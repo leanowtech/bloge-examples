@@ -1151,6 +1151,11 @@ GET /api/visual/operators/risk:eligibility?tenantId=demo-tenant&namespace=local&
 这个 envelope 只读地解释单算子从 schema-only/design-only 到 executable promotion
 还缺哪一类 runtime-plane 证据；它不会修改 `OperatorDefinition.runtimeReadiness`，
 也不会允许用户导入包伪造可执行状态。
+当前 browser composer 的 selected-node refresh 会请求该 envelope，并把 projection
+作为 Inspector readiness panel 的权威控制面状态；当 promotion projection 暴露
+`requiredNextAction` 时，浏览器会把它映射到 Workspace asset action queue 的
+`actionType`，并提供按 operatorRef/actionType 过滤的打开入口。旧的裸 operator 响应仍按
+`bloge.visualOperator.v1` 兼容路径渲染。
 
 ### 10.1.2 查询 operator usage index
 

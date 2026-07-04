@@ -1016,7 +1016,7 @@ Palette 不应写死三类节点。它从 catalog 获取：
 
 | 对象 | Inspector 内容 |
 | --- | --- |
-| 节点 | operator 信息、validation/trace diagnostics 局部归因、input binding、config、timeout/retry/fallback、schema、connectability ready/wired/blocked 状态、blocked preview 和 blocked reason、复制当前配置、快捷复制/删除入口、当前画布上下游影响面、逐条/批量 detach 引用、跨 draft/publication 的 operator usage index 与 fingerprint drift、节点 saved-vs-current fingerprint snapshot 和显式 rebase 动作，并在画布节点上回显 usage 风险 badge |
+| 节点 | operator 信息、runtime binding / executable promotion projection、requiredNextAction、validation/trace diagnostics 局部归因、input binding、config、timeout/retry/fallback、schema、connectability ready/wired/blocked 状态、blocked preview 和 blocked reason、复制当前配置、快捷复制/删除入口、当前画布上下游影响面、逐条/批量 detach 引用、跨 draft/publication 的 operator usage index 与 fingerprint drift、节点 saved-vs-current fingerprint snapshot 和显式 rebase 动作，并在画布节点上回显 usage 风险 badge |
 | 边 | source path、target path、类型兼容结果、transform 建议 |
 | decision table | input columns、output schema、hit policy、规则矩阵、冲突检测 |
 | transform | output object builder、表达式编辑、类型预览 |

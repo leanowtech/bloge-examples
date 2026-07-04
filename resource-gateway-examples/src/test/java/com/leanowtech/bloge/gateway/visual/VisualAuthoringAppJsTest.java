@@ -171,15 +171,44 @@ class VisualAuthoringAppJsTest {
                 .contains("operatorDefinitionMessagesByRef: {}")
                 .contains("operatorDefinitionLoadingRef: ''")
                 .contains("function operatorDefinitionUrl(operatorRef, builder = state.builder, options = {})")
+                .contains("params.set('includeProjections', 'true')")
                 .contains("return `/api/visual/operators/${encodeURIComponent(operatorRef)}?${params.toString()}`")
                 .contains("async function loadVisualOperatorDefinition(operatorRef, options = {})")
+                .contains("includeProjections: options.includeProjections !== false")
                 .contains("fetch(operatorDefinitionUrl(normalized, state.builder, query))")
+                .contains("const detail = normalizeVisualOperatorDetailPayload(payload)")
                 .contains("Operator hidden in active catalog. Retrying with deprecated visibility...")
-                .contains("rememberCatalogOperator(payload, { paletteVisible, deprecated })")
+                .contains("rememberOperatorProjections(")
+                .contains("rememberCatalogOperator(operator, {")
                 .contains("Operator definition refreshed.")
                 .contains("function operatorDefinitionRefForNode(node)")
                 .contains("data-load-operator-definition")
-                .contains("loadVisualOperatorDefinition(button.dataset.loadOperatorDefinition)");
+                .contains("loadVisualOperatorDefinition(button.dataset.loadOperatorDefinition)")
+                .contains("data-open-operator-projection-action")
+                .contains("openOperatorProjectionAction(");
+    }
+
+    @Test
+    void operatorDetailProjectionEnvelopeFeedsInspectorReadiness() throws Exception {
+        assumeNodeAvailable();
+
+        Path tempDir = Files.createTempDirectory("bloge-operator-detail-projection-test");
+        Path appJs = tempDir.resolve("app.js");
+        Path probe = tempDir.resolve("probe.js");
+        try {
+            Files.writeString(appJs, appJsSource(), StandardCharsets.UTF_8);
+            Files.writeString(probe, operatorDetailProjectionProbe(), StandardCharsets.UTF_8);
+
+            ProcessResult result = runProcess(List.of("node", probe.toString(), appJs.toString()), tempDir, 10);
+
+            assertThat(result.finished()).as(result.output()).isTrue();
+            assertThat(result.exitCode()).as(result.output()).isZero();
+            assertThat(result.output()).contains("browser operator detail projection probe passed");
+        } finally {
+            Files.deleteIfExists(probe);
+            Files.deleteIfExists(appJs);
+            Files.deleteIfExists(tempDir);
+        }
     }
 
     @Test
@@ -1972,6 +2001,189 @@ class VisualAuthoringAppJsTest {
                 """);
     }
 
+    private static String operatorDetailProjectionProbe() {
+        return String.join("", """
+                const fs = require('fs');
+                const vm = require('vm');
+                const source = fs.readFileSync(process.argv[2], 'utf8');
+                new vm.Script(source, { filename: 'app.js' });
+
+                function functionSource(name) {
+                  let start = source.indexOf(`function ${name}(`);
+                  if (start < 0) throw new Error(`missing function ${name}`);
+                  if (source.slice(Math.max(0, start - 6), start) === 'async ') {
+                    start -= 6;
+                  }
+                  const openParen = source.indexOf('(', start);
+                  let parenDepth = 0;
+                  let brace = -1;
+                  for (let i = openParen; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '(') parenDepth += 1;
+                    if (ch === ')') {
+                      parenDepth -= 1;
+                      if (parenDepth === 0) {
+                        brace = source.indexOf('{', i + 1);
+                        break;
+                      }
+                    }
+                  }
+                  if (brace < 0) throw new Error(`missing body for function ${name}`);
+                  let depth = 0;
+                  for (let i = brace; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '{') depth += 1;
+                    if (ch === '}') {
+                      depth -= 1;
+                      if (depth === 0) return source.slice(start, i + 1);
+                    }
+                  }
+                  throw new Error(`unterminated function ${name}`);
+                }
+
+                const context = vm.createContext({ console });
+                context.OPERATOR_TYPES = {};
+                context.state = {
+                  operatorRuntimeBindingProjectionsByRef: {},
+                  operatorExecutablePromotionProjectionsByRef: {}
+                };
+                for (const name of [
+                  'escapeHtml',
+                  'normalizeDiagnostics',
+                  'normalizeProjectionLevel',
+                  'normalizeOperatorRuntimeBindingProjection',
+                  'normalizeOperatorExecutablePromotionProjection',
+                  'normalizeVisualOperatorDetailPayload',
+                  'operatorProjectionMap',
+                  'rememberOperatorProjections',
+                  'normalizeOperatorPorts',
+                  'normalizeOperatorRuntimeReadiness',
+                  'operatorPaletteFacetLabel',
+                  'operatorPaletteCapabilityLabels',
+                  'operatorPaletteCapabilityFacetValues',
+                  'operatorPaletteLoweringMode',
+                  'operatorProjectionRuntimeReadiness',
+                  'operatorProjectionQueueActionType',
+                  'operatorProjectionQueueAction',
+                  'operatorProjectionActionLabel',
+                  'operatorPaletteProjectionBadge',
+                  'operatorRuntimeReadiness',
+                  'renderOperatorReadinessPanel',
+                  'readableName',
+                  'baseIdForResource',
+                  'rememberCatalogOperator'
+                ]) {
+                  vm.runInContext(functionSource(name), context);
+                }
+                const payload = {
+                  schemaVersion: 'bloge.visualOperatorDetail.v1',
+                  operator: {
+                    schemaVersion: 'bloge.visualOperator.v1',
+                    operatorRef: 'risk:eligibility',
+                    fingerprint: 'sha256:eligibility',
+                    display: { name: 'Eligibility', description: 'Risk eligibility', tags: ['risk'] },
+                    source: { kind: 'user-library', libraryId: 'risk-policy' },
+                    ports: {
+                      inputs: [{ name: 'inputs', schema: { schema: { type: 'object' } }, required: true }],
+                      outputs: [{ name: 'decision', schema: { schema: { type: 'string' } }, required: true }]
+                    },
+                    configSchema: { schema: { type: 'object' } },
+                    capabilities: { effect: 'PURE' },
+                    lowering: { mode: 'design', operatorRef: 'riskEligibility' },
+                    runtimeReadiness: {
+                      state: 'DESIGN_ONLY',
+                      level: 'info',
+                      executable: false,
+                      artifactKinds: ['DESIGN'],
+                      title: 'Design-only operator',
+                      summary: 'Authorable schema contract.'
+                    }
+                  },
+                  runtimeBindingProjection: {
+                    schemaVersion: 'bloge.operatorRuntimeBindingProjection.v1',
+                    operatorRef: 'risk:eligibility',
+                    operatorFingerprint: 'sha256:eligibility',
+                    runtimeReadinessState: 'design-only',
+                    executable: false,
+                    implementationBindingRequired: false,
+                    runtimeActivationRequired: true,
+                    projectionState: 'binding-bound',
+                    level: 'warning',
+                    title: 'Runtime binding found',
+                    summary: 'Implementation is bound but not activated.',
+                    activeBindingId: 'risk-eligibility-native-v1',
+                    activeBindingRevision: 3
+                  },
+                  executablePromotionProjection: {
+                    schemaVersion: 'bloge.operatorExecutablePromotionProjection.v1',
+                    operatorRef: 'risk:eligibility',
+                    operatorFingerprint: 'sha256:eligibility',
+                    executableNow: false,
+                    promotionReady: false,
+                    promotionState: 'activation-required',
+                    level: 'warning',
+                    title: 'Adapter activation required',
+                    summary: 'Activate the runtime adapter before EXECUTABLE promotion.',
+                    requiredNextAction: 'ACTIVATE_RUNTIME_ADAPTER',
+                    activeBindingId: 'risk-eligibility-native-v1'
+                  }
+                };
+                const detail = context.normalizeVisualOperatorDetailPayload(payload);
+                const runtimeMap = context.operatorProjectionMap(
+                  [payload.runtimeBindingProjection],
+                  context.normalizeOperatorRuntimeBindingProjection
+                );
+                const promotionMap = context.operatorProjectionMap(
+                  [payload.executablePromotionProjection],
+                  context.normalizeOperatorExecutablePromotionProjection
+                );
+                context.rememberCatalogOperator(detail.operator, {
+                  runtimeBindingProjection: detail.runtimeBindingProjection,
+                  executablePromotionProjection: detail.executablePromotionProjection
+                });
+                const spec = context.OPERATOR_TYPES['risk:eligibility'];
+                const readiness = context.operatorRuntimeReadiness(spec);
+                const queueAction = context.operatorProjectionQueueAction(spec);
+                const badge = context.operatorPaletteProjectionBadge(spec);
+                const panel = context.renderOperatorReadinessPanel(spec);
+                const legacy = context.normalizeVisualOperatorDetailPayload({
+                  schemaVersion: 'bloge.visualOperator.v1',
+                  operatorRef: 'risk:legacy'
+                });
+                const checks = [
+                  ['detail operator ref', detail.operator.operatorRef, 'risk:eligibility'],
+                  ['detail binding state', detail.runtimeBindingProjection.projectionState, 'binding-bound'],
+                  ['detail promotion action', detail.executablePromotionProjection.requiredNextAction, 'ACTIVATE_RUNTIME_ADAPTER'],
+                  ['runtime map key', runtimeMap['risk:eligibility'].activeBindingId, 'risk-eligibility-native-v1'],
+                  ['promotion map key', promotionMap['risk:eligibility'].promotionState, 'activation-required'],
+                  ['spec binding state', spec.runtimeBindingProjection.projectionState, 'binding-bound'],
+                  ['spec promotion state', spec.executablePromotionProjection.promotionState, 'activation-required'],
+                  ['state binding remembered', context.state.operatorRuntimeBindingProjectionsByRef['risk:eligibility'].activeBindingId, 'risk-eligibility-native-v1'],
+                  ['readiness title', readiness.title, 'Adapter activation required'],
+                  ['readiness level', readiness.level, 'warning'],
+                  ['readiness executable', readiness.executable, false],
+                  ['readiness state', readiness.state, 'DESIGN_ONLY'],
+                  ['queue action type', queueAction.actionType, 'ACTIVATE_RUNTIME_ADAPTER'],
+                  ['queue required action', queueAction.requiredNextAction, 'ACTIVATE_RUNTIME_ADAPTER'],
+                  ['queue action label', context.operatorProjectionActionLabel(queueAction.actionType), 'Activate Runtime Adapter'],
+                  ['badge includes state label', String(badge.includes('Activation Required')), 'true'],
+                  ['badge includes action label', String(badge.includes('Activate Runtime Adapter')), 'true'],
+                  ['panel includes next action', String(panel.includes('ACTIVATE_RUNTIME_ADAPTER')), 'true'],
+                  ['panel includes promotion label', String(panel.includes('Promotion')), 'true'],
+                  ['panel includes action button', String(panel.includes('data-open-operator-projection-action="risk:eligibility"')), 'true'],
+                  ['panel includes action type', String(panel.includes('data-operator-projection-action-type="ACTIVATE_RUNTIME_ADAPTER"')), 'true'],
+                  ['legacy operator ref', legacy.operator.operatorRef, 'risk:legacy'],
+                  ['legacy binding projection', legacy.runtimeBindingProjection, null]
+                ];
+                for (const [label, actual, expected] of checks) {
+                  if (actual !== expected) {
+                    throw new Error(`${label}: expected ${expected}, got ${actual}`);
+                  }
+                }
+                console.log('browser operator detail projection probe passed');
+                """);
+    }
+
     private static String bracketPathProbe() {
         return String.join("", """
                 const fs = require('fs');
@@ -2292,6 +2504,9 @@ class VisualAuthoringAppJsTest {
                   'operatorPaletteCapabilityLabels',
                   'operatorPaletteCapabilityFacetValues',
                   'normalizeOperatorRuntimeReadiness',
+                  'normalizeProjectionLevel',
+                  'normalizeOperatorRuntimeBindingProjection',
+                  'normalizeOperatorExecutablePromotionProjection',
                   'operatorPaletteReadinessState',
                   'operatorPaletteLoweringMode',
                   'operatorPaletteFacetLabel',
@@ -2301,6 +2516,11 @@ class VisualAuthoringAppJsTest {
                   'normalizeOperatorCatalogFacets',
                   'facetSummaryPart',
                   'operatorCatalogFacetSummary',
+                  'operatorProjectionRuntimeReadiness',
+                  'operatorProjectionQueueActionType',
+                  'operatorProjectionQueueAction',
+                  'operatorProjectionActionLabel',
+                  'operatorPaletteProjectionBadge',
                   'operatorRuntimeReadiness',
                   'renderOperatorReadinessPanel',
                   'operatorPaletteDiagnosticBadges',

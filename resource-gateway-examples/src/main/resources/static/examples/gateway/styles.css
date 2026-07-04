@@ -1045,6 +1045,10 @@ body.dragging-operator * {
   margin-top: 6px;
 }
 
+.operator-card-projection {
+  margin-top: 6px;
+}
+
 .operator-card-diagnostics span {
   display: inline-flex;
   max-width: 100%;
@@ -1056,6 +1060,37 @@ body.dragging-operator * {
   font-size: 9px;
   font-weight: 800;
   overflow-wrap: anywhere;
+}
+
+.operator-card-projection span {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 2px 5px;
+  border: 1px solid #bae6fd;
+  border-radius: 4px;
+  background: #eff6ff;
+  color: #075985;
+  font-size: 9px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.operator-card-projection.warning span {
+  border-color: #f8d18d;
+  background: var(--amber-soft);
+  color: #8a5a13;
+}
+
+.operator-card-projection.error span {
+  border-color: #fca5a5;
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.operator-card-projection.success span {
+  border-color: #86efac;
+  background: var(--green-soft);
+  color: #166534;
 }
 
 .operator-card-diagnostics.warning span {
@@ -1134,6 +1169,11 @@ body.dragging-operator * {
   grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
   gap: 8px;
   align-items: baseline;
+}
+
+.operator-readiness-actions {
+  display: flex;
+  justify-content: flex-start;
 }
 
 .connection-status {

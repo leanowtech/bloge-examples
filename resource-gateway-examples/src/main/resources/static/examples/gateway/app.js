@@ -406,6 +406,8 @@ const state = {
   visualOperators: [],
   visualOperatorCatalogFacets: null,
   visualOperatorCatalogWindow: null,
+  operatorRuntimeBindingProjectionsByRef: {},
+  operatorExecutablePromotionProjectionsByRef: {},
   selected: null,
   layout: null,
   selectedNodeId: null,
@@ -659,9 +661,19 @@ async function loadVisualOperatorCatalog(options = {}) {
     }
     const operators = Array.isArray(payload.operators) ? payload.operators : [];
     const diagnostics = normalizeDiagnostics(payload.diagnostics);
+    const runtimeBindingProjectionsByRef = operatorProjectionMap(
+      payload.runtimeBindingProjections,
+      normalizeOperatorRuntimeBindingProjection
+    );
+    const executablePromotionProjectionsByRef = operatorProjectionMap(
+      payload.executablePromotionProjections,
+      normalizeOperatorExecutablePromotionProjection
+    );
     state.visualOperators = operators;
     state.visualOperatorCatalogWindow = normalizeOperatorCatalogWindow(payload, operators);
     state.visualOperatorCatalogFacets = normalizeOperatorCatalogFacets(payload.facets, operators);
+    state.operatorRuntimeBindingProjectionsByRef = runtimeBindingProjectionsByRef;
+    state.operatorExecutablePromotionProjectionsByRef = executablePromotionProjectionsByRef;
     if (diagnostics.length) {
       setVisualCheck(
         'Catalog loaded with diagnostics.',
@@ -671,7 +683,10 @@ async function loadVisualOperatorCatalog(options = {}) {
     }
     const activeOperatorRefs = new Set();
     for (const operator of operators) {
-      const operatorRef = rememberCatalogOperator(operator);
+      const operatorRef = rememberCatalogOperator(operator, {
+        runtimeBindingProjection: runtimeBindingProjectionsByRef[operator?.operatorRef || ''] || null,
+        executablePromotionProjection: executablePromotionProjectionsByRef[operator?.operatorRef || ''] || null
+      });
       if (operatorRef) {
         activeOperatorRefs.add(operatorRef);
       }
@@ -807,6 +822,13 @@ function rememberCatalogOperator(operator, options = {}) {
     return operatorRef;
   }
   const diagnostics = normalizeDiagnostics(operator.diagnostics);
+  const runtimeBindingProjection = normalizeOperatorRuntimeBindingProjection(
+    options.runtimeBindingProjection || (state.operatorRuntimeBindingProjectionsByRef || {})[operatorRef]
+  );
+  const executablePromotionProjection = normalizeOperatorExecutablePromotionProjection(
+    options.executablePromotionProjection || (state.operatorExecutablePromotionProjectionsByRef || {})[operatorRef]
+  );
+  rememberOperatorProjections(operatorRef, runtimeBindingProjection, executablePromotionProjection);
   if (!operatorRef.startsWith('resource:')) {
     const inputPorts = normalizeOperatorPorts(operator.ports?.inputs, 'inputs');
     const outputPorts = normalizeOperatorPorts(operator.ports?.outputs, 'output');
@@ -834,6 +856,8 @@ function rememberCatalogOperator(operator, options = {}) {
       lowering: operator.lowering,
       diagnostics,
       runtimeReadiness: normalizeOperatorRuntimeReadiness(operator.runtimeReadiness),
+      runtimeBindingProjection,
+      executablePromotionProjection,
       paletteVisible: options.paletteVisible !== false,
       deprecated: Boolean(options.deprecated)
     };
@@ -869,6 +893,8 @@ function rememberCatalogOperator(operator, options = {}) {
     lowering: operator.lowering,
     diagnostics,
     runtimeReadiness: normalizeOperatorRuntimeReadiness(operator.runtimeReadiness),
+    runtimeBindingProjection,
+    executablePromotionProjection,
     paletteVisible: options.paletteVisible !== false,
     deprecated: Boolean(options.deprecated)
   };
@@ -964,7 +990,148 @@ function operatorDefinitionUrl(operatorRef, builder = state.builder, options = {
   if (options.operatorLibraryId) {
     params.set('operatorLibraryId', options.operatorLibraryId);
   }
+  if (options.includeProjections) {
+    params.set('includeProjections', 'true');
+  }
   return `/api/visual/operators/${encodeURIComponent(operatorRef)}?${params.toString()}`;
+}
+
+function normalizeVisualOperatorDetailPayload(payload) {
+  const safePayload = payload && typeof payload === 'object' ? payload : {};
+  if (safePayload.operator && typeof safePayload.operator === 'object') {
+    return {
+      schemaVersion: safePayload.schemaVersion || 'bloge.visualOperatorDetail.v1',
+      operator: safePayload.operator,
+      runtimeBindingProjection: normalizeOperatorRuntimeBindingProjection(safePayload.runtimeBindingProjection),
+      executablePromotionProjection: normalizeOperatorExecutablePromotionProjection(
+        safePayload.executablePromotionProjection
+      ),
+      filter: safePayload.filter || {}
+    };
+  }
+  return {
+    schemaVersion: safePayload.schemaVersion || 'bloge.visualOperator.v1',
+    operator: safePayload,
+    runtimeBindingProjection: normalizeOperatorRuntimeBindingProjection(safePayload.runtimeBindingProjection),
+    executablePromotionProjection: normalizeOperatorExecutablePromotionProjection(
+      safePayload.executablePromotionProjection
+    ),
+    filter: {}
+  };
+}
+
+function normalizeOperatorRuntimeBindingProjection(projection) {
+  if (!projection || typeof projection !== 'object') {
+    return null;
+  }
+  const operatorRef = String(projection.operatorRef || '').trim();
+  const projectionState = String(projection.projectionState || '').trim().toLowerCase();
+  const title = String(projection.title || '').trim();
+  const summary = String(projection.summary || '').trim();
+  if (!operatorRef && !projectionState && !title && !summary) {
+    return null;
+  }
+  return {
+    schemaVersion: projection.schemaVersion || 'bloge.operatorRuntimeBindingProjection.v1',
+    operatorRef,
+    operatorFingerprint: String(projection.operatorFingerprint || '').trim(),
+    runtimeReadinessState: String(projection.runtimeReadinessState || '').trim().toLowerCase(),
+    executable: projection.executable === true,
+    implementationBindingRequired: projection.implementationBindingRequired === true,
+    runtimeActivationRequired: projection.runtimeActivationRequired === true,
+    projectionState,
+    level: normalizeProjectionLevel(projection.level),
+    title,
+    summary,
+    activeBindingId: String(projection.activeBindingId || '').trim(),
+    activeBindingRevision: Number(projection.activeBindingRevision) || 0,
+    activeBindingState: String(projection.activeBindingState || '').trim().toLowerCase(),
+    implementationAdapterKind: String(projection.implementationAdapterKind || '').trim().toLowerCase(),
+    implementationEntrypoint: String(projection.implementationEntrypoint || '').trim(),
+    runtimeOwner: String(projection.runtimeOwner || '').trim(),
+    boundAt: String(projection.boundAt || '').trim(),
+    activeAdapterActivationId: String(projection.activeAdapterActivationId || '').trim(),
+    activeAdapterActivationRevision: Number(projection.activeAdapterActivationRevision) || 0,
+    adapterActivationState: String(projection.adapterActivationState || '').trim().toLowerCase(),
+    adapterHealthState: String(projection.adapterHealthState || '').trim().toLowerCase(),
+    runtimeEnvironment: String(projection.runtimeEnvironment || '').trim(),
+    activatedAt: String(projection.activatedAt || '').trim(),
+    diagnostics: normalizeDiagnostics(projection.diagnostics)
+  };
+}
+
+function normalizeOperatorExecutablePromotionProjection(projection) {
+  if (!projection || typeof projection !== 'object') {
+    return null;
+  }
+  const operatorRef = String(projection.operatorRef || '').trim();
+  const promotionState = String(projection.promotionState || '').trim().toLowerCase();
+  const title = String(projection.title || '').trim();
+  const summary = String(projection.summary || '').trim();
+  if (!operatorRef && !promotionState && !title && !summary) {
+    return null;
+  }
+  return {
+    schemaVersion: projection.schemaVersion || 'bloge.operatorExecutablePromotionProjection.v1',
+    operatorRef,
+    operatorFingerprint: String(projection.operatorFingerprint || '').trim(),
+    executableNow: projection.executableNow === true,
+    promotionReady: projection.promotionReady === true,
+    promotionState,
+    level: normalizeProjectionLevel(projection.level),
+    title,
+    summary,
+    requiredNextAction: String(projection.requiredNextAction || '').trim().toUpperCase(),
+    activeBindingId: String(projection.activeBindingId || '').trim(),
+    activeAdapterActivationId: String(projection.activeAdapterActivationId || '').trim(),
+    adapterKind: String(projection.adapterKind || '').trim().toLowerCase(),
+    entrypoint: String(projection.entrypoint || '').trim(),
+    runtimeEnvironment: String(projection.runtimeEnvironment || '').trim(),
+    activeExecutableLoweringIntegrationId: String(projection.activeExecutableLoweringIntegrationId || '').trim(),
+    activeExecutableLoweringIntegrationRevision: Number(projection.activeExecutableLoweringIntegrationRevision) || 0,
+    executableLoweringMode: String(projection.executableLoweringMode || '').trim().toLowerCase(),
+    executorKind: String(projection.executorKind || '').trim().toLowerCase(),
+    executorEntrypoint: String(projection.executorEntrypoint || '').trim(),
+    integratedAt: String(projection.integratedAt || '').trim(),
+    observedAt: String(projection.observedAt || '').trim(),
+    diagnostics: normalizeDiagnostics(projection.diagnostics)
+  };
+}
+
+function normalizeProjectionLevel(level) {
+  const normalized = String(level || '').trim().toLowerCase();
+  return ['success', 'info', 'warning', 'error'].includes(normalized) ? normalized : 'info';
+}
+
+function operatorProjectionMap(projections, normalizer) {
+  const map = {};
+  for (const projection of Array.isArray(projections) ? projections : []) {
+    const normalized = normalizer(projection);
+    if (normalized?.operatorRef) {
+      map[normalized.operatorRef] = normalized;
+    }
+  }
+  return map;
+}
+
+function rememberOperatorProjections(operatorRef, runtimeBindingProjection, executablePromotionProjection) {
+  const normalizedRef = String(operatorRef || runtimeBindingProjection?.operatorRef
+    || executablePromotionProjection?.operatorRef || '').trim();
+  if (!normalizedRef) {
+    return;
+  }
+  if (runtimeBindingProjection) {
+    state.operatorRuntimeBindingProjectionsByRef = {
+      ...(state.operatorRuntimeBindingProjectionsByRef || {}),
+      [normalizedRef]: runtimeBindingProjection
+    };
+  }
+  if (executablePromotionProjection) {
+    state.operatorExecutablePromotionProjectionsByRef = {
+      ...(state.operatorExecutablePromotionProjectionsByRef || {}),
+      [normalizedRef]: executablePromotionProjection
+    };
+  }
 }
 
 function visualAssetOverviewUrl(builder = state.builder) {
@@ -3301,6 +3468,7 @@ function renderOperatorPalette() {
       <small>${escapeHtml(operatorPaletteContractSummary(spec))}</small>
       ${operatorPaletteTagBadges(spec)}
       ${operatorPaletteCapabilityBadges(spec)}
+      ${operatorPaletteProjectionBadge(spec)}
       ${operatorPaletteDiagnosticBadges(spec)}
     </button>
   `).join('') || '<div class="palette-empty">No matching operators.</div>';
@@ -3825,6 +3993,21 @@ function operatorPaletteCapabilityBadges(spec) {
     `<em>${escapeHtml(label)}</em>`).join('')}</div>`;
 }
 
+function operatorPaletteProjectionBadge(spec) {
+  const action = operatorProjectionQueueAction(spec);
+  if (!action) {
+    return '';
+  }
+  const text = action.actionType
+    ? `${operatorPaletteFacetLabel(action.promotionState)} · ${operatorProjectionActionLabel(action.actionType)}`
+    : `${operatorPaletteFacetLabel(action.promotionState)} · ${action.requiredNextAction}`;
+  return `
+    <div class="operator-card-projection ${escapeHtml(action.level)}" title="${escapeHtml(action.summary)}">
+      <span>${escapeHtml(text)}</span>
+    </div>
+  `;
+}
+
 function operatorPaletteCapabilityLabels(spec) {
   const labels = [];
   const sourceKind = String(spec?.sourceKind || '').trim().toLowerCase();
@@ -3981,6 +4164,7 @@ function operatorPaletteDiagnosticBadges(spec) {
 }
 
 function operatorPaletteSearchValues(spec) {
+  const projectionAction = operatorProjectionQueueAction(spec);
   return [
     ...inputPortsForSpec(spec).flatMap(operatorPaletteSchemaSearchValues),
     ...outputPortsForSpec(spec).flatMap(operatorPaletteSchemaSearchValues),
@@ -3990,7 +4174,11 @@ function operatorPaletteSearchValues(spec) {
       diagnostic.code,
       diagnostic.message,
       diagnostic.target
-    ])
+    ]),
+    projectionAction?.promotionState,
+    projectionAction?.requiredNextAction,
+    projectionAction?.actionType,
+    projectionAction?.summary
   ];
 }
 
@@ -13515,6 +13703,15 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const button of target.querySelectorAll('[data-open-operator-projection-action]')) {
+    button.addEventListener('click', () => {
+      openOperatorProjectionAction(
+        button.dataset.openOperatorProjectionAction,
+        button.dataset.operatorProjectionActionType || ''
+      );
+    });
+  }
+
   for (const button of target.querySelectorAll('[data-rebase-operator-fingerprint]')) {
     button.addEventListener('click', () => {
       rebaseOperatorFingerprint(button.dataset.rebaseOperatorFingerprint);
@@ -14649,7 +14846,8 @@ async function loadVisualOperatorDefinition(operatorRef, options = {}) {
   const silent = options.silent === true;
   let query = {
     includeDeprecated: Boolean(options.includeDeprecated),
-    resourceOnly: Boolean(options.resourceOnly)
+    resourceOnly: Boolean(options.resourceOnly),
+    includeProjections: options.includeProjections !== false
   };
   if (!silent) {
     state.operatorDefinitionLoadingRef = normalized;
@@ -14680,7 +14878,9 @@ async function loadVisualOperatorDefinition(operatorRef, options = {}) {
       response = await fetch(operatorDefinitionUrl(normalized, state.builder, query));
     }
     const payload = await response.json().catch(() => null);
-    if (!response.ok || !payload?.operatorRef) {
+    const detail = normalizeVisualOperatorDetailPayload(payload);
+    const operator = detail.operator;
+    if (!response.ok || !operator?.operatorRef) {
       const message = response.status === 404
         ? 'Operator not visible in current authoring scope.'
         : `Operator definition failed with ${response.status}.`;
@@ -14690,10 +14890,20 @@ async function loadVisualOperatorDefinition(operatorRef, options = {}) {
     const paletteVisible = Object.prototype.hasOwnProperty.call(options, 'paletteVisible')
       ? Boolean(options.paletteVisible)
       : !deprecated;
-    rememberCatalogOperator(payload, { paletteVisible, deprecated });
+    rememberOperatorProjections(
+      operator.operatorRef,
+      detail.runtimeBindingProjection,
+      detail.executablePromotionProjection
+    );
+    rememberCatalogOperator(operator, {
+      paletteVisible,
+      deprecated,
+      runtimeBindingProjection: detail.runtimeBindingProjection,
+      executablePromotionProjection: detail.executablePromotionProjection
+    });
     state.visualOperators = [
-      ...(state.visualOperators || []).filter((operator) => operator?.operatorRef !== payload.operatorRef),
-      payload
+      ...(state.visualOperators || []).filter((item) => item?.operatorRef !== operator.operatorRef),
+      operator
     ];
     if (!silent) {
       state.operatorDefinitionMessagesByRef = {
@@ -14709,7 +14919,7 @@ async function loadVisualOperatorDefinition(operatorRef, options = {}) {
     if (options.render !== false) {
       renderOperatorPalette();
     }
-    return payload;
+    return operator;
   } catch (error) {
     if (!silent) {
       state.operatorDefinitionMessagesByRef = {
@@ -15548,6 +15758,7 @@ function renderOperatorReadinessPanel(spec) {
   if (!readiness.title) {
     return '';
   }
+  const action = operatorProjectionQueueAction(spec);
   const details = readiness.details.map((detail) => `
     <div class="operator-readiness-row">
       <strong>${escapeHtml(detail.label)}</strong>
@@ -15561,6 +15772,16 @@ function renderOperatorReadinessPanel(spec) {
         <span>${escapeHtml(readiness.summary)}</span>
       </div>
       ${details ? `<div class="operator-readiness-rows">${details}</div>` : ''}
+      ${action ? `
+        <div class="operator-readiness-actions">
+          <button
+            type="button"
+            class="secondary compact"
+            data-open-operator-projection-action="${escapeHtml(action.operatorRef)}"
+            data-operator-projection-action-type="${escapeHtml(action.actionType)}"
+          >Open action</button>
+        </div>
+      ` : ''}
     </div>
   `;
 }
@@ -15595,7 +15816,183 @@ function normalizeOperatorRuntimeReadiness(readiness) {
   };
 }
 
+function operatorProjectionRuntimeReadiness(spec) {
+  const runtimeBindingProjection = normalizeOperatorRuntimeBindingProjection(spec?.runtimeBindingProjection);
+  const executablePromotionProjection = normalizeOperatorExecutablePromotionProjection(
+    spec?.executablePromotionProjection
+  );
+  if (!runtimeBindingProjection && !executablePromotionProjection) {
+    return null;
+  }
+  const serverReadiness = normalizeOperatorRuntimeReadiness(spec?.runtimeReadiness);
+  const level = normalizeProjectionLevel(
+    executablePromotionProjection?.level || runtimeBindingProjection?.level || serverReadiness?.level
+  );
+  const state = String(runtimeBindingProjection?.runtimeReadinessState || serverReadiness?.state || '')
+    .trim()
+    .toUpperCase()
+    .replaceAll('-', '_');
+  const details = [];
+  if (serverReadiness?.title) {
+    details.push({ label: 'Catalog readiness', value: serverReadiness.title });
+  }
+  if (runtimeBindingProjection?.projectionState) {
+    details.push({
+      label: 'Binding projection',
+      value: operatorPaletteFacetLabel(runtimeBindingProjection.projectionState)
+    });
+  }
+  if (runtimeBindingProjection?.activeBindingId) {
+    details.push({ label: 'Binding', value: runtimeBindingProjection.activeBindingId });
+  }
+  if (runtimeBindingProjection?.activeAdapterActivationId) {
+    details.push({ label: 'Activation', value: runtimeBindingProjection.activeAdapterActivationId });
+  }
+  if (executablePromotionProjection?.promotionState) {
+    details.push({
+      label: 'Promotion',
+      value: operatorPaletteFacetLabel(executablePromotionProjection.promotionState)
+    });
+  }
+  if (executablePromotionProjection?.requiredNextAction) {
+    details.push({ label: 'Next action', value: executablePromotionProjection.requiredNextAction });
+  }
+  if (executablePromotionProjection?.activeExecutableLoweringIntegrationId) {
+    details.push({
+      label: 'Lowering integration',
+      value: executablePromotionProjection.activeExecutableLoweringIntegrationId
+    });
+  }
+  return {
+    state,
+    level,
+    executable: executablePromotionProjection
+      ? executablePromotionProjection.executableNow === true
+      : runtimeBindingProjection?.executable === true,
+    artifactKinds: executablePromotionProjection?.promotionReady || executablePromotionProjection?.executableNow
+      ? ['EXECUTABLE', 'DESIGN']
+      : serverReadiness?.artifactKinds || [],
+    title: executablePromotionProjection?.title
+      || runtimeBindingProjection?.title
+      || serverReadiness?.title
+      || 'Runtime projection',
+    summary: executablePromotionProjection?.summary
+      || runtimeBindingProjection?.summary
+      || serverReadiness?.summary
+      || 'Server-derived runtime binding state is available.',
+    details
+  };
+}
+
+function operatorProjectionQueueAction(spec) {
+  const promotion = normalizeOperatorExecutablePromotionProjection(spec?.executablePromotionProjection);
+  const binding = normalizeOperatorRuntimeBindingProjection(spec?.runtimeBindingProjection);
+  const operatorRef = String(promotion?.operatorRef || binding?.operatorRef
+    || spec?.visualOperatorRef || spec?.operatorRef || '').trim();
+  if (!operatorRef || !promotion || promotion.promotionReady || promotion.executableNow) {
+    return null;
+  }
+  const requiredNextAction = String(promotion.requiredNextAction || '').trim().toUpperCase();
+  const promotionState = String(promotion.promotionState || '').trim().toLowerCase();
+  const actionType = operatorProjectionQueueActionType(requiredNextAction, promotionState);
+  if (!requiredNextAction && !actionType) {
+    return null;
+  }
+  return {
+    operatorRef,
+    actionType,
+    requiredNextAction,
+    promotionState,
+    level: normalizeProjectionLevel(promotion.level || binding?.level),
+    summary: promotion.summary || binding?.summary || 'Review this operator promotion blocker.'
+  };
+}
+
+function operatorProjectionQueueActionType(requiredNextAction, promotionState = '') {
+  const action = String(requiredNextAction || '').trim().toUpperCase();
+  switch (action) {
+    case 'SUBMIT_IMPLEMENTATION_BINDING':
+      return 'BIND_OPERATOR_RUNTIME';
+    case 'SUPERSEDE_IMPLEMENTATION_BINDING':
+      return 'BIND_RUNTIME_IMPLEMENTATION';
+    case 'ACTIVATE_RUNTIME_ADAPTER':
+      return 'ACTIVATE_RUNTIME_ADAPTER';
+    case 'REACTIVATE_RUNTIME_ADAPTER':
+      return 'REPAIR_RUNTIME_ACTIVATION_CHAIN';
+    case 'INTEGRATE_EXECUTABLE_LOWERING':
+      return 'INTEGRATE_EXECUTABLE_LOWERING';
+    case 'REVALIDATE_EXECUTABLE_LOWERING':
+      return 'REPAIR_EXECUTABLE_LOWERING_CHAIN';
+    case 'RECOMPUTE_OPERATOR_READINESS':
+      return 'REPAIR_OPERATOR_CATALOG';
+    case 'REFRESH_CATALOG':
+      return 'REPAIR_OPERATOR_CATALOG';
+    default:
+      break;
+  }
+  switch (String(promotionState || '').trim().toLowerCase()) {
+    case 'binding-required':
+      return 'BIND_OPERATOR_RUNTIME';
+    case 'binding-drifted':
+      return 'BIND_RUNTIME_IMPLEMENTATION';
+    case 'activation-required':
+      return 'ACTIVATE_RUNTIME_ADAPTER';
+    case 'activation-drifted':
+      return 'REPAIR_RUNTIME_ACTIVATION_CHAIN';
+    case 'executor-integration-required':
+      return 'INTEGRATE_EXECUTABLE_LOWERING';
+    case 'lowering-integration-drifted':
+      return 'REPAIR_EXECUTABLE_LOWERING_CHAIN';
+    case 'readiness-recompute-required':
+      return 'REPAIR_OPERATOR_CATALOG';
+    default:
+      return '';
+  }
+}
+
+async function openOperatorProjectionAction(operatorRef, actionType = '') {
+  const normalized = String(operatorRef || '').trim();
+  if (!normalized) {
+    return null;
+  }
+  await updateVisualAssetActionQuery({
+    severity: '',
+    actionType,
+    targetKind: '',
+    operatorRef: normalized,
+    operatorLibraryId: '',
+    offset: 0
+  });
+  const overview = $('visual-asset-overview');
+  if (overview && typeof overview.scrollIntoView === 'function') {
+    overview.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+  setVisualCheck(
+    actionType
+      ? `Opened ${operatorProjectionActionLabel(actionType)} actions for ${normalized}.`
+      : `Opened action queue for ${normalized}.`,
+    'info',
+    state.visualCheck?.diagnostics || [],
+    state.visualCheck?.readiness || null,
+    state.visualCheck?.actionReadiness || null
+  );
+  return state.visualAssetOverviewActionQuery;
+}
+
+function operatorProjectionActionLabel(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replaceAll('_', ' ')
+    .replaceAll('-', ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function operatorRuntimeReadiness(spec) {
+  const projectionReadiness = operatorProjectionRuntimeReadiness(spec);
+  if (projectionReadiness) {
+    return projectionReadiness;
+  }
   const serverReadiness = normalizeOperatorRuntimeReadiness(spec?.runtimeReadiness);
   if (serverReadiness) {
     return serverReadiness;
