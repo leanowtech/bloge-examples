@@ -148,6 +148,10 @@ class DefaultVisualOperatorCatalogTest {
         OperatorDefinition remoteWorker = VisualCatalogTestSupport.remoteWorkerEligibilityOperator("integer");
         OperatorDefinition aiTool = VisualCatalogTestSupport.aiToolSummaryOperator();
         OperatorDefinition eventSource = VisualCatalogTestSupport.orderSubmittedEventSourceOperator();
+        OperatorDefinition streaming = eligibilityOperatorWithCapabilities(new OperatorDefinition.Capabilities(
+                "PURE", "DETERMINISTIC", true, false, false));
+        OperatorDefinition durable = eligibilityOperatorWithCapabilities(new OperatorDefinition.Capabilities(
+                "WRITE_EXTERNAL", "NON_IDEMPOTENT", false, true, false));
         OperatorDefinition forged = new OperatorDefinition(
                 designOnly.schemaVersion(),
                 designOnly.operatorRef(),
@@ -188,6 +192,21 @@ class DefaultVisualOperatorCatalogTest {
         assertThat(eventSource.runtimeReadiness().state()).isEqualTo("RUNTIME_BLOCKED");
         assertThat(eventSource.runtimeReadiness().title()).isEqualTo("Event source runtime blocked");
         assertThat(eventSource.runtimeReadiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(streaming.runtimeReadiness().state()).isEqualTo("RUNTIME_BLOCKED");
+        assertThat(streaming.runtimeReadiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(streaming.runtimeReadiness().summary()).contains("authored as a design contract");
+        assertThat(streaming.runtimeReadiness().details())
+                .anySatisfy(detail -> {
+                    assertThat(detail.label()).isEqualTo("Publish");
+                    assertThat(detail.value()).contains("DESIGN artifact only");
+                });
+        assertThat(durable.runtimeReadiness().state()).isEqualTo("RUNTIME_BLOCKED");
+        assertThat(durable.runtimeReadiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(durable.runtimeReadiness().details())
+                .anySatisfy(detail -> {
+                    assertThat(detail.label()).isEqualTo("Execution");
+                    assertThat(detail.value()).contains("durable runtime");
+                });
         assertThat(forged.runtimeReadiness().state()).isEqualTo("DESIGN_ONLY");
         assertThat(forged.runtimeReadiness().title()).isEqualTo("Design-only operator");
     }
@@ -1231,6 +1250,23 @@ class DefaultVisualOperatorCatalogTest {
                 base.configSchema(),
                 new OperatorDefinition.Capabilities("WRITE_EXTERNAL", "NON_IDEMPOTENT",
                         false, false, true),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+    }
+
+    private static OperatorDefinition eligibilityOperatorWithCapabilities(OperatorDefinition.Capabilities capabilities) {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        return new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                capabilities,
                 base.policy(),
                 base.lowering(),
                 base.diagnostics()

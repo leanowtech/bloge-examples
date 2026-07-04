@@ -2484,6 +2484,76 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void publishDesignArtifactFreezesRuntimeBlockedStreamingDraftWhenWarningsAcknowledged() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                eligibilityLibraryWithCapabilities(new OperatorDefinition.Capabilities(
+                        "PURE", "DETERMINISTIC", true, false, false)));
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(
+                catalog,
+                new InMemoryGraphDraftRepository(),
+                publications
+        );
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<VisualGraphPublicationResult> missingAck = controller.publish(stored.draftId(),
+                new VisualGraphPublishRequest(stored.revision(), false, VisualGraphPublication.ARTIFACT_DESIGN));
+
+        assertThat(missingAck.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(missingAck.getBody()).isNotNull();
+        assertThat(missingAck.getBody().published()).isFalse();
+        assertThat(missingAck.getBody().validation().valid()).isTrue();
+        assertThat(missingAck.getBody().validation().readiness().state()).isEqualTo("runtime-blocked");
+        assertThat(missingAck.getBody().validation().readiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(missingAck.getBody().validation().actionReadiness().state()).isEqualTo("warning-ack-required");
+        assertThat(missingAck.getBody().validation().actionReadiness().publishDesignNow()).isFalse();
+        assertThat(missingAck.getBody().validation().actionReadiness().publishDesignAfterReview()).isTrue();
+        assertThat(missingAck.getBody().diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.runtime.streamingUnsupported");
+                });
+        assertThat(publications.all()).isEmpty();
+
+        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId(),
+                new VisualGraphPublishRequest(stored.revision(), true,
+                        VisualGraphPublication.ARTIFACT_DESIGN,
+                        "publisher",
+                        "visual-canvas",
+                        "Freeze streaming schema design.",
+                        "Runtime owner will bind the streaming execution lane later."));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        VisualGraphPublicationResult result = response.getBody();
+        assertThat(result).isNotNull();
+        assertThat(result.published()).isTrue();
+        assertThat(result.publication().artifactKind()).isEqualTo(VisualGraphPublication.ARTIFACT_DESIGN);
+        assertThat(result.publication().designArtifact()).isTrue();
+        assertThat(result.publication().validation().valid()).isTrue();
+        assertThat(result.publication().validation().readiness().state()).isEqualTo("runtime-blocked");
+        assertThat(result.publication().validation().readiness().runtimeBindingRequirements())
+                .singleElement()
+                .satisfies(requirement -> {
+                    assertThat(requirement.bindingKind()).isEqualTo("streaming-runtime");
+                    assertThat(requirement.handoffLane()).isEqualTo("streaming-runtime");
+                    assertThat(requirement.handoffKind()).isEqualTo("streaming-execution");
+                });
+        assertThat(result.publication().generation().generated()).isFalse();
+        assertThat(result.publication().generation().diagnostics())
+                .anySatisfy(diagnostic ->
+                        assertThat(diagnostic.code()).isEqualTo("visual.action.compileBlocked"));
+        assertThat(result.publication().publicationMetadata().actor()).isEqualTo("publisher");
+        assertThat(result.publication().publicationMetadata().reason())
+                .isEqualTo("Runtime owner will bind the streaming execution lane later.");
+        assertThat(publications.find(result.publication().publicationId())).contains(result.publication());
+    }
+
+    @Test
     void publishDesignArtifactReturnsPersistenceDiagnosticWhenRepositoryCreateFails() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));

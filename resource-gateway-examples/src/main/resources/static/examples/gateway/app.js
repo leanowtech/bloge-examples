@@ -291,7 +291,7 @@ const SUPPORTED_SCHEMA_KINDS = new Set([
 ]);
 const UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
 const SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
-const UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['allOf', 'if', 'then', 'else'];
+const UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['if', 'then', 'else'];
 const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [
   'unevaluatedItems'
 ];
@@ -18555,6 +18555,10 @@ function nodeSupportsDependencyTarget(node) {
 }
 
 function schemaType(schema) {
+  const allOfLabel = schemaAllOfLabel(schema);
+  if (allOfLabel) {
+    return allOfLabel;
+  }
   const unionLabel = schemaUnionLabel(schema);
   if (unionLabel) {
     return unionLabel;
@@ -19367,6 +19371,7 @@ function validateSchemaEnvelope(schemaEnvelope, diagnostics) {
 function validateSchemaStructure(schema, path, diagnostics) {
   validateUnsupportedSchemaKeywords(schema, path, diagnostics);
   validateSupportedSchemaUnions(schema, path, diagnostics);
+  validateSupportedSchemaAllOf(schema, path, diagnostics);
   const invalidTypeArray = validateSchemaTypeArray(schema, path, diagnostics);
   validateSchemaDefinitions(schema, path, diagnostics);
   validateSchemaNot(schema, path, diagnostics);
@@ -19446,6 +19451,33 @@ function validateSchemaStructure(schema, path, diagnostics) {
   } else if (kind === 'enum') {
     validateCustomSchemaEnumValues(schema, path, diagnostics);
   }
+}
+
+function validateSupportedSchemaAllOf(schema, path, diagnostics) {
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'allOf')) {
+    return;
+  }
+  const branches = schema?.allOf;
+  if (!Array.isArray(branches) || !branches.length) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.allOfInvalid',
+      "JSON Schema composition keyword 'allOf' must be a non-empty array of schema objects.",
+      `${path}/allOf`
+    ));
+    return;
+  }
+  branches.forEach((branch, index) => {
+    const branchPath = `${path}/allOf/${index}`;
+    if (!branch || typeof branch !== 'object' || Array.isArray(branch)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.allOfInvalid',
+        `JSON Schema composition keyword 'allOf' branch ${index} must be a schema object.`,
+        branchPath
+      ));
+      return;
+    }
+    validateSchemaStructure(branch, branchPath, diagnostics);
+  });
 }
 
 function validateSchemaTypeArray(schema, path, diagnostics) {
@@ -20986,6 +21018,14 @@ function literalEnumSchema(value) {
 }
 
 function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  const sourceAllOfIssue = sourceAllOfCompatibilityIssue(sourceSchema, targetSchema, path);
+  if (sourceAllOfIssue) {
+    return sourceAllOfIssue;
+  }
+  const targetAllOfIssue = targetAllOfCompatibilityIssue(sourceSchema, targetSchema, path);
+  if (targetAllOfIssue) {
+    return targetAllOfIssue;
+  }
   const sourceUnionIssue = sourceUnionCompatibilityIssue(sourceSchema, targetSchema, path);
   if (sourceUnionIssue) {
     return sourceUnionIssue;
@@ -21047,6 +21087,61 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   return sourceType === targetType
     ? ''
     : reasonAt(path, `source type ${schemaType(sourceSchema)} cannot feed target type ${schemaType(targetSchema)}`);
+}
+
+function sourceAllOfCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  const branches = schemaAllOfBranches(sourceSchema);
+  if (!branches.length) {
+    return '';
+  }
+  const reasons = [];
+  const base = schemaWithoutCombinator(sourceSchema, 'allOf');
+  if (Object.keys(base).length) {
+    const baseIssue = schemaCompatibilityIssue(base, targetSchema, path);
+    if (!baseIssue) {
+      return '';
+    }
+    reasons.push(`base: ${baseIssue}`);
+  }
+  for (let index = 0; index < branches.length; index += 1) {
+    const branch = branches[index];
+    if (!branchCanProveAllOfSourceCompatibility(branch)) {
+      reasons.push(`allOf branch ${index} has no explicit type or finite domain`);
+      continue;
+    }
+    const branchIssue = schemaCompatibilityIssue(branch, targetSchema, path);
+    if (!branchIssue) {
+      return '';
+    }
+    reasons.push(`branch ${index}: ${branchIssue}`);
+  }
+  return reasonAt(path, `source allOf has no constituent that can prove compatibility with target: ${reasons.join('; ')}`);
+}
+
+function branchCanProveAllOfSourceCompatibility(branch) {
+  return Boolean(branch && typeof branch === 'object' && !Array.isArray(branch)
+    && (schemaType(branch) || schemaEnumValues(branch).length));
+}
+
+function targetAllOfCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  const branches = schemaAllOfBranches(targetSchema);
+  if (!branches.length) {
+    return '';
+  }
+  const base = schemaWithoutCombinator(targetSchema, 'allOf');
+  if (Object.keys(base).length) {
+    const baseIssue = schemaCompatibilityIssue(sourceSchema, base, path);
+    if (baseIssue) {
+      return reasonAt(path, `target allOf base constraints are not compatible: ${baseIssue}`);
+    }
+  }
+  for (let index = 0; index < branches.length; index += 1) {
+    const branchIssue = schemaCompatibilityIssue(sourceSchema, branches[index], path);
+    if (branchIssue) {
+      return reasonAt(path, `target allOf branch ${index} is not compatible: ${branchIssue}`);
+    }
+  }
+  return '';
 }
 
 function sourceUnionCompatibilityIssue(sourceSchema, targetSchema, path = '') {
@@ -21999,6 +22094,7 @@ function schemaValueMatchesSchema(value, schema) {
     && stringValueMatchesFormat(value, schema)
     && arrayValueMatchesSchema(value, schema)
     && objectValueMatchesSchema(value, schema)
+    && schemaValueMatchesAllOf(value, schema)
     && schemaValueMatchesUnions(value, schema);
 }
 
@@ -22031,6 +22127,11 @@ function schemaValueMatchesUnions(value, schema) {
   const anyOfBranches = schemaUnionBranches(schema, 'anyOf');
   return !anyOfBranches.length
     || anyOfBranches.some((branch) => schemaValueMatchesSchema(value, branch));
+}
+
+function schemaValueMatchesAllOf(value, schema) {
+  const branches = schemaAllOfBranches(schema);
+  return !branches.length || branches.every((branch) => schemaValueMatchesSchema(value, branch));
 }
 
 function schemaValueMatchesType(value, type) {
@@ -22171,6 +22272,10 @@ function schemaUnionBranches(schema, keyword) {
     : [];
 }
 
+function schemaAllOfBranches(schema) {
+  return schemaUnionBranches(schema, 'allOf');
+}
+
 function schemaUnionBranchOptions(schema) {
   return SUPPORTED_SCHEMA_UNION_KEYWORDS.flatMap((keyword) =>
     schemaUnionBranches(schema, keyword).map((branch, index) => ({
@@ -22234,9 +22339,18 @@ function targetSchemaForUnionSelection(targetSchema, selection) {
 }
 
 function schemaWithoutUnions(schema) {
+  return schemaWithoutCombinators(schema, ['oneOf', 'anyOf']);
+}
+
+function schemaWithoutCombinator(schema, keyword) {
+  return schemaWithoutCombinators(schema, [keyword]);
+}
+
+function schemaWithoutCombinators(schema, keywords) {
   const base = { ...(schema || {}) };
-  delete base.oneOf;
-  delete base.anyOf;
+  for (const keyword of keywords) {
+    delete base[keyword];
+  }
   delete base.$comment;
   delete base.title;
   delete base.description;
@@ -22246,6 +22360,13 @@ function schemaWithoutUnions(schema) {
   delete base.writeOnly;
   delete base.$defs;
   return base;
+}
+
+function schemaAllOfLabel(schema) {
+  const branches = schemaAllOfBranches(schema);
+  return branches.length
+    ? `allOf<${branches.map((branch) => schemaType(branch) || 'unknown').join('&')}>`
+    : '';
 }
 
 function schemaUnionLabel(schema) {

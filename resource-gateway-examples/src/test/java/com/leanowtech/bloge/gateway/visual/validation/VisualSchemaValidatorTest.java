@@ -92,6 +92,40 @@ class VisualSchemaValidatorTest {
     }
 
     @Test
+    void acceptsRuntimeValuesThatMatchEveryAllOfBranch() {
+        SchemaEnvelope schema = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "allOf", List.of(
+                        Map.of("type", "string"),
+                        Map.of("minLength", 3),
+                        Map.of("pattern", "^[A-Z]+$")
+                )
+        ));
+
+        assertThat(VisualSchemaValidator.validateValue(schema, "APPROVE", "/context")).isEmpty();
+    }
+
+    @Test
+    void rejectsRuntimeValuesThatMissAllOfBranchWithSpecificConstraintDiagnostic() {
+        SchemaEnvelope schema = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "allOf", List.of(
+                        Map.of("type", "string"),
+                        Map.of("minLength", 3),
+                        Map.of("pattern", "^[A-Z]+$")
+                )
+        ));
+
+        var diagnostics = VisualSchemaValidator.validateValue(schema, "no", "/context");
+
+        assertThat(diagnostics)
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.context.stringConstraintMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/context");
+                    assertThat(diagnostic.message()).contains("length");
+                });
+    }
+
+    @Test
     void reportsRuntimeUnionBranchMismatches() {
         SchemaEnvelope schema = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
                 "type", "object",
@@ -318,6 +352,27 @@ class VisualSchemaValidatorTest {
                     assertThat(diagnostic.code()).isEqualTo("visual.context.arrayConstraintMismatch");
                     assertThat(diagnostic.target()).isEqualTo("/context");
                     assertThat(diagnostic.message()).contains("uniqueItems");
+                });
+    }
+
+    @Test
+    void rejectsInvalidAllOfSchemaShapes() {
+        var diagnostics = VisualSchemaValidator.validateSchema(Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "decision", Map.of("allOf", List.of()),
+                        "riskSignal", Map.of("allOf", List.of("bad"))
+                )
+        ), "/schema");
+
+        assertThat(diagnostics)
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.allOfInvalid");
+                    assertThat(diagnostic.target()).isEqualTo("/schema/properties/decision/allOf");
+                })
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.allOfInvalid");
+                    assertThat(diagnostic.target()).isEqualTo("/schema/properties/riskSignal/allOf/0");
                 });
     }
 

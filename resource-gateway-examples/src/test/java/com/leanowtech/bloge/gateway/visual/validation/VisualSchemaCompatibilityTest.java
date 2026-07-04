@@ -71,6 +71,84 @@ class VisualSchemaCompatibilityTest {
     }
 
     @Test
+    void acceptsTargetAllOfWhenSourceCanSatisfyEveryBranch() {
+        Map<String, Object> source = Map.of("type", "integer", "minimum", 10, "maximum", 20);
+        Map<String, Object> target = Map.of(
+                "allOf", List.of(
+                        Map.of("type", "integer"),
+                        Map.of("type", "integer", "minimum", 0),
+                        Map.of("type", "integer", "maximum", 25)
+                )
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsTargetAllOfWhenSourceCannotSatisfyOneBranch() {
+        Map<String, Object> source = Map.of("type", "integer", "minimum", 10);
+        Map<String, Object> target = Map.of(
+                "allOf", List.of(
+                        Map.of("type", "integer"),
+                        Map.of("type", "integer", "maximum", 5)
+                )
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("target allOf branch 1")
+                        .contains("target requires value <= 5")
+                        .contains("source has no upper bound"));
+    }
+
+    @Test
+    void acceptsSourceAllOfWhenOneConstituentProvesTargetCompatibility() {
+        Map<String, Object> source = Map.of(
+                "allOf", List.of(
+                        Map.of("type", "integer", "minimum", 10),
+                        Map.of("not", Map.of("const", 13))
+                )
+        );
+        Map<String, Object> target = Map.of("type", "integer", "minimum", 0);
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsSourceAllOfWhenNoConstituentCanProveTargetCompatibility() {
+        Map<String, Object> source = Map.of(
+                "allOf", List.of(
+                        Map.of("type", "string"),
+                        Map.of("pattern", "^[A-Z]+$")
+                )
+        );
+        Map<String, Object> target = Map.of("type", "integer");
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("source allOf has no constituent")
+                        .contains("branch 0")
+                        .contains("source type string cannot feed target type integer")
+                        .contains("branch 1 has no explicit type or finite domain"));
+    }
+
+    @Test
+    void matchesValuesAgainstAllOfBranches() {
+        Map<String, Object> schema = Map.of(
+                "allOf", List.of(
+                        Map.of("type", "string"),
+                        Map.of("minLength", 3),
+                        Map.of("not", Map.of("const", "BAD"))
+                )
+        );
+
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema("GOOD", schema)).isTrue();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema("NO", schema)).isFalse();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema("BAD", schema)).isFalse();
+        assertThat(VisualSchemaCompatibility.schemaTypeLabel(schema)).isEqualTo("allOf<string&unknown&unknown>");
+    }
+
+    @Test
     void rejectsSourceResidualFieldThatCanCollideWithTargetOptionalProperty() {
         Map<String, Object> source = Map.of(
                 "type", "object",

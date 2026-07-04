@@ -1836,7 +1836,7 @@ class GraphDraftValidatorTest {
     }
 
     @Test
-    void rejectsDraftWhenOperatorStreamsInRequestResponseRuntime() {
+    void acceptsStreamingOperatorAsSchemaValidRuntimeBlockedDesignArtifact() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
                         eligibilityLibraryWithCapabilities(new OperatorDefinition.Capabilities(
@@ -1854,17 +1854,32 @@ class GraphDraftValidatorTest {
 
         VisualValidationResult result = validator.validate(draft);
 
-        assertThat(result.valid()).isFalse();
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
                     assertThat(diagnostic.code()).isEqualTo("visual.operator.runtime.streamingUnsupported");
-                    assertThat(diagnostic.message()).contains("request-response");
+                    assertThat(diagnostic.message()).contains("schema authoring is allowed").contains("streaming runtime");
                     assertThat(diagnostic.target()).isEqualTo("/nodes/0/operatorRef");
                 });
+        assertThat(result.readiness().state()).isEqualTo("runtime-blocked");
+        assertThat(result.readiness().executable()).isFalse();
+        assertThat(result.readiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(result.readiness().runtimeBindingRequirements())
+                .singleElement()
+                .satisfies(requirement -> {
+                    assertThat(requirement.bindingKind()).isEqualTo("streaming-runtime");
+                    assertThat(requirement.handoffLane()).isEqualTo("streaming-runtime");
+                    assertThat(requirement.handoffKind()).isEqualTo("streaming-execution");
+                    assertThat(requirement.recommendedAction()).contains("EXECUTABLE promotion");
+                });
+        assertThat(result.actionReadiness().state()).isEqualTo("warning-ack-required");
+        assertThat(result.actionReadiness().publishDesignNow()).isFalse();
+        assertThat(result.actionReadiness().publishDesignAfterReview()).isTrue();
     }
 
     @Test
-    void rejectsDraftWhenOperatorRequiresDurableRuntime() {
+    void acceptsDurableOperatorAsSchemaValidRuntimeBlockedDesignArtifact() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
                         eligibilityLibraryWithCapabilities(new OperatorDefinition.Capabilities(
@@ -1882,13 +1897,28 @@ class GraphDraftValidatorTest {
 
         VisualValidationResult result = validator.validate(draft);
 
-        assertThat(result.valid()).isFalse();
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
                     assertThat(diagnostic.code()).isEqualTo("visual.operator.runtime.durableUnsupported");
-                    assertThat(diagnostic.message()).contains("durable/suspendable").contains("request-response");
+                    assertThat(diagnostic.message()).contains("durable/suspendable").contains("schema authoring is allowed");
                     assertThat(diagnostic.target()).isEqualTo("/nodes/0/operatorRef");
                 });
+        assertThat(result.readiness().state()).isEqualTo("runtime-blocked");
+        assertThat(result.readiness().executable()).isFalse();
+        assertThat(result.readiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(result.readiness().runtimeBindingRequirements())
+                .singleElement()
+                .satisfies(requirement -> {
+                    assertThat(requirement.bindingKind()).isEqualTo("durable-runtime");
+                    assertThat(requirement.handoffLane()).isEqualTo("durable-runtime");
+                    assertThat(requirement.handoffKind()).isEqualTo("durable-execution");
+                    assertThat(requirement.recommendedAction()).contains("EXECUTABLE promotion");
+                });
+        assertThat(result.actionReadiness().state()).isEqualTo("warning-ack-required");
+        assertThat(result.actionReadiness().publishDesignNow()).isFalse();
+        assertThat(result.actionReadiness().publishDesignAfterReview()).isTrue();
     }
 
     @Test

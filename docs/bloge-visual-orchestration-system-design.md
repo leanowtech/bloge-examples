@@ -533,6 +533,7 @@ schema 证明 `applicant.score` 存在，但 `objectTemplate` 不能只绑定
 | `string` | `enum` | 禁止/需 transform | 没有来源值域证明，不能隐式接入枚举输入 |
 | `object` | `object` | 结构化检查 | required 字段必须满足 |
 | `array<T>` | `array<U>` | 检查 item 兼容 | foreach 场景重要 |
+| `allOf` | 任意 / 任意 | 保守交集检查 | target `allOf` 必须逐 branch 满足；source `allOf` 只有在 base 或显式 typed / finite-domain constituent 可证明安全时放行 |
 | `oneOf`/`anyOf` | 任意 | 保守检查，可显式消歧 | source union 必须所有分支可赋值；target `anyOf` 至少一个分支可接；target `oneOf` 默认必须唯一分支可接；binding 可用 `targetUnionBranch` 指定 root target branch |
 | `object` | `string` | 禁止或需表达式 | 不能隐式转 JSON |
 | `unknown` | 任意 | 警告 | 可继续草稿，不可无条件发布 |
@@ -550,7 +551,7 @@ name 是否能作为 BLOGE DSL path segment，
 未知 binding kind 会在 `GraphDraftValidator` 被阻断，不能落到 codegen 的 literal fallback
 绕过 target schema gate。
 浏览器侧的 connection hint 和 source picker 也要复用这些关键规则，至少覆盖
-object required 字段证明、array item 递归兼容、enum 值域子集、`oneOf`/`anyOf`
+object required 字段证明、array item 递归兼容、enum 值域子集、`allOf` 分支结构校验、runtime value matching 与保守交集、`oneOf`/`anyOf`
 union 的保守兼容提示，以及普通 `string` 不能隐式接入 enum，减少画布交互与服务端裁决之间的断层。拖线落点和
 inspector source picker 写入 binding 前都必须调用服务端 connection preview
 gate，本地 hint 不能成为最终授权。
@@ -704,6 +705,9 @@ assignment target 不在 output schema 中、template 引用不存在 input path
 给出 `RUNTIME_EXECUTABLE`、`DESIGN_ONLY`、`RUNTIME_BLOCKED`、`GOVERNANCE_REVIEW`
 或 `CATALOG_REPAIR_REQUIRED`，并作为 `/api/visual/operators` 的 `runtimeReadiness`
 filter 与 `facets.runtimeReadinessStates` 聚合维度返回，避免浏览器用前端启发式伪造控制面判断。
+其中 streaming/durable 等 capability 导致的 `RUNTIME_BLOCKED` 仍会声明
+`artifactKinds=["DESIGN"]`，表示该 operator 的 schema surface 可进入画布和 DESIGN
+资产冻结，但不能被当前 request-response runtime 执行。
 同一口径也进入 operator-library validate/import 的 `profile`：服务端按规范化后的 operator、
 validation diagnostics 和 runtime inventory warning 计算 operator count、schema field count、
 DSL-unsafe/dynamic schema 计数、facets、catalog-repair、runtime-blocked、governance-review 与

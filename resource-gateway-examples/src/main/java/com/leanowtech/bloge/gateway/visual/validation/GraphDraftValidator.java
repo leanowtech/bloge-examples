@@ -368,14 +368,14 @@ public class GraphDraftValidator {
                                                             List<VisualDiagnostic> diagnostics) {
         OperatorDefinition.Capabilities capabilities = operator.capabilities();
         if (capabilities.streaming()) {
-            diagnostics.add(VisualDiagnostic.error("visual.operator.runtime.streamingUnsupported",
-                    "Operator '%s' on node '%s' produces streaming output, but this visual authoring runtime supports request-response execution only."
+            diagnostics.add(VisualDiagnostic.warning("visual.operator.runtime.streamingUnsupported",
+                    "Operator '%s' on node '%s' produces streaming output; schema authoring is allowed, but this visual runtime cannot execute streaming nodes until a streaming runtime is bound."
                             .formatted(operator.operatorRef(), node.id()),
                     nodePath + "/operatorRef"));
         }
         if (capabilities.durable()) {
-            diagnostics.add(VisualDiagnostic.error("visual.operator.runtime.durableUnsupported",
-                    "Operator '%s' on node '%s' requires a durable/suspendable runtime, but this visual authoring runtime supports request-response execution only."
+            diagnostics.add(VisualDiagnostic.warning("visual.operator.runtime.durableUnsupported",
+                    "Operator '%s' on node '%s' requires a durable/suspendable runtime; schema authoring is allowed, but this visual runtime cannot execute durable nodes until a durable runtime is bound."
                             .formatted(operator.operatorRef(), node.id()),
                     nodePath + "/operatorRef"));
         }

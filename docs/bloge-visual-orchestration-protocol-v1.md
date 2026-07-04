@@ -1181,9 +1181,11 @@ review 可以在没有 stored draft 引用时仍然暴露 operator-level 变更�
 服务端 validate/import 需要保持同口径，避免把半解析 schema 写入 catalog。
 同一 normalization 层还会把可证明等价的 safe object `allOf` 与 safe scalar
 `allOf` 展开成普通 object/string/integer/number/decimal/boolean/null schema；
-scalar `allOf` 只接受同一标量类型和非冲突的基础数字/字符串约束。无法安全展开的
-`allOf` 会继续作为 unsupported composition 被 blocking diagnostic 拦截，而不是
-被画布近似解释。
+scalar `allOf` 只接受同一标量类型和非冲突的基础数字/字符串约束。无法安全展开但
+分支结构有效的 `allOf` 会保留为受支持交集组合，继续进入服务端/浏览器结构校验、
+runtime value matching 和保守 schema-to-schema 兼容推理；空数组或非 schema object
+分支返回 `visual.schema.allOfInvalid`。`if` / `then` / `else` 等条件组合仍作为
+unsupported composition 被 blocking diagnostic 拦截，不能被画布近似解释。
 浏览器 Operator Libraries 面板已在 Import 前调用该端点，把结构化 diagnostics、
 impact review、profile 和 import readiness 以明细列表展示给作者，再允许作者选择是否执行 Import。
 

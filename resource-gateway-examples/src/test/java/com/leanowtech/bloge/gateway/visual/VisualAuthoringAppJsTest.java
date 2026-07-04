@@ -2643,6 +2643,7 @@ class VisualAuthoringAppJsTest {
                 for (const name of [
                   'validateUnsupportedSchemaKeywords',
                   'validateSupportedSchemaUnions',
+                  'validateSupportedSchemaAllOf',
                   'validateSchemaDefinitions',
                   'validateSchemaEnum',
                   'validateSchemaConst',
@@ -6367,7 +6368,7 @@ operators:
                 ]);
                 context.SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
                 context.UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
-                context.UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['allOf', 'if', 'then', 'else'];
+                context.UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['if', 'then', 'else'];
                 context.UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = ['unevaluatedItems'];
                 context.LOCAL_SCHEMA_DEFS_REF_PREFIX = '#/$defs/';
                 context.SCHEMA_REF_ANNOTATION_KEYS = new Set([
@@ -6416,15 +6417,18 @@ operators:
                   'validateUnsupportedSchemaKeywords',
                   'schemaReferenceDiagnostic',
                   'validateSupportedSchemaUnions',
+                  'validateSupportedSchemaAllOf',
                   'validateSchemaNot',
                   'validateSchemaEnumValues',
                   'graphInputSchemaDiagnostic',
                   'schemaType',
+                  'schemaAllOfLabel',
                   'schemaUnionLabel',
                   'schemaUnionSummary',
                   'schemaUnionDescriptors',
                   'schemaUnionDescriptorLabel',
                   'schemaUnionBranches',
+                  'schemaAllOfBranches',
                   'schemaUnionBranchOptions',
                   'normalizedUnionBranchSelection',
                   'unionBranchSelectionValue',
@@ -6433,10 +6437,15 @@ operators:
                   'schemaCompatibilityIssueForTargetUnionSelection',
                   'targetSchemaForUnionSelection',
                   'schemaWithoutUnions',
+                  'schemaWithoutCombinator',
+                  'schemaWithoutCombinators',
                   'schemaObjectProperties',
                   'schemaItemsSchema',
                   'schemaPrefixItems',
                   'schemaCompatibilityIssue',
+                  'sourceAllOfCompatibilityIssue',
+                  'branchCanProveAllOfSourceCompatibility',
+                  'targetAllOfCompatibilityIssue',
                   'sourceUnionCompatibilityIssue',
                   'targetUnionCompatibilityIssue',
                   'unionBaseCompatibilityIssue',
@@ -6452,6 +6461,7 @@ operators:
                   'effectiveSchemaType',
                   'schemaHasAnyKeyword',
                   'schemaValueMatchesUnions',
+                  'schemaValueMatchesAllOf',
                   'schemaValueMatchesType',
                   'rawSchemaType',
                   'nullableTypePrimary',
@@ -6571,8 +6581,16 @@ operators:
                 }, 'schema', ambiguousUnionDiagnostics);
                 const unsupportedCompositionDiagnostics = [];
                 context.validateSchemaStructure({
-                  allOf: [{ type: 'string' }]
+                  if: { type: 'string' }
                 }, 'schema', unsupportedCompositionDiagnostics);
+                const validAllOfDiagnostics = [];
+                context.validateSchemaStructure({
+                  allOf: [{ type: 'string' }, { minLength: 3 }]
+                }, 'schema', validAllOfDiagnostics);
+                const invalidAllOfDiagnostics = [];
+                context.validateSchemaStructure({
+                  allOf: [{ type: 'string' }, 'bad']
+                }, 'schema', invalidAllOfDiagnostics);
                 const finiteNotDiagnostics = [];
                 context.validateSchemaStructure({
                   type: 'string',
@@ -6704,7 +6722,9 @@ operators:
                   ['valid union diagnostics', validUnionDiagnostics.length, 0],
                   ['invalid union code', invalidUnionDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.unionInvalid'],
                   ['ambiguous union code', ambiguousUnionDiagnostics.some((diagnostic) => diagnostic.code === 'visual.schema.unionAmbiguous'), true],
-                  ['allOf remains unsupported', unsupportedCompositionDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.compositionUnsupported'],
+                  ['if remains unsupported', unsupportedCompositionDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.compositionUnsupported'],
+                  ['valid allOf diagnostics', validAllOfDiagnostics.length, 0],
+                  ['invalid allOf code', invalidAllOfDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.allOfInvalid'],
                   ['finite not diagnostics', finiteNotDiagnostics.length, 0],
                   ['schema-form not diagnostics', nonFiniteNotDiagnostics.length, 0],
                   ['safe scalar allOf diagnostics', safeAllOfDiagnostics.length, 0],
@@ -6714,12 +6734,15 @@ operators:
                   ['unresolved local ref diagnostic', unresolvedRefDiagnostics.find((diagnostic) => diagnostic.target === '/inputSchema/schema/properties/customer/$ref')?.code, 'visual.schema.refUnresolved'],
                   ['remote ref diagnostic', unresolvedRefDiagnostics.find((diagnostic) => diagnostic.target === '/inputSchema/schema/properties/remote/$ref')?.code, 'visual.schema.refRemoteUnsupported'],
                   ['oneOf type label', context.schemaType({ oneOf: [{ type: 'integer' }, { type: 'string' }] }), 'oneOf<integer|string>'],
+                  ['allOf type label', context.schemaType({ allOf: [{ type: 'string' }, { enum: ['APPROVE'] }] }), 'allOf<string&enum<APPROVE>>'],
                   ['nested anyOf type label', context.schemaType({ type: 'array', items: { anyOf: [{ type: 'boolean' }, { type: 'null' }] } }), 'array<anyOf<boolean|null>>'],
                   ['oneOf exact value', context.schemaValueMatchesSchema('APPROVE', { oneOf: [{ type: 'string', enum: ['APPROVE'] }, { type: 'string', enum: ['REJECT'] }] }), true],
                   ['oneOf missing value', context.schemaValueMatchesSchema('PENDING', { oneOf: [{ type: 'string', enum: ['APPROVE'] }, { type: 'string', enum: ['REJECT'] }] }), false],
                   ['oneOf ambiguous numeric value', context.schemaValueMatchesSchema(3, { oneOf: [{ type: 'integer' }, { type: 'number' }] }), false],
                   ['anyOf matching value', context.schemaValueMatchesSchema(3, { anyOf: [{ type: 'integer' }, { type: 'string' }] }), true],
                   ['anyOf missing value', context.schemaValueMatchesSchema(false, { anyOf: [{ type: 'integer' }, { type: 'string' }] }), false],
+                  ['allOf matching value', context.schemaValueMatchesSchema('APPROVE', { allOf: [{ type: 'string' }, { enum: ['APPROVE', 'REJECT'] }, { not: { const: 'ARCHIVED' } }] }), true],
+                  ['allOf rejected value', context.schemaValueMatchesSchema('ARCHIVED', { allOf: [{ type: 'string' }, { not: { const: 'ARCHIVED' } }] }), false],
                   ['not excluded value', context.schemaValueMatchesSchema('ARCHIVED', { type: 'string', not: { const: 'ARCHIVED' } }), false],
                   ['not accepted value', context.schemaValueMatchesSchema('ACTIVE', { type: 'string', not: { const: 'ARCHIVED' } }), true],
                   ['type-less numeric not keeps string value', context.schemaValueMatchesSchema('ACTIVE', { type: 'string', not: { minimum: 0 } }), true],
@@ -6793,6 +6816,9 @@ operators:
 
                 for (const name of [
                   'schemaCompatibilityIssue',
+                  'sourceAllOfCompatibilityIssue',
+                  'branchCanProveAllOfSourceCompatibility',
+                  'targetAllOfCompatibilityIssue',
                   'sourceUnionCompatibilityIssue',
                   'targetUnionCompatibilityIssue',
                   'unionBaseCompatibilityIssue',
@@ -6824,9 +6850,13 @@ operators:
                   'objectDependentSchemasCompatibilityIssue',
                   'objectPropertyBoundsCompatibilityIssue',
                   'schemaType',
+                  'schemaAllOfLabel',
                   'schemaUnionLabel',
                   'schemaUnionBranches',
+                  'schemaAllOfBranches',
                   'schemaWithoutUnions',
+                  'schemaWithoutCombinator',
+                  'schemaWithoutCombinators',
                   'schemaObjectProperties',
                   'schemaPatternProperties',
                   'matchingPatternPropertySchemas',
@@ -6852,6 +6882,7 @@ operators:
                   'schemaValueMatchesEffectiveNotSchema',
                   'effectiveNotValueSchema',
                   'schemaValueMatchesUnions',
+                  'schemaValueMatchesAllOf',
                   'schemaValueMatchesType',
                   'rawSchemaType',
                   'nullableTypePrimary',
@@ -7126,6 +7157,53 @@ operators:
                     propertyNames: { pattern: '^internal\\\\.' }
                   }
                 });
+                const targetAllOfSafeIssue = context.schemaCompatibilityIssue({
+                  type: 'string',
+                  enum: ['APPROVE']
+                }, {
+                  type: 'string',
+                  allOf: [
+                    { type: 'string', enum: ['APPROVE', 'REJECT'] },
+                    { not: { const: 'ARCHIVED' } }
+                  ]
+                });
+                const targetAllOfRejectedIssue = context.schemaCompatibilityIssue({
+                  type: 'string'
+                }, {
+                  type: 'string',
+                  allOf: [
+                    { type: 'string', enum: ['APPROVE'] }
+                  ]
+                });
+                const sourceAllOfSafeIssue = context.schemaCompatibilityIssue({
+                  allOf: [
+                    { type: 'string', enum: ['APPROVE'] },
+                    { minLength: 3 }
+                  ]
+                }, {
+                  type: 'string'
+                });
+                const sourceAllOfRejectedIssue = context.schemaCompatibilityIssue({
+                  allOf: [
+                    { minLength: 3 },
+                    { pattern: '^[A-Z]+$' }
+                  ]
+                }, {
+                  type: 'string'
+                });
+                const allOfValueAccepted = context.schemaValueMatchesSchema('APPROVE', {
+                  allOf: [
+                    { type: 'string' },
+                    { enum: ['APPROVE', 'REJECT'] },
+                    { not: { const: 'ARCHIVED' } }
+                  ]
+                });
+                const allOfValueRejected = context.schemaValueMatchesSchema('ARCHIVED', {
+                  allOf: [
+                    { type: 'string' },
+                    { not: { const: 'ARCHIVED' } }
+                  ]
+                });
 
                 const checks = [
                   ['residual optional collision path', String(residualIssue.includes("at 'score'")), 'true'],
@@ -7158,7 +7236,13 @@ operators:
                   ['target not object count disjoint safe', targetNotObjectCountDisjointIssue, ''],
                   ['target not object required property disjoint safe', targetNotObjectRequiredDisjointIssue, ''],
                   ['target not object required const disjoint safe', targetNotObjectRequiredConstDisjointIssue, ''],
-                  ['target not object propertyNames disjoint safe', targetNotObjectPropertyNamesDisjointIssue, '']
+                  ['target not object propertyNames disjoint safe', targetNotObjectPropertyNamesDisjointIssue, ''],
+                  ['target allOf safe', targetAllOfSafeIssue, ''],
+                  ['target allOf rejected', targetAllOfRejectedIssue, 'target allOf branch 0 is not compatible: target enum [APPROVE] requires a finite source enum domain, but source is string'],
+                  ['source allOf safe', sourceAllOfSafeIssue, ''],
+                  ['source allOf rejected', String(sourceAllOfRejectedIssue.includes('source allOf has no constituent that can prove compatibility with target')), 'true'],
+                  ['allOf accepted value', String(allOfValueAccepted), 'true'],
+                  ['allOf rejected value', String(allOfValueRejected), 'false']
                 ];
 
                 for (const [label, actual, expected] of checks) {

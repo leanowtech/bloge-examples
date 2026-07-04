@@ -48,7 +48,6 @@ public final class VisualSchemaValidator {
             "$dynamicRef"
     );
     private static final Set<String> UNSUPPORTED_COMPOSITION_KEYWORDS = Set.of(
-            "allOf",
             "if",
             "then",
             "else"
@@ -135,6 +134,14 @@ public final class VisualSchemaValidator {
                                                 String path,
                                                 List<VisualDiagnostic> diagnostics) {
         if (valueMatchesSchema(value, schema)) {
+            return;
+        }
+        Optional<String> allOfMismatch = allOfMismatch(value, schema);
+        if (allOfMismatch.isPresent()) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.allOfMismatch",
+                    "Runtime value at '%s' does not satisfy schema allOf: %s."
+                            .formatted(path, allOfMismatch.get()),
+                    path));
             return;
         }
         Optional<String> unionMismatch = unionMismatch(value, schema);
@@ -362,6 +369,7 @@ public final class VisualSchemaValidator {
                                        boolean warnOpaque) {
         boolean hasUnsupportedKeyword = validateUnsupportedKeywords(schema, path, diagnostics);
         boolean hasSupportedUnion = validateSupportedUnions(schema, path, diagnostics);
+        boolean hasSupportedAllOf = validateSupportedAllOf(schema, path, diagnostics);
         boolean invalidTypeArray = validateTypeArray(schema, path, diagnostics);
         validateDefinitions(schema, path, diagnostics);
         validateNotConstraint(schema, path, diagnostics);
@@ -370,7 +378,8 @@ public final class VisualSchemaValidator {
             return;
         }
         if (kind.isBlank()) {
-            if (warnOpaque && !hasUnsupportedKeyword && !hasSupportedUnion && !schema.containsKey("not")) {
+            if (warnOpaque && !hasUnsupportedKeyword && !hasSupportedUnion && !hasSupportedAllOf
+                    && !schema.containsKey("not")) {
                 diagnostics.add(VisualDiagnostic.warning("visual.schema.opaque",
                         "Schema has no type/kind; it will be treated as opaque.",
                         path));
@@ -465,6 +474,35 @@ public final class VisualSchemaValidator {
             }
         }
         return unsupported;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static boolean validateSupportedAllOf(Map<String, Object> schema,
+                                                  String path,
+                                                  List<VisualDiagnostic> diagnostics) {
+        if (!schema.containsKey("allOf")) {
+            return false;
+        }
+        Object raw = schema.get("allOf");
+        if (!(raw instanceof List<?> branches) || branches.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.allOfInvalid",
+                    "JSON Schema composition keyword 'allOf' must be a non-empty array of schema objects.",
+                    path + "/allOf"));
+            return true;
+        }
+        for (int i = 0; i < branches.size(); i++) {
+            Object branch = branches.get(i);
+            String branchPath = path + "/allOf/" + i;
+            if (!(branch instanceof Map<?, ?> branchSchema)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.allOfInvalid",
+                        "JSON Schema composition keyword 'allOf' branch %d must be a schema object."
+                                .formatted(i),
+                        branchPath));
+                continue;
+            }
+            validateSchema((Map<String, Object>) branchSchema, branchPath, diagnostics);
+        }
+        return true;
     }
 
     private static VisualDiagnostic referenceDiagnostic(String keyword, Object rawRef, String target) {
@@ -2238,6 +2276,7 @@ public final class VisualSchemaValidator {
 	                && stringValueMatchesFormat(value, schema)
 	                && arrayValueMatchesSchema(value, schema)
 	                && objectValueMatchesSchema(value, schema)
+                    && allOfMismatch(value, schema).isEmpty()
                     && unionMismatch(value, schema).isEmpty();
 	    }
 
@@ -2402,6 +2441,16 @@ public final class VisualSchemaValidator {
                 if (matches < 1) {
                     return Optional.of("anyOf matched none");
                 }
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<String> allOfMismatch(Object value, Map<String, Object> schema) {
+        List<Map<String, Object>> branches = unionBranches(schema, "allOf");
+        for (int i = 0; i < branches.size(); i++) {
+            if (!valueMatchesSchema(value, branches.get(i))) {
+                return Optional.of("allOf branch %d did not match".formatted(i));
             }
         }
         return Optional.empty();

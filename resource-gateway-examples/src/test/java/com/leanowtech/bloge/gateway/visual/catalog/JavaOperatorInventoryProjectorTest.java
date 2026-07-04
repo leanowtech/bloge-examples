@@ -100,6 +100,8 @@ class JavaOperatorInventoryProjectorTest {
         assertThat(operator.capabilities().durable()).isTrue();
         assertThat(operator.capabilities().effect()).isEqualTo("WRITE_EXTERNAL");
         assertThat(operator.capabilities().idempotency()).isEqualTo("NON_IDEMPOTENT");
+        assertThat(operator.runtimeReadiness().state()).isEqualTo("RUNTIME_BLOCKED");
+        assertThat(operator.runtimeReadiness().artifactKinds()).containsExactly("DESIGN");
         assertThat(operator.lowering().mode()).isEqualTo("native");
         assertThat(operator.lowering().operatorRef()).isEqualTo("awaitApproval");
         assertThat(operator.ports().outputs().getFirst().description())

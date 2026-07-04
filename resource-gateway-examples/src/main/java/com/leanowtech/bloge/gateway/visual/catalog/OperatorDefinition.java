@@ -531,13 +531,15 @@ public record OperatorDefinition(
                         .toList());
                 details.add(new ReadinessDetail("Execution",
                         blockers + " not supported by this request-response runtime"));
+                details.add(new ReadinessDetail("Publish",
+                        "DESIGN artifact only until the required runtime is bound"));
                 return new RuntimeReadiness(
                         "RUNTIME_BLOCKED",
                         "warning",
                         false,
-                        List.of(),
+                        List.of("DESIGN"),
                         "Runtime blocked",
-                        "The schema can be inspected, but this visual runtime cannot execute the required runtime mode.",
+                        "The schema can be inspected and authored as a design contract, but this visual runtime cannot execute the required runtime mode.",
                         details
                 );
             }
