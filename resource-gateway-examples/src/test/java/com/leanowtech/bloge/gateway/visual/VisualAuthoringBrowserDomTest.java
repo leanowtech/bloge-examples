@@ -287,6 +287,29 @@ class VisualAuthoringBrowserDomTest {
         assertNoHorizontalOverflow(wait, By.id("resource-contract-json"));
         assertNoHorizontalOverflow(wait, By.id("resource-descriptor-json"));
         assertNoHorizontalOverflow(wait, By.id("resource-contract-status-message"));
+
+        scrollIntoView(wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("draft-bundle-json"))));
+        assertVisibleElementsNoHorizontalOverflow(wait, By.cssSelector(".draft-controls"));
+        assertNoHorizontalOverflow(wait, By.cssSelector(".draft-revision-controls"));
+        assertVisibleElementsNoHorizontalOverflow(wait, By.cssSelector(".draft-transfer-controls"));
+        assertNoHorizontalOverflow(wait, By.id("draft-dependencies"));
+        assertNoHorizontalOverflow(wait, By.id("draft-bundle-json"));
+        assertNoHorizontalOverflow(wait, By.id("draft-status"));
+
+        scrollIntoView(wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("publication-bundle-json"))));
+        assertNoHorizontalOverflow(wait, By.id("publication-bundle-json"));
+        assertNoHorizontalOverflow(wait, By.id("golden-case-select"));
+        assertNoHorizontalOverflow(wait, By.cssSelector(".golden-assertion-controls"));
+        assertNoHorizontalOverflow(wait, By.id("golden-assertion-list"));
+        assertNoHorizontalOverflow(wait, By.id("golden-certification-status"));
+        assertNoHorizontalOverflow(wait, By.id("publication-status"));
+
+        scrollIntoView(wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("run-history-list"))));
+        assertNoHorizontalOverflow(wait, By.cssSelector(".run-history-controls"));
+        assertNoHorizontalOverflow(wait, By.id("run-history-stats"));
+        assertNoHorizontalOverflow(wait, By.id("run-history-node-stats"));
+        assertNoHorizontalOverflow(wait, By.id("run-history-list"));
+        assertVisibleElementsNoHorizontalOverflow(wait, By.cssSelector(".run-history-row"));
         assertPageNoHorizontalOverflow();
     }
 
@@ -699,41 +722,51 @@ class VisualAuthoringBrowserDomTest {
         addScoreMatrixSourceAndSingleReviewTargetInBrowser(wait);
 
         waitForText(wait, By.id("selected-operator-editor"), "CONNECTABILITY");
-        waitForText(wait, By.id("selected-operator-editor"), "12 sources ·");
-        waitForText(wait, By.id("selected-operator-editor"), "Showing first 8 of 12 source endpoints");
+        waitForText(wait, By.id("selected-operator-editor"), "40 sources ·");
+        waitForText(wait, By.id("selected-operator-editor"), "Showing first 8 of 40 source endpoints");
         waitForConnectabilityServerReady(new WebDriverWait(driver, Duration.ofSeconds(30)),
                 "riskScoreMatrixSource", 0);
         wait.until(ignored -> connectabilityServerSourceKeys()
-                .equals("data:riskScoreMatrixSource:metric1:|data:riskScoreMatrixSource:metric2:"
-                        + "|data:riskScoreMatrixSource:metric3:|data:riskScoreMatrixSource:metric4:"
-                        + "|data:riskScoreMatrixSource:metric5:|data:riskScoreMatrixSource:metric6:"
-                        + "|data:riskScoreMatrixSource:metric7:|data:riskScoreMatrixSource:metric8:"));
-        assertThat(connectabilitySourceRowLabels())
-                .containsExactly(
-                        "riskScoreMatrixSource.metric1",
-                        "riskScoreMatrixSource.metric2",
-                        "riskScoreMatrixSource.metric3",
-                        "riskScoreMatrixSource.metric4",
-                        "riskScoreMatrixSource.metric5",
-                        "riskScoreMatrixSource.metric6",
-                        "riskScoreMatrixSource.metric7",
-                        "riskScoreMatrixSource.metric8"
-                );
+                .equals(expectedMetricSourceKeys(1, 8)));
+        assertThat(connectabilitySourceRowLabels()).containsExactlyElementsOf(expectedMetricSourceLabels(1, 8));
         assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-panel"));
 
         click(wait, By.cssSelector("#selected-operator-editor [data-connectability-source-window='next']"));
-        waitForText(wait, By.id("selected-operator-editor"), "Showing 9-12 of 12 source endpoints");
+        waitForText(wait, By.id("selected-operator-editor"), "Showing 9-16 of 40 source endpoints");
         wait.until(ignored -> connectabilityServerSourceKeys()
-                .equals("data:riskScoreMatrixSource:metric10:|data:riskScoreMatrixSource:metric11:"
-                        + "|data:riskScoreMatrixSource:metric12:|data:riskScoreMatrixSource:metric9:"));
-        assertThat(connectabilitySourceRowLabels())
-                .containsExactly(
-                        "riskScoreMatrixSource.metric9",
-                        "riskScoreMatrixSource.metric10",
-                        "riskScoreMatrixSource.metric11",
-                        "riskScoreMatrixSource.metric12"
-                );
+                .equals(expectedMetricSourceKeys(9, 16)));
+        assertThat(connectabilitySourceRowLabels()).containsExactlyElementsOf(expectedMetricSourceLabels(9, 16));
         assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-panel"));
+
+        click(wait, By.cssSelector("#selected-operator-editor [data-connectability-source-window='next']"));
+        waitForText(wait, By.id("selected-operator-editor"), "Showing 17-24 of 40 source endpoints");
+        wait.until(ignored -> connectabilityServerSourceKeys()
+                .equals(expectedMetricSourceKeys(17, 24)));
+
+        click(wait, By.cssSelector("#selected-operator-editor [data-connectability-source-window='next']"));
+        waitForText(wait, By.id("selected-operator-editor"), "Showing 25-32 of 40 source endpoints");
+        wait.until(ignored -> connectabilityServerSourceKeys()
+                .equals(expectedMetricSourceKeys(25, 32)));
+
+        click(wait, By.cssSelector("#selected-operator-editor [data-connectability-source-window='next']"));
+        waitForText(wait, By.id("selected-operator-editor"), "Showing 33-40 of 40 source endpoints");
+        wait.until(ignored -> connectabilityServerSourceKeys()
+                .equals(expectedMetricSourceKeys(33, 40)));
+        assertThat(connectabilitySourceRowLabels()).containsExactlyElementsOf(expectedMetricSourceLabels(33, 40));
+        assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-panel"));
+
+        setViewport(wait, 390, 980);
+        scrollIntoView(wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("selected-operator-editor"))));
+        waitForText(wait, By.id("selected-operator-editor"), "Showing 33-40 of 40 source endpoints");
+        assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-panel"));
+        assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-filter-controls"));
+        assertNoHorizontalOverflow(wait, By.cssSelector(
+                "#selected-operator-editor .node-connectability-source-window-controls"
+        ));
+        assertVisibleElementsNoHorizontalOverflow(wait, By.cssSelector(
+                "#selected-operator-editor .node-connectability-row"
+        ));
+        assertPageNoHorizontalOverflow();
     }
 
     @Test
@@ -2014,7 +2047,7 @@ class VisualAuthoringBrowserDomTest {
     }
 
     private static OperatorLibrary scoreReviewLargeSourceConnectabilityLibrary() {
-        List<OperatorDefinition.Port> outputs = IntStream.rangeClosed(1, 12)
+        List<OperatorDefinition.Port> outputs = IntStream.rangeClosed(1, 40)
                 .mapToObj(index -> new OperatorDefinition.Port("metric" + index,
                         new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12",
                                 Map.of("type", "integer")),
@@ -2044,6 +2077,19 @@ class VisualAuthoringBrowserDomTest {
                 "ACTIVE",
                 List.of(source, scoreReviewTransformTargetOperatorDefinition())
         );
+    }
+
+    private static String expectedMetricSourceKeys(int startInclusive, int endInclusive) {
+        return IntStream.rangeClosed(startInclusive, endInclusive)
+                .mapToObj(index -> "data:riskScoreMatrixSource:metric" + index + ":")
+                .sorted()
+                .collect(java.util.stream.Collectors.joining("|"));
+    }
+
+    private static List<String> expectedMetricSourceLabels(int startInclusive, int endInclusive) {
+        return IntStream.rangeClosed(startInclusive, endInclusive)
+                .mapToObj(index -> "riskScoreMatrixSource.metric" + index)
+                .toList();
     }
 
     private static OperatorDefinition scoreReviewTransformTargetOperatorDefinition() {
@@ -2231,7 +2277,7 @@ class VisualAuthoringBrowserDomTest {
                 renderDiagram();
                 return sourceHandlesForNode(source).length;
                 """);
-        assertThat(sourceCount.intValue()).isEqualTo(12);
+        assertThat(sourceCount.intValue()).isEqualTo(40);
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
                 "#diagram [data-node-id='riskScoreMatrixSource']"
         )));
@@ -2685,6 +2731,25 @@ class VisualAuthoringBrowserDomTest {
                 element
         );
         assertThat(overflow.doubleValue()).isLessThanOrEqualTo(2.0);
+    }
+
+    private void assertVisibleElementsNoHorizontalOverflow(WebDriverWait wait, By locator) {
+        wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(locator));
+        List<WebElement> visibleElements = driver.findElements(locator).stream()
+                .filter(WebElement::isDisplayed)
+                .toList();
+        assertThat(visibleElements)
+                .as("visible elements for %s", locator)
+                .isNotEmpty();
+        for (WebElement element : visibleElements) {
+            Number overflow = (Number) ((JavascriptExecutor) driver).executeScript(
+                    "return Math.max(0, arguments[0].scrollWidth - arguments[0].clientWidth);",
+                    element
+            );
+            assertThat(overflow.doubleValue())
+                    .as("horizontal overflow for %s", locator)
+                    .isLessThanOrEqualTo(2.0);
+        }
     }
 
     private void assertPageNoHorizontalOverflow() {

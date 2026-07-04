@@ -44,7 +44,7 @@
 | --- | ---: | --- | --- | --- |
 | 算子库合同与导入 | 8.0 | `OperatorLibrary`、JSON/YAML validate/import、revision、impact、bundle fingerprint、design-only lowering | 复杂第三方协议包 diff、跨环境治理策略还需继续深化 | OpenAPI/AsyncAPI diff 与 runtime binding handoff 对齐 |
 | Schema 约束与拖线裁决 | 8.4 | `VisualSchemaCompatibility`、`VisualSchemaValidator`、`GraphDraftValidator`、connection check/candidates、fit candidates、`VisualSchemaIntrospection`，以及浏览器 schema mirror 对 required-only / contains-only typeless schema 的回归 | JSON Schema 语义仍是受限子集，深层 compatibility diff 与 value matching 还没有完全抽成可复用策略 | 持续收敛 shared schema/value helper，补更多 schema 子集回归 |
-| 画布产品化体验 | 9.1 | Browser Composer palette、schema-aware picker、hover preflight、readiness panel、diagnostic queue、impact inspector，前端本地 schema type/validator mirror 已覆盖 required-only object 与 contains-only array；selected-node Connectability 直接展示服务端候选 schema 类型、替换影响、target runtime-binding debt，并在候选窗口被截断时显式提示 partial server window / local fallback 风险，已提供 Prev/Next 候选窗口控制，并支持按 target/reason/schema 文本发起服务端全局 query、按 ready/blocked/wired 做服务端全局状态过滤并返回 `statusCounts`；服务端候选结果现在返回 `facetCounts` 和候选行级 `facetValues`，覆盖 surface、schemaType、operatorRef、operatorLibraryId、runtimeReadiness、sourceKind、loweringMode，Connectability 已把这 7 个维度全部暴露为交互式服务端 facet filter，且 facet 统计口径保持在 query/status 之后、facet filter 与分页之前；selected-node Connectability 现在还提供 Endpoint/source-handle 筛选，多输出算子可把可见行和服务端候选请求收窄到单个输出端点；候选行渲染已窗口化，默认和过滤状态都限制首批展示并用行级 overflow chip 显示被裁剪的 ready/match 数，overflow 后的行级 Prev/Next 可继续浏览同一 source 的后续 chip，箭头键可在 action 之间推进并跨行级窗口前进，且服务端当前窗口候选会优先排在 local fallback 前；大量 source handle 现在也有 source-row 窗口，默认只展示 8 个 source endpoint，并把服务端候选请求 scope 收敛到当前可见 source rows，真实浏览器已覆盖 12 输出端口 source 的 1-8 / 9-12 窗口切换与 server source key 收敛；候选 row、target action、row-window/source-window 控件现在带稳定 DOM id、`aria-labelledby`/`aria-describedby`、`aria-controls`、`aria-live`、`aria-posinset`/`aria-setsize` 与焦点态 `aria-activedescendant`，真实浏览器覆盖首窗口、行内 Next 和方向键跨窗口后的 active descendant 更新；YAML 用户算子库导入 / palette / diagram / selected operator inspector、OpenAPI Resource Contract preview/save 面板、AsyncAPI discovery/selection/projection/import 面板均已在 390px mobile emulation 下通过 no-overflow 回归，同一 260 target 回归还在 390px mobile emulation 下断言 Connectability panel/filter/targets/action 与页面级横向滚动无溢出；真实浏览器还覆盖 filter 输入重绘后的焦点保留、状态筛选、Clear 恢复，以及 260 个 target 下的服务端窗口、行级 24 个 chip 上限、overflow 提示、行级 Next 到 25-48、键盘右箭头推进到 49-72、服务端全局 query/status/schema/lowering facet 命中末尾 target、Next 翻页和无横向溢出；服务端候选接口已把大窗口成本限制到当前页，并通过 `targetSurface=canvas` 与画布 target handle 语义对齐 | 单文件前端复杂度高，query/status/facet filter 已下沉到服务端候选合同并覆盖当前服务端 facet 维度，Endpoint filter 已能收窄单 source，source-row 和候选行都已窗口化并有真实浏览器证据，候选区已有基础 a11y 状态合同，用户自带 schema/协议定义的主要入口已有 390px 移动视口回归，但还不是完整虚拟化列表，也没有完整无障碍审计；大图回归仍缺完整移动矩阵、更大 source handle、多算子族性能矩阵 | 抽更小 UI 模块，补真正虚拟化候选列表、完整移动布局矩阵、完整 a11y audit、更大 source handle 和多 operator family 大画布回归 |
+| 画布产品化体验 | 9.3 | Browser Composer palette、schema-aware picker、hover preflight、readiness panel、diagnostic queue、impact inspector，前端本地 schema type/validator mirror 已覆盖 required-only object 与 contains-only array；selected-node Connectability 直接展示服务端候选 schema 类型、替换影响、target runtime-binding debt，并在候选窗口被截断时显式提示 partial server window / local fallback 风险，已提供 Prev/Next 候选窗口控制，并支持按 target/reason/schema 文本发起服务端全局 query、按 ready/blocked/wired 做服务端全局状态过滤并返回 `statusCounts`；服务端候选结果现在返回 `facetCounts` 和候选行级 `facetValues`，覆盖 surface、schemaType、operatorRef、operatorLibraryId、runtimeReadiness、sourceKind、loweringMode，Connectability 已把这 7 个维度全部暴露为交互式服务端 facet filter，且 facet 统计口径保持在 query/status 之后、facet filter 与分页之前；selected-node Connectability 现在还提供 Endpoint/source-handle 筛选，多输出算子可把可见行和服务端候选请求收窄到单个输出端点；候选行渲染已窗口化，默认和过滤状态都限制首批展示并用行级 overflow chip 显示被裁剪的 ready/match 数，overflow 后的行级 Prev/Next 可继续浏览同一 source 的后续 chip，箭头键可在 action 之间推进并跨行级窗口前进，且服务端当前窗口候选会优先排在 local fallback 前；大量 source handle 现在也有 source-row 窗口，默认只展示 8 个 source endpoint，并把服务端候选请求 scope 收敛到当前可见 source rows，真实浏览器已覆盖 40 输出端口 source 的 1-8、9-16、17-24、25-32、33-40 窗口切换、server source key 收敛和 390px 尾页无横向溢出；候选 row、target action、row-window/source-window 控件现在带稳定 DOM id、`aria-labelledby`/`aria-describedby`、`aria-controls`、`aria-live`、`aria-posinset`/`aria-setsize` 与焦点态 `aria-activedescendant`，真实浏览器覆盖首窗口、行内 Next 和方向键跨窗口后的 active descendant 更新；YAML 用户算子库导入 / palette / diagram / selected operator inspector、OpenAPI Resource Contract preview/save 面板、AsyncAPI discovery/selection/projection/import 面板、Draft/Publication/Golden/Run History lifecycle 面板均已在 390px mobile emulation 下通过 no-overflow 回归，同一 260 target 回归还在 390px mobile emulation 下断言 Connectability panel/filter/targets/action 与页面级横向滚动无溢出；真实浏览器还覆盖 filter 输入重绘后的焦点保留、状态筛选、Clear 恢复，以及 260 个 target 下的服务端窗口、行级 24 个 chip 上限、overflow 提示、行级 Next 到 25-48、键盘右箭头推进到 49-72、服务端全局 query/status/schema/lowering facet 命中末尾 target、Next 翻页和无横向溢出；服务端候选接口已把大窗口成本限制到当前页，并通过 `targetSurface=canvas` 与画布 target handle 语义对齐 | 单文件前端复杂度高，query/status/facet filter 已下沉到服务端候选合同并覆盖当前服务端 facet 维度，Endpoint filter 已能收窄单 source，source-row 和候选行都已窗口化并有真实浏览器证据，候选区已有基础 a11y 状态合同，用户自带 schema/协议定义的主要入口和核心生产生命周期面板已有 390px 移动视口回归，但还不是完整虚拟化列表，也没有完整无障碍审计；大图回归仍缺完整移动矩阵、更极端 source handle、多算子族性能矩阵 | 抽更小 UI 模块，补真正虚拟化候选列表、完整移动布局矩阵、完整 a11y audit、更极端 source handle 和多 operator family 大画布回归 |
 | Design-only artifact 生命周期 | 8.0 | `DESIGN` publication、action-readiness gate、run/golden 禁用、runtime-binding requirements | DESIGN 到 external runtime bound 的组织流程仍依赖外部协作 | handoff bundle 与外部工单/事件系统对接 |
 | Runtime binding 闭环 | 6.5 | requirement index、handoff bundle、implementation proposal、bind/supersede/unbind、activation、rollout observation、lowering integration、readiness recompute | 跨 repository partial-failure、异步 workflow idempotency、指标消费闭环仍未全覆盖 | 继续硬化 runtime evidence lifecycle 和 replay/compensation |
 | 发布、可迁移性与版本治理 | 7.5 | draft/publication bundles、fingerprint gate、immutable publication、revision guard、operator/resource impact | 还有协议命名与当前 wire contract 的历史漂移 | 协议草案按现状收敛，保留平台化 ADR |
@@ -53,7 +53,7 @@
 | Runtime 扩展族 | 5.8 | remote-worker、AI-tool、event-source、message-handler、webhook、streaming/durable contract 已可设计态编排 | 真正 dispatcher、ingress runtime、AI tool invocation、durable instance 尚未落地 | 从 runtime-binding handoff 开始逐类接 executor |
 | 工程可维护性 | 7.2 | 服务端测试丰富，完整 `clean verify` 可跑通，Java 侧读模型、GraphDraftValidator、VisualSchemaCompatibility 与 VisualSchemaValidator 的结构类型推断已开始共享 schema helper；浏览器 helper probe 覆盖了本地 mirror 与服务端语义一致性 | 深层 compatibility/value matching 仍分散，前端 `app.js` 过大 | 继续迁移 compatibility/validator 深层校验 helpers，逐步拆分前端 authoring helpers |
 
-综合分：**85/100**。
+综合分：**87/100**。
 
 这个分数不是贬低当前成果。相反，它说明项目已经跨过“画布玩具”阶段，但离完整工业平台还差治理、runtime、观测和维护性闭环。
 
@@ -80,11 +80,12 @@
 17. selected-node Connectability 已支持 Endpoint/source-handle 筛选：多输出算子可以在 inspector 中先锁定一个输出端点，UI 只展示该 source 的候选行，服务端候选请求也只针对该 source 发起，并把 `sourceKey` 纳入 request key/server state，避免不同 source handle 的窗口和筛选状态互相污染。
 18. selected-node Connectability 候选行已做窗口化显性裁剪：默认状态不再一次渲染 250+ chip，而是显示首批 24 个 ready target，并用行级 overflow chip 说明“Showing first 24 of N”；翻页后当前 server-reviewed 候选优先排在 local fallback 前，避免服务端第 2 页目标被本地前 24 个目标遮住。
 19. selected-node Connectability 行级窗口已可继续消费：overflow 后提供行内 Prev/Next 控制，箭头键可在可连 action 间移动并在行尾推进到下一段窗口；真实浏览器 260 target 回归已覆盖 1-24、25-48、49-72 的渐进浏览路径。
-20. selected-node Connectability source rows 已窗口化：默认只展示 8 个 source endpoint，source-window key 与 query/status/facet/source filter 隔离，并把 `/api/visual/connections/candidates` 的请求 scope 收敛到当前可见 source rows；真实浏览器 12 输出端口 source 回归覆盖 1-8 / 9-12 source rows、server `resultsBySourceKey` 只包含当前窗口 source keys，以及无横向溢出。
+20. selected-node Connectability source rows 已窗口化：默认只展示 8 个 source endpoint，source-window key 与 query/status/facet/source filter 隔离，并把 `/api/visual/connections/candidates` 的请求 scope 收敛到当前可见 source rows；真实浏览器 40 输出端口 source 回归覆盖 1-8、9-16、17-24、25-32、33-40 source rows，证明 server `resultsBySourceKey` 只包含当前窗口 source keys，并在 390px mobile emulation 下复核尾页 source window controls、source rows 和页面级横向滚动无溢出。
 21. selected-node Connectability 候选区已有基础 a11y 合同：source row、target group、target action、row-window/source-window 控件有稳定 id 与 ARIA 关联，候选 action 带 `aria-posinset` / `aria-setsize`，focus 会更新容器 `aria-activedescendant`；真实浏览器 260 target 回归覆盖首窗口、行内 Next 和方向键跨窗口后的 active descendant 与位置语义。
 22. selected-node Connectability 已有一条真实移动视口布局回归：同一 260 target 浏览器用例在 390px mobile emulation 下复核 Connectability panel、filter controls、target group、末尾 target action 和页面级横向滚动均无溢出；决策表所在 tool section 的 `min-width` 也被收敛，宽表格回到局部滚动容器内。
 23. YAML 用户算子库导入到画布作者入口已有真实移动视口回归：浏览器用例导入 `risk:eligibility` YAML library、拖入 palette 算子、验证 schema port 和 selected operator inspector 后，在 390px mobile emulation 下复核 operator palette、palette controls、diagram panel、selected operator editor 和页面级横向滚动均无溢出。
 24. OpenAPI/AsyncAPI 协议导入入口已有真实移动视口回归：OpenAPI resource contract preview/save 主流程在完成后切到 390px mobile emulation，复核 resource contract controls/actions、OpenAPI text、contract/descriptor preview、status 和页面级横向滚动无溢出；AsyncAPI discovery/selection/projection/import 流程在 projection review 态复核 library controls、operation select、operation summary、operator-library editor、profile、projection review 和页面级横向滚动无溢出，并在 import 后复核 palette 无溢出。
+25. Draft/Publication/Golden/Run History 生产生命周期面板已有真实移动视口回归：完整 OpenAPI 主流程在 save/export/import/run/publish/publication run/golden save/run/suite/certify/delete/run-history filter 之后切到 390px mobile emulation，复核 draft controls/revision controls/transfer controls/dependencies/bundle/status、publication bundle、golden controls/assertion list/certification/status、run-history controls/stats/node-stats/list/rows 和页面级横向滚动均无溢出。
 
 ### 尚未成立
 
@@ -95,6 +96,50 @@
 5. 前端仍是示例项目形态，复杂度已经接近需要模块化拆分的边界。
 
 ## 4. 本轮迭代复盘
+
+### 2026-07-05：40 source-handle Connectability 窗口与尾页移动回归
+
+触发问题：
+
+上一轮 source-row 窗口只证明了 12 个输出端口的 1-8 / 9-12 两段切换。这个证据能说明窗口机制成立，但工业画布里的用户算子可能暴露几十个字段级输出、指标输出或事件 payload 分支；如果只覆盖 12 个 source handle，还不能证明 inspector 在多页 source 矩阵下真的把服务端候选请求和 DOM 渲染控制住。
+
+本轮完成：
+
+1. 将 `VisualAuthoringBrowserDomTest#composerConnectabilityWindowsLargeSourceHandleSetInRealBrowser` 的测试算子从 12 个输出端口扩展到 40 个输出端口。
+2. 浏览器回归现在验证 1-8、9-16、17-24、25-32、33-40 五段 source window，且每一段等待服务端 `resultsBySourceKey` 只包含当前可见 source rows，证明 `ensureNodeConnectabilityServerCandidates()` 的 source-window scope 没有偷偷退回全量请求。
+3. 在尾页 33-40 source endpoints 下切到 390x980 mobile viewport，复核 Connectability panel、filter controls、source-window controls、source rows 和页面级横向滚动均无溢出。
+
+验证：
+
+```bash
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerConnectabilityWindowsLargeSourceHandleSetInRealBrowser test
+```
+
+剩余风险：
+
+这轮把“大量 source handle 证据”从 12 个输出端口推进到 40 个输出端口，并补上尾页移动回归，所以评估从 86 分推进到 87 分。但这仍不是完整虚拟化：source rows 仍是分页窗口，不是滚动容器虚拟渲染；多 operator family 大图、完整 a11y 审计、复杂 schema field rendering 负路径和更极端 source handle 性能矩阵仍需继续补。
+
+### 2026-07-05：Draft / Publication / Golden / Run History 生命周期 390px 回归
+
+触发问题：
+
+前几轮已经证明用户能从 YAML/OpenAPI/AsyncAPI 把 schema 带进画布，也能在 Connectability 大候选面板里按 schema 约束拖线。但严肃生产项目不是“能画完一张图”就结束。作者还必须在同一个画布里保存草稿、查看依赖、导出/导入、发布不可变 artifact、保存和运行 golden case、查看认证状态、按来源过滤运行历史。如果这些生产生命周期面板在移动宽度下撑破页面，系统仍会退回 demo 级体验。
+
+本轮完成：
+
+1. 移动端 CSS 把 `.draft-controls`、`.draft-revision-controls`、`.draft-transfer-controls`、`.golden-assertion-controls`、`.run-history-controls` 在 760px 以下收敛为单列布局，并让 golden assertion row、run history row/stats 在窄屏下单列展示，避免 select、按钮、长 run id 和认证状态把页面撑宽。
+2. 扩展 `VisualAuthoringBrowserDomTest#composerSupportsOpenApiSaveLibraryImportSchemaConnectionRunAndPublishInRealBrowser`：在完整 OpenAPI resource contract、用户 operator library 导入、schema-aware connection、draft save/export/import、transient run、publish、publication run、golden save/run/suite/certify/delete 和 run-history source filter 之后，切到 390x980 mobile viewport。
+3. 同一浏览器用例逐面板复核 draft controls/revision controls/transfer controls/dependencies/bundle/status、publication bundle、golden case select/assertion controls/assertion list/certification/status、run-history controls/stats/node-stats/list/rows 和页面级横向滚动均无溢出。
+
+验证：
+
+```bash
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerSupportsOpenApiSaveLibraryImportSchemaConnectionRunAndPublishInRealBrowser test
+```
+
+剩余风险：
+
+这轮把移动矩阵从“导入入口 + Connectability”推进到“导入入口 + Connectability + 生产生命周期主路径”，所以评估从 85 分推进到 86 分。但当时仍不是完整工业验收：复杂 schema field rendering、draft revision diff 的更多冲突态、publication bundle diff、更多 run-history 异常态、多 operator family 大图、真正虚拟化列表、完整 a11y 审计和更极端 source handle 性能矩阵还没有形成系统矩阵。后一轮已把 source-handle 回归扩到 40 输出端口并覆盖尾页移动布局，剩余风险继续集中在虚拟化、完整 a11y、多算子族大图和更复杂异常态。
 
 ### 2026-07-05：OpenAPI / AsyncAPI 导入面板 390px 回归
 
@@ -117,7 +162,7 @@ mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest
 
 剩余风险：
 
-这轮把移动矩阵从“YAML + Connectability”推进到“YAML + OpenAPI + AsyncAPI + Connectability”，所以评估从 84 分推进到 85 分。但这仍不是完整移动端验收：draft/history、publication/golden、run history、复杂 schema field rendering、source-row 大矩阵、更大 source handle、多 operator family 大图和真正虚拟化列表还没有形成系统矩阵。
+这轮把移动矩阵从“YAML + Connectability”推进到“YAML + OpenAPI + AsyncAPI + Connectability”，所以评估从 84 分推进到 85 分。但当时仍不是完整移动端验收：draft/history、publication/golden、run history、复杂 schema field rendering、source-row 大矩阵、更大 source handle、多 operator family 大图和真正虚拟化列表还没有形成系统矩阵。后一轮已补核心生产生命周期面板移动回归，剩余风险转向更复杂异常态、虚拟化、无障碍和多算子族大图。
 
 ### 2026-07-05：YAML 导入与 Palette 作者入口 390px 回归
 
@@ -733,7 +778,7 @@ schema type/path 逻辑仍分散在多个类中。短期可接受；中期应抽
 | --- | --- | --- | --- |
 | P0 | 深层 compatibility / value diagnostics 策略收敛 | effective kind 已统一，但 not/conditional/patternProperties/dependent schema 等深层判断仍在类内分散 | 选一个高风险 schema 子集，抽共享 value/schema policy 或补明确不可迁移边界 |
 | P0 | Runtime binding partial-failure 硬化 | 这是 DESIGN artifact 走向可执行 runtime 的主干 | 选一个尚未补偿的跨 repository mutation，补 replay/compensation/诊断 |
-| P1 | Browser regression matrix | required-only / contains-only typeless schema、Connectability 可见候选解释、design-only target runtime debt、候选窗口截断提示、基本 Prev/Next 窗口翻页、JS 层候选过滤、真实浏览器 filter 交互、260 target 大画布窗口、服务端全局 query、ready/blocked/wired status、全维度 facet、Endpoint/source-handle 筛选、行级候选窗口化和行内箭头键推进、12 输出端口 source-row 窗口与 server request scope 收敛、候选区基础 a11y active-descendant/position 合同、390px mobile Connectability/no-page-overflow、YAML 导入 + palette + diagram + selected inspector no-overflow、OpenAPI Resource Contract preview/save 390px no-overflow、AsyncAPI discovery/selection/projection/import 390px no-overflow 回归已覆盖，但 UI 能力多，DOM smoke 仍需继续扩大 | 覆盖多算子族大画布、真正虚拟化候选列表、完整移动布局矩阵、完整无障碍审计、更大 source handle 性能矩阵和大量 schema field rendering 的更多负路径/漂移路径 |
+| P1 | Browser regression matrix | required-only / contains-only typeless schema、Connectability 可见候选解释、design-only target runtime debt、候选窗口截断提示、基本 Prev/Next 窗口翻页、JS 层候选过滤、真实浏览器 filter 交互、260 target 大画布窗口、服务端全局 query、ready/blocked/wired status、全维度 facet、Endpoint/source-handle 筛选、行级候选窗口化和行内箭头键推进、40 输出端口 source-row 窗口与 server request scope 收敛、候选区基础 a11y active-descendant/position 合同、390px mobile Connectability/no-page-overflow、YAML 导入 + palette + diagram + selected inspector no-overflow、OpenAPI Resource Contract preview/save 390px no-overflow、AsyncAPI discovery/selection/projection/import 390px no-overflow、Draft/Publication/Golden/Run History lifecycle 390px no-overflow 回归已覆盖，但 UI 能力多，DOM smoke 仍需继续扩大 | 覆盖多算子族大画布、真正虚拟化候选列表、完整移动布局矩阵、完整无障碍审计、更极端 source handle 性能矩阵和大量 schema field rendering 的更多负路径/漂移路径 |
 | P1 | 协议文档收敛 | 设计草案与当前 wire contract 名称仍有历史漂移 | 把 candidate/fit/readiness 当前字段写入 protocol v1 |
 | P2 | 前端模块化 | `app.js` 已承载太多 authoring 逻辑 | 先抽 schema helper 或 readiness helper，保持测试覆盖 |
 

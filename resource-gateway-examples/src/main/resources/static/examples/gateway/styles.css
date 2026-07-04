@@ -3423,8 +3423,23 @@ body.dragging-operator * {
   .library-controls,
   .library-revision-controls,
   .resource-contract-controls,
-  .resource-contract-actions {
+  .resource-contract-actions,
+  .draft-controls,
+  .draft-revision-controls,
+  .draft-transfer-controls,
+  .golden-assertion-controls,
+  .run-history-controls {
     grid-template-columns: 1fr;
+  }
+
+  .golden-assertion-row,
+  .run-history-row,
+  .run-history-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .run-history-meta {
+    text-align: left;
   }
 
   .contract-port-groups,

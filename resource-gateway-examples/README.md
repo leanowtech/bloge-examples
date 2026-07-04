@@ -675,6 +675,9 @@ candidate requests to the currently visible source rows, with Prev/Next source
 controls for later endpoints. Candidate rows render a bounded first window with
 a visible overflow chip; row-level Prev/Next controls and arrow-key navigation let
 authors continue through later candidates without rendering every chip at once.
+The source-handle browser regression now covers a 40-output operator, walks the
+1-8 through 33-40 source windows, and checks the 33-40 tail page under a 390px
+mobile viewport.
 Those rows and controls also expose stable ARIA labels, controlled-region links,
 live range summaries, and active-descendant focus state so keyboard navigation
 has a machine-readable state contract, not only visual chip movement.
@@ -688,6 +691,9 @@ schema-only authoring entry path is covered before users reach Connectability.
 The OpenAPI Resource Contract preview/save flow and AsyncAPI discovery,
 selection, projection review, import, and palette flow now run the same 390px
 mobile no-overflow checks for the protocol-driven schema entry paths.
+The full draft, publication, golden-regression, and run-history lifecycle path
+also replays after save/export/import/run/publish/certify and checks the same
+390px mobile no-overflow contract for production authoring panels.
 Server-reviewed candidates from the active window are ordered ahead of local
 fallback rows; the click path still runs connection check before mutating the
 draft.
