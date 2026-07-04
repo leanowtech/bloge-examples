@@ -677,6 +677,7 @@ body.connecting-edge * {
 }
 
 .tool-section {
+  min-width: 0;
   padding: 14px;
 }
 
@@ -687,10 +688,13 @@ body.connecting-edge * {
 }
 
 .decision-table-section {
+  min-width: 0;
   overflow: auto;
 }
 
 .decision-table {
+  min-width: 0;
+  max-width: 100%;
   overflow: auto;
 }
 

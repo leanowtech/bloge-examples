@@ -678,6 +678,13 @@ authors continue through later candidates without rendering every chip at once.
 Those rows and controls also expose stable ARIA labels, controlled-region links,
 live range summaries, and active-descendant focus state so keyboard navigation
 has a machine-readable state contract, not only visual chip movement.
+The large-candidate browser regression also replays that selected-node
+Connectability path under a 390px mobile viewport and checks the panel, filter
+controls, target group, late target action, and page shell for horizontal
+overflow.
+The YAML import browser regression also checks the post-import palette, diagram,
+and selected-operator inspector under the same 390px mobile viewport, so the
+schema-only authoring entry path is covered before users reach Connectability.
 Server-reviewed candidates from the active window are ordered ahead of local
 fallback rows; the click path still runs connection check before mutating the
 draft.

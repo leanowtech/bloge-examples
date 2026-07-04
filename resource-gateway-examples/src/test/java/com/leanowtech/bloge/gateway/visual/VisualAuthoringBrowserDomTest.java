@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.openqa.selenium.By;
+import org.openqa.selenium.Dimension;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.Keys;
 import org.openqa.selenium.NoSuchElementException;
@@ -478,6 +479,15 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("selected-operator-editor"), "Eligibility");
         waitForText(wait, By.id("selected-operator-editor"), "2 required");
         waitForText(wait, By.id("selected-operator-editor"), "object · 2 fields · 0 required");
+
+        setViewport(wait, 390, 980);
+        scrollIntoView(wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("selected-operator-editor"))));
+        waitForText(wait, By.id("selected-operator-editor"), "Eligibility");
+        assertNoHorizontalOverflow(wait, By.id("operator-palette"));
+        assertNoHorizontalOverflow(wait, By.cssSelector(".palette-controls"));
+        assertNoHorizontalOverflow(wait, By.cssSelector(".diagram-panel"));
+        assertNoHorizontalOverflow(wait, By.id("selected-operator-editor"));
+        assertPageNoHorizontalOverflow();
     }
 
     @Test
@@ -649,6 +659,18 @@ class VisualAuthoringBrowserDomTest {
                 .contains("Score review (riskScoreReview260)")
                 .contains("integer -> integer");
         assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-panel"));
+
+        setViewport(wait, 390, 980);
+        scrollIntoView(wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("selected-operator-editor"))));
+        waitForText(wait, By.id("selected-operator-editor"), "CONNECTABILITY");
+        assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-panel"));
+        assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-filter-controls"));
+        assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-targets"));
+        assertNoHorizontalOverflow(wait, By.cssSelector(
+                "#selected-operator-editor [data-connectability-action='connect']"
+                        + "[data-connect-target-node='riskScoreReview260']"
+        ));
+        assertPageNoHorizontalOverflow();
     }
 
     @Test
@@ -2636,6 +2658,76 @@ class VisualAuthoringBrowserDomTest {
                 element
         );
         assertThat(overflow.doubleValue()).isLessThanOrEqualTo(2.0);
+    }
+
+    private void assertPageNoHorizontalOverflow() {
+        Number overflow = (Number) ((JavascriptExecutor) driver).executeScript("""
+                const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+                const scroller = document.scrollingElement || document.documentElement;
+                return Math.max(
+                  0,
+                  scroller.scrollWidth - viewportWidth,
+                  document.body ? document.body.scrollWidth - viewportWidth : 0
+                );
+                """);
+        String diagnostics = String.valueOf(((JavascriptExecutor) driver).executeScript("""
+                const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+                const hasClippingAncestor = (element) => {
+                  for (let parent = element.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+                    const style = window.getComputedStyle(parent);
+                    if (!['visible', 'clip'].includes(style.overflowX)) {
+                      return true;
+                    }
+                  }
+                  return false;
+                };
+                return JSON.stringify([...document.querySelectorAll('body *')]
+                  .map((element) => {
+                    const rect = element.getBoundingClientRect();
+                    return {
+                      tag: element.tagName.toLowerCase(),
+                      id: element.id || '',
+                      className: String(element.className || ''),
+                      overflow: Math.max(0, rect.right - viewportWidth),
+                      width: rect.width,
+                      clipped: hasClippingAncestor(element)
+                    };
+                  })
+                  .filter((item) => item.overflow > 2 && !item.clipped)
+                  .sort((left, right) => right.overflow - left.overflow)
+                  .slice(0, 5)
+                  .concat([{
+                    tag: 'metrics',
+                    id: '',
+                    className: '',
+                    overflow: Math.max(
+                      0,
+                      (document.scrollingElement || document.documentElement).scrollWidth - viewportWidth,
+                      document.body ? document.body.scrollWidth - viewportWidth : 0
+                    ),
+                    width: viewportWidth,
+                    clipped: false
+                  }]));
+                """));
+        assertThat(overflow.doubleValue())
+                .as("page horizontal overflow diagnostics: %s", diagnostics)
+                .isLessThanOrEqualTo(2.0);
+    }
+
+    private void setViewport(WebDriverWait wait, int width, int height) {
+        driver.manage().window().setSize(new Dimension(width, height));
+        if (driver instanceof ChromeDriver chromeDriver) {
+            chromeDriver.executeCdpCommand("Emulation.setDeviceMetricsOverride", Map.of(
+                    "width", width,
+                    "height", height,
+                    "deviceScaleFactor", 1,
+                    "mobile", true
+            ));
+        }
+        wait.until(ignored -> {
+            Number innerWidth = (Number) ((JavascriptExecutor) driver).executeScript("return window.innerWidth;");
+            return innerWidth.doubleValue() <= width + 20;
+        });
     }
 
     private List<String> connectabilitySourceRowLabels() {
