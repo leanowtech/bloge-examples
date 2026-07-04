@@ -43,6 +43,11 @@ import java.util.Map;
  * @param scopeMismatchOperatorCount number of frozen nodes unavailable in publication scope
  * @param driftedFingerprintCount number of frozen nodes whose saved fingerprint drifted
  * @param missingFingerprintCount number of frozen nodes without a saved fingerprint
+ * @param schemaBreakingDriftCount number of frozen nodes whose operator schema snapshot is incompatible with current catalog schema
+ * @param schemaCompatibleDriftCount number of frozen nodes whose operator schema snapshot changed but remains compatible
+ * @param schemaCompatibilityStateCounts frozen node counts by schema compatibility state
+ * @param schemaBreakingOperatorRefCounts breaking schema drift frozen node counts by operatorRef
+ * @param schemaCompatibleOperatorRefCounts compatible schema drift frozen node counts by operatorRef
  * @param sourceKindCounts node counts by source kind
  * @param operatorLibraryIdCounts node counts by owner operator library id
  * @param operatorLibraryIdsByOperatorRef exact operatorRef to owner operator library id map from frozen dependency evidence
@@ -73,6 +78,11 @@ public record VisualGraphPublicationSummary(
         int scopeMismatchOperatorCount,
         int driftedFingerprintCount,
         int missingFingerprintCount,
+        int schemaBreakingDriftCount,
+        int schemaCompatibleDriftCount,
+        Map<String, Integer> schemaCompatibilityStateCounts,
+        Map<String, Integer> schemaBreakingOperatorRefCounts,
+        Map<String, Integer> schemaCompatibleOperatorRefCounts,
         Map<String, Integer> sourceKindCounts,
         Map<String, Integer> operatorLibraryIdCounts,
         Map<String, String> operatorLibraryIdsByOperatorRef,
@@ -100,6 +110,15 @@ public record VisualGraphPublicationSummary(
         actionReadiness = actionReadiness == null
                 ? derivedActionReadiness(valid, diagnosticCount, errorCount, warningCount, readiness)
                 : actionReadiness;
+        schemaCompatibilityStateCounts = schemaCompatibilityStateCounts == null
+                ? Map.of()
+                : new LinkedHashMap<>(schemaCompatibilityStateCounts);
+        schemaBreakingOperatorRefCounts = schemaBreakingOperatorRefCounts == null
+                ? Map.of()
+                : new LinkedHashMap<>(schemaBreakingOperatorRefCounts);
+        schemaCompatibleOperatorRefCounts = schemaCompatibleOperatorRefCounts == null
+                ? Map.of()
+                : new LinkedHashMap<>(schemaCompatibleOperatorRefCounts);
         sourceKindCounts = sourceKindCounts == null ? Map.of() : new LinkedHashMap<>(sourceKindCounts);
         operatorLibraryIdCounts = operatorLibraryIdCounts == null
                 ? Map.of()
@@ -154,6 +173,11 @@ public record VisualGraphPublicationSummary(
                 dependencies.scopeMismatchOperatorCount(),
                 dependencies.driftedFingerprintCount(),
                 dependencies.missingFingerprintCount(),
+                dependencies.schemaBreakingDriftCount(),
+                dependencies.schemaCompatibleDriftCount(),
+                dependencies.schemaCompatibilityStateCounts(),
+                schemaOperatorRefCounts(dependencies, "breaking"),
+                schemaOperatorRefCounts(dependencies, "compatible"),
                 dependencies.sourceKindCounts(),
                 dependencies.operatorLibraryIdCounts(),
                 operatorLibraryIdsByOperatorRef(dependencies),
@@ -190,6 +214,11 @@ public record VisualGraphPublicationSummary(
                 0,
                 0,
                 0,
+                0,
+                0,
+                Map.of(),
+                Map.of(),
+                Map.of(),
                 Map.of(),
                 Map.of(),
                 Map.of(),
@@ -214,6 +243,24 @@ public record VisualGraphPublicationSummary(
             }
         }
         return ownerIds;
+    }
+
+    private static Map<String, Integer> schemaOperatorRefCounts(GraphDraftDependencyReport dependencies,
+                                                                String state) {
+        if (dependencies == null || dependencies.nodes() == null || state == null || state.isBlank()) {
+            return Map.of();
+        }
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (GraphDraftDependencyReport.NodeDependency node : dependencies.nodes()) {
+            if (node == null || !state.equals(node.schemaCompatibilityState())) {
+                continue;
+            }
+            String operatorRef = node.operatorRef() == null ? "" : node.operatorRef().trim();
+            if (!operatorRef.isBlank()) {
+                counts.merge(operatorRef, 1, Integer::sum);
+            }
+        }
+        return counts;
     }
 
     private static Map<String, String> normalizeOperatorLibraryIds(Map<String, String> ownerIds) {

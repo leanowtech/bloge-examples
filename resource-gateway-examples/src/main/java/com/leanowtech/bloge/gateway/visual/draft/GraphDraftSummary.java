@@ -45,6 +45,11 @@ import java.util.Map;
  * @param scopeMismatchOperatorCount number of nodes unavailable in draft scope
  * @param driftedFingerprintCount number of nodes whose saved fingerprint drifted
  * @param missingFingerprintCount number of nodes without a saved fingerprint
+ * @param schemaBreakingDriftCount number of nodes whose frozen operator schema snapshot is incompatible with current catalog schema
+ * @param schemaCompatibleDriftCount number of nodes whose frozen operator schema snapshot changed but remains compatible
+ * @param schemaCompatibilityStateCounts node counts by frozen-vs-current operator schema compatibility state
+ * @param schemaBreakingOperatorRefCounts breaking schema drift node counts by operatorRef
+ * @param schemaCompatibleOperatorRefCounts compatible schema drift node counts by operatorRef
  * @param sourceKindCounts node counts by operator source kind
  * @param operatorLibraryIdCounts node counts by owner operator library id
  * @param operatorLibraryIdsByOperatorRef exact operatorRef to owner operator library id map from dependency evidence
@@ -80,6 +85,11 @@ public record GraphDraftSummary(
         int scopeMismatchOperatorCount,
         int driftedFingerprintCount,
         int missingFingerprintCount,
+        int schemaBreakingDriftCount,
+        int schemaCompatibleDriftCount,
+        Map<String, Integer> schemaCompatibilityStateCounts,
+        Map<String, Integer> schemaBreakingOperatorRefCounts,
+        Map<String, Integer> schemaCompatibleOperatorRefCounts,
         Map<String, Integer> sourceKindCounts,
         Map<String, Integer> operatorLibraryIdCounts,
         Map<String, String> operatorLibraryIdsByOperatorRef,
@@ -108,6 +118,15 @@ public record GraphDraftSummary(
                 ? derivedActionReadiness(valid, diagnosticCount, errorCount, warningCount, readiness)
                 : actionReadiness;
         sourceKindCounts = sourceKindCounts == null ? Map.of() : new LinkedHashMap<>(sourceKindCounts);
+        schemaCompatibilityStateCounts = schemaCompatibilityStateCounts == null
+                ? Map.of()
+                : new LinkedHashMap<>(schemaCompatibilityStateCounts);
+        schemaBreakingOperatorRefCounts = schemaBreakingOperatorRefCounts == null
+                ? Map.of()
+                : new LinkedHashMap<>(schemaBreakingOperatorRefCounts);
+        schemaCompatibleOperatorRefCounts = schemaCompatibleOperatorRefCounts == null
+                ? Map.of()
+                : new LinkedHashMap<>(schemaCompatibleOperatorRefCounts);
         operatorLibraryIdCounts = operatorLibraryIdCounts == null
                 ? Map.of()
                 : new LinkedHashMap<>(operatorLibraryIdCounts);
@@ -171,6 +190,11 @@ public record GraphDraftSummary(
                 safeDependencies.scopeMismatchOperatorCount(),
                 safeDependencies.driftedFingerprintCount(),
                 safeDependencies.missingFingerprintCount(),
+                safeDependencies.schemaBreakingDriftCount(),
+                safeDependencies.schemaCompatibleDriftCount(),
+                safeDependencies.schemaCompatibilityStateCounts(),
+                schemaOperatorRefCounts(safeDependencies, "breaking"),
+                schemaOperatorRefCounts(safeDependencies, "compatible"),
                 safeDependencies.sourceKindCounts(),
                 safeDependencies.operatorLibraryIdCounts(),
                 operatorLibraryIdsByOperatorRef(safeDependencies),
@@ -195,6 +219,24 @@ public record GraphDraftSummary(
             }
         }
         return ownerIds;
+    }
+
+    private static Map<String, Integer> schemaOperatorRefCounts(GraphDraftDependencyReport dependencies,
+                                                                String state) {
+        if (dependencies == null || dependencies.nodes() == null || state == null || state.isBlank()) {
+            return Map.of();
+        }
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (GraphDraftDependencyReport.NodeDependency node : dependencies.nodes()) {
+            if (node == null || !state.equals(node.schemaCompatibilityState())) {
+                continue;
+            }
+            String operatorRef = node.operatorRef() == null ? "" : node.operatorRef().trim();
+            if (!operatorRef.isBlank()) {
+                counts.merge(operatorRef, 1, Integer::sum);
+            }
+        }
+        return counts;
     }
 
     private static Map<String, String> normalizeOperatorLibraryIds(Map<String, String> ownerIds) {

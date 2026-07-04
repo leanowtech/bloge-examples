@@ -419,6 +419,9 @@ public record VisualAssetOverview(
             int scopeMismatchOperatorCount,
             int driftedFingerprintCount,
             int missingFingerprintCount,
+            int schemaBreakingDriftCount,
+            int schemaCompatibleDriftCount,
+            Map<String, Integer> schemaCompatibilityStateCounts,
             Map<String, Integer> graphReadinessStateCounts,
             Map<String, Integer> publishableArtifactKindCounts,
             Map<String, Integer> sourceKindCounts,
@@ -427,6 +430,7 @@ public record VisualAssetOverview(
             Map<String, Integer> operatorRuntimeReadinessStateCounts
     ) {
         public DraftAssets {
+            schemaCompatibilityStateCounts = immutableCounts(schemaCompatibilityStateCounts);
             graphReadinessStateCounts = immutableCounts(graphReadinessStateCounts);
             publishableArtifactKindCounts = immutableCounts(publishableArtifactKindCounts);
             sourceKindCounts = immutableCounts(sourceKindCounts);
@@ -445,6 +449,7 @@ public record VisualAssetOverview(
             Map<String, Integer> operatorLibraries = new LinkedHashMap<>();
             Map<String, Integer> loweringModes = new LinkedHashMap<>();
             Map<String, Integer> runtimeReadiness = new LinkedHashMap<>();
+            Map<String, Integer> schemaCompatibilityStates = new LinkedHashMap<>();
             int activeCount = 0;
             int recoverableDeletedCount = 0;
             int validCount = 0;
@@ -459,6 +464,8 @@ public record VisualAssetOverview(
             int scopeMismatchOperatorCount = 0;
             int driftedFingerprintCount = 0;
             int missingFingerprintCount = 0;
+            int schemaBreakingDriftCount = 0;
+            int schemaCompatibleDriftCount = 0;
             for (GraphDraftSummary summary : safeSummaries) {
                 if (summary.active()) {
                     activeCount++;
@@ -480,6 +487,8 @@ public record VisualAssetOverview(
                 scopeMismatchOperatorCount += summary.scopeMismatchOperatorCount();
                 driftedFingerprintCount += summary.driftedFingerprintCount();
                 missingFingerprintCount += summary.missingFingerprintCount();
+                schemaBreakingDriftCount += summary.schemaBreakingDriftCount();
+                schemaCompatibleDriftCount += summary.schemaCompatibleDriftCount();
                 VisualGraphReadiness readiness = summary.readiness();
                 incrementNormalized(graphReadiness, readiness == null ? "" : readiness.state());
                 if (readiness != null) {
@@ -491,6 +500,7 @@ public record VisualAssetOverview(
                 mergeText(operatorLibraries, summary.operatorLibraryIdCounts());
                 mergeNormalized(loweringModes, summary.loweringModeCounts());
                 mergeNormalized(runtimeReadiness, summary.runtimeReadinessStateCounts());
+                mergeNormalized(schemaCompatibilityStates, summary.schemaCompatibilityStateCounts());
             }
             return new DraftAssets(
                     safeSummaries.size(),
@@ -508,6 +518,9 @@ public record VisualAssetOverview(
                     scopeMismatchOperatorCount,
                     driftedFingerprintCount,
                     missingFingerprintCount,
+                    schemaBreakingDriftCount,
+                    schemaCompatibleDriftCount,
+                    schemaCompatibilityStates,
                     graphReadiness,
                     publishableKinds,
                     sourceKinds,
@@ -541,6 +554,9 @@ public record VisualAssetOverview(
             int scopeMismatchOperatorCount,
             int driftedFingerprintCount,
             int missingFingerprintCount,
+            int schemaBreakingDriftCount,
+            int schemaCompatibleDriftCount,
+            Map<String, Integer> schemaCompatibilityStateCounts,
             Map<String, Integer> artifactKindCounts,
             Map<String, Integer> graphReadinessStateCounts,
             Map<String, Integer> sourceKindCounts,
@@ -549,6 +565,7 @@ public record VisualAssetOverview(
             Map<String, Integer> operatorRuntimeReadinessStateCounts
     ) {
         public PublicationAssets {
+            schemaCompatibilityStateCounts = immutableCounts(schemaCompatibilityStateCounts);
             artifactKindCounts = immutableCounts(artifactKindCounts);
             graphReadinessStateCounts = immutableCounts(graphReadinessStateCounts);
             sourceKindCounts = immutableCounts(sourceKindCounts);
@@ -567,6 +584,7 @@ public record VisualAssetOverview(
             Map<String, Integer> operatorLibraries = new LinkedHashMap<>();
             Map<String, Integer> loweringModes = new LinkedHashMap<>();
             Map<String, Integer> runtimeReadiness = new LinkedHashMap<>();
+            Map<String, Integer> schemaCompatibilityStates = new LinkedHashMap<>();
             int executableArtifactCount = 0;
             int designArtifactCount = 0;
             int validCount = 0;
@@ -581,6 +599,8 @@ public record VisualAssetOverview(
             int scopeMismatchOperatorCount = 0;
             int driftedFingerprintCount = 0;
             int missingFingerprintCount = 0;
+            int schemaBreakingDriftCount = 0;
+            int schemaCompatibleDriftCount = 0;
             for (VisualGraphPublicationSummary summary : safeSummaries) {
                 String artifactKind = normalizeArtifactKind(summary.artifactKind());
                 if (VisualGraphPublication.ARTIFACT_DESIGN.equals(artifactKind)) {
@@ -604,12 +624,15 @@ public record VisualAssetOverview(
                 scopeMismatchOperatorCount += summary.scopeMismatchOperatorCount();
                 driftedFingerprintCount += summary.driftedFingerprintCount();
                 missingFingerprintCount += summary.missingFingerprintCount();
+                schemaBreakingDriftCount += summary.schemaBreakingDriftCount();
+                schemaCompatibleDriftCount += summary.schemaCompatibleDriftCount();
                 VisualGraphReadiness readiness = summary.readiness();
                 incrementNormalized(graphReadiness, readiness == null ? "" : readiness.state());
                 mergeNormalized(sourceKinds, summary.sourceKindCounts());
                 mergeText(operatorLibraries, summary.operatorLibraryIdCounts());
                 mergeNormalized(loweringModes, summary.loweringModeCounts());
                 mergeNormalized(runtimeReadiness, summary.runtimeReadinessStateCounts());
+                mergeNormalized(schemaCompatibilityStates, summary.schemaCompatibilityStateCounts());
             }
             return new PublicationAssets(
                     safeSummaries.size(),
@@ -627,6 +650,9 @@ public record VisualAssetOverview(
                     scopeMismatchOperatorCount,
                     driftedFingerprintCount,
                     missingFingerprintCount,
+                    schemaBreakingDriftCount,
+                    schemaCompatibleDriftCount,
+                    schemaCompatibilityStates,
                     artifactKinds,
                     graphReadiness,
                     sourceKinds,
@@ -1960,6 +1986,7 @@ public record VisualAssetOverview(
                 draft.graphName().isBlank() ? draft.draftId() : draft.graphName(),
                 draft.currentRevision() > 0 ? draft.currentRevision() : draft.latestRevision()
         );
+        addDraftSchemaDriftActions(items, draft, label, operatorLibraryIdsByOperatorRef);
         if (VisualGraphActionReadiness.DRAFT_REPAIR_REQUIRED.equals(actionState)
                 || "draft-repair-required".equals(state) || "catalog-repair-required".equals(state)
                 || draft.missingOperatorCount() > 0) {
@@ -2064,6 +2091,7 @@ public record VisualAssetOverview(
                 publication.graphName().isBlank() ? publication.publicationId() : publication.graphName(),
                 publication.draftRevision()
         );
+        addPublicationSchemaDriftActions(items, publication, label, artifactKind, operatorLibraryIdsByOperatorRef);
         if (VisualGraphActionReadiness.DRAFT_REPAIR_REQUIRED.equals(actionState)
                 || "draft-repair-required".equals(state) || "catalog-repair-required".equals(state)
                 || publication.missingOperatorCount() > 0) {
@@ -2149,6 +2177,153 @@ public record VisualAssetOverview(
                 ));
             }
         }
+    }
+
+    private static void addDraftSchemaDriftActions(List<ActionItem> items,
+                                                   GraphDraftSummary draft,
+                                                   String label,
+                                                   Map<String, String> operatorLibraryIdsByOperatorRef) {
+        if (draft == null) {
+            return;
+        }
+        addSchemaDriftActions(
+                items,
+                "draft",
+                draft.draftId(),
+                label,
+                "",
+                "REPAIR_DRAFT_SCHEMA_DRIFT",
+                "REVIEW_DRAFT_SCHEMA_DRIFT",
+                draft.schemaBreakingOperatorRefCounts(),
+                draft.schemaCompatibleOperatorRefCounts(),
+                operatorLibraryIdsByOperatorRef,
+                "Draft",
+                "Open the draft dependency report, repair incompatible bindings or intentionally rebase after updating the graph.",
+                "Review compatible schema drift, then rebase fingerprints with actor/reason evidence if the change is accepted."
+        );
+    }
+
+    private static void addPublicationSchemaDriftActions(List<ActionItem> items,
+                                                         VisualGraphPublicationSummary publication,
+                                                         String label,
+                                                         String artifactKind,
+                                                         Map<String, String> operatorLibraryIdsByOperatorRef) {
+        if (publication == null) {
+            return;
+        }
+        addSchemaDriftActions(
+                items,
+                "publication",
+                publication.publicationId(),
+                label,
+                artifactKind,
+                "RECERTIFY_PUBLICATION_SCHEMA_DRIFT",
+                "REVIEW_PUBLICATION_SCHEMA_DRIFT",
+                publication.schemaBreakingOperatorRefCounts(),
+                publication.schemaCompatibleOperatorRefCounts(),
+                operatorLibraryIdsByOperatorRef,
+                "Publication",
+                "Repair the source draft or catalog, republish, then recertify this immutable artifact.",
+                "Review frozen dependency evidence and recertify before promoting or reusing this artifact."
+        );
+    }
+
+    private static void addSchemaDriftActions(List<ActionItem> items,
+                                              String targetKind,
+                                              String targetId,
+                                              String targetLabel,
+                                              String artifactKind,
+                                              String breakingActionType,
+                                              String compatibleActionType,
+                                              Map<String, Integer> breakingOperatorRefCounts,
+                                              Map<String, Integer> compatibleOperatorRefCounts,
+                                              Map<String, String> operatorLibraryIdsByOperatorRef,
+                                              String assetKind,
+                                              String breakingRecommendation,
+                                              String compatibleRecommendation) {
+        for (Map.Entry<String, Integer> entry : positiveOperatorCounts(breakingOperatorRefCounts).entrySet()) {
+            String operatorRef = entry.getKey();
+            int count = entry.getValue();
+            items.add(new ActionItem(
+                    schemaDriftActionKey(breakingActionType, targetKind, targetId, operatorRef, "breaking",
+                            artifactKind),
+                    "error",
+                    breakingActionType,
+                    targetKind,
+                    targetId,
+                    schemaDriftTargetLabel(targetLabel, operatorRef),
+                    operatorRef,
+                    operatorLibraryId(operatorRef, operatorLibraryIdsByOperatorRef),
+                    "schema-breaking-drift",
+                    artifactKind,
+                    "operator-platform",
+                    "schema-contract-review",
+                    operatorRef,
+                    "%s has %d node%s whose frozen operator schema is breaking against current catalog operator '%s'."
+                            .formatted(assetKind, count, count == 1 ? "" : "s", operatorRef),
+                    breakingRecommendation
+            ));
+        }
+        for (Map.Entry<String, Integer> entry : positiveOperatorCounts(compatibleOperatorRefCounts).entrySet()) {
+            String operatorRef = entry.getKey();
+            int count = entry.getValue();
+            items.add(new ActionItem(
+                    schemaDriftActionKey(compatibleActionType, targetKind, targetId, operatorRef, "compatible",
+                            artifactKind),
+                    "warning",
+                    compatibleActionType,
+                    targetKind,
+                    targetId,
+                    schemaDriftTargetLabel(targetLabel, operatorRef),
+                    operatorRef,
+                    operatorLibraryId(operatorRef, operatorLibraryIdsByOperatorRef),
+                    "schema-compatible-drift",
+                    artifactKind,
+                    "operator-platform",
+                    "schema-contract-review",
+                    operatorRef,
+                    "%s has %d node%s whose frozen operator schema remains compatible but changed for current catalog operator '%s'."
+                            .formatted(assetKind, count, count == 1 ? "" : "s", operatorRef),
+                    compatibleRecommendation
+            ));
+        }
+    }
+
+    private static Map<String, Integer> positiveOperatorCounts(Map<String, Integer> counts) {
+        if (counts == null || counts.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Integer> normalized = new LinkedHashMap<>();
+        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+            String operatorRef = normalizeTextValue(entry.getKey());
+            int value = entry.getValue() == null ? 0 : entry.getValue();
+            if (!operatorRef.isBlank() && value > 0) {
+                normalized.put(operatorRef, value);
+            }
+        }
+        return normalized;
+    }
+
+    private static String schemaDriftActionKey(String actionType,
+                                               String targetKind,
+                                               String targetId,
+                                               String operatorRef,
+                                               String state,
+                                               String artifactKind) {
+        return String.join("|",
+                actionType == null ? "" : actionType,
+                targetKind == null ? "" : targetKind,
+                targetId == null ? "" : targetId,
+                operatorRef == null ? "" : operatorRef,
+                state == null ? "" : state,
+                artifactKind == null ? "" : artifactKind
+        );
+    }
+
+    private static String schemaDriftTargetLabel(String targetLabel, String operatorRef) {
+        String label = targetLabel == null ? "" : targetLabel;
+        String operator = operatorRef == null ? "" : operatorRef;
+        return operator.isBlank() ? label : "%s / %s".formatted(label, operator).trim();
     }
 
     private static boolean addDraftRuntimeBindingActions(List<ActionItem> items,

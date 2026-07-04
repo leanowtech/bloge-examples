@@ -8592,6 +8592,8 @@ function renderVisualAssetOverview() {
     ['Runtime bindings', bindingIndex?.unfilteredTotal ?? bindingIndex?.total],
     ['Binding records', implementationBindingCount],
     ['Runtime evidence', runtimeEvidenceRecordCount],
+    ['Schema breaks', Number(drafts.schemaBreakingDriftCount || 0) + Number(publications.schemaBreakingDriftCount || 0)],
+    ['Schema review', Number(drafts.schemaCompatibleDriftCount || 0) + Number(publications.schemaCompatibleDriftCount || 0)],
     ['Design-only operators', visualAssetOverviewCatalogReadiness(catalog, 'design-only')],
     ['Runtime-blocked operators', visualAssetOverviewCatalogReadiness(catalog, 'runtime-blocked')]
   ].filter(([, value], index) => index < 7 || Number(value || 0) > 0)
@@ -9246,10 +9248,34 @@ function visualAssetOverviewRows(overview) {
       'drafts are valid design artifacts'
     ),
     visualAssetOverviewRow(
+      'Draft schema breaking drift',
+      Number(drafts.schemaBreakingDriftCount || 0),
+      'error',
+      'draft nodes have frozen schemas incompatible with the current catalog'
+    ),
+    visualAssetOverviewRow(
+      'Draft schema review drift',
+      Number(drafts.schemaCompatibleDriftCount || 0),
+      'warning',
+      'draft nodes have compatible schema drift that still needs review'
+    ),
+    visualAssetOverviewRow(
       'Design publications',
       Number(publications.designArtifactCount || 0),
       'info',
       'published non-executable design artifacts'
+    ),
+    visualAssetOverviewRow(
+      'Publication schema breaking drift',
+      Number(publications.schemaBreakingDriftCount || 0),
+      'error',
+      'publication nodes froze schemas incompatible with the current catalog review'
+    ),
+    visualAssetOverviewRow(
+      'Publication schema review drift',
+      Number(publications.schemaCompatibleDriftCount || 0),
+      'warning',
+      'publication nodes froze compatible schema drift requiring review'
     ),
     visualAssetOverviewRow(
       'Runtime-blocked catalog',
@@ -9344,6 +9370,8 @@ function visualAssetOverviewLevel(overview) {
       || visualAssetOverviewReadiness(publications, 'draft-repair-required')
       || visualAssetOverviewReadiness(publications, 'catalog-repair-required')
       || visualAssetOverviewCatalogReadiness(catalog, 'catalog-repair-required')
+      || Number(drafts.schemaBreakingDriftCount || 0)
+      || Number(publications.schemaBreakingDriftCount || 0)
       || Number(runtimeEvidence.failedEvidenceRecordCount || 0)
       || Number(runtimeEvidence.failedRolloutObservationCount || 0)
       || Number(runtimeEvidence.rolledBackRolloutObservationCount || 0)
@@ -9356,6 +9384,8 @@ function visualAssetOverviewLevel(overview) {
       || visualAssetOverviewReadiness(publications, 'governance-review')
       || visualAssetOverviewCatalogReadiness(catalog, 'runtime-blocked')
       || visualAssetOverviewCatalogReadiness(catalog, 'governance-review')
+      || Number(drafts.schemaCompatibleDriftCount || 0)
+      || Number(publications.schemaCompatibleDriftCount || 0)
       || partialRuntimeEvidence
       || Number(runtimeEvidence.degradedRolloutObservationCount || 0)
       || Number(runtimeEvidence.rollbackTriggeredObservationCount || 0)

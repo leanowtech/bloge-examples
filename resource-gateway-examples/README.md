@@ -873,7 +873,7 @@ Showcase metadata APIs:
 | `GET` | `/api/visual/operators` | List native, Java registry, imported, executable publication-backed subgraph, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering, `sourceKind` / `operatorLibraryId` / `loweringMode` / `capability` / `runtimeReadiness` catalog facets, plus multi-term schema-aware search across input/output/config fields, field types, JSON Schema field annotations, library owner ids, and readiness summaries; response includes `facets.total/sourceKinds/operatorLibraryIds/loweringModes/capabilities/runtimeReadinessStates` counts plus server-derived `runtimeBindingProjections[]` / `runtimeBindingProjectionStateCounts` and `executablePromotionProjections[]` / `executablePromotionStateCounts`, so palette clients can distinguish missing, bound, drifted, adapter-active, still-executor-blocked, and readiness-recompute-required implementation state without trusting imported libraries to declare runtime readiness |
 | `GET` | `/api/visual/operators/{operatorRef}` | Return one visible `bloge.visualOperator.v1` definition under the same `tenantId` / `namespace` / `environment`, `includeDeprecated`, `resourceOnly`, `operatorLibraryId`, and catalog facet visibility gates used by the operator catalog; returns `404` when the operator is hidden or missing |
 | `GET` | `/api/visual/operators/{operatorRef}/usage` | Return stored draft and immutable-publication usage of one operatorRef, including saved/frozen fingerprint status, changed-surface drift summaries, and `changeRisk/changeCategories/changeSummary` when snapshots allow risk classification |
-| `GET` | `/api/visual/assets/overview` | Return `bloge.visualAssetOverview.v1`, an environment-level visual authoring overview that echoes the requested authoring scope while aggregating draft summaries, publication summaries, current operator catalog facets, runtime evidence chain health counts, and an action-readiness/runtime-binding-requirement/runtime-evidence-aware server-derived action queue with optional `tenantId` / `namespace` / `environment` scope filters plus `actionLimit` / `actionOffset` / `actionSeverity` / `actionType` / `actionTargetKind` / `actionOperatorRef` / `actionOperatorLibraryId` queue query controls and operatorRef/operatorLibraryId counts for runtime-plane triage |
+| `GET` | `/api/visual/assets/overview` | Return `bloge.visualAssetOverview.v1`, an environment-level visual authoring overview that echoes the requested authoring scope while aggregating draft summaries, publication summaries, frozen-vs-current schema drift counts, current operator catalog facets, runtime evidence chain health counts, and an action-readiness/schema-drift/runtime-binding-requirement/runtime-evidence-aware server-derived action queue with optional `tenantId` / `namespace` / `environment` scope filters plus `actionLimit` / `actionOffset` / `actionSeverity` / `actionType` / `actionTargetKind` / `actionOperatorRef` / `actionOperatorLibraryId` queue query controls and operatorRef/operatorLibraryId counts for schema-contract and runtime-plane triage |
 | `GET` | `/api/visual/assets/runtime-binding-requirements` | Return `bloge.visualRuntimeBindingRequirements.v1`, a scope-aware, pageable runtime-binding gap index for active drafts and immutable publications, with `targetKind` / `operatorRef` / `operatorLibraryId` / `bindingKind` / `handoffLane` / `handoffKind` / `handoffTarget` / `sourceKind` / `loweringMode` / `readinessState` / `requirementKey` filters, stable requirement keys, operatorRef/operatorLibraryId counts, and handoff lane/kind/target fields for external runtime-plane routing |
 | `GET` | `/api/visual/assets/runtime-binding-requirements/handoff-bundle` | Export the current runtime-binding gap query window as `bloge.visualRuntimeBindingHandoff.v1`, preserving source index lineage, normalized scope/filter, stable requirement keys, operator/library/routing counts, requirement rows, and per-operator contract snapshots with ports/config/lowering/readiness evidence for runtime-plane handoff without creating workflow state |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/handoff-review` | Review a `bloge.visualRuntimeBindingHandoff.v1` bundle against the current runtime-binding read model and current operator catalog contracts; returns `bloge.visualRuntimeBindingHandoffReview.v1` with requirement and operator-contract current/drifted/missing/new-current-window reconciliation status, field-change categories, and exported/current/new routing distributions for owner/lane assignment |
@@ -897,7 +897,7 @@ Showcase metadata APIs:
 | `POST` | `/api/visual/assets/runtime-binding-requirements/executable-readiness-recomputations/evidence-refresh?operatorRef=...&ackWarnings=true&actor=...&reason=...` | Refresh post-apply runtime-plane evidence by creating a new bound implementation binding, adapter activation, and executable lowering integration against the current trusted operator fingerprint; optional `expectedPreviousOperatorFingerprint` and `expectedCurrentOperatorFingerprint` reject stale evidence-refresh acknowledgements with `409`; returns `bloge.visualExecutableReadinessEvidenceRefreshResult.v1`, supersedes the old binding, retains old evidence for audit, supports native executable plus external-runtime-bound runtime-binding/metadata-only change surfaces, returns structured failed results for refreshed binding create failures, compensates binding-transition and activation/integration write failures by marking partial refreshed evidence `failed` and restoring the source binding to `bound`, and only reports `current` when the active binding, adapter activation, and executable lowering integration form a complete aligned evidence chain |
 | `GET` | `/api/visual/drafts` | List stored visual graph drafts with optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/drafts/history` | List lightweight active/deleted draft history summaries with current/latest revision, revision count, latest actor/source/summary, recovery status, and optional `tenantId` / `namespace` / `environment` scope filters |
-| `GET` | `/api/visual/drafts/summaries` | List `bloge.visualGraphDraftSummary.v1` draft asset summaries that combine history, server validation/readiness/action-readiness, diagnostic counts, and dependency counts without returning full draft JSON; supports optional `tenantId` / `namespace` / `environment` scope filters |
+| `GET` | `/api/visual/drafts/summaries` | List `bloge.visualGraphDraftSummary.v1` draft asset summaries that combine history, server validation/readiness/action-readiness, diagnostic counts, dependency counts, and schema breaking/compatible drift routing counts without returning full draft JSON; supports optional `tenantId` / `namespace` / `environment` scope filters |
 | `POST` | `/api/visual/drafts` | Save a new visual graph draft with server-assigned id/revision, ignoring submitted draft identity fields; repository write failures return `409` with `visual.draft.createPersistenceFailed` while preserving candidate readiness |
 | `GET` | `/api/visual/drafts/{draftId}` | Load a stored visual graph draft |
 | `GET` | `/api/visual/drafts/{draftId}/dependencies` | Summarize a stored draft as `bloge.visualGraphDraftDependencies.v1`, including distinct operator dependencies, per-node binding/edge lineage, source/lowering/runtime-readiness counts, current/missing/drifted/scope-mismatch fingerprint state, frozen-vs-current operator schema compatibility states/issues, and scope policy diagnostics |
@@ -919,7 +919,7 @@ Showcase metadata APIs:
 | `POST` | `/api/visual/drafts/{draftId}/run` | Execute a stored visual graph draft with submitted context; response includes validation/readiness/action-readiness, and optional `expectedRevision` rejects stale runs with `409 CONFLICT` |
 | `POST` | `/api/visual/drafts/{draftId}/publish` | Publish an immutable visual graph artifact; default `artifactKind=EXECUTABLE` validates, compiles, and stores frozen DSL, while `artifactKind=DESIGN` freezes a schema-valid non-executable design artifact with generation diagnostics; response includes validation/readiness/action-readiness on accepted and rejected attempts so clients can constrain publish artifact kinds, warning review gates, and repository persistence failures; optional `expectedRevision` rejects stale publishes with `409 CONFLICT`; warning-level validation diagnostics require `ackWarnings=true`, warning-acknowledged storage also requires non-empty `actor` and `reason` evidence that is frozen as publication metadata, and publication write failure returns `visual.publication.persistenceFailed` |
 | `GET` | `/api/visual/publications` | List immutable visual graph publications; supports optional `tenantId` / `namespace` / `environment` scope filters and `artifactKind` filtering for `EXECUTABLE` or `DESIGN` assets |
-| `GET` | `/api/visual/publications/summaries` | List `bloge.visualGraphPublicationSummary.v1` publication asset summaries with frozen artifact kind, readiness/action-readiness, diagnostic counts, dependency counts, and source/runtime-readiness distributions without returning full publication payloads; supports optional `tenantId` / `namespace` / `environment` scope filters and `artifactKind` filtering for `EXECUTABLE` or `DESIGN` assets |
+| `GET` | `/api/visual/publications/summaries` | List `bloge.visualGraphPublicationSummary.v1` publication asset summaries with frozen artifact kind, readiness/action-readiness, diagnostic counts, dependency counts, schema compatibility drift summaries, and source/runtime-readiness distributions without returning full publication payloads; supports optional `tenantId` / `namespace` / `environment` scope filters and `artifactKind` filtering for `EXECUTABLE` or `DESIGN` assets |
 | `POST` | `/api/visual/publications/import-bundle` | Import a portable `bloge.visualGraphPublicationExport.v1` bundle and return `bloge.visualGraphPublicationImportResult.v1` with source and target dependency reports plus target runtime-binding handoff requirements and stable keys; rejects unsupported bundle/publication schema versions, missing publication snapshots, duplicate target publication ids, and repository write failures with structured diagnostics |
 | `GET` | `/api/visual/publications/{publicationId}` | Load a published visual graph artifact |
 | `GET` | `/api/visual/publications/{publicationId}/dependencies` | Load the publish-time dependency report frozen with an immutable visual graph artifact |
@@ -1262,11 +1262,20 @@ items with stable keys plus related `operatorRef` and owner `operatorLibraryId`,
 so runtime-plane binding work can be filtered, counted, and assigned by
 user-provided operator or operator-library ownership directly from the overview
 without loading each full draft or immutable publication.
+The same overview path now consumes draft/publication dependency summaries for
+schema drift: breaking frozen-vs-current operator schema drift becomes
+`REPAIR_DRAFT_SCHEMA_DRIFT` or `RECERTIFY_PUBLICATION_SCHEMA_DRIFT` error
+actions, while compatible drift becomes `REVIEW_DRAFT_SCHEMA_DRIFT` or
+`REVIEW_PUBLICATION_SCHEMA_DRIFT` warning actions. These action items also carry
+the affected `operatorRef`, owner `operatorLibraryId`, and
+`schema-contract-review` handoff kind, so large user-provided operator library
+upgrades can be triaged centrally instead of opening each draft one at a time.
 Draft and publication summaries also carry an exact
-`operatorLibraryIdsByOperatorRef` map derived from dependency evidence; overview
-actions and the runtime-binding index use the current catalog owner map when it
-exists and fall back to that snapshot map when a target environment has not
-installed the source operator library yet.
+`operatorLibraryIdsByOperatorRef` map plus schema breaking/compatible drift
+operatorRef counts derived from dependency evidence; overview actions and the
+runtime-binding index use the current catalog owner map when it exists and fall
+back to that snapshot map when a target environment has not installed the source
+operator library yet.
 Connection candidate discovery exposes the same runtime-binding evidence at two
 granularities: candidate `summary` describes the whole preview draft, while
 `explanation.targetRuntimeBinding` is filtered to the current drop target node.
@@ -1385,6 +1394,7 @@ The Workspace Overview panel consumes `bloge.visualAssetOverview.v1` to show the
 same readiness distribution across drafts, immutable publications, and the
 current operator catalog for the active Authoring Scope. The overview response
 echoes the authoring scope used to derive the read model, adds server-derived
+schema breaking/compatible drift counts across draft and publication summaries,
 runtime evidence chain health counts for implementation bindings, adapter
 activations, rollout observations, executable lowering integrations,
 complete/partial chains, and failed or rollback-prone evidence, including the
@@ -1395,7 +1405,7 @@ normalized `evidenceChainHealthCounts` map for `complete`, `partial`,
 rollout guardrail signals, then adds a
 server-derived action queue for repair, runtime-binding, runtime evidence chain
 repair, rollout-risk review from degraded/rollback states or breached rollout
-signals, governance-review, warning acknowledgement/evidence
+signals, schema-contract review, governance-review, warning acknowledgement/evidence
 review, and design-asset tracking work. Large
 schema-only workspaces can therefore be
 triaged without pulling every graph or artifact body, and without mixing assets

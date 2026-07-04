@@ -1719,10 +1719,14 @@ draft、draft bundle、import result 和 publication dependency report 能直接
 满足冻结 output contract”判断；breaking issue 会携带 shared JSON Schema compatibility
 的机器可解释原因，compatible issue 表示 schema surface 已变化但可保守放行、仍应人工审阅。
 `bloge.visualGraphDraftSummary.v1` 和 `bloge.visualGraphPublicationSummary.v1`
-会从 dependency report 的 operator 行继续派生 `operatorLibraryIdsByOperatorRef`，
-供 overview action queue 与 runtime-binding index 在目标环境 catalog 尚未安装对应
-operator library 时仍能保留精确 owner 路由；当前 catalog 能提供 owner map 时，以当前
-catalog 归属覆盖该快照值。
+会从 dependency report 继续派生 `schemaBreakingDriftCount`、
+`schemaCompatibleDriftCount`、`schemaCompatibilityStateCounts`，以及
+`schemaBreakingOperatorRefCounts` / `schemaCompatibleOperatorRefCounts`，让资产列表和
+overview action queue 能在不拉完整 draft/publication payload 的情况下识别
+breaking schema drift 与 requires-review compatible schema drift。summary 还会从
+operator 行继续派生 `operatorLibraryIdsByOperatorRef`，供 overview action queue 与
+runtime-binding index 在目标环境 catalog 尚未安装对应 operator library 时仍能保留精确
+owner 路由；当前 catalog 能提供 owner map 时，以当前 catalog 归属覆盖该快照值。
 当目标环境 catalog 缺少当前 operatorRef 时，报告会回退到
 draft 保存时冻结的 operator definition snapshot 提供 source/lowering/operator-library owner
 审阅上下文，但仍把运行状态标记为 `CATALOG_MISSING`，避免跨环境迁移或坏版本导入时把
@@ -1952,7 +1956,12 @@ message handler、webhook、streaming 或 durable capability 暂时不能运行�
 `handoffLane/handoffKind/handoffTarget` 作为 runtime-plane 路由提示；overview
 action queue 支持 `actionOperatorRef` / `actionOperatorLibraryId` 过滤并返回
 `operatorRefCounts` / `operatorLibraryIdCounts`，这些字段不是工单状态，不引入第二套
-workflow 真相源。
+workflow 真相源。同一 action queue 也会消费 summary 中的 schema drift 聚合，把
+breaking drift 投影为 `REPAIR_DRAFT_SCHEMA_DRIFT` /
+`RECERTIFY_PUBLICATION_SCHEMA_DRIFT` error action，把 compatible drift 投影为
+`REVIEW_DRAFT_SCHEMA_DRIFT` / `REVIEW_PUBLICATION_SCHEMA_DRIFT` warning action，并携带
+`operatorRef`、`operatorLibraryId`、`handoffKind=schema-contract-review`，用于大型用户
+算子库升级后的集中治理。
 同一 overview 响应还包含只读 `runtimeEvidence` aggregate：implementation binding、
 adapter activation、rollout observation 和 executable lowering integration 的状态分布、
 operator/binding/activation 计数、complete chain、partial chain、failed evidence record

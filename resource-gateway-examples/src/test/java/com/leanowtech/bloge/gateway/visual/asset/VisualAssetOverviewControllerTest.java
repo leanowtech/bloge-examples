@@ -238,6 +238,107 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void overviewRoutesBreakingDraftSchemaDriftThroughActionQueue() {
+        DefaultVisualOperatorCatalog initialCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("number"));
+        DefaultVisualOperatorCatalog currentCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        GraphDraftValidator validator = new GraphDraftValidator(currentCatalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        OperatorDefinition initialOperator = initialCatalog.find("risk:eligibility").orElseThrow();
+        GraphDraft draft = drafts.save(draftWithFingerprint(initialOperator)
+                .withOperatorSnapshots(Map.of("eligibility", initialOperator)));
+        VisualAssetOverviewController controller =
+                new VisualAssetOverviewController(drafts, validator, currentCatalog, publications);
+
+        VisualAssetOverview overview = controller.overview(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "error",
+                "REPAIR_DRAFT_SCHEMA_DRIFT",
+                "draft",
+                "",
+                "risk-policy");
+
+        assertThat(overview.drafts().schemaBreakingDriftCount()).isEqualTo(1);
+        assertThat(overview.drafts().schemaCompatibleDriftCount()).isZero();
+        assertThat(overview.drafts().schemaCompatibilityStateCounts()).containsEntry("breaking", 1);
+        assertThat(overview.actionQueue().total()).isEqualTo(1);
+        assertThat(overview.actionQueue().errorCount()).isEqualTo(1);
+        assertThat(overview.actionQueue().operatorRefCounts()).containsEntry("risk:eligibility", 1);
+        assertThat(overview.actionQueue().operatorLibraryIdCounts()).containsEntry("risk-policy", 1);
+        assertThat(overview.actionQueue().items())
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.actionType()).isEqualTo("REPAIR_DRAFT_SCHEMA_DRIFT");
+                    assertThat(item.actionKey()).isEqualTo(
+                            "REPAIR_DRAFT_SCHEMA_DRIFT|draft|%s|risk:eligibility|breaking|"
+                                    .formatted(draft.draftId()));
+                    assertThat(item.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(item.operatorLibraryId()).isEqualTo("risk-policy");
+                    assertThat(item.readinessState()).isEqualTo("schema-breaking-drift");
+                    assertThat(item.handoffLane()).isEqualTo("operator-platform");
+                    assertThat(item.handoffKind()).isEqualTo("schema-contract-review");
+                    assertThat(item.summary()).contains("frozen operator schema is breaking");
+                    assertThat(item.recommendedAction()).contains("repair incompatible bindings");
+                });
+    }
+
+    @Test
+    void overviewRoutesCompatibleDraftSchemaDriftThroughActionQueue() {
+        DefaultVisualOperatorCatalog initialCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        DefaultVisualOperatorCatalog currentCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("number"));
+        GraphDraftValidator validator = new GraphDraftValidator(currentCatalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        OperatorDefinition initialOperator = initialCatalog.find("risk:eligibility").orElseThrow();
+        GraphDraft draft = drafts.save(draftWithFingerprint(initialOperator)
+                .withOperatorSnapshots(Map.of("eligibility", initialOperator)));
+        VisualAssetOverviewController controller =
+                new VisualAssetOverviewController(drafts, validator, currentCatalog, publications);
+
+        VisualAssetOverview overview = controller.overview(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "warning",
+                "REVIEW_DRAFT_SCHEMA_DRIFT",
+                "draft",
+                "risk:eligibility",
+                "risk-policy");
+
+        assertThat(overview.drafts().schemaBreakingDriftCount()).isZero();
+        assertThat(overview.drafts().schemaCompatibleDriftCount()).isEqualTo(1);
+        assertThat(overview.drafts().schemaCompatibilityStateCounts()).containsEntry("compatible", 1);
+        assertThat(overview.actionQueue().filter().operatorRef()).isEqualTo("risk:eligibility");
+        assertThat(overview.actionQueue().filter().operatorLibraryId()).isEqualTo("risk-policy");
+        assertThat(overview.actionQueue().total()).isEqualTo(1);
+        assertThat(overview.actionQueue().warningCount()).isEqualTo(1);
+        assertThat(overview.actionQueue().items())
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.actionType()).isEqualTo("REVIEW_DRAFT_SCHEMA_DRIFT");
+                    assertThat(item.actionKey()).isEqualTo(
+                            "REVIEW_DRAFT_SCHEMA_DRIFT|draft|%s|risk:eligibility|compatible|"
+                                    .formatted(draft.draftId()));
+                    assertThat(item.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(item.operatorLibraryId()).isEqualTo("risk-policy");
+                    assertThat(item.readinessState()).isEqualTo("schema-compatible-drift");
+                    assertThat(item.handoffTarget()).isEqualTo("risk:eligibility");
+                    assertThat(item.summary()).contains("remains compatible but changed");
+                    assertThat(item.recommendedAction()).contains("rebase fingerprints");
+                });
+    }
+
+    @Test
     void overviewRoutesRuntimeEvidenceRisksThroughActionQueue() {
         RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
         VisualRuntimeBindingImplementationBinding proposal =
