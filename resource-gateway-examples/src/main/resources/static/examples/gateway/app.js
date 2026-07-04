@@ -292,9 +292,7 @@ const SUPPORTED_SCHEMA_KINDS = new Set([
 const UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
 const SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
 const SUPPORTED_SCHEMA_CONDITIONAL_KEYWORDS = ['if', 'then', 'else'];
-const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [
-  'unevaluatedItems'
-];
+const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [];
 const SUPPORTED_SCHEMA_STRING_FORMATS = new Set(['date', 'date-time', 'duration', 'email', 'uri', 'uuid']);
 const LOCAL_SCHEMA_DEFS_REF_PREFIX = '#/$defs/';
 const SCHEMA_REF_ANNOTATION_KEYS = new Set([
@@ -5844,6 +5842,10 @@ function schemaDynamicSurfaceCount(schema) {
   }
   if (schema.items && typeof schema.items === 'object' && !Array.isArray(schema.items)) {
     count += schemaDynamicSurfaceCount(schema.items);
+  }
+  if (schema.unevaluatedItems && typeof schema.unevaluatedItems === 'object'
+      && !Array.isArray(schema.unevaluatedItems)) {
+    count += 1 + schemaDynamicSurfaceCount(schema.unevaluatedItems);
   }
   return count;
 }
@@ -17008,10 +17010,15 @@ function arraySchemaFieldDescriptors(schema, prefix, prefixDslPathSafe, branchSe
   const itemsSchema = schema?.items && typeof schema.items === 'object' && !Array.isArray(schema.items)
     ? schema.items
     : null;
-  if (itemsSchema) {
+  const residualItemsSchema = itemsSchema || (
+    schema?.unevaluatedItems && typeof schema.unevaluatedItems === 'object' && !Array.isArray(schema.unevaluatedItems)
+      ? schema.unevaluatedItems
+      : null
+  );
+  if (residualItemsSchema) {
     const nextUniformIndex = prefixItems.length;
     if (!itemDescriptors.some((item) => item.index === nextUniformIndex)) {
-      itemDescriptors.push({ index: nextUniformIndex, schema: itemsSchema });
+      itemDescriptors.push({ index: nextUniformIndex, schema: residualItemsSchema });
     }
   }
   return itemDescriptors.flatMap((item) => {
@@ -19976,6 +19983,7 @@ function validateSchemaStructure(schema, path, diagnostics) {
   validateSchemaArrayUniqueItems(schema, kind, path, diagnostics);
   validateSchemaArrayPrefixItems(schema, kind, path, diagnostics);
   validateSchemaArrayContains(schema, kind, path, diagnostics);
+  validateSchemaArrayUnevaluatedItems(schema, kind, path, diagnostics);
   validateSchemaObjectPropertyBounds(schema, kind, path, diagnostics);
   validateSchemaObjectPatternProperties(schema, kind, path, diagnostics);
   validateSchemaObjectPropertyNames(schema, kind, path, diagnostics);
@@ -20014,15 +20022,21 @@ function validateSchemaStructure(schema, path, diagnostics) {
     }
   } else if (kind === 'array') {
     const items = schema?.items;
-    if (!items || typeof items !== 'object' || Array.isArray(items)) {
+    if (items && typeof items === 'object' && !Array.isArray(items)) {
+      validateSchemaStructure(items, `${path}/items`, diagnostics);
+    } else if (Object.prototype.hasOwnProperty.call(schema || {}, 'items')) {
       diagnostics.push(graphInputSchemaDiagnostic(
         'visual.schema.arrayItemsMissing',
-        'Array schema must declare an item schema.',
+        'Array schema items must be a schema object.',
         `${path}/items`
       ));
-      return;
+    } else if (!hasSupportedArrayItemContract(schema)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.arrayItemsMissing',
+        'Array schema must declare items, prefixItems, or unevaluatedItems.',
+        `${path}/items`
+      ));
     }
-    validateSchemaStructure(items, `${path}/items`, diagnostics);
   } else if (kind === 'enum') {
     validateCustomSchemaEnumValues(schema, path, diagnostics);
   }
@@ -20601,6 +20615,7 @@ function validateSchemaNot(schema, path, diagnostics) {
   validateSchemaArrayItemBounds(notSchema, notKind, `${path}/not`, diagnostics);
   validateSchemaArrayUniqueItems(notSchema, notKind, `${path}/not`, diagnostics);
   validateSchemaArrayContains(notSchema, notKind, `${path}/not`, diagnostics);
+  validateSchemaArrayUnevaluatedItems(notSchema, notKind, `${path}/not`, diagnostics);
   validateSchemaObjectPropertyBounds(notSchema, notKind, `${path}/not`, diagnostics);
   validateSchemaObjectPatternProperties(notSchema, notKind, `${path}/not`, diagnostics);
   validateSchemaObjectPropertyNames(notSchema, notKind, `${path}/not`, diagnostics);
@@ -20934,6 +20949,32 @@ function validateSchemaArrayContains(schema, kind, path, diagnostics) {
       path
     ));
   }
+}
+
+function validateSchemaArrayUnevaluatedItems(schema, kind, path, diagnostics) {
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'unevaluatedItems')) {
+    return;
+  }
+  if (!arrayType(kind)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.unevaluatedItemsConstraintTypeMismatch',
+      'Array unevaluatedItems constraints require schema type/kind array.',
+      path
+    ));
+  }
+  const unevaluatedItems = schema?.unevaluatedItems;
+  if (typeof unevaluatedItems === 'boolean') {
+    return;
+  }
+  if (unevaluatedItems && typeof unevaluatedItems === 'object' && !Array.isArray(unevaluatedItems)) {
+    validateSchemaStructure(unevaluatedItems, `${path}/unevaluatedItems`, diagnostics);
+    return;
+  }
+  diagnostics.push(graphInputSchemaDiagnostic(
+    'visual.schema.unevaluatedItemsInvalid',
+    'Array schema unevaluatedItems must be a boolean or schema object.',
+    `${path}/unevaluatedItems`
+  ));
 }
 
 function validateSchemaObjectPropertyBounds(schema, kind, path, diagnostics) {
@@ -21639,6 +21680,7 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   if (sourceType === 'array' && targetType === 'array') {
     return arrayPrefixItemsCompatibilityIssue(sourceSchema, targetSchema, path)
       || arrayItemsCompatibilityIssue(sourceSchema, targetSchema, path)
+      || arrayUnevaluatedItemsCompatibilityIssue(sourceSchema, targetSchema, path)
       || arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path)
       || arrayUniqueItemsCompatibilityIssue(sourceSchema, targetSchema, path)
       || arrayContainsCompatibilityIssue(sourceSchema, targetSchema, path)
@@ -22080,7 +22122,7 @@ function sourceItemsCannotMatchContains(sourceSchema, excludedContains) {
   if (!mayHaveUniformItems) {
     return true;
   }
-  const sourceItems = schemaItemsSchema(sourceSchema);
+  const sourceItems = residualArrayItemSchema(sourceSchema);
   return Boolean(sourceItems && schemasDefinitelyDisjoint(sourceItems, excludedContains));
 }
 
@@ -22292,11 +22334,57 @@ function arrayItemsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   if (sourceMaximum !== null && sourceMaximum <= firstUniformIndex) {
     return '';
   }
-  const sourceItems = schemaItemsSchema(sourceSchema);
+  const sourceItems = residualArrayItemSchema(sourceSchema);
   if (!sourceItems) {
     return reasonAt(path, 'target requires items but source does not constrain additional array items');
   }
   return schemaCompatibilityIssue(sourceItems, targetItems, appendCompatibilityPath(path, 'items'));
+}
+
+function arrayUnevaluatedItemsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  const targetResidual = unevaluatedArrayItemsPolicy(targetSchema);
+  if (targetResidual === null || targetResidual === true) {
+    return '';
+  }
+  const firstUnevaluatedIndex = schemaPrefixItems(targetSchema).length;
+  const sourceMaximum = schemaMaxItems(sourceSchema);
+  if (sourceMaximum !== null && sourceMaximum <= firstUnevaluatedIndex) {
+    return '';
+  }
+  const sourceValues = schemaEnumValues(sourceSchema);
+  if (sourceValues.length
+      && sourceValues.every(Array.isArray)
+      && sourceValues.every((value) => arrayValueMatchesSchema(value, targetSchema))) {
+    return '';
+  }
+  if (targetResidual === false) {
+    return reasonAt(path, `target unevaluatedItems=false allows no residual array items but source may produce items beyond prefixItems[${firstUnevaluatedIndex}]`);
+  }
+  const targetResidualSchema = targetResidual && typeof targetResidual === 'object' && !Array.isArray(targetResidual)
+    ? targetResidual
+    : null;
+  if (!targetResidualSchema) {
+    return '';
+  }
+  const sourcePrefixItems = schemaPrefixItems(sourceSchema);
+  for (let index = firstUnevaluatedIndex; index < sourcePrefixItems.length; index += 1) {
+    if (sourceMaximum !== null && sourceMaximum <= index) {
+      continue;
+    }
+    const nested = schemaCompatibilityIssue(sourcePrefixItems[index], targetResidualSchema, appendCompatibilityPath(path, `prefixItems/${index}`));
+    if (nested) {
+      return nested;
+    }
+  }
+  const sourceResidualSchema = residualArrayItemSchema(sourceSchema);
+  if (!sourceResidualSchema) {
+    const sourceResidual = unevaluatedArrayItemsPolicy(sourceSchema);
+    if (sourceResidual === false) {
+      return '';
+    }
+    return reasonAt(path, `target unevaluatedItems requires ${schemaType(targetResidualSchema)} but source does not constrain residual array items`);
+  }
+  return schemaCompatibilityIssue(sourceResidualSchema, targetResidualSchema, appendCompatibilityPath(path, 'unevaluatedItems'));
 }
 
 function arrayPrefixItemsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
@@ -22319,7 +22407,7 @@ function arrayPrefixItemsCompatibilityIssue(sourceSchema, targetSchema, path = '
     if (sourceMaximum !== null && sourceMaximum <= index) {
       continue;
     }
-    const sourceItem = sourcePrefixItems[index] || schemaItemsSchema(sourceSchema);
+    const sourceItem = sourcePrefixItems[index] || residualArrayItemSchema(sourceSchema);
     if (!sourceItem) {
       return reasonAt(path, `target requires prefixItems[${index}] but source does not constrain that array item`);
     }
@@ -22827,7 +22915,7 @@ function rawSchemaType(schema) {
   }
   return declared
     || (schema.properties ? 'object' : '')
-    || (schema.items ? 'array' : '')
+    || (schemaHasAnyKeyword(schema, 'items', 'prefixItems', 'unevaluatedItems') ? 'array' : '')
     || (Object.prototype.hasOwnProperty.call(schema, 'const') ? schemaTypeForValue(schema.const) : '');
 }
 
@@ -22905,12 +22993,17 @@ function schemaUnionDescriptors(schema, path = '') {
   const itemDescriptors = itemSchema
     ? schemaUnionDescriptors(itemSchema, path ? `${path}[]` : '[]')
     : [];
+  const residualItemSchema = !itemSchema && residualArrayItemSchema(schema);
+  const residualItemDescriptors = residualItemSchema
+    ? schemaUnionDescriptors(residualItemSchema, path ? `${path}[]` : '[]')
+    : [];
   const prefixItemDescriptors = schemaPrefixItems(schema).flatMap((item, index) =>
     schemaUnionDescriptors(item, `${path || '[]'}[${index}]`));
   return [
     ...current,
     ...propertyDescriptors,
     ...itemDescriptors,
+    ...residualItemDescriptors,
     ...prefixItemDescriptors
   ];
 }
@@ -23225,6 +23318,21 @@ function schemaHasArrayContains(schema) {
     || Object.prototype.hasOwnProperty.call(schema || {}, 'maxContains');
 }
 
+function hasSupportedArrayItemContract(schema) {
+  if (schemaItemsSchema(schema)) {
+    return true;
+  }
+  if (schemaPrefixItems(schema).length) {
+    return true;
+  }
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'unevaluatedItems')) {
+    return false;
+  }
+  const unevaluatedItems = schema?.unevaluatedItems;
+  return typeof unevaluatedItems === 'boolean'
+    || (unevaluatedItems && typeof unevaluatedItems === 'object' && !Array.isArray(unevaluatedItems));
+}
+
 function schemaHasObjectPropertyBounds(schema) {
   return Object.prototype.hasOwnProperty.call(schema || {}, 'minProperties')
     || Object.prototype.hasOwnProperty.call(schema || {}, 'maxProperties');
@@ -23251,6 +23359,9 @@ function arrayValueMatchesSchema(value, schema) {
     return false;
   }
   if (!arrayValueMatchesContains(value, schema)) {
+    return false;
+  }
+  if (!arrayValueMatchesUnevaluatedItems(value, schema)) {
     return false;
   }
   return value.every((item, index) => {
@@ -23298,7 +23409,48 @@ function arrayItemSchemaForIndex(schema, index) {
   if (index < prefixItems.length) {
     return prefixItems[index];
   }
-  return schemaItemsSchema(schema);
+  return residualArrayItemSchema(schema);
+}
+
+function residualArrayItemSchema(schema) {
+  const items = schemaItemsSchema(schema);
+  if (items) {
+    return items;
+  }
+  const residual = unevaluatedArrayItemsPolicy(schema);
+  return residual && typeof residual === 'object' && !Array.isArray(residual)
+    ? residual
+    : null;
+}
+
+function unevaluatedArrayItemsPolicy(schema) {
+  if (!schema
+      || schemaItemsSchema(schema)
+      || !Object.prototype.hasOwnProperty.call(schema, 'unevaluatedItems')) {
+    return null;
+  }
+  return schema.unevaluatedItems;
+}
+
+function arrayValueMatchesUnevaluatedItems(value, schema) {
+  if (!Array.isArray(value)) {
+    return true;
+  }
+  const residual = unevaluatedArrayItemsPolicy(schema);
+  if (residual === null || residual === true) {
+    return true;
+  }
+  const firstUnevaluatedIndex = schemaPrefixItems(schema).length;
+  if (value.length <= firstUnevaluatedIndex) {
+    return true;
+  }
+  if (residual === false) {
+    return false;
+  }
+  if (!residual || typeof residual !== 'object' || Array.isArray(residual)) {
+    return true;
+  }
+  return value.slice(firstUnevaluatedIndex).every((item) => schemaValueMatchesSchema(item, residual));
 }
 
 function schemaPrefixItems(schema) {
@@ -23536,6 +23688,9 @@ function schemaMaxItems(schema) {
   const explicit = explicitSchemaMaxItems(schema);
   if (explicit !== null) {
     return explicit;
+  }
+  if (unevaluatedArrayItemsPolicy(schema) === false) {
+    return schemaPrefixItems(schema).length;
   }
   const values = schemaEnumValues(schema);
   if (values.length && values.every(Array.isArray)) {

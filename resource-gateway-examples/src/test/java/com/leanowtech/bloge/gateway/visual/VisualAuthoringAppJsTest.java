@@ -2049,6 +2049,8 @@ class VisualAuthoringAppJsTest {
                   'arrayItemSchemaForIndex',
                   'schemaPrefixItems',
                   'schemaItemsSchema',
+                  'residualArrayItemSchema',
+                  'unevaluatedArrayItemsPolicy',
                   'rawSchemaType',
                   'residualPropertiesPolicy',
                   'additionalPropertySchema',
@@ -2755,6 +2757,7 @@ class VisualAuthoringAppJsTest {
                   'validateSchemaArrayUniqueItems',
                   'validateSchemaArrayPrefixItems',
                   'validateSchemaArrayContains',
+                  'validateSchemaArrayUnevaluatedItems',
                   'validateSchemaObjectPropertyBounds',
                   'validateSchemaObjectPropertyNames',
                   'validateSchemaObjectDependentRequired',
@@ -6468,7 +6471,7 @@ operators:
                 context.SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
                 context.SUPPORTED_SCHEMA_CONDITIONAL_KEYWORDS = ['if', 'then', 'else'];
                 context.UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
-                context.UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = ['unevaluatedItems'];
+                context.UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [];
                 context.LOCAL_SCHEMA_DEFS_REF_PREFIX = '#/$defs/';
                 context.SCHEMA_REF_ANNOTATION_KEYS = new Set([
                   '$ref', '$comment', 'title', 'description', 'examples', 'deprecated', 'readOnly', 'writeOnly'
@@ -6545,6 +6548,9 @@ operators:
                   'schemaObjectProperties',
                   'schemaItemsSchema',
                   'schemaPrefixItems',
+                  'hasSupportedArrayItemContract',
+                  'residualArrayItemSchema',
+                  'unevaluatedArrayItemsPolicy',
                   'schemaCompatibilityIssue',
                   'sourceAllOfCompatibilityIssue',
                   'branchCanProveAllOfSourceCompatibility',
@@ -6569,6 +6575,7 @@ operators:
                   'schemaValueMatchesAllOf',
                   'schemaValueMatchesConditional',
                   'schemaValueMatchesType',
+                  'arrayValueMatchesUnevaluatedItems',
                   'rawSchemaType',
                   'nullableTypePrimary',
                   'schemaMayProduceNull',
@@ -6633,6 +6640,7 @@ operators:
                   'validateSchemaArrayUniqueItems',
                   'validateSchemaArrayPrefixItems',
                   'validateSchemaArrayContains',
+                  'validateSchemaArrayUnevaluatedItems',
                   'validateSchemaObjectPropertyBounds',
                   'validateSchemaObjectPatternProperties',
                   'validateSchemaObjectPropertyNames',
@@ -6657,6 +6665,7 @@ operators:
                 context.stringLengthCompatibilityIssue = () => '';
                 context.arrayPrefixItemsCompatibilityIssue = () => '';
                 context.arrayItemsCompatibilityIssue = () => '';
+                context.arrayUnevaluatedItemsCompatibilityIssue = () => '';
                 context.arrayItemBoundsCompatibilityIssue = () => '';
                 context.arrayUniqueItemsCompatibilityIssue = () => '';
                 context.arrayContainsCompatibilityIssue = () => '';
@@ -6978,6 +6987,7 @@ operators:
                   'objectDependentRequiredCompatibilityIssue',
                   'objectDependentSchemasCompatibilityIssue',
                   'objectPropertyBoundsCompatibilityIssue',
+                  'arrayUnevaluatedItemsCompatibilityIssue',
                   'schemaType',
                   'schemaAllOfLabel',
                   'schemaUnionLabel',
@@ -7039,6 +7049,9 @@ operators:
                   'explicitSchemaMaxItems',
                   'schemaPrefixItems',
                   'schemaItemsSchema',
+                  'residualArrayItemSchema',
+                  'unevaluatedArrayItemsPolicy',
+                  'arrayValueMatchesUnevaluatedItems',
                   'schemaContainsSchema',
                   'schemaMinContains',
                   'schemaMaxContains',
@@ -7337,6 +7350,24 @@ operators:
                     { not: { const: 'ARCHIVED' } }
                   ]
                 });
+                const targetUnevaluatedItemsIssue = context.schemaCompatibilityIssue({
+                  type: 'array',
+                  prefixItems: [{ type: 'string' }],
+                  items: { type: 'string' }
+                }, {
+                  type: 'array',
+                  prefixItems: [{ type: 'string' }],
+                  unevaluatedItems: false
+                });
+                const targetUnevaluatedItemsSafe = context.schemaCompatibilityIssue({
+                  type: 'array',
+                  prefixItems: [{ type: 'string' }],
+                  unevaluatedItems: false
+                }, {
+                  type: 'array',
+                  prefixItems: [{ type: 'string' }],
+                  unevaluatedItems: false
+                });
 
                 const checks = [
                   ['residual optional collision path', String(residualIssue.includes("at 'score'")), 'true'],
@@ -7375,7 +7406,9 @@ operators:
                   ['source allOf safe', sourceAllOfSafeIssue, ''],
                   ['source allOf rejected', String(sourceAllOfRejectedIssue.includes('source allOf has no constituent that can prove compatibility with target')), 'true'],
                   ['allOf accepted value', String(allOfValueAccepted), 'true'],
-                  ['allOf rejected value', String(allOfValueRejected), 'false']
+                  ['allOf rejected value', String(allOfValueRejected), 'false'],
+                  ['target unevaluatedItems blocks residual source', targetUnevaluatedItemsIssue, 'target unevaluatedItems=false allows no residual array items but source may produce items beyond prefixItems[1]'],
+                  ['target unevaluatedItems bounded source safe', targetUnevaluatedItemsSafe, '']
                 ];
 
                 for (const [label, actual, expected] of checks) {

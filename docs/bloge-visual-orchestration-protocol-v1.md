@@ -480,7 +480,7 @@ resource-gateway 示例已经实现第一层确定性 policy gate：
 
 resource-gateway 示例已经为 `ResourceDesignContract` 提供 admin validate/upsert
 gate：`requestSchema` 与 `responseSchema` 进入 virtual operator catalog 前必须
-通过同一套 schema 结构校验，`array` 缺少 `items`、`required` 引用未知字段、
+通过同一套 schema 结构校验，`array` 缺少 `items`、`prefixItems` 或受支持 `unevaluatedItems`、`required` 引用未知字段、
 enum 缺少 values 和 examples 中的原始 secret 都会返回 blocking
 `VisualDiagnostic`，不会被持久化到设计合同 registry。示例实现使用
 H2-backed `ResourceDesignContractRegistry`，并且 bootstrap 只补齐缺失的内置
@@ -1214,6 +1214,10 @@ visual conditional schema 支持：三个关键字的值必须是 schema object�
 `visual.schema.conditionalInvalid`；运行值、默认值和静态 literal 按条件语义应用
 `then` 或 `else`；schema-to-schema 兼容只在 source 能证明命中或避开 `if` 时按单分支放行，
 无法证明时要求所有可能分支都兼容。
+受限 array `unevaluatedItems` 也在同一 visual subset 中：只接受 boolean 或 schema object，
+否则返回 `visual.schema.unevaluatedItemsInvalid`；当 `items` 不存在时，
+`unevaluatedItems=false` 禁止 `prefixItems` 后的 residual items，schema object 则约束这些 residual items，
+并进入默认值、运行值、静态 literal 和 schema-to-schema compatibility。
 浏览器 Operator Libraries 面板已在 Import 前调用该端点，把结构化 diagnostics、
 impact review、profile 和 import readiness 以明细列表展示给作者，再允许作者选择是否执行 Import。
 
@@ -1552,7 +1556,7 @@ MVP 至少阻断：
 - transform template 引用不存在的 input path。
 - 不支持的 schema `type` / `kind`。
 - `required` 中引用不存在的 `properties` 字段。
-- `array` schema 未声明 `items`。
+- `array` schema 未声明 `items`、`prefixItems` 或受支持 `unevaluatedItems`。
 - 明显明文 secret 出现在 lowering parameters、config schema 或 port schema。
 
 导入后的 `policy` 不只是展示字段：catalog 查询会按 scope 过滤，draft
@@ -1809,7 +1813,7 @@ POST /api/visual/drafts/{draftId}/validate
 `ctx.*` 引用。resource-gateway 示例已经让 graph input schema、
 `ResourceDesignContract` request/response schema、operator input/output port
 schema、operator `configSchema` 复用同一个结构校验器：不支持的 `type/kind`、
-`required` 引用不存在的 property、array 缺少 `items`、enum 缺少 values 等都会
+`required` 引用不存在的 property、array 缺少 `items`、`prefixItems` 或受支持 `unevaluatedItems`、enum 缺少 values 等都会
 产生 blocking diagnostic。
 该结构校验器也会把未展开的 schema `$ref` 作为 blocking diagnostic 暴露：
 可解析的本地 `#/$defs/*` 应在 envelope 阶段展开，剩余本地 `$defs` 引用视为
@@ -2462,7 +2466,8 @@ Content-Type: application/json
 后再报错；它需要服务端返回当前 draft 中哪些目标端点可接、哪些目标端点被
 schema/DAG/policy 阻断以及阻断原因。该接口是只读候选发现：服务端从当前
 catalog 中的 target operator input/config schema 派生候选 target endpoint，
-包括对象字段、数组 item 代表下标和 tuple `prefixItems` 下标路径（例如
+包括对象字段、数组 item 代表下标、tuple `prefixItems` 下标路径和 schema-object
+`unevaluatedItems` residual item 代表路径（例如
 `items.0`、`items.1.score`），
 再对每个候选复用 `/api/visual/connections/check` 的权威预检路径。它不保存
 draft，不产生新 edge，也不成为新的 schema 判断来源。
@@ -2931,7 +2936,7 @@ flowchart TD
 - 类型不兼容且没有 adapter。
 - 纯引用 expression 的 source schema 与 target schema 不兼容。
 - 纯引用 config expression 的 source schema 与目标 `configSchema` 不兼容。
-- `array<T>` 到 `array<U>` 时 item schema 不兼容。
+- `array<T>` 到 `array<U>` 时 `items` / `prefixItems` / 受限 `unevaluatedItems` residual item schema 不兼容。
 - node config 不满足 operator `configSchema`。
 - graph output selection 不满足 output port schema。
 - draft operator fingerprint 与当前 catalog fingerprint 不一致。

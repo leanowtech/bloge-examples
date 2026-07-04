@@ -49,9 +49,7 @@ public final class VisualSchemaValidator {
     );
     private static final Set<String> SUPPORTED_UNION_KEYWORDS = Set.of("oneOf", "anyOf");
     private static final List<String> SUPPORTED_CONDITIONAL_KEYWORDS = List.of("if", "then", "else");
-    private static final Set<String> UNSUPPORTED_CONSTRAINT_KEYWORDS = Set.of(
-            "unevaluatedItems"
-    );
+    private static final Set<String> UNSUPPORTED_CONSTRAINT_KEYWORDS = Set.of();
     private static final Set<String> SUPPORTED_STRING_FORMATS = Set.of(
             "date",
             "date-time",
@@ -276,13 +274,16 @@ public final class VisualSchemaValidator {
                     "Runtime array at '%s' does not satisfy graph inputSchema contains constraint."
                             .formatted(path),
                     path));
+            return;
         }
-        Map<String, Object> itemSchema = objectProperty(schema.get("items"));
-        List<Map<String, Object>> prefixItems = prefixItemsOf(schema);
+        if (!arrayValueMatchesUnevaluatedItems(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.arrayConstraintMismatch",
+                    "Runtime array at '%s' does not satisfy graph inputSchema unevaluatedItems constraint."
+                            .formatted(path),
+                    path));
+        }
         for (int i = 0; i < value.size(); i++) {
-            Map<String, Object> itemSchemaForIndex = i < prefixItems.size()
-                    ? prefixItems.get(i)
-                    : itemSchema;
+            Map<String, Object> itemSchemaForIndex = arrayItemSchemaForIndex(schema, i);
             if (itemSchemaForIndex != null) {
                 collectValueDiagnostics(value.get(i), itemSchemaForIndex, path + "/" + i, diagnostics);
             }
@@ -408,6 +409,7 @@ public final class VisualSchemaValidator {
 	        validateArrayUniqueItems(schema, kind, path, diagnostics);
 	        validateArrayPrefixItems(schema, kind, path, diagnostics);
 	        validateArrayContains(schema, kind, path, diagnostics);
+	        validateArrayUnevaluatedItems(schema, kind, path, diagnostics);
 	        validateObjectPropertyBounds(schema, kind, path, diagnostics);
 	        validateObjectPatternProperties(schema, kind, path, diagnostics);
 	        validateObjectPropertyNames(schema, kind, path, diagnostics);
@@ -438,13 +440,17 @@ public final class VisualSchemaValidator {
             }
         } else if ("array".equals(kind)) {
             Object items = schema.get("items");
-            if (!(items instanceof Map<?, ?> nestedItems)) {
+            if (items instanceof Map<?, ?> nestedItems) {
+                validateSchema((Map<String, Object>) nestedItems, path + "/items", diagnostics);
+            } else if (schema.containsKey("items")) {
                 diagnostics.add(VisualDiagnostic.error("visual.schema.arrayItemsMissing",
-                        "Array schema must declare an item schema.",
+                        "Array schema items must be a schema object.",
                         path + "/items"));
-                return;
+            } else if (!hasSupportedArrayItemContract(schema)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.arrayItemsMissing",
+                        "Array schema must declare items, prefixItems, or unevaluatedItems.",
+                        path + "/items"));
             }
-            validateSchema((Map<String, Object>) nestedItems, path + "/items", diagnostics);
         } else if ("enum".equals(kind)) {
             validateCustomEnumValues(schema, path, diagnostics);
         }
@@ -808,15 +814,13 @@ public final class VisualSchemaValidator {
 	                        "Schema default must satisfy array contains constraints.",
 	                        path));
 	            }
-	            Object items = schema.get("items");
-	            Map<String, Object> itemSchemaMap = items instanceof Map<?, ?> itemSchema
-	                    ? (Map<String, Object>) itemSchema
-	                    : null;
-	            List<Map<String, Object>> prefixItems = prefixItemsOf(schema);
+	            if (!arrayValueMatchesUnevaluatedItems(list, schema)) {
+	                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
+	                        "Schema default must satisfy array unevaluatedItems constraints.",
+	                        path));
+	            }
 	            for (int i = 0; i < list.size(); i++) {
-	                Map<String, Object> itemSchemaForIndex = i < prefixItems.size()
-	                        ? prefixItems.get(i)
-	                        : itemSchemaMap;
+	                Map<String, Object> itemSchemaForIndex = arrayItemSchemaForIndex(schema, i);
 	                if (itemSchemaForIndex != null) {
 	                    validateDefaultValue(itemSchemaForIndex, schemaKind(itemSchemaForIndex), path + "/" + i,
 	                            diagnostics, list.get(i));
@@ -915,7 +919,7 @@ public final class VisualSchemaValidator {
         if (raw == null && schema.containsKey("properties")) {
             return "object";
         }
-        if (raw == null && schema.containsKey("items")) {
+        if (raw == null && hasSchemaKeyword(schema, "items", "prefixItems", "unevaluatedItems")) {
             return "array";
         }
         if (raw == null && schema.containsKey("const")) {
@@ -1376,6 +1380,7 @@ public final class VisualSchemaValidator {
         validateArrayItemBounds(notSchema, notKind, path + "/not", diagnostics);
         validateArrayUniqueItems(notSchema, notKind, path + "/not", diagnostics);
         validateArrayContains(notSchema, notKind, path + "/not", diagnostics);
+        validateArrayUnevaluatedItems(notSchema, notKind, path + "/not", diagnostics);
         validateObjectPropertyBounds(notSchema, notKind, path + "/not", diagnostics);
         validateObjectPatternProperties(notSchema, notKind, path + "/not", diagnostics);
         validateObjectPropertyNames(notSchema, notKind, path + "/not", diagnostics);
@@ -1620,6 +1625,33 @@ public final class VisualSchemaValidator {
 	        }
 	    }
 
+    @SuppressWarnings("unchecked")
+    private static void validateArrayUnevaluatedItems(Map<String, Object> schema,
+                                                      String kind,
+                                                      String path,
+                                                      List<VisualDiagnostic> diagnostics) {
+        if (!schema.containsKey("unevaluatedItems")) {
+            return;
+        }
+        if (!arrayKind(kind)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.unevaluatedItemsConstraintTypeMismatch",
+                    "Array unevaluatedItems constraints require schema type/kind array.",
+                    path));
+        }
+        Object raw = schema.get("unevaluatedItems");
+        if (raw instanceof Boolean) {
+            return;
+        }
+        if (raw instanceof Map<?, ?> unevaluatedItemsSchema) {
+            validateSchema((Map<String, Object>) unevaluatedItemsSchema,
+                    path + "/unevaluatedItems", diagnostics);
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error("visual.schema.unevaluatedItemsInvalid",
+                "Array schema unevaluatedItems must be a boolean or schema object.",
+                path + "/unevaluatedItems"));
+    }
+
 	    private static void validateObjectPropertyBounds(Map<String, Object> schema,
 	                                                     String kind,
 	                                                     String path,
@@ -1749,6 +1781,18 @@ public final class VisualSchemaValidator {
 	                || schema.containsKey("minContains")
 	                || schema.containsKey("maxContains");
 	    }
+
+    private static boolean hasSupportedArrayItemContract(Map<String, Object> schema) {
+        if (schema.get("items") instanceof Map<?, ?>) {
+            return true;
+        }
+        if (!prefixItemsOf(schema).isEmpty()) {
+            return true;
+        }
+        return schema.containsKey("unevaluatedItems")
+                && (schema.get("unevaluatedItems") instanceof Boolean
+                || schema.get("unevaluatedItems") instanceof Map<?, ?>);
+    }
 
 	    private static boolean hasObjectPropertyBounds(Map<String, Object> schema) {
 	        return schema.containsKey("minProperties")
@@ -1986,21 +2030,63 @@ public final class VisualSchemaValidator {
 	        if (!arrayValueMatchesContains(list, schema)) {
 	            return false;
 	        }
-	        Object items = schema.get("items");
-	        Map<String, Object> itemSchemaMap = items instanceof Map<?, ?> itemSchema
-	                ? (Map<String, Object>) itemSchema
-	                : null;
-	        List<Map<String, Object>> prefixItems = prefixItemsOf(schema);
+	        if (!arrayValueMatchesUnevaluatedItems(list, schema)) {
+	            return false;
+	        }
 	        for (int i = 0; i < list.size(); i++) {
-	            Map<String, Object> itemSchemaForIndex = i < prefixItems.size()
-	                    ? prefixItems.get(i)
-	                    : itemSchemaMap;
+	            Map<String, Object> itemSchemaForIndex = arrayItemSchemaForIndex(schema, i);
 	            if (itemSchemaForIndex != null && !valueMatchesSchema(list.get(i), itemSchemaForIndex)) {
 	                return false;
 	            }
 	        }
 	        return true;
 	    }
+
+    private static boolean arrayValueMatchesUnevaluatedItems(List<?> value, Map<String, Object> schema) {
+        Object residual = unevaluatedArrayItemsPolicy(schema);
+        if (residual == null || Boolean.TRUE.equals(residual)) {
+            return true;
+        }
+        int firstUnevaluatedIndex = prefixItemsOf(schema).size();
+        if (value.size() <= firstUnevaluatedIndex) {
+            return true;
+        }
+        if (Boolean.FALSE.equals(residual)) {
+            return false;
+        }
+        if (residual instanceof Map<?, ?> residualSchema) {
+            Map<String, Object> itemSchema = objectProperty(residualSchema);
+            if (itemSchema == null) {
+                return true;
+            }
+            for (int i = firstUnevaluatedIndex; i < value.size(); i++) {
+                if (!valueMatchesSchema(value.get(i), itemSchema)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static Object unevaluatedArrayItemsPolicy(Map<String, Object> schema) {
+        if (schema.get("items") instanceof Map<?, ?> || !schema.containsKey("unevaluatedItems")) {
+            return null;
+        }
+        return schema.get("unevaluatedItems");
+    }
+
+    private static Map<String, Object> arrayItemSchemaForIndex(Map<String, Object> schema, int index) {
+        List<Map<String, Object>> prefixItems = prefixItemsOf(schema);
+        if (index < prefixItems.size()) {
+            return prefixItems.get(index);
+        }
+        Map<String, Object> items = objectProperty(schema.get("items"));
+        if (items != null) {
+            return items;
+        }
+        Object residual = unevaluatedArrayItemsPolicy(schema);
+        return residual instanceof Map<?, ?> residualSchema ? objectProperty(residualSchema) : null;
+    }
 
 	    @SuppressWarnings("unchecked")
 	    private static List<Map<String, Object>> prefixItemsOf(Map<String, Object> schema) {

@@ -424,7 +424,8 @@ such as `["string", "null"]`, pure local `$defs` references such as
 `{"$ref":"#/$defs/Customer"}`, strict object `properties`,
 `additionalProperties`, `required`, enum value-domain, `const` shape checks,
 numeric bound/`multipleOf` validation, string length validation, string
-pattern/format validation, array item-count validation, `uniqueItems` validation, array `prefixItems` validation, object
+pattern/format validation, array item-count validation, `uniqueItems` validation, array `prefixItems` validation, bounded
+array `unevaluatedItems` validation, object
 property-count validation, object `propertyNames` validation, and object
 `patternProperties`, `dependentRequired`, `dependentSchemas`, and
 `unevaluatedProperties` validation, array `contains`
@@ -443,8 +444,9 @@ standard `enum`, or visual custom enum values are enforced by structural,
 runtime-value, static-literal, and connection compatibility checks; browser advisory type labels, value matching, and local connection hints mirror the same conservative `allOf` rule; remote refs, unresolved refs, `$dynamicRef`, `$ref`
 nodes with validation-affecting siblings, unsupported composition keywords such
 as non-object or unsafe `allOf`, non-finite `not`, conditional branches whose
-`if`/`then`/`else` values are not schema objects, and unenforced constraint keywords such as unevaluated-item constraints are
-rejected instead of being silently ignored. The shared gate supports `oneOf` and
+`if`/`then`/`else` values are not schema objects, `unevaluatedItems` values that
+are neither boolean nor schema object, and constraint keywords outside the
+enforced subset are rejected instead of being silently ignored. The shared gate supports `oneOf` and
 `anyOf` as explicit visual union schemas: runtime value validation requires
 `oneOf` to match exactly one branch and `anyOf` to match at least one branch, and
 schema-aware connection checks stay conservative for union-to-target assignments.
@@ -488,8 +490,9 @@ nodes such as branch routers cannot be selected as graph outputs.
 Runtime output extraction uses the same dotted path semantics, including array
 index segments such as `items.0.id`, so a schema-valid selection resolves to the
 same payload fragment authors saw on the canvas.
-The browser composer also enumerates schema-safe array item paths from `items`
-and `prefixItems` as draggable handles and graph-output path options.
+The browser composer also enumerates schema-safe array item paths from `items`,
+`prefixItems`, and schema-object `unevaluatedItems` residual item contracts as
+draggable handles and graph-output path options.
 Structured `contextPath` and `nodePath` bindings that target schema array item
 paths lower to BLOGE bracket expressions such as `ctx.scores[0]`,
 `ctx[0]`, `node.output.items[0]`, and `node.output[0]`, keeping canvas
@@ -1130,7 +1133,8 @@ Descriptor creates or updates the runtime descriptor through `/admin/resources`,
 and the visual operator catalog is refreshed so the corresponding
 `resource:<resourceId>` operator can be dragged immediately once both sides exist.
 The validator rejects unsupported request/response schema kinds, `required`
-fields not declared in `properties`, array schemas without `items`, enum schemas
+fields not declared in `properties`, array schemas without `items`, `prefixItems`,
+or supported `unevaluatedItems`, enum schemas
 without values, unsupported schema envelope format/version, unsupported JSON
 Schema remote or unresolved references, unsupported composition/constraint keywords
 outside the safe object/scalar `allOf` subset with branch-structure and value matching gates and the supported `oneOf`/`anyOf` union subset,
@@ -1150,7 +1154,8 @@ dependencies with `dependentRequired` or whole-object dependent subschemas with
 `unevaluatedProperties`; `if`/`then`/`else` conditionals may express cross-field
 requirements when each branch remains inside the same enforced schema subset.
 Supported array schemas may constrain tuple-like leading
-items with `prefixItems` and may require matching elements with `contains` plus `minContains`/`maxContains`. Built-in bootstrap
+items with `prefixItems`, forbid or constrain residual items with boolean or
+schema-object `unevaluatedItems`, and may require matching elements with `contains` plus `minContains`/`maxContains`. Built-in bootstrap
 contracts pass the same gate, so resource-backed virtual operators do not enter
 the visual catalog with weaker schema guarantees than imported user operators.
 Built-in and descriptor-projected operator schemas are covered by the same
@@ -1572,7 +1577,8 @@ also match their declared type/kind, enum/`const` domain, numeric bounds and
 array item-count constraints, `uniqueItems` constraints, object property-count
 constraints, object `propertyNames`, `patternProperties`, and
 `dependentRequired`/`dependentSchemas` constraints, `if`/`then`/`else`
-conditional branches, array `prefixItems` and `contains` constraints, required object properties, array item schema, and `additionalProperties`/`unevaluatedProperties` policy so
+conditional branches, array `prefixItems`, `contains`, and `unevaluatedItems`
+constraints, required object properties, array item schema, and `additionalProperties`/`unevaluatedProperties` policy so
 canvas-generated default node config cannot start invalid. The browser consumes both root object defaults
 and nested field-level defaults from `configSchema` when a node is dragged from
 the palette. Schema `enum` and `const` values are held to the same array item

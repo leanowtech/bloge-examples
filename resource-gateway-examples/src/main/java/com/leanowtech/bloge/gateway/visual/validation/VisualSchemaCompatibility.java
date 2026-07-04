@@ -110,6 +110,11 @@ public final class VisualSchemaCompatibility {
 	            if (itemIssue.isPresent()) {
 	                return itemIssue;
 	            }
+	            Optional<String> unevaluatedItemsIssue =
+	                    arrayUnevaluatedItemsCompatibilityIssue(sourceSchema, targetSchema, path);
+	            if (unevaluatedItemsIssue.isPresent()) {
+	                return unevaluatedItemsIssue;
+	            }
 	            Optional<String> itemBoundsIssue = arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
 	            if (itemBoundsIssue.isPresent()) {
 	                return itemBoundsIssue;
@@ -547,7 +552,7 @@ public final class VisualSchemaCompatibility {
         if (!mayHaveUniformItems) {
             return true;
         }
-        Map<String, Object> sourceItems = objectProperty(sourceSchema.get("items"));
+        Map<String, Object> sourceItems = residualArrayItemSchema(sourceSchema);
         return sourceItems != null && schemasDefinitelyDisjoint(sourceItems, excludedContains);
     }
 
@@ -937,13 +942,65 @@ public final class VisualSchemaCompatibility {
 	        if (sourceMaximum != null && sourceMaximum <= firstUniformIndex) {
 	            return Optional.empty();
 	        }
-	        Map<String, Object> sourceItems = objectProperty(sourceSchema.get("items"));
+	        Map<String, Object> sourceItems = residualArrayItemSchema(sourceSchema);
 	        if (sourceItems == null) {
 	            return Optional.of(reasonAt(path,
 	                    "target requires items but source does not constrain additional array items"));
 	        }
 	        return schemaCompatibilityIssue(sourceItems, targetItems, appendCompatibilityPath(path, "items"));
 	    }
+
+    private static Optional<String> arrayUnevaluatedItemsCompatibilityIssue(Map<String, Object> sourceSchema,
+                                                                            Map<String, Object> targetSchema,
+                                                                            String path) {
+        Object targetResidual = unevaluatedArrayItemsPolicy(targetSchema);
+        if (targetResidual == null || Boolean.TRUE.equals(targetResidual)) {
+            return Optional.empty();
+        }
+        int firstUnevaluatedIndex = prefixItemsOf(targetSchema).size();
+        Long sourceMaximum = arrayMaxItems(sourceSchema);
+        if (sourceMaximum != null && sourceMaximum <= firstUnevaluatedIndex) {
+            return Optional.empty();
+        }
+        List<Object> sourceValues = enumValues(sourceSchema);
+        if (!sourceValues.isEmpty()
+                && sourceValues.stream().allMatch(List.class::isInstance)
+                && sourceValues.stream().allMatch(value -> arrayValueMatchesSchema(value, targetSchema))) {
+            return Optional.empty();
+        }
+        if (Boolean.FALSE.equals(targetResidual)) {
+            return Optional.of(reasonAt(path,
+                    "target unevaluatedItems=false allows no residual array items but source may produce items beyond prefixItems[%d]"
+                            .formatted(firstUnevaluatedIndex)));
+        }
+        Map<String, Object> targetResidualSchema = objectProperty(targetResidual);
+        if (targetResidualSchema == null) {
+            return Optional.empty();
+        }
+        List<Map<String, Object>> sourcePrefixItems = prefixItemsOf(sourceSchema);
+        for (int i = firstUnevaluatedIndex; i < sourcePrefixItems.size(); i++) {
+            if (sourceMaximum != null && sourceMaximum <= i) {
+                continue;
+            }
+            Optional<String> nestedIssue = schemaCompatibilityIssue(sourcePrefixItems.get(i), targetResidualSchema,
+                    appendCompatibilityPath(path, "prefixItems/" + i));
+            if (nestedIssue.isPresent()) {
+                return nestedIssue;
+            }
+        }
+        Map<String, Object> sourceResidualSchema = residualArrayItemSchema(sourceSchema);
+        if (sourceResidualSchema == null) {
+            Object sourceResidual = unevaluatedArrayItemsPolicy(sourceSchema);
+            if (Boolean.FALSE.equals(sourceResidual)) {
+                return Optional.empty();
+            }
+            return Optional.of(reasonAt(path,
+                    "target unevaluatedItems requires %s but source does not constrain residual array items"
+                            .formatted(schemaTypeLabel(targetResidualSchema))));
+        }
+        return schemaCompatibilityIssue(sourceResidualSchema, targetResidualSchema,
+                appendCompatibilityPath(path, "unevaluatedItems"));
+    }
 
 	    private static Optional<String> arrayPrefixItemsCompatibilityIssue(Map<String, Object> sourceSchema,
 	                                                                       Map<String, Object> targetSchema,
@@ -953,7 +1010,7 @@ public final class VisualSchemaCompatibility {
 	        }
 	        List<Map<String, Object>> targetPrefixItems = prefixItemsOf(targetSchema);
 	        List<Map<String, Object>> sourcePrefixItems = prefixItemsOf(sourceSchema);
-	        Map<String, Object> sourceItems = objectProperty(sourceSchema.get("items"));
+	        Map<String, Object> sourceItems = residualArrayItemSchema(sourceSchema);
 	        Map<String, Object> targetItems = objectProperty(targetSchema.get("items"));
 	        if (targetPrefixItems.isEmpty() && sourcePrefixItems.size() <= targetPrefixItems.size()) {
 	            return Optional.empty();
@@ -1894,9 +1951,9 @@ public final class VisualSchemaCompatibility {
 	    }
 
 	    @SuppressWarnings("unchecked")
-		    private static boolean arrayValueMatchesSchema(Object value, Map<String, Object> schema) {
-		        if (!(value instanceof List<?> list) || !"array".equals(schemaType(schema))) {
-		            return true;
+	    private static boolean arrayValueMatchesSchema(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof List<?> list) || !"array".equals(schemaType(schema))) {
+	            return true;
 	        }
 	        if (!arrayValueMatchesItemBounds(list, schema)) {
 	            return false;
@@ -1905,6 +1962,9 @@ public final class VisualSchemaCompatibility {
 	            return false;
 	        }
 	        if (!arrayValueMatchesContains(list, schema)) {
+	            return false;
+	        }
+	        if (!arrayValueMatchesUnevaluatedItems(list, schema)) {
 	            return false;
 	        }
 		        for (int i = 0; i < list.size(); i++) {
@@ -1921,8 +1981,51 @@ public final class VisualSchemaCompatibility {
 	        if (index < prefixItems.size()) {
 	            return prefixItems.get(index);
 	        }
-	        return objectProperty(schema.get("items"));
+	        return residualArrayItemSchema(schema);
 	    }
+
+    private static Map<String, Object> residualArrayItemSchema(Map<String, Object> schema) {
+        if (schema == null) {
+            return null;
+        }
+        Map<String, Object> items = objectProperty(schema.get("items"));
+        if (items != null) {
+            return items;
+        }
+        Object residual = unevaluatedArrayItemsPolicy(schema);
+        return residual instanceof Map<?, ?> residualSchema ? objectProperty(residualSchema) : null;
+    }
+
+    private static Object unevaluatedArrayItemsPolicy(Map<String, Object> schema) {
+        if (schema == null || schema.get("items") instanceof Map<?, ?> || !schema.containsKey("unevaluatedItems")) {
+            return null;
+        }
+        return schema.get("unevaluatedItems");
+    }
+
+    private static boolean arrayValueMatchesUnevaluatedItems(List<?> value, Map<String, Object> schema) {
+        Object residual = unevaluatedArrayItemsPolicy(schema);
+        if (residual == null || Boolean.TRUE.equals(residual)) {
+            return true;
+        }
+        int firstUnevaluatedIndex = prefixItemsOf(schema).size();
+        if (value.size() <= firstUnevaluatedIndex) {
+            return true;
+        }
+        if (Boolean.FALSE.equals(residual)) {
+            return false;
+        }
+        Map<String, Object> residualSchema = objectProperty(residual);
+        if (residualSchema == null) {
+            return true;
+        }
+        for (int i = firstUnevaluatedIndex; i < value.size(); i++) {
+            if (!valueMatchesSchema(value.get(i), residualSchema)) {
+                return false;
+            }
+        }
+        return true;
+    }
 
 	    private static List<Map<String, Object>> prefixItemsOf(Map<String, Object> schema) {
 	        Object raw = schema.get("prefixItems");
@@ -2051,7 +2154,7 @@ public final class VisualSchemaCompatibility {
         if (type == null && property.containsKey("properties")) {
             return "object";
         }
-        if (type == null && property.containsKey("items")) {
+        if (type == null && hasSchemaKeyword(property, "items", "prefixItems", "unevaluatedItems")) {
             return "array";
         }
         if (type == null && property.containsKey("const")) {
@@ -2197,6 +2300,9 @@ public final class VisualSchemaCompatibility {
 	        Long explicit = arrayItemBoundary(schema.get("maxItems"));
 	        if (explicit != null) {
 	            return explicit;
+	        }
+	        if (Boolean.FALSE.equals(unevaluatedArrayItemsPolicy(schema))) {
+	            return (long) prefixItemsOf(schema).size();
 	        }
 	        List<Object> values = enumValues(schema);
 	        if (!values.isEmpty() && values.stream().allMatch(List.class::isInstance)) {

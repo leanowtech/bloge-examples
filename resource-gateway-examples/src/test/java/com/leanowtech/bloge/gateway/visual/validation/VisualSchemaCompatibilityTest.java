@@ -171,6 +171,69 @@ class VisualSchemaCompatibilityTest {
     }
 
     @Test
+    void matchesArrayValuesAgainstUnevaluatedItems() {
+        Map<String, Object> schema = tupleSchemaWithUnevaluatedItems(false);
+
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(List.of("risk", 7), schema)).isTrue();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(List.of("risk", 7, "extra"), schema)).isFalse();
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(schema, schema)).isEmpty();
+    }
+
+    @Test
+    void rejectsSourceResidualItemsWhenTargetForbidsUnevaluatedItems() {
+        Map<String, Object> source = Map.of(
+                "type", "array",
+                "prefixItems", List.of(Map.of("type", "string")),
+                "items", Map.of("type", "string")
+        );
+        Map<String, Object> target = Map.of(
+                "type", "array",
+                "prefixItems", List.of(Map.of("type", "string")),
+                "unevaluatedItems", false
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("target unevaluatedItems=false")
+                        .contains("source may produce items beyond prefixItems[1]"));
+    }
+
+    @Test
+    void acceptsSourceResidualSchemaThatCanFeedTargetUnevaluatedItems() {
+        Map<String, Object> source = Map.of(
+                "type", "array",
+                "prefixItems", List.of(Map.of("type", "string")),
+                "unevaluatedItems", Map.of("type", "integer")
+        );
+        Map<String, Object> target = Map.of(
+                "type", "array",
+                "prefixItems", List.of(Map.of("type", "string")),
+                "unevaluatedItems", Map.of("type", "number")
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsSourceResidualSchemaThatCannotFeedTargetUnevaluatedItems() {
+        Map<String, Object> source = Map.of(
+                "type", "array",
+                "prefixItems", List.of(Map.of("type", "string")),
+                "unevaluatedItems", Map.of("type", "string")
+        );
+        Map<String, Object> target = Map.of(
+                "type", "array",
+                "prefixItems", List.of(Map.of("type", "string")),
+                "unevaluatedItems", Map.of("type", "integer")
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("unevaluatedItems")
+                        .contains("source type string cannot feed target type integer"));
+    }
+
+    @Test
     void acceptsTargetConditionalThenBranchWhenSourceProvesCondition() {
         Map<String, Object> source = paymentSourceSchema("CARD", "cardNumber");
 
@@ -669,6 +732,17 @@ class VisualSchemaCompatibilityTest {
         ));
         schema.put("then", Map.of("required", List.of("cardNumber")));
         schema.put("else", Map.of("required", List.of("bankAccount")));
+        return schema;
+    }
+
+    private static Map<String, Object> tupleSchemaWithUnevaluatedItems(Object unevaluatedItems) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "array");
+        schema.put("prefixItems", List.of(
+                Map.of("type", "string"),
+                Map.of("type", "integer")
+        ));
+        schema.put("unevaluatedItems", unevaluatedItems);
         return schema;
     }
 

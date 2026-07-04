@@ -407,6 +407,70 @@ class VisualSchemaValidatorTest {
     }
 
     @Test
+    void acceptsTupleSchemasThatForbidUnevaluatedItems() {
+        Map<String, Object> schema = Map.of(
+                "type", "array",
+                "prefixItems", List.of(
+                        Map.of("type", "string"),
+                        Map.of("type", "integer")
+                ),
+                "unevaluatedItems", false,
+                "default", List.of("customerId", 7)
+        );
+
+        assertThat(VisualSchemaValidator.validateSchema(schema, "/schema")).isEmpty();
+        assertThat(VisualSchemaValidator.validateValue(
+                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema),
+                List.of("customerId", 7),
+                "/context"
+        )).isEmpty();
+
+        var diagnostics = VisualSchemaValidator.validateValue(
+                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema),
+                List.of("customerId", 7, "extra"),
+                "/context"
+        );
+
+        assertThat(diagnostics)
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.context.arrayConstraintMismatch");
+                    assertThat(diagnostic.message()).contains("unevaluatedItems");
+                });
+    }
+
+    @Test
+    void validatesUnevaluatedItemsSchemaForDefaults() {
+        Map<String, Object> schema = Map.of(
+                "type", "array",
+                "prefixItems", List.of(Map.of("type", "string")),
+                "unevaluatedItems", Map.of("type", "integer"),
+                "default", List.of("risk", "bad")
+        );
+
+        assertThat(VisualSchemaValidator.validateSchema(schema, "/schema"))
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.defaultConstraintMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/schema/default");
+                    assertThat(diagnostic.message()).contains("unevaluatedItems");
+                });
+    }
+
+    @Test
+    void rejectsInvalidUnevaluatedItemsShapes() {
+        var diagnostics = VisualSchemaValidator.validateSchema(Map.of(
+                "type", "array",
+                "prefixItems", List.of(Map.of("type", "string")),
+                "unevaluatedItems", List.of("bad")
+        ), "/schema");
+
+        assertThat(diagnostics)
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.unevaluatedItemsInvalid");
+                    assertThat(diagnostic.target()).isEqualTo("/schema/unevaluatedItems");
+                });
+    }
+
+    @Test
     void rejectsInvalidAllOfSchemaShapes() {
         var diagnostics = VisualSchemaValidator.validateSchema(Map.of(
                 "type", "object",
