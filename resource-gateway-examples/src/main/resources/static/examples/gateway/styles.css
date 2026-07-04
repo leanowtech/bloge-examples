@@ -966,6 +966,11 @@ body.connecting-edge * {
   cursor: grabbing;
 }
 
+.operator-card.focused {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.14), inset 0 3px 0 rgba(82, 103, 127, 0.22);
+}
+
 .operator-card.drag-origin {
   border-color: var(--blue);
   background: var(--blue-soft);
@@ -1103,6 +1108,95 @@ body.dragging-operator * {
   border-color: #fca5a5;
   background: var(--red-soft);
   color: var(--red);
+}
+
+.operator-palette-detail {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.operator-palette-detail[hidden] {
+  display: none;
+}
+
+.operator-palette-detail-head {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.operator-palette-detail-head strong,
+.operator-palette-detail-head span {
+  display: block;
+}
+
+.operator-palette-detail-head span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.operator-palette-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.operator-detail-message {
+  padding: 7px 8px;
+  border: 1px solid #bae6fd;
+  border-radius: 5px;
+  background: #eff6ff;
+  color: #075985;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.operator-detail-message.warning {
+  border-color: #f8d18d;
+  background: var(--amber-soft);
+  color: #8a5a13;
+}
+
+.operator-detail-message.error {
+  border-color: #fca5a5;
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.operator-detail-message.success {
+  border-color: #86efac;
+  background: var(--green-soft);
+  color: #166534;
+}
+
+.operator-palette-detail-rows {
+  display: grid;
+  gap: 5px;
+}
+
+.operator-palette-detail-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.6fr) minmax(0, 1.4fr);
+  gap: 8px;
+  align-items: baseline;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.operator-palette-detail-row strong {
+  color: var(--text);
+}
+
+.operator-palette-detail-row span {
+  overflow-wrap: anywhere;
 }
 
 .operator-diagnostics-panel {

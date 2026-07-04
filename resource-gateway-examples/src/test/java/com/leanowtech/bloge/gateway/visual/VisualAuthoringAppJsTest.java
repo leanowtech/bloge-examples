@@ -281,6 +281,7 @@ class VisualAuthoringAppJsTest {
                 .contains("visualAssetOverview: null")
                 .contains("activeVisualAssetAction: null")
                 .contains("visualAssetOverviewActionQuery: {")
+                .contains("focusedOperatorRef: ''")
                 .contains("actionReadiness: null")
                 .contains("publicationSummaries: []")
                 .contains("publicationDetailsById: {}")
@@ -325,6 +326,11 @@ class VisualAuthoringAppJsTest {
                 .contains("function findVisualRuntimeEvidenceRow(target)")
                 .contains("function visualRuntimeEvidenceTargetKindMatches(rowKind, targetKind)")
                 .contains("function focusOperatorPaletteRef(operatorRef, context = null)")
+                .contains("function renderOperatorPaletteDetail()")
+                .contains("function operatorPaletteDetailRows(spec)")
+                .contains("function operatorPaletteDetailPortSummary(ports)")
+                .contains("state.focusedOperatorRef = normalized")
+                .contains("await loadVisualOperatorDefinition(normalized, { render: false })")
                 .contains("const focusedRolloutSignal = row.kind === 'rollout-observation' && breachedSignals.length")
                 .contains("breachedOnly: Boolean(focusedRolloutSignal)")
                 .contains("['runtime-evidence', 'Runtime evidence']")
@@ -336,6 +342,10 @@ class VisualAuthoringAppJsTest {
                 .contains("data-visual-asset-action-key")
                 .contains("data-visual-asset-action-target-kind")
                 .contains("data-visual-asset-action-target-id")
+                .contains("id=\"operator-palette-detail\"")
+                .contains("data-add-focused-operator")
+                .contains("data-refresh-focused-operator")
+                .contains("data-close-operator-detail")
                 .contains("candidate?.actionKey === actionKey")
                 .contains("Workspace Asset Overview")
                 .contains("Authoring Scope")
@@ -2041,11 +2051,37 @@ class VisualAuthoringAppJsTest {
                   throw new Error(`unterminated function ${name}`);
                 }
 
+                const detailTarget = {
+                  hidden: true,
+                  className: '',
+                  innerHTML: '',
+                  querySelector: () => null,
+                  querySelectorAll: () => []
+                };
                 const context = vm.createContext({ console });
                 context.OPERATOR_TYPES = {};
+                context.$ = (id) => id === 'operator-palette-detail' ? detailTarget : null;
+                context.detailTarget = detailTarget;
+                context.addBuilderNode = () => {};
+                context.focusOperatorPaletteRef = async () => null;
+                context.openOperatorProjectionAction = async () => null;
+                context.schemaType = (schema) => schema?.type || '';
+                context.schemaFieldDescriptors = (schemaEnvelope) =>
+                  Object.keys(schemaEnvelope?.schema?.properties || {}).map((path) => ({ path }));
+                context.inputPortsForSpec = (spec) => Array.isArray(spec?.inputPorts) ? spec.inputPorts : [];
+                context.outputPortsForSpec = (spec) => Array.isArray(spec?.outputPorts) ? spec.outputPorts : [];
+                context.operatorPaletteContractSummary = (spec) => {
+                  const inputs = Array.isArray(spec?.inputPorts) ? spec.inputPorts.length : 0;
+                  const outputs = Array.isArray(spec?.outputPorts) ? spec.outputPorts.length : 0;
+                  return `In ${inputs}/0 fields · Out ${outputs}/0 fields`;
+                };
+                context.renderOperatorDiagnosticsPanel = () => '';
                 context.state = {
                   operatorRuntimeBindingProjectionsByRef: {},
-                  operatorExecutablePromotionProjectionsByRef: {}
+                  operatorExecutablePromotionProjectionsByRef: {},
+                  operatorDefinitionMessagesByRef: {},
+                  operatorDefinitionLoadingRef: '',
+                  focusedOperatorRef: ''
                 };
                 for (const name of [
                   'escapeHtml',
@@ -2067,6 +2103,10 @@ class VisualAuthoringAppJsTest {
                   'operatorProjectionQueueAction',
                   'operatorProjectionActionLabel',
                   'operatorPaletteProjectionBadge',
+                  'operatorPaletteDetailPortSummary',
+                  'operatorPaletteDetailRows',
+                  'attachOperatorPaletteDetailHandlers',
+                  'renderOperatorPaletteDetail',
                   'operatorRuntimeReadiness',
                   'renderOperatorReadinessPanel',
                   'readableName',
@@ -2146,6 +2186,13 @@ class VisualAuthoringAppJsTest {
                 const queueAction = context.operatorProjectionQueueAction(spec);
                 const badge = context.operatorPaletteProjectionBadge(spec);
                 const panel = context.renderOperatorReadinessPanel(spec);
+                context.state.focusedOperatorRef = 'risk:eligibility';
+                context.state.operatorDefinitionMessagesByRef['risk:eligibility'] = {
+                  text: 'Operator definition refreshed.',
+                  level: 'success'
+                };
+                context.renderOperatorPaletteDetail();
+                const detailHtml = context.detailTarget.innerHTML;
                 const legacy = context.normalizeVisualOperatorDetailPayload({
                   schemaVersion: 'bloge.visualOperator.v1',
                   operatorRef: 'risk:legacy'
@@ -2172,6 +2219,14 @@ class VisualAuthoringAppJsTest {
                   ['panel includes promotion label', String(panel.includes('Promotion')), 'true'],
                   ['panel includes action button', String(panel.includes('data-open-operator-projection-action="risk:eligibility"')), 'true'],
                   ['panel includes action type', String(panel.includes('data-operator-projection-action-type="ACTIVATE_RUNTIME_ADAPTER"')), 'true'],
+                  ['detail panel visible', context.detailTarget.hidden, false],
+                  ['detail panel focused class', String(context.detailTarget.className.includes('warning')), 'true'],
+                  ['detail includes operator label', String(detailHtml.includes('Eligibility')), 'true'],
+                  ['detail includes source row', String(detailHtml.includes('risk-policy')), 'true'],
+                  ['detail includes add action', String(detailHtml.includes('data-add-focused-operator="risk:eligibility"')), 'true'],
+                  ['detail includes refresh action', String(detailHtml.includes('data-refresh-focused-operator="risk:eligibility"')), 'true'],
+                  ['detail includes close action', String(detailHtml.includes('data-close-operator-detail')), 'true'],
+                  ['detail includes projection action', String(detailHtml.includes('data-open-operator-projection-action="risk:eligibility"')), 'true'],
                   ['legacy operator ref', legacy.operator.operatorRef, 'risk:legacy'],
                   ['legacy binding projection', legacy.runtimeBindingProjection, null]
                 ];

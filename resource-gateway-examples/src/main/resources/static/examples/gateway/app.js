@@ -523,6 +523,7 @@ const state = {
   operatorUsageLoadingRef: '',
   operatorDefinitionMessagesByRef: {},
   operatorDefinitionLoadingRef: '',
+  focusedOperatorRef: '',
   operatorFingerprintRebaseNodeId: '',
   visualCheck: {
     message: 'Not checked',
@@ -2247,6 +2248,7 @@ function renderInputForm() {
           <button id="operator-palette-next" class="secondary compact" type="button">Next</button>
         </div>
         <div id="operator-palette" class="operator-palette"></div>
+        <div id="operator-palette-detail" class="operator-palette-detail" hidden></div>
         <div id="connection-status" class="connection-status" hidden></div>
       </div>
       <div class="builder-panel">
@@ -3459,9 +3461,10 @@ function renderOperatorPalette() {
   target.innerHTML = filteredEntries
     .map(([type, spec]) => `
     <button
-      class="operator-card ${escapeHtml(spec.kind)}"
+      class="operator-card ${escapeHtml(spec.kind)}${type === state.focusedOperatorRef ? ' focused' : ''}"
       type="button"
       data-operator-type="${escapeHtml(type)}"
+      aria-current="${type === state.focusedOperatorRef ? 'true' : 'false'}"
       data-testid="operator-${escapeHtml(type)}">
       <strong>${escapeHtml(spec.label)}</strong>
       <span>${escapeHtml(spec.kind)}</span>
@@ -3487,6 +3490,135 @@ function renderOperatorPalette() {
       }
       addBuilderNode(button.dataset.operatorType);
       state.draggingOperatorType = null;
+    });
+  }
+  renderOperatorPaletteDetail();
+}
+
+function renderOperatorPaletteDetail() {
+  const target = $('operator-palette-detail');
+  if (!target) {
+    return;
+  }
+  const operatorRef = String(state.focusedOperatorRef || '').trim();
+  if (!operatorRef) {
+    target.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+  const spec = OPERATOR_TYPES[operatorRef] || null;
+  const message = (state.operatorDefinitionMessagesByRef || {})[operatorRef] || null;
+  const loading = state.operatorDefinitionLoadingRef === operatorRef;
+  const readiness = spec ? operatorRuntimeReadiness(spec) : null;
+  const level = readiness?.level || message?.level || 'info';
+  target.hidden = false;
+  target.className = `operator-palette-detail ${escapeHtml(level)}`;
+  if (!spec) {
+    target.innerHTML = `
+      <div class="operator-palette-detail-head">
+        <div>
+          <strong>${escapeHtml(operatorRef)}</strong>
+          <span>${escapeHtml('Operator detail')}</span>
+        </div>
+        <div class="operator-palette-detail-actions">
+          <button type="button" class="secondary compact" data-refresh-focused-operator="${escapeHtml(operatorRef)}">Refresh</button>
+          <button type="button" class="secondary compact" data-close-operator-detail>Close</button>
+        </div>
+      </div>
+      ${message ? `<div class="operator-detail-message ${escapeHtml(message.level || 'info')}">${escapeHtml(message.text || '')}</div>` : ''}
+    `;
+    attachOperatorPaletteDetailHandlers(target);
+    return;
+  }
+  const rows = operatorPaletteDetailRows(spec);
+  target.innerHTML = `
+    <div class="operator-palette-detail-head">
+      <div>
+        <strong>${escapeHtml(spec.label || operatorRef)}</strong>
+        <span>${escapeHtml(operatorRef)}</span>
+      </div>
+      <div class="operator-palette-detail-actions">
+        <button type="button" class="secondary compact" data-add-focused-operator="${escapeHtml(operatorRef)}">Add</button>
+        <button type="button" class="secondary compact" data-refresh-focused-operator="${escapeHtml(operatorRef)}">Refresh</button>
+        <button type="button" class="secondary compact" data-close-operator-detail>Close</button>
+      </div>
+    </div>
+    ${message || loading ? `<div class="operator-detail-message ${escapeHtml(message?.level || 'info')}">${escapeHtml(message?.text || 'Loading operator definition...')}</div>` : ''}
+    <div class="operator-palette-detail-rows">
+      ${rows.map((row) => `
+        <div class="operator-palette-detail-row">
+          <strong>${escapeHtml(row.label)}</strong>
+          <span>${escapeHtml(row.value)}</span>
+        </div>
+      `).join('')}
+    </div>
+    ${renderOperatorReadinessPanel(spec)}
+    ${renderOperatorDiagnosticsPanel(spec)}
+  `;
+  attachOperatorPaletteDetailHandlers(target);
+}
+
+function operatorPaletteDetailRows(spec) {
+  const source = [operatorPaletteFacetLabel(spec?.sourceKind), spec?.operatorLibraryId ? `library ${spec.operatorLibraryId}` : '']
+    .filter(Boolean)
+    .join(' · ');
+  const lowering = [
+    operatorPaletteFacetLabel(operatorPaletteLoweringMode(spec)),
+    spec?.lowering?.operatorRef || spec?.lowering?.resourceId || ''
+  ].filter(Boolean).join(' · ');
+  const capabilities = operatorPaletteCapabilityLabels(spec).map(operatorPaletteFacetLabel).join(', ');
+  const configFields = schemaFieldDescriptors(spec?.configSchema).length;
+  const configType = schemaType(spec?.configSchema?.schema || {});
+  return [
+    { label: 'Source', value: source || 'catalog' },
+    { label: 'Lowering', value: lowering || 'none' },
+    { label: 'Capabilities', value: capabilities || 'none' },
+    { label: 'Contract', value: operatorPaletteContractSummary(spec) },
+    { label: 'Inputs', value: operatorPaletteDetailPortSummary(inputPortsForSpec(spec)) },
+    { label: 'Outputs', value: operatorPaletteDetailPortSummary(outputPortsForSpec(spec)) },
+    { label: 'Config', value: configFields ? `${configType || 'object'} · ${configFields} fields` : (configType || 'none') }
+  ];
+}
+
+function operatorPaletteDetailPortSummary(ports) {
+  const safePorts = Array.isArray(ports) ? ports : [];
+  if (!safePorts.length) {
+    return 'none';
+  }
+  return safePorts.map((port) => {
+    const fields = schemaFieldDescriptors(port?.schema).length;
+    const type = schemaType(port?.schema?.schema || {});
+    const required = port?.required === false ? 'optional' : 'required';
+    return [port?.name || 'value', type || 'schema', `${fields} fields`, required].join(' · ');
+  }).join('; ');
+}
+
+function attachOperatorPaletteDetailHandlers(target) {
+  const addButton = target.querySelector('[data-add-focused-operator]');
+  if (addButton) {
+    addButton.addEventListener('click', () => {
+      addBuilderNode(addButton.dataset.addFocusedOperator);
+    });
+  }
+  const refreshButton = target.querySelector('[data-refresh-focused-operator]');
+  if (refreshButton) {
+    refreshButton.addEventListener('click', () => {
+      focusOperatorPaletteRef(refreshButton.dataset.refreshFocusedOperator);
+    });
+  }
+  const closeButton = target.querySelector('[data-close-operator-detail]');
+  if (closeButton) {
+    closeButton.addEventListener('click', () => {
+      state.focusedOperatorRef = '';
+      renderOperatorPaletteDetail();
+    });
+  }
+  for (const button of target.querySelectorAll('[data-open-operator-projection-action]')) {
+    button.addEventListener('click', () => {
+      openOperatorProjectionAction(
+        button.dataset.openOperatorProjectionAction,
+        button.dataset.operatorProjectionActionType || ''
+      );
     });
   }
 }
@@ -10579,10 +10711,17 @@ async function focusOperatorPaletteRef(operatorRef, context = null) {
   state.paletteReadiness = '';
   state.paletteLoweringMode = '';
   state.paletteOffset = 0;
+  state.focusedOperatorRef = normalized;
   await loadVisualOperatorCatalog({ render: true });
+  await loadVisualOperatorDefinition(normalized, { render: false });
+  renderOperatorPalette();
   const search = $('operator-palette-search');
   if (search) {
     search.focus();
+  }
+  const detail = $('operator-palette-detail');
+  if (detail && typeof detail.scrollIntoView === 'function') {
+    detail.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
   setVisualCheck(
     context ? `Opened overview action: ${context.message}` : `Focused operator ${normalized} in the palette.`,
