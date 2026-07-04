@@ -911,6 +911,24 @@ body.connecting-edge * {
   color: var(--text);
 }
 
+.palette-fit-controls {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.55fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.palette-fit-controls button {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.palette-fit-controls button.active {
+  border-color: #86efac;
+  background: var(--green-soft);
+  color: #166534;
+}
+
 .palette-summary {
   min-height: 22px;
   margin-bottom: 8px;

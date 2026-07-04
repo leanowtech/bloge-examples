@@ -1,17 +1,24 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -19,6 +26,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Tests for the public visual operator catalog API.
  */
 class VisualOperatorCatalogControllerTest {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     @Test
     void listIncludesCatalogDiagnostics() throws Exception {
@@ -235,6 +244,65 @@ class VisualOperatorCatalogControllerTest {
                         .param("includeDeprecated", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.operatorRef").value("risk:eligibility"));
+    }
+
+    @Test
+    void fitCandidatesReturnsSchemaCompatibleCatalogWindow() throws Exception {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(fitLibrary());
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new VisualOperatorCatalogController(catalog)).build();
+        GraphDraft draft = new GraphDraft(
+                GraphDraft.SCHEMA_VERSION,
+                "draft-fit",
+                0,
+                "fitGraph",
+                "demo-tenant",
+                "local",
+                "browser",
+                GraphDraft.STATUS_DRAFT,
+                SchemaEnvelope.opaque(),
+                List.of(new GraphDraft.DraftNode(
+                        "profile",
+                        "risk:profile",
+                        "Profile",
+                        Map.of(),
+                        Map.of(),
+                        new GraphDraft.Position(80, 120)
+                )),
+                List.of(),
+                Map.of(),
+                GraphDraft.OutputSelection.empty()
+        );
+        OperatorFitCandidatesRequest request = new OperatorFitCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("profile", "output", ""),
+                new OperatorCatalogQuery("", List.of(), false, false,
+                        "demo-tenant", "local", "browser",
+                        List.of("user-library"), List.of("fit-policy"), List.of(), List.of(), List.of()),
+                "input",
+                false,
+                10,
+                0
+        );
+
+        mockMvc.perform(post("/api/visual/operators/fit-candidates")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(OBJECT_MAPPER.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value("bloge.visualOperatorFitCatalog.v1"))
+                .andExpect(jsonPath("$.source.nodeId").value("profile"))
+                .andExpect(jsonPath("$.sourceSchemaType").value("object"))
+                .andExpect(jsonPath("$.acceptedCount").value(2))
+                .andExpect(jsonPath("$.rejectedCount").value(2))
+                .andExpect(jsonPath("$.total").value(2))
+                .andExpect(jsonPath("$.operators.length()").value(2))
+                .andExpect(jsonPath("$.operators[0].operatorRef").value("risk:design-eligibility"))
+                .andExpect(jsonPath("$.operators[1].operatorRef").value("risk:eligibility"))
+                .andExpect(jsonPath("$.fitCandidates[0].accepted").value(true))
+                .andExpect(jsonPath("$.fitCandidates[0].acceptedTargetCount").value(1))
+                .andExpect(jsonPath("$.fitCandidates[0].targets[0].targetSurface").value("input"))
+                .andExpect(jsonPath("$.fitCandidates[0].targets[0].targetPort").value("inputs"))
+                .andExpect(jsonPath("$.runtimeBindingProjections.length()").value(2))
+                .andExpect(jsonPath("$.facets.runtimeReadinessStates['design-only']").value(1));
     }
 
     private static final class DiagnosticCatalog implements VisualOperatorCatalog {
@@ -474,6 +542,83 @@ class VisualOperatorCatalogControllerTest {
                 base.policy(),
                 base.lowering(),
                 base.diagnostics()
+        );
+    }
+
+    private static OperatorLibrary fitLibrary() {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "fit-policy",
+                "Fit policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(
+                        profileSourceOperator(),
+                        fitEligibilityOperator("risk:eligibility", "integer", "transform"),
+                        fitEligibilityOperator("risk:design-eligibility", "integer", "design"),
+                        fitEligibilityOperator("risk:string-eligibility", "string", "transform")
+                )
+        );
+    }
+
+    private static OperatorDefinition profileSourceOperator() {
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("score", Map.of("type", "integer"));
+        outputProperties.put("amount", Map.of("type", "number"));
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:profile",
+                "1.0.0",
+                new OperatorDefinition.Display("Profile", "Source output fixture.", List.of("risk")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of("score", "amount")),
+                                true,
+                                "Profile output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "score", "{{input.score}}",
+                                "amount", "{{input.amount}}"
+                        )
+                )),
+                List.of()
+        );
+    }
+
+    private static OperatorDefinition fitEligibilityOperator(String operatorRef, String scoreType, String mode) {
+        Map<String, Object> inputProperties = new LinkedHashMap<>();
+        inputProperties.put("score", Map.of("type", scoreType));
+        inputProperties.put("amount", Map.of("type", "number"));
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("eligible", Map.of("type", "boolean"));
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                operatorRef,
+                "1.0.0",
+                new OperatorDefinition.Display(operatorRef, "Fit target fixture.", List.of("risk")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(inputProperties, List.of("score", "amount")),
+                                true,
+                                "Eligibility inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Eligibility output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering(mode, "transform", Map.of(
+                        "assignments", Map.of("eligible", "{{input.score}} >= 700")
+                )),
+                List.of()
         );
     }
 }

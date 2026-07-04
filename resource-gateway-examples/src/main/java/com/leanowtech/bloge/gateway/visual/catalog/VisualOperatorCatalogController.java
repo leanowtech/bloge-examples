@@ -1,8 +1,11 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,12 +22,24 @@ public class VisualOperatorCatalogController {
     private static final int MAX_OPERATOR_WINDOW_SIZE = 500;
 
     private final VisualOperatorCatalog catalog;
+    private final OperatorFitCandidateService fitCandidateService;
 
     /**
      * @param catalog visual operator catalog
      */
     public VisualOperatorCatalogController(VisualOperatorCatalog catalog) {
+        this(catalog, new OperatorFitCandidateService(catalog));
+    }
+
+    /**
+     * @param catalog visual operator catalog
+     * @param fitCandidateService schema-aware operator fit discovery service
+     */
+    @Autowired
+    public VisualOperatorCatalogController(VisualOperatorCatalog catalog,
+                                           OperatorFitCandidateService fitCandidateService) {
         this.catalog = catalog;
+        this.fitCandidateService = fitCandidateService;
     }
 
     /**
@@ -154,6 +169,17 @@ public class VisualOperatorCatalogController {
                         ? ResponseEntity.ok((Object) detailResponse(query, operator))
                         : ResponseEntity.ok((Object) operator))
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Discovers catalog operators whose declared target schemas can accept one canvas source endpoint.
+     *
+     * @param request fit candidate request
+     * @return schema-fit operator catalog window
+     */
+    @PostMapping("/fit-candidates")
+    public OperatorFitCatalogResponse fitCandidates(@RequestBody OperatorFitCandidatesRequest request) {
+        return fitCandidateService.candidates(request);
     }
 
     private OperatorDetailResponse detailResponse(OperatorCatalogQuery query, OperatorDefinition operator) {

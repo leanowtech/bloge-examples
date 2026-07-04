@@ -406,6 +406,7 @@ const state = {
   visualOperators: [],
   visualOperatorCatalogFacets: null,
   visualOperatorCatalogWindow: null,
+  visualOperatorFitCatalog: null,
   operatorRuntimeBindingProjectionsByRef: {},
   operatorExecutablePromotionProjectionsByRef: {},
   selected: null,
@@ -556,6 +557,7 @@ const state = {
   paletteCapability: '',
   paletteReadiness: '',
   paletteLoweringMode: '',
+  paletteFitSelectedOutput: false,
   paletteOffset: 0,
   paletteLimit: 24,
   draggingOperatorType: null,
@@ -650,10 +652,14 @@ async function loadVisualOperatorCatalog(options = {}) {
   const isLatestRequest = () => requestId === visualOperatorCatalogRequestSeq;
   try {
     resetDynamicOperatorTypes();
-    const response = await fetch(operatorCatalogUrl(state.builder, {
+    const catalogOptions = {
       ...operatorPaletteCatalogQueryOptions(),
       includeDeprecated: Boolean(options.includeDeprecated)
-    }));
+    };
+    const fitSource = operatorPaletteFitSourceEndpoint();
+    const response = fitSource
+      ? await fetchOperatorFitCatalog(fitSource, catalogOptions)
+      : await fetch(operatorCatalogUrl(state.builder, catalogOptions));
     if (!response.ok) {
       return;
     }
@@ -663,6 +669,7 @@ async function loadVisualOperatorCatalog(options = {}) {
     }
     const operators = Array.isArray(payload.operators) ? payload.operators : [];
     const diagnostics = normalizeDiagnostics(payload.diagnostics);
+    const operatorFitCandidatesByRef = operatorFitCandidateMap(payload.fitCandidates);
     const runtimeBindingProjectionsByRef = operatorProjectionMap(
       payload.runtimeBindingProjections,
       normalizeOperatorRuntimeBindingProjection
@@ -674,6 +681,7 @@ async function loadVisualOperatorCatalog(options = {}) {
     state.visualOperators = operators;
     state.visualOperatorCatalogWindow = normalizeOperatorCatalogWindow(payload, operators);
     state.visualOperatorCatalogFacets = normalizeOperatorCatalogFacets(payload.facets, operators);
+    state.visualOperatorFitCatalog = fitSource ? normalizeOperatorFitCatalog(payload, fitSource) : null;
     state.operatorRuntimeBindingProjectionsByRef = runtimeBindingProjectionsByRef;
     state.operatorExecutablePromotionProjectionsByRef = executablePromotionProjectionsByRef;
     if (diagnostics.length) {
@@ -687,7 +695,8 @@ async function loadVisualOperatorCatalog(options = {}) {
     for (const operator of operators) {
       const operatorRef = rememberCatalogOperator(operator, {
         runtimeBindingProjection: runtimeBindingProjectionsByRef[operator?.operatorRef || ''] || null,
-        executablePromotionProjection: executablePromotionProjectionsByRef[operator?.operatorRef || ''] || null
+        executablePromotionProjection: executablePromotionProjectionsByRef[operator?.operatorRef || ''] || null,
+        operatorFitCandidate: operatorFitCandidatesByRef[operator?.operatorRef || ''] || null
       });
       if (operatorRef) {
         activeOperatorRefs.add(operatorRef);
@@ -714,6 +723,7 @@ async function loadVisualOperatorCatalog(options = {}) {
     }
   } catch (error) {
     state.visualOperatorCatalogWindow = null;
+    state.visualOperatorFitCatalog = null;
     console.debug('Visual operator catalog unavailable', error);
   }
 }
@@ -857,6 +867,7 @@ function rememberCatalogOperator(operator, options = {}) {
       policy: operator.policy,
       lowering: operator.lowering,
       diagnostics,
+      operatorFitCandidate: normalizeOperatorFitCandidate(options.operatorFitCandidate),
       runtimeReadiness: normalizeOperatorRuntimeReadiness(operator.runtimeReadiness),
       runtimeBindingProjection,
       executablePromotionProjection,
@@ -894,6 +905,7 @@ function rememberCatalogOperator(operator, options = {}) {
     policy: operator.policy,
     lowering: operator.lowering,
     diagnostics,
+    operatorFitCandidate: normalizeOperatorFitCandidate(options.operatorFitCandidate),
     runtimeReadiness: normalizeOperatorRuntimeReadiness(operator.runtimeReadiness),
     runtimeBindingProjection,
     executablePromotionProjection,
@@ -930,6 +942,79 @@ function operatorPaletteCatalogQueryOptions() {
     itemLimit: state.paletteLimit,
     offset: state.paletteOffset
   };
+}
+
+function operatorPaletteFitSourceEndpoint() {
+  if (!state.paletteFitSelectedOutput) {
+    return null;
+  }
+  return operatorPaletteSelectedOutputEndpoint();
+}
+
+function operatorPaletteSelectedOutputEndpoint() {
+  const node = selectedBuilderNode();
+  if (!node) {
+    return null;
+  }
+  const source = sourceHandlesForNode(node)
+    .find((handle) => canonicalEdgeKind(handle.kind || 'data') === 'data');
+  if (!source) {
+    return null;
+  }
+  return {
+    nodeId: source.nodeId || node.id,
+    port: source.port || '',
+    path: source.path || ''
+  };
+}
+
+function operatorPaletteFitSourceKey(source) {
+  if (!source) {
+    return '';
+  }
+  return [source.nodeId || '', source.port || '', source.path || '']
+    .map((item) => String(item || '').trim())
+    .join(':');
+}
+
+function operatorPaletteFitSourceLabel(source) {
+  if (!source) {
+    return '';
+  }
+  return endpointLabel(source);
+}
+
+async function fetchOperatorFitCatalog(source, options = {}) {
+  const scope = builderScope(state.builder);
+  const filter = {
+    search: options.search || '',
+    tags: options.tags || [],
+    resourceOnly: Boolean(options.resourceOnly),
+    includeDeprecated: Boolean(options.includeDeprecated),
+    tenantId: scope.tenantId,
+    namespace: scope.namespace,
+    environment: scope.environment,
+    sourceKinds: options.sourceKinds || [],
+    operatorLibraryIds: options.operatorLibraryIds || (options.operatorLibraryId ? [options.operatorLibraryId] : []),
+    loweringModes: options.loweringModes || [],
+    capabilities: options.capabilities || [],
+    runtimeReadinessStates: options.runtimeReadinessStates || []
+  };
+  return fetch('/api/visual/operators/fit-candidates', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      draft: builderToVisualDraft(state.builder),
+      source,
+      filter,
+      targetSurface: 'input',
+      includeRejected: false,
+      limit: Number.isFinite(Number(options.itemLimit ?? options.limit))
+        ? Number(options.itemLimit ?? options.limit)
+        : state.paletteLimit,
+      offset: Number.isFinite(Number(options.offset)) ? Number(options.offset) : 0
+    })
+  });
 }
 
 function operatorCatalogUrl(builder = state.builder, options = {}) {
@@ -2241,6 +2326,9 @@ function renderInputForm() {
           <select id="operator-palette-readiness" aria-label="Filter operators by runtime readiness"></select>
           <select id="operator-palette-lowering-mode" aria-label="Filter operators by lowering mode"></select>
         </div>
+        <div class="palette-fit-controls">
+          <button id="operator-palette-fit-selected" class="secondary compact" type="button" aria-pressed="${state.paletteFitSelectedOutput ? 'true' : 'false'}">Fit selected output</button>
+        </div>
         <div id="operator-palette-summary" class="palette-summary"></div>
         <div class="palette-window-controls">
           <select id="operator-palette-limit" aria-label="Operator page size">
@@ -3478,6 +3566,7 @@ function renderOperatorPalette() {
         <small>${escapeHtml(operatorPaletteContractSummary(spec))}</small>
         ${operatorPaletteTagBadges(spec)}
         ${operatorPaletteCapabilityBadges(spec)}
+        ${operatorPaletteFitBadge(spec)}
         ${operatorPaletteProjectionBadge(spec)}
         ${operatorPaletteDiagnosticBadges(spec)}
       </div>
@@ -3693,6 +3782,8 @@ function reloadOperatorPaletteFromFirstPage() {
 }
 
 function renderOperatorPaletteFilters(entries) {
+  renderOperatorPaletteFitControls();
+
   const search = $('operator-palette-search');
   if (search) {
     search.value = state.paletteSearch || '';
@@ -3821,6 +3912,49 @@ function renderOperatorPaletteFilters(entries) {
   }
 }
 
+function renderOperatorPaletteFitControls() {
+  const button = $('operator-palette-fit-selected');
+  if (!button) {
+    return;
+  }
+  const wasEnabled = state.paletteFitSelectedOutput;
+  const source = operatorPaletteSelectedOutputEndpoint();
+  if (wasEnabled && !source) {
+    state.paletteFitSelectedOutput = false;
+    state.visualOperatorFitCatalog = null;
+  }
+  button.disabled = !source;
+  button.textContent = state.paletteFitSelectedOutput && source
+    ? `Fit ${operatorPaletteFitSourceLabel(source)}`
+    : 'Fit selected output';
+  button.setAttribute('aria-pressed', state.paletteFitSelectedOutput && source ? 'true' : 'false');
+  button.classList.toggle('active', Boolean(state.paletteFitSelectedOutput && source));
+  button.onclick = () => {
+    if (!source && !state.paletteFitSelectedOutput) {
+      return;
+    }
+    state.paletteFitSelectedOutput = !state.paletteFitSelectedOutput;
+    state.visualOperatorFitCatalog = null;
+    void reloadOperatorPaletteFromFirstPage();
+  };
+}
+
+function reloadOperatorPaletteIfFitSourceChanged() {
+  if (!state.paletteFitSelectedOutput) {
+    return;
+  }
+  const source = operatorPaletteFitSourceEndpoint();
+  const sourceKey = operatorPaletteFitSourceKey(source);
+  if (!sourceKey) {
+    return;
+  }
+  if (sourceKey === state.visualOperatorFitCatalog?.sourceKey) {
+    return;
+  }
+  state.visualOperatorFitCatalog = null;
+  void reloadOperatorPaletteFromFirstPage();
+}
+
 function renderOperatorPaletteSummary(visible, total) {
   const target = $('operator-palette-summary');
   if (!target) return;
@@ -3833,7 +3967,8 @@ function renderOperatorPaletteSummary(visible, total) {
     state.paletteOperatorLibraryId ? `library ${operatorPaletteLibraryLabel(state.paletteOperatorLibraryId)}` : '',
     state.paletteCapability ? `capability ${operatorPaletteFacetLabel(state.paletteCapability)}` : '',
     state.paletteReadiness ? `readiness ${operatorPaletteFacetLabel(state.paletteReadiness)}` : '',
-    state.paletteLoweringMode ? `lowering ${operatorPaletteFacetLabel(state.paletteLoweringMode)}` : ''
+    state.paletteLoweringMode ? `lowering ${operatorPaletteFacetLabel(state.paletteLoweringMode)}` : '',
+    state.visualOperatorFitCatalog?.source ? `fits ${operatorPaletteFitSourceLabel(state.visualOperatorFitCatalog.source)}` : ''
   ].filter(Boolean);
   const windowStart = window && window.displayedCount > 0 ? window.offset + 1 : 0;
   const windowEnd = window ? window.offset + window.displayedCount : visible;
@@ -3846,9 +3981,18 @@ function renderOperatorPaletteSummary(visible, total) {
     ? ` ${unfilteredTotal} visible before filters.`
     : '';
   const facetSummary = operatorCatalogFacetSummary(state.visualOperatorCatalogFacets);
+  const fitSummary = operatorPaletteFitSummary();
   target.textContent = facetSummary
-    ? `${matchSummary}${unfilteredSummary} ${facetSummary}`
-    : `${matchSummary}${unfilteredSummary}`;
+    ? `${matchSummary}${unfilteredSummary} ${facetSummary}${fitSummary}`
+    : `${matchSummary}${unfilteredSummary}${fitSummary}`;
+}
+
+function operatorPaletteFitSummary() {
+  const fit = state.visualOperatorFitCatalog;
+  if (!fit) {
+    return '';
+  }
+  return ` Fit: ${fit.acceptedCount} accepted, ${fit.rejectedCount} blocked from ${fit.totalCandidateCount} evaluated.`;
 }
 
 function renderOperatorPaletteWindowControls() {
@@ -3918,6 +4062,69 @@ function operatorPaletteLibraryLabel(libraryId) {
     return `${displayName} (${normalized})`;
   }
   return normalized;
+}
+
+function operatorFitCandidateMap(candidates) {
+  if (!Array.isArray(candidates)) {
+    return {};
+  }
+  return Object.fromEntries(candidates
+    .map((candidate) => {
+      const normalized = normalizeOperatorFitCandidate(candidate);
+      return [normalized.operatorRef, normalized];
+    })
+    .filter(([operatorRef]) => Boolean(operatorRef)));
+}
+
+function normalizeOperatorFitCatalog(payload, source) {
+  const safePayload = payload && typeof payload === 'object' ? payload : {};
+  return {
+    schemaVersion: safePayload.schemaVersion || 'bloge.visualOperatorFitCatalog.v1',
+    source: safePayload.source || source || null,
+    sourceKey: operatorPaletteFitSourceKey(safePayload.source || source),
+    sourceSchemaType: safePayload.sourceSchemaType || '',
+    sourceSchemaKnown: Boolean(safePayload.sourceSchemaKnown),
+    totalCandidateCount: numericCount(safePayload.totalCandidateCount, 0),
+    acceptedCount: numericCount(safePayload.acceptedCount, 0),
+    rejectedCount: numericCount(safePayload.rejectedCount, 0)
+  };
+}
+
+function normalizeOperatorFitCandidate(candidate) {
+  const operator = candidate?.operator || {};
+  const targets = Array.isArray(candidate?.targets)
+    ? candidate.targets.map(normalizeOperatorFitTarget)
+    : [];
+  const acceptedTargetCount = numericCount(
+    candidate?.acceptedTargetCount,
+    targets.filter((target) => target.accepted).length
+  );
+  const rejectedTargetCount = numericCount(
+    candidate?.rejectedTargetCount,
+    targets.filter((target) => !target.accepted).length
+  );
+  return {
+    operatorRef: operator.operatorRef || candidate?.operatorRef || '',
+    accepted: Boolean(candidate?.accepted),
+    acceptedTargetCount,
+    rejectedTargetCount,
+    targets,
+    message: candidate?.message || ''
+  };
+}
+
+function normalizeOperatorFitTarget(target) {
+  return {
+    targetSurface: target?.targetSurface || 'input',
+    targetPort: target?.targetPort || '',
+    targetPath: target?.targetPath || '',
+    accepted: Boolean(target?.accepted),
+    sourceSchemaType: target?.sourceSchemaType || '',
+    targetSchemaType: target?.targetSchemaType || '',
+    sourceSchemaKnown: Boolean(target?.sourceSchemaKnown),
+    targetSchemaKnown: Boolean(target?.targetSchemaKnown),
+    message: target?.message || ''
+  };
 }
 
 function normalizeOperatorCatalogWindow(payload, operators = []) {
@@ -4156,6 +4363,25 @@ function operatorPaletteCapabilityBadges(spec) {
   }
   return `<div class="operator-card-tags operator-card-capabilities">${labels.map((label) =>
     `<em>${escapeHtml(label)}</em>`).join('')}</div>`;
+}
+
+function operatorPaletteFitBadge(spec) {
+  const fit = spec?.operatorFitCandidate || null;
+  if (!state.visualOperatorFitCatalog || !fit?.accepted) {
+    return '';
+  }
+  const firstTarget = (fit.targets || []).find((target) => target.accepted) || {};
+  const targetLabel = [firstTarget.targetPort || '', firstTarget.targetPath || '']
+    .filter(Boolean)
+    .join('.');
+  const text = targetLabel
+    ? `${fit.acceptedTargetCount} fit · ${targetLabel}`
+    : `${fit.acceptedTargetCount} fit target${fit.acceptedTargetCount === 1 ? '' : 's'}`;
+  return `
+    <div class="operator-card-projection success" title="${escapeHtml(fit.message || '')}">
+      <span>${escapeHtml(text)}</span>
+    </div>
+  `;
 }
 
 function operatorPaletteProjectionBadge(spec) {
@@ -17388,6 +17614,7 @@ function addBuilderNode(type, position = null) {
   syncComposerFromBuilder();
   renderInputForm();
   renderDiagram();
+  reloadOperatorPaletteIfFitSourceChanged();
   return node;
 }
 
@@ -19433,6 +19660,7 @@ function renderDiagram() {
         state.builder.selectedId = node.id;
         renderSelectedOperatorEditor();
         renderNodeDetails(selectedBuilderNode() || node);
+        reloadOperatorPaletteIfFitSourceChanged();
       } else {
         renderNodeDetails(node);
       }
@@ -25750,6 +25978,7 @@ function applyConnection(source, target, serverCheck = null) {
     state.selectedNodeId = node.id;
     syncComposerFromBuilder({ render: false });
     renderInputForm();
+    reloadOperatorPaletteIfFitSourceChanged();
     return;
   }
   if (target.kind === 'route') {
@@ -25758,6 +25987,7 @@ function applyConnection(source, target, serverCheck = null) {
     state.selectedNodeId = node.id;
     syncComposerFromBuilder({ render: false });
     renderInputForm();
+    reloadOperatorPaletteIfFitSourceChanged();
     return;
   }
   clearConnectionReplacementInputs(node, serverCheck?.summary);
@@ -25798,6 +26028,7 @@ function applyConnection(source, target, serverCheck = null) {
   state.selectedNodeId = node.id;
   syncComposerFromBuilder({ render: false });
   renderInputForm();
+  reloadOperatorPaletteIfFitSourceChanged();
 }
 
 function clearConnectionReplacementInputs(node, summary = null) {

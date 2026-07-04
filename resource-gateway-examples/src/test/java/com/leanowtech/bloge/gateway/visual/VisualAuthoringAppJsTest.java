@@ -217,14 +217,24 @@ class VisualAuthoringAppJsTest {
 
         assertThat(source)
                 .contains("visualOperatorCatalogWindow: null")
+                .contains("visualOperatorFitCatalog: null")
                 .contains("let visualOperatorCatalogRequestSeq = 0")
                 .contains("let operatorPaletteReloadTimer = null")
+                .contains("paletteFitSelectedOutput: false")
                 .contains("paletteOffset: 0")
                 .contains("paletteLimit: 24")
                 .contains("function operatorPaletteCatalogQueryOptions()")
+                .contains("function operatorPaletteFitSourceEndpoint()")
+                .contains("fetch('/api/visual/operators/fit-candidates'")
+                .contains("operatorFitCandidateMap(payload.fitCandidates)")
+                .contains("operatorFitCandidate: operatorFitCandidatesByRef[operator?.operatorRef || ''] || null")
+                .contains("function operatorPaletteFitBadge(spec)")
+                .contains("id=\"operator-palette-fit-selected\"")
+                .contains("Fit selected output")
                 .contains("itemLimit: state.paletteLimit")
                 .contains("offset: state.paletteOffset")
                 .contains("function normalizeOperatorCatalogWindow(payload, operators = [])")
+                .contains("function normalizeOperatorFitCatalog(payload, source)")
                 .contains("function markOperatorPaletteLoading()")
                 .contains("function scheduleOperatorPaletteReloadFromFirstPage()")
                 .contains("Loading catalog window...")
@@ -2117,6 +2127,9 @@ class VisualAuthoringAppJsTest {
                   'operatorProjectionMap',
                   'rememberOperatorProjections',
                   'normalizeOperatorPorts',
+                  'numericCount',
+                  'normalizeOperatorFitTarget',
+                  'normalizeOperatorFitCandidate',
                   'normalizeOperatorRuntimeReadiness',
                   'operatorPaletteFacetLabel',
                   'operatorPaletteCapabilityLabels',
