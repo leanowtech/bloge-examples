@@ -5509,10 +5509,10 @@ function uniqueSchemaChanges(schemaChanges) {
   const normalized = [];
   for (const change of Array.isArray(schemaChanges) ? schemaChanges : []) {
     const next = normalizeSchemaChange(change);
-    if (!next.surface && !next.portName && !next.message) {
+    if (!next.surface && !next.portName && !next.path && !next.message) {
       continue;
     }
-    const key = `${next.surface}|${next.portName}|${next.compatibility}|${next.message}`;
+    const key = `${next.surface}|${next.portName}|${next.path}|${next.compatibility}|${next.message}`;
     if (seen.has(key)) {
       continue;
     }
@@ -5527,6 +5527,7 @@ function normalizeSchemaChange(change) {
     surface: String(change?.surface || '').trim(),
     portName: String(change?.portName || '').trim(),
     compatibility: String(change?.compatibility || 'compatible').trim().toLowerCase(),
+    path: String(change?.path || '').trim(),
     message: String(change?.message || '').trim()
   };
 }
@@ -5538,7 +5539,14 @@ function schemaChangeLevel(change) {
 function schemaChangeSurfaceLabel(change) {
   const surface = changeRiskLabel(change?.surface || 'schema');
   const port = String(change?.portName || '').trim();
-  return port ? `${surface} ${port}` : surface;
+  const path = String(change?.path || '').trim();
+  if (port && path) {
+    return `${surface} ${port}.${path}`;
+  }
+  if (port) {
+    return `${surface} ${port}`;
+  }
+  return path ? `${surface} ${path}` : surface;
 }
 
 function schemaChangeMessage(change) {

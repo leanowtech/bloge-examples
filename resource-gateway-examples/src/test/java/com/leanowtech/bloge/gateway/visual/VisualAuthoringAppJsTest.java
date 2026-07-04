@@ -1020,6 +1020,8 @@ class VisualAuthoringAppJsTest {
                 .contains("function renderSchemaChangeRows(schemaChanges, limit = 5)")
                 .contains("function librarySchemaChangesFromDiagnostics(diagnostics)")
                 .contains("renderSchemaChangeRows(change.schemaChanges, 3)")
+                .contains("path: String(change?.path || '').trim()")
+                .contains("`${surface} ${port}.${path}`")
                 .contains("function libraryImpactRefsFromDiagnostic(diagnostic)")
                 .contains("function changeRiskLabel(risk)")
                 .contains("function libraryImpactRiskSummaryText(summary)")
@@ -4993,6 +4995,7 @@ operators:
                           surface: 'output',
                           portName: 'result',
                           compatibility: 'breaking',
+                          path: 'eligible',
                           message: 'output result type changed'
                         }
                       ]
@@ -5144,6 +5147,7 @@ operators:
                             surface: 'input',
                             portName: 'inputs',
                             compatibility: 'breaking',
+                            path: 'score',
                             message: 'input score type changed'
                           }
                         ]
@@ -6107,7 +6111,7 @@ operators:
                   ['library impact risk counts', libraryImpact.changeRiskCounts.map((entry) => `${entry.risk}:${entry.count}`).join('|'), 'BREAKING_SCHEMA:1|GOVERNANCE:1'],
                   ['library impact risk text', libraryImpactRiskText, 'Breaking schema change: affected drafts need repair or explicit rebase review. Breaking Schema 1 · Governance 1.'],
                   ['library schema changes count', librarySchemaChanges.length, 1],
-                  ['library schema change label', context.schemaChangeSurfaceLabel(librarySchemaChanges[0]), 'Output result'],
+                  ['library schema change label', context.schemaChangeSurfaceLabel(librarySchemaChanges[0]), 'Output result.eligible'],
                   ['library schema change message', context.schemaChangeMessage(librarySchemaChanges[0]), 'Breaking: output result type changed'],
                   ['library schema rows include change', String(librarySchemaRows.includes('output result type changed')), 'true'],
                   ['library impact label', context.libraryImpactSummaryLabel(libraryImpact), '2 errors · 2 warnings · 1 draft · 1 publication · 2 operators'],
@@ -6130,8 +6134,8 @@ operators:
                   ['library impact panel includes payload code', String(libraryImpactPanel.innerHTML.includes('visual.library.payloadImpact')), 'true'],
                   ['library impact panel includes risk label', String(libraryImpactPanel.innerHTML.includes('Runtime Binding')), 'true'],
                   ['library impact panel includes risk summary', String(libraryImpactPanel.innerHTML.includes('Runtime binding change')), 'true'],
-                  ['library impact panel includes schema change', String(libraryImpactPanel.innerHTML.includes('Output result')), 'true'],
-                  ['library diff panel includes schema change', String(libraryDiffPanel.innerHTML.includes('Input inputs')), 'true'],
+                  ['library impact panel includes schema change', String(libraryImpactPanel.innerHTML.includes('Output result.eligible')), 'true'],
+                  ['library diff panel includes schema change', String(libraryDiffPanel.innerHTML.includes('Input inputs.score')), 'true'],
                   ['library diff panel includes schema message', String(libraryDiffPanel.innerHTML.includes('input score type changed')), 'true'],
                   ['library impact draft group action', String(libraryImpactDraftGroup.includes('data-library-impact-draft="draft-risk"')), 'true'],
                   ['resource payload impact resources deduped', resourceImpactFromPayload.resourceIds.join('|'), 'order-service.listOrders'],

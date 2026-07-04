@@ -365,6 +365,29 @@ class VisualSchemaCompatibilityTest {
     }
 
     @Test
+    void returnsStructuredCompatibilityIssuePathForObjectFields() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "properties", Map.of("score", Map.of("type", "integer")),
+                "required", List.of("score"),
+                "additionalProperties", false
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "properties", Map.of("score", Map.of("type", "string")),
+                "required", List.of("score"),
+                "additionalProperties", false
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssueDetail(source, target))
+                .hasValueSatisfying(issue -> {
+                    assertThat(issue.path()).isEqualTo("score");
+                    assertThat(issue.message()).contains("source type integer cannot feed target type string");
+                    assertThat(issue.message()).doesNotContain("at 'score'");
+                });
+    }
+
+    @Test
     void rejectsSourcePatternPropertyThatCanCollideWithTargetOptionalProperty() {
         Map<String, Object> source = Map.of(
                 "type", "object",

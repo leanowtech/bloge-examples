@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.SchemaCompatibilityIssue;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -10,7 +11,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
-import static com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.schemaCompatibilityIssue;
+import static com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.schemaCompatibilityIssueDetail;
 
 /**
  * Describes schema and execution surface changes between two operator definitions.
@@ -168,12 +169,15 @@ public final class OperatorDefinitionChangeSummary {
         if (!Objects.equals(previous, replacement)) {
             Map<String, Object> previousSchema = previous == null ? Map.of() : previous.schema();
             Map<String, Object> replacementSchema = replacement == null ? Map.of() : replacement.schema();
-            Optional<String> compatibilityIssue = inputLike
-                    ? schemaCompatibilityIssue(previousSchema, replacementSchema)
-                    : schemaCompatibilityIssue(replacementSchema, previousSchema);
+            Optional<SchemaCompatibilityIssue> compatibilityIssue = inputLike
+                    ? schemaCompatibilityIssueDetail(previousSchema, replacementSchema)
+                    : schemaCompatibilityIssueDetail(replacementSchema, previousSchema);
             String risk = compatibilityIssue.isPresent() ? RISK_BREAKING_SCHEMA : RISK_COMPATIBLE_SCHEMA;
             changes.add(label + " changed", risk, schemaSurface(label), schemaPortName(label),
-                    compatibilityIssue.orElse(label + " changed compatibly"));
+                    compatibilityIssue.map(SchemaCompatibilityIssue::path)
+                            .orElse(""),
+                    compatibilityIssue.map(SchemaCompatibilityIssue::message)
+                            .orElse(label + " changed compatibly"));
         }
     }
 
@@ -257,15 +261,21 @@ public final class OperatorDefinitionChangeSummary {
      * @param surface input, output, or config
      * @param portName input/output port name, blank for config schema
      * @param compatibility breaking or compatible
+     * @param path schema-relative path inside the port/config schema, blank for whole-surface changes
      * @param message compatibility reason or concise surface-change message
      */
-    public record SchemaChange(String surface, String portName, String compatibility, String message) {
+    public record SchemaChange(String surface, String portName, String compatibility, String path, String message) {
+        public SchemaChange(String surface, String portName, String compatibility, String message) {
+            this(surface, portName, compatibility, "", message);
+        }
+
         public SchemaChange {
             surface = surface == null ? "" : surface;
             portName = portName == null ? "" : portName;
             compatibility = compatibility == null || compatibility.isBlank()
                     ? "compatible"
                     : compatibility.trim().toLowerCase(java.util.Locale.ROOT);
+            path = path == null ? "" : path;
             message = message == null ? "" : message;
         }
     }
@@ -285,10 +295,20 @@ public final class OperatorDefinitionChangeSummary {
                          String surface,
                          String portName,
                          String message) {
+            add(description, category, surface, portName, "", message);
+        }
+
+        private void add(String description,
+                         String category,
+                         String surface,
+                         String portName,
+                         String path,
+                         String message) {
             add(description, category);
             if (RISK_BREAKING_SCHEMA.equals(category) || RISK_COMPATIBLE_SCHEMA.equals(category)) {
                 schemaChanges.add(new SchemaChange(surface, portName,
                         RISK_BREAKING_SCHEMA.equals(category) ? "breaking" : "compatible",
+                        path,
                         message == null || message.isBlank() ? description : message));
             }
         }

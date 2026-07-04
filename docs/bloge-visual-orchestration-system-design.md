@@ -683,8 +683,8 @@ node fetchApplicant : httpResource {
 | `POST` | `/admin/visual-operator-libraries/import-text` | 当前实现：导入用户提供的 operator library JSON/YAML source text，服务端解析后复用 impact / warning / revision 治理 |
 | `POST` | `/admin/visual-operator-libraries/validate-text` | 当前实现：校验用户提供的 operator library JSON/YAML source text，不落库，解析错误返回结构化诊断 |
 | `GET` | `/admin/visual-operator-libraries/{libraryId}/export` | 当前实现：导出当前用户算子库为 `bloge.visualOperatorLibraryExport.v1`，包含 `bundleFingerprint`、library snapshot、latest revision evidence 和 export-time validation/profile/impact |
-| `POST` | `/admin/visual-operator-libraries/validate-bundle` | 当前实现：非写入预检用户算子库 portable bundle，先校验 schemaVersion 与 `bundleFingerprint`，再返回目标环境 validation/profile/impact/readiness、intended `mutationAction` 和 target current library -> source bundle snapshot 的 `targetDiff`，其中 changed operator 携带 `schemaChanges[]`，不要求 ack/governance evidence 且不创建 revision |
-| `POST` | `/admin/visual-operator-libraries/import-bundle` | 当前实现：导入用户算子库 portable bundle，先校验 schemaVersion 与 `bundleFingerprint`，再复用目标环境 validation/impact/SemVer/warning/revision audit，并返回 `sourceBundleFingerprint` 与写入前带 `schemaChanges[]` 的 `targetDiff` |
+| `POST` | `/admin/visual-operator-libraries/validate-bundle` | 当前实现：非写入预检用户算子库 portable bundle，先校验 schemaVersion 与 `bundleFingerprint`，再返回目标环境 validation/profile/impact/readiness、intended `mutationAction` 和 target current library -> source bundle snapshot 的 `targetDiff`，其中 changed operator 携带含 schema-relative path 的 `schemaChanges[]`，不要求 ack/governance evidence 且不创建 revision |
+| `POST` | `/admin/visual-operator-libraries/import-bundle` | 当前实现：导入用户算子库 portable bundle，先校验 schemaVersion 与 `bundleFingerprint`，再复用目标环境 validation/impact/SemVer/warning/revision audit，并返回 `sourceBundleFingerprint` 与写入前带字段路径级 `schemaChanges[]` 的 `targetDiff` |
 | `GET` | `/api/visual/resource-operators` | 将 resource descriptors 投影为虚拟算子 |
 
 resource-gateway 示例当前以 `/admin/visual-operator-libraries` 暴露用户库管理：
@@ -861,7 +861,7 @@ version，additive 或 compatible schema 变更必须至少提升 minor version�
 `GET /admin/visual-operator-libraries/{libraryId}/revisions/{baseRevision}/diff/{targetRevision}`
 返回 `bloge.visualOperatorLibraryDiff.v1`，按 library-level 与 operator-level 分解
 added / removed / changed surface、最高风险、风险分类、摘要和 changed operator 的
-`schemaChanges[]` 端口级明细，供 restore / rollback 前审阅；
+`schemaChanges[]` 端口与字段路径级明细，供 restore / rollback 前审阅；
 `POST /admin/visual-operator-libraries/{libraryId}/revisions/{revision}/restore`
 会把历史快照作为新的 latest library 写回，并记录 `action=RESTORE` 与
 `restoredFromRevision`。restore 复用 replacement 的结构校验、operatorRef 归属保护、

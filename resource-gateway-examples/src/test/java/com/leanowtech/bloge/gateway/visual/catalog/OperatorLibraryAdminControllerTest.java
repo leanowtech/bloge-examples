@@ -1979,6 +1979,7 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.operatorChanges[0].schemaChanges[0].surface").value("input"))
                 .andExpect(jsonPath("$.operatorChanges[0].schemaChanges[0].portName").value("inputs"))
                 .andExpect(jsonPath("$.operatorChanges[0].schemaChanges[0].compatibility").value("breaking"))
+                .andExpect(jsonPath("$.operatorChanges[0].schemaChanges[0].path").value("score"))
                 .andExpect(jsonPath("$.operatorChanges[0].schemaChanges[0].message")
                         .value(org.hamcrest.Matchers.containsString("type")))
                 .andExpect(jsonPath("$.operatorChanges[0].summary")
@@ -2844,6 +2845,7 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].surface").value("input"))
                 .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].portName").value("inputs"))
                 .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].compatibility").value("breaking"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].path").value("score"))
                 .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].message")
                         .value(org.hamcrest.Matchers.containsString("type")))
                 .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"))
@@ -2882,6 +2884,7 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].surface").value("input"))
                 .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].portName").value("inputs"))
                 .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].compatibility").value("compatible"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].path").value(""))
                 .andExpect(jsonPath("$.impact.changeRiskCounts[0].risk").value("COMPATIBLE_SCHEMA"))
                 .andExpect(jsonPath("$.impact.changeRiskCounts[0].count").value(1));
 
@@ -2912,6 +2915,7 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[0].metadata.operatorRefs[0]").value("risk:eligibility"))
                 .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].surface").value("input"))
                 .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].compatibility").value("breaking"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].path").value("score"))
                 .andExpect(jsonPath("$.impact.warningCount").value(1))
                 .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:eligibility"))
                 .andExpect(jsonPath("$.impact.changeRiskCounts[0].risk").value("BREAKING_SCHEMA"));

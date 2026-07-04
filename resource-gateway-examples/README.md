@@ -1516,7 +1516,7 @@ replacement changes schema- or executable-relevant metadata used by stored
 draft snapshots. Those warnings include a concise changed-surface summary,
 machine-readable `metadata.changeRisk` / `changeCategories`, and schema drift
 `metadata.schemaChanges[]` entries with `surface`, `portName`,
-`compatibility`, and `message`, classifying
+schema-relative `path`, `compatibility`, and `message`, classifying
 replacement risk as `BREAKING_SCHEMA`, `COMPATIBLE_SCHEMA`, `RUNTIME_BINDING`,
 `GOVERNANCE`, `POLICY`, or `METADATA`; authors can distinguish compatible
 schema growth from schema-breaking or runtime/governance changes before runtime
@@ -1550,7 +1550,7 @@ message is risk-aware: breaking schema, runtime binding, governance, policy,
 compatible schema growth, and metadata drift get distinct review copy instead
 of a generic warning banner. The impact contract also carries `changeRiskCounts`
 plus `draftTargets` with affected node indexes, while diagnostics carry
-schemaChanges for port-level review. Affected draft chips in the
+schemaChanges for port/path-level review. Affected draft chips in the
 review are actionable: selecting one loads the draft through the normal draft
 loader and focuses the impacted node so the author can inspect fingerprints,
 schema drift, and bindings before choosing a rebase or repair path.
@@ -1569,7 +1569,7 @@ schema drift, and bindings before choosing a rebase or repair path.
 | `GET` | `/admin/visual-operator-libraries/{libraryId}/export` | Export the current library as `bloge.visualOperatorLibraryExport.v1`, including normalized library snapshot, latest registry revision evidence, and export-time validation/profile/impact result | 200 / 404 |
 | `GET` | `/admin/visual-operator-libraries/{libraryId}/revisions` | List immutable create/replace/delete/restore registry snapshots for an imported library, newest first, including `revisionMetadata` audit fields; delete snapshots remain queryable after the current library is removed | 200 / 404 |
 | `GET` | `/admin/visual-operator-libraries/{libraryId}/revisions/{revision}` | Load one immutable operator-library registry snapshot | 200 / 404 |
-| `GET` | `/admin/visual-operator-libraries/{libraryId}/revisions/{baseRevision}/diff/{targetRevision}` | Compare two immutable registry snapshots as `bloge.visualOperatorLibraryDiff.v1`, including highest change risk, risk categories, summary, library-level changes, operator-level added/removed/changed surface, changed-operator `schemaChanges[]`, and operator change counts | 200 / 404 |
+| `GET` | `/admin/visual-operator-libraries/{libraryId}/revisions/{baseRevision}/diff/{targetRevision}` | Compare two immutable registry snapshots as `bloge.visualOperatorLibraryDiff.v1`, including highest change risk, risk categories, summary, library-level changes, operator-level added/removed/changed surface, changed-operator `schemaChanges[]` with schema-relative paths, and operator change counts | 200 / 404 |
 | `POST` | `/admin/visual-operator-libraries/{libraryId}/revisions/{revision}/restore` | Restore one immutable snapshot as a new latest library revision; uses the same validation, impact, and warning acknowledgement gates as replacement, blocks SemVer regression by default, allows controlled rollback only with `allowVersionRegression=true&ackWarnings=true`, and accepts optional registry revision audit metadata query params; high-risk writes using `force=true` or `ackWarnings=true` require non-empty `actor` and `reason` evidence | 200 / 400 / 404 / 409 |
 | `PUT` | `/admin/visual-operator-libraries/{libraryId}` | Replace an imported library; rejected or warning-gated responses include `bloge.visualOperatorLibraryProfile.v1` and `bloge.visualOperatorLibraryImpact.v1`, reject removal or disablement of stored-draft operator refs unless `force=true`, reject SemVer regression, require `ackWarnings=true` before storing warning-level runtime-capability, governance, executable-resolution, SemVer, or replacement impact, and accept optional registry revision audit metadata query params; high-risk writes using `force=true` or `ackWarnings=true` require non-empty `actor` and `reason` evidence | 200 / 400 / 409 |
 | `DELETE` | `/admin/visual-operator-libraries/{libraryId}` | Delete an imported library; rejects stored-draft references and published-artifact references unless `force=true`, returning `bloge.visualOperatorLibraryProfile.v1` and `bloge.visualOperatorLibraryImpact.v1` on conflict, and accepts optional registry revision audit metadata query params for the delete snapshot; forced deletes require non-empty `actor` and `reason` evidence | 204 / 400 / 409 |
@@ -1912,7 +1912,7 @@ compiled graphs, and evaluates them against arbitrary data contexts. Used by
 |------|------|
 | `DatabaseResourceRegistry` | `WritableResourceRegistry` backed by H2 via JDBC with an in-memory `ConcurrentHashMap` cache for hot-path reads |
 | `DatabaseOperatorLibraryRegistry` | Persists imported visual operator libraries and immutable revision snapshots in H2 as JSON blobs with cache-backed reads |
-| `OperatorLibraryDiff` | Compares two immutable operator-library revision snapshots into library-level and operator-level change-risk review data, including changed-operator schemaChanges for port-level review |
+| `OperatorLibraryDiff` | Compares two immutable operator-library revision snapshots into library-level and operator-level change-risk review data, including changed-operator schemaChanges for port/path-level review |
 | `DatabaseGraphDraftRepository` | Persists visual graph drafts and revision numbers in H2, preserving immutable revision history after current draft deletion |
 | `GraphDraftDiff` | Compares two immutable draft revision snapshots into graph-level, node-level, and edge-level change-risk review data |
 | `ResourceRegistryAdminController` | REST CRUD at `/admin/resources` |

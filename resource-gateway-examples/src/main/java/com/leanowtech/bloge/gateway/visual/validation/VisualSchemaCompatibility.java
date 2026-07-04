@@ -59,6 +59,31 @@ public final class VisualSchemaCompatibility {
         return schemaCompatibilityIssue(sourceSchema, targetSchema, "");
     }
 
+    /**
+     * @param sourceSchema source schema
+     * @param targetSchema target schema
+     * @return structured compatibility issue with a machine-readable schema path when available
+     */
+    public static Optional<SchemaCompatibilityIssue> schemaCompatibilityIssueDetail(
+            Map<String, Object> sourceSchema,
+            Map<String, Object> targetSchema) {
+        return schemaCompatibilityIssue(sourceSchema, targetSchema)
+                .map(VisualSchemaCompatibility::schemaCompatibilityIssueDetail);
+    }
+
+    /**
+     * Structured schema compatibility issue for drift and impact review surfaces.
+     *
+     * @param path schema-relative path such as {@code facts.score}; blank when not path-localized
+     * @param message human-readable issue without the leading path prefix when possible
+     */
+    public record SchemaCompatibilityIssue(String path, String message) {
+        public SchemaCompatibilityIssue {
+            path = path == null ? "" : path;
+            message = message == null ? "" : message;
+        }
+    }
+
     private static Optional<String> schemaCompatibilityIssue(Map<String, Object> sourceSchema,
                                                              Map<String, Object> targetSchema,
                                                              String path) {
@@ -1698,6 +1723,23 @@ public final class VisualSchemaCompatibility {
 
     private static String reasonAt(String path, String reason) {
         return path == null || path.isBlank() ? reason : "at '%s': %s".formatted(path, reason);
+    }
+
+    private static SchemaCompatibilityIssue schemaCompatibilityIssueDetail(String reason) {
+        String normalized = reason == null ? "" : reason.trim();
+        String prefix = "at '";
+        int start = normalized.indexOf(prefix);
+        if (start < 0) {
+            return new SchemaCompatibilityIssue("", normalized);
+        }
+        int pathStart = start + prefix.length();
+        int pathEnd = normalized.indexOf("': ", pathStart);
+        if (pathEnd <= pathStart) {
+            return new SchemaCompatibilityIssue("", normalized);
+        }
+        String path = normalized.substring(pathStart, pathEnd);
+        String message = start == 0 ? normalized.substring(pathEnd + 3).trim() : normalized;
+        return new SchemaCompatibilityIssue(path, message);
     }
 
     private static String valueDomainLabel(List<Object> values) {

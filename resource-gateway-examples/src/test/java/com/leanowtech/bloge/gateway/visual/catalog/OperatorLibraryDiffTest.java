@@ -70,6 +70,7 @@ class OperatorLibraryDiffTest {
                     assertThat(change.surface()).isEqualTo("input");
                     assertThat(change.portName()).isEqualTo("inputs");
                     assertThat(change.compatibility()).isEqualTo("breaking");
+                    assertThat(change.path()).isEqualTo("score");
                     assertThat(change.message()).contains("type");
                 });
         assertThat(diff.changeSummary())

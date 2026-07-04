@@ -941,7 +941,8 @@ transform assemble {
         "surface": "input",
         "portName": "inputs",
         "compatibility": "breaking",
-        "message": "type mismatch at properties/score"
+        "path": "score",
+        "message": "source type integer cannot feed target type string"
       }
     ]
   },
@@ -962,8 +963,9 @@ transform assemble {
 当前会使用 `metadata.changeRisk`、`metadata.changeCategories` 和
 `metadata.changeSummary` 表达同一 `operatorRef` 升级的风险分类；涉及
 input/output/config schema 的 replacement 还会携带 `metadata.schemaChanges[]`，
-用 `surface`、`portName`、`compatibility=breaking|compatible` 和 `message`
-给浏览器或外部控制面提供端口级审查明细，避免解析自然语言 summary。
+用 `surface`、`portName`、schema-relative `path`、
+`compatibility=breaking|compatible` 和 `message`
+给浏览器或外部控制面提供端口与字段路径级审查明细，避免解析自然语言 summary。
 
 ### 9.3 source
 
@@ -1362,7 +1364,7 @@ preflight 和 warning acknowledgement gate。
 `libraryChanges`、`operatorChanges` 以及 added/removed/changed operator 计数，用于
 restore / rollback 前的机器审阅。operator-level diff 复用
 `OperatorDefinitionChangeSummary` 的风险分类，并在 changed operator 上返回
-`schemaChanges[]` 端口级明细，因此 schema-only operator 的 input/output/config
+`schemaChanges[]` 端口与字段路径级明细，因此 schema-only operator 的 input/output/config
 schema、lowering、capability、policy 和 metadata 变化可以在不运行图的情况下被控制面识别。
 restore 默认仍阻断 library version 回退；只有请求显式携带
 `allowVersionRegression=true` 时，版本回退才会降级为
