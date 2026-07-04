@@ -15246,6 +15246,7 @@ function renderOperatorContractPanel(node) {
       ${renderOperatorReadinessPanel(spec)}
       ${renderOperatorDiagnosticsPanel(spec)}
       ${renderSchemaOutlineSearchControl(node, spec, schemaOutlineQuery, schemaDriftIssues)}
+      ${renderSchemaDriftReviewPanel(schemaDriftIssues)}
       <div class="contract-port-groups">
         ${renderContractPortGroup('Inputs', inputPortsForSpec(spec), schemaOutlineQuery, schemaDriftIssues, 'input', node)}
         ${renderContractPortGroup('Outputs', outputPortsForSpec(spec), schemaOutlineQuery, schemaDriftIssues, 'output', node)}
@@ -18403,10 +18404,11 @@ function normalizeSchemaDriftIssues(issues) {
       currentType: String(issue?.currentType || issue?.catalogType || '').trim(),
       reviewHint: String(issue?.reviewHint || issue?.reviewAction || '').trim(),
       schemaChanges: normalizeSchemaDriftSchemaChanges(issue?.schemaChanges || issue?.changes),
+      schemaPreview: normalizeSchemaDriftSchemaPreview(issue?.schemaPreview || issue?.preview || issue?.schemaDiff),
       message: String(issue?.message || '').trim()
     };
     if (!next.surface && !next.portName && !next.path && !next.savedType && !next.currentType
-      && !next.reviewHint && !next.schemaChanges.length && !next.message) {
+      && !next.reviewHint && !next.schemaChanges.length && !next.schemaPreview && !next.message) {
       continue;
     }
     const key = [
@@ -18419,6 +18421,7 @@ function normalizeSchemaDriftIssues(issues) {
       next.currentType,
       next.reviewHint,
       next.schemaChanges.map(schemaDriftSchemaChangeLabel).join(';'),
+      schemaDriftSchemaPreviewSearchText(next.schemaPreview),
       next.message
     ].join('|');
     if (seen.has(key)) {
@@ -18428,6 +18431,54 @@ function normalizeSchemaDriftIssues(issues) {
     normalized.push(next);
   }
   return normalized;
+}
+
+function normalizeSchemaDriftSchemaPreview(preview) {
+  if (!preview || typeof preview !== 'object' || Array.isArray(preview)) {
+    return null;
+  }
+  const savedSchema = plainSchemaPreviewObject(preview.savedSchema || preview.frozenSchema || preview.previousSchema);
+  const currentSchema = plainSchemaPreviewObject(preview.currentSchema || preview.catalogSchema || preview.replacementSchema);
+  if (!Object.keys(savedSchema).length && !Object.keys(currentSchema).length) {
+    return null;
+  }
+  return {
+    path: normalizeSchemaDriftPath(preview.path),
+    savedSchema,
+    currentSchema,
+    truncated: Boolean(preview.truncated)
+  };
+}
+
+function plainSchemaPreviewObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function schemaDriftSchemaPreviewText(schema) {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema) || !Object.keys(schema).length) {
+    return '{}';
+  }
+  try {
+    return JSON.stringify(schema, null, 2);
+  } catch (error) {
+    return String(schema || '{}');
+  }
+}
+
+function schemaDriftSchemaPreviewSearchText(preview) {
+  const normalized = normalizeSchemaDriftSchemaPreview(preview);
+  if (!normalized) {
+    return '';
+  }
+  return [
+    'schema preview',
+    'frozen schema',
+    'current schema',
+    normalized.path,
+    schemaDriftSchemaPreviewText(normalized.savedSchema),
+    schemaDriftSchemaPreviewText(normalized.currentSchema),
+    normalized.truncated ? 'truncated' : ''
+  ].filter(Boolean).join(' ');
 }
 
 function normalizeSchemaDriftSchemaChanges(changes) {
@@ -18602,6 +18653,70 @@ function renderSchemaDriftSummary(issues) {
       <span>${escapeHtml(schemaDriftSummaryLabel(normalized))}</span>
       ${visible}
       ${hidden ? `<small>+${escapeHtml(hidden)} more schema drift issues</small>` : ''}
+    </div>
+  `;
+}
+
+function renderSchemaDriftReviewPanel(issues) {
+  const normalized = normalizeSchemaDriftIssues(issues)
+    .filter((issue) => issue.schemaPreview);
+  if (!normalized.length) {
+    return '';
+  }
+  const rows = normalized.slice(0, 3).map((issue, index) => {
+    const preview = normalizeSchemaDriftSchemaPreview(issue.schemaPreview);
+    const pathLabel = preview?.path || issue.path || '(root)';
+    const rowId = `schema-drift-review-${compactStringHash([
+      issue.surface,
+      issue.portName,
+      pathLabel,
+      index
+    ].join('|'))}`;
+    const savedText = schemaDriftSchemaPreviewText(preview?.savedSchema);
+    const currentText = schemaDriftSchemaPreviewText(preview?.currentSchema);
+    const summary = schemaDriftIssueDetailLabel(issue);
+    return `
+      <div
+        id="${escapeHtml(rowId)}"
+        class="schema-drift-review-row ${escapeHtml(schemaDriftLevel([issue]))}"
+        data-schema-drift-review-row
+        data-schema-drift-review-path="${escapeHtml(pathLabel)}"
+        role="listitem"
+        aria-posinset="${escapeHtml(index + 1)}"
+        aria-setsize="${escapeHtml(normalized.length)}">
+        <div class="schema-drift-review-head">
+          <strong>${escapeHtml(changeRiskLabel(issue.compatibility))} schema review</strong>
+          <span>${escapeHtml([issue.surface, issue.portName, pathLabel].filter(Boolean).join(' · '))}</span>
+          <small>${escapeHtml(summary)}</small>
+          ${preview?.truncated ? '<small>Preview truncated to keep the review bounded.</small>' : ''}
+        </div>
+        <div class="schema-drift-preview-grid">
+          <div class="schema-drift-preview-side" data-schema-drift-preview-side="saved">
+            <strong>Frozen schema</strong>
+            <pre>${escapeHtml(savedText)}</pre>
+          </div>
+          <div class="schema-drift-preview-side" data-schema-drift-preview-side="current">
+            <strong>Current schema</strong>
+            <pre>${escapeHtml(currentText)}</pre>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  const hidden = Math.max(0, normalized.length - 3);
+  return `
+    <div
+      class="schema-drift-review"
+      data-schema-drift-review
+      role="list"
+      aria-label="Selected operator schema drift review"
+      aria-live="polite">
+      <div class="schema-drift-review-title">
+        <span>Schema Review</span>
+        <small>${escapeHtml(normalized.length)} frozen/current preview${normalized.length === 1 ? '' : 's'}</small>
+      </div>
+      ${rows}
+      ${hidden ? `<div class="schema-drift-review-overflow">+${escapeHtml(hidden)} more schema previews</div>` : ''}
     </div>
   `;
 }
@@ -18899,6 +19014,7 @@ function schemaOutlineRowSearchText(row) {
       schemaDriftTypeTransitionLabel(issue),
       issue.reviewHint,
       schemaDriftIssueChangeSummary(issue),
+      schemaDriftSchemaPreviewSearchText(issue.schemaPreview),
       ...normalizeSchemaDriftSchemaChanges(issue.schemaChanges).map((change) => [
         change.path,
         change.keyword,

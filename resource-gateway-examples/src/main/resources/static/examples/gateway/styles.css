@@ -1479,6 +1479,94 @@ body.dragging-operator * {
   color: #b91c1c;
 }
 
+.schema-drift-review {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(20, 184, 166, 0.22);
+  border-radius: 6px;
+  background: rgba(240, 253, 250, 0.38);
+}
+
+.schema-drift-review-title,
+.schema-drift-review-head {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.schema-drift-review-title span,
+.schema-drift-review-head strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.schema-drift-review-title small,
+.schema-drift-review-head span,
+.schema-drift-review-head small,
+.schema-drift-review-overflow {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.schema-drift-review-row {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  padding: 7px;
+  border-radius: 6px;
+}
+
+.schema-drift-review-row.error {
+  border: 1px solid rgba(220, 38, 38, 0.24);
+  background: rgba(254, 242, 242, 0.74);
+}
+
+.schema-drift-review-row.warning {
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  background: rgba(255, 251, 235, 0.78);
+}
+
+.schema-drift-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.schema-drift-preview-side {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.schema-drift-preview-side strong {
+  color: #115e59;
+  font-size: 10.5px;
+  font-weight: 900;
+}
+
+.schema-drift-preview-side pre {
+  min-width: 0;
+  max-width: 100%;
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.74);
+  color: #334155;
+  font-size: 10px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .binding-row-head .schema-field-hint {
   display: block;
   color: #0f766e;
@@ -3619,9 +3707,14 @@ body.dragging-operator * {
     text-align: left;
   }
 
+  .schema-drift-preview-grid {
+    grid-template-columns: 1fr;
+  }
+
   .contract-port-groups,
   .schema-outline-search,
   .schema-drift-summary,
+  .schema-drift-review,
   .contract-port-row,
   .contract-config-summary,
   .schema-outline-row,

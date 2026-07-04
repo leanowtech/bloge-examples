@@ -661,6 +661,7 @@ public record GraphDraftDependencyReport(
      * @param currentType current catalog type at the issue path, or port/config root type when path is blank
      * @param reviewHint short remediation hint for dependency and canvas review surfaces
      * @param schemaChanges bounded keyword-level schema diff rows for review surfaces
+     * @param schemaPreview bounded frozen/current schema snippet at the issue path
      * @param message human-readable compatibility detail
      */
     public record SchemaCompatibilityIssue(
@@ -673,12 +674,17 @@ public record GraphDraftDependencyReport(
             String currentType,
             String reviewHint,
             List<SchemaKeywordChange> schemaChanges,
+            SchemaPreview schemaPreview,
             String message
     ) {
         private static final String MISSING_TYPE = "missing";
         private static final String BREAKING_REVIEW_HINT = "Review bindings before rebase or keep the frozen snapshot.";
         private static final String COMPATIBLE_REVIEW_HINT = "Review downstream expectations before rebase.";
         private static final int SCHEMA_CHANGE_LIMIT = 8;
+        private static final int SCHEMA_PREVIEW_DEPTH_LIMIT = 4;
+        private static final int SCHEMA_PREVIEW_OBJECT_LIMIT = 12;
+        private static final int SCHEMA_PREVIEW_ARRAY_LIMIT = 8;
+        private static final int SCHEMA_PREVIEW_STRING_LIMIT = 160;
         private static final List<String> SCHEMA_CHANGE_KEYWORDS = List.of(
                 "const",
                 "enum",
@@ -710,7 +716,8 @@ public record GraphDraftDependencyReport(
                                         String portName,
                                         String compatibility,
                                         String message) {
-            this(nodeId, surface, portName, compatibility, "", "", "", "", List.of(), message);
+            this(nodeId, surface, portName, compatibility, "", "", "", "", List.of(), SchemaPreview.empty(),
+                    message);
         }
 
         public SchemaCompatibilityIssue {
@@ -723,6 +730,7 @@ public record GraphDraftDependencyReport(
             currentType = currentType == null ? "" : currentType;
             reviewHint = reviewHint == null ? "" : reviewHint;
             schemaChanges = schemaChanges == null ? List.of() : List.copyOf(schemaChanges);
+            schemaPreview = schemaPreview == null ? SchemaPreview.empty() : schemaPreview;
             message = message == null ? "" : message;
         }
 
@@ -732,7 +740,8 @@ public record GraphDraftDependencyReport(
                                         String compatibility,
                                         String path,
                                         String message) {
-            this(nodeId, surface, portName, compatibility, path, "", "", "", List.of(), message);
+            this(nodeId, surface, portName, compatibility, path, "", "", "", List.of(), SchemaPreview.empty(),
+                    message);
         }
 
         /**
@@ -776,6 +785,44 @@ public record GraphDraftDependencyReport(
             }
         }
 
+        /**
+         * Bounded frozen/current schema preview for side-by-side review.
+         *
+         * @param path schema-relative path for the preview
+         * @param savedSchema frozen snapshot schema snippet
+         * @param currentSchema current catalog schema snippet
+         * @param truncated whether either snippet was depth/size truncated
+         */
+        public record SchemaPreview(
+                String path,
+                Map<String, Object> savedSchema,
+                Map<String, Object> currentSchema,
+                boolean truncated
+        ) {
+            public SchemaPreview {
+                path = path == null ? "" : path;
+                savedSchema = savedSchema == null ? Map.of() : new LinkedHashMap<>(savedSchema);
+                currentSchema = currentSchema == null ? Map.of() : new LinkedHashMap<>(currentSchema);
+            }
+
+            private static SchemaPreview empty() {
+                return new SchemaPreview("", Map.of(), Map.of(), false);
+            }
+
+            private static SchemaPreview of(com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope saved,
+                                            com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope current,
+                                            String path) {
+                Map<String, Object> savedRoot = saved == null ? Map.of() : saved.schema();
+                Map<String, Object> currentRoot = current == null ? Map.of() : current.schema();
+                boolean[] truncated = new boolean[]{false};
+                Map<String, Object> savedPreview = compactSchemaPreviewMap(effectiveSchemaAtPath(savedRoot, path),
+                        0, truncated);
+                Map<String, Object> currentPreview = compactSchemaPreviewMap(effectiveSchemaAtPath(currentRoot, path),
+                        0, truncated);
+                return new SchemaPreview(path, savedPreview, currentPreview, truncated[0]);
+            }
+        }
+
         private static SchemaCompatibilityIssue breaking(String nodeId,
                                                          String surface,
                                                          String portName,
@@ -798,7 +845,8 @@ public record GraphDraftDependencyReport(
                                                          String savedType,
                                                          String currentType,
                                                          String message) {
-            return breaking(nodeId, surface, portName, path, savedType, currentType, List.of(), message);
+            return breaking(nodeId, surface, portName, path, savedType, currentType, List.of(),
+                    SchemaPreview.empty(), message);
         }
 
         private static SchemaCompatibilityIssue breaking(String nodeId,
@@ -808,9 +856,10 @@ public record GraphDraftDependencyReport(
                                                          String savedType,
                                                          String currentType,
                                                          List<SchemaKeywordChange> schemaChanges,
+                                                         SchemaPreview schemaPreview,
                                                          String message) {
             return new SchemaCompatibilityIssue(nodeId, surface, portName, "breaking", path,
-                    savedType, currentType, BREAKING_REVIEW_HINT, schemaChanges, message);
+                    savedType, currentType, BREAKING_REVIEW_HINT, schemaChanges, schemaPreview, message);
         }
 
         private static SchemaCompatibilityIssue compatible(String nodeId,
@@ -827,7 +876,8 @@ public record GraphDraftDependencyReport(
                                                            String savedType,
                                                            String currentType,
                                                            String message) {
-            return compatible(nodeId, surface, portName, path, savedType, currentType, List.of(), message);
+            return compatible(nodeId, surface, portName, path, savedType, currentType, List.of(),
+                    SchemaPreview.empty(), message);
         }
 
         private static SchemaCompatibilityIssue compatible(String nodeId,
@@ -837,9 +887,10 @@ public record GraphDraftDependencyReport(
                                                            String savedType,
                                                            String currentType,
                                                            List<SchemaKeywordChange> schemaChanges,
+                                                           SchemaPreview schemaPreview,
                                                            String message) {
             return new SchemaCompatibilityIssue(nodeId, surface, portName, "compatible", path,
-                    savedType, currentType, COMPATIBLE_REVIEW_HINT, schemaChanges, message);
+                    savedType, currentType, COMPATIBLE_REVIEW_HINT, schemaChanges, schemaPreview, message);
         }
 
         private static String typeLabel(com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope envelope,
@@ -971,6 +1022,68 @@ public record GraphDraftDependencyReport(
         private static String compactSchemaValueLabel(String value) {
             String compact = value == null ? "" : value.replaceAll("\\s+", " ").trim();
             return compact.length() <= 96 ? compact : compact.substring(0, 93) + "...";
+        }
+
+        private static Map<String, Object> compactSchemaPreviewMap(Map<String, Object> schema,
+                                                                   int depth,
+                                                                   boolean[] truncated) {
+            if (schema == null || schema.isEmpty()) {
+                return Map.of();
+            }
+            Object compact = compactSchemaPreviewValue(schema, depth, truncated);
+            if (compact instanceof Map<?, ?> map) {
+                Map<String, Object> result = new LinkedHashMap<>();
+                map.forEach((key, value) -> result.put(String.valueOf(key), value));
+                return result;
+            }
+            return Map.of("value", compact);
+        }
+
+        private static Object compactSchemaPreviewValue(Object value, int depth, boolean[] truncated) {
+            if (value == null || value instanceof Number || value instanceof Boolean) {
+                return value;
+            }
+            if (value instanceof String string) {
+                if (string.length() > SCHEMA_PREVIEW_STRING_LIMIT) {
+                    truncated[0] = true;
+                    return string.substring(0, SCHEMA_PREVIEW_STRING_LIMIT - 3) + "...";
+                }
+                return string;
+            }
+            if (depth >= SCHEMA_PREVIEW_DEPTH_LIMIT) {
+                truncated[0] = true;
+                return "...";
+            }
+            if (value instanceof List<?> list) {
+                List<Object> compact = new ArrayList<>();
+                int count = 0;
+                for (Object item : list) {
+                    if (count >= SCHEMA_PREVIEW_ARRAY_LIMIT) {
+                        truncated[0] = true;
+                        compact.add("...");
+                        break;
+                    }
+                    compact.add(compactSchemaPreviewValue(item, depth + 1, truncated));
+                    count++;
+                }
+                return compact;
+            }
+            if (value instanceof Map<?, ?> map) {
+                Map<String, Object> compact = new LinkedHashMap<>();
+                int count = 0;
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    if (count >= SCHEMA_PREVIEW_OBJECT_LIMIT) {
+                        truncated[0] = true;
+                        compact.put("...", "truncated");
+                        break;
+                    }
+                    compact.put(String.valueOf(entry.getKey()),
+                            compactSchemaPreviewValue(entry.getValue(), depth + 1, truncated));
+                    count++;
+                }
+                return compact;
+            }
+            return compactSchemaValueLabel(String.valueOf(value));
         }
     }
 
@@ -1128,6 +1241,7 @@ public record GraphDraftDependencyReport(
                         SchemaCompatibilityIssue.typeLabel(saved, path),
                         SchemaCompatibilityIssue.typeLabel(current, path),
                         SchemaCompatibilityIssue.schemaChanges(saved, current, path, "breaking"),
+                        SchemaCompatibilityIssue.SchemaPreview.of(saved, current, path),
                         issue.get().message()));
                 return;
             }
@@ -1137,6 +1251,7 @@ public record GraphDraftDependencyReport(
                     SchemaCompatibilityIssue.typeLabel(saved, compatiblePath),
                     SchemaCompatibilityIssue.typeLabel(current, compatiblePath),
                     SchemaCompatibilityIssue.schemaChanges(saved, current, compatiblePath, "compatible"),
+                    SchemaCompatibilityIssue.SchemaPreview.of(saved, current, compatiblePath),
                     compatibleMessage));
         }
 

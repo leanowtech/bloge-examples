@@ -712,6 +712,11 @@ It also carries bounded keyword-level `schemaChanges` rows for the affected
 schema path, so the same UI can show compact review evidence such as
 `type: number -> integer` or `minimum: 0 -> 10` and let `Schema Search` locate
 drift by keyword, old value, current value, or review hint.
+For schema drift review, the dependency contract also returns a bounded
+`schemaPreview` at the affected path. The selected-operator contract panel
+renders `Frozen schema` and `Current schema` side by side, limits the preview
+size for large imported schemas, and indexes the preview text so searches such
+as `frozen integer`, `minimum`, or `current schema` can locate the drift row.
 The same contract area now exposes a stable accessibility state contract:
 schema search inputs control their rendered outline regions, result counters are
 announced through live metadata, outline containers and rows use list/status

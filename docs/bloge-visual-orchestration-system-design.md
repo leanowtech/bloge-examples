@@ -909,7 +909,7 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | --- | --- | --- |
 | `POST` | `/api/visual/drafts` | 当前已实现：创建图草稿，服务端分配 identity/revision 并固化 operator snapshot；repository 写入失败返回 `409` / `visual.draft.createPersistenceFailed`，保留候选 draft readiness |
 | `GET` | `/api/visual/drafts/{draftId}` | 获取草稿 |
-| `GET` | `/api/visual/drafts/{draftId}/dependencies` | 当前已实现：返回 `bloge.visualGraphDraftDependencies.v1`，输出 current catalog 中 missing/scope-mismatch/drifted/missing-snapshot operator、operator library owner、source/lowering/readiness 分布、frozen-vs-current input/output/config schema compatibility state/issues 和每个节点的 binding/edge 上下游 lineage |
+| `GET` | `/api/visual/drafts/{draftId}/dependencies` | 当前已实现：返回 `bloge.visualGraphDraftDependencies.v1`，输出 current catalog 中 missing/scope-mismatch/drifted/missing-snapshot operator、operator library owner、source/lowering/readiness 分布、frozen-vs-current input/output/config schema compatibility state/issues（含 path、type transition、keyword diff 和 bounded frozen/current schema preview）以及每个节点的 binding/edge 上下游 lineage |
 | `GET` | `/api/visual/drafts/history` | 当前已实现：返回轻量 active/deleted draft history index，用于发现 retained history 和 deleted draft recovery 入口 |
 | `GET` | `/api/visual/drafts/summaries` | 当前已实现：返回 `bloge.visualGraphDraftSummary.v1`，列表层暴露 validation/readiness/actionReadiness、diagnostic counts、dependency counts、frozen-vs-current schema compatibility drift counts/state counts 和 schema drift operatorRef routing counts |
 | `GET` | `/api/visual/drafts/{draftId}/export` | 当前已实现：导出 `bloge.visualGraphDraftExport.v1` 包，包含 `bundleFingerprint`、draft snapshot、operator snapshots、export-time diagnostics 和 validation/readiness/actionReadiness |

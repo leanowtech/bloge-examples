@@ -381,6 +381,10 @@ class VisualGraphDraftControllerTest {
                                             assertThat(change.compatibility()).isEqualTo("compatible");
                                             assertThat(change.summary()).isEqualTo("type: integer -> number");
                                         });
+                                assertThat(issue.schemaPreview().path()).isEqualTo("score");
+                                assertThat(issue.schemaPreview().savedSchema()).containsEntry("type", "integer");
+                                assertThat(issue.schemaPreview().currentSchema()).containsEntry("type", "number");
+                                assertThat(issue.schemaPreview().truncated()).isFalse();
                             });
                 });
         assertThat(report.nodes())
@@ -404,6 +408,9 @@ class VisualGraphDraftControllerTest {
                                             assertThat(change.savedValue()).isEqualTo("integer");
                                             assertThat(change.currentValue()).isEqualTo("number");
                                         });
+                                assertThat(issue.schemaPreview().path()).isEqualTo("score");
+                                assertThat(issue.schemaPreview().savedSchema()).containsEntry("type", "integer");
+                                assertThat(issue.schemaPreview().currentSchema()).containsEntry("type", "number");
                                 assertThat(issue.message()).contains("can still feed current input schema");
                             });
                 });
@@ -460,6 +467,10 @@ class VisualGraphDraftControllerTest {
                                             assertThat(change.compatibility()).isEqualTo("breaking");
                                             assertThat(change.summary()).isEqualTo("type: number -> integer");
                                         });
+                                assertThat(issue.schemaPreview().path()).isEqualTo("score");
+                                assertThat(issue.schemaPreview().savedSchema()).containsEntry("type", "number");
+                                assertThat(issue.schemaPreview().currentSchema()).containsEntry("type", "integer");
+                                assertThat(issue.schemaPreview().truncated()).isFalse();
                                 assertThat(issue.message())
                                         .contains("target type integer requires integer-valued source")
                                         .contains("source type number has no integral multipleOf");
@@ -484,6 +495,9 @@ class VisualGraphDraftControllerTest {
                                             assertThat(change.savedValue()).isEqualTo("number");
                                             assertThat(change.currentValue()).isEqualTo("integer");
                                         });
+                                assertThat(issue.schemaPreview().path()).isEqualTo("score");
+                                assertThat(issue.schemaPreview().savedSchema()).containsEntry("type", "number");
+                                assertThat(issue.schemaPreview().currentSchema()).containsEntry("type", "integer");
                                 assertThat(issue.message())
                                         .contains("target type integer requires integer-valued source")
                                         .contains("source type number has no integral multipleOf");

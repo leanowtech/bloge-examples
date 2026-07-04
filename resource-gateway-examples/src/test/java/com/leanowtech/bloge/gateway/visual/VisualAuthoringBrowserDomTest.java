@@ -400,6 +400,15 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("selected-operator-editor"), "number -> integer");
         waitForText(wait, By.id("selected-operator-editor"), "type: number -> integer");
         waitForText(wait, By.id("selected-operator-editor"), "Review bindings before rebase");
+        waitForText(wait, By.id("selected-operator-editor"), "Schema Review");
+        waitForText(wait, By.id("selected-operator-editor"), "Frozen schema");
+        waitForText(wait, By.id("selected-operator-editor"), "Current schema");
+        waitForText(wait, By.id("selected-operator-editor"), "\"type\": \"number\"");
+        waitForText(wait, By.id("selected-operator-editor"), "\"type\": \"integer\"");
+        assertThat(driver.findElements(By.cssSelector(
+                "#selected-operator-editor [data-schema-drift-review-row]"
+                        + "[data-schema-drift-review-path='score']"
+        ))).isNotEmpty();
         assertThat(driver.findElements(By.cssSelector(
                 "#selected-operator-editor [data-schema-outline-row]"
                         + "[data-schema-outline-path='score'][data-schema-drift='error']"
@@ -428,17 +437,28 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ignored -> driver.findElements(By.cssSelector(
                 "#selected-operator-editor [data-schema-outline-row][data-schema-outline-path='amount']"
         )).isEmpty());
+        sendKeysThroughRerenderedFocusedInput(wait, schemaSearch, "frozen integer");
+        waitForFocusedValue(wait, schemaSearch, "frozen integer");
+        waitForText(wait, By.id("selected-operator-editor"), "score");
         assertVisibleElementsNoHorizontalOverflow(wait,
                 By.cssSelector("#selected-operator-editor [data-schema-drift-summary]"));
+        assertVisibleElementsNoHorizontalOverflow(wait,
+                By.cssSelector("#selected-operator-editor [data-schema-drift-review]"));
+        assertVisibleElementsNoHorizontalOverflow(wait,
+                By.cssSelector("#selected-operator-editor [data-schema-drift-preview-side]"));
         assertVisibleElementsNoHorizontalOverflow(wait,
                 By.cssSelector("#selected-operator-editor [data-schema-outline-row][data-schema-drift]"));
 
         setViewport(wait, 390, 980);
         scrollIntoView(wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("selected-operator-editor"))));
         waitForText(wait, By.id("selected-operator-editor"), "1 breaking drift");
-        waitForFocusedValue(wait, schemaSearch, "breaking");
+        waitForFocusedValue(wait, schemaSearch, "frozen integer");
         assertVisibleElementsNoHorizontalOverflow(wait,
                 By.cssSelector("#selected-operator-editor [data-schema-drift-summary]"));
+        assertVisibleElementsNoHorizontalOverflow(wait,
+                By.cssSelector("#selected-operator-editor [data-schema-drift-review]"));
+        assertVisibleElementsNoHorizontalOverflow(wait,
+                By.cssSelector("#selected-operator-editor [data-schema-drift-preview-side]"));
         assertNoHorizontalOverflow(wait, By.id("selected-operator-editor"));
         assertPageNoHorizontalOverflow();
     }

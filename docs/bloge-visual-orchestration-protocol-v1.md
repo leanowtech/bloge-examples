@@ -1778,6 +1778,11 @@ draft、draft bundle、import result 和 publication dependency report 能直接
 按“冻结 schema 是否仍能 feed 当前 schema”判断，output drift 按“当前 output 是否仍能
 满足冻结 output contract”判断；breaking issue 会携带 shared JSON Schema compatibility
 的机器可解释原因，compatible issue 表示 schema surface 已变化但可保守放行、仍应人工审阅。
+每条 schema compatibility issue 会携带 schema-relative `path`、`savedType`、`currentType`、
+`reviewHint`、bounded keyword-level `schemaChanges[]`，以及 bounded `schemaPreview`。
+`schemaPreview` 只截取 drift path 对应的 frozen/current JSON Schema snippet，并通过
+`truncated` 标记说明是否因为深度、对象 key 数、数组项或字符串长度限制而裁剪；浏览器
+selected contract 可直接把它渲染成并排 `Frozen schema` / `Current schema` 审阅块。
 `bloge.visualGraphDraftSummary.v1` 和 `bloge.visualGraphPublicationSummary.v1`
 会从 dependency report 继续派生 `schemaBreakingDriftCount`、
 `schemaCompatibleDriftCount`、`schemaCompatibilityStateCounts`，以及

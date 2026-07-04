@@ -8146,6 +8146,10 @@ operators:
                   'valueDomainLabel',
                   'changeRiskLabel',
                   'normalizeSchemaDriftIssues',
+                  'normalizeSchemaDriftSchemaPreview',
+                  'plainSchemaPreviewObject',
+                  'schemaDriftSchemaPreviewText',
+                  'schemaDriftSchemaPreviewSearchText',
                   'normalizeSchemaDriftSchemaChanges',
                   'schemaDriftTypeTransitionLabel',
                   'schemaDriftReviewHint',
@@ -8158,6 +8162,7 @@ operators:
                   'schemaDriftIssuesForOutlineRow',
                   'schemaDriftSummaryLabel',
                   'renderSchemaDriftSummary',
+                  'renderSchemaDriftReviewPanel',
                   'schemaDriftLevel',
                   'schemaOutlineSearchInputDomId',
                   'schemaOutlineSearchMetaDomId',
@@ -8505,11 +8510,18 @@ operators:
                     compatibility: 'breaking',
                     summary: 'type: string -> integer'
                   }],
+                  schemaPreview: {
+                    path: 'customer.profile.id',
+                    savedSchema: { type: 'string', title: 'Customer identifier' },
+                    currentSchema: { type: 'integer', minimum: 1 },
+                    truncated: false
+                  },
                   message: 'id type narrowed'
                 }];
                 const driftOutline = context.schemaOutlineForEnvelope(complexOutlineEnvelope, 40, 'breaking', driftIssues);
                 const driftOutlineByType = context.schemaOutlineForEnvelope(complexOutlineEnvelope, 40, 'string integer', driftIssues);
                 const driftOutlineByKeyword = context.schemaOutlineForEnvelope(complexOutlineEnvelope, 40, 'type integer', driftIssues);
+                const driftOutlineByPreview = context.schemaOutlineForEnvelope(complexOutlineEnvelope, 40, 'frozen minimum', driftIssues);
                 const driftOutlineByReview = context.schemaOutlineForEnvelope(complexOutlineEnvelope, 40, 'rebase', driftIssues);
                 const driftOutlinePaths = driftOutline.rows.map((row) => row.path).join('|');
                 const driftLeafRow = driftOutline.rows.find((row) => row.path === 'customer.profile.id');
@@ -8518,10 +8530,12 @@ operators:
                   { outlineId: 'drift-outline', label: 'Drift outline' }
                 );
                 const driftSummaryHtml = context.renderSchemaDriftSummary(driftIssues);
+                const driftReviewHtml = context.renderSchemaDriftReviewPanel(driftIssues);
                 const driftIssueForPort = context.schemaDriftIssuesForPort(driftIssues, 'input', 'request')[0];
                 const driftTransitionLabel = context.schemaDriftTypeTransitionLabel(driftIssueForPort);
                 const driftReviewHint = context.schemaDriftReviewHint(driftIssueForPort);
                 const driftChangeSummary = context.schemaDriftIssueChangeSummary(driftIssueForPort);
+                const driftPreviewSearchText = context.schemaDriftSchemaPreviewSearchText(driftIssueForPort.schemaPreview);
                 const driftDetailLabel = context.schemaDriftIssueDetailLabel(driftIssueForPort);
                 const schemaSearchHtml = context.renderSchemaOutlineSearchControl(
                   { id: 'riskComplexIntake' },
@@ -8613,10 +8627,14 @@ operators:
                   ['complex drift review hint', driftReviewHint, 'Review bindings before rebase.'],
                   ['complex drift change keyword', driftIssueForPort.schemaChanges[0].keyword, 'type'],
                   ['complex drift change summary', driftChangeSummary, 'type: string -> integer'],
+                  ['complex drift preview saved type', driftIssueForPort.schemaPreview.savedSchema.type, 'string'],
+                  ['complex drift preview current minimum', driftIssueForPort.schemaPreview.currentSchema.minimum, 1],
+                  ['complex drift preview search text', String(driftPreviewSearchText.includes('frozen schema') && driftPreviewSearchText.includes('"minimum": 1')), 'true'],
                   ['complex drift detail label', driftDetailLabel, 'customer.profile.id: id type narrowed · type: string -> integer · Review bindings before rebase.'],
                   ['complex drift outline search total', driftOutline.total, 3],
                   ['complex drift outline type search path', String(driftOutlineByType.rows.some((row) => row.path === 'customer.profile.id')), 'true'],
                   ['complex drift outline keyword search path', String(driftOutlineByKeyword.rows.some((row) => row.path === 'customer.profile.id')), 'true'],
+                  ['complex drift outline preview search path', String(driftOutlineByPreview.rows.some((row) => row.path === 'customer.profile.id')), 'true'],
                   ['complex drift outline review search path', String(driftOutlineByReview.rows.some((row) => row.path === 'customer.profile.id')), 'true'],
                   ['complex drift outline search path', String(driftOutlinePaths.includes('customer.profile.id')), 'true'],
                   ['complex drift outline issue attached', driftLeafRow.driftIssues[0].message, 'id type narrowed'],
@@ -8630,6 +8648,10 @@ operators:
                   ['complex drift outline label id', String(driftOutlineHtml.includes('id="drift-outline-row-')), 'true'],
                   ['complex drift summary html', String(driftSummaryHtml.includes('1 breaking drift')), 'true'],
                   ['complex drift summary html transition', String(driftSummaryHtml.includes('type: string -&gt; integer')), 'true'],
+                  ['complex drift review html title', String(driftReviewHtml.includes('Schema Review')), 'true'],
+                  ['complex drift review html path', String(driftReviewHtml.includes('data-schema-drift-review-path="customer.profile.id"')), 'true'],
+                  ['complex drift review html frozen', String(driftReviewHtml.includes('Frozen schema') && driftReviewHtml.includes('&quot;type&quot;: &quot;string&quot;')), 'true'],
+                  ['complex drift review html current', String(driftReviewHtml.includes('Current schema') && driftReviewHtml.includes('&quot;minimum&quot;: 1')), 'true'],
                   ['union library input summary', unionLibraryProfile.operators[0].inputUnionSummary, 'inputs.decision oneOf<integer|string>, inputs.events[] anyOf<boolean|null>'],
                   ['union library config summary', unionLibraryProfile.operators[0].configUnionSummary, '(root) oneOf<object|null>'],
                   ['union library html input branch', String(unionLibraryProfileHtml.includes('in union inputs.decision oneOf&lt;integer|string&gt;')), 'true'],
