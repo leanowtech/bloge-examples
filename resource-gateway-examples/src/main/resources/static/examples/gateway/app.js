@@ -492,6 +492,7 @@ const state = {
   visualRuntimeEvidenceQuery: {
     evidenceKind: '',
     operatorRef: '',
+    operatorLibraryId: '',
     bindingId: '',
     activationId: '',
     lifecycleState: '',
@@ -1232,6 +1233,9 @@ function visualRuntimeEvidenceParams(kind = '') {
   if (query.operatorRef) {
     params.set('operatorRef', query.operatorRef);
   }
+  if (query.operatorLibraryId && kind === 'runtime-evidence') {
+    params.set('operatorLibraryId', query.operatorLibraryId);
+  }
   if (query.bindingId && kind !== 'executable-lowering-integration') {
     params.set('bindingId', query.bindingId);
   }
@@ -1382,6 +1386,7 @@ function normalizeVisualRuntimeEvidenceQuery(query = {}) {
   return {
     evidenceKind: normalizeReadinessState(query.evidenceKind),
     operatorRef: String(query.operatorRef || '').trim(),
+    operatorLibraryId: String(query.operatorLibraryId || '').trim(),
     bindingId: String(query.bindingId || '').trim(),
     activationId: String(query.activationId || '').trim(),
     lifecycleState: String(query.lifecycleState || '').trim().toLowerCase(),
@@ -9168,6 +9173,7 @@ function visualRuntimeEvidenceShouldShow(rows) {
   return Number(evidenceWindow?.unfilteredTotal ?? evidenceWindow?.total ?? 0) > 0
     || (Array.isArray(rows) && rows.length > 0)
     || Boolean(query.operatorRef
+      || query.operatorLibraryId
       || query.bindingId
       || query.activationId
       || query.lifecycleState
@@ -9431,6 +9437,7 @@ function visualRuntimeEvidenceControls(rows) {
   const offset = Number(evidenceWindow?.offset ?? query.offset) || 0;
   const pageSize = Number(evidenceWindow?.itemLimit || query.limit || 12) || 12;
   const hasFilter = Boolean(query.operatorRef
+    || query.operatorLibraryId
     || query.evidenceKind
     || query.bindingId
     || query.activationId
@@ -9441,6 +9448,8 @@ function visualRuntimeEvidenceControls(rows) {
     || offset
     || pageSize !== 12);
   const operatorCounts = evidenceWindow?.operatorRefCounts || visualRuntimeEvidenceCounts(rows, 'operatorRef');
+  const operatorLibraryCounts = evidenceWindow?.operatorLibraryIdCounts
+    || visualRuntimeEvidenceCounts(rows, 'operatorLibraryId');
   const kindCounts = evidenceWindow?.kindCounts || visualRuntimeEvidenceCounts(rows, 'kind');
   const bindingCounts = evidenceWindow?.bindingIdCounts || visualRuntimeEvidenceCounts(rows, 'bindingId');
   const activationCounts = evidenceWindow?.activationIdCounts || visualRuntimeEvidenceCounts(rows, 'activationId');
@@ -9453,6 +9462,12 @@ function visualRuntimeEvidenceControls(rows) {
         <span>${escapeHtml('Kind')}</span>
         <select id="runtime-evidence-kind" aria-label="Filter runtime evidence by kind">
           ${visualRuntimeBindingOptionMarkup(VISUAL_RUNTIME_EVIDENCE_KINDS, query.evidenceKind, kindCounts)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Library')}</span>
+        <select id="runtime-evidence-operator-library-id" aria-label="Filter runtime evidence by operator library">
+          ${visualRuntimeBindingRawOptionMarkup('All libraries', operatorLibraryCounts, query.operatorLibraryId)}
         </select>
       </label>
       <label>
@@ -9859,6 +9874,14 @@ function visualRuntimeEvidenceRows(implementationBindings = [], adapterActivatio
     .map((row, index) => ({ ...row, index }));
 }
 
+function runtimeEvidenceOperatorLibraryId(operatorRef) {
+  const normalized = String(operatorRef || '').trim();
+  if (!normalized) {
+    return '';
+  }
+  return String(OPERATOR_TYPES[normalized]?.operatorLibraryId || '').trim();
+}
+
 function visualRuntimeEvidenceImplementationBindingRow(binding, index) {
   const requirementCount = Array.isArray(binding?.sourceRequirementKeys) ? binding.sourceRequirementKeys.length : 0;
   const implementation = binding?.implementation || {};
@@ -9869,6 +9892,7 @@ function visualRuntimeEvidenceImplementationBindingRow(binding, index) {
     state: String(binding?.state || '').trim().toLowerCase(),
     level: visualRuntimeEvidenceLevel(binding),
     operatorRef: binding?.operatorRef || '',
+    operatorLibraryId: runtimeEvidenceOperatorLibraryId(binding?.operatorRef),
     bindingId: binding?.bindingId || '',
     activationId: '',
     label: [
@@ -9879,6 +9903,8 @@ function visualRuntimeEvidenceImplementationBindingRow(binding, index) {
     ].filter(Boolean).join(' · '),
     value: [
       binding?.operatorRef ? `operator ${binding.operatorRef}` : '',
+      runtimeEvidenceOperatorLibraryId(binding?.operatorRef)
+        ? `library ${runtimeEvidenceOperatorLibraryId(binding.operatorRef)}` : '',
       implementation.adapterKind ? `adapter ${implementation.adapterKind}` : '',
       implementation.runtimeOwner ? `owner ${implementation.runtimeOwner}` : '',
       implementation.entrypoint ? `entrypoint ${implementation.entrypoint}` : '',
@@ -9896,6 +9922,7 @@ function visualRuntimeAdapterActivationRow(activation, index) {
     state: String(activation?.state || '').trim().toLowerCase(),
     level: visualRuntimeEvidenceLevel(activation),
     operatorRef: activation?.operatorRef || '',
+    operatorLibraryId: runtimeEvidenceOperatorLibraryId(activation?.operatorRef),
     bindingId: activation?.bindingId || '',
     activationId: activation?.activationId || '',
     label: [
@@ -9906,6 +9933,8 @@ function visualRuntimeAdapterActivationRow(activation, index) {
     ].filter(Boolean).join(' · '),
     value: [
       activation?.operatorRef ? `operator ${activation.operatorRef}` : '',
+      runtimeEvidenceOperatorLibraryId(activation?.operatorRef)
+        ? `library ${runtimeEvidenceOperatorLibraryId(activation.operatorRef)}` : '',
       activation?.bindingId ? `binding ${activation.bindingId}@${Number(activation.bindingRevision || 0) || 0}` : '',
       activation?.adapterKind ? `adapter ${activation.adapterKind}` : '',
       activation?.runtimeEnvironment ? `env ${activation.runtimeEnvironment}` : '',
@@ -9934,6 +9963,7 @@ function visualRuntimeRolloutObservationRow(observation, index) {
     state: String(observation?.state || '').trim().toLowerCase(),
     level: visualRuntimeEvidenceLevel(observation),
     operatorRef: observation?.operatorRef || '',
+    operatorLibraryId: runtimeEvidenceOperatorLibraryId(observation?.operatorRef),
     bindingId: observation?.bindingId || '',
     activationId: observation?.activationId || '',
     rolloutSignals,
@@ -9946,6 +9976,8 @@ function visualRuntimeRolloutObservationRow(observation, index) {
     ].filter(Boolean).join(' · '),
     value: [
       observation?.operatorRef ? `operator ${observation.operatorRef}` : '',
+      runtimeEvidenceOperatorLibraryId(observation?.operatorRef)
+        ? `library ${runtimeEvidenceOperatorLibraryId(observation.operatorRef)}` : '',
       observation?.activationId ? `activation ${observation.activationId}@${Number(observation.activationRevision || 0) || 0}` : '',
       observation?.rolloutStrategy ? `strategy ${operatorPaletteFacetLabel(observation.rolloutStrategy)}` : '',
       `${Number(observation?.trafficPercent || 0) || 0}% traffic`,
@@ -9967,6 +9999,7 @@ function visualExecutableLoweringIntegrationRow(integration, index) {
     state: String(integration?.state || '').trim().toLowerCase(),
     level: visualRuntimeEvidenceLevel(integration),
     operatorRef: integration?.operatorRef || '',
+    operatorLibraryId: runtimeEvidenceOperatorLibraryId(integration?.operatorRef),
     bindingId: integration?.bindingId || '',
     activationId: integration?.activationId || '',
     label: [
@@ -9977,6 +10010,8 @@ function visualExecutableLoweringIntegrationRow(integration, index) {
     ].filter(Boolean).join(' · '),
     value: [
       integration?.operatorRef ? `operator ${integration.operatorRef}` : '',
+      runtimeEvidenceOperatorLibraryId(integration?.operatorRef)
+        ? `library ${runtimeEvidenceOperatorLibraryId(integration.operatorRef)}` : '',
       integration?.activationId ? `activation ${integration.activationId}@${Number(integration.activationRevision || 0) || 0}` : '',
       integration?.bindingId ? `binding ${integration.bindingId}@${Number(integration.bindingRevision || 0) || 0}` : '',
       integration?.loweringMode ? `lowering ${operatorPaletteFacetLabel(integration.loweringMode)}` : '',
@@ -10109,6 +10144,7 @@ function visualRuntimeEvidenceContext(row) {
     message: [
       operatorPaletteFacetLabel(row.kind || 'runtime-evidence'),
       row.id,
+      row.operatorLibraryId ? `library ${row.operatorLibraryId}` : '',
       row.operatorRef,
       row.bindingId ? `binding ${row.bindingId}` : '',
       row.activationId ? `activation ${row.activationId}` : ''
@@ -10457,6 +10493,13 @@ function attachVisualRuntimeEvidenceQueryHandlers() {
       offset: 0
     });
   }
+  const operatorLibraryId = $('runtime-evidence-operator-library-id');
+  if (operatorLibraryId) {
+    operatorLibraryId.onchange = () => updateVisualRuntimeEvidenceQuery({
+      operatorLibraryId: operatorLibraryId.value,
+      offset: 0
+    });
+  }
   const bindingId = $('runtime-evidence-binding-id');
   if (bindingId) {
     bindingId.onchange = () => updateVisualRuntimeEvidenceQuery({
@@ -10527,6 +10570,7 @@ function attachVisualRuntimeEvidenceQueryHandlers() {
     reset.onclick = () => updateVisualRuntimeEvidenceQuery({
       evidenceKind: '',
       operatorRef: '',
+      operatorLibraryId: '',
       bindingId: '',
       activationId: '',
       lifecycleState: '',
@@ -10580,6 +10624,7 @@ async function openVisualRuntimeEvidenceAction(item, context = null) {
     return null;
   }
   const operatorRef = String(item?.operatorRef || '').trim();
+  const operatorLibraryId = String(item?.operatorLibraryId || '').trim();
   if (target.kind === 'binding') {
     state.visualRuntimeBindingImplementationQuery = normalizeVisualRuntimeBindingImplementationQuery({
       operatorRef,
@@ -10594,6 +10639,7 @@ async function openVisualRuntimeEvidenceAction(item, context = null) {
     state.visualRuntimeEvidenceQuery = normalizeVisualRuntimeEvidenceQuery({
       evidenceKind: 'implementation-binding',
       operatorRef,
+      operatorLibraryId,
       bindingId: target.id,
       activationId: '',
       lifecycleState: '',
@@ -10618,6 +10664,7 @@ async function openVisualRuntimeEvidenceAction(item, context = null) {
       ? 'adapter-activation'
       : (target.kind === 'integration' ? 'executable-lowering-integration' : ''),
     operatorRef,
+    operatorLibraryId,
     bindingId: '',
     activationId: target.kind === 'activation' ? target.id : '',
     lifecycleState: '',
@@ -10637,6 +10684,7 @@ async function openVisualRuntimeEvidenceAction(item, context = null) {
     state.visualRuntimeEvidenceQuery = normalizeVisualRuntimeEvidenceQuery({
       evidenceKind: row.kind || '',
       operatorRef: row.operatorRef || operatorRef,
+      operatorLibraryId: row.operatorLibraryId || operatorLibraryId,
       bindingId: row.bindingId || '',
       activationId: row.activationId || '',
       lifecycleState: row.kind === 'rollout-observation' ? '' : row.state,

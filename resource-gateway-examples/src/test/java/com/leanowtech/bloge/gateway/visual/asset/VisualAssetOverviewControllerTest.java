@@ -3401,6 +3401,10 @@ class VisualAssetOverviewControllerTest {
                 10, 0, "", "", "", "", "", "p95_latency", false);
         VisualRuntimeEvidenceWindow byKind = fixture.controller().runtimeEvidenceWindow(
                 10, 0, "rollout-observation", "", "", "", "", "", "", false);
+        VisualRuntimeEvidenceWindow byOperatorLibrary = fixture.controller().runtimeEvidenceWindow(
+                10, 0, "", "", "risk-policy-design", "", "", "", "", "", false);
+        VisualRuntimeEvidenceWindow byMissingOperatorLibrary = fixture.controller().runtimeEvidenceWindow(
+                10, 0, "", "", "missing-library", "", "", "", "", "", false);
         VisualRuntimeEvidenceWindow bySignalAdapterKind = fixture.controller().runtimeEvidenceWindow(
                 10, 0, "adapter_activation", "", "", "", "", "", "p95_latency", false);
         VisualRuntimeEvidenceWindow breachedOnly = fixture.controller().runtimeEvidenceWindow(
@@ -3424,6 +3428,7 @@ class VisualAssetOverviewControllerTest {
                 .containsEntry("rollout-observation", 1)
                 .containsEntry("executable-lowering-integration", 1);
         assertThat(firstPage.operatorRefCounts()).containsEntry("risk:eligibility", 4);
+        assertThat(firstPage.operatorLibraryIdCounts()).containsEntry("risk-policy-design", 4);
         assertThat(firstPage.bindingIdCounts()).containsEntry(binding.bindingId(), 4);
         assertThat(firstPage.activationIdCounts()).containsEntry(activation.activationId(), 3);
         assertThat(firstPage.rolloutSignalCounts()).containsEntry("p95-latency", 1);
@@ -3453,6 +3458,15 @@ class VisualAssetOverviewControllerTest {
         assertThat(byKind.total()).isEqualTo(1);
         assertThat(byKind.kindCounts()).containsOnly(Map.entry("rollout-observation", 1));
         assertThat(byKind.rolloutObservations()).singleElement().isEqualTo(observation);
+        assertThat(byOperatorLibrary.filter().operatorLibraryId()).isEqualTo("risk-policy-design");
+        assertThat(byOperatorLibrary.total()).isEqualTo(4);
+        assertThat(byOperatorLibrary.operatorLibraryIdCounts()).containsEntry("risk-policy-design", 4);
+        assertThat(byOperatorLibrary.items())
+                .extracting(VisualRuntimeEvidenceWindow.Item::operatorLibraryId)
+                .containsOnly("risk-policy-design");
+        assertThat(byMissingOperatorLibrary.filter().operatorLibraryId()).isEqualTo("missing-library");
+        assertThat(byMissingOperatorLibrary.total()).isZero();
+        assertThat(byMissingOperatorLibrary.items()).isEmpty();
         assertThat(bySignalAdapterKind.filter().evidenceKind()).isEqualTo("adapter-activation");
         assertThat(bySignalAdapterKind.filter().rolloutSignal()).isEqualTo("p95-latency");
         assertThat(bySignalAdapterKind.total()).isEqualTo(1);

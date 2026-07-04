@@ -1463,6 +1463,7 @@ public class VisualAssetOverviewController {
      * @param offset zero-based offset after filtering
      * @param evidenceKind optional mixed evidence kind filter
      * @param operatorRef optional operator reference filter
+     * @param operatorLibraryId optional imported operator-library owner filter
      * @param bindingId optional implementation binding id filter
      * @param activationId optional adapter activation id filter
      * @param lifecycleState optional lifecycle state for activation/lowering evidence
@@ -1477,6 +1478,7 @@ public class VisualAssetOverviewController {
             @RequestParam(defaultValue = "0") int offset,
             @RequestParam(defaultValue = "") String evidenceKind,
             @RequestParam(defaultValue = "") String operatorRef,
+            @RequestParam(defaultValue = "") String operatorLibraryId,
             @RequestParam(defaultValue = "") String bindingId,
             @RequestParam(defaultValue = "") String activationId,
             @RequestParam(defaultValue = "") String lifecycleState,
@@ -1488,10 +1490,12 @@ public class VisualAssetOverviewController {
                 adapterActivationRepository.all().stream().toList(),
                 rolloutObservationRepository.all().stream().toList(),
                 executableLoweringIntegrationRepository.all().stream().toList(),
+                catalog.operatorLibraryIdsByOperatorRef(true),
                 itemLimit,
                 offset,
                 evidenceKind,
                 operatorRef,
+                operatorLibraryId,
                 bindingId,
                 activationId,
                 lifecycleState,
@@ -1499,6 +1503,31 @@ public class VisualAssetOverviewController {
                 rolloutSignal,
                 breachedOnly
         );
+    }
+
+    public VisualRuntimeEvidenceWindow runtimeEvidenceWindow(
+            int itemLimit,
+            int offset,
+            String evidenceKind,
+            String operatorRef,
+            String bindingId,
+            String activationId,
+            String lifecycleState,
+            String rolloutState,
+            String rolloutSignal,
+            boolean breachedOnly) {
+        return runtimeEvidenceWindow(
+                itemLimit,
+                offset,
+                evidenceKind,
+                operatorRef,
+                "",
+                bindingId,
+                activationId,
+                lifecycleState,
+                rolloutState,
+                rolloutSignal,
+                breachedOnly);
     }
 
     public VisualRuntimeEvidenceWindow runtimeEvidenceWindow(
@@ -1516,6 +1545,7 @@ public class VisualAssetOverviewController {
                 offset,
                 "",
                 operatorRef,
+                "",
                 bindingId,
                 activationId,
                 lifecycleState,

@@ -35,6 +35,7 @@ import java.util.function.Function;
  * @param filter normalized evidence filter
  * @param kindCounts filtered counts by runtime evidence kind
  * @param operatorRefCounts filtered counts by operator reference
+ * @param operatorLibraryIdCounts filtered counts by imported operator-library owner id
  * @param bindingIdCounts filtered counts by runtime binding id
  * @param activationIdCounts filtered counts by adapter activation id
  * @param stateCounts filtered counts by evidence state
@@ -59,6 +60,7 @@ public record VisualRuntimeEvidenceWindow(
         Filter filter,
         Map<String, Integer> kindCounts,
         Map<String, Integer> operatorRefCounts,
+        Map<String, Integer> operatorLibraryIdCounts,
         Map<String, Integer> bindingIdCounts,
         Map<String, Integer> activationIdCounts,
         Map<String, Integer> stateCounts,
@@ -85,6 +87,7 @@ public record VisualRuntimeEvidenceWindow(
         filter = filter == null ? Filter.all() : filter;
         kindCounts = immutableCounts(kindCounts);
         operatorRefCounts = immutableCounts(operatorRefCounts);
+        operatorLibraryIdCounts = immutableCounts(operatorLibraryIdCounts);
         bindingIdCounts = immutableCounts(bindingIdCounts);
         activationIdCounts = immutableCounts(activationIdCounts);
         stateCounts = immutableCounts(stateCounts);
@@ -123,10 +126,12 @@ public record VisualRuntimeEvidenceWindow(
                 adapterActivations,
                 rolloutObservations,
                 executableLoweringIntegrations,
+                Map.of(),
                 itemLimit,
                 offset,
                 "",
                 operatorRef,
+                "",
                 bindingId,
                 activationId,
                 lifecycleState,
@@ -152,13 +157,52 @@ public record VisualRuntimeEvidenceWindow(
                                                    String rolloutState,
                                                    String rolloutSignal,
                                                    boolean breachedOnly) {
+        return from(
+                implementationBindings,
+                adapterActivations,
+                rolloutObservations,
+                executableLoweringIntegrations,
+                Map.of(),
+                itemLimit,
+                offset,
+                evidenceKind,
+                operatorRef,
+                "",
+                bindingId,
+                activationId,
+                lifecycleState,
+                rolloutState,
+                rolloutSignal,
+                breachedOnly);
+    }
+
+    /**
+     * Builds a mixed evidence chain window with catalog operator-library ownership context.
+     */
+    public static VisualRuntimeEvidenceWindow from(List<VisualRuntimeBindingImplementationBinding> implementationBindings,
+                                                   List<VisualRuntimeAdapterActivation> adapterActivations,
+                                                   List<VisualRuntimeRolloutObservation> rolloutObservations,
+                                                   List<VisualExecutableLoweringIntegration> executableLoweringIntegrations,
+                                                   Map<String, String> operatorLibraryIdsByOperatorRef,
+                                                   int itemLimit,
+                                                   int offset,
+                                                   String evidenceKind,
+                                                   String operatorRef,
+                                                   String operatorLibraryId,
+                                                   String bindingId,
+                                                   String activationId,
+                                                   String lifecycleState,
+                                                   String rolloutState,
+                                                   String rolloutSignal,
+                                                   boolean breachedOnly) {
         List<Entry> generated = generate(
                 implementationBindings,
                 adapterActivations,
                 rolloutObservations,
-                executableLoweringIntegrations);
-        Filter filter = new Filter(evidenceKind, operatorRef, bindingId, activationId, lifecycleState, rolloutState,
-                rolloutSignal, breachedOnly);
+                executableLoweringIntegrations,
+                operatorLibraryIdsByOperatorRef);
+        Filter filter = new Filter(evidenceKind, operatorRef, operatorLibraryId, bindingId, activationId,
+                lifecycleState, rolloutState, rolloutSignal, breachedOnly);
         List<Entry> filtered = filter.usesRolloutSignalFilter()
                 ? filterByRolloutSignalChain(generated, filter)
                 : generated.stream().filter(filter::matches).toList();
@@ -183,6 +227,7 @@ public record VisualRuntimeEvidenceWindow(
                 filter,
                 countBy(filtered, Entry::kind),
                 countBy(filtered, Entry::operatorRef),
+                countBy(filtered, Entry::operatorLibraryId),
                 countBy(filtered, Entry::bindingId),
                 countBy(filtered, Entry::activationId),
                 countBy(filtered, Entry::state),
@@ -212,26 +257,31 @@ public record VisualRuntimeEvidenceWindow(
     private static List<Entry> generate(List<VisualRuntimeBindingImplementationBinding> implementationBindings,
                                         List<VisualRuntimeAdapterActivation> adapterActivations,
                                         List<VisualRuntimeRolloutObservation> rolloutObservations,
-                                        List<VisualExecutableLoweringIntegration> executableLoweringIntegrations) {
+                                        List<VisualExecutableLoweringIntegration> executableLoweringIntegrations,
+                                        Map<String, String> operatorLibraryIdsByOperatorRef) {
         ArrayList<Entry> entries = new ArrayList<>();
         for (VisualRuntimeBindingImplementationBinding binding : safeList(implementationBindings)) {
             if (binding != null) {
-                entries.add(Entry.from(binding));
+                entries.add(Entry.from(binding, operatorLibraryId(binding.operatorRef(),
+                        operatorLibraryIdsByOperatorRef)));
             }
         }
         for (VisualRuntimeAdapterActivation activation : safeList(adapterActivations)) {
             if (activation != null) {
-                entries.add(Entry.from(activation));
+                entries.add(Entry.from(activation, operatorLibraryId(activation.operatorRef(),
+                        operatorLibraryIdsByOperatorRef)));
             }
         }
         for (VisualRuntimeRolloutObservation observation : safeList(rolloutObservations)) {
             if (observation != null) {
-                entries.add(Entry.from(observation));
+                entries.add(Entry.from(observation, operatorLibraryId(observation.operatorRef(),
+                        operatorLibraryIdsByOperatorRef)));
             }
         }
         for (VisualExecutableLoweringIntegration integration : safeList(executableLoweringIntegrations)) {
             if (integration != null) {
-                entries.add(Entry.from(integration));
+                entries.add(Entry.from(integration, operatorLibraryId(integration.operatorRef(),
+                        operatorLibraryIdsByOperatorRef)));
             }
         }
         return entries;
@@ -310,6 +360,13 @@ public record VisualRuntimeEvidenceWindow(
             case "executable-lowering-integration" -> 3;
             default -> 9;
         };
+    }
+
+    private static String operatorLibraryId(String operatorRef, Map<String, String> operatorLibraryIdsByOperatorRef) {
+        if (operatorRef == null || operatorLibraryIdsByOperatorRef == null) {
+            return "";
+        }
+        return safe(operatorLibraryIdsByOperatorRef.get(operatorRef));
     }
 
     private static Map<String, Integer> rolloutSignalCounts(List<Entry> entries, boolean breachedOnly) {
@@ -401,6 +458,7 @@ public record VisualRuntimeEvidenceWindow(
     public record Filter(
             String evidenceKind,
             String operatorRef,
+            String operatorLibraryId,
             String bindingId,
             String activationId,
             String lifecycleState,
@@ -411,6 +469,7 @@ public record VisualRuntimeEvidenceWindow(
     ) {
         public Filter(String evidenceKind,
                       String operatorRef,
+                      String operatorLibraryId,
                       String bindingId,
                       String activationId,
                       String lifecycleState,
@@ -420,6 +479,7 @@ public record VisualRuntimeEvidenceWindow(
             this(
                     normalizeEvidenceKind(evidenceKind),
                     safe(operatorRef),
+                    safe(operatorLibraryId),
                     safe(bindingId),
                     safe(activationId),
                     normalize(lifecycleState),
@@ -428,6 +488,7 @@ public record VisualRuntimeEvidenceWindow(
                     breachedOnly,
                     !normalizeEvidenceKind(evidenceKind).isBlank()
                             || !safe(operatorRef).isBlank()
+                            || !safe(operatorLibraryId).isBlank()
                             || !safe(bindingId).isBlank()
                             || !safe(activationId).isBlank()
                             || !normalize(lifecycleState).isBlank()
@@ -440,6 +501,7 @@ public record VisualRuntimeEvidenceWindow(
         public Filter {
             evidenceKind = normalizeEvidenceKind(evidenceKind);
             operatorRef = safe(operatorRef);
+            operatorLibraryId = safe(operatorLibraryId);
             bindingId = safe(bindingId);
             activationId = safe(activationId);
             lifecycleState = normalize(lifecycleState);
@@ -447,6 +509,7 @@ public record VisualRuntimeEvidenceWindow(
             rolloutSignal = normalizeSignal(rolloutSignal);
             filtered = !evidenceKind.isBlank()
                     || !operatorRef.isBlank()
+                    || !operatorLibraryId.isBlank()
                     || !bindingId.isBlank()
                     || !activationId.isBlank()
                     || !lifecycleState.isBlank()
@@ -456,7 +519,7 @@ public record VisualRuntimeEvidenceWindow(
         }
 
         static Filter all() {
-            return new Filter("", "", "", "", "", "", "", false);
+            return new Filter("", "", "", "", "", "", "", "", false);
         }
 
         boolean usesRolloutSignalFilter() {
@@ -483,6 +546,9 @@ public record VisualRuntimeEvidenceWindow(
             if (!operatorRef.isBlank() && !entry.operatorRef().equals(operatorRef)) {
                 return false;
             }
+            if (!operatorLibraryId.isBlank() && !entry.operatorLibraryId().equals(operatorLibraryId)) {
+                return false;
+            }
             if (!bindingId.isBlank() && !entry.bindingId().equals(bindingId)) {
                 return false;
             }
@@ -500,6 +566,9 @@ public record VisualRuntimeEvidenceWindow(
                 return false;
             }
             if (!operatorRef.isBlank() && !entry.operatorRef().equals(operatorRef)) {
+                return false;
+            }
+            if (!operatorLibraryId.isBlank() && !entry.operatorLibraryId().equals(operatorLibraryId)) {
                 return false;
             }
             if (!bindingId.isBlank() && !entry.bindingId().equals(bindingId)) {
@@ -539,6 +608,7 @@ public record VisualRuntimeEvidenceWindow(
             String state,
             String level,
             String operatorRef,
+            String operatorLibraryId,
             String bindingId,
             String activationId,
             Instant updatedAt,
@@ -550,6 +620,7 @@ public record VisualRuntimeEvidenceWindow(
             state = normalize(state);
             level = normalize(level);
             operatorRef = safe(operatorRef);
+            operatorLibraryId = safe(operatorLibraryId);
             bindingId = safe(bindingId);
             activationId = safe(activationId);
             updatedAt = updatedAt == null ? Instant.EPOCH : updatedAt;
@@ -562,6 +633,7 @@ public record VisualRuntimeEvidenceWindow(
             String state,
             String level,
             String operatorRef,
+            String operatorLibraryId,
             String bindingId,
             String activationId,
             Instant updatedAt,
@@ -571,41 +643,45 @@ public record VisualRuntimeEvidenceWindow(
             VisualRuntimeRolloutObservation rolloutObservation,
             VisualExecutableLoweringIntegration executableLoweringIntegration
     ) {
-        static Entry from(VisualRuntimeBindingImplementationBinding binding) {
+        static Entry from(VisualRuntimeBindingImplementationBinding binding, String operatorLibraryId) {
             String kind = "implementation-binding";
             Item item = new Item(kind, binding.bindingId(), binding.state(), binding.level(),
-                    binding.operatorRef(), binding.bindingId(), "",
+                    binding.operatorRef(), operatorLibraryId, binding.bindingId(), "",
                     binding.updatedAt(), false);
             return new Entry(kind, binding.bindingId(), item.state(), item.level(), item.operatorRef(),
+                    item.operatorLibraryId(),
                     item.bindingId(), item.activationId(), item.updatedAt(), item, binding, null, null, null);
         }
 
-        static Entry from(VisualRuntimeAdapterActivation activation) {
+        static Entry from(VisualRuntimeAdapterActivation activation, String operatorLibraryId) {
             String kind = "adapter-activation";
             Item item = new Item(kind, activation.activationId(), activation.state(), activation.level(),
-                    activation.operatorRef(), activation.bindingId(), activation.activationId(),
+                    activation.operatorRef(), operatorLibraryId, activation.bindingId(), activation.activationId(),
                     activation.updatedAt(), false);
             return new Entry(kind, activation.activationId(), item.state(), item.level(), item.operatorRef(),
+                    item.operatorLibraryId(),
                     item.bindingId(), item.activationId(), item.updatedAt(), item, null, activation, null, null);
         }
 
-        static Entry from(VisualRuntimeRolloutObservation observation) {
+        static Entry from(VisualRuntimeRolloutObservation observation, String operatorLibraryId) {
             String kind = "rollout-observation";
             boolean breached = observation.rolloutSignals().stream()
                     .anyMatch(signal -> signal != null && signal.breached());
             Item item = new Item(kind, observation.observationId(), observation.state(), observation.level(),
-                    observation.operatorRef(), observation.bindingId(), observation.activationId(),
+                    observation.operatorRef(), operatorLibraryId, observation.bindingId(), observation.activationId(),
                     observation.updatedAt(), breached);
             return new Entry(kind, observation.observationId(), item.state(), item.level(), item.operatorRef(),
+                    item.operatorLibraryId(),
                     item.bindingId(), item.activationId(), item.updatedAt(), item, null, null, observation, null);
         }
 
-        static Entry from(VisualExecutableLoweringIntegration integration) {
+        static Entry from(VisualExecutableLoweringIntegration integration, String operatorLibraryId) {
             String kind = "executable-lowering-integration";
             Item item = new Item(kind, integration.integrationId(), integration.state(), integration.level(),
-                    integration.operatorRef(), integration.bindingId(), integration.activationId(),
+                    integration.operatorRef(), operatorLibraryId, integration.bindingId(), integration.activationId(),
                     integration.updatedAt(), false);
             return new Entry(kind, integration.integrationId(), item.state(), item.level(), item.operatorRef(),
+                    item.operatorLibraryId(),
                     item.bindingId(), item.activationId(), item.updatedAt(), item, null, null, null, integration);
         }
     }
