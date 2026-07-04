@@ -223,6 +223,133 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void overviewRoutesRuntimeEvidenceRisksThroughActionQueue() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding proposal =
+                submitImplementation(fixture, completeImplementation());
+
+        VisualAssetOverview readyToBind = fixture.controller().overview(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "info",
+                "BIND_RUNTIME_IMPLEMENTATION",
+                "runtime-evidence");
+        assertThat(readyToBind.actionQueue().total()).isEqualTo(1);
+        assertThat(readyToBind.actionQueue().items())
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.targetId()).isEqualTo("binding:%s".formatted(proposal.bindingId()));
+                    assertThat(item.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(item.operatorLibraryId()).isEqualTo("risk-policy-design");
+                    assertThat(item.handoffLane()).isEqualTo("operator-platform");
+                    assertThat(item.handoffKind()).isEqualTo("operator-implementation");
+                    assertThat(item.readinessState()).isEqualTo("runtime-evidence-ready");
+                });
+
+        var bindResponse = fixture.controller().bindRuntimeBindingImplementation(
+                proposal.bindingId(),
+                transitionRequest("", true));
+        assertThat(bindResponse.getStatusCode().value()).isEqualTo(200);
+        VisualRuntimeBindingImplementationBinding binding = bindResponse.getBody().binding();
+
+        VisualAssetOverview missingActivation = fixture.controller().overview(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "warning",
+                "ACTIVATE_RUNTIME_ADAPTER",
+                "runtime-evidence");
+        assertThat(missingActivation.actionQueue().total()).isEqualTo(1);
+        assertThat(missingActivation.actionQueue().items())
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.targetId()).isEqualTo("binding:%s".formatted(binding.bindingId()));
+                    assertThat(item.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(item.operatorLibraryId()).isEqualTo("risk-policy-design");
+                    assertThat(item.handoffLane()).isEqualTo("runtime-platform");
+                    assertThat(item.handoffKind()).isEqualTo("adapter-activation");
+                    assertThat(item.handoffTarget()).isEqualTo("native");
+                    assertThat(item.summary()).contains("no matching active runtime adapter activation");
+                });
+
+        var activationResponse = fixture.controller().submitRuntimeAdapterActivation(
+                adapterActivationRequest(binding, "risk-eligibility-prod-active"));
+        assertThat(activationResponse.getStatusCode().value()).isEqualTo(201);
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) activationResponse.getBody();
+
+        VisualAssetOverview missingIntegration = fixture.controller().overview(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "warning",
+                "INTEGRATE_EXECUTABLE_LOWERING",
+                "runtime-evidence");
+        assertThat(missingIntegration.actionQueue().total()).isEqualTo(1);
+        assertThat(missingIntegration.actionQueue().items())
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.targetId()).isEqualTo("activation:%s".formatted(activation.activationId()));
+                    assertThat(item.handoffLane()).isEqualTo("operator-platform");
+                    assertThat(item.handoffKind()).isEqualTo("executable-lowering");
+                    assertThat(item.readinessState()).isEqualTo("runtime-evidence-partial");
+                });
+
+        var rolloutResponse = fixture.controller().submitRuntimeRolloutObservation(
+                rolloutObservationRequest(
+                        activation,
+                        "risk-rollout-canary-degraded",
+                        VisualRuntimeRolloutObservation.STATE_DEGRADED,
+                        25,
+                        true,
+                        "p95 latency breached canary guardrail"));
+        assertThat(rolloutResponse.getStatusCode().value()).isEqualTo(201);
+        var integrationResponse = fixture.controller().submitExecutableLoweringIntegration(
+                executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"));
+        assertThat(integrationResponse.getStatusCode().value()).isEqualTo(201);
+
+        VisualAssetOverview rolloutRisk = fixture.controller().overview(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "warning",
+                "REVIEW_RUNTIME_ROLLOUT_RISK",
+                "runtime-evidence",
+                "",
+                "risk-policy-design");
+        assertThat(rolloutRisk.actionQueue().total()).isEqualTo(1);
+        assertThat(rolloutRisk.actionQueue().operatorRefCounts()).containsEntry("risk:eligibility", 1);
+        assertThat(rolloutRisk.actionQueue().operatorLibraryIdCounts()).containsEntry("risk-policy-design", 1);
+        assertThat(rolloutRisk.actionQueue().items())
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.targetId()).isEqualTo("rollout:risk-rollout-canary-degraded");
+                    assertThat(item.handoffLane()).isEqualTo("runtime-platform");
+                    assertThat(item.handoffKind()).isEqualTo("rollout-observation");
+                    assertThat(item.readinessState()).isEqualTo("runtime-rollout-risk");
+                    assertThat(item.summary()).contains("rollback triggered");
+                });
+        assertThat(fixture.controller().overview(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "warning",
+                "INTEGRATE_EXECUTABLE_LOWERING",
+                "runtime-evidence").actionQueue().total())
+                .isZero();
+    }
+
+    @Test
     void runtimeBindingRoutingFallsBackToFrozenOperatorLibraryOwnersWhenCatalogMapIsMissing() {
         OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(library);

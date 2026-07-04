@@ -80,7 +80,7 @@
    unbind/deactivate mutation、bind 写入失败诊断、字段级 implementation contract-diff gate、semantic JSON
    Schema-compatible drift classification、runtime implementation SemVer/reimplementation submit gate、implementation rolloutPlan validate gate
    和四类 runtime evidence submit stable-id 精确 replay
-   幂等返回、submit 写入失败诊断、overview runtime evidence aggregate、operator-library create/import-text/import-bundle/replace/restore/delete registry 写入失败诊断、ResourceDesignContract upsert/delete registry 写入失败诊断、draft create/full-save/import 写入失败诊断、publication publish/import 持久化失败诊断，以及 golden save/delete/run-history/certification 写入失败诊断之后，补其他尚未覆盖的跨 repository 事务/partial-failure 硬化、更广义 idempotency、
+   幂等返回、submit 写入失败诊断、overview runtime evidence aggregate 与 runtime-evidence action queue、operator-library create/import-text/import-bundle/replace/restore/delete registry 写入失败诊断、ResourceDesignContract upsert/delete registry 写入失败诊断、draft create/full-save/import 写入失败诊断、publication publish/import 持久化失败诊断，以及 golden save/delete/run-history/certification 写入失败诊断之后，补其他尚未覆盖的跨 repository 事务/partial-failure 硬化、更广义 idempotency、
    更深跨系统 rollout/canary/rollback 编排、指标消费闭环和在已补 `allOf` 结构校验、runtime value matching 与保守交集推理之后继续深化 JSON Schema 兼容性门禁，让
    handoff contract snapshot 能被外部 runtime team 变成可绑定、可激活、可对账 executor bridge、
    可回滚、可持续重新派生 executable readiness 的实现事实。

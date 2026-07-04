@@ -323,7 +323,11 @@ public record VisualAssetOverview(
                         actionType,
                         actionTargetKind,
                         actionOperatorRef,
-                        actionOperatorLibraryId
+                        actionOperatorLibraryId,
+                        implementationBindings,
+                        adapterActivations,
+                        rolloutObservations,
+                        executableLoweringIntegrations
                 )
         );
     }
@@ -1116,6 +1120,26 @@ public record VisualAssetOverview(
                                 String actionTargetKind,
                                 String actionOperatorRef,
                                 String actionOperatorLibraryId) {
+            return from(drafts, publications, operators, operatorLibraryIdsByOperatorRef, actionItemLimit,
+                    actionOffset, actionSeverity, actionType, actionTargetKind, actionOperatorRef,
+                    actionOperatorLibraryId, List.of(), List.of(), List.of(), List.of());
+        }
+
+        static ActionQueue from(List<GraphDraftSummary> drafts,
+                                List<VisualGraphPublicationSummary> publications,
+                                List<OperatorDefinition> operators,
+                                Map<String, String> operatorLibraryIdsByOperatorRef,
+                                int actionItemLimit,
+                                int actionOffset,
+                                String actionSeverity,
+                                String actionType,
+                                String actionTargetKind,
+                                String actionOperatorRef,
+                                String actionOperatorLibraryId,
+                                List<VisualRuntimeBindingImplementationBinding> implementationBindings,
+                                List<VisualRuntimeAdapterActivation> adapterActivations,
+                                List<VisualRuntimeRolloutObservation> rolloutObservations,
+                                List<VisualExecutableLoweringIntegration> executableLoweringIntegrations) {
             List<ActionItem> generated = new ArrayList<>();
             Map<String, String> currentOwnerIdsByOperatorRef = mergedOperatorLibraryIds(
                     Map.of(),
@@ -1138,6 +1162,14 @@ public record VisualAssetOverview(
             for (OperatorDefinition operator : operators == null ? List.<OperatorDefinition>of() : operators) {
                 addCatalogAction(generated, operator, currentOwnerIdsByOperatorRef);
             }
+            addRuntimeEvidenceActions(
+                    generated,
+                    implementationBindings,
+                    adapterActivations,
+                    rolloutObservations,
+                    executableLoweringIntegrations,
+                    currentOwnerIdsByOperatorRef
+            );
             generated.sort((left, right) -> {
                 int severity = Integer.compare(severityRank(left.severity()), severityRank(right.severity()));
                 if (severity != 0) {
@@ -1418,6 +1450,367 @@ public record VisualAssetOverview(
                     ? stableActionKey(actionType, targetKind, targetId, readinessState, artifactKind)
                     : actionKey.trim();
         }
+    }
+
+    private static void addRuntimeEvidenceActions(
+            List<ActionItem> items,
+            List<VisualRuntimeBindingImplementationBinding> implementationBindings,
+            List<VisualRuntimeAdapterActivation> adapterActivations,
+            List<VisualRuntimeRolloutObservation> rolloutObservations,
+            List<VisualExecutableLoweringIntegration> executableLoweringIntegrations,
+            Map<String, String> operatorLibraryIdsByOperatorRef) {
+        List<VisualRuntimeBindingImplementationBinding> safeBindings = implementationBindings == null
+                ? List.of()
+                : implementationBindings.stream().filter(binding -> binding != null).toList();
+        List<VisualRuntimeAdapterActivation> safeActivations = adapterActivations == null
+                ? List.of()
+                : adapterActivations.stream().filter(activation -> activation != null).toList();
+        List<VisualRuntimeRolloutObservation> safeObservations = rolloutObservations == null
+                ? List.of()
+                : rolloutObservations.stream().filter(observation -> observation != null).toList();
+        List<VisualExecutableLoweringIntegration> safeIntegrations = executableLoweringIntegrations == null
+                ? List.of()
+                : executableLoweringIntegrations.stream().filter(integration -> integration != null).toList();
+
+        Map<String, VisualRuntimeBindingImplementationBinding> activeBindingsById = new LinkedHashMap<>();
+        for (VisualRuntimeBindingImplementationBinding binding : safeBindings) {
+            if (binding.bound()) {
+                activeBindingsById.put(binding.bindingId(), binding);
+            }
+            addRuntimeBindingEvidenceAction(items, binding, operatorLibraryIdsByOperatorRef);
+        }
+
+        Map<String, VisualRuntimeAdapterActivation> activeActivationsById = new LinkedHashMap<>();
+        Map<String, VisualRuntimeAdapterActivation> activeActivationsByBindingId = new LinkedHashMap<>();
+        for (VisualRuntimeAdapterActivation activation : safeActivations) {
+            if (activation.active()) {
+                activeActivationsById.put(activation.activationId(), activation);
+                activeActivationsByBindingId.putIfAbsent(activation.bindingId(), activation);
+            } else if (VisualRuntimeAdapterActivation.STATE_FAILED.equals(activation.state())) {
+                addRuntimeEvidenceAction(
+                        items,
+                        "error",
+                        "REVIEW_RUNTIME_ADAPTER_FAILURE",
+                        activation.operatorRef(),
+                        operatorLibraryId(activation.operatorRef(), operatorLibraryIdsByOperatorRef),
+                        "activation",
+                        activation.activationId(),
+                        "runtime-evidence-failed",
+                        "runtime-platform",
+                        "adapter-activation",
+                        activation.bindingId(),
+                        "Runtime adapter activation '%s' is failed for operator '%s'."
+                                .formatted(activation.activationId(), activation.operatorRef()),
+                        "Review adapter health/deployment evidence, submit a healthy activation, or deactivate the stale record."
+                );
+            }
+        }
+
+        Map<String, VisualExecutableLoweringIntegration> activeIntegrationsByActivationId =
+                new LinkedHashMap<>();
+        for (VisualExecutableLoweringIntegration integration : safeIntegrations) {
+            if (integration.active()) {
+                activeIntegrationsByActivationId.putIfAbsent(integration.activationId(), integration);
+            } else if (VisualExecutableLoweringIntegration.STATE_FAILED.equals(integration.state())) {
+                addRuntimeEvidenceAction(
+                        items,
+                        "error",
+                        "REVIEW_EXECUTABLE_LOWERING_FAILURE",
+                        integration.operatorRef(),
+                        operatorLibraryId(integration.operatorRef(), operatorLibraryIdsByOperatorRef),
+                        "integration",
+                        integration.integrationId(),
+                        "runtime-evidence-failed",
+                        "operator-platform",
+                        "executable-lowering",
+                        integration.activationId(),
+                        "Executable lowering integration '%s' is failed for operator '%s'."
+                                .formatted(integration.integrationId(), integration.operatorRef()),
+                        "Repair executor bridge evidence, then resubmit or deactivate the failed integration."
+                );
+            }
+        }
+
+        for (VisualRuntimeBindingImplementationBinding binding : activeBindingsById.values()) {
+            VisualRuntimeAdapterActivation activation = activeActivationsByBindingId.get(binding.bindingId());
+            if (!runtimeActivationMatchesBinding(activation, binding)) {
+                String adapterKind = binding.implementation() == null ? "" : binding.implementation().adapterKind();
+                addRuntimeEvidenceAction(
+                        items,
+                        "warning",
+                        "ACTIVATE_RUNTIME_ADAPTER",
+                        binding.operatorRef(),
+                        operatorLibraryId(binding.operatorRef(), operatorLibraryIdsByOperatorRef),
+                        "binding",
+                        binding.bindingId(),
+                        "runtime-evidence-partial",
+                        "runtime-platform",
+                        "adapter-activation",
+                        defaultIfBlank(adapterKind, binding.operatorRef()),
+                        "Bound implementation '%s' has no matching active runtime adapter activation."
+                                .formatted(binding.bindingId()),
+                        "Submit a healthy adapter activation for this binding before executable lowering or production rollout."
+                );
+            }
+        }
+
+        for (VisualRuntimeAdapterActivation activation : activeActivationsById.values()) {
+            VisualRuntimeBindingImplementationBinding binding = activeBindingsById.get(activation.bindingId());
+            if (!runtimeActivationMatchesBinding(activation, binding)) {
+                addRuntimeEvidenceAction(
+                        items,
+                        "error",
+                        "REPAIR_RUNTIME_ACTIVATION_CHAIN",
+                        activation.operatorRef(),
+                        operatorLibraryId(activation.operatorRef(), operatorLibraryIdsByOperatorRef),
+                        "activation",
+                        activation.activationId(),
+                        "runtime-evidence-orphaned",
+                        "runtime-platform",
+                        "adapter-activation",
+                        activation.bindingId(),
+                        "Active adapter activation '%s' no longer matches an active bound implementation."
+                                .formatted(activation.activationId()),
+                        "Deactivate or refresh this activation against the current bound implementation fingerprint/revision."
+                );
+                continue;
+            }
+            VisualExecutableLoweringIntegration integration =
+                    activeIntegrationsByActivationId.get(activation.activationId());
+            if (!runtimeIntegrationMatchesActivationAndBinding(integration, activation, binding)) {
+                addRuntimeEvidenceAction(
+                        items,
+                        "warning",
+                        "INTEGRATE_EXECUTABLE_LOWERING",
+                        activation.operatorRef(),
+                        operatorLibraryId(activation.operatorRef(), operatorLibraryIdsByOperatorRef),
+                        "activation",
+                        activation.activationId(),
+                        "runtime-evidence-partial",
+                        "operator-platform",
+                        "executable-lowering",
+                        activation.operatorRef(),
+                        "Active adapter activation '%s' has no matching executable lowering integration."
+                                .formatted(activation.activationId()),
+                        "Submit executor/lowering bridge evidence before recomputing executable readiness."
+                );
+            }
+        }
+
+        for (VisualExecutableLoweringIntegration integration : activeIntegrationsByActivationId.values()) {
+            VisualRuntimeAdapterActivation activation = activeActivationsById.get(integration.activationId());
+            VisualRuntimeBindingImplementationBinding binding =
+                    activation == null ? null : activeBindingsById.get(activation.bindingId());
+            if (!runtimeIntegrationMatchesActivationAndBinding(integration, activation, binding)) {
+                addRuntimeEvidenceAction(
+                        items,
+                        "error",
+                        "REPAIR_EXECUTABLE_LOWERING_CHAIN",
+                        integration.operatorRef(),
+                        operatorLibraryId(integration.operatorRef(), operatorLibraryIdsByOperatorRef),
+                        "integration",
+                        integration.integrationId(),
+                        "runtime-evidence-orphaned",
+                        "operator-platform",
+                        "executable-lowering",
+                        integration.activationId(),
+                        "Active executable lowering integration '%s' no longer matches an active activation chain."
+                                .formatted(integration.integrationId()),
+                        "Deactivate or refresh this integration after adapter activation and binding evidence are current."
+                );
+            }
+        }
+
+        for (VisualRuntimeRolloutObservation observation : safeObservations) {
+            addRuntimeRolloutEvidenceAction(items, observation, operatorLibraryIdsByOperatorRef);
+        }
+    }
+
+    private static void addRuntimeBindingEvidenceAction(
+            List<ActionItem> items,
+            VisualRuntimeBindingImplementationBinding binding,
+            Map<String, String> operatorLibraryIdsByOperatorRef) {
+        if (binding == null) {
+            return;
+        }
+        String operatorLibraryId = operatorLibraryId(binding.operatorRef(), operatorLibraryIdsByOperatorRef);
+        if (binding.failed()) {
+            addRuntimeEvidenceAction(
+                    items,
+                    "error",
+                    "REVIEW_RUNTIME_IMPLEMENTATION_FAILURE",
+                    binding.operatorRef(),
+                    operatorLibraryId,
+                    "binding",
+                    binding.bindingId(),
+                    "runtime-evidence-failed",
+                    "operator-platform",
+                    "operator-implementation",
+                    binding.operatorRef(),
+                    "Runtime implementation binding '%s' is failed for operator '%s'."
+                            .formatted(binding.bindingId(), binding.operatorRef()),
+                    "Review implementation validation evidence, fix the proposal, and resubmit a new binding record."
+            );
+        } else if (binding.requiresReview()) {
+            addRuntimeEvidenceAction(
+                    items,
+                    "warning",
+                    "REVIEW_RUNTIME_IMPLEMENTATION_BINDING",
+                    binding.operatorRef(),
+                    operatorLibraryId,
+                    "binding",
+                    binding.bindingId(),
+                    "runtime-evidence-review-required",
+                    "operator-platform",
+                    "operator-implementation",
+                    binding.operatorRef(),
+                    "Runtime implementation binding '%s' requires review before it can become active."
+                            .formatted(binding.bindingId()),
+                    "Review test, policy, rollback, and rollout evidence; then bind it with actor/reason audit."
+            );
+        } else if (binding.readyToBind()) {
+            addRuntimeEvidenceAction(
+                    items,
+                    "info",
+                    "BIND_RUNTIME_IMPLEMENTATION",
+                    binding.operatorRef(),
+                    operatorLibraryId,
+                    "binding",
+                    binding.bindingId(),
+                    "runtime-evidence-ready",
+                    "operator-platform",
+                    "operator-implementation",
+                    binding.operatorRef(),
+                    "Runtime implementation binding '%s' is ready to bind."
+                            .formatted(binding.bindingId()),
+                    "Bind this implementation with actor/reason evidence, or supersede it if newer evidence exists."
+            );
+        }
+    }
+
+    private static void addRuntimeRolloutEvidenceAction(
+            List<ActionItem> items,
+            VisualRuntimeRolloutObservation observation,
+            Map<String, String> operatorLibraryIdsByOperatorRef) {
+        if (observation == null) {
+            return;
+        }
+        String state = normalizeFacetValue(observation.state());
+        boolean failed = VisualRuntimeRolloutObservation.STATE_FAILED.equals(state)
+                || VisualRuntimeRolloutObservation.STATE_ROLLED_BACK.equals(state);
+        boolean risky = failed
+                || VisualRuntimeRolloutObservation.STATE_DEGRADED.equals(state)
+                || observation.rollbackTriggered();
+        if (!risky) {
+            return;
+        }
+        String actionType = failed ? "REVIEW_RUNTIME_ROLLOUT_FAILURE" : "REVIEW_RUNTIME_ROLLOUT_RISK";
+        String severity = failed ? "error" : "warning";
+        String recommendedAction = failed
+                ? "Review rollback evidence, keep the chain out of promotion, and submit fresh rollout evidence after remediation."
+                : "Review canary/degradation evidence before promoting this runtime binding or recomputing executable readiness.";
+        addRuntimeEvidenceAction(
+                items,
+                severity,
+                actionType,
+                observation.operatorRef(),
+                operatorLibraryId(observation.operatorRef(), operatorLibraryIdsByOperatorRef),
+                "rollout",
+                observation.observationId(),
+                failed ? "runtime-rollout-failed" : "runtime-rollout-risk",
+                "runtime-platform",
+                "rollout-observation",
+                observation.runtimeEnvironment(),
+                "Runtime rollout observation '%s' is %s%s for operator '%s'."
+                        .formatted(
+                                observation.observationId(),
+                                state,
+                                observation.rollbackTriggered() ? " with rollback triggered" : "",
+                                observation.operatorRef()),
+                recommendedAction
+        );
+    }
+
+    private static void addRuntimeEvidenceAction(List<ActionItem> items,
+                                                 String severity,
+                                                 String actionType,
+                                                 String operatorRef,
+                                                 String operatorLibraryId,
+                                                 String evidenceKind,
+                                                 String evidenceId,
+                                                 String readinessState,
+                                                 String handoffLane,
+                                                 String handoffKind,
+                                                 String handoffTarget,
+                                                 String summary,
+                                                 String recommendedAction) {
+        String targetId = "%s:%s".formatted(evidenceKind, evidenceId == null ? "" : evidenceId);
+        items.add(new ActionItem(
+                runtimeEvidenceActionKey(actionType, evidenceKind, evidenceId),
+                severity,
+                actionType,
+                "runtime-evidence",
+                targetId,
+                runtimeEvidenceTargetLabel(evidenceKind, evidenceId, operatorRef),
+                operatorRef,
+                operatorLibraryId,
+                readinessState,
+                "",
+                handoffLane,
+                handoffKind,
+                handoffTarget,
+                summary,
+                recommendedAction
+        ));
+    }
+
+    private static String runtimeEvidenceActionKey(String actionType,
+                                                   String evidenceKind,
+                                                   String evidenceId) {
+        return String.join("|",
+                actionType,
+                "runtime-evidence",
+                evidenceKind == null ? "" : evidenceKind,
+                evidenceId == null ? "" : evidenceId);
+    }
+
+    private static String runtimeEvidenceTargetLabel(String evidenceKind,
+                                                     String evidenceId,
+                                                     String operatorRef) {
+        String kind = normalizeFacetValue(evidenceKind);
+        String id = evidenceId == null ? "" : evidenceId;
+        String operator = operatorRef == null ? "" : operatorRef;
+        if (operator.isBlank()) {
+            return "%s %s".formatted(kind, id).trim();
+        }
+        return "%s / %s %s".formatted(operator, kind, id).trim();
+    }
+
+    private static boolean runtimeActivationMatchesBinding(VisualRuntimeAdapterActivation activation,
+                                                           VisualRuntimeBindingImplementationBinding binding) {
+        return activation != null
+                && binding != null
+                && binding.bound()
+                && activation.active()
+                && activation.bindingId().equals(binding.bindingId())
+                && activation.bindingRevision() == binding.revision()
+                && activation.operatorRef().equals(binding.operatorRef())
+                && activation.operatorFingerprint().equals(binding.operatorFingerprint());
+    }
+
+    private static boolean runtimeIntegrationMatchesActivationAndBinding(
+            VisualExecutableLoweringIntegration integration,
+            VisualRuntimeAdapterActivation activation,
+            VisualRuntimeBindingImplementationBinding binding) {
+        return integration != null
+                && runtimeActivationMatchesBinding(activation, binding)
+                && integration.active()
+                && integration.activationId().equals(activation.activationId())
+                && integration.activationRevision() == activation.revision()
+                && integration.bindingId().equals(binding.bindingId())
+                && integration.bindingRevision() == binding.revision()
+                && integration.operatorRef().equals(binding.operatorRef())
+                && integration.operatorFingerprint().equals(binding.operatorFingerprint());
     }
 
     private static Map<String, Integer> immutableCounts(Map<String, Integer> counts) {
@@ -2012,5 +2405,10 @@ public record VisualAssetOverview(
 
     private static String normalizeTextValue(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private static String defaultIfBlank(String value, String fallback) {
+        String normalized = normalizeTextValue(value);
+        return normalized.isBlank() ? normalizeTextValue(fallback) : normalized;
     }
 }

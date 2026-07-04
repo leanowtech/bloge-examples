@@ -1909,6 +1909,12 @@ adapter activation、rollout observation 和 executable lowering integration 的
 operator/binding/activation 计数、complete chain、partial chain、failed evidence record
 以及 degraded/rolled-back/rollback-triggered rollout 计数。它用于 workspace 健康摘要和
 控制面路由，不能被解释成 graph artifact 语义，也不能直接把 design-only operator 提升为 executable。
+overview action queue 会把这些 runtime evidence 风险进一步投影为 `targetKind=runtime-evidence`
+的派工建议，例如 `BIND_RUNTIME_IMPLEMENTATION`、`ACTIVATE_RUNTIME_ADAPTER`、
+`INTEGRATE_EXECUTABLE_LOWERING`、`REPAIR_RUNTIME_ACTIVATION_CHAIN`、
+`REPAIR_EXECUTABLE_LOWERING_CHAIN`、`REVIEW_RUNTIME_ROLLOUT_RISK` 和
+`REVIEW_RUNTIME_ROLLOUT_FAILURE`；这些 item 仍是只读 read-model recommendation，
+不是 runtime-plane lifecycle mutation，也不是新的 workflow truth source。
 owner `operatorLibraryId` 的解析顺序是：优先使用当前 catalog 的
 `operatorRef -> operatorLibraryId`，缺失时回退到 draft/publication summary 从 dependency
 evidence 派生的 `operatorLibraryIdsByOperatorRef`。这保证跨环境 DESIGN publication 或
