@@ -1029,6 +1029,51 @@ class VisualSchemaCompatibilityTest {
     }
 
     @Test
+    void acceptsDependentSchemaResidualConstraintWhenSourceResidualIsCompatible() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "riskFlag", Map.of("type", "string")
+                ),
+                "additionalProperties", Map.of("type", "string")
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "dependentSchemas", Map.of(
+                        "riskFlag", Map.of(
+                                "additionalProperties", Map.of("type", "string")
+                        )
+                )
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsDependentSchemaResidualConstraintWhenSourceResidualIsIncompatible() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "riskFlag", Map.of("type", "string")
+                ),
+                "additionalProperties", Map.of("type", "integer")
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "dependentSchemas", Map.of(
+                        "riskFlag", Map.of(
+                                "additionalProperties", Map.of("type", "string")
+                        )
+                )
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("target requires dependentSchemas 'riskFlag'")
+                        .contains("source does not guarantee the dependent schema"));
+    }
+
+    @Test
     void acceptsClosedObjectSourceThatCannotContainTargetNotRequiredProperty() {
         Map<String, Object> source = Map.of(
                 "type", "object",

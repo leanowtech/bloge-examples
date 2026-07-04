@@ -7660,7 +7660,9 @@ operators:
                   'sourceItemsCannotMatchContains',
                   'objectSchemasDefinitelyDisjoint',
                   'sourcePropertyConstraintsDisjointFrom',
+                  'propertyConstraintCompatibilityIssue',
                   'sourcePropertyConstraintsFor',
+                  'propertyConstraintsFor',
                   'numericIntegerCompatibilityIssue',
                   'objectSchemaCompatibilityIssue',
                   'objectOptionalTargetPropertiesCompatibilityIssue',
@@ -7783,6 +7785,43 @@ operators:
                 context.objectValueMatchesSchema = () => true;
                 context.objectPropertyBoundsCompatibilityIssue = () => '';
 
+                const requiredOnlySafeIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  required: ['traceId'],
+                  additionalProperties: true
+                }, {
+                  type: 'object',
+                  required: ['traceId'],
+                  additionalProperties: true
+                });
+                const requiredOnlyTargetConstrainedIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  required: ['traceId'],
+                  additionalProperties: true
+                }, {
+                  type: 'object',
+                  properties: {
+                    traceId: { type: 'string' }
+                  },
+                  required: ['traceId'],
+                  additionalProperties: true
+                });
+                const requiredPatternConstrainedSafeIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  required: ['risk_score'],
+                  patternProperties: {
+                    '^risk_': { type: 'integer' }
+                  },
+                  additionalProperties: false
+                }, {
+                  type: 'object',
+                  properties: {
+                    risk_score: { type: 'number' }
+                  },
+                  required: ['risk_score'],
+                  additionalProperties: true
+                });
+
                 const dependentRequiredProvesDependentSchemaIssue = context.schemaCompatibilityIssue({
                   type: 'object',
                   properties: {
@@ -7893,6 +7932,34 @@ operators:
                     paymentMethod: { required: ['cardNumber'] }
                   }
                 }, 'paymentMethod', 'cardNumber');
+                const dependentSchemaResidualSafeIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  properties: {
+                    riskFlag: { type: 'string' }
+                  },
+                  additionalProperties: { type: 'string' }
+                }, {
+                  type: 'object',
+                  dependentSchemas: {
+                    riskFlag: {
+                      additionalProperties: { type: 'string' }
+                    }
+                  }
+                });
+                const dependentSchemaResidualMismatchIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  properties: {
+                    riskFlag: { type: 'string' }
+                  },
+                  additionalProperties: { type: 'integer' }
+                }, {
+                  type: 'object',
+                  dependentSchemas: {
+                    riskFlag: {
+                      additionalProperties: { type: 'string' }
+                    }
+                  }
+                });
 
                 context.objectDependentRequiredCompatibilityIssue = () => '';
                 context.objectDependentSchemasCompatibilityIssue = () => '';
@@ -8273,12 +8340,17 @@ operators:
                 });
 
                 const checks = [
+                  ['required-only object field safe', requiredOnlySafeIssue, ''],
+                  ['required-only target constrained rejected', String(requiredOnlyTargetConstrainedIssue.includes("source object guarantees required field 'traceId' but does not constrain it")), 'true'],
+                  ['required field constrained by source pattern safe', requiredPatternConstrainedSafeIssue, ''],
                   ['dependentRequired proves dependentSchemas safe', dependentRequiredProvesDependentSchemaIssue, ''],
                   ['dependentRequired dependentSchemas mismatch surfaced', String(dependentRequiredRejectsDependentSchemaIssue.includes("target requires dependentSchemas 'creditCard'")), 'true'],
                   ['dependent trigger required projection', triggeredRequired, 'billingAddress|creditCard|customerId'],
                   ['dependentSchemas proves dependentRequired safe', dependentSchemaProvesDependentRequiredIssue, ''],
                   ['dependentSchemas missing required rejected', String(dependentSchemaMissingRequiredIssue.includes("target requires dependentRequired 'paymentMethod' -> 'cardNumber'")), 'true'],
                   ['dependentSchemas required helper', String(sourceDependentSchemaRequiresCard), 'true'],
+                  ['dependentSchemas residual safe', dependentSchemaResidualSafeIssue, ''],
+                  ['dependentSchemas residual mismatch rejected', String(dependentSchemaResidualMismatchIssue.includes("target requires dependentSchemas 'riskFlag'")), 'true'],
                   ['residual optional collision path', String(residualIssue.includes("at 'score'")), 'true'],
                   ['residual optional collision type', String(residualIssue.includes('source type string cannot feed target type integer')), 'true'],
                   ['pattern optional collision path', String(patternIssue.includes("at 'score'")), 'true'],

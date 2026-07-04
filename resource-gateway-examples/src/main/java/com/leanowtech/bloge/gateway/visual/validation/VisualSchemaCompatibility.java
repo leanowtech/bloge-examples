@@ -2783,7 +2783,9 @@ public final class VisualSchemaCompatibility {
 	    private static Map<String, Object> effectiveDependentObjectSchema(Map<String, Object> schema) {
 	        Map<String, Object> effective = new LinkedHashMap<>(schema);
 	        if (schemaType(effective).isBlank()
-	                && (effective.containsKey("required")
+	                && (effective.containsKey("properties")
+	                || effective.containsKey("required")
+	                || effective.containsKey("additionalProperties")
 	                || effective.containsKey("dependentRequired")
 	                || effective.containsKey("dependentSchemas")
 	                || effective.containsKey("minProperties")

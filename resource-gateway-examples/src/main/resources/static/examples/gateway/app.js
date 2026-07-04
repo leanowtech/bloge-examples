@@ -23617,7 +23617,25 @@ function sourcePropertyConstraintsDisjointFrom(sourceSchema, propertyName, exclu
     .some((sourceConstraint) => schemasDefinitelyDisjoint(sourceConstraint, excludedPropertySchema));
 }
 
+function propertyConstraintCompatibilityIssue(sourceConstraints, targetConstraint, path = '') {
+  let firstIssue = '';
+  for (const sourceConstraint of sourceConstraints) {
+    const issue = schemaCompatibilityIssue(sourceConstraint, targetConstraint, path);
+    if (!issue) {
+      return '';
+    }
+    if (!firstIssue) {
+      firstIssue = issue;
+    }
+  }
+  return firstIssue;
+}
+
 function sourcePropertyConstraintsFor(sourceSchema, propertyName) {
+  return propertyConstraintsFor(sourceSchema, propertyName);
+}
+
+function propertyConstraintsFor(sourceSchema, propertyName) {
   const constraints = [];
   const sourceProperty = schemaObjectProperties(sourceSchema)[propertyName];
   if (sourceProperty && typeof sourceProperty === 'object' && !Array.isArray(sourceProperty)) {
@@ -24017,20 +24035,32 @@ function objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   const sourceRequired = new Set(schemaRequiredNames(sourceSchema));
   for (const required of schemaRequiredNames(targetSchema)) {
     const childPath = appendCompatibilityPath(path, required);
-    const sourceProperty = sourceProperties[required];
-    const targetProperty = targetProperties[required];
-    if (!sourceProperty) {
+    if (sourceCannotContainProperty(sourceSchema, required)) {
       return reasonAt(childPath, `source object does not declare required field '${required}'`);
-    }
-    if (!targetProperty) {
-      return reasonAt(childPath, `target schema requires undeclared field '${required}'`);
     }
     if (!sourceRequired.has(required)) {
       return reasonAt(childPath, `source object does not guarantee required field '${required}'`);
     }
-    const nested = schemaCompatibilityIssue(sourceProperty, targetProperty, childPath);
-    if (nested) {
-      return nested;
+    if (sourceCannotContainProperty(targetSchema, required)) {
+      return reasonAt(childPath, `target schema requires field '${required}' but target object cannot contain it`);
+    }
+    const targetConstraints = propertyConstraintsFor(targetSchema, required)
+      .filter((constraint) => constraint && typeof constraint === 'object' && !Array.isArray(constraint)
+        && Object.keys(constraint).length);
+    if (!targetConstraints.length) {
+      continue;
+    }
+    const sourceConstraints = propertyConstraintsFor(sourceSchema, required)
+      .filter((constraint) => constraint && typeof constraint === 'object' && !Array.isArray(constraint)
+        && Object.keys(constraint).length);
+    if (!sourceConstraints.length) {
+      return reasonAt(childPath, `source object guarantees required field '${required}' but does not constrain it for target schema`);
+    }
+    for (const targetConstraint of targetConstraints) {
+      const nested = propertyConstraintCompatibilityIssue(sourceConstraints, targetConstraint, childPath);
+      if (nested) {
+        return nested;
+      }
     }
   }
   const targetResidual = residualPropertiesPolicy(targetSchema);
@@ -25252,7 +25282,9 @@ function sourceSchemaAssumingDependentTriggerPresent(sourceSchema, trigger) {
 function effectiveDependentObjectSchema(schema) {
   const effective = { ...(schema || {}) };
   if (!rawSchemaType(effective)
-      && (Object.prototype.hasOwnProperty.call(effective, 'required')
+      && (Object.prototype.hasOwnProperty.call(effective, 'properties')
+        || Object.prototype.hasOwnProperty.call(effective, 'required')
+        || Object.prototype.hasOwnProperty.call(effective, 'additionalProperties')
         || Object.prototype.hasOwnProperty.call(effective, 'dependentRequired')
         || Object.prototype.hasOwnProperty.call(effective, 'dependentSchemas')
         || Object.prototype.hasOwnProperty.call(effective, 'minProperties')
