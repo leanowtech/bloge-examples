@@ -1713,7 +1713,8 @@ operator's declared inputs, materializes that selector through a generated
 branch operators declarative while honoring the BLOGE compiler requirement that
 branch conditions read from node outputs.
 Browser connection hints mirror the server's stricter schema rules
-for object required-field proof, enum value-domain subsets, and supported
+for object required-field proof, including required-only fields and fields constrained by `patternProperties`,
+enum value-domain subsets, and supported
 `oneOf`/`anyOf` visual union schemas. Target `oneOf` stays conservative unless
 exactly one branch can receive the source, or the author selects a root
 `targetUnionBranch` in the input inspector; that branch selection is saved on the

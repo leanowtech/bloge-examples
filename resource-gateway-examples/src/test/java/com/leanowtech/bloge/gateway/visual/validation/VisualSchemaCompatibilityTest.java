@@ -423,6 +423,61 @@ class VisualSchemaCompatibilityTest {
     }
 
     @Test
+    void acceptsRequiredOnlyObjectFieldsWhenTargetDoesNotConstrainTheFieldValue() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "required", List.of("traceId"),
+                "additionalProperties", true
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "required", List.of("traceId"),
+                "additionalProperties", true
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsRequiredOnlyObjectFieldWhenTargetConstrainsTheFieldValue() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "required", List.of("traceId"),
+                "additionalProperties", true
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "properties", Map.of("traceId", Map.of("type", "string")),
+                "required", List.of("traceId"),
+                "additionalProperties", true
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("at 'traceId'")
+                        .contains("source object guarantees required field 'traceId'")
+                        .contains("does not constrain it for target schema"));
+    }
+
+    @Test
+    void acceptsRequiredFieldConstrainedBySourcePatternProperties() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "required", List.of("risk_score"),
+                "patternProperties", Map.of("^risk_", Map.of("type", "integer")),
+                "additionalProperties", false
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "properties", Map.of("risk_score", Map.of("type", "number")),
+                "required", List.of("risk_score"),
+                "additionalProperties", true
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
     void rejectsUnboundedSourceWhenTargetExcludesFiniteValueWithNot() {
         Map<String, Object> source = Map.of("type", "string");
         Map<String, Object> target = Map.of(

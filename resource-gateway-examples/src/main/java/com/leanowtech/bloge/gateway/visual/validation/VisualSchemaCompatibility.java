@@ -613,8 +613,30 @@ public final class VisualSchemaCompatibility {
                 .anyMatch(sourceConstraint -> schemasDefinitelyDisjoint(sourceConstraint, excludedPropertySchema));
     }
 
+    private static Optional<String> propertyConstraintCompatibilityIssue(
+            List<Map<String, Object>> sourceConstraints,
+            Map<String, Object> targetConstraint,
+            String path) {
+        Optional<String> firstIssue = Optional.empty();
+        for (Map<String, Object> sourceConstraint : sourceConstraints) {
+            Optional<String> issue = schemaCompatibilityIssue(sourceConstraint, targetConstraint, path);
+            if (issue.isEmpty()) {
+                return Optional.empty();
+            }
+            if (firstIssue.isEmpty()) {
+                firstIssue = issue;
+            }
+        }
+        return firstIssue;
+    }
+
     private static List<Map<String, Object>> sourcePropertyConstraintsFor(Map<String, Object> sourceSchema,
                                                                           String propertyName) {
+        return propertyConstraintsFor(sourceSchema, propertyName);
+    }
+
+    private static List<Map<String, Object>> propertyConstraintsFor(Map<String, Object> sourceSchema,
+                                                                    String propertyName) {
         List<Map<String, Object>> constraints = new ArrayList<>();
         Map<String, Object> sourceProperty = objectProperty(propertiesOf(sourceSchema).get(propertyName));
         if (sourceProperty != null) {
@@ -1229,23 +1251,39 @@ public final class VisualSchemaCompatibility {
         Set<String> sourceRequired = new LinkedHashSet<>(requiredNamesOf(sourceSchema));
         for (String required : requiredNamesOf(targetSchema)) {
             String childPath = appendCompatibilityPath(path, required);
-            Map<String, Object> sourceProperty = objectProperty(sourceProperties.get(required));
-            Map<String, Object> targetProperty = objectProperty(targetProperties.get(required));
-            if (sourceProperty == null) {
+            if (sourceCannotContainProperty(sourceSchema, required)) {
                 return Optional.of(reasonAt(childPath,
                         "source object does not declare required field '%s'".formatted(required)));
-            }
-            if (targetProperty == null) {
-                return Optional.of(reasonAt(childPath,
-                        "target schema requires undeclared field '%s'".formatted(required)));
             }
             if (!sourceRequired.contains(required)) {
                 return Optional.of(reasonAt(childPath,
                         "source object does not guarantee required field '%s'".formatted(required)));
             }
-            Optional<String> nested = schemaCompatibilityIssue(sourceProperty, targetProperty, childPath);
-            if (nested.isPresent()) {
-                return nested;
+            if (sourceCannotContainProperty(targetSchema, required)) {
+                return Optional.of(reasonAt(childPath,
+                        "target schema requires field '%s' but target object cannot contain it"
+                                .formatted(required)));
+            }
+            List<Map<String, Object>> targetConstraints = propertyConstraintsFor(targetSchema, required).stream()
+                    .filter(constraint -> !constraint.isEmpty())
+                    .toList();
+            if (targetConstraints.isEmpty()) {
+                continue;
+            }
+            List<Map<String, Object>> sourceConstraints = propertyConstraintsFor(sourceSchema, required).stream()
+                    .filter(constraint -> !constraint.isEmpty())
+                    .toList();
+            if (sourceConstraints.isEmpty()) {
+                return Optional.of(reasonAt(childPath,
+                        "source object guarantees required field '%s' but does not constrain it for target schema"
+                                .formatted(required)));
+            }
+            for (Map<String, Object> targetConstraint : targetConstraints) {
+                Optional<String> targetIssue = propertyConstraintCompatibilityIssue(sourceConstraints,
+                        targetConstraint, childPath);
+                if (targetIssue.isPresent()) {
+                    return targetIssue;
+                }
             }
         }
 
