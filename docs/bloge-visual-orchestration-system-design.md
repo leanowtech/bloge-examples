@@ -535,6 +535,7 @@ schema 证明 `applicant.score` 存在，但 `objectTemplate` 不能只绑定
 | `array<T>` | `array<U>` | 检查 item 兼容 | foreach 场景重要 |
 | `allOf` | 任意 / 任意 | 保守交集检查 | target `allOf` 必须逐 branch 满足；source `allOf` 只有在 base 或显式 typed / finite-domain constituent 可证明安全时放行 |
 | `oneOf`/`anyOf` | 任意 | 保守检查，可显式消歧 | source union 必须所有分支可赋值；target `anyOf` 至少一个分支可接；target `oneOf` 默认必须唯一分支可接；binding 可用 `targetUnionBranch` 指定 root target branch |
+| `if`/`then`/`else` | 任意 | 保守条件检查 | `if` 命中时应用 `then`，否则应用 `else`；source 能证明命中或不命中时只检查对应分支，无法证明时所有可能分支都必须兼容 |
 | `object` | `string` | 禁止或需表达式 | 不能隐式转 JSON |
 | `unknown` | 任意 | 警告 | 可继续草稿，不可无条件发布 |
 
@@ -552,7 +553,7 @@ name 是否能作为 BLOGE DSL path segment，
 绕过 target schema gate。
 浏览器侧的 connection hint 和 source picker 也要复用这些关键规则，至少覆盖
 object required 字段证明、array item 递归兼容、enum 值域子集、`allOf` 分支结构校验、runtime value matching 与保守交集、`oneOf`/`anyOf`
-union 的保守兼容提示，以及普通 `string` 不能隐式接入 enum，减少画布交互与服务端裁决之间的断层。拖线落点和
+union 的保守兼容提示、`if`/`then`/`else` 条件分支的保守 value/compatibility hint，以及普通 `string` 不能隐式接入 enum，减少画布交互与服务端裁决之间的断层。拖线落点和
 inspector source picker 写入 binding 前都必须调用服务端 connection preview
 gate，本地 hint 不能成为最终授权。
 当前服务端 schema gate 和浏览器本地 hint 已支持 `oneOf` / `anyOf` 作为受限 visual union：
@@ -565,6 +566,11 @@ target handle 已支持 root `targetUnionBranch` 与 nested `targetUnionBranches
 binding validation 和 data edge validation 会共同按选中 branch 消歧。分支内字段
 只有在 branch path、字段枚举、candidate preview 和 lowering 语义都能被服务端
 证明时才能成为稳定 handle，不能只做前端展开。
+当前 schema gate 也支持受限 `if` / `then` / `else` 条件 schema：三个关键字的值
+必须是 schema object；runtime context、默认值、静态 literal 和浏览器本地 value
+matching 会按 JSON Schema 条件语义应用对应分支；schema-to-schema 连接兼容保持保守，
+只有 source 能证明必然命中 `if` 或必然与 `if` disjoint 时才按单一分支放行，否则
+要求所有可能应用的分支都能被证明兼容。
 同一节点内多个 binding 写入同一解析后输入目标，或 root/path 前缀重叠，
 会以 `visual.input.duplicateTarget` 阻断；不同 input port 上同名字段仍然合法，
 例如 `customer.id` 和 `order.id`。

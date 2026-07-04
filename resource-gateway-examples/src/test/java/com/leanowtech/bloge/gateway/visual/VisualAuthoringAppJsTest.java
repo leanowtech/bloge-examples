@@ -1979,6 +1979,7 @@ class VisualAuthoringAppJsTest {
 
                 const context = vm.createContext({ console, URLSearchParams });
                 context.SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
+                context.SUPPORTED_SCHEMA_CONDITIONAL_KEYWORDS = ['if', 'then', 'else'];
                 context.VISUAL_DIAGNOSTIC_NODE_PREVIEW_LIMIT = 6;
                 context.DEFAULT_COMPOSER_DECISION_TABLE = {
                   rows: [{
@@ -2056,8 +2057,11 @@ class VisualAuthoringAppJsTest {
                   'schemaPatternProperties',
                   'patternMatches',
                   'validateSchemaStructure',
+                  'validateSupportedSchemaConditionals',
                   'validateSchemaNot',
                   'effectiveNotSchemaKind',
+                  'effectiveConditionalSchema',
+                  'effectiveConditionalValidationSchema',
                   'validateSchemaEnumValues',
                   'validateSchemaAdditionalProperties',
                   'validateSchemaUnevaluatedProperties',
@@ -6462,8 +6466,8 @@ operators:
                   'boolean', 'duration', 'datetime', 'enum', 'any', 'opaque', 'null'
                 ]);
                 context.SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
+                context.SUPPORTED_SCHEMA_CONDITIONAL_KEYWORDS = ['if', 'then', 'else'];
                 context.UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
-                context.UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['if', 'then', 'else'];
                 context.UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = ['unevaluatedItems'];
                 context.LOCAL_SCHEMA_DEFS_REF_PREFIX = '#/$defs/';
                 context.SCHEMA_REF_ANNOTATION_KEYS = new Set([
@@ -6513,6 +6517,7 @@ operators:
                   'schemaReferenceDiagnostic',
                   'validateSupportedSchemaUnions',
                   'validateSupportedSchemaAllOf',
+                  'validateSupportedSchemaConditionals',
                   'validateSchemaNot',
                   'validateSchemaEnumValues',
                   'graphInputSchemaDiagnostic',
@@ -6532,8 +6537,11 @@ operators:
                   'schemaCompatibilityIssueForTargetUnionSelection',
                   'targetSchemaForUnionSelection',
                   'schemaWithoutUnions',
+                  'schemaWithoutConditionals',
                   'schemaWithoutCombinator',
                   'schemaWithoutCombinators',
+                  'effectiveConditionalSchema',
+                  'effectiveConditionalValidationSchema',
                   'schemaObjectProperties',
                   'schemaItemsSchema',
                   'schemaPrefixItems',
@@ -6543,6 +6551,8 @@ operators:
                   'targetAllOfCompatibilityIssue',
                   'sourceUnionCompatibilityIssue',
                   'targetUnionCompatibilityIssue',
+                  'targetConditionalCompatibilityIssue',
+                  'conditionalBranchIssue',
                   'unionBaseCompatibilityIssue',
                   'targetFiniteDomainCompatibilityIssue',
                   'targetFiniteDomainLabel',
@@ -6557,6 +6567,7 @@ operators:
                   'schemaHasAnyKeyword',
                   'schemaValueMatchesUnions',
                   'schemaValueMatchesAllOf',
+                  'schemaValueMatchesConditional',
                   'schemaValueMatchesType',
                   'rawSchemaType',
                   'nullableTypePrimary',
@@ -6674,10 +6685,16 @@ operators:
                   oneOf: [{ type: 'integer' }],
                   anyOf: [{ type: 'string' }]
                 }, 'schema', ambiguousUnionDiagnostics);
-                const unsupportedCompositionDiagnostics = [];
+                const validConditionalDiagnostics = [];
                 context.validateSchemaStructure({
-                  if: { type: 'string' }
-                }, 'schema', unsupportedCompositionDiagnostics);
+                  if: { type: 'string' },
+                  then: { type: 'string', enum: ['VIP'] },
+                  else: { type: 'integer' }
+                }, 'schema', validConditionalDiagnostics);
+                const invalidConditionalDiagnostics = [];
+                context.validateSchemaStructure({
+                  if: 'bad'
+                }, 'schema', invalidConditionalDiagnostics);
                 const validAllOfDiagnostics = [];
                 context.validateSchemaStructure({
                   allOf: [{ type: 'string' }, { minLength: 3 }]
@@ -6737,6 +6754,14 @@ operators:
                 const targetOneOfIssue = context.schemaCompatibilityIssue(
                   { type: 'integer' },
                   { oneOf: [{ type: 'integer' }, { type: 'number' }] }
+                );
+                const targetConditionalCompatible = context.schemaCompatibilityIssue(
+                  { type: 'string', enum: ['VIP'] },
+                  { if: { type: 'string' }, then: { type: 'string', enum: ['VIP'] }, else: { type: 'integer' } }
+                );
+                const targetConditionalIssue = context.schemaCompatibilityIssue(
+                  { type: 'string', enum: ['NOPE'] },
+                  { if: { type: 'string' }, then: { type: 'string', enum: ['VIP'] }, else: { type: 'integer' } }
                 );
                 const selectedBranchIssue = context.schemaCompatibilityIssueForTargetUnionSelection(
                   { type: 'integer' },
@@ -6817,7 +6842,8 @@ operators:
                   ['valid union diagnostics', validUnionDiagnostics.length, 0],
                   ['invalid union code', invalidUnionDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.unionInvalid'],
                   ['ambiguous union code', ambiguousUnionDiagnostics.some((diagnostic) => diagnostic.code === 'visual.schema.unionAmbiguous'), true],
-                  ['if remains unsupported', unsupportedCompositionDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.compositionUnsupported'],
+                  ['valid conditional diagnostics', validConditionalDiagnostics.length, 0],
+                  ['invalid conditional code', invalidConditionalDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.conditionalInvalid'],
                   ['valid allOf diagnostics', validAllOfDiagnostics.length, 0],
                   ['invalid allOf code', invalidAllOfDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.allOfInvalid'],
                   ['finite not diagnostics', finiteNotDiagnostics.length, 0],
@@ -6836,6 +6862,9 @@ operators:
                   ['oneOf ambiguous numeric value', context.schemaValueMatchesSchema(3, { oneOf: [{ type: 'integer' }, { type: 'number' }] }), false],
                   ['anyOf matching value', context.schemaValueMatchesSchema(3, { anyOf: [{ type: 'integer' }, { type: 'string' }] }), true],
                   ['anyOf missing value', context.schemaValueMatchesSchema(false, { anyOf: [{ type: 'integer' }, { type: 'string' }] }), false],
+                  ['conditional then matching value', context.schemaValueMatchesSchema('VIP', { if: { type: 'string' }, then: { type: 'string', enum: ['VIP'] }, else: { type: 'integer' } }), true],
+                  ['conditional then rejected value', context.schemaValueMatchesSchema('NOPE', { if: { type: 'string' }, then: { type: 'string', enum: ['VIP'] }, else: { type: 'integer' } }), false],
+                  ['conditional else matching value', context.schemaValueMatchesSchema(7, { if: { type: 'string' }, then: { type: 'string', enum: ['VIP'] }, else: { type: 'integer' } }), true],
                   ['allOf matching value', context.schemaValueMatchesSchema('APPROVE', { allOf: [{ type: 'string' }, { enum: ['APPROVE', 'REJECT'] }, { not: { const: 'ARCHIVED' } }] }), true],
                   ['allOf rejected value', context.schemaValueMatchesSchema('ARCHIVED', { allOf: [{ type: 'string' }, { not: { const: 'ARCHIVED' } }] }), false],
                   ['not excluded value', context.schemaValueMatchesSchema('ARCHIVED', { type: 'string', not: { const: 'ARCHIVED' } }), false],
@@ -6851,6 +6880,8 @@ operators:
                   ['source union issue', sourceUnionIssue, 'source oneOf branch 1 cannot feed target: source type string cannot feed target type integer'],
                   ['target anyOf compatible', targetAnyOfIssue, ''],
                   ['target oneOf ambiguous', targetOneOfIssue, 'target oneOf is ambiguous because source is compatible with 2 compatible branches'],
+                  ['target conditional compatible', targetConditionalCompatible, ''],
+                  ['target conditional issue', targetConditionalIssue, 'source enum value(s) [NOPE] do not match target conditional schema'],
                   ['selected branch compatible', selectedBranchIssue, ''],
                   ['wrong selected branch issue', wrongBranchIssue, 'source type integer cannot feed target type string'],
                   ['branch option labels', branchOptions, 'oneOf[0] integer|oneOf[1] string'],
@@ -6907,6 +6938,7 @@ operators:
 
                 const context = vm.createContext({ console });
                 context.SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
+                context.SUPPORTED_SCHEMA_CONDITIONAL_KEYWORDS = ['if', 'then', 'else'];
                 context.SUPPORTED_SCHEMA_STRING_FORMATS = new Set(['date', 'date-time', 'duration', 'email', 'uri', 'uuid']);
 
                 for (const name of [
@@ -6916,6 +6948,8 @@ operators:
                   'targetAllOfCompatibilityIssue',
                   'sourceUnionCompatibilityIssue',
                   'targetUnionCompatibilityIssue',
+                  'targetConditionalCompatibilityIssue',
+                  'conditionalBranchIssue',
                   'unionBaseCompatibilityIssue',
                   'targetFiniteDomainCompatibilityIssue',
                   'targetFiniteDomainLabel',
@@ -6950,8 +6984,11 @@ operators:
                   'schemaUnionBranches',
                   'schemaAllOfBranches',
                   'schemaWithoutUnions',
+                  'schemaWithoutConditionals',
                   'schemaWithoutCombinator',
                   'schemaWithoutCombinators',
+                  'effectiveConditionalSchema',
+                  'effectiveConditionalValidationSchema',
                   'schemaObjectProperties',
                   'schemaPatternProperties',
                   'matchingPatternPropertySchemas',
@@ -6978,6 +7015,7 @@ operators:
                   'effectiveNotValueSchema',
                   'schemaValueMatchesUnions',
                   'schemaValueMatchesAllOf',
+                  'schemaValueMatchesConditional',
                   'schemaValueMatchesType',
                   'rawSchemaType',
                   'nullableTypePrimary',

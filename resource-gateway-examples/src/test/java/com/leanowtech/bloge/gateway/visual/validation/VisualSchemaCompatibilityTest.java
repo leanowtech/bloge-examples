@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.validation;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -146,6 +147,57 @@ class VisualSchemaCompatibilityTest {
         assertThat(VisualSchemaCompatibility.valueMatchesSchema("NO", schema)).isFalse();
         assertThat(VisualSchemaCompatibility.valueMatchesSchema("BAD", schema)).isFalse();
         assertThat(VisualSchemaCompatibility.schemaTypeLabel(schema)).isEqualTo("allOf<string&unknown&unknown>");
+    }
+
+    @Test
+    void matchesValuesAgainstIfThenElseBranches() {
+        Map<String, Object> schema = conditionalPaymentSchema();
+
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(Map.of(
+                "paymentMethod", "CARD",
+                "cardNumber", "41111111"
+        ), schema)).isTrue();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(Map.of(
+                "paymentMethod", "CARD",
+                "bankAccount", "BA-1"
+        ), schema)).isFalse();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(Map.of(
+                "paymentMethod", "BANK",
+                "bankAccount", "BA-1"
+        ), schema)).isTrue();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(Map.of(
+                "paymentMethod", "BANK"
+        ), schema)).isFalse();
+    }
+
+    @Test
+    void acceptsTargetConditionalThenBranchWhenSourceProvesCondition() {
+        Map<String, Object> source = paymentSourceSchema("CARD", "cardNumber");
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, conditionalPaymentSchema())).isEmpty();
+    }
+
+    @Test
+    void acceptsTargetConditionalElseBranchWhenSourceIsDisjointFromCondition() {
+        Map<String, Object> source = paymentSourceSchema("BANK", "bankAccount");
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, conditionalPaymentSchema())).isEmpty();
+    }
+
+    @Test
+    void rejectsTargetConditionalWhenSourceMayEnterThenWithoutRequiredField() {
+        Map<String, Object> source = new LinkedHashMap<>();
+        source.put("type", "object");
+        source.put("properties", Map.of(
+                "paymentMethod", Map.of("type", "string", "enum", List.of("CARD", "BANK"))
+        ));
+        source.put("required", List.of("paymentMethod"));
+        source.put("additionalProperties", false);
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, conditionalPaymentSchema()))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("target conditional then may apply")
+                        .contains("cardNumber"));
     }
 
     @Test
@@ -599,5 +651,36 @@ class VisualSchemaCompatibilityTest {
                 .hasValueSatisfying(reason -> assertThat(reason)
                         .contains("source multipleOf 0.5")
                         .contains("does not guarantee integer values"));
+    }
+
+    private static Map<String, Object> conditionalPaymentSchema() {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", Map.of(
+                "paymentMethod", Map.of("type", "string", "enum", List.of("CARD", "BANK")),
+                "cardNumber", Map.of("type", "string"),
+                "bankAccount", Map.of("type", "string")
+        ));
+        schema.put("required", List.of("paymentMethod"));
+        schema.put("additionalProperties", false);
+        schema.put("if", Map.of(
+                "properties", Map.of("paymentMethod", Map.of("const", "CARD")),
+                "required", List.of("paymentMethod")
+        ));
+        schema.put("then", Map.of("required", List.of("cardNumber")));
+        schema.put("else", Map.of("required", List.of("bankAccount")));
+        return schema;
+    }
+
+    private static Map<String, Object> paymentSourceSchema(String method, String requiredField) {
+        Map<String, Object> source = new LinkedHashMap<>();
+        source.put("type", "object");
+        source.put("properties", Map.of(
+                "paymentMethod", Map.of("type", "string", "const", method),
+                requiredField, Map.of("type", "string")
+        ));
+        source.put("required", List.of("paymentMethod", requiredField));
+        source.put("additionalProperties", false);
+        return source;
     }
 }

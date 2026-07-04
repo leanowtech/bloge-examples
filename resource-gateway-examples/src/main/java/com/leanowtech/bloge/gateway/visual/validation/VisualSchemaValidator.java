@@ -47,12 +47,8 @@ public final class VisualSchemaValidator {
             "$ref",
             "$dynamicRef"
     );
-    private static final Set<String> UNSUPPORTED_COMPOSITION_KEYWORDS = Set.of(
-            "if",
-            "then",
-            "else"
-    );
     private static final Set<String> SUPPORTED_UNION_KEYWORDS = Set.of("oneOf", "anyOf");
+    private static final List<String> SUPPORTED_CONDITIONAL_KEYWORDS = List.of("if", "then", "else");
     private static final Set<String> UNSUPPORTED_CONSTRAINT_KEYWORDS = Set.of(
             "unevaluatedItems"
     );
@@ -151,6 +147,14 @@ public final class VisualSchemaValidator {
                             : "visual.context.anyOfMismatch",
                     "Runtime value at '%s' does not satisfy schema union: %s."
                             .formatted(path, unionMismatch.get()),
+                    path));
+            return;
+        }
+        Optional<String> conditionalMismatch = conditionalMismatch(value, schema);
+        if (conditionalMismatch.isPresent()) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.conditionalMismatch",
+                    "Runtime value at '%s' does not satisfy schema conditional: %s."
+                            .formatted(path, conditionalMismatch.get()),
                     path));
             return;
         }
@@ -370,6 +374,7 @@ public final class VisualSchemaValidator {
         boolean hasUnsupportedKeyword = validateUnsupportedKeywords(schema, path, diagnostics);
         boolean hasSupportedUnion = validateSupportedUnions(schema, path, diagnostics);
         boolean hasSupportedAllOf = validateSupportedAllOf(schema, path, diagnostics);
+        boolean hasSupportedConditional = validateSupportedConditionals(schema, path, diagnostics);
         boolean invalidTypeArray = validateTypeArray(schema, path, diagnostics);
         validateDefinitions(schema, path, diagnostics);
         validateNotConstraint(schema, path, diagnostics);
@@ -379,7 +384,7 @@ public final class VisualSchemaValidator {
         }
         if (kind.isBlank()) {
             if (warnOpaque && !hasUnsupportedKeyword && !hasSupportedUnion && !hasSupportedAllOf
-                    && !schema.containsKey("not")) {
+                    && !hasSupportedConditional && !schema.containsKey("not")) {
                 diagnostics.add(VisualDiagnostic.warning("visual.schema.opaque",
                         "Schema has no type/kind; it will be treated as opaque.",
                         path));
@@ -452,15 +457,6 @@ public final class VisualSchemaValidator {
         for (String keyword : UNSUPPORTED_REFERENCE_KEYWORDS) {
             if (schema.containsKey(keyword)) {
                 diagnostics.add(referenceDiagnostic(keyword, schema.get(keyword), path + "/" + keyword));
-                unsupported = true;
-            }
-        }
-        for (String keyword : UNSUPPORTED_COMPOSITION_KEYWORDS) {
-            if (schema.containsKey(keyword)) {
-                diagnostics.add(VisualDiagnostic.error("visual.schema.compositionUnsupported",
-                        "JSON Schema composition keyword '%s' is not supported by visual authoring schemas."
-                                .formatted(keyword),
-                        path + "/" + keyword));
                 unsupported = true;
             }
         }
@@ -577,6 +573,31 @@ public final class VisualSchemaValidator {
     }
 
     @SuppressWarnings("unchecked")
+    private static boolean validateSupportedConditionals(Map<String, Object> schema,
+                                                         String path,
+                                                         List<VisualDiagnostic> diagnostics) {
+        boolean present = false;
+        for (String keyword : SUPPORTED_CONDITIONAL_KEYWORDS) {
+            if (!schema.containsKey(keyword)) {
+                continue;
+            }
+            present = true;
+            Object raw = schema.get(keyword);
+            String branchPath = path + "/" + keyword;
+            if (!(raw instanceof Map<?, ?> branchSchema)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.conditionalInvalid",
+                        "JSON Schema conditional keyword '%s' must be a schema object."
+                                .formatted(keyword),
+                        branchPath));
+                continue;
+            }
+            validateSchema(effectiveConditionalValidationSchema((Map<String, Object>) branchSchema, schema),
+                    branchPath, diagnostics, false);
+        }
+        return present;
+    }
+
+    @SuppressWarnings("unchecked")
     private static void validateDefinitions(Map<String, Object> schema,
                                             String path,
                                             List<VisualDiagnostic> diagnostics) {
@@ -685,6 +706,11 @@ public final class VisualSchemaValidator {
         if (valueMatchesNotConstraint(value, schema)) {
             diagnostics.add(VisualDiagnostic.error("visual.schema.defaultNotMismatch",
                     "Schema default must not match schema not exclusion.",
+                    path));
+        }
+        if (!valueMatchesConditional(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConditionalMismatch",
+                    "Schema default must satisfy schema if/then/else conditional constraints.",
                     path));
         }
         if (schema.containsKey("const") && !schemaValuesEqual(schema.get("const"), value)) {
@@ -1294,6 +1320,11 @@ public final class VisualSchemaValidator {
         if (valueMatchesNotConstraint(constValue, schema)) {
             diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
                     "Const value must not match schema not exclusion.",
+                    path + "/const"));
+        }
+        if (!valueMatchesConditional(constValue, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
+                    "Const value must satisfy schema if/then/else conditional constraints.",
                     path + "/const"));
         }
 	    }
@@ -2277,7 +2308,8 @@ public final class VisualSchemaValidator {
 	                && arrayValueMatchesSchema(value, schema)
 	                && objectValueMatchesSchema(value, schema)
                     && allOfMismatch(value, schema).isEmpty()
-                    && unionMismatch(value, schema).isEmpty();
+                    && unionMismatch(value, schema).isEmpty()
+                    && valueMatchesConditional(value, schema);
 	    }
 
     private static boolean valueMatchesNotConstraint(Object value, Map<String, Object> schema) {
@@ -2296,6 +2328,63 @@ public final class VisualSchemaValidator {
         }
         Map<String, Object> effective = new LinkedHashMap<>(schema);
         effective.put("type", effectiveKind);
+        return effective;
+    }
+
+    private static boolean valueMatchesConditional(Object value, Map<String, Object> schema) {
+        Map<String, Object> condition = objectProperty(schema.get("if"));
+        if (condition == null) {
+            return true;
+        }
+        boolean matched = valueMatchesSchema(value, effectiveConditionalValueSchema(condition, schema));
+        Map<String, Object> branch = objectProperty(schema.get(matched ? "then" : "else"));
+        return branch == null || valueMatchesSchema(value, effectiveConditionalValueSchema(branch, schema));
+    }
+
+    private static Optional<String> conditionalMismatch(Object value, Map<String, Object> schema) {
+        Map<String, Object> condition = objectProperty(schema.get("if"));
+        if (condition == null) {
+            return Optional.empty();
+        }
+        boolean matched = valueMatchesSchema(value, effectiveConditionalValueSchema(condition, schema));
+        String keyword = matched ? "then" : "else";
+        Map<String, Object> branch = objectProperty(schema.get(keyword));
+        if (branch == null || valueMatchesSchema(value, effectiveConditionalValueSchema(branch, schema))) {
+            return Optional.empty();
+        }
+        return Optional.of("%s branch did not match".formatted(keyword));
+    }
+
+    private static Map<String, Object> effectiveConditionalValueSchema(Map<String, Object> schema,
+                                                                       Map<String, Object> parentSchema) {
+        Map<String, Object> effective = new LinkedHashMap<>(schema);
+        if (schemaKind(effective).isBlank()) {
+            String kind = effectiveNotSchemaKind(effective);
+            if (!kind.isBlank()) {
+                effective.put("type", kind);
+            }
+        }
+        if ("object".equals(schemaKind(effective))
+                && !effective.containsKey("properties")
+                && "object".equals(schemaKind(parentSchema))) {
+            Map<String, Object> parentProperties = propertiesWithoutDiagnostics(parentSchema);
+            if (!parentProperties.isEmpty()) {
+                effective.put("properties", parentProperties);
+            }
+        }
+        return effective;
+    }
+
+    private static Map<String, Object> effectiveConditionalValidationSchema(Map<String, Object> schema,
+                                                                            Map<String, Object> parentSchema) {
+        Map<String, Object> effective = effectiveConditionalValueSchema(schema, parentSchema);
+        if (!schema.containsKey("properties")
+                && "object".equals(schemaKind(effective))
+                && effective.get("properties") instanceof Map<?, ?> properties) {
+            Map<String, Object> placeholders = new LinkedHashMap<>();
+            properties.forEach((key, item) -> placeholders.put(String.valueOf(key), Map.of("type", "any")));
+            effective.put("properties", placeholders);
+        }
         return effective;
     }
 

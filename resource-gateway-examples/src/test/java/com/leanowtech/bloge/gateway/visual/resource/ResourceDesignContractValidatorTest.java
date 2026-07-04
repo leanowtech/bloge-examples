@@ -760,15 +760,14 @@ class ResourceDesignContractValidatorTest {
         assertThat(result.valid()).isFalse();
         assertThat(result.diagnostics())
                 .extracting("code")
-                .contains(
-                        "visual.schema.refUnresolved",
-                        "visual.schema.compositionUnsupported"
-                );
+                .contains("visual.schema.refUnresolved");
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .doesNotContain("visual.schema.compositionUnsupported");
         assertThat(result.diagnostics())
                 .extracting("target")
                 .contains(
-                        "/requestSchema/schema/properties/userId/$ref",
-                        "/responseSchema/schema/properties/decision/if"
+                        "/requestSchema/schema/properties/userId/$ref"
                 );
     }
 

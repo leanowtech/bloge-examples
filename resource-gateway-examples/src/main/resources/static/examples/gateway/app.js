@@ -291,7 +291,7 @@ const SUPPORTED_SCHEMA_KINDS = new Set([
 ]);
 const UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
 const SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
-const UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['if', 'then', 'else'];
+const SUPPORTED_SCHEMA_CONDITIONAL_KEYWORDS = ['if', 'then', 'else'];
 const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [
   'unevaluatedItems'
 ];
@@ -19946,6 +19946,7 @@ function validateSchemaStructure(schema, path, diagnostics) {
   validateUnsupportedSchemaKeywords(schema, path, diagnostics);
   validateSupportedSchemaUnions(schema, path, diagnostics);
   validateSupportedSchemaAllOf(schema, path, diagnostics);
+  validateSupportedSchemaConditionals(schema, path, diagnostics);
   const invalidTypeArray = validateSchemaTypeArray(schema, path, diagnostics);
   validateSchemaDefinitions(schema, path, diagnostics);
   validateSchemaNot(schema, path, diagnostics);
@@ -20054,6 +20055,25 @@ function validateSupportedSchemaAllOf(schema, path, diagnostics) {
   });
 }
 
+function validateSupportedSchemaConditionals(schema, path, diagnostics) {
+  for (const keyword of SUPPORTED_SCHEMA_CONDITIONAL_KEYWORDS) {
+    if (!Object.prototype.hasOwnProperty.call(schema || {}, keyword)) {
+      continue;
+    }
+    const branch = schema?.[keyword];
+    const branchPath = `${path}/${keyword}`;
+    if (!branch || typeof branch !== 'object' || Array.isArray(branch)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.conditionalInvalid',
+        `JSON Schema conditional keyword '${keyword}' must be a schema object.`,
+        branchPath
+      ));
+      continue;
+    }
+    validateSchemaStructure(effectiveConditionalValidationSchema(branch, schema), branchPath, diagnostics);
+  }
+}
+
 function validateSchemaTypeArray(schema, path, diagnostics) {
   const type = schema?.type;
   if (!Array.isArray(type)) {
@@ -20154,15 +20174,6 @@ function validateUnsupportedSchemaKeywords(schema, path, diagnostics) {
   for (const keyword of UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS) {
     if (Object.prototype.hasOwnProperty.call(schema || {}, keyword)) {
       diagnostics.push(schemaReferenceDiagnostic(keyword, schema[keyword], `${path}/${keyword}`));
-    }
-  }
-  for (const keyword of UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS) {
-    if (Object.prototype.hasOwnProperty.call(schema || {}, keyword)) {
-      diagnostics.push(graphInputSchemaDiagnostic(
-        'visual.schema.compositionUnsupported',
-        `JSON Schema composition keyword '${keyword}' is not supported by visual authoring schemas.`,
-        `${path}/${keyword}`
-      ));
     }
   }
   for (const keyword of UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS) {
@@ -21608,6 +21619,10 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   if (targetUnionIssue) {
     return targetUnionIssue;
   }
+  const targetConditionalIssue = targetConditionalCompatibilityIssue(sourceSchema, targetSchema, path);
+  if (targetConditionalIssue) {
+    return targetConditionalIssue;
+  }
   const sourceType = rawSchemaType(sourceSchema);
   const targetType = rawSchemaType(targetSchema);
   if (schemaMayProduceNull(sourceSchema) && !schemaValueMatchesSchema(null, targetSchema)) {
@@ -21775,6 +21790,58 @@ function targetUnionCompatibilityIssue(sourceSchema, targetSchema, path = '') {
     return reasonAt(path, `target oneOf is ambiguous because source is compatible with ${compatible} compatible branches`);
   }
   return '';
+}
+
+function targetConditionalCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  const condition = targetSchema?.if;
+  if (!condition || typeof condition !== 'object' || Array.isArray(condition)) {
+    return '';
+  }
+  const base = schemaWithoutConditionals(targetSchema);
+  if (Object.keys(base).length) {
+    const baseIssue = schemaCompatibilityIssue(sourceSchema, base, path);
+    if (baseIssue) {
+      return reasonAt(path, `target conditional base constraints are not compatible: ${baseIssue}`);
+    }
+  }
+  const thenSchema = targetSchema?.then;
+  const elseSchema = targetSchema?.else;
+  const hasThen = thenSchema && typeof thenSchema === 'object' && !Array.isArray(thenSchema);
+  const hasElse = elseSchema && typeof elseSchema === 'object' && !Array.isArray(elseSchema);
+  if (!hasThen && !hasElse) {
+    return '';
+  }
+  const sourceValues = schemaEnumValues(sourceSchema);
+  if (sourceValues.length) {
+    const incompatible = sourceValues.filter((value) => !schemaValueMatchesSchema(value, targetSchema));
+    return incompatible.length
+      ? reasonAt(path, `source enum value(s) ${valueDomainLabel(incompatible)} do not match target conditional schema`)
+      : '';
+  }
+  const effectiveCondition = effectiveConditionalSchema(condition, targetSchema);
+  if (!schemaCompatibilityIssue(sourceSchema, effectiveCondition, path)) {
+    return hasThen
+      ? conditionalBranchIssue(sourceSchema, thenSchema, targetSchema, 'then', false, path)
+      : '';
+  }
+  if (schemasDefinitelyDisjoint(sourceSchema, effectiveCondition)) {
+    return hasElse
+      ? conditionalBranchIssue(sourceSchema, elseSchema, targetSchema, 'else', false, path)
+      : '';
+  }
+  return conditionalBranchIssue(sourceSchema, hasThen ? thenSchema : null, targetSchema, 'then', true, path)
+    || conditionalBranchIssue(sourceSchema, hasElse ? elseSchema : null, targetSchema, 'else', true, path);
+}
+
+function conditionalBranchIssue(sourceSchema, branchSchema, parentSchema, keyword, mayApply, path = '') {
+  if (!branchSchema) {
+    return '';
+  }
+  const issue = schemaCompatibilityIssue(sourceSchema, effectiveConditionalSchema(branchSchema, parentSchema), path);
+  if (!issue) {
+    return '';
+  }
+  return reasonAt(path, `target conditional ${keyword}${mayApply ? ' may apply but source cannot prove it' : ' is not compatible'}: ${issue}`);
 }
 
 function unionBaseCompatibilityIssue(sourceSchema, targetSchema, path = '') {
@@ -22649,7 +22716,9 @@ function schemaValueMatchesSchema(value, schema) {
   if (value === null && schemaAllowsNull(schema)) {
     const values = schemaEnumValues(schema);
     return (!values.length || values.some((allowed) => schemaValuesEqual(allowed, null)))
-      && schemaValueMatchesUnions(value, schema);
+      && schemaValueMatchesUnions(value, schema)
+      && schemaValueMatchesAllOf(value, schema)
+      && schemaValueMatchesConditional(value, schema);
   }
   if (!schemaValueMatchesType(value, type)) {
     return false;
@@ -22669,7 +22738,8 @@ function schemaValueMatchesSchema(value, schema) {
     && arrayValueMatchesSchema(value, schema)
     && objectValueMatchesSchema(value, schema)
     && schemaValueMatchesAllOf(value, schema)
-    && schemaValueMatchesUnions(value, schema);
+    && schemaValueMatchesUnions(value, schema)
+    && schemaValueMatchesConditional(value, schema);
 }
 
 function schemaValueMatchesNot(value, schema) {
@@ -22706,6 +22776,19 @@ function schemaValueMatchesUnions(value, schema) {
 function schemaValueMatchesAllOf(value, schema) {
   const branches = schemaAllOfBranches(schema);
   return !branches.length || branches.every((branch) => schemaValueMatchesSchema(value, branch));
+}
+
+function schemaValueMatchesConditional(value, schema) {
+  const condition = schema?.if;
+  if (!condition || typeof condition !== 'object' || Array.isArray(condition)) {
+    return true;
+  }
+  const matched = schemaValueMatchesSchema(value, effectiveConditionalSchema(condition, schema));
+  const branch = matched ? schema?.then : schema?.else;
+  return !branch
+    || typeof branch !== 'object'
+    || Array.isArray(branch)
+    || schemaValueMatchesSchema(value, effectiveConditionalSchema(branch, schema));
 }
 
 function schemaValueMatchesType(value, type) {
@@ -22916,6 +22999,10 @@ function schemaWithoutUnions(schema) {
   return schemaWithoutCombinators(schema, ['oneOf', 'anyOf']);
 }
 
+function schemaWithoutConditionals(schema) {
+  return schemaWithoutCombinators(schema, SUPPORTED_SCHEMA_CONDITIONAL_KEYWORDS);
+}
+
 function schemaWithoutCombinator(schema, keyword) {
   return schemaWithoutCombinators(schema, [keyword]);
 }
@@ -22934,6 +23021,39 @@ function schemaWithoutCombinators(schema, keywords) {
   delete base.writeOnly;
   delete base.$defs;
   return base;
+}
+
+function effectiveConditionalSchema(schema, parentSchema) {
+  const effective = { ...(schema || {}) };
+  if (!rawSchemaType(effective)) {
+    const type = effectiveSchemaType(effective);
+    if (type) {
+      effective.type = type;
+    }
+  }
+  if (rawSchemaType(effective) === 'object'
+      && !Object.prototype.hasOwnProperty.call(effective, 'properties')
+      && rawSchemaType(parentSchema) === 'object') {
+    const parentProperties = schemaObjectProperties(parentSchema);
+    if (Object.keys(parentProperties).length) {
+      effective.properties = parentProperties;
+    }
+  }
+  return effective;
+}
+
+function effectiveConditionalValidationSchema(schema, parentSchema) {
+  const effective = effectiveConditionalSchema(schema, parentSchema);
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'properties')
+      && rawSchemaType(effective) === 'object'
+      && effective.properties
+      && typeof effective.properties === 'object'
+      && !Array.isArray(effective.properties)) {
+    effective.properties = Object.fromEntries(
+      Object.keys(effective.properties).map((name) => [name, { type: 'any' }])
+    );
+  }
+  return effective;
 }
 
 function schemaAllOfLabel(schema) {

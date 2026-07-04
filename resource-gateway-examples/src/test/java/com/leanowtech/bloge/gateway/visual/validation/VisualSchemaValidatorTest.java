@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -102,6 +103,56 @@ class VisualSchemaValidatorTest {
         ));
 
         assertThat(VisualSchemaValidator.validateValue(schema, "APPROVE", "/context")).isEmpty();
+    }
+
+    @Test
+    void acceptsConditionalSchemasWithRequiredOnlyBranches() {
+        Map<String, Object> schema = conditionalPaymentSchema();
+
+        assertThat(VisualSchemaValidator.validateSchema(schema, "/schema")).isEmpty();
+        assertThat(VisualSchemaValidator.validateValue(
+                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema),
+                Map.of("paymentMethod", "CARD", "cardNumber", "41111111"),
+                "/context"
+        )).isEmpty();
+        assertThat(VisualSchemaValidator.validateValue(
+                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema),
+                Map.of("paymentMethod", "BANK", "bankAccount", "BA-1"),
+                "/context"
+        )).isEmpty();
+    }
+
+    @Test
+    void reportsRuntimeConditionalBranchMismatches() {
+        SchemaEnvelope schema = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", conditionalPaymentSchema());
+
+        var diagnostics = VisualSchemaValidator.validateValue(schema, Map.of(
+                "paymentMethod", "CARD",
+                "bankAccount", "BA-1"
+        ), "/context");
+
+        assertThat(diagnostics)
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.context.conditionalMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/context");
+                    assertThat(diagnostic.message()).contains("then branch");
+                });
+    }
+
+    @Test
+    void rejectsDefaultValuesThatViolateConditionalBranches() {
+        Map<String, Object> schema = new LinkedHashMap<>(conditionalPaymentSchema());
+        schema.put("default", Map.of(
+                "paymentMethod", "CARD",
+                "bankAccount", "BA-1"
+        ));
+
+        assertThat(VisualSchemaValidator.validateSchema(schema, "/schema"))
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.defaultConditionalMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/schema/default");
+                });
     }
 
     @Test
@@ -424,5 +475,24 @@ class VisualSchemaValidatorTest {
                     assertThat(diagnostic.message()).contains("#/components/schemas/Risk");
                     assertThat(diagnostic.target()).isEqualTo("/schema/properties/components/$ref");
                 });
+    }
+
+    private static Map<String, Object> conditionalPaymentSchema() {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", Map.of(
+                "paymentMethod", Map.of("type", "string", "enum", List.of("CARD", "BANK")),
+                "cardNumber", Map.of("type", "string"),
+                "bankAccount", Map.of("type", "string")
+        ));
+        schema.put("required", List.of("paymentMethod"));
+        schema.put("additionalProperties", false);
+        schema.put("if", Map.of(
+                "properties", Map.of("paymentMethod", Map.of("const", "CARD")),
+                "required", List.of("paymentMethod")
+        ));
+        schema.put("then", Map.of("required", List.of("cardNumber")));
+        schema.put("else", Map.of("required", List.of("bankAccount")));
+        return schema;
     }
 }

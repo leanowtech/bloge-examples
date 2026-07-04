@@ -641,14 +641,13 @@ class GraphDraftValidatorTest {
         assertThat(result.valid()).isFalse();
         assertThat(result.diagnostics())
                 .extracting("code")
-                .contains(
-                        "visual.schema.compositionUnsupported",
-                        "visual.schema.refUnresolved"
-                );
+                .contains("visual.schema.refUnresolved");
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .doesNotContain("visual.schema.compositionUnsupported");
         assertThat(result.diagnostics())
                 .extracting("target")
                 .contains(
-                        "/inputSchema/schema/properties/decision/if",
                         "/inputSchema/schema/properties/customer/$ref"
                 );
     }

@@ -78,6 +78,10 @@ public final class VisualSchemaCompatibility {
         if (targetUnionIssue.isPresent()) {
             return targetUnionIssue;
         }
+        Optional<String> targetConditionalIssue = targetConditionalCompatibilityIssue(sourceSchema, targetSchema, path);
+        if (targetConditionalIssue.isPresent()) {
+            return targetConditionalIssue;
+        }
         String sourceType = schemaType(sourceSchema);
         String targetType = schemaType(targetSchema);
         if (schemaMayProduceNull(sourceSchema) && !valueMatchesSchema(null, targetSchema)) {
@@ -309,6 +313,77 @@ public final class VisualSchemaCompatibility {
                             .formatted(compatible)));
         }
         return Optional.empty();
+    }
+
+    private static Optional<String> targetConditionalCompatibilityIssue(Map<String, Object> sourceSchema,
+                                                                        Map<String, Object> targetSchema,
+                                                                        String path) {
+        Map<String, Object> condition = objectProperty(targetSchema.get("if"));
+        if (condition == null) {
+            return Optional.empty();
+        }
+        Map<String, Object> base = schemaWithoutConditionals(targetSchema);
+        if (!base.isEmpty()) {
+            Optional<String> baseIssue = schemaCompatibilityIssue(sourceSchema, base, path);
+            if (baseIssue.isPresent()) {
+                return Optional.of(reasonAt(path,
+                        "target conditional base constraints are not compatible: " + baseIssue.get()));
+            }
+        }
+        Map<String, Object> thenSchema = objectProperty(targetSchema.get("then"));
+        Map<String, Object> elseSchema = objectProperty(targetSchema.get("else"));
+        if (thenSchema == null && elseSchema == null) {
+            return Optional.empty();
+        }
+        List<Object> sourceValues = enumValues(sourceSchema);
+        if (!sourceValues.isEmpty()) {
+            List<Object> incompatible = sourceValues.stream()
+                    .filter(value -> !valueMatchesSchema(value, targetSchema))
+                    .toList();
+            return incompatible.isEmpty()
+                    ? Optional.empty()
+                    : Optional.of(reasonAt(path,
+                    "source enum value(s) %s do not match target conditional schema"
+                            .formatted(valueDomainLabel(incompatible))));
+        }
+
+        Map<String, Object> effectiveCondition = effectiveConditionalSchema(condition, targetSchema);
+        if (schemaCompatibilityIssue(sourceSchema, effectiveCondition, path).isEmpty()) {
+            return thenSchema == null
+                    ? Optional.empty()
+                    : conditionalBranchIssue(sourceSchema, thenSchema, targetSchema, "then", false, path);
+        }
+        if (schemasDefinitelyDisjoint(sourceSchema, effectiveCondition)) {
+            return elseSchema == null
+                    ? Optional.empty()
+                    : conditionalBranchIssue(sourceSchema, elseSchema, targetSchema, "else", false, path);
+        }
+        Optional<String> thenIssue = conditionalBranchIssue(sourceSchema, thenSchema, targetSchema,
+                "then", true, path);
+        if (thenIssue.isPresent()) {
+            return thenIssue;
+        }
+        return conditionalBranchIssue(sourceSchema, elseSchema, targetSchema, "else", true, path);
+    }
+
+    private static Optional<String> conditionalBranchIssue(Map<String, Object> sourceSchema,
+                                                           Map<String, Object> branchSchema,
+                                                           Map<String, Object> parentSchema,
+                                                           String keyword,
+                                                           boolean mayApply,
+                                                           String path) {
+        if (branchSchema == null) {
+            return Optional.empty();
+        }
+        Optional<String> issue = schemaCompatibilityIssue(sourceSchema,
+                effectiveConditionalSchema(branchSchema, parentSchema), path);
+        if (issue.isEmpty()) {
+            return Optional.empty();
+        }
+        String prefix = mayApply
+                ? "target conditional %s may apply but source cannot prove it: "
+                : "target conditional %s is not compatible: ";
+        return Optional.of(reasonAt(path, prefix.formatted(keyword) + issue.get()));
     }
 
     private static Optional<String> unionBaseCompatibilityIssue(Map<String, Object> sourceSchema,
@@ -1587,7 +1662,10 @@ public final class VisualSchemaCompatibility {
         String type = schemaType(schema);
         if (value == null && schemaAllowsNull(schema)) {
             List<Object> values = enumValues(schema);
-            return values.isEmpty() || schemaValuesContain(values, null);
+            return (values.isEmpty() || schemaValuesContain(values, null))
+                    && valueMatchesAllOf(value, schema)
+                    && valueMatchesUnions(value, schema)
+                    && valueMatchesConditional(value, schema);
         }
         if (!valueMatchesType(value, type)) {
             return false;
@@ -1607,7 +1685,8 @@ public final class VisualSchemaCompatibility {
 		                && arrayValueMatchesSchema(value, schema)
 		                && objectValueMatchesSchema(value, schema)
                         && valueMatchesAllOf(value, schema)
-                        && valueMatchesUnions(value, schema);
+                        && valueMatchesUnions(value, schema)
+                        && valueMatchesConditional(value, schema);
 		    }
 
     private static boolean valueMatchesNotConstraint(Object value, Map<String, Object> schema) {
@@ -1656,6 +1735,16 @@ public final class VisualSchemaCompatibility {
         return branches.isEmpty() || branches.stream().allMatch(branch -> valueMatchesSchema(value, branch));
     }
 
+    private static boolean valueMatchesConditional(Object value, Map<String, Object> schema) {
+        Map<String, Object> condition = objectProperty(schema.get("if"));
+        if (condition == null) {
+            return true;
+        }
+        boolean matched = valueMatchesSchema(value, effectiveConditionalSchema(condition, schema));
+        Map<String, Object> branch = objectProperty(schema.get(matched ? "then" : "else"));
+        return branch == null || valueMatchesSchema(value, effectiveConditionalSchema(branch, schema));
+    }
+
     private static List<Map<String, Object>> allOfBranches(Map<String, Object> schema) {
         return unionBranches(schema, "allOf");
     }
@@ -1679,6 +1768,10 @@ public final class VisualSchemaCompatibility {
         return schemaWithoutCombinators(schema, Set.of("oneOf", "anyOf"));
     }
 
+    private static Map<String, Object> schemaWithoutConditionals(Map<String, Object> schema) {
+        return schemaWithoutCombinators(schema, Set.of("if", "then", "else"));
+    }
+
     private static Map<String, Object> schemaWithoutCombinator(Map<String, Object> schema, String combinator) {
         return schemaWithoutCombinators(schema, Set.of(combinator));
     }
@@ -1695,6 +1788,26 @@ public final class VisualSchemaCompatibility {
         base.remove("writeOnly");
         base.remove("$defs");
         return base;
+    }
+
+    private static Map<String, Object> effectiveConditionalSchema(Map<String, Object> schema,
+                                                                  Map<String, Object> parentSchema) {
+        Map<String, Object> effective = new LinkedHashMap<>(schema);
+        if (schemaType(effective).isBlank()) {
+            String type = effectiveSchemaType(effective);
+            if (!type.isBlank()) {
+                effective.put("type", type);
+            }
+        }
+        if ("object".equals(schemaType(effective))
+                && !effective.containsKey("properties")
+                && "object".equals(schemaType(parentSchema))) {
+            Map<String, Object> parentProperties = propertiesOf(parentSchema);
+            if (!parentProperties.isEmpty()) {
+                effective.put("properties", parentProperties);
+            }
+        }
+        return effective;
     }
 
     private static Optional<String> allOfLabel(Map<String, Object> schema) {

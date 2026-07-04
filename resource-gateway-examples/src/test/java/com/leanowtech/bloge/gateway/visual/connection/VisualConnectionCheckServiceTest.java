@@ -884,7 +884,7 @@ class VisualConnectionCheckServiceTest {
     void rejectsContextPickerPreviewWhenGraphInputSchemaIsInvalid() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
-        GraphDraft draft = resourceEligibilityDraft(unsupportedCompositionGraphInputSchema(), List.of());
+        GraphDraft draft = resourceEligibilityDraft(unsupportedReferenceGraphInputSchema(), List.of());
 
         VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
                 draft,
@@ -896,8 +896,8 @@ class VisualConnectionCheckServiceTest {
         assertThat(result.accepted()).isFalse();
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> {
-                    assertThat(diagnostic.code()).isEqualTo("visual.schema.compositionUnsupported");
-                    assertThat(diagnostic.target()).isEqualTo("/inputSchema/schema/if");
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.refUnresolved");
+                    assertThat(diagnostic.target()).isEqualTo("/inputSchema/schema/$ref");
                 });
     }
 
@@ -1830,11 +1830,11 @@ class VisualConnectionCheckServiceTest {
         ));
     }
 
-    private static SchemaEnvelope unsupportedCompositionGraphInputSchema() {
+    private static SchemaEnvelope unsupportedReferenceGraphInputSchema() {
         return new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
                 "type", "object",
                 "properties", Map.of("score", Map.of("type", "integer")),
-                "if", Map.of("required", List.of("score"))
+                "$ref", "#/$defs/Score"
         ));
     }
 

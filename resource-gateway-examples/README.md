@@ -441,17 +441,22 @@ scalar type and non-conflicting basic numeric or string constraints are also
 flattened into ordinary scalar schemas; finite `not` exclusions over `const`,
 standard `enum`, or visual custom enum values are enforced by structural,
 runtime-value, static-literal, and connection compatibility checks; browser advisory type labels, value matching, and local connection hints mirror the same conservative `allOf` rule; remote refs, unresolved refs, `$dynamicRef`, `$ref`
-nodes with validation-affecting siblings, unsupported composition and conditional
-keywords such as non-object or unsafe `allOf`, non-finite `not`, `if`, `then`, and `else`,
-and unenforced constraint keywords such as unevaluated-item constraints are
+nodes with validation-affecting siblings, unsupported composition keywords such
+as non-object or unsafe `allOf`, non-finite `not`, conditional branches whose
+`if`/`then`/`else` values are not schema objects, and unenforced constraint keywords such as unevaluated-item constraints are
 rejected instead of being silently ignored. The shared gate supports `oneOf` and
 `anyOf` as explicit visual union schemas: runtime value validation requires
 `oneOf` to match exactly one branch and `anyOf` to match at least one branch, and
 schema-aware connection checks stay conservative for union-to-target assignments.
-The browser app mirrors those union rules for graph-input structural diagnostics,
-readable type labels, local value matching, advisory connection hints, and
-branch summaries in the selected-operator contract panel and operator-library
-profile; server connection preview remains authoritative before a binding is
+It also supports `if`/`then`/`else` as conservative conditional schemas: runtime,
+default, and static-literal value matching apply `then` when `if` matches and
+`else` when it does not; schema-to-schema connection checks follow a conditional
+branch only when the source proves it must match or avoid `if`, otherwise every
+possible branch must be compatible.
+The browser app mirrors those union and conditional value-matching rules for
+graph-input structural diagnostics, readable type labels, local value matching,
+advisory connection hints, and branch summaries in the selected-operator
+contract panel and operator-library profile; server connection preview remains authoritative before a binding is
 written.
 Multi-concrete `type` arrays
 such as `["integer", "string", "null"]` are also rejected; use explicit
@@ -1129,6 +1134,7 @@ fields not declared in `properties`, array schemas without `items`, enum schemas
 without values, unsupported schema envelope format/version, unsupported JSON
 Schema remote or unresolved references, unsupported composition/constraint keywords
 outside the safe object/scalar `allOf` subset with branch-structure and value matching gates and the supported `oneOf`/`anyOf` union subset,
+conditional schemas whose `if`/`then`/`else` branches are not schema objects,
 multi-concrete type arrays, and raw secret material in
 contract examples. Contract lifecycle status is explicit and normalized:
 `ACTIVE` resource-backed operators enter the default palette, `DEPRECATED`
@@ -1141,7 +1147,9 @@ subset enforced elsewhere in the canvas, and may constrain dynamic key values
 with regex-keyed `patternProperties` schemas or conditional object-field
 dependencies with `dependentRequired` or whole-object dependent subschemas with
 `dependentSchemas`, and may constrain remaining dynamic fields with
-`unevaluatedProperties`. Supported array schemas may constrain tuple-like leading
+`unevaluatedProperties`; `if`/`then`/`else` conditionals may express cross-field
+requirements when each branch remains inside the same enforced schema subset.
+Supported array schemas may constrain tuple-like leading
 items with `prefixItems` and may require matching elements with `contains` plus `minContains`/`maxContains`. Built-in bootstrap
 contracts pass the same gate, so resource-backed virtual operators do not enter
 the visual catalog with weaker schema guarantees than imported user operators.
@@ -1552,8 +1560,9 @@ output port names, or schema path fields that cannot be rendered as BLOGE DSL pa
 for executable lowering modes.
 It also rejects unsupported
 schema envelope format/version, JSON Schema remote or unresolved references,
-unsupported composition/conditional keywords outside the safe object/scalar `allOf`
-subset with branch-structure and value matching gates and supported `oneOf`/`anyOf` union subset, and constraint keywords the
+unsupported composition keywords outside the safe object/scalar `allOf`
+subset with branch-structure and value matching gates, supported `oneOf`/`anyOf`
+union subset, supported schema-object `if`/`then`/`else` conditionals, and constraint keywords the
 canvas does not currently enforce, so
 imported schemas cannot imply validation behavior that drag/drop hints, server
 validation, or DSL generation will ignore. Schema
@@ -1562,7 +1571,8 @@ also match their declared type/kind, enum/`const` domain, numeric bounds and
 `multipleOf` constraints, string length constraints, string pattern/format constraints,
 array item-count constraints, `uniqueItems` constraints, object property-count
 constraints, object `propertyNames`, `patternProperties`, and
-`dependentRequired`/`dependentSchemas` constraints, array `prefixItems` and `contains` constraints, required object properties, array item schema, and `additionalProperties`/`unevaluatedProperties` policy so
+`dependentRequired`/`dependentSchemas` constraints, `if`/`then`/`else`
+conditional branches, array `prefixItems` and `contains` constraints, required object properties, array item schema, and `additionalProperties`/`unevaluatedProperties` policy so
 canvas-generated default node config cannot start invalid. The browser consumes both root object defaults
 and nested field-level defaults from `configSchema` when a node is dragged from
 the palette. Schema `enum` and `const` values are held to the same array item

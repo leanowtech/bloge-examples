@@ -3242,7 +3242,7 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
-    void rejectsUnsupportedJsonSchemaKeywordsAcrossOperatorSchemas() {
+    void acceptsConditionalSchemasAndRejectsUnsupportedReferencesAcrossOperatorSchemas() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",
                 "risk:unsupportedSchemaKeywords",
@@ -3276,14 +3276,13 @@ class OperatorLibraryValidatorTest {
         assertThat(result.valid()).isFalse();
         assertThat(result.diagnostics())
                 .extracting("code")
-                .contains(
-                        "visual.schema.compositionUnsupported",
-                        "visual.schema.refUnresolved"
-                );
+                .contains("visual.schema.refUnresolved");
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .doesNotContain("visual.schema.compositionUnsupported");
         assertThat(result.diagnostics())
                 .extracting("target")
 		                .contains(
-		                        "/operators/0/ports/inputs/0/schema/schema/properties/choice/if",
 		                        "/operators/0/ports/outputs/0/schema/schema/properties/customer/$ref"
 		                );
 		    }

@@ -1209,8 +1209,11 @@ review 可以在没有 stored draft 引用时仍然暴露 operator-level 变更�
 scalar `allOf` 只接受同一标量类型和非冲突的基础数字/字符串约束。无法安全展开但
 分支结构有效的 `allOf` 会保留为受支持交集组合，继续进入服务端/浏览器结构校验、
 runtime value matching 和保守 schema-to-schema 兼容推理；空数组或非 schema object
-分支返回 `visual.schema.allOfInvalid`。`if` / `then` / `else` 等条件组合仍作为
-unsupported composition 被 blocking diagnostic 拦截，不能被画布近似解释。
+分支返回 `visual.schema.allOfInvalid`。`if` / `then` / `else` 条件组合已作为受限
+visual conditional schema 支持：三个关键字的值必须是 schema object，否则返回
+`visual.schema.conditionalInvalid`；运行值、默认值和静态 literal 按条件语义应用
+`then` 或 `else`；schema-to-schema 兼容只在 source 能证明命中或避开 `if` 时按单分支放行，
+无法证明时要求所有可能分支都兼容。
 浏览器 Operator Libraries 面板已在 Import 前调用该端点，把结构化 diagnostics、
 impact review、profile 和 import readiness 以明细列表展示给作者，再允许作者选择是否执行 Import。
 
