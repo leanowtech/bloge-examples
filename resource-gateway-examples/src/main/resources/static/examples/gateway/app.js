@@ -15285,6 +15285,13 @@ function nodeConnectabilityTargetMatchesFilter(entry, filter = nodeConnectabilit
 }
 
 function nodeConnectabilityTargetStatus(entry) {
+  const serverStatus = normalizeConnectionCandidateStatus(
+    entry.serverCandidate?.targetStatus,
+    Boolean(entry.serverCandidate?.accepted)
+  );
+  if (entry.serverCandidate && serverStatus === 'wired') {
+    return 'wired';
+  }
   if (!entry.compatibility?.ok) {
     return 'blocked';
   }
@@ -15532,10 +15539,16 @@ function nodeConnectabilityTargetsForSource(source, builder = state.builder) {
       }
       const kind = nodeConnectabilityTargetKind(target);
       const serverCandidate = serverCandidates?.[connectionCandidateTargetKey(kind, target)] || null;
+      const serverTargetStatus = normalizeConnectionCandidateStatus(
+        serverCandidate?.targetStatus,
+        Boolean(serverCandidate?.accepted)
+      );
       const compatibility = serverCandidate
         ? {
-            ok: serverCandidate.accepted,
-            message: serverCandidate.message || (serverCandidate.accepted ? '' : 'Connection rejected by server.')
+            ok: serverCandidate.accepted || serverTargetStatus === 'wired',
+            message: serverCandidate.message
+              || (serverTargetStatus === 'wired' ? 'Connection already exists.' : '')
+              || (serverCandidate.accepted ? '' : 'Connection rejected by server.')
           }
         : connectionCompatibility(source, target);
       entries.push({
@@ -15546,7 +15559,8 @@ function nodeConnectabilityTargetsForSource(source, builder = state.builder) {
         compatibility,
         serverCandidate,
         decisionSource: serverCandidate ? 'server' : 'local',
-        alreadyConnected: compatibility.ok && connectionAlreadyApplied(source, target, builder)
+        alreadyConnected: serverTargetStatus === 'wired'
+          || (compatibility.ok && connectionAlreadyApplied(source, target, builder))
       });
     }
   }
@@ -15558,7 +15572,8 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
     return;
   }
   const query = nodeConnectabilityServerActiveQuery();
-  const currentWindow = nodeConnectabilityServerWindowFor(node, state.builder, query);
+  const targetStatus = nodeConnectabilityServerActiveStatus();
+  const currentWindow = nodeConnectabilityServerWindowFor(node, state.builder, query, targetStatus);
   const offset = Number.isFinite(Number(options.offset))
     ? Math.max(0, Math.floor(Number(options.offset)))
     : currentWindow.offset;
@@ -15566,7 +15581,7 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
     ? Math.max(1, Math.floor(Number(options.limit)))
     : currentWindow.limit;
   const draftKey = nodeConnectabilityServerDraftKey(node);
-  const requestKey = nodeConnectabilityServerRequestKey(node, state.builder, offset, limit, query);
+  const requestKey = nodeConnectabilityServerRequestKey(node, state.builder, offset, limit, query, targetStatus);
   const current = state.nodeConnectabilityServer;
   if (!options.force && current?.requestKey === requestKey && (current.status === 'loading' || current.status === 'ready')) {
     return;
@@ -15586,12 +15601,13 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
     offset,
     limit,
     query,
+    targetStatus,
     resultsBySourceKey: {},
     error: ''
   };
   if (query && !options.force && !options.debounced) {
     state.nodeConnectabilityServer = loadingState;
-    scheduleNodeConnectabilityServerQuery(node, offset, limit, query);
+    scheduleNodeConnectabilityServerQuery(node, offset, limit, query, targetStatus);
     return;
   }
   if (!query) {
@@ -15606,7 +15622,8 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
       includeRejected: true,
       limit,
       offset,
-      query
+      query,
+      targetStatus
     })
       .then((result) => ({ sourceKey, result, error: '' }))
       .catch((error) => ({ sourceKey, result: null, error: error.message || 'Connection candidates unavailable.' }));
@@ -15633,6 +15650,7 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
         offset,
         limit,
         query,
+        targetStatus,
         resultsBySourceKey,
         error: uniqueStrings(errors).join(' | ')
       };
@@ -15642,12 +15660,15 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
     });
 }
 
-function scheduleNodeConnectabilityServerQuery(node, offset, limit, query) {
+function scheduleNodeConnectabilityServerQuery(node, offset, limit, query, targetStatus = '') {
   clearNodeConnectabilityServerQueryTimer();
   state.nodeConnectabilityServerQueryTimer = setTimeout(() => {
     state.nodeConnectabilityServerQueryTimer = null;
     const activeQuery = nodeConnectabilityServerActiveQuery();
     if (nodeConnectabilityServerQueryKey(activeQuery) !== nodeConnectabilityServerQueryKey(query)) {
+      return;
+    }
+    if (nodeConnectabilityServerStatusKey(nodeConnectabilityServerActiveStatus()) !== nodeConnectabilityServerStatusKey(targetStatus)) {
       return;
     }
     const selected = selectedBuilderNode();
@@ -15766,7 +15787,7 @@ function nodeConnectabilityServerWindowSummary(serverState) {
   }
   const visibleWindows = uniqueStrings(windows).slice(0, 2);
   const moreWindows = windows.length > visibleWindows.length ? ` + ${windows.length - visibleWindows.length} more` : '';
-  const filteredSummary = filtered ? `; query ${total}/${unfilteredTotal} matches` : '';
+  const filteredSummary = filtered ? `; filter ${total}/${unfilteredTotal} matches` : '';
   return ` · partial server window ${visibleWindows.join(', ')}${moreWindows}${filteredSummary}; local fallback beyond server window`;
 }
 
@@ -15808,11 +15829,12 @@ function nodeConnectabilityServerWindowLabel(stats) {
 function nodeConnectabilityServerWindowFor(
   nodeOrId,
   builder = state.builder,
-  query = nodeConnectabilityServerActiveQuery()
+  query = nodeConnectabilityServerActiveQuery(),
+  targetStatus = nodeConnectabilityServerActiveStatus()
 ) {
   const current = state.nodeConnectabilityServer;
   const nodeId = typeof nodeOrId === 'string' ? nodeOrId : nodeOrId?.id;
-  if (current?.nodeId === nodeId && nodeConnectabilityServerStateMatchesNode(current, nodeOrId, builder, query)) {
+  if (current?.nodeId === nodeId && nodeConnectabilityServerStateMatchesNode(current, nodeOrId, builder, query, targetStatus)) {
     return {
       offset: numericCount(current.offset, 0),
       limit: Math.max(1, numericCount(current.limit, nodeConnectabilityServerCandidateLimit()))
@@ -15848,12 +15870,16 @@ function nodeConnectabilityServerStateMatchesNode(
   serverState,
   nodeOrId,
   builder = state.builder,
-  query = nodeConnectabilityServerActiveQuery()
+  query = nodeConnectabilityServerActiveQuery(),
+  targetStatus = nodeConnectabilityServerActiveStatus()
 ) {
   if (!serverState) {
     return false;
   }
   if (nodeConnectabilityServerQueryKey(serverState.query || '') !== nodeConnectabilityServerQueryKey(query)) {
+    return false;
+  }
+  if (nodeConnectabilityServerStatusKey(serverState.targetStatus || '') !== nodeConnectabilityServerStatusKey(targetStatus)) {
     return false;
   }
   const draftKey = nodeConnectabilityServerDraftKey(nodeOrId, builder);
@@ -15868,7 +15894,8 @@ function nodeConnectabilityServerStateMatchesNode(
     builder,
     numericCount(serverState.offset, 0),
     numericCount(serverState.limit, nodeConnectabilityServerCandidateLimit()),
-    query
+    query,
+    targetStatus
   );
 }
 
@@ -15886,7 +15913,8 @@ function nodeConnectabilityServerRequestKey(
   builder = state.builder,
   offset = 0,
   limit = nodeConnectabilityServerCandidateLimit(),
-  query = ''
+  query = '',
+  targetStatus = ''
 ) {
   const normalizedOffset = Math.max(0, Math.floor(Number(offset) || 0));
   const normalizedLimit = Math.max(1, Math.floor(Number(limit) || nodeConnectabilityServerCandidateLimit()));
@@ -15894,7 +15922,9 @@ function nodeConnectabilityServerRequestKey(
   const querySuffix = normalizedQuery
     ? `:query:${compactStringHash(normalizedQuery)}:${normalizedQuery.length}`
     : '';
-  return `${nodeConnectabilityServerDraftKey(nodeOrId, builder)}:window:${normalizedOffset}:${normalizedLimit}${querySuffix}`;
+  const statusKey = nodeConnectabilityServerStatusKey(targetStatus);
+  const statusSuffix = statusKey ? `:status:${statusKey}` : '';
+  return `${nodeConnectabilityServerDraftKey(nodeOrId, builder)}:window:${normalizedOffset}:${normalizedLimit}${querySuffix}${statusSuffix}`;
 }
 
 function nodeConnectabilityServerActiveQuery() {
@@ -15904,6 +15934,14 @@ function nodeConnectabilityServerActiveQuery() {
 
 function nodeConnectabilityServerQueryKey(query = '') {
   return String(query || '').trim().toLowerCase();
+}
+
+function nodeConnectabilityServerActiveStatus() {
+  return nodeConnectabilityActiveFilter().status || '';
+}
+
+function nodeConnectabilityServerStatusKey(targetStatus = '') {
+  return normalizeConnectionCandidateStatus(targetStatus, false, true);
 }
 
 function compactStringHash(value) {
@@ -15972,16 +16010,15 @@ function nodeConnectabilitySourceLevel(sourceSummary) {
 }
 
 function nodeConnectabilityTargetLevel(entry) {
-  if (!entry.compatibility.ok) {
+  const status = nodeConnectabilityTargetStatus(entry);
+  if (status === 'blocked') {
     return 'error';
   }
-  return entry.alreadyConnected ? 'info' : 'success';
+  return status === 'wired' ? 'info' : 'success';
 }
 
 function nodeConnectabilityTargetLabel(entry) {
-  const status = entry.compatibility.ok
-    ? (entry.alreadyConnected ? 'wired' : 'ready')
-    : 'blocked';
+  const status = nodeConnectabilityTargetStatus(entry);
   const targetPath = nodeImpactPortPath(entry.target.port || '', entry.target.path || '');
   return `${entry.targetLabel} · ${readableEdgeKind(entry.kind)} -> ${targetPath} · ${status}`;
 }
@@ -26413,6 +26450,7 @@ async function discoverVisualConnectionCandidatesOnServer(source, options = {}) 
     targetPort: options.targetPort || target.port || '',
     targetPath: options.targetPath || target.path || '',
     query: options.query || '',
+    targetStatus: nodeConnectabilityServerStatusKey(options.targetStatus || ''),
     source: {
       nodeId: source.nodeId,
       port: source.port || '',
@@ -26454,10 +26492,12 @@ function normalizeConnectionCandidatesResult(payload, source = null, request = {
     targetPort: request.targetPort || '',
     targetPath: request.targetPath || '',
     query: request.query || '',
+    targetStatus: nodeConnectabilityServerStatusKey(request.targetStatus || payload?.targetStatus || ''),
     targetUnionBranch: normalizedUnionBranchSelection(request.targetUnionBranch),
     targetUnionBranches: normalizedUnionBranchSelections(request.targetUnionBranches),
     totalCandidateCount: numericCount(payload?.totalCandidateCount, 0),
     unfilteredCandidateCount: numericCount(payload?.unfilteredCandidateCount, payload?.totalCandidateCount),
+    statusCounts: normalizeConnectionCandidateStatusCounts(payload?.statusCounts),
     offset: numericCount(payload?.offset, 0),
     acceptedCount: numericCount(
       payload?.acceptedCount,
@@ -26478,6 +26518,23 @@ function normalizeConnectionCandidatesResult(payload, source = null, request = {
 function numericCount(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : fallback;
+}
+
+function normalizeConnectionCandidateStatus(value = '', accepted = false, allowBlank = false) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['ready', 'blocked', 'wired'].includes(normalized)) {
+    return normalized;
+  }
+  return allowBlank ? '' : (accepted ? 'ready' : 'blocked');
+}
+
+function normalizeConnectionCandidateStatusCounts(source = {}) {
+  const counts = normalizeCountMap(source);
+  return {
+    ready: numericCount(counts.ready, 0),
+    blocked: numericCount(counts.blocked, 0),
+    wired: numericCount(counts.wired, 0)
+  };
 }
 
 function normalizeConnectionCandidate(candidate, kind = 'data') {
@@ -26502,6 +26559,7 @@ function normalizeConnectionCandidate(candidate, kind = 'data') {
     },
     kind: canonicalEdgeKind(kind),
     accepted: Boolean(candidate?.accepted),
+    targetStatus: normalizeConnectionCandidateStatus(candidate?.targetStatus, Boolean(candidate?.accepted)),
     bindingKey: candidate?.bindingKey || '',
     summary,
     explanation,

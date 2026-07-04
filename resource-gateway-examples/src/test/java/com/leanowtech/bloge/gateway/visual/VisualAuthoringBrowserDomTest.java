@@ -562,9 +562,14 @@ class VisualAuthoringBrowserDomTest {
         assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-panel"));
 
         By filterQuery = By.cssSelector("#selected-operator-editor [data-connectability-filter-query]");
+        By filterStatus = By.cssSelector("#selected-operator-editor [data-connectability-filter-status]");
         sendKeysThroughRerenderedFocusedInput(wait, filterQuery, "riskScoreReview260");
         waitForConnectabilityServerReady(new WebDriverWait(driver, Duration.ofSeconds(30)),
                 "riskScoreSource", 0, "riskScoreReview260");
+        selectByValue(wait, filterStatus, "ready");
+        waitForValue(wait, filterStatus, "ready");
+        waitForConnectabilityServerReady(new WebDriverWait(driver, Duration.ofSeconds(30)),
+                "riskScoreSource", 0, "riskScoreReview260", "ready");
         waitForText(wait, By.id("selected-operator-editor"), "1/260 matching candidate");
         WebElement globalQueryLateTarget = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
                 "#selected-operator-editor [data-connectability-action='connect']"
@@ -2411,6 +2416,14 @@ class VisualAuthoringBrowserDomTest {
     }
 
     private void waitForConnectabilityServerReady(WebDriverWait wait, String nodeId, int offset, String query) {
+        waitForConnectabilityServerReady(wait, nodeId, offset, query, "");
+    }
+
+    private void waitForConnectabilityServerReady(WebDriverWait wait,
+                                                  String nodeId,
+                                                  int offset,
+                                                  String query,
+                                                  String targetStatus) {
         try {
             wait.until(ignored -> Boolean.TRUE.equals(((JavascriptExecutor) driver).executeScript("""
                     const server = state.nodeConnectabilityServer;
@@ -2418,8 +2431,9 @@ class VisualAuthoringBrowserDomTest {
                       && server.nodeId === arguments[0]
                       && server.status === 'ready'
                       && Number(server.offset || 0) === Number(arguments[1])
-                      && String(server.query || '').toLowerCase() === String(arguments[2] || '').toLowerCase();
-                    """, nodeId, offset, query)));
+                      && String(server.query || '').toLowerCase() === String(arguments[2] || '').toLowerCase()
+                      && String(server.targetStatus || '').toLowerCase() === String(arguments[3] || '').toLowerCase();
+                    """, nodeId, offset, query, targetStatus)));
         } catch (TimeoutException ex) {
             Object serverState = ((JavascriptExecutor) driver).executeScript("""
                     try {
@@ -2428,8 +2442,8 @@ class VisualAuthoringBrowserDomTest {
                       return `unavailable: ${error.message}`;
                     }
                     """);
-            throw new AssertionError("Connectability server candidates did not become ready for node '%s' at offset %d query '%s'. state=%s"
-                    .formatted(nodeId, offset, query, serverState), ex);
+            throw new AssertionError("Connectability server candidates did not become ready for node '%s' at offset %d query '%s' status '%s'. state=%s"
+                    .formatted(nodeId, offset, query, targetStatus, serverState), ex);
         }
     }
 

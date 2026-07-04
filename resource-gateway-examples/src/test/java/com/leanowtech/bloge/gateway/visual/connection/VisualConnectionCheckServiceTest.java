@@ -332,6 +332,9 @@ class VisualConnectionCheckServiceTest {
 
         assertThat(result.unfilteredCandidateCount()).isEqualTo(260);
         assertThat(result.totalCandidateCount()).isEqualTo(1);
+        assertThat(result.statusCounts()).containsEntry("ready", 1);
+        assertThat(result.statusCounts()).containsEntry("blocked", 0);
+        assertThat(result.statusCounts()).containsEntry("wired", 0);
         assertThat(result.offset()).isZero();
         assertThat(result.displayedCount()).isEqualTo(1);
         assertThat(result.truncated()).isFalse();
@@ -345,10 +348,83 @@ class VisualConnectionCheckServiceTest {
         });
         assertThat(runtimeDebt.unfilteredCandidateCount()).isEqualTo(260);
         assertThat(runtimeDebt.totalCandidateCount()).isEqualTo(260);
+        assertThat(runtimeDebt.statusCounts()).containsEntry("ready", 260);
+        assertThat(runtimeDebt.statusCounts()).containsEntry("blocked", 0);
+        assertThat(runtimeDebt.statusCounts()).containsEntry("wired", 0);
         assertThat(runtimeDebt.displayedCount()).isEqualTo(5);
         assertThat(runtimeDebt.truncated()).isTrue();
         assertThat(runtimeDebt.candidates()).allSatisfy(candidate ->
                 assertThat(candidate.explanation().targetRuntimeBinding().requirementCount()).isEqualTo(1));
+    }
+
+    @Test
+    void connectionCandidatesApplyGlobalStatusBeforePagingLargeCanvasTargets() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(scoreReviewLargeConnectabilityLibrary()));
+        GraphDraft draft = scoreReviewLargeConnectabilityDraft(260, List.of(new GraphDraft.DraftEdge(
+                "score-to-review-260",
+                "data",
+                new GraphDraft.Endpoint("riskScoreSource", "output", "score"),
+                new GraphDraft.Endpoint("riskScoreReview260", "inputs", "score")
+        )));
+
+        VisualConnectionCandidatesResult wired = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("riskScoreSource", "output", "score"),
+                "data",
+                true,
+                10,
+                0,
+                "",
+                "canvas",
+                "",
+                "",
+                "",
+                "wired",
+                GraphDraft.UnionBranchSelection.empty(),
+                Map.of()
+        ));
+        VisualConnectionCandidatesResult ready = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("riskScoreSource", "output", "score"),
+                "data",
+                true,
+                5,
+                0,
+                "",
+                "canvas",
+                "",
+                "",
+                "",
+                "ready",
+                GraphDraft.UnionBranchSelection.empty(),
+                Map.of()
+        ));
+
+        assertThat(wired.unfilteredCandidateCount()).isEqualTo(260);
+        assertThat(wired.totalCandidateCount()).isEqualTo(1);
+        assertThat(wired.statusCounts()).containsEntry("ready", 259);
+        assertThat(wired.statusCounts()).containsEntry("blocked", 0);
+        assertThat(wired.statusCounts()).containsEntry("wired", 1);
+        assertThat(wired.candidates()).singleElement().satisfies(candidate -> {
+            assertThat(candidate.targetNodeId()).isEqualTo("riskScoreReview260");
+            assertThat(candidate.targetStatus()).isEqualTo("wired");
+            assertThat(candidate.accepted()).isFalse();
+            assertThat(candidate.diagnostics())
+                    .extracting("code")
+                    .contains("visual.edge.duplicateConnection");
+        });
+        assertThat(ready.unfilteredCandidateCount()).isEqualTo(260);
+        assertThat(ready.totalCandidateCount()).isEqualTo(259);
+        assertThat(ready.statusCounts()).containsEntry("ready", 259);
+        assertThat(ready.statusCounts()).containsEntry("blocked", 0);
+        assertThat(ready.statusCounts()).containsEntry("wired", 1);
+        assertThat(ready.candidates()).hasSize(5);
+        assertThat(ready.candidates()).allSatisfy(candidate -> {
+            assertThat(candidate.targetStatus()).isEqualTo("ready");
+            assertThat(candidate.targetNodeId()).isNotEqualTo("riskScoreReview260");
+            assertThat(candidate.accepted()).isTrue();
+        });
     }
 
     @Test
@@ -2626,6 +2702,10 @@ class VisualConnectionCheckServiceTest {
     }
 
     private static GraphDraft scoreReviewLargeConnectabilityDraft(int targetCount) {
+        return scoreReviewLargeConnectabilityDraft(targetCount, List.of());
+    }
+
+    private static GraphDraft scoreReviewLargeConnectabilityDraft(int targetCount, List<GraphDraft.DraftEdge> edges) {
         List<GraphDraft.DraftNode> nodes = new ArrayList<>();
         nodes.add(new GraphDraft.DraftNode(
                 "riskScoreSource",
@@ -2656,7 +2736,7 @@ class VisualConnectionCheckServiceTest {
                 "",
                 null,
                 nodes,
-                List.of(),
+                edges,
                 Map.of(),
                 new GraphDraft.OutputSelection("riskScoreSource", "score")
         );

@@ -306,10 +306,11 @@ public class VisualConnectionCheckService {
         }
 
         List<ConnectionCandidateTarget> allTargets = candidateTargets(request.draft(), request);
-        List<ConnectionCandidateTarget> targets = filteredCandidateTargets(request, allTargets);
+        CandidateTargetFilterResult filtered = filteredCandidateTargets(request, allTargets);
+        List<ConnectionCandidateTarget> targets = filtered.targets();
         int unfilteredCandidateCount = allTargets.size();
         if (request.includeRejected() && targets.size() > FULL_CANDIDATE_CHECK_LIMIT) {
-            return pagedCandidates(request, targets, unfilteredCandidateCount);
+            return pagedCandidates(request, targets, unfilteredCandidateCount, filtered.statusCounts());
         }
         List<VisualConnectionCandidatesResult.ConnectionCandidate> candidates = new ArrayList<>();
         for (ConnectionCandidateTarget target : targets) {
@@ -338,6 +339,7 @@ public class VisualConnectionCheckService {
                 request.offset(),
                 candidates.size(),
                 unfilteredCandidateCount,
+                filtered.statusCounts(),
                 acceptedCount,
                 rejectedCount,
                 window.size(),
@@ -349,7 +351,8 @@ public class VisualConnectionCheckService {
 
     private VisualConnectionCandidatesResult pagedCandidates(VisualConnectionCandidatesRequest request,
                                                              List<ConnectionCandidateTarget> targets,
-                                                             int unfilteredCandidateCount) {
+                                                             int unfilteredCandidateCount,
+                                                             Map<String, Integer> statusCounts) {
         int acceptedCount = 0;
         for (ConnectionCandidateTarget target : targets) {
             if (fastCandidateAccepted(request, target)) {
@@ -370,6 +373,7 @@ public class VisualConnectionCheckService {
                 request.offset(),
                 targets.size(),
                 unfilteredCandidateCount,
+                statusCounts,
                 acceptedCount,
                 rejectedCount,
                 window.size(),
@@ -397,6 +401,7 @@ public class VisualConnectionCheckService {
                 target.surface(),
                 check.edge() == null ? target.endpoint() : check.edge().target(),
                 check.accepted(),
+                candidateTargetStatus(request, target, check.accepted()),
                 check.bindingKey(),
                 check.summary(),
                 candidateExplanation(request, target, check),
@@ -412,6 +417,9 @@ public class VisualConnectionCheckService {
                     request.source(), target.endpoint(), "");
             return !hasSameConnection(request.draft(), edge);
         }
+        if (duplicateConnectionRejectedByCheck(request, target) && candidateAlreadyWired(request, target)) {
+            return false;
+        }
         Map<String, Object> sourceSchema = endpointSourceSchema(request.draft(), request.source());
         Map<String, Object> targetSchema = selectedUnionBranchSchema(
                 endpointTargetSchema(request.draft(), target.endpoint(), target.surface()),
@@ -421,6 +429,36 @@ public class VisualConnectionCheckService {
             return true;
         }
         return VisualSchemaCompatibility.schemasCompatible(sourceSchema, targetSchema);
+    }
+
+    private String fastCandidateStatus(VisualConnectionCandidatesRequest request,
+                                       ConnectionCandidateTarget target) {
+        if (candidateAlreadyWired(request, target)) {
+            return "wired";
+        }
+        return fastCandidateAccepted(request, target) ? "ready" : "blocked";
+    }
+
+    private String candidateTargetStatus(VisualConnectionCandidatesRequest request,
+                                         ConnectionCandidateTarget target,
+                                         boolean accepted) {
+        if (candidateAlreadyWired(request, target)) {
+            return "wired";
+        }
+        return accepted ? "ready" : "blocked";
+    }
+
+    private static boolean duplicateConnectionRejectedByCheck(VisualConnectionCandidatesRequest request,
+                                                             ConnectionCandidateTarget target) {
+        return !CONFIG_TARGET_PORT.equals(target.endpoint().port())
+                && !CONTEXT_SOURCE_NODE_ID.equals(request.source().nodeId());
+    }
+
+    private static boolean candidateAlreadyWired(VisualConnectionCandidatesRequest request,
+                                                 ConnectionCandidateTarget target) {
+        GraphDraft.DraftEdge edge = new GraphDraft.DraftEdge(PREVIEW_EDGE_ID, request.kind(),
+                request.source(), target.endpoint(), "");
+        return hasSameConnection(request.draft(), edge);
     }
 
     private List<ConnectionCandidateTarget> candidateTargets(GraphDraft draft,
@@ -487,17 +525,37 @@ public class VisualConnectionCheckService {
         return targets;
     }
 
-    private List<ConnectionCandidateTarget> filteredCandidateTargets(VisualConnectionCandidatesRequest request,
-                                                                     List<ConnectionCandidateTarget> targets) {
+    private CandidateTargetFilterResult filteredCandidateTargets(VisualConnectionCandidatesRequest request,
+                                                                 List<ConnectionCandidateTarget> targets) {
         List<String> queryTokens = queryTokens(request.query());
-        if (queryTokens.isEmpty() || targets.isEmpty()) {
-            return targets;
+        List<ConnectionCandidateTarget> queryFiltered = targets;
+        if (!queryTokens.isEmpty() && !targets.isEmpty()) {
+            Map<String, Object> sourceSchema = endpointSourceSchema(request.draft(), request.source());
+            String sourceSchemaType = schemaTypeLabel(sourceSchema, "");
+            queryFiltered = targets.stream()
+                    .filter(target -> candidateTargetMatchesQuery(request, target, sourceSchemaType, queryTokens))
+                    .toList();
         }
-        Map<String, Object> sourceSchema = endpointSourceSchema(request.draft(), request.source());
-        String sourceSchemaType = schemaTypeLabel(sourceSchema, "");
-        return targets.stream()
-                .filter(target -> candidateTargetMatchesQuery(request, target, sourceSchemaType, queryTokens))
+        Map<String, Integer> statusCounts = candidateStatusCounts(request, queryFiltered);
+        if (request.targetStatus().isBlank() || queryFiltered.isEmpty()) {
+            return new CandidateTargetFilterResult(queryFiltered, statusCounts);
+        }
+        List<ConnectionCandidateTarget> statusFiltered = queryFiltered.stream()
+                .filter(target -> request.targetStatus().equals(fastCandidateStatus(request, target)))
                 .toList();
+        return new CandidateTargetFilterResult(statusFiltered, statusCounts);
+    }
+
+    private Map<String, Integer> candidateStatusCounts(VisualConnectionCandidatesRequest request,
+                                                       List<ConnectionCandidateTarget> targets) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        counts.put("ready", 0);
+        counts.put("blocked", 0);
+        counts.put("wired", 0);
+        for (ConnectionCandidateTarget target : targets) {
+            counts.merge(fastCandidateStatus(request, target), 1, Integer::sum);
+        }
+        return counts;
     }
 
     private boolean candidateTargetMatchesQuery(VisualConnectionCandidatesRequest request,
@@ -913,6 +971,12 @@ public class VisualConnectionCheckService {
             GraphDraft.DraftNode node,
             String surface,
             GraphDraft.Endpoint endpoint
+    ) {
+    }
+
+    private record CandidateTargetFilterResult(
+            List<ConnectionCandidateTarget> targets,
+            Map<String, Integer> statusCounts
     ) {
     }
 

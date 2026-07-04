@@ -44,7 +44,7 @@
 | --- | ---: | --- | --- | --- |
 | 算子库合同与导入 | 8.0 | `OperatorLibrary`、JSON/YAML validate/import、revision、impact、bundle fingerprint、design-only lowering | 复杂第三方协议包 diff、跨环境治理策略还需继续深化 | OpenAPI/AsyncAPI diff 与 runtime binding handoff 对齐 |
 | Schema 约束与拖线裁决 | 8.4 | `VisualSchemaCompatibility`、`VisualSchemaValidator`、`GraphDraftValidator`、connection check/candidates、fit candidates、`VisualSchemaIntrospection`，以及浏览器 schema mirror 对 required-only / contains-only typeless schema 的回归 | JSON Schema 语义仍是受限子集，深层 compatibility diff 与 value matching 还没有完全抽成可复用策略 | 持续收敛 shared schema/value helper，补更多 schema 子集回归 |
-| 画布产品化体验 | 7.8 | Browser Composer palette、schema-aware picker、hover preflight、readiness panel、diagnostic queue、impact inspector，前端本地 schema type/validator mirror 已覆盖 required-only object 与 contains-only array；selected-node Connectability 直接展示服务端候选 schema 类型、替换影响、target runtime-binding debt，并在候选窗口被截断时显式提示 partial server window / local fallback 风险，已提供 Prev/Next 候选窗口控制，并支持按 target/reason/schema 文本发起服务端全局 query、按 ready/blocked/wired 做窗口状态过滤；真实浏览器已覆盖 filter 输入重绘后的焦点保留、状态筛选、Clear 恢复，以及 260 个 target 下的服务端窗口、服务端全局 query 命中末尾 target、Next 翻页和无横向溢出；服务端候选接口已把大窗口成本限制到当前页，并通过 `targetSurface=canvas` 与画布 target handle 语义对齐 | 单文件前端复杂度高，query 已下沉到服务端全局候选过滤，但 status/facet 仍主要是当前窗口 UI 过滤；大图回归仍缺窄屏、虚拟化列表和多算子族性能矩阵 | 抽更小 UI 模块，补服务端 status/facet query、虚拟化列表、窄屏布局和多 operator family 大画布回归 |
+| 画布产品化体验 | 8.0 | Browser Composer palette、schema-aware picker、hover preflight、readiness panel、diagnostic queue、impact inspector，前端本地 schema type/validator mirror 已覆盖 required-only object 与 contains-only array；selected-node Connectability 直接展示服务端候选 schema 类型、替换影响、target runtime-binding debt，并在候选窗口被截断时显式提示 partial server window / local fallback 风险，已提供 Prev/Next 候选窗口控制，并支持按 target/reason/schema 文本发起服务端全局 query、按 ready/blocked/wired 做服务端全局状态过滤并返回 `statusCounts`；真实浏览器已覆盖 filter 输入重绘后的焦点保留、状态筛选、Clear 恢复，以及 260 个 target 下的服务端窗口、服务端全局 query/status 命中末尾 target、Next 翻页和无横向溢出；服务端候选接口已把大窗口成本限制到当前页，并通过 `targetSurface=canvas` 与画布 target handle 语义对齐 | 单文件前端复杂度高，query/status 已下沉到服务端全局候选过滤，但 operator/runtime/schema 等更丰富 facet 仍未产品化；大图回归仍缺窄屏、虚拟化列表和多算子族性能矩阵 | 抽更小 UI 模块，补更丰富服务端 facet、虚拟化列表、窄屏布局和多 operator family 大画布回归 |
 | Design-only artifact 生命周期 | 8.0 | `DESIGN` publication、action-readiness gate、run/golden 禁用、runtime-binding requirements | DESIGN 到 external runtime bound 的组织流程仍依赖外部协作 | handoff bundle 与外部工单/事件系统对接 |
 | Runtime binding 闭环 | 6.5 | requirement index、handoff bundle、implementation proposal、bind/supersede/unbind、activation、rollout observation、lowering integration、readiness recompute | 跨 repository partial-failure、异步 workflow idempotency、指标消费闭环仍未全覆盖 | 继续硬化 runtime evidence lifecycle 和 replay/compensation |
 | 发布、可迁移性与版本治理 | 7.5 | draft/publication bundles、fingerprint gate、immutable publication、revision guard、operator/resource impact | 还有协议命名与当前 wire contract 的历史漂移 | 协议草案按现状收敛，保留平台化 ADR |
@@ -53,7 +53,7 @@
 | Runtime 扩展族 | 5.8 | remote-worker、AI-tool、event-source、message-handler、webhook、streaming/durable contract 已可设计态编排 | 真正 dispatcher、ingress runtime、AI tool invocation、durable instance 尚未落地 | 从 runtime-binding handoff 开始逐类接 executor |
 | 工程可维护性 | 7.2 | 服务端测试丰富，完整 `clean verify` 可跑通，Java 侧读模型、GraphDraftValidator、VisualSchemaCompatibility 与 VisualSchemaValidator 的结构类型推断已开始共享 schema helper；浏览器 helper probe 覆盖了本地 mirror 与服务端语义一致性 | 深层 compatibility/value matching 仍分散，前端 `app.js` 过大 | 继续迁移 compatibility/validator 深层校验 helpers，逐步拆分前端 authoring helpers |
 
-综合分：**73/100**。
+综合分：**74/100**。
 
 这个分数不是贬低当前成果。相反，它说明项目已经跨过“画布玩具”阶段，但离完整工业平台还差治理、runtime、观测和维护性闭环。
 
@@ -74,6 +74,7 @@
 11. selected-node Connectability 已支持候选窗口内文本过滤和 ready/blocked/wired 状态过滤，用户可以按 target、port、schema hint、阻断原因或 runtime-binding debt 收敛 chip，而不是在大图窗口里盲扫；真实浏览器回归已证明输入框在 selected-node editor 重绘后仍保留焦点和值，状态过滤和 Clear 不会破坏可见候选解释。
 12. selected-node Connectability 已有真实 260 target 大画布回归：服务端 candidates API 使用 canvas target 语义返回与画布一致的 260 个候选，窗口显示 `1-250 of 260`，Next 可进入 `251-260 of 260`，且 inspector 面板无横向溢出。
 13. selected-node Connectability 已支持服务端全局 query：候选 API 在全量 target 上先按 query 过滤再分页，返回 filtered total 与 `unfilteredCandidateCount`；真实 260 target 浏览器回归证明在首窗口输入 `riskScoreReview260` 可直接得到 `1/260 matching candidate` 并展示 `integer -> integer`，且 query 输入有 debounce 防止逐字请求风暴。
+14. selected-node Connectability 已支持服务端全局 ready/blocked/wired 状态筛选：`targetStatus` 参与候选 API、request key、server state 和真实浏览器等待条件；返回结果包含 `statusCounts`，并把 duplicate-but-existing 的候选显式标记为 `wired`，避免大画布跨页状态筛选退回当前窗口 UI 假象。
 
 ### 尚未成立
 
@@ -84,6 +85,33 @@
 5. 前端仍是示例项目形态，复杂度已经接近需要模块化拆分的边界。
 
 ## 4. 本轮迭代复盘
+
+### 2026-07-05：Connectability 服务端全局状态筛选与候选状态 Facet
+
+触发问题：
+
+服务端全局文本 query 已解决“第 260 个 target 需要先翻页才能搜索到”的问题，但 ready/blocked/wired 状态仍主要依赖当前窗口 UI 过滤。对工业级画布来说这是不可接受的：用户选择 `wired` 或 `blocked` 时，系统必须在全量候选集上筛选，而不是只在当前 250 个 chip 里做视觉过滤。
+
+本轮完成：
+
+1. `VisualConnectionCandidatesRequest` 增加 `targetStatus`，支持 `ready/blocked/wired` 全局候选状态过滤，并保留旧构造器兼容。
+2. `VisualConnectionCandidatesResult` 增加 `statusCounts`，表达 query 过滤后、status 过滤前的 ready/blocked/wired 分布；`ConnectionCandidate` 增加 `targetStatus`，避免 duplicate-but-existing 的候选被 UI 误归类为 blocked。
+3. `/api/visual/connections/candidates` 现在先枚举全量 target，再按 query 过滤、计算状态分布、按 `targetStatus` 过滤，最后执行 offset/limit；大候选集路径继续只对当前窗口执行完整 `check()`。
+4. 服务端轻量状态分类把 `wired` 与 `ready` 分开：已经存在相同连接的 target 不再被 ready 筛选命中；data duplicate 仍保留 validator duplicate diagnostic，但候选行会显式标记 `targetStatus=wired`。
+5. Connectability 前端把 active status 纳入 request body、request key、server state 和 debounce guard；状态切换不会复用旧 query/window cache。
+6. 前端归一化 `statusCounts` 为稳定的 `ready/blocked/wired` 三键结构，并让 server-returned `wired` 候选在 UI 中保持 wired 状态，而不是被 duplicate diagnostic 误显示成 blocked。
+7. 真实浏览器 260 target 回归现在先选择 `Ready`，再输入 `riskScoreReview260`，等待 server state 同时满足 `query=riskScoreReview260` 与 `targetStatus=ready`，证明 DOM 事件链路和服务端状态筛选一起工作。
+
+验证：
+
+```bash
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualConnectionCheckServiceTest test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringAppJsTest test
+```
+
+剩余风险：
+
+这轮补齐的是 connectability 候选表的核心状态 facet，不是完整 facet 系统。operator family、runtime readiness、schema type、runtime-binding debt 等 facet 仍没有统一服务端查询模型；候选列表还没有虚拟化；窄屏/移动端和多算子族大画布性能矩阵还缺自动化证明。
 
 ### 2026-07-04：Connectability 服务端全局候选 Query 与输入防抖
 
@@ -109,7 +137,7 @@ mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest
 
 剩余风险：
 
-服务端全局文本 query 已补上，但这还不是完整候选表产品。ready/blocked/wired status 和更丰富 facet 仍主要在当前窗口 UI 层工作；列表还没有虚拟化；大图性能只覆盖一个 source/一个 transform target family；窄屏和移动端布局还没有自动化证明。
+服务端全局文本 query 已补上，但当时还不是完整候选表产品。后续已经补了 ready/blocked/wired 服务端全局状态筛选；更丰富 facet、列表虚拟化、多算子族大图性能矩阵、窄屏和移动端布局仍没有自动化证明。
 
 ### 2026-07-04：Connectability 260 target 大画布窗口回归与候选接口成本收敛
 
@@ -133,7 +161,7 @@ mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest
 
 剩余风险：
 
-这轮把 250+ target 的真实浏览器窗口、服务端分页成本和 canvas/server target 语义对齐补上了，但当时仍不是完整候选表产品：过滤仍是当前窗口内 UI 检索，不是服务端全局 query。后一轮已经把文本 query 下沉到服务端全局候选过滤；剩余缺口转为 status/facet 服务端化、列表虚拟化、多算子族性能矩阵，以及窄屏和移动端布局自动化证明。
+这轮把 250+ target 的真实浏览器窗口、服务端分页成本和 canvas/server target 语义对齐补上了，但当时仍不是完整候选表产品：过滤仍是当前窗口内 UI 检索，不是服务端全局 query。后续已经把文本 query 与 ready/blocked/wired status 下沉到服务端全局候选过滤；剩余缺口转为更丰富 facet、列表虚拟化、多算子族性能矩阵，以及窄屏和移动端布局自动化证明。
 
 ### 2026-07-04：Connectability 过滤真实浏览器交互回归
 
@@ -185,7 +213,7 @@ mvn -q -f resource-gateway-examples/pom.xml clean verify
 
 剩余风险：
 
-这轮当时仍是“当前窗口内检索”，不是服务端全局候选查询，也不是虚拟化候选表。后续已经补了 filter browser interaction、真实 260 target DOM 回归和服务端全局文本 query；下一步应推进服务端 status/facet query、虚拟化候选列表和窄屏布局矩阵。
+这轮当时仍是“当前窗口内检索”，不是服务端全局候选查询，也不是虚拟化候选表。后续已经补了 filter browser interaction、真实 260 target DOM 回归、服务端全局文本 query 和 ready/blocked/wired 服务端状态筛选；下一步应推进更丰富 facet、虚拟化候选列表和窄屏布局矩阵。
 
 ### 2026-07-04：Connectability 服务端候选窗口翻页
 
@@ -410,7 +438,7 @@ schema type/path 逻辑仍分散在多个类中。短期可接受；中期应抽
 | --- | --- | --- | --- |
 | P0 | 深层 compatibility / value diagnostics 策略收敛 | effective kind 已统一，但 not/conditional/patternProperties/dependent schema 等深层判断仍在类内分散 | 选一个高风险 schema 子集，抽共享 value/schema policy 或补明确不可迁移边界 |
 | P0 | Runtime binding partial-failure 硬化 | 这是 DESIGN artifact 走向可执行 runtime 的主干 | 选一个尚未补偿的跨 repository mutation，补 replay/compensation/诊断 |
-| P1 | Browser regression matrix | required-only / contains-only typeless schema、Connectability 可见候选解释、design-only target runtime debt、候选窗口截断提示、基本 Prev/Next 窗口翻页、JS 层候选过滤、真实浏览器 filter 交互、260 target 大画布窗口和服务端全局 query 已覆盖，但 UI 能力多，DOM smoke 仍需继续扩大 | 覆盖导入面板、窄屏/移动布局、多算子族大画布、虚拟化候选列表、服务端 status/facet query 和大量 schema field rendering 的更多负路径/漂移路径 |
+| P1 | Browser regression matrix | required-only / contains-only typeless schema、Connectability 可见候选解释、design-only target runtime debt、候选窗口截断提示、基本 Prev/Next 窗口翻页、JS 层候选过滤、真实浏览器 filter 交互、260 target 大画布窗口、服务端全局 query 与 ready/blocked/wired status 已覆盖，但 UI 能力多，DOM smoke 仍需继续扩大 | 覆盖导入面板、窄屏/移动布局、多算子族大画布、虚拟化候选列表、更丰富服务端 facet 和大量 schema field rendering 的更多负路径/漂移路径 |
 | P1 | 协议文档收敛 | 设计草案与当前 wire contract 名称仍有历史漂移 | 把 candidate/fit/readiness 当前字段写入 protocol v1 |
 | P2 | 前端模块化 | `app.js` 已承载太多 authoring 逻辑 | 先抽 schema helper 或 readiness helper，保持测试覆盖 |
 

@@ -19,6 +19,7 @@ import java.util.Map;
  * @param targetPort optional target port filter for exact-hover discovery
  * @param targetPath optional target schema path filter for exact-hover discovery
  * @param query optional global candidate query applied before offset/limit
+ * @param targetStatus optional global status filter, one of ready, blocked, or wired
  * @param targetUnionBranch explicit target oneOf/anyOf branch selected by the author for focused discovery
  * @param targetUnionBranches explicit nested target oneOf/anyOf branches keyed by target path
  */
@@ -34,6 +35,7 @@ public record VisualConnectionCandidatesRequest(
         String targetPort,
         String targetPath,
         String query,
+        String targetStatus,
         GraphDraft.UnionBranchSelection targetUnionBranch,
         Map<String, GraphDraft.UnionBranchSelection> targetUnionBranches
 ) {
@@ -53,10 +55,31 @@ public record VisualConnectionCandidatesRequest(
         targetPort = targetPort == null ? "" : targetPort.trim();
         targetPath = targetPath == null ? "" : targetPath.trim();
         query = query == null ? "" : query.trim();
+        targetStatus = canonicalTargetStatus(targetStatus);
         targetUnionBranch = targetUnionBranch == null
                 ? GraphDraft.UnionBranchSelection.empty()
                 : targetUnionBranch;
         targetUnionBranches = VisualConnectionCheckRequest.normalizeUnionBranchSelections(targetUnionBranches);
+    }
+
+    /**
+     * Backward-compatible constructor for callers created before global status filtering existed.
+     */
+    public VisualConnectionCandidatesRequest(GraphDraft draft,
+                                             GraphDraft.Endpoint source,
+                                             String kind,
+                                             boolean includeRejected,
+                                             int limit,
+                                             int offset,
+                                             String targetNodeId,
+                                             String targetSurface,
+                                             String targetPort,
+                                             String targetPath,
+                                             String query,
+                                             GraphDraft.UnionBranchSelection targetUnionBranch,
+                                             Map<String, GraphDraft.UnionBranchSelection> targetUnionBranches) {
+        this(draft, source, kind, includeRejected, limit, offset, targetNodeId, targetSurface,
+                targetPort, targetPath, query, "", targetUnionBranch, targetUnionBranches);
     }
 
     /**
@@ -75,7 +98,7 @@ public record VisualConnectionCandidatesRequest(
                                              GraphDraft.UnionBranchSelection targetUnionBranch,
                                              Map<String, GraphDraft.UnionBranchSelection> targetUnionBranches) {
         this(draft, source, kind, includeRejected, limit, offset, targetNodeId, targetSurface,
-                targetPort, targetPath, "", targetUnionBranch, targetUnionBranches);
+                targetPort, targetPath, "", "", targetUnionBranch, targetUnionBranches);
     }
 
     /**
@@ -137,6 +160,19 @@ public record VisualConnectionCandidatesRequest(
             case "control" -> "control";
             case "canvas", "canvas-targets", "canvas_targets" -> "canvas";
             default -> trimmed;
+        };
+    }
+
+    private static String canonicalTargetStatus(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String trimmed = value.trim();
+        return switch (trimmed.toLowerCase(Locale.ROOT)) {
+            case "ready", "available", "connectable" -> "ready";
+            case "blocked", "rejected", "invalid" -> "blocked";
+            case "wired", "connected", "already", "already-connected", "already_connected" -> "wired";
+            default -> "";
         };
     }
 }

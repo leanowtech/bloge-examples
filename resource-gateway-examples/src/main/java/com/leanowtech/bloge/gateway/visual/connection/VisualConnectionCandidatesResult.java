@@ -15,10 +15,11 @@ import java.util.Map;
  * @param source normalized source endpoint
  * @param kind normalized edge kind used for candidate checks
  * @param offset zero-based offset applied after accepted/rejected filtering
- * @param totalCandidateCount enumerated targets after request query filtering and before accepted/rejected filtering
- * @param unfilteredCandidateCount enumerated targets before request query filtering
- * @param acceptedCount accepted target count after request query filtering and before display limiting
- * @param rejectedCount rejected target count after request query filtering and before display limiting
+ * @param totalCandidateCount enumerated targets after request query/status filtering and before accepted/rejected filtering
+ * @param unfilteredCandidateCount enumerated targets before request query/status filtering
+ * @param statusCounts ready/blocked/wired target counts after query filtering and before status filtering
+ * @param acceptedCount accepted target count after request query/status filtering and before display limiting
+ * @param rejectedCount rejected target count after request query/status filtering and before display limiting
  * @param displayedCount returned candidate row count
  * @param truncated true when more visible rows existed after the returned window
  * @param candidates returned candidate rows
@@ -31,6 +32,7 @@ public record VisualConnectionCandidatesResult(
         int offset,
         int totalCandidateCount,
         int unfilteredCandidateCount,
+        Map<String, Integer> statusCounts,
         int acceptedCount,
         int rejectedCount,
         int displayedCount,
@@ -50,6 +52,7 @@ public record VisualConnectionCandidatesResult(
         offset = Math.max(0, offset);
         totalCandidateCount = Math.max(0, totalCandidateCount);
         unfilteredCandidateCount = Math.max(totalCandidateCount, unfilteredCandidateCount);
+        statusCounts = normalizeStatusCounts(statusCounts);
         acceptedCount = Math.max(0, acceptedCount);
         rejectedCount = Math.max(0, rejectedCount);
         candidates = candidates == null ? List.of() : List.copyOf(candidates);
@@ -71,7 +74,7 @@ public record VisualConnectionCandidatesResult(
                                             List<ConnectionCandidate> candidates,
                                             List<VisualDiagnostic> diagnostics) {
         this(schemaVersion, source, kind, 0, totalCandidateCount, totalCandidateCount,
-                acceptedCount, rejectedCount, displayedCount,
+                Map.of(), acceptedCount, rejectedCount, displayedCount,
                 truncated, candidates, diagnostics);
     }
 
@@ -90,7 +93,41 @@ public record VisualConnectionCandidatesResult(
                                             List<ConnectionCandidate> candidates,
                                             List<VisualDiagnostic> diagnostics) {
         this(schemaVersion, source, kind, offset, totalCandidateCount, totalCandidateCount,
-                acceptedCount, rejectedCount, displayedCount, truncated, candidates, diagnostics);
+                Map.of(), acceptedCount, rejectedCount, displayedCount, truncated, candidates, diagnostics);
+    }
+
+    /**
+     * Backward-compatible constructor for callers created before status counts existed.
+     */
+    public VisualConnectionCandidatesResult(String schemaVersion,
+                                            GraphDraft.Endpoint source,
+                                            String kind,
+                                            int offset,
+                                            int totalCandidateCount,
+                                            int unfilteredCandidateCount,
+                                            int acceptedCount,
+                                            int rejectedCount,
+                                            int displayedCount,
+                                            boolean truncated,
+                                            List<ConnectionCandidate> candidates,
+                                            List<VisualDiagnostic> diagnostics) {
+        this(schemaVersion, source, kind, offset, totalCandidateCount, unfilteredCandidateCount,
+                Map.of(), acceptedCount, rejectedCount, displayedCount, truncated, candidates, diagnostics);
+    }
+
+    private static Map<String, Integer> normalizeStatusCounts(Map<String, Integer> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        addStatusCount(counts, source, "ready");
+        addStatusCount(counts, source, "blocked");
+        addStatusCount(counts, source, "wired");
+        return Collections.unmodifiableMap(counts);
+    }
+
+    private static void addStatusCount(Map<String, Integer> counts, Map<String, Integer> source, String key) {
+        counts.put(key, Math.max(0, source.getOrDefault(key, 0)));
     }
 
     /**
@@ -102,6 +139,7 @@ public record VisualConnectionCandidatesResult(
      * @param targetSurface target surface, such as input or config
      * @param target normalized target endpoint
      * @param accepted true when the connection can be applied
+     * @param targetStatus target status, one of ready, blocked, or wired
      * @param bindingKey storage key for data/input bindings when applicable
      * @param summary machine-readable check summary reused from the connection preflight contract
      * @param explanation schema and replacement explanation for product UI and external control planes
@@ -114,6 +152,7 @@ public record VisualConnectionCandidatesResult(
             String targetSurface,
             GraphDraft.Endpoint target,
             boolean accepted,
+            String targetStatus,
             String bindingKey,
             VisualConnectionCheckResult.VisualConnectionCheckSummary summary,
             ConnectionCandidateExplanation explanation,
@@ -128,6 +167,7 @@ public record VisualConnectionCandidatesResult(
             targetOperatorRef = targetOperatorRef == null ? "" : targetOperatorRef;
             targetSurface = targetSurface == null || targetSurface.isBlank() ? "input" : targetSurface;
             target = target == null ? GraphDraft.Endpoint.empty() : target;
+            targetStatus = normalizeTargetStatus(targetStatus, accepted);
             bindingKey = bindingKey == null ? "" : bindingKey;
             explanation = explanation == null ? ConnectionCandidateExplanation.empty() : explanation;
             diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
@@ -145,8 +185,35 @@ public record VisualConnectionCandidatesResult(
                                    String bindingKey,
                                    VisualConnectionCheckResult.VisualConnectionCheckSummary summary,
                                    List<VisualDiagnostic> diagnostics) {
-            this(targetNodeId, targetNodeLabel, targetOperatorRef, targetSurface, target, accepted, bindingKey,
+            this(targetNodeId, targetNodeLabel, targetOperatorRef, targetSurface, target, accepted, "", bindingKey,
                     summary, ConnectionCandidateExplanation.empty(), diagnostics);
+        }
+
+        /**
+         * Backward-compatible constructor for callers created before target status existed.
+         */
+        public ConnectionCandidate(String targetNodeId,
+                                   String targetNodeLabel,
+                                   String targetOperatorRef,
+                                   String targetSurface,
+                                   GraphDraft.Endpoint target,
+                                   boolean accepted,
+                                   String bindingKey,
+                                   VisualConnectionCheckResult.VisualConnectionCheckSummary summary,
+                                   ConnectionCandidateExplanation explanation,
+                                   List<VisualDiagnostic> diagnostics) {
+            this(targetNodeId, targetNodeLabel, targetOperatorRef, targetSurface, target, accepted, "", bindingKey,
+                    summary, explanation, diagnostics);
+        }
+
+        private static String normalizeTargetStatus(String value, boolean accepted) {
+            if (value != null && !value.isBlank()) {
+                String normalized = value.trim().toLowerCase();
+                if ("ready".equals(normalized) || "blocked".equals(normalized) || "wired".equals(normalized)) {
+                    return normalized;
+                }
+            }
+            return accepted ? "ready" : "blocked";
         }
     }
 

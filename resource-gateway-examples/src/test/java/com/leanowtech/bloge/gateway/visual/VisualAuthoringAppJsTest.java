@@ -3011,6 +3011,10 @@ class VisualAuthoringAppJsTest {
                   'nodeConnectabilityServerCandidateLimit',
                   'nodeConnectabilityServerDraftKey',
                   'nodeConnectabilityServerRequestKey',
+                  'nodeConnectabilityServerActiveStatus',
+                  'nodeConnectabilityServerStatusKey',
+                  'normalizeConnectionCandidateStatus',
+                  'normalizeConnectionCandidateStatusCounts',
                   'compactStringHash',
                   'nodeConnectabilityTargetAppliesToSource',
                   'nodeConnectabilityTargetKind',
@@ -5450,9 +5454,10 @@ operators:
                     nodeId: scoreConnectability.source.nodeId,
                     port: scoreConnectability.source.port,
                     path: scoreConnectability.source.path
-                  },
-                  totalCandidateCount: 3,
-                  offset: 1,
+	                  },
+	                  totalCandidateCount: 3,
+	                  statusCounts: { ready: 1, blocked: 2, wired: 0 },
+	                  offset: 1,
                   acceptedCount: 1,
                   rejectedCount: 2,
                   displayedCount: 2,
@@ -5460,10 +5465,11 @@ operators:
                     targetNodeId: 'auditNode',
                     targetNodeLabel: 'Audit',
                     targetOperatorRef: 'risk:audit',
-                    targetSurface: 'input',
-                    target: { nodeId: 'auditNode', port: 'inputs', path: 'score' },
-                    accepted: true,
-                    bindingKey: 'inputs.score',
+	                    targetSurface: 'input',
+	                    target: { nodeId: 'auditNode', port: 'inputs', path: 'score' },
+	                    accepted: true,
+	                    targetStatus: 'ready',
+	                    bindingKey: 'inputs.score',
                     summary: {
                       message: 'Server schema accepts score.',
                       runtimeBindingRequirementCount: 1,
@@ -5509,10 +5515,11 @@ operators:
                     targetNodeId: 'auditNode',
                     targetNodeLabel: 'Audit',
                     targetOperatorRef: 'risk:audit',
-                    targetSurface: 'input',
-                    target: { nodeId: 'auditNode', port: 'inputs', path: 'risk' },
-                    accepted: false,
-                    bindingKey: '',
+	                    targetSurface: 'input',
+	                    target: { nodeId: 'auditNode', port: 'inputs', path: 'risk' },
+	                    accepted: false,
+	                    targetStatus: 'blocked',
+	                    bindingKey: '',
                     summary: { message: '' },
                     explanation: {
                       sourceLabel: 'riskNode.payload.score',
@@ -5710,22 +5717,33 @@ operators:
                 };
                 const pageOneRequestKey = context.nodeConnectabilityServerRequestKey('riskNode', context.state.builder, 0, 250);
                 const pageTwoRequestKey = context.nodeConnectabilityServerRequestKey('riskNode', context.state.builder, 250, 250);
-                const pageOneStats = context.nodeConnectabilityServerWindowStats(truncatedServerState);
-                const pageTwoStats = context.nodeConnectabilityServerWindowStats(pageTwoServerState);
-                const pageOneControls = context.renderNodeConnectabilityServerControls(truncatedServerState);
-                const pageTwoControls = context.renderNodeConnectabilityServerControls(pageTwoServerState);
-                const connectabilityServerBeforeFetch = context.state.nodeConnectabilityServer;
-                const connectabilityFetchOptions = [];
+	                const pageOneStats = context.nodeConnectabilityServerWindowStats(truncatedServerState);
+	                const pageTwoStats = context.nodeConnectabilityServerWindowStats(pageTwoServerState);
+	                const pageOneControls = context.renderNodeConnectabilityServerControls(truncatedServerState);
+	                const pageTwoControls = context.renderNodeConnectabilityServerControls(pageTwoServerState);
+	                const pageOneReadyStatusRequestKey = context.nodeConnectabilityServerRequestKey(
+	                  'riskNode',
+	                  context.state.builder,
+	                  0,
+	                  250,
+	                  '',
+	                  'ready'
+	                );
+	                context.state.nodeConnectabilityFilter = { query: '', status: 'ready' };
+	                const activeServerStatus = context.nodeConnectabilityServerActiveStatus();
+	                const connectabilityServerBeforeFetch = context.state.nodeConnectabilityServer;
+	                const connectabilityFetchOptions = [];
                 const previousFetch = context.fetch;
                 const previousCandidateDiscoverer = context.discoverVisualConnectionCandidatesOnServer;
                 context.fetch = () => {};
                 context.discoverVisualConnectionCandidatesOnServer = (source, options) => {
                   connectabilityFetchOptions.push({
-                    sourcePath: source.path || '',
-                    offset: options.offset,
-                    limit: options.limit,
-                    includeRejected: options.includeRejected
-                  });
+	                    sourcePath: source.path || '',
+	                    offset: options.offset,
+	                    limit: options.limit,
+	                    includeRejected: options.includeRejected,
+	                    targetStatus: options.targetStatus || ''
+	                  });
                   return Promise.resolve(context.normalizeConnectionCandidatesResult({
                     schemaVersion: 'bloge.visualConnectionCandidates.v1',
                     kind: options.kind || 'data',
@@ -5741,19 +5759,20 @@ operators:
                     displayedCount: 0,
                     truncated: false,
                     candidates: []
-                  }, source));
-                };
+	                  }, source, { targetStatus: options.targetStatus || '' }));
+	                };
                 context.ensureNodeConnectabilityServerCandidates(
                   context.state.builder.nodes[1],
                   connectability,
                   { offset: 250, limit: 250, force: true }
                 );
-                const connectabilityFetchOffsets = connectabilityFetchOptions
-                  .map((entry) => `${entry.sourcePath}:${entry.offset}:${entry.limit}:${entry.includeRejected}`)
-                  .sort()
-                  .join('|');
-                context.state.nodeConnectabilityServer = connectabilityServerBeforeFetch;
-                context.fetch = previousFetch;
+	                const connectabilityFetchOffsets = connectabilityFetchOptions
+	                  .map((entry) => `${entry.sourcePath}:${entry.offset}:${entry.limit}:${entry.includeRejected}:${entry.targetStatus}`)
+	                  .sort()
+	                  .join('|');
+	                context.state.nodeConnectabilityServer = connectabilityServerBeforeFetch;
+	                context.clearNodeConnectabilityFilter();
+	                context.fetch = previousFetch;
                 context.discoverVisualConnectionCandidatesOnServer = previousCandidateDiscoverer;
                 context.state.connectionCandidatePreview = {
                   sourceKey: context.connectionCandidatePreviewSourceKey(scoreConnectability.source, 'data'),
@@ -5777,12 +5796,42 @@ operators:
                   schema: { type: 'object' }
                 };
                 const serverRejectedDecision = context.connectionDragTargetDecision(scoreConnectability.source, serverRejectedTarget);
-                const serverRejectedMessage = context.connectionDragTargetMessage(
-                  scoreConnectability.source,
-                  serverRejectedTarget,
-                  serverRejectedDecision
-                );
-                const localFallbackTarget = {
+	                const serverRejectedMessage = context.connectionDragTargetMessage(
+	                  scoreConnectability.source,
+	                  serverRejectedTarget,
+	                  serverRejectedDecision
+	                );
+	                const serverWiredCandidateResult = context.normalizeConnectionCandidatesResult({
+	                  schemaVersion: 'bloge.visualConnectionCandidates.v1',
+	                  kind: 'data',
+	                  source: {
+	                    nodeId: scoreConnectability.source.nodeId,
+	                    port: scoreConnectability.source.port,
+	                    path: scoreConnectability.source.path
+	                  },
+	                  totalCandidateCount: 1,
+	                  statusCounts: { ready: 0, blocked: 0, wired: 1 },
+	                  acceptedCount: 0,
+	                  rejectedCount: 1,
+	                  displayedCount: 1,
+	                  candidates: [{
+	                    targetNodeId: 'auditNode',
+	                    targetNodeLabel: 'Audit',
+	                    targetOperatorRef: 'risk:audit',
+	                    targetSurface: 'input',
+	                    target: { nodeId: 'auditNode', port: 'inputs', path: 'score' },
+	                    accepted: false,
+	                    targetStatus: 'wired',
+	                    summary: { message: 'Connection already exists.' },
+	                    diagnostics: [{ level: 'ERROR', message: 'Connection already exists.' }]
+	                  }]
+	                }, scoreConnectability.source);
+	                const serverWiredStatus = context.nodeConnectabilityTargetStatus({
+	                  compatibility: { ok: false, message: 'Connection already exists.' },
+	                  alreadyConnected: false,
+	                  serverCandidate: serverWiredCandidateResult.candidates[0]
+	                });
+	                const localFallbackTarget = {
                   nodeId: 'auditNode',
                   port: 'inputs',
                   path: 'approved',
@@ -6511,6 +6560,10 @@ operators:
                   ['connection candidates target keys', Object.keys(serverCandidateResult.candidatesByTargetKey).sort().join('|'), 'data:auditNode:inputs:risk|data:auditNode:inputs:score'],
                   ['connection candidates accepted count', serverCandidateResult.acceptedCount, 1],
                   ['connection candidates rejected count', serverCandidateResult.rejectedCount, 2],
+                  ['connection candidates status ready count', serverCandidateResult.statusCounts.ready, 1],
+                  ['connection candidates status blocked count', serverCandidateResult.statusCounts.blocked, 2],
+                  ['connection candidates status wired count', serverCandidateResult.statusCounts.wired, 0],
+                  ['connection candidates target status', serverCandidateResult.candidates[0].targetStatus, 'ready'],
                   ['connection candidates explanation source type', serverCandidateResult.candidates[0].explanation.sourceSchemaType, 'integer'],
                   ['connection candidates explanation target type', serverCandidateResult.candidates[0].explanation.targetSchemaType, 'integer'],
                   ['connection candidates runtime binding count', serverCandidateResult.candidates[0].summary.runtimeBindingRequirementCount, 1],
@@ -6543,6 +6596,7 @@ operators:
                   ['server candidate rejected source', serverRejectedDecision.source, 'server'],
                   ['server candidate rejected', serverRejectedDecision.ok, false],
                   ['server candidate rejected message', serverRejectedMessage, 'Server schema rejects root risk.'],
+                  ['server candidate wired status preserved', serverWiredStatus, 'wired'],
                   ['server candidate local fallback source', localFallbackDecision.source, 'local'],
                   ['server candidate local fallback message', localFallbackDecision.message, 'Type mismatch: integer cannot feed boolean.'],
                   ['server connectability source count', serverConnectability.sourceCount, 3],
@@ -6565,7 +6619,9 @@ operators:
                   ['server connectability page two has no next', pageTwoStats.hasNext, false],
                   ['server connectability page one controls next', String(pageOneControls.includes('data-connectability-window="next"')), 'true'],
                   ['server connectability page two controls window label', String(pageTwoControls.includes('Window 251-300 of 300')), 'true'],
-                  ['server connectability next page request offsets', connectabilityFetchOffsets, ':250:250:true|eligible:250:250:true|score:250:250:true'],
+                  ['server connectability status request key differs', String(pageOneRequestKey !== pageOneReadyStatusRequestKey), 'true'],
+                  ['server connectability active status', activeServerStatus, 'ready'],
+                  ['server connectability next page request offsets', connectabilityFetchOffsets, ':250:250:true:ready|eligible:250:250:true:ready|score:250:250:true:ready'],
                   ['auto bind required unbound count', autoBindPlan.requiredUnboundCount, 2],
                   ['auto bind item count', autoBindPlan.items.length, 1],
                   ['auto bind skipped count', autoBindPlan.skippedCount, 1],
