@@ -1984,12 +1984,12 @@ evidence 派生的 `operatorLibraryIdsByOperatorRef`。这保证跨环境 DESIGN
 schema-only draft 在目标 catalog 未就绪时仍可按源算子库归属交接 runtime-plane work。
 如果外部控制面需要审阅 runtime fact 明细而不是只看 aggregate/action queue，
 `GET /api/visual/assets/runtime-binding-requirements/runtime-evidence` 返回
-`bloge.visualRuntimeEvidenceWindow.v1`，把 adapter activation、rollout observation 和
-executable lowering integration 合成同一个可分页窗口。该窗口回显 `itemLimit/offset/hasMore/filter`，
+`bloge.visualRuntimeEvidenceWindow.v1`，把 implementation binding、adapter activation、
+rollout observation 和 executable lowering integration 合成同一个可分页窗口。该窗口回显 `itemLimit/offset/hasMore/filter`，
 返回 filtered/unfiltered total、kind/operator/binding/activation/state/level counts，以及
 `rolloutSignalCounts` / `breachedRolloutSignalCounts`；`rolloutSignal` 或
 `breachedOnly=true` 查询会先命中 rollout observation，再只带同一 activation/binding/operator
-链路上的 activation/integration 上下文，避免大型 workspace 因一个 guardrail 过滤拉回全局无关证据。
+链路上的 implementation binding、activation 和 integration 上下文，避免大型 workspace 因一个 guardrail 过滤拉回全局无关证据。
 如果外部 runtime-plane 团队需要事实清单而不是 overview action recommendation，
 `GET /api/visual/assets/runtime-binding-requirements` 会返回
 `bloge.visualRuntimeBindingRequirements.v1`，按 active draft 和 immutable publication
@@ -2116,8 +2116,9 @@ transition request 可携带 `expectedRevision`；supersede 还可携带
 `bloge.visualRuntimeBindingImplementationTransition.v1`，默认携带当前 record revision 作为
 `expectedRevision`；supersede 还会从可见 replacement proposal 携带
 `expectedReplacementRevision`，让 UI acknowledgement 与 runtime-plane repository fact 对齐。
-同一面板还会只读消费 adapter activation、rollout observation 和 executable lowering integration
-list endpoint，按 `operatorRef`、`bindingId`、`activationId`、lifecycle state 和 rollout state 展示 Runtime
+同一面板还会只读消费 runtime evidence window 中的 implementation binding、adapter activation、
+rollout observation 和 executable lowering integration facts，按 `operatorRef`、`bindingId`、
+`activationId`、lifecycle state 和 rollout state 展示 Runtime
 Evidence Chain；这些行只表达 runtime-plane 事实链和 promotion blocker 位置，不改写 graph artifact、
 operator definition 或 readiness。`bloge.visualAssetOverview.v1.runtimeEvidence.evidenceChainHealthCounts`
 把同一事实链归一化为 `complete`、`partial`、`missing-activation`、`missing-integration`、

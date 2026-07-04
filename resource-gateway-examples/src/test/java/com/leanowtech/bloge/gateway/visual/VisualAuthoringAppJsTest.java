@@ -565,7 +565,8 @@ class VisualAuthoringAppJsTest {
                 .contains("runtime-evidence-reset")
                 .contains("function visualRuntimeBindingRequirementRows(bindingIndex)")
                 .contains("function visualRuntimeBindingImplementationRows(bindings)")
-                .contains("function visualRuntimeEvidenceRows(adapterActivations = [], rolloutObservations = [], loweringIntegrations = [])")
+                .contains("function visualRuntimeEvidenceRows(implementationBindings = [], adapterActivations = [], rolloutObservations = [], loweringIntegrations = [])")
+                .contains("function visualRuntimeEvidenceImplementationBindingRow(binding, index)")
                 .contains("function visualRuntimeAdapterActivationRow(activation, index)")
                 .contains("function visualRuntimeRolloutObservationRow(observation, index)")
                 .contains("function visualExecutableLoweringIntegrationRow(integration, index)")
@@ -1838,6 +1839,7 @@ class VisualAuthoringAppJsTest {
                   'visualExecutableLoweringIntegrationsUrl',
                   'visualRuntimeEvidenceWindowUrl',
                   'visualRuntimeEvidenceRows',
+                  'visualRuntimeEvidenceImplementationBindingRow',
                   'visualRuntimeAdapterActivationRow',
                   'visualRuntimeRolloutObservationRow',
                   'visualExecutableLoweringIntegrationRow',
@@ -1850,6 +1852,19 @@ class VisualAuthoringAppJsTest {
                 ]) {
                   vm.runInContext(functionSource(name), context);
                 }
+                const binding = {
+                  bindingId: 'risk-eligibility-native-v1',
+                  revision: 4,
+                  state: 'bound',
+                  level: 'success',
+                  operatorRef: 'risk:eligibility',
+                  sourceRequirementKeys: ['RUNTIME_BINDING|draft|risk'],
+                  implementation: {
+                    adapterKind: 'http',
+                    runtimeOwner: 'runtime-team',
+                    entrypoint: 'riskEligibility'
+                  }
+                };
                 const activation = {
                   activationId: 'risk-eligibility-native-v1-prod',
                   revision: 2,
@@ -1902,7 +1917,7 @@ class VisualAuthoringAppJsTest {
                   executorOwner: 'executor-platform',
                   evidence: [{ kind: 'executor-test' }]
                 };
-                const rows = context.visualRuntimeEvidenceRows([activation], [rollout], [integration]);
+                const rows = context.visualRuntimeEvidenceRows([binding], [activation], [rollout], [integration]);
                 const activationUrl = context.visualRuntimeAdapterActivationsUrl();
                 const rolloutUrl = context.visualRuntimeRolloutObservationsUrl();
                 const integrationUrl = context.visualExecutableLoweringIntegrationsUrl();
@@ -1911,11 +1926,12 @@ class VisualAuthoringAppJsTest {
                 const signalCounts = context.visualRuntimeEvidenceSignalCounts(rows, true);
                 const summary = context.visualRuntimeEvidenceWindowSummary(rows);
                 const pagedSummary = context.visualRuntimeEvidenceWindowSummary({
-                  total: 3,
-                  unfilteredTotal: 5,
+                  total: 4,
+                  unfilteredTotal: 6,
                   offset: 1,
                   displayedCount: 2,
                   kindCounts: {
+                    'implementation-binding': 1,
                     'adapter-activation': 1,
                     'rollout-observation': 1,
                     'executable-lowering-integration': 1
@@ -1927,19 +1943,21 @@ class VisualAuthoringAppJsTest {
                   ['rollout url', rolloutUrl, '/api/visual/assets/runtime-binding-requirements/rollout-observations?operatorRef=risk%3Aeligibility&bindingId=risk-eligibility-native-v1&activationId=risk-eligibility-native-v1-prod&state=healthy&rolloutSignal=error-rate&breachedOnly=true'],
                   ['integration url', integrationUrl, '/api/visual/assets/runtime-binding-requirements/executable-lowering-integrations?operatorRef=risk%3Aeligibility&activationId=risk-eligibility-native-v1-prod&state=active'],
                   ['window url', windowUrl, '/api/visual/assets/runtime-binding-requirements/runtime-evidence?operatorRef=risk%3Aeligibility&bindingId=risk-eligibility-native-v1&activationId=risk-eligibility-native-v1-prod&lifecycleState=active&rolloutState=healthy&rolloutSignal=error-rate&breachedOnly=true&itemLimit=12&offset=0'],
-                  ['row count', rows.length, 3],
-                  ['first kind', rows[0].kind, 'adapter-activation'],
-                  ['second kind', rows[1].kind, 'rollout-observation'],
-                  ['third kind', rows[2].kind, 'executable-lowering-integration'],
-                  ['activation label', rows[0].label, 'risk-eligibility-native-v1-prod · Adapter activation · Active · rev 2'],
-                  ['rollout value includes traffic', String(rows[1].value.includes('25% traffic')), 'true'],
-                  ['integration value includes executor', String(rows[2].value.includes('executor bloge-worker')), 'true'],
-                  ['operator count', counts['risk:eligibility'], 3],
+                  ['row count', rows.length, 4],
+                  ['first kind', rows[0].kind, 'implementation-binding'],
+                  ['second kind', rows[1].kind, 'adapter-activation'],
+                  ['third kind', rows[2].kind, 'rollout-observation'],
+                  ['fourth kind', rows[3].kind, 'executable-lowering-integration'],
+                  ['binding label', rows[0].label, 'risk-eligibility-native-v1 · Implementation binding · Bound · rev 4'],
+                  ['activation label', rows[1].label, 'risk-eligibility-native-v1-prod · Adapter activation · Active · rev 2'],
+                  ['rollout value includes traffic', String(rows[2].value.includes('25% traffic')), 'true'],
+                  ['integration value includes executor', String(rows[3].value.includes('executor bloge-worker')), 'true'],
+                  ['operator count', counts['risk:eligibility'], 4],
                   ['breached signal count', signalCounts['error-rate'], 1],
-                  ['summary', summary, '3 runtime evidence records · 1 activations / 1 rollout / 1 lowering'],
-                  ['paged summary', pagedSummary, '2-3 of 3 / 5 total · 1 activations / 1 rollout / 1 lowering'],
+                  ['summary', summary, '4 runtime evidence records · 1 bindings / 1 activations / 1 rollout / 1 lowering'],
+                  ['paged summary', pagedSummary, '2-3 of 4 / 6 total · 1 bindings / 1 activations / 1 rollout / 1 lowering'],
                   ['context level', activeContext.level, 'success'],
-                  ['context message', activeContext.message, 'Adapter Activation · risk-eligibility-native-v1-prod · risk:eligibility · binding risk-eligibility-native-v1 · activation risk-eligibility-native-v1-prod']
+                  ['context message', activeContext.message, 'Implementation Binding · risk-eligibility-native-v1 · risk:eligibility · binding risk-eligibility-native-v1']
                 ];
                 for (const [label, actual, expected] of checks) {
                   if (actual !== expected) {

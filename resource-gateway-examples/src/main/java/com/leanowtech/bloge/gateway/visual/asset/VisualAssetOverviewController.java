@@ -1482,6 +1482,7 @@ public class VisualAssetOverviewController {
             @RequestParam(defaultValue = "") String rolloutSignal,
             @RequestParam(defaultValue = "false") boolean breachedOnly) {
         return VisualRuntimeEvidenceWindow.from(
+                implementationRepository.all().stream().toList(),
                 adapterActivationRepository.all().stream().toList(),
                 rolloutObservationRepository.all().stream().toList(),
                 executableLoweringIntegrationRepository.all().stream().toList(),

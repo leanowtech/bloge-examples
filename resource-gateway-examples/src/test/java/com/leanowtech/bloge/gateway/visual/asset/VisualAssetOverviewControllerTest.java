@@ -3403,48 +3403,57 @@ class VisualAssetOverviewControllerTest {
                 10, 0, "", "", "", "", "", "p95-latency", true);
         VisualRuntimeEvidenceWindow lifecycleFiltered = fixture.controller().runtimeEvidenceWindow(
                 10, 0, "", "", "", "active", "", "", false);
+        VisualRuntimeEvidenceWindow bindingLifecycleFiltered = fixture.controller().runtimeEvidenceWindow(
+                10, 0, "", "", "", "bound", "", "", false);
 
         assertThat(firstPage.schemaVersion()).isEqualTo(VisualRuntimeEvidenceWindow.SCHEMA_VERSION);
-        assertThat(firstPage.total()).isEqualTo(3);
-        assertThat(firstPage.unfilteredTotal()).isEqualTo(3);
+        assertThat(firstPage.total()).isEqualTo(4);
+        assertThat(firstPage.unfilteredTotal()).isEqualTo(4);
         assertThat(firstPage.displayedCount()).isEqualTo(2);
         assertThat(firstPage.itemLimit()).isEqualTo(2);
         assertThat(firstPage.offset()).isZero();
         assertThat(firstPage.hasMore()).isTrue();
         assertThat(firstPage.filter().filtered()).isFalse();
         assertThat(firstPage.kindCounts())
+                .containsEntry("implementation-binding", 1)
                 .containsEntry("adapter-activation", 1)
                 .containsEntry("rollout-observation", 1)
                 .containsEntry("executable-lowering-integration", 1);
-        assertThat(firstPage.operatorRefCounts()).containsEntry("risk:eligibility", 3);
-        assertThat(firstPage.bindingIdCounts()).containsEntry(binding.bindingId(), 3);
+        assertThat(firstPage.operatorRefCounts()).containsEntry("risk:eligibility", 4);
+        assertThat(firstPage.bindingIdCounts()).containsEntry(binding.bindingId(), 4);
         assertThat(firstPage.activationIdCounts()).containsEntry(activation.activationId(), 3);
         assertThat(firstPage.rolloutSignalCounts()).containsEntry("p95-latency", 1);
         assertThat(firstPage.breachedRolloutSignalCounts()).isEmpty();
         assertThat(firstPage.items()).hasSize(2);
-        assertThat(firstPage.adapterActivations().size()
+        assertThat(firstPage.implementationBindings().size()
+                + firstPage.adapterActivations().size()
                 + firstPage.rolloutObservations().size()
                 + firstPage.executableLoweringIntegrations().size())
                 .isEqualTo(2);
-        assertThat(secondPage.displayedCount()).isEqualTo(1);
+        assertThat(secondPage.displayedCount()).isEqualTo(2);
         assertThat(secondPage.hasMore()).isFalse();
         assertThat(byBinding.filter().bindingId()).isEqualTo(binding.bindingId());
-        assertThat(byBinding.total()).isEqualTo(3);
+        assertThat(byBinding.total()).isEqualTo(4);
+        assertThat(byBinding.implementationBindings()).singleElement().isEqualTo(binding);
         assertThat(byBinding.executableLoweringIntegrations()).singleElement().isEqualTo(integration);
         assertThat(byActivation.filter().activationId()).isEqualTo(activation.activationId());
         assertThat(byActivation.total()).isEqualTo(3);
         assertThat(byActivation.adapterActivations()).singleElement().isEqualTo(activation);
         assertThat(bySignal.filter().rolloutSignal()).isEqualTo("p95-latency");
-        assertThat(bySignal.total()).isEqualTo(3);
+        assertThat(bySignal.total()).isEqualTo(4);
+        assertThat(bySignal.implementationBindings()).singleElement().isEqualTo(binding);
         assertThat(bySignal.rolloutObservations()).singleElement().isEqualTo(observation);
         assertThat(bySignal.adapterActivations()).singleElement().isEqualTo(activation);
         assertThat(bySignal.executableLoweringIntegrations()).singleElement().isEqualTo(integration);
         assertThat(breachedOnly.filter().breachedOnly()).isTrue();
         assertThat(breachedOnly.total()).isZero();
-        assertThat(breachedOnly.unfilteredTotal()).isEqualTo(3);
+        assertThat(breachedOnly.unfilteredTotal()).isEqualTo(4);
         assertThat(lifecycleFiltered.filter().lifecycleState()).isEqualTo("active");
         assertThat(lifecycleFiltered.total()).isEqualTo(3);
         assertThat(lifecycleFiltered.rolloutObservations()).singleElement().isEqualTo(observation);
+        assertThat(bindingLifecycleFiltered.filter().lifecycleState()).isEqualTo("bound");
+        assertThat(bindingLifecycleFiltered.total()).isEqualTo(2);
+        assertThat(bindingLifecycleFiltered.implementationBindings()).singleElement().isEqualTo(binding);
     }
 
     @Test

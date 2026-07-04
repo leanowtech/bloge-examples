@@ -21,7 +21,8 @@ import java.util.function.Function;
  * <p>Runtime evidence facts can grow independently from graph artifacts. This read
  * model gives browser and external control planes one bounded, filter-echoing
  * window instead of forcing them to fetch all adapter activations, rollout
- * observations, and executable lowering integrations.</p>
+ * observations, executable lowering integrations, and the implementation
+ * binding records that anchor those downstream facts.</p>
  *
  * @param schemaVersion runtime evidence window contract version
  * @param generatedAt server timestamp when this window was derived
@@ -41,6 +42,7 @@ import java.util.function.Function;
  * @param rolloutSignalCounts filtered counts by rollout signal name
  * @param breachedRolloutSignalCounts filtered counts by breached rollout signal name
  * @param items mixed evidence item window in server sort order
+ * @param implementationBindings implementation binding records present in the returned window
  * @param adapterActivations adapter activation records present in the returned window
  * @param rolloutObservations rollout observation records present in the returned window
  * @param executableLoweringIntegrations lowering integration records present in the returned window
@@ -64,6 +66,7 @@ public record VisualRuntimeEvidenceWindow(
         Map<String, Integer> rolloutSignalCounts,
         Map<String, Integer> breachedRolloutSignalCounts,
         List<Item> items,
+        List<VisualRuntimeBindingImplementationBinding> implementationBindings,
         List<VisualRuntimeAdapterActivation> adapterActivations,
         List<VisualRuntimeRolloutObservation> rolloutObservations,
         List<VisualExecutableLoweringIntegration> executableLoweringIntegrations
@@ -89,6 +92,7 @@ public record VisualRuntimeEvidenceWindow(
         rolloutSignalCounts = immutableCounts(rolloutSignalCounts);
         breachedRolloutSignalCounts = immutableCounts(breachedRolloutSignalCounts);
         items = items == null ? List.of() : List.copyOf(items);
+        implementationBindings = implementationBindings == null ? List.of() : List.copyOf(implementationBindings);
         adapterActivations = adapterActivations == null ? List.of() : List.copyOf(adapterActivations);
         rolloutObservations = rolloutObservations == null ? List.of() : List.copyOf(rolloutObservations);
         executableLoweringIntegrations = executableLoweringIntegrations == null
@@ -101,7 +105,8 @@ public record VisualRuntimeEvidenceWindow(
     /**
      * Builds a mixed evidence chain window from submitted runtime evidence facts.
      */
-    public static VisualRuntimeEvidenceWindow from(List<VisualRuntimeAdapterActivation> adapterActivations,
+    public static VisualRuntimeEvidenceWindow from(List<VisualRuntimeBindingImplementationBinding> implementationBindings,
+                                                   List<VisualRuntimeAdapterActivation> adapterActivations,
                                                    List<VisualRuntimeRolloutObservation> rolloutObservations,
                                                    List<VisualExecutableLoweringIntegration> executableLoweringIntegrations,
                                                    int itemLimit,
@@ -113,7 +118,11 @@ public record VisualRuntimeEvidenceWindow(
                                                    String rolloutState,
                                                    String rolloutSignal,
                                                    boolean breachedOnly) {
-        List<Entry> generated = generate(adapterActivations, rolloutObservations, executableLoweringIntegrations);
+        List<Entry> generated = generate(
+                implementationBindings,
+                adapterActivations,
+                rolloutObservations,
+                executableLoweringIntegrations);
         Filter filter = new Filter(operatorRef, bindingId, activationId, lifecycleState, rolloutState, rolloutSignal,
                 breachedOnly);
         List<Entry> filtered = filter.usesRolloutSignalFilter()
@@ -148,6 +157,10 @@ public record VisualRuntimeEvidenceWindow(
                 rolloutSignalCounts(filtered, true),
                 window.stream().map(Entry::item).toList(),
                 window.stream()
+                        .map(Entry::implementationBinding)
+                        .filter(record -> record != null)
+                        .toList(),
+                window.stream()
                         .map(Entry::adapterActivation)
                         .filter(record -> record != null)
                         .toList(),
@@ -162,10 +175,16 @@ public record VisualRuntimeEvidenceWindow(
         );
     }
 
-    private static List<Entry> generate(List<VisualRuntimeAdapterActivation> adapterActivations,
+    private static List<Entry> generate(List<VisualRuntimeBindingImplementationBinding> implementationBindings,
+                                        List<VisualRuntimeAdapterActivation> adapterActivations,
                                         List<VisualRuntimeRolloutObservation> rolloutObservations,
                                         List<VisualExecutableLoweringIntegration> executableLoweringIntegrations) {
         ArrayList<Entry> entries = new ArrayList<>();
+        for (VisualRuntimeBindingImplementationBinding binding : safeList(implementationBindings)) {
+            if (binding != null) {
+                entries.add(Entry.from(binding));
+            }
+        }
         for (VisualRuntimeAdapterActivation activation : safeList(adapterActivations)) {
             if (activation != null) {
                 entries.add(Entry.from(activation));
@@ -251,6 +270,7 @@ public record VisualRuntimeEvidenceWindow(
 
     private static int kindOrder(String kind) {
         return switch (normalize(kind)) {
+            case "implementation-binding" -> 0;
             case "adapter-activation" -> 1;
             case "rollout-observation" -> 2;
             case "executable-lowering-integration" -> 3;
@@ -468,17 +488,27 @@ public record VisualRuntimeEvidenceWindow(
             String activationId,
             Instant updatedAt,
             Item item,
+            VisualRuntimeBindingImplementationBinding implementationBinding,
             VisualRuntimeAdapterActivation adapterActivation,
             VisualRuntimeRolloutObservation rolloutObservation,
             VisualExecutableLoweringIntegration executableLoweringIntegration
     ) {
+        static Entry from(VisualRuntimeBindingImplementationBinding binding) {
+            String kind = "implementation-binding";
+            Item item = new Item(kind, binding.bindingId(), binding.state(), binding.level(),
+                    binding.operatorRef(), binding.bindingId(), "",
+                    binding.updatedAt(), false);
+            return new Entry(kind, binding.bindingId(), item.state(), item.level(), item.operatorRef(),
+                    item.bindingId(), item.activationId(), item.updatedAt(), item, binding, null, null, null);
+        }
+
         static Entry from(VisualRuntimeAdapterActivation activation) {
             String kind = "adapter-activation";
             Item item = new Item(kind, activation.activationId(), activation.state(), activation.level(),
                     activation.operatorRef(), activation.bindingId(), activation.activationId(),
                     activation.updatedAt(), false);
             return new Entry(kind, activation.activationId(), item.state(), item.level(), item.operatorRef(),
-                    item.bindingId(), item.activationId(), item.updatedAt(), item, activation, null, null);
+                    item.bindingId(), item.activationId(), item.updatedAt(), item, null, activation, null, null);
         }
 
         static Entry from(VisualRuntimeRolloutObservation observation) {
@@ -489,7 +519,7 @@ public record VisualRuntimeEvidenceWindow(
                     observation.operatorRef(), observation.bindingId(), observation.activationId(),
                     observation.updatedAt(), breached);
             return new Entry(kind, observation.observationId(), item.state(), item.level(), item.operatorRef(),
-                    item.bindingId(), item.activationId(), item.updatedAt(), item, null, observation, null);
+                    item.bindingId(), item.activationId(), item.updatedAt(), item, null, null, observation, null);
         }
 
         static Entry from(VisualExecutableLoweringIntegration integration) {
@@ -498,7 +528,7 @@ public record VisualRuntimeEvidenceWindow(
                     integration.operatorRef(), integration.bindingId(), integration.activationId(),
                     integration.updatedAt(), false);
             return new Entry(kind, integration.integrationId(), item.state(), item.level(), item.operatorRef(),
-                    item.bindingId(), item.activationId(), item.updatedAt(), item, null, null, integration);
+                    item.bindingId(), item.activationId(), item.updatedAt(), item, null, null, null, integration);
         }
     }
 }

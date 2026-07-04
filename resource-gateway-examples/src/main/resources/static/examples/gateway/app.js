@@ -474,6 +474,7 @@ const state = {
     state: ''
   },
   activeVisualRuntimeBindingImplementation: null,
+  visualRuntimeEvidenceImplementationBindings: [],
   visualRuntimeAdapterActivations: [],
   visualRuntimeRolloutObservations: [],
   visualExecutableLoweringIntegrations: [],
@@ -759,6 +760,9 @@ async function loadVisualRuntimeEvidenceChains(options = {}) {
     }
     const payload = await response.json();
     state.visualRuntimeEvidenceWindow = payload;
+    state.visualRuntimeEvidenceImplementationBindings = Array.isArray(payload?.implementationBindings)
+      ? payload.implementationBindings
+      : [];
     state.visualRuntimeAdapterActivations = Array.isArray(payload?.adapterActivations)
       ? payload.adapterActivations
       : [];
@@ -771,6 +775,7 @@ async function loadVisualRuntimeEvidenceChains(options = {}) {
     state.visualRuntimeEvidenceMessage = null;
   } catch (error) {
     state.visualRuntimeEvidenceWindow = null;
+    state.visualRuntimeEvidenceImplementationBindings = [];
     state.visualRuntimeAdapterActivations = [];
     state.visualRuntimeRolloutObservations = [];
     state.visualExecutableLoweringIntegrations = [];
@@ -780,6 +785,7 @@ async function loadVisualRuntimeEvidenceChains(options = {}) {
     renderVisualAssetOverview();
   }
   return visualRuntimeEvidenceRows(
+    state.visualRuntimeEvidenceImplementationBindings,
     state.visualRuntimeAdapterActivations,
     state.visualRuntimeRolloutObservations,
     state.visualExecutableLoweringIntegrations
@@ -8543,6 +8549,7 @@ function renderVisualAssetOverview() {
     : [];
   const implementationRows = visualRuntimeBindingImplementationRows(implementationBindings);
   const runtimeEvidenceRows = visualRuntimeEvidenceRows(
+    state.visualRuntimeEvidenceImplementationBindings,
     state.visualRuntimeAdapterActivations,
     state.visualRuntimeRolloutObservations,
     state.visualExecutableLoweringIntegrations
@@ -8856,7 +8863,9 @@ function visualRuntimeEvidenceWindowSummary(evidenceWindow, rows = null) {
     ?? safeRows.filter((row) => row.kind === 'rollout-observation').length) || 0;
   const integrationCount = Number(kindCounts['executable-lowering-integration']
     ?? safeRows.filter((row) => row.kind === 'executable-lowering-integration').length) || 0;
-  const detail = `${activationCount} activations / ${rolloutCount} rollout / ${integrationCount} lowering`;
+  const bindingCount = Number(kindCounts['implementation-binding']
+    ?? safeRows.filter((row) => row.kind === 'implementation-binding').length) || 0;
+  const detail = `${bindingCount} bindings / ${activationCount} activations / ${rolloutCount} rollout / ${integrationCount} lowering`;
   if (evidenceWindow) {
     return unfilteredTotal !== total
       ? `${range} / ${unfilteredTotal} total · ${detail}`
@@ -9098,7 +9107,7 @@ function visualRuntimeEvidenceControls(rows) {
       </label>
       <label>
         <span>${escapeHtml('Lifecycle')}</span>
-        <select id="runtime-evidence-lifecycle-state" aria-label="Filter runtime activation and lowering evidence by lifecycle state">
+        <select id="runtime-evidence-lifecycle-state" aria-label="Filter runtime implementation, activation, and lowering evidence by lifecycle state">
           ${visualAssetActionOptionMarkup(VISUAL_RUNTIME_EVIDENCE_LIFECYCLE_STATES, query.lifecycleState)}
         </select>
       </label>
@@ -9337,7 +9346,8 @@ function visualAssetOverviewCountSum(counts) {
 }
 
 function visualAssetOverviewRuntimeEvidenceRecordCount(runtimeEvidence, runtimeEvidenceRows) {
-  const aggregate = Number(runtimeEvidence?.adapterActivationCount || 0)
+  const aggregate = Number(runtimeEvidence?.implementationBindingCount || 0)
+    + Number(runtimeEvidence?.adapterActivationCount || 0)
     + Number(runtimeEvidence?.rolloutObservationCount || 0)
     + Number(runtimeEvidence?.executableLoweringIntegrationCount || 0);
   return aggregate || (Array.isArray(runtimeEvidenceRows) ? runtimeEvidenceRows.length : 0);
@@ -9458,8 +9468,11 @@ function visualRuntimeBindingImplementationRows(bindings) {
     }));
 }
 
-function visualRuntimeEvidenceRows(adapterActivations = [], rolloutObservations = [], loweringIntegrations = []) {
+function visualRuntimeEvidenceRows(implementationBindings = [], adapterActivations = [], rolloutObservations = [], loweringIntegrations = []) {
   const rows = [];
+  for (const binding of Array.isArray(implementationBindings) ? implementationBindings : []) {
+    rows.push(visualRuntimeEvidenceImplementationBindingRow(binding, rows.length));
+  }
   for (const activation of Array.isArray(adapterActivations) ? adapterActivations : []) {
     rows.push(visualRuntimeAdapterActivationRow(activation, rows.length));
   }
@@ -9476,6 +9489,34 @@ function visualRuntimeEvidenceRows(adapterActivations = [], rolloutObservations 
       || visualRuntimeEvidenceKindOrder(left.kind) - visualRuntimeEvidenceKindOrder(right.kind)
       || String(left.id || '').localeCompare(String(right.id || '')))
     .map((row, index) => ({ ...row, index }));
+}
+
+function visualRuntimeEvidenceImplementationBindingRow(binding, index) {
+  const requirementCount = Array.isArray(binding?.sourceRequirementKeys) ? binding.sourceRequirementKeys.length : 0;
+  const implementation = binding?.implementation || {};
+  return {
+    index,
+    kind: 'implementation-binding',
+    id: binding?.bindingId || '',
+    state: String(binding?.state || '').trim().toLowerCase(),
+    level: visualRuntimeEvidenceLevel(binding),
+    operatorRef: binding?.operatorRef || '',
+    bindingId: binding?.bindingId || '',
+    activationId: '',
+    label: [
+      binding?.bindingId || 'implementation binding',
+      'Implementation binding',
+      operatorPaletteFacetLabel(binding?.state || ''),
+      `rev ${Number(binding?.revision || 0) || 0}`
+    ].filter(Boolean).join(' · '),
+    value: [
+      binding?.operatorRef ? `operator ${binding.operatorRef}` : '',
+      implementation.adapterKind ? `adapter ${implementation.adapterKind}` : '',
+      implementation.runtimeOwner ? `owner ${implementation.runtimeOwner}` : '',
+      implementation.entrypoint ? `entrypoint ${implementation.entrypoint}` : '',
+      `${requirementCount} requirement key${requirementCount === 1 ? '' : 's'}`
+    ].filter(Boolean).join(' · ')
+  };
 }
 
 function visualRuntimeAdapterActivationRow(activation, index) {
@@ -9580,6 +9621,9 @@ function visualExecutableLoweringIntegrationRow(integration, index) {
 }
 
 function visualRuntimeEvidenceKindOrder(kind) {
+  if (kind === 'implementation-binding') {
+    return 0;
+  }
   if (kind === 'adapter-activation') {
     return 1;
   }
@@ -10247,6 +10291,7 @@ function visualRuntimeEvidenceTargetParts(targetId = '') {
 
 function findVisualRuntimeEvidenceRow(target) {
   const rows = visualRuntimeEvidenceRows(
+    state.visualRuntimeEvidenceImplementationBindings,
     state.visualRuntimeAdapterActivations,
     state.visualRuntimeRolloutObservations,
     state.visualExecutableLoweringIntegrations
@@ -10262,6 +10307,7 @@ function visualRuntimeEvidenceTargetKindMatches(rowKind, targetKind) {
   const normalizedRowKind = String(rowKind || '').trim().toLowerCase();
   const normalizedTargetKind = String(targetKind || '').trim().toLowerCase();
   return normalizedRowKind === normalizedTargetKind
+    || (normalizedTargetKind === 'binding' && normalizedRowKind === 'implementation-binding')
     || (normalizedTargetKind === 'activation' && normalizedRowKind === 'adapter-activation')
     || (normalizedTargetKind === 'rollout' && normalizedRowKind === 'rollout-observation')
     || (normalizedTargetKind === 'integration' && normalizedRowKind === 'executable-lowering-integration');
