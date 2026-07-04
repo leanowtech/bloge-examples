@@ -6989,6 +6989,9 @@ operators:
                   'objectDependentSchemasCompatibilityIssue',
                   'objectPropertyBoundsCompatibilityIssue',
                   'arrayUnevaluatedItemsCompatibilityIssue',
+                  'arrayContainsCompatibilityIssue',
+                  'containsBoundsSatisfyTarget',
+                  'inferContainsMatchBounds',
                   'schemaType',
                   'schemaAllOfLabel',
                   'schemaUnionLabel',
@@ -7085,7 +7088,6 @@ operators:
                 context.arrayPrefixItemsCompatibilityIssue = () => '';
                 context.arrayItemsCompatibilityIssue = () => '';
                 context.arrayUniqueItemsCompatibilityIssue = () => '';
-                context.arrayContainsCompatibilityIssue = () => '';
                 context.numericValueMatchesBounds = () => true;
                 context.numericValueMatchesMultipleOf = () => true;
                 context.stringValueMatchesLengthBounds = () => true;
@@ -7388,6 +7390,41 @@ operators:
                   prefixItems: [{ type: 'string' }],
                   items: false
                 });
+                const targetContainsFromItemsSafe = context.schemaCompatibilityIssue({
+                  type: 'array',
+                  items: { type: 'string' },
+                  minItems: 2
+                }, {
+                  type: 'array',
+                  items: true,
+                  contains: { type: 'string' },
+                  minContains: 2
+                });
+                const targetContainsFromPrefixSafe = context.schemaCompatibilityIssue({
+                  type: 'array',
+                  prefixItems: [
+                    { type: 'string', const: 'primary' },
+                    { type: 'integer' }
+                  ],
+                  items: false,
+                  minItems: 1
+                }, {
+                  type: 'array',
+                  items: true,
+                  contains: { type: 'string', const: 'primary' },
+                  minContains: 1
+                });
+                const targetMaxContainsDisjointSafe = context.schemaCompatibilityIssue({
+                  type: 'array',
+                  items: { type: 'integer' },
+                  maxItems: 5
+                }, {
+                  type: 'array',
+                  items: true,
+                  contains: { type: 'string' },
+                  minContains: 0,
+                  maxContains: 0
+                });
 
                 const checks = [
                   ['residual optional collision path', String(residualIssue.includes("at 'score'")), 'true'],
@@ -7430,7 +7467,10 @@ operators:
                   ['target unevaluatedItems blocks residual source', targetUnevaluatedItemsIssue, 'target unevaluatedItems=false allows no residual array items but source may produce items beyond prefixItems[1]'],
                   ['target unevaluatedItems bounded source safe', targetUnevaluatedItemsSafe, ''],
                   ['target items=false blocks residual source', targetItemsFalseIssue, 'target requires item count <= 1 but source has no maxItems'],
-                  ['target items=false bounded source safe', targetItemsFalseSafe, '']
+                  ['target items=false bounded source safe', targetItemsFalseSafe, ''],
+                  ['target contains inferred from items safe', targetContainsFromItemsSafe, ''],
+                  ['target contains inferred from prefixItems safe', targetContainsFromPrefixSafe, ''],
+                  ['target maxContains inferred disjoint safe', targetMaxContainsDisjointSafe, '']
                 ];
 
                 for (const [label, actual, expected] of checks) {

@@ -22463,6 +22463,10 @@ function arrayContainsCompatibilityIssue(sourceSchema, targetSchema, path = '') 
       && sourceValues.every((value) => arrayValueMatchesSchema(value, targetSchema))) {
     return '';
   }
+  const inferredBounds = inferContainsMatchBounds(sourceSchema, targetContains);
+  if (containsBoundsSatisfyTarget(inferredBounds, targetMinimum, targetMaximum)) {
+    return '';
+  }
   const sourceContains = schemaContainsSchema(sourceSchema);
   if (!sourceContains) {
     return reasonAt(path, 'target requires contains but source does not guarantee matching array items');
@@ -22490,6 +22494,56 @@ function arrayContainsCompatibilityIssue(sourceSchema, targetSchema, path = '') 
     }
   }
   return '';
+}
+
+function containsBoundsSatisfyTarget(sourceBounds, targetMinimum, targetMaximum) {
+  if (targetMinimum !== null && sourceBounds.minimumMatches < targetMinimum) {
+    return false;
+  }
+  return targetMaximum === null
+    || sourceBounds.maximumMatches !== null && sourceBounds.maximumMatches <= targetMaximum;
+}
+
+function inferContainsMatchBounds(sourceSchema, targetContains) {
+  const sourceMinimum = schemaMinItems(sourceSchema);
+  const sourceMaximum = schemaMaxItems(sourceSchema);
+  const prefixItems = schemaPrefixItems(sourceSchema);
+  const residualItems = residualArrayItemSchema(sourceSchema);
+  let minimumMatches = 0;
+
+  if (sourceMinimum !== null) {
+    const guaranteedPrefixItems = Math.min(sourceMinimum, prefixItems.length);
+    for (let index = 0; index < guaranteedPrefixItems; index += 1) {
+      if (!schemaCompatibilityIssue(prefixItems[index], targetContains)) {
+        minimumMatches += 1;
+      }
+    }
+    const guaranteedResidualItems = Math.max(0, sourceMinimum - prefixItems.length);
+    if (guaranteedResidualItems > 0
+        && residualItems
+        && !schemaCompatibilityIssue(residualItems, targetContains)) {
+      minimumMatches += guaranteedResidualItems;
+    }
+  }
+
+  let maximumMatches = 0;
+  const possiblePrefixItems = sourceMaximum === null
+    ? prefixItems.length
+    : Math.min(sourceMaximum, prefixItems.length);
+  for (let index = 0; index < possiblePrefixItems; index += 1) {
+    if (!schemasDefinitelyDisjoint(prefixItems[index], targetContains)) {
+      maximumMatches += 1;
+    }
+  }
+  const mayHaveResidualItems = sourceMaximum === null || sourceMaximum > prefixItems.length;
+  if (mayHaveResidualItems) {
+    if (!residualItems || !schemasDefinitelyDisjoint(residualItems, targetContains)) {
+      maximumMatches = sourceMaximum === null
+        ? null
+        : maximumMatches + sourceMaximum - prefixItems.length;
+    }
+  }
+  return { minimumMatches, maximumMatches };
 }
 
 function objectSchemasCompatible(sourceSchema, targetSchema) {

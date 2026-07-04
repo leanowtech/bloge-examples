@@ -305,8 +305,10 @@ domain, a source list must stay inside the target `minItems`/`maxItems`
 range and guarantee `uniqueItems=true` when the target requires a duplicate-free
 array. Array `contains` constraints are also proven conservatively: a source
 must guarantee a compatible matching item schema and satisfy the target
-`minContains`/`maxContains` range, unless it exposes a finite enum/const array
-domain that can be checked directly. Array `prefixItems` constraints are
+`minContains`/`maxContains` range, either through explicit source `contains`,
+finite enum/const array domains, or source `items` / `prefixItems` plus
+`minItems` / `maxItems` bounds that prove the required matching-item count.
+Array `prefixItems` constraints are
 checked positionally too: tuple-like outputs must prove each constrained
 leading item is compatible before they can feed a target array, while later
 items continue to use the regular `items` schema. A source object must stay inside the target

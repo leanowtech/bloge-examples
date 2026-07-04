@@ -532,7 +532,7 @@ schema 证明 `applicant.score` 存在，但 `objectTemplate` 不能只绑定
 | `decimal` | `integer` | 警告/需 transform | 可能丢精度 |
 | `string` | `enum` | 禁止/需 transform | 没有来源值域证明，不能隐式接入枚举输入 |
 | `object` | `object` | 结构化检查 | required 字段必须满足 |
-| `array<T>` | `array<U>` | 检查 schema-object/boolean `items` / `prefixItems` / 受限 `unevaluatedItems` residual item 兼容 | foreach 场景重要 |
+| `array<T>` | `array<U>` | 检查 schema-object/boolean `items` / `prefixItems` / `contains` 匹配元素上下界 / 受限 `unevaluatedItems` residual item 兼容 | foreach 场景重要 |
 | `allOf` | 任意 / 任意 | 保守交集检查 | target `allOf` 必须逐 branch 满足；source `allOf` 只有在 base 或显式 typed / finite-domain constituent 可证明安全时放行 |
 | `oneOf`/`anyOf` | 任意 | 保守检查，可显式消歧 | source union 必须所有分支可赋值；target `anyOf` 至少一个分支可接；target `oneOf` 默认必须唯一分支可接；binding 可用 `targetUnionBranch` 指定 root target branch |
 | `if`/`then`/`else` | 任意 | 保守条件检查 | `if` 命中时应用 `then`，否则应用 `else`；source 能证明命中或不命中时只检查对应分支，无法证明时所有可能分支都必须兼容 |
@@ -540,7 +540,7 @@ schema 证明 `applicant.score` 存在，但 `objectTemplate` 不能只绑定
 | `unknown` | 任意 | 警告 | 可继续草稿，不可无条件发布 |
 
 resource-gateway 示例当前已在 binding 和 edge 校验中递归检查 object required
-字段、array schema-object/boolean `items` / `prefixItems` / residual `unevaluatedItems` 兼容性和 enum 值域集合：target object 的 required 字段必须
+字段、array schema-object/boolean `items` / `prefixItems` / `contains` 匹配元素上下界 / residual `unevaluatedItems` 兼容性和 enum 值域集合：target object 的 required 字段必须
 能从 source schema 中证明为 required 且类型兼容，source enum values 必须是
 target enum values 的子集，普通 `string` 不能直接接入 enum input。正式 draft
 还会校验 data edge 与语义依赖一致，包含 `nodePath` binding 和 config expression

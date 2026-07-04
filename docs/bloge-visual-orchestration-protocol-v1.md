@@ -1214,6 +1214,10 @@ visual conditional schema 支持：三个关键字的值必须是 schema object�
 `visual.schema.conditionalInvalid`；运行值、默认值和静态 literal 按条件语义应用
 `then` 或 `else`；schema-to-schema 兼容只在 source 能证明命中或避开 `if` 时按单分支放行，
 无法证明时要求所有可能分支都兼容。
+array `contains` / `minContains` / `maxContains` compatibility 会保守使用 source
+显式 `contains`、finite array enum/const，或 source `items` / `prefixItems` 搭配
+`minItems` / `maxItems` 推导出的匹配元素上下界；只有能证明 target matching item count
+约束时才放行。
 array `items` 支持 schema object 或 boolean residual policy：schema object 约束
 `prefixItems` 之后的剩余项，`items=false` 禁止剩余项，`items=true` 表示剩余项无约束；
 非 schema object / boolean 的 `items` 会返回 `visual.schema.arrayItemsMissing`。
@@ -2939,7 +2943,7 @@ flowchart TD
 - 类型不兼容且没有 adapter。
 - 纯引用 expression 的 source schema 与 target schema 不兼容。
 - 纯引用 config expression 的 source schema 与目标 `configSchema` 不兼容。
-- `array<T>` 到 `array<U>` 时 schema-object/boolean `items` / `prefixItems` / 受限 `unevaluatedItems` residual item schema 不兼容。
+- `array<T>` 到 `array<U>` 时 schema-object/boolean `items` / `prefixItems` / `contains` 匹配元素上下界 / 受限 `unevaluatedItems` residual item schema 不兼容。
 - node config 不满足 operator `configSchema`。
 - graph output selection 不满足 output port schema。
 - draft operator fingerprint 与当前 catalog fingerprint 不一致。

@@ -1095,6 +1095,10 @@ public final class VisualSchemaCompatibility {
 	                && sourceValues.stream().allMatch(value -> arrayValueMatchesSchema(value, targetSchema))) {
 	            return Optional.empty();
 	        }
+            ContainsMatchBounds inferredBounds = inferContainsMatchBounds(sourceSchema, targetContains);
+            if (containsBoundsSatisfyTarget(inferredBounds, targetMinimum, targetMaximum)) {
+                return Optional.empty();
+            }
 	        Map<String, Object> sourceContains = objectProperty(sourceSchema.get("contains"));
 	        if (sourceContains == null) {
 	            return Optional.of(reasonAt(path,
@@ -1133,6 +1137,64 @@ public final class VisualSchemaCompatibility {
 	        }
 	        return Optional.empty();
 	    }
+
+    private static boolean containsBoundsSatisfyTarget(ContainsMatchBounds sourceBounds,
+                                                       Long targetMinimum,
+                                                       Long targetMaximum) {
+        if (targetMinimum != null && sourceBounds.minimumMatches() < targetMinimum) {
+            return false;
+        }
+        return targetMaximum == null
+                || sourceBounds.maximumMatches() != null && sourceBounds.maximumMatches() <= targetMaximum;
+    }
+
+    private static ContainsMatchBounds inferContainsMatchBounds(Map<String, Object> sourceSchema,
+                                                               Map<String, Object> targetContains) {
+        Long sourceMinimum = arrayMinItems(sourceSchema);
+        Long sourceMaximum = arrayMaxItems(sourceSchema);
+        List<Map<String, Object>> prefixItems = prefixItemsOf(sourceSchema);
+        Map<String, Object> residualItems = residualArrayItemSchema(sourceSchema);
+
+        long minimumMatches = 0;
+        if (sourceMinimum != null) {
+            long guaranteedPrefixItems = Math.min(sourceMinimum, prefixItems.size());
+            for (int i = 0; i < guaranteedPrefixItems; i++) {
+                if (schemaCompatibilityIssue(prefixItems.get(i), targetContains).isEmpty()) {
+                    minimumMatches++;
+                }
+            }
+            long guaranteedResidualItems = Math.max(0, sourceMinimum - prefixItems.size());
+            if (guaranteedResidualItems > 0
+                    && residualItems != null
+                    && schemaCompatibilityIssue(residualItems, targetContains).isEmpty()) {
+                minimumMatches += guaranteedResidualItems;
+            }
+        }
+
+        Long maximumMatches = 0L;
+        long possiblePrefixItems = sourceMaximum == null
+                ? prefixItems.size()
+                : Math.min(sourceMaximum, prefixItems.size());
+        for (int i = 0; i < possiblePrefixItems; i++) {
+            if (!schemasDefinitelyDisjoint(prefixItems.get(i), targetContains)) {
+                maximumMatches++;
+            }
+        }
+        boolean mayHaveResidualItems = sourceMaximum == null || sourceMaximum > prefixItems.size();
+        if (mayHaveResidualItems) {
+            if (residualItems == null || !schemasDefinitelyDisjoint(residualItems, targetContains)) {
+                if (sourceMaximum == null) {
+                    maximumMatches = null;
+                } else {
+                    maximumMatches += sourceMaximum - prefixItems.size();
+                }
+            }
+        }
+        return new ContainsMatchBounds(minimumMatches, maximumMatches);
+    }
+
+    private record ContainsMatchBounds(long minimumMatches, Long maximumMatches) {
+    }
 
 	    private static Optional<String> objectSchemaCompatibilityIssue(Map<String, Object> sourceSchema,
 	                                                                   Map<String, Object> targetSchema,

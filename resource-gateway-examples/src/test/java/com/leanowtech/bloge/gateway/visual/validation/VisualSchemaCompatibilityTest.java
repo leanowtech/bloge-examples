@@ -207,6 +207,62 @@ class VisualSchemaCompatibilityTest {
     }
 
     @Test
+    void acceptsArrayContainsWhenSourceItemsAndMinItemsGuaranteeMatches() {
+        Map<String, Object> source = Map.of(
+                "type", "array",
+                "items", Map.of("type", "string"),
+                "minItems", 2
+        );
+        Map<String, Object> target = Map.of(
+                "type", "array",
+                "items", true,
+                "contains", Map.of("type", "string"),
+                "minContains", 2
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void acceptsArrayContainsWhenSourcePrefixItemsGuaranteeMatches() {
+        Map<String, Object> source = Map.of(
+                "type", "array",
+                "prefixItems", List.of(
+                        Map.of("type", "string", "const", "primary"),
+                        Map.of("type", "integer")
+                ),
+                "items", false,
+                "minItems", 1
+        );
+        Map<String, Object> target = Map.of(
+                "type", "array",
+                "items", true,
+                "contains", Map.of("type", "string", "const", "primary"),
+                "minContains", 1
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void acceptsArrayContainsMaxWhenSourceItemsCannotMatch() {
+        Map<String, Object> source = Map.of(
+                "type", "array",
+                "items", Map.of("type", "integer"),
+                "maxItems", 5
+        );
+        Map<String, Object> target = Map.of(
+                "type", "array",
+                "items", true,
+                "contains", Map.of("type", "string"),
+                "minContains", 0,
+                "maxContains", 0
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
     void rejectsSourceResidualItemsWhenTargetForbidsUnevaluatedItems() {
         Map<String, Object> source = Map.of(
                 "type", "array",
