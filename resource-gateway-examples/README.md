@@ -665,10 +665,10 @@ before writing the edge.
 The selected-node Connectability inspector uses the same source-scoped candidate
 read model as a short-lived server snapshot, so blocked previews and quick-connect
 suggestions can show server-derived reasons before the author clicks. Its Find,
-Status, Schema, Runtime, and Library controls are sent back to the candidate
-endpoint, so large canvases filter the full candidate set instead of only the
-currently rendered chip window; the click path still runs connection check
-before mutating the draft.
+Status, Schema, Runtime, Library, Operator, Source, Lowering, and Surface
+controls are sent back to the candidate endpoint, so large canvases filter the
+full candidate set instead of only the currently rendered chip window; the click
+path still runs connection check before mutating the draft.
 Operator availability is also enforced by policy: imported operator definitions
 may declare allowed `tenants`, `namespaces`, and `environments`; the browser
 queries the active catalog with the current draft scope from the Authoring Scope

@@ -15259,15 +15259,22 @@ function renderNodeConnectabilityFilterControls(
 }
 
 function nodeConnectabilityFacetFilterControls(serverState, filter = nodeConnectabilityActiveFilter()) {
-  const facets = [
-    ['schemaType', 'Schema'],
-    ['runtimeReadiness', 'Runtime'],
-    ['operatorLibraryId', 'Library']
-  ];
-  return facets
-    .map(([facet, label]) => nodeConnectabilityFacetFilterControl(serverState, filter, facet, label))
+  return nodeConnectabilityFacetDefinitions()
+    .map((facet) => nodeConnectabilityFacetFilterControl(serverState, filter, facet.key, facet.label))
     .filter(Boolean)
     .join('');
+}
+
+function nodeConnectabilityFacetDefinitions() {
+  return [
+    { key: 'schemaType', label: 'Schema', summaryLabel: 'schema' },
+    { key: 'runtimeReadiness', label: 'Runtime', summaryLabel: 'runtime' },
+    { key: 'operatorLibraryId', label: 'Library', summaryLabel: 'library' },
+    { key: 'operatorRef', label: 'Operator', summaryLabel: 'operator' },
+    { key: 'sourceKind', label: 'Source', summaryLabel: 'source' },
+    { key: 'loweringMode', label: 'Lowering', summaryLabel: 'lowering' },
+    { key: 'surface', label: 'Surface', summaryLabel: 'surface' }
+  ];
 }
 
 function nodeConnectabilityFacetFilterControl(serverState, filter, facet, label) {
@@ -15923,12 +15930,15 @@ function nodeConnectabilityServerFacetSummary(serverState) {
   if (!Object.keys(aggregate).length) {
     return '';
   }
-  const labels = [
-    connectionCandidateFacetLabel('schema', aggregate.schemaType),
-    connectionCandidateFacetLabel('runtime', aggregate.runtimeReadiness),
-    connectionCandidateFacetLabel('library', aggregate.operatorLibraryId)
-  ].filter(Boolean);
+  const labels = nodeConnectabilityFacetDefinitions()
+    .map((facet) => connectionCandidateFacetLabel(facet.summaryLabel, aggregate[facet.key]))
+    .filter(Boolean)
+    .slice(0, nodeConnectabilityFacetSummaryLimit());
   return labels.length ? `Facets · ${labels.join(' · ')}` : '';
+}
+
+function nodeConnectabilityFacetSummaryLimit() {
+  return 5;
 }
 
 function nodeConnectabilityServerFacetCounts(serverState) {

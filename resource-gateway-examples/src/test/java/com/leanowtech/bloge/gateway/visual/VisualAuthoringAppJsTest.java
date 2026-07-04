@@ -2983,9 +2983,11 @@ class VisualAuthoringAppJsTest {
                   'nodeConnectabilityFilterIsActive',
                   'nodeConnectabilityFilterDisplayLimit',
                   'nodeConnectabilityFacetFilterControls',
+                  'nodeConnectabilityFacetDefinitions',
                   'nodeConnectabilityFacetFilterControl',
                   'nodeConnectabilityFacetFilterOptions',
                   'nodeConnectabilityFacetFilterOptionLimit',
+                  'nodeConnectabilityFacetSummaryLimit',
                   'nodeConnectabilityAllTargets',
                   'nodeConnectabilityFilteredTargets',
                   'nodeConnectabilityTargetMatchesFilter',
@@ -5688,7 +5690,11 @@ operators:
                   facetFilters: {
                     schemaType: ['integer'],
                     runtimeReadiness: ['design-only'],
-                    operatorLibraryId: ['risk-policy']
+                    operatorLibraryId: ['risk-policy'],
+                    operatorRef: ['risk:audit'],
+                    sourceKind: ['user-library'],
+                    loweringMode: ['design'],
+                    surface: ['input']
                   }
                 };
                 const activeFacetFilter = context.nodeConnectabilityActiveFilter();
@@ -6714,12 +6720,19 @@ operators:
                   ['server connectability panel includes visible detail class', String(serverConnectabilityPanel.includes('node-connectability-chip-detail')), 'true'],
                   ['server connectability panel includes visible schema detail', String(serverConnectabilityPanel.includes('integer -&gt; integer')), 'true'],
                   ['server connectability panel includes visible runtime debt', String(serverConnectabilityPanel.includes('1 target runtime binding requirement')), 'true'],
-                  ['server connectability facet summary', serverFacetSummary, 'Facets · schema integer 1 +1 · runtime design-only 2 · library risk-policy 2'],
+                  ['server connectability facet definition count', context.nodeConnectabilityFacetDefinitions().length, 7],
+                  ['server connectability facet summary limit', context.nodeConnectabilityFacetSummaryLimit(), 5],
+                  ['server connectability facet summary', serverFacetSummary, 'Facets · schema integer 1 +1 · runtime design-only 2 · library risk-policy 2 · operator risk:audit 2 · source user-library 2'],
                   ['server connectability panel includes facet summary', String(serverConnectabilityPanel.includes('Facets')), 'true'],
-                  ['server connectability active facet key', facetFilterKey, 'operatorLibraryId=risk-policy|runtimeReadiness=design-only|schemaType=integer'],
+                  ['server connectability active facet key', facetFilterKey, 'loweringMode=design|operatorLibraryId=risk-policy|operatorRef=risk:audit|runtimeReadiness=design-only|schemaType=integer|sourceKind=user-library|surface=input'],
                   ['server connectability facet request key differs', String(pageOneRequestKey !== facetRequestKey), 'true'],
                   ['server connectability facet controls include schema', String(facetFilterControls.includes('data-connectability-filter-facet="schemaType"')), 'true'],
+                  ['server connectability facet controls include operator', String(facetFilterControls.includes('data-connectability-filter-facet="operatorRef"')), 'true'],
+                  ['server connectability facet controls include source', String(facetFilterControls.includes('data-connectability-filter-facet="sourceKind"')), 'true'],
+                  ['server connectability facet controls include lowering', String(facetFilterControls.includes('data-connectability-filter-facet="loweringMode"')), 'true'],
+                  ['server connectability facet controls include surface', String(facetFilterControls.includes('data-connectability-filter-facet="surface"')), 'true'],
                   ['server connectability facet controls selected schema', String(facetFilterControls.includes('value="integer" selected')), 'true'],
+                  ['server connectability facet controls selected operator', String(facetFilterControls.includes('value="risk:audit" selected')), 'true'],
                   ['server connectability facet filtered count', facetFilteredScoreTargets.length, 1],
                   ['server connectability facet filtered target', context.nodeConnectabilityTargetLabel(facetFilteredScoreTargets[0]), 'Audit (auditNode) · data -> inputs.score · ready'],
                   ['server connectability truncated status includes partial window', String(truncatedServerStatus.includes('partial server window 1-250 of 300')), 'true'],

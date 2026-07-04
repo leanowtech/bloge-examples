@@ -564,6 +564,7 @@ class VisualAuthoringBrowserDomTest {
         By filterQuery = By.cssSelector("#selected-operator-editor [data-connectability-filter-query]");
         By filterStatus = By.cssSelector("#selected-operator-editor [data-connectability-filter-status]");
         By filterSchema = By.cssSelector("#selected-operator-editor [data-connectability-filter-facet='schemaType']");
+        By filterLowering = By.cssSelector("#selected-operator-editor [data-connectability-filter-facet='loweringMode']");
         sendKeysThroughRerenderedFocusedInput(wait, filterQuery, "riskScoreReview260");
         waitForConnectabilityServerReady(new WebDriverWait(driver, Duration.ofSeconds(30)),
                 "riskScoreSource", 0, "riskScoreReview260");
@@ -575,6 +576,10 @@ class VisualAuthoringBrowserDomTest {
         waitForValue(wait, filterSchema, "integer");
         waitForConnectabilityServerReady(new WebDriverWait(driver, Duration.ofSeconds(30)),
                 "riskScoreSource", 0, "riskScoreReview260", "ready", "schemaType=integer");
+        selectByValue(wait, filterLowering, "transform");
+        waitForValue(wait, filterLowering, "transform");
+        waitForConnectabilityServerReady(new WebDriverWait(driver, Duration.ofSeconds(30)),
+                "riskScoreSource", 0, "riskScoreReview260", "ready", "loweringMode=transform|schemaType=integer");
         waitForText(wait, By.id("selected-operator-editor"), "1/260 matching candidate");
         WebElement globalQueryLateTarget = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
                 "#selected-operator-editor [data-connectability-action='connect']"
@@ -2323,17 +2328,28 @@ class VisualAuthoringBrowserDomTest {
         target = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(targetSelector)));
         double[] sourceCenter = elementCenter(source);
         double[] targetCenter = elementCenter(target);
-        new Actions(driver)
-                .moveToElement(source)
-                .clickAndHold()
-                .pause(Duration.ofMillis(150))
-                .moveByOffset(
-                        (int) Math.round(targetCenter[0] - sourceCenter[0]),
-                        (int) Math.round(targetCenter[1] - sourceCenter[1])
-                )
-                .pause(Duration.ofMillis(150))
-                .release()
-                .perform();
+        ((JavascriptExecutor) driver).executeScript("""
+                const source = arguments[0];
+                const sx = arguments[1];
+                const sy = arguments[2];
+                const tx = arguments[3];
+                const ty = arguments[4];
+                const options = (x, y, buttons) => ({
+                  bubbles: true,
+                  cancelable: true,
+                  composed: true,
+                  pointerId: 1,
+                  pointerType: 'mouse',
+                  isPrimary: true,
+                  button: 0,
+                  buttons,
+                  clientX: x,
+                  clientY: y
+                });
+                source.dispatchEvent(new PointerEvent('pointerdown', options(sx, sy, 1)));
+                document.dispatchEvent(new PointerEvent('pointermove', options(tx, ty, 1)));
+                document.dispatchEvent(new PointerEvent('pointerup', options(tx, ty, 0)));
+                """, source, sourceCenter[0], sourceCenter[1], targetCenter[0], targetCenter[1]);
     }
 
     private double[] elementCenter(WebElement element) {

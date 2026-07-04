@@ -411,6 +411,45 @@ class VisualConnectionCheckServiceTest {
                 GraphDraft.UnionBranchSelection.empty(),
                 Map.of()
         ));
+        VisualConnectionCandidatesResult fullFacetMatch = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("riskScoreSource", "output", "score"),
+                "data",
+                true,
+                5,
+                0,
+                "",
+                "canvas",
+                "",
+                "",
+                "runtime binding",
+                "",
+                Map.of(
+                        "operatorRef", List.of("risk:scoreReview"),
+                        "sourceKind", List.of("user-library"),
+                        "loweringMode", List.of("design"),
+                        "surface", List.of("input")
+                ),
+                GraphDraft.UnionBranchSelection.empty(),
+                Map.of()
+        ));
+        VisualConnectionCandidatesResult operatorMismatch = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("riskScoreSource", "output", "score"),
+                "data",
+                true,
+                5,
+                0,
+                "",
+                "canvas",
+                "",
+                "",
+                "runtime binding",
+                "",
+                Map.of("operatorRef", List.of("risk:missingReview")),
+                GraphDraft.UnionBranchSelection.empty(),
+                Map.of()
+        ));
 
         assertThat(designOnly.unfilteredCandidateCount()).isEqualTo(260);
         assertThat(designOnly.totalCandidateCount()).isEqualTo(260);
@@ -426,6 +465,20 @@ class VisualConnectionCheckServiceTest {
         assertThat(runtimeExecutable.statusCounts()).containsEntry("ready", 260);
         assertThat(runtimeExecutable.facetCounts().get("runtimeReadiness")).containsEntry("design-only", 260);
         assertThat(runtimeExecutable.candidates()).isEmpty();
+        assertThat(fullFacetMatch.totalCandidateCount()).isEqualTo(260);
+        assertThat(fullFacetMatch.facetCounts().get("operatorRef")).containsEntry("risk:scoreReview", 260);
+        assertThat(fullFacetMatch.facetCounts().get("sourceKind")).containsEntry("user-library", 260);
+        assertThat(fullFacetMatch.facetCounts().get("loweringMode")).containsEntry("design", 260);
+        assertThat(fullFacetMatch.facetCounts().get("surface")).containsEntry("input", 260);
+        assertThat(fullFacetMatch.candidates()).allSatisfy(candidate -> {
+            assertThat(candidate.facetValues()).containsEntry("operatorRef", "risk:scoreReview");
+            assertThat(candidate.facetValues()).containsEntry("sourceKind", "user-library");
+            assertThat(candidate.facetValues()).containsEntry("loweringMode", "design");
+            assertThat(candidate.facetValues()).containsEntry("surface", "input");
+        });
+        assertThat(operatorMismatch.totalCandidateCount()).isZero();
+        assertThat(operatorMismatch.facetCounts().get("operatorRef")).containsEntry("risk:scoreReview", 260);
+        assertThat(operatorMismatch.candidates()).isEmpty();
     }
 
     @Test

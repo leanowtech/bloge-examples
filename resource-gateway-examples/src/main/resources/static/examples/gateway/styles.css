@@ -1529,7 +1529,7 @@ body.dragging-operator * {
 
 .node-connectability-filter-controls {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
   gap: 6px;
   align-items: end;
 }
@@ -1553,6 +1553,8 @@ body.dragging-operator * {
   min-width: 0;
   font-size: 11px;
   padding: 5px 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .node-connectability-filter-controls small {
