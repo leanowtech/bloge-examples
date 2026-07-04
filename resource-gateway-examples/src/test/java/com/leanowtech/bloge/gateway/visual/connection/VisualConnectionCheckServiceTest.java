@@ -372,6 +372,63 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void connectionCandidatesApplyFacetFiltersBeforePagingLargeCanvasTargets() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(scoreReviewLargeConnectabilityLibrary()));
+        GraphDraft draft = scoreReviewLargeConnectabilityDraft(260);
+
+        VisualConnectionCandidatesResult designOnly = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("riskScoreSource", "output", "score"),
+                "data",
+                true,
+                5,
+                0,
+                "",
+                "canvas",
+                "",
+                "",
+                "runtime binding",
+                "",
+                Map.of("runtimeReadiness", List.of("design-only")),
+                GraphDraft.UnionBranchSelection.empty(),
+                Map.of()
+        ));
+        VisualConnectionCandidatesResult runtimeExecutable = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("riskScoreSource", "output", "score"),
+                "data",
+                true,
+                5,
+                0,
+                "",
+                "canvas",
+                "",
+                "",
+                "runtime binding",
+                "",
+                Map.of("runtimeReadiness", List.of("runtime-executable")),
+                GraphDraft.UnionBranchSelection.empty(),
+                Map.of()
+        ));
+
+        assertThat(designOnly.unfilteredCandidateCount()).isEqualTo(260);
+        assertThat(designOnly.totalCandidateCount()).isEqualTo(260);
+        assertThat(designOnly.statusCounts()).containsEntry("ready", 260);
+        assertThat(designOnly.facetCounts().get("runtimeReadiness")).containsEntry("design-only", 260);
+        assertThat(designOnly.displayedCount()).isEqualTo(5);
+        assertThat(designOnly.candidates()).allSatisfy(candidate -> {
+            assertThat(candidate.facetValues()).containsEntry("runtimeReadiness", "design-only");
+            assertThat(candidate.facetValues()).containsEntry("operatorLibraryId", "risk-score-large-connectability");
+        });
+        assertThat(runtimeExecutable.unfilteredCandidateCount()).isEqualTo(260);
+        assertThat(runtimeExecutable.totalCandidateCount()).isZero();
+        assertThat(runtimeExecutable.statusCounts()).containsEntry("ready", 260);
+        assertThat(runtimeExecutable.facetCounts().get("runtimeReadiness")).containsEntry("design-only", 260);
+        assertThat(runtimeExecutable.candidates()).isEmpty();
+    }
+
+    @Test
     void connectionCandidatesApplyGlobalStatusBeforePagingLargeCanvasTargets() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLibrary(scoreReviewLargeConnectabilityLibrary()));

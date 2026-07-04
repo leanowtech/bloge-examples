@@ -2,6 +2,10 @@ package com.leanowtech.bloge.gateway.visual.connection;
 
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -20,6 +24,7 @@ import java.util.Map;
  * @param targetPath optional target schema path filter for exact-hover discovery
  * @param query optional global candidate query applied before offset/limit
  * @param targetStatus optional global status filter, one of ready, blocked, or wired
+ * @param facetFilters optional global facet filters applied before offset/limit
  * @param targetUnionBranch explicit target oneOf/anyOf branch selected by the author for focused discovery
  * @param targetUnionBranches explicit nested target oneOf/anyOf branches keyed by target path
  */
@@ -36,6 +41,7 @@ public record VisualConnectionCandidatesRequest(
         String targetPath,
         String query,
         String targetStatus,
+        Map<String, List<String>> facetFilters,
         GraphDraft.UnionBranchSelection targetUnionBranch,
         Map<String, GraphDraft.UnionBranchSelection> targetUnionBranches
 ) {
@@ -56,10 +62,32 @@ public record VisualConnectionCandidatesRequest(
         targetPath = targetPath == null ? "" : targetPath.trim();
         query = query == null ? "" : query.trim();
         targetStatus = canonicalTargetStatus(targetStatus);
+        facetFilters = normalizeFacetFilters(facetFilters);
         targetUnionBranch = targetUnionBranch == null
                 ? GraphDraft.UnionBranchSelection.empty()
                 : targetUnionBranch;
         targetUnionBranches = VisualConnectionCheckRequest.normalizeUnionBranchSelections(targetUnionBranches);
+    }
+
+    /**
+     * Backward-compatible constructor for callers created before facet filtering existed.
+     */
+    public VisualConnectionCandidatesRequest(GraphDraft draft,
+                                             GraphDraft.Endpoint source,
+                                             String kind,
+                                             boolean includeRejected,
+                                             int limit,
+                                             int offset,
+                                             String targetNodeId,
+                                             String targetSurface,
+                                             String targetPort,
+                                             String targetPath,
+                                             String query,
+                                             String targetStatus,
+                                             GraphDraft.UnionBranchSelection targetUnionBranch,
+                                             Map<String, GraphDraft.UnionBranchSelection> targetUnionBranches) {
+        this(draft, source, kind, includeRejected, limit, offset, targetNodeId, targetSurface,
+                targetPort, targetPath, query, targetStatus, Map.of(), targetUnionBranch, targetUnionBranches);
     }
 
     /**
@@ -79,7 +107,7 @@ public record VisualConnectionCandidatesRequest(
                                              GraphDraft.UnionBranchSelection targetUnionBranch,
                                              Map<String, GraphDraft.UnionBranchSelection> targetUnionBranches) {
         this(draft, source, kind, includeRejected, limit, offset, targetNodeId, targetSurface,
-                targetPort, targetPath, query, "", targetUnionBranch, targetUnionBranches);
+                targetPort, targetPath, query, "", Map.of(), targetUnionBranch, targetUnionBranches);
     }
 
     /**
@@ -98,7 +126,7 @@ public record VisualConnectionCandidatesRequest(
                                              GraphDraft.UnionBranchSelection targetUnionBranch,
                                              Map<String, GraphDraft.UnionBranchSelection> targetUnionBranches) {
         this(draft, source, kind, includeRejected, limit, offset, targetNodeId, targetSurface,
-                targetPort, targetPath, "", "", targetUnionBranch, targetUnionBranches);
+                targetPort, targetPath, "", "", Map.of(), targetUnionBranch, targetUnionBranches);
     }
 
     /**
@@ -173,6 +201,63 @@ public record VisualConnectionCandidatesRequest(
             case "blocked", "rejected", "invalid" -> "blocked";
             case "wired", "connected", "already", "already-connected", "already_connected" -> "wired";
             default -> "";
+        };
+    }
+
+    private static Map<String, List<String>> normalizeFacetFilters(Map<String, List<String>> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, List<String>> filters = new LinkedHashMap<>();
+        source.forEach((facet, values) -> {
+            String facetKey = canonicalFacetKey(facet);
+            List<String> normalizedValues = normalizeFacetFilterValues(facetKey, values);
+            if (!facetKey.isBlank() && !normalizedValues.isEmpty()) {
+                filters.put(facetKey, normalizedValues);
+            }
+        });
+        return filters.isEmpty() ? Map.of() : Collections.unmodifiableMap(filters);
+    }
+
+    private static List<String> normalizeFacetFilterValues(String facet, List<String> values) {
+        if (facet == null || facet.isBlank() || values == null || values.isEmpty()) {
+            return List.of();
+        }
+        List<String> normalized = new ArrayList<>();
+        for (String value : values) {
+            String item = canonicalFacetValue(facet, value);
+            if (!item.isBlank() && !normalized.contains(item)) {
+                normalized.add(item);
+            }
+        }
+        return List.copyOf(normalized);
+    }
+
+    private static String canonicalFacetKey(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        return switch (value.trim().toLowerCase(Locale.ROOT).replace("_", "").replace("-", "")) {
+            case "surface", "targetsurface" -> "surface";
+            case "schematype", "schema" -> "schemaType";
+            case "operatorref", "operator" -> "operatorRef";
+            case "operatorlibraryid", "library", "libraryid" -> "operatorLibraryId";
+            case "runtimereadiness", "readiness", "runtime" -> "runtimeReadiness";
+            case "sourcekind", "source" -> "sourceKind";
+            case "loweringmode", "lowering" -> "loweringMode";
+            default -> "";
+        };
+    }
+
+    private static String canonicalFacetValue(String facet, String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String trimmed = value.trim();
+        return switch (facet) {
+            case "surface", "schemaType", "runtimeReadiness", "sourceKind", "loweringMode" ->
+                    trimmed.toLowerCase(Locale.ROOT).replace('_', '-');
+            default -> trimmed;
         };
     }
 }

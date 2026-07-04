@@ -581,7 +581,8 @@ const state = {
   nodeConnectabilityServerQueryTimer: null,
   nodeConnectabilityFilter: {
     query: '',
-    status: ''
+    status: '',
+    facetFilters: {}
   },
   connectionMessage: null,
   builderHistoryUndo: [],
@@ -14535,6 +14536,28 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const select of target.querySelectorAll('[data-connectability-filter-facet]')) {
+    select.addEventListener('change', () => {
+      const facet = canonicalConnectionCandidateFacetKey(select.dataset.connectabilityFilterFacet || '');
+      const facetFilters = normalizeConnectionCandidateFacetFilters(nodeConnectabilityActiveFilter().facetFilters);
+      if (facet) {
+        if (select.value) {
+          facetFilters[facet] = [select.value];
+        } else {
+          delete facetFilters[facet];
+        }
+      }
+      state.nodeConnectabilityFilter = {
+        ...nodeConnectabilityActiveFilter(),
+        facetFilters
+      };
+      renderSelectedOperatorEditor();
+      $('selected-operator-editor')
+        ?.querySelector(`[data-connectability-filter-facet="${facet}"]`)
+        ?.focus();
+    });
+  }
+
   for (const button of target.querySelectorAll('[data-connectability-filter-clear]')) {
     button.addEventListener('click', () => {
       clearNodeConnectabilityFilter();
@@ -15173,7 +15196,7 @@ function renderNodeConnectabilityPanel(node) {
       </div>
       ${serverStatus}
       ${serverControls}
-      ${renderNodeConnectabilityFilterControls(summary, filter)}
+      ${renderNodeConnectabilityFilterControls(summary, filter, serverState)}
       ${summary.sources.map((source) => renderNodeConnectabilityRow(source, filter)).join('')}
     </div>
   `;
@@ -15194,7 +15217,11 @@ function renderNodeConnectabilityRow(sourceSummary, filter = nodeConnectabilityA
   `;
 }
 
-function renderNodeConnectabilityFilterControls(summary, filter = nodeConnectabilityActiveFilter()) {
+function renderNodeConnectabilityFilterControls(
+  summary,
+  filter = nodeConnectabilityActiveFilter(),
+  serverState = nodeConnectabilityServerStateFor(selectedBuilderNode())
+) {
   const query = filter.query || '';
   const status = filter.status || '';
   const active = nodeConnectabilityFilterIsActive(filter);
@@ -15207,6 +15234,7 @@ function renderNodeConnectabilityFilterControls(summary, filter = nodeConnectabi
     `<option value="${escapeHtml(value)}"${status === value ? ' selected' : ''}>${escapeHtml(label)}</option>`
   ).join('');
   const summaryText = active ? nodeConnectabilityFilterSummary(summary, filter) : 'Current window';
+  const facetControls = nodeConnectabilityFacetFilterControls(serverState, filter);
   return `
     <div class="node-connectability-filter-controls">
       <label>
@@ -15223,10 +15251,61 @@ function renderNodeConnectabilityFilterControls(summary, filter = nodeConnectabi
         <span>Status</span>
         <select data-connectability-filter-status aria-label="Filter connectability target status">${statusOptions}</select>
       </label>
+      ${facetControls}
       <small>${escapeHtml(summaryText)}</small>
       ${active ? '<button type="button" class="secondary compact" data-connectability-filter-clear>Clear</button>' : ''}
     </div>
   `;
+}
+
+function nodeConnectabilityFacetFilterControls(serverState, filter = nodeConnectabilityActiveFilter()) {
+  const facets = [
+    ['schemaType', 'Schema'],
+    ['runtimeReadiness', 'Runtime'],
+    ['operatorLibraryId', 'Library']
+  ];
+  return facets
+    .map(([facet, label]) => nodeConnectabilityFacetFilterControl(serverState, filter, facet, label))
+    .filter(Boolean)
+    .join('');
+}
+
+function nodeConnectabilityFacetFilterControl(serverState, filter, facet, label) {
+  const selected = (filter.facetFilters?.[facet] || [])[0] || '';
+  const options = nodeConnectabilityFacetFilterOptions(serverState, facet, selected);
+  if (!options.length && !selected) {
+    return '';
+  }
+  const optionRows = [
+    `<option value="">All</option>`,
+    ...options.map(([value, count]) => {
+      const selectedAttr = selected === value ? ' selected' : '';
+      const countLabel = count > 0 ? ` (${count})` : '';
+      return `<option value="${escapeHtml(value)}"${selectedAttr}>${escapeHtml(connectionCandidateFacetOptionLabel(facet, value))}${escapeHtml(countLabel)}</option>`;
+    })
+  ].join('');
+  return `
+    <label>
+      <span>${escapeHtml(label)}</span>
+      <select data-connectability-filter-facet="${escapeHtml(facet)}" aria-label="Filter connectability ${escapeHtml(label.toLowerCase())}">${optionRows}</select>
+    </label>
+  `;
+}
+
+function nodeConnectabilityFacetFilterOptions(serverState, facet, selected = '') {
+  const aggregate = nodeConnectabilityServerFacetCounts(serverState);
+  const counts = normalizeCountMap(aggregate[facet]);
+  const entries = Object.entries(counts)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, nodeConnectabilityFacetFilterOptionLimit());
+  if (selected && !entries.some(([value]) => value === selected)) {
+    entries.push([selected, numericCount(counts[selected], 0)]);
+  }
+  return entries;
+}
+
+function nodeConnectabilityFacetFilterOptionLimit() {
+  return 12;
 }
 
 function nodeConnectabilityDisplayTargets(sourceSummary, filter = nodeConnectabilityActiveFilter()) {
@@ -15250,12 +15329,13 @@ function nodeConnectabilityActiveFilter() {
   return {
     query: String(filter.query || ''),
     normalizedQuery: String(filter.query || '').trim().toLowerCase(),
-    status
+    status,
+    facetFilters: normalizeConnectionCandidateFacetFilters(filter.facetFilters)
   };
 }
 
 function nodeConnectabilityFilterIsActive(filter = nodeConnectabilityActiveFilter()) {
-  return Boolean(filter.normalizedQuery || filter.status);
+  return Boolean(filter.normalizedQuery || filter.status || Object.keys(filter.facetFilters || {}).length);
 }
 
 function nodeConnectabilityFilterDisplayLimit() {
@@ -15278,10 +15358,45 @@ function nodeConnectabilityTargetMatchesFilter(entry, filter = nodeConnectabilit
   if (filter.status && nodeConnectabilityTargetStatus(entry) !== filter.status) {
     return false;
   }
+  if (!nodeConnectabilityTargetMatchesFacetFilters(entry, filter.facetFilters)) {
+    return false;
+  }
   if (!filter.normalizedQuery) {
     return true;
   }
   return nodeConnectabilityTargetSearchText(entry).includes(filter.normalizedQuery);
+}
+
+function nodeConnectabilityTargetMatchesFacetFilters(entry, facetFilters = {}) {
+  const filters = normalizeConnectionCandidateFacetFilters(facetFilters);
+  if (!Object.keys(filters).length) {
+    return true;
+  }
+  for (const [facet, values] of Object.entries(filters)) {
+    const value = connectionCandidateFacetValueForTarget(entry, facet);
+    if (!value || !values.includes(value)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function connectionCandidateFacetValueForTarget(entry, facet) {
+  const candidate = entry?.serverCandidate || {};
+  const facetValues = normalizeConnectionCandidateFacetValues(candidate.facetValues);
+  if (facetValues[facet]) {
+    return facetValues[facet];
+  }
+  if (facet === 'schemaType') {
+    return normalizeConnectionCandidateFacetValue(facet, candidate.explanation?.targetSchemaType || '');
+  }
+  if (facet === 'operatorRef') {
+    return normalizeConnectionCandidateFacetValue(facet, candidate.targetOperatorRef || '');
+  }
+  if (facet === 'surface') {
+    return normalizeConnectionCandidateFacetValue(facet, candidate.targetSurface || connectionCandidateTargetSurface(entry?.target));
+  }
+  return '';
 }
 
 function nodeConnectabilityTargetStatus(entry) {
@@ -15343,7 +15458,7 @@ function nodeConnectabilityFilterSummary(summary, filter = nodeConnectabilityAct
 }
 
 function clearNodeConnectabilityFilter() {
-  state.nodeConnectabilityFilter = { query: '', status: '' };
+  state.nodeConnectabilityFilter = { query: '', status: '', facetFilters: {} };
 }
 
 function renderNodeConnectabilityTarget(source, entry) {
@@ -15573,7 +15688,8 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
   }
   const query = nodeConnectabilityServerActiveQuery();
   const targetStatus = nodeConnectabilityServerActiveStatus();
-  const currentWindow = nodeConnectabilityServerWindowFor(node, state.builder, query, targetStatus);
+  const facetFilters = nodeConnectabilityServerActiveFacetFilters();
+  const currentWindow = nodeConnectabilityServerWindowFor(node, state.builder, query, targetStatus, facetFilters);
   const offset = Number.isFinite(Number(options.offset))
     ? Math.max(0, Math.floor(Number(options.offset)))
     : currentWindow.offset;
@@ -15581,7 +15697,7 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
     ? Math.max(1, Math.floor(Number(options.limit)))
     : currentWindow.limit;
   const draftKey = nodeConnectabilityServerDraftKey(node);
-  const requestKey = nodeConnectabilityServerRequestKey(node, state.builder, offset, limit, query, targetStatus);
+  const requestKey = nodeConnectabilityServerRequestKey(node, state.builder, offset, limit, query, targetStatus, facetFilters);
   const current = state.nodeConnectabilityServer;
   if (!options.force && current?.requestKey === requestKey && (current.status === 'loading' || current.status === 'ready')) {
     return;
@@ -15602,12 +15718,13 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
     limit,
     query,
     targetStatus,
+    facetFilters,
     resultsBySourceKey: {},
     error: ''
   };
   if (query && !options.force && !options.debounced) {
     state.nodeConnectabilityServer = loadingState;
-    scheduleNodeConnectabilityServerQuery(node, offset, limit, query, targetStatus);
+    scheduleNodeConnectabilityServerQuery(node, offset, limit, query, targetStatus, facetFilters);
     return;
   }
   if (!query) {
@@ -15623,7 +15740,8 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
       limit,
       offset,
       query,
-      targetStatus
+      targetStatus,
+      facetFilters
     })
       .then((result) => ({ sourceKey, result, error: '' }))
       .catch((error) => ({ sourceKey, result: null, error: error.message || 'Connection candidates unavailable.' }));
@@ -15651,6 +15769,7 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
         limit,
         query,
         targetStatus,
+        facetFilters,
         resultsBySourceKey,
         error: uniqueStrings(errors).join(' | ')
       };
@@ -15660,15 +15779,19 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
     });
 }
 
-function scheduleNodeConnectabilityServerQuery(node, offset, limit, query, targetStatus = '') {
+function scheduleNodeConnectabilityServerQuery(node, offset, limit, query, targetStatus = '', facetFilters = {}) {
   clearNodeConnectabilityServerQueryTimer();
   state.nodeConnectabilityServerQueryTimer = setTimeout(() => {
     state.nodeConnectabilityServerQueryTimer = null;
     const activeQuery = nodeConnectabilityServerActiveQuery();
+    const activeFacetFilters = nodeConnectabilityServerActiveFacetFilters();
     if (nodeConnectabilityServerQueryKey(activeQuery) !== nodeConnectabilityServerQueryKey(query)) {
       return;
     }
     if (nodeConnectabilityServerStatusKey(nodeConnectabilityServerActiveStatus()) !== nodeConnectabilityServerStatusKey(targetStatus)) {
+      return;
+    }
+    if (nodeConnectabilityServerFacetFiltersKey(activeFacetFilters) !== nodeConnectabilityServerFacetFiltersKey(facetFilters)) {
       return;
     }
     const selected = selectedBuilderNode();
@@ -15796,9 +15919,22 @@ function nodeConnectabilityServerWindowSummary(serverState) {
 }
 
 function nodeConnectabilityServerFacetSummary(serverState) {
+  const aggregate = nodeConnectabilityServerFacetCounts(serverState);
+  if (!Object.keys(aggregate).length) {
+    return '';
+  }
+  const labels = [
+    connectionCandidateFacetLabel('schema', aggregate.schemaType),
+    connectionCandidateFacetLabel('runtime', aggregate.runtimeReadiness),
+    connectionCandidateFacetLabel('library', aggregate.operatorLibraryId)
+  ].filter(Boolean);
+  return labels.length ? `Facets · ${labels.join(' · ')}` : '';
+}
+
+function nodeConnectabilityServerFacetCounts(serverState) {
   const results = Object.values(serverState?.resultsBySourceKey || {}).filter(Boolean);
   if (!results.length) {
-    return '';
+    return {};
   }
   const aggregate = {};
   for (const result of results) {
@@ -15812,12 +15948,7 @@ function nodeConnectabilityServerFacetSummary(serverState) {
       }
     }
   }
-  const labels = [
-    connectionCandidateFacetLabel('schema', aggregate.schemaType),
-    connectionCandidateFacetLabel('runtime', aggregate.runtimeReadiness),
-    connectionCandidateFacetLabel('library', aggregate.operatorLibraryId)
-  ].filter(Boolean);
-  return labels.length ? `Facets · ${labels.join(' · ')}` : '';
+  return aggregate;
 }
 
 function connectionCandidateFacetLabel(label, counts = {}) {
@@ -15841,6 +15972,13 @@ function topConnectionCandidateFacet(counts = {}) {
     count,
     extraCount: entries.length - 1
   };
+}
+
+function connectionCandidateFacetOptionLabel(facet, value) {
+  if (facet === 'operatorLibraryId' || facet === 'operatorRef') {
+    return value;
+  }
+  return operatorPaletteFacetLabel(value);
 }
 
 function nodeConnectabilityServerWindowStats(serverState) {
@@ -15882,11 +16020,12 @@ function nodeConnectabilityServerWindowFor(
   nodeOrId,
   builder = state.builder,
   query = nodeConnectabilityServerActiveQuery(),
-  targetStatus = nodeConnectabilityServerActiveStatus()
+  targetStatus = nodeConnectabilityServerActiveStatus(),
+  facetFilters = nodeConnectabilityServerActiveFacetFilters()
 ) {
   const current = state.nodeConnectabilityServer;
   const nodeId = typeof nodeOrId === 'string' ? nodeOrId : nodeOrId?.id;
-  if (current?.nodeId === nodeId && nodeConnectabilityServerStateMatchesNode(current, nodeOrId, builder, query, targetStatus)) {
+  if (current?.nodeId === nodeId && nodeConnectabilityServerStateMatchesNode(current, nodeOrId, builder, query, targetStatus, facetFilters)) {
     return {
       offset: numericCount(current.offset, 0),
       limit: Math.max(1, numericCount(current.limit, nodeConnectabilityServerCandidateLimit()))
@@ -15923,7 +16062,8 @@ function nodeConnectabilityServerStateMatchesNode(
   nodeOrId,
   builder = state.builder,
   query = nodeConnectabilityServerActiveQuery(),
-  targetStatus = nodeConnectabilityServerActiveStatus()
+  targetStatus = nodeConnectabilityServerActiveStatus(),
+  facetFilters = nodeConnectabilityServerActiveFacetFilters()
 ) {
   if (!serverState) {
     return false;
@@ -15932,6 +16072,9 @@ function nodeConnectabilityServerStateMatchesNode(
     return false;
   }
   if (nodeConnectabilityServerStatusKey(serverState.targetStatus || '') !== nodeConnectabilityServerStatusKey(targetStatus)) {
+    return false;
+  }
+  if (nodeConnectabilityServerFacetFiltersKey(serverState.facetFilters) !== nodeConnectabilityServerFacetFiltersKey(facetFilters)) {
     return false;
   }
   const draftKey = nodeConnectabilityServerDraftKey(nodeOrId, builder);
@@ -15947,7 +16090,8 @@ function nodeConnectabilityServerStateMatchesNode(
     numericCount(serverState.offset, 0),
     numericCount(serverState.limit, nodeConnectabilityServerCandidateLimit()),
     query,
-    targetStatus
+    targetStatus,
+    facetFilters
   );
 }
 
@@ -15966,7 +16110,8 @@ function nodeConnectabilityServerRequestKey(
   offset = 0,
   limit = nodeConnectabilityServerCandidateLimit(),
   query = '',
-  targetStatus = ''
+  targetStatus = '',
+  facetFilters = {}
 ) {
   const normalizedOffset = Math.max(0, Math.floor(Number(offset) || 0));
   const normalizedLimit = Math.max(1, Math.floor(Number(limit) || nodeConnectabilityServerCandidateLimit()));
@@ -15976,7 +16121,9 @@ function nodeConnectabilityServerRequestKey(
     : '';
   const statusKey = nodeConnectabilityServerStatusKey(targetStatus);
   const statusSuffix = statusKey ? `:status:${statusKey}` : '';
-  return `${nodeConnectabilityServerDraftKey(nodeOrId, builder)}:window:${normalizedOffset}:${normalizedLimit}${querySuffix}${statusSuffix}`;
+  const facetKey = nodeConnectabilityServerFacetFiltersKey(facetFilters);
+  const facetSuffix = facetKey ? `:facets:${compactStringHash(facetKey)}:${facetKey.length}` : '';
+  return `${nodeConnectabilityServerDraftKey(nodeOrId, builder)}:window:${normalizedOffset}:${normalizedLimit}${querySuffix}${statusSuffix}${facetSuffix}`;
 }
 
 function nodeConnectabilityServerActiveQuery() {
@@ -15994,6 +16141,18 @@ function nodeConnectabilityServerActiveStatus() {
 
 function nodeConnectabilityServerStatusKey(targetStatus = '') {
   return normalizeConnectionCandidateStatus(targetStatus, false, true);
+}
+
+function nodeConnectabilityServerActiveFacetFilters() {
+  return normalizeConnectionCandidateFacetFilters(nodeConnectabilityActiveFilter().facetFilters);
+}
+
+function nodeConnectabilityServerFacetFiltersKey(facetFilters = {}) {
+  const normalized = normalizeConnectionCandidateFacetFilters(facetFilters);
+  return Object.entries(normalized)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([facet, values]) => `${facet}=${values.join(',')}`)
+    .join('|');
 }
 
 function compactStringHash(value) {
@@ -26503,6 +26662,7 @@ async function discoverVisualConnectionCandidatesOnServer(source, options = {}) 
     targetPath: options.targetPath || target.path || '',
     query: options.query || '',
     targetStatus: nodeConnectabilityServerStatusKey(options.targetStatus || ''),
+    facetFilters: normalizeConnectionCandidateFacetFilters(options.facetFilters),
     source: {
       nodeId: source.nodeId,
       port: source.port || '',
@@ -26545,6 +26705,7 @@ function normalizeConnectionCandidatesResult(payload, source = null, request = {
     targetPath: request.targetPath || '',
     query: request.query || '',
     targetStatus: nodeConnectabilityServerStatusKey(request.targetStatus || payload?.targetStatus || ''),
+    facetFilters: normalizeConnectionCandidateFacetFilters(request.facetFilters || payload?.facetFilters),
     targetUnionBranch: normalizedUnionBranchSelection(request.targetUnionBranch),
     targetUnionBranches: normalizedUnionBranchSelections(request.targetUnionBranches),
     totalCandidateCount: numericCount(payload?.totalCandidateCount, 0),
@@ -26599,6 +26760,71 @@ function normalizeConnectionCandidateFacetCounts(source = {}) {
     .filter(([facet, counts]) => facet && Object.keys(counts).length));
 }
 
+function normalizeConnectionCandidateFacetValues(source = {}) {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(source)
+    .map(([facet, value]) => {
+      const facetKey = canonicalConnectionCandidateFacetKey(facet);
+      return [facetKey, normalizeConnectionCandidateFacetValue(facetKey, value)];
+    })
+    .filter(([facet, value]) => facet && value));
+}
+
+function normalizeConnectionCandidateFacetFilters(source = {}) {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(source)
+    .map(([facet, values]) => {
+      const facetKey = canonicalConnectionCandidateFacetKey(facet);
+      const rawValues = Array.isArray(values) ? values : [values];
+      const normalizedValues = uniqueStrings(rawValues
+        .map((value) => normalizeConnectionCandidateFacetValue(facetKey, value))
+        .filter(Boolean));
+      return [facetKey, normalizedValues];
+    })
+    .filter(([facet, values]) => facet && values.length));
+}
+
+function canonicalConnectionCandidateFacetKey(value = '') {
+  const normalized = String(value || '').trim().toLowerCase().replaceAll('_', '').replaceAll('-', '');
+  if (['surface', 'targetsurface'].includes(normalized)) {
+    return 'surface';
+  }
+  if (['schematype', 'schema'].includes(normalized)) {
+    return 'schemaType';
+  }
+  if (['operatorref', 'operator'].includes(normalized)) {
+    return 'operatorRef';
+  }
+  if (['operatorlibraryid', 'library', 'libraryid'].includes(normalized)) {
+    return 'operatorLibraryId';
+  }
+  if (['runtimereadiness', 'readiness', 'runtime'].includes(normalized)) {
+    return 'runtimeReadiness';
+  }
+  if (['sourcekind', 'source'].includes(normalized)) {
+    return 'sourceKind';
+  }
+  if (['loweringmode', 'lowering'].includes(normalized)) {
+    return 'loweringMode';
+  }
+  return '';
+}
+
+function normalizeConnectionCandidateFacetValue(facet, value = '') {
+  const text = String(value || '').trim();
+  if (!text) {
+    return '';
+  }
+  if (['surface', 'schemaType', 'runtimeReadiness', 'sourceKind', 'loweringMode'].includes(facet)) {
+    return text.toLowerCase().replaceAll('_', '-');
+  }
+  return text;
+}
+
 function normalizeConnectionCandidate(candidate, kind = 'data') {
   const diagnostics = normalizeDiagnostics(candidate?.diagnostics);
   const payload = {
@@ -26622,6 +26848,7 @@ function normalizeConnectionCandidate(candidate, kind = 'data') {
     kind: canonicalEdgeKind(kind),
     accepted: Boolean(candidate?.accepted),
     targetStatus: normalizeConnectionCandidateStatus(candidate?.targetStatus, Boolean(candidate?.accepted)),
+    facetValues: normalizeConnectionCandidateFacetValues(candidate?.facetValues),
     bindingKey: candidate?.bindingKey || '',
     summary,
     explanation,

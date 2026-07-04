@@ -2576,6 +2576,13 @@ draft，不产生新 edge，也不成为新的 schema 判断来源。
   "includeRejected": true,
   "limit": 100,
   "offset": 0,
+  "query": "risk score",
+  "targetStatus": "ready",
+  "facetFilters": {
+    "schemaType": ["integer"],
+    "runtimeReadiness": ["design-only"],
+    "operatorLibraryId": ["risk-policy"]
+  },
   "targetNodeId": "loanPolicy",
   "targetSurface": "input",
   "targetPort": "inputs",
@@ -2606,6 +2613,13 @@ draft，不产生新 edge，也不成为新的 schema 判断来源。
   "kind": "data",
   "offset": 0,
   "totalCandidateCount": 5,
+  "unfilteredCandidateCount": 12,
+  "statusCounts": { "ready": 5, "blocked": 6, "wired": 1 },
+  "facetCounts": {
+    "schemaType": { "integer": 5, "object": 2 },
+    "runtimeReadiness": { "design-only": 5, "runtime-executable": 2 },
+    "operatorLibraryId": { "risk-policy": 5 }
+  },
   "acceptedCount": 1,
   "rejectedCount": 4,
   "displayedCount": 5,
@@ -2619,6 +2633,16 @@ draft，不产生新 edge，也不成为新的 schema 判断来源。
       "targetSurface": "input",
       "target": { "nodeId": "loanPolicy", "port": "inputs", "path": "score" },
       "accepted": true,
+      "targetStatus": "ready",
+      "facetValues": {
+        "surface": "input",
+        "schemaType": "integer",
+        "operatorRef": "risk:eligibility",
+        "operatorLibraryId": "risk-policy",
+        "runtimeReadiness": "design-only",
+        "sourceKind": "user-library",
+        "loweringMode": "design"
+      },
       "bindingKey": "score",
       "summary": {
         "schemaVersion": "bloge.visualConnectionCheckSummary.v1",
@@ -2662,6 +2686,13 @@ draft，不产生新 edge，也不成为新的 schema 判断来源。
 
 `includeRejected=false` 时默认只返回可接目标，但 `totalCandidateCount`、
 `acceptedCount` 和 `rejectedCount` 仍反映服务端评估过的完整候选集合。
+`query`、`targetStatus` 和 `facetFilters` 都在服务端全量候选集上生效：
+`statusCounts` 在 query 过滤之后、status 过滤之前计算；`facetCounts` 在
+query/status 过滤之后、facet filter 与分页之前计算；`totalCandidateCount`
+表达 query/status/facet 过滤之后、accepted/rejected 显示过滤之前的候选全集。
+每个候选的 `targetStatus` 只能是 `ready`、`blocked` 或 `wired`，`facetValues`
+必须来自服务端枚举的 target 事实，用于浏览器和外部控制面做筛选回显，而不是
+从自然语言 explanation 中反推。
 `targetNodeId`、`targetSurface`、`targetPort`、`targetPath`、`offset` 和 `limit`
 用于大画布 focused discovery；外部控制面可以只请求某个目标节点、某类 target
 surface 或某个精确 target endpoint，而不必拉完整候选集合。`targetUnionBranch`

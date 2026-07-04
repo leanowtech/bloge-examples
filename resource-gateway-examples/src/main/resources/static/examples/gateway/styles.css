@@ -1529,9 +1529,13 @@ body.dragging-operator * {
 
 .node-connectability-filter-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(92px, 0.45fr);
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
   gap: 6px;
   align-items: end;
+}
+
+.node-connectability-filter-controls label:first-child {
+  grid-column: span 2;
 }
 
 .node-connectability-filter-controls label {

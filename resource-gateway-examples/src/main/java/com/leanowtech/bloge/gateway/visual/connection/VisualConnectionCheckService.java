@@ -306,16 +306,17 @@ public class VisualConnectionCheckService {
         }
 
         List<ConnectionCandidateTarget> allTargets = candidateTargets(request.draft(), request);
-        CandidateTargetFilterResult filtered = filteredCandidateTargets(request, allTargets);
+        Map<String, String> libraryIds = operatorLibraryIdsByOperatorRef();
+        CandidateTargetFilterResult filtered = filteredCandidateTargets(request, allTargets, libraryIds);
         List<ConnectionCandidateTarget> targets = filtered.targets();
         int unfilteredCandidateCount = allTargets.size();
         if (request.includeRejected() && targets.size() > FULL_CANDIDATE_CHECK_LIMIT) {
             return pagedCandidates(request, targets, unfilteredCandidateCount,
-                    filtered.statusCounts(), filtered.facetCounts());
+                    filtered.statusCounts(), filtered.facetCounts(), libraryIds);
         }
         List<VisualConnectionCandidatesResult.ConnectionCandidate> candidates = new ArrayList<>();
         for (ConnectionCandidateTarget target : targets) {
-            candidates.add(candidateFor(request, target));
+            candidates.add(candidateFor(request, target, libraryIds));
         }
 
         int acceptedCount = 0;
@@ -355,7 +356,8 @@ public class VisualConnectionCheckService {
                                                              List<ConnectionCandidateTarget> targets,
                                                              int unfilteredCandidateCount,
                                                              Map<String, Integer> statusCounts,
-                                                             Map<String, Map<String, Integer>> facetCounts) {
+                                                             Map<String, Map<String, Integer>> facetCounts,
+                                                             Map<String, String> libraryIds) {
         int acceptedCount = 0;
         for (ConnectionCandidateTarget target : targets) {
             if (fastCandidateAccepted(request, target)) {
@@ -367,7 +369,7 @@ public class VisualConnectionCheckService {
         List<VisualConnectionCandidatesResult.ConnectionCandidate> window = targets.stream()
                 .skip(request.offset())
                 .limit(request.limit())
-                .map(target -> candidateFor(request, target))
+                .map(target -> candidateFor(request, target, libraryIds))
                 .toList();
         return new VisualConnectionCandidatesResult(
                 VisualConnectionCandidatesResult.SCHEMA_VERSION,
@@ -388,7 +390,8 @@ public class VisualConnectionCheckService {
     }
 
     private VisualConnectionCandidatesResult.ConnectionCandidate candidateFor(VisualConnectionCandidatesRequest request,
-                                                                             ConnectionCandidateTarget target) {
+                                                                             ConnectionCandidateTarget target,
+                                                                             Map<String, String> libraryIds) {
         VisualConnectionCheckResult check = check(new VisualConnectionCheckRequest(
                 request.draft(),
                 request.source(),
@@ -406,9 +409,10 @@ public class VisualConnectionCheckService {
                 check.edge() == null ? target.endpoint() : check.edge().target(),
                 check.accepted(),
                 candidateTargetStatus(request, target, check.accepted()),
+                candidateFacetValues(request, target, libraryIds),
                 check.bindingKey(),
                 check.summary(),
-                candidateExplanation(request, target, check),
+                candidateExplanation(request, target, check, libraryIds),
                 check.diagnostics()
         );
     }
@@ -530,7 +534,8 @@ public class VisualConnectionCheckService {
     }
 
     private CandidateTargetFilterResult filteredCandidateTargets(VisualConnectionCandidatesRequest request,
-                                                                 List<ConnectionCandidateTarget> targets) {
+                                                                 List<ConnectionCandidateTarget> targets,
+                                                                 Map<String, String> libraryIds) {
         List<String> queryTokens = queryTokens(request.query());
         List<ConnectionCandidateTarget> queryFiltered = targets;
         if (!queryTokens.isEmpty() && !targets.isEmpty()) {
@@ -541,15 +546,20 @@ public class VisualConnectionCheckService {
                     .toList();
         }
         Map<String, Integer> statusCounts = candidateStatusCounts(request, queryFiltered);
-        if (request.targetStatus().isBlank() || queryFiltered.isEmpty()) {
-            return new CandidateTargetFilterResult(queryFiltered, statusCounts,
-                    candidateFacetCounts(request, queryFiltered));
+        List<ConnectionCandidateTarget> statusFiltered = queryFiltered;
+        if (!request.targetStatus().isBlank() && !queryFiltered.isEmpty()) {
+            statusFiltered = queryFiltered.stream()
+                    .filter(target -> request.targetStatus().equals(fastCandidateStatus(request, target)))
+                    .toList();
         }
-        List<ConnectionCandidateTarget> statusFiltered = queryFiltered.stream()
-                .filter(target -> request.targetStatus().equals(fastCandidateStatus(request, target)))
+        Map<String, Map<String, Integer>> facetCounts = candidateFacetCounts(request, statusFiltered, libraryIds);
+        if (request.facetFilters().isEmpty() || statusFiltered.isEmpty()) {
+            return new CandidateTargetFilterResult(statusFiltered, statusCounts, facetCounts);
+        }
+        List<ConnectionCandidateTarget> facetFiltered = statusFiltered.stream()
+                .filter(target -> candidateMatchesFacetFilters(request, target, libraryIds))
                 .toList();
-        return new CandidateTargetFilterResult(statusFiltered, statusCounts,
-                candidateFacetCounts(request, statusFiltered));
+        return new CandidateTargetFilterResult(facetFiltered, statusCounts, facetCounts);
     }
 
     private Map<String, Integer> candidateStatusCounts(VisualConnectionCandidatesRequest request,
@@ -565,40 +575,71 @@ public class VisualConnectionCheckService {
     }
 
     private Map<String, Map<String, Integer>> candidateFacetCounts(VisualConnectionCandidatesRequest request,
-                                                                   List<ConnectionCandidateTarget> targets) {
+                                                                   List<ConnectionCandidateTarget> targets,
+                                                                   Map<String, String> libraryIds) {
         Map<String, Map<String, Integer>> counts = new LinkedHashMap<>();
         if (targets == null || targets.isEmpty()) {
             return counts;
         }
-        Map<String, String> libraryIds = operatorLibraryIdsByOperatorRef();
         for (ConnectionCandidateTarget target : targets) {
-            incrementFacet(counts, "surface", target.surface());
-            Map<String, Object> targetSchema = selectedUnionBranchSchema(
-                    endpointTargetSchema(request.draft(), target.endpoint(), target.surface()),
-                    request.targetUnionBranch()
-            );
-            incrementFacet(counts, "schemaType",
-                    schemaTypeLabel(targetSchema, controlSurface(target.surface()) ? target.surface() : ""));
-            Optional<OperatorDefinition> operator = catalog.find(target.node().operatorRef());
-            if (operator.isEmpty()) {
-                incrementFacet(counts, "operatorRef", target.node().operatorRef());
-                continue;
-            }
-            OperatorDefinition definition = operator.get();
-            incrementFacet(counts, "operatorRef", definition.operatorRef());
-            incrementFacet(counts, "operatorLibraryId", libraryIds.get(definition.operatorRef()));
-            incrementFacet(counts, "sourceKind", definition.source() == null ? "" : definition.source().kind());
-            incrementFacet(counts, "loweringMode", definition.lowering() == null ? "" : definition.lowering().mode());
-            incrementFacet(counts, "runtimeReadiness",
-                    runtimeReadinessFacetValue(definition.runtimeReadiness()));
+            candidateFacetValues(request, target, libraryIds).forEach((facet, value) ->
+                    incrementFacet(counts, facet, value));
         }
         return counts;
+    }
+
+    private boolean candidateMatchesFacetFilters(VisualConnectionCandidatesRequest request,
+                                                 ConnectionCandidateTarget target,
+                                                 Map<String, String> libraryIds) {
+        if (request.facetFilters().isEmpty()) {
+            return true;
+        }
+        Map<String, String> values = candidateFacetValues(request, target, libraryIds);
+        for (Map.Entry<String, List<String>> entry : request.facetFilters().entrySet()) {
+            String value = values.getOrDefault(entry.getKey(), "");
+            if (value.isBlank() || !entry.getValue().contains(value)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private Map<String, String> candidateFacetValues(VisualConnectionCandidatesRequest request,
+                                                     ConnectionCandidateTarget target,
+                                                     Map<String, String> libraryIds) {
+        Map<String, String> values = new LinkedHashMap<>();
+        putFacetValue(values, "surface", target.surface());
+        Map<String, Object> targetSchema = selectedUnionBranchSchema(
+                endpointTargetSchema(request.draft(), target.endpoint(), target.surface()),
+                request.targetUnionBranch()
+        );
+        putFacetValue(values, "schemaType",
+                schemaTypeLabel(targetSchema, controlSurface(target.surface()) ? target.surface() : ""));
+        Optional<OperatorDefinition> operator = catalog.find(target.node().operatorRef());
+        if (operator.isEmpty()) {
+            putFacetValue(values, "operatorRef", target.node().operatorRef());
+            return values;
+        }
+        OperatorDefinition definition = operator.get();
+        putFacetValue(values, "operatorRef", definition.operatorRef());
+        putFacetValue(values, "operatorLibraryId", libraryIds.get(definition.operatorRef()));
+        putFacetValue(values, "sourceKind", definition.source() == null ? "" : definition.source().kind());
+        putFacetValue(values, "loweringMode", definition.lowering() == null ? "" : definition.lowering().mode());
+        putFacetValue(values, "runtimeReadiness", runtimeReadinessFacetValue(definition.runtimeReadiness()));
+        return values;
     }
 
     private static String runtimeReadinessFacetValue(OperatorDefinition.RuntimeReadiness readiness) {
         return readiness == null
                 ? ""
                 : readiness.state().trim().toLowerCase(Locale.ROOT).replace('_', '-');
+    }
+
+    private static void putFacetValue(Map<String, String> values, String facet, String value) {
+        if (facet == null || facet.isBlank() || value == null || value.isBlank()) {
+            return;
+        }
+        values.put(facet, value);
     }
 
     private static void incrementFacet(Map<String, Map<String, Integer>> counts, String facet, String value) {
@@ -736,7 +777,8 @@ public class VisualConnectionCheckService {
     private VisualConnectionCandidatesResult.ConnectionCandidateExplanation candidateExplanation(
             VisualConnectionCandidatesRequest request,
             ConnectionCandidateTarget target,
-            VisualConnectionCheckResult check) {
+            VisualConnectionCheckResult check,
+            Map<String, String> libraryIds) {
         GraphDraft draft = request.draft();
         GraphDraft.Endpoint source = request.source();
         Map<String, Object> sourceSchema = endpointSourceSchema(draft, source);
@@ -761,7 +803,7 @@ public class VisualConnectionCheckService {
                 replacementSummary(replacedBindings, replacedEdges),
                 replacedBindings,
                 replacedEdges,
-                targetRuntimeBindingImpact(target.node().id(), check.validation(), operatorLibraryIdsByOperatorRef())
+                targetRuntimeBindingImpact(target.node().id(), check.validation(), libraryIds)
         );
     }
 

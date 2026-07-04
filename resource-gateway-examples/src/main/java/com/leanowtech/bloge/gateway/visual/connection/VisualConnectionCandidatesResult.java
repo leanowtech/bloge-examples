@@ -15,10 +15,10 @@ import java.util.Map;
  * @param source normalized source endpoint
  * @param kind normalized edge kind used for candidate checks
  * @param offset zero-based offset applied after accepted/rejected filtering
- * @param totalCandidateCount enumerated targets after request query/status filtering and before accepted/rejected filtering
+ * @param totalCandidateCount enumerated targets after request query/status/facet filtering and before accepted/rejected filtering
  * @param unfilteredCandidateCount enumerated targets before request query/status filtering
  * @param statusCounts ready/blocked/wired target counts after query filtering and before status filtering
- * @param facetCounts candidate facet counts after query/status filtering and before paging
+ * @param facetCounts candidate facet counts after query/status filtering and before request facet filtering/paging
  * @param acceptedCount accepted target count after request query/status filtering and before display limiting
  * @param rejectedCount rejected target count after request query/status filtering and before display limiting
  * @param displayedCount returned candidate row count
@@ -194,6 +194,7 @@ public record VisualConnectionCandidatesResult(
      * @param target normalized target endpoint
      * @param accepted true when the connection can be applied
      * @param targetStatus target status, one of ready, blocked, or wired
+     * @param facetValues target facet values used by server-side facet filtering
      * @param bindingKey storage key for data/input bindings when applicable
      * @param summary machine-readable check summary reused from the connection preflight contract
      * @param explanation schema and replacement explanation for product UI and external control planes
@@ -207,6 +208,7 @@ public record VisualConnectionCandidatesResult(
             GraphDraft.Endpoint target,
             boolean accepted,
             String targetStatus,
+            Map<String, String> facetValues,
             String bindingKey,
             VisualConnectionCheckResult.VisualConnectionCheckSummary summary,
             ConnectionCandidateExplanation explanation,
@@ -222,6 +224,7 @@ public record VisualConnectionCandidatesResult(
             targetSurface = targetSurface == null || targetSurface.isBlank() ? "input" : targetSurface;
             target = target == null ? GraphDraft.Endpoint.empty() : target;
             targetStatus = normalizeTargetStatus(targetStatus, accepted);
+            facetValues = normalizeFacetValues(facetValues);
             bindingKey = bindingKey == null ? "" : bindingKey;
             explanation = explanation == null ? ConnectionCandidateExplanation.empty() : explanation;
             diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
@@ -239,7 +242,7 @@ public record VisualConnectionCandidatesResult(
                                    String bindingKey,
                                    VisualConnectionCheckResult.VisualConnectionCheckSummary summary,
                                    List<VisualDiagnostic> diagnostics) {
-            this(targetNodeId, targetNodeLabel, targetOperatorRef, targetSurface, target, accepted, "", bindingKey,
+            this(targetNodeId, targetNodeLabel, targetOperatorRef, targetSurface, target, accepted, "", Map.of(), bindingKey,
                     summary, ConnectionCandidateExplanation.empty(), diagnostics);
         }
 
@@ -256,8 +259,26 @@ public record VisualConnectionCandidatesResult(
                                    VisualConnectionCheckResult.VisualConnectionCheckSummary summary,
                                    ConnectionCandidateExplanation explanation,
                                    List<VisualDiagnostic> diagnostics) {
-            this(targetNodeId, targetNodeLabel, targetOperatorRef, targetSurface, target, accepted, "", bindingKey,
+            this(targetNodeId, targetNodeLabel, targetOperatorRef, targetSurface, target, accepted, "", Map.of(), bindingKey,
                     summary, explanation, diagnostics);
+        }
+
+        /**
+         * Backward-compatible constructor for callers created before target facet values existed.
+         */
+        public ConnectionCandidate(String targetNodeId,
+                                   String targetNodeLabel,
+                                   String targetOperatorRef,
+                                   String targetSurface,
+                                   GraphDraft.Endpoint target,
+                                   boolean accepted,
+                                   String targetStatus,
+                                   String bindingKey,
+                                   VisualConnectionCheckResult.VisualConnectionCheckSummary summary,
+                                   ConnectionCandidateExplanation explanation,
+                                   List<VisualDiagnostic> diagnostics) {
+            this(targetNodeId, targetNodeLabel, targetOperatorRef, targetSurface, target, accepted, targetStatus,
+                    Map.of(), bindingKey, summary, explanation, diagnostics);
         }
 
         private static String normalizeTargetStatus(String value, boolean accepted) {
@@ -268,6 +289,21 @@ public record VisualConnectionCandidatesResult(
                 }
             }
             return accepted ? "ready" : "blocked";
+        }
+
+        private static Map<String, String> normalizeFacetValues(Map<String, String> source) {
+            if (source == null || source.isEmpty()) {
+                return Map.of();
+            }
+            Map<String, String> values = new LinkedHashMap<>();
+            source.forEach((key, value) -> {
+                String normalizedKey = key == null ? "" : key.trim();
+                String normalizedValue = value == null ? "" : value.trim();
+                if (!normalizedKey.isBlank() && !normalizedValue.isBlank()) {
+                    values.put(normalizedKey, normalizedValue);
+                }
+            });
+            return values.isEmpty() ? Map.of() : Collections.unmodifiableMap(values);
         }
     }
 

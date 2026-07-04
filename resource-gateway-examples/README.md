@@ -652,8 +652,10 @@ connection, which keeps root/field rebinding behavior aligned with the
 server-side preview instead of leaving stale overlapping inputs behind.
 The Browser Composer also prefetches `bloge.visualConnectionCandidates.v1`
 when a normal data/config connection drag starts. The read model supports
-focused windows (`targetNodeId`, `targetSurface`, `offset`, `limit`) and returns
-per-candidate schema explanations with source/target labels, schema type
+focused windows (`targetNodeId`, `targetSurface`, `offset`, `limit`), global
+query/status filtering, server-side facet filters, `statusCounts`, and
+pre-facet `facetCounts`. Per-candidate rows return `targetStatus`,
+`facetValues`, and schema explanations with source/target labels, schema type
 summaries, first diagnostic code, replacement counts, and runtime-binding
 summary for schema-valid but non-executable candidates. Hover feedback prefers
 the server candidate explanation, runtime-binding hint, or blocked diagnostic
@@ -662,8 +664,11 @@ or does not cover that target, and still runs `/api/visual/connections/check`
 before writing the edge.
 The selected-node Connectability inspector uses the same source-scoped candidate
 read model as a short-lived server snapshot, so blocked previews and quick-connect
-suggestions can show server-derived reasons before the author clicks; the click
-path still runs connection check before mutating the draft.
+suggestions can show server-derived reasons before the author clicks. Its Find,
+Status, Schema, Runtime, and Library controls are sent back to the candidate
+endpoint, so large canvases filter the full candidate set instead of only the
+currently rendered chip window; the click path still runs connection check
+before mutating the draft.
 Operator availability is also enforced by policy: imported operator definitions
 may declare allowed `tenants`, `namespaces`, and `environments`; the browser
 queries the active catalog with the current draft scope from the Authoring Scope
@@ -936,7 +941,7 @@ Showcase metadata APIs:
 | `POST` | `/api/visual/drafts/validate` | Validate a visual graph draft against operator schemas, typed port edges, and DAG constraints; response includes `bloge.visualGraphReadiness.v1` and `bloge.visualGraphActionReadiness.v1` so callers can distinguish runtime-executable, design-only, runtime-blocked, governance-review, draft-repair-required graphs and the allowed compile/run/DESIGN publish/EXECUTABLE publish actions |
 | `POST` | `/api/visual/drafts/compile` | Validate a visual graph draft, lower it to BLOGE DSL, then compile the DSL; response includes validation/readiness/action-readiness so clients keep publish and action guidance after compile diagnostics |
 | `POST` | `/api/visual/connections/check` | Check a proposed source-to-target canvas connection against the same schema and DAG rules used by draft validation, returning connection-scoped diagnostics, a machine-readable decision/replacement/runtime-binding summary, the canonical binding key for data/input bindings, and candidate draft validation/readiness/action-readiness |
-| `POST` | `/api/visual/connections/candidates` | Discover schema-aware target endpoints for one dragged source endpoint, returning `bloge.visualConnectionCandidates.v1` accepted/rejected counts, focused target filters/windowing, per-candidate schema explanations, optional blocked diagnostics, preflight summaries with runtime-binding count/keys/routing counts, and the same binding keys produced by connection check |
+| `POST` | `/api/visual/connections/candidates` | Discover schema-aware target endpoints for one dragged source endpoint, returning `bloge.visualConnectionCandidates.v1` accepted/rejected counts, query/status/facet filters, focused target filters/windowing, `statusCounts`, pre-facet `facetCounts`, per-candidate `targetStatus`/`facetValues`/schema explanations, optional blocked diagnostics, preflight summaries with runtime-binding count/keys/routing counts, and the same binding keys produced by connection check |
 | `POST` | `/api/visual/drafts/run` | Validate, compile, and execute a transient visual graph draft; response includes validation/readiness/action-readiness and a run history id |
 | `POST` | `/api/visual/drafts/{draftId}/run` | Execute a stored visual graph draft with submitted context; response includes validation/readiness/action-readiness, and optional `expectedRevision` rejects stale runs with `409 CONFLICT` |
 | `POST` | `/api/visual/drafts/{draftId}/publish` | Publish an immutable visual graph artifact; default `artifactKind=EXECUTABLE` validates, compiles, and stores frozen DSL, while `artifactKind=DESIGN` freezes a schema-valid non-executable design artifact with generation diagnostics; response includes validation/readiness/action-readiness on accepted and rejected attempts so clients can constrain publish artifact kinds, warning review gates, and repository persistence failures; optional `expectedRevision` rejects stale publishes with `409 CONFLICT`; warning-level validation diagnostics require `ackWarnings=true`, warning-acknowledged storage also requires non-empty `actor` and `reason` evidence that is frozen as publication metadata, and publication write failure returns `visual.publication.persistenceFailed` |

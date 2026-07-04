@@ -833,12 +833,14 @@ runtime binding requirement count/key 和 binding/handoff/source/lowering/readin
 runtime-binding index 的 requirementKey 为长期 handoff 引用。
 拖拽连线的 hover 提示使用 `/api/visual/connections/candidates` 作为 source-scoped
 读模型：普通 data/config 拖拽开始时预取 accepted 与 blocked target，必要时可按
-`targetNodeId`、`targetSurface`、`offset` 和 `limit` 收窄大画布候选窗口；命中时优先展示服务端
+`query`、`targetStatus`、`facetFilters`、`targetNodeId`、`targetSurface`、`offset` 和 `limit`
+收窄大画布候选窗口；响应会回显 `statusCounts`、pre-facet `facetCounts` 以及候选行级
+`targetStatus` / `facetValues`；命中时优先展示服务端
 summary/diagnostic/schema explanation（source/target type、first diagnostic、replacement effect、runtime binding hint），
 未命中或读模型失败时回退本地 schema hint；真正 drop 写入前仍必须调用
 `/api/visual/connections/check`，避免把候选发现误用成 mutation gate。
 selected-node connectability inspector 复用同一读模型为当前节点 source handles 建立短期快照，
-用服务端 candidate summary/diagnostic/schema explanation 覆盖本地推断；但 quick-connect 点击前仍再次调用
+用服务端 candidate summary/diagnostic/schema explanation、Schema/Runtime/Library facet filter 覆盖本地推断；但 quick-connect 点击前仍再次调用
 connection check，保证 inspector 建议和实际写入之间不存在第二套权威。
 选中已发布 artifact 时，浏览器展示 publication 冻结的 readiness 和非执行节点清单；
 这是审阅历史设计制品的依据，不依赖当前 catalog 重新推断。
@@ -920,7 +922,7 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `POST` | `/api/visual/drafts/{draftId}/operator-fingerprints/rebase` | 当前已实现：显式刷新选中节点或全部节点的 service-managed operator fingerprint snapshot，使用 `expectedRevision` 防并发覆盖，并对未知节点/当前 catalog 缺失算子返回结构化 diagnostics |
 | `DELETE` | `/api/visual/drafts/{draftId}` | 当前已实现：删除 current draft 指针但保留 immutable revision history，写入 deletion audit snapshot，并允许后续从 retained revision 恢复 |
 | `POST` | `/api/visual/connections/check` | 当前已实现：服务端权威预检候选 data/dependency/route/config/context 连接；响应的 `diagnostics` 只保留候选连接相关问题，`summary` 以 `bloge.visualConnectionCheckSummary.v1` 暴露 accepted、binding key、diagnostic counts、replacement effects 和 candidate readiness 摘要，`validation/readiness/actionReadiness` 表达加上候选连接后的完整 candidate draft 状态 |
-| `POST` | `/api/visual/connections/candidates` | 当前已实现：给定 draft 和 source endpoint，从当前 catalog 的 target input/config schema 派生可拖拽目标候选，覆盖对象字段、schema-object array `items`、tuple `prefixItems` 下标路径和 schema-object `unevaluatedItems` residual item 代表路径，并对每个候选复用 `/check` 权威预检，返回 `bloge.visualConnectionCandidates.v1` 的 accepted/rejected counts、target filter/window、候选 target、bindingKey、summary、schema explanation 和阻断 diagnostics；默认只返回 accepted rows，`includeRejected=true` 时可用于 inspector 展示 blocked reasons |
+| `POST` | `/api/visual/connections/candidates` | 当前已实现：给定 draft 和 source endpoint，从当前 catalog 的 target input/config schema 派生可拖拽目标候选，覆盖对象字段、schema-object array `items`、tuple `prefixItems` 下标路径和 schema-object `unevaluatedItems` residual item 代表路径，并对每个候选复用 `/check` 权威预检，返回 `bloge.visualConnectionCandidates.v1` 的 accepted/rejected counts、query/status/facet filter 回显、target filter/window、`statusCounts`、pre-facet `facetCounts`、候选 target、`targetStatus`、`facetValues`、bindingKey、summary、schema explanation 和阻断 diagnostics；默认只返回 accepted rows，`includeRejected=true` 时可用于 inspector 展示 blocked reasons |
 | `POST` | `/api/visual/drafts/{draftId}/validate` | 增量或全量校验；当前实现的 transient `/api/visual/drafts/validate` 返回 `valid`、`diagnostics`、`bloge.visualGraphReadiness.v1` 图级 runtime/design readiness、节点级 runtime binding requirements 和 `bloge.visualGraphActionReadiness.v1` 动作准入 |
 | `POST` | `/api/visual/drafts/{draftId}/compile` | 生成 DSL 并编译；响应携带本次 draft validation/readiness/actionReadiness，供客户端在 compiler 或 design-only blocking 后继续约束发布路径 |
 | `POST` | `/api/visual/drafts/{draftId}/run` | 使用测试 context 运行；响应携带本次 draft validation/readiness/actionReadiness、diagnostics 和 run history id |

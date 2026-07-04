@@ -2982,9 +2982,15 @@ class VisualAuthoringAppJsTest {
                   'nodeConnectabilityActiveFilter',
                   'nodeConnectabilityFilterIsActive',
                   'nodeConnectabilityFilterDisplayLimit',
+                  'nodeConnectabilityFacetFilterControls',
+                  'nodeConnectabilityFacetFilterControl',
+                  'nodeConnectabilityFacetFilterOptions',
+                  'nodeConnectabilityFacetFilterOptionLimit',
                   'nodeConnectabilityAllTargets',
                   'nodeConnectabilityFilteredTargets',
                   'nodeConnectabilityTargetMatchesFilter',
+                  'nodeConnectabilityTargetMatchesFacetFilters',
+                  'connectionCandidateFacetValueForTarget',
                   'nodeConnectabilityTargetStatus',
                   'nodeConnectabilityTargetSearchText',
                   'nodeConnectabilityFilterSummary',
@@ -3004,8 +3010,10 @@ class VisualAuthoringAppJsTest {
                   'renderNodeConnectabilityServerControls',
                   'nodeConnectabilityServerWindowSummary',
                   'nodeConnectabilityServerFacetSummary',
+                  'nodeConnectabilityServerFacetCounts',
                   'connectionCandidateFacetLabel',
                   'topConnectionCandidateFacet',
+                  'connectionCandidateFacetOptionLabel',
                   'nodeConnectabilityServerWindowStats',
                   'nodeConnectabilityServerWindowLabel',
                   'nodeConnectabilityServerWindowFor',
@@ -3016,9 +3024,15 @@ class VisualAuthoringAppJsTest {
                   'nodeConnectabilityServerRequestKey',
                   'nodeConnectabilityServerActiveStatus',
                   'nodeConnectabilityServerStatusKey',
+                  'nodeConnectabilityServerActiveFacetFilters',
+                  'nodeConnectabilityServerFacetFiltersKey',
                   'normalizeConnectionCandidateStatus',
                   'normalizeConnectionCandidateStatusCounts',
                   'normalizeConnectionCandidateFacetCounts',
+                  'normalizeConnectionCandidateFacetValues',
+                  'normalizeConnectionCandidateFacetFilters',
+                  'canonicalConnectionCandidateFacetKey',
+                  'normalizeConnectionCandidateFacetValue',
                   'compactStringHash',
                   'nodeConnectabilityTargetAppliesToSource',
                   'nodeConnectabilityTargetKind',
@@ -5482,6 +5496,15 @@ operators:
 	                    target: { nodeId: 'auditNode', port: 'inputs', path: 'score' },
 	                    accepted: true,
 	                    targetStatus: 'ready',
+	                    facetValues: {
+	                      surface: 'input',
+	                      schemaType: 'integer',
+	                      operatorRef: 'risk:audit',
+	                      operatorLibraryId: 'risk-policy',
+	                      runtimeReadiness: 'design-only',
+	                      loweringMode: 'design',
+	                      sourceKind: 'user-library'
+	                    },
 	                    bindingKey: 'inputs.score',
                     summary: {
                       message: 'Server schema accepts score.',
@@ -5532,6 +5555,15 @@ operators:
 	                    target: { nodeId: 'auditNode', port: 'inputs', path: 'risk' },
 	                    accepted: false,
 	                    targetStatus: 'blocked',
+	                    facetValues: {
+	                      surface: 'input',
+	                      schemaType: 'object',
+	                      operatorRef: 'risk:audit',
+	                      operatorLibraryId: 'risk-policy',
+	                      runtimeReadiness: 'design-only',
+	                      loweringMode: 'design',
+	                      sourceKind: 'user-library'
+	                    },
 	                    bindingKey: '',
                     summary: { message: '' },
                     explanation: {
@@ -5650,6 +5682,36 @@ operators:
                 const serverConnectabilityPanel = context.renderNodeConnectabilityPanel(context.state.builder.nodes[1]);
                 const serverFacetSummary =
                   context.nodeConnectabilityServerFacetSummary(context.state.nodeConnectabilityServer);
+                context.state.nodeConnectabilityFilter = {
+                  query: '',
+                  status: '',
+                  facetFilters: {
+                    schemaType: ['integer'],
+                    runtimeReadiness: ['design-only'],
+                    operatorLibraryId: ['risk-policy']
+                  }
+                };
+                const activeFacetFilter = context.nodeConnectabilityActiveFilter();
+                const facetFilteredScoreTargets = context.nodeConnectabilityFilteredTargets(
+                  serverScoreConnectability,
+                  activeFacetFilter
+                );
+                const facetFilterControls = context.renderNodeConnectabilityFilterControls(
+                  serverConnectability,
+                  activeFacetFilter,
+                  context.state.nodeConnectabilityServer
+                );
+                const facetFilterKey = context.nodeConnectabilityServerFacetFiltersKey(activeFacetFilter.facetFilters);
+                const facetRequestKey = context.nodeConnectabilityServerRequestKey(
+                  'riskNode',
+                  context.state.builder,
+                  0,
+                  250,
+                  '',
+                  '',
+                  activeFacetFilter.facetFilters
+                );
+                context.clearNodeConnectabilityFilter();
                 const truncatedServerStatus = context.renderNodeConnectabilityServerStatus({
                   nodeId: 'riskNode',
                   draftKey: context.nodeConnectabilityServerDraftKey('riskNode', context.state.builder),
@@ -5749,8 +5811,22 @@ operators:
 	                  '',
 	                  'ready'
 	                );
-	                context.state.nodeConnectabilityFilter = { query: '', status: 'ready' };
+	                const pageOneReadySchemaFacetRequestKey = context.nodeConnectabilityServerRequestKey(
+	                  'riskNode',
+	                  context.state.builder,
+	                  0,
+	                  250,
+	                  '',
+	                  'ready',
+	                  { schemaType: ['integer'] }
+	                );
+	                context.state.nodeConnectabilityFilter = {
+	                  query: '',
+	                  status: 'ready',
+	                  facetFilters: { schemaType: ['integer'] }
+	                };
 	                const activeServerStatus = context.nodeConnectabilityServerActiveStatus();
+	                const activeServerFacetFilters = context.nodeConnectabilityServerActiveFacetFilters();
 	                const connectabilityServerBeforeFetch = context.state.nodeConnectabilityServer;
 	                const connectabilityFetchOptions = [];
                 const previousFetch = context.fetch;
@@ -5762,7 +5838,8 @@ operators:
 	                    offset: options.offset,
 	                    limit: options.limit,
 	                    includeRejected: options.includeRejected,
-	                    targetStatus: options.targetStatus || ''
+	                    targetStatus: options.targetStatus || '',
+	                    facetFiltersKey: context.nodeConnectabilityServerFacetFiltersKey(options.facetFilters || {})
 	                  });
                   return Promise.resolve(context.normalizeConnectionCandidatesResult({
                     schemaVersion: 'bloge.visualConnectionCandidates.v1',
@@ -5779,7 +5856,7 @@ operators:
                     displayedCount: 0,
                     truncated: false,
                     candidates: []
-	                  }, source, { targetStatus: options.targetStatus || '' }));
+	                  }, source, { targetStatus: options.targetStatus || '', facetFilters: options.facetFilters || {} }));
 	                };
                 context.ensureNodeConnectabilityServerCandidates(
                   context.state.builder.nodes[1],
@@ -5787,7 +5864,7 @@ operators:
                   { offset: 250, limit: 250, force: true }
                 );
 	                const connectabilityFetchOffsets = connectabilityFetchOptions
-	                  .map((entry) => `${entry.sourcePath}:${entry.offset}:${entry.limit}:${entry.includeRejected}:${entry.targetStatus}`)
+	                  .map((entry) => `${entry.sourcePath}:${entry.offset}:${entry.limit}:${entry.includeRejected}:${entry.targetStatus}:${entry.facetFiltersKey}`)
 	                  .sort()
 	                  .join('|');
 	                context.state.nodeConnectabilityServer = connectabilityServerBeforeFetch;
@@ -6587,6 +6664,9 @@ operators:
                   ['connection candidates facet schema object', serverCandidateResult.facetCounts.schemaType.object, 1],
                   ['connection candidates facet library', serverCandidateResult.facetCounts.operatorLibraryId['risk-policy'], 2],
                   ['connection candidates facet runtime', serverCandidateResult.facetCounts.runtimeReadiness['design-only'], 2],
+                  ['connection candidates facet value schema', serverCandidateResult.candidates[0].facetValues.schemaType, 'integer'],
+                  ['connection candidates facet value library', serverCandidateResult.candidates[0].facetValues.operatorLibraryId, 'risk-policy'],
+                  ['connection candidates facet filter normalized', serverCandidateResult.facetFilters.schemaType?.[0] || '', ''],
                   ['connection candidates target status', serverCandidateResult.candidates[0].targetStatus, 'ready'],
                   ['connection candidates explanation source type', serverCandidateResult.candidates[0].explanation.sourceSchemaType, 'integer'],
                   ['connection candidates explanation target type', serverCandidateResult.candidates[0].explanation.targetSchemaType, 'integer'],
@@ -6636,6 +6716,12 @@ operators:
                   ['server connectability panel includes visible runtime debt', String(serverConnectabilityPanel.includes('1 target runtime binding requirement')), 'true'],
                   ['server connectability facet summary', serverFacetSummary, 'Facets · schema integer 1 +1 · runtime design-only 2 · library risk-policy 2'],
                   ['server connectability panel includes facet summary', String(serverConnectabilityPanel.includes('Facets')), 'true'],
+                  ['server connectability active facet key', facetFilterKey, 'operatorLibraryId=risk-policy|runtimeReadiness=design-only|schemaType=integer'],
+                  ['server connectability facet request key differs', String(pageOneRequestKey !== facetRequestKey), 'true'],
+                  ['server connectability facet controls include schema', String(facetFilterControls.includes('data-connectability-filter-facet="schemaType"')), 'true'],
+                  ['server connectability facet controls selected schema', String(facetFilterControls.includes('value="integer" selected')), 'true'],
+                  ['server connectability facet filtered count', facetFilteredScoreTargets.length, 1],
+                  ['server connectability facet filtered target', context.nodeConnectabilityTargetLabel(facetFilteredScoreTargets[0]), 'Audit (auditNode) · data -> inputs.score · ready'],
                   ['server connectability truncated status includes partial window', String(truncatedServerStatus.includes('partial server window 1-250 of 300')), 'true'],
                   ['server connectability truncated status warns local fallback', String(truncatedServerStatus.includes('local fallback beyond server window')), 'true'],
                   ['server connectability truncated status includes facet summary', String(truncatedServerStatus.includes('schema integer 300')), 'true'],
@@ -6647,8 +6733,10 @@ operators:
                   ['server connectability page one controls next', String(pageOneControls.includes('data-connectability-window="next"')), 'true'],
                   ['server connectability page two controls window label', String(pageTwoControls.includes('Window 251-300 of 300')), 'true'],
                   ['server connectability status request key differs', String(pageOneRequestKey !== pageOneReadyStatusRequestKey), 'true'],
+                  ['server connectability status facet request key differs', String(pageOneReadyStatusRequestKey !== pageOneReadySchemaFacetRequestKey), 'true'],
                   ['server connectability active status', activeServerStatus, 'ready'],
-                  ['server connectability next page request offsets', connectabilityFetchOffsets, ':250:250:true:ready|eligible:250:250:true:ready|score:250:250:true:ready'],
+                  ['server connectability active facet filters', context.nodeConnectabilityServerFacetFiltersKey(activeServerFacetFilters), 'schemaType=integer'],
+                  ['server connectability next page request offsets', connectabilityFetchOffsets, ':250:250:true:ready:schemaType=integer|eligible:250:250:true:ready:schemaType=integer|score:250:250:true:ready:schemaType=integer'],
                   ['auto bind required unbound count', autoBindPlan.requiredUnboundCount, 2],
                   ['auto bind item count', autoBindPlan.items.length, 1],
                   ['auto bind skipped count', autoBindPlan.skippedCount, 1],
