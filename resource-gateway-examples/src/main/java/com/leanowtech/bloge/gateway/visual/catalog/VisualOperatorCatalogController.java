@@ -123,33 +123,70 @@ public class VisualOperatorCatalogController {
      * @param loweringModes lowering mode filters
      * @param capabilities capability facet filters
      * @param runtimeReadinessStates runtime readiness state filters
+     * @param includeProjections include server-derived runtime binding and executable promotion projections
      * @return visible operator definition or 404
      */
     @GetMapping("/{operatorRef:.+}")
-    public ResponseEntity<OperatorDefinition> get(@PathVariable String operatorRef,
-                                                  @RequestParam(defaultValue = "false") boolean resourceOnly,
-                                                  @RequestParam(defaultValue = "false") boolean includeDeprecated,
-                                                  @RequestParam(defaultValue = "") String tenantId,
-                                                  @RequestParam(defaultValue = "") String namespace,
-                                                  @RequestParam(defaultValue = "") String environment,
-                                                  @RequestParam(name = "sourceKind", defaultValue = "")
-                                                  List<String> sourceKinds,
-                                                  @RequestParam(name = "operatorLibraryId", defaultValue = "")
-                                                  List<String> operatorLibraryIds,
-                                                  @RequestParam(name = "loweringMode", defaultValue = "")
-                                                  List<String> loweringModes,
-                                                  @RequestParam(name = "capability", defaultValue = "")
-                                                  List<String> capabilities,
-                                                  @RequestParam(name = "runtimeReadiness", defaultValue = "")
-                                                  List<String> runtimeReadinessStates) {
+    public ResponseEntity<Object> get(@PathVariable String operatorRef,
+                                      @RequestParam(defaultValue = "false") boolean resourceOnly,
+                                      @RequestParam(defaultValue = "false") boolean includeDeprecated,
+                                      @RequestParam(defaultValue = "") String tenantId,
+                                      @RequestParam(defaultValue = "") String namespace,
+                                      @RequestParam(defaultValue = "") String environment,
+                                      @RequestParam(name = "sourceKind", defaultValue = "")
+                                      List<String> sourceKinds,
+                                      @RequestParam(name = "operatorLibraryId", defaultValue = "")
+                                      List<String> operatorLibraryIds,
+                                      @RequestParam(name = "loweringMode", defaultValue = "")
+                                      List<String> loweringModes,
+                                      @RequestParam(name = "capability", defaultValue = "")
+                                      List<String> capabilities,
+                                      @RequestParam(name = "runtimeReadiness", defaultValue = "")
+                                      List<String> runtimeReadinessStates,
+                                      @RequestParam(defaultValue = "false") boolean includeProjections) {
         OperatorCatalogQuery query = new OperatorCatalogQuery("", List.of(), resourceOnly, includeDeprecated,
                 tenantId, namespace, environment, sourceKinds, operatorLibraryIds, loweringModes, capabilities,
                 runtimeReadinessStates);
         return catalog.list(query).stream()
                 .filter(operator -> operator.operatorRef().equals(operatorRef))
                 .findFirst()
-                .map(ResponseEntity::ok)
+                .map(operator -> includeProjections
+                        ? ResponseEntity.ok((Object) detailResponse(query, operator))
+                        : ResponseEntity.ok((Object) operator))
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private OperatorDetailResponse detailResponse(OperatorCatalogQuery query, OperatorDefinition operator) {
+        OperatorRuntimeBindingProjection runtimeBindingProjection = firstRuntimeBindingProjection(query, operator);
+        OperatorExecutablePromotionProjection executablePromotionProjection =
+                firstExecutablePromotionProjection(query, runtimeBindingProjection);
+        return new OperatorDetailResponse(
+                "bloge.visualOperatorDetail.v1",
+                operator,
+                runtimeBindingProjection,
+                executablePromotionProjection,
+                query
+        );
+    }
+
+    private OperatorRuntimeBindingProjection firstRuntimeBindingProjection(OperatorCatalogQuery query,
+                                                                           OperatorDefinition operator) {
+        List<OperatorRuntimeBindingProjection> projections = catalog.runtimeBindingProjections(query, List.of(operator));
+        return projections.stream()
+                .filter(projection -> operator.operatorRef().equals(projection.operatorRef()))
+                .findFirst()
+                .orElseGet(() -> OperatorRuntimeBindingProjection.from(operator, null));
+    }
+
+    private OperatorExecutablePromotionProjection firstExecutablePromotionProjection(
+            OperatorCatalogQuery query,
+            OperatorRuntimeBindingProjection runtimeBindingProjection) {
+        List<OperatorExecutablePromotionProjection> projections =
+                catalog.executablePromotionProjections(query, List.of(runtimeBindingProjection));
+        return projections.stream()
+                .filter(projection -> runtimeBindingProjection.operatorRef().equals(projection.operatorRef()))
+                .findFirst()
+                .orElseGet(() -> OperatorExecutablePromotionProjection.from(runtimeBindingProjection));
     }
 
     private static int normalizeItemLimit(Integer requestedLimit, int total) {

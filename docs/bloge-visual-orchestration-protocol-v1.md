@@ -1118,6 +1118,40 @@ GET /api/visual/operators/resource:loan-applicant-service.getProfile?tenantId=de
 但未显式 `includeDeprecated=true`，或被 facet 条件排除时，返回 `404`。外部控制面
 可用它为 inspector、schema cache 或 operator detail 页面按需加载定义，而不必拉取完整目录。
 
+详情页如果需要和 palette 一致的服务端控制面投影，可显式请求
+`includeProjections=true`。此时默认兼容的裸 `bloge.visualOperator.v1`
+会被包进 `bloge.visualOperatorDetail.v1`：
+
+```http
+GET /api/visual/operators/risk:eligibility?tenantId=demo-tenant&namespace=local&environment=dev&includeProjections=true
+```
+
+```json
+{
+  "schemaVersion": "bloge.visualOperatorDetail.v1",
+  "operator": {
+    "schemaVersion": "bloge.visualOperator.v1",
+    "operatorRef": "risk:eligibility"
+  },
+  "runtimeBindingProjection": {
+    "schemaVersion": "bloge.operatorRuntimeBindingProjection.v1",
+    "operatorRef": "risk:eligibility",
+    "projectionState": "binding-bound",
+    "activeBindingId": "risk-eligibility-native-v1"
+  },
+  "executablePromotionProjection": {
+    "schemaVersion": "bloge.operatorExecutablePromotionProjection.v1",
+    "operatorRef": "risk:eligibility",
+    "promotionState": "activation-required",
+    "requiredNextAction": "ACTIVATE_RUNTIME_ADAPTER"
+  }
+}
+```
+
+这个 envelope 只读地解释单算子从 schema-only/design-only 到 executable promotion
+还缺哪一类 runtime-plane 证据；它不会修改 `OperatorDefinition.runtimeReadiness`，
+也不会允许用户导入包伪造可执行状态。
+
 ### 10.1.2 查询 operator usage index
 
 ```http

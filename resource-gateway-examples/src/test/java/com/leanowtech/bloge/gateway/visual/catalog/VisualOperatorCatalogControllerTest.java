@@ -190,6 +190,29 @@ class VisualOperatorCatalogControllerTest {
     }
 
     @Test
+    void getCanIncludeRuntimeBindingAndPromotionProjections() throws Exception {
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new VisualOperatorCatalogController(
+                new ProjectedBindingCatalog()
+        )).build();
+
+        mockMvc.perform(get("/api/visual/operators/risk:eligibility")
+                        .param("includeProjections", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value("bloge.visualOperatorDetail.v1"))
+                .andExpect(jsonPath("$.operator.operatorRef").value("risk:eligibility"))
+                .andExpect(jsonPath("$.runtimeBindingProjection.operatorRef").value("risk:eligibility"))
+                .andExpect(jsonPath("$.runtimeBindingProjection.projectionState").value("binding-bound"))
+                .andExpect(jsonPath("$.runtimeBindingProjection.activeBindingId")
+                        .value("risk-eligibility-native-v1"))
+                .andExpect(jsonPath("$.executablePromotionProjection.operatorRef").value("risk:eligibility"))
+                .andExpect(jsonPath("$.executablePromotionProjection.promotionState")
+                        .value("activation-required"))
+                .andExpect(jsonPath("$.executablePromotionProjection.requiredNextAction")
+                        .value("ACTIVATE_RUNTIME_ADAPTER"))
+                .andExpect(jsonPath("$.filter.includeDeprecated").value(false));
+    }
+
+    @Test
     void getReturnsNotFoundWhenOperatorIsNotVisible() throws Exception {
         MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new VisualOperatorCatalogController(
                 new CapturingCatalog(List.of(VisualCatalogTestSupport.eligibilityOperator("integer")))
