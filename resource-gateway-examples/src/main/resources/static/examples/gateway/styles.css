@@ -1514,6 +1514,19 @@ body.dragging-operator * {
   gap: 5px;
 }
 
+.node-connectability-window-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.node-connectability-window-controls span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .node-connectability-chip {
   max-width: 100%;
   display: inline-grid;

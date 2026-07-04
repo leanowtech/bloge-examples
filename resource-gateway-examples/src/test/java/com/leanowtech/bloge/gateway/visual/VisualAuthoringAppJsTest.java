@@ -2986,10 +2986,19 @@ class VisualAuthoringAppJsTest {
                   'nodeConnectabilitySummary',
                   'nodeConnectabilitySourceSummaryFor',
                   'nodeConnectabilityTargetsForSource',
+                  'ensureNodeConnectabilityServerCandidates',
                   'nodeConnectabilityServerCandidatesForSource',
                   'nodeConnectabilityServerStateFor',
                   'renderNodeConnectabilityServerStatus',
+                  'renderNodeConnectabilityServerControls',
                   'nodeConnectabilityServerWindowSummary',
+                  'nodeConnectabilityServerWindowStats',
+                  'nodeConnectabilityServerWindowLabel',
+                  'nodeConnectabilityServerWindowFor',
+                  'changeNodeConnectabilityServerWindowFromButton',
+                  'nodeConnectabilityServerStateMatchesNode',
+                  'nodeConnectabilityServerCandidateLimit',
+                  'nodeConnectabilityServerDraftKey',
                   'nodeConnectabilityServerRequestKey',
                   'compactStringHash',
                   'nodeConnectabilityTargetAppliesToSource',
@@ -5577,8 +5586,11 @@ operators:
                   context.connectionTargetRequiresFocusedCandidatePreview(scoreReadyTarget.target);
                 context.state.nodeConnectabilityServer = {
                   nodeId: 'riskNode',
+                  draftKey: context.nodeConnectabilityServerDraftKey('riskNode', context.state.builder),
                   requestKey: context.nodeConnectabilityServerRequestKey('riskNode', context.state.builder),
                   status: 'ready',
+                  offset: 0,
+                  limit: 250,
                   resultsBySourceKey: {
                     [context.connectionCandidatePreviewSourceKey(scoreConnectability.source, 'data')]: serverCandidateResult
                   },
@@ -5593,8 +5605,11 @@ operators:
                 const serverConnectabilityPanel = context.renderNodeConnectabilityPanel(context.state.builder.nodes[1]);
                 const truncatedServerStatus = context.renderNodeConnectabilityServerStatus({
                   nodeId: 'riskNode',
+                  draftKey: context.nodeConnectabilityServerDraftKey('riskNode', context.state.builder),
                   requestKey: context.nodeConnectabilityServerRequestKey('riskNode', context.state.builder),
                   status: 'ready',
+                  offset: 0,
+                  limit: 250,
                   resultsBySourceKey: {
                     [context.connectionCandidatePreviewSourceKey(scoreConnectability.source, 'data')]:
                       context.normalizeConnectionCandidatesResult({
@@ -5616,6 +5631,105 @@ operators:
                   },
                   error: ''
                 });
+                const truncatedServerState = {
+                  nodeId: 'riskNode',
+                  draftKey: context.nodeConnectabilityServerDraftKey('riskNode', context.state.builder),
+                  requestKey: context.nodeConnectabilityServerRequestKey('riskNode', context.state.builder, 0, 250),
+                  status: 'ready',
+                  offset: 0,
+                  limit: 250,
+                  resultsBySourceKey: {
+                    [context.connectionCandidatePreviewSourceKey(scoreConnectability.source, 'data')]:
+                      context.normalizeConnectionCandidatesResult({
+                        schemaVersion: 'bloge.visualConnectionCandidates.v1',
+                        kind: 'data',
+                        source: {
+                          nodeId: scoreConnectability.source.nodeId,
+                          port: scoreConnectability.source.port,
+                          path: scoreConnectability.source.path
+                        },
+                        totalCandidateCount: 300,
+                        offset: 0,
+                        acceptedCount: 250,
+                        rejectedCount: 50,
+                        displayedCount: 250,
+                        truncated: true,
+                        candidates: []
+                      }, scoreConnectability.source)
+                  },
+                  error: ''
+                };
+                const pageTwoServerState = {
+                  ...truncatedServerState,
+                  requestKey: context.nodeConnectabilityServerRequestKey('riskNode', context.state.builder, 250, 250),
+                  offset: 250,
+                  resultsBySourceKey: {
+                    [context.connectionCandidatePreviewSourceKey(scoreConnectability.source, 'data')]:
+                      context.normalizeConnectionCandidatesResult({
+                        schemaVersion: 'bloge.visualConnectionCandidates.v1',
+                        kind: 'data',
+                        source: {
+                          nodeId: scoreConnectability.source.nodeId,
+                          port: scoreConnectability.source.port,
+                          path: scoreConnectability.source.path
+                        },
+                        totalCandidateCount: 300,
+                        offset: 250,
+                        acceptedCount: 50,
+                        rejectedCount: 0,
+                        displayedCount: 50,
+                        truncated: false,
+                        candidates: []
+                      }, scoreConnectability.source)
+                  }
+                };
+                const pageOneRequestKey = context.nodeConnectabilityServerRequestKey('riskNode', context.state.builder, 0, 250);
+                const pageTwoRequestKey = context.nodeConnectabilityServerRequestKey('riskNode', context.state.builder, 250, 250);
+                const pageOneStats = context.nodeConnectabilityServerWindowStats(truncatedServerState);
+                const pageTwoStats = context.nodeConnectabilityServerWindowStats(pageTwoServerState);
+                const pageOneControls = context.renderNodeConnectabilityServerControls(truncatedServerState);
+                const pageTwoControls = context.renderNodeConnectabilityServerControls(pageTwoServerState);
+                const connectabilityServerBeforeFetch = context.state.nodeConnectabilityServer;
+                const connectabilityFetchOptions = [];
+                const previousFetch = context.fetch;
+                const previousCandidateDiscoverer = context.discoverVisualConnectionCandidatesOnServer;
+                context.fetch = () => {};
+                context.discoverVisualConnectionCandidatesOnServer = (source, options) => {
+                  connectabilityFetchOptions.push({
+                    sourcePath: source.path || '',
+                    offset: options.offset,
+                    limit: options.limit,
+                    includeRejected: options.includeRejected
+                  });
+                  return Promise.resolve(context.normalizeConnectionCandidatesResult({
+                    schemaVersion: 'bloge.visualConnectionCandidates.v1',
+                    kind: options.kind || 'data',
+                    source: {
+                      nodeId: source.nodeId,
+                      port: source.port,
+                      path: source.path || ''
+                    },
+                    totalCandidateCount: 300,
+                    offset: options.offset,
+                    acceptedCount: 0,
+                    rejectedCount: 0,
+                    displayedCount: 0,
+                    truncated: false,
+                    candidates: []
+                  }, source));
+                };
+                context.ensureNodeConnectabilityServerCandidates(
+                  context.state.builder.nodes[1],
+                  connectability,
+                  { offset: 250, limit: 250, force: true }
+                );
+                const connectabilityFetchOffsets = connectabilityFetchOptions
+                  .map((entry) => `${entry.sourcePath}:${entry.offset}:${entry.limit}:${entry.includeRejected}`)
+                  .sort()
+                  .join('|');
+                context.state.nodeConnectabilityServer = connectabilityServerBeforeFetch;
+                context.fetch = previousFetch;
+                context.discoverVisualConnectionCandidatesOnServer = previousCandidateDiscoverer;
                 context.state.connectionCandidatePreview = {
                   sourceKey: context.connectionCandidatePreviewSourceKey(scoreConnectability.source, 'data'),
                   kind: serverCandidateResult.kind,
@@ -6406,6 +6520,14 @@ operators:
                   ['server connectability panel includes visible runtime debt', String(serverConnectabilityPanel.includes('1 target runtime binding requirement')), 'true'],
                   ['server connectability truncated status includes partial window', String(truncatedServerStatus.includes('partial server window 1-250 of 300')), 'true'],
                   ['server connectability truncated status warns local fallback', String(truncatedServerStatus.includes('local fallback beyond server window')), 'true'],
+                  ['server connectability page request keys differ', String(pageOneRequestKey !== pageTwoRequestKey), 'true'],
+                  ['server connectability page one has next', pageOneStats.hasNext, true],
+                  ['server connectability page one has no previous', pageOneStats.hasPrevious, false],
+                  ['server connectability page two has previous', pageTwoStats.hasPrevious, true],
+                  ['server connectability page two has no next', pageTwoStats.hasNext, false],
+                  ['server connectability page one controls next', String(pageOneControls.includes('data-connectability-window="next"')), 'true'],
+                  ['server connectability page two controls window label', String(pageTwoControls.includes('Window 251-300 of 300')), 'true'],
+                  ['server connectability next page request offsets', connectabilityFetchOffsets, ':250:250:true|eligible:250:250:true|score:250:250:true'],
                   ['auto bind required unbound count', autoBindPlan.requiredUnboundCount, 2],
                   ['auto bind item count', autoBindPlan.items.length, 1],
                   ['auto bind skipped count', autoBindPlan.skippedCount, 1],

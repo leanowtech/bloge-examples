@@ -14494,6 +14494,12 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const button of target.querySelectorAll('[data-connectability-window]')) {
+    button.addEventListener('click', () => {
+      changeNodeConnectabilityServerWindowFromButton(button);
+    });
+  }
+
   for (const button of target.querySelectorAll('[data-impact-node]')) {
     button.addEventListener('click', () => {
       focusCanvasNode(button.dataset.impactNode);
@@ -15069,6 +15075,9 @@ function renderNodeConnectabilityPanel(node) {
   const serverStatus = typeof renderNodeConnectabilityServerStatus === 'function'
     ? renderNodeConnectabilityServerStatus(serverState)
     : '';
+  const serverControls = typeof renderNodeConnectabilityServerControls === 'function'
+    ? renderNodeConnectabilityServerControls(serverState)
+    : '';
   return `
     <div class="node-connectability-panel">
       <div class="binding-panel-title">
@@ -15076,6 +15085,7 @@ function renderNodeConnectabilityPanel(node) {
         <small>${escapeHtml(nodeConnectabilityTotalsLabel(summary))}</small>
       </div>
       ${serverStatus}
+      ${serverControls}
       ${summary.sources.map((source) => renderNodeConnectabilityRow(source)).join('')}
     </div>
   `;
@@ -15318,13 +15328,21 @@ function nodeConnectabilityTargetsForSource(source, builder = state.builder) {
   return entries;
 }
 
-function ensureNodeConnectabilityServerCandidates(node, summary) {
+function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
   if (!node?.id || !summary?.sourceCount || typeof fetch !== 'function') {
     return;
   }
-  const requestKey = nodeConnectabilityServerRequestKey(node);
+  const currentWindow = nodeConnectabilityServerWindowFor(node);
+  const offset = Number.isFinite(Number(options.offset))
+    ? Math.max(0, Math.floor(Number(options.offset)))
+    : currentWindow.offset;
+  const limit = Number.isFinite(Number(options.limit)) && Number(options.limit) > 0
+    ? Math.max(1, Math.floor(Number(options.limit)))
+    : currentWindow.limit;
+  const draftKey = nodeConnectabilityServerDraftKey(node);
+  const requestKey = nodeConnectabilityServerRequestKey(node, state.builder, offset, limit);
   const current = state.nodeConnectabilityServer;
-  if (current?.requestKey === requestKey && (current.status === 'loading' || current.status === 'ready')) {
+  if (!options.force && current?.requestKey === requestKey && (current.status === 'loading' || current.status === 'ready')) {
     return;
   }
   const sources = (summary.sources || [])
@@ -15336,8 +15354,11 @@ function ensureNodeConnectabilityServerCandidates(node, summary) {
   }
   state.nodeConnectabilityServer = {
     nodeId: node.id,
+    draftKey,
     requestKey,
     status: 'loading',
+    offset,
+    limit,
     resultsBySourceKey: {},
     error: ''
   };
@@ -15347,7 +15368,8 @@ function ensureNodeConnectabilityServerCandidates(node, summary) {
     return discoverVisualConnectionCandidatesOnServer(source, {
       kind,
       includeRejected: true,
-      limit: 250
+      limit,
+      offset
     })
       .then((result) => ({ sourceKey, result, error: '' }))
       .catch((error) => ({ sourceKey, result: null, error: error.message || 'Connection candidates unavailable.' }));
@@ -15368,8 +15390,11 @@ function ensureNodeConnectabilityServerCandidates(node, summary) {
       }
       state.nodeConnectabilityServer = {
         nodeId: node.id,
+        draftKey,
         requestKey,
         status: Object.keys(resultsBySourceKey).length ? 'ready' : 'error',
+        offset,
+        limit,
         resultsBySourceKey,
         error: uniqueStrings(errors).join(' | ')
       };
@@ -15385,7 +15410,7 @@ function nodeConnectabilityServerCandidatesForSource(source, builder = state.bui
     return null;
   }
   const node = (builder.nodes || []).find((item) => item.id === source?.nodeId);
-  if (!node || stateForNode.requestKey !== nodeConnectabilityServerRequestKey(node, builder)) {
+  if (!node || !nodeConnectabilityServerStateMatchesNode(stateForNode, node, builder)) {
     return null;
   }
   const kind = connectionCandidateKindForSource(source);
@@ -15398,7 +15423,7 @@ function nodeConnectabilityServerStateFor(node, builder = state.builder) {
   if (!node?.id || !stateForNode || stateForNode.nodeId !== node.id) {
     return null;
   }
-  if (stateForNode.requestKey !== nodeConnectabilityServerRequestKey(node, builder)) {
+  if (!nodeConnectabilityServerStateMatchesNode(stateForNode, node, builder)) {
     return null;
   }
   return stateForNode;
@@ -15417,6 +15442,23 @@ function renderNodeConnectabilityServerStatus(serverState) {
   const resultCount = Object.keys(serverState.resultsBySourceKey || {}).length;
   const windowSummary = nodeConnectabilityServerWindowSummary(serverState);
   return `<span class="node-connectability-chip success">Server candidates synced · ${escapeHtml(resultCount)} source${resultCount === 1 ? '' : 's'}${escapeHtml(windowSummary)}</span>`;
+}
+
+function renderNodeConnectabilityServerControls(serverState) {
+  const stats = nodeConnectabilityServerWindowStats(serverState);
+  if (!serverState || (!stats.hasPrevious && !stats.hasNext)) {
+    return '';
+  }
+  const loading = serverState.status === 'loading';
+  const previousDisabled = loading || !stats.hasPrevious ? 'disabled' : '';
+  const nextDisabled = loading || !stats.hasNext ? 'disabled' : '';
+  return `
+    <div class="node-connectability-window-controls" aria-label="Connectability server candidate window">
+      <button type="button" class="secondary compact" data-connectability-window="prev" ${previousDisabled}>Prev</button>
+      <span>${escapeHtml(nodeConnectabilityServerWindowLabel(stats))}</span>
+      <button type="button" class="secondary compact" data-connectability-window="next" ${nextDisabled}>Next</button>
+    </div>
+  `;
 }
 
 function nodeConnectabilityServerWindowSummary(serverState) {
@@ -15446,9 +15488,110 @@ function nodeConnectabilityServerWindowSummary(serverState) {
   return ` · partial server window ${visibleWindows.join(', ')}${moreWindows}; local fallback beyond server window`;
 }
 
-function nodeConnectabilityServerRequestKey(nodeOrId, builder = state.builder) {
+function nodeConnectabilityServerWindowStats(serverState) {
+  const offset = numericCount(serverState?.offset, 0);
+  const limit = Math.max(1, numericCount(serverState?.limit, nodeConnectabilityServerCandidateLimit()));
+  const results = Object.values(serverState?.resultsBySourceKey || {}).filter(Boolean);
+  let hasNext = false;
+  let displayedMax = 0;
+  let totalMax = 0;
+  for (const result of results) {
+    const displayed = numericCount(result.displayedCount, Array.isArray(result.candidates) ? result.candidates.length : 0);
+    const resultTotal = numericCount(result.totalCandidateCount, displayed);
+    const end = offset + displayed;
+    displayedMax = Math.max(displayedMax, displayed);
+    totalMax = Math.max(totalMax, resultTotal);
+    if (result.truncated || end < resultTotal) {
+      hasNext = true;
+    }
+  }
+  return {
+    offset,
+    limit,
+    displayedMax,
+    totalMax,
+    hasPrevious: offset > 0,
+    hasNext,
+    loading: serverState?.status === 'loading'
+  };
+}
+
+function nodeConnectabilityServerWindowLabel(stats) {
+  const start = stats.displayedMax ? stats.offset + 1 : stats.offset;
+  const end = stats.displayedMax ? stats.offset + stats.displayedMax : stats.offset;
+  const total = stats.totalMax ? ` of ${stats.totalMax}` : '';
+  return `Window ${start}-${end}${total}`;
+}
+
+function nodeConnectabilityServerWindowFor(nodeOrId, builder = state.builder) {
+  const current = state.nodeConnectabilityServer;
+  const nodeId = typeof nodeOrId === 'string' ? nodeOrId : nodeOrId?.id;
+  if (current?.nodeId === nodeId && nodeConnectabilityServerStateMatchesNode(current, nodeOrId, builder)) {
+    return {
+      offset: numericCount(current.offset, 0),
+      limit: Math.max(1, numericCount(current.limit, nodeConnectabilityServerCandidateLimit()))
+    };
+  }
+  return { offset: 0, limit: nodeConnectabilityServerCandidateLimit() };
+}
+
+function changeNodeConnectabilityServerWindowFromButton(button) {
+  const direction = button?.dataset?.connectabilityWindow || '';
+  const node = selectedBuilderNode();
+  if (!node) {
+    return;
+  }
+  const summary = nodeConnectabilitySummary(node, state.builder);
+  const currentState = nodeConnectabilityServerStateFor(node) || state.nodeConnectabilityServer || {};
+  const stats = nodeConnectabilityServerWindowStats(currentState);
+  const nextOffset = direction === 'next'
+    ? stats.offset + stats.limit
+    : Math.max(0, stats.offset - stats.limit);
+  if (nextOffset === stats.offset || (direction === 'next' && !stats.hasNext) || (direction === 'prev' && !stats.hasPrevious)) {
+    return;
+  }
+  ensureNodeConnectabilityServerCandidates(node, summary, {
+    offset: nextOffset,
+    limit: stats.limit,
+    force: true
+  });
+  renderSelectedOperatorEditor();
+}
+
+function nodeConnectabilityServerStateMatchesNode(serverState, nodeOrId, builder = state.builder) {
+  if (!serverState) {
+    return false;
+  }
+  const draftKey = nodeConnectabilityServerDraftKey(nodeOrId, builder);
+  if (serverState.draftKey) {
+    return serverState.draftKey === draftKey;
+  }
+  return serverState.requestKey === nodeConnectabilityServerRequestKey(
+    nodeOrId,
+    builder,
+    numericCount(serverState.offset, 0),
+    numericCount(serverState.limit, nodeConnectabilityServerCandidateLimit())
+  );
+}
+
+function nodeConnectabilityServerCandidateLimit() {
+  return 250;
+}
+
+function nodeConnectabilityServerDraftKey(nodeOrId, builder = state.builder) {
   const nodeId = typeof nodeOrId === 'string' ? nodeOrId : nodeOrId?.id;
   return `${nodeId || ''}:${compactStringHash(JSON.stringify(builderToVisualDraft(builder)))}`;
+}
+
+function nodeConnectabilityServerRequestKey(
+  nodeOrId,
+  builder = state.builder,
+  offset = 0,
+  limit = nodeConnectabilityServerCandidateLimit()
+) {
+  const normalizedOffset = Math.max(0, Math.floor(Number(offset) || 0));
+  const normalizedLimit = Math.max(1, Math.floor(Number(limit) || nodeConnectabilityServerCandidateLimit()));
+  return `${nodeConnectabilityServerDraftKey(nodeOrId, builder)}:window:${normalizedOffset}:${normalizedLimit}`;
 }
 
 function compactStringHash(value) {
