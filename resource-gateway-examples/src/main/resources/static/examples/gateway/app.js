@@ -15415,7 +15415,35 @@ function renderNodeConnectabilityServerStatus(serverState) {
     return `<span class="node-connectability-chip error" title="${escapeHtml(serverState.error || 'Server candidates unavailable')}">Server candidates unavailable</span>`;
   }
   const resultCount = Object.keys(serverState.resultsBySourceKey || {}).length;
-  return `<span class="node-connectability-chip success">Server candidates synced · ${escapeHtml(resultCount)} source${resultCount === 1 ? '' : 's'}</span>`;
+  const windowSummary = nodeConnectabilityServerWindowSummary(serverState);
+  return `<span class="node-connectability-chip success">Server candidates synced · ${escapeHtml(resultCount)} source${resultCount === 1 ? '' : 's'}${escapeHtml(windowSummary)}</span>`;
+}
+
+function nodeConnectabilityServerWindowSummary(serverState) {
+  const results = Object.values(serverState?.resultsBySourceKey || {}).filter(Boolean);
+  if (!results.length) {
+    return '';
+  }
+  let total = 0;
+  let partial = false;
+  const windows = [];
+  for (const result of results) {
+    const displayed = numericCount(result.displayedCount, Array.isArray(result.candidates) ? result.candidates.length : 0);
+    const resultTotal = numericCount(result.totalCandidateCount, displayed);
+    const offset = numericCount(result.offset, 0);
+    const end = displayed ? offset + displayed : offset;
+    total += resultTotal;
+    if (result.truncated || offset > 0 || end < resultTotal) {
+      partial = true;
+      windows.push(displayed ? `${offset + 1}-${end} of ${resultTotal}` : `0 of ${resultTotal}`);
+    }
+  }
+  if (!partial) {
+    return ` · ${total} candidate${total === 1 ? '' : 's'}`;
+  }
+  const visibleWindows = uniqueStrings(windows).slice(0, 2);
+  const moreWindows = windows.length > visibleWindows.length ? ` + ${windows.length - visibleWindows.length} more` : '';
+  return ` · partial server window ${visibleWindows.join(', ')}${moreWindows}; local fallback beyond server window`;
 }
 
 function nodeConnectabilityServerRequestKey(nodeOrId, builder = state.builder) {

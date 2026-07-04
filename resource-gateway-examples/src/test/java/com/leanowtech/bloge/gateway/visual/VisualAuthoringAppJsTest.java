@@ -2989,6 +2989,7 @@ class VisualAuthoringAppJsTest {
                   'nodeConnectabilityServerCandidatesForSource',
                   'nodeConnectabilityServerStateFor',
                   'renderNodeConnectabilityServerStatus',
+                  'nodeConnectabilityServerWindowSummary',
                   'nodeConnectabilityServerRequestKey',
                   'compactStringHash',
                   'nodeConnectabilityTargetAppliesToSource',
@@ -5590,6 +5591,31 @@ operators:
                 const serverReadyTarget = serverScoreConnectability.availableTargets
                   .find((entry) => entry.target.nodeId === 'auditNode' && entry.target.path === 'score');
                 const serverConnectabilityPanel = context.renderNodeConnectabilityPanel(context.state.builder.nodes[1]);
+                const truncatedServerStatus = context.renderNodeConnectabilityServerStatus({
+                  nodeId: 'riskNode',
+                  requestKey: context.nodeConnectabilityServerRequestKey('riskNode', context.state.builder),
+                  status: 'ready',
+                  resultsBySourceKey: {
+                    [context.connectionCandidatePreviewSourceKey(scoreConnectability.source, 'data')]:
+                      context.normalizeConnectionCandidatesResult({
+                        schemaVersion: 'bloge.visualConnectionCandidates.v1',
+                        kind: 'data',
+                        source: {
+                          nodeId: scoreConnectability.source.nodeId,
+                          port: scoreConnectability.source.port,
+                          path: scoreConnectability.source.path
+                        },
+                        totalCandidateCount: 300,
+                        offset: 0,
+                        acceptedCount: 250,
+                        rejectedCount: 50,
+                        displayedCount: 250,
+                        truncated: true,
+                        candidates: []
+                      }, scoreConnectability.source)
+                  },
+                  error: ''
+                });
                 context.state.connectionCandidatePreview = {
                   sourceKey: context.connectionCandidatePreviewSourceKey(scoreConnectability.source, 'data'),
                   kind: serverCandidateResult.kind,
@@ -6378,6 +6404,8 @@ operators:
                   ['server connectability panel includes visible detail class', String(serverConnectabilityPanel.includes('node-connectability-chip-detail')), 'true'],
                   ['server connectability panel includes visible schema detail', String(serverConnectabilityPanel.includes('integer -&gt; integer')), 'true'],
                   ['server connectability panel includes visible runtime debt', String(serverConnectabilityPanel.includes('1 target runtime binding requirement')), 'true'],
+                  ['server connectability truncated status includes partial window', String(truncatedServerStatus.includes('partial server window 1-250 of 300')), 'true'],
+                  ['server connectability truncated status warns local fallback', String(truncatedServerStatus.includes('local fallback beyond server window')), 'true'],
                   ['auto bind required unbound count', autoBindPlan.requiredUnboundCount, 2],
                   ['auto bind item count', autoBindPlan.items.length, 1],
                   ['auto bind skipped count', autoBindPlan.skippedCount, 1],
