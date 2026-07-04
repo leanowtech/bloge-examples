@@ -1453,6 +1453,51 @@ public class VisualAssetOverviewController {
     }
 
     /**
+     * Lists submitted runtime evidence facts as one bounded, filter-echoing mixed window.
+     *
+     * <p>This endpoint is the scalable read surface for browser overview panels and
+     * external control planes. The legacy per-kind list endpoints remain available for
+     * compatibility and direct integrations.</p>
+     *
+     * @param itemLimit maximum number of mixed evidence records to return
+     * @param offset zero-based offset after filtering
+     * @param operatorRef optional operator reference filter
+     * @param bindingId optional implementation binding id filter
+     * @param activationId optional adapter activation id filter
+     * @param lifecycleState optional lifecycle state for activation/lowering evidence
+     * @param rolloutState optional rollout observation state filter
+     * @param rolloutSignal optional structured rollout guardrail signal name filter
+     * @param breachedOnly whether to require a breached rollout guardrail signal
+     * @return bounded runtime evidence window
+     */
+    @GetMapping("/runtime-binding-requirements/runtime-evidence")
+    public VisualRuntimeEvidenceWindow runtimeEvidenceWindow(
+            @RequestParam(defaultValue = "50") int itemLimit,
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "") String operatorRef,
+            @RequestParam(defaultValue = "") String bindingId,
+            @RequestParam(defaultValue = "") String activationId,
+            @RequestParam(defaultValue = "") String lifecycleState,
+            @RequestParam(defaultValue = "") String rolloutState,
+            @RequestParam(defaultValue = "") String rolloutSignal,
+            @RequestParam(defaultValue = "false") boolean breachedOnly) {
+        return VisualRuntimeEvidenceWindow.from(
+                adapterActivationRepository.all().stream().toList(),
+                rolloutObservationRepository.all().stream().toList(),
+                executableLoweringIntegrationRepository.all().stream().toList(),
+                itemLimit,
+                offset,
+                operatorRef,
+                bindingId,
+                activationId,
+                lifecycleState,
+                rolloutState,
+                rolloutSignal,
+                breachedOnly
+        );
+    }
+
+    /**
      * Stores a healthy runtime adapter activation fact for a bound implementation.
      *
      * <p>Accepted activations are auditable runtime-plane facts. They are surfaced

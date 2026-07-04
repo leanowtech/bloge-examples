@@ -490,6 +490,7 @@ public record OperatorLibraryProfile(
     private static OperatorCatalogFacets facetsFrom(List<OperatorDefinition> operators,
                                                     List<OperatorProfile> profiles) {
         Map<String, Integer> sourceKinds = new TreeMap<>();
+        Map<String, Integer> tags = new TreeMap<>();
         Map<String, Integer> operatorLibraryIds = new TreeMap<>();
         Map<String, Integer> loweringModes = new TreeMap<>();
         Map<String, Integer> capabilities = new TreeMap<>();
@@ -497,6 +498,9 @@ public record OperatorLibraryProfile(
         for (int i = 0; i < operators.size(); i++) {
             OperatorDefinition operator = operators.get(i);
             OperatorProfile profile = profiles.get(i);
+            for (String tag : operator.display().tags()) {
+                increment(tags, tag);
+            }
             increment(sourceKinds, OperatorCatalogFacets.normalizeFacetValue(operator.source().kind()));
             increment(operatorLibraryIds, operator.source().libraryId());
             increment(loweringModes, OperatorCatalogFacets.normalizeFacetValue(operator.lowering().mode()));
@@ -507,6 +511,7 @@ public record OperatorLibraryProfile(
         }
         return new OperatorCatalogFacets(
                 profiles.size(),
+                new LinkedHashMap<>(tags),
                 new LinkedHashMap<>(sourceKinds),
                 new LinkedHashMap<>(operatorLibraryIds),
                 new LinkedHashMap<>(loweringModes),

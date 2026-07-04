@@ -16,6 +16,8 @@ import java.util.List;
 @RequestMapping("/api/visual/operators")
 public class VisualOperatorCatalogController {
 
+    private static final int MAX_OPERATOR_WINDOW_SIZE = 500;
+
     private final VisualOperatorCatalog catalog;
 
     /**
@@ -40,6 +42,9 @@ public class VisualOperatorCatalogController {
      * @param loweringModes lowering mode filters
      * @param capabilities capability facet filters
      * @param runtimeReadinessStates runtime readiness state filters
+     * @param itemLimit response window size
+     * @param legacyLimit response window size alias
+     * @param offset response window offset
      * @return catalog response
      */
     @GetMapping
@@ -59,21 +64,42 @@ public class VisualOperatorCatalogController {
                                         @RequestParam(name = "capability", defaultValue = "")
                                         List<String> capabilities,
                                         @RequestParam(name = "runtimeReadiness", defaultValue = "")
-                                        List<String> runtimeReadinessStates) {
+                                        List<String> runtimeReadinessStates,
+                                        @RequestParam(name = "itemLimit", required = false)
+                                        Integer itemLimit,
+                                        @RequestParam(name = "limit", required = false)
+                                        Integer legacyLimit,
+                                        @RequestParam(defaultValue = "0") int offset) {
         OperatorCatalogQuery query = new OperatorCatalogQuery(search, tags, resourceOnly, includeDeprecated,
                 tenantId, namespace, environment, sourceKinds, operatorLibraryIds, loweringModes, capabilities,
                 runtimeReadinessStates);
-        List<OperatorDefinition> operators = catalog.list(query);
+        OperatorCatalogQuery unfilteredQuery = new OperatorCatalogQuery("", List.of(), resourceOnly,
+                includeDeprecated, tenantId, namespace, environment, List.of(), List.of(), List.of(), List.of(),
+                List.of());
+        int unfilteredTotal = catalog.list(unfilteredQuery).size();
+        List<OperatorDefinition> matchingOperators = catalog.list(query);
+        int normalizedOffset = Math.max(0, offset);
+        int normalizedItemLimit = normalizeItemLimit(itemLimit == null ? legacyLimit : itemLimit,
+                matchingOperators.size());
+        List<OperatorDefinition> operators = page(matchingOperators, normalizedOffset, normalizedItemLimit);
         List<OperatorRuntimeBindingProjection> runtimeBindingProjections =
                 catalog.runtimeBindingProjections(query, operators);
         return new OperatorCatalogResponse(
                 "bloge.visualOperatorCatalog.v1",
                 operators,
                 catalog.diagnostics(query),
-                OperatorCatalogFacets.from(operators),
+                OperatorCatalogFacets.from(matchingOperators),
                 runtimeBindingProjections,
                 OperatorRuntimeBindingProjection.stateCounts(runtimeBindingProjections),
-                catalog.executablePromotionProjections(query, runtimeBindingProjections)
+                catalog.executablePromotionProjections(query, runtimeBindingProjections),
+                null,
+                matchingOperators.size(),
+                unfilteredTotal,
+                operators.size(),
+                normalizedItemLimit,
+                normalizedOffset,
+                normalizedOffset + operators.size() < matchingOperators.size(),
+                query
         );
     }
 
@@ -118,5 +144,20 @@ public class VisualOperatorCatalogController {
                 .findFirst()
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private static int normalizeItemLimit(Integer requestedLimit, int total) {
+        if (requestedLimit == null) {
+            return Math.max(0, total);
+        }
+        return Math.max(0, Math.min(requestedLimit, MAX_OPERATOR_WINDOW_SIZE));
+    }
+
+    private static List<OperatorDefinition> page(List<OperatorDefinition> operators, int offset, int itemLimit) {
+        if (operators == null || operators.isEmpty() || itemLimit == 0 || offset >= operators.size()) {
+            return List.of();
+        }
+        int endExclusive = Math.min(operators.size(), offset + itemLimit);
+        return List.copyOf(operators.subList(offset, endExclusive));
     }
 }

@@ -87,6 +87,31 @@ class VisualOperatorCatalogControllerTest {
     }
 
     @Test
+    void listReturnsPagedCatalogWindowWithFullMatchFacets() throws Exception {
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new VisualOperatorCatalogController(
+                new WindowedCatalog()
+        )).build();
+
+        mockMvc.perform(get("/api/visual/operators")
+                        .param("search", "risk")
+                        .param("itemLimit", "2")
+                        .param("offset", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.operators.length()").value(2))
+                .andExpect(jsonPath("$.operators[0].operatorRef").value("risk:b"))
+                .andExpect(jsonPath("$.operators[1].operatorRef").value("risk:c"))
+                .andExpect(jsonPath("$.total").value(3))
+                .andExpect(jsonPath("$.unfilteredTotal").value(5))
+                .andExpect(jsonPath("$.displayedCount").value(2))
+                .andExpect(jsonPath("$.itemLimit").value(2))
+                .andExpect(jsonPath("$.offset").value(1))
+                .andExpect(jsonPath("$.hasMore").value(false))
+                .andExpect(jsonPath("$.filter.search").value("risk"))
+                .andExpect(jsonPath("$.facets.total").value(3))
+                .andExpect(jsonPath("$.facets.tags.risk").value(3));
+    }
+
+    @Test
     void listIncludesRuntimeBindingProjections() throws Exception {
         MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new VisualOperatorCatalogController(
                 new ProjectedBindingCatalog()
@@ -294,6 +319,33 @@ class VisualOperatorCatalogControllerTest {
         }
     }
 
+    private static final class WindowedCatalog implements VisualOperatorCatalog {
+        private final List<OperatorDefinition> operators = List.of(
+                taggedOperator("risk:a", "risk-policy", List.of("risk", "alpha")),
+                taggedOperator("risk:b", "risk-policy", List.of("risk", "beta")),
+                taggedOperator("risk:c", "risk-policy", List.of("risk", "gamma")),
+                taggedOperator("fraud:a", "fraud-policy", List.of("fraud")),
+                taggedOperator("fraud:b", "fraud-policy", List.of("fraud"))
+        );
+
+        @Override
+        public List<OperatorDefinition> list(OperatorCatalogQuery query) {
+            if (query.search().isBlank()) {
+                return operators;
+            }
+            return operators.stream()
+                    .filter(operator -> operator.operatorRef().contains(query.search()))
+                    .toList();
+        }
+
+        @Override
+        public Optional<OperatorDefinition> find(String operatorRef) {
+            return operators.stream()
+                    .filter(operator -> operator.operatorRef().equals(operatorRef))
+                    .findFirst();
+        }
+    }
+
     private static OperatorDefinition ownedBy(String libraryId, OperatorDefinition operator) {
         OperatorDefinition.Source source = operator.source();
         return new OperatorDefinition(
@@ -317,6 +369,31 @@ class VisualOperatorCatalogControllerTest {
                 operator.lowering(),
                 operator.diagnostics(),
                 operator.runtimeReadiness()
+        );
+    }
+
+    private static OperatorDefinition taggedOperator(String operatorRef, String libraryId, List<String> tags) {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition.Source source = base.source();
+        return new OperatorDefinition(
+                base.schemaVersion(),
+                operatorRef,
+                base.operatorVersion(),
+                new OperatorDefinition.Display(operatorRef, "Paged catalog fixture.", tags),
+                new OperatorDefinition.Source(
+                        source.kind(),
+                        source.resourceId(),
+                        source.method(),
+                        source.urlTemplate(),
+                        source.virtual(),
+                        libraryId
+                ),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
         );
     }
 }

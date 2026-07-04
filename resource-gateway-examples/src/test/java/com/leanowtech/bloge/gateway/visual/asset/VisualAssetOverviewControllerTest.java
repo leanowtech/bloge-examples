@@ -3260,6 +3260,93 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void runtimeEvidenceWindowPaginatesAndFiltersMixedEvidenceFacts() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        VisualRuntimeRolloutObservation observation = (VisualRuntimeRolloutObservation) fixture.controller()
+                .submitRuntimeRolloutObservation(
+                        rolloutObservationRequest(
+                                activation,
+                                "risk-rollout-canary-5",
+                                VisualRuntimeRolloutObservation.STATE_HEALTHY,
+                                5,
+                                false,
+                                ""))
+                .getBody();
+        VisualExecutableLoweringIntegration integration = (VisualExecutableLoweringIntegration) fixture.controller()
+                .submitExecutableLoweringIntegration(
+                        executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"))
+                .getBody();
+
+        VisualRuntimeEvidenceWindow firstPage = fixture.controller().runtimeEvidenceWindow(
+                2, 0, "", "", "", "", "", "", false);
+        VisualRuntimeEvidenceWindow secondPage = fixture.controller().runtimeEvidenceWindow(
+                2, 2, "", "", "", "", "", "", false);
+        VisualRuntimeEvidenceWindow byBinding = fixture.controller().runtimeEvidenceWindow(
+                10, 0, "", binding.bindingId(), "", "", "", "", false);
+        VisualRuntimeEvidenceWindow byActivation = fixture.controller().runtimeEvidenceWindow(
+                10, 0, "", "", activation.activationId(), "", "", "", false);
+        VisualRuntimeEvidenceWindow bySignal = fixture.controller().runtimeEvidenceWindow(
+                10, 0, "", "", "", "", "", "p95_latency", false);
+        VisualRuntimeEvidenceWindow breachedOnly = fixture.controller().runtimeEvidenceWindow(
+                10, 0, "", "", "", "", "", "p95-latency", true);
+        VisualRuntimeEvidenceWindow lifecycleFiltered = fixture.controller().runtimeEvidenceWindow(
+                10, 0, "", "", "", "active", "", "", false);
+
+        assertThat(firstPage.schemaVersion()).isEqualTo(VisualRuntimeEvidenceWindow.SCHEMA_VERSION);
+        assertThat(firstPage.total()).isEqualTo(3);
+        assertThat(firstPage.unfilteredTotal()).isEqualTo(3);
+        assertThat(firstPage.displayedCount()).isEqualTo(2);
+        assertThat(firstPage.itemLimit()).isEqualTo(2);
+        assertThat(firstPage.offset()).isZero();
+        assertThat(firstPage.hasMore()).isTrue();
+        assertThat(firstPage.filter().filtered()).isFalse();
+        assertThat(firstPage.kindCounts())
+                .containsEntry("adapter-activation", 1)
+                .containsEntry("rollout-observation", 1)
+                .containsEntry("executable-lowering-integration", 1);
+        assertThat(firstPage.operatorRefCounts()).containsEntry("risk:eligibility", 3);
+        assertThat(firstPage.bindingIdCounts()).containsEntry(binding.bindingId(), 3);
+        assertThat(firstPage.activationIdCounts()).containsEntry(activation.activationId(), 3);
+        assertThat(firstPage.rolloutSignalCounts()).containsEntry("p95-latency", 1);
+        assertThat(firstPage.breachedRolloutSignalCounts()).isEmpty();
+        assertThat(firstPage.items()).hasSize(2);
+        assertThat(firstPage.adapterActivations().size()
+                + firstPage.rolloutObservations().size()
+                + firstPage.executableLoweringIntegrations().size())
+                .isEqualTo(2);
+        assertThat(secondPage.displayedCount()).isEqualTo(1);
+        assertThat(secondPage.hasMore()).isFalse();
+        assertThat(byBinding.filter().bindingId()).isEqualTo(binding.bindingId());
+        assertThat(byBinding.total()).isEqualTo(3);
+        assertThat(byBinding.executableLoweringIntegrations()).singleElement().isEqualTo(integration);
+        assertThat(byActivation.filter().activationId()).isEqualTo(activation.activationId());
+        assertThat(byActivation.total()).isEqualTo(3);
+        assertThat(byActivation.adapterActivations()).singleElement().isEqualTo(activation);
+        assertThat(bySignal.filter().rolloutSignal()).isEqualTo("p95-latency");
+        assertThat(bySignal.total()).isEqualTo(3);
+        assertThat(bySignal.rolloutObservations()).singleElement().isEqualTo(observation);
+        assertThat(bySignal.adapterActivations()).singleElement().isEqualTo(activation);
+        assertThat(bySignal.executableLoweringIntegrations()).singleElement().isEqualTo(integration);
+        assertThat(breachedOnly.filter().breachedOnly()).isTrue();
+        assertThat(breachedOnly.total()).isZero();
+        assertThat(breachedOnly.unfilteredTotal()).isEqualTo(3);
+        assertThat(lifecycleFiltered.filter().lifecycleState()).isEqualTo("active");
+        assertThat(lifecycleFiltered.total()).isEqualTo(3);
+        assertThat(lifecycleFiltered.rolloutObservations()).singleElement().isEqualTo(observation);
+    }
+
+    @Test
     void runtimeRolloutObservationRecordsRollbackAsRecordableErrorFact() {
         RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
         VisualRuntimeBindingImplementationBinding stored = submitImplementation(

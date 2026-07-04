@@ -11,6 +11,7 @@ import java.util.TreeMap;
  * Faceted count summary for the visual operator catalog.
  *
  * @param total total matching operators
+ * @param tags count by display tag
  * @param sourceKinds count by source kind
  * @param operatorLibraryIds count by imported operator library owner
  * @param loweringModes count by lowering mode
@@ -19,6 +20,7 @@ import java.util.TreeMap;
  */
 public record OperatorCatalogFacets(
         int total,
+        Map<String, Integer> tags,
         Map<String, Integer> sourceKinds,
         Map<String, Integer> operatorLibraryIds,
         Map<String, Integer> loweringModes,
@@ -29,6 +31,8 @@ public record OperatorCatalogFacets(
      * Creates a facet summary.
      */
     public OperatorCatalogFacets {
+        tags = tags == null ? Map.of()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(tags));
         sourceKinds = sourceKinds == null ? Map.of()
                 : Collections.unmodifiableMap(new LinkedHashMap<>(sourceKinds));
         operatorLibraryIds = operatorLibraryIds == null ? Map.of()
@@ -51,12 +55,16 @@ public record OperatorCatalogFacets(
         List<OperatorDefinition> safeOperators = operators == null ? List.of() : operators.stream()
                 .filter(operator -> operator != null)
                 .toList();
+        Map<String, Integer> tags = new TreeMap<>();
         Map<String, Integer> sourceKinds = new TreeMap<>();
         Map<String, Integer> operatorLibraryIds = new TreeMap<>();
         Map<String, Integer> loweringModes = new TreeMap<>();
         Map<String, Integer> capabilities = new TreeMap<>();
         Map<String, Integer> runtimeReadinessStates = new TreeMap<>();
         for (OperatorDefinition operator : safeOperators) {
+            for (String tag : operator.display().tags()) {
+                increment(tags, tag);
+            }
             increment(sourceKinds, normalizeFacetValue(operator.source().kind()));
             increment(operatorLibraryIds, operator.source().libraryId());
             increment(loweringModes, normalizeFacetValue(operator.lowering().mode()));
@@ -67,6 +75,7 @@ public record OperatorCatalogFacets(
         }
         return new OperatorCatalogFacets(
                 safeOperators.size(),
+                new LinkedHashMap<>(tags),
                 new LinkedHashMap<>(sourceKinds),
                 new LinkedHashMap<>(operatorLibraryIds),
                 new LinkedHashMap<>(loweringModes),

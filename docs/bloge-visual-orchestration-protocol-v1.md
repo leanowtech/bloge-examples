@@ -990,7 +990,7 @@ transform assemble {
 ### 10.1 查询 catalog
 
 ```http
-GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&environment=dev&sourceKind=user-library&operatorLibraryId=risk-policy&loweringMode=design&capability=design-only&runtimeReadiness=design-only
+GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&environment=dev&sourceKind=user-library&operatorLibraryId=risk-policy&loweringMode=design&capability=design-only&runtimeReadiness=design-only&itemLimit=24&offset=0
 ```
 
 当前 `resource-gateway-examples` 的查询面支持：
@@ -1007,12 +1007,28 @@ GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&envi
 | `loweringMode` | 可重复；例如 `native`、`transform`、`branch`、`resource-descriptor`、`design`、`remote-worker`、`ai-tool`、`event-source`、`message-handler`、`webhook` |
 | `capability` | 可重复；例如 `design-only`、`runtime-executable`、`streaming`、`durable`、`suspendable`、`requires-secret`、`external-effect`、`non-idempotent` |
 | `runtimeReadiness` | 可重复；按服务端派生 readiness state 过滤，例如 `runtime-executable`、`design-only`、`runtime-blocked`、`governance-review`、`catalog-repair-required` |
+| `itemLimit` / `limit` | 可选 catalog window 大小；`limit` 是兼容别名，服务端会夹取最大窗口 |
+| `offset` | 可选 catalog window 起点，默认 `0` |
 
 响应：
 
 ```json
 {
   "schemaVersion": "bloge.visualOperatorCatalog.v1",
+  "total": 1,
+  "unfilteredTotal": 4,
+  "displayedCount": 1,
+  "itemLimit": 24,
+  "offset": 0,
+  "hasMore": false,
+  "filter": {
+    "search": "score",
+    "sourceKinds": ["user-library"],
+    "operatorLibraryIds": ["risk-policy"],
+    "loweringModes": ["design"],
+    "capabilities": ["design-only"],
+    "runtimeReadinessStates": ["design-only"]
+  },
   "operators": [
     {
       "schemaVersion": "bloge.visualOperator.v1",
@@ -1037,6 +1053,7 @@ GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&envi
   "diagnostics": [],
   "facets": {
     "total": 1,
+    "tags": { "risk": 1 },
     "sourceKinds": { "resource-descriptor": 1 },
     "operatorLibraryIds": {},
     "loweringModes": { "resource-descriptor": 1 },
@@ -1052,6 +1069,14 @@ GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&envi
   }
 }
 ```
+
+`operators` 是本次返回的 catalog window。`total`、`facets`、
+`runtimeBindingProjectionStateCounts` 和 `executablePromotionStateCounts` 针对
+搜索/筛选后的完整匹配集或其投影语义；`unfilteredTotal` 是同一 authoring scope
+下去掉 search/tags/facet filter 后的可见总量，用于大型用户算子库的 palette
+分页、过滤强度说明和外部控制面审阅。当前画布已经引用但不在当前 window 中的
+operator 应通过 `GET /api/visual/operators/{operatorRef}` 精确补载，不能为了恢复
+一个节点退回全量 catalog 拉取。
 
 `runtimeReadiness` 由服务端按 `source`、`lowering`、`capabilities` 和 catalog
 diagnostics 派生，用户导入的算子库不能伪造。当前 request-response runtime 会返回
@@ -1924,6 +1949,14 @@ owner `operatorLibraryId` 的解析顺序是：优先使用当前 catalog 的
 `operatorRef -> operatorLibraryId`，缺失时回退到 draft/publication summary 从 dependency
 evidence 派生的 `operatorLibraryIdsByOperatorRef`。这保证跨环境 DESIGN publication 或
 schema-only draft 在目标 catalog 未就绪时仍可按源算子库归属交接 runtime-plane work。
+如果外部控制面需要审阅 runtime fact 明细而不是只看 aggregate/action queue，
+`GET /api/visual/assets/runtime-binding-requirements/runtime-evidence` 返回
+`bloge.visualRuntimeEvidenceWindow.v1`，把 adapter activation、rollout observation 和
+executable lowering integration 合成同一个可分页窗口。该窗口回显 `itemLimit/offset/hasMore/filter`，
+返回 filtered/unfiltered total、kind/operator/binding/activation/state/level counts，以及
+`rolloutSignalCounts` / `breachedRolloutSignalCounts`；`rolloutSignal` 或
+`breachedOnly=true` 查询会先命中 rollout observation，再只带同一 activation/binding/operator
+链路上的 activation/integration 上下文，避免大型 workspace 因一个 guardrail 过滤拉回全局无关证据。
 如果外部 runtime-plane 团队需要事实清单而不是 overview action recommendation，
 `GET /api/visual/assets/runtime-binding-requirements` 会返回
 `bloge.visualRuntimeBindingRequirements.v1`，按 active draft 和 immutable publication

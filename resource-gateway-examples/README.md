@@ -88,9 +88,13 @@ drag operators such as `HTTP Resource`, `Decision Table`, and `Transform` onto
 the graph canvas. Resource operators are loaded from the visual operator catalog
 as `resource:<resourceId>` virtual operators, so descriptor-backed APIs can be
 dragged as schema-aware business operators and lowered back to `httpResource` at
-runtime. The palette can filter large catalogs by operator kind, tag, imported
-operator library owner, schema field names, port-qualified field names, config
-field names, and field types.
+runtime. The palette consumes the paged `bloge.visualOperatorCatalog.v1` window,
+so large imported catalogs can be searched and filtered by operator kind, tag,
+source, imported operator library owner, capability, runtime readiness, lowering
+mode, schema field names, port-qualified field names, config field names, and
+field types without fetching the whole catalog; operators already used by the
+current graph but outside the active palette page are recovered through the
+single-operator definition endpoint.
 Java operators registered in the Spring `OperatorRegistry` also enter
 the same catalog from BLOGE metadata, with streaming and suspendable operators
 marked as distinct Java source kinds and suspendable operators marked as durable
@@ -126,11 +130,12 @@ inspector, inspect that node's upstream context/data/config/order inputs,
 downstream consumers, branch routes, and delete impact, clear individual incoming or
 downstream input/config/dependency/route relations from that impact view, or
 detach all current node references including graph-output selection before
-repairing or deleting a node, search the operator palette with multi-term
+repairing or deleting a node, search the operator palette through a paged
+server catalog window with multi-term
 queries across label, operator ref, description, source kind/resource id, tag,
 input/output/config schema fields, port-qualified field names, field types, and
 JSON Schema field annotations such as `title`, `description`, `examples`, `default`, and `$comment`, filter it by operator type,
-tag, source, imported operator library owner, capability, runtime readiness, or lowering mode for larger imported catalogs, and see the server-provided catalog mix counts for library owners, runtime-executable, design-only, runtime-blocked, governance-review, catalog-repair, streaming/durable, secret-bound, and external-effect operators, inspect each palette card's input/output port and
+tag, source, imported operator library owner, capability, runtime readiness, or lowering mode for larger imported catalogs, page through the returned operator window without losing operators already referenced by the active graph, and see the server-provided catalog mix counts for tags, library owners, runtime-executable, design-only, runtime-blocked, governance-review, catalog-repair, streaming/durable, secret-bound, and external-effect operators, inspect each palette card's input/output port and
 schema-field summary plus streaming/durable/suspendable/secret/effect capability badges before dragging, inspect the selected node's contract
 coverage summary for input/output ports, required binding coverage, and config
 field counts plus the server-derived operator runtime readiness contract across runtime-executable, design-only,
@@ -1326,7 +1331,11 @@ fact remains runtime feedback rather than executable readiness. The browser
 Workspace Overview now renders these downstream facts as a Runtime Evidence
 Chain: adapter activations, rollout observations, and executable lowering
 integrations can be filtered by operator, binding, activation, lifecycle state,
-rollout state, rollout guardrail signal, and breached-only guardrail state, making the post-binding promotion chain visible without
+rollout state, rollout guardrail signal, and breached-only guardrail state. The
+browser consumes the unified `bloge.visualRuntimeEvidenceWindow.v1` endpoint, so
+the detail rows are server-paged with total/unfiltered counts, `hasMore`, facet
+counts, and chain-aware rollout-signal context instead of pulling every runtime
+fact into the browser, making the post-binding promotion chain visible without
 mistaking it for graph artifact state.
 Executable lowering integration
 assertions then validate activation revision, binding revision, current catalog
@@ -1374,10 +1383,11 @@ binding or runtime evidence filter/focus state, and de-duplicate repeated
 recommendations without treating the queue itself as a stateful workflow engine.
 The browser also exposes the action
 queue's server-side severity, type, target-kind, operator library, operatorRef,
-and page-window controls, and renders runtime evidence aggregate/detail rows as
-read-only control-plane facts rather than graph artifact semantics, so a large
-design-only workspace can be reviewed as a bounded governance queue rather than
-a fixed demo list.
+and page-window controls, and renders runtime evidence aggregate/detail rows
+through the runtime evidence window's server-side paging controls as read-only
+control-plane facts rather than graph artifact semantics, so a large design-only
+workspace can be reviewed as a bounded governance queue rather than a fixed demo
+list.
 Authors can still publish the draft as a non-executable
 `artifactKind=DESIGN` artifact to freeze the schema-valid composition for
 review and later runtime binding. Design-only
@@ -1770,6 +1780,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `VisualRuntimeBindingImplementationBinding` | Persistent `bloge.visualRuntimeBindingImplementationBindingRecord.v1` proposal/lifecycle record with validation snapshot, implementation metadata, bound/superseded state, actor/reason lifecycle events, and supersede lineage |
 | `VisualRuntimeBindingImplementationLifecycleResult` | Mutation response for bind/supersede lifecycle transitions, returning accepted/rejected state, affected binding records, and structured diagnostics |
 | `VisualRuntimeBindingDeactivationResult` | Governed `bloge.visualRuntimeBindingDeactivationResult.v1` unbind/deactivation mutation response that returns the unbound implementation binding plus any adapter activation and executable lowering integration deactivated by the transition; failed partial mutations return the still-bound implementation plus restored runtime evidence when compensation succeeds |
+| `VisualRuntimeEvidenceWindow` | Queryable `bloge.visualRuntimeEvidenceWindow.v1` read model that pages mixed adapter activation, rollout observation, and executable lowering integration facts with normalized filters, total/unfiltered counts, facet counts, rollout signal counts, and chain-aware breached-signal context |
 | `VisualExecutableReadinessRecomputePreview` | Read-only `bloge.visualExecutableReadinessRecomputePreview.v1` gate that joins active binding, adapter activation, and executable lowering integration evidence into a candidate executable operator surface, fingerprint, and runtime readiness without writing a trusted catalog/library revision |
 | `VisualExecutableReadinessRecomputeResult` | Governed `bloge.visualExecutableReadinessRecomputeResult.v1` apply result that recomputes the preview server-side, requires warning acknowledgement plus actor/reason evidence, writes native executable or external-runtime-bound candidate surfaces as new owning operator-library revisions when fingerprints still match, and reports revision-write persistence failures as structured failed results |
 | `VisualExecutableReadinessEvidenceRefreshResult` | Governed `bloge.visualExecutableReadinessEvidenceRefreshResult.v1` post-apply refresh result that rebinds implementation, activation, and executable lowering evidence to the current trusted operator fingerprint while preserving old evidence lineage and exposing blocked diagnostics for incomplete current evidence chains |
@@ -1863,7 +1874,7 @@ Wired by `@Order` — highest precedence first:
 | `UserDashboardController` | Orchestration endpoints for dashboard, products, orders, credit-score, loan-policy |
 | `ResourceExecuteController` | Unified `resourceId` execution endpoint backed by `resourceDispatch` |
 | `AiSearchStreamingController` | SSE streaming endpoint for AI search |
-| `VisualOperatorCatalogController` / `VisualOperatorUsageController` / `VisualGraphDraftController` | Visual operator discovery, usage impact indexing, draft revision diff/restore, validation, compilation, and execution |
+| `VisualOperatorCatalogController` / `VisualOperatorUsageController` / `VisualGraphDraftController` | Paged visual operator discovery with catalog facets/window metadata, usage impact indexing, draft revision diff/restore, validation, compilation, and execution |
 | `GatewayGraphService` | Shared graph-loading and execution service |
 | `GatewayResponse` | Uniform JSON response wrapper record |
 | `ResourceExecuteRequest` | Request DTO for unified resource dispatch (params, header/auth overrides, timeout) |

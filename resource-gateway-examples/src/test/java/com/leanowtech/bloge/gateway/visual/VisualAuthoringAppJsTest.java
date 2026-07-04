@@ -183,6 +183,34 @@ class VisualAuthoringAppJsTest {
     }
 
     @Test
+    void operatorPaletteUsesServerCatalogWindow() throws Exception {
+        String source = appJsSource();
+
+        assertThat(source)
+                .contains("visualOperatorCatalogWindow: null")
+                .contains("let visualOperatorCatalogRequestSeq = 0")
+                .contains("let operatorPaletteReloadTimer = null")
+                .contains("paletteOffset: 0")
+                .contains("paletteLimit: 24")
+                .contains("function operatorPaletteCatalogQueryOptions()")
+                .contains("itemLimit: state.paletteLimit")
+                .contains("offset: state.paletteOffset")
+                .contains("function normalizeOperatorCatalogWindow(payload, operators = [])")
+                .contains("function markOperatorPaletteLoading()")
+                .contains("function scheduleOperatorPaletteReloadFromFirstPage()")
+                .contains("Loading catalog window...")
+                .contains("state.visualOperatorCatalogWindow = normalizeOperatorCatalogWindow(payload, operators)")
+                .contains("if (!isLatestRequest()) {\n      return;\n    }")
+                .contains("operator-palette-limit")
+                .contains("operator-palette-prev")
+                .contains("operator-palette-next")
+                .contains("params.set('itemLimit', String(itemLimit))")
+                .contains("params.set('offset', String(offset))")
+                .contains("loadVisualOperatorDefinition(operatorRef, {\n        paletteVisible: false,\n        render: false,\n        silent: true\n      })")
+                .doesNotContain("fetch(operatorCatalogUrl(state.builder, { includeDeprecated: true }))");
+    }
+
+    @Test
     void surfacesPortablePublicationBundlesInBrowserControls() throws Exception {
         String source = appJsSource();
 
@@ -386,10 +414,13 @@ class VisualAuthoringAppJsTest {
                 .contains("visualRuntimeAdapterActivations: []")
                 .contains("visualRuntimeRolloutObservations: []")
                 .contains("visualExecutableLoweringIntegrations: []")
+                .contains("visualRuntimeEvidenceWindow: null")
                 .contains("visualRuntimeEvidenceMessage: null")
                 .contains("visualRuntimeEvidenceQuery: {")
                 .contains("rolloutSignal: ''")
                 .contains("breachedOnly: false")
+                .contains("offset: 0")
+                .contains("limit: 12")
                 .contains("activeVisualRuntimeEvidence: null")
                 .contains("visualRuntimeBindingRequirementQuery: {")
                 .contains("activeVisualRuntimeBindingRequirement: null")
@@ -401,7 +432,7 @@ class VisualAuthoringAppJsTest {
                 .contains("async function loadVisualRuntimeEvidenceChains(options = {})")
                 .contains("fetch(visualRuntimeBindingRequirementsUrl())")
                 .contains("fetch(visualRuntimeBindingImplementationsUrl())")
-                .contains("fetch(url)")
+                .contains("fetch(visualRuntimeEvidenceWindowUrl())")
                 .contains("function visualRuntimeBindingRequirementsUrl(builder = state.builder)")
                 .contains("function visualRuntimeBindingHandoffBundleUrl(builder = state.builder)")
                 .contains("function visualRuntimeBindingHandoffReviewUrl()")
@@ -410,6 +441,7 @@ class VisualAuthoringAppJsTest {
                 .contains("function visualRuntimeAdapterActivationsUrl()")
                 .contains("function visualRuntimeRolloutObservationsUrl()")
                 .contains("function visualExecutableLoweringIntegrationsUrl()")
+                .contains("function visualRuntimeEvidenceWindowUrl()")
                 .contains("function visualRuntimeEvidenceParams(kind = '')")
                 .contains("function visualRuntimeBindingRequirementParams(builder = state.builder)")
                 .contains("/api/visual/assets/runtime-binding-requirements")
@@ -419,11 +451,16 @@ class VisualAuthoringAppJsTest {
                 .contains("/api/visual/assets/runtime-binding-requirements/adapter-activations")
                 .contains("/api/visual/assets/runtime-binding-requirements/rollout-observations")
                 .contains("/api/visual/assets/runtime-binding-requirements/executable-lowering-integrations")
+                .contains("/api/visual/assets/runtime-binding-requirements/runtime-evidence")
                 .contains("params.set('limit', String(query.limit))")
+                .contains("params.set('itemLimit', String(query.limit))")
+                .contains("params.set('offset', String(query.offset))")
                 .contains("params.set('targetKind', query.targetKind)")
                 .contains("params.set('artifactKind', query.artifactKind)")
                 .contains("params.set('operatorRef', query.operatorRef)")
                 .contains("params.set('operatorLibraryId', query.operatorLibraryId)")
+                .contains("params.set('lifecycleState', query.lifecycleState)")
+                .contains("params.set(kind === 'runtime-evidence' ? 'rolloutState' : 'state', query.rolloutState)")
                 .contains("params.set('rolloutSignal', query.rolloutSignal)")
                 .contains("params.set('breachedOnly', 'true')")
                 .contains("params.set('bindingKind', query.bindingKind)")
@@ -515,6 +552,9 @@ class VisualAuthoringAppJsTest {
                 .contains("runtime-evidence-rollout-state")
                 .contains("runtime-evidence-rollout-signal")
                 .contains("runtime-evidence-breached-only")
+                .contains("runtime-evidence-limit")
+                .contains("runtime-evidence-prev")
+                .contains("runtime-evidence-next")
                 .contains("runtime-evidence-refresh")
                 .contains("runtime-evidence-reset")
                 .contains("function visualRuntimeBindingRequirementRows(bindingIndex)")
@@ -1783,6 +1823,7 @@ class VisualAuthoringAppJsTest {
                   'visualRuntimeAdapterActivationsUrl',
                   'visualRuntimeRolloutObservationsUrl',
                   'visualExecutableLoweringIntegrationsUrl',
+                  'visualRuntimeEvidenceWindowUrl',
                   'visualRuntimeEvidenceRows',
                   'visualRuntimeAdapterActivationRow',
                   'visualRuntimeRolloutObservationRow',
@@ -1852,14 +1893,27 @@ class VisualAuthoringAppJsTest {
                 const activationUrl = context.visualRuntimeAdapterActivationsUrl();
                 const rolloutUrl = context.visualRuntimeRolloutObservationsUrl();
                 const integrationUrl = context.visualExecutableLoweringIntegrationsUrl();
+                const windowUrl = context.visualRuntimeEvidenceWindowUrl();
                 const counts = context.visualRuntimeEvidenceCounts(rows, 'operatorRef');
                 const signalCounts = context.visualRuntimeEvidenceSignalCounts(rows, true);
                 const summary = context.visualRuntimeEvidenceWindowSummary(rows);
+                const pagedSummary = context.visualRuntimeEvidenceWindowSummary({
+                  total: 3,
+                  unfilteredTotal: 5,
+                  offset: 1,
+                  displayedCount: 2,
+                  kindCounts: {
+                    'adapter-activation': 1,
+                    'rollout-observation': 1,
+                    'executable-lowering-integration': 1
+                  }
+                }, rows.slice(0, 2));
                 const activeContext = context.visualRuntimeEvidenceContext(rows[0]);
                 const checks = [
                   ['activation url', activationUrl, '/api/visual/assets/runtime-binding-requirements/adapter-activations?operatorRef=risk%3Aeligibility&bindingId=risk-eligibility-native-v1&state=active'],
                   ['rollout url', rolloutUrl, '/api/visual/assets/runtime-binding-requirements/rollout-observations?operatorRef=risk%3Aeligibility&bindingId=risk-eligibility-native-v1&activationId=risk-eligibility-native-v1-prod&state=healthy&rolloutSignal=error-rate&breachedOnly=true'],
                   ['integration url', integrationUrl, '/api/visual/assets/runtime-binding-requirements/executable-lowering-integrations?operatorRef=risk%3Aeligibility&activationId=risk-eligibility-native-v1-prod&state=active'],
+                  ['window url', windowUrl, '/api/visual/assets/runtime-binding-requirements/runtime-evidence?operatorRef=risk%3Aeligibility&bindingId=risk-eligibility-native-v1&activationId=risk-eligibility-native-v1-prod&lifecycleState=active&rolloutState=healthy&rolloutSignal=error-rate&breachedOnly=true&itemLimit=12&offset=0'],
                   ['row count', rows.length, 3],
                   ['first kind', rows[0].kind, 'adapter-activation'],
                   ['second kind', rows[1].kind, 'rollout-observation'],
@@ -1870,6 +1924,7 @@ class VisualAuthoringAppJsTest {
                   ['operator count', counts['risk:eligibility'], 3],
                   ['breached signal count', signalCounts['error-rate'], 1],
                   ['summary', summary, '3 runtime evidence records · 1 activations / 1 rollout / 1 lowering'],
+                  ['paged summary', pagedSummary, '2-3 of 3 / 5 total · 1 activations / 1 rollout / 1 lowering'],
                   ['context level', activeContext.level, 'success'],
                   ['context message', activeContext.message, 'Adapter Activation · risk-eligibility-native-v1-prod · risk:eligibility · binding risk-eligibility-native-v1 · activation risk-eligibility-native-v1-prod']
                 ];

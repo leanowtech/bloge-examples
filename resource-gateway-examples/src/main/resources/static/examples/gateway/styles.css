@@ -920,6 +920,22 @@ body.connecting-edge * {
   overflow-wrap: anywhere;
 }
 
+.palette-window-controls {
+  display: grid;
+  grid-template-columns: minmax(74px, 0.35fr) repeat(2, minmax(92px, 0.4fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.palette-window-controls select {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--text);
+}
+
 .palette-empty {
   grid-column: 1 / -1;
   min-height: 42px;
@@ -3126,6 +3142,10 @@ body.dragging-operator * {
   }
 
   .palette-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .palette-window-controls {
     grid-template-columns: 1fr;
   }
 

@@ -16,6 +16,13 @@ import java.util.Map;
  * @param runtimeBindingProjectionStateCounts projection state counts
  * @param executablePromotionProjections server-derived executable promotion projections
  * @param executablePromotionStateCounts executable promotion state counts
+ * @param total total operators matching the catalog filter before paging
+ * @param unfilteredTotal total operators visible in the authoring scope before search/facet filters
+ * @param displayedCount operators returned in this response window
+ * @param itemLimit requested response window size
+ * @param offset zero-based response window offset
+ * @param hasMore whether another catalog window exists after this response
+ * @param filter normalized catalog filter echoed for clients
  */
 public record OperatorCatalogResponse(
         String schemaVersion,
@@ -25,7 +32,14 @@ public record OperatorCatalogResponse(
         List<OperatorRuntimeBindingProjection> runtimeBindingProjections,
         Map<String, Integer> runtimeBindingProjectionStateCounts,
         List<OperatorExecutablePromotionProjection> executablePromotionProjections,
-        Map<String, Integer> executablePromotionStateCounts
+        Map<String, Integer> executablePromotionStateCounts,
+        int total,
+        int unfilteredTotal,
+        int displayedCount,
+        int itemLimit,
+        int offset,
+        boolean hasMore,
+        OperatorCatalogQuery filter
 ) {
     /**
      * Backward-compatible response constructor.
@@ -119,6 +133,37 @@ public record OperatorCatalogResponse(
     }
 
     /**
+     * Creates a response with executable promotion projections and state counts.
+     *
+     * @param schemaVersion response schema version
+     * @param operators matching operators
+     * @param diagnostics catalog diagnostics
+     * @param facets count summary
+     * @param runtimeBindingProjections server-derived runtime binding projections
+     * @param runtimeBindingProjectionStateCounts runtime binding projection state counts
+     * @param executablePromotionProjections server-derived executable promotion projections
+     * @param executablePromotionStateCounts executable promotion state counts
+     */
+    public OperatorCatalogResponse(String schemaVersion,
+                                   List<OperatorDefinition> operators,
+                                   List<VisualDiagnostic> diagnostics,
+                                   OperatorCatalogFacets facets,
+                                   List<OperatorRuntimeBindingProjection> runtimeBindingProjections,
+                                   Map<String, Integer> runtimeBindingProjectionStateCounts,
+                                   List<OperatorExecutablePromotionProjection> executablePromotionProjections,
+                                   Map<String, Integer> executablePromotionStateCounts) {
+        this(schemaVersion, operators, diagnostics, facets, runtimeBindingProjections,
+                runtimeBindingProjectionStateCounts, executablePromotionProjections, executablePromotionStateCounts,
+                operators == null ? 0 : operators.size(),
+                operators == null ? 0 : operators.size(),
+                operators == null ? 0 : operators.size(),
+                operators == null ? 0 : operators.size(),
+                0,
+                false,
+                OperatorCatalogQuery.all());
+    }
+
+    /**
      * Creates a response envelope.
      */
     public OperatorCatalogResponse {
@@ -140,5 +185,12 @@ public record OperatorCatalogResponse(
         executablePromotionStateCounts = executablePromotionStateCounts == null
                 ? OperatorExecutablePromotionProjection.stateCounts(executablePromotionProjections)
                 : Map.copyOf(executablePromotionStateCounts);
+        int safeOperatorCount = operators.size();
+        total = Math.max(total, safeOperatorCount);
+        unfilteredTotal = Math.max(unfilteredTotal, total);
+        displayedCount = Math.max(0, displayedCount);
+        itemLimit = Math.max(0, itemLimit);
+        offset = Math.max(0, offset);
+        filter = filter == null ? OperatorCatalogQuery.all() : filter;
     }
 }

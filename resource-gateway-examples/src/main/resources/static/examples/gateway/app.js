@@ -400,6 +400,7 @@ const state = {
   scenarios: [],
   visualOperators: [],
   visualOperatorCatalogFacets: null,
+  visualOperatorCatalogWindow: null,
   selected: null,
   layout: null,
   selectedNodeId: null,
@@ -478,6 +479,7 @@ const state = {
   visualRuntimeAdapterActivations: [],
   visualRuntimeRolloutObservations: [],
   visualExecutableLoweringIntegrations: [],
+  visualRuntimeEvidenceWindow: null,
   visualRuntimeEvidenceMessage: null,
   visualRuntimeEvidenceQuery: {
     operatorRef: '',
@@ -486,7 +488,9 @@ const state = {
     lifecycleState: '',
     rolloutState: '',
     rolloutSignal: '',
-    breachedOnly: false
+    breachedOnly: false,
+    offset: 0,
+    limit: 12
   },
   activeVisualRuntimeEvidence: null,
   goldenAssertionMode: 'EXACT_OUTPUT',
@@ -541,6 +545,8 @@ const state = {
   paletteCapability: '',
   paletteReadiness: '',
   paletteLoweringMode: '',
+  paletteOffset: 0,
+  paletteLimit: 24,
   draggingOperatorType: null,
   paletteDrag: null,
   nodeDrag: null,
@@ -565,6 +571,8 @@ const state = {
 };
 
 let dragPreview = null;
+let visualOperatorCatalogRequestSeq = 0;
+let operatorPaletteReloadTimer = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -626,17 +634,26 @@ async function loadScenarios() {
   await selectScenario(COMPOSER_GRAPH);
 }
 
-async function loadVisualOperatorCatalog() {
+async function loadVisualOperatorCatalog(options = {}) {
+  const requestId = ++visualOperatorCatalogRequestSeq;
+  const isLatestRequest = () => requestId === visualOperatorCatalogRequestSeq;
   try {
     resetDynamicOperatorTypes();
-    const response = await fetch(operatorCatalogUrl());
+    const response = await fetch(operatorCatalogUrl(state.builder, {
+      ...operatorPaletteCatalogQueryOptions(),
+      includeDeprecated: Boolean(options.includeDeprecated)
+    }));
     if (!response.ok) {
       return;
     }
     const payload = await response.json();
+    if (!isLatestRequest()) {
+      return;
+    }
     const operators = Array.isArray(payload.operators) ? payload.operators : [];
     const diagnostics = normalizeDiagnostics(payload.diagnostics);
     state.visualOperators = operators;
+    state.visualOperatorCatalogWindow = normalizeOperatorCatalogWindow(payload, operators);
     state.visualOperatorCatalogFacets = normalizeOperatorCatalogFacets(payload.facets, operators);
     if (diagnostics.length) {
       setVisualCheck(
@@ -655,22 +672,24 @@ async function loadVisualOperatorCatalog() {
     const nodeOnlyRefs = operatorRefsRequiredByBuilder()
       .filter((operatorRef) => !activeOperatorRefs.has(operatorRef));
     if (nodeOnlyRefs.length) {
-      const deprecatedResponse = await fetch(operatorCatalogUrl(state.builder, { includeDeprecated: true }));
-      if (deprecatedResponse.ok) {
-        const deprecatedPayload = await deprecatedResponse.json();
-        const required = new Set(nodeOnlyRefs);
-        const deprecatedOperators = Array.isArray(deprecatedPayload.operators)
-          ? deprecatedPayload.operators
-          : [];
-        for (const operator of deprecatedOperators) {
-          if (required.has(operator.operatorRef || '')) {
-            rememberCatalogOperator(operator, { paletteVisible: false, deprecated: true });
-          }
-        }
+      await Promise.all(nodeOnlyRefs.map((operatorRef) => loadVisualOperatorDefinition(operatorRef, {
+        paletteVisible: false,
+        render: false,
+        silent: true
+      })));
+      if (!isLatestRequest()) {
+        return;
       }
     }
     await loadVisualAssetOverview();
+    if (!isLatestRequest()) {
+      return;
+    }
+    if (options.render !== false) {
+      renderOperatorPalette();
+    }
   } catch (error) {
+    state.visualOperatorCatalogWindow = null;
     console.debug('Visual operator catalog unavailable', error);
   }
 }
@@ -735,27 +754,30 @@ async function loadVisualRuntimeBindingImplementations(options = {}) {
 }
 
 async function loadVisualRuntimeEvidenceChains(options = {}) {
-  const sources = [
-    ['visualRuntimeAdapterActivations', visualRuntimeAdapterActivationsUrl(), 'adapter activations'],
-    ['visualRuntimeRolloutObservations', visualRuntimeRolloutObservationsUrl(), 'rollout observations'],
-    ['visualExecutableLoweringIntegrations', visualExecutableLoweringIntegrationsUrl(), 'executable lowering integrations']
-  ];
-  const failures = [];
-  await Promise.all(sources.map(async ([stateKey, url, label]) => {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`${label} failed with ${response.status}`);
-      }
-      state[stateKey] = await response.json();
-    } catch (error) {
-      state[stateKey] = [];
-      failures.push(error.message);
+  try {
+    const response = await fetch(visualRuntimeEvidenceWindowUrl());
+    if (!response.ok) {
+      throw new Error(`runtime evidence window failed with ${response.status}`);
     }
-  }));
-  state.visualRuntimeEvidenceMessage = failures.length
-    ? { text: `Runtime evidence chain incomplete: ${failures.join('; ')}`, level: 'error' }
-    : null;
+    const payload = await response.json();
+    state.visualRuntimeEvidenceWindow = payload;
+    state.visualRuntimeAdapterActivations = Array.isArray(payload?.adapterActivations)
+      ? payload.adapterActivations
+      : [];
+    state.visualRuntimeRolloutObservations = Array.isArray(payload?.rolloutObservations)
+      ? payload.rolloutObservations
+      : [];
+    state.visualExecutableLoweringIntegrations = Array.isArray(payload?.executableLoweringIntegrations)
+      ? payload.executableLoweringIntegrations
+      : [];
+    state.visualRuntimeEvidenceMessage = null;
+  } catch (error) {
+    state.visualRuntimeEvidenceWindow = null;
+    state.visualRuntimeAdapterActivations = [];
+    state.visualRuntimeRolloutObservations = [];
+    state.visualExecutableLoweringIntegrations = [];
+    state.visualRuntimeEvidenceMessage = { text: `Runtime evidence chain incomplete: ${error.message}`, level: 'error' };
+  }
   if (options.render !== false) {
     renderVisualAssetOverview();
   }
@@ -856,17 +878,61 @@ function operatorRefsRequiredByBuilder(builder = state.builder) {
   return [...refs];
 }
 
+function operatorPaletteCatalogQueryOptions() {
+  return {
+    search: state.paletteSearch,
+    tags: state.paletteTag ? [state.paletteTag] : [],
+    sourceKinds: state.paletteSourceKind ? [state.paletteSourceKind] : [],
+    operatorLibraryIds: state.paletteOperatorLibraryId ? [state.paletteOperatorLibraryId] : [],
+    loweringModes: state.paletteLoweringMode ? [state.paletteLoweringMode] : [],
+    capabilities: state.paletteCapability ? [state.paletteCapability] : [],
+    runtimeReadinessStates: state.paletteReadiness ? [state.paletteReadiness] : [],
+    itemLimit: state.paletteLimit,
+    offset: state.paletteOffset
+  };
+}
+
 function operatorCatalogUrl(builder = state.builder, options = {}) {
   const scope = builderScope(builder);
   const params = new URLSearchParams();
   params.set('tenantId', scope.tenantId);
   params.set('namespace', scope.namespace);
   params.set('environment', scope.environment);
+  if (options.search) {
+    params.set('search', options.search);
+  }
+  for (const tag of options.tags || []) {
+    params.append('tags', tag);
+  }
   if (options.includeDeprecated) {
     params.set('includeDeprecated', 'true');
   }
-  if (options.operatorLibraryId) {
-    params.set('operatorLibraryId', options.operatorLibraryId);
+  if (options.resourceOnly) {
+    params.set('resourceOnly', 'true');
+  }
+  for (const sourceKind of options.sourceKinds || []) {
+    params.append('sourceKind', sourceKind);
+  }
+  const operatorLibraryIds = options.operatorLibraryIds || (options.operatorLibraryId ? [options.operatorLibraryId] : []);
+  for (const operatorLibraryId of operatorLibraryIds) {
+    params.append('operatorLibraryId', operatorLibraryId);
+  }
+  for (const loweringMode of options.loweringModes || []) {
+    params.append('loweringMode', loweringMode);
+  }
+  for (const capability of options.capabilities || []) {
+    params.append('capability', capability);
+  }
+  for (const readiness of options.runtimeReadinessStates || []) {
+    params.append('runtimeReadiness', readiness);
+  }
+  const itemLimit = Number(options.itemLimit ?? options.limit);
+  if (Number.isFinite(itemLimit) && itemLimit >= 0) {
+    params.set('itemLimit', String(itemLimit));
+  }
+  const offset = Number(options.offset);
+  if (Number.isFinite(offset) && offset >= 0) {
+    params.set('offset', String(offset));
   }
   return `/api/visual/operators?${params.toString()}`;
 }
@@ -968,6 +1034,15 @@ function visualExecutableLoweringIntegrationsUrl() {
   return `/api/visual/assets/runtime-binding-requirements/executable-lowering-integrations${queryString ? `?${queryString}` : ''}`;
 }
 
+function visualRuntimeEvidenceWindowUrl() {
+  const params = visualRuntimeEvidenceParams('runtime-evidence');
+  const query = normalizeVisualRuntimeEvidenceQuery(state.visualRuntimeEvidenceQuery);
+  params.set('itemLimit', String(query.limit));
+  params.set('offset', String(query.offset));
+  const queryString = params.toString();
+  return `/api/visual/assets/runtime-binding-requirements/runtime-evidence${queryString ? `?${queryString}` : ''}`;
+}
+
 function visualRuntimeEvidenceParams(kind = '') {
   const params = new URLSearchParams();
   const query = normalizeVisualRuntimeEvidenceQuery(state.visualRuntimeEvidenceQuery);
@@ -981,15 +1056,19 @@ function visualRuntimeEvidenceParams(kind = '') {
     params.set('activationId', query.activationId);
   }
   if (query.lifecycleState && kind !== 'rollout-observation') {
-    params.set('state', query.lifecycleState);
+    if (kind === 'runtime-evidence') {
+      params.set('lifecycleState', query.lifecycleState);
+    } else {
+      params.set('state', query.lifecycleState);
+    }
   }
-  if (query.rolloutState && kind === 'rollout-observation') {
-    params.set('state', query.rolloutState);
+  if (query.rolloutState && (kind === 'rollout-observation' || kind === 'runtime-evidence')) {
+    params.set(kind === 'runtime-evidence' ? 'rolloutState' : 'state', query.rolloutState);
   }
-  if (query.rolloutSignal && kind === 'rollout-observation') {
+  if (query.rolloutSignal && (kind === 'rollout-observation' || kind === 'runtime-evidence')) {
     params.set('rolloutSignal', query.rolloutSignal);
   }
-  if (query.breachedOnly && kind === 'rollout-observation') {
+  if (query.breachedOnly && (kind === 'rollout-observation' || kind === 'runtime-evidence')) {
     params.set('breachedOnly', 'true');
   }
   return params;
@@ -1116,6 +1195,7 @@ async function updateVisualRuntimeBindingImplementationQuery(patch = {}) {
 }
 
 function normalizeVisualRuntimeEvidenceQuery(query = {}) {
+  const limit = Math.max(1, Math.min(Number(query.limit || 12) || 12, 200));
   return {
     operatorRef: String(query.operatorRef || '').trim(),
     bindingId: String(query.bindingId || '').trim(),
@@ -1123,7 +1203,9 @@ function normalizeVisualRuntimeEvidenceQuery(query = {}) {
     lifecycleState: String(query.lifecycleState || '').trim().toLowerCase(),
     rolloutState: String(query.rolloutState || '').trim().toLowerCase(),
     rolloutSignal: normalizeReadinessState(query.rolloutSignal),
-    breachedOnly: query.breachedOnly === true || String(query.breachedOnly || '').trim().toLowerCase() === 'true'
+    breachedOnly: query.breachedOnly === true || String(query.breachedOnly || '').trim().toLowerCase() === 'true',
+    offset: Math.max(0, Number(query.offset || 0) || 0),
+    limit
   };
 }
 
@@ -1971,6 +2053,16 @@ function renderInputForm() {
           <select id="operator-palette-lowering-mode" aria-label="Filter operators by lowering mode"></select>
         </div>
         <div id="operator-palette-summary" class="palette-summary"></div>
+        <div class="palette-window-controls">
+          <select id="operator-palette-limit" aria-label="Operator page size">
+            <option value="12">12</option>
+            <option value="24">24</option>
+            <option value="48">48</option>
+            <option value="96">96</option>
+          </select>
+          <button id="operator-palette-prev" class="secondary compact" type="button">Previous</button>
+          <button id="operator-palette-next" class="secondary compact" type="button">Next</button>
+        </div>
         <div id="operator-palette" class="operator-palette"></div>
         <div id="connection-status" class="connection-status" hidden></div>
       </div>
@@ -3180,6 +3272,7 @@ function renderOperatorPalette() {
   renderOperatorPaletteFilters(entries);
   const filteredEntries = entries.filter(([type, spec]) => operatorMatchesPaletteFilter(type, spec));
   renderOperatorPaletteSummary(filteredEntries.length, entries.length);
+  renderOperatorPaletteWindowControls();
   target.innerHTML = filteredEntries
     .map(([type, spec]) => `
     <button
@@ -3214,13 +3307,49 @@ function renderOperatorPalette() {
   }
 }
 
+function markOperatorPaletteLoading() {
+  visualOperatorCatalogRequestSeq += 1;
+  const target = $('operator-palette');
+  if (target) {
+    target.innerHTML = '<div class="palette-empty">Loading operators...</div>';
+  }
+  const summary = $('operator-palette-summary');
+  if (summary) {
+    summary.textContent = 'Loading catalog window...';
+  }
+  for (const id of ['operator-palette-prev', 'operator-palette-next', 'operator-palette-limit']) {
+    const control = $(id);
+    if (control) {
+      control.disabled = true;
+    }
+  }
+}
+
+function scheduleOperatorPaletteReloadFromFirstPage() {
+  clearTimeout(operatorPaletteReloadTimer);
+  state.paletteOffset = 0;
+  markOperatorPaletteLoading();
+  operatorPaletteReloadTimer = setTimeout(() => {
+    operatorPaletteReloadTimer = null;
+    void loadVisualOperatorCatalog({ render: true });
+  }, 180);
+}
+
+function reloadOperatorPaletteFromFirstPage() {
+  clearTimeout(operatorPaletteReloadTimer);
+  operatorPaletteReloadTimer = null;
+  state.paletteOffset = 0;
+  markOperatorPaletteLoading();
+  return loadVisualOperatorCatalog({ render: true });
+}
+
 function renderOperatorPaletteFilters(entries) {
   const search = $('operator-palette-search');
   if (search) {
     search.value = state.paletteSearch || '';
     search.oninput = (event) => {
       state.paletteSearch = event.target.value;
-      renderOperatorPalette();
+      scheduleOperatorPaletteReloadFromFirstPage();
     };
   }
 
@@ -3235,11 +3364,12 @@ function renderOperatorPaletteFilters(entries) {
     kindSelect.value = selected;
     kindSelect.onchange = (event) => {
       state.paletteKind = event.target.value;
+      state.paletteOffset = 0;
       renderOperatorPalette();
     };
   }
 
-  const tags = [...new Set(entries.flatMap(([, spec]) => spec.tags || []).filter(Boolean))].sort();
+  const tags = operatorPaletteFacetKeys('tags', entries.flatMap(([, spec]) => spec.tags || []));
   const tagSelect = $('operator-palette-tag');
   if (tagSelect) {
     const selected = tags.includes(state.paletteTag) ? state.paletteTag : '';
@@ -3250,14 +3380,13 @@ function renderOperatorPaletteFilters(entries) {
     tagSelect.value = selected;
     tagSelect.onchange = (event) => {
       state.paletteTag = event.target.value;
-      renderOperatorPalette();
+      void reloadOperatorPaletteFromFirstPage();
     };
   }
 
-  const sourceKinds = [...new Set(entries
+  const sourceKinds = operatorPaletteFacetKeys('sourceKinds', entries
     .map(([, spec]) => String(spec.sourceKind || '').trim())
-    .filter(Boolean))]
-    .sort();
+    .filter(Boolean));
   const sourceSelect = $('operator-palette-source-kind');
   if (sourceSelect) {
     const selected = sourceKinds.includes(state.paletteSourceKind) ? state.paletteSourceKind : '';
@@ -3269,7 +3398,7 @@ function renderOperatorPaletteFilters(entries) {
     sourceSelect.value = selected;
     sourceSelect.onchange = (event) => {
       state.paletteSourceKind = event.target.value;
-      renderOperatorPalette();
+      void reloadOperatorPaletteFromFirstPage();
     };
   }
 
@@ -3285,13 +3414,12 @@ function renderOperatorPaletteFilters(entries) {
     librarySelect.value = selected;
     librarySelect.onchange = (event) => {
       state.paletteOperatorLibraryId = event.target.value;
-      renderOperatorPalette();
+      void reloadOperatorPaletteFromFirstPage();
     };
   }
 
-  const capabilities = [...new Set(entries.flatMap(([, spec]) =>
-    operatorPaletteCapabilityFacetValues(spec)))]
-    .sort();
+  const capabilities = operatorPaletteFacetKeys('capabilities', entries.flatMap(([, spec]) =>
+    operatorPaletteCapabilityFacetValues(spec)));
   const capabilitySelect = $('operator-palette-capability');
   if (capabilitySelect) {
     const selected = capabilities.includes(state.paletteCapability) ? state.paletteCapability : '';
@@ -3303,14 +3431,13 @@ function renderOperatorPaletteFilters(entries) {
     capabilitySelect.value = selected;
     capabilitySelect.onchange = (event) => {
       state.paletteCapability = event.target.value;
-      renderOperatorPalette();
+      void reloadOperatorPaletteFromFirstPage();
     };
   }
 
-  const readinessStates = [...new Set(entries
+  const readinessStates = operatorPaletteFacetKeys('runtimeReadinessStates', entries
     .map(([, spec]) => operatorPaletteReadinessState(spec))
-    .filter(Boolean))]
-    .sort();
+    .filter(Boolean));
   const readinessSelect = $('operator-palette-readiness');
   if (readinessSelect) {
     const selected = readinessStates.includes(state.paletteReadiness) ? state.paletteReadiness : '';
@@ -3322,14 +3449,13 @@ function renderOperatorPaletteFilters(entries) {
     readinessSelect.value = selected;
     readinessSelect.onchange = (event) => {
       state.paletteReadiness = event.target.value;
-      renderOperatorPalette();
+      void reloadOperatorPaletteFromFirstPage();
     };
   }
 
-  const loweringModes = [...new Set(entries
+  const loweringModes = operatorPaletteFacetKeys('loweringModes', entries
     .map(([, spec]) => operatorPaletteLoweringMode(spec))
-    .filter(Boolean))]
-    .sort();
+    .filter(Boolean));
   const loweringSelect = $('operator-palette-lowering-mode');
   if (loweringSelect) {
     const selected = loweringModes.includes(state.paletteLoweringMode) ? state.paletteLoweringMode : '';
@@ -3341,7 +3467,7 @@ function renderOperatorPaletteFilters(entries) {
     loweringSelect.value = selected;
     loweringSelect.onchange = (event) => {
       state.paletteLoweringMode = event.target.value;
-      renderOperatorPalette();
+      void reloadOperatorPaletteFromFirstPage();
     };
   }
 }
@@ -3349,6 +3475,7 @@ function renderOperatorPaletteFilters(entries) {
 function renderOperatorPaletteSummary(visible, total) {
   const target = $('operator-palette-summary');
   if (!target) return;
+  const window = state.visualOperatorCatalogWindow;
   const filters = [
     state.paletteSearch ? `search "${state.paletteSearch.trim()}"` : '',
     state.paletteKind ? `type ${state.paletteKind}` : '',
@@ -3359,13 +3486,53 @@ function renderOperatorPaletteSummary(visible, total) {
     state.paletteReadiness ? `readiness ${operatorPaletteFacetLabel(state.paletteReadiness)}` : '',
     state.paletteLoweringMode ? `lowering ${operatorPaletteFacetLabel(state.paletteLoweringMode)}` : ''
   ].filter(Boolean);
+  const windowStart = window && window.displayedCount > 0 ? window.offset + 1 : 0;
+  const windowEnd = window ? window.offset + window.displayedCount : visible;
+  const filteredTotal = window ? window.total : total;
+  const unfilteredTotal = window ? window.unfilteredTotal : total;
   const matchSummary = filters.length
-    ? `${visible} of ${total} operators match ${filters.join(', ')}.`
-    : `${total} operators available.`;
+    ? `${windowStart}-${windowEnd} of ${filteredTotal} operators match ${filters.join(', ')}.`
+    : `${windowStart}-${windowEnd} of ${filteredTotal} operators available.`;
+  const unfilteredSummary = unfilteredTotal > filteredTotal
+    ? ` ${unfilteredTotal} visible before filters.`
+    : '';
   const facetSummary = operatorCatalogFacetSummary(state.visualOperatorCatalogFacets);
   target.textContent = facetSummary
-    ? `${matchSummary} ${facetSummary}`
-    : matchSummary;
+    ? `${matchSummary}${unfilteredSummary} ${facetSummary}`
+    : `${matchSummary}${unfilteredSummary}`;
+}
+
+function renderOperatorPaletteWindowControls() {
+  const limitSelect = $('operator-palette-limit');
+  if (limitSelect) {
+    const allowedLimits = [...limitSelect.options].map((option) => Number(option.value));
+    if (!allowedLimits.includes(Number(state.paletteLimit))) {
+      state.paletteLimit = 24;
+    }
+    limitSelect.value = String(state.paletteLimit);
+    limitSelect.onchange = (event) => {
+      state.paletteLimit = Number(event.target.value) || 24;
+      state.paletteOffset = 0;
+      void loadVisualOperatorCatalog({ render: true });
+    };
+  }
+  const window = state.visualOperatorCatalogWindow || {};
+  const prev = $('operator-palette-prev');
+  if (prev) {
+    prev.disabled = Number(window.offset || 0) <= 0;
+    prev.onclick = () => {
+      state.paletteOffset = Math.max(0, Number(state.paletteOffset || 0) - Number(state.paletteLimit || 24));
+      void loadVisualOperatorCatalog({ render: true });
+    };
+  }
+  const next = $('operator-palette-next');
+  if (next) {
+    next.disabled = !window.hasMore;
+    next.onclick = () => {
+      state.paletteOffset = Number(window.offset || 0) + Number(window.displayedCount || state.paletteLimit || 24);
+      void loadVisualOperatorCatalog({ render: true });
+    };
+  }
 }
 
 function operatorPaletteLibraryIds(entries = []) {
@@ -3375,6 +3542,17 @@ function operatorPaletteLibraryIds(entries = []) {
   }
   return [...new Set(entries
     .map(([, spec]) => String(spec.operatorLibraryId || '').trim())
+    .filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function operatorPaletteFacetKeys(facetName, fallbackValues = []) {
+  const facetIds = Object.keys(state.visualOperatorCatalogFacets?.[facetName] || {});
+  if (facetIds.length) {
+    return facetIds.sort((left, right) => left.localeCompare(right));
+  }
+  return [...new Set((fallbackValues || [])
+    .map((value) => String(value || '').trim())
     .filter(Boolean))]
     .sort((left, right) => left.localeCompare(right));
 }
@@ -3393,10 +3571,38 @@ function operatorPaletteLibraryLabel(libraryId) {
   return normalized;
 }
 
+function normalizeOperatorCatalogWindow(payload, operators = []) {
+  const safePayload = payload && typeof payload === 'object' ? payload : {};
+  const safeOperators = Array.isArray(operators) ? operators : [];
+  const total = Number.isFinite(Number(safePayload.total))
+    ? Number(safePayload.total)
+    : safeOperators.length;
+  const displayedCount = Number.isFinite(Number(safePayload.displayedCount))
+    ? Number(safePayload.displayedCount)
+    : safeOperators.length;
+  const itemLimit = Number.isFinite(Number(safePayload.itemLimit))
+    ? Number(safePayload.itemLimit)
+    : safeOperators.length;
+  const offset = Number.isFinite(Number(safePayload.offset))
+    ? Number(safePayload.offset)
+    : 0;
+  return {
+    schemaVersion: safePayload.schemaVersion || 'bloge.visualOperatorCatalog.v1',
+    total: Math.max(0, total),
+    unfilteredTotal: Math.max(0, Number(safePayload.unfilteredTotal) || total),
+    displayedCount: Math.max(0, displayedCount),
+    itemLimit: Math.max(0, itemLimit),
+    offset: Math.max(0, offset),
+    hasMore: Boolean(safePayload.hasMore),
+    filter: safePayload.filter || {}
+  };
+}
+
 function normalizeOperatorCatalogFacets(facets, operators = []) {
   const payload = facets && typeof facets === 'object' ? facets : {};
   const normalized = {
     total: Number(payload.total) || 0,
+    tags: normalizeFacetCountMap(payload.tags),
     sourceKinds: normalizeFacetCountMap(payload.sourceKinds),
     operatorLibraryIds: normalizeFacetCountMap(payload.operatorLibraryIds),
     loweringModes: normalizeFacetCountMap(payload.loweringModes),
@@ -3406,6 +3612,9 @@ function normalizeOperatorCatalogFacets(facets, operators = []) {
   const fallback = operatorCatalogFallbackFacets(operators);
   if (!normalized.total) {
     normalized.total = fallback.total;
+  }
+  if (!Object.keys(normalized.tags).length) {
+    normalized.tags = fallback.tags;
   }
   if (!Object.keys(normalized.sourceKinds).length) {
     normalized.sourceKinds = fallback.sourceKinds;
@@ -3423,6 +3632,7 @@ function normalizeOperatorCatalogFacets(facets, operators = []) {
     normalized.runtimeReadinessStates = fallback.runtimeReadinessStates;
   }
   if (normalized.total
+      || Object.keys(normalized.tags).length
       || Object.keys(normalized.sourceKinds).length
       || Object.keys(normalized.operatorLibraryIds).length
       || Object.keys(normalized.loweringModes).length
@@ -3434,6 +3644,7 @@ function normalizeOperatorCatalogFacets(facets, operators = []) {
 }
 
 function operatorCatalogFallbackFacets(operators = []) {
+  const tags = {};
   const sourceKinds = {};
   const operatorLibraryIds = {};
   const loweringModes = {};
@@ -3447,6 +3658,9 @@ function operatorCatalogFallbackFacets(operators = []) {
       capabilities: operator?.capabilities || {},
       runtimeReadiness: operator?.runtimeReadiness || null
     };
+    for (const tag of operator?.display?.tags || []) {
+      incrementFacetCount(tags, tag);
+    }
     incrementFacetCount(sourceKinds, spec.sourceKind);
     incrementFacetCount(operatorLibraryIds, spec.operatorLibraryId);
     incrementFacetCount(loweringModes, operatorPaletteLoweringMode(spec));
@@ -3457,6 +3671,7 @@ function operatorCatalogFallbackFacets(operators = []) {
   }
   return {
     total: Array.isArray(operators) ? operators.length : 0,
+    tags,
     sourceKinds,
     operatorLibraryIds,
     loweringModes,
@@ -8329,6 +8544,7 @@ function renderVisualAssetOverview() {
     state.visualRuntimeRolloutObservations,
     state.visualExecutableLoweringIntegrations
   );
+  const runtimeEvidenceWindow = state.visualRuntimeEvidenceWindow || null;
   const implementationBindingCount = Number(runtimeEvidence.implementationBindingCount ?? implementationBindings.length) || 0;
   const runtimeEvidenceRecordCount = visualAssetOverviewRuntimeEvidenceRecordCount(runtimeEvidence, runtimeEvidenceRows);
   const rows = visualAssetOverviewRows(overview);
@@ -8340,6 +8556,10 @@ function renderVisualAssetOverview() {
   const bindingOverflow = Math.max(
     0,
     Number(bindingIndex?.total || 0) - Number(bindingIndex?.offset || 0) - bindingRows.length
+  );
+  const runtimeEvidenceOverflow = Math.max(
+    0,
+    Number(runtimeEvidenceWindow?.total || 0) - Number(runtimeEvidenceWindow?.offset || 0) - runtimeEvidenceRows.length
   );
   const activeAction = visualAssetActionContext(state.activeVisualAssetAction);
   const activeBinding = visualRuntimeBindingRequirementContext(state.activeVisualRuntimeBindingRequirement);
@@ -8495,7 +8715,7 @@ function renderVisualAssetOverview() {
     ${runtimeEvidenceVisible ? `<div class="library-impact-risks">
       <div class="library-impact-head">
         <strong>Runtime Evidence Chain</strong>
-        <span>${escapeHtml(visualRuntimeEvidenceWindowSummary(runtimeEvidenceRows))}</span>
+        <span>${escapeHtml(visualRuntimeEvidenceWindowSummary(runtimeEvidenceWindow, runtimeEvidenceRows))}</span>
       </div>
       ${state.visualRuntimeEvidenceMessage?.text ? `<div class="library-impact-risk ${escapeHtml(state.visualRuntimeEvidenceMessage.level || 'error')}">
         <strong>${escapeHtml('Runtime evidence chain incomplete')}</strong>
@@ -8512,6 +8732,7 @@ function renderVisualAssetOverview() {
         </div>
       `).join('')}
       ${runtimeEvidenceRows.length ? '' : `<div class="library-impact-more">${escapeHtml('No matching runtime evidence records')}</div>`}
+      ${runtimeEvidenceOverflow ? `<div class="library-impact-more">+${runtimeEvidenceOverflow} more runtime evidence records</div>` : ''}
     </div>` : ''}
   `;
   attachVisualAssetOverviewActionHandlers();
@@ -8571,12 +8792,17 @@ function visualRuntimeBindingImplementationsShouldShow(bindings) {
 
 function visualRuntimeEvidenceShouldShow(rows) {
   const query = normalizeVisualRuntimeEvidenceQuery(state.visualRuntimeEvidenceQuery);
-  return (Array.isArray(rows) && rows.length > 0)
+  const evidenceWindow = state.visualRuntimeEvidenceWindow || null;
+  return Number(evidenceWindow?.unfilteredTotal ?? evidenceWindow?.total ?? 0) > 0
+    || (Array.isArray(rows) && rows.length > 0)
     || Boolean(query.operatorRef
       || query.bindingId
       || query.activationId
       || query.lifecycleState
-      || query.rolloutState);
+      || query.rolloutState
+      || query.rolloutSignal
+      || query.breachedOnly
+      || query.offset);
 }
 
 function visualAssetOverviewActionWindowSummary(actionQueue, actionRows) {
@@ -8606,15 +8832,33 @@ function visualRuntimeBindingImplementationWindowSummary(rows) {
   return `${count} runtime implementation binding record${count === 1 ? '' : 's'}`;
 }
 
-function visualRuntimeEvidenceWindowSummary(rows) {
+function visualRuntimeEvidenceWindowSummary(evidenceWindow, rows = null) {
+  if (Array.isArray(evidenceWindow) && rows === null) {
+    rows = evidenceWindow;
+    evidenceWindow = null;
+  }
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const total = Number(evidenceWindow?.total ?? safeRows.length ?? 0) || 0;
+  const unfilteredTotal = Number(evidenceWindow?.unfilteredTotal ?? total) || 0;
+  const offset = Number(evidenceWindow?.offset || 0) || 0;
+  const displayed = Number(evidenceWindow?.displayedCount ?? safeRows.length) || 0;
+  const range = displayed ? `${offset + 1}-${offset + displayed} of ${total}` : `0 of ${total}`;
   const count = Array.isArray(rows) ? rows.length : 0;
-  const activationCount = (Array.isArray(rows) ? rows : [])
-    .filter((row) => row.kind === 'adapter-activation').length;
-  const rolloutCount = (Array.isArray(rows) ? rows : [])
-    .filter((row) => row.kind === 'rollout-observation').length;
-  const integrationCount = (Array.isArray(rows) ? rows : [])
-    .filter((row) => row.kind === 'executable-lowering-integration').length;
-  return `${count} runtime evidence record${count === 1 ? '' : 's'} · ${activationCount} activations / ${rolloutCount} rollout / ${integrationCount} lowering`;
+  const kindCounts = evidenceWindow?.kindCounts || {};
+  const activationCount = Number(kindCounts['adapter-activation']
+    ?? safeRows.filter((row) => row.kind === 'adapter-activation').length) || 0;
+  const rolloutCount = Number(kindCounts['rollout-observation']
+    ?? safeRows.filter((row) => row.kind === 'rollout-observation').length) || 0;
+  const integrationCount = Number(kindCounts['executable-lowering-integration']
+    ?? safeRows.filter((row) => row.kind === 'executable-lowering-integration').length) || 0;
+  const detail = `${activationCount} activations / ${rolloutCount} rollout / ${integrationCount} lowering`;
+  if (evidenceWindow) {
+    return unfilteredTotal !== total
+      ? `${range} / ${unfilteredTotal} total · ${detail}`
+      : `${range} runtime evidence records · ${detail}`;
+  }
+  const fallbackCount = count;
+  return `${fallbackCount} runtime evidence record${fallbackCount === 1 ? '' : 's'} · ${detail}`;
 }
 
 function visualAssetOverviewActionControls(actionQueue) {
@@ -8809,31 +9053,42 @@ function visualRuntimeBindingImplementationControls(bindings) {
 
 function visualRuntimeEvidenceControls(rows) {
   const query = normalizeVisualRuntimeEvidenceQuery(state.visualRuntimeEvidenceQuery);
+  const evidenceWindow = state.visualRuntimeEvidenceWindow || null;
+  const offset = Number(evidenceWindow?.offset ?? query.offset) || 0;
+  const pageSize = Number(evidenceWindow?.itemLimit || query.limit || 12) || 12;
   const hasFilter = Boolean(query.operatorRef
     || query.bindingId
     || query.activationId
     || query.lifecycleState
     || query.rolloutState
     || query.rolloutSignal
-    || query.breachedOnly);
+    || query.breachedOnly
+    || offset
+    || pageSize !== 12);
+  const operatorCounts = evidenceWindow?.operatorRefCounts || visualRuntimeEvidenceCounts(rows, 'operatorRef');
+  const bindingCounts = evidenceWindow?.bindingIdCounts || visualRuntimeEvidenceCounts(rows, 'bindingId');
+  const activationCounts = evidenceWindow?.activationIdCounts || visualRuntimeEvidenceCounts(rows, 'activationId');
+  const signalCounts = query.breachedOnly
+    ? (evidenceWindow?.breachedRolloutSignalCounts || visualRuntimeEvidenceSignalCounts(rows, true))
+    : (evidenceWindow?.rolloutSignalCounts || visualRuntimeEvidenceSignalCounts(rows, false));
   return `
     <div class="library-impact-controls">
       <label>
         <span>${escapeHtml('Operator')}</span>
         <select id="runtime-evidence-operator-ref" aria-label="Filter runtime evidence by operator reference">
-          ${visualRuntimeBindingRawOptionMarkup('All operators', visualRuntimeEvidenceCounts(rows, 'operatorRef'), query.operatorRef)}
+          ${visualRuntimeBindingRawOptionMarkup('All operators', operatorCounts, query.operatorRef)}
         </select>
       </label>
       <label>
         <span>${escapeHtml('Binding')}</span>
         <select id="runtime-evidence-binding-id" aria-label="Filter runtime evidence by binding id">
-          ${visualRuntimeBindingRawOptionMarkup('All bindings', visualRuntimeEvidenceCounts(rows, 'bindingId'), query.bindingId)}
+          ${visualRuntimeBindingRawOptionMarkup('All bindings', bindingCounts, query.bindingId)}
         </select>
       </label>
       <label>
         <span>${escapeHtml('Activation')}</span>
         <select id="runtime-evidence-activation-id" aria-label="Filter runtime evidence by activation id">
-          ${visualRuntimeBindingRawOptionMarkup('All activations', visualRuntimeEvidenceCounts(rows, 'activationId'), query.activationId)}
+          ${visualRuntimeBindingRawOptionMarkup('All activations', activationCounts, query.activationId)}
         </select>
       </label>
       <label>
@@ -8851,13 +9106,21 @@ function visualRuntimeEvidenceControls(rows) {
       <label>
         <span>${escapeHtml('Signal')}</span>
         <select id="runtime-evidence-rollout-signal" aria-label="Filter runtime rollout evidence by guardrail signal">
-          ${visualRuntimeBindingRawOptionMarkup('All signals', visualRuntimeEvidenceSignalCounts(rows, query.breachedOnly), query.rolloutSignal)}
+          ${visualRuntimeBindingRawOptionMarkup('All signals', signalCounts, query.rolloutSignal)}
         </select>
       </label>
       <label class="config-checkbox compact">
         <input id="runtime-evidence-breached-only" type="checkbox" ${query.breachedOnly ? 'checked' : ''}>
         <span>${escapeHtml('Breached only')}</span>
       </label>
+      <label>
+        <span>${escapeHtml('Limit')}</span>
+        <select id="runtime-evidence-limit" aria-label="Runtime evidence page size">
+          ${visualAssetActionOptionMarkup([['6', '6'], ['12', '12'], ['24', '24'], ['50', '50']], String(pageSize))}
+        </select>
+      </label>
+      <button type="button" class="secondary compact" id="runtime-evidence-prev" ${offset > 0 ? '' : 'disabled'}>Previous</button>
+      <button type="button" class="secondary compact" id="runtime-evidence-next" ${evidenceWindow?.hasMore ? '' : 'disabled'}>Next</button>
       <button type="button" class="secondary compact" id="runtime-evidence-refresh">Refresh</button>
       <button type="button" class="secondary compact" id="runtime-evidence-reset" ${hasFilter ? '' : 'disabled'}>Reset</button>
     </div>
@@ -9738,44 +10001,70 @@ function attachVisualRuntimeEvidenceQueryHandlers() {
   const operatorRef = $('runtime-evidence-operator-ref');
   if (operatorRef) {
     operatorRef.onchange = () => updateVisualRuntimeEvidenceQuery({
-      operatorRef: operatorRef.value
+      operatorRef: operatorRef.value,
+      offset: 0
     });
   }
   const bindingId = $('runtime-evidence-binding-id');
   if (bindingId) {
     bindingId.onchange = () => updateVisualRuntimeEvidenceQuery({
-      bindingId: bindingId.value
+      bindingId: bindingId.value,
+      offset: 0
     });
   }
   const activationId = $('runtime-evidence-activation-id');
   if (activationId) {
     activationId.onchange = () => updateVisualRuntimeEvidenceQuery({
-      activationId: activationId.value
+      activationId: activationId.value,
+      offset: 0
     });
   }
   const lifecycleState = $('runtime-evidence-lifecycle-state');
   if (lifecycleState) {
     lifecycleState.onchange = () => updateVisualRuntimeEvidenceQuery({
-      lifecycleState: lifecycleState.value
+      lifecycleState: lifecycleState.value,
+      offset: 0
     });
   }
   const rolloutState = $('runtime-evidence-rollout-state');
   if (rolloutState) {
     rolloutState.onchange = () => updateVisualRuntimeEvidenceQuery({
-      rolloutState: rolloutState.value
+      rolloutState: rolloutState.value,
+      offset: 0
     });
   }
   const rolloutSignal = $('runtime-evidence-rollout-signal');
   if (rolloutSignal) {
     rolloutSignal.onchange = () => updateVisualRuntimeEvidenceQuery({
-      rolloutSignal: rolloutSignal.value
+      rolloutSignal: rolloutSignal.value,
+      offset: 0
     });
   }
   const breachedOnly = $('runtime-evidence-breached-only');
   if (breachedOnly) {
     breachedOnly.onchange = () => updateVisualRuntimeEvidenceQuery({
-      breachedOnly: breachedOnly.checked
+      breachedOnly: breachedOnly.checked,
+      offset: 0
     });
+  }
+  const limit = $('runtime-evidence-limit');
+  if (limit) {
+    limit.onchange = () => updateVisualRuntimeEvidenceQuery({
+      limit: Number(limit.value || 12),
+      offset: 0
+    });
+  }
+  const pageSize = Number(state.visualRuntimeEvidenceWindow?.itemLimit
+    || state.visualRuntimeEvidenceQuery.limit
+    || 12) || 12;
+  const offset = Number(state.visualRuntimeEvidenceWindow?.offset || 0) || 0;
+  const previous = $('runtime-evidence-prev');
+  if (previous) {
+    previous.onclick = () => updateVisualRuntimeEvidenceQuery({ offset: Math.max(0, offset - pageSize) });
+  }
+  const next = $('runtime-evidence-next');
+  if (next) {
+    next.onclick = () => updateVisualRuntimeEvidenceQuery({ offset: offset + pageSize });
   }
   const refresh = $('runtime-evidence-refresh');
   if (refresh) {
@@ -9790,7 +10079,9 @@ function attachVisualRuntimeEvidenceQueryHandlers() {
       lifecycleState: '',
       rolloutState: '',
       rolloutSignal: '',
-      breachedOnly: false
+      breachedOnly: false,
+      offset: 0,
+      limit: 12
     });
   }
 }
@@ -9987,7 +10278,8 @@ async function focusOperatorPaletteRef(operatorRef, context = null) {
   state.paletteCapability = '';
   state.paletteReadiness = '';
   state.paletteLoweringMode = '';
-  renderOperatorPalette();
+  state.paletteOffset = 0;
+  await loadVisualOperatorCatalog({ render: true });
   const search = $('operator-palette-search');
   if (search) {
     search.focus();
@@ -14182,27 +14474,35 @@ async function loadVisualOperatorDefinition(operatorRef, options = {}) {
   if (!normalized) {
     return null;
   }
+  const silent = options.silent === true;
   let query = {
     includeDeprecated: Boolean(options.includeDeprecated),
     resourceOnly: Boolean(options.resourceOnly)
   };
-  state.operatorDefinitionLoadingRef = normalized;
-  state.operatorDefinitionMessagesByRef = {
-    ...(state.operatorDefinitionMessagesByRef || {}),
-    [normalized]: { text: 'Loading operator definition...', level: 'info' }
-  };
-  if (options.render !== false) {
+  if (!silent) {
+    state.operatorDefinitionLoadingRef = normalized;
+    state.operatorDefinitionMessagesByRef = {
+      ...(state.operatorDefinitionMessagesByRef || {}),
+      [normalized]: { text: 'Loading operator definition...', level: 'info' }
+    };
+  }
+  if (!silent && options.render !== false) {
     renderSelectedOperatorEditor();
   }
   try {
     let response = await fetch(operatorDefinitionUrl(normalized, state.builder, query));
     if (response.status === 404 && !query.includeDeprecated && options.includeDeprecatedFallback !== false) {
       query = { ...query, includeDeprecated: true };
-      state.operatorDefinitionMessagesByRef = {
-        ...(state.operatorDefinitionMessagesByRef || {}),
-        [normalized]: { text: 'Operator hidden in active catalog. Retrying with deprecated visibility...', level: 'warning' }
-      };
-      if (options.render !== false) {
+      if (!silent) {
+        state.operatorDefinitionMessagesByRef = {
+          ...(state.operatorDefinitionMessagesByRef || {}),
+          [normalized]: {
+            text: 'Operator hidden in active catalog. Retrying with deprecated visibility...',
+            level: 'warning'
+          }
+        };
+      }
+      if (!silent && options.render !== false) {
         renderSelectedOperatorEditor();
       }
       response = await fetch(operatorDefinitionUrl(normalized, state.builder, query));
@@ -14223,30 +14523,34 @@ async function loadVisualOperatorDefinition(operatorRef, options = {}) {
       ...(state.visualOperators || []).filter((operator) => operator?.operatorRef !== payload.operatorRef),
       payload
     ];
-    state.operatorDefinitionMessagesByRef = {
-      ...(state.operatorDefinitionMessagesByRef || {}),
-      [normalized]: {
-        text: deprecated
-          ? 'Operator definition loaded with deprecated visibility.'
-          : 'Operator definition refreshed.',
-        level: deprecated ? 'warning' : 'success'
-      }
-    };
+    if (!silent) {
+      state.operatorDefinitionMessagesByRef = {
+        ...(state.operatorDefinitionMessagesByRef || {}),
+        [normalized]: {
+          text: deprecated
+            ? 'Operator definition loaded with deprecated visibility.'
+            : 'Operator definition refreshed.',
+          level: deprecated ? 'warning' : 'success'
+        }
+      };
+    }
     if (options.render !== false) {
       renderOperatorPalette();
     }
     return payload;
   } catch (error) {
-    state.operatorDefinitionMessagesByRef = {
-      ...(state.operatorDefinitionMessagesByRef || {}),
-      [normalized]: { text: error.message, level: 'error' }
-    };
+    if (!silent) {
+      state.operatorDefinitionMessagesByRef = {
+        ...(state.operatorDefinitionMessagesByRef || {}),
+        [normalized]: { text: error.message, level: 'error' }
+      };
+    }
     return null;
   } finally {
-    if (state.operatorDefinitionLoadingRef === normalized) {
+    if (!silent && state.operatorDefinitionLoadingRef === normalized) {
       state.operatorDefinitionLoadingRef = '';
     }
-    if (options.render !== false) {
+    if (!silent && options.render !== false) {
       renderSelectedOperatorEditor();
       renderDiagram();
     }
