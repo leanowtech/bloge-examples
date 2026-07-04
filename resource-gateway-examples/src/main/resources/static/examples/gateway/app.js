@@ -21454,15 +21454,7 @@ function validateSchemaStructure(schema, path, diagnostics) {
   if (kind === 'object') {
     const properties = validatedSchemaObjectProperties(schema, path, diagnostics);
     validateSchemaAdditionalProperties(schema, path, diagnostics);
-    for (const required of validatedSchemaRequiredNames(schema, path, diagnostics)) {
-      if (!Object.prototype.hasOwnProperty.call(properties, required)) {
-        diagnostics.push(graphInputSchemaDiagnostic(
-          'visual.schema.requiredUnknown',
-          `Required property '${required}' is not declared in properties.`,
-          `${path}/required`
-        ));
-      }
-    }
+    validatedSchemaRequiredNames(schema, path, diagnostics);
     for (const [name, childSchema] of Object.entries(properties)) {
       if (!isDslFieldName(name)) {
         diagnostics.push(graphInputSchemaDiagnostic(
@@ -22571,19 +22563,12 @@ function validateSchemaObjectDependentRequired(schema, kind, path, diagnostics) 
     ));
     return;
   }
-  const properties = schemaObjectProperties(schema);
   for (const [trigger, dependencies] of Object.entries(dependentRequired)) {
     const triggerPath = `${path}/dependentRequired/${trigger}`;
     if (!trigger.trim()) {
       diagnostics.push(graphInputSchemaDiagnostic(
         'visual.schema.dependentRequiredInvalid',
         'Object schema dependentRequired keys must be non-blank property names.',
-        triggerPath
-      ));
-    } else if (!Object.prototype.hasOwnProperty.call(properties, trigger)) {
-      diagnostics.push(graphInputSchemaDiagnostic(
-        'visual.schema.dependentRequiredUnknown',
-        `Dependent-required trigger property '${trigger}' is not declared in properties.`,
         triggerPath
       ));
     }
@@ -22614,13 +22599,6 @@ function validateSchemaObjectDependentRequired(schema, kind, path, diagnostics) 
         ));
       }
       seen.add(dependency);
-      if (!Object.prototype.hasOwnProperty.call(properties, dependency)) {
-        diagnostics.push(graphInputSchemaDiagnostic(
-          'visual.schema.dependentRequiredUnknown',
-          `Dependent-required property '${dependency}' is not declared in properties.`,
-          dependencyPath
-        ));
-      }
     });
   }
 }
@@ -22645,19 +22623,12 @@ function validateSchemaObjectDependentSchemas(schema, kind, path, diagnostics) {
     ));
     return;
   }
-  const properties = schemaObjectProperties(schema);
   for (const [trigger, dependentSchema] of Object.entries(dependentSchemas)) {
     const triggerPath = `${path}/dependentSchemas/${trigger}`;
     if (!trigger.trim()) {
       diagnostics.push(graphInputSchemaDiagnostic(
         'visual.schema.dependentSchemasInvalid',
         'Object schema dependentSchemas keys must be non-blank property names.',
-        triggerPath
-      ));
-    } else if (!Object.prototype.hasOwnProperty.call(properties, trigger)) {
-      diagnostics.push(graphInputSchemaDiagnostic(
-        'visual.schema.dependentSchemasUnknown',
-        `Dependent-schema trigger property '${trigger}' is not declared in properties.`,
         triggerPath
       ));
     }
@@ -24547,8 +24518,11 @@ function rawSchemaType(schema) {
     return nullableTypePrimary(declared);
   }
   return declared
-    || (schema.properties ? 'object' : '')
-    || (schemaHasAnyKeyword(schema, 'items', 'prefixItems', 'unevaluatedItems') ? 'array' : '')
+    || (schemaHasAnyKeyword(schema, 'properties', 'required', 'additionalProperties',
+      'unevaluatedProperties', 'patternProperties', 'propertyNames', 'dependentRequired',
+      'dependentSchemas', 'minProperties', 'maxProperties') ? 'object' : '')
+    || (schemaHasAnyKeyword(schema, 'items', 'prefixItems', 'unevaluatedItems', 'contains',
+      'minItems', 'maxItems', 'uniqueItems', 'minContains', 'maxContains') ? 'array' : '')
     || (Object.prototype.hasOwnProperty.call(schema, 'const') ? schemaTypeForValue(schema.const) : '');
 }
 

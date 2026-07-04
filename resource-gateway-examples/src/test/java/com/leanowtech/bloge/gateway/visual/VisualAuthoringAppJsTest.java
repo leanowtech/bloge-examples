@@ -2610,6 +2610,8 @@ class VisualAuthoringAppJsTest {
                   'normalizedUnionBranchSelections',
                   'schemaUnionBranches',
                   'schemaUnionBranchOptions',
+                  'schemaAllOfBranches',
+                  'schemaAllOfLabel',
                   'schemaUnionLabel',
                   'schemaType',
                   'schemaEnumValues',
@@ -2657,16 +2659,22 @@ class VisualAuthoringAppJsTest {
                   'patternPropertySchema',
                   'schemaPatternProperties',
                   'patternMatches',
+                  'graphInputSchemaDiagnostic',
+                  'validatedSchemaRequiredNames',
+                  'validatedSchemaObjectProperties',
                   'validateSchemaStructure',
                   'validateSupportedSchemaConditionals',
                   'validateSchemaNot',
                   'effectiveNotSchemaKind',
                   'effectiveConditionalSchema',
                   'effectiveConditionalValidationSchema',
+                  'effectiveDependentObjectSchema',
                   'validateSchemaEnumValues',
                   'validateSchemaAdditionalProperties',
                   'validateSchemaUnevaluatedProperties',
                   'validateSchemaObjectPatternProperties',
+                  'validateSchemaObjectDependentRequired',
+                  'validateSchemaObjectDependentSchemas',
                   'schemaReferenceDiagnostic',
                   'schemaFieldDescriptors',
                   'dslSafeSchemaFieldDescriptors',
@@ -3136,6 +3144,86 @@ class VisualAuthoringAppJsTest {
                 }
                 if (typelessPrefixPaths !== '0|0.code') {
                   throw new Error(`Expected typeless prefixItems to expand, got ${typelessPrefixPaths}`);
+                }
+                const typelessRequiredSchema = { required: ['traceId'], additionalProperties: true };
+                const typelessContainsSchema = { contains: { type: 'string' }, minContains: 1 };
+                if (context.rawSchemaType(typelessRequiredSchema) !== 'object' || context.schemaType(typelessRequiredSchema) !== 'object') {
+                  throw new Error(`Expected typeless required-only schema to display as object, got raw=${context.rawSchemaType(typelessRequiredSchema)} type=${context.schemaType(typelessRequiredSchema)}`);
+                }
+                if (context.rawSchemaType(typelessContainsSchema) !== 'array' || context.schemaType(typelessContainsSchema) !== 'array') {
+                  throw new Error(`Expected typeless contains-only schema to display as array, got raw=${context.rawSchemaType(typelessContainsSchema)} type=${context.schemaType(typelessContainsSchema)}`);
+                }
+                context.SUPPORTED_SCHEMA_KINDS = new Set(['string', 'integer', 'number', 'decimal', 'boolean', 'object', 'array', 'enum', 'duration', 'datetime', 'null']);
+                const schemaValidationStubNames = [
+                  'validateUnsupportedSchemaKeywords',
+                  'validateSupportedSchemaUnions',
+                  'validateSupportedSchemaAllOf',
+                  'validateSupportedSchemaConditionals',
+                  'validateSchemaDefinitions',
+                  'validateSchemaNot',
+                  'validateSchemaEnum',
+                  'validateSchemaConst',
+                  'validateSchemaNumericBounds',
+                  'validateSchemaNumericMultipleOf',
+                  'validateSchemaStringLengthBounds',
+                  'validateSchemaStringPattern',
+                  'validateSchemaStringFormat',
+                  'validateSchemaArrayItemBounds',
+                  'validateSchemaArrayUniqueItems',
+                  'validateSchemaArrayPrefixItems',
+                  'validateSchemaArrayContains',
+                  'validateSchemaArrayUnevaluatedItems',
+                  'validateSchemaObjectPropertyBounds',
+                  'validateSchemaObjectPatternProperties',
+                  'validateSchemaObjectPropertyNames',
+                  'validateSchemaUnevaluatedProperties',
+                  'validateSchemaAdditionalProperties',
+                  'validateCustomSchemaEnumValues'
+                ];
+                const schemaValidationOriginals = new Map();
+                for (const name of schemaValidationStubNames) {
+                  schemaValidationOriginals.set(name, context[name]);
+                  context[name] = () => {};
+                }
+                schemaValidationOriginals.set('validateSchemaTypeArray', context.validateSchemaTypeArray);
+                context.validateSchemaTypeArray = () => false;
+                const requiredOnlyDiagnostics = [];
+                context.validateSchemaStructure(typelessRequiredSchema, 'schema', requiredOnlyDiagnostics);
+                if (requiredOnlyDiagnostics.some((diagnostic) => diagnostic.code === 'visual.schema.requiredUnknown')) {
+                  throw new Error(`Browser schema mirror still rejects required-only object schema: ${JSON.stringify(requiredOnlyDiagnostics)}`);
+                }
+                const dependentRequiredDiagnostics = [];
+                context.validateSchemaObjectDependentRequired({
+                  dependentRequired: {
+                    paymentMethod: ['cardNumber']
+                  }
+                }, 'object', 'schema', dependentRequiredDiagnostics);
+                if (dependentRequiredDiagnostics.some((diagnostic) => diagnostic.code === 'visual.schema.dependentRequiredUnknown')) {
+                  throw new Error(`Browser schema mirror still rejects dependentRequired without properties: ${JSON.stringify(dependentRequiredDiagnostics)}`);
+                }
+                const duplicateDependentDiagnostics = [];
+                context.validateSchemaObjectDependentRequired({
+                  dependentRequired: {
+                    paymentMethod: ['cardNumber', 'cardNumber']
+                  }
+                }, 'object', 'schema', duplicateDependentDiagnostics);
+                if (!duplicateDependentDiagnostics.some((diagnostic) => diagnostic.code === 'visual.schema.dependentRequiredDuplicate')) {
+                  throw new Error(`Expected duplicate dependentRequired diagnostics to remain, got ${JSON.stringify(duplicateDependentDiagnostics)}`);
+                }
+                const originalValidateSchemaStructure = context.validateSchemaStructure;
+                context.validateSchemaStructure = () => {};
+                const dependentSchemasDiagnostics = [];
+                context.validateSchemaObjectDependentSchemas({
+                  dependentSchemas: {
+                    riskFlag: { required: ['reviewReason'] }
+                  }
+                }, 'object', 'schema', dependentSchemasDiagnostics);
+                context.validateSchemaStructure = originalValidateSchemaStructure;
+                if (dependentSchemasDiagnostics.some((diagnostic) => diagnostic.code === 'visual.schema.dependentSchemasUnknown')) {
+                  throw new Error(`Browser schema mirror still rejects dependentSchemas without properties: ${JSON.stringify(dependentSchemasDiagnostics)}`);
+                }
+                for (const [name, original] of schemaValidationOriginals.entries()) {
+                  context[name] = original;
                 }
 
                 context.BUILDER_HISTORY_LIMIT = 50;

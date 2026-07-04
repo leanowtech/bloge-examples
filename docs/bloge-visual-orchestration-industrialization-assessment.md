@@ -43,17 +43,17 @@
 | 维度 | 当前分 | 证据 | 主要缺口 | 下一步 |
 | --- | ---: | --- | --- | --- |
 | 算子库合同与导入 | 8.0 | `OperatorLibrary`、JSON/YAML validate/import、revision、impact、bundle fingerprint、design-only lowering | 复杂第三方协议包 diff、跨环境治理策略还需继续深化 | OpenAPI/AsyncAPI diff 与 runtime binding handoff 对齐 |
-| Schema 约束与拖线裁决 | 8.3 | `VisualSchemaCompatibility`、`VisualSchemaValidator`、`GraphDraftValidator`、connection check/candidates、fit candidates、`VisualSchemaIntrospection` | JSON Schema 语义仍是受限子集，深层 compatibility diff 与 value matching 还没有完全抽成可复用策略 | 持续收敛 shared schema/value helper，补更多 schema 子集回归 |
-| 画布产品化体验 | 7.0 | Browser Composer palette、schema-aware picker、hover preflight、readiness panel、diagnostic queue、impact inspector | 单文件前端复杂度高，交互矩阵仍未完全自动化 | 抽更小 UI 模块或增加更强 browser regression matrix |
+| Schema 约束与拖线裁决 | 8.4 | `VisualSchemaCompatibility`、`VisualSchemaValidator`、`GraphDraftValidator`、connection check/candidates、fit candidates、`VisualSchemaIntrospection`，以及浏览器 schema mirror 对 required-only / contains-only typeless schema 的回归 | JSON Schema 语义仍是受限子集，深层 compatibility diff 与 value matching 还没有完全抽成可复用策略 | 持续收敛 shared schema/value helper，补更多 schema 子集回归 |
+| 画布产品化体验 | 7.1 | Browser Composer palette、schema-aware picker、hover preflight、readiness panel、diagnostic queue、impact inspector，前端本地 schema type/validator mirror 已覆盖 required-only object 与 contains-only array | 单文件前端复杂度高，交互矩阵仍未完全自动化 | 抽更小 UI 模块或增加更强 browser regression matrix |
 | Design-only artifact 生命周期 | 8.0 | `DESIGN` publication、action-readiness gate、run/golden 禁用、runtime-binding requirements | DESIGN 到 external runtime bound 的组织流程仍依赖外部协作 | handoff bundle 与外部工单/事件系统对接 |
 | Runtime binding 闭环 | 6.5 | requirement index、handoff bundle、implementation proposal、bind/supersede/unbind、activation、rollout observation、lowering integration、readiness recompute | 跨 repository partial-failure、异步 workflow idempotency、指标消费闭环仍未全覆盖 | 继续硬化 runtime evidence lifecycle 和 replay/compensation |
 | 发布、可迁移性与版本治理 | 7.5 | draft/publication bundles、fingerprint gate、immutable publication、revision guard、operator/resource impact | 还有协议命名与当前 wire contract 的历史漂移 | 协议草案按现状收敛，保留平台化 ADR |
 | 观测、回归和认证 | 6.8 | run history、SLO stats、golden case、suite run、certification status | 事件流回放、趋势分析、长运行实例观测不足 | run trace/golden trend 与 durable runtime 对齐 |
 | 安全与治理 | 5.0 | tenant/namespace/environment policy、secret capability、actor/reason evidence gate | 不是完整 IAM/RBAC/secret/egress/admin audit 后台 | 平台化阶段引入权限模型和安全边界 |
 | Runtime 扩展族 | 5.8 | remote-worker、AI-tool、event-source、message-handler、webhook、streaming/durable contract 已可设计态编排 | 真正 dispatcher、ingress runtime、AI tool invocation、durable instance 尚未落地 | 从 runtime-binding handoff 开始逐类接 executor |
-| 工程可维护性 | 7.1 | 服务端测试丰富，完整 `clean verify` 可跑通，Java 侧读模型、GraphDraftValidator、VisualSchemaCompatibility 与 VisualSchemaValidator 的结构类型推断已开始共享 schema helper | 深层 compatibility/value matching 仍分散，前端 `app.js` 过大 | 继续迁移 compatibility/validator 深层校验 helpers，逐步拆分前端 authoring helpers |
+| 工程可维护性 | 7.2 | 服务端测试丰富，完整 `clean verify` 可跑通，Java 侧读模型、GraphDraftValidator、VisualSchemaCompatibility 与 VisualSchemaValidator 的结构类型推断已开始共享 schema helper；浏览器 helper probe 覆盖了本地 mirror 与服务端语义一致性 | 深层 compatibility/value matching 仍分散，前端 `app.js` 过大 | 继续迁移 compatibility/validator 深层校验 helpers，逐步拆分前端 authoring helpers |
 
-综合分：**71/100**。
+综合分：**72/100**。
 
 这个分数不是贬低当前成果。相反，它说明项目已经跨过“画布玩具”阶段，但离完整工业平台还差治理、runtime、观测和维护性闭环。
 
@@ -67,6 +67,7 @@
 4. 没有 runtime 实现的 operator 可以保存、导出和发布为 DESIGN artifact。
 5. compile/run/default EXECUTABLE publish 会被 action-readiness 明确阻断，而不是伪运行。
 6. runtime-binding gap 可以被导出为 handoff material，给外部 runtime-plane 团队处理。
+7. 浏览器本地 schema mirror 已与服务端对齐 required-only object、dependent* 和 contains-only array 的 typeless schema 基础语义，避免合法外部 schema 在前端被旧风格规则误拒。
 
 ### 尚未成立
 
@@ -77,6 +78,30 @@
 5. 前端仍是示例项目形态，复杂度已经接近需要模块化拆分的边界。
 
 ## 4. 本轮迭代复盘
+
+### 2026-07-04：Browser schema mirror effective kind 收敛
+
+触发问题：
+
+服务端已经接受更接近 JSON Schema 语义的外部 operator schema：`required`、`dependentRequired`、`dependentSchemas` 不要求字段预先出现在 `properties`，`contains/minContains/maxContains` 可以把 typeless schema 识别为 array。但浏览器 `app.js` 的本地 schema mirror 仍保留旧规则：本地预检可能产出 `requiredUnknown`、`dependentRequiredUnknown`、`dependentSchemasUnknown`，并且 `schemaType()` 对 required-only object / contains-only array 仍可能显示为空类型。这是典型的工业级画布漂移：服务端能保存，前端却误报或展示不可信。
+
+本轮完成：
+
+1. `app.js.rawSchemaType` 对齐服务端结构类型入口：object 关键字覆盖 `required`、`additionalProperties`、`patternProperties`、`propertyNames`、`dependentRequired`、`dependentSchemas`、`min/maxProperties` 等；array 关键字覆盖 `contains`、`min/maxContains`、`min/maxItems`、`uniqueItems` 等。
+2. 浏览器本地 `validateSchemaStructure` 不再把 `required` 缺少显式 `properties` 声明作为 blocking diagnostic，只保留 required 数组形态、空值和重复项校验。
+3. 浏览器本地 `validateSchemaObjectDependentRequired` / `validateSchemaObjectDependentSchemas` 不再把 trigger/dependency 未声明在 `properties` 中作为 blocking diagnostic，但仍保留非空 key、array shape、duplicate dependency 和 dependent schema shape 校验。
+4. `VisualAuthoringAppJsTest` 的 Node probe 增加 browser-facing 回归：typeless required-only schema 显示为 `object`，typeless contains-only schema 显示为 `array`，本地 mirror 不再产生旧 unknown diagnostics，同时 duplicate dependent item 仍然被保留为错误。
+
+验证：
+
+```bash
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringAppJsTest test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualSchemaCompatibilityTest,VisualSchemaValidatorTest,VisualSchemaIntrospectionTest,VisualAuthoringAppJsTest test
+```
+
+剩余风险：
+
+这次只是把浏览器 mirror 的结构类型与旧 unknown-property 规则补齐。`app.js` 仍然承载大量 schema/value/compatibility 逻辑，长期仍会漂移；下一步更好的方向不是继续无限加 if，而是把 browser helper 拆成更小的可测模块，或让更多高风险判断回到服务端候选/validate API 后只在前端做解释性展示。
 
 ### 2026-07-04：Compatibility / Validator effective kind 收敛
 
@@ -203,7 +228,7 @@ schema type/path 逻辑仍分散在多个类中。短期可接受；中期应抽
 | --- | --- | --- | --- |
 | P0 | 深层 compatibility / value diagnostics 策略收敛 | effective kind 已统一，但 not/conditional/patternProperties/dependent schema 等深层判断仍在类内分散 | 选一个高风险 schema 子集，抽共享 value/schema policy 或补明确不可迁移边界 |
 | P0 | Runtime binding partial-failure 硬化 | 这是 DESIGN artifact 走向可执行 runtime 的主干 | 选一个尚未补偿的跨 repository mutation，补 replay/compensation/诊断 |
-| P1 | Browser regression matrix | 当前 UI 能力多，单测/DOM smoke 需要继续扩大 | 覆盖 required-only / contains-only typeless schema 的 browser-facing 行为 |
+| P1 | Browser regression matrix | required-only / contains-only typeless schema 已覆盖，但 UI 能力多，单测/DOM smoke 仍需继续扩大 | 覆盖导入面板、候选发现、DOM schema field rendering 的更多负路径和漂移路径 |
 | P1 | 协议文档收敛 | 设计草案与当前 wire contract 名称仍有历史漂移 | 把 candidate/fit/readiness 当前字段写入 protocol v1 |
 | P2 | 前端模块化 | `app.js` 已承载太多 authoring 逻辑 | 先抽 schema helper 或 readiness helper，保持测试覆盖 |
 
