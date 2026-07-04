@@ -183,4 +183,40 @@ public record VisualExecutableReadinessRecomputeResult(
                 List.of()
         );
     }
+
+    /**
+     * @param storedLibrary current stored library snapshot
+     * @param storedRevision immutable registry revision that already contains the candidate
+     * @param preview current non-recomputable preview after the original apply
+     * @param expectedCurrentOperatorFingerprint reviewed fingerprint before the original apply
+     * @param expectedCandidateOperatorFingerprint candidate fingerprint already present in the catalog
+     * @return applied result for an exact replay of a completed apply mutation
+     */
+    public static VisualExecutableReadinessRecomputeResult appliedReplay(
+            OperatorLibrary storedLibrary,
+            OperatorLibraryRevision storedRevision,
+            VisualExecutableReadinessRecomputePreview preview,
+            String expectedCurrentOperatorFingerprint,
+            String expectedCandidateOperatorFingerprint) {
+        long revision = storedRevision == null ? 0L : storedRevision.revision();
+        String operatorRef = preview == null ? "" : preview.operatorRef();
+        return new VisualExecutableReadinessRecomputeResult(
+                SCHEMA_VERSION,
+                Instant.now(),
+                true,
+                "applied",
+                "success",
+                "Executable readiness recompute for '%s' was already written as operator-library revision %d."
+                        .formatted(operatorRef, revision),
+                operatorRef,
+                preview == null ? "" : preview.operatorLibraryId(),
+                expectedCurrentOperatorFingerprint,
+                expectedCandidateOperatorFingerprint,
+                revision,
+                storedLibrary,
+                storedRevision,
+                preview,
+                List.of()
+        );
+    }
 }

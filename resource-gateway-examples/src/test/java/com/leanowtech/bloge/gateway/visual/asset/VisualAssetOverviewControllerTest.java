@@ -3979,6 +3979,81 @@ class VisualAssetOverviewControllerTest {
         assertThat(trustedOperator.lowering().mode()).isEqualTo("native");
         assertThat(trustedOperator.lowering().operatorRef()).isEqualTo("operator:risk:eligibility");
 
+        var replayAckRequired = fixture.controller().applyExecutableReadinessRecompute(
+                "risk:eligibility",
+                false,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Retry risk eligibility executable readiness promotion.",
+                "Original apply response was lost; replay the reviewed fingerprints.",
+                result.currentOperatorFingerprint(),
+                result.candidateOperatorFingerprint()
+        );
+        assertThat(replayAckRequired.getStatusCode().value()).isEqualTo(409);
+        assertThat(replayAckRequired.getBody()).isNotNull();
+        assertThat(replayAckRequired.getBody().state()).isEqualTo("ack-required");
+        assertThat(replayAckRequired.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessRecompute.ackWarningsRequired");
+        assertThat(fixture.libraries().revisions("risk-policy-design")).hasSize(2);
+
+        var replayMissingGovernance = fixture.controller().applyExecutableReadinessRecompute(
+                "risk:eligibility",
+                true,
+                "",
+                "visual-canvas-test",
+                "Retry risk eligibility executable readiness promotion.",
+                "",
+                result.currentOperatorFingerprint(),
+                result.candidateOperatorFingerprint()
+        );
+        assertThat(replayMissingGovernance.getStatusCode().value()).isEqualTo(400);
+        assertThat(replayMissingGovernance.getBody()).isNotNull();
+        assertThat(replayMissingGovernance.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessRecompute.governanceEvidenceMissing");
+        assertThat(fixture.libraries().revisions("risk-policy-design")).hasSize(2);
+
+        var replayWrongCurrentFingerprint = fixture.controller().applyExecutableReadinessRecompute(
+                "risk:eligibility",
+                true,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Retry risk eligibility executable readiness promotion.",
+                "Original apply response was lost; replay the reviewed fingerprints.",
+                "sha256:not-the-reviewed-current",
+                result.candidateOperatorFingerprint()
+        );
+        assertThat(replayWrongCurrentFingerprint.getStatusCode().value()).isEqualTo(409);
+        assertThat(replayWrongCurrentFingerprint.getBody()).isNotNull();
+        assertThat(replayWrongCurrentFingerprint.getBody().state()).isEqualTo("stale");
+        assertThat(replayWrongCurrentFingerprint.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessRecompute.expectedCurrentOperatorFingerprintMismatch");
+        assertThat(fixture.libraries().revisions("risk-policy-design")).hasSize(2);
+
+        var replayedResponse = fixture.controller().applyExecutableReadinessRecompute(
+                "risk:eligibility",
+                true,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Retry risk eligibility executable readiness promotion.",
+                "Original apply response was lost; replay the reviewed fingerprints.",
+                result.currentOperatorFingerprint(),
+                result.candidateOperatorFingerprint()
+        );
+        assertThat(replayedResponse.getStatusCode().value()).isEqualTo(200);
+        assertThat(replayedResponse.getBody()).isNotNull();
+        VisualExecutableReadinessRecomputeResult replayed = replayedResponse.getBody();
+        assertThat(replayed.applied()).isTrue();
+        assertThat(replayed.state()).isEqualTo("applied");
+        assertThat(replayed.currentOperatorFingerprint()).isEqualTo(result.currentOperatorFingerprint());
+        assertThat(replayed.candidateOperatorFingerprint()).isEqualTo(result.candidateOperatorFingerprint());
+        assertThat(replayed.libraryRevision()).isEqualTo(result.libraryRevision());
+        assertThat(replayed.storedRevision().revision()).isEqualTo(result.storedRevision().revision());
+        assertThat(replayed.diagnostics()).isEmpty();
+        assertThat(fixture.libraries().revisions("risk-policy-design")).hasSize(2);
+
         var afterApplyPreview = fixture.controller().previewExecutableReadinessRecompute("risk:eligibility");
         assertThat(afterApplyPreview.getStatusCode().value()).isEqualTo(200);
         assertThat(afterApplyPreview.getBody()).isNotNull();

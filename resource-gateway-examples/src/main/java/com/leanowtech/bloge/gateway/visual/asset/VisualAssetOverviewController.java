@@ -2096,6 +2096,17 @@ public class VisualAssetOverviewController {
             return ResponseEntity.status(previewResponse.getStatusCode())
                     .body(VisualExecutableReadinessRecomputeResult.fromPreview(preview));
         }
+        ResponseEntity<VisualExecutableReadinessRecomputeResult> replay =
+                replayExecutableReadinessRecomputeApplyIfAlreadyCurrent(
+                        preview,
+                        expectedCurrentOperatorFingerprint,
+                        expectedCandidateOperatorFingerprint,
+                        ackWarnings,
+                        actor,
+                        reason);
+        if (replay != null) {
+            return replay;
+        }
         if (preview == null || !preview.recomputable()) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(VisualExecutableReadinessRecomputeResult.fromPreview(preview));
@@ -2182,6 +2193,99 @@ public class VisualAssetOverviewController {
                 latestRevision,
                 preview
         ));
+    }
+
+    private ResponseEntity<VisualExecutableReadinessRecomputeResult>
+            replayExecutableReadinessRecomputeApplyIfAlreadyCurrent(
+                    VisualExecutableReadinessRecomputePreview preview,
+                    String expectedCurrentOperatorFingerprint,
+                    String expectedCandidateOperatorFingerprint,
+                    boolean ackWarnings,
+                    String actor,
+                    String reason) {
+        if (preview == null) {
+            return null;
+        }
+        String expectedCurrent = expectedCurrentOperatorFingerprint == null
+                ? ""
+                : expectedCurrentOperatorFingerprint.trim();
+        String expectedCandidate = expectedCandidateOperatorFingerprint == null
+                ? ""
+                : expectedCandidateOperatorFingerprint.trim();
+        if (expectedCurrent.isBlank()
+                || expectedCandidate.isBlank()
+                || expectedCurrent.equals(expectedCandidate)
+                || !expectedCandidate.equals(preview.currentOperatorFingerprint())) {
+            return null;
+        }
+        OperatorDefinition currentOperator = catalog.find(preview.operatorRef()).orElse(null);
+        if (!serverRecomputedExecutableReadinessApply(currentOperator, expectedCandidate)) {
+            return null;
+        }
+        OperatorLibrary storedLibrary = operatorLibraryRegistry.find(preview.operatorLibraryId()).orElse(null);
+        if (storedLibrary == null || !libraryContainsOperatorFingerprint(
+                storedLibrary,
+                preview.operatorRef(),
+                expectedCandidate)) {
+            return null;
+        }
+        OperatorLibraryRevision appliedRevision = executableReadinessApplyReplayRevision(
+                storedLibrary.libraryId(),
+                preview.operatorRef(),
+                expectedCurrent,
+                expectedCandidate);
+        if (appliedRevision == null) {
+            List<VisualDiagnostic> expectedFingerprintDiagnostics =
+                    executableReadinessApplyExpectedFingerprintDiagnostics(
+                            expectedCurrent,
+                            expectedCandidate,
+                            preview);
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(VisualExecutableReadinessRecomputeResult.rejected(
+                            preview,
+                            "stale",
+                            "error",
+                            "Executable readiness recompute preview for '%s' is stale; reload preview before applying."
+                                    .formatted(preview.operatorRef()),
+                            expectedFingerprintDiagnostics));
+        }
+        if (!ackWarnings) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(VisualExecutableReadinessRecomputeResult.ackRequired(
+                            preview,
+                            executableReadinessApplyAckRequired(preview)));
+        }
+        List<VisualDiagnostic> governanceDiagnostics = executableReadinessApplyGovernanceDiagnostics(actor, reason);
+        if (!governanceDiagnostics.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(VisualExecutableReadinessRecomputeResult.rejected(preview, governanceDiagnostics));
+        }
+        return ResponseEntity.ok(VisualExecutableReadinessRecomputeResult.appliedReplay(
+                storedLibrary,
+                appliedRevision,
+                preview,
+                expectedCurrent,
+                expectedCandidate));
+    }
+
+    private OperatorLibraryRevision executableReadinessApplyReplayRevision(String libraryId,
+                                                                           String operatorRef,
+                                                                           String expectedCurrentFingerprint,
+                                                                           String expectedCandidateFingerprint) {
+        return operatorLibraryRegistry.revisions(libraryId).stream()
+                .filter(revision -> revision != null && libraryContainsOperatorFingerprint(
+                        revision.library(),
+                        operatorRef,
+                        expectedCandidateFingerprint))
+                .filter(revision -> revision.revision() > 1L
+                        && operatorLibraryRegistry.findRevision(libraryId, revision.revision() - 1L)
+                        .map(previousRevision -> libraryContainsOperatorFingerprint(
+                                previousRevision.library(),
+                                operatorRef,
+                                expectedCurrentFingerprint))
+                        .orElse(false))
+                .findFirst()
+                .orElse(null);
     }
 
     /**
@@ -3571,6 +3675,39 @@ public class VisualAssetOverviewController {
                 defaultIfBlank(message, "Executable readiness recompute apply mutation failed."),
                 target,
                 diagnosticMetadata);
+    }
+
+    private static boolean serverRecomputedExecutableReadinessApply(OperatorDefinition operator,
+                                                                    String expectedCandidateFingerprint) {
+        if (operator == null
+                || !operator.fingerprint().equals(defaultIfBlank(expectedCandidateFingerprint, ""))
+                || operator.lowering() == null) {
+            return false;
+        }
+        Map<String, Object> parameters = operator.lowering().parameters();
+        return "server-recomputed-executable-readiness".equals(parameters.get("runtimeBindingApplyKind"))
+                && parameters.get("runtimeBindingId") instanceof String runtimeBindingId
+                && !runtimeBindingId.isBlank()
+                && parameters.get("adapterActivationId") instanceof String adapterActivationId
+                && !adapterActivationId.isBlank()
+                && parameters.get("executableLoweringIntegrationId") instanceof String integrationId
+                && !integrationId.isBlank()
+                && parameters.get("executorEntrypoint") instanceof String executorEntrypoint
+                && !executorEntrypoint.isBlank();
+    }
+
+    private static boolean libraryContainsOperatorFingerprint(OperatorLibrary library,
+                                                              String operatorRef,
+                                                              String operatorFingerprint) {
+        if (library == null) {
+            return false;
+        }
+        String normalizedOperatorRef = defaultIfBlank(operatorRef, "");
+        String normalizedFingerprint = defaultIfBlank(operatorFingerprint, "");
+        return library.operators().stream()
+                .filter(Objects::nonNull)
+                .anyMatch(operator -> operator.operatorRef().equals(normalizedOperatorRef)
+                        && operator.fingerprint().equals(normalizedFingerprint));
     }
 
     private static ReplacementLibrary replacementLibraryForExecutableReadinessApply(
