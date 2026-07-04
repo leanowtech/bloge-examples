@@ -578,6 +578,10 @@ const state = {
   connectionDrag: null,
   connectionCandidatePreview: null,
   nodeConnectabilityServer: null,
+  nodeConnectabilityFilter: {
+    query: '',
+    status: ''
+  },
   connectionMessage: null,
   builderHistoryUndo: [],
   builderHistoryRedo: [],
@@ -14500,6 +14504,43 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const input of target.querySelectorAll('[data-connectability-filter-query]')) {
+    input.addEventListener('input', () => {
+      const caret = Number.isFinite(input.selectionStart) ? input.selectionStart : input.value.length;
+      state.nodeConnectabilityFilter = {
+        ...nodeConnectabilityActiveFilter(),
+        query: input.value
+      };
+      renderSelectedOperatorEditor();
+      const nextInput = $('selected-operator-editor')?.querySelector('[data-connectability-filter-query]');
+      if (nextInput) {
+        nextInput.focus();
+        if (typeof nextInput.setSelectionRange === 'function') {
+          nextInput.setSelectionRange(caret, caret);
+        }
+      }
+    });
+  }
+
+  for (const select of target.querySelectorAll('[data-connectability-filter-status]')) {
+    select.addEventListener('change', () => {
+      state.nodeConnectabilityFilter = {
+        ...nodeConnectabilityActiveFilter(),
+        status: select.value
+      };
+      renderSelectedOperatorEditor();
+      $('selected-operator-editor')?.querySelector('[data-connectability-filter-status]')?.focus();
+    });
+  }
+
+  for (const button of target.querySelectorAll('[data-connectability-filter-clear]')) {
+    button.addEventListener('click', () => {
+      clearNodeConnectabilityFilter();
+      renderSelectedOperatorEditor();
+      $('selected-operator-editor')?.querySelector('[data-connectability-filter-query]')?.focus();
+    });
+  }
+
   for (const button of target.querySelectorAll('[data-impact-node]')) {
     button.addEventListener('click', () => {
       focusCanvasNode(button.dataset.impactNode);
@@ -15078,6 +15119,7 @@ function renderNodeConnectabilityPanel(node) {
   const serverControls = typeof renderNodeConnectabilityServerControls === 'function'
     ? renderNodeConnectabilityServerControls(serverState)
     : '';
+  const filter = nodeConnectabilityActiveFilter();
   return `
     <div class="node-connectability-panel">
       <div class="binding-panel-title">
@@ -15086,16 +15128,18 @@ function renderNodeConnectabilityPanel(node) {
       </div>
       ${serverStatus}
       ${serverControls}
-      ${summary.sources.map((source) => renderNodeConnectabilityRow(source)).join('')}
+      ${renderNodeConnectabilityFilterControls(summary, filter)}
+      ${summary.sources.map((source) => renderNodeConnectabilityRow(source, filter)).join('')}
     </div>
   `;
 }
 
-function renderNodeConnectabilityRow(sourceSummary) {
-  const targets = nodeConnectabilityDisplayTargets(sourceSummary);
+function renderNodeConnectabilityRow(sourceSummary, filter = nodeConnectabilityActiveFilter()) {
+  const filterActive = nodeConnectabilityFilterIsActive(filter);
+  const targets = nodeConnectabilityDisplayTargets(sourceSummary, filter);
   const targetRows = targets.length
     ? targets.map((entry) => renderNodeConnectabilityTarget(sourceSummary.source, entry)).join('')
-    : '<span class="node-connectability-chip info">No canvas targets</span>';
+    : `<span class="node-connectability-chip info">${filterActive ? 'No matching targets' : 'No canvas targets'}</span>`;
   return `
     <div class="node-connectability-row ${escapeHtml(nodeConnectabilitySourceLevel(sourceSummary))}">
       <strong>${escapeHtml(endpointLabel(sourceSummary.source))}</strong>
@@ -15105,13 +15149,149 @@ function renderNodeConnectabilityRow(sourceSummary) {
   `;
 }
 
-function nodeConnectabilityDisplayTargets(sourceSummary) {
+function renderNodeConnectabilityFilterControls(summary, filter = nodeConnectabilityActiveFilter()) {
+  const query = filter.query || '';
+  const status = filter.status || '';
+  const active = nodeConnectabilityFilterIsActive(filter);
+  const statusOptions = [
+    ['', 'All'],
+    ['ready', 'Ready'],
+    ['blocked', 'Blocked'],
+    ['wired', 'Wired']
+  ].map(([value, label]) =>
+    `<option value="${escapeHtml(value)}"${status === value ? ' selected' : ''}>${escapeHtml(label)}</option>`
+  ).join('');
+  const summaryText = active ? nodeConnectabilityFilterSummary(summary, filter) : 'Current window';
+  return `
+    <div class="node-connectability-filter-controls">
+      <label>
+        <span>Find</span>
+        <input
+          type="search"
+          data-connectability-filter-query
+          value="${escapeHtml(query)}"
+          placeholder="Target, port, reason"
+          aria-label="Filter connectability targets"
+        >
+      </label>
+      <label>
+        <span>Status</span>
+        <select data-connectability-filter-status aria-label="Filter connectability target status">${statusOptions}</select>
+      </label>
+      <small>${escapeHtml(summaryText)}</small>
+      ${active ? '<button type="button" class="secondary compact" data-connectability-filter-clear>Clear</button>' : ''}
+    </div>
+  `;
+}
+
+function nodeConnectabilityDisplayTargets(sourceSummary, filter = nodeConnectabilityActiveFilter()) {
   const compatible = sourceSummary.compatibleTargets || [];
   const blocked = sourceSummary.blockedTargets || [];
+  if (nodeConnectabilityFilterIsActive(filter)) {
+    return nodeConnectabilityFilteredTargets(sourceSummary, filter)
+      .slice(0, nodeConnectabilityFilterDisplayLimit());
+  }
   if (!compatible.length) {
     return blocked.slice(0, 2);
   }
   return [...compatible, ...blocked.slice(0, 2)];
+}
+
+function nodeConnectabilityActiveFilter() {
+  const filter = state.nodeConnectabilityFilter || {};
+  const status = ['ready', 'blocked', 'wired'].includes(filter.status)
+    ? filter.status
+    : '';
+  return {
+    query: String(filter.query || ''),
+    normalizedQuery: String(filter.query || '').trim().toLowerCase(),
+    status
+  };
+}
+
+function nodeConnectabilityFilterIsActive(filter = nodeConnectabilityActiveFilter()) {
+  return Boolean(filter.normalizedQuery || filter.status);
+}
+
+function nodeConnectabilityFilterDisplayLimit() {
+  return 24;
+}
+
+function nodeConnectabilityAllTargets(sourceSummary) {
+  return [
+    ...(sourceSummary.compatibleTargets || []),
+    ...(sourceSummary.blockedTargets || [])
+  ];
+}
+
+function nodeConnectabilityFilteredTargets(sourceSummary, filter = nodeConnectabilityActiveFilter()) {
+  return nodeConnectabilityAllTargets(sourceSummary)
+    .filter((entry) => nodeConnectabilityTargetMatchesFilter(entry, filter));
+}
+
+function nodeConnectabilityTargetMatchesFilter(entry, filter = nodeConnectabilityActiveFilter()) {
+  if (filter.status && nodeConnectabilityTargetStatus(entry) !== filter.status) {
+    return false;
+  }
+  if (!filter.normalizedQuery) {
+    return true;
+  }
+  return nodeConnectabilityTargetSearchText(entry).includes(filter.normalizedQuery);
+}
+
+function nodeConnectabilityTargetStatus(entry) {
+  if (!entry.compatibility?.ok) {
+    return 'blocked';
+  }
+  return entry.alreadyConnected ? 'wired' : 'ready';
+}
+
+function nodeConnectabilityTargetSearchText(entry) {
+  const explanation = entry.serverCandidate?.explanation || {};
+  const summary = entry.serverCandidate?.summary || {};
+  return uniqueStrings([
+    nodeConnectabilityTargetLabel(entry),
+    nodeConnectabilityTargetTitle(entry),
+    nodeConnectabilityTargetDetail(entry),
+    entry.targetLabel,
+    entry.targetNodeId,
+    entry.target?.nodeId,
+    entry.target?.port,
+    entry.target?.path,
+    entry.kind,
+    entry.decisionSource,
+    entry.compatibility?.message,
+    entry.serverCandidate?.targetOperatorRef,
+    entry.serverCandidate?.bindingKey,
+    summary.message,
+    explanation.sourceLabel,
+    explanation.targetLabel,
+    explanation.decisionMessage,
+    explanation.firstDiagnosticCode,
+    explanation.replacementSummary,
+    explanation.sourceSchemaType,
+    explanation.targetSchemaType
+  ]).join(' ').toLowerCase();
+}
+
+function nodeConnectabilityFilterSummary(summary, filter = nodeConnectabilityActiveFilter()) {
+  if (!nodeConnectabilityFilterIsActive(filter)) {
+    return 'Current window';
+  }
+  const totals = (summary.sources || []).reduce((acc, sourceSummary) => {
+    const allTargets = nodeConnectabilityAllTargets(sourceSummary);
+    const matched = nodeConnectabilityFilteredTargets(sourceSummary, filter);
+    acc.total += allTargets.length;
+    acc.matched += matched.length;
+    acc.displayed += Math.min(matched.length, nodeConnectabilityFilterDisplayLimit());
+    return acc;
+  }, { total: 0, matched: 0, displayed: 0 });
+  const capSuffix = totals.displayed < totals.matched ? ` · showing ${totals.displayed}` : '';
+  return `${totals.matched}/${totals.total} matches${capSuffix}`;
+}
+
+function clearNodeConnectabilityFilter() {
+  state.nodeConnectabilityFilter = { query: '', status: '' };
 }
 
 function renderNodeConnectabilityTarget(source, entry) {

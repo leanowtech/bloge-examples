@@ -2978,6 +2978,17 @@ class VisualAuthoringAppJsTest {
                   'renderNodeConnectabilityPanel',
                   'renderNodeConnectabilityRow',
                   'nodeConnectabilityDisplayTargets',
+                  'renderNodeConnectabilityFilterControls',
+                  'nodeConnectabilityActiveFilter',
+                  'nodeConnectabilityFilterIsActive',
+                  'nodeConnectabilityFilterDisplayLimit',
+                  'nodeConnectabilityAllTargets',
+                  'nodeConnectabilityFilteredTargets',
+                  'nodeConnectabilityTargetMatchesFilter',
+                  'nodeConnectabilityTargetStatus',
+                  'nodeConnectabilityTargetSearchText',
+                  'nodeConnectabilityFilterSummary',
+                  'clearNodeConnectabilityFilter',
                   'renderNodeConnectabilityTarget',
                   'connectionAppliedMessage',
                   'connectNodeConnectabilityFromButton',
@@ -5401,6 +5412,20 @@ operators:
                 const rootConnectability = connectability.sources.find((entry) => entry.source.path === '');
                 const scoreConnectability = connectability.sources.find((entry) => entry.source.path === 'score');
                 const eligibleConnectability = connectability.sources.find((entry) => entry.source.path === 'eligible');
+                context.state.nodeConnectabilityFilter = { query: 'score', status: 'ready' };
+                const activeConnectabilityFilter = context.nodeConnectabilityActiveFilter();
+                const filteredScoreTargets = context.nodeConnectabilityDisplayTargets(
+                  scoreConnectability,
+                  activeConnectabilityFilter
+                );
+                const filteredRootBlockedTargets = context.nodeConnectabilityDisplayTargets(
+                  rootConnectability,
+                  { query: '', normalizedQuery: '', status: 'blocked' }
+                );
+                const filteredControls = context.renderNodeConnectabilityFilterControls(connectability, activeConnectabilityFilter);
+                const filteredPanel = context.renderNodeConnectabilityPanel(context.state.builder.nodes[1]);
+                context.clearNodeConnectabilityFilter();
+                const clearedConnectabilityFilter = context.nodeConnectabilityActiveFilter();
                 const scoreReadyTarget = scoreConnectability.availableTargets
                   .find((entry) => entry.target.nodeId === 'auditNode' && entry.target.path === 'score');
                 const quickConnectButton = {
@@ -6466,6 +6491,19 @@ operators:
                   ['connectability panel includes blocked reason', String(connectabilityPanel.includes('Type mismatch: object cannot feed integer.')), 'true'],
                   ['connectability panel includes aria label', String(connectabilityPanel.includes('aria-label=')), 'true'],
                   ['connectability panel includes connect action', String(connectabilityPanel.includes('data-connectability-action="connect"')), 'true'],
+                  ['connectability panel includes filter query', String(connectabilityPanel.includes('data-connectability-filter-query')), 'true'],
+                  ['connectability active filter status', activeConnectabilityFilter.status, 'ready'],
+                  ['connectability active filter query', activeConnectabilityFilter.normalizedQuery, 'score'],
+                  ['connectability filtered target count', filteredScoreTargets.length, 1],
+                  ['connectability filtered target status', context.nodeConnectabilityTargetStatus(filteredScoreTargets[0]), 'ready'],
+                  ['connectability filtered target label', context.nodeConnectabilityTargetLabel(filteredScoreTargets[0]), 'Audit (auditNode) · data -> inputs.score · ready'],
+                  ['connectability blocked filter count', filteredRootBlockedTargets.length, 3],
+                  ['connectability wired target status', context.nodeConnectabilityTargetStatus(rootConnectability.compatibleTargets[0]), 'wired'],
+                  ['connectability search text includes reason', String(context.nodeConnectabilityTargetSearchText(rootConnectability.blockedTargets[0]).includes('type mismatch')), 'true'],
+                  ['connectability filter summary', context.nodeConnectabilityFilterSummary(connectability, activeConnectabilityFilter), '1/15 matches'],
+                  ['connectability filter controls include clear', String(filteredControls.includes('data-connectability-filter-clear')), 'true'],
+                  ['connectability filtered panel no matching targets', String(filteredPanel.includes('No matching targets')), 'true'],
+                  ['connectability cleared filter inactive', context.nodeConnectabilityFilterIsActive(clearedConnectabilityFilter), false],
                   ['connectability quick source', context.endpointLabel(quickConnectSource), 'riskNode.payload.score'],
                   ['connectability quick target', context.endpointLabel(quickConnectTarget), 'auditNode.inputs.score'],
                   ['connection candidates schema', serverCandidateResult.schemaVersion, 'bloge.visualConnectionCandidates.v1'],
