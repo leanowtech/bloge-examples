@@ -229,6 +229,13 @@ class VisualAuthoringAppJsTest {
                 .contains("operatorFitCandidateMap(payload.fitCandidates)")
                 .contains("operatorFitCandidate: operatorFitCandidatesByRef[operator?.operatorRef || ''] || null")
                 .contains("function operatorPaletteFitBadge(spec)")
+                .contains("function addBuilderNodeFromPalette(type, position = null)")
+                .contains("const fitSource = operatorPaletteFitSourceEndpoint();")
+                .contains("void applyPaletteFitConnection(node, fitSource, fitCandidate);")
+                .contains("function applyPaletteFitConnection(node, sourceEndpoint, fitCandidate)")
+                .contains("function operatorPaletteFitSourceHandle(sourceEndpoint)")
+                .contains("function operatorPaletteFitTargetForNode(node, fitCandidate)")
+                .contains("Checking recommended connection with server...")
                 .contains("id=\"operator-palette-fit-selected\"")
                 .contains("Fit selected output")
                 .contains("itemLimit: state.paletteLimit")
@@ -247,6 +254,29 @@ class VisualAuthoringAppJsTest {
                 .contains("params.set('offset', String(offset))")
                 .contains("loadVisualOperatorDefinition(operatorRef, {\n        paletteVisible: false,\n        render: false,\n        silent: true\n      })")
                 .doesNotContain("fetch(operatorCatalogUrl(state.builder, { includeDeprecated: true }))");
+    }
+
+    @Test
+    void paletteFitAddAutoConnectsThroughServerCheck() throws Exception {
+        assumeNodeAvailable();
+
+        Path tempDir = Files.createTempDirectory("bloge-palette-fit-connect-app-js-test");
+        Path appJs = tempDir.resolve("app.js");
+        Path probe = tempDir.resolve("probe.js");
+        try {
+            Files.writeString(appJs, appJsSource(), StandardCharsets.UTF_8);
+            Files.writeString(probe, paletteFitAutoConnectProbe(), StandardCharsets.UTF_8);
+
+            ProcessResult result = runProcess(List.of("node", probe.toString(), appJs.toString()), tempDir, 10);
+
+            assertThat(result.finished()).as(result.output()).isTrue();
+            assertThat(result.exitCode()).as(result.output()).isZero();
+            assertThat(result.output()).contains("browser palette fit auto-connect probe passed");
+        } finally {
+            Files.deleteIfExists(probe);
+            Files.deleteIfExists(appJs);
+            Files.deleteIfExists(tempDir);
+        }
     }
 
     @Test
@@ -345,7 +375,7 @@ class VisualAuthoringAppJsTest {
                 .contains("data-operator-add")
                 .contains("event.target?.closest?.('button')")
                 .contains("void focusOperatorPaletteRef(card.dataset.operatorType)")
-                .contains("addBuilderNode(button.dataset.operatorAdd)")
+                .contains("addBuilderNodeFromPalette(button.dataset.operatorAdd)")
                 .contains("state.focusedOperatorRef = normalized")
                 .contains("await loadVisualOperatorDefinition(normalized, { render: false })")
                 .contains("const focusedRolloutSignal = row.kind === 'rollout-observation' && breachedSignals.length")
@@ -2274,6 +2304,180 @@ class VisualAuthoringAppJsTest {
                 }
                 console.log('browser operator detail projection probe passed');
                 """);
+    }
+
+    private static String paletteFitAutoConnectProbe() {
+        return """
+                const fs = require('fs');
+                const vm = require('vm');
+                const source = fs.readFileSync(process.argv[2], 'utf8');
+                new vm.Script(source, { filename: 'app.js' });
+
+                function functionSource(name) {
+                  let start = source.indexOf(`function ${name}(`);
+                  if (start < 0) throw new Error(`missing function ${name}`);
+                  if (source.slice(Math.max(0, start - 6), start) === 'async ') {
+                    start -= 6;
+                  }
+                  const openParen = source.indexOf('(', start);
+                  let parenDepth = 0;
+                  let brace = -1;
+                  for (let i = openParen; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '(') parenDepth += 1;
+                    if (ch === ')') {
+                      parenDepth -= 1;
+                      if (parenDepth === 0) {
+                        brace = source.indexOf('{', i + 1);
+                        break;
+                      }
+                    }
+                  }
+                  if (brace < 0) throw new Error(`missing body for function ${name}`);
+                  let depth = 0;
+                  for (let i = brace; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '{') depth += 1;
+                    if (ch === '}') {
+                      depth -= 1;
+                      if (depth === 0) return source.slice(start, i + 1);
+                    }
+                  }
+                  throw new Error(`unterminated function ${name}`);
+                }
+
+                const context = vm.createContext({ console });
+                for (const name of [
+                  'numericCount',
+                  'normalizeOperatorFitTarget',
+                  'normalizeOperatorFitCandidate',
+                  'operatorPaletteFitSourceHandle',
+                  'operatorPaletteFitTargetForNode',
+                  'addBuilderNodeFromPalette',
+                  'applyPaletteFitConnection'
+                ]) {
+                  vm.runInContext(functionSource(name), context);
+                }
+
+                const sourceEndpoint = { nodeId: 'riskNode', port: 'payload', path: 'score' };
+                const targetNode = { id: 'auditNode', type: 'customOperator' };
+                const rawFitCandidate = {
+                  accepted: true,
+                  operator: { operatorRef: 'risk:audit' },
+                  targets: [{
+                    targetSurface: 'input',
+                    targetPort: 'inputs',
+                    targetPath: 'score',
+                    accepted: true,
+                    message: 'Source integer can feed input score.'
+                  }],
+                  message: '1 compatible target.'
+                };
+                context.state = {
+                  builder: {
+                    nodes: [{ id: 'riskNode', type: 'customOperator' }, targetNode]
+                  }
+                };
+                context.sourceHandlesForNode = (node) => node.id === 'riskNode'
+                  ? [{ nodeId: 'riskNode', port: 'payload', path: 'score' }]
+                  : [];
+                context.targetHandlesForNode = (node) => node.id === 'auditNode'
+                  ? [
+                    { nodeId: 'auditNode', port: 'inputs', path: 'risk', key: 'inputs.risk' },
+                    { nodeId: 'auditNode', port: 'inputs', path: 'score', key: 'inputs.score' }
+                  ]
+                  : [];
+                context.targetWithSelectedUnionBranch = (node, target) => ({ ...target, unionChecked: node.id });
+
+                const normalizedCandidate = context.normalizeOperatorFitCandidate(rawFitCandidate);
+                const resolvedSource = context.operatorPaletteFitSourceHandle(sourceEndpoint);
+                const resolvedTarget = context.operatorPaletteFitTargetForNode(targetNode, normalizedCandidate);
+                const originalApplyPaletteFitConnection = context.applyPaletteFitConnection;
+
+                let addType = '';
+                let addPosition = null;
+                let autoNode = '';
+                let autoSource = '';
+                let autoAccepted = false;
+                context.OPERATOR_TYPES = { 'risk:audit': { operatorFitCandidate: rawFitCandidate } };
+                context.operatorPaletteFitSourceEndpoint = () => sourceEndpoint;
+                context.addBuilderNode = (type, position) => {
+                  addType = type;
+                  addPosition = position;
+                  return targetNode;
+                };
+                context.applyPaletteFitConnection = (node, source, candidate) => {
+                  autoNode = node.id;
+                  autoSource = `${source.nodeId}.${source.port}.${source.path}`;
+                  autoAccepted = candidate.accepted;
+                  return Promise.resolve(true);
+                };
+                const addedNode = context.addBuilderNodeFromPalette('risk:audit', { x: 120, y: 240 });
+
+                let checkCall = '';
+                let applied = '';
+                const messages = [];
+                let editorRenders = 0;
+                let diagramRenders = 0;
+                context.applyPaletteFitConnection = originalApplyPaletteFitConnection;
+                context.connectionAlreadyApplied = () => false;
+                context.connectionCompatibility = () => ({ ok: false, message: 'local advisory' });
+                context.connectionServerPreflightMessage = (compatibility, fallback) => fallback;
+                context.checkVisualConnectionOnServer = async (source, target) => {
+                  checkCall = `${source.nodeId}.${source.port}.${source.path}->${target.nodeId}.${target.port}.${target.path}`;
+                  return { accepted: true, bindingKey: 'inputs.score', diagnostics: [], message: '' };
+                };
+                context.targetWithServerBindingKey = (target, serverCheck) => ({ ...target, key: serverCheck.bindingKey });
+                context.applyConnection = (source, target) => {
+                  applied = `${source.nodeId}.${source.port}.${source.path}->${target.nodeId}.${target.port}.${target.path}:${target.key}`;
+                };
+                context.connectionAppliedMessage = (source, target) =>
+                  `Connected ${source.nodeId}.${source.port}.${source.path} -> ${target.nodeId}.${target.port}.${target.path}.`;
+                context.specForNode = () => ({ label: 'Risk Audit' });
+                context.setConnectionMessage = (text, level) => messages.push({ text, level });
+                context.renderSelectedOperatorEditor = () => {
+                  editorRenders += 1;
+                };
+                context.renderDiagram = () => {
+                  diagramRenders += 1;
+                };
+
+                context.applyPaletteFitConnection(targetNode, sourceEndpoint, normalizedCandidate)
+                  .then((connected) => {
+                    const checks = [
+                      ['source node', resolvedSource.nodeId, 'riskNode'],
+                      ['source port', resolvedSource.port, 'payload'],
+                      ['target path', resolvedTarget.path, 'score'],
+                      ['target key', resolvedTarget.key, 'inputs.score'],
+                      ['target union checked', resolvedTarget.unionChecked, 'auditNode'],
+                      ['add wrapper type', addType, 'risk:audit'],
+                      ['add wrapper x', addPosition.x, 120],
+                      ['add wrapper node', addedNode.id, 'auditNode'],
+                      ['add wrapper auto node', autoNode, 'auditNode'],
+                      ['add wrapper auto source', autoSource, 'riskNode.payload.score'],
+                      ['add wrapper normalized candidate', autoAccepted, true],
+                      ['connected', connected, true],
+                      ['server check call', checkCall, 'riskNode.payload.score->auditNode.inputs.score'],
+                      ['applied call', applied, 'riskNode.payload.score->auditNode.inputs.score:inputs.score'],
+                      ['preflight message', messages[0].text, 'Checking recommended connection with server...'],
+                      ['preflight level', messages[0].level, 'info'],
+                      ['success level', messages[1].level, 'success'],
+                      ['success message', messages[1].text, 'Added Risk Audit and Connected riskNode.payload.score -> auditNode.inputs.score.'],
+                      ['editor renders', editorRenders, 1],
+                      ['diagram renders', diagramRenders, 1]
+                    ];
+                    for (const [label, actual, expected] of checks) {
+                      if (actual !== expected) {
+                        throw new Error(`${label}: expected ${expected}, got ${actual}`);
+                      }
+                    }
+                    console.log('browser palette fit auto-connect probe passed');
+                  })
+                  .catch((error) => {
+                    console.error(error);
+                    process.exitCode = 1;
+                  });
+                """;
     }
 
     private static String bracketPathProbe() {

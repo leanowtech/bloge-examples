@@ -3604,7 +3604,7 @@ function renderOperatorPalette() {
   for (const button of target.querySelectorAll('[data-operator-add]')) {
     button.addEventListener('click', (event) => {
       event.stopPropagation();
-      addBuilderNode(button.dataset.operatorAdd);
+      addBuilderNodeFromPalette(button.dataset.operatorAdd);
       state.draggingOperatorType = null;
     });
   }
@@ -3719,7 +3719,7 @@ function attachOperatorPaletteDetailHandlers(target) {
   const addButton = target.querySelector('[data-add-focused-operator]');
   if (addButton) {
     addButton.addEventListener('click', () => {
-      addBuilderNode(addButton.dataset.addFocusedOperator);
+      addBuilderNodeFromPalette(addButton.dataset.addFocusedOperator);
     });
   }
   const refreshButton = target.querySelector('[data-refresh-focused-operator]');
@@ -17618,6 +17618,90 @@ function addBuilderNode(type, position = null) {
   return node;
 }
 
+function addBuilderNodeFromPalette(type, position = null) {
+  const fitSource = operatorPaletteFitSourceEndpoint();
+  const fitCandidate = normalizeOperatorFitCandidate(OPERATOR_TYPES[type]?.operatorFitCandidate);
+  const node = addBuilderNode(type, position);
+  if (node) {
+    void applyPaletteFitConnection(node, fitSource, fitCandidate);
+  }
+  return node;
+}
+
+function applyPaletteFitConnection(node, sourceEndpoint, fitCandidate) {
+  if (!node || !sourceEndpoint || !fitCandidate?.accepted) {
+    return Promise.resolve(false);
+  }
+  const source = operatorPaletteFitSourceHandle(sourceEndpoint);
+  const target = operatorPaletteFitTargetForNode(node, fitCandidate);
+  if (!source || !target) {
+    return Promise.resolve(false);
+  }
+  if (connectionAlreadyApplied(source, target)) {
+    setConnectionMessage('Recommended connection already exists.', 'info');
+    return Promise.resolve(false);
+  }
+  const compatibility = connectionCompatibility(source, target);
+  setConnectionMessage(connectionServerPreflightMessage(
+    compatibility,
+    'Checking recommended connection with server...'
+  ), 'info');
+  return checkVisualConnectionOnServer(source, target)
+    .then((serverCheck) => {
+      if (serverCheck.accepted) {
+        const checkedTarget = targetWithServerBindingKey(target, serverCheck);
+        applyConnection(source, checkedTarget, serverCheck);
+        setConnectionMessage(
+          `Added ${specForNode(node).label || node.id} and ${connectionAppliedMessage(source, checkedTarget, serverCheck)}`,
+          'success'
+        );
+        return true;
+      }
+      setConnectionMessage(
+        `Added ${specForNode(node).label || node.id}; recommended connection rejected: ${serverCheck.message || 'Server rejected recommended connection.'}`,
+        'error'
+      );
+      return false;
+    })
+    .catch((error) => {
+      setConnectionMessage(`Added ${specForNode(node).label || node.id}; recommended connection failed: ${error.message}`, 'error');
+      return false;
+    })
+    .finally(() => {
+      renderSelectedOperatorEditor();
+      renderDiagram();
+    });
+}
+
+function operatorPaletteFitSourceHandle(sourceEndpoint) {
+  const node = state.builder.nodes.find((item) => item.id === sourceEndpoint?.nodeId);
+  if (!node) {
+    return null;
+  }
+  return sourceHandlesForNode(node).find((handle) =>
+    handle.port === (sourceEndpoint.port || '')
+      && (handle.path || '') === (sourceEndpoint.path || '')
+  ) || null;
+}
+
+function operatorPaletteFitTargetForNode(node, fitCandidate) {
+  const targets = Array.isArray(fitCandidate?.targets) ? fitCandidate.targets : [];
+  const handles = targetHandlesForNode(node);
+  for (const target of targets) {
+    if (!target.accepted || target.targetSurface !== 'input') {
+      continue;
+    }
+    const handle = handles.find((candidate) =>
+      candidate.port === (target.targetPort || '')
+        && (candidate.path || '') === (target.targetPath || '')
+    );
+    if (handle) {
+      return targetWithSelectedUnionBranch(node, handle);
+    }
+  }
+  return null;
+}
+
 function createBuilderNode(type, x, y) {
   const spec = OPERATOR_TYPES[type];
   const resourceOperator = spec.kind === 'resource' && spec.resourceId;
@@ -25090,7 +25174,7 @@ function addBuilderNodeAtClientPoint(type, clientX, clientY) {
   const svg = $('diagram');
   if (!svg || !pointInsideElement(svg, clientX, clientY)) return null;
   const point = svgPointFromClient(svg, clientX, clientY);
-  return addBuilderNode(type, {
+  return addBuilderNodeFromPalette(type, {
     x: point.x - NODE_SIZE.width / 2,
     y: point.y - NODE_SIZE.height / 2
   });

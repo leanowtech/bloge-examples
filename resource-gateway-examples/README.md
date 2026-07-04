@@ -102,7 +102,11 @@ an author selects a node, the palette can also ask the server for a
 `bloge.visualOperatorFitCatalog.v1` window of addable operators whose declared
 input schemas can accept that node's selected output schema, keeping large
 user-provided operator libraries navigable by schema fit instead of keyword
-search alone.
+search alone. In Fit selected output mode, adding or dropping a compatible
+operator keeps the new node and then routes the recommended connection through
+the same server-side `/api/visual/connections/check` gate before writing the
+input binding, so the palette recommendation improves authoring speed without
+becoming a second source of connection truth.
 Java operators registered in the Spring `OperatorRegistry` also enter
 the same catalog from BLOGE metadata, with streaming and suspendable operators
 marked as distinct Java source kinds and suspendable operators marked as durable
