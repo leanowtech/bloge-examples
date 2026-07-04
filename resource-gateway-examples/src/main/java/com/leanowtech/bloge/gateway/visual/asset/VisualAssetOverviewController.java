@@ -2304,6 +2304,21 @@ public class VisualAssetOverviewController {
                 ? null
                 : executableLoweringIntegrationRepository.findActiveByActivationId(
                         sourceActivation.activationId()).orElse(null);
+        ResponseEntity<VisualExecutableReadinessEvidenceRefreshResult> replay =
+                replayExecutableReadinessEvidenceRefreshIfCurrent(
+                        normalizedOperatorRef,
+                        sourceBinding,
+                        sourceActivation,
+                        sourceIntegration,
+                        currentOperator,
+                        refreshedBindingId,
+                        refreshedActivationId,
+                        refreshedIntegrationId,
+                        expectedPreviousOperatorFingerprint,
+                        expectedCurrentOperatorFingerprint);
+        if (replay != null) {
+            return replay;
+        }
         List<VisualDiagnostic> expectedFingerprintDiagnostics =
                 executableReadinessEvidenceRefreshExpectedFingerprintDiagnostics(
                         expectedPreviousOperatorFingerprint,
@@ -2896,6 +2911,85 @@ public class VisualAssetOverviewController {
                 sourceIntegration,
                 compensatedIntegration,
                 allDiagnostics));
+    }
+
+    private ResponseEntity<VisualExecutableReadinessEvidenceRefreshResult>
+            replayExecutableReadinessEvidenceRefreshIfCurrent(
+                    String operatorRef,
+                    VisualRuntimeBindingImplementationBinding currentBinding,
+                    VisualRuntimeAdapterActivation currentActivation,
+                    VisualExecutableLoweringIntegration currentIntegration,
+                    OperatorDefinition currentOperator,
+                    String refreshedBindingId,
+                    String refreshedActivationId,
+                    String refreshedIntegrationId,
+                    String expectedPreviousOperatorFingerprint,
+                    String expectedCurrentOperatorFingerprint) {
+        String bindingId = refreshedBindingId == null ? "" : refreshedBindingId.trim();
+        String activationId = refreshedActivationId == null ? "" : refreshedActivationId.trim();
+        String integrationId = refreshedIntegrationId == null ? "" : refreshedIntegrationId.trim();
+        if (bindingId.isBlank() || activationId.isBlank() || integrationId.isBlank()
+                || currentBinding == null || currentActivation == null || currentIntegration == null
+                || currentOperator == null) {
+            return null;
+        }
+        if (!currentBinding.bound()
+                || !bindingId.equals(currentBinding.bindingId())
+                || !activationId.equals(currentActivation.activationId())
+                || !integrationId.equals(currentIntegration.integrationId())
+                || !currentBinding.operatorFingerprint().equals(currentOperator.fingerprint())
+                || !currentActivation.active()
+                || !currentIntegration.active()
+                || !currentActivation.bindingId().equals(currentBinding.bindingId())
+                || !currentIntegration.bindingId().equals(currentBinding.bindingId())
+                || !currentIntegration.activationId().equals(currentActivation.activationId())) {
+            return null;
+        }
+        VisualRuntimeBindingImplementationBinding previousBinding =
+                currentBinding.supersedesBindingId().isBlank()
+                        ? null
+                        : implementationRepository.find(currentBinding.supersedesBindingId()).orElse(null);
+        if (previousBinding == null
+                || !previousBinding.superseded()
+                || !previousBinding.supersededByBindingId().equals(currentBinding.bindingId())) {
+            return null;
+        }
+        String expectedPrevious = expectedPreviousOperatorFingerprint == null
+                ? ""
+                : expectedPreviousOperatorFingerprint.trim();
+        if (!expectedPrevious.isBlank()
+                && !expectedPrevious.equals(previousBinding.operatorFingerprint())) {
+            return null;
+        }
+        String expectedCurrent = expectedCurrentOperatorFingerprint == null
+                ? ""
+                : expectedCurrentOperatorFingerprint.trim();
+        if (!expectedCurrent.isBlank() && !expectedCurrent.equals(currentOperator.fingerprint())) {
+            return null;
+        }
+        VisualRuntimeAdapterActivation previousActivation =
+                adapterActivationRepository.findActiveByBindingId(previousBinding.bindingId()).orElse(null);
+        VisualExecutableLoweringIntegration previousIntegration = previousActivation == null
+                ? null
+                : executableLoweringIntegrationRepository.findActiveByActivationId(
+                        previousActivation.activationId()).orElse(null);
+        OperatorDefinitionChangeSummary.ChangeReport changeReport =
+                OperatorDefinitionChangeSummary.analyze(
+                        operatorDefinitionFromContract(previousBinding.operatorContract()),
+                        currentOperator);
+        return ResponseEntity.ok(VisualExecutableReadinessEvidenceRefreshResult.refreshed(
+                operatorRef,
+                previousBinding.operatorFingerprint(),
+                currentOperator.fingerprint(),
+                changeReport.risk(),
+                changeReport.categories(),
+                changeReport.summary(),
+                previousBinding,
+                currentBinding,
+                previousActivation,
+                currentActivation,
+                previousIntegration,
+                currentIntegration));
     }
 
     private static VisualDiagnostic evidenceRefreshMutationExceptionDiagnostic(

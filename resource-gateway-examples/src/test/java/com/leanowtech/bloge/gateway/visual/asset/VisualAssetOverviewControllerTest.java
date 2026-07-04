@@ -4292,6 +4292,35 @@ class VisualAssetOverviewControllerTest {
                 .extracting(VisualExecutableLoweringIntegration.Evidence::kind)
                 .contains("post-apply-refresh");
 
+        var replayedResponse = fixture.controller().refreshExecutableReadinessEvidence(
+                "risk:eligibility",
+                true,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Retry post-apply runtime evidence refresh.",
+                "Original refresh response was lost; replay the same stable ids.",
+                "risk-eligibility-native-v1-refresh",
+                "risk-eligibility-prod-active-refresh",
+                "risk-eligibility-lowering-v1-refresh",
+                binding.operatorFingerprint(),
+                applied.candidateOperatorFingerprint());
+        assertThat(replayedResponse.getStatusCode().value()).isEqualTo(200);
+        assertThat(replayedResponse.getBody()).isNotNull();
+        VisualExecutableReadinessEvidenceRefreshResult replayed = replayedResponse.getBody();
+        assertThat(replayed.refreshed()).isTrue();
+        assertThat(replayed.state()).isEqualTo("refreshed");
+        assertThat(replayed.previousOperatorFingerprint()).isEqualTo(binding.operatorFingerprint());
+        assertThat(replayed.currentOperatorFingerprint()).isEqualTo(applied.candidateOperatorFingerprint());
+        assertThat(replayed.sourceBinding().bindingId()).isEqualTo(binding.bindingId());
+        assertThat(replayed.refreshedBinding().bindingId()).isEqualTo("risk-eligibility-native-v1-refresh");
+        assertThat(replayed.sourceActivation().activationId()).isEqualTo(activation.activationId());
+        assertThat(replayed.refreshedActivation().activationId())
+                .isEqualTo("risk-eligibility-prod-active-refresh");
+        assertThat(replayed.sourceIntegration().integrationId()).isEqualTo(integration.integrationId());
+        assertThat(replayed.refreshedIntegration().integrationId())
+                .isEqualTo("risk-eligibility-lowering-v1-refresh");
+        assertThat(replayed.diagnostics()).isEmpty();
+
         assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "bound"))
                 .singleElement()
                 .extracting(VisualRuntimeBindingImplementationBinding::bindingId)
@@ -4300,6 +4329,10 @@ class VisualAssetOverviewControllerTest {
                 .singleElement()
                 .extracting(VisualRuntimeBindingImplementationBinding::bindingId)
                 .isEqualTo(binding.bindingId());
+        assertThat(fixture.controller().runtimeAdapterActivations("", "risk:eligibility", "active"))
+                .hasSize(2);
+        assertThat(fixture.controller().executableLoweringIntegrations("", "risk:eligibility", "active"))
+                .hasSize(2);
         var afterRefreshPreview = fixture.controller().previewExecutableReadinessRecompute("risk:eligibility");
         assertThat(afterRefreshPreview.getStatusCode().value()).isEqualTo(200);
         assertThat(afterRefreshPreview.getBody()).isNotNull();
