@@ -555,10 +555,11 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("selected-operator-editor"), "partial server window 1-250 of 260");
         waitForText(wait, By.id("selected-operator-editor"), "local fallback beyond server window");
         waitForText(wait, By.id("selected-operator-editor"), "Window 1-250 of 260");
+        waitForText(wait, By.id("selected-operator-editor"), "Showing first 24 of 260 ready targets");
         wait.until(ignored -> driver.findElements(By.cssSelector(
                 "#selected-operator-editor [data-connectability-action='connect']"
                         + "[data-connect-target-node^='riskScoreReview']"
-        )).size() >= 250);
+        )).size() == 24);
         assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-panel"));
 
         By filterQuery = By.cssSelector("#selected-operator-editor [data-connectability-filter-query]");

@@ -44,7 +44,7 @@
 | --- | ---: | --- | --- | --- |
 | 算子库合同与导入 | 8.0 | `OperatorLibrary`、JSON/YAML validate/import、revision、impact、bundle fingerprint、design-only lowering | 复杂第三方协议包 diff、跨环境治理策略还需继续深化 | OpenAPI/AsyncAPI diff 与 runtime binding handoff 对齐 |
 | Schema 约束与拖线裁决 | 8.4 | `VisualSchemaCompatibility`、`VisualSchemaValidator`、`GraphDraftValidator`、connection check/candidates、fit candidates、`VisualSchemaIntrospection`，以及浏览器 schema mirror 对 required-only / contains-only typeless schema 的回归 | JSON Schema 语义仍是受限子集，深层 compatibility diff 与 value matching 还没有完全抽成可复用策略 | 持续收敛 shared schema/value helper，补更多 schema 子集回归 |
-| 画布产品化体验 | 8.4 | Browser Composer palette、schema-aware picker、hover preflight、readiness panel、diagnostic queue、impact inspector，前端本地 schema type/validator mirror 已覆盖 required-only object 与 contains-only array；selected-node Connectability 直接展示服务端候选 schema 类型、替换影响、target runtime-binding debt，并在候选窗口被截断时显式提示 partial server window / local fallback 风险，已提供 Prev/Next 候选窗口控制，并支持按 target/reason/schema 文本发起服务端全局 query、按 ready/blocked/wired 做服务端全局状态过滤并返回 `statusCounts`；服务端候选结果现在返回 `facetCounts` 和候选行级 `facetValues`，覆盖 surface、schemaType、operatorRef、operatorLibraryId、runtimeReadiness、sourceKind、loweringMode，Connectability 已把这 7 个维度全部暴露为交互式服务端 facet filter，且 facet 统计口径保持在 query/status 之后、facet filter 与分页之前；selected-node Connectability 现在还提供 Endpoint/source-handle 筛选，多输出算子可把可见行和服务端候选请求收窄到单个输出端点；真实浏览器已覆盖 filter 输入重绘后的焦点保留、状态筛选、Clear 恢复，以及 260 个 target 下的服务端窗口、服务端全局 query/status/schema/lowering facet 命中末尾 target、Next 翻页和无横向溢出；服务端候选接口已把大窗口成本限制到当前页，并通过 `targetSurface=canvas` 与画布 target handle 语义对齐 | 单文件前端复杂度高，query/status/facet filter 已下沉到服务端候选合同并覆盖当前服务端 facet 维度，Endpoint filter 已能收窄多输出 source，但候选列表仍是 chip/window 形态；大图回归仍缺窄屏、虚拟化列表、大量 source handle 和多算子族性能矩阵 | 抽更小 UI 模块，补虚拟化候选列表、窄屏布局、大量 source handle 和多 operator family 大画布回归 |
+| 画布产品化体验 | 8.5 | Browser Composer palette、schema-aware picker、hover preflight、readiness panel、diagnostic queue、impact inspector，前端本地 schema type/validator mirror 已覆盖 required-only object 与 contains-only array；selected-node Connectability 直接展示服务端候选 schema 类型、替换影响、target runtime-binding debt，并在候选窗口被截断时显式提示 partial server window / local fallback 风险，已提供 Prev/Next 候选窗口控制，并支持按 target/reason/schema 文本发起服务端全局 query、按 ready/blocked/wired 做服务端全局状态过滤并返回 `statusCounts`；服务端候选结果现在返回 `facetCounts` 和候选行级 `facetValues`，覆盖 surface、schemaType、operatorRef、operatorLibraryId、runtimeReadiness、sourceKind、loweringMode，Connectability 已把这 7 个维度全部暴露为交互式服务端 facet filter，且 facet 统计口径保持在 query/status 之后、facet filter 与分页之前；selected-node Connectability 现在还提供 Endpoint/source-handle 筛选，多输出算子可把可见行和服务端候选请求收窄到单个输出端点；候选行渲染已窗口化，默认和过滤状态都限制首批展示并用行级 overflow chip 显示被裁剪的 ready/match 数，且服务端当前窗口候选会优先排在 local fallback 前；真实浏览器已覆盖 filter 输入重绘后的焦点保留、状态筛选、Clear 恢复，以及 260 个 target 下的服务端窗口、行级 24 个 chip 上限、overflow 提示、服务端全局 query/status/schema/lowering facet 命中末尾 target、Next 翻页和无横向溢出；服务端候选接口已把大窗口成本限制到当前页，并通过 `targetSurface=canvas` 与画布 target handle 语义对齐 | 单文件前端复杂度高，query/status/facet filter 已下沉到服务端候选合同并覆盖当前服务端 facet 维度，Endpoint filter 已能收窄多输出 source，候选行已从无界 chip 渲染推进到窗口化显性裁剪，但还不是完整虚拟化列表；大图回归仍缺窄屏、键盘导航、大量 source handle 和多算子族性能矩阵 | 抽更小 UI 模块，补真正虚拟化候选列表、窄屏布局、键盘导航、大量 source handle 和多 operator family 大画布回归 |
 | Design-only artifact 生命周期 | 8.0 | `DESIGN` publication、action-readiness gate、run/golden 禁用、runtime-binding requirements | DESIGN 到 external runtime bound 的组织流程仍依赖外部协作 | handoff bundle 与外部工单/事件系统对接 |
 | Runtime binding 闭环 | 6.5 | requirement index、handoff bundle、implementation proposal、bind/supersede/unbind、activation、rollout observation、lowering integration、readiness recompute | 跨 repository partial-failure、异步 workflow idempotency、指标消费闭环仍未全覆盖 | 继续硬化 runtime evidence lifecycle 和 replay/compensation |
 | 发布、可迁移性与版本治理 | 7.5 | draft/publication bundles、fingerprint gate、immutable publication、revision guard、operator/resource impact | 还有协议命名与当前 wire contract 的历史漂移 | 协议草案按现状收敛，保留平台化 ADR |
@@ -53,7 +53,7 @@
 | Runtime 扩展族 | 5.8 | remote-worker、AI-tool、event-source、message-handler、webhook、streaming/durable contract 已可设计态编排 | 真正 dispatcher、ingress runtime、AI tool invocation、durable instance 尚未落地 | 从 runtime-binding handoff 开始逐类接 executor |
 | 工程可维护性 | 7.2 | 服务端测试丰富，完整 `clean verify` 可跑通，Java 侧读模型、GraphDraftValidator、VisualSchemaCompatibility 与 VisualSchemaValidator 的结构类型推断已开始共享 schema helper；浏览器 helper probe 覆盖了本地 mirror 与服务端语义一致性 | 深层 compatibility/value matching 仍分散，前端 `app.js` 过大 | 继续迁移 compatibility/validator 深层校验 helpers，逐步拆分前端 authoring helpers |
 
-综合分：**78/100**。
+综合分：**79/100**。
 
 这个分数不是贬低当前成果。相反，它说明项目已经跨过“画布玩具”阶段，但离完整工业平台还差治理、runtime、观测和维护性闭环。
 
@@ -78,6 +78,7 @@
 15. selected-node Connectability 候选 API 已返回服务端 `facetCounts`：统计口径是 query/status 过滤之后、facet filter 与分页之前，覆盖 surface、schemaType、operatorRef、operatorLibraryId、runtimeReadiness、sourceKind、loweringMode；前端会聚合同一 selected node 的 source 结果并展示短 facet 摘要，让用户在大画布候选窗口中看到当前结果集合由哪些 schema/runtime/library 构成。
 16. selected-node Connectability 已支持交互式服务端 facet filter：请求可携带 `facetFilters`，候选行返回 `facetValues`，UI 暴露 Schema、Runtime、Library、Operator、Source、Lowering、Surface 七个下拉；`totalCandidateCount` 表达 query/status/facet 过滤后的全集，`statusCounts` 仍表达 query 之后、status 之前的状态分布，`facetCounts` 仍表达 query/status 之后、facet 之前的可选项分布，避免筛选控件被当前选项自我吃掉。
 17. selected-node Connectability 已支持 Endpoint/source-handle 筛选：多输出算子可以在 inspector 中先锁定一个输出端点，UI 只展示该 source 的候选行，服务端候选请求也只针对该 source 发起，并把 `sourceKey` 纳入 request key/server state，避免不同 source handle 的窗口和筛选状态互相污染。
+18. selected-node Connectability 候选行已做窗口化显性裁剪：默认状态不再一次渲染 250+ chip，而是显示首批 24 个 ready target，并用行级 overflow chip 说明“Showing first 24 of N”；翻页后当前 server-reviewed 候选优先排在 local fallback 前，避免服务端第 2 页目标被本地前 24 个目标遮住。
 
 ### 尚未成立
 
@@ -88,6 +89,33 @@
 5. 前端仍是示例项目形态，复杂度已经接近需要模块化拆分的边界。
 
 ## 4. 本轮迭代复盘
+
+### 2026-07-05：Connectability 行级候选窗口化
+
+触发问题：
+
+上一轮补了 Endpoint/source-handle 过滤，但候选行本身仍有一个产品级漏洞：默认状态会把当前 source 的大量 ready target 全部渲染成 chip；过滤状态虽然限制到 24 个，但只有总摘要弱提示，行级用户看不出这一行被裁剪。更糟的是，点击服务端候选 Next 到 `251-260` 后，如果前 24 个本地 fallback 仍排在前面，第 260 个 server-reviewed target 会被新窗口裁剪挡住。
+
+本轮完成：
+
+1. `nodeConnectabilityDisplayTargetWindow()` 统一默认与过滤状态的行级展示窗口，默认只展示首批 ready target 和少量 blocked preview，过滤状态只展示首批 matches。
+2. `renderNodeConnectabilityRow()` 增加 `data-connectability-overflow` 行级 overflow chip，例如 `Showing first 24 of 260 ready targets`，让裁剪成为显式产品行为。
+3. `nodeConnectabilityPrioritizedDisplayTargets()` 把带 `serverCandidate` 的当前服务端窗口候选排在 local fallback 前，保证翻页窗口里的 server-reviewed target 不会被前序本地候选遮住。
+4. CSS 增加 dashed overflow chip 样式，保留 chip 视觉体系但把“这是窗口提示，不是可连目标”区分出来。
+5. `VisualAuthoringAppJsTest` 覆盖 30 个 ready target 的窗口计数、overflow 文案、active filter 裁剪，以及 server-reviewed target 优先排序。
+6. 真实 Chrome 260 target 回归从“首窗口至少 250 个可点按钮”改为“首窗口 24 个可点按钮 + overflow 提示”，并继续证明全局 query 可命中第 260 个 target、Next 后第 260 个 target 可见。
+
+验证：
+
+```bash
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringAppJsTest test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerConnectabilityHandlesLargeTargetWindowInRealBrowser test
+mvn -q -f resource-gateway-examples/pom.xml clean verify
+```
+
+剩余风险：
+
+这轮把候选展示从“无界 chip 堆叠”推进到“行级窗口化 + 裁剪显性化 + server window 优先”，所以评估从 78 分推进到 79 分。但它仍不是完整虚拟化候选表：没有列表键盘导航、没有按行滚动虚拟化、没有窄屏矩阵，也没有多 operator family / 大量 source handle 的性能证明。
 
 ### 2026-07-05：Connectability Endpoint Source Filter
 
@@ -114,7 +142,7 @@ mvn -q -f resource-gateway-examples/pom.xml clean verify
 
 剩余风险：
 
-这轮把“多输出 source handle 的作者控制权”补上，所以评估从 77 分推进到 78 分。但它仍不是完整候选表：Endpoint 还是单选；大量 source handle、窄屏布局、虚拟化列表和多 operator family 大图性能矩阵还没有自动化证明。
+这轮把“多输出 source handle 的作者控制权”补上，所以评估从 77 分推进到 78 分。但它当时仍不是完整候选表：Endpoint 还是单选；大量 source handle、窄屏布局、虚拟化列表和多 operator family 大图性能矩阵还没有自动化证明。后一轮已把候选行从无界 chip 渲染推进到窗口化显性裁剪，但真正虚拟化和大矩阵仍未完成。
 
 ### 2026-07-05：Connectability 全维度服务端 Facet 控件
 
@@ -550,7 +578,7 @@ schema type/path 逻辑仍分散在多个类中。短期可接受；中期应抽
 | --- | --- | --- | --- |
 | P0 | 深层 compatibility / value diagnostics 策略收敛 | effective kind 已统一，但 not/conditional/patternProperties/dependent schema 等深层判断仍在类内分散 | 选一个高风险 schema 子集，抽共享 value/schema policy 或补明确不可迁移边界 |
 | P0 | Runtime binding partial-failure 硬化 | 这是 DESIGN artifact 走向可执行 runtime 的主干 | 选一个尚未补偿的跨 repository mutation，补 replay/compensation/诊断 |
-| P1 | Browser regression matrix | required-only / contains-only typeless schema、Connectability 可见候选解释、design-only target runtime debt、候选窗口截断提示、基本 Prev/Next 窗口翻页、JS 层候选过滤、真实浏览器 filter 交互、260 target 大画布窗口、服务端全局 query、ready/blocked/wired status、全维度 facet 和 Endpoint/source-handle 筛选已覆盖，但 UI 能力多，DOM smoke 仍需继续扩大 | 覆盖导入面板、窄屏/移动布局、多算子族大画布、虚拟化候选列表、大量 source handle 性能矩阵和大量 schema field rendering 的更多负路径/漂移路径 |
+| P1 | Browser regression matrix | required-only / contains-only typeless schema、Connectability 可见候选解释、design-only target runtime debt、候选窗口截断提示、基本 Prev/Next 窗口翻页、JS 层候选过滤、真实浏览器 filter 交互、260 target 大画布窗口、服务端全局 query、ready/blocked/wired status、全维度 facet、Endpoint/source-handle 筛选和行级候选窗口化已覆盖，但 UI 能力多，DOM smoke 仍需继续扩大 | 覆盖导入面板、窄屏/移动布局、多算子族大画布、真正虚拟化候选列表、键盘导航、大量 source handle 性能矩阵和大量 schema field rendering 的更多负路径/漂移路径 |
 | P1 | 协议文档收敛 | 设计草案与当前 wire contract 名称仍有历史漂移 | 把 candidate/fit/readiness 当前字段写入 protocol v1 |
 | P2 | 前端模块化 | `app.js` 已承载太多 authoring 逻辑 | 先抽 schema helper 或 readiness helper，保持测试覆盖 |
 

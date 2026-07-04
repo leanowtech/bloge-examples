@@ -669,8 +669,10 @@ Status, Endpoint, Schema, Runtime, Library, Operator, Source, Lowering, and
 Surface controls are sent back to the candidate endpoint, so large canvases
 filter the full candidate set instead of only the currently rendered chip
 window. Endpoint selection also narrows multi-output nodes to one source handle
-before fetching candidates; the click path still runs connection check before
-mutating the draft.
+before fetching candidates. Candidate rows render a bounded first window with a
+visible overflow chip, and server-reviewed candidates from the active window are
+ordered ahead of local fallback rows; the click path still runs connection check
+before mutating the draft.
 Operator availability is also enforced by policy: imported operator definitions
 may declare allowed `tenants`, `namespaces`, and `environments`; the browser
 queries the active catalog with the current draft scope from the Authoring Scope

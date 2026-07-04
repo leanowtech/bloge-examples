@@ -2982,6 +2982,10 @@ class VisualAuthoringAppJsTest {
                   'nodeConnectabilitySourceFilterKey',
                   'nodeConnectabilityDisplaySources',
                   'nodeConnectabilityDisplayTargets',
+                  'nodeConnectabilityDisplayTargetWindow',
+                  'nodeConnectabilityDisplayOverflowSummary',
+                  'nodeConnectabilityPrioritizedDisplayTargets',
+                  'nodeConnectabilityDisplayPriority',
                   'renderNodeConnectabilityFilterControls',
                   'nodeConnectabilityActiveFilter',
                   'nodeConnectabilityFilterIsActive',
@@ -5442,6 +5446,57 @@ operators:
                 const rootConnectability = connectability.sources.find((entry) => entry.source.path === '');
                 const scoreConnectability = connectability.sources.find((entry) => entry.source.path === 'score');
                 const eligibleConnectability = connectability.sources.find((entry) => entry.source.path === 'eligible');
+                const overflowReadyTargets = Array.from({ length: 30 }, (_, index) => {
+                  const base = scoreConnectability.availableTargets[0];
+                  return {
+                    ...base,
+                    targetNodeId: `overflowReview${index + 1}`,
+                    targetLabel: `Overflow Review ${index + 1}`,
+                    target: {
+                      ...base.target,
+                      nodeId: `overflowReview${index + 1}`
+                    }
+                  };
+                });
+                const overflowConnectability = {
+                  ...scoreConnectability,
+                  availableCount: overflowReadyTargets.length,
+                  compatibleTargets: overflowReadyTargets,
+                  availableTargets: overflowReadyTargets
+                };
+                const overflowDisplayTargets = context.nodeConnectabilityDisplayTargets(overflowConnectability);
+                const overflowDisplayWindow = context.nodeConnectabilityDisplayTargetWindow(overflowConnectability);
+                const overflowSummary = context.nodeConnectabilityDisplayOverflowSummary(overflowConnectability);
+                const overflowRow = context.renderNodeConnectabilityRow(overflowConnectability);
+                const overflowReadyFilter = {
+                  query: '',
+                  normalizedQuery: '',
+                  status: 'ready',
+                  sourceKey: '',
+                  facetFilters: {}
+                };
+                const overflowFilteredTargets = context.nodeConnectabilityDisplayTargets(
+                  overflowConnectability,
+                  overflowReadyFilter
+                );
+                const overflowFilteredSummary = context.nodeConnectabilityDisplayOverflowSummary(
+                  overflowConnectability,
+                  overflowReadyFilter
+                );
+                const overflowServerWindowTargets = context.nodeConnectabilityDisplayTargets({
+                  ...overflowConnectability,
+                  compatibleTargets: overflowReadyTargets.map((entry, index) =>
+                    index === overflowReadyTargets.length - 1
+                      ? {
+                          ...entry,
+                          serverCandidate: {
+                            accepted: true,
+                            targetStatus: 'ready'
+                          }
+                        }
+                      : entry
+                  )
+                });
                 context.state.nodeConnectabilityFilter = { query: 'score', status: 'ready' };
                 const activeConnectabilityFilter = context.nodeConnectabilityActiveFilter();
                 const filteredScoreTargets = context.nodeConnectabilityDisplayTargets(
@@ -6699,6 +6754,14 @@ operators:
                   ['connectability root first target label', context.nodeConnectabilityTargetLabel(rootConnectability.compatibleTargets[0]), 'Audit (auditNode) · data -> inputs.risk · wired'],
                   ['connectability root display targets', context.nodeConnectabilityDisplayTargets(rootConnectability).length, 4],
                   ['connectability root blocked preview count', context.nodeConnectabilityDisplayTargets(rootConnectability).filter((entry) => !entry.compatibility.ok).length, 2],
+                  ['connectability overflow display targets', overflowDisplayTargets.length, 26],
+                  ['connectability overflow display ready count', overflowDisplayWindow.displayed, 24],
+                  ['connectability overflow total ready count', overflowDisplayWindow.total, 30],
+                  ['connectability overflow summary', overflowSummary, 'Showing first 24 of 30 ready targets'],
+                  ['connectability overflow row marker', String(overflowRow.includes('data-connectability-overflow')), 'true'],
+                  ['connectability overflow filtered targets', overflowFilteredTargets.length, 24],
+                  ['connectability overflow filtered summary', overflowFilteredSummary, 'Showing first 24 of 30 matches'],
+                  ['connectability overflow server target first', overflowServerWindowTargets[0].target.nodeId, 'overflowReview30'],
                   ['connectability blocked target title', context.nodeConnectabilityTargetTitle(rootConnectability.blockedTargets[0]), 'Audit (auditNode) · data -> inputs.score · blocked · Type mismatch: object cannot feed integer.'],
                   ['connectability panel includes score chip', String(connectabilityPanel.includes('riskNode.payload.score')), 'true'],
                   ['connectability panel includes blocked chip', String(connectabilityPanel.includes('blocked')), 'true'],

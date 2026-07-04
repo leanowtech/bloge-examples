@@ -15232,8 +15232,12 @@ function renderNodeConnectabilityPanel(node) {
 function renderNodeConnectabilityRow(sourceSummary, filter = nodeConnectabilityActiveFilter()) {
   const filterActive = nodeConnectabilityFilterIsActive(filter);
   const targets = nodeConnectabilityDisplayTargets(sourceSummary, filter);
+  const overflowSummary = nodeConnectabilityDisplayOverflowSummary(sourceSummary, filter);
+  const overflowRow = overflowSummary
+    ? `<span class="node-connectability-chip info node-connectability-overflow" data-connectability-overflow>${escapeHtml(overflowSummary)}</span>`
+    : '';
   const targetRows = targets.length
-    ? targets.map((entry) => renderNodeConnectabilityTarget(sourceSummary.source, entry)).join('')
+    ? `${targets.map((entry) => renderNodeConnectabilityTarget(sourceSummary.source, entry)).join('')}${overflowRow}`
     : `<span class="node-connectability-chip info">${filterActive ? 'No matching targets' : 'No canvas targets'}</span>`;
   return `
     <div class="node-connectability-row ${escapeHtml(nodeConnectabilitySourceLevel(sourceSummary))}">
@@ -15391,16 +15395,62 @@ function nodeConnectabilityFacetFilterOptionLimit() {
 }
 
 function nodeConnectabilityDisplayTargets(sourceSummary, filter = nodeConnectabilityActiveFilter()) {
+  return nodeConnectabilityDisplayTargetWindow(sourceSummary, filter).targets;
+}
+
+function nodeConnectabilityDisplayTargetWindow(sourceSummary, filter = nodeConnectabilityActiveFilter()) {
   const compatible = sourceSummary.compatibleTargets || [];
   const blocked = sourceSummary.blockedTargets || [];
+  const limit = nodeConnectabilityFilterDisplayLimit();
   if (nodeConnectabilityFilterIsActive(filter)) {
-    return nodeConnectabilityFilteredTargets(sourceSummary, filter)
-      .slice(0, nodeConnectabilityFilterDisplayLimit());
+    const matched = nodeConnectabilityPrioritizedDisplayTargets(nodeConnectabilityFilteredTargets(sourceSummary, filter));
+    const targets = matched.slice(0, limit);
+    return {
+      targets,
+      displayed: targets.length,
+      total: matched.length,
+      label: 'matches'
+    };
   }
   if (!compatible.length) {
-    return blocked.slice(0, 2);
+    const targets = blocked.slice(0, 2);
+    return {
+      targets,
+      displayed: targets.length,
+      total: blocked.length,
+      label: 'blocked previews'
+    };
   }
-  return [...compatible, ...blocked.slice(0, 2)];
+  const prioritizedCompatible = nodeConnectabilityPrioritizedDisplayTargets(compatible);
+  const readyTargets = prioritizedCompatible.slice(0, limit);
+  return {
+    targets: [...readyTargets, ...blocked.slice(0, 2)],
+    displayed: readyTargets.length,
+    total: compatible.length,
+    label: 'ready targets'
+  };
+}
+
+function nodeConnectabilityDisplayOverflowSummary(sourceSummary, filter = nodeConnectabilityActiveFilter()) {
+  const window = nodeConnectabilityDisplayTargetWindow(sourceSummary, filter);
+  if (window.total <= window.displayed) {
+    return '';
+  }
+  return `Showing first ${window.displayed} of ${window.total} ${window.label}`;
+}
+
+function nodeConnectabilityPrioritizedDisplayTargets(targets) {
+  return (targets || [])
+    .map((entry, index) => ({ entry, index }))
+    .sort((left, right) =>
+      nodeConnectabilityDisplayPriority(left.entry) - nodeConnectabilityDisplayPriority(right.entry)
+        || left.index - right.index
+    )
+    .map((item) => item.entry);
+}
+
+function nodeConnectabilityDisplayPriority(entry) {
+  return entry?.serverCandidate ? 0 : 1;
 }
 
 function nodeConnectabilityActiveFilter() {

@@ -1630,6 +1630,12 @@ body.dragging-operator * {
   color: #b91c1c;
 }
 
+.node-connectability-overflow {
+  border-style: dashed;
+  background: #fff;
+  color: var(--muted);
+}
+
 .node-impact-panel {
   display: grid;
   gap: 8px;
