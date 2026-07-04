@@ -3168,6 +3168,48 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsContextPathBindingWithTypelessArrayIndexSegment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.numericBoundsCompatibilityLibrary(0, 1000, 0, 1000)));
+        SchemaEnvelope inputSchema = SchemaEnvelope.object(Map.of(
+                "scores", Map.of("items", Map.of(
+                        "type", "integer",
+                        "minimum", 0,
+                        "maximum", 1000))
+        ), List.of("scores"));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "typelessArrayContextBinding",
+                "",
+                "",
+                "",
+                "",
+                inputSchema,
+                List.of(new GraphDraft.DraftNode(
+                        "scoreConsumer",
+                        "risk:scoreConsumer",
+                        "",
+                        Map.of("score", GraphDraft.Binding.contextPath("scores.0")),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("scoreConsumer", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
+        assertThat(result.diagnostics())
+                .noneSatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.binding.pathSegment.invalid"));
+    }
+
+    @Test
     void acceptsNodePathBindingWithArrayIndexSegment() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(arrayItemScoreLibrary()));
@@ -3176,6 +3218,58 @@ class GraphDraftValidatorTest {
                 "",
                 0,
                 "arrayNodeBinding",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "listFacts",
+                                "risk:listFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "scoreConsumer",
+                                "risk:scoreConsumer",
+                                "",
+                                Map.of("score", GraphDraft.Binding.nodePath(
+                                        "listFacts",
+                                        "output",
+                                        "items.0",
+                                        "inputs",
+                                        "score")),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(new GraphDraft.DraftEdge("score", "data",
+                        new GraphDraft.Endpoint("listFacts", "output", "items.0"),
+                        new GraphDraft.Endpoint("scoreConsumer", "inputs", "score"))),
+                Map.of(),
+                new GraphDraft.OutputSelection("scoreConsumer", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics())
+                .noneSatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.binding.pathSegment.invalid"));
+    }
+
+    @Test
+    void acceptsNodePathBindingWithTypelessArrayIndexSegment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(typelessArrayItemScoreLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "typelessArrayNodeBinding",
                 "",
                 "",
                 "",
@@ -6570,7 +6664,57 @@ class GraphDraftValidatorTest {
     }
 
     private static OperatorLibrary arrayItemScoreLibrary() {
-        OperatorDefinition scoreConsumer = new OperatorDefinition(
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-array-item-score",
+                "Array item score operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(VisualCatalogTestSupport.listFactsOperator("integer"), scoreConsumerOperator())
+        );
+    }
+
+    private static OperatorLibrary typelessArrayItemScoreLibrary() {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-typeless-array-item-score",
+                "Typeless array item score operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(typelessArrayListFactsOperator(), scoreConsumerOperator())
+        );
+    }
+
+    private static OperatorDefinition typelessArrayListFactsOperator() {
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("items", Map.of("items", Map.of("type", "integer")));
+
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:listFacts",
+                "1.0.0",
+                new OperatorDefinition.Display("List facts",
+                        "Produces typed list facts.",
+                        List.of("risk", "list")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "List facts."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskListFacts", Map.of()),
+                List.of()
+        );
+    }
+
+    private static OperatorDefinition scoreConsumerOperator() {
+        return new OperatorDefinition(
                 "bloge.visualOperator.v1",
                 "risk:scoreConsumer",
                 "1.0.0",
@@ -6595,15 +6739,6 @@ class GraphDraftValidatorTest {
                         "assignments", Map.of("accepted", "true")
                 )),
                 List.of()
-        );
-        return new OperatorLibrary(
-                "bloge.visualOperatorLibrary.v1",
-                "risk-array-item-score",
-                "Array item score operators",
-                "1.0.0",
-                "risk-team",
-                "ACTIVE",
-                List.of(VisualCatalogTestSupport.listFactsOperator("integer"), scoreConsumer)
         );
     }
 

@@ -1599,7 +1599,8 @@ public class GraphDraftValidator {
         if (path == null || path.isBlank()) {
             Map<String, Object> root = new LinkedHashMap<>(schema.schema());
             if (!root.containsKey("type") && !root.containsKey("kind")) {
-                root.put("type", "object");
+                String inferredType = schemaType(root);
+                root.put("type", inferredType.isBlank() ? "object" : inferredType);
             }
             return selectedUnionBranchSchemaAtPath(root, "", branchSelections, targetPath, diagnostics)
                     .orElse(root);
@@ -2331,16 +2332,31 @@ public class GraphDraftValidator {
         if (type instanceof List<?> types) {
             return nullableTypePrimary(types);
         }
-        if (type == null && property.containsKey("properties")) {
+        if (type == null && hasSchemaKeyword(property, "properties", "required", "additionalProperties",
+                "unevaluatedProperties", "patternProperties", "propertyNames", "dependentRequired",
+                "dependentSchemas", "minProperties", "maxProperties")) {
             return "object";
         }
-        if (type == null && property.containsKey("items")) {
+        if (type == null && hasSchemaKeyword(property, "items", "prefixItems", "unevaluatedItems", "contains",
+                "minItems", "maxItems", "uniqueItems", "minContains", "maxContains")) {
             return "array";
         }
         if (type == null && property.containsKey("const")) {
             return schemaTypeForValue(property.get("const"));
         }
         return type == null ? "" : String.valueOf(type);
+    }
+
+    private static boolean hasSchemaKeyword(Map<String, Object> schema, String... keywords) {
+        if (schema == null) {
+            return false;
+        }
+        for (String keyword : keywords) {
+            if (schema.containsKey(keyword)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String nullableTypePrimary(List<?> types) {

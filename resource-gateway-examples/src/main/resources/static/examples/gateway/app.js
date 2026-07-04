@@ -17352,7 +17352,10 @@ function updateConfigFieldStatus(node, input) {
 }
 
 function parseConfigInputValue(input, schema) {
-  const type = rawSchemaType(schema);
+  let type = rawSchemaType(schema);
+  if (!type) {
+    type = compatibilitySchemaType(schema);
+  }
   const values = schemaEnumValues(schema);
   if (input.type === 'checkbox' || type === 'boolean') {
     return Boolean(input.checked);
@@ -18451,7 +18454,7 @@ function schemaFieldsFromSchema(schema, prefix, parentRequired, prefixDslPathSaf
       ...schemaFieldsFromSchema(normalizedChildSchema, path, fieldRequired, fieldDslPathSafe, branchSelections)
     ];
   });
-  if (rawSchemaType(normalizedSchema) !== 'array') {
+  if (compatibilitySchemaType(normalizedSchema) !== 'array') {
     return propertyFields;
   }
   return [
@@ -18642,7 +18645,7 @@ function isSchemaPathDslSafe(schemaEnvelope, path) {
   let current = schemaEnvelope?.schema || {};
   const normalized = String(path).startsWith('.') ? String(path).slice(1) : String(path);
   for (const segment of normalized.split('.').filter(Boolean)) {
-    if (rawSchemaType(current) === 'array') {
+    if (compatibilitySchemaType(current) === 'array') {
       const index = arrayIndexSegment(segment);
       if (index !== null) {
         current = arrayItemSchemaForIndex(current, index) || {};
@@ -23124,8 +23127,8 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   if (targetConditionalIssue) {
     return targetConditionalIssue;
   }
-  const sourceType = rawSchemaType(sourceSchema);
-  const targetType = rawSchemaType(targetSchema);
+  const sourceType = compatibilitySchemaType(sourceSchema);
+  const targetType = compatibilitySchemaType(targetSchema);
   if (schemaMayProduceNull(sourceSchema) && !schemaValueMatchesSchema(null, targetSchema)) {
     return reasonAt(path, `source may produce null but target ${schemaType(targetSchema)} does not allow null`);
   }
@@ -23481,6 +23484,11 @@ function effectiveSchemaType(schema) {
   return '';
 }
 
+function compatibilitySchemaType(schema) {
+  const type = rawSchemaType(schema);
+  return type || effectiveSchemaType(schema);
+}
+
 function excludedSchemaLabel(schema) {
   const values = schemaEnumValues(schema);
   if (values.length) {
@@ -23652,7 +23660,7 @@ function propertyConstraintsFor(sourceSchema, propertyName) {
 }
 
 function numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
-  if (!numericType(rawSchemaType(sourceSchema)) || !numericType(rawSchemaType(targetSchema))) {
+  if (!numericType(compatibilitySchemaType(sourceSchema)) || !numericType(compatibilitySchemaType(targetSchema))) {
     return '';
   }
   const targetLower = schemaLowerBound(targetSchema);
@@ -23679,7 +23687,7 @@ function numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path = '') 
 }
 
 function numericMultipleOfCompatibilityIssue(sourceSchema, targetSchema, path = '') {
-  if (!numericType(rawSchemaType(sourceSchema)) || !numericType(rawSchemaType(targetSchema))) {
+  if (!numericType(compatibilitySchemaType(sourceSchema)) || !numericType(compatibilitySchemaType(targetSchema))) {
     return '';
   }
   const targetMultipleOf = numericMultipleOfValue(targetSchema?.multipleOf);
@@ -23697,8 +23705,8 @@ function numericMultipleOfCompatibilityIssue(sourceSchema, targetSchema, path = 
 }
 
 function numericIntegerCompatibilityIssue(sourceSchema, targetSchema, path = '') {
-  const sourceType = rawSchemaType(sourceSchema);
-  const targetType = rawSchemaType(targetSchema);
+  const sourceType = compatibilitySchemaType(sourceSchema);
+  const targetType = compatibilitySchemaType(targetSchema);
   if (targetType !== 'integer' || !numericType(sourceType) || sourceType === 'integer') {
     return '';
   }
@@ -23713,7 +23721,7 @@ function numericIntegerCompatibilityIssue(sourceSchema, targetSchema, path = '')
 }
 
 function stringLengthCompatibilityIssue(sourceSchema, targetSchema, path = '') {
-  if (!stringType(rawSchemaType(sourceSchema)) || !stringType(rawSchemaType(targetSchema))) {
+  if (!stringType(compatibilitySchemaType(sourceSchema)) || !stringType(compatibilitySchemaType(targetSchema))) {
     return '';
   }
   const targetMinimum = schemaMinLength(targetSchema);
@@ -23740,7 +23748,7 @@ function stringLengthCompatibilityIssue(sourceSchema, targetSchema, path = '') {
 }
 
 function stringPatternCompatibilityIssue(sourceSchema, targetSchema, path = '') {
-  if (!stringType(rawSchemaType(sourceSchema)) || !stringType(rawSchemaType(targetSchema))) {
+  if (!stringType(compatibilitySchemaType(sourceSchema)) || !stringType(compatibilitySchemaType(targetSchema))) {
     return '';
   }
   const targetPattern = schemaPatternValue(targetSchema);
@@ -23758,7 +23766,7 @@ function stringPatternCompatibilityIssue(sourceSchema, targetSchema, path = '') 
 }
 
 function stringFormatCompatibilityIssue(sourceSchema, targetSchema, path = '') {
-  if (!stringType(rawSchemaType(sourceSchema)) || !stringType(rawSchemaType(targetSchema))) {
+  if (!stringType(compatibilitySchemaType(sourceSchema)) || !stringType(compatibilitySchemaType(targetSchema))) {
     return '';
   }
   const targetFormat = schemaFormatValue(targetSchema);
@@ -23776,7 +23784,7 @@ function stringFormatCompatibilityIssue(sourceSchema, targetSchema, path = '') {
 }
 
 function arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
-  if (!arrayType(rawSchemaType(sourceSchema)) || !arrayType(rawSchemaType(targetSchema))) {
+  if (!arrayType(compatibilitySchemaType(sourceSchema)) || !arrayType(compatibilitySchemaType(targetSchema))) {
     return '';
   }
   const targetMinimum = schemaMinItems(targetSchema);
@@ -23866,7 +23874,7 @@ function arrayUnevaluatedItemsCompatibilityIssue(sourceSchema, targetSchema, pat
 }
 
 function arrayPrefixItemsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
-  if (!arrayType(rawSchemaType(sourceSchema)) || !arrayType(rawSchemaType(targetSchema))) {
+  if (!arrayType(compatibilitySchemaType(sourceSchema)) || !arrayType(compatibilitySchemaType(targetSchema))) {
     return '';
   }
   const targetPrefixItems = schemaPrefixItems(targetSchema);
@@ -23910,7 +23918,7 @@ function arrayPrefixItemsCompatibilityIssue(sourceSchema, targetSchema, path = '
 }
 
 function arrayUniqueItemsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
-  if (!arrayType(rawSchemaType(sourceSchema)) || !arrayType(rawSchemaType(targetSchema)) || targetSchema?.uniqueItems !== true) {
+  if (!arrayType(compatibilitySchemaType(sourceSchema)) || !arrayType(compatibilitySchemaType(targetSchema)) || targetSchema?.uniqueItems !== true) {
     return '';
   }
   if (sourceSchema?.uniqueItems === true) {
@@ -23924,7 +23932,7 @@ function arrayUniqueItemsCompatibilityIssue(sourceSchema, targetSchema, path = '
 }
 
 function arrayContainsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
-  if (!arrayType(rawSchemaType(sourceSchema)) || !arrayType(rawSchemaType(targetSchema))) {
+  if (!arrayType(compatibilitySchemaType(sourceSchema)) || !arrayType(compatibilitySchemaType(targetSchema))) {
     return '';
   }
   const targetContains = schemaContainsSchema(targetSchema);
@@ -24336,7 +24344,7 @@ function objectDependentSchemasCompatibilityIssue(sourceSchema, targetSchema, pa
 }
 
 function objectPropertyBoundsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
-  if (rawSchemaType(sourceSchema) !== 'object' || rawSchemaType(targetSchema) !== 'object') {
+  if (compatibilitySchemaType(sourceSchema) !== 'object' || compatibilitySchemaType(targetSchema) !== 'object') {
     return '';
   }
   const targetMinimum = schemaMinProperties(targetSchema);

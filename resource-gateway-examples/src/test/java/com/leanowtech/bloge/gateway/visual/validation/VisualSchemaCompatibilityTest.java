@@ -146,7 +146,7 @@ class VisualSchemaCompatibilityTest {
         assertThat(VisualSchemaCompatibility.valueMatchesSchema("GOOD", schema)).isTrue();
         assertThat(VisualSchemaCompatibility.valueMatchesSchema("NO", schema)).isFalse();
         assertThat(VisualSchemaCompatibility.valueMatchesSchema("BAD", schema)).isFalse();
-        assertThat(VisualSchemaCompatibility.schemaTypeLabel(schema)).isEqualTo("allOf<string&unknown&unknown>");
+        assertThat(VisualSchemaCompatibility.schemaTypeLabel(schema)).isEqualTo("allOf<string&string&unknown>");
     }
 
     @Test
@@ -436,6 +436,98 @@ class VisualSchemaCompatibilityTest {
         );
 
         assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsTypelessTargetRequiredObjectFieldWhenSourceDoesNotGuaranteeIt() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "additionalProperties", true
+        );
+        Map<String, Object> target = Map.of(
+                "required", List.of("traceId"),
+                "additionalProperties", true
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("at 'traceId'")
+                        .contains("source object does not guarantee required field 'traceId'"));
+    }
+
+    @Test
+    void rejectsTypelessTargetResidualObjectSchemaWhenSourceResidualIsIncompatible() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "additionalProperties", Map.of("type", "integer")
+        );
+        Map<String, Object> target = Map.of(
+                "additionalProperties", Map.of("type", "string")
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("at 'additionalProperties'")
+                        .contains("source type integer cannot feed target type string"));
+    }
+
+    @Test
+    void rejectsTypelessSourceResidualObjectSchemaWhenTargetResidualIsIncompatible() {
+        Map<String, Object> source = Map.of(
+                "additionalProperties", Map.of("type", "integer")
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "additionalProperties", Map.of("type", "string")
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("at 'additionalProperties'")
+                        .contains("source type integer cannot feed target type string"));
+    }
+
+    @Test
+    void rejectsTypelessObjectMinPropertiesWhenSourceGuaranteeIsWeaker() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "minProperties", 1
+        );
+        Map<String, Object> target = Map.of("minProperties", 2);
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("source minProperties 1 is weaker than target minProperties 2"));
+    }
+
+    @Test
+    void rejectsTypelessTargetStringLengthWhenSourceHasNoProof() {
+        Map<String, Object> source = Map.of("type", "string");
+        Map<String, Object> target = Map.of("minLength", 3);
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("target requires length >= 3 but source has no minLength"));
+    }
+
+    @Test
+    void rejectsTypelessTargetArrayMinItemsWhenSourceHasNoProof() {
+        Map<String, Object> source = Map.of("type", "array");
+        Map<String, Object> target = Map.of("minItems", 2);
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("target requires item count >= 2 but source has no minItems"));
+    }
+
+    @Test
+    void rejectsTypelessTargetNumericMinimumWhenSourceHasNoProof() {
+        Map<String, Object> source = Map.of("type", "number");
+        Map<String, Object> target = Map.of("minimum", 0);
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("target requires value >= 0 but source has no lower bound"));
     }
 
     @Test

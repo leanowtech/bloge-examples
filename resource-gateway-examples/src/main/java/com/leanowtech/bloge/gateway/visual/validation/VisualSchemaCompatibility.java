@@ -107,8 +107,8 @@ public final class VisualSchemaCompatibility {
         if (targetConditionalIssue.isPresent()) {
             return targetConditionalIssue;
         }
-        String sourceType = schemaType(sourceSchema);
-        String targetType = schemaType(targetSchema);
+        String sourceType = compatibilitySchemaType(sourceSchema);
+        String targetType = compatibilitySchemaType(targetSchema);
         if (schemaMayProduceNull(sourceSchema) && !valueMatchesSchema(null, targetSchema)) {
             return Optional.of(reasonAt(path,
                     "source may produce null but target %s does not allow null"
@@ -720,6 +720,11 @@ public final class VisualSchemaCompatibility {
         return "";
     }
 
+    private static String compatibilitySchemaType(Map<String, Object> schema) {
+        String type = schemaType(schema);
+        return type.isBlank() ? effectiveSchemaType(schema) : type;
+    }
+
     private static boolean hasSchemaKeyword(Map<String, Object> schema, String... keywords) {
         if (schema == null) {
             return false;
@@ -783,7 +788,7 @@ public final class VisualSchemaCompatibility {
 	    private static Optional<String> numericBoundsCompatibilityIssue(Map<String, Object> sourceSchema,
 	                                                                    Map<String, Object> targetSchema,
                                                                     String path) {
-        if (!numeric(schemaType(sourceSchema)) || !numeric(schemaType(targetSchema))) {
+        if (!numeric(compatibilitySchemaType(sourceSchema)) || !numeric(compatibilitySchemaType(targetSchema))) {
             return Optional.empty();
         }
         NumericBoundary targetLower = lowerBound(targetSchema);
@@ -818,7 +823,7 @@ public final class VisualSchemaCompatibility {
 	    private static Optional<String> numericMultipleOfCompatibilityIssue(Map<String, Object> sourceSchema,
 	                                                                        Map<String, Object> targetSchema,
 	                                                                        String path) {
-	        if (!numeric(schemaType(sourceSchema)) || !numeric(schemaType(targetSchema))) {
+	        if (!numeric(compatibilitySchemaType(sourceSchema)) || !numeric(compatibilitySchemaType(targetSchema))) {
 	            return Optional.empty();
 	        }
 	        Double targetMultipleOf = numericMultipleOf(targetSchema.get("multipleOf"));
@@ -842,8 +847,8 @@ public final class VisualSchemaCompatibility {
 	    private static Optional<String> numericIntegerCompatibilityIssue(Map<String, Object> sourceSchema,
 	                                                                     Map<String, Object> targetSchema,
 	                                                                     String path) {
-	        String sourceType = schemaType(sourceSchema);
-	        String targetType = schemaType(targetSchema);
+	        String sourceType = compatibilitySchemaType(sourceSchema);
+	        String targetType = compatibilitySchemaType(targetSchema);
 	        if (!"integer".equals(targetType) || !numeric(sourceType) || "integer".equals(sourceType)) {
 	            return Optional.empty();
 	        }
@@ -864,7 +869,8 @@ public final class VisualSchemaCompatibility {
 	    private static Optional<String> stringLengthCompatibilityIssue(Map<String, Object> sourceSchema,
 	                                                                   Map<String, Object> targetSchema,
 	                                                                   String path) {
-	        if (!stringLike(schemaType(sourceSchema)) || !stringLike(schemaType(targetSchema))) {
+	        if (!stringLike(compatibilitySchemaType(sourceSchema))
+                    || !stringLike(compatibilitySchemaType(targetSchema))) {
 	            return Optional.empty();
 	        }
 	        Long targetMinimum = stringMinLength(targetSchema);
@@ -899,7 +905,8 @@ public final class VisualSchemaCompatibility {
 		    private static Optional<String> stringPatternCompatibilityIssue(Map<String, Object> sourceSchema,
 		                                                                    Map<String, Object> targetSchema,
 		                                                                    String path) {
-	        if (!stringLike(schemaType(sourceSchema)) || !stringLike(schemaType(targetSchema))) {
+	        if (!stringLike(compatibilitySchemaType(sourceSchema))
+                    || !stringLike(compatibilitySchemaType(targetSchema))) {
 	            return Optional.empty();
 	        }
 	        String targetPattern = stringPattern(targetSchema);
@@ -922,7 +929,8 @@ public final class VisualSchemaCompatibility {
 	    private static Optional<String> stringFormatCompatibilityIssue(Map<String, Object> sourceSchema,
 	                                                                   Map<String, Object> targetSchema,
 	                                                                   String path) {
-	        if (!stringLike(schemaType(sourceSchema)) || !stringLike(schemaType(targetSchema))) {
+	        if (!stringLike(compatibilitySchemaType(sourceSchema))
+                    || !stringLike(compatibilitySchemaType(targetSchema))) {
 	            return Optional.empty();
 	        }
 	        String targetFormat = stringFormat(targetSchema);
@@ -945,7 +953,8 @@ public final class VisualSchemaCompatibility {
 	    private static Optional<String> arrayItemBoundsCompatibilityIssue(Map<String, Object> sourceSchema,
 	                                                                      Map<String, Object> targetSchema,
 	                                                                      String path) {
-	        if (!"array".equals(schemaType(sourceSchema)) || !"array".equals(schemaType(targetSchema))) {
+	        if (!"array".equals(compatibilitySchemaType(sourceSchema))
+                    || !"array".equals(compatibilitySchemaType(targetSchema))) {
 	            return Optional.empty();
 	        }
 	        Long targetMinimum = arrayMinItems(targetSchema);
@@ -1052,7 +1061,8 @@ public final class VisualSchemaCompatibility {
 	    private static Optional<String> arrayPrefixItemsCompatibilityIssue(Map<String, Object> sourceSchema,
 	                                                                       Map<String, Object> targetSchema,
 	                                                                       String path) {
-	        if (!"array".equals(schemaType(sourceSchema)) || !"array".equals(schemaType(targetSchema))) {
+	        if (!"array".equals(compatibilitySchemaType(sourceSchema))
+                    || !"array".equals(compatibilitySchemaType(targetSchema))) {
 	            return Optional.empty();
 	        }
 	        List<Map<String, Object>> targetPrefixItems = prefixItemsOf(targetSchema);
@@ -1105,7 +1115,8 @@ public final class VisualSchemaCompatibility {
 	    private static Optional<String> arrayUniqueItemsCompatibilityIssue(Map<String, Object> sourceSchema,
 	                                                                       Map<String, Object> targetSchema,
 	                                                                       String path) {
-	        if (!"array".equals(schemaType(sourceSchema)) || !"array".equals(schemaType(targetSchema))
+	        if (!"array".equals(compatibilitySchemaType(sourceSchema))
+                    || !"array".equals(compatibilitySchemaType(targetSchema))
 	                || !Boolean.TRUE.equals(targetSchema.get("uniqueItems"))) {
 	            return Optional.empty();
 	        }
@@ -1124,7 +1135,8 @@ public final class VisualSchemaCompatibility {
 	    private static Optional<String> arrayContainsCompatibilityIssue(Map<String, Object> sourceSchema,
 	                                                                    Map<String, Object> targetSchema,
 	                                                                    String path) {
-	        if (!"array".equals(schemaType(sourceSchema)) || !"array".equals(schemaType(targetSchema))) {
+	        if (!"array".equals(compatibilitySchemaType(sourceSchema))
+                    || !"array".equals(compatibilitySchemaType(targetSchema))) {
 	            return Optional.empty();
 	        }
 	        Map<String, Object> targetContains = objectProperty(targetSchema.get("contains"));
@@ -1661,7 +1673,8 @@ public final class VisualSchemaCompatibility {
 	    private static Optional<String> objectPropertyBoundsCompatibilityIssue(Map<String, Object> sourceSchema,
 	                                                                           Map<String, Object> targetSchema,
 	                                                                           String path) {
-	        if (!"object".equals(schemaType(sourceSchema)) || !"object".equals(schemaType(targetSchema))) {
+	        if (!"object".equals(compatibilitySchemaType(sourceSchema))
+                    || !"object".equals(compatibilitySchemaType(targetSchema))) {
 	            return Optional.empty();
 	        }
 	        Long targetMinimum = objectMinProperties(targetSchema);
@@ -1713,6 +1726,9 @@ public final class VisualSchemaCompatibility {
             return "enum<" + String.join("|", values.stream().map(String::valueOf).toList()) + ">";
         }
         String type = schemaType(schema);
+        if (type.isBlank()) {
+            type = compatibilitySchemaType(schema);
+        }
         if ("array".equals(type)) {
             Map<String, Object> items = objectProperty(schema.get("items"));
             String label = items == null ? "array" : "array<" + schemaTypeLabel(items) + ">";

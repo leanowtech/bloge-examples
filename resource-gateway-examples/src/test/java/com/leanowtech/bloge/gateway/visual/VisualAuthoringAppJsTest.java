@@ -2648,6 +2648,9 @@ class VisualAuthoringAppJsTest {
                   'residualArrayItemSchema',
                   'unevaluatedArrayItemsPolicy',
                   'rawSchemaType',
+                  'compatibilitySchemaType',
+                  'effectiveSchemaType',
+                  'schemaHasAnyKeyword',
                   'residualPropertiesPolicy',
                   'additionalPropertySchema',
                   'matchingPatternPropertySchemas',
@@ -3097,6 +3100,43 @@ class VisualAuthoringAppJsTest {
                 }
                 context.actualSourceHandlesForNode = context.sourceHandlesForNode;
                 context.actualOutputPathOptionsForNode = context.outputPathOptionsForNode;
+                context.DSL_FIELD_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+                context.RESERVED_DSL_FIELD_NAMES = new Set(['graph', 'node', 'input', 'output', 'true', 'false']);
+                const typelessArrayEnvelope = {
+                  schema: {
+                    items: {
+                      properties: {
+                        score: { type: 'integer' }
+                      },
+                      required: ['score']
+                    }
+                  }
+                };
+                const typelessArrayPaths = context.schemaFieldDescriptors(typelessArrayEnvelope)
+                  .map((field) => field.path)
+                  .join('|');
+                const typelessArrayScoreSchema = context.schemaAtPath(typelessArrayEnvelope, '0.score') || {};
+                const typelessPrefixEnvelope = {
+                  schema: {
+                    prefixItems: [{
+                      properties: {
+                        code: { type: 'string' }
+                      }
+                    }]
+                  }
+                };
+                const typelessPrefixPaths = context.schemaFieldDescriptors(typelessPrefixEnvelope)
+                  .map((field) => field.path)
+                  .join('|');
+                if (typelessArrayPaths !== '0|0.score') {
+                  throw new Error(`Expected typeless array items to expand, got ${typelessArrayPaths}`);
+                }
+                if (typelessArrayScoreSchema.type !== 'integer') {
+                  throw new Error(`Expected typeless array schemaAtPath to resolve 0.score, got ${JSON.stringify(typelessArrayScoreSchema)}`);
+                }
+                if (typelessPrefixPaths !== '0|0.code') {
+                  throw new Error(`Expected typeless prefixItems to expand, got ${typelessPrefixPaths}`);
+                }
 
                 context.BUILDER_HISTORY_LIMIT = 50;
                 context.CONTEXT_SOURCE_ID = '__ctx';
@@ -7250,6 +7290,7 @@ operators:
                   'schemaValueMatchesEffectiveNotSchema',
                   'effectiveNotValueSchema',
                   'effectiveSchemaType',
+                  'compatibilitySchemaType',
                   'schemaHasAnyKeyword',
                   'schemaValueMatchesUnions',
                   'schemaValueMatchesAllOf',
@@ -7650,6 +7691,7 @@ operators:
                   'schemasDefinitelyDisjoint',
                   'schemaTypesOverlap',
                   'effectiveSchemaType',
+                  'compatibilitySchemaType',
                   'schemaHasAnyKeyword',
                   'excludedSchemaLabel',
                   'numericRangesDisjoint',
@@ -7820,6 +7862,25 @@ operators:
                   },
                   required: ['risk_score'],
                   additionalProperties: true
+                });
+                const typelessTargetRequiredMissingIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  additionalProperties: true
+                }, {
+                  required: ['traceId'],
+                  additionalProperties: true
+                });
+                const typelessTargetResidualMismatchIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  additionalProperties: { type: 'integer' }
+                }, {
+                  additionalProperties: { type: 'string' }
+                });
+                const typelessSourceResidualMismatchIssue = context.schemaCompatibilityIssue({
+                  additionalProperties: { type: 'integer' }
+                }, {
+                  type: 'object',
+                  additionalProperties: { type: 'string' }
                 });
 
                 const dependentRequiredProvesDependentSchemaIssue = context.schemaCompatibilityIssue({
@@ -8343,6 +8404,9 @@ operators:
                   ['required-only object field safe', requiredOnlySafeIssue, ''],
                   ['required-only target constrained rejected', String(requiredOnlyTargetConstrainedIssue.includes("source object guarantees required field 'traceId' but does not constrain it")), 'true'],
                   ['required field constrained by source pattern safe', requiredPatternConstrainedSafeIssue, ''],
+                  ['typeless target required rejected', String(typelessTargetRequiredMissingIssue.includes("source object does not guarantee required field 'traceId'")), 'true'],
+                  ['typeless target residual rejected', String(typelessTargetResidualMismatchIssue.includes('source type integer cannot feed target type string')), 'true'],
+                  ['typeless source residual rejected', String(typelessSourceResidualMismatchIssue.includes('source type integer cannot feed target type string')), 'true'],
                   ['dependentRequired proves dependentSchemas safe', dependentRequiredProvesDependentSchemaIssue, ''],
                   ['dependentRequired dependentSchemas mismatch surfaced', String(dependentRequiredRejectsDependentSchemaIssue.includes("target requires dependentSchemas 'creditCard'")), 'true'],
                   ['dependent trigger required projection', triggeredRequired, 'billingAddress|creditCard|customerId'],
