@@ -798,10 +798,14 @@ changes, including risk, summary, and node/edge add/remove/change counts before
 preview or restore. Stored drafts also expose
 `bloge.visualGraphDraftDependencies.v1`, a current-catalog dependency report
 that groups operatorRefs, owner operator-library counts, node lineage, source/lowering/readiness counts, and
-fingerprint states, while falling back to saved operator snapshots when a draft
-is imported into an environment where the current catalog is missing an
-operator and flagging scope-mismatch dependencies when an operator exists but is
-not available to the draft's tenant/namespace/environment. The Drafts panel
+fingerprint states. The report also compares each saved operator schema snapshot
+with the current catalog schema and returns schema-compatible versus breaking
+drift counts, per-node/operator `schemaCompatibilityState`, and structured
+`schemaCompatibilityIssues[]` with the shared JSON Schema compatibility reason,
+while falling back to saved operator snapshots when a draft is imported into an
+environment where the current catalog is missing an operator and flagging
+scope-mismatch dependencies when an operator exists but is not available to the
+draft's tenant/namespace/environment. The Drafts panel
 loads the same report after save, load, import, restore, and fingerprint rebase,
 and renders the dependency mix plus missing-catalog, scope-mismatch, drifted,
 and missing-snapshot states beside the revision review. Operator and node rows
@@ -896,7 +900,7 @@ Showcase metadata APIs:
 | `GET` | `/api/visual/drafts/summaries` | List `bloge.visualGraphDraftSummary.v1` draft asset summaries that combine history, server validation/readiness/action-readiness, diagnostic counts, and dependency counts without returning full draft JSON; supports optional `tenantId` / `namespace` / `environment` scope filters |
 | `POST` | `/api/visual/drafts` | Save a new visual graph draft with server-assigned id/revision, ignoring submitted draft identity fields; repository write failures return `409` with `visual.draft.createPersistenceFailed` while preserving candidate readiness |
 | `GET` | `/api/visual/drafts/{draftId}` | Load a stored visual graph draft |
-| `GET` | `/api/visual/drafts/{draftId}/dependencies` | Summarize a stored draft as `bloge.visualGraphDraftDependencies.v1`, including distinct operator dependencies, per-node binding/edge lineage, source/lowering/runtime-readiness counts, current/missing/drifted/scope-mismatch fingerprint state, and scope policy diagnostics |
+| `GET` | `/api/visual/drafts/{draftId}/dependencies` | Summarize a stored draft as `bloge.visualGraphDraftDependencies.v1`, including distinct operator dependencies, per-node binding/edge lineage, source/lowering/runtime-readiness counts, current/missing/drifted/scope-mismatch fingerprint state, frozen-vs-current operator schema compatibility states/issues, and scope policy diagnostics |
 | `GET` | `/api/visual/drafts/{draftId}/export` | Export a portable draft bundle with operator snapshots, export-time diagnostics, validation/readiness/action-readiness, and source-environment dependency report |
 | `POST` | `/api/visual/drafts/import` | Import a portable draft bundle as a new draft identity with current operator fingerprints/snapshots plus target-environment diagnostics, validation/readiness/action-readiness, source and target dependency reports, target runtime-binding handoff requirements and stable keys, legacy target `dependencyReport`, and optional `actor` / `changeSource` / `changeSummary` / `reason` revision audit metadata; repository save failures return `409` with `visual.draft.importPersistenceFailed` while retaining target preview evidence |
 | `GET` | `/api/visual/drafts/{draftId}/revisions` | List immutable draft revision snapshots, newest first; retained history remains queryable after current draft deletion |
@@ -1793,7 +1797,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection, operator fingerprint snapshots, and node-level operator definition snapshots |
 | `GraphDraftHistorySummary` | Lightweight active/deleted draft history index entry for browser and external recovery control planes, including latest revision actor/source/summary/reason |
 | `GraphDraftDiff` | Machine-readable graph draft revision diff with graph/node/edge change surfaces, node and edge add/remove/change counts, and risk-classified review summaries |
-| `GraphDraftDependencyReport` | Machine-readable dependency report used for stored drafts, migration bundles, import results, and frozen publications, with distinct operatorRef usage, owner operator-library counts, per-node binding/edge upstream and downstream lineage, source/lowering/readiness counts, saved-vs-current/scope-mismatch fingerprint state, and scope policy diagnostics |
+| `GraphDraftDependencyReport` | Machine-readable dependency report used for stored drafts, migration bundles, import results, and frozen publications, with distinct operatorRef usage, owner operator-library counts, per-node binding/edge upstream and downstream lineage, source/lowering/readiness counts, saved-vs-current/scope-mismatch fingerprint state, frozen-vs-current operator schema compatibility states/issues, and scope policy diagnostics |
 | `GraphDraftRevisionRestoreRequest` | Governed restore request for turning one immutable draft revision into a new latest revision with optimistic locking and actor/source/summary/reason audit metadata |
 | `VisualGraphReadiness` | Server-derived graph runtime/design readiness (`bloge.visualGraphReadiness.v1`) with node readiness rows and runtime binding requirements for schema-valid but non-executable design artifacts |
 | `VisualGraphActionReadiness` | Server-derived graph action gate summary (`bloge.visualGraphActionReadiness.v1`) for compile, run, DESIGN publication, EXECUTABLE publication, warning acknowledgement, and governance evidence requirements |

@@ -10599,11 +10599,14 @@ function renderDraftDependencyReport() {
     ['Missing', report.missingOperatorCount || 0],
     ['Scope', report.scopeMismatchOperatorCount || 0],
     ['Drifted', report.driftedFingerprintCount || 0],
-    ['Unsnapshotted', report.missingFingerprintCount || 0]
+    ['Unsnapshotted', report.missingFingerprintCount || 0],
+    ['Schema break', report.schemaBreakingDriftCount || 0],
+    ['Schema review', report.schemaCompatibleDriftCount || 0]
   ].map(([label, value]) => `<span><strong>${escapeHtml(value)}</strong> ${escapeHtml(label)}</span>`).join('');
   const readinessRows = draftDependencyCountRows(report.runtimeReadinessStateCounts || {}, 'readiness');
   const sourceRows = draftDependencyCountRows(report.sourceKindCounts || {}, 'source');
   const libraryRows = draftDependencyCountRows(report.operatorLibraryIdCounts || {}, 'library');
+  const schemaRows = draftDependencyCountRows(report.schemaCompatibilityStateCounts || {}, 'schema');
   const operatorRows = draftDependencyOperatorRows(report);
   const nodeRows = draftDependencyNodeRows(report);
   target.innerHTML = `
@@ -10613,8 +10616,8 @@ function renderDraftDependencyReport() {
     </div>
     <div class="library-impact-risk-summary">${escapeHtml(draftDependencySummary(report))}</div>
     <div class="library-impact-stats">${stats}</div>
-    ${readinessRows || sourceRows || libraryRows
-      ? `<div class="library-impact-codes">${readinessRows}${sourceRows}${libraryRows}</div>`
+    ${readinessRows || sourceRows || libraryRows || schemaRows
+      ? `<div class="library-impact-codes">${readinessRows}${sourceRows}${libraryRows}${schemaRows}</div>`
       : ''}
     ${operatorRows ? `<div class="library-impact-risks">${operatorRows}</div>` : ''}
     ${nodeRows ? `<div class="library-impact-risks">${nodeRows}</div>` : ''}
@@ -10633,11 +10636,13 @@ function renderDraftDependencyReport() {
 
 function draftDependencyReportLevel(report) {
   if ((Number(report?.missingOperatorCount) || 0) > 0
-      || (Number(report?.scopeMismatchOperatorCount) || 0) > 0) {
+      || (Number(report?.scopeMismatchOperatorCount) || 0) > 0
+      || (Number(report?.schemaBreakingDriftCount) || 0) > 0) {
     return 'error';
   }
   if ((Number(report?.driftedFingerprintCount) || 0) > 0
-      || (Number(report?.missingFingerprintCount) || 0) > 0) {
+      || (Number(report?.missingFingerprintCount) || 0) > 0
+      || (Number(report?.schemaCompatibleDriftCount) || 0) > 0) {
     return 'warning';
   }
   const readinessCounts = report?.runtimeReadinessStateCounts || {};
@@ -10659,6 +10664,8 @@ function draftDependencySummary(report) {
   const scopeMismatch = Number(report?.scopeMismatchOperatorCount) || 0;
   const drifted = Number(report?.driftedFingerprintCount) || 0;
   const unsnapshotted = Number(report?.missingFingerprintCount) || 0;
+  const schemaBreaking = Number(report?.schemaBreakingDriftCount) || 0;
+  const schemaCompatible = Number(report?.schemaCompatibleDriftCount) || 0;
   if (missing) {
     parts.push(`${missing} catalog-missing node${missing === 1 ? '' : 's'}`);
   }
@@ -10670,6 +10677,12 @@ function draftDependencySummary(report) {
   }
   if (unsnapshotted) {
     parts.push(`${unsnapshotted} missing snapshot${unsnapshotted === 1 ? '' : 's'}`);
+  }
+  if (schemaBreaking) {
+    parts.push(`${schemaBreaking} breaking schema drift${schemaBreaking === 1 ? '' : 's'}`);
+  }
+  if (schemaCompatible) {
+    parts.push(`${schemaCompatible} schema-compatible drift${schemaCompatible === 1 ? '' : 's'}`);
   }
   return parts.length
     ? parts.join(' · ')
@@ -10689,11 +10702,23 @@ function draftDependencyCountRows(counts, label) {
 }
 
 function draftDependencyCountLabel(label, key) {
-  return label === 'library' ? String(key || '') : operatorPaletteFacetLabel(key);
+  if (label === 'library') {
+    return String(key || '');
+  }
+  if (label === 'schema') {
+    return draftDependencySchemaCompatibilityLabel(key);
+  }
+  return operatorPaletteFacetLabel(key);
 }
 
 function draftDependencyCountLevel(label, key) {
   const normalized = String(key || '').trim().toUpperCase().replaceAll('-', '_');
+  if (label === 'schema') {
+    if (normalized === 'BREAKING') {
+      return 'error';
+    }
+    return normalized === 'COMPATIBLE' ? 'warning' : 'success';
+  }
   if (normalized === 'CATALOG_MISSING'
       || normalized === 'SCOPE_MISMATCH'
       || normalized === 'CATALOG_REPAIR_REQUIRED') {
@@ -10711,7 +10736,7 @@ function draftDependencyOperatorRows(report) {
     draftDependencyRowRank(right) - draftDependencyRowRank(left)
       || String(left.operatorRef || '').localeCompare(String(right.operatorRef || '')));
   const rows = sorted.slice(0, 6).map((operator) => `
-    <div class="library-impact-risk ${escapeHtml(draftDependencyFingerprintLevel(operator.fingerprintState, operator.runtimeReadinessState))}">
+    <div class="library-impact-risk ${escapeHtml(draftDependencyFingerprintLevel(operator.fingerprintState, operator.runtimeReadinessState, operator.schemaCompatibilityState))}">
       <strong>${escapeHtml(operator.operatorRef || 'operator')}</strong>
       <span>${escapeHtml(draftDependencyOperatorSummary(operator))}</span>
       <small>${draftDependencyNodeButtons(operator.nodeIds)}</small>
@@ -10728,7 +10753,7 @@ function draftDependencyNodeRows(report) {
     .sort((left, right) => draftDependencyRowRank(right) - draftDependencyRowRank(left)
       || String(left.nodeId || '').localeCompare(String(right.nodeId || '')));
   const rows = interesting.slice(0, 5).map((node) => `
-    <div class="library-impact-risk ${escapeHtml(draftDependencyFingerprintLevel(node.fingerprintState, node.runtimeReadinessState))}">
+    <div class="library-impact-risk ${escapeHtml(draftDependencyFingerprintLevel(node.fingerprintState, node.runtimeReadinessState, node.schemaCompatibilityState))}">
       <strong>${draftDependencyNodeButton(node.nodeId || 'node')}</strong>
       <span>${escapeHtml(node.operatorRef || 'operator')} · ${escapeHtml(draftDependencyLineageLabel(node))}</span>
       <small>${escapeHtml(draftDependencyNodeSummary(node))}${draftDependencyRebaseButton(node)}</small>
@@ -10784,14 +10809,16 @@ function draftDependencyHasRebaseState(row) {
 function draftDependencyRowRank(row) {
   const fingerprintState = String(row?.fingerprintState || '').toLowerCase();
   const readiness = String(row?.runtimeReadinessState || '').toUpperCase();
+  const schemaState = String(row?.schemaCompatibilityState || '').toLowerCase();
   if (fingerprintState === 'catalog-missing'
       || fingerprintState === 'scope-mismatch'
+      || schemaState === 'breaking'
       || readiness === 'CATALOG_MISSING'
       || readiness === 'SCOPE_MISMATCH'
       || readiness === 'CATALOG_REPAIR_REQUIRED') {
     return 4;
   }
-  if (fingerprintState === 'drifted') {
+  if (fingerprintState === 'drifted' || schemaState === 'compatible') {
     return 3;
   }
   if (fingerprintState === 'missing-snapshot'
@@ -10801,17 +10828,20 @@ function draftDependencyRowRank(row) {
   return 0;
 }
 
-function draftDependencyFingerprintLevel(fingerprintState, runtimeReadinessState) {
+function draftDependencyFingerprintLevel(fingerprintState, runtimeReadinessState, schemaCompatibilityState = '') {
   const stateLabel = String(fingerprintState || '').toLowerCase();
   const readiness = String(runtimeReadinessState || '').toUpperCase();
+  const schemaState = String(schemaCompatibilityState || '').toLowerCase();
   if (stateLabel === 'catalog-missing'
       || stateLabel === 'scope-mismatch'
+      || schemaState === 'breaking'
       || readiness === 'CATALOG_MISSING'
       || readiness === 'SCOPE_MISMATCH'
       || readiness === 'CATALOG_REPAIR_REQUIRED') {
     return 'error';
   }
   if (stateLabel === 'drifted' || stateLabel === 'missing-snapshot'
+      || schemaState === 'compatible'
       || ['DESIGN_ONLY', 'RUNTIME_BLOCKED', 'GOVERNANCE_REVIEW'].includes(readiness)) {
     return 'warning';
   }
@@ -10825,6 +10855,8 @@ function draftDependencyOperatorSummary(operator) {
     operatorPaletteFacetLabel(operator.loweringMode || 'native'),
     operatorPaletteFacetLabel(operator.runtimeReadinessState || 'UNKNOWN'),
     draftDependencyFingerprintLabel(operator.fingerprintState),
+    draftDependencySchemaCompatibilityLabel(operator.schemaCompatibilityState),
+    draftDependencySchemaIssueLabel(operator),
     draftDependencyPolicyViolationLabel(operator)
   ].filter(Boolean).join(' · ');
 }
@@ -10857,9 +10889,34 @@ function draftDependencyNodeSummary(node) {
     edgeTargets.length ? `edge to: ${edgeTargets.join(', ')}` : '',
     draftDependencyOperatorLibraryLabel(node?.operatorLibraryId),
     draftDependencyFingerprintLabel(node?.fingerprintState),
+    draftDependencySchemaCompatibilityLabel(node?.schemaCompatibilityState),
+    draftDependencySchemaIssueLabel(node),
     draftDependencyPolicyViolationLabel(node)
   ].filter(Boolean);
   return parts.join(' · ');
+}
+
+function draftDependencySchemaCompatibilityLabel(value) {
+  return {
+    breaking: 'schema breaking',
+    compatible: 'schema compatible',
+    current: 'schema current',
+    'catalog-missing': 'schema catalog missing',
+    'scope-mismatch': 'schema scope mismatch',
+    'missing-snapshot': 'schema snapshot missing'
+  }[String(value || '').toLowerCase()] || String(value || '');
+}
+
+function draftDependencySchemaIssueLabel(row) {
+  const issues = Array.isArray(row?.schemaCompatibilityIssues) ? row.schemaCompatibilityIssues : [];
+  if (!issues.length) {
+    return '';
+  }
+  const first = issues[0] || {};
+  const surface = [first.surface, first.portName].filter(Boolean).join(' ');
+  const prefix = surface ? `schema ${surface}` : 'schema';
+  const hidden = Math.max(0, issues.length - 1);
+  return `${prefix} ${first.compatibility || 'review'}: ${first.message || 'review schema drift'}${hidden ? `; +${hidden} more` : ''}`;
 }
 
 function draftDependencyOperatorLibraryLabel(operatorLibraryId) {
@@ -11467,11 +11524,14 @@ function renderPublicationDependencyReport() {
     ['Missing', report.missingOperatorCount || 0],
     ['Scope', report.scopeMismatchOperatorCount || 0],
     ['Drifted', report.driftedFingerprintCount || 0],
-    ['Unsnapshotted', report.missingFingerprintCount || 0]
+    ['Unsnapshotted', report.missingFingerprintCount || 0],
+    ['Schema break', report.schemaBreakingDriftCount || 0],
+    ['Schema review', report.schemaCompatibleDriftCount || 0]
   ].map(([label, value]) => `<span><strong>${escapeHtml(value)}</strong> ${escapeHtml(label)}</span>`).join('');
   const readinessRows = draftDependencyCountRows(report.runtimeReadinessStateCounts || {}, 'readiness');
   const sourceRows = draftDependencyCountRows(report.sourceKindCounts || {}, 'source');
   const libraryRows = draftDependencyCountRows(report.operatorLibraryIdCounts || {}, 'library');
+  const schemaRows = draftDependencyCountRows(report.schemaCompatibilityStateCounts || {}, 'schema');
   const operatorRows = publicationDependencyOperatorRows(report);
   const nodeRows = publicationDependencyNodeRows(report);
   target.hidden = false;
@@ -11483,8 +11543,8 @@ function renderPublicationDependencyReport() {
     </div>
     <div class="library-impact-risk-summary">${escapeHtml(publicationDependencySummary(report))}</div>
     <div class="library-impact-stats">${stats}</div>
-    ${readinessRows || sourceRows || libraryRows
-      ? `<div class="library-impact-codes">${readinessRows}${sourceRows}${libraryRows}</div>`
+    ${readinessRows || sourceRows || libraryRows || schemaRows
+      ? `<div class="library-impact-codes">${readinessRows}${sourceRows}${libraryRows}${schemaRows}</div>`
       : ''}
     ${operatorRows ? `<div class="library-impact-risks">${operatorRows}</div>` : ''}
     ${nodeRows ? `<div class="library-impact-risks">${nodeRows}</div>` : ''}
@@ -11505,7 +11565,7 @@ function publicationDependencyOperatorRows(report) {
     draftDependencyRowRank(right) - draftDependencyRowRank(left)
       || String(left.operatorRef || '').localeCompare(String(right.operatorRef || '')));
   const rows = sorted.slice(0, 6).map((operator) => `
-    <div class="library-impact-risk ${escapeHtml(draftDependencyFingerprintLevel(operator.fingerprintState, operator.runtimeReadinessState))}">
+    <div class="library-impact-risk ${escapeHtml(draftDependencyFingerprintLevel(operator.fingerprintState, operator.runtimeReadinessState, operator.schemaCompatibilityState))}">
       <strong>${escapeHtml(operator.operatorRef || 'operator')}</strong>
       <span>${escapeHtml(draftDependencyOperatorSummary(operator))}</span>
       <small>${escapeHtml(`nodes ${uniqueStrings(operator.nodeIds).join(', ') || 'none'}`)}</small>
@@ -11522,7 +11582,7 @@ function publicationDependencyNodeRows(report) {
     .sort((left, right) => draftDependencyRowRank(right) - draftDependencyRowRank(left)
       || String(left.nodeId || '').localeCompare(String(right.nodeId || '')));
   const rows = interesting.slice(0, 5).map((node) => `
-    <div class="library-impact-risk ${escapeHtml(draftDependencyFingerprintLevel(node.fingerprintState, node.runtimeReadinessState))}">
+    <div class="library-impact-risk ${escapeHtml(draftDependencyFingerprintLevel(node.fingerprintState, node.runtimeReadinessState, node.schemaCompatibilityState))}">
       <strong>${escapeHtml(node.nodeId || 'node')}</strong>
       <span>${escapeHtml(node.operatorRef || 'operator')} · ${escapeHtml(draftDependencyLineageLabel(node))}</span>
       <small>${escapeHtml(draftDependencyNodeSummary(node))}</small>

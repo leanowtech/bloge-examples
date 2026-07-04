@@ -251,6 +251,9 @@ class VisualGraphDraftControllerTest {
         assertThat(report.scopeMismatchOperatorCount()).isZero();
         assertThat(report.driftedFingerprintCount()).isZero();
         assertThat(report.missingFingerprintCount()).isZero();
+        assertThat(report.schemaBreakingDriftCount()).isZero();
+        assertThat(report.schemaCompatibleDriftCount()).isZero();
+        assertThat(report.schemaCompatibilityStateCounts()).containsEntry("current", 2);
         assertThat(report.sourceKindCounts()).containsEntry("user-library", 2);
         assertThat(report.operatorLibraryIdCounts()).containsEntry("risk-policy", 2);
         assertThat(report.loweringModeCounts()).containsEntry("transform", 2);
@@ -265,6 +268,8 @@ class VisualGraphDraftControllerTest {
                     assertThat(operator.policyViolations()).isEmpty();
                     assertThat(operator.artifactKinds()).containsExactly("EXECUTABLE");
                     assertThat(operator.fingerprintState()).isEqualTo("current");
+                    assertThat(operator.schemaCompatibilityState()).isEqualTo("current");
+                    assertThat(operator.schemaCompatibilityIssues()).isEmpty();
                     assertThat(operator.nodeIds()).containsExactly("eligibility", "audit");
                 });
         assertThat(report.nodes())
@@ -279,6 +284,8 @@ class VisualGraphDraftControllerTest {
                     assertThat(node.edgeTargetNodes()).isEmpty();
                     assertThat(node.downstreamNodes()).isEmpty();
                     assertThat(node.fingerprintState()).isEqualTo("current");
+                    assertThat(node.schemaCompatibilityState()).isEqualTo("current");
+                    assertThat(node.schemaCompatibilityIssues()).isEmpty();
                     assertThat(node.scopeAllowed()).isTrue();
                     assertThat(node.policyViolations()).isEmpty();
                 });
@@ -320,6 +327,115 @@ class VisualGraphDraftControllerTest {
                     assertThat(node.bindingTargetNodes()).containsExactly("audit");
                     assertThat(node.edgeTargetNodes()).isEmpty();
                     assertThat(node.downstreamNodes()).containsExactly("audit");
+                });
+    }
+
+    @Test
+    void dependenciesClassifyCompatibleOperatorSchemaDrift() {
+        DefaultVisualOperatorCatalog initialCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        DefaultVisualOperatorCatalog currentCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("number"));
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        GraphDraft stored = controllerWithCatalog(initialCatalog, drafts).create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        VisualGraphDraftController controllerWithCurrentCatalog = controllerWithCatalog(currentCatalog, drafts);
+
+        ResponseEntity<GraphDraftDependencyReport> response =
+                controllerWithCurrentCatalog.dependencies(stored.draftId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        GraphDraftDependencyReport report = response.getBody();
+        assertThat(report.driftedFingerprintCount()).isEqualTo(1);
+        assertThat(report.schemaBreakingDriftCount()).isZero();
+        assertThat(report.schemaCompatibleDriftCount()).isEqualTo(1);
+        assertThat(report.schemaCompatibilityStateCounts()).containsEntry("compatible", 1);
+        assertThat(report.operators())
+                .singleElement()
+                .satisfies(operator -> {
+                    assertThat(operator.fingerprintState()).isEqualTo("drifted");
+                    assertThat(operator.schemaCompatibilityState()).isEqualTo("compatible");
+                    assertThat(operator.schemaCompatibilityIssues())
+                            .singleElement()
+                            .satisfies(issue -> {
+                                assertThat(issue.nodeId()).isEqualTo("eligibility");
+                                assertThat(issue.surface()).isEqualTo("input");
+                                assertThat(issue.portName()).isEqualTo("inputs");
+                                assertThat(issue.compatibility()).isEqualTo("compatible");
+                            });
+                });
+        assertThat(report.nodes())
+                .singleElement()
+                .satisfies(node -> {
+                    assertThat(node.fingerprintState()).isEqualTo("drifted");
+                    assertThat(node.schemaCompatibilityState()).isEqualTo("compatible");
+                    assertThat(node.schemaCompatibilityIssues())
+                            .singleElement()
+                            .satisfies(issue -> {
+                                assertThat(issue.surface()).isEqualTo("input");
+                                assertThat(issue.portName()).isEqualTo("inputs");
+                                assertThat(issue.message()).contains("can still feed current input schema");
+                            });
+                });
+    }
+
+    @Test
+    void dependenciesClassifyBreakingOperatorSchemaDrift() {
+        DefaultVisualOperatorCatalog initialCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("number"));
+        DefaultVisualOperatorCatalog currentCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        GraphDraft stored = controllerWithCatalog(initialCatalog, drafts).create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        VisualGraphDraftController controllerWithCurrentCatalog = controllerWithCatalog(currentCatalog, drafts);
+
+        ResponseEntity<GraphDraftDependencyReport> response =
+                controllerWithCurrentCatalog.dependencies(stored.draftId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        GraphDraftDependencyReport report = response.getBody();
+        assertThat(report.driftedFingerprintCount()).isEqualTo(1);
+        assertThat(report.schemaBreakingDriftCount()).isEqualTo(1);
+        assertThat(report.schemaCompatibleDriftCount()).isZero();
+        assertThat(report.schemaCompatibilityStateCounts()).containsEntry("breaking", 1);
+        assertThat(report.operators())
+                .singleElement()
+                .satisfies(operator -> {
+                    assertThat(operator.fingerprintState()).isEqualTo("drifted");
+                    assertThat(operator.schemaCompatibilityState()).isEqualTo("breaking");
+                    assertThat(operator.schemaCompatibilityIssues())
+                            .singleElement()
+                            .satisfies(issue -> {
+                                assertThat(issue.nodeId()).isEqualTo("eligibility");
+                                assertThat(issue.surface()).isEqualTo("input");
+                                assertThat(issue.portName()).isEqualTo("inputs");
+                                assertThat(issue.compatibility()).isEqualTo("breaking");
+                                assertThat(issue.message())
+                                        .contains("target type integer requires integer-valued source")
+                                        .contains("source type number has no integral multipleOf");
+                            });
+                });
+        assertThat(report.nodes())
+                .singleElement()
+                .satisfies(node -> {
+                    assertThat(node.fingerprintState()).isEqualTo("drifted");
+                    assertThat(node.schemaCompatibilityState()).isEqualTo("breaking");
+                    assertThat(node.schemaCompatibilityIssues())
+                            .singleElement()
+                            .satisfies(issue -> assertThat(issue.message())
+                                    .contains("target type integer requires integer-valued source")
+                                    .contains("source type number has no integral multipleOf"));
                 });
     }
 

@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.draft;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -10,6 +11,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -34,6 +36,9 @@ import java.util.Set;
  * @param scopeMismatchOperatorCount number of nodes whose operator exists but is unavailable in the draft scope
  * @param driftedFingerprintCount number of nodes whose saved fingerprint differs from the current catalog
  * @param missingFingerprintCount number of nodes without a saved fingerprint
+ * @param schemaBreakingDriftCount number of nodes whose frozen operator schema snapshot is incompatible with current catalog schema
+ * @param schemaCompatibleDriftCount number of nodes whose frozen operator schema snapshot changed but remains compatible
+ * @param schemaCompatibilityStateCounts node counts by frozen-vs-current operator schema compatibility state
  * @param sourceKindCounts node counts by operator source kind
  * @param operatorLibraryIdCounts node counts by owner operator library id
  * @param loweringModeCounts node counts by operator lowering mode
@@ -56,6 +61,9 @@ public record GraphDraftDependencyReport(
         int scopeMismatchOperatorCount,
         int driftedFingerprintCount,
         int missingFingerprintCount,
+        int schemaBreakingDriftCount,
+        int schemaCompatibleDriftCount,
+        Map<String, Integer> schemaCompatibilityStateCounts,
         Map<String, Integer> sourceKindCounts,
         Map<String, Integer> operatorLibraryIdCounts,
         Map<String, Integer> loweringModeCounts,
@@ -76,6 +84,9 @@ public record GraphDraftDependencyReport(
         namespace = namespace == null ? "" : namespace;
         environment = environment == null ? "" : environment;
         sourceKindCounts = sourceKindCounts == null ? Map.of() : new LinkedHashMap<>(sourceKindCounts);
+        schemaCompatibilityStateCounts = schemaCompatibilityStateCounts == null
+                ? Map.of()
+                : new LinkedHashMap<>(schemaCompatibilityStateCounts);
         operatorLibraryIdCounts = operatorLibraryIdCounts == null
                 ? Map.of()
                 : new LinkedHashMap<>(operatorLibraryIdCounts);
@@ -125,12 +136,15 @@ public record GraphDraftDependencyReport(
         Map<String, Integer> operatorLibraryIdCounts = new LinkedHashMap<>();
         Map<String, Integer> loweringModeCounts = new LinkedHashMap<>();
         Map<String, Integer> runtimeReadinessStateCounts = new LinkedHashMap<>();
+        Map<String, Integer> schemaCompatibilityStateCounts = new LinkedHashMap<>();
         Map<String, OperatorAggregate> operatorAggregates = new LinkedHashMap<>();
         List<NodeDependency> nodeRows = new ArrayList<>();
         int missingOperators = 0;
         int scopeMismatchOperators = 0;
         int driftedFingerprints = 0;
         int missingFingerprints = 0;
+        int schemaBreakingDrifts = 0;
+        int schemaCompatibleDrifts = 0;
         Map<String, OperatorDefinition> scopedOperators = scopedOperators(draft, catalog);
 
         for (GraphDraft.DraftNode node : draft.nodes()) {
@@ -162,6 +176,19 @@ public record GraphDraftDependencyReport(
             if (savedFingerprint.isBlank()) {
                 missingFingerprints++;
             }
+            SchemaCompatibilityReview schemaReview = SchemaCompatibilityReview.from(
+                    node.id(),
+                    snapshotForNode(draft, node),
+                    catalogOperator.orElse(null),
+                    currentOperatorPresent,
+                    scopeAllowed
+            );
+            if ("breaking".equals(schemaReview.state())) {
+                schemaBreakingDrifts++;
+            }
+            if ("compatible".equals(schemaReview.state())) {
+                schemaCompatibleDrifts++;
+            }
 
             String sourceKind = sourceKind(reviewOperator, currentOperatorPresent);
             String operatorLibraryId = operatorLibraryId(reviewOperator);
@@ -179,6 +206,7 @@ public record GraphDraftDependencyReport(
             incrementIfPresent(operatorLibraryIdCounts, operatorLibraryId);
             increment(loweringModeCounts, loweringMode);
             increment(runtimeReadinessStateCounts, readinessState);
+            increment(schemaCompatibilityStateCounts, schemaReview.state());
 
             Set<String> bindingSourceNodes = bindingSourcesByTarget.getOrDefault(node.id(), Set.of());
             Set<String> edgeSourceNodes = edgeSourcesByTarget.getOrDefault(node.id(), Set.of());
@@ -203,6 +231,8 @@ public record GraphDraftDependencyReport(
                     savedFingerprint,
                     currentFingerprint,
                     fingerprintState,
+                    schemaReview.state(),
+                    schemaReview.issues(),
                     List.copyOf(bindingSourceNodes),
                     List.copyOf(edgeSourceNodes),
                     List.copyOf(upstreamNodes),
@@ -227,7 +257,7 @@ public record GraphDraftDependencyReport(
                             scopeAllowed,
                             policyViolations
                     ))
-                    .add(node.id(), fingerprintState);
+                    .add(node.id(), fingerprintState, schemaReview);
         }
 
         List<OperatorDependency> operators = operatorAggregates.values().stream()
@@ -248,6 +278,9 @@ public record GraphDraftDependencyReport(
                 scopeMismatchOperators,
                 driftedFingerprints,
                 missingFingerprints,
+                schemaBreakingDrifts,
+                schemaCompatibleDrifts,
+                schemaCompatibilityStateCounts,
                 sourceKindCounts,
                 operatorLibraryIdCounts,
                 loweringModeCounts,
@@ -276,6 +309,9 @@ public record GraphDraftDependencyReport(
                 0,
                 0,
                 0,
+                0,
+                0,
+                Map.of(),
                 Map.of(),
                 Map.of(),
                 Map.of(),
@@ -394,6 +430,8 @@ public record GraphDraftDependencyReport(
      * @param artifactKinds supported artifact kinds from the operator contract
      * @param currentFingerprint current catalog fingerprint, when present
      * @param fingerprintState aggregate fingerprint state across using nodes
+     * @param schemaCompatibilityState aggregate frozen-vs-current schema compatibility state across using nodes
+     * @param schemaCompatibilityIssues schema compatibility issues found across using nodes
      * @param scopeAllowed whether the operator is available in the draft tenant/namespace/environment
      * @param policyViolations scope policy violations for the draft context
      * @param nodeIds draft nodes using the operator
@@ -408,6 +446,8 @@ public record GraphDraftDependencyReport(
             List<String> artifactKinds,
             String currentFingerprint,
             String fingerprintState,
+            String schemaCompatibilityState,
+            List<SchemaCompatibilityIssue> schemaCompatibilityIssues,
             boolean scopeAllowed,
             List<String> policyViolations,
             List<String> nodeIds
@@ -421,6 +461,10 @@ public record GraphDraftDependencyReport(
             artifactKinds = artifactKinds == null ? List.of() : List.copyOf(artifactKinds);
             currentFingerprint = currentFingerprint == null ? "" : currentFingerprint;
             fingerprintState = fingerprintState == null ? "" : fingerprintState;
+            schemaCompatibilityState = schemaCompatibilityState == null ? "" : schemaCompatibilityState;
+            schemaCompatibilityIssues = schemaCompatibilityIssues == null
+                    ? List.of()
+                    : List.copyOf(schemaCompatibilityIssues);
             policyViolations = policyViolations == null ? List.of() : List.copyOf(policyViolations);
             nodeIds = nodeIds == null ? List.of() : List.copyOf(nodeIds);
         }
@@ -440,6 +484,8 @@ public record GraphDraftDependencyReport(
      * @param savedFingerprint saved draft fingerprint snapshot
      * @param currentFingerprint current catalog fingerprint
      * @param fingerprintState node fingerprint state
+     * @param schemaCompatibilityState frozen-vs-current operator schema compatibility state
+     * @param schemaCompatibilityIssues schema compatibility issues for this node
      * @param bindingSourceNodes node ids referenced by input/config bindings
      * @param edgeSourceNodes node ids referenced by incoming visual edges
      * @param upstreamNodes union of binding and edge source nodes
@@ -461,6 +507,8 @@ public record GraphDraftDependencyReport(
             String savedFingerprint,
             String currentFingerprint,
             String fingerprintState,
+            String schemaCompatibilityState,
+            List<SchemaCompatibilityIssue> schemaCompatibilityIssues,
             List<String> bindingSourceNodes,
             List<String> edgeSourceNodes,
             List<String> upstreamNodes,
@@ -481,6 +529,10 @@ public record GraphDraftDependencyReport(
             savedFingerprint = savedFingerprint == null ? "" : savedFingerprint;
             currentFingerprint = currentFingerprint == null ? "" : currentFingerprint;
             fingerprintState = fingerprintState == null ? "" : fingerprintState;
+            schemaCompatibilityState = schemaCompatibilityState == null ? "" : schemaCompatibilityState;
+            schemaCompatibilityIssues = schemaCompatibilityIssues == null
+                    ? List.of()
+                    : List.copyOf(schemaCompatibilityIssues);
             bindingSourceNodes = bindingSourceNodes == null ? List.of() : List.copyOf(bindingSourceNodes);
             edgeSourceNodes = edgeSourceNodes == null ? List.of() : List.copyOf(edgeSourceNodes);
             upstreamNodes = upstreamNodes == null ? List.of() : List.copyOf(upstreamNodes);
@@ -504,6 +556,8 @@ public record GraphDraftDependencyReport(
         private final Set<String> policyViolations = new LinkedHashSet<>();
         private final Set<String> nodeIds = new LinkedHashSet<>();
         private final Set<String> fingerprintStates = new LinkedHashSet<>();
+        private final Set<String> schemaCompatibilityStates = new LinkedHashSet<>();
+        private final List<SchemaCompatibilityIssue> schemaCompatibilityIssues = new ArrayList<>();
 
         private OperatorAggregate(String operatorRef,
                                   String sourceKind,
@@ -527,9 +581,15 @@ public record GraphDraftDependencyReport(
             this.policyViolations.addAll(policyViolations == null ? List.of() : policyViolations);
         }
 
-        private OperatorAggregate add(String nodeId, String fingerprintState) {
+        private OperatorAggregate add(String nodeId,
+                                      String fingerprintState,
+                                      SchemaCompatibilityReview schemaReview) {
             nodeIds.add(nodeId);
             fingerprintStates.add(fingerprintState);
+            if (schemaReview != null) {
+                schemaCompatibilityStates.add(schemaReview.state());
+                schemaCompatibilityIssues.addAll(schemaReview.issues());
+            }
             return this;
         }
 
@@ -544,6 +604,8 @@ public record GraphDraftDependencyReport(
                     artifactKinds,
                     currentFingerprint,
                     aggregateFingerprintState(fingerprintStates),
+                    aggregateSchemaCompatibilityState(schemaCompatibilityStates),
+                    List.copyOf(schemaCompatibilityIssues),
                     scopeAllowed,
                     List.copyOf(policyViolations),
                     List.copyOf(nodeIds)
@@ -565,5 +627,215 @@ public record GraphDraftDependencyReport(
             return "missing-snapshot";
         }
         return states.isEmpty() ? "unknown" : "current";
+    }
+
+    private static String aggregateSchemaCompatibilityState(Set<String> states) {
+        if (states.contains("breaking")) {
+            return "breaking";
+        }
+        if (states.contains("compatible")) {
+            return "compatible";
+        }
+        if (states.contains("catalog-missing")) {
+            return "catalog-missing";
+        }
+        if (states.contains("scope-mismatch")) {
+            return "scope-mismatch";
+        }
+        if (states.contains("missing-snapshot")) {
+            return "missing-snapshot";
+        }
+        return states.isEmpty() ? "unknown" : "current";
+    }
+
+    /**
+     * Field-level frozen-vs-current schema compatibility issue.
+     *
+     * @param nodeId draft node id
+     * @param surface operator contract surface: input, output, or config
+     * @param portName port name when the issue belongs to a port
+     * @param compatibility breaking or compatible
+     * @param message human-readable compatibility detail
+     */
+    public record SchemaCompatibilityIssue(
+            String nodeId,
+            String surface,
+            String portName,
+            String compatibility,
+            String message
+    ) {
+        public SchemaCompatibilityIssue {
+            nodeId = nodeId == null ? "" : nodeId;
+            surface = surface == null ? "" : surface;
+            portName = portName == null ? "" : portName;
+            compatibility = compatibility == null ? "" : compatibility;
+            message = message == null ? "" : message;
+        }
+
+        private static SchemaCompatibilityIssue breaking(String nodeId,
+                                                         String surface,
+                                                         String portName,
+                                                         String message) {
+            return new SchemaCompatibilityIssue(nodeId, surface, portName, "breaking", message);
+        }
+
+        private static SchemaCompatibilityIssue compatible(String nodeId,
+                                                           String surface,
+                                                           String portName,
+                                                           String message) {
+            return new SchemaCompatibilityIssue(nodeId, surface, portName, "compatible", message);
+        }
+    }
+
+    private record SchemaCompatibilityReview(
+            String state,
+            List<SchemaCompatibilityIssue> issues
+    ) {
+        private SchemaCompatibilityReview {
+            state = state == null || state.isBlank() ? "current" : state;
+            issues = issues == null ? List.of() : List.copyOf(issues);
+        }
+
+        private static SchemaCompatibilityReview from(String nodeId,
+                                                      OperatorDefinition snapshot,
+                                                      OperatorDefinition current,
+                                                      boolean currentOperatorPresent,
+                                                      boolean scopeAllowed) {
+            if (!currentOperatorPresent) {
+                return new SchemaCompatibilityReview("catalog-missing", List.of());
+            }
+            if (!scopeAllowed) {
+                return new SchemaCompatibilityReview("scope-mismatch", List.of());
+            }
+            if (snapshot == null) {
+                return new SchemaCompatibilityReview("missing-snapshot", List.of());
+            }
+            List<SchemaCompatibilityIssue> issues = new ArrayList<>();
+            compareInputPorts(nodeId, snapshot, current, issues);
+            compareOutputPorts(nodeId, snapshot, current, issues);
+            compareConfigSchema(nodeId, snapshot, current, issues);
+            if (issues.stream().anyMatch(issue -> "breaking".equals(issue.compatibility()))) {
+                return new SchemaCompatibilityReview("breaking", issues);
+            }
+            if (!issues.isEmpty()) {
+                return new SchemaCompatibilityReview("compatible", issues);
+            }
+            return new SchemaCompatibilityReview("current", List.of());
+        }
+
+        private static void compareInputPorts(String nodeId,
+                                              OperatorDefinition snapshot,
+                                              OperatorDefinition current,
+                                              List<SchemaCompatibilityIssue> issues) {
+            Map<String, OperatorDefinition.Port> savedPorts = inputPorts(snapshot);
+            Map<String, OperatorDefinition.Port> currentPorts = inputPorts(current);
+            savedPorts.forEach((name, savedPort) -> {
+                OperatorDefinition.Port currentPort = currentPorts.get(name);
+                if (currentPort == null) {
+                    issues.add(SchemaCompatibilityIssue.breaking(nodeId, "input", name,
+                            "Input port '%s' was removed from current operator contract.".formatted(name)));
+                    return;
+                }
+                if (!savedPort.required() && currentPort.required()) {
+                    issues.add(SchemaCompatibilityIssue.breaking(nodeId, "input", name,
+                            "Input port '%s' became required in current operator contract.".formatted(name)));
+                } else if (savedPort.required() && !currentPort.required()) {
+                    issues.add(SchemaCompatibilityIssue.compatible(nodeId, "input", name,
+                            "Input port '%s' became optional in current operator contract.".formatted(name)));
+                }
+                compareSchemas(nodeId, "input", name, savedPort.schema(), currentPort.schema(),
+                        "Frozen input port '%s' schema can still feed current input schema.".formatted(name),
+                        issues);
+            });
+            currentPorts.forEach((name, currentPort) -> {
+                if (savedPorts.containsKey(name)) {
+                    return;
+                }
+                if (currentPort.required()) {
+                    issues.add(SchemaCompatibilityIssue.breaking(nodeId, "input", name,
+                            "Required input port '%s' was added to current operator contract.".formatted(name)));
+                } else {
+                    issues.add(SchemaCompatibilityIssue.compatible(nodeId, "input", name,
+                            "Optional input port '%s' was added to current operator contract.".formatted(name)));
+                }
+            });
+        }
+
+        private static void compareOutputPorts(String nodeId,
+                                               OperatorDefinition snapshot,
+                                               OperatorDefinition current,
+                                               List<SchemaCompatibilityIssue> issues) {
+            Map<String, OperatorDefinition.Port> savedPorts = outputPorts(snapshot);
+            Map<String, OperatorDefinition.Port> currentPorts = outputPorts(current);
+            savedPorts.forEach((name, savedPort) -> {
+                OperatorDefinition.Port currentPort = currentPorts.get(name);
+                if (currentPort == null) {
+                    issues.add(SchemaCompatibilityIssue.breaking(nodeId, "output", name,
+                            "Output port '%s' was removed from current operator contract.".formatted(name)));
+                    return;
+                }
+                compareSchemas(nodeId, "output", name, currentPort.schema(), savedPort.schema(),
+                        "Current output port '%s' schema can still satisfy frozen output schema.".formatted(name),
+                        issues);
+            });
+            currentPorts.forEach((name, currentPort) -> {
+                if (!savedPorts.containsKey(name)) {
+                    issues.add(SchemaCompatibilityIssue.compatible(nodeId, "output", name,
+                            "Output port '%s' was added to current operator contract.".formatted(name)));
+                }
+            });
+        }
+
+        private static void compareConfigSchema(String nodeId,
+                                                OperatorDefinition snapshot,
+                                                OperatorDefinition current,
+                                                List<SchemaCompatibilityIssue> issues) {
+            compareSchemas(nodeId, "config", "", snapshot.configSchema(), current.configSchema(),
+                    "Frozen config schema can still feed current config schema.", issues);
+        }
+
+        private static void compareSchemas(String nodeId,
+                                           String surface,
+                                           String portName,
+                                           com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope source,
+                                           com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope target,
+                                           String compatibleMessage,
+                                           List<SchemaCompatibilityIssue> issues) {
+            Map<String, Object> sourceSchema = source == null ? Map.of() : source.schema();
+            Map<String, Object> targetSchema = target == null ? Map.of() : target.schema();
+            if (Objects.equals(sourceSchema, targetSchema)) {
+                return;
+            }
+            Optional<String> issue = VisualSchemaCompatibility.schemaCompatibilityIssue(sourceSchema, targetSchema);
+            if (issue.isPresent()) {
+                issues.add(SchemaCompatibilityIssue.breaking(nodeId, surface, portName, issue.get()));
+                return;
+            }
+            issues.add(SchemaCompatibilityIssue.compatible(nodeId, surface, portName, compatibleMessage));
+        }
+
+        private static Map<String, OperatorDefinition.Port> inputPorts(OperatorDefinition operator) {
+            if (operator == null || operator.ports() == null) {
+                return Map.of();
+            }
+            return portsByName(operator.ports().inputs());
+        }
+
+        private static Map<String, OperatorDefinition.Port> outputPorts(OperatorDefinition operator) {
+            if (operator == null || operator.ports() == null) {
+                return Map.of();
+            }
+            return portsByName(operator.ports().outputs());
+        }
+
+        private static Map<String, OperatorDefinition.Port> portsByName(List<OperatorDefinition.Port> ports) {
+            Map<String, OperatorDefinition.Port> byName = new LinkedHashMap<>();
+            for (OperatorDefinition.Port port : ports == null ? List.<OperatorDefinition.Port>of() : ports) {
+                if (port != null) {
+                    byName.putIfAbsent(port.name(), port);
+                }
+            }
+            return byName;
+        }
     }
 }

@@ -1711,6 +1711,13 @@ binding/edge downstream lineage、source kind / operator library owner / lowerin
 `policyViolations`。对于 imported operator，报告还会在顶层
 `operatorLibraryIdCounts`、operator 行和 node 行暴露 `operatorLibraryId`，让 stored
 draft、draft bundle、import result 和 publication dependency report 能直接按用户导入库归属路由修复工作。
+报告还会把 draft 保存时冻结的 operator schema snapshot 与当前 catalog operator schema
+做保守兼容性对账：顶层输出 `schemaBreakingDriftCount`、
+`schemaCompatibleDriftCount` 和 `schemaCompatibilityStateCounts`，operator/node 行输出
+`schemaCompatibilityState` 与 `schemaCompatibilityIssues[]`。其中 input/config drift
+按“冻结 schema 是否仍能 feed 当前 schema”判断，output drift 按“当前 output 是否仍能
+满足冻结 output contract”判断；breaking issue 会携带 shared JSON Schema compatibility
+的机器可解释原因，compatible issue 表示 schema surface 已变化但可保守放行、仍应人工审阅。
 `bloge.visualGraphDraftSummary.v1` 和 `bloge.visualGraphPublicationSummary.v1`
 会从 dependency report 的 operator 行继续派生 `operatorLibraryIdsByOperatorRef`，
 供 overview action queue 与 runtime-binding index 在目标环境 catalog 尚未安装对应
