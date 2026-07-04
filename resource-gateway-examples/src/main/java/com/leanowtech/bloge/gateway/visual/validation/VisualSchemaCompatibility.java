@@ -2451,17 +2451,19 @@ public final class VisualSchemaCompatibility {
 
 	    private static Long objectMinProperties(Map<String, Object> schema) {
 	        Long explicit = objectPropertyBoundary(schema.get("minProperties"));
+            Long requiredMinimum = (long) new LinkedHashSet<>(requiredNamesOf(schema)).size();
 	        if (explicit != null) {
-	            return explicit;
+	            return Math.max(explicit, requiredMinimum);
 	        }
 	        List<Object> values = enumValues(schema);
 	        if (!values.isEmpty() && values.stream().allMatch(Map.class::isInstance)) {
-	            return values.stream()
+	            Long enumMinimum = values.stream()
 	                    .map(value -> (long) ((Map<?, ?>) value).size())
 	                    .min(Long::compareTo)
 	                    .orElse(null);
+                return enumMinimum == null ? requiredMinimum : Math.max(requiredMinimum, enumMinimum);
 	        }
-	        return null;
+	        return requiredMinimum == 0 ? null : requiredMinimum;
 	    }
 
 	    private static Long objectMaxProperties(Map<String, Object> schema) {

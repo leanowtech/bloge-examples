@@ -312,7 +312,9 @@ Array `prefixItems` constraints are
 checked positionally too: tuple-like outputs must prove each constrained
 leading item is compatible before they can feed a target array, while later
 items continue to use the regular `items` schema. A source object must stay inside the target
-`minProperties`/`maxProperties` range. String `pattern` and `format`
+`minProperties`/`maxProperties` range, and its `required` field set is used as
+a conservative `minProperties` lower-bound proof when no explicit property
+count is declared. String `pattern` and `format`
 constraints are supported conservatively: finite `enum`/`const` source values
 must match the target constraint, and non-finite string outputs must declare the
 same pattern or format before they can feed a constrained target. Supported
@@ -340,7 +342,7 @@ remaining dynamic fields can be forbidden or checked against a schema.
 Schema mismatch diagnostics explain the failing path and reason, such as an
 incompatible array `items` schema, an enum domain, numeric range or step, string
 length range, string pattern or format, array item-count range, array uniqueness, array prefix item, array contains count, or object
-property-count, property-name, pattern-property, dependent-required,
+property-count inferred from explicit bounds or required fields, property-name, pattern-property, dependent-required,
 dependent-schema, or unevaluated-property requirement that is not a subset of the target domain, a missing required object
 field, or a required field that the source object declares but does not
 guarantee. Literal `constant`

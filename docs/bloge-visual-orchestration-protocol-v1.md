@@ -1218,6 +1218,9 @@ array `contains` / `minContains` / `maxContains` compatibility 会保守使用 s
 显式 `contains`、finite array enum/const，或 source `items` / `prefixItems` 搭配
 `minItems` / `maxItems` 推导出的匹配元素上下界；只有能证明 target matching item count
 约束时才放行。
+object `minProperties` compatibility 会把 source `required` 字段集合视为保守属性数
+下界证明；因此没有显式 `minProperties` 但声明了多个 required 字段的业务对象，可以
+安全接入只要求最小属性数的 target schema。
 array `items` 支持 schema object 或 boolean residual policy：schema object 约束
 `prefixItems` 之后的剩余项，`items=false` 禁止剩余项，`items=true` 表示剩余项无约束；
 非 schema object / boolean 的 `items` 会返回 `visual.schema.arrayItemsMissing`。

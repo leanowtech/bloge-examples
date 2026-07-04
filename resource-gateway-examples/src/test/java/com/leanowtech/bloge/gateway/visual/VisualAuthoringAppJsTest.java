@@ -7268,6 +7268,17 @@ operators:
                   type: 'object',
                   not: { minProperties: 2 }
                 });
+                const targetObjectRequiredMinPropertiesSafe = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  properties: {
+                    customerId: { type: 'string' },
+                    score: { type: 'integer' }
+                  },
+                  required: ['customerId', 'score']
+                }, {
+                  type: 'object',
+                  minProperties: 2
+                });
                 const targetNotObjectRequiredDisjointIssue = context.schemaCompatibilityIssue({
                   type: 'object',
                   properties: {
@@ -7455,6 +7466,7 @@ operators:
                   ['target not array prefix contains disjoint safe', targetNotArrayPrefixContainsDisjointIssue, ''],
                   ['target not array contains additional item blocked', targetNotArrayContainsAdditionalItemIssue, 'target excludes schema array contains [BAD] minContains 1 but source array cannot prove it avoids the excluded domain'],
                   ['target not object count disjoint safe', targetNotObjectCountDisjointIssue, ''],
+                  ['target object minProperties inferred from required safe', targetObjectRequiredMinPropertiesSafe, ''],
                   ['target not object required property disjoint safe', targetNotObjectRequiredDisjointIssue, ''],
                   ['target not object required const disjoint safe', targetNotObjectRequiredConstDisjointIssue, ''],
                   ['target not object propertyNames disjoint safe', targetNotObjectPropertyNamesDisjointIssue, ''],

@@ -23798,14 +23798,15 @@ function schemaMaxContains(schema) {
 
 function schemaMinProperties(schema) {
   const explicit = explicitSchemaMinProperties(schema);
+  const requiredMinimum = new Set(schemaRequiredNames(schema)).size;
   if (explicit !== null) {
-    return explicit;
+    return Math.max(explicit, requiredMinimum);
   }
   const values = schemaEnumValues(schema);
   if (values.length && values.every((value) => value !== null && typeof value === 'object' && !Array.isArray(value))) {
-    return Math.min(...values.map((value) => Object.keys(value).length));
+    return Math.max(requiredMinimum, Math.min(...values.map((value) => Object.keys(value).length)));
   }
-  return null;
+  return requiredMinimum === 0 ? null : requiredMinimum;
 }
 
 function schemaMaxProperties(schema) {

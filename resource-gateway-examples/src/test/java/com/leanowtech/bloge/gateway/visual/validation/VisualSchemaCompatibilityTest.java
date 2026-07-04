@@ -700,6 +700,43 @@ class VisualSchemaCompatibilityTest {
     }
 
     @Test
+    void acceptsObjectMinPropertiesWhenSourceRequiredFieldsGuaranteeCount() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "customerId", Map.of("type", "string"),
+                        "score", Map.of("type", "integer")
+                ),
+                "required", List.of("customerId", "score")
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "minProperties", 2
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsObjectMinPropertiesWhenSourceRequiredFieldsAreTooFew() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "customerId", Map.of("type", "string")
+                ),
+                "required", List.of("customerId")
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "minProperties", 2
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("source minProperties 1 is weaker than target minProperties 2"));
+    }
+
+    @Test
     void acceptsClosedObjectSourceThatCannotContainTargetNotRequiredProperty() {
         Map<String, Object> source = Map.of(
                 "type", "object",
