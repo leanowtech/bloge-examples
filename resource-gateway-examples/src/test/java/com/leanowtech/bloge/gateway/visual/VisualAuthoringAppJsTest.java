@@ -143,7 +143,7 @@ class VisualAuthoringAppJsTest {
                 .contains("startConnectionCandidatePreview(source);")
                 .contains("fetch('/api/visual/connections/candidates'")
                 .contains("targetNodeId: options.targetNodeId || target.nodeId || ''")
-                .contains("targetSurface: options.targetSurface || connectionCandidateTargetSurface(target)")
+                .contains("targetSurface: options.targetSurface || (target.nodeId ? connectionCandidateTargetSurface(target) : 'canvas')")
                 .contains("targetPort: options.targetPort || target.port || ''")
                 .contains("targetPath: options.targetPath || target.path || ''")
                 .contains("normalizeConnectionCandidateExplanation(candidate?.explanation")

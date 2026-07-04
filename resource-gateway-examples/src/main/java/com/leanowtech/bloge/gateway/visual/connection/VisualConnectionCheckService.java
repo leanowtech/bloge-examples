@@ -33,6 +33,7 @@ public class VisualConnectionCheckService {
     private static final String CONFIG_TARGET_PORT = "config";
     private static final int MAX_SCHEMA_CANDIDATE_PATHS = 64;
     private static final int MAX_SCHEMA_CANDIDATE_DEPTH = 4;
+    private static final int FULL_CANDIDATE_CHECK_LIMIT = 80;
 
     private final GraphDraftValidator validator;
     private final VisualOperatorCatalog catalog;
@@ -304,29 +305,12 @@ public class VisualConnectionCheckService {
         }
 
         List<ConnectionCandidateTarget> targets = candidateTargets(request.draft(), request);
+        if (request.includeRejected() && targets.size() > FULL_CANDIDATE_CHECK_LIMIT) {
+            return pagedCandidates(request, targets);
+        }
         List<VisualConnectionCandidatesResult.ConnectionCandidate> candidates = new ArrayList<>();
         for (ConnectionCandidateTarget target : targets) {
-            VisualConnectionCheckResult check = check(new VisualConnectionCheckRequest(
-                    request.draft(),
-                    request.source(),
-                    target.endpoint(),
-                    request.kind(),
-                    "",
-                    request.targetUnionBranch(),
-                    request.targetUnionBranches()
-            ));
-            candidates.add(new VisualConnectionCandidatesResult.ConnectionCandidate(
-                    target.node().id(),
-                    target.node().label(),
-                    target.node().operatorRef(),
-                    target.surface(),
-                    check.edge() == null ? target.endpoint() : check.edge().target(),
-                    check.accepted(),
-                    check.bindingKey(),
-                    check.summary(),
-                    candidateExplanation(request, target, check),
-                    check.diagnostics()
-            ));
+            candidates.add(candidateFor(request, target));
         }
 
         int acceptedCount = 0;
@@ -359,6 +343,80 @@ public class VisualConnectionCheckService {
         );
     }
 
+    private VisualConnectionCandidatesResult pagedCandidates(VisualConnectionCandidatesRequest request,
+                                                             List<ConnectionCandidateTarget> targets) {
+        int acceptedCount = 0;
+        for (ConnectionCandidateTarget target : targets) {
+            if (fastCandidateAccepted(request, target)) {
+                acceptedCount++;
+            }
+        }
+        int rejectedCount = targets.size() - acceptedCount;
+        boolean truncated = targets.size() > request.offset() + request.limit();
+        List<VisualConnectionCandidatesResult.ConnectionCandidate> window = targets.stream()
+                .skip(request.offset())
+                .limit(request.limit())
+                .map(target -> candidateFor(request, target))
+                .toList();
+        return new VisualConnectionCandidatesResult(
+                VisualConnectionCandidatesResult.SCHEMA_VERSION,
+                request.source(),
+                request.kind(),
+                request.offset(),
+                targets.size(),
+                acceptedCount,
+                rejectedCount,
+                window.size(),
+                truncated,
+                window,
+                List.of()
+        );
+    }
+
+    private VisualConnectionCandidatesResult.ConnectionCandidate candidateFor(VisualConnectionCandidatesRequest request,
+                                                                             ConnectionCandidateTarget target) {
+        VisualConnectionCheckResult check = check(new VisualConnectionCheckRequest(
+                request.draft(),
+                request.source(),
+                target.endpoint(),
+                request.kind(),
+                "",
+                request.targetUnionBranch(),
+                request.targetUnionBranches()
+        ));
+        return new VisualConnectionCandidatesResult.ConnectionCandidate(
+                target.node().id(),
+                target.node().label(),
+                target.node().operatorRef(),
+                target.surface(),
+                check.edge() == null ? target.endpoint() : check.edge().target(),
+                check.accepted(),
+                check.bindingKey(),
+                check.summary(),
+                candidateExplanation(request, target, check),
+                check.diagnostics()
+        );
+    }
+
+    private boolean fastCandidateAccepted(VisualConnectionCandidatesRequest request,
+                                          ConnectionCandidateTarget target) {
+        if ("dependency".equals(request.kind()) || "route".equals(request.kind())
+                || controlSurface(target.surface())) {
+            GraphDraft.DraftEdge edge = new GraphDraft.DraftEdge(PREVIEW_EDGE_ID, request.kind(),
+                    request.source(), target.endpoint(), "");
+            return !hasSameConnection(request.draft(), edge);
+        }
+        Map<String, Object> sourceSchema = endpointSourceSchema(request.draft(), request.source());
+        Map<String, Object> targetSchema = selectedUnionBranchSchema(
+                endpointTargetSchema(request.draft(), target.endpoint(), target.surface()),
+                request.targetUnionBranch()
+        );
+        if (sourceSchema == null || targetSchema == null) {
+            return true;
+        }
+        return VisualSchemaCompatibility.schemasCompatible(sourceSchema, targetSchema);
+    }
+
     private List<ConnectionCandidateTarget> candidateTargets(GraphDraft draft,
                                                              VisualConnectionCandidatesRequest request) {
         List<ConnectionCandidateTarget> targets = new ArrayList<>();
@@ -387,8 +445,14 @@ public class VisualConnectionCheckService {
             }
             if (candidateSurfaceMatches(request.targetSurface(), "input")) {
                 for (OperatorDefinition.Port port : operator.get().ports().inputs()) {
-                    for (String path : VisualSchemaIntrospection.connectableSchemaPaths(port.schema(),
-                            MAX_SCHEMA_CANDIDATE_PATHS, MAX_SCHEMA_CANDIDATE_DEPTH)) {
+                    List<String> paths = VisualSchemaIntrospection.connectableSchemaPaths(port.schema(),
+                            MAX_SCHEMA_CANDIDATE_PATHS, MAX_SCHEMA_CANDIDATE_DEPTH);
+                    if (canvasTargetSemantics(request) && paths.stream().anyMatch(Predicate.not(String::isBlank))) {
+                        paths = paths.stream()
+                                .filter(Predicate.not(String::isBlank))
+                                .toList();
+                    }
+                    for (String path : paths) {
                         if (!candidateEndpointMatches(request, port.name(), path)) {
                             continue;
                         }
@@ -442,7 +506,15 @@ public class VisualConnectionCheckService {
         if (requested.equals(actual)) {
             return true;
         }
+        if ("canvas".equals(requested)) {
+            return "input".equals(actual) || "config".equals(actual)
+                    || "dependency".equals(actual) || "route".equals(actual);
+        }
         return "control".equals(requested) && ("dependency".equals(actual) || "route".equals(actual));
+    }
+
+    private static boolean canvasTargetSemantics(VisualConnectionCandidatesRequest request) {
+        return "canvas".equals(request.targetSurface());
     }
 
     private VisualConnectionCandidatesResult.ConnectionCandidateExplanation candidateExplanation(

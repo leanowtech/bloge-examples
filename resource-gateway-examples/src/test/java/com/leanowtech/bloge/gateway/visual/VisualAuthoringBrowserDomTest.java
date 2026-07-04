@@ -508,6 +508,76 @@ class VisualAuthoringBrowserDomTest {
                         + "[data-connect-target-port='inputs']"
                         + "[data-connect-target-path='score']"
         ))).isNotEmpty();
+
+        By filterQuery = By.cssSelector("#selected-operator-editor [data-connectability-filter-query]");
+        By filterStatus = By.cssSelector("#selected-operator-editor [data-connectability-filter-status]");
+        sendKeysThroughRerenderedFocusedInput(wait, filterQuery, "runtime");
+        waitForText(wait, By.id("selected-operator-editor"), "matches");
+        waitForText(wait, By.id("selected-operator-editor"), "target runtime binding requirement");
+        waitForFocusedValue(wait, filterQuery, "runtime");
+
+        selectByValue(wait, filterStatus, "ready");
+        waitForValue(wait, filterStatus, "ready");
+        waitForText(wait, By.id("selected-operator-editor"), "Score review (riskScoreReview)");
+
+        selectByValue(wait, filterStatus, "blocked");
+        waitForValue(wait, filterStatus, "blocked");
+        waitForText(wait, By.id("selected-operator-editor"), "No matching targets");
+        assertThat(driver.findElements(By.cssSelector(
+                "#selected-operator-editor [data-connectability-action='connect']"
+                        + "[data-connect-target-node='riskScoreReview']"
+        ))).isEmpty();
+
+        click(wait, By.cssSelector("#selected-operator-editor [data-connectability-filter-clear]"));
+        waitForValue(wait, filterQuery, "");
+        waitForFocusedValue(wait, filterQuery, "");
+        waitForText(wait, By.id("selected-operator-editor"), "Score review (riskScoreReview)");
+        waitForText(wait, By.id("selected-operator-editor"), "target runtime binding requirement");
+    }
+
+    @Test
+    void composerConnectabilityHandlesLargeTargetWindowInRealBrowser()
+            throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importOperatorLibrary(wait, scoreReviewLargeConnectabilityLibrary());
+        addScoreSourceAndReviewTargetsInBrowser(wait, 260);
+
+        waitForText(wait, By.id("selected-operator-editor"), "CONNECTABILITY");
+        waitForText(wait, By.id("selected-operator-editor"), "1 source ·");
+        waitForConnectabilityServerReady(new WebDriverWait(driver, Duration.ofSeconds(30)),
+                "riskScoreSource", 0);
+        waitForText(wait, By.id("selected-operator-editor"), "partial server window 1-250 of 260");
+        waitForText(wait, By.id("selected-operator-editor"), "local fallback beyond server window");
+        waitForText(wait, By.id("selected-operator-editor"), "Window 1-250 of 260");
+        wait.until(ignored -> driver.findElements(By.cssSelector(
+                "#selected-operator-editor [data-connectability-action='connect']"
+                        + "[data-connect-target-node^='riskScoreReview']"
+        )).size() >= 250);
+        assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-panel"));
+
+        click(wait, By.cssSelector("#selected-operator-editor [data-connectability-window='next']"));
+        waitForConnectabilityServerReady(new WebDriverWait(driver, Duration.ofSeconds(30)),
+                "riskScoreSource", 250);
+        waitForText(wait, By.id("selected-operator-editor"), "Window 251-260 of 260");
+        waitForText(wait, By.id("selected-operator-editor"), "partial server window 251-260 of 260");
+
+        By filterQuery = By.cssSelector("#selected-operator-editor [data-connectability-filter-query]");
+        sendKeysThroughRerenderedFocusedInput(wait, filterQuery, "riskScoreReview260");
+        waitForText(wait, By.id("selected-operator-editor"), "matches");
+        WebElement lateTarget = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "#selected-operator-editor [data-connectability-action='connect']"
+                        + "[data-connect-target-node='riskScoreReview260']"
+        )));
+        assertThat(lateTarget.getText())
+                .contains("Score review (riskScoreReview260)")
+                .contains("integer -> integer");
+        assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-panel"));
     }
 
     @Test
@@ -1728,7 +1798,84 @@ class VisualAuthoringBrowserDomTest {
     }
 
     private static OperatorLibrary scoreReviewDesignOnlyLibrary() {
-        OperatorDefinition operator = new OperatorDefinition(
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-score-design",
+                "Risk score design operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(scoreReviewOperatorDefinition())
+        );
+    }
+
+    private static OperatorLibrary scoreReviewLargeConnectabilityLibrary() {
+        OperatorDefinition source = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreSource",
+                "1.0.0",
+                new OperatorDefinition.Display("Score source",
+                        "Provides one primitive score output for large connectability windows.",
+                        List.of("risk", "design")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12",
+                                        Map.of("type", "integer")),
+                                true,
+                                "Score output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("design", "", Map.of()),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-score-large-connectability",
+                "Risk score large connectability operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(source, scoreReviewTransformTargetOperatorDefinition())
+        );
+    }
+
+    private static OperatorDefinition scoreReviewTransformTargetOperatorDefinition() {
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreReview",
+                "1.0.0",
+                new OperatorDefinition.Display("Score review",
+                        "Reviews a risk score inside the visual transform runtime.",
+                        List.of("risk", "transform")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(
+                                        Map.of("score", Map.of("type", "integer")),
+                                        List.of("score")),
+                                true,
+                                "Score review input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(
+                                        Map.of("approved", Map.of("type", "boolean")),
+                                        List.of()),
+                                true,
+                                "Score review result."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("approved", "true")
+                )),
+                List.of()
+        );
+    }
+
+    private static OperatorDefinition scoreReviewOperatorDefinition() {
+        return new OperatorDefinition(
                 "bloge.visualOperator.v1",
                 "risk:scoreReview",
                 "1.0.0",
@@ -1754,15 +1901,6 @@ class VisualAuthoringBrowserDomTest {
                 OperatorDefinition.Capabilities.pure(),
                 new OperatorDefinition.Lowering("design", "", Map.of()),
                 List.of()
-        );
-        return new OperatorLibrary(
-                "bloge.visualOperatorLibrary.v1",
-                "risk-score-design",
-                "Risk score design operators",
-                "1.0.0",
-                "risk-team",
-                "ACTIVE",
-                List.of(operator)
         );
     }
 
@@ -1803,6 +1941,49 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("library-profile"), "1 operators");
         waitForText(wait, By.id("library-profile"), "2 required");
         waitForText(wait, By.id("library-profile"), "Eligibility");
+    }
+
+    private void addScoreSourceAndReviewTargetsInBrowser(WebDriverWait wait, int count) {
+        Number added = (Number) ((JavascriptExecutor) driver).executeScript("""
+                const targetCount = Number(arguments[0]);
+                const sourceType = 'risk:scoreSource';
+                const targetType = 'risk:scoreReview';
+                if (!OPERATOR_TYPES[sourceType]) {
+                  throw new Error(`Operator ${sourceType} is not registered in the browser catalog`);
+                }
+                if (!OPERATOR_TYPES[targetType]) {
+                  throw new Error(`Operator ${targetType} is not registered in the browser catalog`);
+                }
+                const source = createBuilderNode(sourceType, 120, 160);
+                state.builder.nodes = [source];
+                for (let index = 0; index < targetCount; index += 1) {
+                  const column = index % 20;
+                  const row = Math.floor(index / 20);
+                  const node = createBuilderNode(targetType, 520 + column * 240, 120 + row * 145);
+                  state.builder.nodes.push(node);
+                }
+                state.builder.dependencyEdges = [];
+                state.builder.routeEdges = [];
+                state.builder.output = { nodeId: source.id, path: '' };
+                state.builder.selectedId = source.id;
+                state.selectedNodeId = source.id;
+                state.canvasFocusedNodeId = source.id;
+                state.nodeConnectabilityServer = null;
+                clearNodeConnectabilityFilter();
+                syncComposerFromBuilder({ render: false });
+                renderInputForm();
+                renderSelectedOperatorEditor();
+                renderGraphOutputEditor();
+                renderDiagram();
+                return state.builder.nodes.length;
+                """, count);
+        assertThat(added.intValue()).isEqualTo(count + 1);
+        wait.until(ignored -> driver.findElements(By.cssSelector(
+                "#diagram [data-node-id^='riskScoreReview']"
+        )).size() >= count);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "#diagram [data-node-id^='riskScoreSource']"
+        )));
     }
 
     private void publishVisualDraft(WebDriverWait wait) {
@@ -2165,6 +2346,70 @@ class VisualAuthoringBrowserDomTest {
         } catch (TimeoutException ex) {
             throw new AssertionError("Expected value '%s' was not present in %s. Actual='%s', output='%s'"
                     .formatted(expected, locator, valueOf(locator), textOf(By.id("output"))), ex);
+        }
+    }
+
+    private void sendKeysThroughRerenderedFocusedInput(WebDriverWait wait, By locator, String value) {
+        WebElement input = wait.until(ExpectedConditions.elementToBeClickable(locator));
+        input.clear();
+        input.click();
+        waitForFocusedValue(wait, locator, "");
+        StringBuilder typed = new StringBuilder();
+        for (char character : value.toCharArray()) {
+            driver.switchTo().activeElement().sendKeys(String.valueOf(character));
+            typed.append(character);
+            String expected = typed.toString();
+            waitForValue(wait, locator, expected);
+            waitForFocusedValue(wait, locator, expected);
+        }
+    }
+
+    private void waitForFocusedValue(WebDriverWait wait, By locator, String expected) {
+        try {
+            wait.until(ignored -> {
+                try {
+                    WebElement element = driver.findElement(locator);
+                    WebElement activeElement = driver.switchTo().activeElement();
+                    return element.equals(activeElement)
+                            && expected.equals(String.valueOf(element.getAttribute("value")));
+                } catch (NoSuchElementException | StaleElementReferenceException ex) {
+                    return false;
+                }
+            });
+        } catch (TimeoutException ex) {
+            throw new AssertionError("Expected focused value '%s' was not present in %s. Actual='%s', output='%s'"
+                    .formatted(expected, locator, valueOf(locator), textOf(By.id("output"))), ex);
+        }
+    }
+
+    private void assertNoHorizontalOverflow(WebDriverWait wait, By locator) {
+        WebElement element = wait.until(ExpectedConditions.visibilityOfElementLocated(locator));
+        Number overflow = (Number) ((JavascriptExecutor) driver).executeScript(
+                "return Math.max(0, arguments[0].scrollWidth - arguments[0].clientWidth);",
+                element
+        );
+        assertThat(overflow.doubleValue()).isLessThanOrEqualTo(2.0);
+    }
+
+    private void waitForConnectabilityServerReady(WebDriverWait wait, String nodeId, int offset) {
+        try {
+            wait.until(ignored -> Boolean.TRUE.equals(((JavascriptExecutor) driver).executeScript("""
+                    const server = state.nodeConnectabilityServer;
+                    return Boolean(server)
+                      && server.nodeId === arguments[0]
+                      && server.status === 'ready'
+                      && Number(server.offset || 0) === Number(arguments[1]);
+                    """, nodeId, offset)));
+        } catch (TimeoutException ex) {
+            Object serverState = ((JavascriptExecutor) driver).executeScript("""
+                    try {
+                      return JSON.stringify(state.nodeConnectabilityServer || null);
+                    } catch (error) {
+                      return `unavailable: ${error.message}`;
+                    }
+                    """);
+            throw new AssertionError("Connectability server candidates did not become ready for node '%s' at offset %d. state=%s"
+                    .formatted(nodeId, offset, serverState), ex);
         }
     }
 

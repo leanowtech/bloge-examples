@@ -26277,7 +26277,7 @@ async function discoverVisualConnectionCandidatesOnServer(source, options = {}) 
     limit: Number.isFinite(Number(options.limit)) ? Number(options.limit) : 250,
     offset: Number.isFinite(Number(options.offset)) ? Number(options.offset) : 0,
     targetNodeId: options.targetNodeId || target.nodeId || '',
-    targetSurface: options.targetSurface || connectionCandidateTargetSurface(target),
+    targetSurface: options.targetSurface || (target.nodeId ? connectionCandidateTargetSurface(target) : 'canvas'),
     targetPort: options.targetPort || target.port || '',
     targetPath: options.targetPath || target.path || '',
     source: {

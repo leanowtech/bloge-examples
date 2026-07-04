@@ -15,7 +15,7 @@ import java.util.Map;
  * @param limit maximum returned candidate rows
  * @param offset zero-based offset after accepted/rejected filtering
  * @param targetNodeId optional target node filter for large-canvas focused discovery
- * @param targetSurface optional target surface filter, such as input, config, dependency, route, or control
+ * @param targetSurface optional target surface filter, such as input, config, dependency, route, control, or canvas
  * @param targetPort optional target port filter for exact-hover discovery
  * @param targetPath optional target schema path filter for exact-hover discovery
  * @param targetUnionBranch explicit target oneOf/anyOf branch selected by the author for focused discovery
@@ -113,6 +113,7 @@ public record VisualConnectionCandidatesRequest(
             case "dependency", "depends_on", "dependson" -> "dependency";
             case "route", "branch" -> "route";
             case "control" -> "control";
+            case "canvas", "canvas-targets", "canvas_targets" -> "canvas";
             default -> trimmed;
         };
     }
