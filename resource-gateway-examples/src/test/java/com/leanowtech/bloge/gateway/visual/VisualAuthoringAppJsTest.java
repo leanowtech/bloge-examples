@@ -2977,6 +2977,10 @@ class VisualAuthoringAppJsTest {
                   'outputReferenceFromSelectionPath',
                   'renderNodeConnectabilityPanel',
                   'renderNodeConnectabilityRow',
+                  'nodeConnectabilitySourceFilterControl',
+                  'nodeConnectabilitySourceFilterOptions',
+                  'nodeConnectabilitySourceFilterKey',
+                  'nodeConnectabilityDisplaySources',
                   'nodeConnectabilityDisplayTargets',
                   'renderNodeConnectabilityFilterControls',
                   'nodeConnectabilityActiveFilter',
@@ -3026,6 +3030,8 @@ class VisualAuthoringAppJsTest {
                   'nodeConnectabilityServerRequestKey',
                   'nodeConnectabilityServerActiveStatus',
                   'nodeConnectabilityServerStatusKey',
+                  'nodeConnectabilityServerActiveSourceKey',
+                  'nodeConnectabilityServerSourceKey',
                   'nodeConnectabilityServerActiveFacetFilters',
                   'nodeConnectabilityServerFacetFiltersKey',
                   'normalizeConnectionCandidateStatus',
@@ -5687,6 +5693,7 @@ operators:
                 context.state.nodeConnectabilityFilter = {
                   query: '',
                   status: '',
+                  sourceKey: '',
                   facetFilters: {
                     schemaType: ['integer'],
                     runtimeReadiness: ['design-only'],
@@ -5715,7 +5722,42 @@ operators:
                   250,
                   '',
                   '',
+                  '',
                   activeFacetFilter.facetFilters
+                );
+                const scoreSourceKey = context.nodeConnectabilitySourceFilterKey(scoreConnectability.source);
+                context.state.nodeConnectabilityFilter = {
+                  query: '',
+                  status: '',
+                  sourceKey: scoreSourceKey,
+                  facetFilters: {}
+                };
+                const activeSourceFilter = context.nodeConnectabilityActiveFilter();
+                const sourceFilteredSources = context.nodeConnectabilityDisplaySources(
+                  serverConnectability,
+                  activeSourceFilter
+                );
+                const sourceFilterControls = context.renderNodeConnectabilityFilterControls(
+                  serverConnectability,
+                  activeSourceFilter,
+                  context.state.nodeConnectabilityServer
+                );
+                const sourceFilterSummary = context.nodeConnectabilityFilterSummary(
+                  serverConnectability,
+                  activeSourceFilter
+                );
+                const sourceFilteredPanel = sourceFilteredSources
+                  .map((entry) => context.renderNodeConnectabilityRow(entry, activeSourceFilter))
+                  .join('');
+                const sourceRequestKey = context.nodeConnectabilityServerRequestKey(
+                  'riskNode',
+                  context.state.builder,
+                  0,
+                  250,
+                  '',
+                  '',
+                  scoreSourceKey,
+                  {}
                 );
                 context.clearNodeConnectabilityFilter();
                 const truncatedServerStatus = context.renderNodeConnectabilityServerStatus({
@@ -5824,14 +5866,17 @@ operators:
 	                  250,
 	                  '',
 	                  'ready',
+	                  '',
 	                  { schemaType: ['integer'] }
 	                );
 	                context.state.nodeConnectabilityFilter = {
 	                  query: '',
 	                  status: 'ready',
+	                  sourceKey: '',
 	                  facetFilters: { schemaType: ['integer'] }
 	                };
 	                const activeServerStatus = context.nodeConnectabilityServerActiveStatus();
+	                const activeServerSourceKey = context.nodeConnectabilityServerActiveSourceKey();
 	                const activeServerFacetFilters = context.nodeConnectabilityServerActiveFacetFilters();
 	                const connectabilityServerBeforeFetch = context.state.nodeConnectabilityServer;
 	                const connectabilityFetchOptions = [];
@@ -5870,6 +5915,23 @@ operators:
                   { offset: 250, limit: 250, force: true }
                 );
 	                const connectabilityFetchOffsets = connectabilityFetchOptions
+	                  .map((entry) => `${entry.sourcePath}:${entry.offset}:${entry.limit}:${entry.includeRejected}:${entry.targetStatus}:${entry.facetFiltersKey}`)
+	                  .sort()
+	                  .join('|');
+	                context.state.nodeConnectabilityServer = connectabilityServerBeforeFetch;
+	                context.state.nodeConnectabilityFilter = {
+	                  query: '',
+	                  status: 'ready',
+	                  sourceKey: scoreSourceKey,
+	                  facetFilters: { schemaType: ['integer'] }
+	                };
+	                connectabilityFetchOptions.length = 0;
+	                context.ensureNodeConnectabilityServerCandidates(
+	                  context.state.builder.nodes[1],
+	                  connectability,
+	                  { offset: 250, limit: 250, force: true }
+	                );
+	                const sourceFilteredFetchOffsets = connectabilityFetchOptions
 	                  .map((entry) => `${entry.sourcePath}:${entry.offset}:${entry.limit}:${entry.includeRejected}:${entry.targetStatus}:${entry.facetFiltersKey}`)
 	                  .sort()
 	                  .join('|');
@@ -6726,6 +6788,16 @@ operators:
                   ['server connectability panel includes facet summary', String(serverConnectabilityPanel.includes('Facets')), 'true'],
                   ['server connectability active facet key', facetFilterKey, 'loweringMode=design|operatorLibraryId=risk-policy|operatorRef=risk:audit|runtimeReadiness=design-only|schemaType=integer|sourceKind=user-library|surface=input'],
                   ['server connectability facet request key differs', String(pageOneRequestKey !== facetRequestKey), 'true'],
+                  ['server connectability source filter key', scoreSourceKey, 'data:riskNode:payload:score'],
+                  ['server connectability source options', context.nodeConnectabilitySourceFilterOptions(serverConnectability).map((entry) => entry.label).join('|'), 'riskNode.payload|riskNode.payload.score|riskNode.payload.eligible'],
+                  ['server connectability source display count', sourceFilteredSources.length, 1],
+                  ['server connectability source display label', context.endpointLabel(sourceFilteredSources[0].source), 'riskNode.payload.score'],
+                  ['server connectability source filter summary', sourceFilterSummary, '5/5 matches'],
+                  ['server connectability source controls include endpoint', String(sourceFilterControls.includes('data-connectability-filter-source')), 'true'],
+                  ['server connectability source controls selected score', String(sourceFilterControls.includes('value="' + scoreSourceKey + '" selected')), 'true'],
+                  ['server connectability source row hides eligible', String(!sourceFilteredPanel.includes('riskNode.payload.eligible')), 'true'],
+                  ['server connectability source row keeps score', String(sourceFilteredPanel.includes('riskNode.payload.score')), 'true'],
+                  ['server connectability source request key differs', String(pageOneRequestKey !== sourceRequestKey), 'true'],
                   ['server connectability facet controls include schema', String(facetFilterControls.includes('data-connectability-filter-facet="schemaType"')), 'true'],
                   ['server connectability facet controls include operator', String(facetFilterControls.includes('data-connectability-filter-facet="operatorRef"')), 'true'],
                   ['server connectability facet controls include source', String(facetFilterControls.includes('data-connectability-filter-facet="sourceKind"')), 'true'],
@@ -6748,8 +6820,10 @@ operators:
                   ['server connectability status request key differs', String(pageOneRequestKey !== pageOneReadyStatusRequestKey), 'true'],
                   ['server connectability status facet request key differs', String(pageOneReadyStatusRequestKey !== pageOneReadySchemaFacetRequestKey), 'true'],
                   ['server connectability active status', activeServerStatus, 'ready'],
+                  ['server connectability active source', activeServerSourceKey, ''],
                   ['server connectability active facet filters', context.nodeConnectabilityServerFacetFiltersKey(activeServerFacetFilters), 'schemaType=integer'],
                   ['server connectability next page request offsets', connectabilityFetchOffsets, ':250:250:true:ready:schemaType=integer|eligible:250:250:true:ready:schemaType=integer|score:250:250:true:ready:schemaType=integer'],
+                  ['server connectability source filtered fetch offsets', sourceFilteredFetchOffsets, 'score:250:250:true:ready:schemaType=integer'],
                   ['auto bind required unbound count', autoBindPlan.requiredUnboundCount, 2],
                   ['auto bind item count', autoBindPlan.items.length, 1],
                   ['auto bind skipped count', autoBindPlan.skippedCount, 1],

@@ -840,7 +840,7 @@ summary/diagnostic/schema explanation（source/target type、first diagnostic、
 未命中或读模型失败时回退本地 schema hint；真正 drop 写入前仍必须调用
 `/api/visual/connections/check`，避免把候选发现误用成 mutation gate。
 selected-node connectability inspector 复用同一读模型为当前节点 source handles 建立短期快照，
-用服务端 candidate summary/diagnostic/schema explanation，以及 Schema/Runtime/Library/Operator/Source/Lowering/Surface facet filter 覆盖本地推断；但 quick-connect 点击前仍再次调用
+用服务端 candidate summary/diagnostic/schema explanation，以及 Endpoint/source-handle、Schema/Runtime/Library/Operator/Source/Lowering/Surface filter 覆盖本地推断；Endpoint 选择会把展示行和候选请求收窄到单个输出端点，但 quick-connect 点击前仍再次调用
 connection check，保证 inspector 建议和实际写入之间不存在第二套权威。
 选中已发布 artifact 时，浏览器展示 publication 冻结的 readiness 和非执行节点清单；
 这是审阅历史设计制品的依据，不依赖当前 catalog 重新推断。

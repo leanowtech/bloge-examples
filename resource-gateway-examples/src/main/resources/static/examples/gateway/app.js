@@ -582,6 +582,7 @@ const state = {
   nodeConnectabilityFilter: {
     query: '',
     status: '',
+    sourceKey: '',
     facetFilters: {}
   },
   connectionMessage: null,
@@ -14536,6 +14537,17 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const select of target.querySelectorAll('[data-connectability-filter-source]')) {
+    select.addEventListener('change', () => {
+      state.nodeConnectabilityFilter = {
+        ...nodeConnectabilityActiveFilter(),
+        sourceKey: select.value
+      };
+      renderSelectedOperatorEditor();
+      $('selected-operator-editor')?.querySelector('[data-connectability-filter-source]')?.focus();
+    });
+  }
+
   for (const select of target.querySelectorAll('[data-connectability-filter-facet]')) {
     select.addEventListener('change', () => {
       const facet = canonicalConnectionCandidateFacetKey(select.dataset.connectabilityFilterFacet || '');
@@ -14856,6 +14868,21 @@ function selectedOperatorEditorFocusSnapshot(target) {
       selector: '[data-connectability-filter-status]',
       value: active.value || ''
     };
+  }
+  if (active.matches('[data-connectability-filter-source]')) {
+    return {
+      selector: '[data-connectability-filter-source]',
+      value: active.value || ''
+    };
+  }
+  if (active.matches('[data-connectability-filter-facet]')) {
+    const facet = canonicalConnectionCandidateFacetKey(active.dataset.connectabilityFilterFacet || '');
+    if (facet) {
+      return {
+        selector: `[data-connectability-filter-facet="${facet}"]`,
+        value: active.value || ''
+      };
+    }
   }
   return null;
 }
@@ -15197,7 +15224,7 @@ function renderNodeConnectabilityPanel(node) {
       ${serverStatus}
       ${serverControls}
       ${renderNodeConnectabilityFilterControls(summary, filter, serverState)}
-      ${summary.sources.map((source) => renderNodeConnectabilityRow(source, filter)).join('')}
+      ${nodeConnectabilityDisplaySources(summary, filter).map((source) => renderNodeConnectabilityRow(source, filter)).join('')}
     </div>
   `;
 }
@@ -15224,6 +15251,7 @@ function renderNodeConnectabilityFilterControls(
 ) {
   const query = filter.query || '';
   const status = filter.status || '';
+  const sourceKey = filter.sourceKey || '';
   const active = nodeConnectabilityFilterIsActive(filter);
   const statusOptions = [
     ['', 'All'],
@@ -15233,10 +15261,12 @@ function renderNodeConnectabilityFilterControls(
   ].map(([value, label]) =>
     `<option value="${escapeHtml(value)}"${status === value ? ' selected' : ''}>${escapeHtml(label)}</option>`
   ).join('');
+  const sourceFilter = nodeConnectabilitySourceFilterControl(summary, sourceKey);
   const summaryText = active ? nodeConnectabilityFilterSummary(summary, filter) : 'Current window';
   const facetControls = nodeConnectabilityFacetFilterControls(serverState, filter);
   return `
     <div class="node-connectability-filter-controls">
+      ${sourceFilter}
       <label>
         <span>Find</span>
         <input
@@ -15256,6 +15286,51 @@ function renderNodeConnectabilityFilterControls(
       ${active ? '<button type="button" class="secondary compact" data-connectability-filter-clear>Clear</button>' : ''}
     </div>
   `;
+}
+
+function nodeConnectabilitySourceFilterControl(summary, selected = '') {
+  const options = nodeConnectabilitySourceFilterOptions(summary);
+  if (options.length <= 1 && !selected) {
+    return '';
+  }
+  const optionRows = [
+    '<option value="">All</option>',
+    ...options.map((option) => {
+      const selectedAttr = selected === option.key ? ' selected' : '';
+      return `<option value="${escapeHtml(option.key)}"${selectedAttr}>${escapeHtml(option.label)}</option>`;
+    })
+  ].join('');
+  return `
+    <label>
+      <span>Endpoint</span>
+      <select data-connectability-filter-source aria-label="Filter connectability source endpoint">${optionRows}</select>
+    </label>
+  `;
+}
+
+function nodeConnectabilitySourceFilterOptions(summary) {
+  return (summary?.sources || [])
+    .map((sourceSummary) => ({
+      key: nodeConnectabilitySourceFilterKey(sourceSummary.source),
+      label: endpointLabel(sourceSummary.source)
+    }))
+    .filter((option) => option.key);
+}
+
+function nodeConnectabilitySourceFilterKey(source) {
+  if (!source) {
+    return '';
+  }
+  return connectionCandidatePreviewSourceKey(source, connectionCandidateKindForSource(source));
+}
+
+function nodeConnectabilityDisplaySources(summary, filter = nodeConnectabilityActiveFilter()) {
+  const selected = filter.sourceKey || '';
+  const sources = summary?.sources || [];
+  if (!selected) {
+    return sources;
+  }
+  return sources.filter((sourceSummary) => nodeConnectabilitySourceFilterKey(sourceSummary.source) === selected);
 }
 
 function nodeConnectabilityFacetFilterControls(serverState, filter = nodeConnectabilityActiveFilter()) {
@@ -15337,12 +15412,13 @@ function nodeConnectabilityActiveFilter() {
     query: String(filter.query || ''),
     normalizedQuery: String(filter.query || '').trim().toLowerCase(),
     status,
+    sourceKey: String(filter.sourceKey || ''),
     facetFilters: normalizeConnectionCandidateFacetFilters(filter.facetFilters)
   };
 }
 
 function nodeConnectabilityFilterIsActive(filter = nodeConnectabilityActiveFilter()) {
-  return Boolean(filter.normalizedQuery || filter.status || Object.keys(filter.facetFilters || {}).length);
+  return Boolean(filter.normalizedQuery || filter.status || filter.sourceKey || Object.keys(filter.facetFilters || {}).length);
 }
 
 function nodeConnectabilityFilterDisplayLimit() {
@@ -15452,7 +15528,7 @@ function nodeConnectabilityFilterSummary(summary, filter = nodeConnectabilityAct
   if (!nodeConnectabilityFilterIsActive(filter)) {
     return 'Current window';
   }
-  const totals = (summary.sources || []).reduce((acc, sourceSummary) => {
+  const totals = nodeConnectabilityDisplaySources(summary, filter).reduce((acc, sourceSummary) => {
     const allTargets = nodeConnectabilityAllTargets(sourceSummary);
     const matched = nodeConnectabilityFilteredTargets(sourceSummary, filter);
     acc.total += allTargets.length;
@@ -15465,7 +15541,7 @@ function nodeConnectabilityFilterSummary(summary, filter = nodeConnectabilityAct
 }
 
 function clearNodeConnectabilityFilter() {
-  state.nodeConnectabilityFilter = { query: '', status: '', facetFilters: {} };
+  state.nodeConnectabilityFilter = { query: '', status: '', sourceKey: '', facetFilters: {} };
 }
 
 function renderNodeConnectabilityTarget(source, entry) {
@@ -15695,8 +15771,9 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
   }
   const query = nodeConnectabilityServerActiveQuery();
   const targetStatus = nodeConnectabilityServerActiveStatus();
+  const sourceKey = nodeConnectabilityServerActiveSourceKey();
   const facetFilters = nodeConnectabilityServerActiveFacetFilters();
-  const currentWindow = nodeConnectabilityServerWindowFor(node, state.builder, query, targetStatus, facetFilters);
+  const currentWindow = nodeConnectabilityServerWindowFor(node, state.builder, query, targetStatus, sourceKey, facetFilters);
   const offset = Number.isFinite(Number(options.offset))
     ? Math.max(0, Math.floor(Number(options.offset)))
     : currentWindow.offset;
@@ -15704,13 +15781,14 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
     ? Math.max(1, Math.floor(Number(options.limit)))
     : currentWindow.limit;
   const draftKey = nodeConnectabilityServerDraftKey(node);
-  const requestKey = nodeConnectabilityServerRequestKey(node, state.builder, offset, limit, query, targetStatus, facetFilters);
+  const requestKey = nodeConnectabilityServerRequestKey(node, state.builder, offset, limit, query, targetStatus, sourceKey, facetFilters);
   const current = state.nodeConnectabilityServer;
   if (!options.force && current?.requestKey === requestKey && (current.status === 'loading' || current.status === 'ready')) {
     return;
   }
   const sources = (summary.sources || [])
     .map((entry) => entry.source)
+    .filter((source) => !sourceKey || nodeConnectabilitySourceFilterKey(source) === sourceKey)
     .filter((source) => source?.nodeId && source.nodeId !== CONTEXT_SOURCE_ID);
   if (!sources.length) {
     state.nodeConnectabilityServer = null;
@@ -15725,13 +15803,14 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
     limit,
     query,
     targetStatus,
+    sourceKey,
     facetFilters,
     resultsBySourceKey: {},
     error: ''
   };
   if (query && !options.force && !options.debounced) {
     state.nodeConnectabilityServer = loadingState;
-    scheduleNodeConnectabilityServerQuery(node, offset, limit, query, targetStatus, facetFilters);
+    scheduleNodeConnectabilityServerQuery(node, offset, limit, query, targetStatus, sourceKey, facetFilters);
     return;
   }
   if (!query) {
@@ -15776,6 +15855,7 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
         limit,
         query,
         targetStatus,
+        sourceKey,
         facetFilters,
         resultsBySourceKey,
         error: uniqueStrings(errors).join(' | ')
@@ -15786,16 +15866,20 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
     });
 }
 
-function scheduleNodeConnectabilityServerQuery(node, offset, limit, query, targetStatus = '', facetFilters = {}) {
+function scheduleNodeConnectabilityServerQuery(node, offset, limit, query, targetStatus = '', sourceKey = '', facetFilters = {}) {
   clearNodeConnectabilityServerQueryTimer();
   state.nodeConnectabilityServerQueryTimer = setTimeout(() => {
     state.nodeConnectabilityServerQueryTimer = null;
     const activeQuery = nodeConnectabilityServerActiveQuery();
+    const activeSourceKey = nodeConnectabilityServerActiveSourceKey();
     const activeFacetFilters = nodeConnectabilityServerActiveFacetFilters();
     if (nodeConnectabilityServerQueryKey(activeQuery) !== nodeConnectabilityServerQueryKey(query)) {
       return;
     }
     if (nodeConnectabilityServerStatusKey(nodeConnectabilityServerActiveStatus()) !== nodeConnectabilityServerStatusKey(targetStatus)) {
+      return;
+    }
+    if (nodeConnectabilityServerSourceKey(activeSourceKey) !== nodeConnectabilityServerSourceKey(sourceKey)) {
       return;
     }
     if (nodeConnectabilityServerFacetFiltersKey(activeFacetFilters) !== nodeConnectabilityServerFacetFiltersKey(facetFilters)) {
@@ -16031,11 +16115,12 @@ function nodeConnectabilityServerWindowFor(
   builder = state.builder,
   query = nodeConnectabilityServerActiveQuery(),
   targetStatus = nodeConnectabilityServerActiveStatus(),
+  sourceKey = nodeConnectabilityServerActiveSourceKey(),
   facetFilters = nodeConnectabilityServerActiveFacetFilters()
 ) {
   const current = state.nodeConnectabilityServer;
   const nodeId = typeof nodeOrId === 'string' ? nodeOrId : nodeOrId?.id;
-  if (current?.nodeId === nodeId && nodeConnectabilityServerStateMatchesNode(current, nodeOrId, builder, query, targetStatus, facetFilters)) {
+  if (current?.nodeId === nodeId && nodeConnectabilityServerStateMatchesNode(current, nodeOrId, builder, query, targetStatus, sourceKey, facetFilters)) {
     return {
       offset: numericCount(current.offset, 0),
       limit: Math.max(1, numericCount(current.limit, nodeConnectabilityServerCandidateLimit()))
@@ -16073,6 +16158,7 @@ function nodeConnectabilityServerStateMatchesNode(
   builder = state.builder,
   query = nodeConnectabilityServerActiveQuery(),
   targetStatus = nodeConnectabilityServerActiveStatus(),
+  sourceKey = nodeConnectabilityServerActiveSourceKey(),
   facetFilters = nodeConnectabilityServerActiveFacetFilters()
 ) {
   if (!serverState) {
@@ -16082,6 +16168,9 @@ function nodeConnectabilityServerStateMatchesNode(
     return false;
   }
   if (nodeConnectabilityServerStatusKey(serverState.targetStatus || '') !== nodeConnectabilityServerStatusKey(targetStatus)) {
+    return false;
+  }
+  if (nodeConnectabilityServerSourceKey(serverState.sourceKey || '') !== nodeConnectabilityServerSourceKey(sourceKey)) {
     return false;
   }
   if (nodeConnectabilityServerFacetFiltersKey(serverState.facetFilters) !== nodeConnectabilityServerFacetFiltersKey(facetFilters)) {
@@ -16101,6 +16190,7 @@ function nodeConnectabilityServerStateMatchesNode(
     numericCount(serverState.limit, nodeConnectabilityServerCandidateLimit()),
     query,
     targetStatus,
+    sourceKey,
     facetFilters
   );
 }
@@ -16121,6 +16211,7 @@ function nodeConnectabilityServerRequestKey(
   limit = nodeConnectabilityServerCandidateLimit(),
   query = '',
   targetStatus = '',
+  sourceKey = '',
   facetFilters = {}
 ) {
   const normalizedOffset = Math.max(0, Math.floor(Number(offset) || 0));
@@ -16131,9 +16222,11 @@ function nodeConnectabilityServerRequestKey(
     : '';
   const statusKey = nodeConnectabilityServerStatusKey(targetStatus);
   const statusSuffix = statusKey ? `:status:${statusKey}` : '';
+  const sourceFilterKey = nodeConnectabilityServerSourceKey(sourceKey);
+  const sourceSuffix = sourceFilterKey ? `:source:${compactStringHash(sourceFilterKey)}:${sourceFilterKey.length}` : '';
   const facetKey = nodeConnectabilityServerFacetFiltersKey(facetFilters);
   const facetSuffix = facetKey ? `:facets:${compactStringHash(facetKey)}:${facetKey.length}` : '';
-  return `${nodeConnectabilityServerDraftKey(nodeOrId, builder)}:window:${normalizedOffset}:${normalizedLimit}${querySuffix}${statusSuffix}${facetSuffix}`;
+  return `${nodeConnectabilityServerDraftKey(nodeOrId, builder)}:window:${normalizedOffset}:${normalizedLimit}${querySuffix}${statusSuffix}${sourceSuffix}${facetSuffix}`;
 }
 
 function nodeConnectabilityServerActiveQuery() {
@@ -16151,6 +16244,14 @@ function nodeConnectabilityServerActiveStatus() {
 
 function nodeConnectabilityServerStatusKey(targetStatus = '') {
   return normalizeConnectionCandidateStatus(targetStatus, false, true);
+}
+
+function nodeConnectabilityServerActiveSourceKey() {
+  return nodeConnectabilityActiveFilter().sourceKey || '';
+}
+
+function nodeConnectabilityServerSourceKey(sourceKey = '') {
+  return String(sourceKey || '').trim();
 }
 
 function nodeConnectabilityServerActiveFacetFilters() {
