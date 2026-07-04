@@ -585,6 +585,7 @@ const state = {
     sourceKey: '',
     facetFilters: {}
   },
+  nodeConnectabilitySourceWindows: {},
   nodeConnectabilityDisplayWindows: {},
   connectionMessage: null,
   builderHistoryUndo: [],
@@ -14515,6 +14516,12 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const button of target.querySelectorAll('[data-connectability-source-window]')) {
+    button.addEventListener('click', () => {
+      changeNodeConnectabilitySourceWindowFromButton(button);
+    });
+  }
+
   for (const container of target.querySelectorAll('[data-connectability-targets]')) {
     container.addEventListener('keydown', handleNodeConnectabilityTargetsKeydown);
   }
@@ -15213,11 +15220,22 @@ function renderNodeConnectabilityPanel(node) {
   if (!summary.sourceCount) {
     return '';
   }
+  const filter = nodeConnectabilityActiveFilter();
+  const sourceWindow = nodeConnectabilityDisplaySourceWindow(summary, filter);
   if (typeof ensureNodeConnectabilityServerCandidates === 'function') {
-    ensureNodeConnectabilityServerCandidates(node, summary);
+    ensureNodeConnectabilityServerCandidates(node, summary, nodeConnectabilitySourceWindowRequestOptions(sourceWindow));
   }
+  const sourceScopeKey = nodeConnectabilitySourceWindowRequestScopeKey(sourceWindow);
   const serverState = typeof nodeConnectabilityServerStateFor === 'function'
-    ? nodeConnectabilityServerStateFor(node)
+    ? nodeConnectabilityServerStateFor(
+        node,
+        state.builder,
+        nodeConnectabilityServerActiveQuery(),
+        nodeConnectabilityServerActiveStatus(),
+        nodeConnectabilityServerActiveSourceKey(),
+        nodeConnectabilityServerActiveFacetFilters(),
+        sourceScopeKey
+      )
     : null;
   const serverStatus = typeof renderNodeConnectabilityServerStatus === 'function'
     ? renderNodeConnectabilityServerStatus(serverState)
@@ -15225,7 +15243,6 @@ function renderNodeConnectabilityPanel(node) {
   const serverControls = typeof renderNodeConnectabilityServerControls === 'function'
     ? renderNodeConnectabilityServerControls(serverState)
     : '';
-  const filter = nodeConnectabilityActiveFilter();
   return `
     <div class="node-connectability-panel">
       <div class="binding-panel-title">
@@ -15235,7 +15252,8 @@ function renderNodeConnectabilityPanel(node) {
       ${serverStatus}
       ${serverControls}
       ${renderNodeConnectabilityFilterControls(summary, filter, serverState)}
-      ${nodeConnectabilityDisplaySources(summary, filter).map((source) => renderNodeConnectabilityRow(source, filter)).join('')}
+      ${renderNodeConnectabilitySourceWindowControls(sourceWindow)}
+      ${sourceWindow.sources.map((source) => renderNodeConnectabilityRow(source, filter)).join('')}
     </div>
   `;
 }
@@ -15371,13 +15389,165 @@ function nodeConnectabilitySourceFilterKey(source) {
   return connectionCandidatePreviewSourceKey(source, connectionCandidateKindForSource(source));
 }
 
-function nodeConnectabilityDisplaySources(summary, filter = nodeConnectabilityActiveFilter()) {
+function nodeConnectabilityFilteredSources(summary, filter = nodeConnectabilityActiveFilter()) {
   const selected = filter.sourceKey || '';
   const sources = summary?.sources || [];
   if (!selected) {
     return sources;
   }
   return sources.filter((sourceSummary) => nodeConnectabilitySourceFilterKey(sourceSummary.source) === selected);
+}
+
+function nodeConnectabilityDisplaySources(summary, filter = nodeConnectabilityActiveFilter()) {
+  return nodeConnectabilityDisplaySourceWindow(summary, filter).sources;
+}
+
+function nodeConnectabilityDisplaySourceWindow(summary, filter = nodeConnectabilityActiveFilter()) {
+  const sources = nodeConnectabilityFilteredSources(summary, filter);
+  const limit = filter.sourceKey ? Math.max(1, sources.length || 1) : nodeConnectabilitySourceWindowLimit();
+  return nodeConnectabilitySourceWindow(
+    sources,
+    limit,
+    'source endpoints',
+    nodeConnectabilitySourceWindowKey(summary, filter)
+  );
+}
+
+function nodeConnectabilitySourceWindow(sources, limit, label, key) {
+  const safeSources = sources || [];
+  const safeLimit = Math.max(1, numericCount(limit, nodeConnectabilitySourceWindowLimit()));
+  const total = safeSources.length;
+  const requestedOffset = nodeConnectabilitySourceWindowOffset(key);
+  const maxOffset = Math.max(0, Math.floor(Math.max(total - 1, 0) / safeLimit) * safeLimit);
+  const offset = Math.min(Math.max(0, requestedOffset), maxOffset);
+  const visible = safeSources.slice(offset, offset + safeLimit);
+  return {
+    key,
+    sources: visible,
+    sourceKeys: nodeConnectabilitySourceWindowSourceKeys({ sources: visible }),
+    offset,
+    limit: safeLimit,
+    displayed: visible.length,
+    total,
+    label,
+    hasPrevious: offset > 0,
+    hasNext: offset + safeLimit < total,
+    previousOffset: Math.max(0, offset - safeLimit),
+    nextOffset: offset + safeLimit < total ? offset + safeLimit : offset
+  };
+}
+
+function nodeConnectabilitySourceWindowKey(summary, filter = nodeConnectabilityActiveFilter()) {
+  const nodeId = summary?.nodeId || state.selectedNodeId || '';
+  const facetKey = nodeConnectabilityServerFacetFiltersKey(filter.facetFilters);
+  return [
+    nodeConnectabilityServerDraftKey(nodeId, state.builder),
+    nodeConnectabilityServerQueryKey(filter.query || ''),
+    nodeConnectabilityServerStatusKey(filter.status || ''),
+    nodeConnectabilityServerSourceKey(filter.sourceKey || ''),
+    facetKey ? `${compactStringHash(facetKey)}:${facetKey.length}` : ''
+  ].join('|');
+}
+
+function nodeConnectabilitySourceWindowOffset(key) {
+  return Math.max(0, Math.floor(Number((state.nodeConnectabilitySourceWindows || {})[key]) || 0));
+}
+
+function nodeConnectabilitySetSourceWindowOffset(key, offset) {
+  if (!key) {
+    return;
+  }
+  state.nodeConnectabilitySourceWindows = {
+    ...(state.nodeConnectabilitySourceWindows || {}),
+    [key]: Math.max(0, Math.floor(Number(offset) || 0))
+  };
+}
+
+function nodeConnectabilitySourceWindowLimit() {
+  return 8;
+}
+
+function nodeConnectabilitySourceWindowSourceKeys(sourceWindow) {
+  return uniqueStrings((sourceWindow?.sources || [])
+    .map((sourceSummary) => nodeConnectabilitySourceFilterKey(sourceSummary.source))
+    .filter(Boolean));
+}
+
+function nodeConnectabilitySourceWindowRequestOptions(sourceWindow) {
+  return {
+    sourceKeys: nodeConnectabilitySourceWindowSourceKeys(sourceWindow),
+    sourceScopeKey: nodeConnectabilitySourceWindowRequestScopeKey(sourceWindow)
+  };
+}
+
+function nodeConnectabilitySourceWindowRequestScopeKey(sourceWindow) {
+  if (!sourceWindow || sourceWindow.total <= sourceWindow.limit) {
+    return '';
+  }
+  return nodeConnectabilityServerSourceScopeKey(nodeConnectabilitySourceWindowSourceKeys(sourceWindow));
+}
+
+function nodeConnectabilitySourceWindowSummary(sourceWindow) {
+  if (!sourceWindow || sourceWindow.total <= sourceWindow.limit) {
+    return '';
+  }
+  if (!sourceWindow.displayed) {
+    return `Showing 0 of ${sourceWindow.total} ${sourceWindow.label}`;
+  }
+  const end = sourceWindow.offset + sourceWindow.displayed;
+  if (sourceWindow.offset === 0) {
+    return `Showing first ${end} of ${sourceWindow.total} ${sourceWindow.label}`;
+  }
+  return `Showing ${sourceWindow.offset + 1}-${end} of ${sourceWindow.total} ${sourceWindow.label}`;
+}
+
+function renderNodeConnectabilitySourceWindowControls(sourceWindow) {
+  const summary = nodeConnectabilitySourceWindowSummary(sourceWindow);
+  if (!summary) {
+    return '';
+  }
+  const previousDisabled = sourceWindow.hasPrevious ? '' : 'disabled';
+  const nextDisabled = sourceWindow.hasNext ? '' : 'disabled';
+  return `
+    <div class="node-connectability-window-controls node-connectability-source-window-controls" aria-label="Connectability source endpoint window">
+      <button
+        type="button"
+        class="secondary compact"
+        data-connectability-source-window="prev"
+        data-connectability-source-window-key="${escapeHtml(sourceWindow.key)}"
+        data-connectability-source-window-offset="${escapeHtml(sourceWindow.previousOffset)}"
+        ${previousDisabled}
+      >Prev sources</button>
+      <span>${escapeHtml(summary)}</span>
+      <button
+        type="button"
+        class="secondary compact"
+        data-connectability-source-window="next"
+        data-connectability-source-window-key="${escapeHtml(sourceWindow.key)}"
+        data-connectability-source-window-offset="${escapeHtml(sourceWindow.nextOffset)}"
+        ${nextDisabled}
+      >Next sources</button>
+    </div>
+  `;
+}
+
+function changeNodeConnectabilitySourceWindowFromButton(button) {
+  const key = button?.dataset?.connectabilitySourceWindowKey || '';
+  const offset = Number(button?.dataset?.connectabilitySourceWindowOffset);
+  if (!key || !Number.isFinite(offset) || button.disabled) {
+    return;
+  }
+  nodeConnectabilitySetSourceWindowOffset(key, offset);
+  const node = selectedBuilderNode();
+  if (node) {
+    const summary = nodeConnectabilitySummary(node, state.builder);
+    const sourceWindow = nodeConnectabilityDisplaySourceWindow(summary, nodeConnectabilityActiveFilter());
+    ensureNodeConnectabilityServerCandidates(node, summary, {
+      ...nodeConnectabilitySourceWindowRequestOptions(sourceWindow),
+      force: true
+    });
+  }
+  renderSelectedOperatorEditor();
 }
 
 function nodeConnectabilityFacetFilterControls(serverState, filter = nodeConnectabilityActiveFilter()) {
@@ -15735,7 +15905,7 @@ function nodeConnectabilityFilterSummary(summary, filter = nodeConnectabilityAct
   if (!nodeConnectabilityFilterIsActive(filter)) {
     return 'Current window';
   }
-  const totals = nodeConnectabilityDisplaySources(summary, filter).reduce((acc, sourceSummary) => {
+  const totals = nodeConnectabilityFilteredSources(summary, filter).reduce((acc, sourceSummary) => {
     const allTargets = nodeConnectabilityAllTargets(sourceSummary);
     const matched = nodeConnectabilityFilteredTargets(sourceSummary, filter);
     acc.total += allTargets.length;
@@ -15980,7 +16150,12 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
   const targetStatus = nodeConnectabilityServerActiveStatus();
   const sourceKey = nodeConnectabilityServerActiveSourceKey();
   const facetFilters = nodeConnectabilityServerActiveFacetFilters();
-  const currentWindow = nodeConnectabilityServerWindowFor(node, state.builder, query, targetStatus, sourceKey, facetFilters);
+  const requestedSourceKeys = normalizeNodeConnectabilityServerSourceKeys(options.sourceKeys);
+  const hasSourceScopeOption = Object.prototype.hasOwnProperty.call(options, 'sourceScopeKey');
+  const sourceScopeKey = sourceKey
+    ? ''
+    : nodeConnectabilityServerSourceScopeKey(hasSourceScopeOption ? options.sourceScopeKey : requestedSourceKeys);
+  const currentWindow = nodeConnectabilityServerWindowFor(node, state.builder, query, targetStatus, sourceKey, facetFilters, sourceScopeKey);
   const offset = Number.isFinite(Number(options.offset))
     ? Math.max(0, Math.floor(Number(options.offset)))
     : currentWindow.offset;
@@ -15988,7 +16163,17 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
     ? Math.max(1, Math.floor(Number(options.limit)))
     : currentWindow.limit;
   const draftKey = nodeConnectabilityServerDraftKey(node);
-  const requestKey = nodeConnectabilityServerRequestKey(node, state.builder, offset, limit, query, targetStatus, sourceKey, facetFilters);
+  const requestKey = nodeConnectabilityServerRequestKey(
+    node,
+    state.builder,
+    offset,
+    limit,
+    query,
+    targetStatus,
+    sourceKey,
+    facetFilters,
+    sourceScopeKey
+  );
   const current = state.nodeConnectabilityServer;
   if (!options.force && current?.requestKey === requestKey && (current.status === 'loading' || current.status === 'ready')) {
     return;
@@ -15996,6 +16181,7 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
   const sources = (summary.sources || [])
     .map((entry) => entry.source)
     .filter((source) => !sourceKey || nodeConnectabilitySourceFilterKey(source) === sourceKey)
+    .filter((source) => sourceKey || !requestedSourceKeys.length || requestedSourceKeys.includes(nodeConnectabilitySourceFilterKey(source)))
     .filter((source) => source?.nodeId && source.nodeId !== CONTEXT_SOURCE_ID);
   if (!sources.length) {
     state.nodeConnectabilityServer = null;
@@ -16011,13 +16197,14 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
     query,
     targetStatus,
     sourceKey,
+    sourceScopeKey,
     facetFilters,
     resultsBySourceKey: {},
     error: ''
   };
   if (query && !options.force && !options.debounced) {
     state.nodeConnectabilityServer = loadingState;
-    scheduleNodeConnectabilityServerQuery(node, offset, limit, query, targetStatus, sourceKey, facetFilters);
+    scheduleNodeConnectabilityServerQuery(node, offset, limit, query, targetStatus, sourceKey, facetFilters, sourceScopeKey);
     return;
   }
   if (!query) {
@@ -16063,6 +16250,7 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
         query,
         targetStatus,
         sourceKey,
+        sourceScopeKey,
         facetFilters,
         resultsBySourceKey,
         error: uniqueStrings(errors).join(' | ')
@@ -16073,7 +16261,16 @@ function ensureNodeConnectabilityServerCandidates(node, summary, options = {}) {
     });
 }
 
-function scheduleNodeConnectabilityServerQuery(node, offset, limit, query, targetStatus = '', sourceKey = '', facetFilters = {}) {
+function scheduleNodeConnectabilityServerQuery(
+  node,
+  offset,
+  limit,
+  query,
+  targetStatus = '',
+  sourceKey = '',
+  facetFilters = {},
+  sourceScopeKey = ''
+) {
   clearNodeConnectabilityServerQueryTimer();
   state.nodeConnectabilityServerQueryTimer = setTimeout(() => {
     state.nodeConnectabilityServerQueryTimer = null;
@@ -16096,7 +16293,14 @@ function scheduleNodeConnectabilityServerQuery(node, offset, limit, query, targe
     if (!selected || selected.id !== node?.id) {
       return;
     }
-    ensureNodeConnectabilityServerCandidates(selected, nodeConnectabilitySummary(selected, state.builder), {
+    const summary = nodeConnectabilitySummary(selected, state.builder);
+    const sourceWindow = nodeConnectabilityDisplaySourceWindow(summary, nodeConnectabilityActiveFilter());
+    const activeSourceScopeKey = nodeConnectabilitySourceWindowRequestScopeKey(sourceWindow);
+    if (nodeConnectabilityServerSourceScopeKey(activeSourceScopeKey) !== nodeConnectabilityServerSourceScopeKey(sourceScopeKey)) {
+      return;
+    }
+    ensureNodeConnectabilityServerCandidates(selected, summary, {
+      ...nodeConnectabilitySourceWindowRequestOptions(sourceWindow),
       offset,
       limit,
       force: true,
@@ -16131,12 +16335,29 @@ function nodeConnectabilityServerCandidatesForSource(source, builder = state.bui
   return stateForNode.resultsBySourceKey?.[sourceKey]?.candidatesByTargetKey || null;
 }
 
-function nodeConnectabilityServerStateFor(node, builder = state.builder) {
+function nodeConnectabilityServerStateFor(
+  node,
+  builder = state.builder,
+  query = nodeConnectabilityServerActiveQuery(),
+  targetStatus = nodeConnectabilityServerActiveStatus(),
+  sourceKey = nodeConnectabilityServerActiveSourceKey(),
+  facetFilters = nodeConnectabilityServerActiveFacetFilters(),
+  sourceScopeKey = ''
+) {
   const stateForNode = state.nodeConnectabilityServer;
   if (!node?.id || !stateForNode || stateForNode.nodeId !== node.id) {
     return null;
   }
-  if (!nodeConnectabilityServerStateMatchesNode(stateForNode, node, builder)) {
+  if (!nodeConnectabilityServerStateMatchesNode(
+    stateForNode,
+    node,
+    builder,
+    query,
+    targetStatus,
+    sourceKey,
+    facetFilters,
+    sourceScopeKey
+  )) {
     return null;
   }
   return stateForNode;
@@ -16323,11 +16544,21 @@ function nodeConnectabilityServerWindowFor(
   query = nodeConnectabilityServerActiveQuery(),
   targetStatus = nodeConnectabilityServerActiveStatus(),
   sourceKey = nodeConnectabilityServerActiveSourceKey(),
-  facetFilters = nodeConnectabilityServerActiveFacetFilters()
+  facetFilters = nodeConnectabilityServerActiveFacetFilters(),
+  sourceScopeKey = ''
 ) {
   const current = state.nodeConnectabilityServer;
   const nodeId = typeof nodeOrId === 'string' ? nodeOrId : nodeOrId?.id;
-  if (current?.nodeId === nodeId && nodeConnectabilityServerStateMatchesNode(current, nodeOrId, builder, query, targetStatus, sourceKey, facetFilters)) {
+  if (current?.nodeId === nodeId && nodeConnectabilityServerStateMatchesNode(
+    current,
+    nodeOrId,
+    builder,
+    query,
+    targetStatus,
+    sourceKey,
+    facetFilters,
+    sourceScopeKey
+  )) {
     return {
       offset: numericCount(current.offset, 0),
       limit: Math.max(1, numericCount(current.limit, nodeConnectabilityServerCandidateLimit()))
@@ -16343,6 +16574,7 @@ function changeNodeConnectabilityServerWindowFromButton(button) {
     return;
   }
   const summary = nodeConnectabilitySummary(node, state.builder);
+  const sourceWindow = nodeConnectabilityDisplaySourceWindow(summary, nodeConnectabilityActiveFilter());
   const currentState = nodeConnectabilityServerStateFor(node) || state.nodeConnectabilityServer || {};
   const stats = nodeConnectabilityServerWindowStats(currentState);
   const nextOffset = direction === 'next'
@@ -16352,6 +16584,7 @@ function changeNodeConnectabilityServerWindowFromButton(button) {
     return;
   }
   ensureNodeConnectabilityServerCandidates(node, summary, {
+    ...nodeConnectabilitySourceWindowRequestOptions(sourceWindow),
     offset: nextOffset,
     limit: stats.limit,
     force: true
@@ -16366,7 +16599,8 @@ function nodeConnectabilityServerStateMatchesNode(
   query = nodeConnectabilityServerActiveQuery(),
   targetStatus = nodeConnectabilityServerActiveStatus(),
   sourceKey = nodeConnectabilityServerActiveSourceKey(),
-  facetFilters = nodeConnectabilityServerActiveFacetFilters()
+  facetFilters = nodeConnectabilityServerActiveFacetFilters(),
+  sourceScopeKey = ''
 ) {
   if (!serverState) {
     return false;
@@ -16381,6 +16615,11 @@ function nodeConnectabilityServerStateMatchesNode(
     return false;
   }
   if (nodeConnectabilityServerFacetFiltersKey(serverState.facetFilters) !== nodeConnectabilityServerFacetFiltersKey(facetFilters)) {
+    return false;
+  }
+  const actualSourceScopeKey = nodeConnectabilityServerSourceScopeKey(serverState.sourceScopeKey || '');
+  const expectedSourceScopeKey = nodeConnectabilityServerSourceScopeKey(sourceScopeKey || actualSourceScopeKey);
+  if (actualSourceScopeKey !== expectedSourceScopeKey) {
     return false;
   }
   const draftKey = nodeConnectabilityServerDraftKey(nodeOrId, builder);
@@ -16398,7 +16637,8 @@ function nodeConnectabilityServerStateMatchesNode(
     query,
     targetStatus,
     sourceKey,
-    facetFilters
+    facetFilters,
+    expectedSourceScopeKey
   );
 }
 
@@ -16419,7 +16659,8 @@ function nodeConnectabilityServerRequestKey(
   query = '',
   targetStatus = '',
   sourceKey = '',
-  facetFilters = {}
+  facetFilters = {},
+  sourceScopeKey = ''
 ) {
   const normalizedOffset = Math.max(0, Math.floor(Number(offset) || 0));
   const normalizedLimit = Math.max(1, Math.floor(Number(limit) || nodeConnectabilityServerCandidateLimit()));
@@ -16433,7 +16674,9 @@ function nodeConnectabilityServerRequestKey(
   const sourceSuffix = sourceFilterKey ? `:source:${compactStringHash(sourceFilterKey)}:${sourceFilterKey.length}` : '';
   const facetKey = nodeConnectabilityServerFacetFiltersKey(facetFilters);
   const facetSuffix = facetKey ? `:facets:${compactStringHash(facetKey)}:${facetKey.length}` : '';
-  return `${nodeConnectabilityServerDraftKey(nodeOrId, builder)}:window:${normalizedOffset}:${normalizedLimit}${querySuffix}${statusSuffix}${sourceSuffix}${facetSuffix}`;
+  const sourceScope = sourceFilterKey ? '' : nodeConnectabilityServerSourceScopeKey(sourceScopeKey);
+  const sourceScopeSuffix = sourceScope ? `:sourceWindow:${compactStringHash(sourceScope)}:${sourceScope.length}` : '';
+  return `${nodeConnectabilityServerDraftKey(nodeOrId, builder)}:window:${normalizedOffset}:${normalizedLimit}${querySuffix}${statusSuffix}${sourceSuffix}${facetSuffix}${sourceScopeSuffix}`;
 }
 
 function nodeConnectabilityServerActiveQuery() {
@@ -16459,6 +16702,20 @@ function nodeConnectabilityServerActiveSourceKey() {
 
 function nodeConnectabilityServerSourceKey(sourceKey = '') {
   return String(sourceKey || '').trim();
+}
+
+function normalizeNodeConnectabilityServerSourceKeys(sourceKeys = []) {
+  const values = Array.isArray(sourceKeys)
+    ? sourceKeys
+    : String(sourceKeys || '').split('|');
+  return uniqueStrings(values
+    .map((value) => nodeConnectabilityServerSourceKey(value))
+    .filter(Boolean))
+    .sort();
+}
+
+function nodeConnectabilityServerSourceScopeKey(sourceKeys = []) {
+  return normalizeNodeConnectabilityServerSourceKeys(sourceKeys).join('|');
 }
 
 function nodeConnectabilityServerActiveFacetFilters() {

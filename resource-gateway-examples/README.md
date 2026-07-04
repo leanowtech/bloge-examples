@@ -669,8 +669,11 @@ Status, Endpoint, Schema, Runtime, Library, Operator, Source, Lowering, and
 Surface controls are sent back to the candidate endpoint, so large canvases
 filter the full candidate set instead of only the currently rendered chip
 window. Endpoint selection also narrows multi-output nodes to one source handle
-before fetching candidates. Candidate rows render a bounded first window with a
-visible overflow chip; row-level Prev/Next controls and arrow-key navigation let
+before fetching candidates. When a selected node exposes many source handles,
+the inspector also windows source rows in batches of eight and scopes server
+candidate requests to the currently visible source rows, with Prev/Next source
+controls for later endpoints. Candidate rows render a bounded first window with
+a visible overflow chip; row-level Prev/Next controls and arrow-key navigation let
 authors continue through later candidates without rendering every chip at once.
 Server-reviewed candidates from the active window are ordered ahead of local
 fallback rows; the click path still runs connection check before mutating the

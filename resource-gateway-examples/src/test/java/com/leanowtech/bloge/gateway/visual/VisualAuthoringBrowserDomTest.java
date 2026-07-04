@@ -45,6 +45,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -302,7 +303,7 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("draft-dependencies"), "Rebase");
 
         click(wait, By.cssSelector("#diagram [data-node-id='riskEligibility']"));
-        setControlValue(driver.findElement(By.cssSelector("[data-binding-expression][data-binding-path='score']")),
+        setControlValue(wait, By.cssSelector("[data-binding-expression][data-binding-path='score']"),
                 "ctx.changedScore");
         waitForValue(wait, By.id("composer-dsl"), "ctx.changedScore");
         waitForText(wait, By.id("draft-dependencies"), "save or reload local changes before rebasing");
@@ -629,6 +630,57 @@ class VisualAuthoringBrowserDomTest {
         assertThat(lateTarget.getText())
                 .contains("Score review (riskScoreReview260)")
                 .contains("integer -> integer");
+        assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-panel"));
+    }
+
+    @Test
+    void composerConnectabilityWindowsLargeSourceHandleSetInRealBrowser()
+            throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importOperatorLibrary(wait, scoreReviewLargeSourceConnectabilityLibrary());
+        addScoreMatrixSourceAndSingleReviewTargetInBrowser(wait);
+
+        waitForText(wait, By.id("selected-operator-editor"), "CONNECTABILITY");
+        waitForText(wait, By.id("selected-operator-editor"), "12 sources ·");
+        waitForText(wait, By.id("selected-operator-editor"), "Showing first 8 of 12 source endpoints");
+        waitForConnectabilityServerReady(new WebDriverWait(driver, Duration.ofSeconds(30)),
+                "riskScoreMatrixSource", 0);
+        wait.until(ignored -> connectabilityServerSourceKeys()
+                .equals("data:riskScoreMatrixSource:metric1:|data:riskScoreMatrixSource:metric2:"
+                        + "|data:riskScoreMatrixSource:metric3:|data:riskScoreMatrixSource:metric4:"
+                        + "|data:riskScoreMatrixSource:metric5:|data:riskScoreMatrixSource:metric6:"
+                        + "|data:riskScoreMatrixSource:metric7:|data:riskScoreMatrixSource:metric8:"));
+        assertThat(connectabilitySourceRowLabels())
+                .containsExactly(
+                        "riskScoreMatrixSource.metric1",
+                        "riskScoreMatrixSource.metric2",
+                        "riskScoreMatrixSource.metric3",
+                        "riskScoreMatrixSource.metric4",
+                        "riskScoreMatrixSource.metric5",
+                        "riskScoreMatrixSource.metric6",
+                        "riskScoreMatrixSource.metric7",
+                        "riskScoreMatrixSource.metric8"
+                );
+        assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-panel"));
+
+        click(wait, By.cssSelector("#selected-operator-editor [data-connectability-source-window='next']"));
+        waitForText(wait, By.id("selected-operator-editor"), "Showing 9-12 of 12 source endpoints");
+        wait.until(ignored -> connectabilityServerSourceKeys()
+                .equals("data:riskScoreMatrixSource:metric10:|data:riskScoreMatrixSource:metric11:"
+                        + "|data:riskScoreMatrixSource:metric12:|data:riskScoreMatrixSource:metric9:"));
+        assertThat(connectabilitySourceRowLabels())
+                .containsExactly(
+                        "riskScoreMatrixSource.metric9",
+                        "riskScoreMatrixSource.metric10",
+                        "riskScoreMatrixSource.metric11",
+                        "riskScoreMatrixSource.metric12"
+                );
         assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-panel"));
     }
 
@@ -1894,6 +1946,39 @@ class VisualAuthoringBrowserDomTest {
         );
     }
 
+    private static OperatorLibrary scoreReviewLargeSourceConnectabilityLibrary() {
+        List<OperatorDefinition.Port> outputs = IntStream.rangeClosed(1, 12)
+                .mapToObj(index -> new OperatorDefinition.Port("metric" + index,
+                        new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12",
+                                Map.of("type", "integer")),
+                        true,
+                        "Score metric " + index + "."))
+                .toList();
+        OperatorDefinition source = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreMatrixSource",
+                "1.0.0",
+                new OperatorDefinition.Display("Score matrix source",
+                        "Provides many primitive score outputs for source-handle connectability windows.",
+                        List.of("risk", "design")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(List.of(), outputs),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("design", "", Map.of()),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-score-source-connectability",
+                "Risk score source connectability operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(source, scoreReviewTransformTargetOperatorDefinition())
+        );
+    }
+
     private static OperatorDefinition scoreReviewTransformTargetOperatorDefinition() {
         return new OperatorDefinition(
                 "bloge.visualOperator.v1",
@@ -1960,16 +2045,7 @@ class VisualAuthoringBrowserDomTest {
         WebElement editor = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-library-json")));
         setControlValue(editor, OBJECT_MAPPER.writeValueAsString(library));
         click(wait, By.id("import-library"));
-        waitForAnyText(wait, By.id("library-status"),
-                "Imported " + library.libraryId(),
-                "Replaced " + library.libraryId(),
-                "Review warnings");
-        if (textOf(By.id("library-status")).contains("Review warnings")) {
-            click(wait, By.id("import-library"));
-        }
-        waitForAnyText(wait, By.id("library-status"),
-                "Imported " + library.libraryId(),
-                "Replaced " + library.libraryId());
+        waitForImportedOperatorLibrary(wait, library.libraryId());
     }
 
     private void importYamlOperatorLibrary(WebDriverWait wait, OperatorLibrary library) throws JsonProcessingException {
@@ -1980,19 +2056,37 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("library-profile"), library.libraryId());
 
         click(wait, By.id("import-library"));
-        waitForAnyText(wait, By.id("library-status"),
-                "Imported " + library.libraryId(),
-                "Replaced " + library.libraryId(),
-                "Review warnings");
-        if (textOf(By.id("library-status")).contains("Review warnings")) {
-            click(wait, By.id("import-library"));
-        }
-        waitForAnyText(wait, By.id("library-status"),
-                "Imported " + library.libraryId(),
-                "Replaced " + library.libraryId());
+        waitForImportedOperatorLibrary(wait, library.libraryId());
         waitForText(wait, By.id("library-profile"), "1 operators");
         waitForText(wait, By.id("library-profile"), "2 required");
         waitForText(wait, By.id("library-profile"), "Eligibility");
+    }
+
+    private void waitForImportedOperatorLibrary(WebDriverWait wait, String libraryId) {
+        for (int attempt = 0; attempt < 3; attempt += 1) {
+            waitForAnyText(wait, By.id("library-status"),
+                    "Imported " + libraryId,
+                    "Replaced " + libraryId,
+                    "Review warnings");
+            String status = textOf(By.id("library-status"));
+            if (status.contains("Imported " + libraryId) || status.contains("Replaced " + libraryId)) {
+                return;
+            }
+            runOperatorLibraryImportInBrowser();
+        }
+        waitForAnyText(wait, By.id("library-status"),
+                "Imported " + libraryId,
+                "Replaced " + libraryId);
+    }
+
+    private void runOperatorLibraryImportInBrowser() {
+        Object result = ((JavascriptExecutor) driver).executeAsyncScript("""
+                const done = arguments[arguments.length - 1];
+                Promise.resolve(importOperatorLibrary())
+                  .then(() => done(document.getElementById('library-status')?.textContent || ''))
+                  .catch((error) => done(`ERROR: ${String(error?.message || error)}`));
+                """);
+        assertThat(String.valueOf(result)).doesNotStartWith("ERROR:");
     }
 
     private void addScoreSourceAndReviewTargetsInBrowser(WebDriverWait wait, int count) {
@@ -2036,6 +2130,78 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
                 "#diagram [data-node-id^='riskScoreSource']"
         )));
+    }
+
+    private void addScoreMatrixSourceAndSingleReviewTargetInBrowser(WebDriverWait wait) {
+        ensureBrowserOperatorTypes(List.of("risk:scoreMatrixSource", "risk:scoreReview"));
+        Number sourceCount = (Number) ((JavascriptExecutor) driver).executeScript("""
+                const sourceType = 'risk:scoreMatrixSource';
+                const targetType = 'risk:scoreReview';
+                if (!OPERATOR_TYPES[sourceType]) {
+                  throw new Error(`Operator ${sourceType} is not registered in the browser catalog`);
+                }
+                if (!OPERATOR_TYPES[targetType]) {
+                  throw new Error(`Operator ${targetType} is not registered in the browser catalog`);
+                }
+                const source = createBuilderNode(sourceType, 120, 160);
+                source.id = 'riskScoreMatrixSource';
+                const target = createBuilderNode(targetType, 560, 160);
+                target.id = 'riskScoreReview1';
+                state.builder.nodes = [source, target];
+                state.builder.dependencyEdges = [];
+                state.builder.routeEdges = [];
+                state.builder.output = { nodeId: source.id, path: 'metric1' };
+                state.builder.selectedId = source.id;
+                state.selectedNodeId = source.id;
+                state.canvasFocusedNodeId = source.id;
+                state.nodeConnectabilityServer = null;
+                state.nodeConnectabilitySourceWindows = {};
+                clearNodeConnectabilityFilter();
+                syncComposerFromBuilder({ render: false });
+                renderInputForm();
+                renderSelectedOperatorEditor();
+                renderGraphOutputEditor();
+                renderDiagram();
+                return sourceHandlesForNode(source).length;
+                """);
+        assertThat(sourceCount.intValue()).isEqualTo(12);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "#diagram [data-node-id='riskScoreMatrixSource']"
+        )));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "#diagram [data-node-id='riskScoreReview1']"
+        )));
+    }
+
+    private void ensureBrowserOperatorTypes(List<String> operatorRefs) {
+        Object result = ((JavascriptExecutor) driver).executeAsyncScript("""
+                const refs = arguments[0];
+                const done = arguments[arguments.length - 1];
+                const hasAllRefs = () => refs.every((ref) => Boolean(OPERATOR_TYPES[ref]));
+                if (hasAllRefs()) {
+                  done({ ready: true });
+                  return;
+                }
+                Promise.all(refs.map((ref) => loadVisualOperatorDefinition(ref, {
+                  paletteVisible: false,
+                  render: false,
+                  silent: true
+                })))
+                  .then(() => done({ ready: hasAllRefs(), missing: refs.filter((ref) => !OPERATOR_TYPES[ref]) }))
+                  .catch((error) => done({
+                    ready: false,
+                    error: String(error?.message || error),
+                    missing: refs.filter((ref) => !OPERATOR_TYPES[ref])
+                  }));
+                """, operatorRefs);
+        assertThat(result)
+                .as("browser catalog should expose operator refs %s", operatorRefs)
+                .isInstanceOf(Map.class);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) result;
+        assertThat(payload)
+                .as("browser catalog readiness for operator refs %s", operatorRefs)
+                .containsEntry("ready", true);
     }
 
     private void publishVisualDraft(WebDriverWait wait) {
@@ -2454,6 +2620,23 @@ class VisualAuthoringBrowserDomTest {
         assertThat(overflow.doubleValue()).isLessThanOrEqualTo(2.0);
     }
 
+    private List<String> connectabilitySourceRowLabels() {
+        @SuppressWarnings("unchecked")
+        List<Object> values = (List<Object>) ((JavascriptExecutor) driver).executeScript("""
+                return [...document.querySelectorAll('#selected-operator-editor .node-connectability-row strong')]
+                  .map((element) => element.textContent.trim());
+                """);
+        return values.stream().map(String::valueOf).toList();
+    }
+
+    private String connectabilityServerSourceKeys() {
+        return String.valueOf(((JavascriptExecutor) driver).executeScript("""
+                return Object.keys(state.nodeConnectabilityServer?.resultsBySourceKey || {})
+                  .sort()
+                  .join('|');
+                """));
+    }
+
     private void waitForConnectabilityServerReady(WebDriverWait wait, String nodeId, int offset) {
         waitForConnectabilityServerReady(wait, nodeId, offset, "");
     }
@@ -2575,6 +2758,17 @@ class VisualAuthoringBrowserDomTest {
                 element,
                 value
         );
+    }
+
+    private void setControlValue(WebDriverWait wait, By locator, String value) {
+        wait.until(ignored -> {
+            try {
+                setControlValue(driver.findElement(locator), value);
+                return true;
+            } catch (NoSuchElementException | StaleElementReferenceException ex) {
+                return false;
+            }
+        });
     }
 
     private void scrollIntoView(WebElement element) {

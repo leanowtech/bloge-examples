@@ -2980,7 +2980,19 @@ class VisualAuthoringAppJsTest {
                   'nodeConnectabilitySourceFilterControl',
                   'nodeConnectabilitySourceFilterOptions',
                   'nodeConnectabilitySourceFilterKey',
+                  'nodeConnectabilityFilteredSources',
                   'nodeConnectabilityDisplaySources',
+                  'nodeConnectabilityDisplaySourceWindow',
+                  'nodeConnectabilitySourceWindow',
+                  'nodeConnectabilitySourceWindowKey',
+                  'nodeConnectabilitySourceWindowOffset',
+                  'nodeConnectabilitySetSourceWindowOffset',
+                  'nodeConnectabilitySourceWindowLimit',
+                  'nodeConnectabilitySourceWindowSourceKeys',
+                  'nodeConnectabilitySourceWindowRequestOptions',
+                  'nodeConnectabilitySourceWindowRequestScopeKey',
+                  'nodeConnectabilitySourceWindowSummary',
+                  'renderNodeConnectabilitySourceWindowControls',
                   'nodeConnectabilityDisplayTargets',
                   'nodeConnectabilityDisplayTargetWindow',
                   'nodeConnectabilityTargetWindow',
@@ -3042,6 +3054,8 @@ class VisualAuthoringAppJsTest {
                   'nodeConnectabilityServerStatusKey',
                   'nodeConnectabilityServerActiveSourceKey',
                   'nodeConnectabilityServerSourceKey',
+                  'normalizeNodeConnectabilityServerSourceKeys',
+                  'nodeConnectabilityServerSourceScopeKey',
                   'nodeConnectabilityServerActiveFacetFilters',
                   'nodeConnectabilityServerFacetFiltersKey',
                   'normalizeConnectionCandidateStatus',
@@ -5843,6 +5857,69 @@ operators:
                   scoreSourceKey,
                   {}
                 );
+                const manySourceSummaries = Array.from({ length: 12 }, (_, index) => {
+                  const path = `metric${index + 1}`;
+                  return {
+                    ...scoreConnectability,
+                    source: {
+                      ...scoreConnectability.source,
+                      path
+                    }
+                  };
+                });
+                const manySourceConnectability = {
+                  ...serverConnectability,
+                  sourceCount: manySourceSummaries.length,
+                  availableCount: manySourceSummaries.reduce((total, entry) => total + entry.availableCount, 0),
+                  alreadyCount: manySourceSummaries.reduce((total, entry) => total + entry.alreadyCount, 0),
+                  blockedCount: manySourceSummaries.reduce((total, entry) => total + entry.blockedCount, 0),
+                  targetCount: manySourceSummaries.reduce((total, entry) => total + entry.targetCount, 0),
+                  sources: manySourceSummaries
+                };
+                context.clearNodeConnectabilityFilter();
+                const manySourceFilter = context.nodeConnectabilityActiveFilter();
+                const manySourceWindow = context.nodeConnectabilityDisplaySourceWindow(manySourceConnectability, manySourceFilter);
+                const manySourceDisplaySources = context.nodeConnectabilityDisplaySources(manySourceConnectability, manySourceFilter);
+                const manySourceWindowSummary = context.nodeConnectabilitySourceWindowSummary(manySourceWindow);
+                const manySourceWindowControls = context.renderNodeConnectabilitySourceWindowControls(manySourceWindow);
+                const manySourceRequestScope = context.nodeConnectabilitySourceWindowRequestScopeKey(manySourceWindow);
+                const manySourceScopedRequestKey = context.nodeConnectabilityServerRequestKey(
+                  'riskNode',
+                  context.state.builder,
+                  0,
+                  250,
+                  '',
+                  '',
+                  '',
+                  {},
+                  manySourceRequestScope
+                );
+                const manySourceUnscopedRequestKey = context.nodeConnectabilityServerRequestKey(
+                  'riskNode',
+                  context.state.builder,
+                  0,
+                  250,
+                  '',
+                  '',
+                  '',
+                  {}
+                );
+                context.nodeConnectabilitySetSourceWindowOffset(manySourceWindow.key, context.nodeConnectabilitySourceWindowLimit());
+                const manySourceSecondWindow = context.nodeConnectabilityDisplaySourceWindow(manySourceConnectability, manySourceFilter);
+                const manySourceSecondSummary = context.nodeConnectabilitySourceWindowSummary(manySourceSecondWindow);
+                const metric10SourceKey = context.nodeConnectabilitySourceFilterKey(manySourceSummaries[9].source);
+                const manySourceSpecificFilter = {
+                  query: '',
+                  normalizedQuery: '',
+                  status: '',
+                  sourceKey: metric10SourceKey,
+                  facetFilters: {}
+                };
+                const manySourceSpecificWindow = context.nodeConnectabilityDisplaySourceWindow(
+                  manySourceConnectability,
+                  manySourceSpecificFilter
+                );
+                context.nodeConnectabilitySetSourceWindowOffset(manySourceWindow.key, 0);
                 context.clearNodeConnectabilityFilter();
                 const truncatedServerStatus = context.renderNodeConnectabilityServerStatus({
                   nodeId: 'riskNode',
@@ -6019,6 +6096,49 @@ operators:
 	                  .map((entry) => `${entry.sourcePath}:${entry.offset}:${entry.limit}:${entry.includeRejected}:${entry.targetStatus}:${entry.facetFiltersKey}`)
 	                  .sort()
 	                  .join('|');
+	                context.state.nodeConnectabilityServer = connectabilityServerBeforeFetch;
+	                context.clearNodeConnectabilityFilter();
+	                connectabilityFetchOptions.length = 0;
+	                const manySourceFetchWindow = context.nodeConnectabilityDisplaySourceWindow(
+	                  manySourceConnectability,
+	                  context.nodeConnectabilityActiveFilter()
+	                );
+	                context.ensureNodeConnectabilityServerCandidates(
+	                  context.state.builder.nodes[1],
+	                  manySourceConnectability,
+	                  {
+	                    ...context.nodeConnectabilitySourceWindowRequestOptions(manySourceFetchWindow),
+	                    offset: 0,
+	                    limit: 250,
+	                    force: true
+	                  }
+	                );
+	                const manySourceWindowFetchPaths = connectabilityFetchOptions
+	                  .map((entry) => entry.sourcePath)
+	                  .sort()
+	                  .join('|');
+	                context.state.nodeConnectabilityServer = connectabilityServerBeforeFetch;
+	                context.nodeConnectabilitySetSourceWindowOffset(manySourceFetchWindow.key, context.nodeConnectabilitySourceWindowLimit());
+	                connectabilityFetchOptions.length = 0;
+	                const manySourceSecondFetchWindow = context.nodeConnectabilityDisplaySourceWindow(
+	                  manySourceConnectability,
+	                  context.nodeConnectabilityActiveFilter()
+	                );
+	                context.ensureNodeConnectabilityServerCandidates(
+	                  context.state.builder.nodes[1],
+	                  manySourceConnectability,
+	                  {
+	                    ...context.nodeConnectabilitySourceWindowRequestOptions(manySourceSecondFetchWindow),
+	                    offset: 0,
+	                    limit: 250,
+	                    force: true
+	                  }
+	                );
+	                const manySourceSecondWindowFetchPaths = connectabilityFetchOptions
+	                  .map((entry) => entry.sourcePath)
+	                  .sort()
+	                  .join('|');
+	                context.nodeConnectabilitySetSourceWindowOffset(manySourceFetchWindow.key, 0);
 	                context.state.nodeConnectabilityServer = connectabilityServerBeforeFetch;
 	                context.clearNodeConnectabilityFilter();
 	                context.fetch = previousFetch;
@@ -6904,6 +7024,22 @@ operators:
                   ['server connectability source row hides eligible', String(!sourceFilteredPanel.includes('riskNode.payload.eligible')), 'true'],
                   ['server connectability source row keeps score', String(sourceFilteredPanel.includes('riskNode.payload.score')), 'true'],
                   ['server connectability source request key differs', String(pageOneRequestKey !== sourceRequestKey), 'true'],
+                  ['server connectability source window limit', context.nodeConnectabilitySourceWindowLimit(), 8],
+                  ['server connectability source window display count', manySourceDisplaySources.length, 8],
+                  ['server connectability source window total', manySourceWindow.total, 12],
+                  ['server connectability source window first label', context.endpointLabel(manySourceDisplaySources[0].source), 'riskNode.payload.metric1'],
+                  ['server connectability source window last first-page label', context.endpointLabel(manySourceDisplaySources[7].source), 'riskNode.payload.metric8'],
+                  ['server connectability source window summary', manySourceWindowSummary, 'Showing first 8 of 12 source endpoints'],
+                  ['server connectability source window controls next', String(manySourceWindowControls.includes('data-connectability-source-window="next"')), 'true'],
+                  ['server connectability source request scope first-page', manySourceRequestScope.split('|').length, 8],
+                  ['server connectability source request scope includes metric8', String(manySourceRequestScope.includes('metric8')), 'true'],
+                  ['server connectability source request scope excludes metric9', String(!manySourceRequestScope.includes('metric9')), 'true'],
+                  ['server connectability source scoped request key differs', String(manySourceScopedRequestKey !== manySourceUnscopedRequestKey), 'true'],
+                  ['server connectability source second window count', manySourceSecondWindow.displayed, 4],
+                  ['server connectability source second window first label', context.endpointLabel(manySourceSecondWindow.sources[0].source), 'riskNode.payload.metric9'],
+                  ['server connectability source second window summary', manySourceSecondSummary, 'Showing 9-12 of 12 source endpoints'],
+                  ['server connectability source filter bypasses source window', manySourceSpecificWindow.displayed, 1],
+                  ['server connectability source filter selected metric', context.endpointLabel(manySourceSpecificWindow.sources[0].source), 'riskNode.payload.metric10'],
                   ['server connectability facet controls include schema', String(facetFilterControls.includes('data-connectability-filter-facet="schemaType"')), 'true'],
                   ['server connectability facet controls include operator', String(facetFilterControls.includes('data-connectability-filter-facet="operatorRef"')), 'true'],
                   ['server connectability facet controls include source', String(facetFilterControls.includes('data-connectability-filter-facet="sourceKind"')), 'true'],
@@ -6930,6 +7066,8 @@ operators:
                   ['server connectability active facet filters', context.nodeConnectabilityServerFacetFiltersKey(activeServerFacetFilters), 'schemaType=integer'],
                   ['server connectability next page request offsets', connectabilityFetchOffsets, ':250:250:true:ready:schemaType=integer|eligible:250:250:true:ready:schemaType=integer|score:250:250:true:ready:schemaType=integer'],
                   ['server connectability source filtered fetch offsets', sourceFilteredFetchOffsets, 'score:250:250:true:ready:schemaType=integer'],
+                  ['server connectability source window fetch paths', manySourceWindowFetchPaths, 'metric1|metric2|metric3|metric4|metric5|metric6|metric7|metric8'],
+                  ['server connectability source second window fetch paths', manySourceSecondWindowFetchPaths, 'metric10|metric11|metric12|metric9'],
                   ['auto bind required unbound count', autoBindPlan.requiredUnboundCount, 2],
                   ['auto bind item count', autoBindPlan.items.length, 1],
                   ['auto bind skipped count', autoBindPlan.skippedCount, 1],

@@ -44,7 +44,7 @@
 | --- | ---: | --- | --- | --- |
 | 算子库合同与导入 | 8.0 | `OperatorLibrary`、JSON/YAML validate/import、revision、impact、bundle fingerprint、design-only lowering | 复杂第三方协议包 diff、跨环境治理策略还需继续深化 | OpenAPI/AsyncAPI diff 与 runtime binding handoff 对齐 |
 | Schema 约束与拖线裁决 | 8.4 | `VisualSchemaCompatibility`、`VisualSchemaValidator`、`GraphDraftValidator`、connection check/candidates、fit candidates、`VisualSchemaIntrospection`，以及浏览器 schema mirror 对 required-only / contains-only typeless schema 的回归 | JSON Schema 语义仍是受限子集，深层 compatibility diff 与 value matching 还没有完全抽成可复用策略 | 持续收敛 shared schema/value helper，补更多 schema 子集回归 |
-| 画布产品化体验 | 8.6 | Browser Composer palette、schema-aware picker、hover preflight、readiness panel、diagnostic queue、impact inspector，前端本地 schema type/validator mirror 已覆盖 required-only object 与 contains-only array；selected-node Connectability 直接展示服务端候选 schema 类型、替换影响、target runtime-binding debt，并在候选窗口被截断时显式提示 partial server window / local fallback 风险，已提供 Prev/Next 候选窗口控制，并支持按 target/reason/schema 文本发起服务端全局 query、按 ready/blocked/wired 做服务端全局状态过滤并返回 `statusCounts`；服务端候选结果现在返回 `facetCounts` 和候选行级 `facetValues`，覆盖 surface、schemaType、operatorRef、operatorLibraryId、runtimeReadiness、sourceKind、loweringMode，Connectability 已把这 7 个维度全部暴露为交互式服务端 facet filter，且 facet 统计口径保持在 query/status 之后、facet filter 与分页之前；selected-node Connectability 现在还提供 Endpoint/source-handle 筛选，多输出算子可把可见行和服务端候选请求收窄到单个输出端点；候选行渲染已窗口化，默认和过滤状态都限制首批展示并用行级 overflow chip 显示被裁剪的 ready/match 数，overflow 后的行级 Prev/Next 可继续浏览同一 source 的后续 chip，箭头键可在 action 之间推进并跨行级窗口前进，且服务端当前窗口候选会优先排在 local fallback 前；真实浏览器已覆盖 filter 输入重绘后的焦点保留、状态筛选、Clear 恢复，以及 260 个 target 下的服务端窗口、行级 24 个 chip 上限、overflow 提示、行级 Next 到 25-48、键盘右箭头推进到 49-72、服务端全局 query/status/schema/lowering facet 命中末尾 target、Next 翻页和无横向溢出；服务端候选接口已把大窗口成本限制到当前页，并通过 `targetSurface=canvas` 与画布 target handle 语义对齐 | 单文件前端复杂度高，query/status/facet filter 已下沉到服务端候选合同并覆盖当前服务端 facet 维度，Endpoint filter 已能收窄多输出 source，候选行已从无界 chip 渲染推进到窗口化显性裁剪和行内渐进浏览，但还不是完整虚拟化列表；大图回归仍缺窄屏、完整键盘导航/a11y、大量 source handle 和多算子族性能矩阵 | 抽更小 UI 模块，补真正虚拟化候选列表、窄屏布局、完整键盘导航/a11y、大量 source handle 和多 operator family 大画布回归 |
+| 画布产品化体验 | 8.7 | Browser Composer palette、schema-aware picker、hover preflight、readiness panel、diagnostic queue、impact inspector，前端本地 schema type/validator mirror 已覆盖 required-only object 与 contains-only array；selected-node Connectability 直接展示服务端候选 schema 类型、替换影响、target runtime-binding debt，并在候选窗口被截断时显式提示 partial server window / local fallback 风险，已提供 Prev/Next 候选窗口控制，并支持按 target/reason/schema 文本发起服务端全局 query、按 ready/blocked/wired 做服务端全局状态过滤并返回 `statusCounts`；服务端候选结果现在返回 `facetCounts` 和候选行级 `facetValues`，覆盖 surface、schemaType、operatorRef、operatorLibraryId、runtimeReadiness、sourceKind、loweringMode，Connectability 已把这 7 个维度全部暴露为交互式服务端 facet filter，且 facet 统计口径保持在 query/status 之后、facet filter 与分页之前；selected-node Connectability 现在还提供 Endpoint/source-handle 筛选，多输出算子可把可见行和服务端候选请求收窄到单个输出端点；候选行渲染已窗口化，默认和过滤状态都限制首批展示并用行级 overflow chip 显示被裁剪的 ready/match 数，overflow 后的行级 Prev/Next 可继续浏览同一 source 的后续 chip，箭头键可在 action 之间推进并跨行级窗口前进，且服务端当前窗口候选会优先排在 local fallback 前；大量 source handle 现在也有 source-row 窗口，默认只展示 8 个 source endpoint，并把服务端候选请求 scope 收敛到当前可见 source rows，真实浏览器已覆盖 12 输出端口 source 的 1-8 / 9-12 窗口切换与 server source key 收敛；真实浏览器还覆盖 filter 输入重绘后的焦点保留、状态筛选、Clear 恢复，以及 260 个 target 下的服务端窗口、行级 24 个 chip 上限、overflow 提示、行级 Next 到 25-48、键盘右箭头推进到 49-72、服务端全局 query/status/schema/lowering facet 命中末尾 target、Next 翻页和无横向溢出；服务端候选接口已把大窗口成本限制到当前页，并通过 `targetSurface=canvas` 与画布 target handle 语义对齐 | 单文件前端复杂度高，query/status/facet filter 已下沉到服务端候选合同并覆盖当前服务端 facet 维度，Endpoint filter 已能收窄单 source，source-row 和候选行都已窗口化并有真实浏览器证据，但还不是完整虚拟化列表；大图回归仍缺窄屏、完整键盘导航/a11y、更大 source handle、多算子族性能矩阵 | 抽更小 UI 模块，补真正虚拟化候选列表、窄屏布局、完整键盘导航/a11y、更大 source handle 和多 operator family 大画布回归 |
 | Design-only artifact 生命周期 | 8.0 | `DESIGN` publication、action-readiness gate、run/golden 禁用、runtime-binding requirements | DESIGN 到 external runtime bound 的组织流程仍依赖外部协作 | handoff bundle 与外部工单/事件系统对接 |
 | Runtime binding 闭环 | 6.5 | requirement index、handoff bundle、implementation proposal、bind/supersede/unbind、activation、rollout observation、lowering integration、readiness recompute | 跨 repository partial-failure、异步 workflow idempotency、指标消费闭环仍未全覆盖 | 继续硬化 runtime evidence lifecycle 和 replay/compensation |
 | 发布、可迁移性与版本治理 | 7.5 | draft/publication bundles、fingerprint gate、immutable publication、revision guard、operator/resource impact | 还有协议命名与当前 wire contract 的历史漂移 | 协议草案按现状收敛，保留平台化 ADR |
@@ -53,7 +53,7 @@
 | Runtime 扩展族 | 5.8 | remote-worker、AI-tool、event-source、message-handler、webhook、streaming/durable contract 已可设计态编排 | 真正 dispatcher、ingress runtime、AI tool invocation、durable instance 尚未落地 | 从 runtime-binding handoff 开始逐类接 executor |
 | 工程可维护性 | 7.2 | 服务端测试丰富，完整 `clean verify` 可跑通，Java 侧读模型、GraphDraftValidator、VisualSchemaCompatibility 与 VisualSchemaValidator 的结构类型推断已开始共享 schema helper；浏览器 helper probe 覆盖了本地 mirror 与服务端语义一致性 | 深层 compatibility/value matching 仍分散，前端 `app.js` 过大 | 继续迁移 compatibility/validator 深层校验 helpers，逐步拆分前端 authoring helpers |
 
-综合分：**80/100**。
+综合分：**81/100**。
 
 这个分数不是贬低当前成果。相反，它说明项目已经跨过“画布玩具”阶段，但离完整工业平台还差治理、runtime、观测和维护性闭环。
 
@@ -80,6 +80,7 @@
 17. selected-node Connectability 已支持 Endpoint/source-handle 筛选：多输出算子可以在 inspector 中先锁定一个输出端点，UI 只展示该 source 的候选行，服务端候选请求也只针对该 source 发起，并把 `sourceKey` 纳入 request key/server state，避免不同 source handle 的窗口和筛选状态互相污染。
 18. selected-node Connectability 候选行已做窗口化显性裁剪：默认状态不再一次渲染 250+ chip，而是显示首批 24 个 ready target，并用行级 overflow chip 说明“Showing first 24 of N”；翻页后当前 server-reviewed 候选优先排在 local fallback 前，避免服务端第 2 页目标被本地前 24 个目标遮住。
 19. selected-node Connectability 行级窗口已可继续消费：overflow 后提供行内 Prev/Next 控制，箭头键可在可连 action 间移动并在行尾推进到下一段窗口；真实浏览器 260 target 回归已覆盖 1-24、25-48、49-72 的渐进浏览路径。
+20. selected-node Connectability source rows 已窗口化：默认只展示 8 个 source endpoint，source-window key 与 query/status/facet/source filter 隔离，并把 `/api/visual/connections/candidates` 的请求 scope 收敛到当前可见 source rows；真实浏览器 12 输出端口 source 回归覆盖 1-8 / 9-12 source rows、server `resultsBySourceKey` 只包含当前窗口 source keys，以及无横向溢出。
 
 ### 尚未成立
 
@@ -90,6 +91,34 @@
 5. 前端仍是示例项目形态，复杂度已经接近需要模块化拆分的边界。
 
 ## 4. 本轮迭代复盘
+
+### 2026-07-05：Connectability Source-row 窗口与请求收敛
+
+触发问题：
+
+上一轮解决了“同一 source 的 target chip 太多”的问题，但多输出算子仍有另一层膨胀：selected-node Connectability 会把所有 source handle 行一次性展示出来，并且默认对所有 source handle 发起服务端候选请求。Endpoint 筛选可以手动收窄到单个 source，但工业画布不能要求用户每次先筛选才能避免 30/50/100 个输出端点把 inspector 撑爆。
+
+本轮完成：
+
+1. `nodeConnectabilityDisplaySourceWindow()` / `nodeConnectabilitySourceWindow()` 把 source rows 做成独立窗口 primitive，默认窗口大小为 8，source-window offset 与 target-row window offset 分离。
+2. `renderNodeConnectabilitySourceWindowControls()` 在 Connectability filter 下方提供 `Prev sources` / `Next sources`，并显示 `Showing first 8 of N source endpoints` 或 `Showing 9-12 of 12 source endpoints` 这类窗口边界。
+3. `nodeConnectabilityFilteredSources()` 与 `nodeConnectabilityDisplaySources()` 分离，保证 filter summary 仍按完整过滤集合统计，不被当前 source window 低估。
+4. `ensureNodeConnectabilityServerCandidates()` 增加 source-scope request key：只有当 source rows 确实被窗口化时，request key 才带 `sourceWindow` 后缀，并且只向当前可见 source rows 发起 `/api/visual/connections/candidates` 请求；单 source 和未超过窗口上限的小图保持旧 key 语义。
+5. query debounce 会校验 source-window scope，避免旧窗口的延迟请求覆盖新窗口；同时修复了空 `sourceScopeKey` 被 `||` 回退成 sourceKeys 后导致单 source query 一直停在 loading 的状态污染。
+6. `VisualAuthoringAppJsTest` 覆盖 12 个 source summary 的 1-8 / 9-12 窗口、Endpoint source filter 绕过 source window、source-scope request key 差异，以及 server fetch 只请求当前 source window。
+7. 真实 Chrome 回归新增 12 输出端口 source + 1 target 场景，验证 Connectability 只展示 8 个 source rows，`Next sources` 后展示 9-12，`resultsBySourceKey` 只包含当前窗口 source keys，并继续断言 inspector 无横向溢出。
+
+验证：
+
+```bash
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringAppJsTest test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerConnectabilityWindowsLargeSourceHandleSetInRealBrowser test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerConnectabilityHandlesLargeTargetWindowInRealBrowser test
+```
+
+剩余风险：
+
+这轮把“大量 source handle 只能靠 Endpoint 手动筛选”推进到“默认 source-row 窗口 + 服务端请求 scope 收敛”，所以评估从 80 分推进到 81 分。但它仍不是完整虚拟化候选表：source rows 和 target chips 都是窗口化，不是滚动虚拟化；完整 a11y roving-index/aria-activedescendant、窄屏矩阵、更大 source handle 数、多 operator family 大画布和前端模块化仍未完成。
 
 ### 2026-07-05：Connectability 行级渐进窗口与键盘推进
 
@@ -605,7 +634,7 @@ schema type/path 逻辑仍分散在多个类中。短期可接受；中期应抽
 | --- | --- | --- | --- |
 | P0 | 深层 compatibility / value diagnostics 策略收敛 | effective kind 已统一，但 not/conditional/patternProperties/dependent schema 等深层判断仍在类内分散 | 选一个高风险 schema 子集，抽共享 value/schema policy 或补明确不可迁移边界 |
 | P0 | Runtime binding partial-failure 硬化 | 这是 DESIGN artifact 走向可执行 runtime 的主干 | 选一个尚未补偿的跨 repository mutation，补 replay/compensation/诊断 |
-| P1 | Browser regression matrix | required-only / contains-only typeless schema、Connectability 可见候选解释、design-only target runtime debt、候选窗口截断提示、基本 Prev/Next 窗口翻页、JS 层候选过滤、真实浏览器 filter 交互、260 target 大画布窗口、服务端全局 query、ready/blocked/wired status、全维度 facet、Endpoint/source-handle 筛选、行级候选窗口化和行内箭头键推进已覆盖，但 UI 能力多，DOM smoke 仍需继续扩大 | 覆盖导入面板、窄屏/移动布局、多算子族大画布、真正虚拟化候选列表、完整键盘导航/a11y、大量 source handle 性能矩阵和大量 schema field rendering 的更多负路径/漂移路径 |
+| P1 | Browser regression matrix | required-only / contains-only typeless schema、Connectability 可见候选解释、design-only target runtime debt、候选窗口截断提示、基本 Prev/Next 窗口翻页、JS 层候选过滤、真实浏览器 filter 交互、260 target 大画布窗口、服务端全局 query、ready/blocked/wired status、全维度 facet、Endpoint/source-handle 筛选、行级候选窗口化和行内箭头键推进、12 输出端口 source-row 窗口与 server request scope 收敛已覆盖，但 UI 能力多，DOM smoke 仍需继续扩大 | 覆盖导入面板、窄屏/移动布局、多算子族大画布、真正虚拟化候选列表、完整键盘导航/a11y、更大 source handle 性能矩阵和大量 schema field rendering 的更多负路径/漂移路径 |
 | P1 | 协议文档收敛 | 设计草案与当前 wire contract 名称仍有历史漂移 | 把 candidate/fit/readiness 当前字段写入 protocol v1 |
 | P2 | 前端模块化 | `app.js` 已承载太多 authoring 逻辑 | 先抽 schema helper 或 readiness helper，保持测试覆盖 |
 
