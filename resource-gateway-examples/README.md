@@ -851,7 +851,7 @@ Showcase metadata APIs:
 | `GET` | `/api/visual/operators` | List native, Java registry, imported, executable publication-backed subgraph, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering, `sourceKind` / `operatorLibraryId` / `loweringMode` / `capability` / `runtimeReadiness` catalog facets, plus multi-term schema-aware search across input/output/config fields, field types, JSON Schema field annotations, library owner ids, and readiness summaries; response includes `facets.total/sourceKinds/operatorLibraryIds/loweringModes/capabilities/runtimeReadinessStates` counts plus server-derived `runtimeBindingProjections[]` / `runtimeBindingProjectionStateCounts` and `executablePromotionProjections[]` / `executablePromotionStateCounts`, so palette clients can distinguish missing, bound, drifted, adapter-active, still-executor-blocked, and readiness-recompute-required implementation state without trusting imported libraries to declare runtime readiness |
 | `GET` | `/api/visual/operators/{operatorRef}` | Return one visible `bloge.visualOperator.v1` definition under the same `tenantId` / `namespace` / `environment`, `includeDeprecated`, `resourceOnly`, `operatorLibraryId`, and catalog facet visibility gates used by the operator catalog; returns `404` when the operator is hidden or missing |
 | `GET` | `/api/visual/operators/{operatorRef}/usage` | Return stored draft and immutable-publication usage of one operatorRef, including saved/frozen fingerprint status, changed-surface drift summaries, and `changeRisk/changeCategories/changeSummary` when snapshots allow risk classification |
-| `GET` | `/api/visual/assets/overview` | Return `bloge.visualAssetOverview.v1`, an environment-level visual authoring overview that echoes the requested authoring scope while aggregating draft summaries, publication summaries, current operator catalog facets, and an action-readiness/runtime-binding-requirement-aware server-derived action queue with optional `tenantId` / `namespace` / `environment` scope filters plus `actionLimit` / `actionOffset` / `actionSeverity` / `actionType` / `actionTargetKind` / `actionOperatorRef` / `actionOperatorLibraryId` queue query controls and operatorRef/operatorLibraryId counts for runtime-plane triage |
+| `GET` | `/api/visual/assets/overview` | Return `bloge.visualAssetOverview.v1`, an environment-level visual authoring overview that echoes the requested authoring scope while aggregating draft summaries, publication summaries, current operator catalog facets, runtime evidence chain health counts, and an action-readiness/runtime-binding-requirement-aware server-derived action queue with optional `tenantId` / `namespace` / `environment` scope filters plus `actionLimit` / `actionOffset` / `actionSeverity` / `actionType` / `actionTargetKind` / `actionOperatorRef` / `actionOperatorLibraryId` queue query controls and operatorRef/operatorLibraryId counts for runtime-plane triage |
 | `GET` | `/api/visual/assets/runtime-binding-requirements` | Return `bloge.visualRuntimeBindingRequirements.v1`, a scope-aware, pageable runtime-binding gap index for active drafts and immutable publications, with `targetKind` / `operatorRef` / `operatorLibraryId` / `bindingKind` / `handoffLane` / `handoffKind` / `handoffTarget` / `sourceKind` / `loweringMode` / `readinessState` / `requirementKey` filters, stable requirement keys, operatorRef/operatorLibraryId counts, and handoff lane/kind/target fields for external runtime-plane routing |
 | `GET` | `/api/visual/assets/runtime-binding-requirements/handoff-bundle` | Export the current runtime-binding gap query window as `bloge.visualRuntimeBindingHandoff.v1`, preserving source index lineage, normalized scope/filter, stable requirement keys, operator/library/routing counts, requirement rows, and per-operator contract snapshots with ports/config/lowering/readiness evidence for runtime-plane handoff without creating workflow state |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/handoff-review` | Review a `bloge.visualRuntimeBindingHandoff.v1` bundle against the current runtime-binding read model and current operator catalog contracts; returns `bloge.visualRuntimeBindingHandoffReview.v1` with requirement and operator-contract current/drifted/missing/new-current-window reconciliation status, field-change categories, and exported/current/new routing distributions for owner/lane assignment |
@@ -1351,7 +1351,10 @@ author loads a full immutable publication payload.
 The Workspace Overview panel consumes `bloge.visualAssetOverview.v1` to show the
 same readiness distribution across drafts, immutable publications, and the
 current operator catalog for the active Authoring Scope. The overview response
-echoes the authoring scope used to derive the read model, then adds a
+echoes the authoring scope used to derive the read model, adds server-derived
+runtime evidence chain health counts for implementation bindings, adapter
+activations, rollout observations, executable lowering integrations,
+complete/partial chains, and failed or rollback-prone evidence, then adds a
 server-derived action queue for repair, runtime-binding, governance-review,
 warning acknowledgement/evidence review, and design-asset tracking work. Large
 schema-only workspaces can therefore be
@@ -1362,8 +1365,10 @@ worker can open the affected draft or publication, focus the relevant operator
 in the palette, and de-duplicate repeated recommendations without treating the
 queue itself as a stateful workflow engine. The browser also exposes the action
 queue's server-side severity, type, target-kind, operator library, operatorRef,
-and page-window controls, so a large design-only workspace can be reviewed as a
-bounded governance queue rather than a fixed demo list.
+and page-window controls, and renders runtime evidence aggregate/detail rows as
+read-only control-plane facts rather than graph artifact semantics, so a large
+design-only workspace can be reviewed as a bounded governance queue rather than
+a fixed demo list.
 Authors can still publish the draft as a non-executable
 `artifactKind=DESIGN` artifact to freeze the schema-valid composition for
 review and later runtime binding. Design-only

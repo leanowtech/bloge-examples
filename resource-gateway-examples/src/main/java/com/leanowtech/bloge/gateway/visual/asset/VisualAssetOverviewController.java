@@ -226,6 +226,30 @@ public class VisualAssetOverviewController {
         );
         List<OperatorDefinition> operators = catalog.list(query);
         List<VisualDiagnostic> diagnostics = catalog.diagnostics(query);
+        boolean scoped = scopeFiltered(tenantId, namespace, environment);
+        List<String> visibleOperatorRefs = operators.stream()
+                .map(OperatorDefinition::operatorRef)
+                .toList();
+        List<VisualRuntimeBindingImplementationBinding> implementationBindings = implementationRepository.all()
+                .stream()
+                .filter(binding -> runtimeEvidenceOperatorInScope(binding.operatorRef(), scoped, visibleOperatorRefs))
+                .toList();
+        List<VisualRuntimeAdapterActivation> adapterActivations = adapterActivationRepository.all()
+                .stream()
+                .filter(activation -> runtimeEvidenceOperatorInScope(activation.operatorRef(), scoped,
+                        visibleOperatorRefs))
+                .toList();
+        List<VisualRuntimeRolloutObservation> rolloutObservations = rolloutObservationRepository.all()
+                .stream()
+                .filter(observation -> runtimeEvidenceOperatorInScope(observation.operatorRef(), scoped,
+                        visibleOperatorRefs))
+                .toList();
+        List<VisualExecutableLoweringIntegration> executableLoweringIntegrations =
+                executableLoweringIntegrationRepository.all()
+                        .stream()
+                        .filter(integration -> runtimeEvidenceOperatorInScope(integration.operatorRef(), scoped,
+                                visibleOperatorRefs))
+                        .toList();
         return VisualAssetOverview.from(
                 draftSummaries,
                 publicationSummaries,
@@ -241,7 +265,11 @@ public class VisualAssetOverviewController {
                 actionType,
                 actionTargetKind,
                 actionOperatorRef,
-                actionOperatorLibraryId
+                actionOperatorLibraryId,
+                implementationBindings,
+                adapterActivations,
+                rolloutObservations,
+                executableLoweringIntegrations
         );
     }
 
@@ -3358,6 +3386,22 @@ public class VisualAssetOverviewController {
 
     private static String defaultIfBlank(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    private static boolean scopeFiltered(String tenantId, String namespace, String environment) {
+        return (tenantId != null && !tenantId.isBlank())
+                || (namespace != null && !namespace.isBlank())
+                || (environment != null && !environment.isBlank());
+    }
+
+    private static boolean runtimeEvidenceOperatorInScope(String operatorRef,
+                                                          boolean scoped,
+                                                          List<String> visibleOperatorRefs) {
+        if (!scoped) {
+            return true;
+        }
+        String normalized = operatorRef == null ? "" : operatorRef.trim();
+        return !normalized.isBlank() && visibleOperatorRefs != null && visibleOperatorRefs.contains(normalized);
     }
 
     private record ReplacementLibrary(OperatorLibrary library, List<VisualDiagnostic> diagnostics) {

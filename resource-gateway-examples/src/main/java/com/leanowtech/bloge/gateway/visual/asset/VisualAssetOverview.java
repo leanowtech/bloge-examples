@@ -6,6 +6,9 @@ import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftSummary;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationSummary;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegration;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeRolloutObservation;
 import com.leanowtech.bloge.gateway.visual.validation.VisualGraphActionReadiness;
 import com.leanowtech.bloge.gateway.visual.validation.VisualGraphReadiness;
 
@@ -31,6 +34,7 @@ import java.util.function.Function;
  * @param drafts draft asset aggregate
  * @param publications publication asset aggregate
  * @param catalog operator catalog aggregate
+ * @param runtimeEvidence runtime implementation and executor evidence aggregate
  * @param actionQueue server-derived next-action queue for control-plane triage
  */
 public record VisualAssetOverview(
@@ -40,6 +44,7 @@ public record VisualAssetOverview(
         DraftAssets drafts,
         PublicationAssets publications,
         CatalogAssets catalog,
+        RuntimeEvidenceAssets runtimeEvidence,
         ActionQueue actionQueue
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualAssetOverview.v1";
@@ -56,6 +61,7 @@ public record VisualAssetOverview(
         drafts = drafts == null ? DraftAssets.empty() : drafts;
         publications = publications == null ? PublicationAssets.empty() : publications;
         catalog = catalog == null ? CatalogAssets.empty() : catalog;
+        runtimeEvidence = runtimeEvidence == null ? RuntimeEvidenceAssets.empty() : runtimeEvidence;
         actionQueue = actionQueue == null ? ActionQueue.empty() : actionQueue;
     }
 
@@ -228,6 +234,72 @@ public record VisualAssetOverview(
                                            String actionTargetKind,
                                            String actionOperatorRef,
                                            String actionOperatorLibraryId) {
+        return from(
+                drafts,
+                publications,
+                operators,
+                catalogDiagnostics,
+                operatorLibraryIdsByOperatorRef,
+                tenantId,
+                namespace,
+                environment,
+                actionItemLimit,
+                actionOffset,
+                actionSeverity,
+                actionType,
+                actionTargetKind,
+                actionOperatorRef,
+                actionOperatorLibraryId,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of()
+        );
+    }
+
+    /**
+     * Builds an overview with runtime evidence chain aggregates.
+     *
+     * @param drafts draft summaries in scope
+     * @param publications publication summaries in scope
+     * @param operators catalog operators in scope
+     * @param catalogDiagnostics catalog diagnostics in scope
+     * @param operatorLibraryIdsByOperatorRef catalog-derived operatorRef to library owner map
+     * @param tenantId tenant scope used for the read model, empty for all
+     * @param namespace namespace scope used for the read model, empty for all
+     * @param environment environment scope used for the read model, empty for all
+     * @param actionItemLimit requested number of action item details, clamped to the overview contract bounds
+     * @param actionOffset zero-based action item offset after filtering
+     * @param actionSeverity optional action severity filter
+     * @param actionType optional action type filter
+     * @param actionTargetKind optional action target kind filter
+     * @param actionOperatorRef optional operator reference filter
+     * @param actionOperatorLibraryId optional owner operator library id filter
+     * @param implementationBindings submitted runtime implementation binding records in scope
+     * @param adapterActivations runtime adapter activation records in scope
+     * @param rolloutObservations rollout observation records in scope
+     * @param executableLoweringIntegrations executable lowering integration records in scope
+     * @return visual asset overview
+     */
+    public static VisualAssetOverview from(List<GraphDraftSummary> drafts,
+                                           List<VisualGraphPublicationSummary> publications,
+                                           List<OperatorDefinition> operators,
+                                           List<VisualDiagnostic> catalogDiagnostics,
+                                           Map<String, String> operatorLibraryIdsByOperatorRef,
+                                           String tenantId,
+                                           String namespace,
+                                           String environment,
+                                           int actionItemLimit,
+                                           int actionOffset,
+                                           String actionSeverity,
+                                           String actionType,
+                                           String actionTargetKind,
+                                           String actionOperatorRef,
+                                           String actionOperatorLibraryId,
+                                           List<VisualRuntimeBindingImplementationBinding> implementationBindings,
+                                           List<VisualRuntimeAdapterActivation> adapterActivations,
+                                           List<VisualRuntimeRolloutObservation> rolloutObservations,
+                                           List<VisualExecutableLoweringIntegration> executableLoweringIntegrations) {
         return new VisualAssetOverview(
                 SCHEMA_VERSION,
                 Instant.now(),
@@ -235,6 +307,11 @@ public record VisualAssetOverview(
                 DraftAssets.from(drafts),
                 PublicationAssets.from(publications),
                 CatalogAssets.from(operators, catalogDiagnostics),
+                RuntimeEvidenceAssets.from(
+                        implementationBindings,
+                        adapterActivations,
+                        rolloutObservations,
+                        executableLoweringIntegrations),
                 ActionQueue.from(
                         drafts,
                         publications,
@@ -593,6 +670,326 @@ public record VisualAssetOverview(
 
         static CatalogAssets empty() {
             return from(List.of(), List.of());
+        }
+    }
+
+    /**
+     * Runtime evidence aggregate for schema-only/design-only operators moving toward executable binding.
+     *
+     * @param implementationBindingCount total runtime implementation binding records
+     * @param activeBoundImplementationCount currently bound implementation records
+     * @param readyToBindImplementationCount accepted implementation records waiting for bind
+     * @param reviewRequiredImplementationCount implementation records that still require review
+     * @param supersededImplementationCount superseded implementation records
+     * @param unboundImplementationCount unbound implementation records
+     * @param failedImplementationCount failed implementation records
+     * @param adapterActivationCount total adapter activation records
+     * @param activeAdapterActivationCount active adapter activation records
+     * @param failedAdapterActivationCount failed adapter activation records
+     * @param rolloutObservationCount total rollout observation records
+     * @param degradedRolloutObservationCount degraded rollout observations
+     * @param failedRolloutObservationCount failed rollout observations
+     * @param rolledBackRolloutObservationCount rolled-back rollout observations
+     * @param rollbackTriggeredObservationCount rollout observations with rollbackTriggered=true
+     * @param executableLoweringIntegrationCount total executable lowering integration records
+     * @param activeExecutableLoweringIntegrationCount active executable lowering integration records
+     * @param failedExecutableLoweringIntegrationCount failed executable lowering integration records
+     * @param completeEvidenceChainCount active bound implementation chains with matching active activation and integration
+     * @param activeBindingMissingActivationCount active bound implementations without matching active activation
+     * @param activeActivationMissingIntegrationCount active adapter activations without matching active lowering integration
+     * @param orphanActiveActivationCount active activations whose binding is missing, inactive, or revision/fingerprint mismatched
+     * @param orphanActiveIntegrationCount active integrations whose activation is missing, inactive, or revision/fingerprint mismatched
+     * @param failedEvidenceRecordCount failed records across implementation, activation, rollout, and integration evidence
+     * @param implementationStateCounts implementation records by lifecycle state
+     * @param activationStateCounts adapter activation records by lifecycle state
+     * @param rolloutStateCounts rollout observations by state
+     * @param integrationStateCounts executable lowering integration records by lifecycle state
+     * @param operatorRefCounts evidence records by operatorRef
+     * @param bindingIdCounts evidence records by bindingId
+     * @param activationIdCounts activation/integration/rollout records by activationId
+     * @param adapterKindCounts evidence records by adapter kind
+     * @param runtimeEnvironmentCounts runtime evidence records by runtime environment
+     * @param loweringModeCounts executable lowering integration records by lowering mode
+     */
+    public record RuntimeEvidenceAssets(
+            int implementationBindingCount,
+            int activeBoundImplementationCount,
+            int readyToBindImplementationCount,
+            int reviewRequiredImplementationCount,
+            int supersededImplementationCount,
+            int unboundImplementationCount,
+            int failedImplementationCount,
+            int adapterActivationCount,
+            int activeAdapterActivationCount,
+            int failedAdapterActivationCount,
+            int rolloutObservationCount,
+            int degradedRolloutObservationCount,
+            int failedRolloutObservationCount,
+            int rolledBackRolloutObservationCount,
+            int rollbackTriggeredObservationCount,
+            int executableLoweringIntegrationCount,
+            int activeExecutableLoweringIntegrationCount,
+            int failedExecutableLoweringIntegrationCount,
+            int completeEvidenceChainCount,
+            int activeBindingMissingActivationCount,
+            int activeActivationMissingIntegrationCount,
+            int orphanActiveActivationCount,
+            int orphanActiveIntegrationCount,
+            int failedEvidenceRecordCount,
+            Map<String, Integer> implementationStateCounts,
+            Map<String, Integer> activationStateCounts,
+            Map<String, Integer> rolloutStateCounts,
+            Map<String, Integer> integrationStateCounts,
+            Map<String, Integer> operatorRefCounts,
+            Map<String, Integer> bindingIdCounts,
+            Map<String, Integer> activationIdCounts,
+            Map<String, Integer> adapterKindCounts,
+            Map<String, Integer> runtimeEnvironmentCounts,
+            Map<String, Integer> loweringModeCounts
+    ) {
+        public RuntimeEvidenceAssets {
+            implementationStateCounts = immutableCounts(implementationStateCounts);
+            activationStateCounts = immutableCounts(activationStateCounts);
+            rolloutStateCounts = immutableCounts(rolloutStateCounts);
+            integrationStateCounts = immutableCounts(integrationStateCounts);
+            operatorRefCounts = immutableCounts(operatorRefCounts);
+            bindingIdCounts = immutableCounts(bindingIdCounts);
+            activationIdCounts = immutableCounts(activationIdCounts);
+            adapterKindCounts = immutableCounts(adapterKindCounts);
+            runtimeEnvironmentCounts = immutableCounts(runtimeEnvironmentCounts);
+            loweringModeCounts = immutableCounts(loweringModeCounts);
+        }
+
+        static RuntimeEvidenceAssets from(
+                List<VisualRuntimeBindingImplementationBinding> implementationBindings,
+                List<VisualRuntimeAdapterActivation> adapterActivations,
+                List<VisualRuntimeRolloutObservation> rolloutObservations,
+                List<VisualExecutableLoweringIntegration> executableLoweringIntegrations) {
+            List<VisualRuntimeBindingImplementationBinding> safeBindings = implementationBindings == null
+                    ? List.of()
+                    : implementationBindings.stream().filter(binding -> binding != null).toList();
+            List<VisualRuntimeAdapterActivation> safeActivations = adapterActivations == null
+                    ? List.of()
+                    : adapterActivations.stream().filter(activation -> activation != null).toList();
+            List<VisualRuntimeRolloutObservation> safeObservations = rolloutObservations == null
+                    ? List.of()
+                    : rolloutObservations.stream().filter(observation -> observation != null).toList();
+            List<VisualExecutableLoweringIntegration> safeIntegrations = executableLoweringIntegrations == null
+                    ? List.of()
+                    : executableLoweringIntegrations.stream().filter(integration -> integration != null).toList();
+
+            Map<String, Integer> implementationStates = new LinkedHashMap<>();
+            Map<String, Integer> activationStates = new LinkedHashMap<>();
+            Map<String, Integer> rolloutStates = new LinkedHashMap<>();
+            Map<String, Integer> integrationStates = new LinkedHashMap<>();
+            Map<String, Integer> operatorRefs = new LinkedHashMap<>();
+            Map<String, Integer> bindingIds = new LinkedHashMap<>();
+            Map<String, Integer> activationIds = new LinkedHashMap<>();
+            Map<String, Integer> adapterKinds = new LinkedHashMap<>();
+            Map<String, Integer> runtimeEnvironments = new LinkedHashMap<>();
+            Map<String, Integer> loweringModes = new LinkedHashMap<>();
+            Map<String, VisualRuntimeBindingImplementationBinding> activeBindingsById = new LinkedHashMap<>();
+            Map<String, VisualRuntimeAdapterActivation> activeActivationsById = new LinkedHashMap<>();
+            Map<String, VisualRuntimeAdapterActivation> activeActivationsByBindingId = new LinkedHashMap<>();
+            Map<String, VisualExecutableLoweringIntegration> activeIntegrationsByActivationId = new LinkedHashMap<>();
+
+            int activeBoundImplementationCount = 0;
+            int readyToBindImplementationCount = 0;
+            int reviewRequiredImplementationCount = 0;
+            int supersededImplementationCount = 0;
+            int unboundImplementationCount = 0;
+            int failedImplementationCount = 0;
+            for (VisualRuntimeBindingImplementationBinding binding : safeBindings) {
+                String state = normalizeFacetValue(binding.state());
+                incrementNormalized(implementationStates, state);
+                incrementText(operatorRefs, binding.operatorRef());
+                incrementText(bindingIds, binding.bindingId());
+                if (binding.bound()) {
+                    activeBoundImplementationCount++;
+                    activeBindingsById.put(binding.bindingId(), binding);
+                } else if (binding.readyToBind()) {
+                    readyToBindImplementationCount++;
+                } else if (binding.requiresReview()) {
+                    reviewRequiredImplementationCount++;
+                } else if (binding.superseded()) {
+                    supersededImplementationCount++;
+                } else if (binding.unbound()) {
+                    unboundImplementationCount++;
+                } else if (binding.failed()) {
+                    failedImplementationCount++;
+                }
+            }
+
+            int activeAdapterActivationCount = 0;
+            int failedAdapterActivationCount = 0;
+            for (VisualRuntimeAdapterActivation activation : safeActivations) {
+                incrementNormalized(activationStates, activation.state());
+                incrementText(operatorRefs, activation.operatorRef());
+                incrementText(bindingIds, activation.bindingId());
+                incrementText(activationIds, activation.activationId());
+                incrementNormalized(adapterKinds, activation.adapterKind());
+                incrementText(runtimeEnvironments, activation.runtimeEnvironment());
+                if (VisualRuntimeAdapterActivation.STATE_ACTIVE.equals(activation.state())) {
+                    activeAdapterActivationCount++;
+                    activeActivationsById.put(activation.activationId(), activation);
+                    activeActivationsByBindingId.putIfAbsent(activation.bindingId(), activation);
+                } else if (VisualRuntimeAdapterActivation.STATE_FAILED.equals(activation.state())) {
+                    failedAdapterActivationCount++;
+                }
+            }
+
+            int degradedRolloutObservationCount = 0;
+            int failedRolloutObservationCount = 0;
+            int rolledBackRolloutObservationCount = 0;
+            int rollbackTriggeredObservationCount = 0;
+            for (VisualRuntimeRolloutObservation observation : safeObservations) {
+                incrementNormalized(rolloutStates, observation.state());
+                incrementText(operatorRefs, observation.operatorRef());
+                incrementText(bindingIds, observation.bindingId());
+                incrementText(activationIds, observation.activationId());
+                incrementNormalized(adapterKinds, observation.adapterKind());
+                incrementText(runtimeEnvironments, observation.runtimeEnvironment());
+                if (VisualRuntimeRolloutObservation.STATE_DEGRADED.equals(observation.state())) {
+                    degradedRolloutObservationCount++;
+                } else if (VisualRuntimeRolloutObservation.STATE_FAILED.equals(observation.state())) {
+                    failedRolloutObservationCount++;
+                } else if (VisualRuntimeRolloutObservation.STATE_ROLLED_BACK.equals(observation.state())) {
+                    rolledBackRolloutObservationCount++;
+                }
+                if (observation.rollbackTriggered()) {
+                    rollbackTriggeredObservationCount++;
+                }
+            }
+
+            int activeExecutableLoweringIntegrationCount = 0;
+            int failedExecutableLoweringIntegrationCount = 0;
+            for (VisualExecutableLoweringIntegration integration : safeIntegrations) {
+                incrementNormalized(integrationStates, integration.state());
+                incrementText(operatorRefs, integration.operatorRef());
+                incrementText(bindingIds, integration.bindingId());
+                incrementText(activationIds, integration.activationId());
+                incrementNormalized(adapterKinds, integration.adapterKind());
+                incrementText(runtimeEnvironments, integration.runtimeEnvironment());
+                incrementNormalized(loweringModes, integration.loweringMode());
+                if (VisualExecutableLoweringIntegration.STATE_ACTIVE.equals(integration.state())) {
+                    activeExecutableLoweringIntegrationCount++;
+                    activeIntegrationsByActivationId.putIfAbsent(integration.activationId(), integration);
+                } else if (VisualExecutableLoweringIntegration.STATE_FAILED.equals(integration.state())) {
+                    failedExecutableLoweringIntegrationCount++;
+                }
+            }
+
+            int completeEvidenceChainCount = 0;
+            int activeBindingMissingActivationCount = 0;
+            for (VisualRuntimeBindingImplementationBinding binding : activeBindingsById.values()) {
+                VisualRuntimeAdapterActivation activation = activeActivationsByBindingId.get(binding.bindingId());
+                if (!activationMatchesBinding(activation, binding)) {
+                    activeBindingMissingActivationCount++;
+                    continue;
+                }
+                VisualExecutableLoweringIntegration integration =
+                        activeIntegrationsByActivationId.get(activation.activationId());
+                if (integrationMatchesActivationAndBinding(integration, activation, binding)) {
+                    completeEvidenceChainCount++;
+                }
+            }
+
+            int activeActivationMissingIntegrationCount = 0;
+            int orphanActiveActivationCount = 0;
+            for (VisualRuntimeAdapterActivation activation : activeActivationsById.values()) {
+                VisualRuntimeBindingImplementationBinding binding = activeBindingsById.get(activation.bindingId());
+                if (!activationMatchesBinding(activation, binding)) {
+                    orphanActiveActivationCount++;
+                }
+                VisualExecutableLoweringIntegration integration =
+                        activeIntegrationsByActivationId.get(activation.activationId());
+                if (!integrationMatchesActivationAndBinding(integration, activation, binding)) {
+                    activeActivationMissingIntegrationCount++;
+                }
+            }
+
+            int orphanActiveIntegrationCount = 0;
+            for (VisualExecutableLoweringIntegration integration : activeIntegrationsByActivationId.values()) {
+                VisualRuntimeAdapterActivation activation = activeActivationsById.get(integration.activationId());
+                VisualRuntimeBindingImplementationBinding binding =
+                        activation == null ? null : activeBindingsById.get(activation.bindingId());
+                if (!integrationMatchesActivationAndBinding(integration, activation, binding)) {
+                    orphanActiveIntegrationCount++;
+                }
+            }
+
+            int failedEvidenceRecordCount = failedImplementationCount
+                    + failedAdapterActivationCount
+                    + failedRolloutObservationCount
+                    + failedExecutableLoweringIntegrationCount;
+
+            return new RuntimeEvidenceAssets(
+                    safeBindings.size(),
+                    activeBoundImplementationCount,
+                    readyToBindImplementationCount,
+                    reviewRequiredImplementationCount,
+                    supersededImplementationCount,
+                    unboundImplementationCount,
+                    failedImplementationCount,
+                    safeActivations.size(),
+                    activeAdapterActivationCount,
+                    failedAdapterActivationCount,
+                    safeObservations.size(),
+                    degradedRolloutObservationCount,
+                    failedRolloutObservationCount,
+                    rolledBackRolloutObservationCount,
+                    rollbackTriggeredObservationCount,
+                    safeIntegrations.size(),
+                    activeExecutableLoweringIntegrationCount,
+                    failedExecutableLoweringIntegrationCount,
+                    completeEvidenceChainCount,
+                    activeBindingMissingActivationCount,
+                    activeActivationMissingIntegrationCount,
+                    orphanActiveActivationCount,
+                    orphanActiveIntegrationCount,
+                    failedEvidenceRecordCount,
+                    implementationStates,
+                    activationStates,
+                    rolloutStates,
+                    integrationStates,
+                    operatorRefs,
+                    bindingIds,
+                    activationIds,
+                    adapterKinds,
+                    runtimeEnvironments,
+                    loweringModes
+            );
+        }
+
+        static RuntimeEvidenceAssets empty() {
+            return from(List.of(), List.of(), List.of(), List.of());
+        }
+
+        private static boolean activationMatchesBinding(VisualRuntimeAdapterActivation activation,
+                                                        VisualRuntimeBindingImplementationBinding binding) {
+            return activation != null
+                    && binding != null
+                    && binding.bound()
+                    && VisualRuntimeAdapterActivation.STATE_ACTIVE.equals(activation.state())
+                    && activation.bindingId().equals(binding.bindingId())
+                    && activation.bindingRevision() == binding.revision()
+                    && activation.operatorRef().equals(binding.operatorRef())
+                    && activation.operatorFingerprint().equals(binding.operatorFingerprint());
+        }
+
+        private static boolean integrationMatchesActivationAndBinding(
+                VisualExecutableLoweringIntegration integration,
+                VisualRuntimeAdapterActivation activation,
+                VisualRuntimeBindingImplementationBinding binding) {
+            return integration != null
+                    && activationMatchesBinding(activation, binding)
+                    && VisualExecutableLoweringIntegration.STATE_ACTIVE.equals(integration.state())
+                    && integration.activationId().equals(activation.activationId())
+                    && integration.activationRevision() == activation.revision()
+                    && integration.bindingId().equals(binding.bindingId())
+                    && integration.bindingRevision() == binding.revision()
+                    && integration.operatorRef().equals(binding.operatorRef())
+                    && integration.operatorFingerprint().equals(binding.operatorFingerprint());
         }
     }
 
@@ -1520,6 +1917,13 @@ public record VisualAssetOverview(
 
     private static void incrementNormalized(Map<String, Integer> counts, String value) {
         String key = normalizeFacetValue(value);
+        if (!key.isBlank()) {
+            counts.merge(key, 1, Integer::sum);
+        }
+    }
+
+    private static void incrementText(Map<String, Integer> counts, String value) {
+        String key = normalizeTextValue(value);
         if (!key.isBlank()) {
             counts.merge(key, 1, Integer::sum);
         }

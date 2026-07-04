@@ -155,6 +155,74 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void overviewAggregatesRuntimeEvidenceChainHealth() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding proposal =
+                submitImplementation(fixture, completeImplementation());
+
+        var bindResponse = fixture.controller().bindRuntimeBindingImplementation(
+                proposal.bindingId(),
+                transitionRequest("", true));
+        assertThat(bindResponse.getStatusCode().value()).isEqualTo(200);
+        VisualRuntimeBindingImplementationBinding binding = bindResponse.getBody().binding();
+
+        VisualAssetOverview boundOnlyOverview = fixture.controller().overview("", "", "");
+        assertThat(boundOnlyOverview.runtimeEvidence().implementationBindingCount()).isEqualTo(1);
+        assertThat(boundOnlyOverview.runtimeEvidence().activeBoundImplementationCount()).isEqualTo(1);
+        assertThat(boundOnlyOverview.runtimeEvidence().activeBindingMissingActivationCount()).isEqualTo(1);
+        assertThat(boundOnlyOverview.runtimeEvidence().completeEvidenceChainCount()).isZero();
+        assertThat(boundOnlyOverview.runtimeEvidence().implementationStateCounts())
+                .containsEntry("bound", 1);
+        assertThat(boundOnlyOverview.runtimeEvidence().operatorRefCounts())
+                .containsEntry("risk:eligibility", 1);
+
+        var activationResponse = fixture.controller().submitRuntimeAdapterActivation(
+                adapterActivationRequest(binding, "risk-eligibility-prod-active"));
+        assertThat(activationResponse.getStatusCode().value()).isEqualTo(201);
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) activationResponse.getBody();
+
+        VisualAssetOverview activationOnlyOverview = fixture.controller().overview("", "", "");
+        assertThat(activationOnlyOverview.runtimeEvidence().activeBindingMissingActivationCount()).isZero();
+        assertThat(activationOnlyOverview.runtimeEvidence().activeAdapterActivationCount()).isEqualTo(1);
+        assertThat(activationOnlyOverview.runtimeEvidence().activeActivationMissingIntegrationCount()).isEqualTo(1);
+        assertThat(activationOnlyOverview.runtimeEvidence().completeEvidenceChainCount()).isZero();
+
+        var rolloutResponse = fixture.controller().submitRuntimeRolloutObservation(
+                rolloutObservationRequest(
+                        activation,
+                        "risk-rollout-canary-degraded",
+                        VisualRuntimeRolloutObservation.STATE_DEGRADED,
+                        25,
+                        true,
+                        "p95 latency breached canary guardrail"));
+        assertThat(rolloutResponse.getStatusCode().value()).isEqualTo(201);
+        var integrationResponse = fixture.controller().submitExecutableLoweringIntegration(
+                executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"));
+        assertThat(integrationResponse.getStatusCode().value()).isEqualTo(201);
+
+        VisualAssetOverview completeOverview = fixture.controller().overview("", "", "");
+        assertThat(completeOverview.runtimeEvidence().adapterActivationCount()).isEqualTo(1);
+        assertThat(completeOverview.runtimeEvidence().rolloutObservationCount()).isEqualTo(1);
+        assertThat(completeOverview.runtimeEvidence().executableLoweringIntegrationCount()).isEqualTo(1);
+        assertThat(completeOverview.runtimeEvidence().activeExecutableLoweringIntegrationCount()).isEqualTo(1);
+        assertThat(completeOverview.runtimeEvidence().completeEvidenceChainCount()).isEqualTo(1);
+        assertThat(completeOverview.runtimeEvidence().activeActivationMissingIntegrationCount()).isZero();
+        assertThat(completeOverview.runtimeEvidence().degradedRolloutObservationCount()).isEqualTo(1);
+        assertThat(completeOverview.runtimeEvidence().rollbackTriggeredObservationCount()).isEqualTo(1);
+        assertThat(completeOverview.runtimeEvidence().failedEvidenceRecordCount()).isZero();
+        assertThat(completeOverview.runtimeEvidence().activationStateCounts()).containsEntry("active", 1);
+        assertThat(completeOverview.runtimeEvidence().rolloutStateCounts()).containsEntry("degraded", 1);
+        assertThat(completeOverview.runtimeEvidence().integrationStateCounts()).containsEntry("active", 1);
+        assertThat(completeOverview.runtimeEvidence().bindingIdCounts())
+                .containsEntry(binding.bindingId(), 4);
+        assertThat(completeOverview.runtimeEvidence().activationIdCounts())
+                .containsEntry(activation.activationId(), 3);
+        assertThat(completeOverview.runtimeEvidence().adapterKindCounts()).containsEntry("native", 3);
+        assertThat(completeOverview.runtimeEvidence().runtimeEnvironmentCounts()).containsEntry("prod", 3);
+        assertThat(completeOverview.runtimeEvidence().loweringModeCounts()).containsEntry("native", 1);
+    }
+
+    @Test
     void runtimeBindingRoutingFallsBackToFrozenOperatorLibraryOwnersWhenCatalogMapIsMissing() {
         OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(library);

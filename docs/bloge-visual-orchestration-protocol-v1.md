@@ -1904,6 +1904,11 @@ message handler、webhook、streaming 或 durable capability 暂时不能运行�
 action queue 支持 `actionOperatorRef` / `actionOperatorLibraryId` 过滤并返回
 `operatorRefCounts` / `operatorLibraryIdCounts`，这些字段不是工单状态，不引入第二套
 workflow 真相源。
+同一 overview 响应还包含只读 `runtimeEvidence` aggregate：implementation binding、
+adapter activation、rollout observation 和 executable lowering integration 的状态分布、
+operator/binding/activation 计数、complete chain、partial chain、failed evidence record
+以及 degraded/rolled-back/rollback-triggered rollout 计数。它用于 workspace 健康摘要和
+控制面路由，不能被解释成 graph artifact 语义，也不能直接把 design-only operator 提升为 executable。
 owner `operatorLibraryId` 的解析顺序是：优先使用当前 catalog 的
 `operatorRef -> operatorLibraryId`，缺失时回退到 draft/publication summary 从 dependency
 evidence 派生的 `operatorLibraryIdsByOperatorRef`。这保证跨环境 DESIGN publication 或

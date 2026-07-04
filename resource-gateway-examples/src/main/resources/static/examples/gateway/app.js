@@ -8294,6 +8294,7 @@ function renderVisualAssetOverview() {
   const drafts = overview.drafts || {};
   const publications = overview.publications || {};
   const catalog = overview.catalog || {};
+  const runtimeEvidence = overview.runtimeEvidence || {};
   const actionQueue = overview.actionQueue || {};
   const bindingIndex = state.visualRuntimeBindingRequirements || null;
   const bindingRows = visualRuntimeBindingRequirementRows(bindingIndex);
@@ -8306,6 +8307,8 @@ function renderVisualAssetOverview() {
     state.visualRuntimeRolloutObservations,
     state.visualExecutableLoweringIntegrations
   );
+  const implementationBindingCount = Number(runtimeEvidence.implementationBindingCount ?? implementationBindings.length) || 0;
+  const runtimeEvidenceRecordCount = visualAssetOverviewRuntimeEvidenceRecordCount(runtimeEvidence, runtimeEvidenceRows);
   const rows = visualAssetOverviewRows(overview);
   const actionRows = visualAssetOverviewActionRows(actionQueue);
   const actionOverflow = Math.max(
@@ -8342,8 +8345,8 @@ function renderVisualAssetOverview() {
     ['Operators', catalog.totalOperators],
     ['Actions', actionQueue.unfilteredTotal ?? actionQueue.total],
     ['Runtime bindings', bindingIndex?.unfilteredTotal ?? bindingIndex?.total],
-    ['Binding records', implementationBindings.length],
-    ['Runtime evidence', runtimeEvidenceRows.length],
+    ['Binding records', implementationBindingCount],
+    ['Runtime evidence', runtimeEvidenceRecordCount],
     ['Design-only operators', visualAssetOverviewCatalogReadiness(catalog, 'design-only')],
     ['Runtime-blocked operators', visualAssetOverviewCatalogReadiness(catalog, 'runtime-blocked')]
   ].filter(([, value], index) => index < 7 || Number(value || 0) > 0)
@@ -8356,7 +8359,7 @@ function renderVisualAssetOverview() {
       <strong>Workspace Asset Overview</strong>
       <span>${escapeHtml(`${drafts.total || 0} drafts / ${publications.total || 0} artifacts`)}</span>
     </div>
-    <div class="library-impact-risk-summary">${escapeHtml('Server-derived readiness across drafts, publications, and catalog.')}</div>
+    <div class="library-impact-risk-summary">${escapeHtml('Server-derived readiness across drafts, publications, catalog, and runtime evidence.')}</div>
     <div class="library-impact-risk info">
       <strong>${escapeHtml('Authoring Scope')}</strong>
       <span>${escapeHtml(scopeLabel)}</span>
@@ -8896,6 +8899,14 @@ function visualAssetOverviewRows(overview) {
   const drafts = overview?.drafts || {};
   const publications = overview?.publications || {};
   const catalog = overview?.catalog || {};
+  const runtimeEvidence = overview?.runtimeEvidence || {};
+  const partialRuntimeEvidence = Number(runtimeEvidence.activeBindingMissingActivationCount || 0)
+    + Number(runtimeEvidence.activeActivationMissingIntegrationCount || 0)
+    + Number(runtimeEvidence.orphanActiveActivationCount || 0)
+    + Number(runtimeEvidence.orphanActiveIntegrationCount || 0);
+  const rolloutRisk = Number(runtimeEvidence.degradedRolloutObservationCount || 0)
+    + Number(runtimeEvidence.rolledBackRolloutObservationCount || 0)
+    + Number(runtimeEvidence.rollbackTriggeredObservationCount || 0);
   return [
     visualAssetOverviewRow(
       'Draft repair required',
@@ -8934,8 +8945,39 @@ function visualAssetOverviewRows(overview) {
       visualAssetOverviewCatalogReadiness(catalog, 'catalog-repair-required'),
       'error',
       'operators need catalog repair before reliable authoring'
+    ),
+    visualAssetOverviewRow(
+      'Complete runtime evidence chains',
+      Number(runtimeEvidence.completeEvidenceChainCount || 0),
+      'success',
+      'operators have binding, activation, and lowering evidence aligned'
+    ),
+    visualAssetOverviewRow(
+      'Partial runtime evidence chains',
+      partialRuntimeEvidence,
+      'warning',
+      'active runtime evidence links need repair or follow-up'
+    ),
+    visualAssetOverviewRow(
+      'Failed runtime evidence records',
+      Number(runtimeEvidence.failedEvidenceRecordCount || 0),
+      'error',
+      'runtime evidence records failed or could not be trusted'
+    ),
+    visualAssetOverviewRow(
+      'Rollout evidence risk',
+      rolloutRisk,
+      'warning',
+      'runtime rollout observations degraded, rolled back, or triggered rollback'
     )
   ].filter(Boolean);
+}
+
+function visualAssetOverviewRuntimeEvidenceRecordCount(runtimeEvidence, runtimeEvidenceRows) {
+  const aggregate = Number(runtimeEvidence?.adapterActivationCount || 0)
+    + Number(runtimeEvidence?.rolloutObservationCount || 0)
+    + Number(runtimeEvidence?.executableLoweringIntegrationCount || 0);
+  return aggregate || (Array.isArray(runtimeEvidenceRows) ? runtimeEvidenceRows.length : 0);
 }
 
 function visualAssetOverviewRow(label, count, level, suffix) {
@@ -8954,12 +8996,20 @@ function visualAssetOverviewLevel(overview) {
   const drafts = overview?.drafts || {};
   const publications = overview?.publications || {};
   const catalog = overview?.catalog || {};
+  const runtimeEvidence = overview?.runtimeEvidence || {};
+  const partialRuntimeEvidence = Number(runtimeEvidence.activeBindingMissingActivationCount || 0)
+    + Number(runtimeEvidence.activeActivationMissingIntegrationCount || 0)
+    + Number(runtimeEvidence.orphanActiveActivationCount || 0)
+    + Number(runtimeEvidence.orphanActiveIntegrationCount || 0);
   if (Number(drafts.invalidCount || 0)
       || visualAssetOverviewReadiness(drafts, 'draft-repair-required')
       || visualAssetOverviewReadiness(drafts, 'catalog-repair-required')
       || visualAssetOverviewReadiness(publications, 'draft-repair-required')
       || visualAssetOverviewReadiness(publications, 'catalog-repair-required')
       || visualAssetOverviewCatalogReadiness(catalog, 'catalog-repair-required')
+      || Number(runtimeEvidence.failedEvidenceRecordCount || 0)
+      || Number(runtimeEvidence.failedRolloutObservationCount || 0)
+      || Number(runtimeEvidence.rolledBackRolloutObservationCount || 0)
       || Number(catalog.errorCount || 0)) {
     return 'error';
   }
@@ -8969,6 +9019,9 @@ function visualAssetOverviewLevel(overview) {
       || visualAssetOverviewReadiness(publications, 'governance-review')
       || visualAssetOverviewCatalogReadiness(catalog, 'runtime-blocked')
       || visualAssetOverviewCatalogReadiness(catalog, 'governance-review')
+      || partialRuntimeEvidence
+      || Number(runtimeEvidence.degradedRolloutObservationCount || 0)
+      || Number(runtimeEvidence.rollbackTriggeredObservationCount || 0)
       || Number(catalog.warningCount || 0)) {
     return 'warning';
   }
