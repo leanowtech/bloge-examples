@@ -1485,6 +1485,12 @@ public final class VisualSchemaCompatibility {
 	                    appendCompatibilityPath(path, "dependentSchemas/" + trigger)).isEmpty()) {
 	                continue;
 	            }
+	            Map<String, Object> sourceWithTriggeredDependencies =
+	                    sourceSchemaAssumingDependentTriggerPresent(sourceSchema, trigger);
+	            if (schemaCompatibilityIssue(sourceWithTriggeredDependencies, targetDependentSchema,
+	                    appendCompatibilityPath(path, "dependentSchemas/" + trigger)).isEmpty()) {
+	                continue;
+	            }
 	            return Optional.of(reasonAt(path,
 	                    "target requires dependentSchemas '%s' but source does not guarantee the dependent schema"
 	                            .formatted(trigger)));
@@ -2584,6 +2590,17 @@ public final class VisualSchemaCompatibility {
 	            dependencies.put(String.valueOf(entry.getKey()), effectiveDependentObjectSchema(copy));
 	        }
 	        return dependencies;
+	    }
+
+	    private static Map<String, Object> sourceSchemaAssumingDependentTriggerPresent(
+	            Map<String, Object> sourceSchema,
+	            String trigger) {
+	        Map<String, Object> copy = new LinkedHashMap<>(sourceSchema);
+	        Set<String> required = new LinkedHashSet<>(requiredNamesOf(sourceSchema));
+	        required.add(trigger);
+	        required.addAll(dependentRequiredOf(sourceSchema).getOrDefault(trigger, List.of()));
+	        copy.put("required", List.copyOf(required));
+	        return copy;
 	    }
 
 	    private static Map<String, Object> effectiveDependentObjectSchema(Map<String, Object> schema) {

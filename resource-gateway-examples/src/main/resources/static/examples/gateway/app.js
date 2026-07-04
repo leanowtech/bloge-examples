@@ -23896,6 +23896,10 @@ function objectDependentSchemasCompatibilityIssue(sourceSchema, targetSchema, pa
         && !schemaCompatibilityIssue(sourceDependentSchema, targetDependentSchema, dependencyPath)) {
       continue;
     }
+    const sourceWithTriggeredDependencies = sourceSchemaAssumingDependentTriggerPresent(sourceSchema, trigger);
+    if (!schemaCompatibilityIssue(sourceWithTriggeredDependencies, targetDependentSchema, dependencyPath)) {
+      continue;
+    }
     return reasonAt(path, `target requires dependentSchemas '${trigger}' but source does not guarantee the dependent schema`);
   }
   return '';
@@ -24831,6 +24835,18 @@ function schemaDependentSchemas(schema) {
     }
   }
   return result;
+}
+
+function sourceSchemaAssumingDependentTriggerPresent(sourceSchema, trigger) {
+  const required = new Set(schemaRequiredNames(sourceSchema));
+  required.add(trigger);
+  for (const dependency of schemaDependentRequired(sourceSchema)[trigger] || []) {
+    required.add(dependency);
+  }
+  return {
+    ...(sourceSchema || {}),
+    required: Array.from(required)
+  };
 }
 
 function effectiveDependentObjectSchema(schema) {

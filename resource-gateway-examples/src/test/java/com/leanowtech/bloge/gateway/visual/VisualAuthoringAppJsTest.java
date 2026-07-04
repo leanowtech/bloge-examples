@@ -7555,6 +7555,10 @@ operators:
                   'objectPropertyNamesCompatibilityIssue',
                   'objectDependentRequiredCompatibilityIssue',
                   'objectDependentSchemasCompatibilityIssue',
+                  'schemaDependentRequired',
+                  'schemaDependentSchemas',
+                  'sourceSchemaAssumingDependentTriggerPresent',
+                  'effectiveDependentObjectSchema',
                   'objectPropertyBoundsCompatibilityIssue',
                   'arrayUnevaluatedItemsCompatibilityIssue',
                   'arrayContainsCompatibilityIssue',
@@ -7662,9 +7666,69 @@ operators:
                 context.stringValueMatchesFormat = () => true;
                 context.arrayValueMatchesSchema = () => true;
                 context.objectValueMatchesSchema = () => true;
+                context.objectPropertyBoundsCompatibilityIssue = () => '';
+
+                const dependentRequiredProvesDependentSchemaIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  properties: {
+                    creditCard: { type: 'string' },
+                    billingAddress: { type: 'string' }
+                  },
+                  dependentRequired: {
+                    creditCard: ['billingAddress']
+                  },
+                  additionalProperties: false
+                }, {
+                  type: 'object',
+                  properties: {
+                    creditCard: { type: 'string' },
+                    billingAddress: { type: 'string' }
+                  },
+                  dependentSchemas: {
+                    creditCard: {
+                      properties: {
+                        billingAddress: { type: 'string' }
+                      },
+                      required: ['billingAddress']
+                    }
+                  },
+                  additionalProperties: false
+                });
+                const dependentRequiredRejectsDependentSchemaIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  properties: {
+                    creditCard: { type: 'string' },
+                    billingAddress: { type: 'integer' }
+                  },
+                  dependentRequired: {
+                    creditCard: ['billingAddress']
+                  },
+                  additionalProperties: false
+                }, {
+                  type: 'object',
+                  properties: {
+                    creditCard: { type: 'string' }
+                  },
+                  dependentSchemas: {
+                    creditCard: {
+                      properties: {
+                        billingAddress: { type: 'string' }
+                      },
+                      required: ['billingAddress']
+                    }
+                  },
+                  additionalProperties: true
+                });
+                const triggeredRequired = context.sourceSchemaAssumingDependentTriggerPresent({
+                  type: 'object',
+                  required: ['customerId'],
+                  dependentRequired: {
+                    creditCard: ['billingAddress']
+                  }
+                }, 'creditCard').required.sort().join('|');
+
                 context.objectDependentRequiredCompatibilityIssue = () => '';
                 context.objectDependentSchemasCompatibilityIssue = () => '';
-                context.objectPropertyBoundsCompatibilityIssue = () => '';
 
                 const target = {
                   type: 'object',
@@ -8006,6 +8070,9 @@ operators:
                 });
 
                 const checks = [
+                  ['dependentRequired proves dependentSchemas safe', dependentRequiredProvesDependentSchemaIssue, ''],
+                  ['dependentRequired dependentSchemas mismatch surfaced', String(dependentRequiredRejectsDependentSchemaIssue.includes("target requires dependentSchemas 'creditCard'")), 'true'],
+                  ['dependent trigger required projection', triggeredRequired, 'billingAddress|creditCard|customerId'],
                   ['residual optional collision path', String(residualIssue.includes("at 'score'")), 'true'],
                   ['residual optional collision type', String(residualIssue.includes('source type string cannot feed target type integer')), 'true'],
                   ['pattern optional collision path', String(patternIssue.includes("at 'score'")), 'true'],

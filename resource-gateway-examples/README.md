@@ -347,7 +347,9 @@ can feed a constrained target.
 Object `dependentSchemas` constraints extend that conditional gate to whole
 object subschemas, so a payment object that exposes `cardNumber` can be forced
 to satisfy the additional billing schema before a connection, literal, or config
-value is accepted.
+value is accepted. The compatibility gate also treats a source
+`dependentRequired` rule as proof for an equivalent target `dependentSchemas`
+required-field constraint when the triggered companion field schema is compatible.
 Object `unevaluatedProperties` constraints are supported for the canvas schema
 subset as residual object-field policy: after declared `properties`,
 `patternProperties`, and any explicit `additionalProperties` are accounted for,

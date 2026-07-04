@@ -737,6 +737,100 @@ class VisualSchemaCompatibilityTest {
     }
 
     @Test
+    void acceptsSourceDependentRequiredWhenTargetDependentSchemaRequiresSameField() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "creditCard", Map.of("type", "string"),
+                        "billingAddress", Map.of("type", "string")
+                ),
+                "dependentRequired", Map.of("creditCard", List.of("billingAddress")),
+                "additionalProperties", false
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "creditCard", Map.of("type", "string"),
+                        "billingAddress", Map.of("type", "string")
+                ),
+                "dependentSchemas", Map.of(
+                        "creditCard", Map.of(
+                                "properties", Map.of("billingAddress", Map.of("type", "string")),
+                                "required", List.of("billingAddress")
+                        )
+                ),
+                "additionalProperties", false
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsSourceDependentRequiredWhenDependentFieldCannotSatisfyTargetDependentSchema() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "creditCard", Map.of("type", "string"),
+                        "billingAddress", Map.of("type", "integer")
+                ),
+                "dependentRequired", Map.of("creditCard", List.of("billingAddress")),
+                "additionalProperties", false
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "creditCard", Map.of("type", "string")
+                ),
+                "dependentSchemas", Map.of(
+                        "creditCard", Map.of(
+                                "properties", Map.of("billingAddress", Map.of("type", "string")),
+                                "required", List.of("billingAddress")
+                        )
+                ),
+                "additionalProperties", true
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("target requires dependentSchemas 'creditCard'")
+                        .contains("source does not guarantee the dependent schema"));
+    }
+
+    @Test
+    void acceptsSourceDependentSchemaWhenItProvesTargetDependentSchema() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "paymentMethod", Map.of("type", "string"),
+                        "cardNumber", Map.of("type", "string", "minLength", 8)
+                ),
+                "dependentSchemas", Map.of(
+                        "paymentMethod", Map.of(
+                                "properties", Map.of("cardNumber", Map.of("type", "string", "minLength", 8)),
+                                "required", List.of("cardNumber")
+                        )
+                ),
+                "additionalProperties", false
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "paymentMethod", Map.of("type", "string"),
+                        "cardNumber", Map.of("type", "string", "minLength", 4)
+                ),
+                "dependentSchemas", Map.of(
+                        "paymentMethod", Map.of(
+                                "properties", Map.of("cardNumber", Map.of("type", "string", "minLength", 4)),
+                                "required", List.of("cardNumber")
+                        )
+                ),
+                "additionalProperties", false
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
     void acceptsClosedObjectSourceThatCannotContainTargetNotRequiredProperty() {
         Map<String, Object> source = Map.of(
                 "type", "object",
