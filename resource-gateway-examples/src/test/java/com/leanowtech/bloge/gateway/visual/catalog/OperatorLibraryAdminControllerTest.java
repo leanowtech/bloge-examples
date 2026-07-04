@@ -1976,6 +1976,11 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.operatorChanges[0].operatorRef").value("risk:eligibility"))
                 .andExpect(jsonPath("$.operatorChanges[0].changeKind").value("CHANGED"))
                 .andExpect(jsonPath("$.operatorChanges[0].risk").value("BREAKING_SCHEMA"))
+                .andExpect(jsonPath("$.operatorChanges[0].schemaChanges[0].surface").value("input"))
+                .andExpect(jsonPath("$.operatorChanges[0].schemaChanges[0].portName").value("inputs"))
+                .andExpect(jsonPath("$.operatorChanges[0].schemaChanges[0].compatibility").value("breaking"))
+                .andExpect(jsonPath("$.operatorChanges[0].schemaChanges[0].message")
+                        .value(org.hamcrest.Matchers.containsString("type")))
                 .andExpect(jsonPath("$.operatorChanges[0].summary")
                         .value(org.hamcrest.Matchers.containsString("input port 'inputs' schema changed")));
         mockMvc.perform(get("/admin/visual-operator-libraries/risk-policy/revisions/1/diff/99"))
@@ -2836,6 +2841,11 @@ class OperatorLibraryAdminControllerTest {
                                 "changed surface: change risk: BREAKING_SCHEMA; input port 'inputs' schema changed")))
                 .andExpect(jsonPath("$.diagnostics[0].metadata.changeRisk").value("BREAKING_SCHEMA"))
                 .andExpect(jsonPath("$.diagnostics[0].metadata.changeCategories[0]").value("BREAKING_SCHEMA"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].surface").value("input"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].portName").value("inputs"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].compatibility").value("breaking"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].message")
+                        .value(org.hamcrest.Matchers.containsString("type")))
                 .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"))
                 .andExpect(jsonPath("$.impact.warningCount").value(2))
                 .andExpect(jsonPath("$.impact.changeRiskCounts[0].risk").value("BREAKING_SCHEMA"))
@@ -2869,6 +2879,9 @@ class OperatorLibraryAdminControllerTest {
                                 "changed surface: change risk: COMPATIBLE_SCHEMA; input port 'inputs' schema changed")))
                 .andExpect(jsonPath("$.diagnostics[0].metadata.changeRisk").value("COMPATIBLE_SCHEMA"))
                 .andExpect(jsonPath("$.diagnostics[0].metadata.changeCategories[0]").value("COMPATIBLE_SCHEMA"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].surface").value("input"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].portName").value("inputs"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].compatibility").value("compatible"))
                 .andExpect(jsonPath("$.impact.changeRiskCounts[0].risk").value("COMPATIBLE_SCHEMA"))
                 .andExpect(jsonPath("$.impact.changeRiskCounts[0].count").value(1));
 
@@ -2897,6 +2910,8 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[0].metadata.replacementVersion").value("1.1.0"))
                 .andExpect(jsonPath("$.diagnostics[0].metadata.changeRisk").value("BREAKING_SCHEMA"))
                 .andExpect(jsonPath("$.diagnostics[0].metadata.operatorRefs[0]").value("risk:eligibility"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].surface").value("input"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.schemaChanges[0].compatibility").value("breaking"))
                 .andExpect(jsonPath("$.impact.warningCount").value(1))
                 .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:eligibility"))
                 .andExpect(jsonPath("$.impact.changeRiskCounts[0].risk").value("BREAKING_SCHEMA"));

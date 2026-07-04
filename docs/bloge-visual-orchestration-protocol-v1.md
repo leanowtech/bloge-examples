@@ -935,7 +935,15 @@ transform assemble {
   "metadata": {
     "changeRisk": "BREAKING_SCHEMA",
     "changeCategories": ["BREAKING_SCHEMA"],
-    "changeSummary": "input port 'inputs' schema changed"
+    "changeSummary": "input port 'inputs' schema changed",
+    "schemaChanges": [
+      {
+        "surface": "input",
+        "portName": "inputs",
+        "compatibility": "breaking",
+        "message": "type mismatch at properties/score"
+      }
+    ]
   },
   "suggestions": [
     {
@@ -952,7 +960,10 @@ transform assemble {
 可选 `metadata`。`metadata` 只用于机器可读、非敏感的控制面聚合信息，不能
 携带 secret、用户输入原文或大 payload。operator library replacement drift
 当前会使用 `metadata.changeRisk`、`metadata.changeCategories` 和
-`metadata.changeSummary` 表达同一 `operatorRef` 升级的风险分类。
+`metadata.changeSummary` 表达同一 `operatorRef` 升级的风险分类；涉及
+input/output/config schema 的 replacement 还会携带 `metadata.schemaChanges[]`，
+用 `surface`、`portName`、`compatibility=breaking|compatible` 和 `message`
+给浏览器或外部控制面提供端口级审查明细，避免解析自然语言 summary。
 
 ### 9.3 source
 
@@ -1311,7 +1322,8 @@ metadata 携带 `actual/expected`，不会继续执行目标 registry 预检。�
 structural/schema/ownership/runtime/impact/SemVer/readiness 结论，并在 bundle snapshot 可信且可读时返回
 `targetDiff=bloge.visualOperatorLibraryDiff.v1`。`targetDiff` 比较的是目标环境当前 library snapshot
 与 source bundle 中的 library snapshot；它不把 CREATE/REPLACE mutation action 当成 surface 变化，
-只表达 library/operator schema、capability、policy、lowering 和 metadata 风险。这个端点不要求
+只表达 library/operator schema、capability、policy、lowering、metadata 风险和 changed operator
+`schemaChanges[]`。这个端点不要求
 `ackWarnings`、`actor` 或 `reason`，也不会创建 registry revision；它用于 PR、迁移流水线和浏览器
 作者在真正写入前审阅目标环境兼容性。`import-bundle` 是目标环境 mutation：版本与指纹都通过后，
 服务端才把其中的 `library` snapshot 送入目标 registry 的同一套结构校验、operatorRef
@@ -1349,7 +1361,8 @@ preflight 和 warning acknowledgement gate。
 `baseRevision`、`targetRevision`、`changeRisk`、`changeCategories`、`changeSummary`、
 `libraryChanges`、`operatorChanges` 以及 added/removed/changed operator 计数，用于
 restore / rollback 前的机器审阅。operator-level diff 复用
-`OperatorDefinitionChangeSummary` 的风险分类，因此 schema-only operator 的 input/output/config
+`OperatorDefinitionChangeSummary` 的风险分类，并在 changed operator 上返回
+`schemaChanges[]` 端口级明细，因此 schema-only operator 的 input/output/config
 schema、lowering、capability、policy 和 metadata 变化可以在不运行图的情况下被控制面识别。
 restore 默认仍阻断 library version 回退；只有请求显式携带
 `allowVersionRegression=true` 时，版本回退才会降级为

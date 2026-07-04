@@ -234,6 +234,7 @@ public record OperatorLibraryDiff(
                         OperatorDefinitionChangeSummary.RISK_COMPATIBLE_SCHEMA,
                         List.of(OperatorDefinitionChangeSummary.RISK_COMPATIBLE_SCHEMA),
                         "operatorRef '" + operatorRef + "' added",
+                        List.of(),
                         "",
                         target == null ? "" : target.fingerprint(),
                         "",
@@ -245,6 +246,7 @@ public record OperatorLibraryDiff(
                         OperatorDefinitionChangeSummary.RISK_BREAKING_SCHEMA,
                         List.of(OperatorDefinitionChangeSummary.RISK_BREAKING_SCHEMA),
                         "operatorRef '" + operatorRef + "' removed",
+                        List.of(),
                         base.fingerprint(),
                         "",
                         base.operatorVersion(),
@@ -259,6 +261,7 @@ public record OperatorLibraryDiff(
                     report.risk(),
                     report.categories(),
                     report.summary(),
+                    report.schemaChanges(),
                     base.fingerprint(),
                     target.fingerprint(),
                     base.operatorVersion(),
@@ -357,6 +360,7 @@ public record OperatorLibraryDiff(
      * @param risk highest-risk category
      * @param categories all categories in this operator change
      * @param summary concise change summary
+     * @param schemaChanges machine-readable schema surface changes for CHANGED operators
      * @param baseFingerprint fingerprint in the base revision
      * @param targetFingerprint fingerprint in the target revision
      * @param baseOperatorVersion operator version in the base revision
@@ -368,6 +372,7 @@ public record OperatorLibraryDiff(
             String risk,
             List<String> categories,
             String summary,
+            List<OperatorDefinitionChangeSummary.SchemaChange> schemaChanges,
             String baseFingerprint,
             String targetFingerprint,
             String baseOperatorVersion,
@@ -379,6 +384,7 @@ public record OperatorLibraryDiff(
             risk = risk == null || risk.isBlank() ? OperatorDefinitionChangeSummary.RISK_METADATA : risk;
             categories = categories == null ? List.of() : List.copyOf(categories);
             summary = summary == null ? "" : summary;
+            schemaChanges = schemaChanges == null ? List.of() : List.copyOf(schemaChanges);
             baseFingerprint = baseFingerprint == null ? "" : baseFingerprint;
             targetFingerprint = targetFingerprint == null ? "" : targetFingerprint;
             baseOperatorVersion = baseOperatorVersion == null ? "" : baseOperatorVersion;

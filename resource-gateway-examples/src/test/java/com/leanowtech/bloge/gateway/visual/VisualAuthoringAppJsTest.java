@@ -1017,6 +1017,9 @@ class VisualAuthoringAppJsTest {
                 .contains("function renderLibraryImpactPanel(target, diagnostics, impact = null)")
                 .contains("function libraryImpactSummaryFromPayload(impact)")
                 .contains("function libraryImpactSummary(diagnostics)")
+                .contains("function renderSchemaChangeRows(schemaChanges, limit = 5)")
+                .contains("function librarySchemaChangesFromDiagnostics(diagnostics)")
+                .contains("renderSchemaChangeRows(change.schemaChanges, 3)")
                 .contains("function libraryImpactRefsFromDiagnostic(diagnostic)")
                 .contains("function changeRiskLabel(risk)")
                 .contains("function libraryImpactRiskSummaryText(summary)")
@@ -2753,7 +2756,17 @@ class VisualAuthoringAppJsTest {
                   'renderLibraryImportReadinessHandoffGroups',
                   'renderLibraryImportReadinessCountRows',
                   'libraryImportReadinessCountRows',
+                  'renderOperatorLibraryDiffPanel',
+                  'operatorLibraryDiffLevel',
+                  'operatorLibraryDiffRiskLevel',
                   'renderLibraryImpactPanel',
+                  'renderSchemaChangeRows',
+                  'librarySchemaChangesFromDiagnostics',
+                  'uniqueSchemaChanges',
+                  'normalizeSchemaChange',
+                  'schemaChangeLevel',
+                  'schemaChangeSurfaceLabel',
+                  'schemaChangeMessage',
                   'libraryImpactSummaryFromPayload',
                   'libraryImpactDraftTargetsFromPayload',
                   'libraryImpactPublicationTargetsFromPayload',
@@ -4973,7 +4986,17 @@ operators:
                     code: 'visual.library.operatorFingerprintDrift',
                     target: '/drafts/draft-risk/nodes/0/operatorRef',
                     message: "Operator library 'risk-policy' changes operatorRef 'risk:eligibility' used by draft 'draft-risk@3' node 'riskNode' from saved fingerprint 'old' to 'new'; changed surface: change risk: BREAKING_SCHEMA; output schema changed.",
-                    metadata: { changeRisk: 'BREAKING_SCHEMA' }
+                    metadata: {
+                      changeRisk: 'BREAKING_SCHEMA',
+                      schemaChanges: [
+                        {
+                          surface: 'output',
+                          portName: 'result',
+                          compatibility: 'breaking',
+                          message: 'output result type changed'
+                        }
+                      ]
+                    }
                   },
                   {
                     level: 'WARNING',
@@ -5015,6 +5038,8 @@ operators:
                 });
                 const libraryImpactRiskText = context.libraryImpactRiskSummaryText(libraryImpact);
                 const libraryPayloadRiskText = context.libraryImpactRiskSummaryText(libraryImpactFromPayload);
+                const librarySchemaChanges = context.librarySchemaChangesFromDiagnostics(libraryImpactDiagnostics);
+                const librarySchemaRows = context.renderSchemaChangeRows(librarySchemaChanges);
                 const libraryWarningAcknowledgement = context.operatorLibraryWarningAcknowledgementMessage({
                   diagnosticCount: 1,
                   errorCount: 0,
@@ -5096,6 +5121,35 @@ operators:
                       { risk: 'RUNTIME_BINDING', count: 1 }
                     ]
                   });
+                  return target;
+                })();
+                const libraryDiffPanel = (() => {
+                  const target = { hidden: false, innerHTML: '', className: '' };
+                  context.renderOperatorLibraryDiffPanel(target, {
+                    changed: true,
+                    changeRisk: 'BREAKING_SCHEMA',
+                    changeSummary: 'input port inputs schema changed',
+                    addedOperatorCount: 0,
+                    removedOperatorCount: 0,
+                    changedOperatorCount: 1,
+                    libraryChanges: [],
+                    operatorChanges: [
+                      {
+                        operatorRef: 'risk:eligibility',
+                        changeKind: 'CHANGED',
+                        risk: 'BREAKING_SCHEMA',
+                        summary: 'input port inputs schema changed',
+                        schemaChanges: [
+                          {
+                            surface: 'input',
+                            portName: 'inputs',
+                            compatibility: 'breaking',
+                            message: 'input score type changed'
+                          }
+                        ]
+                      }
+                    ]
+                  }, 'Library Diff');
                   return target;
                 })();
                 const libraryImpactDraftGroup = context.libraryImpactRefGroup('Drafts', ['draft-risk'], 'draft');
@@ -6052,6 +6106,10 @@ operators:
                   ['library impact operators', libraryImpact.operatorRefs.join('|'), 'risk:audit|risk:eligibility'],
                   ['library impact risk counts', libraryImpact.changeRiskCounts.map((entry) => `${entry.risk}:${entry.count}`).join('|'), 'BREAKING_SCHEMA:1|GOVERNANCE:1'],
                   ['library impact risk text', libraryImpactRiskText, 'Breaking schema change: affected drafts need repair or explicit rebase review. Breaking Schema 1 · Governance 1.'],
+                  ['library schema changes count', librarySchemaChanges.length, 1],
+                  ['library schema change label', context.schemaChangeSurfaceLabel(librarySchemaChanges[0]), 'Output result'],
+                  ['library schema change message', context.schemaChangeMessage(librarySchemaChanges[0]), 'Breaking: output result type changed'],
+                  ['library schema rows include change', String(librarySchemaRows.includes('output result type changed')), 'true'],
                   ['library impact label', context.libraryImpactSummaryLabel(libraryImpact), '2 errors · 2 warnings · 1 draft · 1 publication · 2 operators'],
                   ['library payload impact diagnostics', libraryImpactFromPayload.diagnosticCount, 3],
                   ['library payload impact drafts deduped', libraryImpactFromPayload.draftIds.join('|'), 'draft-risk'],
@@ -6072,6 +6130,9 @@ operators:
                   ['library impact panel includes payload code', String(libraryImpactPanel.innerHTML.includes('visual.library.payloadImpact')), 'true'],
                   ['library impact panel includes risk label', String(libraryImpactPanel.innerHTML.includes('Runtime Binding')), 'true'],
                   ['library impact panel includes risk summary', String(libraryImpactPanel.innerHTML.includes('Runtime binding change')), 'true'],
+                  ['library impact panel includes schema change', String(libraryImpactPanel.innerHTML.includes('Output result')), 'true'],
+                  ['library diff panel includes schema change', String(libraryDiffPanel.innerHTML.includes('Input inputs')), 'true'],
+                  ['library diff panel includes schema message', String(libraryDiffPanel.innerHTML.includes('input score type changed')), 'true'],
                   ['library impact draft group action', String(libraryImpactDraftGroup.includes('data-library-impact-draft="draft-risk"')), 'true'],
                   ['resource payload impact resources deduped', resourceImpactFromPayload.resourceIds.join('|'), 'order-service.listOrders'],
                   ['resource payload impact operators', resourceImpactFromPayload.operatorRefs.join('|'), 'resource:order-service.listOrders'],

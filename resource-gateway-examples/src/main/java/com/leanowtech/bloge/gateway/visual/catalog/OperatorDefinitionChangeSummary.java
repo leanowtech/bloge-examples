@@ -94,13 +94,20 @@ public final class OperatorDefinitionChangeSummary {
         Map<String, OperatorDefinition.Port> replacementByName = portsByName(replacement);
         previousByName.keySet().stream()
                 .filter(name -> !replacementByName.containsKey(name))
-                .forEach(name -> changes.add(direction + " port '" + name + "' removed", RISK_BREAKING_SCHEMA));
+                .forEach(name -> changes.add(direction + " port '" + name + "' removed",
+                        RISK_BREAKING_SCHEMA,
+                        direction,
+                        name,
+                        direction + " port '" + name + "' removed"));
         replacementByName.keySet().stream()
                 .filter(name -> !previousByName.containsKey(name))
                 .forEach(name -> changes.add(direction + " port '" + name + "' added",
                         "input".equals(direction) && replacementByName.get(name).required()
                                 ? RISK_BREAKING_SCHEMA
-                                : RISK_COMPATIBLE_SCHEMA));
+                                : RISK_COMPATIBLE_SCHEMA,
+                        direction,
+                        name,
+                        direction + " port '" + name + "' added"));
         previousByName.forEach((name, previousPort) -> {
             OperatorDefinition.Port replacementPort = replacementByName.get(name);
             if (replacementPort == null) {
@@ -110,7 +117,11 @@ public final class OperatorDefinitionChangeSummary {
                 String risk = "input".equals(direction) && replacementPort.required()
                         ? RISK_BREAKING_SCHEMA
                         : RISK_COMPATIBLE_SCHEMA;
-                changes.add(direction + " port '" + name + "' required flag changed", risk);
+                changes.add(direction + " port '" + name + "' required flag changed",
+                        risk,
+                        direction,
+                        name,
+                        direction + " port '" + name + "' required flag changed");
             }
             if ("output".equals(direction)) {
                 addOutputSchemaChange(changes, previousPort.schema(), replacementPort.schema(),
@@ -155,12 +166,37 @@ public final class OperatorDefinitionChangeSummary {
                                         String label,
                                         boolean inputLike) {
         if (!Objects.equals(previous, replacement)) {
+            Map<String, Object> previousSchema = previous == null ? Map.of() : previous.schema();
+            Map<String, Object> replacementSchema = replacement == null ? Map.of() : replacement.schema();
             Optional<String> compatibilityIssue = inputLike
-                    ? schemaCompatibilityIssue(previous.schema(), replacement.schema())
-                    : schemaCompatibilityIssue(replacement.schema(), previous.schema());
+                    ? schemaCompatibilityIssue(previousSchema, replacementSchema)
+                    : schemaCompatibilityIssue(replacementSchema, previousSchema);
             String risk = compatibilityIssue.isPresent() ? RISK_BREAKING_SCHEMA : RISK_COMPATIBLE_SCHEMA;
-            changes.add(label + " changed", risk);
+            changes.add(label + " changed", risk, schemaSurface(label), schemaPortName(label),
+                    compatibilityIssue.orElse(label + " changed compatibly"));
         }
+    }
+
+    private static String schemaSurface(String label) {
+        if (label.startsWith("input port")) {
+            return "input";
+        }
+        if (label.startsWith("output port")) {
+            return "output";
+        }
+        if (label.startsWith("config")) {
+            return "config";
+        }
+        return "";
+    }
+
+    private static String schemaPortName(String label) {
+        int start = label.indexOf('\'');
+        int end = start < 0 ? -1 : label.indexOf('\'', start + 1);
+        if (start < 0 || end <= start) {
+            return "";
+        }
+        return label.substring(start + 1, end);
     }
 
     private static void describeCapabilityChanges(ChangeAccumulator changes,
@@ -193,25 +229,68 @@ public final class OperatorDefinitionChangeSummary {
      * @param categories all risk categories present in the change
      * @param summary concise human-readable summary
      */
-    public record ChangeReport(String risk, List<String> categories, String summary) {
+    public record ChangeReport(
+            String risk,
+            List<String> categories,
+            String summary,
+            List<SchemaChange> schemaChanges
+    ) {
+        public ChangeReport(String risk, List<String> categories, String summary) {
+            this(risk, categories, summary, List.of());
+        }
+
         public ChangeReport {
             risk = risk == null || risk.isBlank() ? RISK_METADATA : risk;
             categories = categories == null ? List.of() : List.copyOf(categories);
             summary = summary == null ? "" : summary;
+            schemaChanges = schemaChanges == null ? List.of() : List.copyOf(schemaChanges);
         }
 
         public static ChangeReport empty() {
-            return new ChangeReport(RISK_METADATA, List.of(), "");
+            return new ChangeReport(RISK_METADATA, List.of(), "", List.of());
+        }
+    }
+
+    /**
+     * Machine-readable schema surface change for review UIs.
+     *
+     * @param surface input, output, or config
+     * @param portName input/output port name, blank for config schema
+     * @param compatibility breaking or compatible
+     * @param message compatibility reason or concise surface-change message
+     */
+    public record SchemaChange(String surface, String portName, String compatibility, String message) {
+        public SchemaChange {
+            surface = surface == null ? "" : surface;
+            portName = portName == null ? "" : portName;
+            compatibility = compatibility == null || compatibility.isBlank()
+                    ? "compatible"
+                    : compatibility.trim().toLowerCase(java.util.Locale.ROOT);
+            message = message == null ? "" : message;
         }
     }
 
     private static final class ChangeAccumulator {
         private final List<String> changes = new ArrayList<>();
         private final LinkedHashSet<String> categories = new LinkedHashSet<>();
+        private final List<SchemaChange> schemaChanges = new ArrayList<>();
 
         private void add(String description, String category) {
             changes.add(description);
             categories.add(category);
+        }
+
+        private void add(String description,
+                         String category,
+                         String surface,
+                         String portName,
+                         String message) {
+            add(description, category);
+            if (RISK_BREAKING_SCHEMA.equals(category) || RISK_COMPATIBLE_SCHEMA.equals(category)) {
+                schemaChanges.add(new SchemaChange(surface, portName,
+                        RISK_BREAKING_SCHEMA.equals(category) ? "breaking" : "compatible",
+                        message == null || message.isBlank() ? description : message));
+            }
         }
 
         private boolean isEmpty() {
@@ -230,7 +309,8 @@ public final class OperatorDefinitionChangeSummary {
                     .toList();
             return new ChangeReport(sortedCategories.isEmpty() ? RISK_METADATA : sortedCategories.getFirst(),
                     sortedCategories,
-                    summary);
+                    summary,
+                    schemaChanges);
         }
     }
 

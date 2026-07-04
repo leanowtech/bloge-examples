@@ -1065,11 +1065,14 @@ public class OperatorLibraryAdminController {
         if (report == null) {
             return Map.of();
         }
-        return Map.of(
-                "changeRisk", report.risk(),
-                "changeCategories", report.categories(),
-                "changeSummary", report.summary()
-        );
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("changeRisk", report.risk());
+        metadata.put("changeCategories", report.categories());
+        metadata.put("changeSummary", report.summary());
+        if (!report.schemaChanges().isEmpty()) {
+            metadata.put("schemaChanges", report.schemaChanges());
+        }
+        return metadata;
     }
 
     private List<VisualDiagnostic> replacementPublicationRemovalDiagnostics(OperatorLibrary replacement) {
@@ -1185,6 +1188,9 @@ public class OperatorLibraryAdminController {
         metadata.put("changeCategories", change.categories());
         metadata.put("changeSummary", change.summary());
         metadata.put("operatorRefs", change.operatorRefs());
+        if (!change.schemaChanges().isEmpty()) {
+            metadata.put("schemaChanges", change.schemaChanges());
+        }
         return metadata;
     }
 
@@ -1192,8 +1198,19 @@ public class OperatorLibraryAdminController {
             Set<String> operatorRefs,
             List<String> categories,
             String risk,
-            String summary
+            String summary,
+            List<OperatorDefinitionChangeSummary.SchemaChange> schemaChanges
     ) {
+        private LibraryReplacementChange {
+            operatorRefs = operatorRefs == null
+                    ? Set.of()
+                    : java.util.Collections.unmodifiableSet(new LinkedHashSet<>(operatorRefs));
+            categories = categories == null ? List.of() : List.copyOf(categories);
+            risk = risk == null || risk.isBlank() ? OperatorDefinitionChangeSummary.RISK_METADATA : risk;
+            summary = summary == null ? "" : summary;
+            schemaChanges = schemaChanges == null ? List.of() : List.copyOf(schemaChanges);
+        }
+
         private static LibraryReplacementChange from(OperatorLibrary existing, OperatorLibrary replacement) {
             Map<String, OperatorDefinition> existingByRef = operatorsByRef(existing);
             Map<String, OperatorDefinition> replacementByRef = replacement.visibleInCatalog(true)
@@ -1202,6 +1219,7 @@ public class OperatorLibraryAdminController {
             Set<String> refs = new LinkedHashSet<>();
             Set<String> categories = new LinkedHashSet<>();
             List<String> changes = new ArrayList<>();
+            List<OperatorDefinitionChangeSummary.SchemaChange> schemaChanges = new ArrayList<>();
 
             existingByRef.keySet().stream()
                     .filter(operatorRef -> !replacementByRef.containsKey(operatorRef))
@@ -1227,6 +1245,7 @@ public class OperatorLibraryAdminController {
                 refs.add(operatorRef);
                 categories.addAll(report.categories());
                 changes.add("operatorRef '" + operatorRef + "' changed: " + report.summary());
+                schemaChanges.addAll(report.schemaChanges());
             });
             List<String> sortedCategories = categories.stream()
                     .sorted((left, right) -> Integer.compare(
@@ -1240,7 +1259,8 @@ public class OperatorLibraryAdminController {
                     java.util.Collections.unmodifiableSet(new LinkedHashSet<>(refs)),
                     sortedCategories,
                     risk,
-                    summarize(changes)
+                    summarize(changes),
+                    List.copyOf(schemaChanges)
             );
         }
 

@@ -5125,13 +5125,17 @@ function renderOperatorLibraryDiffPanel(target, diff, title = 'Library Diff') {
       <span>${escapeHtml(change.summary || '')}</span>
     </div>
   `).join('');
-  const operatorRows = operatorChanges.slice(0, 5).map((change) => `
-    <div class="library-impact-risk">
-      <strong>${escapeHtml(change.operatorRef || 'operator')}</strong>
-      <span>${escapeHtml(change.changeKind || 'CHANGED')} · ${escapeHtml(changeRiskLabel(change.risk))}</span>
-      <small>${escapeHtml(change.summary || '')}</small>
-    </div>
-  `).join('');
+  const operatorRows = operatorChanges.slice(0, 5).map((change) => {
+    const schemaRows = renderSchemaChangeRows(change.schemaChanges, 3);
+    return `
+      <div class="library-impact-risk">
+        <strong>${escapeHtml(change.operatorRef || 'operator')}</strong>
+        <span>${escapeHtml(change.changeKind || 'CHANGED')} · ${escapeHtml(changeRiskLabel(change.risk))}</span>
+        <small>${escapeHtml(change.summary || '')}</small>
+        ${schemaRows ? `<div class="library-impact-codes">${schemaRows}</div>` : ''}
+      </div>
+    `;
+  }).join('');
   const remainingOperators = operatorChanges.length > 5
     ? `<div class="library-impact-more">+${operatorChanges.length - 5} more operator changes</div>`
     : '';
@@ -5434,6 +5438,7 @@ function renderLibraryImpactPanel(target, diagnostics, impact = null) {
       <span>${escapeHtml(entry.count)}</span>
     </div>
   `).join('');
+  const schemaRows = renderSchemaChangeRows(librarySchemaChangesFromDiagnostics(diagnostics), 6);
   const remainingCodes = summary.codeCounts.length > 5
     ? `<div class="library-impact-more">+${summary.codeCounts.length - 5} more codes</div>`
     : '';
@@ -5447,6 +5452,7 @@ function renderLibraryImpactPanel(target, diagnostics, impact = null) {
     <div class="library-impact-stats">${stats}</div>
     ${refs ? `<div class="library-impact-refs">${refs}</div>` : ''}
     ${risks ? `<div class="library-impact-risks">${risks}</div>` : ''}
+    ${schemaRows ? `<div class="library-impact-codes">${schemaRows}</div>` : ''}
     ${codes ? `<div class="library-impact-codes">${codes}${remainingCodes}</div>` : ''}
   `;
   if (typeof target.querySelectorAll === 'function') {
@@ -5467,6 +5473,78 @@ function renderLibraryImpactPanel(target, diagnostics, impact = null) {
       });
     }
   }
+}
+
+function renderSchemaChangeRows(schemaChanges, limit = 5) {
+  const normalized = uniqueSchemaChanges(schemaChanges);
+  if (!normalized.length) {
+    return '';
+  }
+  const visible = normalized.slice(0, Math.max(0, limit));
+  const rows = visible.map((change) => `
+    <div class="library-impact-code ${escapeHtml(schemaChangeLevel(change))}">
+      <strong>${escapeHtml(schemaChangeSurfaceLabel(change))}</strong>
+      <span>${escapeHtml(schemaChangeMessage(change))}</span>
+    </div>
+  `).join('');
+  const remaining = normalized.length - visible.length;
+  return remaining > 0
+    ? `${rows}<div class="library-impact-more">+${remaining} more schema changes</div>`
+    : rows;
+}
+
+function librarySchemaChangesFromDiagnostics(diagnostics) {
+  const changes = [];
+  for (const diagnostic of normalizeDiagnostics(diagnostics)) {
+    const raw = diagnostic?.metadata?.schemaChanges;
+    if (Array.isArray(raw)) {
+      changes.push(...raw);
+    }
+  }
+  return uniqueSchemaChanges(changes);
+}
+
+function uniqueSchemaChanges(schemaChanges) {
+  const seen = new Set();
+  const normalized = [];
+  for (const change of Array.isArray(schemaChanges) ? schemaChanges : []) {
+    const next = normalizeSchemaChange(change);
+    if (!next.surface && !next.portName && !next.message) {
+      continue;
+    }
+    const key = `${next.surface}|${next.portName}|${next.compatibility}|${next.message}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    normalized.push(next);
+  }
+  return normalized;
+}
+
+function normalizeSchemaChange(change) {
+  return {
+    surface: String(change?.surface || '').trim(),
+    portName: String(change?.portName || '').trim(),
+    compatibility: String(change?.compatibility || 'compatible').trim().toLowerCase(),
+    message: String(change?.message || '').trim()
+  };
+}
+
+function schemaChangeLevel(change) {
+  return String(change?.compatibility || '').toLowerCase() === 'breaking' ? 'error' : 'warning';
+}
+
+function schemaChangeSurfaceLabel(change) {
+  const surface = changeRiskLabel(change?.surface || 'schema');
+  const port = String(change?.portName || '').trim();
+  return port ? `${surface} ${port}` : surface;
+}
+
+function schemaChangeMessage(change) {
+  const compatibility = changeRiskLabel(change?.compatibility || 'compatible');
+  const message = String(change?.message || '').trim();
+  return message ? `${compatibility}: ${message}` : compatibility;
 }
 
 function renderAsyncApiProjectionReviewPanel(target, review) {

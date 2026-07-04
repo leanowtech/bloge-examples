@@ -852,7 +852,7 @@ summary, and reason, and the browser supplies audit metadata for import,
 delete, and restore actions so the revision picker is reviewable without opening
 the JSON payload. The panel also calls the revision diff API to show the
 latest-to-selected `bloge.visualOperatorLibraryDiff.v1` risk summary, library
-changes, and operator-level added/removed/changed surface before preview or
+changes, and operator-level added/removed/changed surface plus schemaChanges before preview or
 restore. A deleted library keeps its history target in the panel, so
 accidental deletion can be recovered without relying on browser-local state;
 SemVer rollback still requires the explicit `Rollback` toggle and warning
@@ -1513,8 +1513,10 @@ non-idempotent external side effects; these warnings keep high-risk operators
 out of the catalog until the caller repeats the import with `ackWarnings=true`.
 It also emits non-blocking fingerprint drift warnings when a same-`operatorRef`
 replacement changes schema- or executable-relevant metadata used by stored
-draft snapshots. Those warnings include a concise changed-surface summary and
-machine-readable `metadata.changeRisk` / `changeCategories`, classifying
+draft snapshots. Those warnings include a concise changed-surface summary,
+machine-readable `metadata.changeRisk` / `changeCategories`, and schema drift
+`metadata.schemaChanges[]` entries with `surface`, `portName`,
+`compatibility`, and `message`, classifying
 replacement risk as `BREAKING_SCHEMA`, `COMPATIBLE_SCHEMA`, `RUNTIME_BINDING`,
 `GOVERNANCE`, `POLICY`, or `METADATA`; authors can distinguish compatible
 schema growth from schema-breaking or runtime/governance changes before runtime
@@ -1525,7 +1527,8 @@ itself, even when no stored draft currently references the changed operator:
 version regression is a blocking error, breaking schema/removal changes require
 a major bump unless acknowledged, and additive or compatible schema changes
 require at least a minor bump unless acknowledged. The SemVer diagnostics carry
-the same `changeRisk`, `changeCategories`, `changeSummary`, and `operatorRefs`
+the same `changeRisk`, `changeCategories`, `changeSummary`, `schemaChanges`,
+and `operatorRefs`
 metadata as drift warnings, so the impact review can surface version-discipline
 violations beside draft/publication impact.
 The same validation warns when a replacement or removal touches immutable
@@ -1539,13 +1542,15 @@ stored-draft or published-artifact impact. When the edited JSON uses an existing
 browser sends a `PUT` replace request; otherwise it sends a `POST` import. Import
 and replace actions run the same validation preflight before mutating storage;
 if validation returns only warnings, the panel keeps the request pending,
-renders the server-provided impact review plus the structured diagnostics, and requires a second click on the same JSON,
+renders the server-provided impact review plus the structured diagnostics,
+including schemaChanges rows when provided, and requires a second click on the same JSON,
 same `Force` setting, and same warning diagnostics; that mutation request sends
 `ackWarnings=true` before it writes the library. The warning acknowledgement
 message is risk-aware: breaking schema, runtime binding, governance, policy,
 compatible schema growth, and metadata drift get distinct review copy instead
 of a generic warning banner. The impact contract also carries `changeRiskCounts`
-plus `draftTargets` with affected node indexes. Affected draft chips in the
+plus `draftTargets` with affected node indexes, while diagnostics carry
+schemaChanges for port-level review. Affected draft chips in the
 review are actionable: selecting one loads the draft through the normal draft
 loader and focuses the impacted node so the author can inspect fingerprints,
 schema drift, and bindings before choosing a rebase or repair path.
@@ -1564,7 +1569,7 @@ schema drift, and bindings before choosing a rebase or repair path.
 | `GET` | `/admin/visual-operator-libraries/{libraryId}/export` | Export the current library as `bloge.visualOperatorLibraryExport.v1`, including normalized library snapshot, latest registry revision evidence, and export-time validation/profile/impact result | 200 / 404 |
 | `GET` | `/admin/visual-operator-libraries/{libraryId}/revisions` | List immutable create/replace/delete/restore registry snapshots for an imported library, newest first, including `revisionMetadata` audit fields; delete snapshots remain queryable after the current library is removed | 200 / 404 |
 | `GET` | `/admin/visual-operator-libraries/{libraryId}/revisions/{revision}` | Load one immutable operator-library registry snapshot | 200 / 404 |
-| `GET` | `/admin/visual-operator-libraries/{libraryId}/revisions/{baseRevision}/diff/{targetRevision}` | Compare two immutable registry snapshots as `bloge.visualOperatorLibraryDiff.v1`, including highest change risk, risk categories, summary, library-level changes, operator-level added/removed/changed surface, and operator change counts | 200 / 404 |
+| `GET` | `/admin/visual-operator-libraries/{libraryId}/revisions/{baseRevision}/diff/{targetRevision}` | Compare two immutable registry snapshots as `bloge.visualOperatorLibraryDiff.v1`, including highest change risk, risk categories, summary, library-level changes, operator-level added/removed/changed surface, changed-operator `schemaChanges[]`, and operator change counts | 200 / 404 |
 | `POST` | `/admin/visual-operator-libraries/{libraryId}/revisions/{revision}/restore` | Restore one immutable snapshot as a new latest library revision; uses the same validation, impact, and warning acknowledgement gates as replacement, blocks SemVer regression by default, allows controlled rollback only with `allowVersionRegression=true&ackWarnings=true`, and accepts optional registry revision audit metadata query params; high-risk writes using `force=true` or `ackWarnings=true` require non-empty `actor` and `reason` evidence | 200 / 400 / 404 / 409 |
 | `PUT` | `/admin/visual-operator-libraries/{libraryId}` | Replace an imported library; rejected or warning-gated responses include `bloge.visualOperatorLibraryProfile.v1` and `bloge.visualOperatorLibraryImpact.v1`, reject removal or disablement of stored-draft operator refs unless `force=true`, reject SemVer regression, require `ackWarnings=true` before storing warning-level runtime-capability, governance, executable-resolution, SemVer, or replacement impact, and accept optional registry revision audit metadata query params; high-risk writes using `force=true` or `ackWarnings=true` require non-empty `actor` and `reason` evidence | 200 / 400 / 409 |
 | `DELETE` | `/admin/visual-operator-libraries/{libraryId}` | Delete an imported library; rejects stored-draft references and published-artifact references unless `force=true`, returning `bloge.visualOperatorLibraryProfile.v1` and `bloge.visualOperatorLibraryImpact.v1` on conflict, and accepts optional registry revision audit metadata query params for the delete snapshot; forced deletes require non-empty `actor` and `reason` evidence | 204 / 400 / 409 |
@@ -1907,7 +1912,7 @@ compiled graphs, and evaluates them against arbitrary data contexts. Used by
 |------|------|
 | `DatabaseResourceRegistry` | `WritableResourceRegistry` backed by H2 via JDBC with an in-memory `ConcurrentHashMap` cache for hot-path reads |
 | `DatabaseOperatorLibraryRegistry` | Persists imported visual operator libraries and immutable revision snapshots in H2 as JSON blobs with cache-backed reads |
-| `OperatorLibraryDiff` | Compares two immutable operator-library revision snapshots into library-level and operator-level change-risk review data |
+| `OperatorLibraryDiff` | Compares two immutable operator-library revision snapshots into library-level and operator-level change-risk review data, including changed-operator schemaChanges for port-level review |
 | `DatabaseGraphDraftRepository` | Persists visual graph drafts and revision numbers in H2, preserving immutable revision history after current draft deletion |
 | `GraphDraftDiff` | Compares two immutable draft revision snapshots into graph-level, node-level, and edge-level change-risk review data |
 | `ResourceRegistryAdminController` | REST CRUD at `/admin/resources` |
