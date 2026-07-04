@@ -339,8 +339,10 @@ under `additionalProperties=false`, or expose a finite object enum/const domain
 whose keys match before it can feed a constrained target.
 Object `patternProperties` constraints are supported for map-style payloads as
 well: matching dynamic keys are validated against the pattern's value schema,
-and `additionalProperties=false` no longer rejects fields that are accepted by a
-matching pattern.
+same-pattern source and target schemas are compared by value-domain compatibility
+rather than raw schema equality, and source-only dynamic patterns must be
+accepted by the target residual `additionalProperties` / `unevaluatedProperties`
+policy instead of slipping past `additionalProperties=false`.
 Object `dependentRequired` constraints are enforced as conditional field
 dependencies: if the source can produce a non-null trigger property such as
 `cardNumber`, it must also guarantee the required companion properties before it
@@ -1713,7 +1715,8 @@ operator's declared inputs, materializes that selector through a generated
 branch operators declarative while honoring the BLOGE compiler requirement that
 branch conditions read from node outputs.
 Browser connection hints mirror the server's stricter schema rules
-for object required-field proof, including required-only fields and fields constrained by `patternProperties`,
+for object required-field proof, including required-only fields, fields constrained by `patternProperties`,
+same-pattern dynamic map value compatibility, and source dynamic fields blocked by target residual policy,
 enum value-domain subsets, and supported
 `oneOf`/`anyOf` visual union schemas. Target `oneOf` stays conservative unless
 exactly one branch can receive the source, or the author selects a root

@@ -7665,6 +7665,7 @@ operators:
                   'objectSchemaCompatibilityIssue',
                   'objectOptionalTargetPropertiesCompatibilityIssue',
                   'objectPatternPropertiesCompatibilityIssue',
+                  'sourcePatternCompatibleWithAllTargetPatterns',
                   'objectPropertyNamesCompatibilityIssue',
                   'objectDependentRequiredCompatibilityIssue',
                   'objectDependentSchemasCompatibilityIssue',
@@ -7914,6 +7915,42 @@ operators:
                   },
                   additionalProperties: false
                 }, target);
+                const samePatternValueSafeIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  patternProperties: {
+                    '^meta\\\\.': { type: 'string' }
+                  },
+                  additionalProperties: false
+                }, {
+                  type: 'object',
+                  patternProperties: {
+                    '^meta\\\\.': { type: 'string' }
+                  },
+                  additionalProperties: false
+                });
+                const samePatternValueMismatchIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  patternProperties: {
+                    '^meta\\\\.': { type: 'string' }
+                  },
+                  additionalProperties: false
+                }, {
+                  type: 'object',
+                  patternProperties: {
+                    '^meta\\\\.': { type: 'integer' }
+                  },
+                  additionalProperties: false
+                });
+                const sourceOnlyPatternForbiddenIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  patternProperties: {
+                    '^debug_': { type: 'string' }
+                  },
+                  additionalProperties: false
+                }, {
+                  type: 'object',
+                  additionalProperties: false
+                });
                 const excludedByPropertyNamesIssue = context.schemaCompatibilityIssue({
                   type: 'object',
                   propertyNames: { pattern: '^meta\\\\.' },
@@ -8246,6 +8283,9 @@ operators:
                   ['residual optional collision type', String(residualIssue.includes('source type string cannot feed target type integer')), 'true'],
                   ['pattern optional collision path', String(patternIssue.includes("at 'score'")), 'true'],
                   ['pattern optional collision type', String(patternIssue.includes('source type string cannot feed target type integer')), 'true'],
+                  ['same pattern dynamic value safe', samePatternValueSafeIssue, ''],
+                  ['same pattern dynamic value mismatch', String(samePatternValueMismatchIssue.includes('source type string cannot feed target type integer')), 'true'],
+                  ['source-only pattern forbidden by target', String(sourceOnlyPatternForbiddenIssue.includes("source patternProperties '^debug_'")), 'true'],
                   ['propertyNames excluded optional collision', excludedByPropertyNamesIssue, ''],
                   ['target finite not possible issue', targetNotIssue, 'target excludes value(s) [ARCHIVED] but source schema could produce them'],
                   ['target finite not safe enum', finiteNotSafeIssue, ''],

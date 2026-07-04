@@ -24123,8 +24123,9 @@ function objectOptionalTargetPropertiesCompatibilityIssue(sourceSchema, targetSc
 }
 
 function objectPatternPropertiesCompatibilityIssue(sourceSchema, targetSchema, path = '') {
-  const targetPatterns = schemaPatternProperties(targetSchema);
-  if (!targetPatterns || !Object.keys(targetPatterns).length) {
+  const targetPatterns = schemaPatternProperties(targetSchema) || {};
+  const sourcePatterns = schemaPatternProperties(sourceSchema) || {};
+  if (!Object.keys(targetPatterns).length && !Object.keys(sourcePatterns).length) {
     return '';
   }
   const sourceValues = schemaEnumValues(sourceSchema);
@@ -24133,14 +24134,76 @@ function objectPatternPropertiesCompatibilityIssue(sourceSchema, targetSchema, p
       && sourceValues.every((value) => objectValueMatchesSchema(value, targetSchema))) {
     return '';
   }
-  const sourcePatterns = schemaPatternProperties(sourceSchema);
-  if ((!sourcePatterns || !Object.keys(sourcePatterns).length) && residualPropertiesPolicy(sourceSchema) === false) {
+
+  const targetResidual = residualPropertiesPolicy(targetSchema);
+  const targetResidualKeyword = residualPropertiesKeyword(targetSchema);
+  for (const [sourcePattern, sourcePatternSchema] of Object.entries(sourcePatterns)) {
+    if (!sourcePatternSchema || typeof sourcePatternSchema !== 'object' || Array.isArray(sourcePatternSchema)) {
+      continue;
+    }
+    const exactTargetPatternSchema = targetPatterns[sourcePattern];
+    if (exactTargetPatternSchema && typeof exactTargetPatternSchema === 'object' && !Array.isArray(exactTargetPatternSchema)) {
+      const nested = schemaCompatibilityIssue(sourcePatternSchema, exactTargetPatternSchema, appendCompatibilityPath(path, `patternProperties/${sourcePattern}`));
+      if (nested) {
+        return nested;
+      }
+      continue;
+    }
+    if (targetResidual === false) {
+      return reasonAt(path, `source patternProperties '${sourcePattern}' may produce dynamic fields but target ${targetResidualKeyword}=false`);
+    }
+    if (targetResidual && typeof targetResidual === 'object' && !Array.isArray(targetResidual)) {
+      const nested = schemaCompatibilityIssue(sourcePatternSchema, targetResidual, appendCompatibilityPath(path, `patternProperties/${sourcePattern}`));
+      if (nested) {
+        return nested;
+      }
+      continue;
+    }
+    const targetPatternIssue = sourcePatternCompatibleWithAllTargetPatterns(
+      sourcePatternSchema,
+      targetPatterns,
+      appendCompatibilityPath(path, `patternProperties/${sourcePattern}`)
+    );
+    if (targetPatternIssue) {
+      return reasonAt(path, `source patternProperties '${sourcePattern}' has no exact target pattern match: ${targetPatternIssue}`);
+    }
+  }
+
+  if (!Object.keys(targetPatterns).length || residualPropertiesPolicy(sourceSchema) === false) {
     return '';
   }
-  if (sourcePatterns && canonicalSchemaValueKey(sourcePatterns) === canonicalSchemaValueKey(targetPatterns)) {
-    return '';
+  const sourceResidual = residualPropertiesPolicy(sourceSchema);
+  const sourceResidualKeyword = residualPropertiesKeyword(sourceSchema);
+  for (const [targetPattern, targetPatternSchema] of Object.entries(targetPatterns)) {
+    if (Object.prototype.hasOwnProperty.call(sourcePatterns, targetPattern)) {
+      continue;
+    }
+    if (!targetPatternSchema || typeof targetPatternSchema !== 'object' || Array.isArray(targetPatternSchema)) {
+      continue;
+    }
+    if (sourceResidual && typeof sourceResidual === 'object' && !Array.isArray(sourceResidual)) {
+      const nested = schemaCompatibilityIssue(sourceResidual, targetPatternSchema, appendCompatibilityPath(path, `patternProperties/${targetPattern}`));
+      if (nested) {
+        return nested;
+      }
+    } else if (sourceResidual === undefined || sourceResidual === true) {
+      return reasonAt(path, `target requires patternProperties '${targetPattern}' but source may match fields from unconstrained source ${sourceResidualKeyword}`);
+    }
   }
-  return reasonAt(path, 'target requires patternProperties but source does not guarantee matching dynamic fields');
+  return '';
+}
+
+function sourcePatternCompatibleWithAllTargetPatterns(sourcePatternSchema, targetPatterns, path = '') {
+  for (const [targetPattern, targetPatternSchema] of Object.entries(targetPatterns || {})) {
+    if (!targetPatternSchema || typeof targetPatternSchema !== 'object' || Array.isArray(targetPatternSchema)) {
+      continue;
+    }
+    const nested = schemaCompatibilityIssue(sourcePatternSchema, targetPatternSchema, appendCompatibilityPath(path, targetPattern));
+    if (nested) {
+      return nested;
+    }
+  }
+  return '';
 }
 
 function objectPropertyNamesCompatibilityIssue(sourceSchema, targetSchema, path = '') {

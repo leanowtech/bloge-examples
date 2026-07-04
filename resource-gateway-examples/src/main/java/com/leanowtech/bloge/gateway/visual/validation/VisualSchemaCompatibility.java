@@ -1433,7 +1433,14 @@ public final class VisualSchemaCompatibility {
 	                                                                              Map<String, Object> targetSchema,
 	                                                                              String path) {
 	        Map<String, Object> targetPatterns = patternPropertiesOf(targetSchema);
-	        if (targetPatterns == null || targetPatterns.isEmpty()) {
+	        Map<String, Object> sourcePatterns = patternPropertiesOf(sourceSchema);
+	        if (targetPatterns == null) {
+	            targetPatterns = Map.of();
+	        }
+	        if (sourcePatterns == null) {
+	            sourcePatterns = Map.of();
+	        }
+	        if (targetPatterns.isEmpty() && sourcePatterns.isEmpty()) {
 	            return Optional.empty();
 	        }
 	        List<Object> sourceValues = enumValues(sourceSchema);
@@ -1442,17 +1449,94 @@ public final class VisualSchemaCompatibility {
 	                && sourceValues.stream().allMatch(value -> objectValueMatchesSchema(value, targetSchema))) {
 	            return Optional.empty();
 	        }
-	        Map<String, Object> sourcePatterns = patternPropertiesOf(sourceSchema);
-	        if ((sourcePatterns == null || sourcePatterns.isEmpty())
-	                && Boolean.FALSE.equals(residualPropertiesPolicy(sourceSchema))) {
+
+	        Object targetResidual = residualPropertiesPolicy(targetSchema);
+	        String targetResidualKeyword = residualPropertiesKeyword(targetSchema);
+	        for (Map.Entry<String, Object> entry : sourcePatterns.entrySet()) {
+	            String sourcePattern = entry.getKey();
+	            Map<String, Object> sourcePatternSchema = objectProperty(entry.getValue());
+	            if (sourcePatternSchema == null) {
+	                continue;
+	            }
+	            Map<String, Object> exactTargetPatternSchema = objectProperty(targetPatterns.get(sourcePattern));
+	            if (exactTargetPatternSchema != null) {
+	                Optional<String> nested = schemaCompatibilityIssue(sourcePatternSchema, exactTargetPatternSchema,
+	                        appendCompatibilityPath(path, "patternProperties/" + sourcePattern));
+	                if (nested.isPresent()) {
+	                    return nested;
+	                }
+	                continue;
+	            }
+	            if (Boolean.FALSE.equals(targetResidual)) {
+	                return Optional.of(reasonAt(path,
+	                        "source patternProperties '%s' may produce dynamic fields but target %s=false"
+	                                .formatted(sourcePattern, targetResidualKeyword)));
+	            }
+	            if (targetResidual instanceof Map<?, ?> targetResidualSchema) {
+	                Optional<String> nested = schemaCompatibilityIssue(sourcePatternSchema,
+	                        objectProperty(targetResidualSchema),
+	                        appendCompatibilityPath(path, "patternProperties/" + sourcePattern));
+	                if (nested.isPresent()) {
+	                    return nested;
+	                }
+	                continue;
+	            }
+	            Optional<String> targetPatternIssue =
+	                    sourcePatternCompatibleWithAllTargetPatterns(sourcePatternSchema, targetPatterns,
+	                            appendCompatibilityPath(path, "patternProperties/" + sourcePattern));
+	            if (targetPatternIssue.isPresent()) {
+	                return Optional.of(reasonAt(path,
+	                        "source patternProperties '%s' has no exact target pattern match: %s"
+	                                .formatted(sourcePattern, targetPatternIssue.get())));
+	            }
+	        }
+
+	        if (targetPatterns.isEmpty() || Boolean.FALSE.equals(residualPropertiesPolicy(sourceSchema))) {
 	            return Optional.empty();
 	        }
-	        if (sourcePatterns != null && Objects.equals(sourcePatterns, targetPatterns)) {
-	            return Optional.empty();
+	        Object sourceResidual = residualPropertiesPolicy(sourceSchema);
+	        String sourceResidualKeyword = residualPropertiesKeyword(sourceSchema);
+	        for (Map.Entry<String, Object> entry : targetPatterns.entrySet()) {
+	            String targetPattern = entry.getKey();
+	            if (sourcePatterns.containsKey(targetPattern)) {
+	                continue;
+	            }
+	            Map<String, Object> targetPatternSchema = objectProperty(entry.getValue());
+	            if (targetPatternSchema == null) {
+	                continue;
+	            }
+	            if (sourceResidual instanceof Map<?, ?> sourceResidualSchema) {
+	                Optional<String> nested = schemaCompatibilityIssue(objectProperty(sourceResidualSchema),
+	                        targetPatternSchema, appendCompatibilityPath(path, "patternProperties/" + targetPattern));
+	                if (nested.isPresent()) {
+	                    return nested;
+	                }
+	            } else if (sourceResidual == null || Boolean.TRUE.equals(sourceResidual)) {
+	                return Optional.of(reasonAt(path,
+	                        "target requires patternProperties '%s' but source may match fields from unconstrained source %s"
+	                                .formatted(targetPattern, sourceResidualKeyword)));
+	            }
 	        }
-	        return Optional.of(reasonAt(path,
-	                "target requires patternProperties but source does not guarantee matching dynamic fields"));
+	        return Optional.empty();
 	    }
+
+    private static Optional<String> sourcePatternCompatibleWithAllTargetPatterns(
+            Map<String, Object> sourcePatternSchema,
+            Map<String, Object> targetPatterns,
+            String path) {
+        for (Map.Entry<String, Object> entry : targetPatterns.entrySet()) {
+            Map<String, Object> targetPatternSchema = objectProperty(entry.getValue());
+            if (targetPatternSchema == null) {
+                continue;
+            }
+            Optional<String> nested = schemaCompatibilityIssue(sourcePatternSchema, targetPatternSchema,
+                    appendCompatibilityPath(path, entry.getKey()));
+            if (nested.isPresent()) {
+                return nested;
+            }
+        }
+        return Optional.empty();
+    }
 
 	    private static Optional<String> objectPropertyNamesCompatibilityIssue(Map<String, Object> sourceSchema,
 	                                                                          Map<String, Object> targetSchema,

@@ -478,6 +478,71 @@ class VisualSchemaCompatibilityTest {
     }
 
     @Test
+    void acceptsMatchingPatternPropertiesWhenSourceValueSchemaIsStronger() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "patternProperties", Map.of("^meta\\.", Map.of(
+                        "type", "string",
+                        "minLength", 4
+                )),
+                "additionalProperties", false
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "patternProperties", Map.of("^meta\\.", Map.of(
+                        "type", "string",
+                        "minLength", 2
+                )),
+                "additionalProperties", false
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsMatchingPatternPropertiesWhenSourceValueSchemaIsWeaker() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "patternProperties", Map.of("^meta\\.", Map.of(
+                        "type", "string",
+                        "minLength", 1
+                )),
+                "additionalProperties", false
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "patternProperties", Map.of("^meta\\.", Map.of(
+                        "type", "string",
+                        "minLength", 3
+                )),
+                "additionalProperties", false
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("patternProperties/^meta\\.")
+                        .contains("source minLength 1 is weaker than target minLength 3"));
+    }
+
+    @Test
+    void rejectsSourcePatternPropertiesWhenTargetForbidsDynamicFields() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "patternProperties", Map.of("^debug_", Map.of("type", "string")),
+                "additionalProperties", false
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "additionalProperties", false
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("source patternProperties '^debug_'")
+                        .contains("target additionalProperties=false"));
+    }
+
+    @Test
     void rejectsUnboundedSourceWhenTargetExcludesFiniteValueWithNot() {
         Map<String, Object> source = Map.of("type", "string");
         Map<String, Object> target = Map.of(
