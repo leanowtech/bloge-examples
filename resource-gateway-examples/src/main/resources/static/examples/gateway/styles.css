@@ -3420,6 +3420,13 @@ body.dragging-operator * {
     grid-template-columns: 1fr;
   }
 
+  .library-controls,
+  .library-revision-controls,
+  .resource-contract-controls,
+  .resource-contract-actions {
+    grid-template-columns: 1fr;
+  }
+
   .contract-port-groups,
   .contract-port-row,
   .contract-config-summary,

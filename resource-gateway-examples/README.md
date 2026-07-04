@@ -685,6 +685,9 @@ overflow.
 The YAML import browser regression also checks the post-import palette, diagram,
 and selected-operator inspector under the same 390px mobile viewport, so the
 schema-only authoring entry path is covered before users reach Connectability.
+The OpenAPI Resource Contract preview/save flow and AsyncAPI discovery,
+selection, projection review, import, and palette flow now run the same 390px
+mobile no-overflow checks for the protocol-driven schema entry paths.
 Server-reviewed candidates from the active window are ordered ahead of local
 fallback rows; the click path still runs connection check before mutating the
 draft.

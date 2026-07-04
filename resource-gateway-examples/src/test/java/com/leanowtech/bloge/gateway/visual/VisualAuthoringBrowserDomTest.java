@@ -276,6 +276,18 @@ class VisualAuthoringBrowserDomTest {
         selectByValue(wait, By.id("run-history-source"), "PUBLICATION");
         waitForText(wait, By.id("run-history-list"), "PUBLICATION");
         assertThat(textOf(By.id("run-history-list"))).doesNotContain("TRANSIENT_DRAFT");
+
+        setViewport(wait, 390, 980);
+        scrollIntoView(wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("openapi-resource-json"))));
+        waitForText(wait, By.id("resource-contract-status-message"),
+                "Saved loan-applicant-service.getProfile");
+        assertNoHorizontalOverflow(wait, By.cssSelector(".resource-contract-controls"));
+        assertNoHorizontalOverflow(wait, By.cssSelector(".resource-contract-actions"));
+        assertNoHorizontalOverflow(wait, By.id("openapi-resource-json"));
+        assertNoHorizontalOverflow(wait, By.id("resource-contract-json"));
+        assertNoHorizontalOverflow(wait, By.id("resource-descriptor-json"));
+        assertNoHorizontalOverflow(wait, By.id("resource-contract-status-message"));
+        assertPageNoHorizontalOverflow();
     }
 
     @Test
@@ -860,6 +872,17 @@ class VisualAuthoringBrowserDomTest {
                 .contains("\"headersType\": \"object\"")
                 .doesNotContain("RiskAudit");
 
+        setViewport(wait, 390, 980);
+        scrollIntoView(wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-library-json"))));
+        waitForText(wait, By.id("asyncapi-projection-review"), "AsyncAPI Projection Review");
+        assertNoHorizontalOverflow(wait, By.cssSelector(".library-controls"));
+        assertNoHorizontalOverflow(wait, By.id("asyncapi-operation-select"));
+        assertNoHorizontalOverflow(wait, By.id("asyncapi-operation-summary"));
+        assertNoHorizontalOverflow(wait, By.id("operator-library-json"));
+        assertNoHorizontalOverflow(wait, By.id("library-profile"));
+        assertNoHorizontalOverflow(wait, By.id("asyncapi-projection-review"));
+        assertPageNoHorizontalOverflow();
+
         click(wait, By.id("import-library"));
         waitForAnyText(wait, By.id("library-status"),
                 "Imported risk-events-operators",
@@ -868,6 +891,10 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("operator-palette"), "RiskCommand");
         assertThat(driver.findElement(By.id("operator-palette")).getText())
                 .doesNotContain("RiskAudit");
+
+        scrollIntoView(wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette"))));
+        assertNoHorizontalOverflow(wait, By.id("operator-palette"));
+        assertPageNoHorizontalOverflow();
     }
 
     @Test
