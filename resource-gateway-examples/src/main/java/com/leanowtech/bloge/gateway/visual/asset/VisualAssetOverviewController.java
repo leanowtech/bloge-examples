@@ -3898,6 +3898,7 @@ public class VisualAssetOverviewController {
                 validation.observationState(),
                 validation.rollbackTriggered(),
                 validation.rollbackSignal(),
+                validation.rolloutSignals(),
                 validation.observedBy(),
                 validation.reason(),
                 diagnostics

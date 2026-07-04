@@ -8912,13 +8912,16 @@ function visualAssetOverviewRows(overview) {
   const publications = overview?.publications || {};
   const catalog = overview?.catalog || {};
   const runtimeEvidence = overview?.runtimeEvidence || {};
-  const partialRuntimeEvidence = Number(runtimeEvidence.activeBindingMissingActivationCount || 0)
-    + Number(runtimeEvidence.activeActivationMissingIntegrationCount || 0)
-    + Number(runtimeEvidence.orphanActiveActivationCount || 0)
-    + Number(runtimeEvidence.orphanActiveIntegrationCount || 0);
-  const rolloutRisk = Number(runtimeEvidence.degradedRolloutObservationCount || 0)
-    + Number(runtimeEvidence.rolledBackRolloutObservationCount || 0)
-    + Number(runtimeEvidence.rollbackTriggeredObservationCount || 0);
+  const partialRuntimeEvidence = visualAssetOverviewRuntimeEvidenceHealth(runtimeEvidence, 'partial',
+    Number(runtimeEvidence.activeBindingMissingActivationCount || 0)
+      + Number(runtimeEvidence.activeActivationMissingIntegrationCount || 0)
+      + Number(runtimeEvidence.orphanActiveActivationCount || 0)
+      + Number(runtimeEvidence.orphanActiveIntegrationCount || 0));
+  const rolloutRisk = visualAssetOverviewRuntimeEvidenceHealth(runtimeEvidence, 'rollout-risk',
+    Number(runtimeEvidence.degradedRolloutObservationCount || 0)
+      + Number(runtimeEvidence.rolledBackRolloutObservationCount || 0)
+      + Number(runtimeEvidence.rollbackTriggeredObservationCount || 0));
+  const breachedRolloutSignals = visualAssetOverviewCountSum(runtimeEvidence.breachedRolloutSignalCounts);
   return [
     visualAssetOverviewRow(
       'Draft repair required',
@@ -8960,7 +8963,8 @@ function visualAssetOverviewRows(overview) {
     ),
     visualAssetOverviewRow(
       'Complete runtime evidence chains',
-      Number(runtimeEvidence.completeEvidenceChainCount || 0),
+      visualAssetOverviewRuntimeEvidenceHealth(runtimeEvidence, 'complete',
+        Number(runtimeEvidence.completeEvidenceChainCount || 0)),
       'success',
       'operators have binding, activation, and lowering evidence aligned'
     ),
@@ -8972,7 +8976,8 @@ function visualAssetOverviewRows(overview) {
     ),
     visualAssetOverviewRow(
       'Failed runtime evidence records',
-      Number(runtimeEvidence.failedEvidenceRecordCount || 0),
+      visualAssetOverviewRuntimeEvidenceHealth(runtimeEvidence, 'failed-record',
+        Number(runtimeEvidence.failedEvidenceRecordCount || 0)),
       'error',
       'runtime evidence records failed or could not be trusted'
     ),
@@ -8981,8 +8986,26 @@ function visualAssetOverviewRows(overview) {
       rolloutRisk,
       'warning',
       'runtime rollout observations degraded, rolled back, or triggered rollback'
+    ),
+    visualAssetOverviewRow(
+      'Breached rollout signals',
+      breachedRolloutSignals,
+      'warning',
+      'structured rollout guardrail signals breached'
     )
   ].filter(Boolean);
+}
+
+function visualAssetOverviewRuntimeEvidenceHealth(runtimeEvidence, key, fallback = 0) {
+  const counts = runtimeEvidence?.evidenceChainHealthCounts || {};
+  const normalized = normalizeReadinessState(key);
+  const value = Number(counts[normalized] ?? counts[key] ?? fallback ?? 0) || 0;
+  return value;
+}
+
+function visualAssetOverviewCountSum(counts) {
+  return Object.values(counts || {})
+    .reduce((sum, value) => sum + (Number(value || 0) || 0), 0);
 }
 
 function visualAssetOverviewRuntimeEvidenceRecordCount(runtimeEvidence, runtimeEvidenceRows) {
@@ -9034,6 +9057,7 @@ function visualAssetOverviewLevel(overview) {
       || partialRuntimeEvidence
       || Number(runtimeEvidence.degradedRolloutObservationCount || 0)
       || Number(runtimeEvidence.rollbackTriggeredObservationCount || 0)
+      || visualAssetOverviewCountSum(runtimeEvidence.breachedRolloutSignalCounts)
       || Number(catalog.warningCount || 0)) {
     return 'warning';
   }
@@ -9153,6 +9177,8 @@ function visualRuntimeAdapterActivationRow(activation, index) {
 
 function visualRuntimeRolloutObservationRow(observation, index) {
   const evidenceCount = Array.isArray(observation?.evidence) ? observation.evidence.length : 0;
+  const signals = Array.isArray(observation?.rolloutSignals) ? observation.rolloutSignals : [];
+  const breachedSignalCount = signals.filter((signal) => signal?.breached).length;
   return {
     index,
     kind: 'rollout-observation',
@@ -9175,6 +9201,7 @@ function visualRuntimeRolloutObservationRow(observation, index) {
       `${Number(observation?.trafficPercent || 0) || 0}% traffic`,
       observation?.rolloutPhase ? `phase ${operatorPaletteFacetLabel(observation.rolloutPhase)}` : '',
       observation?.rollbackTriggered ? `rollback ${observation.rollbackSignal || 'triggered'}` : '',
+      signals.length ? `${breachedSignalCount}/${signals.length} signals breached` : '',
       observation?.observedBy ? `by ${observation.observedBy}` : '',
       `${evidenceCount} evidence`
     ].filter(Boolean).join(' · ')

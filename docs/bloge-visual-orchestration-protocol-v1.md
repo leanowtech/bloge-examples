@@ -1907,13 +1907,18 @@ workflow 真相源。
 同一 overview 响应还包含只读 `runtimeEvidence` aggregate：implementation binding、
 adapter activation、rollout observation 和 executable lowering integration 的状态分布、
 operator/binding/activation 计数、complete chain、partial chain、failed evidence record
-以及 degraded/rolled-back/rollback-triggered rollout 计数。它用于 workspace 健康摘要和
+以及 degraded/rolled-back/rollback-triggered rollout 计数。rollout observation request 可携带
+`rolloutSignals[]`，用 `name/kind/observedValue/threshold/comparator/unit/breached/summary`
+表达 p95-latency、error-rate、golden-regression 等 guardrail 观测；风险 observation 缺少
+breached signal 或 signal 缺少稳定 name 时返回 warning，但不阻断事实入库。overview 会把这些
+signals 聚合为 `rolloutSignalCounts` 和 `breachedRolloutSignalCounts`，用于 workspace 健康摘要和
 控制面路由，不能被解释成 graph artifact 语义，也不能直接把 design-only operator 提升为 executable。
 overview action queue 会把这些 runtime evidence 风险进一步投影为 `targetKind=runtime-evidence`
 的派工建议，例如 `BIND_RUNTIME_IMPLEMENTATION`、`ACTIVATE_RUNTIME_ADAPTER`、
 `INTEGRATE_EXECUTABLE_LOWERING`、`REPAIR_RUNTIME_ACTIVATION_CHAIN`、
 `REPAIR_EXECUTABLE_LOWERING_CHAIN`、`REVIEW_RUNTIME_ROLLOUT_RISK` 和
-`REVIEW_RUNTIME_ROLLOUT_FAILURE`；这些 item 仍是只读 read-model recommendation，
+`REVIEW_RUNTIME_ROLLOUT_FAILURE`；`REVIEW_RUNTIME_ROLLOUT_RISK` 不只来自 degraded/rollback 状态，
+也来自 `rolloutSignals[].breached=true` 的结构化 guardrail 信号；这些 item 仍是只读 read-model recommendation，
 不是 runtime-plane lifecycle mutation，也不是新的 workflow truth source。
 owner `operatorLibraryId` 的解析顺序是：优先使用当前 catalog 的
 `operatorRef -> operatorLibraryId`，缺失时回退到 draft/publication summary 从 dependency
@@ -2048,7 +2053,12 @@ transition request 可携带 `expectedRevision`；supersede 还可携带
 同一面板还会只读消费 adapter activation、rollout observation 和 executable lowering integration
 list endpoint，按 `operatorRef`、`bindingId`、`activationId`、lifecycle state 和 rollout state 展示 Runtime
 Evidence Chain；这些行只表达 runtime-plane 事实链和 promotion blocker 位置，不改写 graph artifact、
-operator definition 或 readiness。
+operator definition 或 readiness。`bloge.visualAssetOverview.v1.runtimeEvidence.evidenceChainHealthCounts`
+把同一事实链归一化为 `complete`、`partial`、`missing-activation`、`missing-integration`、
+`orphan-activation`、`orphan-integration`、`failed-record` 和 `rollout-risk` 条件计数，供浏览器和外部
+control-plane triage 复用；`rolloutSignalCounts` / `breachedRolloutSignalCounts` 则把 runtime-plane
+guardrail 信号转成可分组风险来源。这些 map 仍是只读派生结果，不是关闭 requirement 或推进 executable
+readiness 的状态来源。
 bind、supersede 和 unbind 都支持 lifecycle exact replay：当请求的
 `actor/reason/changeSource/changeSummary/replacementBindingId` 与最后一次已持久化 lifecycle event 完全匹配，
 且目标状态和关联 binding lineage 仍一致时，服务端返回 idempotent `200 OK`，不会追加第二条 event 或再次

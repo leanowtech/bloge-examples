@@ -29,6 +29,7 @@ import java.util.Locale;
  * @param rolloutPhase rollout phase label from the runtime system
  * @param rollbackTriggered whether this observation says rollback was triggered
  * @param rollbackSignal observed metric, alert, SLO, or manual signal that triggered rollback
+ * @param rolloutSignals structured rollout guardrail signals observed by the runtime system
  * @param observedBy principal or service that emitted the observation
  * @param changeSource source system or workflow
  * @param reason human-readable observation reason
@@ -56,6 +57,7 @@ public record VisualRuntimeRolloutObservation(
         String rolloutPhase,
         boolean rollbackTriggered,
         String rollbackSignal,
+        List<RolloutSignal> rolloutSignals,
         String observedBy,
         String changeSource,
         String reason,
@@ -93,6 +95,7 @@ public record VisualRuntimeRolloutObservation(
         trafficPercent = Math.max(0, Math.min(100, trafficPercent));
         rolloutPhase = normalizeState(rolloutPhase, "");
         rollbackSignal = rollbackSignal == null ? "" : rollbackSignal.trim();
+        rolloutSignals = rolloutSignals == null ? List.of() : List.copyOf(rolloutSignals);
         observedBy = observedBy == null ? "" : observedBy.trim();
         changeSource = changeSource == null ? "" : changeSource.trim();
         reason = reason == null ? "" : reason.trim();
@@ -100,6 +103,35 @@ public record VisualRuntimeRolloutObservation(
         observedAt = observedAt == null ? Instant.EPOCH : observedAt;
         createdAt = createdAt == null ? Instant.EPOCH : createdAt;
         updatedAt = updatedAt == null ? createdAt : updatedAt;
+    }
+
+    /**
+     * Structured guardrail signal attached to a rollout observation.
+     *
+     * @param name stable signal name such as p95-latency, error-rate, or golden-regression
+     * @param kind signal category such as metric, slo, alert, golden, or manual
+     * @param observedValue optional observed numeric value
+     * @param threshold optional threshold numeric value
+     * @param comparator comparison operator such as <=, >=, lt, gt, or eq
+     * @param unit optional measurement unit
+     * @param breached true when the signal breached its guardrail
+     * @param summary human-readable signal summary
+     */
+    public record RolloutSignal(String name,
+                                String kind,
+                                Double observedValue,
+                                Double threshold,
+                                String comparator,
+                                String unit,
+                                boolean breached,
+                                String summary) {
+        public RolloutSignal {
+            name = normalizeState(name, "");
+            kind = normalizeState(kind, "");
+            comparator = comparator == null ? "" : comparator.trim().toLowerCase(Locale.ROOT);
+            unit = unit == null ? "" : unit.trim();
+            summary = summary == null ? "" : summary.trim();
+        }
     }
 
     /**
@@ -145,6 +177,7 @@ public record VisualRuntimeRolloutObservation(
                 validation == null ? "" : validation.rolloutPhase(),
                 validation != null && validation.rollbackTriggered(),
                 validation == null ? "" : validation.rollbackSignal(),
+                validation == null ? List.of() : validation.rolloutSignals(),
                 validation == null ? "" : validation.observedBy(),
                 request == null ? "" : request.changeSource(),
                 validation == null ? "" : validation.reason(),
@@ -187,6 +220,7 @@ public record VisualRuntimeRolloutObservation(
                 rolloutPhase,
                 rollbackTriggered,
                 rollbackSignal,
+                rolloutSignals,
                 observedBy,
                 changeSource,
                 reason,

@@ -43,6 +43,7 @@ import java.util.Set;
  * @param observationState in-progress, healthy, degraded, failed, rolled-back, or completed
  * @param rollbackTriggered whether rollback was triggered by this observation
  * @param rollbackSignal concrete rollback signal when rollback was triggered
+ * @param rolloutSignals structured rollout guardrail signals observed by the runtime system
  * @param observedBy principal or service that emitted the observation
  * @param reason human-readable observation reason
  * @param diagnostics structured validation diagnostics
@@ -72,6 +73,7 @@ public record VisualRuntimeRolloutObservationValidation(
         String observationState,
         boolean rollbackTriggered,
         String rollbackSignal,
+        List<VisualRuntimeRolloutObservation.RolloutSignal> rolloutSignals,
         String observedBy,
         String reason,
         List<VisualDiagnostic> diagnostics
@@ -117,6 +119,7 @@ public record VisualRuntimeRolloutObservationValidation(
                 observationState,
                 VisualRuntimeRolloutObservation.STATE_IN_PROGRESS);
         rollbackSignal = rollbackSignal == null ? "" : rollbackSignal.trim();
+        rolloutSignals = rolloutSignals == null ? List.of() : List.copyOf(rolloutSignals);
         observedBy = observedBy == null ? "" : observedBy.trim();
         reason = reason == null ? "" : reason.trim();
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
@@ -141,6 +144,7 @@ public record VisualRuntimeRolloutObservationValidation(
      * @param observationState in-progress, healthy, degraded, failed, rolled-back, or completed
      * @param rollbackTriggered whether rollback was triggered by this observation
      * @param rollbackSignal concrete rollback signal when rollback was triggered
+     * @param rolloutSignals structured rollout guardrail signals observed by the runtime system
      * @param observedBy principal or service that emitted the observation
      * @param changeSource source system or workflow
      * @param reason human-readable observation reason
@@ -162,6 +166,7 @@ public record VisualRuntimeRolloutObservationValidation(
             String observationState,
             boolean rollbackTriggered,
             String rollbackSignal,
+            List<VisualRuntimeRolloutObservation.RolloutSignal> rolloutSignals,
             String observedBy,
             String changeSource,
             String reason,
@@ -186,6 +191,7 @@ public record VisualRuntimeRolloutObservationValidation(
                     observationState,
                     VisualRuntimeRolloutObservation.STATE_IN_PROGRESS);
             rollbackSignal = rollbackSignal == null ? "" : rollbackSignal.trim();
+            rolloutSignals = rolloutSignals == null ? List.of() : List.copyOf(rolloutSignals);
             observedBy = observedBy == null ? "" : observedBy.trim();
             changeSource = changeSource == null ? "" : changeSource.trim();
             reason = reason == null ? "" : reason.trim();
@@ -225,6 +231,7 @@ public record VisualRuntimeRolloutObservationValidation(
                 VisualRuntimeRolloutObservation.STATE_IN_PROGRESS,
                 false,
                 "",
+                List.of(),
                 "",
                 "",
                 List.of(VisualDiagnostic.error(
@@ -296,6 +303,7 @@ public record VisualRuntimeRolloutObservationValidation(
                 request.observationState(),
                 request.rollbackTriggered(),
                 request.rollbackSignal(),
+                request.rolloutSignals(),
                 request.observedBy(),
                 request.reason(),
                 diagnostics
@@ -454,6 +462,23 @@ public record VisualRuntimeRolloutObservationValidation(
                         "/rollbackSignal"));
             }
         }
+        for (int index = 0; index < request.rolloutSignals().size(); index++) {
+            VisualRuntimeRolloutObservation.RolloutSignal signal = request.rolloutSignals().get(index);
+            if (signal == null || signal.name().isBlank()) {
+                diagnostics.add(VisualDiagnostic.warning(
+                        "visual.runtimeRolloutObservation.rolloutSignalNameMissing",
+                        "Runtime rollout observation signal should include a stable name for aggregation.",
+                        "/rolloutSignals/%d/name".formatted(index)));
+            }
+        }
+        if (riskyObservation(request) && request.rolloutSignals().stream()
+                .filter(signal -> signal != null)
+                .noneMatch(VisualRuntimeRolloutObservation.RolloutSignal::breached)) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeRolloutObservation.breachedSignalMissing",
+                    "Risky rollout observations should include at least one breached structured rollout signal.",
+                    "/rolloutSignals"));
+        }
         if (request.observedBy().isBlank()) {
             diagnostics.add(VisualDiagnostic.error(
                     "visual.runtimeRolloutObservation.observedByMissing",
@@ -472,6 +497,13 @@ public record VisualRuntimeRolloutObservationValidation(
                     "Runtime rollout observation requires non-empty rollout evidence.",
                     "/evidence"));
         }
+    }
+
+    private static boolean riskyObservation(Request request) {
+        return request.rollbackTriggered()
+                || VisualRuntimeRolloutObservation.STATE_DEGRADED.equals(request.observationState())
+                || VisualRuntimeRolloutObservation.STATE_FAILED.equals(request.observationState())
+                || VisualRuntimeRolloutObservation.STATE_ROLLED_BACK.equals(request.observationState());
     }
 
     private static void addMismatch(String field,

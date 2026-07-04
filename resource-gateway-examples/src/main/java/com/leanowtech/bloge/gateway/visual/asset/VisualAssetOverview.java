@@ -704,6 +704,7 @@ public record VisualAssetOverview(
      * @param orphanActiveActivationCount active activations whose binding is missing, inactive, or revision/fingerprint mismatched
      * @param orphanActiveIntegrationCount active integrations whose activation is missing, inactive, or revision/fingerprint mismatched
      * @param failedEvidenceRecordCount failed records across implementation, activation, rollout, and integration evidence
+     * @param evidenceChainHealthCounts normalized runtime evidence chain health condition counts
      * @param implementationStateCounts implementation records by lifecycle state
      * @param activationStateCounts adapter activation records by lifecycle state
      * @param rolloutStateCounts rollout observations by state
@@ -714,6 +715,8 @@ public record VisualAssetOverview(
      * @param adapterKindCounts evidence records by adapter kind
      * @param runtimeEnvironmentCounts runtime evidence records by runtime environment
      * @param loweringModeCounts executable lowering integration records by lowering mode
+     * @param rolloutSignalCounts rollout observation guardrail signals by signal name
+     * @param breachedRolloutSignalCounts breached rollout observation guardrail signals by signal name
      */
     public record RuntimeEvidenceAssets(
             int implementationBindingCount,
@@ -740,6 +743,7 @@ public record VisualAssetOverview(
             int orphanActiveActivationCount,
             int orphanActiveIntegrationCount,
             int failedEvidenceRecordCount,
+            Map<String, Integer> evidenceChainHealthCounts,
             Map<String, Integer> implementationStateCounts,
             Map<String, Integer> activationStateCounts,
             Map<String, Integer> rolloutStateCounts,
@@ -749,9 +753,12 @@ public record VisualAssetOverview(
             Map<String, Integer> activationIdCounts,
             Map<String, Integer> adapterKindCounts,
             Map<String, Integer> runtimeEnvironmentCounts,
-            Map<String, Integer> loweringModeCounts
+            Map<String, Integer> loweringModeCounts,
+            Map<String, Integer> rolloutSignalCounts,
+            Map<String, Integer> breachedRolloutSignalCounts
     ) {
         public RuntimeEvidenceAssets {
+            evidenceChainHealthCounts = immutableCounts(evidenceChainHealthCounts);
             implementationStateCounts = immutableCounts(implementationStateCounts);
             activationStateCounts = immutableCounts(activationStateCounts);
             rolloutStateCounts = immutableCounts(rolloutStateCounts);
@@ -762,6 +769,8 @@ public record VisualAssetOverview(
             adapterKindCounts = immutableCounts(adapterKindCounts);
             runtimeEnvironmentCounts = immutableCounts(runtimeEnvironmentCounts);
             loweringModeCounts = immutableCounts(loweringModeCounts);
+            rolloutSignalCounts = immutableCounts(rolloutSignalCounts);
+            breachedRolloutSignalCounts = immutableCounts(breachedRolloutSignalCounts);
         }
 
         static RuntimeEvidenceAssets from(
@@ -792,6 +801,8 @@ public record VisualAssetOverview(
             Map<String, Integer> adapterKinds = new LinkedHashMap<>();
             Map<String, Integer> runtimeEnvironments = new LinkedHashMap<>();
             Map<String, Integer> loweringModes = new LinkedHashMap<>();
+            Map<String, Integer> rolloutSignals = new LinkedHashMap<>();
+            Map<String, Integer> breachedRolloutSignals = new LinkedHashMap<>();
             Map<String, VisualRuntimeBindingImplementationBinding> activeBindingsById = new LinkedHashMap<>();
             Map<String, VisualRuntimeAdapterActivation> activeActivationsById = new LinkedHashMap<>();
             Map<String, VisualRuntimeAdapterActivation> activeActivationsByBindingId = new LinkedHashMap<>();
@@ -846,6 +857,7 @@ public record VisualAssetOverview(
             int failedRolloutObservationCount = 0;
             int rolledBackRolloutObservationCount = 0;
             int rollbackTriggeredObservationCount = 0;
+            int rolloutRiskObservationCount = 0;
             for (VisualRuntimeRolloutObservation observation : safeObservations) {
                 incrementNormalized(rolloutStates, observation.state());
                 incrementText(operatorRefs, observation.operatorRef());
@@ -862,6 +874,25 @@ public record VisualAssetOverview(
                 }
                 if (observation.rollbackTriggered()) {
                     rollbackTriggeredObservationCount++;
+                }
+                boolean signalBreached = observation.rolloutSignals().stream()
+                        .filter(signal -> signal != null)
+                        .anyMatch(VisualRuntimeRolloutObservation.RolloutSignal::breached);
+                if (VisualRuntimeRolloutObservation.STATE_DEGRADED.equals(observation.state())
+                        || VisualRuntimeRolloutObservation.STATE_FAILED.equals(observation.state())
+                        || VisualRuntimeRolloutObservation.STATE_ROLLED_BACK.equals(observation.state())
+                        || observation.rollbackTriggered()
+                        || signalBreached) {
+                    rolloutRiskObservationCount++;
+                }
+                for (VisualRuntimeRolloutObservation.RolloutSignal signal : observation.rolloutSignals()) {
+                    if (signal == null || signal.name().isBlank()) {
+                        continue;
+                    }
+                    incrementNormalized(rolloutSignals, signal.name());
+                    if (signal.breached()) {
+                        incrementNormalized(breachedRolloutSignals, signal.name());
+                    }
                 }
             }
 
@@ -926,6 +957,15 @@ public record VisualAssetOverview(
                     + failedAdapterActivationCount
                     + failedRolloutObservationCount
                     + failedExecutableLoweringIntegrationCount;
+            Map<String, Integer> evidenceChainHealth = evidenceChainHealthCounts(
+                    completeEvidenceChainCount,
+                    activeBindingMissingActivationCount,
+                    activeActivationMissingIntegrationCount,
+                    orphanActiveActivationCount,
+                    orphanActiveIntegrationCount,
+                    failedEvidenceRecordCount,
+                    rolloutRiskObservationCount
+            );
 
             return new RuntimeEvidenceAssets(
                     safeBindings.size(),
@@ -952,6 +992,7 @@ public record VisualAssetOverview(
                     orphanActiveActivationCount,
                     orphanActiveIntegrationCount,
                     failedEvidenceRecordCount,
+                    evidenceChainHealth,
                     implementationStates,
                     activationStates,
                     rolloutStates,
@@ -961,8 +1002,38 @@ public record VisualAssetOverview(
                     activationIds,
                     adapterKinds,
                     runtimeEnvironments,
-                    loweringModes
+                    loweringModes,
+                    rolloutSignals,
+                    breachedRolloutSignals
             );
+        }
+
+        private static Map<String, Integer> evidenceChainHealthCounts(int completeEvidenceChainCount,
+                                                                      int activeBindingMissingActivationCount,
+                                                                      int activeActivationMissingIntegrationCount,
+                                                                      int orphanActiveActivationCount,
+                                                                      int orphanActiveIntegrationCount,
+                                                                      int failedEvidenceRecordCount,
+                                                                      int rolloutRiskObservationCount) {
+            Map<String, Integer> counts = new LinkedHashMap<>();
+            putPositive(counts, "complete", completeEvidenceChainCount);
+            putPositive(counts, "partial", activeBindingMissingActivationCount
+                    + activeActivationMissingIntegrationCount
+                    + orphanActiveActivationCount
+                    + orphanActiveIntegrationCount);
+            putPositive(counts, "missing-activation", activeBindingMissingActivationCount);
+            putPositive(counts, "missing-integration", activeActivationMissingIntegrationCount);
+            putPositive(counts, "orphan-activation", orphanActiveActivationCount);
+            putPositive(counts, "orphan-integration", orphanActiveIntegrationCount);
+            putPositive(counts, "failed-record", failedEvidenceRecordCount);
+            putPositive(counts, "rollout-risk", rolloutRiskObservationCount);
+            return counts;
+        }
+
+        private static void putPositive(Map<String, Integer> counts, String key, int value) {
+            if (value > 0) {
+                counts.put(key, value);
+            }
         }
 
         static RuntimeEvidenceAssets empty() {
@@ -1696,11 +1767,17 @@ public record VisualAssetOverview(
             return;
         }
         String state = normalizeFacetValue(observation.state());
+        List<String> breachedSignalNames = observation.rolloutSignals().stream()
+                .filter(signal -> signal != null && signal.breached() && !signal.name().isBlank())
+                .map(VisualRuntimeRolloutObservation.RolloutSignal::name)
+                .distinct()
+                .toList();
         boolean failed = VisualRuntimeRolloutObservation.STATE_FAILED.equals(state)
                 || VisualRuntimeRolloutObservation.STATE_ROLLED_BACK.equals(state);
         boolean risky = failed
                 || VisualRuntimeRolloutObservation.STATE_DEGRADED.equals(state)
-                || observation.rollbackTriggered();
+                || observation.rollbackTriggered()
+                || !breachedSignalNames.isEmpty();
         if (!risky) {
             return;
         }
@@ -1725,10 +1802,21 @@ public record VisualAssetOverview(
                         .formatted(
                                 observation.observationId(),
                                 state,
-                                observation.rollbackTriggered() ? " with rollback triggered" : "",
+                                rolloutRiskSuffix(observation.rollbackTriggered(), breachedSignalNames),
                                 observation.operatorRef()),
                 recommendedAction
         );
+    }
+
+    private static String rolloutRiskSuffix(boolean rollbackTriggered, List<String> breachedSignalNames) {
+        List<String> suffixes = new ArrayList<>();
+        if (rollbackTriggered) {
+            suffixes.add("rollback triggered");
+        }
+        if (breachedSignalNames != null && !breachedSignalNames.isEmpty()) {
+            suffixes.add("breached signals %s".formatted(String.join(", ", breachedSignalNames)));
+        }
+        return suffixes.isEmpty() ? "" : " with " + String.join(" and ", suffixes);
     }
 
     private static void addRuntimeEvidenceAction(List<ActionItem> items,

@@ -175,6 +175,9 @@ class VisualAssetOverviewControllerTest {
                 .containsEntry("bound", 1);
         assertThat(boundOnlyOverview.runtimeEvidence().operatorRefCounts())
                 .containsEntry("risk:eligibility", 1);
+        assertThat(boundOnlyOverview.runtimeEvidence().evidenceChainHealthCounts())
+                .containsEntry("partial", 1)
+                .containsEntry("missing-activation", 1);
 
         var activationResponse = fixture.controller().submitRuntimeAdapterActivation(
                 adapterActivationRequest(binding, "risk-eligibility-prod-active"));
@@ -186,6 +189,9 @@ class VisualAssetOverviewControllerTest {
         assertThat(activationOnlyOverview.runtimeEvidence().activeAdapterActivationCount()).isEqualTo(1);
         assertThat(activationOnlyOverview.runtimeEvidence().activeActivationMissingIntegrationCount()).isEqualTo(1);
         assertThat(activationOnlyOverview.runtimeEvidence().completeEvidenceChainCount()).isZero();
+        assertThat(activationOnlyOverview.runtimeEvidence().evidenceChainHealthCounts())
+                .containsEntry("partial", 1)
+                .containsEntry("missing-integration", 1);
 
         var rolloutResponse = fixture.controller().submitRuntimeRolloutObservation(
                 rolloutObservationRequest(
@@ -220,6 +226,15 @@ class VisualAssetOverviewControllerTest {
         assertThat(completeOverview.runtimeEvidence().adapterKindCounts()).containsEntry("native", 3);
         assertThat(completeOverview.runtimeEvidence().runtimeEnvironmentCounts()).containsEntry("prod", 3);
         assertThat(completeOverview.runtimeEvidence().loweringModeCounts()).containsEntry("native", 1);
+        assertThat(completeOverview.runtimeEvidence().evidenceChainHealthCounts())
+                .containsEntry("complete", 1)
+                .containsEntry("rollout-risk", 1)
+                .doesNotContainKey("partial")
+                .doesNotContainKey("failed-record");
+        assertThat(completeOverview.runtimeEvidence().rolloutSignalCounts())
+                .containsEntry("error-rate", 1);
+        assertThat(completeOverview.runtimeEvidence().breachedRolloutSignalCounts())
+                .containsEntry("error-rate", 1);
     }
 
     @Test
@@ -347,6 +362,66 @@ class VisualAssetOverviewControllerTest {
                 "INTEGRATE_EXECUTABLE_LOWERING",
                 "runtime-evidence").actionQueue().total())
                 .isZero();
+    }
+
+    @Test
+    void overviewRoutesBreachedRolloutSignalsThroughActionQueue() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+
+        var rolloutResponse = fixture.controller().submitRuntimeRolloutObservation(
+                rolloutObservationRequest(
+                        activation,
+                        "risk-rollout-golden-signal",
+                        "canary",
+                        VisualRuntimeRolloutObservation.STATE_HEALTHY,
+                        10,
+                        false,
+                        "",
+                        List.of(new VisualRuntimeRolloutObservation.RolloutSignal(
+                                "golden-regression",
+                                "golden",
+                                1.0,
+                                0.0,
+                                "==",
+                                "failures",
+                                true,
+                                "Golden regression suite reported one failure."))));
+        assertThat(rolloutResponse.getStatusCode().value()).isEqualTo(201);
+
+        VisualAssetOverview overview = fixture.controller().overview(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "warning",
+                "REVIEW_RUNTIME_ROLLOUT_RISK",
+                "runtime-evidence");
+
+        assertThat(overview.runtimeEvidence().evidenceChainHealthCounts())
+                .containsEntry("rollout-risk", 1);
+        assertThat(overview.runtimeEvidence().breachedRolloutSignalCounts())
+                .containsEntry("golden-regression", 1);
+        assertThat(overview.actionQueue().total()).isEqualTo(1);
+        assertThat(overview.actionQueue().items())
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.targetId()).isEqualTo("rollout:risk-rollout-golden-signal");
+                    assertThat(item.readinessState()).isEqualTo("runtime-rollout-risk");
+                    assertThat(item.summary()).contains("healthy").contains("breached signals golden-regression");
+                    assertThat(item.recommendedAction()).contains("canary").contains("readiness");
+                });
     }
 
     @Test
@@ -3145,6 +3220,13 @@ class VisualAssetOverviewControllerTest {
             assertThat(evidence.kind()).isEqualTo("canary-metric");
             assertThat(evidence.ref()).isEqualTo("rollout:risk-rollout-canary-5");
         });
+        assertThat(observation.rolloutSignals()).singleElement().satisfies(signal -> {
+            assertThat(signal.name()).isEqualTo("p95-latency");
+            assertThat(signal.kind()).isEqualTo("metric");
+            assertThat(signal.observedValue()).isEqualTo(120.0);
+            assertThat(signal.threshold()).isEqualTo(250.0);
+            assertThat(signal.breached()).isFalse();
+        });
         assertThat(fixture.controller().runtimeRolloutObservations("", "", "", ""))
                 .singleElement()
                 .isEqualTo(observation);
@@ -3205,6 +3287,10 @@ class VisualAssetOverviewControllerTest {
         assertThat(observation.level()).isEqualTo("error");
         assertThat(observation.rollbackTriggered()).isTrue();
         assertThat(observation.rollbackSignal()).contains("error-rate");
+        assertThat(observation.rolloutSignals()).singleElement().satisfies(signal -> {
+            assertThat(signal.name()).isEqualTo("error-rate");
+            assertThat(signal.breached()).isTrue();
+        });
         assertThat(fixture.controller().runtimeRolloutObservations(
                 activation.activationId(), binding.bindingId(), "risk:eligibility", "rolled-back"))
                 .singleElement()
@@ -5383,6 +5469,36 @@ class VisualAssetOverviewControllerTest {
             int trafficPercent,
             boolean rollbackTriggered,
             String rollbackSignal) {
+        return rolloutObservationRequest(
+                activation,
+                observationId,
+                rolloutStrategy,
+                observationState,
+                trafficPercent,
+                rollbackTriggered,
+                rollbackSignal,
+                List.of(new VisualRuntimeRolloutObservation.RolloutSignal(
+                        rollbackTriggered ? "error-rate" : "p95-latency",
+                        "metric",
+                        rollbackTriggered ? 3.2 : 120.0,
+                        rollbackTriggered ? 2.0 : 250.0,
+                        "<=",
+                        rollbackTriggered ? "%" : "ms",
+                        rollbackTriggered,
+                        rollbackTriggered
+                                ? "Error-rate guardrail breached during rollout."
+                                : "Latency guardrail stayed within threshold.")));
+    }
+
+    private static VisualRuntimeRolloutObservationValidation.Request rolloutObservationRequest(
+            VisualRuntimeAdapterActivation activation,
+            String observationId,
+            String rolloutStrategy,
+            String observationState,
+            int trafficPercent,
+            boolean rollbackTriggered,
+            String rollbackSignal,
+            List<VisualRuntimeRolloutObservation.RolloutSignal> rolloutSignals) {
         return new VisualRuntimeRolloutObservationValidation.Request(
                 VisualRuntimeRolloutObservationValidation.REQUEST_SCHEMA_VERSION,
                 observationId,
@@ -5398,6 +5514,7 @@ class VisualAssetOverviewControllerTest {
                 observationState,
                 rollbackTriggered,
                 rollbackSignal,
+                rolloutSignals,
                 "runtime-platform",
                 "visual-canvas-test",
                 rollbackTriggered ? "Rollback trigger was observed." : "Rollout observation was collected.",
