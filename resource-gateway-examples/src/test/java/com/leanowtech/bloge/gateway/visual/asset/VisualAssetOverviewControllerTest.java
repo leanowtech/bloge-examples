@@ -3399,6 +3399,10 @@ class VisualAssetOverviewControllerTest {
                 10, 0, "", "", activation.activationId(), "", "", "", false);
         VisualRuntimeEvidenceWindow bySignal = fixture.controller().runtimeEvidenceWindow(
                 10, 0, "", "", "", "", "", "p95_latency", false);
+        VisualRuntimeEvidenceWindow byKind = fixture.controller().runtimeEvidenceWindow(
+                10, 0, "rollout-observation", "", "", "", "", "", "", false);
+        VisualRuntimeEvidenceWindow bySignalAdapterKind = fixture.controller().runtimeEvidenceWindow(
+                10, 0, "adapter_activation", "", "", "", "", "", "p95_latency", false);
         VisualRuntimeEvidenceWindow breachedOnly = fixture.controller().runtimeEvidenceWindow(
                 10, 0, "", "", "", "", "", "p95-latency", true);
         VisualRuntimeEvidenceWindow lifecycleFiltered = fixture.controller().runtimeEvidenceWindow(
@@ -3445,6 +3449,15 @@ class VisualAssetOverviewControllerTest {
         assertThat(bySignal.rolloutObservations()).singleElement().isEqualTo(observation);
         assertThat(bySignal.adapterActivations()).singleElement().isEqualTo(activation);
         assertThat(bySignal.executableLoweringIntegrations()).singleElement().isEqualTo(integration);
+        assertThat(byKind.filter().evidenceKind()).isEqualTo("rollout-observation");
+        assertThat(byKind.total()).isEqualTo(1);
+        assertThat(byKind.kindCounts()).containsOnly(Map.entry("rollout-observation", 1));
+        assertThat(byKind.rolloutObservations()).singleElement().isEqualTo(observation);
+        assertThat(bySignalAdapterKind.filter().evidenceKind()).isEqualTo("adapter-activation");
+        assertThat(bySignalAdapterKind.filter().rolloutSignal()).isEqualTo("p95-latency");
+        assertThat(bySignalAdapterKind.total()).isEqualTo(1);
+        assertThat(bySignalAdapterKind.adapterActivations()).singleElement().isEqualTo(activation);
+        assertThat(bySignalAdapterKind.rolloutObservations()).isEmpty();
         assertThat(breachedOnly.filter().breachedOnly()).isTrue();
         assertThat(breachedOnly.total()).isZero();
         assertThat(breachedOnly.unfilteredTotal()).isEqualTo(4);

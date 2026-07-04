@@ -1461,6 +1461,7 @@ public class VisualAssetOverviewController {
      *
      * @param itemLimit maximum number of mixed evidence records to return
      * @param offset zero-based offset after filtering
+     * @param evidenceKind optional mixed evidence kind filter
      * @param operatorRef optional operator reference filter
      * @param bindingId optional implementation binding id filter
      * @param activationId optional adapter activation id filter
@@ -1474,6 +1475,7 @@ public class VisualAssetOverviewController {
     public VisualRuntimeEvidenceWindow runtimeEvidenceWindow(
             @RequestParam(defaultValue = "50") int itemLimit,
             @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "") String evidenceKind,
             @RequestParam(defaultValue = "") String operatorRef,
             @RequestParam(defaultValue = "") String bindingId,
             @RequestParam(defaultValue = "") String activationId,
@@ -1488,6 +1490,7 @@ public class VisualAssetOverviewController {
                 executableLoweringIntegrationRepository.all().stream().toList(),
                 itemLimit,
                 offset,
+                evidenceKind,
                 operatorRef,
                 bindingId,
                 activationId,
@@ -1496,6 +1499,29 @@ public class VisualAssetOverviewController {
                 rolloutSignal,
                 breachedOnly
         );
+    }
+
+    public VisualRuntimeEvidenceWindow runtimeEvidenceWindow(
+            int itemLimit,
+            int offset,
+            String operatorRef,
+            String bindingId,
+            String activationId,
+            String lifecycleState,
+            String rolloutState,
+            String rolloutSignal,
+            boolean breachedOnly) {
+        return runtimeEvidenceWindow(
+                itemLimit,
+                offset,
+                "",
+                operatorRef,
+                bindingId,
+                activationId,
+                lifecycleState,
+                rolloutState,
+                rolloutSignal,
+                breachedOnly);
     }
 
     /**

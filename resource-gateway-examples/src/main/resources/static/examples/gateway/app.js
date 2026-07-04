@@ -393,6 +393,13 @@ const VISUAL_RUNTIME_ROLLOUT_STATES = [
   ['rolled-back', 'Rolled back'],
   ['completed', 'Completed']
 ];
+const VISUAL_RUNTIME_EVIDENCE_KINDS = [
+  ['', 'All evidence'],
+  ['implementation-binding', 'Implementation binding'],
+  ['adapter-activation', 'Adapter activation'],
+  ['rollout-observation', 'Rollout observation'],
+  ['executable-lowering-integration', 'Executable lowering']
+];
 
 const state = {
   scenarios: [],
@@ -481,6 +488,7 @@ const state = {
   visualRuntimeEvidenceWindow: null,
   visualRuntimeEvidenceMessage: null,
   visualRuntimeEvidenceQuery: {
+    evidenceKind: '',
     operatorRef: '',
     bindingId: '',
     activationId: '',
@@ -1050,6 +1058,9 @@ function visualRuntimeEvidenceWindowUrl() {
 function visualRuntimeEvidenceParams(kind = '') {
   const params = new URLSearchParams();
   const query = normalizeVisualRuntimeEvidenceQuery(state.visualRuntimeEvidenceQuery);
+  if (query.evidenceKind && kind === 'runtime-evidence') {
+    params.set('evidenceKind', query.evidenceKind);
+  }
   if (query.operatorRef) {
     params.set('operatorRef', query.operatorRef);
   }
@@ -1201,6 +1212,7 @@ async function updateVisualRuntimeBindingImplementationQuery(patch = {}) {
 function normalizeVisualRuntimeEvidenceQuery(query = {}) {
   const limit = Math.max(1, Math.min(Number(query.limit || 12) || 12, 200));
   return {
+    evidenceKind: normalizeReadinessState(query.evidenceKind),
     operatorRef: String(query.operatorRef || '').trim(),
     bindingId: String(query.bindingId || '').trim(),
     activationId: String(query.activationId || '').trim(),
@@ -9071,6 +9083,7 @@ function visualRuntimeEvidenceControls(rows) {
   const offset = Number(evidenceWindow?.offset ?? query.offset) || 0;
   const pageSize = Number(evidenceWindow?.itemLimit || query.limit || 12) || 12;
   const hasFilter = Boolean(query.operatorRef
+    || query.evidenceKind
     || query.bindingId
     || query.activationId
     || query.lifecycleState
@@ -9080,6 +9093,7 @@ function visualRuntimeEvidenceControls(rows) {
     || offset
     || pageSize !== 12);
   const operatorCounts = evidenceWindow?.operatorRefCounts || visualRuntimeEvidenceCounts(rows, 'operatorRef');
+  const kindCounts = evidenceWindow?.kindCounts || visualRuntimeEvidenceCounts(rows, 'kind');
   const bindingCounts = evidenceWindow?.bindingIdCounts || visualRuntimeEvidenceCounts(rows, 'bindingId');
   const activationCounts = evidenceWindow?.activationIdCounts || visualRuntimeEvidenceCounts(rows, 'activationId');
   const signalCounts = query.breachedOnly
@@ -9087,6 +9101,12 @@ function visualRuntimeEvidenceControls(rows) {
     : (evidenceWindow?.rolloutSignalCounts || visualRuntimeEvidenceSignalCounts(rows, false));
   return `
     <div class="library-impact-controls">
+      <label>
+        <span>${escapeHtml('Kind')}</span>
+        <select id="runtime-evidence-kind" aria-label="Filter runtime evidence by kind">
+          ${visualRuntimeBindingOptionMarkup(VISUAL_RUNTIME_EVIDENCE_KINDS, query.evidenceKind, kindCounts)}
+        </select>
+      </label>
       <label>
         <span>${escapeHtml('Operator')}</span>
         <select id="runtime-evidence-operator-ref" aria-label="Filter runtime evidence by operator reference">
@@ -10075,6 +10095,13 @@ function attachVisualRuntimeBindingImplementationQueryHandlers(bindings) {
 }
 
 function attachVisualRuntimeEvidenceQueryHandlers() {
+  const evidenceKind = $('runtime-evidence-kind');
+  if (evidenceKind) {
+    evidenceKind.onchange = () => updateVisualRuntimeEvidenceQuery({
+      evidenceKind: evidenceKind.value,
+      offset: 0
+    });
+  }
   const operatorRef = $('runtime-evidence-operator-ref');
   if (operatorRef) {
     operatorRef.onchange = () => updateVisualRuntimeEvidenceQuery({
@@ -10150,6 +10177,7 @@ function attachVisualRuntimeEvidenceQueryHandlers() {
   const reset = $('runtime-evidence-reset');
   if (reset) {
     reset.onclick = () => updateVisualRuntimeEvidenceQuery({
+      evidenceKind: '',
       operatorRef: '',
       bindingId: '',
       activationId: '',
@@ -10216,6 +10244,7 @@ async function openVisualRuntimeEvidenceAction(item, context = null) {
       .find((candidate) => candidate?.bindingId === target.id) || null;
     state.activeVisualRuntimeBindingImplementation = binding;
     state.visualRuntimeEvidenceQuery = normalizeVisualRuntimeEvidenceQuery({
+      evidenceKind: 'implementation-binding',
       operatorRef,
       bindingId: target.id,
       activationId: '',
@@ -10237,6 +10266,9 @@ async function openVisualRuntimeEvidenceAction(item, context = null) {
   }
 
   state.visualRuntimeEvidenceQuery = normalizeVisualRuntimeEvidenceQuery({
+    evidenceKind: target.kind === 'activation'
+      ? 'adapter-activation'
+      : (target.kind === 'integration' ? 'executable-lowering-integration' : ''),
     operatorRef,
     bindingId: '',
     activationId: target.kind === 'activation' ? target.id : '',
@@ -10255,6 +10287,7 @@ async function openVisualRuntimeEvidenceAction(item, context = null) {
       ? breachedSignals[0]
       : '';
     state.visualRuntimeEvidenceQuery = normalizeVisualRuntimeEvidenceQuery({
+      evidenceKind: row.kind || '',
       operatorRef: row.operatorRef || operatorRef,
       bindingId: row.bindingId || '',
       activationId: row.activationId || '',

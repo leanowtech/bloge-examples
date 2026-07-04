@@ -423,6 +423,7 @@ class VisualAuthoringAppJsTest {
                 .contains("visualRuntimeEvidenceWindow: null")
                 .contains("visualRuntimeEvidenceMessage: null")
                 .contains("visualRuntimeEvidenceQuery: {")
+                .contains("evidenceKind: ''")
                 .contains("rolloutSignal: ''")
                 .contains("breachedOnly: false")
                 .contains("offset: 0")
@@ -461,6 +462,7 @@ class VisualAuthoringAppJsTest {
                 .contains("params.set('limit', String(query.limit))")
                 .contains("params.set('itemLimit', String(query.limit))")
                 .contains("params.set('offset', String(query.offset))")
+                .contains("params.set('evidenceKind', query.evidenceKind)")
                 .contains("params.set('targetKind', query.targetKind)")
                 .contains("params.set('artifactKind', query.artifactKind)")
                 .contains("params.set('operatorRef', query.operatorRef)")
@@ -551,6 +553,7 @@ class VisualAuthoringAppJsTest {
                 .contains("runtime-binding-implementation-state")
                 .contains("runtime-binding-implementation-refresh")
                 .contains("runtime-binding-implementation-reset")
+                .contains("runtime-evidence-kind")
                 .contains("runtime-evidence-operator-ref")
                 .contains("runtime-evidence-binding-id")
                 .contains("runtime-evidence-activation-id")
@@ -1819,6 +1822,7 @@ class VisualAuthoringAppJsTest {
                   URLSearchParams,
                   state: {
                     visualRuntimeEvidenceQuery: {
+                      evidenceKind: 'adapter_activation',
                       operatorRef: 'risk:eligibility',
                       bindingId: 'risk-eligibility-native-v1',
                       activationId: 'risk-eligibility-native-v1-prod',
@@ -1942,7 +1946,7 @@ class VisualAuthoringAppJsTest {
                   ['activation url', activationUrl, '/api/visual/assets/runtime-binding-requirements/adapter-activations?operatorRef=risk%3Aeligibility&bindingId=risk-eligibility-native-v1&state=active'],
                   ['rollout url', rolloutUrl, '/api/visual/assets/runtime-binding-requirements/rollout-observations?operatorRef=risk%3Aeligibility&bindingId=risk-eligibility-native-v1&activationId=risk-eligibility-native-v1-prod&state=healthy&rolloutSignal=error-rate&breachedOnly=true'],
                   ['integration url', integrationUrl, '/api/visual/assets/runtime-binding-requirements/executable-lowering-integrations?operatorRef=risk%3Aeligibility&activationId=risk-eligibility-native-v1-prod&state=active'],
-                  ['window url', windowUrl, '/api/visual/assets/runtime-binding-requirements/runtime-evidence?operatorRef=risk%3Aeligibility&bindingId=risk-eligibility-native-v1&activationId=risk-eligibility-native-v1-prod&lifecycleState=active&rolloutState=healthy&rolloutSignal=error-rate&breachedOnly=true&itemLimit=12&offset=0'],
+                  ['window url', windowUrl, '/api/visual/assets/runtime-binding-requirements/runtime-evidence?evidenceKind=adapter-activation&operatorRef=risk%3Aeligibility&bindingId=risk-eligibility-native-v1&activationId=risk-eligibility-native-v1-prod&lifecycleState=active&rolloutState=healthy&rolloutSignal=error-rate&breachedOnly=true&itemLimit=12&offset=0'],
                   ['row count', rows.length, 4],
                   ['first kind', rows[0].kind, 'implementation-binding'],
                   ['second kind', rows[1].kind, 'adapter-activation'],

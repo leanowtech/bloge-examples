@@ -1987,9 +1987,12 @@ schema-only draft 在目标 catalog 未就绪时仍可按源算子库归属交�
 `bloge.visualRuntimeEvidenceWindow.v1`，把 implementation binding、adapter activation、
 rollout observation 和 executable lowering integration 合成同一个可分页窗口。该窗口回显 `itemLimit/offset/hasMore/filter`，
 返回 filtered/unfiltered total、kind/operator/binding/activation/state/level counts，以及
-`rolloutSignalCounts` / `breachedRolloutSignalCounts`；`rolloutSignal` 或
-`breachedOnly=true` 查询会先命中 rollout observation，再只带同一 activation/binding/operator
-链路上的 implementation binding、activation 和 integration 上下文，避免大型 workspace 因一个 guardrail 过滤拉回全局无关证据。
+`rolloutSignalCounts` / `breachedRolloutSignalCounts`；也支持 `evidenceKind`
+过滤四类 fact：`implementation-binding`、`adapter-activation`、`rollout-observation`
+和 `executable-lowering-integration`。当 `evidenceKind` 与 `rolloutSignal` 或
+`breachedOnly=true` 组合时，服务端会先忽略 kind 命中 rollout observation，再只返回同一
+activation/binding/operator 链路上匹配 kind 的 evidence 上下文，避免大型 workspace 因一个
+guardrail 过滤拉回全局无关证据，也避免 kind 过滤提前切断 rollout 根事实。
 如果外部 runtime-plane 团队需要事实清单而不是 overview action recommendation，
 `GET /api/visual/assets/runtime-binding-requirements` 会返回
 `bloge.visualRuntimeBindingRequirements.v1`，按 active draft 和 immutable publication

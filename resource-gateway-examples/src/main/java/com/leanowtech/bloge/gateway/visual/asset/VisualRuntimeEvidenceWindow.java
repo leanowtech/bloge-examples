@@ -118,13 +118,47 @@ public record VisualRuntimeEvidenceWindow(
                                                    String rolloutState,
                                                    String rolloutSignal,
                                                    boolean breachedOnly) {
+        return from(
+                implementationBindings,
+                adapterActivations,
+                rolloutObservations,
+                executableLoweringIntegrations,
+                itemLimit,
+                offset,
+                "",
+                operatorRef,
+                bindingId,
+                activationId,
+                lifecycleState,
+                rolloutState,
+                rolloutSignal,
+                breachedOnly);
+    }
+
+    /**
+     * Builds a mixed evidence chain window from submitted runtime evidence facts.
+     */
+    public static VisualRuntimeEvidenceWindow from(List<VisualRuntimeBindingImplementationBinding> implementationBindings,
+                                                   List<VisualRuntimeAdapterActivation> adapterActivations,
+                                                   List<VisualRuntimeRolloutObservation> rolloutObservations,
+                                                   List<VisualExecutableLoweringIntegration> executableLoweringIntegrations,
+                                                   int itemLimit,
+                                                   int offset,
+                                                   String evidenceKind,
+                                                   String operatorRef,
+                                                   String bindingId,
+                                                   String activationId,
+                                                   String lifecycleState,
+                                                   String rolloutState,
+                                                   String rolloutSignal,
+                                                   boolean breachedOnly) {
         List<Entry> generated = generate(
                 implementationBindings,
                 adapterActivations,
                 rolloutObservations,
                 executableLoweringIntegrations);
-        Filter filter = new Filter(operatorRef, bindingId, activationId, lifecycleState, rolloutState, rolloutSignal,
-                breachedOnly);
+        Filter filter = new Filter(evidenceKind, operatorRef, bindingId, activationId, lifecycleState, rolloutState,
+                rolloutSignal, breachedOnly);
         List<Entry> filtered = filter.usesRolloutSignalFilter()
                 ? filterByRolloutSignalChain(generated, filter)
                 : generated.stream().filter(filter::matches).toList();
@@ -206,7 +240,7 @@ public record VisualRuntimeEvidenceWindow(
     private static List<Entry> filterByRolloutSignalChain(List<Entry> generated, Filter filter) {
         List<Entry> rolloutMatches = generated.stream()
                 .filter(entry -> entry.rolloutObservation() != null)
-                .filter(filter::matches)
+                .filter(filter::matchesRolloutSignalChainRoot)
                 .toList();
         Set<String> activationIds = new LinkedHashSet<>();
         Set<String> bindingIds = new LinkedHashSet<>();
@@ -225,7 +259,7 @@ public record VisualRuntimeEvidenceWindow(
         return generated.stream()
                 .filter(entry -> {
                     if (entry.rolloutObservation() != null) {
-                        return rolloutMatches.contains(entry);
+                        return rolloutMatches.contains(entry) && filter.matchesEvidenceKind(entry);
                     }
                     return filter.matchesIdentityAndKindState(entry)
                             && chainMatches(entry, activationIds, bindingIds, operatorRefs);
@@ -345,6 +379,18 @@ public record VisualRuntimeEvidenceWindow(
         return normalize(value).replace('_', '-');
     }
 
+    private static String normalizeEvidenceKind(String value) {
+        String normalized = normalize(value).replace('_', '-');
+        return switch (normalized) {
+            case "all", "runtime-evidence" -> "";
+            case "binding", "implementation" -> "implementation-binding";
+            case "activation", "adapter" -> "adapter-activation";
+            case "rollout" -> "rollout-observation";
+            case "integration", "lowering" -> "executable-lowering-integration";
+            default -> normalized;
+        };
+    }
+
     private static String safe(String value) {
         return value == null ? "" : value.trim();
     }
@@ -353,6 +399,7 @@ public record VisualRuntimeEvidenceWindow(
      * Normalized runtime evidence filter.
      */
     public record Filter(
+            String evidenceKind,
             String operatorRef,
             String bindingId,
             String activationId,
@@ -362,7 +409,8 @@ public record VisualRuntimeEvidenceWindow(
             boolean breachedOnly,
             boolean filtered
     ) {
-        public Filter(String operatorRef,
+        public Filter(String evidenceKind,
+                      String operatorRef,
                       String bindingId,
                       String activationId,
                       String lifecycleState,
@@ -370,6 +418,7 @@ public record VisualRuntimeEvidenceWindow(
                       String rolloutSignal,
                       boolean breachedOnly) {
             this(
+                    normalizeEvidenceKind(evidenceKind),
                     safe(operatorRef),
                     safe(bindingId),
                     safe(activationId),
@@ -377,7 +426,8 @@ public record VisualRuntimeEvidenceWindow(
                     normalize(rolloutState),
                     normalizeSignal(rolloutSignal),
                     breachedOnly,
-                    !safe(operatorRef).isBlank()
+                    !normalizeEvidenceKind(evidenceKind).isBlank()
+                            || !safe(operatorRef).isBlank()
                             || !safe(bindingId).isBlank()
                             || !safe(activationId).isBlank()
                             || !normalize(lifecycleState).isBlank()
@@ -388,13 +438,15 @@ public record VisualRuntimeEvidenceWindow(
         }
 
         public Filter {
+            evidenceKind = normalizeEvidenceKind(evidenceKind);
             operatorRef = safe(operatorRef);
             bindingId = safe(bindingId);
             activationId = safe(activationId);
             lifecycleState = normalize(lifecycleState);
             rolloutState = normalize(rolloutState);
             rolloutSignal = normalizeSignal(rolloutSignal);
-            filtered = !operatorRef.isBlank()
+            filtered = !evidenceKind.isBlank()
+                    || !operatorRef.isBlank()
                     || !bindingId.isBlank()
                     || !activationId.isBlank()
                     || !lifecycleState.isBlank()
@@ -404,7 +456,7 @@ public record VisualRuntimeEvidenceWindow(
         }
 
         static Filter all() {
-            return new Filter("", "", "", "", "", "", false);
+            return new Filter("", "", "", "", "", "", "", false);
         }
 
         boolean usesRolloutSignalFilter() {
@@ -425,6 +477,9 @@ public record VisualRuntimeEvidenceWindow(
             if (entry == null) {
                 return false;
             }
+            if (!matchesEvidenceKind(entry)) {
+                return false;
+            }
             if (!operatorRef.isBlank() && !entry.operatorRef().equals(operatorRef)) {
                 return false;
             }
@@ -438,6 +493,29 @@ public record VisualRuntimeEvidenceWindow(
                 return lifecycleState.isBlank() || entry.state().equals(lifecycleState);
             }
             return rolloutState.isBlank() || entry.state().equals(rolloutState);
+        }
+
+        boolean matchesRolloutSignalChainRoot(Entry entry) {
+            if (entry == null || entry.rolloutObservation() == null) {
+                return false;
+            }
+            if (!operatorRef.isBlank() && !entry.operatorRef().equals(operatorRef)) {
+                return false;
+            }
+            if (!bindingId.isBlank() && !entry.bindingId().equals(bindingId)) {
+                return false;
+            }
+            if (!activationId.isBlank() && !entry.activationId().equals(activationId)) {
+                return false;
+            }
+            if (!rolloutState.isBlank() && !entry.state().equals(rolloutState)) {
+                return false;
+            }
+            return matchesRolloutSignal(entry.rolloutObservation());
+        }
+
+        boolean matchesEvidenceKind(Entry entry) {
+            return entry != null && (evidenceKind.isBlank() || evidenceKind.equals(entry.kind()));
         }
 
         private boolean matchesRolloutSignal(VisualRuntimeRolloutObservation observation) {
