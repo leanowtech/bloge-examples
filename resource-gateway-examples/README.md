@@ -675,6 +675,9 @@ candidate requests to the currently visible source rows, with Prev/Next source
 controls for later endpoints. Candidate rows render a bounded first window with
 a visible overflow chip; row-level Prev/Next controls and arrow-key navigation let
 authors continue through later candidates without rendering every chip at once.
+Those rows and controls also expose stable ARIA labels, controlled-region links,
+live range summaries, and active-descendant focus state so keyboard navigation
+has a machine-readable state contract, not only visual chip movement.
 Server-reviewed candidates from the active window are ordered ahead of local
 fallback rows; the click path still runs connection check before mutating the
 draft.

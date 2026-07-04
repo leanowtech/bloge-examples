@@ -14499,7 +14499,11 @@ function renderSelectedOperatorEditor() {
   }
 
   for (const button of target.querySelectorAll('[data-connectability-action="connect"]')) {
+    button.addEventListener('focus', () => {
+      activateNodeConnectabilityTargetForA11y(button);
+    });
     button.addEventListener('click', () => {
+      activateNodeConnectabilityTargetForA11y(button);
       connectNodeConnectabilityFromButton(button);
     });
   }
@@ -15263,16 +15267,29 @@ function renderNodeConnectabilityRow(sourceSummary, filter = nodeConnectabilityA
   const window = nodeConnectabilityDisplayTargetWindow(sourceSummary, filter);
   const targets = window.targets;
   const overflowSummary = nodeConnectabilityDisplayOverflowSummary(sourceSummary, filter);
-  const windowControls = renderNodeConnectabilityDisplayWindowControls(window, overflowSummary);
+  const rowId = nodeConnectabilityRowDomId(sourceSummary.source);
+  const labelId = `${rowId}-label`;
+  const summaryId = `${rowId}-summary`;
+  const targetsId = `${rowId}-targets`;
+  const windowControls = renderNodeConnectabilityDisplayWindowControls(window, overflowSummary, targetsId);
   const targetRows = targets.length
-    ? `${targets.map((entry) => renderNodeConnectabilityTarget(sourceSummary.source, entry)).join('')}${windowControls}`
-    : `<span class="node-connectability-chip info">${filterActive ? 'No matching targets' : 'No canvas targets'}</span>`;
+    ? `${targets.map((entry, index) => renderNodeConnectabilityTarget(sourceSummary.source, entry, window, index)).join('')}${windowControls}`
+    : `<span class="node-connectability-chip info" role="status">${filterActive ? 'No matching targets' : 'No canvas targets'}</span>`;
   return `
-    <div class="node-connectability-row ${escapeHtml(nodeConnectabilitySourceLevel(sourceSummary))}">
-      <strong>${escapeHtml(endpointLabel(sourceSummary.source))}</strong>
-      <span>${escapeHtml(nodeConnectabilitySourceSummary(sourceSummary))}</span>
+    <div
+      class="node-connectability-row ${escapeHtml(nodeConnectabilitySourceLevel(sourceSummary))}"
+      role="group"
+      aria-labelledby="${escapeHtml(labelId)}"
+      aria-describedby="${escapeHtml(summaryId)}"
+    >
+      <strong id="${escapeHtml(labelId)}">${escapeHtml(endpointLabel(sourceSummary.source))}</strong>
+      <span id="${escapeHtml(summaryId)}">${escapeHtml(nodeConnectabilitySourceSummary(sourceSummary))}</span>
       <div
+        id="${escapeHtml(targetsId)}"
         class="node-connectability-targets"
+        role="group"
+        aria-label="Connectability targets for ${escapeHtml(endpointLabel(sourceSummary.source))}"
+        aria-describedby="${escapeHtml(summaryId)}"
         data-connectability-targets
         data-connectability-row-window-key="${escapeHtml(window.key)}"
       >${targetRows}</div>
@@ -15280,14 +15297,21 @@ function renderNodeConnectabilityRow(sourceSummary, filter = nodeConnectabilityA
   `;
 }
 
-function renderNodeConnectabilityDisplayWindowControls(window, overflowSummary = '') {
+function renderNodeConnectabilityDisplayWindowControls(window, overflowSummary = '', controlsTargetId = '') {
   if (!overflowSummary) {
     return '';
   }
+  const summaryId = nodeConnectabilityWindowSummaryDomId(window.key);
   const previousDisabled = window.hasPrevious ? '' : 'disabled';
   const nextDisabled = window.hasNext ? '' : 'disabled';
+  const controlsAttr = controlsTargetId ? ` aria-controls="${escapeHtml(controlsTargetId)}"` : '';
   return `
-    <span class="node-connectability-chip info node-connectability-overflow" data-connectability-overflow>${escapeHtml(overflowSummary)}</span>
+    <span
+      id="${escapeHtml(summaryId)}"
+      class="node-connectability-chip info node-connectability-overflow"
+      data-connectability-overflow
+      aria-live="polite"
+    >${escapeHtml(overflowSummary)}</span>
     <button
       type="button"
       class="node-connectability-chip info node-connectability-window-step"
@@ -15295,6 +15319,8 @@ function renderNodeConnectabilityDisplayWindowControls(window, overflowSummary =
       data-connectability-row-window-key="${escapeHtml(window.key)}"
       data-connectability-row-window-offset="${escapeHtml(window.previousOffset)}"
       aria-label="Show previous connectability targets"
+      aria-describedby="${escapeHtml(summaryId)}"
+      ${controlsAttr}
       ${previousDisabled}
     >Prev</button>
     <button
@@ -15304,9 +15330,34 @@ function renderNodeConnectabilityDisplayWindowControls(window, overflowSummary =
       data-connectability-row-window-key="${escapeHtml(window.key)}"
       data-connectability-row-window-offset="${escapeHtml(window.nextOffset)}"
       aria-label="Show next connectability targets"
+      aria-describedby="${escapeHtml(summaryId)}"
+      ${controlsAttr}
       ${nextDisabled}
     >Next</button>
   `;
+}
+
+function nodeConnectabilityRowDomId(source = {}) {
+  return `connectability-row-${compactStringHash([
+    state.selectedNodeId || source.nodeId || '',
+    nodeConnectabilitySourceFilterKey(source) || endpointLabel(source)
+  ].join('|'))}`;
+}
+
+function nodeConnectabilityTargetDomId(source = {}, entry = {}) {
+  return `connectability-target-${compactStringHash([
+    state.selectedNodeId || source.nodeId || '',
+    nodeConnectabilitySourceFilterKey(source) || endpointLabel(source),
+    entry?.target?.nodeId || '',
+    entry?.target?.port || '',
+    entry?.target?.path || '',
+    entry?.kind || '',
+    entry?.target?.condition || ''
+  ].join('|'))}`;
+}
+
+function nodeConnectabilityWindowSummaryDomId(key = '') {
+  return `connectability-window-summary-${compactStringHash(String(key || 'window'))}`;
 }
 
 function renderNodeConnectabilityFilterControls(
@@ -15506,25 +15557,33 @@ function renderNodeConnectabilitySourceWindowControls(sourceWindow) {
   if (!summary) {
     return '';
   }
+  const summaryId = `connectability-source-window-summary-${compactStringHash(sourceWindow.key || 'sources')}`;
   const previousDisabled = sourceWindow.hasPrevious ? '' : 'disabled';
   const nextDisabled = sourceWindow.hasNext ? '' : 'disabled';
   return `
-    <div class="node-connectability-window-controls node-connectability-source-window-controls" aria-label="Connectability source endpoint window">
+    <div
+      class="node-connectability-window-controls node-connectability-source-window-controls"
+      role="group"
+      aria-label="Connectability source endpoint window"
+      aria-describedby="${escapeHtml(summaryId)}"
+    >
       <button
         type="button"
         class="secondary compact"
         data-connectability-source-window="prev"
         data-connectability-source-window-key="${escapeHtml(sourceWindow.key)}"
         data-connectability-source-window-offset="${escapeHtml(sourceWindow.previousOffset)}"
+        aria-describedby="${escapeHtml(summaryId)}"
         ${previousDisabled}
       >Prev sources</button>
-      <span>${escapeHtml(summary)}</span>
+      <span id="${escapeHtml(summaryId)}" aria-live="polite">${escapeHtml(summary)}</span>
       <button
         type="button"
         class="secondary compact"
         data-connectability-source-window="next"
         data-connectability-source-window-key="${escapeHtml(sourceWindow.key)}"
         data-connectability-source-window-offset="${escapeHtml(sourceWindow.nextOffset)}"
+        aria-describedby="${escapeHtml(summaryId)}"
         ${nextDisabled}
       >Next sources</button>
     </div>
@@ -15766,6 +15825,18 @@ function focusNodeConnectabilityWindowEdge(rowKey, direction = 'next') {
   }
 }
 
+function activateNodeConnectabilityTargetForA11y(button) {
+  const container = button?.closest?.('[data-connectability-targets]');
+  const targetId = button?.id || button?.dataset?.connectabilityTargetId || '';
+  if (!container || !targetId) {
+    return;
+  }
+  container.setAttribute('aria-activedescendant', targetId);
+  for (const action of container.querySelectorAll('[data-connectability-action="connect"]')) {
+    action.setAttribute('aria-current', action === button ? 'true' : 'false');
+  }
+}
+
 function nodeConnectabilityPrioritizedDisplayTargets(targets) {
   return (targets || [])
     .map((entry, index) => ({ entry, index }))
@@ -15921,23 +15992,32 @@ function clearNodeConnectabilityFilter() {
   state.nodeConnectabilityFilter = { query: '', status: '', sourceKey: '', facetFilters: {} };
 }
 
-function renderNodeConnectabilityTarget(source, entry) {
+function renderNodeConnectabilityTarget(source, entry, window = null, index = 0) {
   const label = nodeConnectabilityTargetLabel(entry);
   const title = nodeConnectabilityTargetTitle(entry);
   const detail = nodeConnectabilityTargetDetail(entry);
   const level = nodeConnectabilityTargetLevel(entry);
+  const targetId = nodeConnectabilityTargetDomId(source, entry);
+  const detailId = detail ? `${targetId}-detail` : '';
+  const positionAttrs = nodeConnectabilityTargetA11yPositionAttrs(window, index);
+  const describedByAttr = detailId ? ` aria-describedby="${escapeHtml(detailId)}"` : '';
   const body = `
     <span class="node-connectability-chip-label">${escapeHtml(label)}</span>
-    ${detail ? `<span class="node-connectability-chip-detail">${escapeHtml(detail)}</span>` : ''}
+    ${detail ? `<span id="${escapeHtml(detailId)}" class="node-connectability-chip-detail">${escapeHtml(detail)}</span>` : ''}
   `;
   if (entry.compatibility.ok && !entry.alreadyConnected) {
     return `
       <button
+        id="${escapeHtml(targetId)}"
         type="button"
         class="node-connectability-chip ${escapeHtml(level)} actionable"
         title="${escapeHtml(title)}"
         aria-label="${escapeHtml(title)}"
+        aria-current="false"
+        ${describedByAttr}
+        ${positionAttrs}
         data-connectability-action="connect"
+        data-connectability-target-id="${escapeHtml(targetId)}"
         data-connect-source-node="${escapeHtml(source.nodeId || '')}"
         data-connect-source-port="${escapeHtml(source.port || '')}"
         data-connect-source-path="${escapeHtml(source.path || '')}"
@@ -15949,7 +16029,14 @@ function renderNodeConnectabilityTarget(source, entry) {
       >${body}</button>
     `;
   }
-  return `<span class="node-connectability-chip ${escapeHtml(level)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${body}</span>`;
+  return `<span id="${escapeHtml(targetId)}" class="node-connectability-chip ${escapeHtml(level)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"${describedByAttr} ${positionAttrs}>${body}</span>`;
+}
+
+function nodeConnectabilityTargetA11yPositionAttrs(window = null, index = 0) {
+  if (!window || index < 0 || index >= window.displayed || window.total <= 0) {
+    return '';
+  }
+  return `aria-posinset="${escapeHtml(window.offset + index + 1)}" aria-setsize="${escapeHtml(window.total)}"`;
 }
 
 function nodeConnectabilityTargetDetail(entry) {

@@ -3002,6 +3002,9 @@ class VisualAuthoringAppJsTest {
                   'nodeConnectabilityBlockedPreviewLimit',
                   'nodeConnectabilityDisplayOverflowSummary',
                   'renderNodeConnectabilityDisplayWindowControls',
+                  'nodeConnectabilityRowDomId',
+                  'nodeConnectabilityTargetDomId',
+                  'nodeConnectabilityWindowSummaryDomId',
                   'nodeConnectabilityPrioritizedDisplayTargets',
                   'nodeConnectabilityDisplayPriority',
                   'renderNodeConnectabilityFilterControls',
@@ -3075,6 +3078,7 @@ class VisualAuthoringAppJsTest {
                   'nodeConnectabilityTargetLabel',
                   'nodeConnectabilityTargetTitle',
                   'nodeConnectabilityTargetDetail',
+                  'nodeConnectabilityTargetA11yPositionAttrs',
                   'recordBuilderHistory',
                   'clearBuilderHistory',
                   'undoBuilderEdit',
@@ -5494,11 +5498,21 @@ operators:
                 );
                 const overflowDisplayWindowKey = context.nodeConnectabilityDisplayWindowKey(overflowConnectability);
                 const overflowSourceKey = context.nodeConnectabilitySourceFilterKey(overflowConnectability.source);
+                const overflowRowDomId = context.nodeConnectabilityRowDomId(overflowConnectability.source);
+                const overflowTargetDomId = context.nodeConnectabilityTargetDomId(
+                  overflowConnectability.source,
+                  overflowDisplayTargets[0]
+                );
+                const overflowWindowSummaryDomId = context.nodeConnectabilityWindowSummaryDomId(overflowDisplayWindow.key);
                 context.nodeConnectabilitySetDisplayWindowOffset(overflowDisplayWindowKey, 24);
                 const overflowSecondWindowTargets = context.nodeConnectabilityDisplayTargets(overflowConnectability);
                 const overflowSecondDisplayWindow = context.nodeConnectabilityDisplayTargetWindow(overflowConnectability);
                 const overflowSecondSummary = context.nodeConnectabilityDisplayOverflowSummary(overflowConnectability);
                 const overflowSecondRow = context.renderNodeConnectabilityRow(overflowConnectability);
+                const overflowSecondTargetDomId = context.nodeConnectabilityTargetDomId(
+                  overflowConnectability.source,
+                  overflowSecondWindowTargets[0]
+                );
                 context.nodeConnectabilitySetDisplayWindowOffset(overflowDisplayWindowKey, 0);
                 const overflowReadyFilter = {
                   query: '',
@@ -6914,12 +6928,21 @@ operators:
                   ['connectability overflow controls next', String(overflowWindowControls.includes('data-connectability-row-window="next"')), 'true'],
                   ['connectability overflow row marker', String(overflowRow.includes('data-connectability-overflow')), 'true'],
                   ['connectability overflow row controls', String(overflowRow.includes('data-connectability-row-window-key')), 'true'],
+                  ['connectability overflow row role', String(overflowRow.includes('role="group"')), 'true'],
+                  ['connectability overflow row labelledby', String(overflowRow.includes(`aria-labelledby="${overflowRowDomId}-label"`)), 'true'],
+                  ['connectability overflow targets aria controls', String(overflowRow.includes(`aria-controls="${overflowRowDomId}-targets"`)), 'true'],
+                  ['connectability overflow target id', String(overflowRow.includes(`id="${overflowTargetDomId}"`)), 'true'],
+                  ['connectability overflow target position', String(overflowRow.includes('aria-posinset="1"') && overflowRow.includes('aria-setsize="30"')), 'true'],
+                  ['connectability overflow target current marker', String(overflowRow.includes('aria-current="false"')), 'true'],
+                  ['connectability overflow summary live', String(overflowRow.includes(`id="${overflowWindowSummaryDomId}"`) && overflowRow.includes('aria-live="polite"')), 'true'],
                   ['connectability overflow second first target', overflowSecondWindowTargets[0].target.nodeId, 'overflowReview25'],
                   ['connectability overflow second display count', overflowSecondDisplayWindow.displayed, 6],
                   ['connectability overflow second has previous', overflowSecondDisplayWindow.hasPrevious, true],
                   ['connectability overflow second has next', overflowSecondDisplayWindow.hasNext, false],
                   ['connectability overflow second summary', overflowSecondSummary, 'Showing 25-30 of 30 ready targets'],
                   ['connectability overflow second row previous', String(overflowSecondRow.includes('data-connectability-row-window="prev"')), 'true'],
+                  ['connectability overflow second target id', String(overflowSecondRow.includes(`id="${overflowSecondTargetDomId}"`)), 'true'],
+                  ['connectability overflow second target position', String(overflowSecondRow.includes('aria-posinset="25"') && overflowSecondRow.includes('aria-setsize="30"')), 'true'],
                   ['connectability overflow filtered targets', overflowFilteredTargets.length, 24],
                   ['connectability overflow filtered summary', overflowFilteredSummary, 'Showing first 24 of 30 matches'],
                   ['connectability overflow filtered second count', overflowFilteredSecondWindow.displayed, 6],
@@ -7031,6 +7054,8 @@ operators:
                   ['server connectability source window last first-page label', context.endpointLabel(manySourceDisplaySources[7].source), 'riskNode.payload.metric8'],
                   ['server connectability source window summary', manySourceWindowSummary, 'Showing first 8 of 12 source endpoints'],
                   ['server connectability source window controls next', String(manySourceWindowControls.includes('data-connectability-source-window="next"')), 'true'],
+                  ['server connectability source window aria group', String(manySourceWindowControls.includes('role="group"') && manySourceWindowControls.includes('aria-describedby')), 'true'],
+                  ['server connectability source window live summary', String(manySourceWindowControls.includes('aria-live="polite"')), 'true'],
                   ['server connectability source request scope first-page', manySourceRequestScope.split('|').length, 8],
                   ['server connectability source request scope includes metric8', String(manySourceRequestScope.includes('metric8')), 'true'],
                   ['server connectability source request scope excludes metric9', String(!manySourceRequestScope.includes('metric9')), 'true'],

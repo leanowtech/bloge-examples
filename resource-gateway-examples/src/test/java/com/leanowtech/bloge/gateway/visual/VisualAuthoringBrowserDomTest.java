@@ -562,12 +562,25 @@ class VisualAuthoringBrowserDomTest {
                 "#selected-operator-editor [data-connectability-action='connect']"
                         + "[data-connect-target-node^='riskScoreReview']"
         )).size() == 24);
+        Map<String, String> firstA11yState = connectabilityVisibleTargetA11yState(0);
+        assertThat(firstA11yState)
+                .containsEntry("activeMatches", "true")
+                .containsEntry("current", "true")
+                .containsEntry("pos", "1")
+                .containsEntry("setsize", "260")
+                .containsEntry("containerRole", "group")
+                .containsEntry("rowNextControlsContainer", "true");
         click(wait, By.cssSelector("#selected-operator-editor [data-connectability-row-window='next']"));
         waitForText(wait, By.id("selected-operator-editor"), "Showing 25-48 of 260 ready targets");
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
                 "#selected-operator-editor [data-connectability-action='connect']"
                         + "[data-connect-target-node='riskScoreReview25']"
         )));
+        Map<String, String> secondWindowA11yState = connectabilityTargetA11yState("riskScoreReview25");
+        assertThat(secondWindowA11yState)
+                .containsEntry("activeMatches", "true")
+                .containsEntry("pos", "25")
+                .containsEntry("setsize", "260");
         wait.until(ignored -> driver.findElements(By.cssSelector(
                 "#selected-operator-editor [data-connectability-action='connect']"
                         + "[data-connect-target-node^='riskScoreReview']"
@@ -582,6 +595,11 @@ class VisualAuthoringBrowserDomTest {
                 "#selected-operator-editor [data-connectability-action='connect']"
                         + "[data-connect-target-node='riskScoreReview49']"
         )));
+        Map<String, String> keyboardWindowA11yState = connectabilityTargetA11yState("riskScoreReview49");
+        assertThat(keyboardWindowA11yState)
+                .containsEntry("activeMatches", "true")
+                .containsEntry("pos", "49")
+                .containsEntry("setsize", "260");
         assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-panel"));
 
         By filterQuery = By.cssSelector("#selected-operator-editor [data-connectability-filter-query]");
@@ -2627,6 +2645,74 @@ class VisualAuthoringBrowserDomTest {
                   .map((element) => element.textContent.trim());
                 """);
         return values.stream().map(String::valueOf).toList();
+    }
+
+    private Map<String, String> connectabilityTargetA11yState(String targetNodeId) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> values = (Map<String, Object>) ((JavascriptExecutor) driver).executeScript("""
+                const targetNodeId = arguments[0];
+                const action = document.querySelector(
+                  `#selected-operator-editor [data-connectability-action='connect'][data-connect-target-node='${targetNodeId}']`
+                );
+                if (!action) {
+                  return { missing: 'true' };
+                }
+                action.focus({ preventScroll: true });
+                const container = action.closest('[data-connectability-targets]');
+                const rowNext = container?.querySelector('[data-connectability-row-window="next"]');
+                return {
+                  actionId: action.id || '',
+                  active: container?.getAttribute('aria-activedescendant') || '',
+                  activeMatches: String(Boolean(action.id) && container?.getAttribute('aria-activedescendant') === action.id),
+                  current: action.getAttribute('aria-current') || '',
+                  pos: action.getAttribute('aria-posinset') || '',
+                  setsize: action.getAttribute('aria-setsize') || '',
+                  containerId: container?.id || '',
+                  containerRole: container?.getAttribute('role') || '',
+                  rowNextControls: rowNext?.getAttribute('aria-controls') || '',
+                  rowNextControlsContainer: String(Boolean(container?.id) && rowNext?.getAttribute('aria-controls') === container.id)
+                };
+                """, targetNodeId);
+        return values.entrySet().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> String.valueOf(entry.getValue())
+                ));
+    }
+
+    private Map<String, String> connectabilityVisibleTargetA11yState(int index) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> values = (Map<String, Object>) ((JavascriptExecutor) driver).executeScript("""
+                const index = Number(arguments[0]) || 0;
+                const actions = [...document.querySelectorAll(
+                  "#selected-operator-editor [data-connectability-action='connect'][data-connect-target-node^='riskScoreReview']"
+                )];
+                const action = actions[index];
+                if (!action) {
+                  return { missing: 'true', count: String(actions.length) };
+                }
+                action.focus({ preventScroll: true });
+                const container = action.closest('[data-connectability-targets]');
+                const rowNext = container?.querySelector('[data-connectability-row-window="next"]');
+                return {
+                  actionId: action.id || '',
+                  targetNodeId: action.dataset.connectTargetNode || '',
+                  active: container?.getAttribute('aria-activedescendant') || '',
+                  activeMatches: String(Boolean(action.id) && container?.getAttribute('aria-activedescendant') === action.id),
+                  current: action.getAttribute('aria-current') || '',
+                  pos: action.getAttribute('aria-posinset') || '',
+                  setsize: action.getAttribute('aria-setsize') || '',
+                  containerId: container?.id || '',
+                  containerRole: container?.getAttribute('role') || '',
+                  rowNextControls: rowNext?.getAttribute('aria-controls') || '',
+                  rowNextControlsContainer: String(Boolean(container?.id) && rowNext?.getAttribute('aria-controls') === container.id)
+                };
+                """, index);
+        return values.entrySet().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> String.valueOf(entry.getValue())
+                ));
     }
 
     private String connectabilityServerSourceKeys() {

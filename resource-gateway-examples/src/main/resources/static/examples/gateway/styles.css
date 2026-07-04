@@ -1512,6 +1512,7 @@ body.dragging-operator * {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
+  min-width: 0;
 }
 
 .node-connectability-window-controls {
@@ -1519,6 +1520,7 @@ body.dragging-operator * {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .node-connectability-window-controls span {
@@ -1568,6 +1570,7 @@ body.dragging-operator * {
 }
 
 .node-connectability-chip {
+  min-width: 0;
   max-width: 100%;
   display: inline-grid;
   gap: 2px;
