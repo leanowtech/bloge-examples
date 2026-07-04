@@ -349,7 +349,9 @@ object subschemas, so a payment object that exposes `cardNumber` can be forced
 to satisfy the additional billing schema before a connection, literal, or config
 value is accepted. The compatibility gate also treats a source
 `dependentRequired` rule as proof for an equivalent target `dependentSchemas`
-required-field constraint when the triggered companion field schema is compatible.
+required-field constraint when the triggered companion field schema is compatible,
+and treats source `dependentSchemas` with an explicit required companion as
+proof for equivalent target `dependentRequired`.
 Object `unevaluatedProperties` constraints are supported for the canvas schema
 subset as residual object-field policy: after declared `properties`,
 `patternProperties`, and any explicit `additionalProperties` are accounted for,

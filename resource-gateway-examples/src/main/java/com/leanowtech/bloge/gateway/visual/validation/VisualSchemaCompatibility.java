@@ -1443,7 +1443,8 @@ public final class VisualSchemaCompatibility {
 	            List<String> sourceTriggerDependencies = sourceDependencies.getOrDefault(trigger, List.of());
 	            for (String dependency : entry.getValue()) {
 	                if (!sourceRequired.contains(dependency)
-	                        && !sourceTriggerDependencies.contains(dependency)) {
+	                        && !sourceTriggerDependencies.contains(dependency)
+	                        && !sourceDependentSchemaRequiresProperty(sourceSchema, trigger, dependency)) {
 	                    return Optional.of(reasonAt(path,
 	                            "target requires dependentRequired '%s' -> '%s' but source does not guarantee the dependency"
 	                                    .formatted(trigger, dependency)));
@@ -1451,6 +1452,18 @@ public final class VisualSchemaCompatibility {
 	            }
 	        }
 	        return Optional.empty();
+	    }
+
+	    private static boolean sourceDependentSchemaRequiresProperty(Map<String, Object> sourceSchema,
+	                                                                 String trigger,
+	                                                                 String dependency) {
+	        Map<String, Object> sourceDependentSchema = dependentSchemasOf(sourceSchema).get(trigger);
+	        if (sourceDependentSchema == null) {
+	            return false;
+	        }
+	        Map<String, Object> effective = sourceSchemaAssumingDependentTriggerPresent(
+	                effectiveDependentObjectSchema(sourceDependentSchema), trigger);
+	        return requiredNamesOf(effective).contains(dependency);
 	    }
 
 	    private static Optional<String> objectDependentSchemasCompatibilityIssue(Map<String, Object> sourceSchema,

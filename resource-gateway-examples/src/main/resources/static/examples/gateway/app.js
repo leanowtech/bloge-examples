@@ -23863,12 +23863,26 @@ function objectDependentRequiredCompatibilityIssue(sourceSchema, targetSchema, p
     }
     const sourceTriggerDependencies = sourceDependencies[trigger] || [];
     for (const dependency of dependencies) {
-      if (!sourceRequired.has(dependency) && !sourceTriggerDependencies.includes(dependency)) {
+      if (!sourceRequired.has(dependency)
+          && !sourceTriggerDependencies.includes(dependency)
+          && !sourceDependentSchemaRequiresProperty(sourceSchema, trigger, dependency)) {
         return reasonAt(path, `target requires dependentRequired '${trigger}' -> '${dependency}' but source does not guarantee the dependency`);
       }
     }
   }
   return '';
+}
+
+function sourceDependentSchemaRequiresProperty(sourceSchema, trigger, dependency) {
+  const sourceDependentSchema = schemaDependentSchemas(sourceSchema)[trigger];
+  if (!sourceDependentSchema) {
+    return false;
+  }
+  const effective = sourceSchemaAssumingDependentTriggerPresent(
+    effectiveDependentObjectSchema(sourceDependentSchema),
+    trigger
+  );
+  return schemaRequiredNames(effective).includes(dependency);
 }
 
 function objectDependentSchemasCompatibilityIssue(sourceSchema, targetSchema, path = '') {

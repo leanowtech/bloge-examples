@@ -7557,6 +7557,7 @@ operators:
                   'objectDependentSchemasCompatibilityIssue',
                   'schemaDependentRequired',
                   'schemaDependentSchemas',
+                  'sourceDependentSchemaRequiresProperty',
                   'sourceSchemaAssumingDependentTriggerPresent',
                   'effectiveDependentObjectSchema',
                   'objectPropertyBoundsCompatibilityIssue',
@@ -7726,6 +7727,58 @@ operators:
                     creditCard: ['billingAddress']
                   }
                 }, 'creditCard').required.sort().join('|');
+                const dependentSchemaProvesDependentRequiredIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  properties: {
+                    paymentMethod: { type: 'string' },
+                    cardNumber: { type: 'string' }
+                  },
+                  dependentSchemas: {
+                    paymentMethod: { required: ['cardNumber'] }
+                  },
+                  additionalProperties: false
+                }, {
+                  type: 'object',
+                  properties: {
+                    paymentMethod: { type: 'string' },
+                    cardNumber: { type: 'string' }
+                  },
+                  dependentRequired: {
+                    paymentMethod: ['cardNumber']
+                  },
+                  additionalProperties: false
+                });
+                const dependentSchemaMissingRequiredIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  properties: {
+                    paymentMethod: { type: 'string' },
+                    cardNumber: { type: 'string' }
+                  },
+                  dependentSchemas: {
+                    paymentMethod: {
+                      properties: {
+                        cardNumber: { type: 'string' }
+                      }
+                    }
+                  },
+                  additionalProperties: false
+                }, {
+                  type: 'object',
+                  properties: {
+                    paymentMethod: { type: 'string' },
+                    cardNumber: { type: 'string' }
+                  },
+                  dependentRequired: {
+                    paymentMethod: ['cardNumber']
+                  },
+                  additionalProperties: false
+                });
+                const sourceDependentSchemaRequiresCard = context.sourceDependentSchemaRequiresProperty({
+                  type: 'object',
+                  dependentSchemas: {
+                    paymentMethod: { required: ['cardNumber'] }
+                  }
+                }, 'paymentMethod', 'cardNumber');
 
                 context.objectDependentRequiredCompatibilityIssue = () => '';
                 context.objectDependentSchemasCompatibilityIssue = () => '';
@@ -8073,6 +8126,9 @@ operators:
                   ['dependentRequired proves dependentSchemas safe', dependentRequiredProvesDependentSchemaIssue, ''],
                   ['dependentRequired dependentSchemas mismatch surfaced', String(dependentRequiredRejectsDependentSchemaIssue.includes("target requires dependentSchemas 'creditCard'")), 'true'],
                   ['dependent trigger required projection', triggeredRequired, 'billingAddress|creditCard|customerId'],
+                  ['dependentSchemas proves dependentRequired safe', dependentSchemaProvesDependentRequiredIssue, ''],
+                  ['dependentSchemas missing required rejected', String(dependentSchemaMissingRequiredIssue.includes("target requires dependentRequired 'paymentMethod' -> 'cardNumber'")), 'true'],
+                  ['dependentSchemas required helper', String(sourceDependentSchemaRequiresCard), 'true'],
                   ['residual optional collision path', String(residualIssue.includes("at 'score'")), 'true'],
                   ['residual optional collision type', String(residualIssue.includes('source type string cannot feed target type integer')), 'true'],
                   ['pattern optional collision path', String(patternIssue.includes("at 'score'")), 'true'],
