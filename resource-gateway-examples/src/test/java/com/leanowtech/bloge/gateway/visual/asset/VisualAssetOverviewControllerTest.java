@@ -364,10 +364,18 @@ class VisualAssetOverviewControllerTest {
                 "BIND_RUNTIME_IMPLEMENTATION",
                 "runtime-evidence");
         assertThat(readyToBind.actionQueue().total()).isEqualTo(1);
+        assertThat(readyToBind.actionQueue().evidenceKindCounts()).containsEntry("binding", 1);
+        assertThat(readyToBind.actionQueue().evidenceIdCounts()).containsEntry(proposal.bindingId(), 1);
+        assertThat(readyToBind.actionQueue().bindingIdCounts()).containsEntry(proposal.bindingId(), 1);
+        assertThat(readyToBind.actionQueue().adapterKindCounts()).containsEntry("native", 1);
         assertThat(readyToBind.actionQueue().items())
                 .singleElement()
                 .satisfies(item -> {
                     assertThat(item.targetId()).isEqualTo("binding:%s".formatted(proposal.bindingId()));
+                    assertThat(item.evidenceKind()).isEqualTo("binding");
+                    assertThat(item.evidenceId()).isEqualTo(proposal.bindingId());
+                    assertThat(item.bindingId()).isEqualTo(proposal.bindingId());
+                    assertThat(item.adapterKind()).isEqualTo("native");
                     assertThat(item.operatorRef()).isEqualTo("risk:eligibility");
                     assertThat(item.operatorLibraryId()).isEqualTo("risk-policy-design");
                     assertThat(item.handoffLane()).isEqualTo("operator-platform");
@@ -391,10 +399,17 @@ class VisualAssetOverviewControllerTest {
                 "ACTIVATE_RUNTIME_ADAPTER",
                 "runtime-evidence");
         assertThat(missingActivation.actionQueue().total()).isEqualTo(1);
+        assertThat(missingActivation.actionQueue().evidenceKindCounts()).containsEntry("binding", 1);
+        assertThat(missingActivation.actionQueue().bindingIdCounts()).containsEntry(binding.bindingId(), 1);
+        assertThat(missingActivation.actionQueue().adapterKindCounts()).containsEntry("native", 1);
         assertThat(missingActivation.actionQueue().items())
                 .singleElement()
                 .satisfies(item -> {
                     assertThat(item.targetId()).isEqualTo("binding:%s".formatted(binding.bindingId()));
+                    assertThat(item.evidenceKind()).isEqualTo("binding");
+                    assertThat(item.evidenceId()).isEqualTo(binding.bindingId());
+                    assertThat(item.bindingId()).isEqualTo(binding.bindingId());
+                    assertThat(item.adapterKind()).isEqualTo("native");
                     assertThat(item.operatorRef()).isEqualTo("risk:eligibility");
                     assertThat(item.operatorLibraryId()).isEqualTo("risk-policy-design");
                     assertThat(item.handoffLane()).isEqualTo("runtime-platform");
@@ -418,14 +433,53 @@ class VisualAssetOverviewControllerTest {
                 "INTEGRATE_EXECUTABLE_LOWERING",
                 "runtime-evidence");
         assertThat(missingIntegration.actionQueue().total()).isEqualTo(1);
+        assertThat(missingIntegration.actionQueue().evidenceKindCounts()).containsEntry("activation", 1);
+        assertThat(missingIntegration.actionQueue().evidenceIdCounts()).containsEntry(activation.activationId(), 1);
+        assertThat(missingIntegration.actionQueue().bindingIdCounts()).containsEntry(binding.bindingId(), 1);
+        assertThat(missingIntegration.actionQueue().activationIdCounts()).containsEntry(activation.activationId(), 1);
+        assertThat(missingIntegration.actionQueue().adapterKindCounts()).containsEntry("native", 1);
+        assertThat(missingIntegration.actionQueue().runtimeEnvironmentCounts()).containsEntry("prod", 1);
         assertThat(missingIntegration.actionQueue().items())
                 .singleElement()
                 .satisfies(item -> {
                     assertThat(item.targetId()).isEqualTo("activation:%s".formatted(activation.activationId()));
+                    assertThat(item.evidenceKind()).isEqualTo("activation");
+                    assertThat(item.evidenceId()).isEqualTo(activation.activationId());
+                    assertThat(item.bindingId()).isEqualTo(binding.bindingId());
+                    assertThat(item.activationId()).isEqualTo(activation.activationId());
+                    assertThat(item.adapterKind()).isEqualTo("native");
+                    assertThat(item.runtimeEnvironment()).isEqualTo("prod");
                     assertThat(item.handoffLane()).isEqualTo("operator-platform");
                     assertThat(item.handoffKind()).isEqualTo("executable-lowering");
                     assertThat(item.readinessState()).isEqualTo("runtime-evidence-partial");
                 });
+        VisualAssetOverview missingIntegrationByRuntime = fixture.controller().overview(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "warning",
+                "INTEGRATE_EXECUTABLE_LOWERING",
+                "runtime-evidence",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "activation",
+                activation.activationId(),
+                binding.bindingId(),
+                activation.activationId(),
+                "native",
+                "prod",
+                "");
+        assertThat(missingIntegrationByRuntime.actionQueue().filter().evidenceKind()).isEqualTo("activation");
+        assertThat(missingIntegrationByRuntime.actionQueue().filter().activationId())
+                .isEqualTo(activation.activationId());
+        assertThat(missingIntegrationByRuntime.actionQueue().total()).isEqualTo(1);
 
         var rolloutResponse = fixture.controller().submitRuntimeRolloutObservation(
                 rolloutObservationRequest(
@@ -454,15 +508,54 @@ class VisualAssetOverviewControllerTest {
         assertThat(rolloutRisk.actionQueue().total()).isEqualTo(1);
         assertThat(rolloutRisk.actionQueue().operatorRefCounts()).containsEntry("risk:eligibility", 1);
         assertThat(rolloutRisk.actionQueue().operatorLibraryIdCounts()).containsEntry("risk-policy-design", 1);
+        assertThat(rolloutRisk.actionQueue().evidenceKindCounts()).containsEntry("rollout", 1);
+        assertThat(rolloutRisk.actionQueue().evidenceIdCounts()).containsEntry("risk-rollout-canary-degraded", 1);
+        assertThat(rolloutRisk.actionQueue().bindingIdCounts()).containsEntry(binding.bindingId(), 1);
+        assertThat(rolloutRisk.actionQueue().activationIdCounts()).containsEntry(activation.activationId(), 1);
+        assertThat(rolloutRisk.actionQueue().adapterKindCounts()).containsEntry("native", 1);
+        assertThat(rolloutRisk.actionQueue().runtimeEnvironmentCounts()).containsEntry("prod", 1);
+        assertThat(rolloutRisk.actionQueue().rolloutSignalCounts()).containsEntry("error-rate", 1);
         assertThat(rolloutRisk.actionQueue().items())
                 .singleElement()
                 .satisfies(item -> {
                     assertThat(item.targetId()).isEqualTo("rollout:risk-rollout-canary-degraded");
+                    assertThat(item.evidenceKind()).isEqualTo("rollout");
+                    assertThat(item.evidenceId()).isEqualTo("risk-rollout-canary-degraded");
+                    assertThat(item.bindingId()).isEqualTo(binding.bindingId());
+                    assertThat(item.activationId()).isEqualTo(activation.activationId());
+                    assertThat(item.adapterKind()).isEqualTo("native");
+                    assertThat(item.runtimeEnvironment()).isEqualTo("prod");
+                    assertThat(item.rolloutSignals()).contains("error-rate");
                     assertThat(item.handoffLane()).isEqualTo("runtime-platform");
                     assertThat(item.handoffKind()).isEqualTo("rollout-observation");
                     assertThat(item.readinessState()).isEqualTo("runtime-rollout-risk");
                     assertThat(item.summary()).contains("rollback triggered");
                 });
+        VisualAssetOverview rolloutRiskBySignal = fixture.controller().overview(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "warning",
+                "REVIEW_RUNTIME_ROLLOUT_RISK",
+                "runtime-evidence",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "rollout",
+                "risk-rollout-canary-degraded",
+                binding.bindingId(),
+                activation.activationId(),
+                "native",
+                "prod",
+                "error-rate");
+        assertThat(rolloutRiskBySignal.actionQueue().filter().rolloutSignal()).isEqualTo("error-rate");
+        assertThat(rolloutRiskBySignal.actionQueue().total()).isEqualTo(1);
         assertThat(fixture.controller().overview(
                 "",
                 "",
@@ -525,14 +618,44 @@ class VisualAssetOverviewControllerTest {
         assertThat(overview.runtimeEvidence().breachedRolloutSignalCounts())
                 .containsEntry("golden-regression", 1);
         assertThat(overview.actionQueue().total()).isEqualTo(1);
+        assertThat(overview.actionQueue().rolloutSignalCounts()).containsEntry("golden-regression", 1);
         assertThat(overview.actionQueue().items())
                 .singleElement()
                 .satisfies(item -> {
                     assertThat(item.targetId()).isEqualTo("rollout:risk-rollout-golden-signal");
+                    assertThat(item.evidenceKind()).isEqualTo("rollout");
+                    assertThat(item.bindingId()).isEqualTo(binding.bindingId());
+                    assertThat(item.activationId()).isEqualTo(activation.activationId());
+                    assertThat(item.rolloutSignals()).contains("golden-regression");
                     assertThat(item.readinessState()).isEqualTo("runtime-rollout-risk");
                     assertThat(item.summary()).contains("healthy").contains("breached signals golden-regression");
                     assertThat(item.recommendedAction()).contains("canary").contains("readiness");
                 });
+        VisualAssetOverview signalFiltered = fixture.controller().overview(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "warning",
+                "REVIEW_RUNTIME_ROLLOUT_RISK",
+                "runtime-evidence",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "golden-regression");
+        assertThat(signalFiltered.actionQueue().filter().rolloutSignal()).isEqualTo("golden-regression");
+        assertThat(signalFiltered.actionQueue().total()).isEqualTo(1);
     }
 
     @Test

@@ -455,6 +455,13 @@ const state = {
     handoffTarget: '',
     readinessState: '',
     artifactKind: '',
+    evidenceKind: '',
+    evidenceId: '',
+    bindingId: '',
+    activationId: '',
+    adapterKind: '',
+    runtimeEnvironment: '',
+    rolloutSignal: '',
     offset: 0,
     limit: 12
   },
@@ -1267,6 +1274,27 @@ function visualAssetOverviewUrl(builder = state.builder) {
   if (actionQuery.artifactKind) {
     params.set('actionArtifactKind', actionQuery.artifactKind);
   }
+  if (actionQuery.evidenceKind) {
+    params.set('actionEvidenceKind', actionQuery.evidenceKind);
+  }
+  if (actionQuery.evidenceId) {
+    params.set('actionEvidenceId', actionQuery.evidenceId);
+  }
+  if (actionQuery.bindingId) {
+    params.set('actionBindingId', actionQuery.bindingId);
+  }
+  if (actionQuery.activationId) {
+    params.set('actionActivationId', actionQuery.activationId);
+  }
+  if (actionQuery.adapterKind) {
+    params.set('actionAdapterKind', actionQuery.adapterKind);
+  }
+  if (actionQuery.runtimeEnvironment) {
+    params.set('actionRuntimeEnvironment', actionQuery.runtimeEnvironment);
+  }
+  if (actionQuery.rolloutSignal) {
+    params.set('actionRolloutSignal', actionQuery.rolloutSignal);
+  }
   return `/api/visual/assets/overview?${params.toString()}`;
 }
 
@@ -1429,6 +1457,13 @@ function normalizeVisualAssetActionQuery(query = {}) {
     handoffTarget: String(query.handoffTarget || '').trim(),
     readinessState: String(query.readinessState || '').trim().toLowerCase(),
     artifactKind: normalizePublicationArtifactKindFilter(query.artifactKind),
+    evidenceKind: String(query.evidenceKind || '').trim().toLowerCase(),
+    evidenceId: String(query.evidenceId || '').trim(),
+    bindingId: String(query.bindingId || '').trim(),
+    activationId: String(query.activationId || '').trim(),
+    adapterKind: String(query.adapterKind || '').trim().toLowerCase(),
+    runtimeEnvironment: String(query.runtimeEnvironment || '').trim(),
+    rolloutSignal: String(query.rolloutSignal || '').trim().toLowerCase(),
     offset: Math.max(0, Number(query.offset || 0) || 0),
     limit
   };
@@ -9441,6 +9476,13 @@ function visualAssetOverviewShouldShowActionQueue(actionQueue) {
       || query.handoffTarget
       || query.readinessState
       || query.artifactKind
+      || query.evidenceKind
+      || query.evidenceId
+      || query.bindingId
+      || query.activationId
+      || query.adapterKind
+      || query.runtimeEnvironment
+      || query.rolloutSignal
       || query.offset);
 }
 
@@ -9548,7 +9590,9 @@ function visualAssetOverviewActionControls(actionQueue) {
   const pageSize = Number(actionQueue?.itemLimit || query.limit || 12) || 12;
   const hasFilter = Boolean(query.severity || query.actionType || query.targetKind || query.operatorRef
     || query.operatorLibraryId || query.handoffLane || query.handoffKind || query.handoffTarget
-    || query.readinessState || query.artifactKind || offset || pageSize !== 12);
+    || query.readinessState || query.artifactKind || query.evidenceKind || query.evidenceId
+    || query.bindingId || query.activationId || query.adapterKind || query.runtimeEnvironment
+    || query.rolloutSignal || offset || pageSize !== 12);
   const canPrevious = offset > 0;
   const canNext = Boolean(actionQueue?.hasMore);
   return `
@@ -9611,6 +9655,48 @@ function visualAssetOverviewActionControls(actionQueue) {
         <span>${escapeHtml('Artifact')}</span>
         <select id="visual-asset-action-artifact-kind" aria-label="Filter asset actions by artifact kind">
           ${visualRuntimeBindingRawOptionMarkup('All artifacts', actionQueue?.artifactKindCounts, query.artifactKind)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Evidence')}</span>
+        <select id="visual-asset-action-evidence-kind" aria-label="Filter asset actions by runtime evidence kind">
+          ${visualRuntimeBindingDynamicOptionMarkup('All evidence', actionQueue?.evidenceKindCounts, query.evidenceKind)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Evidence ID')}</span>
+        <select id="visual-asset-action-evidence-id" aria-label="Filter asset actions by runtime evidence id">
+          ${visualRuntimeBindingRawOptionMarkup('All evidence IDs', actionQueue?.evidenceIdCounts, query.evidenceId)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Binding')}</span>
+        <select id="visual-asset-action-binding-id" aria-label="Filter asset actions by runtime binding id">
+          ${visualRuntimeBindingRawOptionMarkup('All bindings', actionQueue?.bindingIdCounts, query.bindingId)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Activation')}</span>
+        <select id="visual-asset-action-activation-id" aria-label="Filter asset actions by runtime activation id">
+          ${visualRuntimeBindingRawOptionMarkup('All activations', actionQueue?.activationIdCounts, query.activationId)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Adapter')}</span>
+        <select id="visual-asset-action-adapter-kind" aria-label="Filter asset actions by adapter kind">
+          ${visualRuntimeBindingDynamicOptionMarkup('All adapters', actionQueue?.adapterKindCounts, query.adapterKind)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Runtime')}</span>
+        <select id="visual-asset-action-runtime-environment" aria-label="Filter asset actions by runtime environment">
+          ${visualRuntimeBindingRawOptionMarkup('All runtimes', actionQueue?.runtimeEnvironmentCounts, query.runtimeEnvironment)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Signal')}</span>
+        <select id="visual-asset-action-rollout-signal" aria-label="Filter asset actions by rollout signal">
+          ${visualRuntimeBindingDynamicOptionMarkup('All signals', actionQueue?.rolloutSignalCounts, query.rolloutSignal)}
         </select>
       </label>
       <label>
@@ -10544,13 +10630,25 @@ function visualAssetActionContext(item) {
   const handoff = [operatorPaletteFacetLabel(item.handoffLane), item.handoffTarget]
     .filter(Boolean)
     .join(' ');
+  const evidence = [operatorPaletteFacetLabel(item.evidenceKind), item.evidenceId]
+    .filter(Boolean)
+    .join(' ');
+  const runtime = [operatorPaletteFacetLabel(item.adapterKind), item.runtimeEnvironment]
+    .filter(Boolean)
+    .join(' ');
+  const signals = Array.isArray(item.rolloutSignals) && item.rolloutSignals.length
+    ? `signals ${item.rolloutSignals.map(operatorPaletteFacetLabel).join(', ')}`
+    : '';
   const library = item.operatorLibraryId ? `library ${item.operatorLibraryId}` : '';
   const operator = item.operatorRef ? `operator ${item.operatorRef}` : '';
+  const binding = item.bindingId ? `binding ${item.bindingId}` : '';
+  const activation = item.activationId ? `activation ${item.activationId}` : '';
   return {
     level: ['error', 'warning', 'info', 'success'].includes(String(item.severity || '').toLowerCase())
       ? String(item.severity).toLowerCase()
       : 'info',
-    message: [action, target, library, operator, readiness, handoff, item.recommendedAction || item.summary]
+    message: [action, target, library, operator, readiness, handoff, evidence, binding, activation, runtime, signals,
+      item.recommendedAction || item.summary]
       .filter(Boolean)
       .join(' · ')
   };
@@ -10565,7 +10663,16 @@ function visualAssetOverviewActionLabel(item) {
   const handoff = item?.handoffLane ? operatorPaletteFacetLabel(item.handoffLane) : '';
   const library = item?.operatorLibraryId ? `library ${item.operatorLibraryId}` : '';
   const operator = item?.operatorRef ? `operator ${item.operatorRef}` : '';
-  return [action, target, library, operator, readiness, handoff]
+  const evidence = item?.evidenceKind ? operatorPaletteFacetLabel(item.evidenceKind) : '';
+  const binding = item?.bindingId ? `binding ${item.bindingId}` : '';
+  const activation = item?.activationId ? `activation ${item.activationId}` : '';
+  const runtime = [operatorPaletteFacetLabel(item?.adapterKind || ''), item?.runtimeEnvironment || '']
+    .filter(Boolean)
+    .join(' ');
+  const signals = Array.isArray(item?.rolloutSignals) && item.rolloutSignals.length
+    ? `signals ${item.rolloutSignals.map(operatorPaletteFacetLabel).join(', ')}`
+    : '';
+  return [action, target, library, operator, readiness, handoff, evidence, binding, activation, runtime, signals]
     .filter(Boolean)
     .join(' · ');
 }
@@ -10626,6 +10733,37 @@ function attachVisualAssetOverviewActionQueryHandlers(actionQueue) {
   if (artifactKind) {
     artifactKind.onchange = () => updateVisualAssetActionQuery({ artifactKind: artifactKind.value, offset: 0 });
   }
+  const evidenceKind = $('visual-asset-action-evidence-kind');
+  if (evidenceKind) {
+    evidenceKind.onchange = () => updateVisualAssetActionQuery({ evidenceKind: evidenceKind.value, offset: 0 });
+  }
+  const evidenceId = $('visual-asset-action-evidence-id');
+  if (evidenceId) {
+    evidenceId.onchange = () => updateVisualAssetActionQuery({ evidenceId: evidenceId.value, offset: 0 });
+  }
+  const bindingId = $('visual-asset-action-binding-id');
+  if (bindingId) {
+    bindingId.onchange = () => updateVisualAssetActionQuery({ bindingId: bindingId.value, offset: 0 });
+  }
+  const activationId = $('visual-asset-action-activation-id');
+  if (activationId) {
+    activationId.onchange = () => updateVisualAssetActionQuery({ activationId: activationId.value, offset: 0 });
+  }
+  const adapterKind = $('visual-asset-action-adapter-kind');
+  if (adapterKind) {
+    adapterKind.onchange = () => updateVisualAssetActionQuery({ adapterKind: adapterKind.value, offset: 0 });
+  }
+  const runtimeEnvironment = $('visual-asset-action-runtime-environment');
+  if (runtimeEnvironment) {
+    runtimeEnvironment.onchange = () => updateVisualAssetActionQuery({
+      runtimeEnvironment: runtimeEnvironment.value,
+      offset: 0
+    });
+  }
+  const rolloutSignal = $('visual-asset-action-rollout-signal');
+  if (rolloutSignal) {
+    rolloutSignal.onchange = () => updateVisualAssetActionQuery({ rolloutSignal: rolloutSignal.value, offset: 0 });
+  }
   const limit = $('visual-asset-action-limit');
   if (limit) {
     limit.onchange = () => updateVisualAssetActionQuery({ limit: Number(limit.value || 12), offset: 0 });
@@ -10653,6 +10791,13 @@ function attachVisualAssetOverviewActionQueryHandlers(actionQueue) {
       handoffTarget: '',
       readinessState: '',
       artifactKind: '',
+      evidenceKind: '',
+      evidenceId: '',
+      bindingId: '',
+      activationId: '',
+      adapterKind: '',
+      runtimeEnvironment: '',
+      rolloutSignal: '',
       offset: 0,
       limit: 12
     });

@@ -280,6 +280,13 @@ public record VisualAssetOverview(
      * @param actionHandoffTarget optional runtime-plane routing target filter
      * @param actionReadinessState optional graph/operator readiness state filter
      * @param actionArtifactKind optional publication artifact kind filter
+     * @param actionEvidenceKind optional runtime evidence kind filter
+     * @param actionEvidenceId optional runtime evidence id filter
+     * @param actionBindingId optional runtime binding id filter
+     * @param actionActivationId optional runtime adapter activation id filter
+     * @param actionAdapterKind optional runtime adapter kind filter
+     * @param actionRuntimeEnvironment optional runtime environment filter
+     * @param actionRolloutSignal optional rollout signal filter
      * @param implementationBindings submitted runtime implementation binding records in scope
      * @param adapterActivations runtime adapter activation records in scope
      * @param rolloutObservations rollout observation records in scope
@@ -306,6 +313,13 @@ public record VisualAssetOverview(
                                            String actionHandoffTarget,
                                            String actionReadinessState,
                                            String actionArtifactKind,
+                                           String actionEvidenceKind,
+                                           String actionEvidenceId,
+                                           String actionBindingId,
+                                           String actionActivationId,
+                                           String actionAdapterKind,
+                                           String actionRuntimeEnvironment,
+                                           String actionRolloutSignal,
                                            List<VisualRuntimeBindingImplementationBinding> implementationBindings,
                                            List<VisualRuntimeAdapterActivation> adapterActivations,
                                            List<VisualRuntimeRolloutObservation> rolloutObservations,
@@ -339,6 +353,13 @@ public record VisualAssetOverview(
                         actionHandoffTarget,
                         actionReadinessState,
                         actionArtifactKind,
+                        actionEvidenceKind,
+                        actionEvidenceId,
+                        actionBindingId,
+                        actionActivationId,
+                        actionAdapterKind,
+                        actionRuntimeEnvironment,
+                        actionRolloutSignal,
                         implementationBindings,
                         adapterActivations,
                         rolloutObservations,
@@ -382,6 +403,13 @@ public record VisualAssetOverview(
                 actionTargetKind,
                 actionOperatorRef,
                 actionOperatorLibraryId,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
                 "",
                 "",
                 "",
@@ -1198,6 +1226,13 @@ public record VisualAssetOverview(
             Map<String, Integer> handoffTargetCounts,
             Map<String, Integer> readinessStateCounts,
             Map<String, Integer> artifactKindCounts,
+            Map<String, Integer> evidenceKindCounts,
+            Map<String, Integer> evidenceIdCounts,
+            Map<String, Integer> bindingIdCounts,
+            Map<String, Integer> activationIdCounts,
+            Map<String, Integer> adapterKindCounts,
+            Map<String, Integer> runtimeEnvironmentCounts,
+            Map<String, Integer> rolloutSignalCounts,
             List<ActionItem> items
     ) {
         public ActionQueue(int total,
@@ -1227,6 +1262,13 @@ public record VisualAssetOverview(
                     Map.of(),
                     Map.of(),
                     Map.of(),
+                    Map.of(),
+                    Map.of(),
+                    Map.of(),
+                    Map.of(),
+                    Map.of(),
+                    Map.of(),
+                    Map.of(),
                     items
             );
         }
@@ -1245,6 +1287,13 @@ public record VisualAssetOverview(
             handoffTargetCounts = immutableCounts(handoffTargetCounts);
             readinessStateCounts = immutableCounts(readinessStateCounts);
             artifactKindCounts = immutableCounts(artifactKindCounts);
+            evidenceKindCounts = immutableCounts(evidenceKindCounts);
+            evidenceIdCounts = immutableCounts(evidenceIdCounts);
+            bindingIdCounts = immutableCounts(bindingIdCounts);
+            activationIdCounts = immutableCounts(activationIdCounts);
+            adapterKindCounts = immutableCounts(adapterKindCounts);
+            runtimeEnvironmentCounts = immutableCounts(runtimeEnvironmentCounts);
+            rolloutSignalCounts = immutableCounts(rolloutSignalCounts);
             items = items == null ? List.of() : List.copyOf(items);
             displayedCount = items.size();
             hasMore = offset + displayedCount < total;
@@ -1320,6 +1369,13 @@ public record VisualAssetOverview(
                                 String actionHandoffTarget,
                                 String actionReadinessState,
                                 String actionArtifactKind,
+                                String actionEvidenceKind,
+                                String actionEvidenceId,
+                                String actionBindingId,
+                                String actionActivationId,
+                                String actionAdapterKind,
+                                String actionRuntimeEnvironment,
+                                String actionRolloutSignal,
                                 List<VisualRuntimeBindingImplementationBinding> implementationBindings,
                                 List<VisualRuntimeAdapterActivation> adapterActivations,
                                 List<VisualRuntimeRolloutObservation> rolloutObservations,
@@ -1367,7 +1423,8 @@ public record VisualAssetOverview(
             });
             ActionFilter filter = new ActionFilter(actionSeverity, actionType, actionTargetKind, actionOperatorRef,
                     actionOperatorLibraryId, actionHandoffLane, actionHandoffKind, actionHandoffTarget,
-                    actionReadinessState, actionArtifactKind);
+                    actionReadinessState, actionArtifactKind, actionEvidenceKind, actionEvidenceId, actionBindingId,
+                    actionActivationId, actionAdapterKind, actionRuntimeEnvironment, actionRolloutSignal);
             List<ActionItem> filtered = generated.stream()
                     .filter(filter::matches)
                     .toList();
@@ -1379,6 +1436,13 @@ public record VisualAssetOverview(
             Map<String, Integer> handoffTargets = countBy(filtered, ActionItem::handoffTarget);
             Map<String, Integer> readinessStates = countBy(filtered, ActionItem::readinessState);
             Map<String, Integer> artifactKinds = countBy(filtered, ActionItem::artifactKind);
+            Map<String, Integer> evidenceKinds = countBy(filtered, ActionItem::evidenceKind);
+            Map<String, Integer> evidenceIds = countBy(filtered, ActionItem::evidenceId);
+            Map<String, Integer> bindingIds = countBy(filtered, ActionItem::bindingId);
+            Map<String, Integer> activationIds = countBy(filtered, ActionItem::activationId);
+            Map<String, Integer> adapterKinds = countBy(filtered, ActionItem::adapterKind);
+            Map<String, Integer> runtimeEnvironments = countBy(filtered, ActionItem::runtimeEnvironment);
+            Map<String, Integer> rolloutSignals = countByMany(filtered, ActionItem::rolloutSignals);
             int errorCount = 0;
             int warningCount = 0;
             int infoCount = 0;
@@ -1411,6 +1475,13 @@ public record VisualAssetOverview(
                     handoffTargets,
                     readinessStates,
                     artifactKinds,
+                    evidenceKinds,
+                    evidenceIds,
+                    bindingIds,
+                    activationIds,
+                    adapterKinds,
+                    runtimeEnvironments,
+                    rolloutSignals,
                     filtered.stream().skip(normalizedOffset).limit(normalizedLimit).toList()
             );
         }
@@ -1447,6 +1518,13 @@ public record VisualAssetOverview(
                     "",
                     "",
                     "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
                     implementationBindings,
                     adapterActivations,
                     rolloutObservations,
@@ -1472,6 +1550,13 @@ public record VisualAssetOverview(
      * @param handoffTarget runtime-plane handoff target filter, empty when not filtered
      * @param readinessState readiness state filter, empty when not filtered
      * @param artifactKind artifact kind filter, empty when not filtered
+     * @param evidenceKind runtime evidence kind filter, empty when not filtered
+     * @param evidenceId runtime evidence id filter, empty when not filtered
+     * @param bindingId runtime binding id filter, empty when not filtered
+     * @param activationId runtime adapter activation id filter, empty when not filtered
+     * @param adapterKind runtime adapter kind filter, empty when not filtered
+     * @param runtimeEnvironment runtime environment filter, empty when not filtered
+     * @param rolloutSignal rollout guardrail signal filter, empty when not filtered
      * @param filtered true when at least one action filter is active
      */
     public record ActionFilter(
@@ -1485,6 +1570,13 @@ public record VisualAssetOverview(
             String handoffTarget,
             String readinessState,
             String artifactKind,
+            String evidenceKind,
+            String evidenceId,
+            String bindingId,
+            String activationId,
+            String adapterKind,
+            String runtimeEnvironment,
+            String rolloutSignal,
             boolean filtered
     ) {
         public ActionFilter(String severity, String actionType, String targetKind) {
@@ -1513,6 +1605,27 @@ public record VisualAssetOverview(
                             String handoffTarget,
                             String readinessState,
                             String artifactKind) {
+            this(severity, actionType, targetKind, operatorRef, operatorLibraryId, handoffLane, handoffKind,
+                    handoffTarget, readinessState, artifactKind, "", "", "", "", "", "", "");
+        }
+
+        public ActionFilter(String severity,
+                            String actionType,
+                            String targetKind,
+                            String operatorRef,
+                            String operatorLibraryId,
+                            String handoffLane,
+                            String handoffKind,
+                            String handoffTarget,
+                            String readinessState,
+                            String artifactKind,
+                            String evidenceKind,
+                            String evidenceId,
+                            String bindingId,
+                            String activationId,
+                            String adapterKind,
+                            String runtimeEnvironment,
+                            String rolloutSignal) {
             this(
                     normalizeSeverityFilter(severity),
                     normalizeActionTypeFilter(actionType),
@@ -1524,6 +1637,13 @@ public record VisualAssetOverview(
                     normalizeTextValue(handoffTarget),
                     normalizeFacetValue(readinessState),
                     normalizeArtifactKindFilter(artifactKind),
+                    normalizeFacetValue(evidenceKind),
+                    normalizeTextValue(evidenceId),
+                    normalizeTextValue(bindingId),
+                    normalizeTextValue(activationId),
+                    normalizeFacetValue(adapterKind),
+                    normalizeTextValue(runtimeEnvironment),
+                    normalizeFacetValue(rolloutSignal),
                     !normalizeSeverityFilter(severity).isBlank()
                             || !normalizeActionTypeFilter(actionType).isBlank()
                             || !normalizeTargetKindFilter(targetKind).isBlank()
@@ -1534,6 +1654,13 @@ public record VisualAssetOverview(
                             || !normalizeTextValue(handoffTarget).isBlank()
                             || !normalizeFacetValue(readinessState).isBlank()
                             || !normalizeArtifactKindFilter(artifactKind).isBlank()
+                            || !normalizeFacetValue(evidenceKind).isBlank()
+                            || !normalizeTextValue(evidenceId).isBlank()
+                            || !normalizeTextValue(bindingId).isBlank()
+                            || !normalizeTextValue(activationId).isBlank()
+                            || !normalizeFacetValue(adapterKind).isBlank()
+                            || !normalizeTextValue(runtimeEnvironment).isBlank()
+                            || !normalizeFacetValue(rolloutSignal).isBlank()
             );
         }
 
@@ -1548,6 +1675,13 @@ public record VisualAssetOverview(
             handoffTarget = normalizeTextValue(handoffTarget);
             readinessState = normalizeFacetValue(readinessState);
             artifactKind = normalizeArtifactKindFilter(artifactKind);
+            evidenceKind = normalizeFacetValue(evidenceKind);
+            evidenceId = normalizeTextValue(evidenceId);
+            bindingId = normalizeTextValue(bindingId);
+            activationId = normalizeTextValue(activationId);
+            adapterKind = normalizeFacetValue(adapterKind);
+            runtimeEnvironment = normalizeTextValue(runtimeEnvironment);
+            rolloutSignal = normalizeFacetValue(rolloutSignal);
             filtered = !severity.isBlank() || !actionType.isBlank() || !targetKind.isBlank()
                     || !operatorRef.isBlank()
                     || !operatorLibraryId.isBlank()
@@ -1555,11 +1689,18 @@ public record VisualAssetOverview(
                     || !handoffKind.isBlank()
                     || !handoffTarget.isBlank()
                     || !readinessState.isBlank()
-                    || !artifactKind.isBlank();
+                    || !artifactKind.isBlank()
+                    || !evidenceKind.isBlank()
+                    || !evidenceId.isBlank()
+                    || !bindingId.isBlank()
+                    || !activationId.isBlank()
+                    || !adapterKind.isBlank()
+                    || !runtimeEnvironment.isBlank()
+                    || !rolloutSignal.isBlank();
         }
 
         static ActionFilter all() {
-            return new ActionFilter("", "", "", "", "", "", "", "", "", "");
+            return new ActionFilter("", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "");
         }
 
         boolean matches(ActionItem item) {
@@ -1573,7 +1714,14 @@ public record VisualAssetOverview(
                     && (handoffKind.isBlank() || handoffKind.equals(item.handoffKind()))
                     && (handoffTarget.isBlank() || handoffTarget.equals(item.handoffTarget()))
                     && (readinessState.isBlank() || readinessState.equals(item.readinessState()))
-                    && (artifactKind.isBlank() || artifactKind.equals(item.artifactKind()));
+                    && (artifactKind.isBlank() || artifactKind.equals(item.artifactKind()))
+                    && (evidenceKind.isBlank() || evidenceKind.equals(item.evidenceKind()))
+                    && (evidenceId.isBlank() || evidenceId.equals(item.evidenceId()))
+                    && (bindingId.isBlank() || bindingId.equals(item.bindingId()))
+                    && (activationId.isBlank() || activationId.equals(item.activationId()))
+                    && (adapterKind.isBlank() || adapterKind.equals(item.adapterKind()))
+                    && (runtimeEnvironment.isBlank() || runtimeEnvironment.equals(item.runtimeEnvironment()))
+                    && (rolloutSignal.isBlank() || item.rolloutSignals().contains(rolloutSignal));
         }
     }
 
@@ -1601,6 +1749,13 @@ public record VisualAssetOverview(
      * @param handoffLane runtime-plane responsibility lane when this is a binding action
      * @param handoffKind runtime-plane work kind when this is a binding action
      * @param handoffTarget runtime-plane routing target when this is a binding action
+     * @param evidenceKind runtime evidence kind when the action targets runtime evidence
+     * @param evidenceId runtime evidence record id when available
+     * @param bindingId runtime binding id when available
+     * @param activationId runtime adapter activation id when available
+     * @param adapterKind runtime adapter kind when available
+     * @param runtimeEnvironment runtime environment when available
+     * @param rolloutSignals rollout guardrail signal names when available
      * @param summary concise reason for the queue item
      * @param recommendedAction concrete next action
      */
@@ -1618,6 +1773,13 @@ public record VisualAssetOverview(
             String handoffLane,
             String handoffKind,
             String handoffTarget,
+            String evidenceKind,
+            String evidenceId,
+            String bindingId,
+            String activationId,
+            String adapterKind,
+            String runtimeEnvironment,
+            List<String> rolloutSignals,
             String summary,
             String recommendedAction
     ) {
@@ -1644,6 +1806,13 @@ public record VisualAssetOverview(
                     "",
                     "",
                     "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    List.of(),
                     summary,
                     recommendedAction
             );
@@ -1673,6 +1842,13 @@ public record VisualAssetOverview(
                     "",
                     "",
                     "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    List.of(),
                     summary,
                     recommendedAction
             );
@@ -1706,6 +1882,54 @@ public record VisualAssetOverview(
                     handoffLane,
                     handoffKind,
                     handoffTarget,
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    List.of(),
+                    summary,
+                    recommendedAction
+            );
+        }
+
+        public ActionItem(String actionKey,
+                          String severity,
+                          String actionType,
+                          String targetKind,
+                          String targetId,
+                          String targetLabel,
+                          String operatorRef,
+                          String operatorLibraryId,
+                          String readinessState,
+                          String artifactKind,
+                          String handoffLane,
+                          String handoffKind,
+                          String handoffTarget,
+                          String summary,
+                          String recommendedAction) {
+            this(
+                    actionKey,
+                    severity,
+                    actionType,
+                    targetKind,
+                    targetId,
+                    targetLabel,
+                    operatorRef,
+                    operatorLibraryId,
+                    readinessState,
+                    artifactKind,
+                    handoffLane,
+                    handoffKind,
+                    handoffTarget,
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    List.of(),
                     summary,
                     recommendedAction
             );
@@ -1726,6 +1950,13 @@ public record VisualAssetOverview(
             handoffLane = normalizeFacetValue(handoffLane);
             handoffKind = normalizeFacetValue(handoffKind);
             handoffTarget = handoffTarget == null ? "" : handoffTarget;
+            evidenceKind = normalizeFacetValue(evidenceKind);
+            evidenceId = normalizeTextValue(evidenceId);
+            bindingId = normalizeTextValue(bindingId);
+            activationId = normalizeTextValue(activationId);
+            adapterKind = normalizeFacetValue(adapterKind);
+            runtimeEnvironment = normalizeTextValue(runtimeEnvironment);
+            rolloutSignals = normalizeFacetValues(rolloutSignals);
             summary = summary == null ? "" : summary;
             recommendedAction = recommendedAction == null ? "" : recommendedAction;
             actionKey = actionKey == null || actionKey.isBlank()
@@ -1781,6 +2012,11 @@ public record VisualAssetOverview(
                         "runtime-platform",
                         "adapter-activation",
                         activation.bindingId(),
+                        activation.bindingId(),
+                        activation.activationId(),
+                        activation.adapterKind(),
+                        activation.runtimeEnvironment(),
+                        List.of(),
                         "Runtime adapter activation '%s' is failed for operator '%s'."
                                 .formatted(activation.activationId(), activation.operatorRef()),
                         "Review adapter health/deployment evidence, submit a healthy activation, or deactivate the stale record."
@@ -1806,6 +2042,11 @@ public record VisualAssetOverview(
                         "operator-platform",
                         "executable-lowering",
                         integration.activationId(),
+                        integration.bindingId(),
+                        integration.activationId(),
+                        integration.adapterKind(),
+                        integration.runtimeEnvironment(),
+                        List.of(),
                         "Executable lowering integration '%s' is failed for operator '%s'."
                                 .formatted(integration.integrationId(), integration.operatorRef()),
                         "Repair executor bridge evidence, then resubmit or deactivate the failed integration."
@@ -1829,6 +2070,11 @@ public record VisualAssetOverview(
                         "runtime-platform",
                         "adapter-activation",
                         defaultIfBlank(adapterKind, binding.operatorRef()),
+                        binding.bindingId(),
+                        "",
+                        adapterKind,
+                        "",
+                        List.of(),
                         "Bound implementation '%s' has no matching active runtime adapter activation."
                                 .formatted(binding.bindingId()),
                         "Submit a healthy adapter activation for this binding before executable lowering or production rollout."
@@ -1851,6 +2097,11 @@ public record VisualAssetOverview(
                         "runtime-platform",
                         "adapter-activation",
                         activation.bindingId(),
+                        activation.bindingId(),
+                        activation.activationId(),
+                        activation.adapterKind(),
+                        activation.runtimeEnvironment(),
+                        List.of(),
                         "Active adapter activation '%s' no longer matches an active bound implementation."
                                 .formatted(activation.activationId()),
                         "Deactivate or refresh this activation against the current bound implementation fingerprint/revision."
@@ -1872,6 +2123,11 @@ public record VisualAssetOverview(
                         "operator-platform",
                         "executable-lowering",
                         activation.operatorRef(),
+                        activation.bindingId(),
+                        activation.activationId(),
+                        activation.adapterKind(),
+                        activation.runtimeEnvironment(),
+                        List.of(),
                         "Active adapter activation '%s' has no matching executable lowering integration."
                                 .formatted(activation.activationId()),
                         "Submit executor/lowering bridge evidence before recomputing executable readiness."
@@ -1896,6 +2152,11 @@ public record VisualAssetOverview(
                         "operator-platform",
                         "executable-lowering",
                         integration.activationId(),
+                        integration.bindingId(),
+                        integration.activationId(),
+                        integration.adapterKind(),
+                        integration.runtimeEnvironment(),
+                        List.of(),
                         "Active executable lowering integration '%s' no longer matches an active activation chain."
                                 .formatted(integration.integrationId()),
                         "Deactivate or refresh this integration after adapter activation and binding evidence are current."
@@ -1916,6 +2177,7 @@ public record VisualAssetOverview(
             return;
         }
         String operatorLibraryId = operatorLibraryId(binding.operatorRef(), operatorLibraryIdsByOperatorRef);
+        String adapterKind = binding.implementation() == null ? "" : binding.implementation().adapterKind();
         if (binding.failed()) {
             addRuntimeEvidenceAction(
                     items,
@@ -1929,6 +2191,11 @@ public record VisualAssetOverview(
                     "operator-platform",
                     "operator-implementation",
                     binding.operatorRef(),
+                    binding.bindingId(),
+                    "",
+                    adapterKind,
+                    "",
+                    List.of(),
                     "Runtime implementation binding '%s' is failed for operator '%s'."
                             .formatted(binding.bindingId(), binding.operatorRef()),
                     "Review implementation validation evidence, fix the proposal, and resubmit a new binding record."
@@ -1946,6 +2213,11 @@ public record VisualAssetOverview(
                     "operator-platform",
                     "operator-implementation",
                     binding.operatorRef(),
+                    binding.bindingId(),
+                    "",
+                    adapterKind,
+                    "",
+                    List.of(),
                     "Runtime implementation binding '%s' requires review before it can become active."
                             .formatted(binding.bindingId()),
                     "Review test, policy, rollback, and rollout evidence; then bind it with actor/reason audit."
@@ -1963,6 +2235,11 @@ public record VisualAssetOverview(
                     "operator-platform",
                     "operator-implementation",
                     binding.operatorRef(),
+                    binding.bindingId(),
+                    "",
+                    adapterKind,
+                    "",
+                    List.of(),
                     "Runtime implementation binding '%s' is ready to bind."
                             .formatted(binding.bindingId()),
                     "Bind this implementation with actor/reason evidence, or supersede it if newer evidence exists."
@@ -2009,6 +2286,11 @@ public record VisualAssetOverview(
                 "runtime-platform",
                 "rollout-observation",
                 observation.runtimeEnvironment(),
+                observation.bindingId(),
+                observation.activationId(),
+                observation.adapterKind(),
+                observation.runtimeEnvironment(),
+                runtimeRolloutSignalNames(observation, breachedSignalNames),
                 "Runtime rollout observation '%s' is %s%s for operator '%s'."
                         .formatted(
                                 observation.observationId(),
@@ -2017,6 +2299,21 @@ public record VisualAssetOverview(
                                 observation.operatorRef()),
                 recommendedAction
         );
+    }
+
+    private static List<String> runtimeRolloutSignalNames(VisualRuntimeRolloutObservation observation,
+                                                          List<String> breachedSignalNames) {
+        List<String> names = new ArrayList<>();
+        if (observation != null && !normalizeFacetValue(observation.rollbackSignal()).isBlank()) {
+            names.add(normalizeFacetValue(observation.rollbackSignal()));
+        }
+        for (String name : breachedSignalNames == null ? List.<String>of() : breachedSignalNames) {
+            String normalized = normalizeFacetValue(name);
+            if (!normalized.isBlank() && !names.contains(normalized)) {
+                names.add(normalized);
+            }
+        }
+        return names;
     }
 
     private static String rolloutRiskSuffix(boolean rollbackTriggered, List<String> breachedSignalNames) {
@@ -2043,6 +2340,46 @@ public record VisualAssetOverview(
                                                  String handoffTarget,
                                                  String summary,
                                                  String recommendedAction) {
+        addRuntimeEvidenceAction(
+                items,
+                severity,
+                actionType,
+                operatorRef,
+                operatorLibraryId,
+                evidenceKind,
+                evidenceId,
+                readinessState,
+                handoffLane,
+                handoffKind,
+                handoffTarget,
+                "",
+                "",
+                "",
+                "",
+                List.of(),
+                summary,
+                recommendedAction
+        );
+    }
+
+    private static void addRuntimeEvidenceAction(List<ActionItem> items,
+                                                 String severity,
+                                                 String actionType,
+                                                 String operatorRef,
+                                                 String operatorLibraryId,
+                                                 String evidenceKind,
+                                                 String evidenceId,
+                                                 String readinessState,
+                                                 String handoffLane,
+                                                 String handoffKind,
+                                                 String handoffTarget,
+                                                 String bindingId,
+                                                 String activationId,
+                                                 String adapterKind,
+                                                 String runtimeEnvironment,
+                                                 List<String> rolloutSignals,
+                                                 String summary,
+                                                 String recommendedAction) {
         String targetId = "%s:%s".formatted(evidenceKind, evidenceId == null ? "" : evidenceId);
         items.add(new ActionItem(
                 runtimeEvidenceActionKey(actionType, evidenceKind, evidenceId),
@@ -2058,6 +2395,13 @@ public record VisualAssetOverview(
                 handoffLane,
                 handoffKind,
                 handoffTarget,
+                evidenceKind,
+                evidenceId,
+                bindingId,
+                activationId,
+                adapterKind,
+                runtimeEnvironment,
+                rolloutSignals,
                 summary,
                 recommendedAction
         ));
@@ -2125,6 +2469,21 @@ public record VisualAssetOverview(
                 continue;
             }
             counts.merge(key, 1, Integer::sum);
+        }
+        return counts;
+    }
+
+    private static Map<String, Integer> countByMany(List<ActionItem> items,
+                                                    Function<ActionItem, List<String>> classifier) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (ActionItem item : items == null ? List.<ActionItem>of() : items) {
+            List<String> keys = classifier.apply(item);
+            for (String key : keys == null ? List.<String>of() : keys) {
+                String normalized = normalizeFacetValue(key);
+                if (!normalized.isBlank()) {
+                    counts.merge(normalized, 1, Integer::sum);
+                }
+            }
         }
         return counts;
     }
@@ -2853,6 +3212,20 @@ public record VisualAssetOverview(
                 .trim()
                 .toLowerCase(Locale.ROOT)
                 .replace('_', '-');
+    }
+
+    private static List<String> normalizeFacetValues(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        List<String> normalized = new ArrayList<>();
+        for (String value : values) {
+            String item = normalizeFacetValue(value);
+            if (!item.isBlank() && !normalized.contains(item)) {
+                normalized.add(item);
+            }
+        }
+        return List.copyOf(normalized);
     }
 
     private static String normalizeTextValue(String value) {

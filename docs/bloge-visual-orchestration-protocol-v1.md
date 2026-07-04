@@ -1993,9 +1993,11 @@ message handler、webhook、streaming 或 durable capability 暂时不能运行�
 `PLAN_PUBLICATION_RUNTIME_BINDING`，并把 `nodeId/bindingKind/bindingTarget`
 固化进稳定 `actionKey`，同时透传 `operatorRef`、owner `operatorLibraryId` 与
 `handoffLane/handoffKind/handoffTarget` 作为 runtime-plane 路由提示；overview
-action queue 支持 `actionOperatorRef` / `actionOperatorLibraryId` 过滤并返回
-`operatorRefCounts` / `operatorLibraryIdCounts`，这些字段不是工单状态，不引入第二套
-workflow 真相源。同一 action queue 也会消费 summary 中的 schema drift 聚合，把
+action queue 支持 `actionOperatorRef` / `actionOperatorLibraryId` /
+`actionHandoffLane` / `actionHandoffKind` / `actionHandoffTarget` /
+`actionReadinessState` / `actionArtifactKind` 过滤并返回对应 count maps，
+这些字段不是工单状态，不引入第二套 workflow 真相源。同一 action queue 也会消费
+summary 中的 schema drift 聚合，把
 breaking drift 投影为 `REPAIR_DRAFT_SCHEMA_DRIFT` /
 `RECERTIFY_PUBLICATION_SCHEMA_DRIFT` error action，把 compatible drift 投影为
 `REVIEW_DRAFT_SCHEMA_DRIFT` / `REVIEW_PUBLICATION_SCHEMA_DRIFT` warning action，并携带
@@ -2016,7 +2018,11 @@ overview action queue 会把这些 runtime evidence 风险进一步投影为 `ta
 `REPAIR_EXECUTABLE_LOWERING_CHAIN`、`REVIEW_RUNTIME_ROLLOUT_RISK` 和
 `REVIEW_RUNTIME_ROLLOUT_FAILURE`；`REVIEW_RUNTIME_ROLLOUT_RISK` 不只来自 degraded/rollback 状态，
 也来自 `rolloutSignals[].breached=true` 的结构化 guardrail 信号；这些 item 仍是只读 read-model recommendation，
-不是 runtime-plane lifecycle mutation，也不是新的 workflow truth source。
+不是 runtime-plane lifecycle mutation，也不是新的 workflow truth source。runtime evidence action item 会额外携带
+`evidenceKind/evidenceId/bindingId/activationId/adapterKind/runtimeEnvironment/rolloutSignals[]`，
+overview query 支持 `actionEvidenceKind`、`actionEvidenceId`、`actionBindingId`、
+`actionActivationId`、`actionAdapterKind`、`actionRuntimeEnvironment` 和 `actionRolloutSignal`
+过滤，并返回对应 count maps，方便外部控制面从 overview action 直接定位具体 runtime fact 链路。
 owner `operatorLibraryId` 的解析顺序是：优先使用当前 catalog 的
 `operatorRef -> operatorLibraryId`，缺失时回退到 draft/publication summary 从 dependency
 evidence 派生的 `operatorLibraryIdsByOperatorRef`。这保证跨环境 DESIGN publication 或

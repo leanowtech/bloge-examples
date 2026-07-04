@@ -200,6 +200,13 @@ public class VisualAssetOverviewController {
      * @param actionHandoffTarget optional runtime-plane handoff target filter
      * @param actionReadinessState optional graph/operator readiness state filter
      * @param actionArtifactKind optional publication artifact kind filter
+     * @param actionEvidenceKind optional runtime evidence kind filter
+     * @param actionEvidenceId optional runtime evidence id filter
+     * @param actionBindingId optional runtime binding id filter
+     * @param actionActivationId optional runtime adapter activation id filter
+     * @param actionAdapterKind optional runtime adapter kind filter
+     * @param actionRuntimeEnvironment optional runtime environment filter
+     * @param actionRolloutSignal optional runtime rollout signal filter
      * @return visual asset overview
      */
     @GetMapping("/overview")
@@ -217,7 +224,14 @@ public class VisualAssetOverviewController {
                                         @RequestParam(defaultValue = "") String actionHandoffKind,
                                         @RequestParam(defaultValue = "") String actionHandoffTarget,
                                         @RequestParam(defaultValue = "") String actionReadinessState,
-                                        @RequestParam(defaultValue = "") String actionArtifactKind) {
+                                        @RequestParam(defaultValue = "") String actionArtifactKind,
+                                        @RequestParam(defaultValue = "") String actionEvidenceKind,
+                                        @RequestParam(defaultValue = "") String actionEvidenceId,
+                                        @RequestParam(defaultValue = "") String actionBindingId,
+                                        @RequestParam(defaultValue = "") String actionActivationId,
+                                        @RequestParam(defaultValue = "") String actionAdapterKind,
+                                        @RequestParam(defaultValue = "") String actionRuntimeEnvironment,
+                                        @RequestParam(defaultValue = "") String actionRolloutSignal) {
         List<GraphDraftSummary> draftSummaries = draftSummaries(tenantId, namespace, environment);
         List<VisualGraphPublicationSummary> publicationSummaries =
                 publicationSummaries(tenantId, namespace, environment);
@@ -281,6 +295,13 @@ public class VisualAssetOverviewController {
                 actionHandoffTarget,
                 actionReadinessState,
                 actionArtifactKind,
+                actionEvidenceKind,
+                actionEvidenceId,
+                actionBindingId,
+                actionActivationId,
+                actionAdapterKind,
+                actionRuntimeEnvironment,
+                actionRolloutSignal,
                 implementationBindings,
                 adapterActivations,
                 rolloutObservations,
@@ -3856,6 +3877,26 @@ public class VisualAssetOverviewController {
                                  String actionOperatorLibraryId) {
         return overview(tenantId, namespace, environment, actionLimit, actionOffset, actionSeverity, actionType,
                 actionTargetKind, actionOperatorRef, actionOperatorLibraryId, "", "", "", "", "");
+    }
+
+    VisualAssetOverview overview(String tenantId,
+                                 String namespace,
+                                 String environment,
+                                 int actionLimit,
+                                 int actionOffset,
+                                 String actionSeverity,
+                                 String actionType,
+                                 String actionTargetKind,
+                                 String actionOperatorRef,
+                                 String actionOperatorLibraryId,
+                                 String actionHandoffLane,
+                                 String actionHandoffKind,
+                                 String actionHandoffTarget,
+                                 String actionReadinessState,
+                                 String actionArtifactKind) {
+        return overview(tenantId, namespace, environment, actionLimit, actionOffset, actionSeverity, actionType,
+                actionTargetKind, actionOperatorRef, actionOperatorLibraryId, actionHandoffLane, actionHandoffKind,
+                actionHandoffTarget, actionReadinessState, actionArtifactKind, "", "", "", "", "", "", "");
     }
 
     VisualRuntimeBindingRequirements runtimeBindingRequirements(String tenantId,

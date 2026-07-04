@@ -1283,8 +1283,11 @@ The Workspace Overview action queue consumes the same requirements and emits
 per-node `PLAN_DRAFT_RUNTIME_BINDING` or `PLAN_PUBLICATION_RUNTIME_BINDING`
 items with stable keys plus related `operatorRef` and owner `operatorLibraryId`,
 so runtime-plane binding work can be filtered, counted, and assigned by
-user-provided operator or operator-library ownership directly from the overview
-without loading each full draft or immutable publication.
+user-provided operator or operator-library ownership, handoff lane/kind/target,
+readiness state, artifact kind, and runtime evidence dimensions such as
+bindingId, activationId, adapter kind, runtime environment, or rollout signal
+directly from the overview without loading each full draft or immutable
+publication.
 The same overview path now consumes draft/publication dependency summaries for
 schema drift: breaking frozen-vs-current operator schema drift becomes
 `REPAIR_DRAFT_SCHEMA_DRIFT` or `RECERTIFY_PUBLICATION_SCHEMA_DRIFT` error
@@ -1440,7 +1443,8 @@ binding or runtime evidence filter/focus state, and de-duplicate repeated
 recommendations without treating the queue itself as a stateful workflow engine.
 The browser also exposes the action
 queue's server-side severity, type, target-kind, operator library, operatorRef,
-and page-window controls, and renders runtime evidence aggregate/detail rows
+handoff, readiness, artifact, runtime evidence identity, binding, activation,
+adapter, runtime environment, rollout signal, and page-window controls, and renders runtime evidence aggregate/detail rows
 through the runtime evidence window's server-side kind, identity, lifecycle,
 rollout-signal, breached-only, and paging controls as read-only control-plane
 facts rather than graph artifact semantics, so a large design-only
