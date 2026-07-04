@@ -544,13 +544,28 @@ public class OperatorFitCandidateService {
                     .findFirst()
                     .orElse("null");
         }
-        if (type == null && schema.containsKey("properties")) {
+        if (type == null && hasSchemaKeyword(schema, "properties", "required", "additionalProperties",
+                "unevaluatedProperties", "patternProperties", "propertyNames", "dependentRequired",
+                "dependentSchemas", "minProperties", "maxProperties")) {
             return "object";
         }
-        if (type == null && schema.containsKey("items")) {
+        if (type == null && hasSchemaKeyword(schema, "items", "prefixItems", "unevaluatedItems", "contains",
+                "minItems", "maxItems", "uniqueItems", "minContains", "maxContains")) {
             return "array";
         }
         return type == null ? "" : String.valueOf(type);
+    }
+
+    private static boolean hasSchemaKeyword(Map<String, Object> schema, String... keywords) {
+        if (schema == null) {
+            return false;
+        }
+        for (String keyword : keywords) {
+            if (schema.containsKey(keyword)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String schemaTypeLabel(Map<String, Object> schema) {

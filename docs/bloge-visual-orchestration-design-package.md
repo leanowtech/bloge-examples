@@ -14,15 +14,17 @@
 | [BLOGE 可视化编排系统关键决策记录](./bloge-visual-orchestration-decision-record.md) | 决策理由：备选方案、拒绝理由、接受代价、失效条件和回看触发器 | 架构评审者、CTO/Tech Lead |
 | [BLOGE 可视化编排 Phase 1 实现蓝图](./bloge-visual-orchestration-phase1-implementation-blueprint.md) | 落地计划：包结构、DTO、controller、validator、DSL generator、前端迁移、测试和 DoD | 实施团队 |
 | [BLOGE 可视化编排实现状态审计](./bloge-visual-orchestration-implementation-status.md) | 当前代码事实：已落地能力、wire contract 命名、Phase 1 验收、剩余生产级缺口和下一步 | 所有人，尤其是继续实现前的工程师 |
+| [BLOGE 可视化编排工业化评估报告](./bloge-visual-orchestration-industrialization-assessment.md) | 多维度成熟度评分、当前工业级差距、本轮迭代复盘和下一轮优先级 | 架构负责人、技术负责人、继续迭代的工程师 |
 
 ## 2. 推荐阅读路径
 
 ### 2.1 快速判断方向是否成立
 
-1. 先读实现状态审计，确认当前代码已经做到哪里，以及早期协议名和当前实现名的差异。
-2. 读主方案第 1-7 章，理解为什么这不是普通拖拽画布，而是可视化编排控制面。
-3. 读决策记录 ADR-001 到 ADR-008，确认核心取舍是否能接受。
-4. 读主方案第 20-23 章，确认路线图和下一步。
+1. 先读工业化评估报告，确认当前离完整生产级平台还有多大差距，以及最近一轮迭代修补了什么。
+2. 读实现状态审计，确认当前代码已经做到哪里，以及早期协议名和当前实现名的差异。
+3. 读主方案第 1-7 章，理解为什么这不是普通拖拽画布，而是可视化编排控制面。
+4. 读决策记录 ADR-001 到 ADR-008，确认核心取舍是否能接受。
+5. 读主方案第 20-23 章，确认路线图和下一步。
 
 ### 2.2 准备进入实现
 

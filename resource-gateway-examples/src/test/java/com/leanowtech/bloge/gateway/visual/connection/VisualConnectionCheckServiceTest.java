@@ -363,6 +363,44 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void connectionCandidatesDiscoverTypelessArrayTargetPaths() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.listSchemaCompatibilityLibrary(
+                        Map.of("items", Map.of("type", "integer")),
+                        Map.of(
+                                "prefixItems", List.of(Map.of("type", "integer")),
+                                "items", Map.of("type", "string")))));
+        GraphDraft draft = listCompatibilityDraft();
+
+        VisualConnectionCandidatesResult result = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("listFacts", "output", "items.0"),
+                "data",
+                true,
+                50,
+                0,
+                "listConsumer",
+                "input"
+        ));
+
+        assertThat(result.candidates())
+                .anySatisfy(candidate -> {
+                    assertThat(candidate.target().path()).isEqualTo("items.0");
+                    assertThat(candidate.accepted()).isTrue();
+                    assertThat(candidate.explanation().sourceSchemaType()).isEqualTo("integer");
+                    assertThat(candidate.explanation().targetSchemaType()).isEqualTo("integer");
+                    assertThat(candidate.diagnostics()).isEmpty();
+                })
+                .anySatisfy(candidate -> {
+                    assertThat(candidate.target().path()).isEqualTo("items.1");
+                    assertThat(candidate.accepted()).isFalse();
+                    assertThat(candidate.explanation().targetSchemaType()).isEqualTo("string");
+                    assertThat(candidate.explanation().firstDiagnosticCode())
+                            .isEqualTo("visual.binding.typeMismatch");
+                });
+    }
+
+    @Test
     void acceptsArrayConnectionWhenSourceItemsAvoidTargetNotContains() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLibrary(VisualCatalogTestSupport.listSchemaCompatibilityLibrary(
