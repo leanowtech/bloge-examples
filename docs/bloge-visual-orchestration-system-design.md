@@ -841,7 +841,7 @@ summary/diagnostic/schema explanation（source/target type、first diagnostic、
 `/api/visual/connections/check`，避免把候选发现误用成 mutation gate。
 selected-node connectability inspector 复用同一读模型为当前节点 source handles 建立短期快照，
 用服务端 candidate summary/diagnostic/schema explanation，以及 Endpoint/source-handle、Schema/Runtime/Library/Operator/Source/Lowering/Surface filter 覆盖本地推断；Endpoint 选择会把展示行和候选请求收窄到单个输出端点，但 quick-connect 点击前仍再次调用
-connection check，保证 inspector 建议和实际写入之间不存在第二套权威。候选行默认以固定窗口展示首批 ready/matching target，并用行级 overflow chip 标明被裁剪数量；当服务端候选窗口翻页时，当前窗口内带 server candidate 的目标优先排在 local fallback 前，避免后页服务端裁决被本地候选遮住。
+connection check，保证 inspector 建议和实际写入之间不存在第二套权威。候选行默认以固定窗口展示首批 ready/matching target，并用行级 overflow chip 标明被裁剪数量；overflow 后的行内 Prev/Next 和方向键推进允许作者继续浏览同一 source 的后续候选，而不一次渲染全量 chip；当服务端候选窗口翻页时，当前窗口内带 server candidate 的目标优先排在 local fallback 前，避免后页服务端裁决被本地候选遮住。
 选中已发布 artifact 时，浏览器展示 publication 冻结的 readiness 和非执行节点清单；
 这是审阅历史设计制品的依据，不依赖当前 catalog 重新推断。
 同一 admin API 已具备 registry-aware impact preflight：删除、禁用或替换仍被 stored draft 引用的

@@ -585,6 +585,7 @@ const state = {
     sourceKey: '',
     facetFilters: {}
   },
+  nodeConnectabilityDisplayWindows: {},
   connectionMessage: null,
   builderHistoryUndo: [],
   builderHistoryRedo: [],
@@ -14508,6 +14509,16 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const button of target.querySelectorAll('[data-connectability-row-window]')) {
+    button.addEventListener('click', () => {
+      changeNodeConnectabilityDisplayWindowFromButton(button);
+    });
+  }
+
+  for (const container of target.querySelectorAll('[data-connectability-targets]')) {
+    container.addEventListener('keydown', handleNodeConnectabilityTargetsKeydown);
+  }
+
   for (const input of target.querySelectorAll('[data-connectability-filter-query]')) {
     input.addEventListener('input', () => {
       const caret = Number.isFinite(input.selectionStart) ? input.selectionStart : input.value.length;
@@ -15231,20 +15242,52 @@ function renderNodeConnectabilityPanel(node) {
 
 function renderNodeConnectabilityRow(sourceSummary, filter = nodeConnectabilityActiveFilter()) {
   const filterActive = nodeConnectabilityFilterIsActive(filter);
-  const targets = nodeConnectabilityDisplayTargets(sourceSummary, filter);
+  const window = nodeConnectabilityDisplayTargetWindow(sourceSummary, filter);
+  const targets = window.targets;
   const overflowSummary = nodeConnectabilityDisplayOverflowSummary(sourceSummary, filter);
-  const overflowRow = overflowSummary
-    ? `<span class="node-connectability-chip info node-connectability-overflow" data-connectability-overflow>${escapeHtml(overflowSummary)}</span>`
-    : '';
+  const windowControls = renderNodeConnectabilityDisplayWindowControls(window, overflowSummary);
   const targetRows = targets.length
-    ? `${targets.map((entry) => renderNodeConnectabilityTarget(sourceSummary.source, entry)).join('')}${overflowRow}`
+    ? `${targets.map((entry) => renderNodeConnectabilityTarget(sourceSummary.source, entry)).join('')}${windowControls}`
     : `<span class="node-connectability-chip info">${filterActive ? 'No matching targets' : 'No canvas targets'}</span>`;
   return `
     <div class="node-connectability-row ${escapeHtml(nodeConnectabilitySourceLevel(sourceSummary))}">
       <strong>${escapeHtml(endpointLabel(sourceSummary.source))}</strong>
       <span>${escapeHtml(nodeConnectabilitySourceSummary(sourceSummary))}</span>
-      <div class="node-connectability-targets">${targetRows}</div>
+      <div
+        class="node-connectability-targets"
+        data-connectability-targets
+        data-connectability-row-window-key="${escapeHtml(window.key)}"
+      >${targetRows}</div>
     </div>
+  `;
+}
+
+function renderNodeConnectabilityDisplayWindowControls(window, overflowSummary = '') {
+  if (!overflowSummary) {
+    return '';
+  }
+  const previousDisabled = window.hasPrevious ? '' : 'disabled';
+  const nextDisabled = window.hasNext ? '' : 'disabled';
+  return `
+    <span class="node-connectability-chip info node-connectability-overflow" data-connectability-overflow>${escapeHtml(overflowSummary)}</span>
+    <button
+      type="button"
+      class="node-connectability-chip info node-connectability-window-step"
+      data-connectability-row-window="prev"
+      data-connectability-row-window-key="${escapeHtml(window.key)}"
+      data-connectability-row-window-offset="${escapeHtml(window.previousOffset)}"
+      aria-label="Show previous connectability targets"
+      ${previousDisabled}
+    >Prev</button>
+    <button
+      type="button"
+      class="node-connectability-chip info node-connectability-window-step"
+      data-connectability-row-window="next"
+      data-connectability-row-window-key="${escapeHtml(window.key)}"
+      data-connectability-row-window-offset="${escapeHtml(window.nextOffset)}"
+      aria-label="Show next connectability targets"
+      ${nextDisabled}
+    >Next</button>
   `;
 }
 
@@ -15402,41 +15445,155 @@ function nodeConnectabilityDisplayTargetWindow(sourceSummary, filter = nodeConne
   const compatible = sourceSummary.compatibleTargets || [];
   const blocked = sourceSummary.blockedTargets || [];
   const limit = nodeConnectabilityFilterDisplayLimit();
+  const key = nodeConnectabilityDisplayWindowKey(sourceSummary, filter);
   if (nodeConnectabilityFilterIsActive(filter)) {
     const matched = nodeConnectabilityPrioritizedDisplayTargets(nodeConnectabilityFilteredTargets(sourceSummary, filter));
-    const targets = matched.slice(0, limit);
-    return {
-      targets,
-      displayed: targets.length,
-      total: matched.length,
-      label: 'matches'
-    };
+    return nodeConnectabilityTargetWindow(matched, limit, 'matches', key);
   }
   if (!compatible.length) {
-    const targets = blocked.slice(0, 2);
-    return {
-      targets,
-      displayed: targets.length,
-      total: blocked.length,
-      label: 'blocked previews'
-    };
+    return nodeConnectabilityTargetWindow(blocked, nodeConnectabilityBlockedPreviewLimit(), 'blocked previews', key);
   }
   const prioritizedCompatible = nodeConnectabilityPrioritizedDisplayTargets(compatible);
-  const readyTargets = prioritizedCompatible.slice(0, limit);
+  const readyWindow = nodeConnectabilityTargetWindow(prioritizedCompatible, limit, 'ready targets', key);
+  const blockedPreview = readyWindow.offset === 0 ? blocked.slice(0, nodeConnectabilityBlockedPreviewLimit()) : [];
   return {
-    targets: [...readyTargets, ...blocked.slice(0, 2)],
-    displayed: readyTargets.length,
-    total: compatible.length,
-    label: 'ready targets'
+    ...readyWindow,
+    targets: [...readyWindow.targets, ...blockedPreview]
   };
+}
+
+function nodeConnectabilityTargetWindow(targets, limit, label, key) {
+  const safeTargets = targets || [];
+  const safeLimit = Math.max(1, numericCount(limit, nodeConnectabilityFilterDisplayLimit()));
+  const total = safeTargets.length;
+  const requestedOffset = nodeConnectabilityDisplayWindowOffset(key);
+  const maxOffset = Math.max(0, Math.floor(Math.max(total - 1, 0) / safeLimit) * safeLimit);
+  const offset = Math.min(Math.max(0, requestedOffset), maxOffset);
+  const visible = safeTargets.slice(offset, offset + safeLimit);
+  return {
+    key,
+    targets: visible,
+    offset,
+    limit: safeLimit,
+    displayed: visible.length,
+    total,
+    label,
+    hasPrevious: offset > 0,
+    hasNext: offset + safeLimit < total,
+    previousOffset: Math.max(0, offset - safeLimit),
+    nextOffset: offset + safeLimit < total ? offset + safeLimit : offset
+  };
+}
+
+function nodeConnectabilityDisplayWindowKey(sourceSummary, filter = nodeConnectabilityActiveFilter()) {
+  const nodeId = state.selectedNodeId || sourceSummary?.source?.nodeId || '';
+  const serverWindow = nodeConnectabilityServerWindowFor(nodeId, state.builder);
+  const sourceKey = nodeConnectabilitySourceFilterKey(sourceSummary?.source)
+    || endpointLabel(sourceSummary?.source)
+    || 'source';
+  const facetKey = nodeConnectabilityServerFacetFiltersKey(filter.facetFilters);
+  return [
+    nodeId,
+    sourceKey,
+    nodeConnectabilityServerQueryKey(filter.query || ''),
+    nodeConnectabilityServerStatusKey(filter.status || ''),
+    nodeConnectabilityServerSourceKey(filter.sourceKey || ''),
+    facetKey ? `${compactStringHash(facetKey)}:${facetKey.length}` : '',
+    serverWindow.offset,
+    serverWindow.limit
+  ].join('|');
+}
+
+function nodeConnectabilityDisplayWindowOffset(key) {
+  return Math.max(0, Math.floor(Number((state.nodeConnectabilityDisplayWindows || {})[key]) || 0));
+}
+
+function nodeConnectabilitySetDisplayWindowOffset(key, offset) {
+  if (!key) {
+    return;
+  }
+  state.nodeConnectabilityDisplayWindows = {
+    ...(state.nodeConnectabilityDisplayWindows || {}),
+    [key]: Math.max(0, Math.floor(Number(offset) || 0))
+  };
+}
+
+function nodeConnectabilityBlockedPreviewLimit() {
+  return 2;
 }
 
 function nodeConnectabilityDisplayOverflowSummary(sourceSummary, filter = nodeConnectabilityActiveFilter()) {
   const window = nodeConnectabilityDisplayTargetWindow(sourceSummary, filter);
-  if (window.total <= window.displayed) {
+  if (window.total <= window.limit) {
     return '';
   }
-  return `Showing first ${window.displayed} of ${window.total} ${window.label}`;
+  if (!window.displayed) {
+    return `Showing 0 of ${window.total} ${window.label}`;
+  }
+  const end = window.offset + window.displayed;
+  if (window.offset === 0) {
+    return `Showing first ${end} of ${window.total} ${window.label}`;
+  }
+  return `Showing ${window.offset + 1}-${end} of ${window.total} ${window.label}`;
+}
+
+function changeNodeConnectabilityDisplayWindowFromButton(button, focusEdge = '') {
+  const key = button?.dataset?.connectabilityRowWindowKey || '';
+  const offset = Number(button?.dataset?.connectabilityRowWindowOffset);
+  if (!key || !Number.isFinite(offset) || button.disabled) {
+    return;
+  }
+  const direction = button?.dataset?.connectabilityRowWindow || '';
+  nodeConnectabilitySetDisplayWindowOffset(key, offset);
+  renderSelectedOperatorEditor();
+  focusNodeConnectabilityWindowEdge(key, focusEdge || direction);
+}
+
+function handleNodeConnectabilityTargetsKeydown(event) {
+  const key = event.key;
+  if (!['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(key)) {
+    return;
+  }
+  const direction = key === 'ArrowRight' || key === 'ArrowDown' ? 1 : -1;
+  if (moveNodeConnectabilityTargetFocus(event.currentTarget, direction)) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+}
+
+function moveNodeConnectabilityTargetFocus(container, direction) {
+  const actions = [...(container?.querySelectorAll?.('[data-connectability-action="connect"]') || [])];
+  const activeAction = document.activeElement?.closest?.('[data-connectability-action="connect"]');
+  const currentIndex = actions.indexOf(activeAction);
+  if (currentIndex >= 0) {
+    const next = actions[currentIndex + direction];
+    if (next) {
+      next.focus({ preventScroll: true });
+      return true;
+    }
+  }
+  const button = direction > 0
+    ? container?.querySelector?.('[data-connectability-row-window="next"]:not(:disabled)')
+    : container?.querySelector?.('[data-connectability-row-window="prev"]:not(:disabled)');
+  if (button) {
+    changeNodeConnectabilityDisplayWindowFromButton(button, direction > 0 ? 'next' : 'prev');
+    return true;
+  }
+  return false;
+}
+
+function focusNodeConnectabilityWindowEdge(rowKey, direction = 'next') {
+  const editor = $('selected-operator-editor');
+  if (!editor) {
+    return;
+  }
+  const containers = [...editor.querySelectorAll('[data-connectability-targets]')];
+  const container = containers.find((item) => item.dataset.connectabilityRowWindowKey === rowKey);
+  const actions = [...(container?.querySelectorAll?.('[data-connectability-action="connect"]') || [])];
+  const target = direction === 'prev' ? actions[actions.length - 1] : actions[0];
+  if (target?.focus) {
+    target.focus({ preventScroll: true });
+  }
 }
 
 function nodeConnectabilityPrioritizedDisplayTargets(targets) {

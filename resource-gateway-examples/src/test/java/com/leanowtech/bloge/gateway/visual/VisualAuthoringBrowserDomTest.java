@@ -20,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.Keys;
 import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.StaleElementReferenceException;
 import org.openqa.selenium.TimeoutException;
@@ -560,6 +561,26 @@ class VisualAuthoringBrowserDomTest {
                 "#selected-operator-editor [data-connectability-action='connect']"
                         + "[data-connect-target-node^='riskScoreReview']"
         )).size() == 24);
+        click(wait, By.cssSelector("#selected-operator-editor [data-connectability-row-window='next']"));
+        waitForText(wait, By.id("selected-operator-editor"), "Showing 25-48 of 260 ready targets");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "#selected-operator-editor [data-connectability-action='connect']"
+                        + "[data-connect-target-node='riskScoreReview25']"
+        )));
+        wait.until(ignored -> driver.findElements(By.cssSelector(
+                "#selected-operator-editor [data-connectability-action='connect']"
+                        + "[data-connect-target-node^='riskScoreReview']"
+        )).size() == 24);
+        WebElement lastVisibleRowTarget = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "#selected-operator-editor [data-connectability-action='connect']"
+                        + "[data-connect-target-node='riskScoreReview48']"
+        )));
+        lastVisibleRowTarget.sendKeys(Keys.ARROW_RIGHT);
+        waitForText(wait, By.id("selected-operator-editor"), "Showing 49-72 of 260 ready targets");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "#selected-operator-editor [data-connectability-action='connect']"
+                        + "[data-connect-target-node='riskScoreReview49']"
+        )));
         assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-panel"));
 
         By filterQuery = By.cssSelector("#selected-operator-editor [data-connectability-filter-query]");

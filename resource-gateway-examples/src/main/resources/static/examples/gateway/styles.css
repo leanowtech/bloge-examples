@@ -1636,6 +1636,17 @@ body.dragging-operator * {
   color: var(--muted);
 }
 
+.node-connectability-window-step {
+  cursor: pointer;
+  border-style: dashed;
+  background: var(--surface-subtle);
+}
+
+.node-connectability-window-step:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
 .node-impact-panel {
   display: grid;
   gap: 8px;

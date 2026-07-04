@@ -2983,7 +2983,13 @@ class VisualAuthoringAppJsTest {
                   'nodeConnectabilityDisplaySources',
                   'nodeConnectabilityDisplayTargets',
                   'nodeConnectabilityDisplayTargetWindow',
+                  'nodeConnectabilityTargetWindow',
+                  'nodeConnectabilityDisplayWindowKey',
+                  'nodeConnectabilityDisplayWindowOffset',
+                  'nodeConnectabilitySetDisplayWindowOffset',
+                  'nodeConnectabilityBlockedPreviewLimit',
                   'nodeConnectabilityDisplayOverflowSummary',
+                  'renderNodeConnectabilityDisplayWindowControls',
                   'nodeConnectabilityPrioritizedDisplayTargets',
                   'nodeConnectabilityDisplayPriority',
                   'renderNodeConnectabilityFilterControls',
@@ -5468,6 +5474,18 @@ operators:
                 const overflowDisplayWindow = context.nodeConnectabilityDisplayTargetWindow(overflowConnectability);
                 const overflowSummary = context.nodeConnectabilityDisplayOverflowSummary(overflowConnectability);
                 const overflowRow = context.renderNodeConnectabilityRow(overflowConnectability);
+                const overflowWindowControls = context.renderNodeConnectabilityDisplayWindowControls(
+                  overflowDisplayWindow,
+                  overflowSummary
+                );
+                const overflowDisplayWindowKey = context.nodeConnectabilityDisplayWindowKey(overflowConnectability);
+                const overflowSourceKey = context.nodeConnectabilitySourceFilterKey(overflowConnectability.source);
+                context.nodeConnectabilitySetDisplayWindowOffset(overflowDisplayWindowKey, 24);
+                const overflowSecondWindowTargets = context.nodeConnectabilityDisplayTargets(overflowConnectability);
+                const overflowSecondDisplayWindow = context.nodeConnectabilityDisplayTargetWindow(overflowConnectability);
+                const overflowSecondSummary = context.nodeConnectabilityDisplayOverflowSummary(overflowConnectability);
+                const overflowSecondRow = context.renderNodeConnectabilityRow(overflowConnectability);
+                context.nodeConnectabilitySetDisplayWindowOffset(overflowDisplayWindowKey, 0);
                 const overflowReadyFilter = {
                   query: '',
                   normalizedQuery: '',
@@ -5483,6 +5501,17 @@ operators:
                   overflowConnectability,
                   overflowReadyFilter
                 );
+                const overflowFilteredWindowKey = context.nodeConnectabilityDisplayWindowKey(overflowConnectability, overflowReadyFilter);
+                context.nodeConnectabilitySetDisplayWindowOffset(overflowFilteredWindowKey, 24);
+                const overflowFilteredSecondWindow = context.nodeConnectabilityDisplayTargetWindow(
+                  overflowConnectability,
+                  overflowReadyFilter
+                );
+                const overflowFilteredSecondSummary = context.nodeConnectabilityDisplayOverflowSummary(
+                  overflowConnectability,
+                  overflowReadyFilter
+                );
+                context.nodeConnectabilitySetDisplayWindowOffset(overflowFilteredWindowKey, 0);
                 const overflowServerWindowTargets = context.nodeConnectabilityDisplayTargets({
                   ...overflowConnectability,
                   compatibleTargets: overflowReadyTargets.map((entry, index) =>
@@ -6758,9 +6787,23 @@ operators:
                   ['connectability overflow display ready count', overflowDisplayWindow.displayed, 24],
                   ['connectability overflow total ready count', overflowDisplayWindow.total, 30],
                   ['connectability overflow summary', overflowSummary, 'Showing first 24 of 30 ready targets'],
+                  ['connectability overflow window key', String(overflowDisplayWindowKey.includes(overflowSourceKey)), 'true'],
+                  ['connectability overflow next offset', overflowDisplayWindow.nextOffset, 24],
+                  ['connectability overflow has previous', overflowDisplayWindow.hasPrevious, false],
+                  ['connectability overflow has next', overflowDisplayWindow.hasNext, true],
+                  ['connectability overflow controls next', String(overflowWindowControls.includes('data-connectability-row-window="next"')), 'true'],
                   ['connectability overflow row marker', String(overflowRow.includes('data-connectability-overflow')), 'true'],
+                  ['connectability overflow row controls', String(overflowRow.includes('data-connectability-row-window-key')), 'true'],
+                  ['connectability overflow second first target', overflowSecondWindowTargets[0].target.nodeId, 'overflowReview25'],
+                  ['connectability overflow second display count', overflowSecondDisplayWindow.displayed, 6],
+                  ['connectability overflow second has previous', overflowSecondDisplayWindow.hasPrevious, true],
+                  ['connectability overflow second has next', overflowSecondDisplayWindow.hasNext, false],
+                  ['connectability overflow second summary', overflowSecondSummary, 'Showing 25-30 of 30 ready targets'],
+                  ['connectability overflow second row previous', String(overflowSecondRow.includes('data-connectability-row-window="prev"')), 'true'],
                   ['connectability overflow filtered targets', overflowFilteredTargets.length, 24],
                   ['connectability overflow filtered summary', overflowFilteredSummary, 'Showing first 24 of 30 matches'],
+                  ['connectability overflow filtered second count', overflowFilteredSecondWindow.displayed, 6],
+                  ['connectability overflow filtered second summary', overflowFilteredSecondSummary, 'Showing 25-30 of 30 matches'],
                   ['connectability overflow server target first', overflowServerWindowTargets[0].target.nodeId, 'overflowReview30'],
                   ['connectability blocked target title', context.nodeConnectabilityTargetTitle(rootConnectability.blockedTargets[0]), 'Audit (auditNode) · data -> inputs.score · blocked · Type mismatch: object cannot feed integer.'],
                   ['connectability panel includes score chip', String(connectabilityPanel.includes('riskNode.payload.score')), 'true'],
