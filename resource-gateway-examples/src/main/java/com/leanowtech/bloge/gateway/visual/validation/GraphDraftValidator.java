@@ -83,7 +83,6 @@ public class GraphDraftValidator {
     private static final Pattern EXPRESSION_PATH_SEGMENT = Pattern.compile(
             "(?:" + PATH_SEGMENT_PATTERN + "|" + ROOT_ARRAY_PATH_SEGMENT_PATTERN + ")");
     private static final Pattern BRACKET_INDEX = Pattern.compile("\\[(" + ARRAY_INDEX_PATTERN + ")]");
-    private static final Pattern ARRAY_INDEX = Pattern.compile(ARRAY_INDEX_PATTERN);
     private static final Pattern PURE_CONTEXT_REFERENCE = Pattern.compile(
             "^ctx(?:(?:\\.(" + PATH_PATTERN + "))|(" + ROOT_ARRAY_PATH_PATTERN + "))?$");
     private static final Pattern PURE_NODE_REFERENCE = Pattern.compile(
@@ -2223,15 +2222,7 @@ public class GraphDraftValidator {
     }
 
     private static Integer arrayIndexSegment(String segment) {
-        if (!ARRAY_INDEX.matcher(segment).matches()) {
-            return null;
-        }
-        try {
-            int index = Integer.parseInt(segment);
-            return index < 0 ? null : index;
-        } catch (NumberFormatException ex) {
-            return null;
-        }
+        return VisualSchemaIntrospection.arrayIndexSegment(segment);
     }
 
     private static List<String> requiredPaths(SchemaEnvelope schema) {
@@ -2322,59 +2313,7 @@ public class GraphDraftValidator {
     }
 
     private static String schemaType(Map<String, Object> property) {
-        if (property == null) {
-            return "";
-        }
-        Object type = property.get("kind");
-        if (type == null) {
-            type = property.get("type");
-        }
-        if (type instanceof List<?> types) {
-            return nullableTypePrimary(types);
-        }
-        if (type == null && hasSchemaKeyword(property, "properties", "required", "additionalProperties",
-                "unevaluatedProperties", "patternProperties", "propertyNames", "dependentRequired",
-                "dependentSchemas", "minProperties", "maxProperties")) {
-            return "object";
-        }
-        if (type == null && hasSchemaKeyword(property, "items", "prefixItems", "unevaluatedItems", "contains",
-                "minItems", "maxItems", "uniqueItems", "minContains", "maxContains")) {
-            return "array";
-        }
-        if (type == null && property.containsKey("const")) {
-            return schemaTypeForValue(property.get("const"));
-        }
-        return type == null ? "" : String.valueOf(type);
-    }
-
-    private static boolean hasSchemaKeyword(Map<String, Object> schema, String... keywords) {
-        if (schema == null) {
-            return false;
-        }
-        for (String keyword : keywords) {
-            if (schema.containsKey(keyword)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static String nullableTypePrimary(List<?> types) {
-        String primary = "";
-        int concreteTypes = 0;
-        for (Object item : types) {
-            if (!(item instanceof String type) || type.isBlank()) {
-                return String.valueOf(types);
-            }
-            if (!"null".equals(type)) {
-                primary = type;
-                concreteTypes++;
-            }
-        }
-        if (concreteTypes > 1) {
-            return String.valueOf(types);
-        }
-        return primary.isBlank() ? "null" : primary;
+        return VisualSchemaIntrospection.schemaType(property);
     }
 
     private static List<Object> enumValues(Map<String, Object> schema) {
@@ -2391,31 +2330,6 @@ public class GraphDraftValidator {
             return values.stream().map(Object.class::cast).distinct().toList();
         }
         return List.of();
-    }
-
-    private static String schemaTypeForValue(Object value) {
-        if (value == null) {
-            return "null";
-        }
-        if (value instanceof String) {
-            return "string";
-        }
-        if (value instanceof Boolean) {
-            return "boolean";
-        }
-        if (isIntegerValue(value)) {
-            return "integer";
-        }
-        if (value instanceof Number) {
-            return "number";
-        }
-        if (value instanceof Map<?, ?>) {
-            return "object";
-        }
-        if (value instanceof List<?>) {
-            return "array";
-        }
-        return "";
     }
 
     private static void validateEdges(GraphDraft draft,

@@ -933,6 +933,23 @@ class DefaultVisualOperatorCatalogTest {
     }
 
     @Test
+    void projectsPublishedVisualGraphSelectedTypelessArrayOutputPathSchema() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        publications.create(publishedTypelessListFactsGraph("pub-typeless-list-facts", "items.0"));
+        DefaultVisualOperatorCatalog catalog = publicationCatalog(publications);
+
+        Map<String, Object> schema = catalog.find("publication:pub-typeless-list-facts")
+                .orElseThrow()
+                .ports()
+                .outputs()
+                .getFirst()
+                .schema()
+                .schema();
+
+        assertThat(schema).containsEntry("type", "integer");
+    }
+
+    @Test
     void projectsPublishedVisualGraphWithNonCanonicalArrayIndexOutputPathAsOpaque() {
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
         publications.create(publishedListFactsGraph("pub-list-facts-bad-index", "items.+1"));
@@ -1464,6 +1481,80 @@ class DefaultVisualOperatorCatalogTest {
         String dsl = """
                 graph publishedListFacts {
                   node listFacts : riskListFacts {
+                    input {
+                    }
+                  }
+                }
+                """;
+        return new VisualGraphPublication(
+                "",
+                publicationId,
+                draft.draftId(),
+                draft.revision(),
+                draft.graphName(),
+                draft.tenantId(),
+                draft.namespace(),
+                draft.environment(),
+                null,
+                draft,
+                List.of(listFacts),
+                draft.operatorFingerprints(),
+                Map.of(),
+                dsl,
+                new VisualValidationResult(true, List.of()),
+                new DslGenerationResult(true, dsl, List.of())
+        );
+    }
+
+    private static VisualGraphPublication publishedTypelessListFactsGraph(String publicationId, String outputPath) {
+        OperatorDefinition listFacts = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:typelessListFacts",
+                "1.0.0",
+                new OperatorDefinition.Display("Typeless list facts",
+                        "Produces list facts using common typeless JSON Schema array syntax.",
+                        List.of("risk", "list")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "items", Map.of("items", Map.of("type", "integer"))
+                                ), List.of()),
+                                true,
+                                "Typeless list facts."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskTypelessListFacts", Map.of()),
+                List.of()
+        );
+        GraphDraft draft = new GraphDraft(
+                "",
+                "draft-typeless-list-facts",
+                3,
+                "publishedTypelessListFacts",
+                "tenant-a",
+                "risk",
+                "prod",
+                "",
+                SchemaEnvelope.object(Map.of(), List.of()),
+                List.of(new GraphDraft.DraftNode(
+                        "listFacts",
+                        listFacts.operatorRef(),
+                        "",
+                        Map.of(),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("listFacts", outputPath),
+                Map.of("listFacts", listFacts.fingerprint())
+        );
+        String dsl = """
+                graph publishedTypelessListFacts {
+                  node listFacts : riskTypelessListFacts {
                     input {
                     }
                   }

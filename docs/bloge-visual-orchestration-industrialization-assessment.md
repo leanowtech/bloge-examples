@@ -43,7 +43,7 @@
 | 维度 | 当前分 | 证据 | 主要缺口 | 下一步 |
 | --- | ---: | --- | --- | --- |
 | 算子库合同与导入 | 8.0 | `OperatorLibrary`、JSON/YAML validate/import、revision、impact、bundle fingerprint、design-only lowering | 复杂第三方协议包 diff、跨环境治理策略还需继续深化 | OpenAPI/AsyncAPI diff 与 runtime binding handoff 对齐 |
-| Schema 约束与拖线裁决 | 7.8 | `VisualSchemaCompatibility`、`GraphDraftValidator`、connection check/candidates、fit candidates | JSON Schema 语义仍是受限子集，多个服务曾存在 type 推断不一致 | 持续收敛 shared schema helper，补更多 schema 子集回归 |
+| Schema 约束与拖线裁决 | 8.0 | `VisualSchemaCompatibility`、`GraphDraftValidator`、connection check/candidates、fit candidates、`VisualSchemaIntrospection` | JSON Schema 语义仍是受限子集，compatibility/validator 的值匹配与深层校验逻辑仍未完全迁移到共享 helper | 持续收敛 shared schema helper，补更多 schema 子集回归 |
 | 画布产品化体验 | 7.0 | Browser Composer palette、schema-aware picker、hover preflight、readiness panel、diagnostic queue、impact inspector | 单文件前端复杂度高，交互矩阵仍未完全自动化 | 抽更小 UI 模块或增加更强 browser regression matrix |
 | Design-only artifact 生命周期 | 8.0 | `DESIGN` publication、action-readiness gate、run/golden 禁用、runtime-binding requirements | DESIGN 到 external runtime bound 的组织流程仍依赖外部协作 | handoff bundle 与外部工单/事件系统对接 |
 | Runtime binding 闭环 | 6.5 | requirement index、handoff bundle、implementation proposal、bind/supersede/unbind、activation、rollout observation、lowering integration、readiness recompute | 跨 repository partial-failure、异步 workflow idempotency、指标消费闭环仍未全覆盖 | 继续硬化 runtime evidence lifecycle 和 replay/compensation |
@@ -51,9 +51,9 @@
 | 观测、回归和认证 | 6.8 | run history、SLO stats、golden case、suite run、certification status | 事件流回放、趋势分析、长运行实例观测不足 | run trace/golden trend 与 durable runtime 对齐 |
 | 安全与治理 | 5.0 | tenant/namespace/environment policy、secret capability、actor/reason evidence gate | 不是完整 IAM/RBAC/secret/egress/admin audit 后台 | 平台化阶段引入权限模型和安全边界 |
 | Runtime 扩展族 | 5.8 | remote-worker、AI-tool、event-source、message-handler、webhook、streaming/durable contract 已可设计态编排 | 真正 dispatcher、ingress runtime、AI tool invocation、durable instance 尚未落地 | 从 runtime-binding handoff 开始逐类接 executor |
-| 工程可维护性 | 6.5 | 服务端测试丰富，完整 `clean verify` 可跑通 | schema path/type 逻辑仍有重复，前端 `app.js` 过大 | 抽 shared schema path utility，逐步拆分前端 authoring helpers |
+| 工程可维护性 | 6.9 | 服务端测试丰富，完整 `clean verify` 可跑通，Java 侧读模型与 GraphDraftValidator 的结构类型推断已开始共享 schema helper | `VisualSchemaCompatibility`、`VisualSchemaValidator` 仍保留部分私有 effective schema kind 逻辑，前端 `app.js` 过大 | 继续迁移 compatibility/validator 深层校验 helpers，逐步拆分前端 authoring helpers |
 
-综合分：**68/100**。
+综合分：**70/100**。
 
 这个分数不是贬低当前成果。相反，它说明项目已经跨过“画布玩具”阶段，但离完整工业平台还差治理、runtime、观测和维护性闭环。
 
@@ -77,6 +77,54 @@
 5. 前端仍是示例项目形态，复杂度已经接近需要模块化拆分的边界。
 
 ## 4. 本轮迭代复盘
+
+### 2026-07-04：GraphDraftValidator 结构类型推断接入共享 helper
+
+触发问题：
+
+上一轮已经让 connection candidates、operator fit 和 publication projection 使用 `VisualSchemaIntrospection`。但最终服务端 gate `GraphDraftValidator` 仍保留自己的 `schemaType` 与 canonical array index 判断。只要最终 gate 和读模型继续各自维护结构类型推断，工业级画布仍然会有漂移风险：读模型可能推荐一个 target，最终 gate 也许用另一套推断解释它；或者最终 gate 支持了某个 typeless schema 写法，而 hover/palette/publication 还没有同步。
+
+本轮完成：
+
+1. `GraphDraftValidator.schemaType` 改为委托 `VisualSchemaIntrospection.schemaType`。
+2. `GraphDraftValidator.arrayIndexSegment` 改为委托 `VisualSchemaIntrospection.arrayIndexSegment`。
+3. 删除 validator 内重复的 `hasSchemaKeyword`、nullable type primary、const-value type inference 和独立 array index regex。
+4. 保留 validator 自己的 `isIntegerValue` 和 config value 校验逻辑，因为那属于值校验语义，不是纯 schema path/type 读模型。
+
+验证：
+
+```bash
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=GraphDraftValidatorTest,VisualSchemaIntrospectionTest,VisualConnectionCheckServiceTest,OperatorFitCandidateServiceTest,DefaultVisualOperatorCatalogTest test
+```
+
+剩余风险：
+
+`VisualSchemaCompatibility` 和 `VisualSchemaValidator` 仍有自己的 effective type/kind 推断，因为它们承担 compatibility diff、schema validation 和 value matching 语义。下一轮不能粗暴替换，应先把“纯结构推断”和“值/兼容性业务判断”切清楚，再迁移可等价部分。
+
+### 2026-07-04：Java 侧 schema path/type helper 收敛
+
+触发问题：
+
+上一轮修复了 typeless schema 在 candidate discovery 与 operator fit discovery 中的行为一致性，但修复方式仍然是在两个服务中各自维护一份相似的 `schemaType`、`schemaAtPath` 和 candidate path 枚举逻辑。继续这样做会导致一个很现实的工业化问题：每新增一种 JSON Schema 子集，都必须记得同步多个读模型，否则画布会出现“validator 接受、hover 不显示、palette 不推荐、publication operator 丢 schema”的漂移。
+
+本轮完成：
+
+1. 新增 `VisualSchemaIntrospection`，作为 Java 侧 schema path/type 读模型共享入口。
+2. `VisualConnectionCheckService` 的 candidate discovery、source/target schema resolution、config path 下标处理和 DSL reference 下标判断开始使用共享 helper。
+3. `OperatorFitCandidateService` 的 target path 枚举、target schema resolution、source schema resolution 和多 output port disambiguation 开始使用共享 helper。
+4. `VisualGraphPublicationOperatorProjector` 的 selected output path 投影开始使用共享 `schemaAtPath`，避免发布后的 reusable publication operator 丢失 typeless array item schema。
+5. 增加 `VisualSchemaIntrospectionTest`，覆盖 typeless array tuple/remainder path、非 canonical array index 和 typeless object `propertyNames` + `patternProperties` gate。
+6. 增加 publication projector 回归：`projectsPublishedVisualGraphSelectedTypelessArrayOutputPathSchema`。
+
+验证：
+
+```bash
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualSchemaIntrospectionTest,VisualConnectionCheckServiceTest,OperatorFitCandidateServiceTest,DefaultVisualOperatorCatalogTest test
+```
+
+剩余风险：
+
+这还不是 schema 逻辑的完全统一。`GraphDraftValidator`、`VisualSchemaCompatibility` 和 `VisualSchemaValidator` 仍有各自的 `schemaType` / effective kind 逻辑，因为它们承载更深的兼容性判断、schema validation 和值匹配语义，不能在一轮里粗暴替换。下一步应迁移其中“路径导航和结构类型推断”部分，保留各自的业务判断层。
 
 ### 2026-07-04：typeless schema 在候选发现链路的一致化
 
@@ -126,7 +174,7 @@ schema type/path 逻辑仍分散在多个类中。短期可接受；中期应抽
 
 | 优先级 | 方向 | 理由 | 最小可交付 |
 | --- | --- | --- | --- |
-| P0 | Shared schema path/type utility | 当前 schema 推断在多个服务重复，越补越容易漂移 | 抽 Java 侧 shared helper，迁移 connection/fit/publication projector/validator 路径解析 |
+| P0 | Compatibility / schema validator effective kind 收敛 | Java 侧读模型和 GraphDraftValidator 结构类型推断已收敛一层，但 compatibility/value validation 仍保留私有 effective kind 判断 | 抽出 shared effective type policy，迁移可等价部分，保留 compatibility diff 和 value matching 的业务判断 |
 | P0 | Runtime binding partial-failure 硬化 | 这是 DESIGN artifact 走向可执行 runtime 的主干 | 选一个尚未补偿的跨 repository mutation，补 replay/compensation/诊断 |
 | P1 | Browser regression matrix | 当前 UI 能力多，单测/DOM smoke 需要继续扩大 | 覆盖 fit candidates typeless array 的 browser-facing 行为 |
 | P1 | 协议文档收敛 | 设计草案与当前 wire contract 名称仍有历史漂移 | 把 candidate/fit/readiness 当前字段写入 protocol v1 |

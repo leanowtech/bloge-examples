@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphPublicationOperator;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaIntrospection;
 
 import org.springframework.stereotype.Component;
 
@@ -13,16 +14,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 /**
  * Projects immutable visual graph publications back into reusable visual operators.
  */
 @Component
 public class VisualGraphPublicationOperatorProjector {
-
-    private static final Pattern ARRAY_INDEX = Pattern.compile("\\d+");
 
     /**
      * @param publication immutable visual graph publication
@@ -121,7 +118,8 @@ public class VisualGraphPublicationOperatorProjector {
         if (port.isEmpty()) {
             return SchemaEnvelope.opaque();
         }
-        Map<String, Object> schema = propertyAtPath(port.get().schema(), outputReference.path());
+        Map<String, Object> schema = VisualSchemaIntrospection.schemaAtPath(port.get().schema().schema(),
+                outputReference.path());
         return new SchemaEnvelope(port.get().schema().format(), port.get().schema().version(),
                 schema == null ? SchemaEnvelope.opaque().schema() : schema);
     }
@@ -163,176 +161,6 @@ public class VisualGraphPublicationOperatorProjector {
         boolean firstNamesPort = operator.ports().outputs().stream()
                 .anyMatch(port -> port.name().equals(first));
         return firstNamesPort ? new OutputReference(first, rest) : new OutputReference("", outputPath);
-    }
-
-    private static Map<String, Object> propertyAtPath(SchemaEnvelope schema, String path) {
-        if (path == null || path.isBlank()) {
-            return new LinkedHashMap<>(schema.schema());
-        }
-        Map<String, Object> currentSchema = schema.schema();
-        Map<String, Object> current = null;
-        for (String segment : path.split("\\.")) {
-            if (segment.isBlank()) {
-                continue;
-            }
-            if ("array".equals(schemaType(currentSchema))) {
-                Integer index = arrayIndexSegment(segment);
-                if (index == null) {
-                    return null;
-                }
-                current = arrayItemSchemaForIndex(currentSchema, index);
-                if (current == null) {
-                    return null;
-                }
-                currentSchema = current;
-                continue;
-            }
-            current = objectProperty(propertiesOf(currentSchema).get(segment));
-            if (current == null) {
-                current = patternPropertySchema(currentSchema, segment);
-            }
-            if (current == null) {
-                current = additionalPropertySchema(currentSchema);
-                if (current == null) {
-                    return null;
-                }
-            }
-            currentSchema = current;
-        }
-        return current;
-    }
-
-    private static Integer arrayIndexSegment(String segment) {
-        if (!ARRAY_INDEX.matcher(segment).matches()) {
-            return null;
-        }
-        try {
-            int index = Integer.parseInt(segment);
-            return index < 0 ? null : index;
-        } catch (NumberFormatException ex) {
-            return null;
-        }
-    }
-
-    private static Map<String, Object> arrayItemSchemaForIndex(Map<String, Object> schema, int index) {
-        List<Map<String, Object>> prefixItems = prefixItemsOf(schema);
-        if (index < prefixItems.size()) {
-            return prefixItems.get(index);
-        }
-        return objectProperty(schema.get("items"));
-    }
-
-    private static List<Map<String, Object>> prefixItemsOf(Map<String, Object> schema) {
-        Object raw = schema.get("prefixItems");
-        if (!(raw instanceof List<?> values)) {
-            return List.of();
-        }
-        List<Map<String, Object>> prefixItems = new ArrayList<>();
-        for (Object value : values) {
-            Map<String, Object> itemSchema = objectProperty(value);
-            if (itemSchema != null) {
-                prefixItems.add(itemSchema);
-            }
-        }
-        return prefixItems;
-    }
-
-    private static Map<String, Object> propertiesOf(Map<String, Object> schema) {
-        Object nested = schema.get("properties");
-        if (!(nested instanceof Map<?, ?> rawNested)) {
-            return Map.of();
-        }
-        Map<String, Object> properties = new LinkedHashMap<>();
-        rawNested.forEach((key, value) -> properties.put(String.valueOf(key), value));
-        return properties;
-    }
-
-    private static Map<String, Object> additionalPropertySchema(Map<String, Object> schema) {
-        Object raw = residualPropertiesPolicy(schema);
-        if (Boolean.TRUE.equals(raw)) {
-            return Map.of();
-        }
-        return objectProperty(raw);
-    }
-
-    private static Object residualPropertiesPolicy(Map<String, Object> schema) {
-        if (schema.containsKey("additionalProperties")) {
-            return schema.get("additionalProperties");
-        }
-        return schema.get("unevaluatedProperties");
-    }
-
-    private static Map<String, Object> patternPropertySchema(Map<String, Object> schema, String propertyName) {
-        List<Map<String, Object>> matches = matchingPatternPropertySchemas(schema, propertyName);
-        return matches.size() == 1 ? matches.getFirst() : null;
-    }
-
-    private static List<Map<String, Object>> matchingPatternPropertySchemas(Map<String, Object> schema,
-                                                                            String propertyName) {
-        Object raw = schema.get("patternProperties");
-        if (!(raw instanceof Map<?, ?> rawMap)) {
-            return List.of();
-        }
-        List<Map<String, Object>> matches = new ArrayList<>();
-        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
-            String pattern = String.valueOf(entry.getKey());
-            if (patternMatches(pattern, propertyName) && entry.getValue() instanceof Map<?, ?> nested) {
-                matches.add(objectProperty(nested));
-            }
-        }
-        return matches;
-    }
-
-    private static boolean patternMatches(String pattern, String value) {
-        try {
-            return Pattern.compile(pattern).matcher(value).find();
-        } catch (PatternSyntaxException ex) {
-            return false;
-        }
-    }
-
-    private static String schemaType(Map<String, Object> schema) {
-        Object type = schema.get("kind");
-        if (type == null) {
-            type = schema.get("type");
-        }
-        if (type instanceof List<?> values) {
-            return nullableTypePrimary(values);
-        }
-        if (type == null && schema.containsKey("properties")) {
-            return "object";
-        }
-        if (type == null && schema.containsKey("items")) {
-            return "array";
-        }
-        return type == null ? "" : String.valueOf(type);
-    }
-
-    private static String nullableTypePrimary(List<?> types) {
-        String primary = "";
-        int concreteTypes = 0;
-        for (Object item : types) {
-            if (!(item instanceof String type) || type.isBlank()) {
-                return String.valueOf(types);
-            }
-            if (!"null".equals(type)) {
-                primary = type;
-                concreteTypes++;
-            }
-        }
-        if (concreteTypes > 1) {
-            return String.valueOf(types);
-        }
-        return primary.isBlank() ? "null" : primary;
-    }
-
-    private static Map<String, Object> objectProperty(Object value) {
-        if (!(value instanceof Map<?, ?> map)) {
-            return null;
-        }
-        Map<String, Object> copy = new LinkedHashMap<>();
-        map.forEach((key, item) -> copy.put(String.valueOf(key), item));
-        return copy;
     }
 
     private record OutputReference(String port, String path) {

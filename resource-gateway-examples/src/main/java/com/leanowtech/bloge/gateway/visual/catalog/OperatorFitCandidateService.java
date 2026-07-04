@@ -2,18 +2,15 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
-import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaIntrospection;
 
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 /**
  * Schema-aware catalog fit discovery for adding the next operator from a canvas source.
@@ -23,7 +20,6 @@ public class OperatorFitCandidateService {
 
     private static final String CONTEXT_SOURCE_NODE_ID = "__ctx";
     private static final String CONFIG_TARGET_PORT = "config";
-    private static final Pattern ARRAY_INDEX = Pattern.compile("\\d+");
     private static final int MAX_SCHEMA_CANDIDATE_PATHS = 64;
     private static final int MAX_SCHEMA_CANDIDATE_DEPTH = 4;
 
@@ -112,8 +108,10 @@ public class OperatorFitCandidateService {
         List<OperatorFitCatalogResponse.OperatorFitTarget> targets = new ArrayList<>();
         if (surfaceMatches(targetSurface, "input")) {
             for (OperatorDefinition.Port port : operator.ports().inputs()) {
-                for (String path : connectableSchemaPaths(port.schema())) {
-                    Map<String, Object> targetSchema = schemaAtPath(port.schema().schema(), path);
+                for (String path : VisualSchemaIntrospection.connectableSchemaPaths(port.schema(),
+                        MAX_SCHEMA_CANDIDATE_PATHS, MAX_SCHEMA_CANDIDATE_DEPTH)) {
+                    Map<String, Object> targetSchema =
+                            VisualSchemaIntrospection.schemaAtPath(port.schema().schema(), path);
                     if (targetSchema == null) {
                         continue;
                     }
@@ -122,11 +120,13 @@ public class OperatorFitCandidateService {
             }
         }
         if (surfaceMatches(targetSurface, "config")) {
-            for (String path : connectableSchemaPaths(operator.configSchema())) {
+            for (String path : VisualSchemaIntrospection.connectableSchemaPaths(operator.configSchema(),
+                    MAX_SCHEMA_CANDIDATE_PATHS, MAX_SCHEMA_CANDIDATE_DEPTH)) {
                 if (path.isBlank()) {
                     continue;
                 }
-                Map<String, Object> targetSchema = schemaAtPath(operator.configSchema().schema(), path);
+                Map<String, Object> targetSchema =
+                        VisualSchemaIntrospection.schemaAtPath(operator.configSchema().schema(), path);
                 if (targetSchema == null) {
                     continue;
                 }
@@ -216,7 +216,8 @@ public class OperatorFitCandidateService {
             )));
         }
         if (CONTEXT_SOURCE_NODE_ID.equals(source.nodeId())) {
-            Map<String, Object> schema = schemaAtPath(draft.inputSchema().schema(), source.path());
+            Map<String, Object> schema =
+                    VisualSchemaIntrospection.schemaAtPath(draft.inputSchema().schema(), source.path());
             return sourceSchema(source, schema, "/source/path");
         }
         Optional<GraphDraft.DraftNode> node = draft.nodes().stream()
@@ -245,7 +246,8 @@ public class OperatorFitCandidateService {
                     "/source/port"
             )));
         }
-        Map<String, Object> schema = schemaAtPath(port.get().schema().schema(), source.path());
+        Map<String, Object> schema = VisualSchemaIntrospection.schemaAtPath(port.get().schema().schema(),
+                source.path());
         return sourceSchema(source, schema, "/source/path");
     }
 
@@ -278,7 +280,7 @@ public class OperatorFitCandidateService {
             return Optional.of(ports.getFirst());
         }
         List<OperatorDefinition.Port> matches = ports.stream()
-                .filter(port -> schemaAtPath(port.schema().schema(), path) != null)
+                .filter(port -> VisualSchemaIntrospection.schemaAtPath(port.schema().schema(), path) != null)
                 .toList();
         return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
     }
@@ -339,233 +341,6 @@ public class OperatorFitCandidateService {
 
     private static String firstNonBlank(String first, String second) {
         return first == null || first.isBlank() ? (second == null ? "" : second) : first;
-    }
-
-    private static List<String> connectableSchemaPaths(SchemaEnvelope schema) {
-        List<String> paths = new ArrayList<>();
-        collectConnectableSchemaPaths(schema == null ? Map.of() : schema.schema(), "", paths, 0);
-        return paths.stream().distinct().limit(MAX_SCHEMA_CANDIDATE_PATHS).toList();
-    }
-
-    private static void collectConnectableSchemaPaths(Map<String, Object> schema,
-                                                      String path,
-                                                      List<String> paths,
-                                                      int depth) {
-        if (schema == null) {
-            return;
-        }
-        paths.add(path);
-        if (depth >= MAX_SCHEMA_CANDIDATE_DEPTH || schema.containsKey("oneOf") || schema.containsKey("anyOf")) {
-            return;
-        }
-        if ("array".equals(schemaType(schema))) {
-            List<Map<String, Object>> prefixItems = prefixItemsOf(schema);
-            for (int i = 0; i < prefixItems.size(); i++) {
-                collectConnectableSchemaPaths(prefixItems.get(i), appendPath(path, String.valueOf(i)),
-                        paths, depth + 1);
-            }
-            Map<String, Object> items = objectSchema(schema.get("items"));
-            if (items != null) {
-                int representativeIndex = prefixItems.isEmpty() ? 0 : prefixItems.size();
-                collectConnectableSchemaPaths(items, appendPath(path, String.valueOf(representativeIndex)),
-                        paths, depth + 1);
-            }
-            return;
-        }
-        for (Map.Entry<String, Object> entry : propertiesOf(schema).entrySet()) {
-            Map<String, Object> child = objectSchema(entry.getValue());
-            if (child != null) {
-                collectConnectableSchemaPaths(child, appendPath(path, entry.getKey()), paths, depth + 1);
-            }
-        }
-    }
-
-    private static String appendPath(String prefix, String segment) {
-        String safeSegment = segment == null ? "" : segment.trim();
-        if (safeSegment.isBlank()) {
-            return prefix == null ? "" : prefix;
-        }
-        if (prefix == null || prefix.isBlank()) {
-            return safeSegment;
-        }
-        return prefix + "." + safeSegment;
-    }
-
-    private static Map<String, Object> schemaAtPath(Map<String, Object> schema, String path) {
-        if (path == null || path.isBlank()) {
-            return schema;
-        }
-        Map<String, Object> current = schema == null ? Map.of() : schema;
-        for (String segment : path.split("\\.")) {
-            if (segment.isBlank()) {
-                continue;
-            }
-            if ("array".equals(schemaType(current))) {
-                Integer index = arrayIndexSegment(segment);
-                if (index == null) {
-                    return null;
-                }
-                Map<String, Object> item = arrayItemSchemaForIndex(current, index);
-                if (item == null) {
-                    return null;
-                }
-                current = item;
-                continue;
-            }
-            Map<String, Object> properties = propertiesOf(current);
-            Map<String, Object> next = objectSchema(properties.get(segment));
-            if (next == null) {
-                if (!propertyNameAllowedBySchema(current, segment)) {
-                    return null;
-                }
-                next = patternPropertySchema(current, segment);
-            }
-            if (next == null) {
-                next = additionalPropertySchema(current);
-            }
-            if (next == null) {
-                return null;
-            }
-            current = next;
-        }
-        return current;
-    }
-
-    private static Map<String, Object> arrayItemSchemaForIndex(Map<String, Object> schema, int index) {
-        Object prefixItems = schema.get("prefixItems");
-        if (prefixItems instanceof List<?> list && index < list.size()) {
-            return objectSchema(list.get(index));
-        }
-        return objectSchema(schema.get("items"));
-    }
-
-    private static List<Map<String, Object>> prefixItemsOf(Map<String, Object> schema) {
-        Object raw = schema.get("prefixItems");
-        if (!(raw instanceof List<?> list)) {
-            return List.of();
-        }
-        List<Map<String, Object>> prefixItems = new ArrayList<>();
-        for (Object item : list) {
-            Map<String, Object> itemSchema = objectSchema(item);
-            if (itemSchema != null) {
-                prefixItems.add(itemSchema);
-            }
-        }
-        return prefixItems;
-    }
-
-    private static Integer arrayIndexSegment(String segment) {
-        if (!ARRAY_INDEX.matcher(segment).matches()) {
-            return null;
-        }
-        try {
-            int index = Integer.parseInt(segment);
-            return index < 0 ? null : index;
-        } catch (NumberFormatException ex) {
-            return null;
-        }
-    }
-
-    private static boolean propertyNameAllowedBySchema(Map<String, Object> schema, String propertyName) {
-        Map<String, Object> propertyNameSchema = objectSchema(schema.get("propertyNames"));
-        if (propertyNameSchema == null) {
-            return true;
-        }
-        Map<String, Object> effectiveSchema = new LinkedHashMap<>(propertyNameSchema);
-        if (!effectiveSchema.containsKey("type") && !effectiveSchema.containsKey("kind")) {
-            effectiveSchema.put("type", "string");
-        }
-        return VisualSchemaCompatibility.valueMatchesSchema(propertyName, effectiveSchema);
-    }
-
-    private static Map<String, Object> patternPropertySchema(Map<String, Object> schema, String propertyName) {
-        List<Map<String, Object>> matches = new ArrayList<>();
-        for (Map.Entry<String, Object> entry : propertiesMap(schema.get("patternProperties")).entrySet()) {
-            try {
-                if (Pattern.compile(entry.getKey()).matcher(propertyName).find()) {
-                    Map<String, Object> candidate = objectSchema(entry.getValue());
-                    if (candidate != null) {
-                        matches.add(candidate);
-                    }
-                }
-            } catch (PatternSyntaxException ignored) {
-                return null;
-            }
-        }
-        return matches.size() == 1 ? matches.getFirst() : null;
-    }
-
-    private static Map<String, Object> additionalPropertySchema(Map<String, Object> schema) {
-        Object residual = residualPropertiesPolicy(schema);
-        if (Boolean.TRUE.equals(residual)) {
-            return Map.of();
-        }
-        return objectSchema(residual);
-    }
-
-    private static Object residualPropertiesPolicy(Map<String, Object> schema) {
-        if (schema.containsKey("additionalProperties")) {
-            return schema.get("additionalProperties");
-        }
-        return schema.get("unevaluatedProperties");
-    }
-
-    private static Map<String, Object> propertiesOf(Map<String, Object> schema) {
-        return propertiesMap(schema.get("properties"));
-    }
-
-    private static Map<String, Object> propertiesMap(Object raw) {
-        if (!(raw instanceof Map<?, ?> map)) {
-            return Map.of();
-        }
-        Map<String, Object> properties = new LinkedHashMap<>();
-        map.forEach((key, value) -> properties.put(String.valueOf(key), value));
-        return properties;
-    }
-
-    private static Map<String, Object> objectSchema(Object raw) {
-        if (!(raw instanceof Map<?, ?> map)) {
-            return null;
-        }
-        Map<String, Object> schema = new LinkedHashMap<>();
-        map.forEach((key, value) -> schema.put(String.valueOf(key), value));
-        return schema;
-    }
-
-    private static String schemaType(Map<String, Object> schema) {
-        Object type = schema.get("kind");
-        if (type == null) {
-            type = schema.get("type");
-        }
-        if (type instanceof List<?> types) {
-            return types.stream()
-                    .filter(item -> item != null && !"null".equals(String.valueOf(item)))
-                    .map(String::valueOf)
-                    .findFirst()
-                    .orElse("null");
-        }
-        if (type == null && hasSchemaKeyword(schema, "properties", "required", "additionalProperties",
-                "unevaluatedProperties", "patternProperties", "propertyNames", "dependentRequired",
-                "dependentSchemas", "minProperties", "maxProperties")) {
-            return "object";
-        }
-        if (type == null && hasSchemaKeyword(schema, "items", "prefixItems", "unevaluatedItems", "contains",
-                "minItems", "maxItems", "uniqueItems", "minContains", "maxContains")) {
-            return "array";
-        }
-        return type == null ? "" : String.valueOf(type);
-    }
-
-    private static boolean hasSchemaKeyword(Map<String, Object> schema, String... keywords) {
-        if (schema == null) {
-            return false;
-        }
-        for (String keyword : keywords) {
-            if (schema.containsKey(keyword)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static String schemaTypeLabel(Map<String, Object> schema) {

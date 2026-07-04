@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualGraphReadiness;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaIntrospection;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 import com.leanowtech.bloge.gateway.visual.validation.VisualRuntimeBindingRequirementKey;
@@ -20,8 +21,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 /**
  * Server-side schema gate for interactive canvas connections.
@@ -32,7 +31,6 @@ public class VisualConnectionCheckService {
     private static final String PREVIEW_EDGE_ID = "__preview_connection";
     private static final String CONTEXT_SOURCE_NODE_ID = "__ctx";
     private static final String CONFIG_TARGET_PORT = "config";
-    private static final Pattern ARRAY_INDEX = Pattern.compile("\\d+");
     private static final int MAX_SCHEMA_CANDIDATE_PATHS = 64;
     private static final int MAX_SCHEMA_CANDIDATE_DEPTH = 4;
 
@@ -389,7 +387,8 @@ public class VisualConnectionCheckService {
             }
             if (candidateSurfaceMatches(request.targetSurface(), "input")) {
                 for (OperatorDefinition.Port port : operator.get().ports().inputs()) {
-                    for (String path : connectableSchemaPaths(port.schema())) {
+                    for (String path : VisualSchemaIntrospection.connectableSchemaPaths(port.schema(),
+                            MAX_SCHEMA_CANDIDATE_PATHS, MAX_SCHEMA_CANDIDATE_DEPTH)) {
                         if (!candidateEndpointMatches(request, port.name(), path)) {
                             continue;
                         }
@@ -402,7 +401,8 @@ public class VisualConnectionCheckService {
                 }
             }
             if (candidateSurfaceMatches(request.targetSurface(), "config")) {
-                for (String path : connectableSchemaPaths(operator.get().configSchema())) {
+                for (String path : VisualSchemaIntrospection.connectableSchemaPaths(operator.get().configSchema(),
+                        MAX_SCHEMA_CANDIDATE_PATHS, MAX_SCHEMA_CANDIDATE_DEPTH)) {
                     if (path.isBlank() || !candidateEndpointMatches(request, CONFIG_TARGET_PORT, path)) {
                         continue;
                     }
@@ -551,7 +551,7 @@ public class VisualConnectionCheckService {
             return null;
         }
         if (CONTEXT_SOURCE_NODE_ID.equals(source.nodeId())) {
-            return schemaAtPath(draft.inputSchema().schema(), source.path());
+            return VisualSchemaIntrospection.schemaAtPath(draft.inputSchema().schema(), source.path());
         }
         Optional<GraphDraft.DraftNode> node = draft.nodes().stream()
                 .filter(candidate -> candidate.id().equals(source.nodeId()))
@@ -564,7 +564,7 @@ public class VisualConnectionCheckService {
             return null;
         }
         return resolveOutputPort(operator.get(), source.port(), source.path())
-                .map(port -> schemaAtPath(port.schema().schema(), source.path()))
+                .map(port -> VisualSchemaIntrospection.schemaAtPath(port.schema().schema(), source.path()))
                 .orElse(null);
     }
 
@@ -585,10 +585,10 @@ public class VisualConnectionCheckService {
             return null;
         }
         if (CONFIG_TARGET_PORT.equals(target.port()) || "config".equals(surface)) {
-            return schemaAtPath(operator.get().configSchema().schema(), target.path());
+            return VisualSchemaIntrospection.schemaAtPath(operator.get().configSchema().schema(), target.path());
         }
         return resolveInputPort(operator.get(), target.port(), target.path())
-                .map(port -> schemaAtPath(port.schema().schema(), target.path()))
+                .map(port -> VisualSchemaIntrospection.schemaAtPath(port.schema().schema(), target.path()))
                 .orElse(null);
     }
 
@@ -608,7 +608,7 @@ public class VisualConnectionCheckService {
             return Optional.of(ports.getFirst());
         }
         List<OperatorDefinition.Port> matches = ports.stream()
-                .filter(port -> schemaAtPath(port.schema().schema(), path) != null)
+                .filter(port -> VisualSchemaIntrospection.schemaAtPath(port.schema().schema(), path) != null)
                 .toList();
         return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
     }
@@ -692,9 +692,9 @@ public class VisualConnectionCheckService {
         if (enumValues instanceof List<?> values && !values.isEmpty()) {
             return "enum";
         }
-        String type = schemaType(schema);
+        String type = VisualSchemaIntrospection.schemaType(schema);
         if ("array".equals(type)) {
-            Map<String, Object> items = objectSchema(schema.get("items"));
+            Map<String, Object> items = VisualSchemaIntrospection.objectSchema(schema.get("items"));
             return items == null ? "array" : "array<" + schemaTypeLabel(items, "any") + ">";
         }
         if (!type.isBlank()) {
@@ -709,7 +709,7 @@ public class VisualConnectionCheckService {
             return "";
         }
         List<String> labels = branches.stream()
-                .map(VisualConnectionCheckService::objectSchema)
+                .map(VisualSchemaIntrospection::objectSchema)
                 .filter(candidate -> candidate != null)
                 .map(candidate -> schemaTypeLabel(candidate, "any"))
                 .distinct()
@@ -726,58 +726,8 @@ public class VisualConnectionCheckService {
         if (!(raw instanceof List<?> branches) || selection.index() >= branches.size()) {
             return schema;
         }
-        Map<String, Object> branch = objectSchema(branches.get(selection.index()));
+        Map<String, Object> branch = VisualSchemaIntrospection.objectSchema(branches.get(selection.index()));
         return branch == null ? schema : branch;
-    }
-
-    private static List<String> connectableSchemaPaths(SchemaEnvelope schema) {
-        List<String> paths = new ArrayList<>();
-        collectConnectableSchemaPaths(schema == null ? Map.of() : schema.schema(), "", paths, 0);
-        return paths.stream().distinct().limit(MAX_SCHEMA_CANDIDATE_PATHS).toList();
-    }
-
-    private static void collectConnectableSchemaPaths(Map<String, Object> schema,
-                                                      String path,
-                                                      List<String> paths,
-                                                      int depth) {
-        if (schema == null) {
-            return;
-        }
-        paths.add(path);
-        if (depth >= MAX_SCHEMA_CANDIDATE_DEPTH || schema.containsKey("oneOf") || schema.containsKey("anyOf")) {
-            return;
-        }
-        if ("array".equals(schemaType(schema))) {
-            List<Map<String, Object>> prefixItems = prefixItemsOf(schema);
-            for (int i = 0; i < prefixItems.size(); i++) {
-                collectConnectableSchemaPaths(prefixItems.get(i), appendPath(path, String.valueOf(i)),
-                        paths, depth + 1);
-            }
-            Map<String, Object> items = objectSchema(schema.get("items"));
-            if (items != null) {
-                int representativeIndex = prefixItems.isEmpty() ? 0 : prefixItems.size();
-                collectConnectableSchemaPaths(items, appendPath(path, String.valueOf(representativeIndex)),
-                        paths, depth + 1);
-            }
-            return;
-        }
-        for (Map.Entry<String, Object> entry : propertiesOf(schema).entrySet()) {
-            Map<String, Object> child = objectSchema(entry.getValue());
-            if (child != null) {
-                collectConnectableSchemaPaths(child, appendPath(path, entry.getKey()), paths, depth + 1);
-            }
-        }
-    }
-
-    private static String appendPath(String prefix, String segment) {
-        String safeSegment = segment == null ? "" : segment.trim();
-        if (safeSegment.isBlank()) {
-            return prefix == null ? "" : prefix;
-        }
-        if (prefix == null || prefix.isBlank()) {
-            return safeSegment;
-        }
-        return prefix + "." + safeSegment;
     }
 
     private record ConnectionCandidateTarget(
@@ -894,7 +844,7 @@ public class VisualConnectionCheckService {
     }
 
     private static Object configContainerForNext(Object existing, String nextSegment) {
-        if (arrayIndexSegment(nextSegment) != null) {
+        if (VisualSchemaIntrospection.arrayIndexSegment(nextSegment) != null) {
             return existing instanceof List<?> list ? new ArrayList<>(list) : new ArrayList<>();
         }
         return existing instanceof Map<?, ?> map && !isConfigBindingMap(map)
@@ -907,7 +857,7 @@ public class VisualConnectionCheckService {
             return map.get(segment);
         }
         if (container instanceof List<?> list) {
-            Integer index = arrayIndexSegment(segment);
+            Integer index = VisualSchemaIntrospection.arrayIndexSegment(segment);
             return index != null && index < list.size() ? list.get(index) : null;
         }
         return null;
@@ -921,7 +871,7 @@ public class VisualConnectionCheckService {
             return;
         }
         if (container instanceof List<?> list) {
-            Integer index = arrayIndexSegment(segment);
+            Integer index = VisualSchemaIntrospection.arrayIndexSegment(segment);
             if (index == null) {
                 return;
             }
@@ -1072,7 +1022,7 @@ public class VisualConnectionCheckService {
             return Optional.of(ports.getFirst());
         }
         List<OperatorDefinition.Port> matches = ports.stream()
-                .filter(port -> schemaAtPath(port.schema().schema(), inputName) != null)
+                .filter(port -> VisualSchemaIntrospection.schemaAtPath(port.schema().schema(), inputName) != null)
                 .toList();
         return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
     }
@@ -1214,7 +1164,7 @@ public class VisualConnectionCheckService {
             return false;
         }
         long matches = operator.get().ports().inputs().stream()
-                .filter(port -> schemaAtPath(port.schema().schema(), path) != null)
+                .filter(port -> VisualSchemaIntrospection.schemaAtPath(port.schema().schema(), path) != null)
                 .limit(2)
                 .count();
         return matches > 1;
@@ -1225,183 +1175,6 @@ public class VisualConnectionCheckService {
                 .filter(node -> node.id().equals(nodeId))
                 .findFirst()
                 .flatMap(node -> catalog.find(node.operatorRef()));
-    }
-
-    private static Map<String, Object> schemaAtPath(Map<String, Object> schema, String path) {
-        if (path == null || path.isBlank()) {
-            return schema;
-        }
-        Map<String, Object> current = schema == null ? Map.of() : schema;
-        for (String segment : path.split("\\.")) {
-            if (segment.isBlank()) {
-                continue;
-            }
-            if ("array".equals(schemaType(current))) {
-                Integer index = arrayIndexSegment(segment);
-                if (index == null) {
-                    return null;
-                }
-                Map<String, Object> item = arrayItemSchemaForIndex(current, index);
-                if (item == null) {
-                    return null;
-                }
-                current = item;
-                continue;
-            }
-            Map<String, Object> properties = propertiesOf(current);
-            Map<String, Object> next = objectSchema(properties.get(segment));
-            if (next == null) {
-                if (!propertyNameAllowedBySchema(current, segment)) {
-                    return null;
-                }
-                next = patternPropertySchema(current, segment);
-            }
-            if (next == null) {
-                next = additionalPropertySchema(current);
-            }
-            if (next == null) {
-                return null;
-            }
-            current = next;
-        }
-        return current;
-    }
-
-    private static Map<String, Object> arrayItemSchemaForIndex(Map<String, Object> schema, int index) {
-        Object prefixItems = schema.get("prefixItems");
-        if (prefixItems instanceof List<?> list && index < list.size()) {
-            return objectSchema(list.get(index));
-        }
-        return objectSchema(schema.get("items"));
-    }
-
-    private static List<Map<String, Object>> prefixItemsOf(Map<String, Object> schema) {
-        Object raw = schema.get("prefixItems");
-        if (!(raw instanceof List<?> list)) {
-            return List.of();
-        }
-        List<Map<String, Object>> prefixItems = new ArrayList<>();
-        for (Object item : list) {
-            Map<String, Object> itemSchema = objectSchema(item);
-            if (itemSchema != null) {
-                prefixItems.add(itemSchema);
-            }
-        }
-        return prefixItems;
-    }
-
-    private static Integer arrayIndexSegment(String segment) {
-        if (!ARRAY_INDEX.matcher(segment).matches()) {
-            return null;
-        }
-        try {
-            int index = Integer.parseInt(segment);
-            return index < 0 ? null : index;
-        } catch (NumberFormatException ex) {
-            return null;
-        }
-    }
-
-    private static Map<String, Object> patternPropertySchema(Map<String, Object> schema, String propertyName) {
-        List<Map<String, Object>> matches = new ArrayList<>();
-        for (Map.Entry<String, Object> entry : propertiesMap(schema.get("patternProperties")).entrySet()) {
-            try {
-                if (Pattern.compile(entry.getKey()).matcher(propertyName).find()) {
-                    Map<String, Object> candidate = objectSchema(entry.getValue());
-                    if (candidate != null) {
-                        matches.add(candidate);
-                    }
-                }
-            } catch (PatternSyntaxException ignored) {
-                return null;
-            }
-        }
-        return matches.size() == 1 ? matches.getFirst() : null;
-    }
-
-    private static boolean propertyNameAllowedBySchema(Map<String, Object> schema, String propertyName) {
-        Map<String, Object> propertyNameSchema = objectSchema(schema.get("propertyNames"));
-        if (propertyNameSchema == null) {
-            return true;
-        }
-        Map<String, Object> effectiveSchema = new LinkedHashMap<>(propertyNameSchema);
-        if (!effectiveSchema.containsKey("type") && !effectiveSchema.containsKey("kind")) {
-            effectiveSchema.put("type", "string");
-        }
-        return VisualSchemaCompatibility.valueMatchesSchema(propertyName, effectiveSchema);
-    }
-
-    private static Map<String, Object> additionalPropertySchema(Map<String, Object> schema) {
-        Object residual = residualPropertiesPolicy(schema);
-        if (Boolean.TRUE.equals(residual)) {
-            return Map.of();
-        }
-        return objectSchema(residual);
-    }
-
-    private static Object residualPropertiesPolicy(Map<String, Object> schema) {
-        if (schema.containsKey("additionalProperties")) {
-            return schema.get("additionalProperties");
-        }
-        return schema.get("unevaluatedProperties");
-    }
-
-    private static Map<String, Object> propertiesOf(Map<String, Object> schema) {
-        return propertiesMap(schema.get("properties"));
-    }
-
-    private static Map<String, Object> propertiesMap(Object raw) {
-        if (!(raw instanceof Map<?, ?> map)) {
-            return Map.of();
-        }
-        Map<String, Object> properties = new LinkedHashMap<>();
-        map.forEach((key, value) -> properties.put(String.valueOf(key), value));
-        return properties;
-    }
-
-    private static Map<String, Object> objectSchema(Object raw) {
-        if (!(raw instanceof Map<?, ?> map)) {
-            return null;
-        }
-        Map<String, Object> schema = new LinkedHashMap<>();
-        map.forEach((key, value) -> schema.put(String.valueOf(key), value));
-        return schema;
-    }
-
-    private static String schemaType(Map<String, Object> schema) {
-        Object type = schema.get("kind");
-        if (type == null) {
-            type = schema.get("type");
-        }
-        if (type instanceof List<?> types) {
-            return types.stream()
-                    .filter(item -> item != null && !"null".equals(String.valueOf(item)))
-                    .map(String::valueOf)
-                    .findFirst()
-                    .orElse("null");
-        }
-        if (type == null && hasSchemaKeyword(schema, "properties", "required", "additionalProperties",
-                "unevaluatedProperties", "patternProperties", "propertyNames", "dependentRequired",
-                "dependentSchemas", "minProperties", "maxProperties")) {
-            return "object";
-        }
-        if (type == null && hasSchemaKeyword(schema, "items", "prefixItems", "unevaluatedItems", "contains",
-                "minItems", "maxItems", "uniqueItems", "minContains", "maxContains")) {
-            return "array";
-        }
-        return type == null ? "" : String.valueOf(type);
-    }
-
-    private static boolean hasSchemaKeyword(Map<String, Object> schema, String... keywords) {
-        if (schema == null) {
-            return false;
-        }
-        for (String keyword : keywords) {
-            if (schema.containsKey(keyword)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static boolean relevantToConnection(VisualDiagnostic diagnostic,
@@ -1498,7 +1271,7 @@ public class VisualConnectionCheckService {
             if (segment.isBlank()) {
                 continue;
             }
-            if (arrayIndexSegment(segment) != null) {
+            if (VisualSchemaIntrospection.arrayIndexSegment(segment) != null) {
                 suffix.append('[').append(segment).append(']');
             } else {
                 suffix.append('.').append(segment);
