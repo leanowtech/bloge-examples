@@ -3460,36 +3460,64 @@ function renderOperatorPalette() {
   renderOperatorPaletteWindowControls();
   target.innerHTML = filteredEntries
     .map(([type, spec]) => `
-    <button
+    <div
       class="operator-card ${escapeHtml(spec.kind)}${type === state.focusedOperatorRef ? ' focused' : ''}"
-      type="button"
       data-operator-type="${escapeHtml(type)}"
+      draggable="true"
+      role="group"
       aria-current="${type === state.focusedOperatorRef ? 'true' : 'false'}"
       data-testid="operator-${escapeHtml(type)}">
-      <strong>${escapeHtml(spec.label)}</strong>
-      <span>${escapeHtml(spec.kind)}</span>
-      <small>${escapeHtml(operatorPaletteContractSummary(spec))}</small>
-      ${operatorPaletteTagBadges(spec)}
-      ${operatorPaletteCapabilityBadges(spec)}
-      ${operatorPaletteProjectionBadge(spec)}
-      ${operatorPaletteDiagnosticBadges(spec)}
-    </button>
+      <div class="operator-card-main" data-operator-detail="${escapeHtml(type)}">
+        <strong>${escapeHtml(spec.label)}</strong>
+        <span>${escapeHtml(spec.kind)}</span>
+        <small>${escapeHtml(operatorPaletteContractSummary(spec))}</small>
+        ${operatorPaletteTagBadges(spec)}
+        ${operatorPaletteCapabilityBadges(spec)}
+        ${operatorPaletteProjectionBadge(spec)}
+        ${operatorPaletteDiagnosticBadges(spec)}
+      </div>
+      <div class="operator-card-actions">
+        <button type="button" class="secondary compact" data-operator-detail="${escapeHtml(type)}">Details</button>
+        <button type="button" class="secondary compact" data-operator-add="${escapeHtml(type)}">Add</button>
+      </div>
+    </div>
   `).join('') || '<div class="palette-empty">No matching operators.</div>';
-  for (const button of target.querySelectorAll('[data-operator-type]')) {
-    button.addEventListener('pointerdown', (event) => startPaletteDrag(event, button));
-    button.addEventListener('dragstart', (event) => {
-      state.draggingOperatorType = button.dataset.operatorType;
-      event.dataTransfer.setData('application/x-bloge-operator', button.dataset.operatorType);
-      event.dataTransfer.setData('text/plain', button.dataset.operatorType);
+  for (const card of target.querySelectorAll('[data-operator-type]')) {
+    card.addEventListener('pointerdown', (event) => {
+      if (event.target?.closest?.('button')) {
+        return;
+      }
+      startPaletteDrag(event, card);
     });
-    button.addEventListener('dragend', cancelPaletteDrag);
-    button.addEventListener('click', () => {
+    card.addEventListener('dragstart', (event) => {
+      state.draggingOperatorType = card.dataset.operatorType;
+      event.dataTransfer.setData('application/x-bloge-operator', card.dataset.operatorType);
+      event.dataTransfer.setData('text/plain', card.dataset.operatorType);
+    });
+    card.addEventListener('dragend', cancelPaletteDrag);
+    card.addEventListener('click', (event) => {
+      if (event.target?.closest?.('[data-operator-add]')) {
+        return;
+      }
       if (state.suppressPaletteClick) {
         state.suppressPaletteClick = false;
         return;
       }
-      addBuilderNode(button.dataset.operatorType);
+      void focusOperatorPaletteRef(card.dataset.operatorType);
       state.draggingOperatorType = null;
+    });
+  }
+  for (const button of target.querySelectorAll('[data-operator-add]')) {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      addBuilderNode(button.dataset.operatorAdd);
+      state.draggingOperatorType = null;
+    });
+  }
+  for (const button of target.querySelectorAll('[data-operator-detail]')) {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      void focusOperatorPaletteRef(button.dataset.operatorDetail);
     });
   }
   renderOperatorPaletteDetail();

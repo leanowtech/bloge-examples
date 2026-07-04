@@ -949,6 +949,9 @@ body.connecting-edge * {
 }
 
 .operator-card {
+  display: grid;
+  gap: 7px;
+  align-content: space-between;
   min-height: 86px;
   padding: 8px;
   border: 1px solid var(--line);
@@ -960,6 +963,22 @@ body.connecting-edge * {
   touch-action: none;
   user-select: none;
   box-shadow: inset 0 3px 0 rgba(82, 103, 127, 0.22);
+}
+
+.operator-card-main {
+  min-width: 0;
+}
+
+.operator-card-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.operator-card-actions button {
+  min-width: 0;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 .operator-card:active {
