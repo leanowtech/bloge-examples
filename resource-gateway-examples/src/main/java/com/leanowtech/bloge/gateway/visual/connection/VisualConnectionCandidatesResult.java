@@ -15,9 +15,10 @@ import java.util.Map;
  * @param source normalized source endpoint
  * @param kind normalized edge kind used for candidate checks
  * @param offset zero-based offset applied after accepted/rejected filtering
- * @param totalCandidateCount enumerated targets before accepted/rejected filtering
- * @param acceptedCount accepted target count before display limiting
- * @param rejectedCount rejected target count before display limiting
+ * @param totalCandidateCount enumerated targets after request query filtering and before accepted/rejected filtering
+ * @param unfilteredCandidateCount enumerated targets before request query filtering
+ * @param acceptedCount accepted target count after request query filtering and before display limiting
+ * @param rejectedCount rejected target count after request query filtering and before display limiting
  * @param displayedCount returned candidate row count
  * @param truncated true when more visible rows existed after the returned window
  * @param candidates returned candidate rows
@@ -29,6 +30,7 @@ public record VisualConnectionCandidatesResult(
         String kind,
         int offset,
         int totalCandidateCount,
+        int unfilteredCandidateCount,
         int acceptedCount,
         int rejectedCount,
         int displayedCount,
@@ -47,6 +49,7 @@ public record VisualConnectionCandidatesResult(
         kind = kind == null ? "data" : kind;
         offset = Math.max(0, offset);
         totalCandidateCount = Math.max(0, totalCandidateCount);
+        unfilteredCandidateCount = Math.max(totalCandidateCount, unfilteredCandidateCount);
         acceptedCount = Math.max(0, acceptedCount);
         rejectedCount = Math.max(0, rejectedCount);
         candidates = candidates == null ? List.of() : List.copyOf(candidates);
@@ -67,8 +70,27 @@ public record VisualConnectionCandidatesResult(
                                             boolean truncated,
                                             List<ConnectionCandidate> candidates,
                                             List<VisualDiagnostic> diagnostics) {
-        this(schemaVersion, source, kind, 0, totalCandidateCount, acceptedCount, rejectedCount, displayedCount,
+        this(schemaVersion, source, kind, 0, totalCandidateCount, totalCandidateCount,
+                acceptedCount, rejectedCount, displayedCount,
                 truncated, candidates, diagnostics);
+    }
+
+    /**
+     * Backward-compatible constructor for callers created before global query filtering existed.
+     */
+    public VisualConnectionCandidatesResult(String schemaVersion,
+                                            GraphDraft.Endpoint source,
+                                            String kind,
+                                            int offset,
+                                            int totalCandidateCount,
+                                            int acceptedCount,
+                                            int rejectedCount,
+                                            int displayedCount,
+                                            boolean truncated,
+                                            List<ConnectionCandidate> candidates,
+                                            List<VisualDiagnostic> diagnostics) {
+        this(schemaVersion, source, kind, offset, totalCandidateCount, totalCandidateCount,
+                acceptedCount, rejectedCount, displayedCount, truncated, candidates, diagnostics);
     }
 
     /**

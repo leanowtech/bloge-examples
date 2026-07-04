@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
@@ -304,9 +305,11 @@ public class VisualConnectionCheckService {
             );
         }
 
-        List<ConnectionCandidateTarget> targets = candidateTargets(request.draft(), request);
+        List<ConnectionCandidateTarget> allTargets = candidateTargets(request.draft(), request);
+        List<ConnectionCandidateTarget> targets = filteredCandidateTargets(request, allTargets);
+        int unfilteredCandidateCount = allTargets.size();
         if (request.includeRejected() && targets.size() > FULL_CANDIDATE_CHECK_LIMIT) {
-            return pagedCandidates(request, targets);
+            return pagedCandidates(request, targets, unfilteredCandidateCount);
         }
         List<VisualConnectionCandidatesResult.ConnectionCandidate> candidates = new ArrayList<>();
         for (ConnectionCandidateTarget target : targets) {
@@ -334,6 +337,7 @@ public class VisualConnectionCheckService {
                 request.kind(),
                 request.offset(),
                 candidates.size(),
+                unfilteredCandidateCount,
                 acceptedCount,
                 rejectedCount,
                 window.size(),
@@ -344,7 +348,8 @@ public class VisualConnectionCheckService {
     }
 
     private VisualConnectionCandidatesResult pagedCandidates(VisualConnectionCandidatesRequest request,
-                                                             List<ConnectionCandidateTarget> targets) {
+                                                             List<ConnectionCandidateTarget> targets,
+                                                             int unfilteredCandidateCount) {
         int acceptedCount = 0;
         for (ConnectionCandidateTarget target : targets) {
             if (fastCandidateAccepted(request, target)) {
@@ -364,6 +369,7 @@ public class VisualConnectionCheckService {
                 request.kind(),
                 request.offset(),
                 targets.size(),
+                unfilteredCandidateCount,
                 acceptedCount,
                 rejectedCount,
                 window.size(),
@@ -479,6 +485,107 @@ public class VisualConnectionCheckService {
             }
         }
         return targets;
+    }
+
+    private List<ConnectionCandidateTarget> filteredCandidateTargets(VisualConnectionCandidatesRequest request,
+                                                                     List<ConnectionCandidateTarget> targets) {
+        List<String> queryTokens = queryTokens(request.query());
+        if (queryTokens.isEmpty() || targets.isEmpty()) {
+            return targets;
+        }
+        Map<String, Object> sourceSchema = endpointSourceSchema(request.draft(), request.source());
+        String sourceSchemaType = schemaTypeLabel(sourceSchema, "");
+        return targets.stream()
+                .filter(target -> candidateTargetMatchesQuery(request, target, sourceSchemaType, queryTokens))
+                .toList();
+    }
+
+    private boolean candidateTargetMatchesQuery(VisualConnectionCandidatesRequest request,
+                                                ConnectionCandidateTarget target,
+                                                String sourceSchemaType,
+                                                List<String> queryTokens) {
+        String haystack = candidateTargetSearchText(request, target, sourceSchemaType);
+        return queryTokens.stream().allMatch(haystack::contains);
+    }
+
+    private String candidateTargetSearchText(VisualConnectionCandidatesRequest request,
+                                             ConnectionCandidateTarget target,
+                                             String sourceSchemaType) {
+        List<String> values = new ArrayList<>();
+        addSearchValue(values, request.kind());
+        addSearchValue(values, target.surface());
+        addSearchValue(values, endpointLabel(request.source(), true));
+        addSearchValue(values, endpointLabel(target.endpoint(), false));
+        addSearchValue(values, target.node().id());
+        addSearchValue(values, target.node().label());
+        addSearchValue(values, target.node().operatorRef());
+        addSearchValue(values, target.endpoint().nodeId());
+        addSearchValue(values, target.endpoint().port());
+        addSearchValue(values, target.endpoint().path());
+        addSearchValue(values, sourceSchemaType);
+        Map<String, Object> targetSchema = selectedUnionBranchSchema(
+                endpointTargetSchema(request.draft(), target.endpoint(), target.surface()),
+                request.targetUnionBranch()
+        );
+        addSearchValue(values, schemaTypeLabel(targetSchema, controlSurface(target.surface()) ? target.surface() : ""));
+        Optional<OperatorDefinition> operator = catalog.find(target.node().operatorRef());
+        if (operator.isPresent()) {
+            OperatorDefinition definition = operator.get();
+            addSearchValue(values, definition.operatorRef());
+            addSearchValue(values, definition.operatorVersion());
+            addSearchValue(values, definition.display().name());
+            addSearchValue(values, definition.display().description());
+            for (String tag : definition.display().tags()) {
+                addSearchValue(values, tag);
+            }
+            addSearchValue(values, definition.source().kind());
+            addSearchValue(values, definition.source().libraryId());
+            addSearchValue(values, definition.lowering().mode());
+            addSearchValue(values, definition.lowering().operatorRef());
+            addRuntimeReadinessSearchValues(values, definition.runtimeReadiness());
+        }
+        return String.join(" ", values).toLowerCase(Locale.ROOT);
+    }
+
+    private static void addRuntimeReadinessSearchValues(List<String> values,
+                                                        OperatorDefinition.RuntimeReadiness readiness) {
+        if (readiness == null) {
+            return;
+        }
+        addSearchValue(values, readiness.state());
+        addSearchValue(values, readiness.level());
+        addSearchValue(values, readiness.title());
+        addSearchValue(values, readiness.summary());
+        for (String artifactKind : readiness.artifactKinds()) {
+            addSearchValue(values, artifactKind);
+        }
+        for (OperatorDefinition.ReadinessDetail detail : readiness.details()) {
+            addSearchValue(values, detail.label());
+            addSearchValue(values, detail.value());
+        }
+        if (!readiness.executable()) {
+            addSearchValue(values, "runtime binding requirement");
+            addSearchValue(values, "executable promotion debt");
+        }
+    }
+
+    private static void addSearchValue(List<String> values, Object value) {
+        if (value == null) {
+            return;
+        }
+        String text = String.valueOf(value).trim();
+        if (!text.isBlank()) {
+            values.add(text);
+        }
+    }
+
+    private static List<String> queryTokens(String query) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+        return List.of(query.trim().toLowerCase(Locale.ROOT).split("\\s+")).stream()
+                .filter(Predicate.not(String::isBlank))
+                .toList();
     }
 
     private static boolean candidateTargetMatches(VisualConnectionCandidatesRequest request,

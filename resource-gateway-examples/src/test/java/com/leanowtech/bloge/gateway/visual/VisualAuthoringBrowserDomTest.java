@@ -561,15 +561,30 @@ class VisualAuthoringBrowserDomTest {
         )).size() >= 250);
         assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-panel"));
 
+        By filterQuery = By.cssSelector("#selected-operator-editor [data-connectability-filter-query]");
+        sendKeysThroughRerenderedFocusedInput(wait, filterQuery, "riskScoreReview260");
+        waitForConnectabilityServerReady(new WebDriverWait(driver, Duration.ofSeconds(30)),
+                "riskScoreSource", 0, "riskScoreReview260");
+        waitForText(wait, By.id("selected-operator-editor"), "1/260 matching candidate");
+        WebElement globalQueryLateTarget = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "#selected-operator-editor [data-connectability-action='connect']"
+                        + "[data-connect-target-node='riskScoreReview260']"
+        )));
+        assertThat(globalQueryLateTarget.getText())
+                .contains("Score review (riskScoreReview260)")
+                .contains("integer -> integer");
+        assertNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor .node-connectability-panel"));
+
+        click(wait, By.cssSelector("#selected-operator-editor [data-connectability-filter-clear]"));
+        waitForValue(wait, filterQuery, "");
+        waitForConnectabilityServerReady(new WebDriverWait(driver, Duration.ofSeconds(30)),
+                "riskScoreSource", 0);
+
         click(wait, By.cssSelector("#selected-operator-editor [data-connectability-window='next']"));
         waitForConnectabilityServerReady(new WebDriverWait(driver, Duration.ofSeconds(30)),
                 "riskScoreSource", 250);
         waitForText(wait, By.id("selected-operator-editor"), "Window 251-260 of 260");
         waitForText(wait, By.id("selected-operator-editor"), "partial server window 251-260 of 260");
-
-        By filterQuery = By.cssSelector("#selected-operator-editor [data-connectability-filter-query]");
-        sendKeysThroughRerenderedFocusedInput(wait, filterQuery, "riskScoreReview260");
-        waitForText(wait, By.id("selected-operator-editor"), "matches");
         WebElement lateTarget = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
                 "#selected-operator-editor [data-connectability-action='connect']"
                         + "[data-connect-target-node='riskScoreReview260']"
@@ -2392,14 +2407,19 @@ class VisualAuthoringBrowserDomTest {
     }
 
     private void waitForConnectabilityServerReady(WebDriverWait wait, String nodeId, int offset) {
+        waitForConnectabilityServerReady(wait, nodeId, offset, "");
+    }
+
+    private void waitForConnectabilityServerReady(WebDriverWait wait, String nodeId, int offset, String query) {
         try {
             wait.until(ignored -> Boolean.TRUE.equals(((JavascriptExecutor) driver).executeScript("""
                     const server = state.nodeConnectabilityServer;
                     return Boolean(server)
                       && server.nodeId === arguments[0]
                       && server.status === 'ready'
-                      && Number(server.offset || 0) === Number(arguments[1]);
-                    """, nodeId, offset)));
+                      && Number(server.offset || 0) === Number(arguments[1])
+                      && String(server.query || '').toLowerCase() === String(arguments[2] || '').toLowerCase();
+                    """, nodeId, offset, query)));
         } catch (TimeoutException ex) {
             Object serverState = ((JavascriptExecutor) driver).executeScript("""
                     try {
@@ -2408,8 +2428,8 @@ class VisualAuthoringBrowserDomTest {
                       return `unavailable: ${error.message}`;
                     }
                     """);
-            throw new AssertionError("Connectability server candidates did not become ready for node '%s' at offset %d. state=%s"
-                    .formatted(nodeId, offset, serverState), ex);
+            throw new AssertionError("Connectability server candidates did not become ready for node '%s' at offset %d query '%s'. state=%s"
+                    .formatted(nodeId, offset, query, serverState), ex);
         }
     }
 

@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -290,6 +291,64 @@ class VisualConnectionCheckServiceTest {
         assertThat(result.displayedCount()).isEqualTo(1);
         assertThat(result.candidates()).hasSize(1);
         assertThat(result.truncated()).isTrue();
+    }
+
+    @Test
+    void connectionCandidatesApplyGlobalQueryBeforePagingLargeCanvasTargets() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(scoreReviewLargeConnectabilityLibrary()));
+        GraphDraft draft = scoreReviewLargeConnectabilityDraft(260);
+
+        VisualConnectionCandidatesResult result = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("riskScoreSource", "output", "score"),
+                "data",
+                true,
+                10,
+                0,
+                "",
+                "canvas",
+                "",
+                "",
+                "riskScoreReview260",
+                GraphDraft.UnionBranchSelection.empty(),
+                Map.of()
+        ));
+        VisualConnectionCandidatesResult runtimeDebt = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("riskScoreSource", "output", "score"),
+                "data",
+                true,
+                5,
+                0,
+                "",
+                "canvas",
+                "",
+                "",
+                "runtime binding",
+                GraphDraft.UnionBranchSelection.empty(),
+                Map.of()
+        ));
+
+        assertThat(result.unfilteredCandidateCount()).isEqualTo(260);
+        assertThat(result.totalCandidateCount()).isEqualTo(1);
+        assertThat(result.offset()).isZero();
+        assertThat(result.displayedCount()).isEqualTo(1);
+        assertThat(result.truncated()).isFalse();
+        assertThat(result.candidates()).singleElement().satisfies(candidate -> {
+            assertThat(candidate.targetNodeId()).isEqualTo("riskScoreReview260");
+            assertThat(candidate.target().port()).isEqualTo("inputs");
+            assertThat(candidate.target().path()).isEqualTo("score");
+            assertThat(candidate.accepted()).isTrue();
+            assertThat(candidate.explanation().sourceSchemaType()).isEqualTo("integer");
+            assertThat(candidate.explanation().targetSchemaType()).isEqualTo("integer");
+        });
+        assertThat(runtimeDebt.unfilteredCandidateCount()).isEqualTo(260);
+        assertThat(runtimeDebt.totalCandidateCount()).isEqualTo(260);
+        assertThat(runtimeDebt.displayedCount()).isEqualTo(5);
+        assertThat(runtimeDebt.truncated()).isTrue();
+        assertThat(runtimeDebt.candidates()).allSatisfy(candidate ->
+                assertThat(candidate.explanation().targetRuntimeBinding().requirementCount()).isEqualTo(1));
     }
 
     @Test
@@ -1643,6 +1702,70 @@ class VisualConnectionCheckServiceTest {
         return new VisualConnectionCheckService(new GraphDraftValidator(catalog), catalog);
     }
 
+    private static OperatorLibrary scoreReviewLargeConnectabilityLibrary() {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-score-large-connectability",
+                "Risk score large connectability operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(scoreSourceOperatorDefinition(), scoreReviewOperatorDefinition())
+        );
+    }
+
+    private static OperatorDefinition scoreSourceOperatorDefinition() {
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreSource",
+                "1.0.0",
+                new OperatorDefinition.Display("Score source", "Produces score facts for connectability search.",
+                        List.of("risk", "score", "source")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("score", Map.of("type", "integer")),
+                                        List.of("score")),
+                                true,
+                                "Score output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("score", "700")
+                )),
+                List.of()
+        );
+    }
+
+    private static OperatorDefinition scoreReviewOperatorDefinition() {
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreReview",
+                "1.0.0",
+                new OperatorDefinition.Display("Score review", "Reviews an integer score before promotion.",
+                        List.of("risk", "score", "review")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(Map.of("score", Map.of("type", "integer")),
+                                        List.of("score")),
+                                true,
+                                "Review input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("approved", Map.of("type", "boolean")),
+                                        List.of("approved")),
+                                true,
+                                "Review output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("design", "", Map.of()),
+                List.of()
+        );
+    }
+
     private static OperatorLibrary unionBranchSelectionLibrary() {
         OperatorDefinition producer = new OperatorDefinition(
                 "bloge.visualOperator.v1",
@@ -2499,6 +2622,43 @@ class VisualConnectionCheckServiceTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("listConsumer", "")
+        );
+    }
+
+    private static GraphDraft scoreReviewLargeConnectabilityDraft(int targetCount) {
+        List<GraphDraft.DraftNode> nodes = new ArrayList<>();
+        nodes.add(new GraphDraft.DraftNode(
+                "riskScoreSource",
+                "risk:scoreSource",
+                "",
+                Map.of(),
+                Map.of(),
+                null
+        ));
+        for (int index = 1; index <= targetCount; index++) {
+            nodes.add(new GraphDraft.DraftNode(
+                    "riskScoreReview" + index,
+                    "risk:scoreReview",
+                    "",
+                    Map.of(),
+                    Map.of(),
+                    null
+            ));
+        }
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "largeConnectabilitySearch",
+                "",
+                "",
+                "",
+                "",
+                null,
+                nodes,
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("riskScoreSource", "score")
         );
     }
 
