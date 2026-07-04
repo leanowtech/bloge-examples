@@ -82,17 +82,23 @@ public class VisualOperatorCatalogController {
         int normalizedItemLimit = normalizeItemLimit(itemLimit == null ? legacyLimit : itemLimit,
                 matchingOperators.size());
         List<OperatorDefinition> operators = page(matchingOperators, normalizedOffset, normalizedItemLimit);
+        List<OperatorRuntimeBindingProjection> allRuntimeBindingProjections =
+                catalog.runtimeBindingProjections(query, matchingOperators);
         List<OperatorRuntimeBindingProjection> runtimeBindingProjections =
-                catalog.runtimeBindingProjections(query, operators);
+                page(allRuntimeBindingProjections, normalizedOffset, normalizedItemLimit);
+        List<OperatorExecutablePromotionProjection> allExecutablePromotionProjections =
+                catalog.executablePromotionProjections(query, allRuntimeBindingProjections);
+        List<OperatorExecutablePromotionProjection> executablePromotionProjections =
+                page(allExecutablePromotionProjections, normalizedOffset, normalizedItemLimit);
         return new OperatorCatalogResponse(
                 "bloge.visualOperatorCatalog.v1",
                 operators,
                 catalog.diagnostics(query),
                 OperatorCatalogFacets.from(matchingOperators),
                 runtimeBindingProjections,
-                OperatorRuntimeBindingProjection.stateCounts(runtimeBindingProjections),
-                catalog.executablePromotionProjections(query, runtimeBindingProjections),
-                null,
+                OperatorRuntimeBindingProjection.stateCounts(allRuntimeBindingProjections),
+                executablePromotionProjections,
+                OperatorExecutablePromotionProjection.stateCounts(allExecutablePromotionProjections),
                 matchingOperators.size(),
                 unfilteredTotal,
                 operators.size(),
@@ -153,11 +159,11 @@ public class VisualOperatorCatalogController {
         return Math.max(0, Math.min(requestedLimit, MAX_OPERATOR_WINDOW_SIZE));
     }
 
-    private static List<OperatorDefinition> page(List<OperatorDefinition> operators, int offset, int itemLimit) {
-        if (operators == null || operators.isEmpty() || itemLimit == 0 || offset >= operators.size()) {
+    private static <T> List<T> page(List<T> values, int offset, int itemLimit) {
+        if (values == null || values.isEmpty() || itemLimit == 0 || offset >= values.size()) {
             return List.of();
         }
-        int endExclusive = Math.min(operators.size(), offset + itemLimit);
-        return List.copyOf(operators.subList(offset, endExclusive));
+        int endExclusive = Math.min(values.size(), offset + itemLimit);
+        return List.copyOf(values.subList(offset, endExclusive));
     }
 }

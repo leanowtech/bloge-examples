@@ -108,7 +108,20 @@ class VisualOperatorCatalogControllerTest {
                 .andExpect(jsonPath("$.hasMore").value(false))
                 .andExpect(jsonPath("$.filter.search").value("risk"))
                 .andExpect(jsonPath("$.facets.total").value(3))
-                .andExpect(jsonPath("$.facets.tags.risk").value(3));
+                .andExpect(jsonPath("$.facets.tags.risk").value(3))
+                .andExpect(jsonPath("$.runtimeBindingProjections.length()").value(2))
+                .andExpect(jsonPath("$.runtimeBindingProjections[0].operatorRef").value("risk:b"))
+                .andExpect(jsonPath("$.runtimeBindingProjections[1].operatorRef").value("risk:c"))
+                .andExpect(jsonPath("$.runtimeBindingProjectionStateCounts['binding-required']").value(1))
+                .andExpect(jsonPath("$.runtimeBindingProjectionStateCounts['binding-bound']").value(1))
+                .andExpect(jsonPath("$.runtimeBindingProjectionStateCounts['adapter-active']").value(1))
+                .andExpect(jsonPath("$.executablePromotionProjections.length()").value(2))
+                .andExpect(jsonPath("$.executablePromotionProjections[0].operatorRef").value("risk:b"))
+                .andExpect(jsonPath("$.executablePromotionProjections[1].operatorRef").value("risk:c"))
+                .andExpect(jsonPath("$.executablePromotionStateCounts['binding-required']").value(1))
+                .andExpect(jsonPath("$.executablePromotionStateCounts['activation-required']").value(1))
+                .andExpect(jsonPath("$.executablePromotionStateCounts['executor-integration-required']")
+                        .value(1));
     }
 
     @Test
@@ -343,6 +356,50 @@ class VisualOperatorCatalogControllerTest {
             return operators.stream()
                     .filter(operator -> operator.operatorRef().equals(operatorRef))
                     .findFirst();
+        }
+
+        @Override
+        public List<OperatorRuntimeBindingProjection> runtimeBindingProjections(
+                OperatorCatalogQuery query,
+                List<OperatorDefinition> operators) {
+            return operators.stream()
+                    .map(WindowedCatalog::projectionFor)
+                    .toList();
+        }
+
+        private static OperatorRuntimeBindingProjection projectionFor(OperatorDefinition operator) {
+            String state = switch (operator.operatorRef()) {
+                case "risk:b" -> "binding-bound";
+                case "risk:c" -> "adapter-active";
+                default -> "binding-required";
+            };
+            return new OperatorRuntimeBindingProjection(
+                    OperatorRuntimeBindingProjection.SCHEMA_VERSION,
+                    operator.operatorRef(),
+                    operator.fingerprint(),
+                    operator.runtimeReadiness().state(),
+                    false,
+                    "binding-required".equals(state),
+                    "binding-bound".equals(state),
+                    state,
+                    "info",
+                    "Projection for " + operator.operatorRef(),
+                    "Paged catalog projection fixture.",
+                    "binding-required".equals(state) ? "" : operator.operatorRef() + "-binding",
+                    "binding-required".equals(state) ? 0 : 1,
+                    "binding-required".equals(state) ? "" : "bound",
+                    "native",
+                    "com.acme." + operator.operatorRef(),
+                    "risk-platform",
+                    java.time.Instant.EPOCH,
+                    "adapter-active".equals(state) ? operator.operatorRef() + "-activation" : "",
+                    "adapter-active".equals(state) ? 1 : 0,
+                    "adapter-active".equals(state) ? "active" : "",
+                    "adapter-active".equals(state) ? "healthy" : "",
+                    "adapter-active".equals(state) ? "prod" : "",
+                    java.time.Instant.EPOCH,
+                    List.of()
+            );
         }
     }
 
