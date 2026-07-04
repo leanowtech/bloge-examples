@@ -367,6 +367,20 @@ class VisualGraphDraftControllerTest {
                                 assertThat(issue.surface()).isEqualTo("input");
                                 assertThat(issue.portName()).isEqualTo("inputs");
                                 assertThat(issue.compatibility()).isEqualTo("compatible");
+                                assertThat(issue.path()).isEqualTo("score");
+                                assertThat(issue.savedType()).isEqualTo("integer");
+                                assertThat(issue.currentType()).isEqualTo("number");
+                                assertThat(issue.reviewHint()).contains("Review downstream expectations");
+                                assertThat(issue.schemaChanges())
+                                        .singleElement()
+                                        .satisfies(change -> {
+                                            assertThat(change.path()).isEqualTo("score");
+                                            assertThat(change.keyword()).isEqualTo("type");
+                                            assertThat(change.savedValue()).isEqualTo("integer");
+                                            assertThat(change.currentValue()).isEqualTo("number");
+                                            assertThat(change.compatibility()).isEqualTo("compatible");
+                                            assertThat(change.summary()).isEqualTo("type: integer -> number");
+                                        });
                             });
                 });
         assertThat(report.nodes())
@@ -379,6 +393,17 @@ class VisualGraphDraftControllerTest {
                             .satisfies(issue -> {
                                 assertThat(issue.surface()).isEqualTo("input");
                                 assertThat(issue.portName()).isEqualTo("inputs");
+                                assertThat(issue.path()).isEqualTo("score");
+                                assertThat(issue.savedType()).isEqualTo("integer");
+                                assertThat(issue.currentType()).isEqualTo("number");
+                                assertThat(issue.reviewHint()).contains("Review downstream expectations");
+                                assertThat(issue.schemaChanges())
+                                        .singleElement()
+                                        .satisfies(change -> {
+                                            assertThat(change.keyword()).isEqualTo("type");
+                                            assertThat(change.savedValue()).isEqualTo("integer");
+                                            assertThat(change.currentValue()).isEqualTo("number");
+                                        });
                                 assertThat(issue.message()).contains("can still feed current input schema");
                             });
                 });
@@ -421,6 +446,20 @@ class VisualGraphDraftControllerTest {
                                 assertThat(issue.surface()).isEqualTo("input");
                                 assertThat(issue.portName()).isEqualTo("inputs");
                                 assertThat(issue.compatibility()).isEqualTo("breaking");
+                                assertThat(issue.path()).isEqualTo("score");
+                                assertThat(issue.savedType()).isEqualTo("number");
+                                assertThat(issue.currentType()).isEqualTo("integer");
+                                assertThat(issue.reviewHint()).contains("Review bindings before rebase");
+                                assertThat(issue.schemaChanges())
+                                        .singleElement()
+                                        .satisfies(change -> {
+                                            assertThat(change.path()).isEqualTo("score");
+                                            assertThat(change.keyword()).isEqualTo("type");
+                                            assertThat(change.savedValue()).isEqualTo("number");
+                                            assertThat(change.currentValue()).isEqualTo("integer");
+                                            assertThat(change.compatibility()).isEqualTo("breaking");
+                                            assertThat(change.summary()).isEqualTo("type: number -> integer");
+                                        });
                                 assertThat(issue.message())
                                         .contains("target type integer requires integer-valued source")
                                         .contains("source type number has no integral multipleOf");
@@ -433,9 +472,22 @@ class VisualGraphDraftControllerTest {
                     assertThat(node.schemaCompatibilityState()).isEqualTo("breaking");
                     assertThat(node.schemaCompatibilityIssues())
                             .singleElement()
-                            .satisfies(issue -> assertThat(issue.message())
-                                    .contains("target type integer requires integer-valued source")
-                                    .contains("source type number has no integral multipleOf"));
+                            .satisfies(issue -> {
+                                assertThat(issue.path()).isEqualTo("score");
+                                assertThat(issue.savedType()).isEqualTo("number");
+                                assertThat(issue.currentType()).isEqualTo("integer");
+                                assertThat(issue.reviewHint()).contains("Review bindings before rebase");
+                                assertThat(issue.schemaChanges())
+                                        .singleElement()
+                                        .satisfies(change -> {
+                                            assertThat(change.keyword()).isEqualTo("type");
+                                            assertThat(change.savedValue()).isEqualTo("number");
+                                            assertThat(change.currentValue()).isEqualTo("integer");
+                                        });
+                                assertThat(issue.message())
+                                        .contains("target type integer requires integer-valued source")
+                                        .contains("source type number has no integral multipleOf");
+                            });
                 });
     }
 

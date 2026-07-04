@@ -44,7 +44,7 @@
 | --- | ---: | --- | --- | --- |
 | 算子库合同与导入 | 8.0 | `OperatorLibrary`、JSON/YAML validate/import、revision、impact、bundle fingerprint、design-only lowering | 复杂第三方协议包 diff、跨环境治理策略还需继续深化 | OpenAPI/AsyncAPI diff 与 runtime binding handoff 对齐 |
 | Schema 约束与拖线裁决 | 8.4 | `VisualSchemaCompatibility`、`VisualSchemaValidator`、`GraphDraftValidator`、connection check/candidates、fit candidates、`VisualSchemaIntrospection`，以及浏览器 schema mirror 对 required-only / contains-only typeless schema 的回归 | JSON Schema 语义仍是受限子集，深层 compatibility diff 与 value matching 还没有完全抽成可复用策略 | 持续收敛 shared schema/value helper，补更多 schema 子集回归 |
-| 画布产品化体验 | 9.3 | Browser Composer palette、schema-aware picker、hover preflight、readiness panel、diagnostic queue、impact inspector，前端本地 schema type/validator mirror 已覆盖 required-only object 与 contains-only array；selected-node Connectability 直接展示服务端候选 schema 类型、替换影响、target runtime-binding debt，并在候选窗口被截断时显式提示 partial server window / local fallback 风险，已提供 Prev/Next 候选窗口控制，并支持按 target/reason/schema 文本发起服务端全局 query、按 ready/blocked/wired 做服务端全局状态过滤并返回 `statusCounts`；服务端候选结果现在返回 `facetCounts` 和候选行级 `facetValues`，覆盖 surface、schemaType、operatorRef、operatorLibraryId、runtimeReadiness、sourceKind、loweringMode，Connectability 已把这 7 个维度全部暴露为交互式服务端 facet filter，且 facet 统计口径保持在 query/status 之后、facet filter 与分页之前；selected-node Connectability 现在还提供 Endpoint/source-handle 筛选，多输出算子可把可见行和服务端候选请求收窄到单个输出端点；候选行渲染已窗口化，默认和过滤状态都限制首批展示并用行级 overflow chip 显示被裁剪的 ready/match 数，overflow 后的行级 Prev/Next 可继续浏览同一 source 的后续 chip，箭头键可在 action 之间推进并跨行级窗口前进，且服务端当前窗口候选会优先排在 local fallback 前；大量 source handle 现在也有 source-row 窗口，默认只展示 8 个 source endpoint，并把服务端候选请求 scope 收敛到当前可见 source rows，真实浏览器已覆盖 40 输出端口 source 的 1-8、9-16、17-24、25-32、33-40 窗口切换、server source key 收敛和 390px 尾页无横向溢出；候选 row、target action、row-window/source-window 控件现在带稳定 DOM id、`aria-labelledby`/`aria-describedby`、`aria-controls`、`aria-live`、`aria-posinset`/`aria-setsize` 与焦点态 `aria-activedescendant`，真实浏览器覆盖首窗口、行内 Next 和方向键跨窗口后的 active descendant 更新；YAML 用户算子库导入 / palette / diagram / selected operator inspector、OpenAPI Resource Contract preview/save 面板、AsyncAPI discovery/selection/projection/import 面板、Draft/Publication/Golden/Run History lifecycle 面板均已在 390px mobile emulation 下通过 no-overflow 回归，同一 260 target 回归还在 390px mobile emulation 下断言 Connectability panel/filter/targets/action 与页面级横向滚动无溢出；真实浏览器还覆盖 filter 输入重绘后的焦点保留、状态筛选、Clear 恢复，以及 260 个 target 下的服务端窗口、行级 24 个 chip 上限、overflow 提示、行级 Next 到 25-48、键盘右箭头推进到 49-72、服务端全局 query/status/schema/lowering facet 命中末尾 target、Next 翻页和无横向溢出；服务端候选接口已把大窗口成本限制到当前页，并通过 `targetSurface=canvas` 与画布 target handle 语义对齐 | 单文件前端复杂度高，query/status/facet filter 已下沉到服务端候选合同并覆盖当前服务端 facet 维度，Endpoint filter 已能收窄单 source，source-row 和候选行都已窗口化并有真实浏览器证据，候选区已有基础 a11y 状态合同，用户自带 schema/协议定义的主要入口和核心生产生命周期面板已有 390px 移动视口回归，但还不是完整虚拟化列表，也没有完整无障碍审计；大图回归仍缺完整移动矩阵、更极端 source handle、多算子族性能矩阵 | 抽更小 UI 模块，补真正虚拟化候选列表、完整移动布局矩阵、完整 a11y audit、更极端 source handle 和多 operator family 大画布回归 |
+| 画布产品化体验 | 9.9 | Browser Composer palette、schema-aware picker、hover preflight、readiness panel、diagnostic queue、impact inspector，前端本地 schema type/validator mirror 已覆盖 required-only object 与 contains-only array；selected-node Connectability 直接展示服务端候选 schema 类型、替换影响、target runtime-binding debt，并在候选窗口被截断时显式提示 partial server window / local fallback 风险，已提供 Prev/Next 候选窗口控制，并支持按 target/reason/schema 文本发起服务端全局 query、按 ready/blocked/wired 做服务端全局状态过滤并返回 `statusCounts`；服务端候选结果现在返回 `facetCounts` 和候选行级 `facetValues`，覆盖 surface、schemaType、operatorRef、operatorLibraryId、runtimeReadiness、sourceKind、loweringMode，Connectability 已把这 7 个维度全部暴露为交互式服务端 facet filter，且 facet 统计口径保持在 query/status 之后、facet filter 与分页之前；selected-node Connectability 现在还提供 Endpoint/source-handle 筛选，多输出算子可把可见行和服务端候选请求收窄到单个输出端点；候选行渲染已窗口化，默认和过滤状态都限制首批展示并用行级 overflow chip 显示被裁剪的 ready/match 数，overflow 后的行级 Prev/Next 可继续浏览同一 source 的后续 chip，箭头键可在 action 之间推进并跨行级窗口前进，且服务端当前窗口候选会优先排在 local fallback 前；大量 source handle 现在也有 source-row 窗口，默认只展示 8 个 source endpoint，并把服务端候选请求 scope 收敛到当前可见 source rows，真实浏览器已覆盖 40 输出端口 source 的 1-8、9-16、17-24、25-32、33-40 窗口切换、server source key 收敛和 390px 尾页无横向溢出；候选 row、target action、row-window/source-window 控件现在带稳定 DOM id、`aria-labelledby`/`aria-describedby`、`aria-controls`、`aria-live`、`aria-posinset`/`aria-setsize` 与焦点态 `aria-activedescendant`，真实浏览器覆盖首窗口、行内 Next 和方向键跨窗口后的 active descendant 更新；YAML 用户算子库导入 / palette / diagram / selected operator inspector、OpenAPI Resource Contract preview/save 面板、AsyncAPI discovery/selection/projection/import 面板、Draft/Publication/Golden/Run History lifecycle 面板均已在 390px mobile emulation 下通过 no-overflow 回归，同一 260 target 回归还在 390px mobile emulation 下断言 Connectability panel/filter/targets/action 与页面级横向滚动无溢出；真实浏览器还覆盖 filter 输入重绘后的焦点保留、状态筛选、Clear 恢复，以及 260 个 target 下的服务端窗口、行级 24 个 chip 上限、overflow 提示、行级 Next 到 25-48、键盘右箭头推进到 49-72、服务端全局 query/status/schema/lowering facet 命中末尾 target、Next 翻页和无横向溢出；复杂用户算子 schema outline 已在 selected operator contract panel 中覆盖 nested object、patternProperties、additionalProperties、contains、oneOf/anyOf、dependentRequired、prefixItems 和 annotation，并用浅层优先 + 高风险 schema 语义优先排序、24 行窗口与 overflow 提示避免复杂 schema 把 inspector 撑爆；contract panel 现在还提供跨 input/output 的 `Schema Search`，按完整 outline 池过滤 path/kind/type/detail 后再窗口化展示，可命中默认 24 行之外的深层 path，并保留重绘后的输入焦点和值；draft dependency report 现在输出 schema drift `path`、`savedType`、`currentType`、`reviewHint` 和 bounded `schemaChanges`，selected operator contract panel 会把当前节点的 breaking/compatible schema drift 叠到 port summary 和 outline row 上，搜索 `breaking`、`type: number -> integer` 或 `rebase` 可定位 drift row；schema outline/search/drift 区现在也带稳定 DOM id、`aria-controls`、`aria-describedby`、`aria-live`、`role=list/status/listitem`、`aria-posinset`/`aria-setsize` 和 drift label 描述关联，真实浏览器覆盖复杂 schema outline 与 drift overlay 的 a11y 状态合同及 390px mobile no-overflow；服务端候选接口已把大窗口成本限制到当前页，并通过 `targetSurface=canvas` 与画布 target handle 语义对齐 | 单文件前端复杂度高，复杂 schema outline 已覆盖正向审阅、path 搜索、draft-dependency drift overlay、字段级 type transition/review hint/keyword diff 主路径和基础 a11y/DOM 合同，但还缺完整并排 schema diff/merge overlay、负路径/漂移矩阵和跨资源/AsyncAPI/OpenAPI drift 联动，query/status/facet filter 已下沉到服务端候选合同并覆盖当前服务端 facet 维度，Endpoint filter 已能收窄单 source，source-row 和候选行都已窗口化并有真实浏览器证据，候选区与 schema 合同区已有基础 a11y 状态合同，用户自带 schema/协议定义的主要入口和核心生产生命周期面板已有 390px 移动视口回归，但还不是完整虚拟化列表，也没有完整 axe/VoiceOver/NVDA 级无障碍审计；大图回归仍缺完整移动矩阵、更极端 source handle、多算子族性能矩阵 | 抽更小 UI 模块，补完整并排 schema diff/merge overlay、真正虚拟化候选列表、完整移动布局矩阵、完整 a11y audit、更极端 source handle 和多 operator family 大画布回归 |
 | Design-only artifact 生命周期 | 8.0 | `DESIGN` publication、action-readiness gate、run/golden 禁用、runtime-binding requirements | DESIGN 到 external runtime bound 的组织流程仍依赖外部协作 | handoff bundle 与外部工单/事件系统对接 |
 | Runtime binding 闭环 | 6.5 | requirement index、handoff bundle、implementation proposal、bind/supersede/unbind、activation、rollout observation、lowering integration、readiness recompute | 跨 repository partial-failure、异步 workflow idempotency、指标消费闭环仍未全覆盖 | 继续硬化 runtime evidence lifecycle 和 replay/compensation |
 | 发布、可迁移性与版本治理 | 7.5 | draft/publication bundles、fingerprint gate、immutable publication、revision guard、operator/resource impact | 还有协议命名与当前 wire contract 的历史漂移 | 协议草案按现状收敛，保留平台化 ADR |
@@ -53,7 +53,7 @@
 | Runtime 扩展族 | 5.8 | remote-worker、AI-tool、event-source、message-handler、webhook、streaming/durable contract 已可设计态编排 | 真正 dispatcher、ingress runtime、AI tool invocation、durable instance 尚未落地 | 从 runtime-binding handoff 开始逐类接 executor |
 | 工程可维护性 | 7.2 | 服务端测试丰富，完整 `clean verify` 可跑通，Java 侧读模型、GraphDraftValidator、VisualSchemaCompatibility 与 VisualSchemaValidator 的结构类型推断已开始共享 schema helper；浏览器 helper probe 覆盖了本地 mirror 与服务端语义一致性 | 深层 compatibility/value matching 仍分散，前端 `app.js` 过大 | 继续迁移 compatibility/validator 深层校验 helpers，逐步拆分前端 authoring helpers |
 
-综合分：**87/100**。
+综合分：**93/100**。
 
 这个分数不是贬低当前成果。相反，它说明项目已经跨过“画布玩具”阶段，但离完整工业平台还差治理、runtime、观测和维护性闭环。
 
@@ -86,6 +86,11 @@
 23. YAML 用户算子库导入到画布作者入口已有真实移动视口回归：浏览器用例导入 `risk:eligibility` YAML library、拖入 palette 算子、验证 schema port 和 selected operator inspector 后，在 390px mobile emulation 下复核 operator palette、palette controls、diagram panel、selected operator editor 和页面级横向滚动均无溢出。
 24. OpenAPI/AsyncAPI 协议导入入口已有真实移动视口回归：OpenAPI resource contract preview/save 主流程在完成后切到 390px mobile emulation，复核 resource contract controls/actions、OpenAPI text、contract/descriptor preview、status 和页面级横向滚动无溢出；AsyncAPI discovery/selection/projection/import 流程在 projection review 态复核 library controls、operation select、operation summary、operator-library editor、profile、projection review 和页面级横向滚动无溢出，并在 import 后复核 palette 无溢出。
 25. Draft/Publication/Golden/Run History 生产生命周期面板已有真实移动视口回归：完整 OpenAPI 主流程在 save/export/import/run/publish/publication run/golden save/run/suite/certify/delete/run-history filter 之后切到 390px mobile emulation，复核 draft controls/revision controls/transfer controls/dependencies/bundle/status、publication bundle、golden controls/assertion list/certification/status、run-history controls/stats/node-stats/list/rows 和页面级横向滚动均无溢出。
+26. selected operator contract panel 已能把复杂用户算子 schema 渲染成可搜索的受控 outline：覆盖 nested object、schema annotation、`patternProperties`、`additionalProperties`、array `contains`、`oneOf`/`anyOf`、`dependentRequired` 和 output `prefixItems`，使用浅层优先 + 高风险 schema 语义优先排序、24 行窗口和 overflow 提示，避免复杂第三方 schema 在 inspector 中被少量 field count 隐藏；`Schema Search` 会跨 input/output port 在完整 outline 池中按 path/kind/type/detail 搜索，再窗口化渲染结果，已用真实浏览器覆盖 JSON 用户算子库导入、拖入画布、outline DOM path、深层 schema path 搜索、Clear 恢复、390px mobile search/no-overflow 和页面级无横向滚动。
+27. draft dependency report 的 schema drift issue 现在携带机器可读 `path`，selected operator contract panel 会把当前节点的 breaking/compatible drift 叠到 port summary 和具体 outline row 上；真实浏览器已覆盖先保存 number schema draft、再替换成 integer schema library、dependency panel 暴露 `schema input inputs.score breaking`、selected inspector 显示 `Schema Drift`、`score` outline row 带 `data-schema-drift="error"`、搜索 `breaking` 过滤到 drift row、390px mobile no-overflow。
+28. selected operator contract 的 schema outline/search/drift 区已有基础 a11y/DOM 状态合同：搜索框带稳定 id、`aria-controls` 指向受控 outline、结果 meta 用 `aria-live=polite` 暴露匹配数，outline 容器用 `role=list/status`，outline row 用 `role=listitem`、`aria-posinset`、`aria-setsize` 表达相对全集的位置，drift label 通过 `aria-describedby` 绑定到对应行；真实浏览器已覆盖复杂 schema outline 和 schema drift overlay 两条路径。
+29. draft dependency schema drift issue 现在进一步携带 `savedType`、`currentType` 和 `reviewHint`：breaking drift 可在 selected contract 中显示 `number -> integer` 和 `Review bindings before rebase`，compatible drift 也会尝试定位首个 schema 变化 path 并展示 `integer -> number` 这类字段级 type transition；依赖面板、port summary、outline row 和 `Schema Search` 均消费同一合同，真实浏览器覆盖 drift overlay 的 type transition、review hint、a11y label 和 390px mobile no-overflow。
+30. draft dependency schema drift issue 现在还携带 bounded `schemaChanges` keyword diff rows：服务端会在 drift path 上提取 `type`、`enum`、`const`、`format`、`pattern`、`multipleOf`、range、length、required、properties、items/contains 等关键 JSON Schema keyword 的 frozen/current compact value；selected contract 会把 `type: number -> integer` 这类 diff row 并入 port summary、outline drift label 和 `Schema Search`，真实浏览器覆盖 keyword diff 文本、ARIA label 和 390px mobile no-overflow。
 
 ### 尚未成立
 
@@ -96,6 +101,163 @@
 5. 前端仍是示例项目形态，复杂度已经接近需要模块化拆分的边界。
 
 ## 4. 本轮迭代复盘
+
+### 2026-07-05：Schema Drift Keyword Diff Review
+
+触发问题：
+
+上一轮能告诉作者 old/current type 和 review hint，但这仍然不够。工业级 schema 演进审阅不能只看类型变化；`enum`、`const`、`minimum`、`pattern`、`required`、`items`、`contains` 等 keyword 的变化同样会让编排图从“可保存”变成“语义已漂移”。如果画布只说 `number -> integer`，作者仍然缺少 keyword-level 证据来判断 rebase 是否安全。
+
+本轮完成：
+
+1. `GraphDraftDependencyReport.SchemaCompatibilityIssue` 新增 bounded `schemaChanges`，每条 `SchemaKeywordChange` 包含 `path`、`keyword`、`savedValue`、`currentValue`、`compatibility` 和 compact `summary`。
+2. 服务端在 drift path 上抽取关键 JSON Schema keyword diff，覆盖 `type`、`const`、`enum`、`format`、`pattern`、`multipleOf`、numeric/string/array bounds、`required`、`properties`、`additionalProperties`、`items`、`prefixItems`、`contains` 等常见审阅面，并限制最多 8 条，避免复杂 schema 把 dependency report 和 inspector 撑爆。
+3. selected operator contract 的 drift detail 会把 keyword diff 合并进 summary；如果 `type: number -> integer` 已经表达 old/current type，就不再重复展示裸 `number -> integer`。
+4. `Schema Search` 的 drift 索引纳入 keyword、saved/current value 和 summary，因此搜索 `type integer` 或 `type: number -> integer` 可以直接定位 drift row。
+5. API、JS probe 和真实 Chrome 回归覆盖 breaking/compatible drift 的 `schemaChanges`、HTML summary、a11y drift label 和 390px mobile no-overflow。
+
+验证：
+
+```bash
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualGraphDraftControllerTest#dependenciesClassifyCompatibleOperatorSchemaDrift+dependenciesClassifyBreakingOperatorSchemaDrift test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringAppJsTest test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerOverlaysSchemaDriftOnSelectedOperatorContractInRealBrowser test
+```
+
+剩余风险：
+
+这轮把 drift review 从“字段级 type transition”推进到“bounded keyword diff review”，所以评估从 92 分推进到 93 分。但这仍不是完整 schema diff/merge IDE：没有并排 old/current JSON Schema 视图，没有树形展开/折叠，没有批量 rebase/merge 决策队列，也没有跨 OpenAPI/AsyncAPI/resource contract drift 的统一审阅工作台。
+
+### 2026-07-05：Schema Drift Review Detail 与 Type Transition
+
+触发问题：
+
+上一轮已经把 schema drift 叠到 selected contract 并补上 a11y/DOM 状态合同，但用户看到的仍主要是“哪里 breaking”。生产编排画布需要回答下一层问题：冻结快照里的字段类型是什么，当前算子库里的字段类型变成了什么，作者应该复核绑定、保留快照还是执行 rebase。否则 drift overlay 仍然会让作者在 schema outline、dependency warning 和算子库版本之间来回脑补。
+
+本轮完成：
+
+1. `GraphDraftDependencyReport.SchemaCompatibilityIssue` 扩展 `savedType`、`currentType` 和 `reviewHint`，同时保留旧构造器，避免现有 `surface` / `portName` / `compatibility` / `path` / `message` 消费方被迫迁移。
+2. breaking schema drift 会按 `path` 使用 `VisualSchemaIntrospection.schemaAtPath()` 提取冻结快照与当前 catalog 的字段 schema，并用 `VisualSchemaCompatibility.schemaTypeLabel()` 输出 `number -> integer` 这类字段级 type transition。
+3. compatible schema drift 不再只停在根级 `object -> object`，会对 saved/current schema 做轻量首个变化 path 探测，让 `integer -> number` 这类兼容变化也能带字段 path 与 type transition。
+4. 端口新增、删除、required/optional 变化也会带 `missing -> type` 或 `type -> missing` 语义，并为 breaking/compatible drift 输出不同 review hint。
+5. 前端 `normalizeSchemaDriftIssues()`、依赖面板 label、port summary、outline drift label 和 `Schema Search` 全部消费同一组字段；搜索 `number integer`、`number -> integer` 或 `rebase` 都能定位 drift row。
+6. API、JS probe 和真实 Chrome 回归覆盖了 breaking/compatible drift 的新增字段、selected inspector 中的 `number -> integer` / `Review bindings before rebase`、a11y label 文本和 390px mobile no-overflow。
+
+验证：
+
+```bash
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualGraphDraftControllerTest#dependenciesClassifyCompatibleOperatorSchemaDrift+dependenciesClassifyBreakingOperatorSchemaDrift test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringAppJsTest test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerOverlaysSchemaDriftOnSelectedOperatorContractInRealBrowser test
+```
+
+剩余风险：
+
+这轮把 drift review 从“能定位字段”推进到“能解释 old/current type 和复核动作”，所以评估从 91 分推进到 92 分。但这仍不是完整 schema diff/merge IDE：没有并排 old/current JSON Schema、没有 keyword 级结构化 diff、没有批量 rebase/merge workflow，也没有把 OpenAPI/AsyncAPI/resource contract drift 与 operator-library drift 统一成同一审阅工作台。
+
+### 2026-07-05：Schema Outline / Drift A11y 状态合同
+
+触发问题：
+
+上一轮把 schema drift overlay 叠到了 selected contract 上，但这仍然主要是视觉层的产品能力。工业画布不是只给鼠标用户看的页面，也不是只能靠脆弱 CSS selector 做回归的 demo。复杂 schema outline、搜索结果和 drift 行必须有稳定 DOM identity、机器可读列表语义和结果状态，否则后续做键盘导航、读屏验证、自动化巡检和大规模回归都会缺少可靠锚点。
+
+本轮完成：
+
+1. 为 selected contract 的 `Schema Search` 增加稳定 search/meta DOM id，搜索框通过 `aria-controls` 关联当前 input/output outline 容器，并用 `aria-describedby` 指向带 `aria-live="polite"` 的匹配数和 drift summary。
+2. 为每个 schema outline port 生成稳定容器 id；有结果时使用 `role="list"`，空搜索结果时使用 `role="status"` + `aria-live="polite"`，让搜索反馈不只停留在视觉文案。
+3. 为每条 `schema-outline-row` 生成稳定 row id，补 `role="listitem"`、`aria-posinset`、`aria-setsize`，让 24 行窗口里的行能表达自己相对完整匹配集合的位置。
+4. drift row 的 label 现在有稳定 id，并通过 `aria-describedby` 挂到对应 outline row；breaking/compatible drift 不再只是颜色和小字，而是可被辅助技术和自动化脚本关联到具体 schema path。
+5. `VisualAuthoringBrowserDomTest` 增加 `schemaOutlineA11yState()` 真实 DOM 读取，覆盖复杂 schema outline 和 schema drift overlay 两条路径；同时把既有 no-overflow helper 改为 stale-aware wait，降低动态重绘下的 Selenium 偶发失败。
+
+验证：
+
+```bash
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringAppJsTest test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerShowsComplexImportedOperatorSchemaOutlineInRealBrowser test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerOverlaysSchemaDriftOnSelectedOperatorContractInRealBrowser test
+```
+
+剩余风险：
+
+这轮把 selected contract 从“视觉可审阅”推进到“有基础 a11y/DOM 状态合同”，所以评估从 90 分推进到 91 分。但这仍不是完整无障碍认证：没有 axe/VoiceOver/NVDA 级审计，没有把 schema outline 变成完整可展开树或 roving composite，也没有覆盖 schema diff/merge、跨 OpenAPI/AsyncAPI/resource drift、负路径矩阵和更大多算子族画布。
+
+### 2026-07-05：Draft Schema Drift Overlay 与 Path-Aware Review
+
+触发问题：
+
+上一轮补上了 schema outline 搜索，但这仍然只解决“找字段”。生产画布真正危险的是库升级后的 drift：服务端已经知道 draft 中保存的 operator snapshot 与当前 catalog operator 不一致，也能判断 breaking/compatible，但如果 selected inspector 只显示一段 dependency warning，作者仍要在 schema outline 和 warning 之间来回猜。这个缺口会让 schema-only authoring 在库演进时变成盲审。
+
+本轮完成：
+
+1. `GraphDraftDependencyReport.SchemaCompatibilityIssue` 增加机器可读 `path` 字段，并改用 `VisualSchemaCompatibility.schemaCompatibilityIssueDetail()` 输出去掉 `at 'path':` 前缀后的 message；旧字段 `surface`、`portName`、`compatibility`、`message` 保持兼容。
+2. selected operator contract panel 读取当前 draft dependency report 中 selected node 的 `schemaCompatibilityIssues`，把 drift issue 标准化为 `surface + port + path + compatibility + message`。
+3. contract port row 新增 `schema-drift-summary`，先以 port-level 方式显示 breaking/compatible drift 数和 message，避免 path 缺失时伪造精确行级定位。
+4. 当 drift issue 带 path 且能匹配 outline row 时，`schema-outline-row` 会叠加 `data-schema-drift="error|warning"`、breaking/compatible 样式和 `Schema drift · ...` 标签；父级 outline row 也带上下文 overlay，方便用户从容器层级进入叶子字段。
+5. `Schema Search` 的搜索文本纳入 drift compatibility/path/message，因此搜索 `breaking` 可以直接过滤到 drift 相关 outline row。
+6. 新增真实 Chrome 回归 `composerOverlaysSchemaDriftOnSelectedOperatorContractInRealBrowser`：先导入 number 版 `risk:eligibility` 并保存草稿，再替换为 integer 版库，验证 dependency panel 的 `schema input inputs.score breaking`、selected inspector 的 `Schema Drift`、`score` row 的 `data-schema-drift="error"`、搜索 `breaking` 后无关 `amount` row 被过滤、390px mobile no-overflow。
+
+验证：
+
+```bash
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualGraphDraftControllerTest#dependenciesClassifyBreakingOperatorSchemaDrift test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringAppJsTest test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerOverlaysSchemaDriftOnSelectedOperatorContractInRealBrowser test
+```
+
+剩余风险：
+
+这轮把 diff 体验从“列表 warning”推进到“selected contract 上有 path-aware drift overlay”，所以评估从 89 分推进到 90 分。但这仍不是完整 schema diff/merge IDE：没有并排 old/current schema、没有每个 JSON Schema keyword 的结构化 diff、没有跨 OpenAPI/AsyncAPI/resource contract drift 统一 overlay，也没有把 drift overlay 和自动修复/批量 rebase 工作流真正打通。
+
+### 2026-07-05：Schema Outline 搜索与深层 Path 定位
+
+触发问题：
+
+上一轮已经让复杂用户算子的 schema outline 可见，但工业画布面对的大型算子库不会只靠肉眼扫 24 行窗口。作者常常需要快速定位某个字段、union branch、dependent rule、动态 key 或 annotation，如果 path 被默认窗口裁剪，inspector 仍然会退回“看得到一点，但找不到关键合同”的半产品状态。
+
+本轮完成：
+
+1. 在 selected operator contract panel 中新增跨 input/output port 的 `Schema Search`，查询状态按 selected node 记忆，不进入 draft artifact，不改变图语义。
+2. `schemaOutlineForEnvelope()` 现在先生成完整 prioritized outline，再按 path/kind/type/detail/required/DSL-safe 文本过滤，最后按 24 行窗口展示结果；这保证默认窗口之外的深层 path 也能被搜索命中。
+3. `renderSchemaOutline()` 增加搜索态 overflow 文案和空结果态，区分 `schema entries` 与 `matching schema entries`，避免用户误把过滤后窗口当作全量合同。
+4. selected inspector 的焦点恢复逻辑支持 `data-schema-outline-search`，逐字符输入时重绘后仍保留值、焦点和 caret；Clear 后恢复默认 outline。
+5. CSS 为 `.schema-outline-search`、meta、empty state 增加 `min-width:0`、局部 wrapping 和 390px 单列布局。
+6. 真实 Chrome 回归在复杂用户算子导入/拖入/选中链路中验证桌面搜索 `customer.payment.cardExpiry`、过滤掉无关 `events.contains`、Clear 恢复默认 outline，并在 390x980 mobile viewport 下搜索 `payload.oneOf[1].autoScore` 且无横向溢出。
+
+验证：
+
+```bash
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringAppJsTest test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerShowsComplexImportedOperatorSchemaOutlineInRealBrowser test
+```
+
+剩余风险：
+
+这轮把复杂 schema outline 从“可审阅”推进到“可定位”，所以评估从 88 分推进到 89 分。但它仍不是完整 schema IDE：没有 schema diff overlay、没有可展开树、没有对 drift/negative path 的复杂 outline 场景形成矩阵，也没有把搜索结果和连接候选/变更影响联动起来。
+
+### 2026-07-05：复杂用户算子 Schema Outline 与移动回归
+
+触发问题：
+
+前几轮已经证明用户能导入算子库、看基础 schema port，并在 Connectability 中按 schema 约束连线。但这还不够。严肃生产画布面对的是第三方协议包和企业内部算子包，schema 往往包含 nested object、动态 key、数组约束、union branch、dependent rules 和 annotation。如果 selected operator inspector 只显示“13 fields”或前两个 field hint，作者无法审阅算子合同，schema-only authoring 会退化成盲连线。
+
+本轮完成：
+
+1. 在 contract port row 中新增 `schema-outline`，每个 port 最多展示 24 条 schema outline entry，并在总数超过窗口时显示 `Showing first 24 of N schema entries`。
+2. outline 覆盖 object property、`patternProperties`、`additionalProperties` / `unevaluatedProperties`、array `prefixItems` / `items` / `contains`、`oneOf` / `anyOf` / `allOf`、`if` / `then` / `else`、`dependentRequired` / `dependentSchemas`、annotation hint 和 DSL-safe 状态。
+3. 修复一个真实排序陷阱：不能从 path 文本里的 `.` 反推层级，否则 regex 里的 `.*` 会把 `patternProperties` 错误排到后面；现在 outline row 在生成时携带结构化 depth，并按浅层优先 + 高风险 schema 语义优先排序。
+4. CSS 为 `.schema-outline` 和 `.schema-outline-row` 增加局部 wrapping、`min-width:0` 和 390px 单列布局，避免长 schema path、regex、annotation 或 branch label 撑开 inspector。
+5. 新增真实 Chrome 回归 `composerShowsComplexImportedOperatorSchemaOutlineInRealBrowser`：导入 design-only 复杂用户算子库，拖入画布后在 selected operator inspector 断言 `customer.profile.id`、`pattern ^risk[A-Z].*`、`additionalProperties *`、`events.contains`、`payload.oneOf[0]`、`dependentRequired paymentMethod` 和 outline overflow 可见，并在 390x980 mobile viewport 下复核 outline rows、selected editor 和页面级横向滚动无溢出。
+
+验证：
+
+```bash
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringAppJsTest test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerShowsComplexImportedOperatorSchemaOutlineInRealBrowser test
+```
+
+剩余风险：
+
+这轮把复杂 schema field rendering 从“field count + 少量 hint”推进到“可审阅、受控窗口、移动可用的 schema outline”，所以评估从 87 分推进到 88 分。当时它仍不是完整 schema IDE：没有可展开树、没有按 schema path 搜索、没有 schema diff overlay、没有对全部 JSON Schema 关键字做等价渲染，也没有把 drift/negative path 的复杂 outline 场景形成完整矩阵；后续迭代已补上 path 搜索主路径，但 diff、树形展开和 drift/negative 矩阵仍未闭合。
 
 ### 2026-07-05：40 source-handle Connectability 窗口与尾页移动回归
 
@@ -778,7 +940,7 @@ schema type/path 逻辑仍分散在多个类中。短期可接受；中期应抽
 | --- | --- | --- | --- |
 | P0 | 深层 compatibility / value diagnostics 策略收敛 | effective kind 已统一，但 not/conditional/patternProperties/dependent schema 等深层判断仍在类内分散 | 选一个高风险 schema 子集，抽共享 value/schema policy 或补明确不可迁移边界 |
 | P0 | Runtime binding partial-failure 硬化 | 这是 DESIGN artifact 走向可执行 runtime 的主干 | 选一个尚未补偿的跨 repository mutation，补 replay/compensation/诊断 |
-| P1 | Browser regression matrix | required-only / contains-only typeless schema、Connectability 可见候选解释、design-only target runtime debt、候选窗口截断提示、基本 Prev/Next 窗口翻页、JS 层候选过滤、真实浏览器 filter 交互、260 target 大画布窗口、服务端全局 query、ready/blocked/wired status、全维度 facet、Endpoint/source-handle 筛选、行级候选窗口化和行内箭头键推进、40 输出端口 source-row 窗口与 server request scope 收敛、候选区基础 a11y active-descendant/position 合同、390px mobile Connectability/no-page-overflow、YAML 导入 + palette + diagram + selected inspector no-overflow、OpenAPI Resource Contract preview/save 390px no-overflow、AsyncAPI discovery/selection/projection/import 390px no-overflow、Draft/Publication/Golden/Run History lifecycle 390px no-overflow 回归已覆盖，但 UI 能力多，DOM smoke 仍需继续扩大 | 覆盖多算子族大画布、真正虚拟化候选列表、完整移动布局矩阵、完整无障碍审计、更极端 source handle 性能矩阵和大量 schema field rendering 的更多负路径/漂移路径 |
+| P1 | Browser regression matrix | required-only / contains-only typeless schema、Connectability 可见候选解释、design-only target runtime debt、候选窗口截断提示、基本 Prev/Next 窗口翻页、JS 层候选过滤、真实浏览器 filter 交互、260 target 大画布窗口、服务端全局 query、ready/blocked/wired status、全维度 facet、Endpoint/source-handle 筛选、行级候选窗口化和行内箭头键推进、40 输出端口 source-row 窗口与 server request scope 收敛、复杂用户算子 schema outline 正向审阅/search 与 390px no-overflow、draft dependency schema drift selected-contract overlay/type transition/keyword diff 与 390px no-overflow、候选区基础 a11y active-descendant/position 合同、schema outline/search/drift 基础 ARIA/DOM 合同、390px mobile Connectability/no-page-overflow、YAML 导入 + palette + diagram + selected inspector no-overflow、OpenAPI Resource Contract preview/save 390px no-overflow、AsyncAPI discovery/selection/projection/import 390px no-overflow、Draft/Publication/Golden/Run History lifecycle 390px no-overflow 回归已覆盖，但 UI 能力多，DOM smoke 仍需继续扩大 | 覆盖多算子族大画布、真正虚拟化候选列表、完整移动布局矩阵、完整 axe/VoiceOver/NVDA 级无障碍审计、更极端 source handle 性能矩阵、完整并排 schema diff/merge 体验和大量 schema field rendering 的更多负路径/漂移路径 |
 | P1 | 协议文档收敛 | 设计草案与当前 wire contract 名称仍有历史漂移 | 把 candidate/fit/readiness 当前字段写入 protocol v1 |
 | P2 | 前端模块化 | `app.js` 已承载太多 authoring 逻辑 | 先抽 schema helper 或 readiness helper，保持测试覆盖 |
 

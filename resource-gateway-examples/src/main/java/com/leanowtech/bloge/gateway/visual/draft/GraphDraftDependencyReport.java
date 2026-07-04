@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaIntrospection;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -655,6 +656,11 @@ public record GraphDraftDependencyReport(
      * @param surface operator contract surface: input, output, or config
      * @param portName port name when the issue belongs to a port
      * @param compatibility breaking or compatible
+     * @param path schema-relative path inside the port/config schema, blank for whole-surface changes
+     * @param savedType frozen snapshot type at the issue path, or port/config root type when path is blank
+     * @param currentType current catalog type at the issue path, or port/config root type when path is blank
+     * @param reviewHint short remediation hint for dependency and canvas review surfaces
+     * @param schemaChanges bounded keyword-level schema diff rows for review surfaces
      * @param message human-readable compatibility detail
      */
     public record SchemaCompatibilityIssue(
@@ -662,28 +668,309 @@ public record GraphDraftDependencyReport(
             String surface,
             String portName,
             String compatibility,
+            String path,
+            String savedType,
+            String currentType,
+            String reviewHint,
+            List<SchemaKeywordChange> schemaChanges,
             String message
     ) {
+        private static final String MISSING_TYPE = "missing";
+        private static final String BREAKING_REVIEW_HINT = "Review bindings before rebase or keep the frozen snapshot.";
+        private static final String COMPATIBLE_REVIEW_HINT = "Review downstream expectations before rebase.";
+        private static final int SCHEMA_CHANGE_LIMIT = 8;
+        private static final List<String> SCHEMA_CHANGE_KEYWORDS = List.of(
+                "const",
+                "enum",
+                "format",
+                "pattern",
+                "multipleOf",
+                "minimum",
+                "maximum",
+                "exclusiveMinimum",
+                "exclusiveMaximum",
+                "minLength",
+                "maxLength",
+                "minItems",
+                "maxItems",
+                "minContains",
+                "maxContains",
+                "required",
+                "properties",
+                "propertyNames",
+                "additionalProperties",
+                "unevaluatedProperties",
+                "items",
+                "prefixItems",
+                "contains"
+        );
+
+        public SchemaCompatibilityIssue(String nodeId,
+                                        String surface,
+                                        String portName,
+                                        String compatibility,
+                                        String message) {
+            this(nodeId, surface, portName, compatibility, "", "", "", "", List.of(), message);
+        }
+
         public SchemaCompatibilityIssue {
             nodeId = nodeId == null ? "" : nodeId;
             surface = surface == null ? "" : surface;
             portName = portName == null ? "" : portName;
             compatibility = compatibility == null ? "" : compatibility;
+            path = path == null ? "" : path;
+            savedType = savedType == null ? "" : savedType;
+            currentType = currentType == null ? "" : currentType;
+            reviewHint = reviewHint == null ? "" : reviewHint;
+            schemaChanges = schemaChanges == null ? List.of() : List.copyOf(schemaChanges);
             message = message == null ? "" : message;
+        }
+
+        public SchemaCompatibilityIssue(String nodeId,
+                                        String surface,
+                                        String portName,
+                                        String compatibility,
+                                        String path,
+                                        String message) {
+            this(nodeId, surface, portName, compatibility, path, "", "", "", List.of(), message);
+        }
+
+        /**
+         * Keyword-level frozen-vs-current schema diff row.
+         *
+         * @param path schema-relative path for this change
+         * @param keyword JSON Schema keyword or synthetic surface such as type
+         * @param savedValue compact frozen snapshot value label
+         * @param currentValue compact current catalog value label
+         * @param compatibility breaking or compatible
+         * @param summary human-readable compact diff summary
+         */
+        public record SchemaKeywordChange(
+                String path,
+                String keyword,
+                String savedValue,
+                String currentValue,
+                String compatibility,
+                String summary
+        ) {
+            public SchemaKeywordChange {
+                path = path == null ? "" : path;
+                keyword = keyword == null ? "" : keyword;
+                savedValue = savedValue == null ? "" : savedValue;
+                currentValue = currentValue == null ? "" : currentValue;
+                compatibility = compatibility == null ? "" : compatibility;
+                summary = summary == null ? "" : summary;
+            }
+
+            private static SchemaKeywordChange of(String path,
+                                                  String keyword,
+                                                  Object savedValue,
+                                                  Object currentValue,
+                                                  String compatibility,
+                                                  Map<String, Object> savedSchema,
+                                                  Map<String, Object> currentSchema) {
+                String savedLabel = schemaKeywordValueLabel(keyword, savedValue, savedSchema);
+                String currentLabel = schemaKeywordValueLabel(keyword, currentValue, currentSchema);
+                return new SchemaKeywordChange(path, keyword, savedLabel, currentLabel, compatibility,
+                        "%s: %s -> %s".formatted(keyword, savedLabel, currentLabel));
+            }
         }
 
         private static SchemaCompatibilityIssue breaking(String nodeId,
                                                          String surface,
                                                          String portName,
                                                          String message) {
-            return new SchemaCompatibilityIssue(nodeId, surface, portName, "breaking", message);
+            return breaking(nodeId, surface, portName, "", "", "", message);
+        }
+
+        private static SchemaCompatibilityIssue breaking(String nodeId,
+                                                         String surface,
+                                                         String portName,
+                                                         String path,
+                                                         String message) {
+            return breaking(nodeId, surface, portName, path, "", "", message);
+        }
+
+        private static SchemaCompatibilityIssue breaking(String nodeId,
+                                                         String surface,
+                                                         String portName,
+                                                         String path,
+                                                         String savedType,
+                                                         String currentType,
+                                                         String message) {
+            return breaking(nodeId, surface, portName, path, savedType, currentType, List.of(), message);
+        }
+
+        private static SchemaCompatibilityIssue breaking(String nodeId,
+                                                         String surface,
+                                                         String portName,
+                                                         String path,
+                                                         String savedType,
+                                                         String currentType,
+                                                         List<SchemaKeywordChange> schemaChanges,
+                                                         String message) {
+            return new SchemaCompatibilityIssue(nodeId, surface, portName, "breaking", path,
+                    savedType, currentType, BREAKING_REVIEW_HINT, schemaChanges, message);
         }
 
         private static SchemaCompatibilityIssue compatible(String nodeId,
                                                            String surface,
                                                            String portName,
                                                            String message) {
-            return new SchemaCompatibilityIssue(nodeId, surface, portName, "compatible", message);
+            return compatible(nodeId, surface, portName, "", "", "", message);
+        }
+
+        private static SchemaCompatibilityIssue compatible(String nodeId,
+                                                           String surface,
+                                                           String portName,
+                                                           String path,
+                                                           String savedType,
+                                                           String currentType,
+                                                           String message) {
+            return compatible(nodeId, surface, portName, path, savedType, currentType, List.of(), message);
+        }
+
+        private static SchemaCompatibilityIssue compatible(String nodeId,
+                                                           String surface,
+                                                           String portName,
+                                                           String path,
+                                                           String savedType,
+                                                           String currentType,
+                                                           List<SchemaKeywordChange> schemaChanges,
+                                                           String message) {
+            return new SchemaCompatibilityIssue(nodeId, surface, portName, "compatible", path,
+                    savedType, currentType, COMPATIBLE_REVIEW_HINT, schemaChanges, message);
+        }
+
+        private static String typeLabel(com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope envelope,
+                                        String path) {
+            Map<String, Object> root = envelope == null ? Map.of() : envelope.schema();
+            Map<String, Object> effective = path == null || path.isBlank()
+                    ? root
+                    : VisualSchemaIntrospection.schemaAtPath(root, path);
+            return VisualSchemaCompatibility.schemaTypeLabel(effective == null ? root : effective);
+        }
+
+        private static String firstChangedPath(com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope saved,
+                                               com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope current) {
+            Map<String, Object> savedSchema = saved == null ? Map.of() : saved.schema();
+            Map<String, Object> currentSchema = current == null ? Map.of() : current.schema();
+            return firstChangedPath(savedSchema, currentSchema);
+        }
+
+        private static String firstChangedPath(Map<String, Object> savedSchema, Map<String, Object> currentSchema) {
+            if (Objects.equals(savedSchema, currentSchema)) {
+                return "";
+            }
+            Map<String, Object> savedProperties = VisualSchemaIntrospection.propertiesOf(savedSchema);
+            Map<String, Object> currentProperties = VisualSchemaIntrospection.propertiesOf(currentSchema);
+            Set<String> propertyNames = new LinkedHashSet<>();
+            propertyNames.addAll(savedProperties.keySet());
+            propertyNames.addAll(currentProperties.keySet());
+            for (String name : propertyNames) {
+                Map<String, Object> savedProperty = VisualSchemaIntrospection.objectSchema(savedProperties.get(name));
+                Map<String, Object> currentProperty = VisualSchemaIntrospection.objectSchema(currentProperties.get(name));
+                if (Objects.equals(savedProperty, currentProperty)) {
+                    continue;
+                }
+                if (savedProperty != null && currentProperty != null) {
+                    String nested = firstChangedPath(savedProperty, currentProperty);
+                    return nested.isBlank() ? name : name + "." + nested;
+                }
+                return name;
+            }
+            Map<String, Object> savedItems = VisualSchemaIntrospection.objectSchema(
+                    savedSchema == null ? null : savedSchema.get("items"));
+            Map<String, Object> currentItems = VisualSchemaIntrospection.objectSchema(
+                    currentSchema == null ? null : currentSchema.get("items"));
+            if (!Objects.equals(savedItems, currentItems)) {
+                return "";
+            }
+            return "";
+        }
+
+        private static List<SchemaKeywordChange> schemaChanges(
+                com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope saved,
+                com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope current,
+                String path,
+                String compatibility) {
+            Map<String, Object> savedRoot = saved == null ? Map.of() : saved.schema();
+            Map<String, Object> currentRoot = current == null ? Map.of() : current.schema();
+            Map<String, Object> savedSchema = effectiveSchemaAtPath(savedRoot, path);
+            Map<String, Object> currentSchema = effectiveSchemaAtPath(currentRoot, path);
+            List<SchemaKeywordChange> changes = new ArrayList<>();
+            String savedType = VisualSchemaCompatibility.schemaTypeLabel(savedSchema);
+            String currentType = VisualSchemaCompatibility.schemaTypeLabel(currentSchema);
+            if (!Objects.equals(savedType, currentType)) {
+                changes.add(new SchemaKeywordChange(path, "type", savedType, currentType, compatibility,
+                        "type: %s -> %s".formatted(savedType, currentType)));
+            }
+            for (String keyword : SCHEMA_CHANGE_KEYWORDS) {
+                if (changes.size() >= SCHEMA_CHANGE_LIMIT) {
+                    break;
+                }
+                Object savedValue = savedSchema == null ? null : savedSchema.get(keyword);
+                Object currentValue = currentSchema == null ? null : currentSchema.get(keyword);
+                if (!Objects.equals(savedValue, currentValue)) {
+                    changes.add(SchemaKeywordChange.of(path, keyword, savedValue, currentValue,
+                            compatibility, savedSchema, currentSchema));
+                }
+            }
+            return changes.isEmpty() ? List.of() : List.copyOf(changes);
+        }
+
+        private static Map<String, Object> effectiveSchemaAtPath(Map<String, Object> root, String path) {
+            if (path == null || path.isBlank()) {
+                return root == null ? Map.of() : root;
+            }
+            Map<String, Object> schema = VisualSchemaIntrospection.schemaAtPath(root, path);
+            return schema == null ? root : schema;
+        }
+
+        private static String schemaKeywordValueLabel(String keyword,
+                                                      Object value,
+                                                      Map<String, Object> schema) {
+            if (value == null) {
+                return MISSING_TYPE;
+            }
+            if ("type".equals(keyword) && schema != null) {
+                return VisualSchemaCompatibility.schemaTypeLabel(schema);
+            }
+            if ("properties".equals(keyword) && value instanceof Map<?, ?> map) {
+                return compactCollectionLabel(map.keySet());
+            }
+            if (value instanceof Map<?, ?> map) {
+                Map<String, Object> schemaValue = VisualSchemaIntrospection.objectSchema(map);
+                if (schemaValue != null) {
+                    return VisualSchemaCompatibility.schemaTypeLabel(schemaValue);
+                }
+            }
+            if (value instanceof List<?> list) {
+                return compactCollectionLabel(list);
+            }
+            return compactSchemaValueLabel(String.valueOf(value));
+        }
+
+        private static String compactCollectionLabel(Iterable<?> values) {
+            List<String> labels = new ArrayList<>();
+            for (Object value : values) {
+                if (labels.size() >= 6) {
+                    labels.add("...");
+                    break;
+                }
+                if (value instanceof Map<?, ?> map) {
+                    Map<String, Object> schemaValue = VisualSchemaIntrospection.objectSchema(map);
+                    labels.add(schemaValue == null ? "object" : VisualSchemaCompatibility.schemaTypeLabel(schemaValue));
+                } else {
+                    labels.add(String.valueOf(value));
+                }
+            }
+            return "[" + String.join(", ", labels) + "]";
+        }
+
+        private static String compactSchemaValueLabel(String value) {
+            String compact = value == null ? "" : value.replaceAll("\\s+", " ").trim();
+            return compact.length() <= 96 ? compact : compact.substring(0, 93) + "...";
         }
     }
 
@@ -733,17 +1020,27 @@ public record GraphDraftDependencyReport(
                 OperatorDefinition.Port currentPort = currentPorts.get(name);
                 if (currentPort == null) {
                     issues.add(SchemaCompatibilityIssue.breaking(nodeId, "input", name,
+                            "",
+                            SchemaCompatibilityIssue.typeLabel(savedPort.schema(), ""),
+                            SchemaCompatibilityIssue.MISSING_TYPE,
                             "Input port '%s' was removed from current operator contract.".formatted(name)));
                     return;
                 }
                 if (!savedPort.required() && currentPort.required()) {
                     issues.add(SchemaCompatibilityIssue.breaking(nodeId, "input", name,
+                            "",
+                            SchemaCompatibilityIssue.typeLabel(savedPort.schema(), ""),
+                            SchemaCompatibilityIssue.typeLabel(currentPort.schema(), ""),
                             "Input port '%s' became required in current operator contract.".formatted(name)));
                 } else if (savedPort.required() && !currentPort.required()) {
                     issues.add(SchemaCompatibilityIssue.compatible(nodeId, "input", name,
+                            "",
+                            SchemaCompatibilityIssue.typeLabel(savedPort.schema(), ""),
+                            SchemaCompatibilityIssue.typeLabel(currentPort.schema(), ""),
                             "Input port '%s' became optional in current operator contract.".formatted(name)));
                 }
                 compareSchemas(nodeId, "input", name, savedPort.schema(), currentPort.schema(),
+                        savedPort.schema(), currentPort.schema(),
                         "Frozen input port '%s' schema can still feed current input schema.".formatted(name),
                         issues);
             });
@@ -753,9 +1050,15 @@ public record GraphDraftDependencyReport(
                 }
                 if (currentPort.required()) {
                     issues.add(SchemaCompatibilityIssue.breaking(nodeId, "input", name,
+                            "",
+                            SchemaCompatibilityIssue.MISSING_TYPE,
+                            SchemaCompatibilityIssue.typeLabel(currentPort.schema(), ""),
                             "Required input port '%s' was added to current operator contract.".formatted(name)));
                 } else {
                     issues.add(SchemaCompatibilityIssue.compatible(nodeId, "input", name,
+                            "",
+                            SchemaCompatibilityIssue.MISSING_TYPE,
+                            SchemaCompatibilityIssue.typeLabel(currentPort.schema(), ""),
                             "Optional input port '%s' was added to current operator contract.".formatted(name)));
                 }
             });
@@ -771,16 +1074,23 @@ public record GraphDraftDependencyReport(
                 OperatorDefinition.Port currentPort = currentPorts.get(name);
                 if (currentPort == null) {
                     issues.add(SchemaCompatibilityIssue.breaking(nodeId, "output", name,
+                            "",
+                            SchemaCompatibilityIssue.typeLabel(savedPort.schema(), ""),
+                            SchemaCompatibilityIssue.MISSING_TYPE,
                             "Output port '%s' was removed from current operator contract.".formatted(name)));
                     return;
                 }
                 compareSchemas(nodeId, "output", name, currentPort.schema(), savedPort.schema(),
+                        savedPort.schema(), currentPort.schema(),
                         "Current output port '%s' schema can still satisfy frozen output schema.".formatted(name),
                         issues);
             });
             currentPorts.forEach((name, currentPort) -> {
                 if (!savedPorts.containsKey(name)) {
                     issues.add(SchemaCompatibilityIssue.compatible(nodeId, "output", name,
+                            "",
+                            SchemaCompatibilityIssue.MISSING_TYPE,
+                            SchemaCompatibilityIssue.typeLabel(currentPort.schema(), ""),
                             "Output port '%s' was added to current operator contract.".formatted(name)));
                 }
             });
@@ -791,6 +1101,7 @@ public record GraphDraftDependencyReport(
                                                 OperatorDefinition current,
                                                 List<SchemaCompatibilityIssue> issues) {
             compareSchemas(nodeId, "config", "", snapshot.configSchema(), current.configSchema(),
+                    snapshot.configSchema(), current.configSchema(),
                     "Frozen config schema can still feed current config schema.", issues);
         }
 
@@ -799,6 +1110,8 @@ public record GraphDraftDependencyReport(
                                            String portName,
                                            com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope source,
                                            com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope target,
+                                           com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope saved,
+                                           com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope current,
                                            String compatibleMessage,
                                            List<SchemaCompatibilityIssue> issues) {
             Map<String, Object> sourceSchema = source == null ? Map.of() : source.schema();
@@ -806,12 +1119,25 @@ public record GraphDraftDependencyReport(
             if (Objects.equals(sourceSchema, targetSchema)) {
                 return;
             }
-            Optional<String> issue = VisualSchemaCompatibility.schemaCompatibilityIssue(sourceSchema, targetSchema);
+            Optional<VisualSchemaCompatibility.SchemaCompatibilityIssue> issue =
+                    VisualSchemaCompatibility.schemaCompatibilityIssueDetail(sourceSchema, targetSchema);
             if (issue.isPresent()) {
-                issues.add(SchemaCompatibilityIssue.breaking(nodeId, surface, portName, issue.get()));
+                String path = issue.get().path();
+                issues.add(SchemaCompatibilityIssue.breaking(nodeId, surface, portName,
+                        path,
+                        SchemaCompatibilityIssue.typeLabel(saved, path),
+                        SchemaCompatibilityIssue.typeLabel(current, path),
+                        SchemaCompatibilityIssue.schemaChanges(saved, current, path, "breaking"),
+                        issue.get().message()));
                 return;
             }
-            issues.add(SchemaCompatibilityIssue.compatible(nodeId, surface, portName, compatibleMessage));
+            String compatiblePath = SchemaCompatibilityIssue.firstChangedPath(saved, current);
+            issues.add(SchemaCompatibilityIssue.compatible(nodeId, surface, portName,
+                    compatiblePath,
+                    SchemaCompatibilityIssue.typeLabel(saved, compatiblePath),
+                    SchemaCompatibilityIssue.typeLabel(current, compatiblePath),
+                    SchemaCompatibilityIssue.schemaChanges(saved, current, compatiblePath, "compatible"),
+                    compatibleMessage));
         }
 
         private static Map<String, OperatorDefinition.Port> inputPorts(OperatorDefinition operator) {

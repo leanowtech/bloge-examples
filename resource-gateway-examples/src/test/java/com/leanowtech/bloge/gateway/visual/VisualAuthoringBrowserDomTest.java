@@ -373,6 +373,77 @@ class VisualAuthoringBrowserDomTest {
     }
 
     @Test
+    void composerOverlaysSchemaDriftOnSelectedOperatorContractInRealBrowser() throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importOperatorLibrary(wait, VisualCatalogTestSupport.eligibilityLibrary("number"));
+        dragOperatorToCanvas(wait, "Eligibility", "risk:eligibility", "riskEligibility", 140, 120);
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "Saved");
+        waitForText(wait, By.id("draft-dependencies"), "fingerprint current");
+
+        importOperatorLibrary(wait, VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        waitForText(wait, By.id("draft-dependencies"), "fingerprint drifted");
+        waitForText(wait, By.id("draft-dependencies"), "schema breaking");
+        waitForText(wait, By.id("draft-dependencies"), "score");
+
+        click(wait, By.cssSelector("#diagram [data-node-id='riskEligibility']"));
+        waitForText(wait, By.id("selected-operator-editor"), "Schema Drift");
+        waitForText(wait, By.id("selected-operator-editor"), "1 breaking drift");
+        waitForText(wait, By.id("selected-operator-editor"), "score:");
+        waitForText(wait, By.id("selected-operator-editor"), "target type integer requires integer-valued source");
+        waitForText(wait, By.id("selected-operator-editor"), "number -> integer");
+        waitForText(wait, By.id("selected-operator-editor"), "type: number -> integer");
+        waitForText(wait, By.id("selected-operator-editor"), "Review bindings before rebase");
+        assertThat(driver.findElements(By.cssSelector(
+                "#selected-operator-editor [data-schema-outline-row]"
+                        + "[data-schema-outline-path='score'][data-schema-drift='error']"
+        ))).isNotEmpty();
+        Map<String, String> driftOutlineA11y = schemaOutlineA11yState("score");
+        assertThat(driftOutlineA11y)
+                .containsEntry("containerRole", "list")
+                .containsEntry("rowRole", "listitem")
+                .containsEntry("rowDrift", "error")
+                .containsEntry("metaLive", "polite")
+                .containsEntry("searchControlsContainer", "true");
+        assertThat(driftOutlineA11y.get("rowId")).startsWith("schema-outline-");
+        assertThat(driftOutlineA11y.get("rowDescribedBy")).contains(driftOutlineA11y.get("rowId") + "-drift-0");
+        assertThat(driftOutlineA11y.get("driftLabels"))
+                .contains("Schema drift · Breaking")
+                .contains("number -> integer")
+                .contains("type: number -> integer")
+                .contains("Review bindings before rebase")
+                .contains("target type integer requires integer-valued source");
+        assertThat(Integer.parseInt(driftOutlineA11y.get("setsize"))).isGreaterThanOrEqualTo(1);
+
+        By schemaSearch = By.cssSelector("#selected-operator-editor [data-schema-outline-search]");
+        sendKeysThroughRerenderedFocusedInput(wait, schemaSearch, "breaking");
+        waitForFocusedValue(wait, schemaSearch, "breaking");
+        waitForText(wait, By.id("selected-operator-editor"), "score");
+        wait.until(ignored -> driver.findElements(By.cssSelector(
+                "#selected-operator-editor [data-schema-outline-row][data-schema-outline-path='amount']"
+        )).isEmpty());
+        assertVisibleElementsNoHorizontalOverflow(wait,
+                By.cssSelector("#selected-operator-editor [data-schema-drift-summary]"));
+        assertVisibleElementsNoHorizontalOverflow(wait,
+                By.cssSelector("#selected-operator-editor [data-schema-outline-row][data-schema-drift]"));
+
+        setViewport(wait, 390, 980);
+        scrollIntoView(wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("selected-operator-editor"))));
+        waitForText(wait, By.id("selected-operator-editor"), "1 breaking drift");
+        waitForFocusedValue(wait, schemaSearch, "breaking");
+        assertVisibleElementsNoHorizontalOverflow(wait,
+                By.cssSelector("#selected-operator-editor [data-schema-drift-summary]"));
+        assertNoHorizontalOverflow(wait, By.id("selected-operator-editor"));
+        assertPageNoHorizontalOverflow();
+    }
+
+    @Test
     void composerRecoversFromDependencyPanelRebaseRevisionConflictInRealBrowser() throws JsonProcessingException {
         driver = newChromeDriverOrSkip();
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
@@ -521,6 +592,77 @@ class VisualAuthoringBrowserDomTest {
         assertNoHorizontalOverflow(wait, By.id("operator-palette"));
         assertNoHorizontalOverflow(wait, By.cssSelector(".palette-controls"));
         assertNoHorizontalOverflow(wait, By.cssSelector(".diagram-panel"));
+        assertNoHorizontalOverflow(wait, By.id("selected-operator-editor"));
+        assertPageNoHorizontalOverflow();
+    }
+
+    @Test
+    void composerShowsComplexImportedOperatorSchemaOutlineInRealBrowser() throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importOperatorLibrary(wait, complexSchemaOutlineLibrary());
+        waitForText(wait, By.id("library-profile"), "risk-complex-schema");
+        waitForText(wait, By.id("library-profile"), "Complex risk intake");
+
+        dragOperatorToCanvas(wait, "Complex risk intake", "risk:complexIntake",
+                "riskComplexIntake", 140, 120);
+        click(wait, By.cssSelector("#diagram [data-node-id='riskComplexIntake']"));
+        waitForText(wait, By.id("selected-operator-editor"), "Complex risk intake");
+        waitForText(wait, By.id("selected-operator-editor"), "customer.profile.id");
+        waitForText(wait, By.id("selected-operator-editor"), "pattern ^risk[A-Z].*");
+        waitForText(wait, By.id("selected-operator-editor"), "additionalProperties *");
+        waitForText(wait, By.id("selected-operator-editor"), "events.contains");
+        waitForText(wait, By.id("selected-operator-editor"), "payload.oneOf[0]");
+        waitForText(wait, By.id("selected-operator-editor"), "dependentRequired paymentMethod");
+        waitForText(wait, By.id("selected-operator-editor"), "Showing first 24 of");
+        assertThat(driver.findElements(By.cssSelector(
+                "#selected-operator-editor [data-schema-outline-row][data-schema-outline-path='customer.profile.id']"
+        ))).isNotEmpty();
+        Map<String, String> outlineA11y = schemaOutlineA11yState("customer.profile.id");
+        assertThat(outlineA11y)
+                .containsEntry("containerRole", "list")
+                .containsEntry("rowRole", "listitem")
+                .containsEntry("metaLive", "polite")
+                .containsEntry("searchControlsContainer", "true");
+        assertThat(outlineA11y.get("rowId")).startsWith("schema-outline-");
+        assertThat(outlineA11y.get("searchDescribedBy")).isEqualTo(outlineA11y.get("metaId"));
+        assertThat(Integer.parseInt(outlineA11y.get("pos"))).isGreaterThanOrEqualTo(1);
+        assertThat(Integer.parseInt(outlineA11y.get("setsize"))).isGreaterThanOrEqualTo(
+                Integer.parseInt(outlineA11y.get("pos")));
+        assertVisibleElementsNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor [data-schema-outline]"));
+        assertVisibleElementsNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor [data-schema-outline-row]"));
+
+        By schemaSearch = By.cssSelector("#selected-operator-editor [data-schema-outline-search]");
+        sendKeysThroughRerenderedFocusedInput(wait, schemaSearch, "customer.payment.cardExpiry");
+        waitForFocusedValue(wait, schemaSearch, "customer.payment.cardExpiry");
+        waitForText(wait, By.id("selected-operator-editor"), "customer.payment.cardExpiry");
+        waitForText(wait, By.id("selected-operator-editor"), "1/");
+        assertThat(driver.findElements(By.cssSelector(
+                "#selected-operator-editor [data-schema-outline-row][data-schema-outline-path='customer.payment.cardExpiry']"
+        ))).isNotEmpty();
+        wait.until(ignored -> driver.findElements(By.cssSelector(
+                "#selected-operator-editor [data-schema-outline-row][data-schema-outline-path='events.contains']"
+        )).isEmpty());
+        click(wait, By.cssSelector("#selected-operator-editor [data-schema-outline-search-clear]"));
+        waitForValue(wait, schemaSearch, "");
+        waitForFocusedValue(wait, schemaSearch, "");
+        waitForText(wait, By.id("selected-operator-editor"), "events.contains");
+
+        setViewport(wait, 390, 980);
+        scrollIntoView(wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("selected-operator-editor"))));
+        waitForText(wait, By.id("selected-operator-editor"), "customer.profile.id");
+        waitForText(wait, By.id("selected-operator-editor"), "pattern ^risk[A-Z].*");
+        sendKeysThroughRerenderedFocusedInput(wait, schemaSearch, "payload.oneOf[1].autoScore");
+        waitForFocusedValue(wait, schemaSearch, "payload.oneOf[1].autoScore");
+        waitForText(wait, By.id("selected-operator-editor"), "payload.oneOf[1].autoScore");
+        assertVisibleElementsNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor [data-schema-outline-search-panel]"));
+        assertVisibleElementsNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor [data-schema-outline]"));
+        assertVisibleElementsNoHorizontalOverflow(wait, By.cssSelector("#selected-operator-editor [data-schema-outline-row]"));
         assertNoHorizontalOverflow(wait, By.id("selected-operator-editor"));
         assertPageNoHorizontalOverflow();
     }
@@ -2001,6 +2143,154 @@ class VisualAuthoringBrowserDomTest {
         );
     }
 
+    private static OperatorLibrary complexSchemaOutlineLibrary() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:complexIntake",
+                "1.0.0",
+                new OperatorDefinition.Display("Complex risk intake",
+                        "Captures nested, dynamic, union, and event-shaped risk intake contracts.",
+                        List.of("risk", "schema", "design")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("request",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12",
+                                        complexRiskIntakeSchema()),
+                                true,
+                                "Complex intake request.")),
+                        List.of(new OperatorDefinition.Port("decision",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12",
+                                        complexRiskDecisionSchema()),
+                                true,
+                                "Complex intake decision."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("design", "", Map.of()),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-complex-schema",
+                "Risk complex schema operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static Map<String, Object> complexRiskIntakeSchema() {
+        Map<String, Object> profileProperties = new LinkedHashMap<>();
+        profileProperties.put("id", Map.of(
+                "type", "string",
+                "title", "Customer identifier",
+                "description", "External customer id.",
+                "examples", List.of("C-1001")
+        ));
+        profileProperties.put("email", Map.of("type", "string", "format", "email"));
+        profileProperties.put("segment", Map.of("type", "string", "enum", List.of("PRIME", "STANDARD")));
+
+        Map<String, Object> paymentProperties = new LinkedHashMap<>();
+        paymentProperties.put("paymentMethod", Map.of("type", "string", "enum", List.of("CARD", "BANK")));
+        paymentProperties.put("cardNumber", Map.of("type", "string", "pattern", "^[0-9]{12,19}$"));
+        paymentProperties.put("cardExpiry", Map.of("type", "string", "pattern", "^[0-9]{2}/[0-9]{2}$"));
+
+        Map<String, Object> customerProperties = new LinkedHashMap<>();
+        customerProperties.put("profile", Map.of(
+                "type", "object",
+                "properties", profileProperties,
+                "required", List.of("id", "email"),
+                "additionalProperties", false
+        ));
+        customerProperties.put("payment", Map.of(
+                "type", "object",
+                "properties", paymentProperties,
+                "required", List.of("paymentMethod"),
+                "dependentRequired", Map.of("paymentMethod", List.of("cardNumber", "cardExpiry")),
+                "additionalProperties", false
+        ));
+        customerProperties.put("attributes", Map.of(
+                "type", "object",
+                "patternProperties", Map.of("^risk[A-Z].*", Map.of("type", "integer", "minimum", 0)),
+                "additionalProperties", Map.of("type", "string")
+        ));
+
+        Map<String, Object> eventProperties = new LinkedHashMap<>();
+        eventProperties.put("type", Map.of("type", "string", "enum", List.of("KYC", "FRAUD", "LIMIT")));
+        eventProperties.put("score", Map.of("type", "integer", "minimum", 0, "maximum", 1000));
+
+        Map<String, Object> rootProperties = new LinkedHashMap<>();
+        rootProperties.put("customer", Map.of(
+                "type", "object",
+                "properties", customerProperties,
+                "required", List.of("profile", "payment"),
+                "additionalProperties", false
+        ));
+        rootProperties.put("events", Map.of(
+                "type", "array",
+                "contains", Map.of(
+                        "type", "object",
+                        "properties", eventProperties,
+                        "required", List.of("type"),
+                        "additionalProperties", false
+                ),
+                "minContains", 1,
+                "maxContains", 3
+        ));
+        rootProperties.put("payload", Map.of(
+                "oneOf", List.of(
+                        Map.of(
+                                "type", "object",
+                                "properties", Map.of("manualLane", Map.of("type", "string")),
+                                "required", List.of("manualLane"),
+                                "additionalProperties", false
+                        ),
+                        Map.of(
+                                "type", "object",
+                                "properties", Map.of("autoScore", Map.of("type", "integer")),
+                                "required", List.of("autoScore"),
+                                "additionalProperties", false
+                        )
+                )
+        ));
+        rootProperties.put("flags", Map.of("anyOf", List.of(
+                Map.of("type", "array", "items", Map.of("type", "string")),
+                Map.of("type", "null")
+        )));
+
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", rootProperties);
+        schema.put("required", List.of("customer", "events", "payload"));
+        schema.put("additionalProperties", false);
+        return schema;
+    }
+
+    private static Map<String, Object> complexRiskDecisionSchema() {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("decision", Map.of(
+                "anyOf", List.of(
+                        Map.of("type", "string", "enum", List.of("APPROVE", "REVIEW", "DECLINE")),
+                        Map.of("type", "integer")
+                )
+        ));
+        properties.put("audit", Map.of(
+                "type", "array",
+                "prefixItems", List.of(
+                        Map.of("type", "string"),
+                        Map.of("type", "integer")
+                ),
+                "items", false
+        ));
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", List.of("decision"));
+        schema.put("additionalProperties", false);
+        return schema;
+    }
+
     private static OperatorLibrary scoreReviewDesignOnlyLibrary() {
         return new OperatorLibrary(
                 "bloge.visualOperatorLibrary.v1",
@@ -2734,22 +3024,34 @@ class VisualAuthoringBrowserDomTest {
     }
 
     private void assertVisibleElementsNoHorizontalOverflow(WebDriverWait wait, By locator) {
-        wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(locator));
-        List<WebElement> visibleElements = driver.findElements(locator).stream()
-                .filter(WebElement::isDisplayed)
-                .toList();
-        assertThat(visibleElements)
-                .as("visible elements for %s", locator)
-                .isNotEmpty();
-        for (WebElement element : visibleElements) {
-            Number overflow = (Number) ((JavascriptExecutor) driver).executeScript(
-                    "return Math.max(0, arguments[0].scrollWidth - arguments[0].clientWidth);",
-                    element
-            );
-            assertThat(overflow.doubleValue())
-                    .as("horizontal overflow for %s", locator)
-                    .isLessThanOrEqualTo(2.0);
-        }
+        wait.until(ignored -> {
+            List<WebElement> visibleElements = driver.findElements(locator).stream()
+                    .filter(element -> {
+                        try {
+                            return element.isDisplayed();
+                        } catch (StaleElementReferenceException ex) {
+                            return false;
+                        }
+                    })
+                    .toList();
+            if (visibleElements.isEmpty()) {
+                return false;
+            }
+            try {
+                for (WebElement element : visibleElements) {
+                    Number overflow = (Number) ((JavascriptExecutor) driver).executeScript(
+                            "return Math.max(0, arguments[0].scrollWidth - arguments[0].clientWidth);",
+                            element
+                    );
+                    assertThat(overflow.doubleValue())
+                            .as("horizontal overflow for %s", locator)
+                            .isLessThanOrEqualTo(2.0);
+                }
+                return true;
+            } catch (StaleElementReferenceException ex) {
+                return false;
+            }
+        });
     }
 
     private void assertPageNoHorizontalOverflow() {
@@ -2905,6 +3207,51 @@ class VisualAuthoringBrowserDomTest {
                   .sort()
                   .join('|');
                 """));
+    }
+
+    private Map<String, String> schemaOutlineA11yState(String path) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> values = (Map<String, Object>) ((JavascriptExecutor) driver).executeScript("""
+                const path = String(arguments[0] || '');
+                const rows = [...document.querySelectorAll('#selected-operator-editor [data-schema-outline-row]')];
+                const row = rows.find((candidate) => candidate.dataset.schemaOutlinePath === path);
+                if (!row) {
+                  return { missing: 'true' };
+                }
+                const container = row.closest('[data-schema-outline]');
+                const search = document.querySelector('#selected-operator-editor [data-schema-outline-search]');
+                const meta = document.querySelector('#selected-operator-editor [data-schema-outline-search-meta]');
+                const describedIds = (row.getAttribute('aria-describedby') || '')
+                  .split(/\\s+/)
+                  .filter(Boolean);
+                const driftLabels = describedIds
+                  .map((id) => document.getElementById(id)?.textContent.trim() || '')
+                  .filter(Boolean)
+                  .join('|');
+                return {
+                  containerId: container?.id || '',
+                  containerRole: container?.getAttribute('role') || '',
+                  containerLabel: container?.getAttribute('aria-label') || '',
+                  searchControls: search?.getAttribute('aria-controls') || '',
+                  searchControlsContainer: String(Boolean(container?.id)
+                    && (search?.getAttribute('aria-controls') || '').split(/\\s+/).includes(container.id)),
+                  searchDescribedBy: search?.getAttribute('aria-describedby') || '',
+                  metaId: meta?.id || '',
+                  metaLive: meta?.getAttribute('aria-live') || '',
+                  rowId: row.id || '',
+                  rowRole: row.getAttribute('role') || '',
+                  pos: row.getAttribute('aria-posinset') || '',
+                  setsize: row.getAttribute('aria-setsize') || '',
+                  rowDrift: row.dataset.schemaDrift || '',
+                  rowDescribedBy: row.getAttribute('aria-describedby') || '',
+                  driftLabels
+                };
+                """, path);
+        return values.entrySet().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> String.valueOf(entry.getValue())
+                ));
     }
 
     private void waitForConnectabilityServerReady(WebDriverWait wait, String nodeId, int offset) {

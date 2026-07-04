@@ -8000,6 +8000,8 @@ operators:
                 ]);
                 context.SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
                 context.SUPPORTED_SCHEMA_CONDITIONAL_KEYWORDS = ['if', 'then', 'else'];
+                context.SCHEMA_OUTLINE_VISIBLE_ROW_LIMIT = 24;
+                context.SCHEMA_OUTLINE_MAX_DEPTH = 4;
                 context.UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
                 context.UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [];
                 context.LOCAL_SCHEMA_DEFS_REF_PREFIX = '#/$defs/';
@@ -8010,11 +8012,16 @@ operators:
                   '$comment', 'title', 'description', 'examples', 'deprecated', 'readOnly', 'writeOnly'
                 ]);
                 context.SCHEMA_DECLARATION_KEYS = new Set(['$defs']);
+                context.state = {
+                  selectedNodeId: 'schemaProbe',
+                  builder: { selectedId: 'schemaProbe' }
+                };
                 context.isDslFieldName = (value) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(String(value || ''))
                   && !new Set(['graph', 'node', 'input', 'output', 'true', 'false']).has(String(value || ''));
 
                 for (const name of [
                   'escapeHtml',
+                  'compactStringHash',
                   'isPlainObject',
                   'resolveLocalSchemaRefs',
                   'resolveLocalSchemaRefValue',
@@ -8075,12 +8082,24 @@ operators:
                   'schemaWithoutCombinators',
                   'effectiveConditionalSchema',
                   'effectiveConditionalValidationSchema',
+                  'effectiveDependentObjectSchema',
                   'schemaObjectProperties',
+                  'schemaPatternProperties',
+                  'schemaPropertyNameSchema',
+                  'schemaRequiredNames',
                   'schemaItemsSchema',
                   'schemaPrefixItems',
+                  'schemaContainsSchema',
+                  'arrayItemBoundaryValue',
+                  'schemaMinContains',
+                  'schemaMaxContains',
                   'hasSupportedArrayItemContract',
                   'residualArrayItemSchema',
                   'unevaluatedArrayItemsPolicy',
+                  'residualPropertiesPolicy',
+                  'residualPropertiesKeyword',
+                  'schemaDependentRequired',
+                  'schemaDependentSchemas',
                   'schemaCompatibilityIssue',
                   'sourceAllOfCompatibilityIssue',
                   'branchCanProveAllOfSourceCompatibility',
@@ -8125,6 +8144,50 @@ operators:
                   'reasonAt',
                   'appendCompatibilityPath',
                   'valueDomainLabel',
+                  'changeRiskLabel',
+                  'normalizeSchemaDriftIssues',
+                  'normalizeSchemaDriftSchemaChanges',
+                  'schemaDriftTypeTransitionLabel',
+                  'schemaDriftReviewHint',
+                  'schemaDriftSchemaChangeLabel',
+                  'schemaDriftIssueChangeSummary',
+                  'schemaDriftIssueDetailLabel',
+                  'normalizeSchemaDriftPath',
+                  'schemaDriftIssuesForPort',
+                  'schemaDriftIssueMatchesOutlineRow',
+                  'schemaDriftIssuesForOutlineRow',
+                  'schemaDriftSummaryLabel',
+                  'renderSchemaDriftSummary',
+                  'schemaDriftLevel',
+                  'schemaOutlineSearchInputDomId',
+                  'schemaOutlineSearchMetaDomId',
+                  'schemaOutlinePortDomId',
+                  'schemaOutlineRowDomId',
+                  'schemaOutlineSelectedNodeKey',
+                  'contractSchemaOutlineDomIds',
+                  'schemaOutlineRowA11yPositionAttrs',
+                  'renderSchemaOutlineSearchControl',
+                  'contractSchemaOutlineSearchSummary',
+                  'renderSchemaOutline',
+                  'schemaOutlineRowSummary',
+                  'schemaOutlineForEnvelope',
+                  'normalizeSchemaOutlineQuery',
+                  'schemaOutlineRowMatchesQuery',
+                  'schemaOutlineRowSearchText',
+                  'schemaOutlinePrioritizedRows',
+                  'schemaOutlineDisplayRank',
+                  'schemaOutlineDisplayDepth',
+                  'schemaOutlineKindPriority',
+                  'schemaOutlineRows',
+                  'schemaOutlineCombinatorRows',
+                  'schemaOutlineConditionalRows',
+                  'schemaOutlineDependentRows',
+                  'schemaOutlineObjectRows',
+                  'schemaOutlineResidualPropertyRows',
+                  'schemaOutlineArrayRows',
+                  'schemaOutlineDescriptor',
+                  'schemaOutlinePath',
+                  'schemaOutlineHasNestedSurface',
                   'renderContractPortGroup',
                   'renderLibraryProfilePanel',
                   'renderLibraryImportReadiness',
@@ -8212,6 +8275,8 @@ operators:
                 context.objectValueMatchesSchema = () => true;
                 context.schemaFieldDescriptors = () => [];
                 context.configFieldDescriptors = () => [];
+                context.inputPortsForSpec = (spec) => Array.isArray(spec?.inputPorts) ? spec.inputPorts : [];
+                context.outputPortsForSpec = (spec) => Array.isArray(spec?.outputPorts) ? spec.outputPorts : [];
                 context.hasSchemaProperties = () => false;
                 context.schemaDynamicSurfaceCount = () => 0;
                 context.operatorLibraryOutputPortDslPathSafe = () => true;
@@ -8361,6 +8426,109 @@ operators:
                   schema: unionSchemaEnvelope,
                   required: true
                 }]);
+                const complexOutlineEnvelope = {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      customer: {
+                        type: 'object',
+                        properties: {
+                          profile: {
+                            type: 'object',
+                            properties: {
+                              id: { type: 'string', title: 'Customer identifier' }
+                            },
+                            required: ['id']
+                          },
+                          payment: {
+                            type: 'object',
+                            properties: {
+                              paymentMethod: { type: 'string' },
+                              cardNumber: { type: 'string' },
+                              cardExpiry: { type: 'string' }
+                            },
+                            dependentRequired: {
+                              paymentMethod: ['cardNumber', 'cardExpiry']
+                            }
+                          },
+                          attributes: {
+                            type: 'object',
+                            patternProperties: {
+                              '^risk[A-Z].*': { type: 'integer' }
+                            },
+                            additionalProperties: { type: 'string' }
+                          }
+                        }
+                      },
+                      events: {
+                        type: 'array',
+                        contains: {
+                          type: 'object',
+                          properties: {
+                            type: { type: 'string' }
+                          }
+                        },
+                        minContains: 1
+                      },
+                      payload: {
+                        oneOf: [
+                          { type: 'object', properties: { manualLane: { type: 'string' } } },
+                          { type: 'object', properties: { autoScore: { type: 'integer' } } }
+                        ]
+                      }
+                    }
+                  }
+                };
+                const complexOutline = context.schemaOutlineForEnvelope(complexOutlineEnvelope, 40);
+                const complexOutlinePaths = complexOutline.rows.map((row) => row.path).join('|');
+                const complexOutlineHtml = context.renderSchemaOutline(
+                  context.schemaOutlineForEnvelope(complexOutlineEnvelope, 4),
+                  { outlineId: 'outline-test', label: 'Test outline' }
+                );
+                const cardExpiryOutline = context.schemaOutlineForEnvelope(complexOutlineEnvelope, 8, 'customer.payment.cardExpiry');
+                const cardExpiryOutlinePaths = cardExpiryOutline.rows.map((row) => row.path).join('|');
+                const cardExpiryOutlineHtml = context.renderSchemaOutline(context.schemaOutlineForEnvelope(complexOutlineEnvelope, 1, 'payment'));
+                const missingOutlineHtml = context.renderSchemaOutline(context.schemaOutlineForEnvelope(complexOutlineEnvelope, 8, 'missingPath'));
+                const driftIssues = [{
+                  surface: 'input',
+                  portName: 'request',
+                  compatibility: 'breaking',
+                  path: 'customer.profile.id',
+                  savedType: 'string',
+                  currentType: 'integer',
+                  reviewHint: 'Review bindings before rebase.',
+                  schemaChanges: [{
+                    path: 'customer.profile.id',
+                    keyword: 'type',
+                    savedValue: 'string',
+                    currentValue: 'integer',
+                    compatibility: 'breaking',
+                    summary: 'type: string -> integer'
+                  }],
+                  message: 'id type narrowed'
+                }];
+                const driftOutline = context.schemaOutlineForEnvelope(complexOutlineEnvelope, 40, 'breaking', driftIssues);
+                const driftOutlineByType = context.schemaOutlineForEnvelope(complexOutlineEnvelope, 40, 'string integer', driftIssues);
+                const driftOutlineByKeyword = context.schemaOutlineForEnvelope(complexOutlineEnvelope, 40, 'type integer', driftIssues);
+                const driftOutlineByReview = context.schemaOutlineForEnvelope(complexOutlineEnvelope, 40, 'rebase', driftIssues);
+                const driftOutlinePaths = driftOutline.rows.map((row) => row.path).join('|');
+                const driftLeafRow = driftOutline.rows.find((row) => row.path === 'customer.profile.id');
+                const driftOutlineHtml = context.renderSchemaOutline(
+                  driftOutline,
+                  { outlineId: 'drift-outline', label: 'Drift outline' }
+                );
+                const driftSummaryHtml = context.renderSchemaDriftSummary(driftIssues);
+                const driftIssueForPort = context.schemaDriftIssuesForPort(driftIssues, 'input', 'request')[0];
+                const driftTransitionLabel = context.schemaDriftTypeTransitionLabel(driftIssueForPort);
+                const driftReviewHint = context.schemaDriftReviewHint(driftIssueForPort);
+                const driftChangeSummary = context.schemaDriftIssueChangeSummary(driftIssueForPort);
+                const driftDetailLabel = context.schemaDriftIssueDetailLabel(driftIssueForPort);
+                const schemaSearchHtml = context.renderSchemaOutlineSearchControl(
+                  { id: 'riskComplexIntake' },
+                  { inputPorts: [{ name: 'request', schema: complexOutlineEnvelope }], outputPorts: [] },
+                  'payment',
+                  driftIssues
+                );
                 const unionLibraryProfile = context.operatorLibraryProfile({
                   libraryId: 'union-profile',
                   version: '1.0.0',
@@ -8415,6 +8583,53 @@ operators:
                   ['nested union summary', nestedUnionSummary, 'decision oneOf<integer|string>, events[] anyOf<boolean|null>'],
                   ['union contract row html', String(unionContractHtml.includes('decision oneOf&lt;integer|string&gt;, events[] anyOf&lt;boolean|null&gt;')), 'true'],
                   ['union contract row annotation', String(unionContractHtml.includes('Decision value')), 'true'],
+                  ['complex outline nested path', String(complexOutlinePaths.includes('customer.profile.id')), 'true'],
+                  ['complex outline pattern path', String(complexOutlinePaths.includes('customer.attributes.pattern ^risk[A-Z].*')), 'true'],
+                  ['complex outline residual path', String(complexOutlinePaths.includes('customer.attributes.additionalProperties *')), 'true'],
+                  ['complex outline contains path', String(complexOutlinePaths.includes('events.contains')), 'true'],
+                  ['complex outline union branch path', String(complexOutlinePaths.includes('payload.oneOf[0]')), 'true'],
+                  ['complex outline dependent path', String(complexOutlinePaths.includes('customer.payment.dependentRequired paymentMethod')), 'true'],
+                  ['complex outline overflow html', String(complexOutlineHtml.includes('Showing first 4 of')), 'true'],
+                  ['complex outline list role', String(complexOutlineHtml.includes('role="list"')), 'true'],
+                  ['complex outline stable id', String(complexOutlineHtml.includes('id="outline-test"')), 'true'],
+                  ['complex outline row role', String(complexOutlineHtml.includes('role="listitem"')), 'true'],
+                  ['complex outline row position', String(complexOutlineHtml.includes('aria-posinset="1"')), 'true'],
+                  ['complex outline row set size', String(complexOutlineHtml.includes('aria-setsize="')), 'true'],
+                  ['complex outline search deep path', String(cardExpiryOutlinePaths.includes('customer.payment.cardExpiry')), 'true'],
+                  ['complex outline search filters unrelated rows', String(cardExpiryOutlinePaths.includes('events.contains')), 'false'],
+                  ['complex outline search total', cardExpiryOutline.total, 1],
+                  ['complex outline search overflow html', String(cardExpiryOutlineHtml.includes('matching schema entries')), 'true'],
+                  ['complex outline search empty html', String(missingOutlineHtml.includes('No schema entries match "missingpath"')), 'true'],
+                  ['complex outline search empty status', String(missingOutlineHtml.includes('role="status"')), 'true'],
+                  ['complex outline search empty live', String(missingOutlineHtml.includes('aria-live="polite"')), 'true'],
+                  ['complex outline search controls', String(schemaSearchHtml.includes('aria-controls="schema-outline-')), 'true'],
+                  ['complex outline search described by', String(schemaSearchHtml.includes('aria-describedby="schema-outline-search-')), 'true'],
+                  ['complex outline search live meta', String(schemaSearchHtml.includes('data-schema-outline-search-meta') && schemaSearchHtml.includes('aria-live="polite"')), 'true'],
+                  ['complex drift path normalized', context.normalizeSchemaDriftPath('#/properties/customer/properties/profile/properties/id'), 'customer.profile.id'],
+                  ['complex drift port match', driftIssueForPort.path, 'customer.profile.id'],
+                  ['complex drift saved type', driftIssueForPort.savedType, 'string'],
+                  ['complex drift current type', driftIssueForPort.currentType, 'integer'],
+                  ['complex drift transition label', driftTransitionLabel, 'string -> integer'],
+                  ['complex drift review hint', driftReviewHint, 'Review bindings before rebase.'],
+                  ['complex drift change keyword', driftIssueForPort.schemaChanges[0].keyword, 'type'],
+                  ['complex drift change summary', driftChangeSummary, 'type: string -> integer'],
+                  ['complex drift detail label', driftDetailLabel, 'customer.profile.id: id type narrowed · type: string -> integer · Review bindings before rebase.'],
+                  ['complex drift outline search total', driftOutline.total, 3],
+                  ['complex drift outline type search path', String(driftOutlineByType.rows.some((row) => row.path === 'customer.profile.id')), 'true'],
+                  ['complex drift outline keyword search path', String(driftOutlineByKeyword.rows.some((row) => row.path === 'customer.profile.id')), 'true'],
+                  ['complex drift outline review search path', String(driftOutlineByReview.rows.some((row) => row.path === 'customer.profile.id')), 'true'],
+                  ['complex drift outline search path', String(driftOutlinePaths.includes('customer.profile.id')), 'true'],
+                  ['complex drift outline issue attached', driftLeafRow.driftIssues[0].message, 'id type narrowed'],
+                  ['complex drift outline transition attached', context.schemaDriftTypeTransitionLabel(driftLeafRow.driftIssues[0]), 'string -> integer'],
+                  ['complex drift outline change attached', context.schemaDriftIssueChangeSummary(driftLeafRow.driftIssues[0]), 'type: string -> integer'],
+                  ['complex drift outline html class', String(driftOutlineHtml.includes('data-schema-drift="error"')), 'true'],
+                  ['complex drift outline html label', String(driftOutlineHtml.includes('Schema drift · Breaking: id type narrowed')), 'true'],
+                  ['complex drift outline html transition', String(driftOutlineHtml.includes('type: string -&gt; integer')), 'true'],
+                  ['complex drift outline html review', String(driftOutlineHtml.includes('Review bindings before rebase.')), 'true'],
+                  ['complex drift outline described by', String(driftOutlineHtml.includes('aria-describedby="drift-outline-row-')), 'true'],
+                  ['complex drift outline label id', String(driftOutlineHtml.includes('id="drift-outline-row-')), 'true'],
+                  ['complex drift summary html', String(driftSummaryHtml.includes('1 breaking drift')), 'true'],
+                  ['complex drift summary html transition', String(driftSummaryHtml.includes('type: string -&gt; integer')), 'true'],
                   ['union library input summary', unionLibraryProfile.operators[0].inputUnionSummary, 'inputs.decision oneOf<integer|string>, inputs.events[] anyOf<boolean|null>'],
                   ['union library config summary', unionLibraryProfile.operators[0].configUnionSummary, '(root) oneOf<object|null>'],
                   ['union library html input branch', String(unionLibraryProfileHtml.includes('in union inputs.decision oneOf&lt;integer|string&gt;')), 'true'],

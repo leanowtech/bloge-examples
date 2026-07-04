@@ -272,6 +272,8 @@ const NODE_SIZE = { width: 184, height: 76 };
 const DRAG_START_THRESHOLD = 4;
 const BUILDER_HISTORY_LIMIT = 50;
 const VISUAL_DIAGNOSTIC_NODE_PREVIEW_LIMIT = 6;
+const SCHEMA_OUTLINE_VISIBLE_ROW_LIMIT = 24;
+const SCHEMA_OUTLINE_MAX_DEPTH = 4;
 const SUPPORTED_SCHEMA_FORMAT = 'json-schema';
 const SUPPORTED_SCHEMA_VERSION = '2020-12';
 const SUPPORTED_SCHEMA_KINDS = new Set([
@@ -587,6 +589,7 @@ const state = {
   },
   nodeConnectabilitySourceWindows: {},
   nodeConnectabilityDisplayWindows: {},
+  schemaOutlineQueriesByNodeId: {},
   connectionMessage: null,
   builderHistoryUndo: [],
   builderHistoryRedo: [],
@@ -12027,11 +12030,13 @@ function draftDependencySchemaIssueLabel(row) {
   if (!issues.length) {
     return '';
   }
-  const first = issues[0] || {};
+  const first = normalizeSchemaDriftIssues(issues)[0] || {};
   const surface = [first.surface, first.portName].filter(Boolean).join(' ');
-  const prefix = surface ? `schema ${surface}` : 'schema';
+  const path = first.path ? `.${first.path}` : '';
+  const prefix = surface ? `schema ${surface}${path}` : `schema${path}`;
   const hidden = Math.max(0, issues.length - 1);
-  return `${prefix} ${first.compatibility || 'review'}: ${first.message || 'review schema drift'}${hidden ? `; +${hidden} more` : ''}`;
+  const detail = schemaDriftIssueDetailLabel(first, { includePath: false });
+  return `${prefix} ${first.compatibility || 'review'}: ${detail}${hidden ? `; +${hidden} more` : ''}`;
 }
 
 function draftDependencyOperatorLibraryLabel(operatorLibraryId) {
@@ -14600,6 +14605,29 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const input of target.querySelectorAll('[data-schema-outline-search]')) {
+    input.addEventListener('input', () => {
+      const caret = Number.isFinite(input.selectionStart) ? input.selectionStart : input.value.length;
+      setSelectedOperatorSchemaOutlineQuery(node, input.value);
+      renderSelectedOperatorEditor();
+      const nextInput = $('selected-operator-editor')?.querySelector('[data-schema-outline-search]');
+      if (nextInput) {
+        nextInput.focus();
+        if (typeof nextInput.setSelectionRange === 'function') {
+          nextInput.setSelectionRange(caret, caret);
+        }
+      }
+    });
+  }
+
+  for (const button of target.querySelectorAll('[data-schema-outline-search-clear]')) {
+    button.addEventListener('click', () => {
+      setSelectedOperatorSchemaOutlineQuery(node, '');
+      renderSelectedOperatorEditor();
+      $('selected-operator-editor')?.querySelector('[data-schema-outline-search]')?.focus();
+    });
+  }
+
   for (const button of target.querySelectorAll('[data-impact-node]')) {
     button.addEventListener('click', () => {
       focusCanvasNode(button.dataset.impactNode);
@@ -14876,6 +14904,15 @@ function selectedOperatorEditorFocusSnapshot(target) {
   if (!target?.contains(active) || typeof active?.matches !== 'function') {
     return null;
   }
+  if (active.matches('[data-schema-outline-search]')) {
+    const value = active.value || '';
+    const caret = Number.isFinite(active.selectionStart) ? active.selectionStart : value.length;
+    return {
+      selector: '[data-schema-outline-search]',
+      value,
+      caret
+    };
+  }
   if (active.matches('[data-connectability-filter-query]')) {
     const value = active.value || '';
     const caret = Number.isFinite(active.selectionStart) ? active.selectionStart : value.length;
@@ -14922,7 +14959,8 @@ function restoreSelectedOperatorEditorFocus(snapshot) {
     return;
   }
   element.focus();
-  if (snapshot.selector === '[data-connectability-filter-query]' && typeof element.setSelectionRange === 'function') {
+  if ((snapshot.selector === '[data-connectability-filter-query]' || snapshot.selector === '[data-schema-outline-search]')
+      && typeof element.setSelectionRange === 'function') {
     const caret = Math.max(0, Math.min(Number(snapshot.caret) || 0, String(element.value || '').length));
     element.setSelectionRange(caret, caret);
   }
@@ -15185,6 +15223,8 @@ function renderOperatorContractPanel(node) {
   const bound = statuses.filter((item) => String(item.expression || '').trim()).length;
   const requiredValid = statuses.filter((item) => item.target.required && item.status.level === 'success').length;
   const errors = statuses.filter((item) => item.status.level === 'error').length;
+  const schemaOutlineQuery = selectedOperatorSchemaOutlineQuery(node);
+  const schemaDriftIssues = selectedNodeSchemaDriftIssues(node);
   return `
     <div class="contract-panel">
       <div class="binding-panel-title">
@@ -15205,9 +15245,10 @@ function renderOperatorContractPanel(node) {
       ` : ''}
       ${renderOperatorReadinessPanel(spec)}
       ${renderOperatorDiagnosticsPanel(spec)}
+      ${renderSchemaOutlineSearchControl(node, spec, schemaOutlineQuery, schemaDriftIssues)}
       <div class="contract-port-groups">
-        ${renderContractPortGroup('Inputs', inputPortsForSpec(spec))}
-        ${renderContractPortGroup('Outputs', outputPortsForSpec(spec))}
+        ${renderContractPortGroup('Inputs', inputPortsForSpec(spec), schemaOutlineQuery, schemaDriftIssues, 'input', node)}
+        ${renderContractPortGroup('Outputs', outputPortsForSpec(spec), schemaOutlineQuery, schemaDriftIssues, 'output', node)}
       </div>
       ${configFields.length ? `
         <div class="contract-config-summary">
@@ -18315,19 +18356,388 @@ function renderOperatorDiagnosticsPanel(spec) {
   `;
 }
 
-function renderContractPortGroup(label, ports) {
+function selectedOperatorSchemaOutlineQuery(node) {
+  const nodeId = node?.id || '';
+  return String((state.schemaOutlineQueriesByNodeId || {})[nodeId] || '');
+}
+
+function setSelectedOperatorSchemaOutlineQuery(node, query) {
+  const nodeId = node?.id || '';
+  if (!nodeId) {
+    return;
+  }
+  const nextQueries = { ...(state.schemaOutlineQueriesByNodeId || {}) };
+  const value = String(query || '');
+  if (value.trim()) {
+    nextQueries[nodeId] = value;
+  } else {
+    delete nextQueries[nodeId];
+  }
+  state.schemaOutlineQueriesByNodeId = nextQueries;
+}
+
+function selectedNodeSchemaDriftIssues(node) {
+  const nodeId = String(node?.id || '').trim();
+  if (!nodeId) {
+    return [];
+  }
+  const dependencyNodes = Array.isArray(state.draftDependencyReport?.nodes)
+    ? state.draftDependencyReport.nodes
+    : [];
+  const dependencyNode = dependencyNodes.find((entry) => entry?.nodeId === nodeId);
+  return normalizeSchemaDriftIssues(dependencyNode?.schemaCompatibilityIssues)
+    .filter((issue) => !issue.nodeId || issue.nodeId === nodeId);
+}
+
+function normalizeSchemaDriftIssues(issues) {
+  const seen = new Set();
+  const normalized = [];
+  for (const issue of Array.isArray(issues) ? issues : []) {
+    const next = {
+      nodeId: String(issue?.nodeId || '').trim(),
+      surface: String(issue?.surface || '').trim().toLowerCase(),
+      portName: String(issue?.portName || '').trim(),
+      compatibility: String(issue?.compatibility || '').trim().toLowerCase(),
+      path: normalizeSchemaDriftPath(issue?.path),
+      savedType: String(issue?.savedType || issue?.frozenType || issue?.previousType || '').trim(),
+      currentType: String(issue?.currentType || issue?.catalogType || '').trim(),
+      reviewHint: String(issue?.reviewHint || issue?.reviewAction || '').trim(),
+      schemaChanges: normalizeSchemaDriftSchemaChanges(issue?.schemaChanges || issue?.changes),
+      message: String(issue?.message || '').trim()
+    };
+    if (!next.surface && !next.portName && !next.path && !next.savedType && !next.currentType
+      && !next.reviewHint && !next.schemaChanges.length && !next.message) {
+      continue;
+    }
+    const key = [
+      next.nodeId,
+      next.surface,
+      next.portName,
+      next.compatibility,
+      next.path,
+      next.savedType,
+      next.currentType,
+      next.reviewHint,
+      next.schemaChanges.map(schemaDriftSchemaChangeLabel).join(';'),
+      next.message
+    ].join('|');
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    normalized.push(next);
+  }
+  return normalized;
+}
+
+function normalizeSchemaDriftSchemaChanges(changes) {
+  const seen = new Set();
+  const normalized = [];
+  for (const change of Array.isArray(changes) ? changes : []) {
+    const next = {
+      path: normalizeSchemaDriftPath(change?.path),
+      keyword: String(change?.keyword || '').trim(),
+      savedValue: String(change?.savedValue || change?.previousValue || '').trim(),
+      currentValue: String(change?.currentValue || change?.replacementValue || '').trim(),
+      compatibility: String(change?.compatibility || '').trim().toLowerCase(),
+      summary: String(change?.summary || '').trim()
+    };
+    if (!next.summary) {
+      const values = [next.savedValue, next.currentValue].filter(Boolean).join(' -> ');
+      next.summary = [next.keyword, values].filter(Boolean).join(': ');
+    }
+    if (!next.path && !next.keyword && !next.savedValue && !next.currentValue && !next.summary) {
+      continue;
+    }
+    const key = [
+      next.path,
+      next.keyword,
+      next.savedValue,
+      next.currentValue,
+      next.compatibility,
+      next.summary
+    ].join('|');
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    normalized.push(next);
+  }
+  return normalized;
+}
+
+function schemaDriftTypeTransitionLabel(issue) {
+  const savedType = String(issue?.savedType || '').trim();
+  const currentType = String(issue?.currentType || '').trim();
+  if (savedType && currentType) {
+    return `${savedType} -> ${currentType}`;
+  }
+  if (savedType) {
+    return `${savedType} -> missing`;
+  }
+  if (currentType) {
+    return `missing -> ${currentType}`;
+  }
+  return '';
+}
+
+function schemaDriftReviewHint(issue) {
+  const explicit = String(issue?.reviewHint || '').trim();
+  if (explicit) {
+    return explicit;
+  }
+  return issue?.compatibility === 'breaking'
+    ? 'Review bindings before rebase.'
+    : '';
+}
+
+function schemaDriftSchemaChangeLabel(change, options = {}) {
+  const includePath = options.includePath === true;
+  const path = includePath && change?.path ? `${change.path} ` : '';
+  if (change?.summary) {
+    return `${path}${change.summary}`.trim();
+  }
+  const keyword = String(change?.keyword || '').trim();
+  const savedValue = String(change?.savedValue || '').trim();
+  const currentValue = String(change?.currentValue || '').trim();
+  const values = [savedValue, currentValue].filter(Boolean).join(' -> ');
+  return `${path}${[keyword, values].filter(Boolean).join(': ')}`.trim();
+}
+
+function schemaDriftIssueChangeSummary(issue) {
+  const changes = normalizeSchemaDriftSchemaChanges(issue?.schemaChanges);
+  if (!changes.length) {
+    return '';
+  }
+  const visible = changes.slice(0, 2)
+    .map((change) => schemaDriftSchemaChangeLabel(change))
+    .filter(Boolean);
+  const hidden = Math.max(0, changes.length - visible.length);
+  return `${visible.join(' · ')}${hidden ? ` · +${hidden} more schema changes` : ''}`;
+}
+
+function schemaDriftIssueDetailLabel(issue, options = {}) {
+  const includePath = options.includePath !== false;
+  const path = includePath && issue?.path ? `${issue.path}: ` : '';
+  const message = `${path}${issue?.message || 'review schema drift'}`;
+  const typeTransition = schemaDriftTypeTransitionLabel(issue);
+  const changeSummary = schemaDriftIssueChangeSummary(issue);
+  const changeCoversType = Boolean(typeTransition && changeSummary.includes(`type: ${typeTransition}`));
+  return [
+    message,
+    changeCoversType ? '' : typeTransition,
+    changeSummary,
+    schemaDriftReviewHint(issue)
+  ].filter(Boolean).join(' · ');
+}
+
+function normalizeSchemaDriftPath(path) {
+  let value = String(path || '').trim();
+  if (!value) {
+    return '';
+  }
+  value = value.replace(/^#\/?/, '').replace(/^\$\.?/, '').replace(/^\//, '');
+  value = value.replaceAll('/properties/', '.');
+  value = value.replace(/^properties[/.]/, '');
+  value = value.replaceAll('/items/properties/', '[].');
+  value = value.replaceAll('/items', '[]');
+  value = value.replaceAll('/', '.');
+  value = value.replaceAll('..', '.');
+  return value.replace(/^\./, '').replace(/\.$/, '');
+}
+
+function schemaDriftIssuesForPort(issues, surface, portName) {
+  const normalizedSurface = String(surface || '').trim().toLowerCase();
+  const normalizedPort = String(portName || '').trim();
+  return normalizeSchemaDriftIssues(issues)
+    .filter((issue) =>
+      (!issue.surface || issue.surface === normalizedSurface)
+        && (!issue.portName || issue.portName === normalizedPort));
+}
+
+function schemaDriftIssueMatchesOutlineRow(issue, row) {
+  const issuePath = normalizeSchemaDriftPath(issue?.path);
+  if (!issuePath) {
+    return false;
+  }
+  const rowPath = normalizeSchemaDriftPath(row?.path);
+  if (!rowPath) {
+    return false;
+  }
+  return rowPath === issuePath
+    || rowPath.startsWith(`${issuePath}.`)
+    || issuePath.startsWith(`${rowPath}.`);
+}
+
+function schemaDriftIssuesForOutlineRow(row, issues) {
+  return normalizeSchemaDriftIssues(issues)
+    .filter((issue) => schemaDriftIssueMatchesOutlineRow(issue, row));
+}
+
+function schemaDriftSummaryLabel(issues) {
+  const normalized = normalizeSchemaDriftIssues(issues);
+  if (!normalized.length) {
+    return '';
+  }
+  const breaking = normalized.filter((issue) => issue.compatibility === 'breaking').length;
+  const compatible = normalized.filter((issue) => issue.compatibility === 'compatible').length;
+  return [
+    breaking ? `${breaking} breaking drift` : '',
+    compatible ? `${compatible} compatible drift` : ''
+  ].filter(Boolean).join(' · ') || `${normalized.length} schema drift`;
+}
+
+function renderSchemaDriftSummary(issues) {
+  const normalized = normalizeSchemaDriftIssues(issues);
+  if (!normalized.length) {
+    return '';
+  }
+  const visible = normalized.slice(0, 3).map((issue) => {
+    return `<small>${escapeHtml(changeRiskLabel(issue.compatibility))}: ${escapeHtml(schemaDriftIssueDetailLabel(issue))}</small>`;
+  }).join('');
+  const hidden = Math.max(0, normalized.length - 3);
+  return `
+    <div class="schema-drift-summary ${escapeHtml(schemaDriftLevel(normalized))}" data-schema-drift-summary>
+      <strong>Schema Drift</strong>
+      <span>${escapeHtml(schemaDriftSummaryLabel(normalized))}</span>
+      ${visible}
+      ${hidden ? `<small>+${escapeHtml(hidden)} more schema drift issues</small>` : ''}
+    </div>
+  `;
+}
+
+function schemaDriftLevel(issues) {
+  return normalizeSchemaDriftIssues(issues).some((issue) => issue.compatibility === 'breaking')
+    ? 'error'
+    : 'warning';
+}
+
+function schemaOutlineSearchInputDomId(node = null) {
+  return `schema-outline-search-${compactStringHash(schemaOutlineSelectedNodeKey(node))}`;
+}
+
+function schemaOutlineSearchMetaDomId(node = null) {
+  return `${schemaOutlineSearchInputDomId(node)}-meta`;
+}
+
+function schemaOutlinePortDomId(node = null, surface = '', portName = '') {
+  return `schema-outline-${compactStringHash([
+    schemaOutlineSelectedNodeKey(node),
+    surface || 'port',
+    portName || 'default'
+  ].join('|'))}`;
+}
+
+function schemaOutlineRowDomId(outlineId = '', row = {}, index = 0) {
+  const prefix = outlineId || 'schema-outline-row';
+  return `${prefix}-row-${compactStringHash([
+    row?.path || '',
+    row?.kind || '',
+    row?.type || '',
+    index
+  ].join('|'))}`;
+}
+
+function schemaOutlineSelectedNodeKey(node = null) {
+  return String(node?.id || state.selectedNodeId || state.builder?.selectedId || 'selected');
+}
+
+function contractSchemaOutlineDomIds(node, spec) {
+  return [
+    ...inputPortsForSpec(spec).map((port) => ({ surface: 'input', port })),
+    ...outputPortsForSpec(spec).map((port) => ({ surface: 'output', port }))
+  ]
+    .filter((entry) => Number(schemaOutlineForEnvelope(entry.port.schema, 0).unfilteredTotal || 0) > 0)
+    .map((entry) => schemaOutlinePortDomId(node, entry.surface, entry.port.name));
+}
+
+function schemaOutlineRowA11yPositionAttrs(outline, index = 0) {
+  const total = Number(outline?.total || outline?.rows?.length || 0);
+  if (total <= 0 || index < 0) {
+    return '';
+  }
+  return `aria-posinset="${escapeHtml(index + 1)}" aria-setsize="${escapeHtml(total)}"`;
+}
+
+function renderSchemaOutlineSearchControl(node, spec, query = '', schemaDriftIssues = []) {
+  const summary = contractSchemaOutlineSearchSummary(spec, query);
+  if (!summary.total) {
+    return '';
+  }
+  const value = String(query || '');
+  const active = normalizeSchemaOutlineQuery(value);
+  const driftSummary = schemaDriftSummaryLabel(schemaDriftIssues);
+  const inputId = schemaOutlineSearchInputDomId(node);
+  const metaId = schemaOutlineSearchMetaDomId(node);
+  const outlineIds = contractSchemaOutlineDomIds(node, spec);
+  const controlsAttr = outlineIds.length ? ` aria-controls="${escapeHtml(outlineIds.join(' '))}"` : '';
+  const meta = active
+    ? `${summary.matches}/${summary.total} schema entries match`
+    : `${summary.total} schema entries`;
+  const metaText = driftSummary ? `${meta} · ${driftSummary}` : meta;
+  return `
+    <div class="schema-outline-search" data-schema-outline-search-panel>
+      <label>
+        <span>Schema Search</span>
+        <input
+          id="${escapeHtml(inputId)}"
+          type="search"
+          value="${escapeHtml(value)}"
+          placeholder="customer.profile.id"
+          data-schema-outline-search="${escapeHtml(node?.id || '')}"
+          aria-label="Search selected operator schema outline"
+          aria-describedby="${escapeHtml(metaId)}"
+          ${controlsAttr}>
+      </label>
+      <span
+        id="${escapeHtml(metaId)}"
+        class="schema-outline-search-meta"
+        data-schema-outline-search-meta
+        aria-live="polite"
+      >${escapeHtml(metaText)}</span>
+      <button
+        type="button"
+        class="secondary compact"
+        data-schema-outline-search-clear
+        aria-describedby="${escapeHtml(metaId)}"
+        ${controlsAttr}
+        ${active ? '' : 'disabled'}>Clear</button>
+    </div>
+  `;
+}
+
+function contractSchemaOutlineSearchSummary(spec, query = '') {
+  const outlines = [...inputPortsForSpec(spec), ...outputPortsForSpec(spec)]
+    .map((port) => schemaOutlineForEnvelope(port.schema, 0, query));
+  return outlines.reduce((summary, outline) => ({
+    total: summary.total + Number(outline.unfilteredTotal || outline.total || 0),
+    matches: summary.matches + Number(outline.total || 0)
+  }), { total: 0, matches: 0 });
+}
+
+function renderContractPortGroup(label, ports, outlineQuery = '', schemaDriftIssues = [], surface = '', node = null) {
   const rows = ports.map((port) => {
     const fields = schemaFieldDescriptors(port.schema);
     const required = fields.filter((field) => field.required).length;
     const rootType = schemaType(port.schema?.schema) || 'any';
     const unionSummary = schemaUnionSummary(port.schema);
     const fieldHints = fields.map(schemaFieldDisplayHint).filter(Boolean).slice(0, 2).join('; ');
+    const portDriftIssues = schemaDriftIssuesForPort(schemaDriftIssues, surface, port.name);
+    const outline = schemaOutlineForEnvelope(
+      port.schema,
+      SCHEMA_OUTLINE_VISIBLE_ROW_LIMIT,
+      outlineQuery,
+      portDriftIssues
+    );
+    const outlineId = schemaOutlinePortDomId(node, surface, port.name);
     return `
       <div class="contract-port-row">
         <strong>${escapeHtml(port.name)}</strong>
         <span>${escapeHtml(rootType)} · ${fields.length} fields · ${required} required</span>
         ${unionSummary ? `<small class="schema-union-summary">${escapeHtml(unionSummary)}</small>` : ''}
         ${fieldHints ? `<small class="schema-field-hint">${escapeHtml(fieldHints)}</small>` : ''}
+        ${renderSchemaDriftSummary(portDriftIssues)}
+        ${renderSchemaOutline(outline, { outlineId, label: `${label} ${port.name} schema outline` })}
       </div>
     `;
   }).join('');
@@ -18337,6 +18747,479 @@ function renderContractPortGroup(label, ports) {
       ${rows || '<div class="contract-port-row empty"><span>None</span></div>'}
     </div>
   `;
+}
+
+function renderSchemaOutline(outline, options = {}) {
+  const rows = Array.isArray(outline?.rows) ? outline.rows : [];
+  const query = String(outline?.query || '');
+  const unfilteredTotal = Number(outline?.unfilteredTotal ?? outline?.total ?? rows.length);
+  const outlineId = String(options.outlineId || '');
+  const outlineIdAttr = outlineId ? ` id="${escapeHtml(outlineId)}"` : '';
+  const outlineLabel = String(options.label || 'Schema outline');
+  if (!rows.length) {
+    if (query && unfilteredTotal) {
+      return `
+        <div
+          class="schema-outline"
+          ${outlineIdAttr}
+          data-schema-outline
+          data-schema-outline-query="${escapeHtml(query)}"
+          role="status"
+          aria-label="${escapeHtml(outlineLabel)}"
+          aria-live="polite"
+        >
+          <div class="schema-outline-empty" data-schema-outline-empty>No schema entries match "${escapeHtml(query)}"</div>
+        </div>
+      `;
+    }
+    return '';
+  }
+  const total = Number(outline.total || rows.length);
+  const visible = rows.length;
+  const overflowLabel = query ? 'matching schema entries' : 'schema entries';
+  const overflow = total > visible
+    ? `<div class="schema-outline-overflow" data-schema-outline-overflow aria-live="polite">Showing first ${visible} of ${total} ${overflowLabel}</div>`
+    : '';
+  return `
+    <div
+      class="schema-outline"
+      ${outlineIdAttr}
+      data-schema-outline
+      data-schema-outline-query="${escapeHtml(query)}"
+      role="list"
+      aria-label="${escapeHtml(outlineLabel)}"
+      ${query ? 'aria-live="polite"' : ''}
+    >
+      ${rows.map((row, index) => {
+        const rowId = schemaOutlineRowDomId(outlineId, row, index);
+        const driftIssues = normalizeSchemaDriftIssues(row.driftIssues);
+        const driftLevel = schemaDriftLevel(driftIssues);
+        const driftClass = driftIssues.length ? ` drift-${driftLevel}` : '';
+        const driftDescriptionIds = [];
+        const driftLabels = driftIssues.slice(0, 2).map((issue, driftIndex) => {
+          const driftId = `${rowId}-drift-${driftIndex}`;
+          driftDescriptionIds.push(driftId);
+          return `
+          <small id="${escapeHtml(driftId)}" class="schema-drift-label">${escapeHtml(`Schema drift · ${changeRiskLabel(issue.compatibility)}: ${schemaDriftIssueDetailLabel(issue, { includePath: false })}`)}</small>
+        `;
+        }).join('');
+        const hiddenDriftId = `${rowId}-drift-more`;
+        const driftHidden = driftIssues.length > 2
+          ? `<small id="${escapeHtml(hiddenDriftId)}" class="schema-drift-label">+${escapeHtml(driftIssues.length - 2)} more drift issues</small>`
+          : '';
+        if (driftHidden) {
+          driftDescriptionIds.push(hiddenDriftId);
+        }
+        const describedByAttr = driftDescriptionIds.length
+          ? ` aria-describedby="${escapeHtml(driftDescriptionIds.join(' '))}"`
+          : '';
+        return `
+        <div
+          id="${escapeHtml(rowId)}"
+          class="schema-outline-row${driftClass}"
+          role="listitem"
+          ${schemaOutlineRowA11yPositionAttrs(outline, index)}
+          ${describedByAttr}
+          data-schema-outline-row
+          data-schema-outline-path="${escapeHtml(row.path)}"
+          ${driftIssues.length ? `data-schema-drift="${escapeHtml(driftLevel)}"` : ''}>
+          <strong>${escapeHtml(row.path)}</strong>
+          <span>${escapeHtml(schemaOutlineRowSummary(row))}</span>
+          ${row.detail ? `<small>${escapeHtml(row.detail)}</small>` : ''}
+          ${driftLabels}
+          ${driftHidden}
+        </div>
+      `;
+      }).join('')}
+      ${overflow}
+    </div>
+  `;
+}
+
+function schemaOutlineRowSummary(row) {
+  return [
+    row.kind,
+    row.type,
+    row.required ? 'required' : '',
+    row.dslPathSafe === false ? 'DSL-unsafe' : ''
+  ].map((item) => String(item || '').trim()).filter(Boolean).join(' · ');
+}
+
+function schemaOutlineForEnvelope(
+  schemaEnvelope,
+  limit = SCHEMA_OUTLINE_VISIBLE_ROW_LIMIT,
+  query = '',
+  driftIssues = []
+) {
+  const schema = schemaEnvelope?.schema || {};
+  const rows = schemaOutlineRows(schema, '', {
+    depth: 0,
+    parentRequired: true,
+    prefixDslPathSafe: true
+  });
+  const prioritizedRows = schemaOutlinePrioritizedRows(rows)
+    .map((row) => ({
+      ...row,
+      driftIssues: schemaDriftIssuesForOutlineRow(row, driftIssues)
+    }));
+  const normalizedQuery = normalizeSchemaOutlineQuery(query);
+  const filteredRows = normalizedQuery
+    ? prioritizedRows.filter((row) => schemaOutlineRowMatchesQuery(row, normalizedQuery))
+    : prioritizedRows;
+  return {
+    rows: filteredRows.slice(0, Math.max(0, Number(limit) || 0)),
+    total: filteredRows.length,
+    unfilteredTotal: rows.length,
+    limit,
+    query: normalizedQuery
+  };
+}
+
+function normalizeSchemaOutlineQuery(query) {
+  return String(query || '').trim().toLowerCase();
+}
+
+function schemaOutlineRowMatchesQuery(row, normalizedQuery) {
+  const tokens = String(normalizedQuery || '').split(/\s+/).filter(Boolean);
+  if (!tokens.length) {
+    return true;
+  }
+  const searchText = schemaOutlineRowSearchText(row);
+  return tokens.every((token) => searchText.includes(token));
+}
+
+function schemaOutlineRowSearchText(row) {
+  const driftText = normalizeSchemaDriftIssues(row?.driftIssues)
+    .map((issue) => [
+      'schema drift',
+      issue.compatibility,
+      issue.path,
+      issue.savedType,
+      issue.currentType,
+      schemaDriftTypeTransitionLabel(issue),
+      issue.reviewHint,
+      schemaDriftIssueChangeSummary(issue),
+      ...normalizeSchemaDriftSchemaChanges(issue.schemaChanges).map((change) => [
+        change.path,
+        change.keyword,
+        change.savedValue,
+        change.currentValue,
+        change.summary
+      ].filter(Boolean).join(' ')),
+      issue.message
+    ].filter(Boolean).join(' '))
+    .join(' ');
+  return [
+    row?.path,
+    row?.kind,
+    row?.type,
+    row?.required ? 'required' : 'optional',
+    row?.dslPathSafe === false ? 'dsl-unsafe' : 'dsl-safe',
+    row?.detail,
+    driftText
+  ].map((item) => String(item || '').toLowerCase()).join(' ');
+}
+
+function schemaOutlinePrioritizedRows(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      const leftRank = schemaOutlineDisplayRank(left.row);
+      const rightRank = schemaOutlineDisplayRank(right.row);
+      return leftRank - rightRank || left.index - right.index;
+    })
+    .map((item) => item.row);
+}
+
+function schemaOutlineDisplayRank(row) {
+  const depth = Number.isFinite(row?.depth) ? row.depth : schemaOutlineDisplayDepth(row?.path);
+  const topLevelPropertyBoost = depth <= 1 && row?.kind === 'property' ? -1 : 0;
+  return (depth * 100) + topLevelPropertyBoost + schemaOutlineKindPriority(row?.kind);
+}
+
+function schemaOutlineDisplayDepth(path) {
+  return String(path || '')
+    .split('.')
+    .filter(Boolean)
+    .length;
+}
+
+function schemaOutlineKindPriority(kind) {
+  const priorities = {
+    oneOf: 0,
+    anyOf: 0,
+    allOf: 0,
+    contains: 1,
+    patternProperties: 2,
+    additionalProperties: 3,
+    unevaluatedProperties: 3,
+    dependentRequired: 4,
+    dependentSchemas: 4,
+    propertyNames: 5,
+    prefixItems: 6,
+    items: 6,
+    truncated: 7,
+    property: 8
+  };
+  return priorities[String(kind || '')] ?? 9;
+}
+
+function schemaOutlineRows(schema, prefix = '', context = {}) {
+  const rawSchema = schema && typeof schema === 'object' && !Array.isArray(schema) ? schema : {};
+  const depth = Number(context.depth || 0);
+  if (depth >= SCHEMA_OUTLINE_MAX_DEPTH) {
+    return schemaOutlineHasNestedSurface(rawSchema)
+      ? [schemaOutlineDescriptor(prefix ? `${prefix}.*` : '(nested)', rawSchema, {
+        kind: 'truncated',
+        depth: depth + 1,
+        detail: `depth limit ${SCHEMA_OUTLINE_MAX_DEPTH}`
+      })]
+      : [];
+  }
+  return [
+    ...schemaOutlineCombinatorRows(rawSchema, prefix, context),
+    ...schemaOutlineConditionalRows(rawSchema, prefix, context),
+    ...schemaOutlineDependentRows(rawSchema, prefix, context),
+    ...schemaOutlineObjectRows(rawSchema, prefix, context),
+    ...schemaOutlineArrayRows(rawSchema, prefix, context)
+  ];
+}
+
+function schemaOutlineCombinatorRows(schema, prefix, context) {
+  return ['oneOf', 'anyOf', 'allOf'].flatMap((keyword) => {
+    const branches = keyword === 'allOf' ? schemaAllOfBranches(schema) : schemaUnionBranches(schema, keyword);
+    return branches.flatMap((branch, index) => {
+      const path = schemaOutlinePath(prefix, `${keyword}[${index}]`);
+      return [
+        schemaOutlineDescriptor(path, branch, {
+          kind: keyword,
+          depth: Number(context.depth || 0) + 1,
+          detail: `branch ${index + 1}/${branches.length}`
+        }),
+        ...schemaOutlineRows(branch, path, {
+          ...context,
+          depth: Number(context.depth || 0) + 1,
+          parentRequired: context.parentRequired !== false
+        })
+      ];
+    });
+  });
+}
+
+function schemaOutlineConditionalRows(schema, prefix, context) {
+  return ['if', 'then', 'else'].flatMap((keyword) => {
+    const branch = schema?.[keyword];
+    if (!branch || typeof branch !== 'object' || Array.isArray(branch)) {
+      return [];
+    }
+    const path = schemaOutlinePath(prefix, keyword);
+    return [
+      schemaOutlineDescriptor(path, branch, {
+        kind: keyword,
+        depth: Number(context.depth || 0) + 1,
+        detail: 'conditional schema'
+      }),
+      ...schemaOutlineRows(branch, path, {
+        ...context,
+        depth: Number(context.depth || 0) + 1,
+        parentRequired: context.parentRequired !== false
+      })
+    ];
+  });
+}
+
+function schemaOutlineDependentRows(schema, prefix, context) {
+  const dependentRequiredRows = Object.entries(schemaDependentRequired(schema)).map(([trigger, dependencies]) =>
+    schemaOutlineDescriptor(schemaOutlinePath(prefix, `dependentRequired ${trigger}`), schema, {
+      kind: 'dependentRequired',
+      depth: Number(context.depth || 0) + 1,
+      detail: dependencies.length ? `${trigger} -> ${dependencies.join(', ')}` : `${trigger} -> (none)`
+    }));
+  const dependentSchemaRows = Object.entries(schemaDependentSchemas(schema)).flatMap(([trigger, dependentSchema]) => {
+    const path = schemaOutlinePath(prefix, `dependentSchemas ${trigger}`);
+    return [
+      schemaOutlineDescriptor(path, dependentSchema, {
+        kind: 'dependentSchemas',
+        depth: Number(context.depth || 0) + 1,
+        detail: `trigger ${trigger}`
+      }),
+      ...schemaOutlineRows(dependentSchema, path, {
+        ...context,
+        depth: Number(context.depth || 0) + 1,
+        parentRequired: context.parentRequired !== false
+      })
+    ];
+  });
+  return [...dependentRequiredRows, ...dependentSchemaRows];
+}
+
+function schemaOutlineObjectRows(schema, prefix, context) {
+  const required = new Set(schemaRequiredNames(schema));
+  const propertyRows = Object.entries(schemaObjectProperties(schema)).flatMap(([name, childSchema]) => {
+    const path = schemaOutlinePath(prefix, name);
+    const rawChildSchema = childSchema && typeof childSchema === 'object' && !Array.isArray(childSchema)
+      ? childSchema
+      : {};
+    const fieldRequired = context.parentRequired !== false && required.has(name);
+    const fieldDslPathSafe = context.prefixDslPathSafe !== false && isDslFieldName(name);
+    return [
+      schemaOutlineDescriptor(path, rawChildSchema, {
+        kind: 'property',
+        depth: Number(context.depth || 0) + 1,
+        required: fieldRequired,
+        dslPathSafe: fieldDslPathSafe
+      }),
+      ...schemaOutlineRows(rawChildSchema, path, {
+        ...context,
+        depth: Number(context.depth || 0) + 1,
+        parentRequired: fieldRequired,
+        prefixDslPathSafe: fieldDslPathSafe
+      })
+    ];
+  });
+  const patternRows = Object.entries(schemaPatternProperties(schema) || {}).map(([pattern, childSchema]) =>
+    schemaOutlineDescriptor(schemaOutlinePath(prefix, `pattern ${pattern}`), childSchema, {
+      kind: 'patternProperties',
+      depth: Number(context.depth || 0) + 1,
+      dslPathSafe: false,
+      detail: `pattern ${pattern}`
+    }));
+  const propertyNameRow = schemaPropertyNameSchema(schema)
+    ? [schemaOutlineDescriptor(schemaOutlinePath(prefix, 'propertyNames'), schemaPropertyNameSchema(schema), {
+      kind: 'propertyNames',
+      depth: Number(context.depth || 0) + 1,
+      dslPathSafe: false
+    })]
+    : [];
+  const residualRows = schemaOutlineResidualPropertyRows(schema, prefix, context);
+  return [...propertyRows, ...patternRows, ...propertyNameRow, ...residualRows];
+}
+
+function schemaOutlineResidualPropertyRows(schema, prefix, context = {}) {
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'additionalProperties')
+      && !Object.prototype.hasOwnProperty.call(schema || {}, 'unevaluatedProperties')) {
+    return [];
+  }
+  const keyword = residualPropertiesKeyword(schema);
+  const residual = residualPropertiesPolicy(schema);
+  if (residual === false) {
+    return [schemaOutlineDescriptor(schemaOutlinePath(prefix, `${keyword} *`), {}, {
+      kind: keyword,
+      type: 'blocked',
+      depth: Number(context.depth || 0) + 1,
+      dslPathSafe: false,
+      detail: `${keyword}=false`
+    })];
+  }
+  if (residual && typeof residual === 'object' && !Array.isArray(residual)) {
+    return [schemaOutlineDescriptor(schemaOutlinePath(prefix, `${keyword} *`), residual, {
+      kind: keyword,
+      depth: Number(context.depth || 0) + 1,
+      dslPathSafe: false
+    })];
+  }
+  if (residual === true) {
+    return [schemaOutlineDescriptor(schemaOutlinePath(prefix, `${keyword} *`), {}, {
+      kind: keyword,
+      type: 'any',
+      depth: Number(context.depth || 0) + 1,
+      dslPathSafe: false,
+      detail: `${keyword}=true`
+    })];
+  }
+  return [];
+}
+
+function schemaOutlineArrayRows(schema, prefix, context) {
+  if (compatibilitySchemaType(schema) !== 'array') {
+    return [];
+  }
+  const rows = [];
+  const prefixItems = schemaPrefixItems(schema);
+  prefixItems.forEach((itemSchema, index) => {
+    const path = `${prefix || 'array'}[${index}]`;
+    rows.push(schemaOutlineDescriptor(path, itemSchema, {
+      kind: 'prefixItems',
+      depth: Number(context.depth || 0) + 1,
+      dslPathSafe: context.prefixDslPathSafe !== false
+    }));
+    rows.push(...schemaOutlineRows(itemSchema, path, {
+      ...context,
+      depth: Number(context.depth || 0) + 1,
+      parentRequired: false
+    }));
+  });
+  const itemSchema = schemaItemsSchema(schema);
+  if (itemSchema) {
+    const path = `${prefix || 'array'}[]`;
+    rows.push(schemaOutlineDescriptor(path, itemSchema, {
+      kind: 'items',
+      depth: Number(context.depth || 0) + 1,
+      dslPathSafe: context.prefixDslPathSafe !== false
+    }));
+    rows.push(...schemaOutlineRows(itemSchema, path, {
+      ...context,
+      depth: Number(context.depth || 0) + 1,
+      parentRequired: false
+    }));
+  }
+  const contains = schemaContainsSchema(schema);
+  if (contains) {
+    const path = schemaOutlinePath(prefix, 'contains');
+    const minContains = schemaMinContains(schema);
+    const maxContains = schemaMaxContains(schema);
+    rows.push(schemaOutlineDescriptor(path, contains, {
+      kind: 'contains',
+      depth: Number(context.depth || 0) + 1,
+      dslPathSafe: false,
+      detail: [
+        minContains !== null ? `minContains ${minContains}` : '',
+        maxContains !== null ? `maxContains ${maxContains}` : ''
+      ].filter(Boolean).join(' · ')
+    }));
+    rows.push(...schemaOutlineRows(contains, path, {
+      ...context,
+      depth: Number(context.depth || 0) + 1,
+      parentRequired: false,
+      prefixDslPathSafe: false
+    }));
+  }
+  return rows;
+}
+
+function schemaOutlineDescriptor(path, schema, options = {}) {
+  const safeSchema = schema && typeof schema === 'object' && !Array.isArray(schema) ? schema : {};
+  const annotation = schemaAnnotationDescriptor(safeSchema);
+  const annotationHint = schemaFieldDisplayHint(annotation);
+  const detail = [options.detail, annotationHint].map((item) => String(item || '').trim()).filter(Boolean).join(' · ');
+  return {
+    path: path || '(root)',
+    kind: options.kind || 'schema',
+    type: options.type || schemaType(safeSchema) || rawSchemaType(safeSchema) || 'any',
+    required: Boolean(options.required),
+    dslPathSafe: options.dslPathSafe,
+    depth: Number.isFinite(options.depth) ? options.depth : schemaOutlineDisplayDepth(path),
+    detail
+  };
+}
+
+function schemaOutlinePath(prefix, segment) {
+  return prefix ? `${prefix}.${segment}` : segment;
+}
+
+function schemaOutlineHasNestedSurface(schema) {
+  return Boolean(
+    Object.keys(schemaObjectProperties(schema)).length
+      || Object.keys(schemaPatternProperties(schema) || {}).length
+      || schemaPrefixItems(schema).length
+      || schemaItemsSchema(schema)
+      || schemaContainsSchema(schema)
+      || schemaUnionBranches(schema, 'oneOf').length
+      || schemaUnionBranches(schema, 'anyOf').length
+      || schemaAllOfBranches(schema).length
+      || Object.keys(schemaDependentRequired(schema)).length
+      || Object.keys(schemaDependentSchemas(schema)).length
+  );
 }
 
 function renderUnavailableOperatorPanel(node, spec) {
