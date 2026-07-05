@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   authoringJourney,
   autoLayoutCanvas,
+  canvasCoachPrompt,
   compileFixtureDrafts,
   connectionCandidatesMessage,
   connectionDecisionMessage,
@@ -599,6 +600,100 @@ describe('authoringJourney', () => {
       detail: 'success',
     });
     expect(completed.action).toEqual({ kind: 'none', label: 'Ready' });
+  });
+});
+
+describe('canvasCoachPrompt', () => {
+  const successfulResponse: SimulationResponse = {
+    validated: true,
+    compiled: true,
+    success: true,
+    graphName: 'g',
+    outputNode: 'n1',
+    output: { ok: true },
+    results: {},
+    statusMap: {},
+    mockedNodeIds: ['n2'],
+    realNodeIds: ['n1'],
+    terminalOutputConforms: true,
+    diagnostics: [],
+    errors: [],
+    generatedDsl: '',
+  };
+
+  it('turns an empty canvas into an in-canvas add action', () => {
+    const prompt = canvasCoachPrompt(4, summarizeCanvas([], []), [], null);
+
+    expect(prompt).toEqual({
+      state: 'compose',
+      title: 'Add first operator',
+      detail: '4 available',
+      action: { kind: 'focus-palette', label: 'Add operator' },
+    });
+  });
+
+  it('prioritizes disconnected topology before simulation guidance', () => {
+    const prompt = canvasCoachPrompt(
+      2,
+      summarizeCanvas(
+        [
+          { id: 'n1', operatorRef: 'risk:a', position: { x: 0, y: 0 } },
+          { id: 'n2', operatorRef: 'risk:b', position: { x: 0, y: 0 } },
+        ],
+        [],
+      ),
+      [],
+      null,
+    );
+
+    expect(prompt).toEqual({
+      state: 'connect',
+      title: 'Connect open nodes',
+      detail: '2 open',
+      action: { kind: 'select-node', label: 'Select open node', nodeId: 'n1' },
+    });
+  });
+
+  it('points authors at mock output pinning before the first run', () => {
+    const prompt = canvasCoachPrompt(
+      1,
+      summarizeCanvas([{ id: 'n1', operatorRef: 'risk:design', position: { x: 0, y: 0 } }], []),
+      [
+        {
+          nodeId: 'n1',
+          label: 'Risk',
+          operatorRef: 'risk:design',
+          state: 'warning',
+          runMode: 'mocked',
+          fixtureLabel: 'server sample',
+          detail: 'server sample',
+        },
+      ],
+      null,
+    );
+
+    expect(prompt).toEqual({
+      state: 'mock',
+      title: 'Pin mock output',
+      detail: '1 sample',
+      action: { kind: 'select-node', label: 'Pin mock output', nodeId: 'n1' },
+    });
+  });
+
+  it('closes with a trust summary after a successful run', () => {
+    const prompt = canvasCoachPrompt(
+      1,
+      summarizeCanvas([{ id: 'n1', operatorRef: 'risk:real', position: { x: 0, y: 0 } }], []),
+      [],
+      successfulResponse,
+    );
+
+    expect(prompt).toEqual({
+      state: 'ready',
+      title: 'Graph ready',
+      detail: '1 real / 1 mocked',
+      action: { kind: 'none', label: 'Ready' },
+    });
   });
 });
 

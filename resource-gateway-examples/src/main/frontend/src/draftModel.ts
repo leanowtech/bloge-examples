@@ -150,6 +150,15 @@ export interface AuthoringJourney {
   completedCount: number;
 }
 
+export type CanvasCoachState = 'blocked' | 'compose' | 'connect' | 'mock' | 'simulate' | 'review' | 'ready';
+
+export interface CanvasCoachPrompt {
+  state: CanvasCoachState;
+  title: string;
+  detail: string;
+  action: AuthoringJourneyAction;
+}
+
 export type PortHandleDirection = 'in' | 'out';
 export type ConnectionCandidateStatus = 'ready' | 'blocked' | 'wired';
 
@@ -695,6 +704,87 @@ export function authoringJourney(
     steps,
     action: nextAuthoringAction(operatorCount, summary, blockedFixtures, warningFixtures, result),
     completedCount: steps.filter((step) => step.state === 'ready').length,
+  };
+}
+
+/**
+ * Chooses the single canvas-level action prompt that should be visible inside the flow area.
+ *
+ * <p>The journey bar is comprehensive; this prompt is intentionally narrow. It keeps the empty and
+ * partially wired canvas from feeling like an inert blank surface while preserving server-authoritative
+ * validation as the real gate.</p>
+ */
+export function canvasCoachPrompt(
+  operatorCount: number,
+  summary: CanvasSummary,
+  fixtureRows: SimulationFixtureRow[],
+  result: SimulationResponse | null,
+): CanvasCoachPrompt {
+  const blockedFixtures = fixtureRows.filter((row) => row.state === 'blocked');
+  const warningFixtures = fixtureRows.filter((row) => row.state === 'warning');
+  const disconnectedCount = summary.disconnectedNodeIds.length;
+
+  if (operatorCount === 0) {
+    return {
+      state: 'blocked',
+      title: 'Catalog empty',
+      detail: '0 operators',
+      action: { kind: 'none', label: 'Catalog empty' },
+    };
+  }
+  if (summary.nodeCount === 0) {
+    return {
+      state: 'compose',
+      title: 'Add first operator',
+      detail: `${operatorCount} available`,
+      action: { kind: 'focus-palette', label: 'Add operator' },
+    };
+  }
+  if (summary.nodeCount > 1 && disconnectedCount > 0) {
+    return {
+      state: 'connect',
+      title: 'Connect open nodes',
+      detail: `${disconnectedCount} open`,
+      action: { kind: 'select-node', label: 'Select open node', nodeId: summary.disconnectedNodeIds[0] },
+    };
+  }
+  if (blockedFixtures.length > 0) {
+    return {
+      state: 'blocked',
+      title: 'Fix mock JSON',
+      detail: `${blockedFixtures.length} blocked`,
+      action: { kind: 'select-node', label: 'Fix mock JSON', nodeId: blockedFixtures[0].nodeId },
+    };
+  }
+  if (!result && warningFixtures.length > 0) {
+    return {
+      state: 'mock',
+      title: 'Pin mock output',
+      detail: `${warningFixtures.length} sample`,
+      action: { kind: 'select-node', label: 'Pin mock output', nodeId: warningFixtures[0].nodeId },
+    };
+  }
+  if (!result) {
+    return {
+      state: 'simulate',
+      title: 'Run simulation',
+      detail: `${summary.nodeCount} node${summary.nodeCount === 1 ? '' : 's'}`,
+      action: { kind: 'simulate', label: 'Simulate' },
+    };
+  }
+  if (!isRunSuccessful(result)) {
+    return {
+      state: 'review',
+      title: 'Review diagnostics',
+      detail: `${result.errors?.length ?? 0} error${(result.errors?.length ?? 0) === 1 ? '' : 's'}`,
+      action: { kind: 'simulate', label: 'Retry simulate' },
+    };
+  }
+  return {
+    state: 'ready',
+    title: 'Graph ready',
+    detail: `${result.realNodeIds?.length ?? 0} real / ${result.mockedNodeIds?.length ?? 0} mocked`,
+    action: { kind: 'none', label: 'Ready' },
   };
 }
 

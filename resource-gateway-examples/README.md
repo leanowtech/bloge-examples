@@ -120,8 +120,10 @@ cards now surface operator display names, required/total input counts, output
 counts, and design-only status; the palette is grouped by imported library,
 supports multi-term search, runtime/design facets, source/tag filters, and a
 Cmd/Ctrl-K search focus; the canvas header shows the core-loop progress from
-library through simulation and exposes the next actionable step; the toolbar
-adds deterministic Auto Layout plus node/edge/output HUD chips; each node renders schema port handles; connection
+library through simulation and exposes the next actionable step; the flow area
+mirrors that step as a compact in-canvas action prompt for empty, disconnected,
+mock-pending, simulation, diagnostic, and ready states; the toolbar adds
+deterministic Auto Layout plus node/edge/output HUD chips; each node renders schema port handles; connection
 drags prefetch `/api/visual/connections/candidates` to highlight compatible,
 blocked, and already-wired target ports; dropped gestures are checked through
 `/api/visual/connections/check` before an edge is written; and the inspector

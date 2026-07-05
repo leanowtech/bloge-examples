@@ -500,6 +500,73 @@ button.secondary:disabled {
 .flow {
   flex: 1;
   min-height: 0;
+  position: relative;
+}
+
+.canvas-coach {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  gap: 6px;
+  max-width: min(280px, calc(100% - 28px));
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 7px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 8px 22px rgb(28 35 48 / 12%);
+}
+
+.canvas-coach.empty {
+  top: 50%;
+  left: 50%;
+  justify-items: center;
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+.canvas-coach.compact {
+  top: 14px;
+  left: 14px;
+}
+
+.canvas-coach strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-coach-kicker {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.canvas-coach.compose,
+.canvas-coach.simulate {
+  border-left-color: var(--accent);
+}
+
+.canvas-coach.connect,
+.canvas-coach.mock,
+.canvas-coach.review {
+  border-left-color: var(--warning);
+}
+
+.canvas-coach.blocked {
+  border-left-color: var(--danger);
+}
+
+.canvas-coach.ready {
+  border-left-color: var(--success);
 }
 
 .operator-node {

@@ -21,8 +21,10 @@ import { checkConnection, fetchConnectionCandidates, fetchOperators, simulate } 
 import {
   authoringJourney,
   autoLayoutCanvas,
+  canvasCoachPrompt,
   type CanvasEdge,
   type CanvasNode,
+  type AuthoringJourneyAction,
   type ConnectionCandidateIndex,
   type ConnectionCandidateStatus,
   compileFixtureDrafts,
@@ -289,6 +291,10 @@ export default function AuthorCanvas() {
     () => authoringJourney(operators.length, canvasSummary, fixtureRows, result),
     [canvasSummary, fixtureRows, operators.length, result],
   );
+  const coachPrompt = useMemo(
+    () => canvasCoachPrompt(operators.length, canvasSummary, fixtureRows, result),
+    [canvasSummary, fixtureRows, operators.length, result],
+  );
   const activeJourneyStepKey = journey.steps.find((step) => step.state !== 'ready')?.key ?? '';
   const fixtureCount = Object.keys(fixtureCompilation.fixtures).length;
   const fixtureErrorCount = Object.keys(fixtureCompilation.errors).length;
@@ -488,20 +494,24 @@ export default function AuthorCanvas() {
     }
   }, [canvasEdges, canvasNodes, fixtureCompilation.fixtures, fixtureCount]);
 
-  const runJourneyAction = useCallback(() => {
-    if (journey.action.kind === 'focus-palette') {
+  const runAuthoringAction = useCallback((action: AuthoringJourneyAction) => {
+    if (action.kind === 'focus-palette') {
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
       return;
     }
-    if (journey.action.kind === 'select-node' && journey.action.nodeId) {
-      setSelectedNodeId(journey.action.nodeId);
+    if (action.kind === 'select-node' && action.nodeId) {
+      setSelectedNodeId(action.nodeId);
       return;
     }
-    if (journey.action.kind === 'simulate') {
+    if (action.kind === 'simulate') {
       void runSimulation();
     }
-  }, [journey.action, runSimulation]);
+  }, [runSimulation]);
+
+  const runJourneyAction = useCallback(() => {
+    runAuthoringAction(journey.action);
+  }, [journey.action, runAuthoringAction]);
 
   const autoLayout = useCallback(() => {
     const layout = autoLayoutCanvas(canvasNodes, canvasEdges);
@@ -708,6 +718,29 @@ export default function AuthorCanvas() {
           </span>
         </div>
         <div className="flow">
+          {coachPrompt && (
+            <div
+              className={[
+                'canvas-coach',
+                canvasSummary.nodeCount === 0 ? 'empty' : 'compact',
+                coachPrompt.state,
+              ].join(' ')}
+              data-testid="canvas-coach"
+            >
+              <span className="canvas-coach-kicker">{coachPrompt.detail}</span>
+              <strong>{coachPrompt.title}</strong>
+              {coachPrompt.action.kind !== 'none' && (
+                <button
+                  type="button"
+                  className="secondary compact"
+                  onClick={() => runAuthoringAction(coachPrompt.action)}
+                  disabled={busy}
+                >
+                  {coachPrompt.action.label}
+                </button>
+              )}
+            </div>
+          )}
           <ReactFlow
             nodes={flowNodes}
             edges={edges}
