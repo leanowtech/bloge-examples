@@ -138,10 +138,11 @@ deterministic Auto Layout plus node/edge/output HUD chips; each node renders sch
 drags prefetch `/api/visual/connections/candidates` to highlight compatible,
 blocked, and already-wired target ports; dropped gestures are checked through
 `/api/visual/connections/check` before an edge is written; and the inspector
-keeps a simulation checklist, selected-node port inventory, node-level fixture
-JSON with deterministic schema-sample prefill, expected-input assertion JSON, a
+keeps a simulation checklist, selected-node port inventory, explicit Set Output
+control, node-level fixture JSON with deterministic schema-sample prefill, expected-input assertion JSON, a
 mocks-needed setup panel, a node trace panel, generated DSL, and unmistakable
-`real` versus `mocked` run badges in one context. Valid fixture JSON is sent as
+`real` versus `mocked` run badges in one context. Simulate sends the same
+selected output node in both the draft and request envelope, and valid fixture JSON is sent as
 request-scoped `/api/visual/graphs/simulate` overrides, where output pins
 replace mock outputs and expected inputs assert what the stand-in observed;
 invalid fixture drafts block the run before they can become misleading mock

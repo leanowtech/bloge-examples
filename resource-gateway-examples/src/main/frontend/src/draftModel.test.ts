@@ -25,6 +25,7 @@ import {
   toConnectionCandidatesRequest,
   toConnectionCheckRequest,
   toGraphDraft,
+  toSimulationRequest,
 } from './draftModel';
 import type { OperatorDefinition, SimulationResponse } from './types';
 
@@ -94,6 +95,42 @@ describe('toGraphDraft', () => {
       source: { nodeId: 'a', port: 'decision' },
       target: { nodeId: 'b', port: 'profile' },
     });
+  });
+});
+
+describe('toSimulationRequest', () => {
+  it('keeps request outputNode aligned with the draft output selection', () => {
+    const request = toSimulationRequest(
+      'myGraph',
+      [
+        { id: 'source', operatorRef: 'producer', position: { x: 0, y: 0 } },
+        { id: 'chosen', operatorRef: 'consumer', position: { x: 200, y: 0 } },
+        { id: 'tail', operatorRef: 'audit', position: { x: 400, y: 0 } },
+      ],
+      [{ id: 'e1', source: 'source', target: 'chosen' }],
+      'chosen',
+      { chosen: { output: { approved: true } } },
+    );
+
+    expect(request.outputNode).toBe('chosen');
+    expect(request.draft.output.nodeId).toBe('chosen');
+    expect(request.fixtures).toEqual({ chosen: { output: { approved: true } } });
+  });
+
+  it('falls back to the last node and omits empty fixtures', () => {
+    const request = toSimulationRequest(
+      'myGraph',
+      [
+        { id: 'a', operatorRef: 'a', position: { x: 0, y: 0 } },
+        { id: 'b', operatorRef: 'b', position: { x: 200, y: 0 } },
+      ],
+      [],
+      '',
+    );
+
+    expect(request.outputNode).toBe('b');
+    expect(request.draft.output.nodeId).toBe('b');
+    expect(request).not.toHaveProperty('fixtures');
   });
 });
 

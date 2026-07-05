@@ -48,7 +48,7 @@ import {
   summarizeOperator,
   toConnectionCandidatesRequest,
   toConnectionCheckRequest,
-  toGraphDraft,
+  toSimulationRequest,
 } from './draftModel';
 import type { OperatorDefinition, SimulationResponse } from './types';
 
@@ -57,6 +57,7 @@ interface NodeData {
   operatorRef: string;
   summary: OperatorSummary;
   status?: 'mocked' | 'real' | 'unknown';
+  isOutput?: boolean;
   candidateStatus?: ConnectionCandidateStatus;
   candidatePorts?: Record<string, ConnectionCandidateStatus>;
   focusState?: CanvasNodeFocusState;
@@ -98,7 +99,10 @@ function OperatorNode({ data, selected }: NodeProps<NodeData>) {
       ))}
       <div className="operator-node-title">
         <span>{data.label}</span>
-        {status !== 'unknown' && <span className={`run-pill ${status}`}>{status}</span>}
+        <span className="operator-node-pills">
+          {data.isOutput && <span className="output-pill">output</span>}
+          {status !== 'unknown' && <span className={`run-pill ${status}`}>{status}</span>}
+        </span>
       </div>
       <div className="operator-node-ref">{data.operatorRef}</div>
       <div className="operator-node-metrics">
@@ -150,6 +154,7 @@ export default function AuthorCanvas() {
   const [sourceFilter, setSourceFilter] = useState('all');
   const [tagFilter, setTagFilter] = useState('all');
   const [selectedNodeId, setSelectedNodeId] = useState('');
+  const [explicitOutputNodeId, setExplicitOutputNodeId] = useState('');
   const [fixtureDrafts, setFixtureDrafts] = useState<Record<string, string>>({});
   const [fixtureInputDrafts, setFixtureInputDrafts] = useState<Record<string, string>>({});
   const [connectionNotice, setConnectionNotice] = useState<ConnectionNotice | null>(null);
@@ -208,6 +213,7 @@ export default function AuthorCanvas() {
           return next;
         });
         setSelectedNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
+        setExplicitOutputNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
       }
       setNodes((current) => applyNodeChanges(changes, current) as Node<NodeData>[]);
     },
@@ -260,7 +266,8 @@ export default function AuthorCanvas() {
       })),
     [edges],
   );
-  const outputNodeId = nodes.length > 0 ? nodes[nodes.length - 1].id : '';
+  const implicitOutputNodeId = nodes.length > 0 ? nodes[nodes.length - 1].id : '';
+  const outputNodeId = explicitOutputNodeId || implicitOutputNodeId;
   const canvasSummary = useMemo(
     () => summarizeCanvas(canvasNodes, canvasEdges, outputNodeId),
     [canvasEdges, canvasNodes, outputNodeId],
@@ -325,10 +332,11 @@ export default function AuthorCanvas() {
             candidateStatus,
             candidatePorts,
             focusState,
+            isOutput: node.id === outputNodeId,
           },
         };
       }),
-    [candidatePreview, coachPrompt, nodes, selectedNodeId],
+    [candidatePreview, coachPrompt, nodes, outputNodeId, selectedNodeId],
   );
 
   const updateSelectedFixtureDraft = useCallback((value: string) => {
@@ -373,6 +381,14 @@ export default function AuthorCanvas() {
       delete next[selectedNodeId];
       return next;
     });
+  }, [clearRunResult, selectedNodeId]);
+
+  const setSelectedAsOutput = useCallback(() => {
+    if (!selectedNodeId) {
+      return;
+    }
+    clearRunResult();
+    setExplicitOutputNodeId(selectedNodeId);
   }, [clearRunResult, selectedNodeId]);
 
   const onConnectStart = useCallback(async (_event: unknown, params: ConnectionStartParams) => {
@@ -472,13 +488,13 @@ export default function AuthorCanvas() {
     setBusy(true);
     setError('');
     try {
-      const draft = toGraphDraft('visualGraph', canvasNodes, canvasEdges, '');
-      const response = await simulate({
-        draft,
-        context: {},
-        outputNode: '',
-        ...(fixtureCount > 0 ? { fixtures: fixtureCompilation.fixtures } : {}),
-      });
+      const response = await simulate(toSimulationRequest(
+        'visualGraph',
+        canvasNodes,
+        canvasEdges,
+        outputNodeId,
+        fixtureCompilation.fixtures,
+      ));
       setResult(response);
 
       const statuses = nodeStatuses(response);
@@ -496,7 +512,7 @@ export default function AuthorCanvas() {
     } finally {
       setBusy(false);
     }
-  }, [canvasEdges, canvasNodes, fixtureCompilation.fixtures, fixtureCount]);
+  }, [canvasEdges, canvasNodes, fixtureCompilation.fixtures, outputNodeId]);
 
   const runAuthoringAction = useCallback((action: AuthoringJourneyAction) => {
     if (action.kind === 'focus-palette') {
@@ -822,6 +838,21 @@ export default function AuthorCanvas() {
             <div className="port-list">
               <strong>Outputs</strong>
               <span>{selectedNode.data.summary.outputNames.join(', ') || 'none'}</span>
+            </div>
+            <div className="output-control">
+              <span>
+                {selectedNode.id === outputNodeId
+                  ? 'Selected as simulation output.'
+                  : `Current output: ${outputNodeId || 'missing'}`}
+              </span>
+              <button
+                type="button"
+                className="secondary compact"
+                onClick={setSelectedAsOutput}
+                disabled={selectedNode.id === outputNodeId}
+              >
+                Set Output
+              </button>
             </div>
             <div className="fixture-editor">
               <div className="fixture-header">

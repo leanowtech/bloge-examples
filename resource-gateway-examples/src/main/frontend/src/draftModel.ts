@@ -11,6 +11,7 @@ import type {
   NodeFixture,
   OperatorDefinition,
   SchemaEnvelope,
+  SimulationRequest,
   SimulationResponse,
   VisualDiagnostic,
 } from './types';
@@ -247,6 +248,30 @@ export function toGraphDraft(
     nodes: draftNodes,
     edges: draftEdges,
     output: { nodeId: resolvedOutputNode, path: '' },
+  };
+}
+
+/**
+ * Builds the simulate endpoint request from the canvas state.
+ *
+ * <p>The output node is duplicated in the draft and request envelope because the backend accepts both
+ * persisted draft output and request-scoped output selection. Keeping them identical prevents the
+ * authoring UI from simulating one terminal node while displaying another.</p>
+ */
+export function toSimulationRequest(
+  graphName: string,
+  nodes: CanvasNode[],
+  edges: CanvasEdge[],
+  outputNodeId: string,
+  fixtures: Record<string, NodeFixture> = {},
+): SimulationRequest {
+  const draft = toGraphDraft(graphName, nodes, edges, outputNodeId);
+  const selectedOutputNode = draft.output.nodeId;
+  return {
+    draft,
+    context: {},
+    outputNode: selectedOutputNode,
+    ...(Object.keys(fixtures).length > 0 ? { fixtures } : {}),
   };
 }
 

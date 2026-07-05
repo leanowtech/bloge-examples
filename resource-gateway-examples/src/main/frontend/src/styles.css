@@ -625,6 +625,13 @@ button.secondary:disabled {
   font-size: 13px;
 }
 
+.operator-node-pills {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .operator-node-ref {
   margin-top: 3px;
   overflow: hidden;
@@ -698,6 +705,17 @@ button.secondary:disabled {
 .run-pill.unknown {
   background: #edf0f5;
   color: #475569;
+}
+
+.output-pill {
+  flex: none;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #eef4ff;
+  color: #174ea6;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 .react-flow__handle {
@@ -877,6 +895,21 @@ button.secondary:disabled {
 .port-list span {
   color: var(--muted);
   overflow-wrap: anywhere;
+}
+
+.output-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 9px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #eef4ff;
+  color: #174ea6;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .fixture-editor {
