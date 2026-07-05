@@ -7,6 +7,7 @@ import com.leanowtech.bloge.graphengine.model.GraphInstanceDiagram;
 import com.leanowtech.bloge.graphengine.model.GraphInstanceContext;
 import com.leanowtech.bloge.graphengine.model.GraphNodeStatus;
 import com.leanowtech.bloge.graphengine.model.GraphNodeState;
+import com.leanowtech.bloge.graphengine.model.GraphOperationsSnapshot;
 import com.leanowtech.bloge.graphengine.model.GraphPendingSignal;
 import com.leanowtech.bloge.graphengine.model.PagedResult;
 import com.leanowtech.bloge.graphengine.model.GraphDeployment;
@@ -241,6 +242,20 @@ public interface GraphEngineService {
      * @return immutable page of refreshed instance projections
      */
     List<GraphInstance> queryInstances(GraphInstanceQuery query);
+
+    /**
+     * Returns a tenant-scoped operations snapshot for the graph-engine control plane.
+     *
+     * <p>The snapshot aggregates bounded samples from instance, deployment, and dead-letter
+     * projections so dashboards and operators can quickly identify health, blockers, and
+     * next recovery actions. It is intentionally not a replacement for paginated APIs or
+     * external metrics.</p>
+     *
+     * @param tenantId tenant identifier, or {@code null} to use the current bound tenant
+     * @param namespace namespace identifier, or {@code null} to use the current bound namespace
+     * @return operations snapshot
+     */
+    GraphOperationsSnapshot queryOperationsSnapshot(String tenantId, String namespace);
 
     /**
      * Delivers an external signal to one running or suspended instance.

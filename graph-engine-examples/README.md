@@ -88,7 +88,18 @@ mvn -f graph-engine-examples/pom.xml -pl server spring-boot:run
 The server includes a static browser console at `http://localhost:8080/console`.
 It consumes the existing `/api/v1` definition, version, deployment, instance,
 operator, task, worker, dead-letter, diagram, node-state, context, audit,
-transition, event, AI validation/generation, and version-diff endpoints.
+transition, event, operations snapshot, AI validation/generation, and version-diff endpoints.
+
+For a quick operator-facing health view, call:
+
+```bash
+curl http://localhost:8080/api/v1/operations/snapshot
+```
+
+The snapshot aggregates the current tenant/namespace's bounded instance,
+deployment, and dead-letter samples into `OK` / `WARNING` / `CRITICAL` health,
+recent dead-letter samples, and recovery-oriented action items. Use the
+paginated instance, deployment, and dead-letter APIs for full-fleet inspection.
 
 The standalone server now defaults `spring.bloge.durable.mode=local`, so it boots with an
 embedded volatile H2 durable store for local development instead of requiring an external

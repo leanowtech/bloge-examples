@@ -4,7 +4,7 @@
 > [standalone graph-engine project](../README.md) and is built with Java 25
 > outside the root bloge reactor.
 
-Spring Boot control-plane HTTP server for the BLOGE graph-engine product layer. Wraps `bloge-graph-engine-service` with REST endpoints for graph definitions, versions, deployments, instances, human tasks, and remote workers.
+Spring Boot control-plane HTTP server for the BLOGE graph-engine product layer. Wraps `bloge-graph-engine-service` with REST endpoints for graph definitions, versions, deployments, instances, human tasks, remote workers, dead-letter recovery, and operations health.
 
 ## How It Boots
 
@@ -39,6 +39,7 @@ or execution model.
 | `/api/v1/deployments` | `GraphDeploymentController` | Create and update deployment bindings (environment, routing policy) |
 | `/api/v1/graphs/{key}/instances` | `GraphInstanceController` | Start new instances for a definition |
 | `/api/v1/instances` | `GraphInstanceController` | Query, signal, cancel, terminate, audit, inspect transition history, and list pending GRAPH signals for instances |
+| `/api/v1/operations/snapshot` | `GraphOperationsController` | Aggregate current-scope instance, deployment, and dead-letter samples into health, recent dead letters, and action items |
 | `/api/v1/tasks` | `GraphTaskController` | Query, claim, complete, reassign, and cancel human tasks, including candidate user/group/role claim metadata |
 | `/api/v1/dead-letters` | `GraphDeadLetterController` | Query tenant-scoped dead letters and retry individual work items |
 | `/api/v1/remote-workers` | `GraphRemoteWorkerController` | Register workers, poll and claim jobs, renew leases, and report completion or failure for remote-worker items |
@@ -50,6 +51,15 @@ or execution model.
 
 The governance endpoints expose runtime lifecycle control and observability on
 top of the durable BLOGE substrate.
+
+**Operations snapshot.** `GET /api/v1/operations/snapshot` returns a bounded
+tenant/namespace health projection for dashboards and operators. The response
+includes instance counts by lifecycle status and execution mode, deployment and
+active-deployment counts, dead-letter count, recent dead-letter samples, a
+top-level `health` value (`OK`, `WARNING`, or `CRITICAL`), and recovery-oriented
+`actionItems`. The snapshot is a control-plane triage view, not a metrics
+backend; when `truncated = true`, use the paginated instance, deployment, and
+dead-letter APIs or external metrics for full-fleet accounting.
 
 **Cancel vs. terminate.** Both instance actions require an optimistic-lock
 `expectedRevision` plus a human-readable `reason` in the

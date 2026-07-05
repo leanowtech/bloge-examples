@@ -56,6 +56,7 @@ import com.leanowtech.bloge.graphengine.model.GraphInstanceStatus;
 import com.leanowtech.bloge.graphengine.model.GraphDefinitionStatus;
 import com.leanowtech.bloge.graphengine.model.GraphNodeState;
 import com.leanowtech.bloge.graphengine.model.GraphNodeStatus;
+import com.leanowtech.bloge.graphengine.model.GraphOperationsSnapshot;
 import com.leanowtech.bloge.graphengine.model.GraphPendingSignal;
 import com.leanowtech.bloge.graphengine.model.PagedResult;
 import com.leanowtech.bloge.graphengine.model.GraphRemoteWorkerJob;
@@ -1874,6 +1875,69 @@ class DefaultGraphEngineServiceTest {
                     0,
                     10
             )).isEmpty());
+        }
+    }
+
+    @Test
+    void operationsSnapshotIsOkForEmptyScope() {
+        try (Fixture fixture = new Fixture()) {
+            GraphOperationsSnapshot snapshot = fixture.service.queryOperationsSnapshot("default", "default");
+
+            assertEquals(GraphOperationsSnapshot.Health.OK, snapshot.health());
+            assertEquals(0, snapshot.sampledInstanceCount());
+            assertEquals(0, snapshot.deadLetterCount());
+            assertTrue(snapshot.actionItems().isEmpty());
+            assertFalse(snapshot.truncated());
+        }
+    }
+
+    @Test
+    void operationsSnapshotMarksDeadLettersCriticalWithRecoveryAction() {
+        try (Fixture fixture = new Fixture()) {
+            GraphInstance instance = fixture.createManagedGraphInstance("exec-ops-dead", GraphInstanceStatus.SUSPENDED);
+            Instant now = Instant.now();
+            fixture.controlPlaneService.deadLetters.add(new DeadLetterEntry(
+                    "dead-ops-1",
+                    fixture.identity(instance),
+                    WorkItemType.EVENT_MATCHED,
+                    "approval",
+                    "wait-ops-1",
+                    null,
+                    5,
+                    3,
+                    3,
+                    "{\"orderId\":\"A-1\"}",
+                    null,
+                    "retry budget exhausted",
+                    "manual intervention",
+                    now.minusSeconds(30),
+                    now
+            ));
+
+            GraphOperationsSnapshot snapshot = fixture.service.queryOperationsSnapshot("default", "default");
+
+            assertEquals(GraphOperationsSnapshot.Health.CRITICAL, snapshot.health());
+            assertEquals(1, snapshot.deadLetterCount());
+            assertEquals("dead-ops-1", snapshot.recentDeadLetters().getFirst().itemId());
+            assertTrue(snapshot.actionItems().stream()
+                    .anyMatch(item -> item.code().equals("DEAD_LETTERS_PRESENT")
+                            && item.severity() == GraphOperationsSnapshot.Health.CRITICAL));
+        }
+    }
+
+    @Test
+    void operationsSnapshotMarksSuspendedInstancesWarning() {
+        try (Fixture fixture = new Fixture()) {
+            fixture.createManagedGraphInstance("exec-ops-waiting", GraphInstanceStatus.SUSPENDED);
+
+            GraphOperationsSnapshot snapshot = fixture.service.queryOperationsSnapshot("default", "default");
+
+            assertEquals(GraphOperationsSnapshot.Health.WARNING, snapshot.health());
+            assertEquals(1, snapshot.instancesByStatus().get(GraphInstanceStatus.SUSPENDED));
+            assertEquals(1, snapshot.activeInstanceCount());
+            assertTrue(snapshot.actionItems().stream()
+                    .anyMatch(item -> item.code().equals("SUSPENDED_INSTANCES_PRESENT")
+                            && item.severity() == GraphOperationsSnapshot.Health.WARNING));
         }
     }
 

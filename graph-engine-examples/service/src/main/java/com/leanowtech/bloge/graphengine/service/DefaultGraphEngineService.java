@@ -61,6 +61,7 @@ import com.leanowtech.bloge.graphengine.model.GraphInstanceContext;
 import com.leanowtech.bloge.graphengine.model.GraphInstanceStatus;
 import com.leanowtech.bloge.graphengine.model.GraphNodeState;
 import com.leanowtech.bloge.graphengine.model.GraphNodeStatus;
+import com.leanowtech.bloge.graphengine.model.GraphOperationsSnapshot;
 import com.leanowtech.bloge.graphengine.model.GraphPendingSignal;
 import com.leanowtech.bloge.graphengine.model.PagedResult;
 import com.leanowtech.bloge.graphengine.model.GraphRemoteWorkerAssignment;
@@ -119,6 +120,8 @@ import com.leanowtech.bloge.state.model.StateMachineStatus;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
@@ -157,6 +160,9 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
     private static final Duration EXECUTION_RESULT_GRACE = Duration.ofMillis(100);
     /** Defensive cap for pending-signal matcher projection to avoid unbounded loads per instance. */
     private static final int MAX_PENDING_SIGNAL_MATCHERS = 10_000;
+    /** Bounded sample size for product operations snapshots. */
+    private static final int OPERATIONS_SNAPSHOT_SAMPLE_LIMIT = 500;
+    private static final int OPERATIONS_SNAPSHOT_DEAD_LETTER_SAMPLE_SIZE = 5;
 
     private final GraphEngineStores stores;
     private final GraphEngineRuntimeSupport runtimeSupport;
@@ -605,6 +611,109 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                 .filter(this::canViewInstance)
                 .map(this::refreshProjection)
                 .toList();
+    }
+
+    @Override
+    public GraphOperationsSnapshot queryOperationsSnapshot(String tenantId, String namespace) {
+        Scope scope = resolveScope(tenantId, namespace);
+        int fetchSize = OPERATIONS_SNAPSHOT_SAMPLE_LIMIT + 1;
+        List<GraphInstance> instanceSample = queryInstances(new GraphInstanceQuery(
+                scope.tenantId(),
+                scope.namespace(),
+                null,
+                null,
+                Set.of(),
+                null,
+                0,
+                fetchSize
+        ));
+        List<GraphDeployment> deploymentSample = queryDeployments(new GraphDeploymentQuery(
+                scope.tenantId(),
+                scope.namespace(),
+                null,
+                null,
+                null,
+                0,
+                fetchSize
+        ));
+        boolean controlPlaneAvailable = runtimeSupport.controlPlaneService() != null;
+        List<GraphDeadLetter> deadLetterSample = controlPlaneAvailable
+                ? queryDeadLetters(new GraphDeadLetterQuery(
+                        scope.tenantId(),
+                        scope.namespace(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        0,
+                        fetchSize
+                ))
+                : List.of();
+
+        boolean truncated = instanceSample.size() > OPERATIONS_SNAPSHOT_SAMPLE_LIMIT
+                || deploymentSample.size() > OPERATIONS_SNAPSHOT_SAMPLE_LIMIT
+                || deadLetterSample.size() > OPERATIONS_SNAPSHOT_SAMPLE_LIMIT;
+        List<GraphInstance> instances = firstItems(instanceSample, OPERATIONS_SNAPSHOT_SAMPLE_LIMIT);
+        List<GraphDeployment> deployments = firstItems(deploymentSample, OPERATIONS_SNAPSHOT_SAMPLE_LIMIT);
+        List<GraphDeadLetter> deadLetters = firstItems(deadLetterSample, OPERATIONS_SNAPSHOT_SAMPLE_LIMIT);
+
+        EnumMap<GraphInstanceStatus, Integer> instancesByStatus = new EnumMap<>(GraphInstanceStatus.class);
+        for (GraphInstanceStatus status : GraphInstanceStatus.values()) {
+            instancesByStatus.put(status, 0);
+        }
+        EnumMap<GraphExecutionMode, Integer> instancesByExecutionMode = new EnumMap<>(GraphExecutionMode.class);
+        for (GraphExecutionMode mode : GraphExecutionMode.values()) {
+            instancesByExecutionMode.put(mode, 0);
+        }
+
+        int activeInstances = 0;
+        int terminalInstances = 0;
+        for (GraphInstance instance : instances) {
+            instancesByStatus.merge(instance.status(), 1, Integer::sum);
+            instancesByExecutionMode.merge(instance.executionMode(), 1, Integer::sum);
+            if (instance.status().terminal()) {
+                terminalInstances++;
+            } else {
+                activeInstances++;
+            }
+        }
+
+        int activeDeployments = (int) deployments.stream()
+                .filter(GraphDeployment::active)
+                .count();
+        List<GraphOperationsSnapshot.DeadLetterSample> recentDeadLetters = deadLetters.stream()
+                .sorted(Comparator.comparing(GraphDeadLetter::deadLetteredAt).reversed())
+                .limit(OPERATIONS_SNAPSHOT_DEAD_LETTER_SAMPLE_SIZE)
+                .map(GraphOperationsSnapshot.DeadLetterSample::from)
+                .toList();
+        List<GraphOperationsSnapshot.ActionItem> actionItems = operationsActionItems(
+                controlPlaneAvailable,
+                truncated,
+                instancesByStatus,
+                deployments.size(),
+                activeDeployments,
+                deadLetters.size()
+        );
+
+        return new GraphOperationsSnapshot(
+                scope.tenantId(),
+                scope.namespace(),
+                runtimeSupport.timeSource().now(),
+                OPERATIONS_SNAPSHOT_SAMPLE_LIMIT,
+                truncated,
+                operationsHealth(actionItems),
+                instancesByStatus,
+                instancesByExecutionMode,
+                instances.size(),
+                activeInstances,
+                terminalInstances,
+                deployments.size(),
+                activeDeployments,
+                deadLetters.size(),
+                recentDeadLetters,
+                actionItems
+        );
     }
 
     @Override
@@ -2984,6 +3093,91 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
             );
         }
         return runtimeSupport.workItemStore();
+    }
+
+    private List<GraphOperationsSnapshot.ActionItem> operationsActionItems(
+            boolean controlPlaneAvailable,
+            boolean truncated,
+            Map<GraphInstanceStatus, Integer> instancesByStatus,
+            int deploymentCount,
+            int activeDeploymentCount,
+            int deadLetterCount) {
+        List<GraphOperationsSnapshot.ActionItem> items = new ArrayList<>();
+        if (!controlPlaneAvailable) {
+            items.add(new GraphOperationsSnapshot.ActionItem(
+                    "CONTROL_PLANE_UNAVAILABLE",
+                    GraphOperationsSnapshot.Health.WARNING,
+                    "Control-plane service is not configured; dead-letter and transition health are incomplete.",
+                    "control-plane",
+                    ""
+            ));
+        }
+        if (deadLetterCount > 0) {
+            items.add(new GraphOperationsSnapshot.ActionItem(
+                    "DEAD_LETTERS_PRESENT",
+                    GraphOperationsSnapshot.Health.CRITICAL,
+                    "Dead-lettered work items require retry, compensation, or manual repair.",
+                    "dead-letters",
+                    ""
+            ));
+        }
+        int failedInstances = instancesByStatus.getOrDefault(GraphInstanceStatus.FAILED, 0);
+        if (failedInstances > 0) {
+            items.add(new GraphOperationsSnapshot.ActionItem(
+                    "FAILED_INSTANCES_PRESENT",
+                    GraphOperationsSnapshot.Health.CRITICAL,
+                    "Failed graph instances require transition/audit inspection before restart or compensation.",
+                    "instances",
+                    "FAILED"
+            ));
+        }
+        int suspendedInstances = instancesByStatus.getOrDefault(GraphInstanceStatus.SUSPENDED, 0);
+        if (suspendedInstances > 0) {
+            items.add(new GraphOperationsSnapshot.ActionItem(
+                    "SUSPENDED_INSTANCES_PRESENT",
+                    GraphOperationsSnapshot.Health.WARNING,
+                    "Suspended instances are waiting for signal, task completion, or remote-worker callback.",
+                    "instances",
+                    "SUSPENDED"
+            ));
+        }
+        if (deploymentCount > 0 && activeDeploymentCount == 0) {
+            items.add(new GraphOperationsSnapshot.ActionItem(
+                    "NO_ACTIVE_DEPLOYMENT",
+                    GraphOperationsSnapshot.Health.WARNING,
+                    "Deployments exist but none are active in this scope; new starts may require explicit version routing.",
+                    "deployments",
+                    ""
+            ));
+        }
+        if (truncated) {
+            items.add(new GraphOperationsSnapshot.ActionItem(
+                    "SNAPSHOT_TRUNCATED",
+                    GraphOperationsSnapshot.Health.WARNING,
+                    "Snapshot hit its sample limit; use paginated APIs or external metrics for full-fleet accounting.",
+                    "operations-snapshot",
+                    ""
+            ));
+        }
+        return List.copyOf(items);
+    }
+
+    private GraphOperationsSnapshot.Health operationsHealth(List<GraphOperationsSnapshot.ActionItem> actionItems) {
+        boolean critical = actionItems.stream()
+                .anyMatch(item -> item.severity() == GraphOperationsSnapshot.Health.CRITICAL);
+        if (critical) {
+            return GraphOperationsSnapshot.Health.CRITICAL;
+        }
+        boolean warning = actionItems.stream()
+                .anyMatch(item -> item.severity() == GraphOperationsSnapshot.Health.WARNING);
+        return warning ? GraphOperationsSnapshot.Health.WARNING : GraphOperationsSnapshot.Health.OK;
+    }
+
+    private static <T> List<T> firstItems(List<T> values, int limit) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        return List.copyOf(values.subList(0, Math.min(values.size(), limit)));
     }
 
     private Scope resolveScope(String tenantId, String namespace) {

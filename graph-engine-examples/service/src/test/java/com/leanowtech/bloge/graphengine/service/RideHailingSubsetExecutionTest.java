@@ -239,12 +239,16 @@ class RideHailingSubsetExecutionTest {
      * Returns the import profile required by the representative BPMN-derived graph fixture.
      *
      * <p>BLOGE 0.8.3 makes complexity limits compiler-scoped, so this test opts the loader into
-     * the import profile directly instead of relying on global validator mutation.</p>
+     * the import profile directly instead of relying on global validator mutation. The fixture
+     * also has a 20-way terminal fan-out so it can prove cancellation of many inactive end states.</p>
      *
      * @return permissive complexity limits for this intentionally large fixture
      */
     private static ComplexityLimits rideHailingImportLimits() {
-        return ComplexityLimits.IMPORT.withRecommendedMaxBranchNesting(9);
+        return ComplexityLimits.IMPORT
+                .withRecommendedMaxBranchNesting(9)
+                .withHardMaxFanOut(20)
+                .withRecommendedMaxFanOut(20);
     }
 
     private void registerMainGraphOperators(DefaultOperatorRegistry registry) {

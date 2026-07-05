@@ -18,6 +18,7 @@ import com.leanowtech.bloge.graphengine.model.GraphInstanceContext;
 import com.leanowtech.bloge.graphengine.model.GraphInstanceStatus;
 import com.leanowtech.bloge.graphengine.model.GraphNodeState;
 import com.leanowtech.bloge.graphengine.model.GraphNodeStatus;
+import com.leanowtech.bloge.graphengine.model.GraphOperationsSnapshot;
 import com.leanowtech.bloge.graphengine.model.GraphPendingSignal;
 import com.leanowtech.bloge.graphengine.model.PagedResult;
 import com.leanowtech.bloge.graphengine.model.GraphRemoteWorkerAssignment;
@@ -403,6 +404,9 @@ abstract class AbstractGraphControllerTest {
         String diffLeftVersionId;
         String diffRightVersionId;
         GraphVersionDiff diffVersionsResult;
+        String operationsSnapshotTenantId;
+        String operationsSnapshotNamespace;
+        GraphOperationsSnapshot operationsSnapshotResult;
         Runnable createDefinitionOverride;
 
         @Override
@@ -529,6 +533,13 @@ abstract class AbstractGraphControllerTest {
         @Override
         public List<GraphInstance> queryInstances(GraphInstanceQuery query) {
             throw unsupported("queryInstances");
+        }
+
+        @Override
+        public GraphOperationsSnapshot queryOperationsSnapshot(String tenantId, String namespace) {
+            operationsSnapshotTenantId = tenantId;
+            operationsSnapshotNamespace = namespace;
+            return required(operationsSnapshotResult, "operationsSnapshotResult");
         }
 
         @Override
