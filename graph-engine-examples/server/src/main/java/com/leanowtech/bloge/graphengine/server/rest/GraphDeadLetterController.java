@@ -4,6 +4,7 @@ import com.leanowtech.bloge.core.context.TenantContext;
 import com.leanowtech.bloge.core.runtime.work.WorkItemType;
 import com.leanowtech.bloge.graphengine.model.GraphDeadLetter;
 import com.leanowtech.bloge.graphengine.service.GraphEngineService;
+import com.leanowtech.bloge.graphengine.server.rest.dto.DeadLetterRetryRequest;
 import com.leanowtech.bloge.graphengine.store.GraphDeadLetterQuery;
 
 import org.springframework.format.annotation.DateTimeFormat;
@@ -12,6 +13,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -79,11 +81,13 @@ public class GraphDeadLetterController {
      * Replays one dead-lettered work item.
      *
      * @param itemId dead-letter item identifier
+     * @param request optional recovery evidence
      * @return empty response when the replay request has been accepted
      */
     @PostMapping("/api/v1/dead-letters/{itemId}/retry")
-    public ResponseEntity<Void> retryDeadLetter(@PathVariable String itemId) {
-        graphEngineService.retryDeadLetter(itemId);
+    public ResponseEntity<Void> retryDeadLetter(@PathVariable String itemId,
+                                                @RequestBody(required = false) DeadLetterRetryRequest request) {
+        graphEngineService.retryDeadLetter(itemId, DeadLetterRetryRequest.toEvidence(request));
         return ResponseEntity.noContent().build();
     }
 }

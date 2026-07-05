@@ -38,6 +38,7 @@ import com.leanowtech.bloge.graphengine.service.GraphVersionDiff;
 import com.leanowtech.bloge.graphengine.service.OperatorInventoryEntry;
 import com.leanowtech.bloge.graphengine.service.OperatorInventoryQuery;
 import com.leanowtech.bloge.graphengine.service.PublishVersionResult;
+import com.leanowtech.bloge.graphengine.service.RecoveryActionEvidence;
 import com.leanowtech.bloge.graphengine.service.RetryInstanceResult;
 import com.leanowtech.bloge.graphengine.service.SignalInstanceResult;
 import com.leanowtech.bloge.graphengine.service.StartInstanceResult;
@@ -391,6 +392,7 @@ abstract class AbstractGraphControllerTest {
         GraphDeadLetterQuery deadLetterQuery;
         List<GraphDeadLetter> queryDeadLettersResult = List.of();
         String retryDeadLetterItemId;
+        RecoveryActionEvidence retryDeadLetterEvidence;
         RegisterRemoteWorkerCommand registerRemoteWorkerCommand;
         GraphRemoteWorkerRegistration registerRemoteWorkerResult;
         PollRemoteWorkerJobsCommand pollRemoteWorkerJobsCommand;
@@ -592,6 +594,12 @@ abstract class AbstractGraphControllerTest {
         }
 
         @Override
+        public void retryDeadLetter(String itemId, RecoveryActionEvidence evidence) {
+            retryDeadLetterEvidence = evidence;
+            retryDeadLetter(itemId);
+        }
+
+        @Override
         public GraphRemoteWorkerRegistration registerRemoteWorker(RegisterRemoteWorkerCommand command) {
             registerRemoteWorkerCommand = command;
             return required(registerRemoteWorkerResult, "registerRemoteWorkerResult");
@@ -677,6 +685,7 @@ abstract class AbstractGraphControllerTest {
         String retryInstanceId;
         Set<String> retryNodeIds;
         long retryExpectedRevision;
+        RecoveryActionEvidence retryInstanceEvidence;
         RetryInstanceResult retryInstanceResult;
 
         @Override
@@ -723,6 +732,15 @@ abstract class AbstractGraphControllerTest {
             retryNodeIds = nodeIds;
             retryExpectedRevision = expectedRevision;
             return required(retryInstanceResult, "retryInstanceResult");
+        }
+
+        @Override
+        public RetryInstanceResult retryInstance(String instanceId,
+                                                Set<String> nodeIds,
+                                                long expectedRevision,
+                                                RecoveryActionEvidence evidence) {
+            retryInstanceEvidence = evidence;
+            return retryInstance(instanceId, nodeIds, expectedRevision);
         }
 
         private static UnsupportedOperationException unsupported(String methodName) {

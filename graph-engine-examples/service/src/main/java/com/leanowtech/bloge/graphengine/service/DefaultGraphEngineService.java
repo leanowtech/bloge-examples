@@ -102,6 +102,7 @@ import com.leanowtech.bloge.graphengine.store.GraphDeploymentQuery;
 import com.leanowtech.bloge.graphengine.store.GraphVersionQuery;
 import com.leanowtech.bloge.runtime.engine.DurableGraphEngine;
 import com.leanowtech.bloge.runtime.audit.AuditEntry;
+import com.leanowtech.bloge.runtime.audit.AuditEventType;
 import com.leanowtech.bloge.runtime.task.TaskInbox;
 import com.leanowtech.bloge.runtime.task.TaskInboxQuery;
 import com.leanowtech.bloge.runtime.task.TaskInboxStatus;
@@ -163,6 +164,12 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
     /** Bounded sample size for product operations snapshots. */
     private static final int OPERATIONS_SNAPSHOT_SAMPLE_LIMIT = 500;
     private static final int OPERATIONS_SNAPSHOT_DEAD_LETTER_SAMPLE_SIZE = 5;
+    private static final int OPERATIONS_DEAD_LETTER_AGE_WARNING_SECONDS = (int) Duration.ofMinutes(5).toSeconds();
+    private static final int OPERATIONS_DEAD_LETTER_AGE_CRITICAL_SECONDS = (int) Duration.ofMinutes(30).toSeconds();
+    private static final int OPERATIONS_SUSPENDED_AGE_WARNING_SECONDS = (int) Duration.ofMinutes(15).toSeconds();
+    private static final int OPERATIONS_SUSPENDED_AGE_CRITICAL_SECONDS = (int) Duration.ofHours(2).toSeconds();
+    private static final String CONTROL_ACTION_NODE_DEAD_LETTER_RETRY = "__control_retry_dead_letter__";
+    private static final String CONTROL_ACTION_NODE_INSTANCE_RETRY = "__control_retry_instance__";
 
     private final GraphEngineStores stores;
     private final GraphEngineRuntimeSupport runtimeSupport;
@@ -685,6 +692,18 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
         int deadLetterCount = deadLetters.size();
         int failedInstances = instancesByStatus.getOrDefault(GraphInstanceStatus.FAILED, 0);
         int suspendedInstances = instancesByStatus.getOrDefault(GraphInstanceStatus.SUSPENDED, 0);
+        Instant generatedAt = runtimeSupport.timeSource().now();
+        int oldestDeadLetterAgeSeconds = oldestAgeSeconds(
+                deadLetters.stream().map(GraphDeadLetter::deadLetteredAt).toList(),
+                generatedAt
+        );
+        int oldestSuspendedAgeSeconds = oldestAgeSeconds(
+                instances.stream()
+                        .filter(instance -> instance.status() == GraphInstanceStatus.SUSPENDED)
+                        .map(GraphInstance::updatedAt)
+                        .toList(),
+                generatedAt
+        );
         List<GraphOperationsSnapshot.DeadLetterSample> recentDeadLetters = deadLetters.stream()
                 .sorted(Comparator.comparing(GraphDeadLetter::deadLetteredAt).reversed())
                 .limit(OPERATIONS_SNAPSHOT_DEAD_LETTER_SAMPLE_SIZE)
@@ -696,7 +715,8 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                 instancesByStatus,
                 deployments.size(),
                 activeDeployments,
-                deadLetterCount
+                deadLetterCount,
+                oldestSuspendedAgeSeconds
         );
         GraphOperationsSnapshot.Health health = operationsHealth(actionItems);
         List<GraphOperationsSnapshot.SloIndicator> sloIndicators = operationsSloIndicators(
@@ -706,7 +726,9 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                 suspendedInstances,
                 deployments.size(),
                 activeDeployments,
-                deadLetterCount
+                deadLetterCount,
+                oldestDeadLetterAgeSeconds,
+                oldestSuspendedAgeSeconds
         );
         recordOperationsSnapshotMetrics(
                 scope,
@@ -716,13 +738,15 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                 suspendedInstances,
                 activeDeployments,
                 truncated,
-                controlPlaneAvailable
+                controlPlaneAvailable,
+                oldestDeadLetterAgeSeconds,
+                oldestSuspendedAgeSeconds
         );
 
         return new GraphOperationsSnapshot(
                 scope.tenantId(),
                 scope.namespace(),
-                runtimeSupport.timeSource().now(),
+                generatedAt,
                 OPERATIONS_SNAPSHOT_SAMPLE_LIMIT,
                 truncated,
                 health,
@@ -935,6 +959,11 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
 
     @Override
     public void retryDeadLetter(String itemId) {
+        retryDeadLetter(itemId, RecoveryActionEvidence.empty());
+    }
+
+    @Override
+    public void retryDeadLetter(String itemId, RecoveryActionEvidence evidence) {
         if (itemId == null || itemId.isBlank()) {
             throw new IllegalArgumentException("itemId must not be blank");
         }
@@ -955,8 +984,10 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
         if (matches.isEmpty()) {
             throw notFound("Dead letter not found: " + itemId);
         }
-        enforceDeadLetterAdmin(matches.getFirst());
+        DeadLetterEntry deadLetter = matches.getFirst();
+        enforceDeadLetterAdmin(deadLetter);
         runtimeSupport.workItemStore().restoreDeadLetter(itemId);
+        recordDeadLetterRetryAudit(deadLetter, evidence == null ? RecoveryActionEvidence.empty() : evidence);
         dispatchReadyWorkItems();
     }
 
@@ -1230,6 +1261,14 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
 
     @Override
     public RetryInstanceResult retryInstance(String instanceId, Set<String> nodeIds, long expectedRevision) {
+        return retryInstance(instanceId, nodeIds, expectedRevision, RecoveryActionEvidence.empty());
+    }
+
+    @Override
+    public RetryInstanceResult retryInstance(String instanceId,
+                                           Set<String> nodeIds,
+                                           long expectedRevision,
+                                           RecoveryActionEvidence evidence) {
         GraphInstance instance = getInstance(instanceId);
         enforceInstanceAdmin(instance);
         requireExpectedRevision(instance.revision(), expectedRevision, "Instance");
@@ -1263,11 +1302,136 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
             runtimeSupport.workItemStore().restoreDeadLetter(item.itemId());
             count++;
         }
+        recordInstanceRetryAudit(
+                instance,
+                nodeIds,
+                deadLettered,
+                count,
+                evidence == null ? RecoveryActionEvidence.empty() : evidence
+        );
 
         dispatchReadyWorkItems();
 
         GraphInstance refreshed = refreshProjection(instance);
         return new RetryInstanceResult(refreshed, count);
+    }
+
+    private void recordDeadLetterRetryAudit(DeadLetterEntry deadLetter, RecoveryActionEvidence evidence) {
+        if (runtimeSupport.auditJournalStore() == null) {
+            return;
+        }
+        GraphInstance instance = stores.graphInstanceStore()
+                .get(deadLetter.identity().executionId())
+                .orElse(null);
+        java.util.LinkedHashMap<String, Object> input = controlActionInput("RETRY_DEAD_LETTER", evidence);
+        input.put("itemId", deadLetter.itemId());
+        input.put("itemType", deadLetter.itemType().name());
+        input.put("targetNodeId", emptyToNull(deadLetter.nodeId()));
+        input.put("waitId", emptyToNull(deadLetter.waitId()));
+        input.put("taskId", emptyToNull(deadLetter.taskId()));
+        input.put("deadLetterReason", emptyToNull(deadLetter.deadLetterReason()));
+
+        java.util.LinkedHashMap<String, Object> output = new java.util.LinkedHashMap<>();
+        output.put("status", "RESTORED");
+        output.put("restoredItemCount", 1);
+        output.put("restoredItemIds", List.of(deadLetter.itemId()));
+
+        appendControlActionAudit(
+                deadLetter.identity().executionId(),
+                controlActionGraphName(instance, deadLetter.identity().graphName()),
+                CONTROL_ACTION_NODE_DEAD_LETTER_RETRY,
+                input,
+                output
+        );
+    }
+
+    private void recordInstanceRetryAudit(GraphInstance instance,
+                                          Set<String> requestedNodeIds,
+                                          List<WorkItem> restoredItems,
+                                          int restoredItemCount,
+                                          RecoveryActionEvidence evidence) {
+        if (runtimeSupport.auditJournalStore() == null) {
+            return;
+        }
+        java.util.LinkedHashMap<String, Object> input = controlActionInput("RETRY_INSTANCE_DEAD_LETTERS", evidence);
+        input.put("instanceId", instance.instanceId());
+        input.put("expectedRevision", instance.revision());
+        input.put("requestedNodeIds", requestedNodeIds == null ? List.of() : distinctNonBlank(requestedNodeIds.stream().toList()));
+
+        java.util.LinkedHashMap<String, Object> output = new java.util.LinkedHashMap<>();
+        output.put("status", "RESTORED");
+        output.put("restoredItemCount", restoredItemCount);
+        output.put("restoredItemIds", restoredItems.stream().map(WorkItem::itemId).toList());
+        output.put("restoredNodeIds", distinctNonBlank(restoredItems.stream().map(WorkItem::nodeId).toList()));
+
+        appendControlActionAudit(
+                instance.instanceId(),
+                instance.definitionKey(),
+                CONTROL_ACTION_NODE_INSTANCE_RETRY,
+                input,
+                output
+        );
+    }
+
+    private java.util.LinkedHashMap<String, Object> controlActionInput(String actionCode,
+                                                                       RecoveryActionEvidence evidence) {
+        java.util.LinkedHashMap<String, Object> input = new java.util.LinkedHashMap<>();
+        RecoveryActionEvidence resolvedEvidence = evidence == null ? RecoveryActionEvidence.empty() : evidence;
+        input.put("actionCode", actionCode);
+        input.put("reason", emptyToNull(resolvedEvidence.reason()));
+        input.put("sourceActionCode", emptyToNull(resolvedEvidence.sourceActionCode()));
+        input.put("sourceIndicatorCode", emptyToNull(resolvedEvidence.sourceIndicatorCode()));
+        input.put("actor", emptyToNull(resolvedEvidence.actor()));
+        input.put("evidenceSupplied", !resolvedEvidence.emptyEvidence());
+        return input;
+    }
+
+    private void appendControlActionAudit(String executionId,
+                                          String graphName,
+                                          String nodeId,
+                                          Map<String, Object> input,
+                                          Map<String, Object> output) {
+        try {
+            runtimeSupport.auditJournalStore().append(AuditEntry.builder(
+                            executionId,
+                            graphName,
+                            nodeId,
+                            AuditEventType.CONTROL_ACTION)
+                    .operatorRef(GOVERNANCE_SOURCE)
+                    .inputJson(runtimeSupport.jsonCodec().serialize(input))
+                    .outputJson(runtimeSupport.jsonCodec().serialize(output))
+                    .timestamp(runtimeSupport.timeSource().now())
+                    .build());
+        } catch (RuntimeException exception) {
+            logger.log(Level.WARNING, "Failed to record graph-engine control action audit", exception);
+        }
+    }
+
+    private static String controlActionGraphName(GraphInstance instance, String fallbackGraphName) {
+        if (instance != null && instance.definitionKey() != null && !instance.definitionKey().isBlank()) {
+            return instance.definitionKey();
+        }
+        if (fallbackGraphName != null && !fallbackGraphName.isBlank()) {
+            return fallbackGraphName;
+        }
+        return "graph-engine-control-plane";
+    }
+
+    private static String emptyToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    private static List<String> distinctNonBlank(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        java.util.LinkedHashSet<String> distinct = new java.util.LinkedHashSet<>();
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                distinct.add(value);
+            }
+        }
+        return List.copyOf(distinct);
     }
 
     private int workItemPriority(WorkItemStatus status) {
@@ -3125,7 +3289,8 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
             Map<GraphInstanceStatus, Integer> instancesByStatus,
             int deploymentCount,
             int activeDeploymentCount,
-            int deadLetterCount) {
+            int deadLetterCount,
+            int oldestSuspendedAgeSeconds) {
         List<GraphOperationsSnapshot.ActionItem> items = new ArrayList<>();
         if (!controlPlaneAvailable) {
             items.add(new GraphOperationsSnapshot.ActionItem(
@@ -3227,10 +3392,15 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
         }
         int suspendedInstances = instancesByStatus.getOrDefault(GraphInstanceStatus.SUSPENDED, 0);
         if (suspendedInstances > 0) {
+            GraphOperationsSnapshot.Health suspendedSeverity = oldestSuspendedAgeSeconds >= OPERATIONS_SUSPENDED_AGE_CRITICAL_SECONDS
+                    ? GraphOperationsSnapshot.Health.CRITICAL
+                    : GraphOperationsSnapshot.Health.WARNING;
             items.add(new GraphOperationsSnapshot.ActionItem(
                     "SUSPENDED_INSTANCES_PRESENT",
-                    GraphOperationsSnapshot.Health.WARNING,
-                    "Suspended instances are waiting for signal, task completion, or remote-worker callback.",
+                    suspendedSeverity,
+                    oldestSuspendedAgeSeconds >= OPERATIONS_SUSPENDED_AGE_CRITICAL_SECONDS
+                            ? "Suspended instances have exceeded the critical wait-age threshold and require triage."
+                            : "Suspended instances are waiting for signal, task completion, or remote-worker callback.",
                     "instances",
                     "SUSPENDED",
                     "GE-RUNBOOK-SUSPENDED-INSTANCE-TRIAGE",
@@ -3371,6 +3541,39 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
         return warning ? GraphOperationsSnapshot.Health.WARNING : GraphOperationsSnapshot.Health.OK;
     }
 
+    private static int oldestAgeSeconds(List<Instant> timestamps, Instant now) {
+        if (timestamps == null || timestamps.isEmpty()) {
+            return 0;
+        }
+        Instant resolvedNow = now == null ? Instant.now() : now;
+        long oldest = 0;
+        for (Instant timestamp : timestamps) {
+            if (timestamp == null) {
+                continue;
+            }
+            long age = Duration.between(timestamp, resolvedNow).getSeconds();
+            if (age > oldest) {
+                oldest = age;
+            }
+        }
+        if (oldest <= 0) {
+            return 0;
+        }
+        return oldest > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) oldest;
+    }
+
+    private static GraphOperationsSnapshot.Health ageHealth(int observedSeconds,
+                                                            int warningSeconds,
+                                                            int criticalSeconds) {
+        if (criticalSeconds >= 0 && observedSeconds >= criticalSeconds) {
+            return GraphOperationsSnapshot.Health.CRITICAL;
+        }
+        if (warningSeconds >= 0 && observedSeconds >= warningSeconds) {
+            return GraphOperationsSnapshot.Health.WARNING;
+        }
+        return GraphOperationsSnapshot.Health.OK;
+    }
+
     private List<GraphOperationsSnapshot.SloIndicator> operationsSloIndicators(
             boolean controlPlaneAvailable,
             boolean truncated,
@@ -3378,7 +3581,9 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
             int suspendedInstances,
             int deploymentCount,
             int activeDeploymentCount,
-            int deadLetterCount) {
+            int deadLetterCount,
+            int oldestDeadLetterAgeSeconds,
+            int oldestSuspendedAgeSeconds) {
         return List.of(
                 new GraphOperationsSnapshot.SloIndicator(
                         "DEAD_LETTER_BACKLOG",
@@ -3392,6 +3597,27 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                                 ? "Dead-letter backlog is present and requires retry, compensation, or manual repair."
                                 : "No dead-letter backlog was observed in the sampled scope.",
                         deadLetterCount > 0 ? "DEAD_LETTERS_PRESENT" : ""
+                ),
+                new GraphOperationsSnapshot.SloIndicator(
+                        "DEAD_LETTER_OLDEST_AGE",
+                        ageHealth(
+                                oldestDeadLetterAgeSeconds,
+                                OPERATIONS_DEAD_LETTER_AGE_WARNING_SECONDS,
+                                OPERATIONS_DEAD_LETTER_AGE_CRITICAL_SECONDS
+                        ),
+                        "ge.operations.dead_letter_oldest_age_seconds",
+                        oldestDeadLetterAgeSeconds,
+                        (double) OPERATIONS_DEAD_LETTER_AGE_WARNING_SECONDS,
+                        (double) OPERATIONS_DEAD_LETTER_AGE_CRITICAL_SECONDS,
+                        "seconds",
+                        oldestDeadLetterAgeSeconds >= OPERATIONS_DEAD_LETTER_AGE_CRITICAL_SECONDS
+                                ? "The oldest dead-lettered work item has exceeded the critical age threshold."
+                                : oldestDeadLetterAgeSeconds >= OPERATIONS_DEAD_LETTER_AGE_WARNING_SECONDS
+                                ? "The oldest dead-lettered work item has exceeded the warning age threshold."
+                                : "Dead-letter age is within the sampled scope's default threshold.",
+                        oldestDeadLetterAgeSeconds >= OPERATIONS_DEAD_LETTER_AGE_WARNING_SECONDS
+                                ? "DEAD_LETTERS_PRESENT"
+                                : ""
                 ),
                 new GraphOperationsSnapshot.SloIndicator(
                         "FAILED_INSTANCE_BACKLOG",
@@ -3418,6 +3644,27 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                                 ? "Suspended instances are waiting for signal, task completion, or remote-worker callback."
                                 : "No suspended graph instances were observed in the sampled scope.",
                         suspendedInstances > 0 ? "SUSPENDED_INSTANCES_PRESENT" : ""
+                ),
+                new GraphOperationsSnapshot.SloIndicator(
+                        "SUSPENDED_INSTANCE_OLDEST_AGE",
+                        ageHealth(
+                                oldestSuspendedAgeSeconds,
+                                OPERATIONS_SUSPENDED_AGE_WARNING_SECONDS,
+                                OPERATIONS_SUSPENDED_AGE_CRITICAL_SECONDS
+                        ),
+                        "ge.operations.suspended_oldest_age_seconds",
+                        oldestSuspendedAgeSeconds,
+                        (double) OPERATIONS_SUSPENDED_AGE_WARNING_SECONDS,
+                        (double) OPERATIONS_SUSPENDED_AGE_CRITICAL_SECONDS,
+                        "seconds",
+                        oldestSuspendedAgeSeconds >= OPERATIONS_SUSPENDED_AGE_CRITICAL_SECONDS
+                                ? "The oldest suspended instance has exceeded the critical wait-age threshold."
+                                : oldestSuspendedAgeSeconds >= OPERATIONS_SUSPENDED_AGE_WARNING_SECONDS
+                                ? "The oldest suspended instance has exceeded the warning wait-age threshold."
+                                : "Suspended instance age is within the sampled scope's default threshold.",
+                        oldestSuspendedAgeSeconds >= OPERATIONS_SUSPENDED_AGE_WARNING_SECONDS
+                                ? "SUSPENDED_INSTANCES_PRESENT"
+                                : ""
                 ),
                 new GraphOperationsSnapshot.SloIndicator(
                         "ACTIVE_DEPLOYMENT_AVAILABLE",
@@ -3471,7 +3718,9 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
             int suspendedInstances,
             int activeDeploymentCount,
             boolean truncated,
-            boolean controlPlaneAvailable) {
+            boolean controlPlaneAvailable,
+            int oldestDeadLetterAgeSeconds,
+            int oldestSuspendedAgeSeconds) {
         metricsObserver.onOperationsSnapshot(
                 scope.tenantId(),
                 scope.namespace(),
@@ -3481,7 +3730,9 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                 suspendedInstances,
                 activeDeploymentCount,
                 truncated,
-                controlPlaneAvailable
+                controlPlaneAvailable,
+                oldestDeadLetterAgeSeconds,
+                oldestSuspendedAgeSeconds
         );
     }
 

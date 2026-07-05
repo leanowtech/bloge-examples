@@ -6,6 +6,7 @@ import com.leanowtech.bloge.graphengine.model.GraphInstanceStatus;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
@@ -13,6 +14,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -62,5 +64,27 @@ class GraphDeadLetterControllerTest extends AbstractGraphControllerTest {
                 .andExpect(status().isNoContent());
 
         assertEquals("wi-1", graphEngineService.retryDeadLetterItemId);
+        assertTrue(graphEngineService.retryDeadLetterEvidence.emptyEvidence());
+    }
+
+    @Test
+    void retryDeadLetterMapsRecoveryEvidence() throws Exception {
+        mockMvc.perform(post("/api/v1/dead-letters/wi-1/retry")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "reason": "validated idempotency",
+                                  "sourceActionCode": "RETRY_DEAD_LETTER",
+                                  "sourceIndicatorCode": "DEAD_LETTER_OLDEST_AGE",
+                                  "actor": "ops-alice"
+                                }
+                                """))
+                .andExpect(status().isNoContent());
+
+        assertEquals("wi-1", graphEngineService.retryDeadLetterItemId);
+        assertEquals("validated idempotency", graphEngineService.retryDeadLetterEvidence.reason());
+        assertEquals("RETRY_DEAD_LETTER", graphEngineService.retryDeadLetterEvidence.sourceActionCode());
+        assertEquals("DEAD_LETTER_OLDEST_AGE", graphEngineService.retryDeadLetterEvidence.sourceIndicatorCode());
+        assertEquals("ops-alice", graphEngineService.retryDeadLetterEvidence.actor());
     }
 }

@@ -326,6 +326,17 @@ public interface GraphEngineService {
     void retryDeadLetter(String itemId);
 
     /**
+     * Replays one dead-lettered work item back into the ready queue and attaches
+     * recovery evidence for audit/correlation.
+     *
+     * @param itemId dead-letter item identifier
+     * @param evidence optional recovery evidence
+     */
+    default void retryDeadLetter(String itemId, RecoveryActionEvidence evidence) {
+        retryDeadLetter(itemId);
+    }
+
+    /**
      * Registers one remote worker against the active deployment bindings visible in the current scope.
      *
      * @param command registration command
@@ -496,4 +507,22 @@ public interface GraphEngineService {
      * @return retry result with refreshed instance and count of restored items
      */
     RetryInstanceResult retryInstance(String instanceId, java.util.Set<String> nodeIds, long expectedRevision);
+
+    /**
+     * Retries all dead-lettered work items belonging to one instance and attaches
+     * recovery evidence for audit/correlation.
+     *
+     * @param instanceId       instance identifier
+     * @param nodeIds          optional node-ID filter; when empty or {@code null}, all
+     *                         dead-lettered items for the instance are retried
+     * @param expectedRevision optimistic-lock guard on the instance projection
+     * @param evidence optional recovery evidence
+     * @return retry result with refreshed instance and count of restored items
+     */
+    default RetryInstanceResult retryInstance(String instanceId,
+                                             java.util.Set<String> nodeIds,
+                                             long expectedRevision,
+                                             RecoveryActionEvidence evidence) {
+        return retryInstance(instanceId, nodeIds, expectedRevision);
+    }
 }

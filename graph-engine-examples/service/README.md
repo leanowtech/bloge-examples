@@ -84,7 +84,8 @@ substrate rather than introducing a separate orchestration engine:
 - `queryDeadLetters` maps `ControlPlaneService.queryDeadLetters(...)` into
   tenant-scoped `GraphDeadLetter` records
 - `retryDeadLetter` restores one dead-lettered work item back to `READY` and,
-  when the durable runtime facade is configured, triggers a dispatch cycle
+  when the durable runtime facade is configured, records a `CONTROL_ACTION`
+  audit entry with optional recovery evidence and triggers a dispatch cycle
 - `queryInstanceNodes` infers the execution status of every node in a running
   instance by combining the compiled artifact with durable runtime state.
   GRAPH instances project DAG nodes from checkpoints, waits, and work items.
@@ -108,6 +109,9 @@ substrate rather than introducing a separate orchestration engine:
 - `retryInstance` restores all dead-lettered work items for an instance
   (optionally filtered to specific node IDs) back to `READY` and triggers a
   dispatch cycle. Requires admin RBAC and an optimistic-lock revision guard.
+  The overload that accepts `RecoveryActionEvidence` records the source action,
+  source indicator, reason, actor, and restored item count in the instance audit
+  log as a `CONTROL_ACTION`.
 
 Session-mode lifecycle actions (start, signal, terminate) are handled through
 `DurableSessionManager`, which the service lazily initializes from the durable
@@ -236,7 +240,20 @@ now carries a runbook and recovery-action contract:
   `retryDeadLetter`, `retryInstance`, deployment update, cancel, or terminate.
 
 This keeps operations guidance close to the health rules without bypassing RBAC,
-validation, or future audit capture at the execution endpoint.
+validation, or recovery-action audit capture at the execution endpoint.
+
+Recovery mutations can attach `RecoveryActionEvidence`:
+
+- `reason` explains why the operator or automation believes the retry is safe.
+- `sourceActionCode` links the execution back to a recovery action such as
+  `RETRY_DEAD_LETTER`.
+- `sourceIndicatorCode` links the execution back to an SLO indicator such as
+  `DEAD_LETTER_OLDEST_AGE`.
+- `actor` identifies the human operator or automation identity.
+
+When an `AuditJournalStore` is configured, dead-letter and instance retry write
+`AuditEventType.CONTROL_ACTION` entries. The audit entry `inputJson` carries the
+evidence and target, while `outputJson` carries restored item IDs and counts.
 
 ## Product-layer metrics
 
@@ -266,6 +283,8 @@ the console renders:
 - `ge.operations.active_deployments`
 - `ge.operations.snapshot_truncated`
 - `ge.operations.control_plane_available`
+- `ge.operations.dead_letter_oldest_age_seconds`
+- `ge.operations.suspended_oldest_age_seconds`
 
 When no observer is configured, `GraphEngineMetricsObserver.NOOP` is used (zero
 overhead). The Micrometer implementation lives in this module as

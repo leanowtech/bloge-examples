@@ -178,7 +178,7 @@ class MicrometerGraphEngineMetricsObserverTest {
     @Test
     void operationsSnapshot_recordsCurrentStateGauges() {
         observer.onOperationsSnapshot("acme", "prod", "CRITICAL",
-                2, 1, 3, 0, true, false);
+                2, 1, 3, 0, true, false, 1_900, 8_100);
 
         assertGauge("ge.operations.health", "acme", "prod", 2.0);
         assertGauge("ge.operations.dead_letters", "acme", "prod", 2.0);
@@ -187,6 +187,8 @@ class MicrometerGraphEngineMetricsObserverTest {
         assertGauge("ge.operations.active_deployments", "acme", "prod", 0.0);
         assertGauge("ge.operations.snapshot_truncated", "acme", "prod", 1.0);
         assertGauge("ge.operations.control_plane_available", "acme", "prod", 0.0);
+        assertGauge("ge.operations.dead_letter_oldest_age_seconds", "acme", "prod", 1_900.0);
+        assertGauge("ge.operations.suspended_oldest_age_seconds", "acme", "prod", 8_100.0);
     }
 
     @Test

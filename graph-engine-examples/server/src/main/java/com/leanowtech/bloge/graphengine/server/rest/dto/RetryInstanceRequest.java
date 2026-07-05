@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.graphengine.server.rest.dto;
 
+import com.leanowtech.bloge.graphengine.service.RecoveryActionEvidence;
+
 import java.util.Set;
 
 /**
@@ -9,9 +11,23 @@ import java.util.Set;
  *                         when {@code null} or empty, all dead-lettered items for the instance
  *                         are retried
  * @param expectedRevision optimistic-lock guard on the instance projection
+ * @param reason human-readable recovery reason
+ * @param sourceActionCode operations action code that suggested this retry
+ * @param sourceIndicatorCode SLO indicator code that triggered this retry
+ * @param actor operator or automation identity initiating the retry
  */
 public record RetryInstanceRequest(
         Set<String> nodeIds,
-        long expectedRevision
+        long expectedRevision,
+        String reason,
+        String sourceActionCode,
+        String sourceIndicatorCode,
+        String actor
 ) {
+    /**
+     * Converts the HTTP payload to service-layer recovery evidence.
+     */
+    public RecoveryActionEvidence toEvidence() {
+        return new RecoveryActionEvidence(reason, sourceActionCode, sourceIndicatorCode, actor);
+    }
 }

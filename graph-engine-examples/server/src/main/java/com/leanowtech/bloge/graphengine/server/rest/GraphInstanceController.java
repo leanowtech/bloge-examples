@@ -277,7 +277,12 @@ public class GraphInstanceController {
     @PostMapping("/api/v1/instances/{instanceId}/retry")
     public RetryInstanceResult retryInstance(@PathVariable String instanceId,
                                              @Valid @RequestBody RetryInstanceRequest request) {
-        return graphEngineService.retryInstance(instanceId, request.nodeIds(), request.expectedRevision());
+        return graphEngineService.retryInstance(
+                instanceId,
+                request.nodeIds(),
+                request.expectedRevision(),
+                request.toEvidence()
+        );
     }
 
     private String resolveEnvironment(String requestedEnvironment) {

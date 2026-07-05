@@ -63,9 +63,12 @@ top-level `health` value (`OK`, `WARNING`, or `CRITICAL`), and recovery-oriented
 and machine-readable `recoveryActions` with console routes, API path templates,
 risk level, and reason/revision requirements. It also includes `sloIndicators`,
 a stable metric-facing contract covering dead-letter backlog, failed instances,
-suspended instances, active deployment availability, snapshot completeness, and
-control-plane availability. The same rules refresh the `ge.operations.*`
-Micrometer gauges when a `GraphEngineMetricsObserver` is wired. The snapshot is
+suspended instances, oldest dead-letter age, oldest suspended-instance age,
+active deployment availability, snapshot completeness, and control-plane
+availability. The same rules refresh the `ge.operations.*` Micrometer gauges
+when a `GraphEngineMetricsObserver` is wired, including
+`ge.operations.dead_letter_oldest_age_seconds` and
+`ge.operations.suspended_oldest_age_seconds`. The snapshot is
 a control-plane triage view, not a metrics backend; when `truncated = true`, use
 the paginated instance, deployment, and dead-letter APIs or external metrics for
 full-fleet accounting.
@@ -147,6 +150,17 @@ the entire response.
 dead-lettered work item back to `READY` through `WorkItemStore.restoreDeadLetter(...)`.
 When the durable runtime facade is configured, the server then triggers a
 dispatch cycle so the item re-enters the normal ready → claim → execute flow.
+The body is optional for backward compatibility. When supplied, it attaches
+recovery evidence that is recorded as a `CONTROL_ACTION` audit entry:
+
+```json
+{
+  "reason": "validated idempotency after downstream fix",
+  "sourceActionCode": "RETRY_DEAD_LETTER",
+  "sourceIndicatorCode": "DEAD_LETTER_OLDEST_AGE",
+  "actor": "ops-alice"
+}
+```
 
 **Node execution view.** `GET /api/v1/instances/{id}/nodes` returns the inferred
 execution state of every execution node in a running instance. GRAPH instances
@@ -239,8 +253,20 @@ completed instances from consuming the per-tenant
 **Instance retry.** `POST /api/v1/instances/{id}/retry` restores all
 dead-lettered work items for an instance back to `READY` and triggers a dispatch
 cycle. The request body accepts an optional `nodeIds` set to restrict retries to
-specific nodes and a required `expectedRevision` for optimistic-lock guarding.
-Requires admin RBAC on the owning definition.
+specific nodes, a required `expectedRevision` for optimistic-lock guarding, and
+the same optional recovery-evidence fields used by dead-letter replay. Requires
+admin RBAC on the owning definition.
+
+```json
+{
+  "nodeIds": ["riskCheck"],
+  "expectedRevision": 7,
+  "reason": "remote worker deployment fixed",
+  "sourceActionCode": "RETRY_INSTANCE_DEAD_LETTERS",
+  "sourceIndicatorCode": "FAILED_INSTANCE_BACKLOG",
+  "actor": "ops-bot"
+}
+```
 
 ### Operator inventory
 

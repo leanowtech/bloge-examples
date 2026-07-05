@@ -1851,7 +1851,12 @@ class DefaultGraphEngineServiceTest {
             assertEquals(GraphInstanceStatus.CANCELLED, transitions.getFirst().toStatus());
             assertEquals(instance.versionId(), deadLetters.getFirst().versionId());
 
-            fixture.service.retryDeadLetter("dead-1");
+            fixture.service.retryDeadLetter("dead-1", new RecoveryActionEvidence(
+                    "validated idempotent replay",
+                    "RETRY_DEAD_LETTER",
+                    "DEAD_LETTER_BACKLOG",
+                    "ops-alice"
+            ));
 
             assertEquals(WorkItemStatus.READY, fixture.workItemStore.query(new WorkItemQuery(
                     instance.instanceId(),
@@ -1875,6 +1880,14 @@ class DefaultGraphEngineServiceTest {
                     0,
                     10
             )).isEmpty());
+            GraphAuditEntry recoveryAudit = fixture.service.queryInstanceAuditLog(instance.instanceId(), 0, 50).stream()
+                    .filter(entry -> entry.eventType() == AuditEventType.CONTROL_ACTION)
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals("__control_retry_dead_letter__", recoveryAudit.nodeId());
+            assertTrue(recoveryAudit.inputJson().contains("validated idempotent replay"));
+            assertTrue(recoveryAudit.inputJson().contains("RETRY_DEAD_LETTER"));
+            assertTrue(recoveryAudit.outputJson().contains("\"restoredItemCount\":1"));
         }
     }
 
@@ -1984,6 +1997,74 @@ class DefaultGraphEngineServiceTest {
                             && indicator.warningThreshold().equals(1.0)
                             && indicator.actionCode().equals("SUSPENDED_INSTANCES_PRESENT")));
             assertEquals(1, fixture.metricsObserver.lastOperationsSuspendedInstanceCount);
+        }
+    }
+
+    @Test
+    void operationsSnapshotReportsAgeBasedSloIndicatorsAndMetrics() {
+        try (Fixture fixture = new Fixture()) {
+            fixture.createManagedGraphInstance("seed-ops-age", GraphInstanceStatus.RUNNING);
+            Instant staleSuspendedAt = Instant.now().minusSeconds(8_100);
+            GraphInstance staleSuspended = new GraphInstance(
+                    "exec-ops-stale",
+                    "approval-flow",
+                    "ver-1",
+                    "default",
+                    "default",
+                    "business-exec-ops-stale",
+                    GraphExecutionMode.GRAPH,
+                    GraphInstanceStatus.SUSPENDED,
+                    "starter",
+                    Map.of("orderId", "A-1"),
+                    0,
+                    staleSuspendedAt.minusSeconds(60),
+                    staleSuspendedAt,
+                    null
+            );
+            fixture.graphInstanceStore.create(staleSuspended);
+            Instant oldDeadLetteredAt = Instant.now().minusSeconds(1_900);
+            fixture.controlPlaneService.deadLetters.add(new DeadLetterEntry(
+                    "dead-ops-old",
+                    fixture.identity(staleSuspended),
+                    WorkItemType.EVENT_MATCHED,
+                    "approval",
+                    "wait-ops-old",
+                    null,
+                    5,
+                    3,
+                    3,
+                    "{\"orderId\":\"A-1\"}",
+                    null,
+                    "retry budget exhausted",
+                    "manual intervention",
+                    oldDeadLetteredAt.minusSeconds(30),
+                    oldDeadLetteredAt
+            ));
+
+            GraphOperationsSnapshot snapshot = fixture.service.queryOperationsSnapshot("default", "default");
+
+            GraphOperationsSnapshot.SloIndicator deadLetterAge = snapshot.sloIndicators().stream()
+                    .filter(indicator -> indicator.code().equals("DEAD_LETTER_OLDEST_AGE"))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(GraphOperationsSnapshot.Health.CRITICAL, deadLetterAge.health());
+            assertEquals("ge.operations.dead_letter_oldest_age_seconds", deadLetterAge.metricName());
+            assertTrue(deadLetterAge.observedValue() >= 1_800);
+            assertEquals("DEAD_LETTERS_PRESENT", deadLetterAge.actionCode());
+
+            GraphOperationsSnapshot.SloIndicator suspendedAge = snapshot.sloIndicators().stream()
+                    .filter(indicator -> indicator.code().equals("SUSPENDED_INSTANCE_OLDEST_AGE"))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(GraphOperationsSnapshot.Health.CRITICAL, suspendedAge.health());
+            assertEquals("ge.operations.suspended_oldest_age_seconds", suspendedAge.metricName());
+            assertTrue(suspendedAge.observedValue() >= 7_200);
+            assertEquals("SUSPENDED_INSTANCES_PRESENT", suspendedAge.actionCode());
+            assertTrue(snapshot.actionItems().stream()
+                    .anyMatch(item -> item.code().equals("SUSPENDED_INSTANCES_PRESENT")
+                            && item.severity() == GraphOperationsSnapshot.Health.CRITICAL));
+            assertTrue(fixture.metricsObserver.lastOperationsDeadLetterOldestAgeSeconds >= 1_800);
+            assertTrue(fixture.metricsObserver.lastOperationsSuspendedOldestAgeSeconds >= 7_200);
         }
     }
 
@@ -3018,12 +3099,26 @@ class DefaultGraphEngineServiceTest {
             RetryInstanceResult retried = fixture.service.retryInstance(
                     started.instance().instanceId(),
                     Set.of("riskCheck"),
-                    fixture.service.getInstance(started.instance().instanceId()).revision()
+                    fixture.service.getInstance(started.instance().instanceId()).revision(),
+                    new RecoveryActionEvidence(
+                            "remote worker fixed",
+                            "RETRY_INSTANCE_DEAD_LETTERS",
+                            "FAILED_INSTANCE_BACKLOG",
+                            "ops-bot"
+                    )
             );
 
             assertEquals(1, retried.retriedItemCount());
             List<GraphNodeState> retriedNodes = fixture.service.queryInstanceNodes(started.instance().instanceId());
             assertEquals(GraphNodeStatus.PENDING, retriedNodes.getFirst().status());
+            GraphAuditEntry recoveryAudit = fixture.service.queryInstanceAuditLog(started.instance().instanceId(), 0, 50).stream()
+                    .filter(entry -> entry.eventType() == AuditEventType.CONTROL_ACTION)
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals("__control_retry_instance__", recoveryAudit.nodeId());
+            assertTrue(recoveryAudit.inputJson().contains("remote worker fixed"));
+            assertTrue(recoveryAudit.inputJson().contains("RETRY_INSTANCE_DEAD_LETTERS"));
+            assertTrue(recoveryAudit.outputJson().contains("\"restoredItemCount\":1"));
         }
     }
 
@@ -3821,6 +3916,8 @@ class DefaultGraphEngineServiceTest {
         private int lastOperationsDeadLetterCount;
         private int lastOperationsFailedInstanceCount;
         private int lastOperationsSuspendedInstanceCount;
+        private int lastOperationsDeadLetterOldestAgeSeconds;
+        private int lastOperationsSuspendedOldestAgeSeconds;
 
         @Override
         public void onVersionPublished(String definitionKey, String tenantId, String namespace) {
@@ -3859,6 +3956,28 @@ class DefaultGraphEngineServiceTest {
             lastOperationsDeadLetterCount = deadLetterCount;
             lastOperationsFailedInstanceCount = failedInstanceCount;
             lastOperationsSuspendedInstanceCount = suspendedInstanceCount;
+        }
+
+        @Override
+        public void onOperationsSnapshot(String tenantId, String namespace, String health,
+                                         int deadLetterCount, int failedInstanceCount,
+                                         int suspendedInstanceCount, int activeDeploymentCount,
+                                         boolean truncated, boolean controlPlaneAvailable,
+                                         int deadLetterOldestAgeSeconds,
+                                         int suspendedOldestAgeSeconds) {
+            onOperationsSnapshot(
+                    tenantId,
+                    namespace,
+                    health,
+                    deadLetterCount,
+                    failedInstanceCount,
+                    suspendedInstanceCount,
+                    activeDeploymentCount,
+                    truncated,
+                    controlPlaneAvailable
+            );
+            lastOperationsDeadLetterOldestAgeSeconds = deadLetterOldestAgeSeconds;
+            lastOperationsSuspendedOldestAgeSeconds = suspendedOldestAgeSeconds;
         }
     }
 

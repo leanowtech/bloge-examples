@@ -118,6 +118,28 @@ public class MicrometerGraphEngineMetricsObserver implements GraphEngineMetricsO
                                      int deadLetterCount, int failedInstanceCount,
                                      int suspendedInstanceCount, int activeDeploymentCount,
                                      boolean truncated, boolean controlPlaneAvailable) {
+        onOperationsSnapshot(
+                tenantId,
+                namespace,
+                health,
+                deadLetterCount,
+                failedInstanceCount,
+                suspendedInstanceCount,
+                activeDeploymentCount,
+                truncated,
+                controlPlaneAvailable,
+                0,
+                0
+        );
+    }
+
+    @Override
+    public void onOperationsSnapshot(String tenantId, String namespace, String health,
+                                     int deadLetterCount, int failedInstanceCount,
+                                     int suspendedInstanceCount, int activeDeploymentCount,
+                                     boolean truncated, boolean controlPlaneAvailable,
+                                     int deadLetterOldestAgeSeconds,
+                                     int suspendedOldestAgeSeconds) {
         setGauge("operations.health", tenantId, namespace, healthScore(health));
         setGauge("operations.dead_letters", tenantId, namespace, deadLetterCount);
         setGauge("operations.failed_instances", tenantId, namespace, failedInstanceCount);
@@ -125,6 +147,8 @@ public class MicrometerGraphEngineMetricsObserver implements GraphEngineMetricsO
         setGauge("operations.active_deployments", tenantId, namespace, activeDeploymentCount);
         setGauge("operations.snapshot_truncated", tenantId, namespace, truncated ? 1 : 0);
         setGauge("operations.control_plane_available", tenantId, namespace, controlPlaneAvailable ? 1 : 0);
+        setGauge("operations.dead_letter_oldest_age_seconds", tenantId, namespace, deadLetterOldestAgeSeconds);
+        setGauge("operations.suspended_oldest_age_seconds", tenantId, namespace, suspendedOldestAgeSeconds);
     }
 
     private void setGauge(String suffix, String tenantId, String namespace, int value) {

@@ -20,6 +20,7 @@ import java.util.Set;
 import static org.hamcrest.Matchers.endsWith;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -274,7 +275,11 @@ class GraphInstanceControllerTest extends AbstractGraphControllerTest {
                         .content("""
                                 {
                                   "nodeIds": ["validate", "process"],
-                                  "expectedRevision": 5
+                                  "expectedRevision": 5,
+                                  "reason": "retry after downstream fix",
+                                  "sourceActionCode": "RETRY_INSTANCE_DEAD_LETTERS",
+                                  "sourceIndicatorCode": "FAILED_INSTANCE_BACKLOG",
+                                  "actor": "ops-bot"
                                 }
                                 """))
                 .andExpect(status().isOk())
@@ -284,6 +289,10 @@ class GraphInstanceControllerTest extends AbstractGraphControllerTest {
         assertEquals("exec-1", graphEngineService.retryInstanceId);
         assertEquals(java.util.Set.of("validate", "process"), graphEngineService.retryNodeIds);
         assertEquals(5L, graphEngineService.retryExpectedRevision);
+        assertEquals("retry after downstream fix", graphEngineService.retryInstanceEvidence.reason());
+        assertEquals("RETRY_INSTANCE_DEAD_LETTERS", graphEngineService.retryInstanceEvidence.sourceActionCode());
+        assertEquals("FAILED_INSTANCE_BACKLOG", graphEngineService.retryInstanceEvidence.sourceIndicatorCode());
+        assertEquals("ops-bot", graphEngineService.retryInstanceEvidence.actor());
     }
 
     @Test
@@ -304,5 +313,6 @@ class GraphInstanceControllerTest extends AbstractGraphControllerTest {
         assertEquals("exec-1", graphEngineService.retryInstanceId);
         assertNull(graphEngineService.retryNodeIds);
         assertEquals(1L, graphEngineService.retryExpectedRevision);
+        assertTrue(graphEngineService.retryInstanceEvidence.emptyEvidence());
     }
 }

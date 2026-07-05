@@ -24,6 +24,8 @@ package com.leanowtech.bloge.graphengine.service;
  *   <li>{@code ge.operations.active_deployments} — Gauge</li>
  *   <li>{@code ge.operations.snapshot_truncated} — Gauge (false=0, true=1)</li>
  *   <li>{@code ge.operations.control_plane_available} — Gauge (false=0, true=1)</li>
+ *   <li>{@code ge.operations.dead_letter_oldest_age_seconds} — Gauge</li>
+ *   <li>{@code ge.operations.suspended_oldest_age_seconds} — Gauge</li>
  * </ul>
  */
 public interface GraphEngineMetricsObserver {
@@ -123,5 +125,40 @@ public interface GraphEngineMetricsObserver {
                                       int deadLetterCount, int failedInstanceCount,
                                       int suspendedInstanceCount, int activeDeploymentCount,
                                       boolean truncated, boolean controlPlaneAvailable) {
+    }
+
+    /**
+     * Called when the operations snapshot for a tenant/namespace scope is queried,
+     * including age-based SLO signals.
+     *
+     * @param tenantId the tenant identifier
+     * @param namespace the namespace
+     * @param health snapshot health (OK, WARNING, CRITICAL)
+     * @param deadLetterCount dead-letter backlog count in the sampled scope
+     * @param failedInstanceCount failed instance count in the sampled scope
+     * @param suspendedInstanceCount suspended instance count in the sampled scope
+     * @param activeDeploymentCount active deployment count in the sampled scope
+     * @param truncated whether the snapshot hit the sample limit
+     * @param controlPlaneAvailable whether control-plane dead-letter data was available
+     * @param deadLetterOldestAgeSeconds age in seconds of the oldest sampled dead letter
+     * @param suspendedOldestAgeSeconds age in seconds of the oldest sampled suspended instance
+     */
+    default void onOperationsSnapshot(String tenantId, String namespace, String health,
+                                      int deadLetterCount, int failedInstanceCount,
+                                      int suspendedInstanceCount, int activeDeploymentCount,
+                                      boolean truncated, boolean controlPlaneAvailable,
+                                      int deadLetterOldestAgeSeconds,
+                                      int suspendedOldestAgeSeconds) {
+        onOperationsSnapshot(
+                tenantId,
+                namespace,
+                health,
+                deadLetterCount,
+                failedInstanceCount,
+                suspendedInstanceCount,
+                activeDeploymentCount,
+                truncated,
+                controlPlaneAvailable
+        );
     }
 }
