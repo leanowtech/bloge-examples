@@ -14,6 +14,7 @@ import {
   portNameFromHandle,
   sampleFromSchemaEnvelope,
   simulationChecklist,
+  simulationFixtureRows,
   simulationTraceRows,
   summarizeCanvas,
   summarizeOperator,
@@ -471,6 +472,129 @@ describe('simulationTraceRows', () => {
 
   it('returns no rows before a simulation result exists', () => {
     expect(simulationTraceRows([], null)).toEqual([]);
+  });
+});
+
+describe('simulationFixtureRows', () => {
+  const designOperator: OperatorDefinition = {
+    operatorRef: 'risk:design',
+    display: { name: 'Design Risk' },
+    lowering: { mode: 'design' },
+    ports: { inputs: [], outputs: [] },
+  };
+  const transformOperator: OperatorDefinition = {
+    operatorRef: 'risk:transform',
+    display: { name: 'Transform Risk' },
+    lowering: { mode: 'transform' },
+    ports: { inputs: [], outputs: [] },
+  };
+
+  it('surfaces likely mocked nodes and fixture JSON errors before simulation', () => {
+    const compiled = compileFixtureDrafts(
+      {
+        design: '',
+        pinned: '{"ok":true}',
+        broken: '{nope',
+      },
+      {
+        pinned: '{"score":720}',
+      },
+    );
+
+    expect(
+      simulationFixtureRows(
+        [
+          { id: 'design', operatorRef: 'risk:design', label: 'Design', position: { x: 0, y: 0 } },
+          { id: 'pinned', operatorRef: 'risk:transform', label: 'Pinned', position: { x: 0, y: 0 } },
+          { id: 'broken', operatorRef: 'risk:transform', label: 'Broken', position: { x: 0, y: 0 } },
+          { id: 'plain', operatorRef: 'risk:transform', label: 'Plain', position: { x: 0, y: 0 } },
+        ],
+        [designOperator, transformOperator],
+        compiled,
+        {
+          design: '',
+          pinned: '{"ok":true}',
+          broken: '{nope',
+        },
+        {
+          pinned: '{"score":720}',
+        },
+        null,
+      ),
+    ).toEqual([
+      {
+        nodeId: 'design',
+        label: 'Design',
+        operatorRef: 'risk:design',
+        state: 'warning',
+        runMode: 'mocked',
+        fixtureLabel: 'server sample',
+        detail: 'server sample',
+      },
+      {
+        nodeId: 'pinned',
+        label: 'Pinned',
+        operatorRef: 'risk:transform',
+        state: 'ready',
+        runMode: 'mocked',
+        fixtureLabel: 'pin + assert',
+        detail: 'fixture set',
+      },
+      {
+        nodeId: 'broken',
+        label: 'Broken',
+        operatorRef: 'risk:transform',
+        state: 'blocked',
+        runMode: 'mocked',
+        fixtureLabel: 'json error',
+        detail: expect.stringContaining('Invalid JSON in output'),
+      },
+      {
+        nodeId: 'plain',
+        label: 'Plain',
+        operatorRef: 'risk:transform',
+        state: 'pending',
+        runMode: 'unknown',
+        fixtureLabel: 'server sample',
+        detail: 'not run',
+      },
+    ]);
+  });
+
+  it('uses the server simulation result as the authoritative run mode', () => {
+    const response: SimulationResponse = {
+      validated: true,
+      compiled: true,
+      success: true,
+      graphName: 'g',
+      outputNode: 'real',
+      output: null,
+      results: {},
+      statusMap: {},
+      mockedNodeIds: ['mocked'],
+      realNodeIds: ['real'],
+      terminalOutputConforms: true,
+      diagnostics: [],
+      errors: [],
+      generatedDsl: '',
+    };
+
+    const rows = simulationFixtureRows(
+      [
+        { id: 'real', operatorRef: 'risk:design', label: 'Real', position: { x: 0, y: 0 } },
+        { id: 'mocked', operatorRef: 'risk:transform', label: 'Mocked', position: { x: 0, y: 0 } },
+      ],
+      [designOperator, transformOperator],
+      { fixtures: {}, errors: {} },
+      {},
+      {},
+      response,
+    );
+
+    expect(rows.map((row) => [row.nodeId, row.runMode, row.state, row.detail])).toEqual([
+      ['real', 'real', 'ready', 'real run'],
+      ['mocked', 'mocked', 'warning', 'server sample'],
+    ]);
   });
 });
 

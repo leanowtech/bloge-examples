@@ -80,6 +80,17 @@ export interface SimulationTraceRow {
   outputPreview: string;
 }
 
+/** One row in the fixture setup list that guides authors to mocked nodes. */
+export interface SimulationFixtureRow {
+  nodeId: string;
+  label: string;
+  operatorRef: string;
+  state: SimulationChecklistItem['state'];
+  runMode: NodeRunStatus;
+  fixtureLabel: string;
+  detail: string;
+}
+
 export type PortHandleDirection = 'in' | 'out';
 export type ConnectionCandidateStatus = 'ready' | 'blocked' | 'wired';
 
@@ -538,6 +549,97 @@ export function simulationTraceRows(
 }
 
 /**
+ * Builds the node-level mock setup list shown before the selected-node editor.
+ *
+ * <p>The backend remains authoritative for the final mocked/real decision; before the first run this
+ * helper only calls out design-only nodes and explicit fixture overrides so authors can configure
+ * likely mock points without reading generated DSL.</p>
+ */
+export function simulationFixtureRows(
+  nodes: CanvasNode[],
+  operators: OperatorDefinition[],
+  fixtureCompilation: FixtureDraftCompilation,
+  outputDrafts: Record<string, string>,
+  expectedInputDrafts: Record<string, string>,
+  response: SimulationResponse | null,
+): SimulationFixtureRow[] {
+  const operatorByRef = new Map(operators.map((operator) => [operator.operatorRef, operator]));
+  const statuses = response ? nodeStatuses(response) : {};
+
+  return nodes.map((node) => {
+    const outputText = outputDrafts[node.id]?.trim() ?? '';
+    const expectedInputText = expectedInputDrafts[node.id]?.trim() ?? '';
+    const hasOutputPin = outputText.length > 0;
+    const hasInputAssert = expectedInputText.length > 0;
+    const hasFixtureDraft = hasOutputPin || hasInputAssert;
+    const error = fixtureCompilation.errors[node.id];
+    const operator = operatorByRef.get(node.operatorRef);
+    const summary = operator ? summarizeOperator(operator) : undefined;
+    const runMode = statuses[node.id]
+      ?? (hasFixtureDraft || summary?.designOnly ? 'mocked' : 'unknown');
+
+    if (error) {
+      return {
+        nodeId: node.id,
+        label: node.label || node.id,
+        operatorRef: node.operatorRef,
+        state: 'blocked',
+        runMode,
+        fixtureLabel: 'json error',
+        detail: error,
+      };
+    }
+
+    const fixtureLabel = fixtureStateLabel(hasOutputPin, hasInputAssert);
+    if (runMode === 'real') {
+      return {
+        nodeId: node.id,
+        label: node.label || node.id,
+        operatorRef: node.operatorRef,
+        state: 'ready',
+        runMode,
+        fixtureLabel,
+        detail: 'real run',
+      };
+    }
+
+    if (hasFixtureDraft) {
+      return {
+        nodeId: node.id,
+        label: node.label || node.id,
+        operatorRef: node.operatorRef,
+        state: 'ready',
+        runMode,
+        fixtureLabel,
+        detail: 'fixture set',
+      };
+    }
+
+    if (runMode === 'mocked' || summary?.designOnly) {
+      return {
+        nodeId: node.id,
+        label: node.label || node.id,
+        operatorRef: node.operatorRef,
+        state: 'warning',
+        runMode: 'mocked',
+        fixtureLabel,
+        detail: 'server sample',
+      };
+    }
+
+    return {
+      nodeId: node.id,
+      label: node.label || node.id,
+      operatorRef: node.operatorRef,
+      state: 'pending',
+      runMode,
+      fixtureLabel,
+      detail: response ? 'not reached' : 'not run',
+    };
+  });
+}
+
+/**
  * Builds the initial JSON text for a node output fixture from its operator contract.
  *
  * <p>A single-output operator pins that output value directly. Multi-output operators pin an object
@@ -599,6 +701,19 @@ export function compileFixtureDrafts(
   }
 
   return { fixtures, errors };
+}
+
+function fixtureStateLabel(hasOutputPin: boolean, hasInputAssert: boolean): string {
+  if (hasOutputPin && hasInputAssert) {
+    return 'pin + assert';
+  }
+  if (hasOutputPin) {
+    return 'output pin';
+  }
+  if (hasInputAssert) {
+    return 'input assert';
+  }
+  return 'server sample';
 }
 
 /** Generates the same deterministic schema sample shape used by the server mock-run generator. */

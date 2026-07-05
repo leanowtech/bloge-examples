@@ -413,6 +413,11 @@ button.secondary:disabled {
   color: #1b5e20;
 }
 
+.run-pill.unknown {
+  background: #edf0f5;
+  color: #475569;
+}
+
 .react-flow__handle {
   width: 9px;
   height: 9px;
@@ -488,6 +493,84 @@ button.secondary:disabled {
 .checklist strong {
   color: var(--muted);
   font-weight: 600;
+}
+
+.mock-setup-list {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.mock-setup-row {
+  width: 100%;
+  min-height: 62px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: #fafafa;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mock-setup-row.ready {
+  border-left-color: var(--success);
+}
+
+.mock-setup-row.warning,
+.mock-setup-row.pending {
+  border-left-color: var(--warning);
+}
+
+.mock-setup-row.blocked {
+  border-left-color: var(--danger);
+}
+
+.mock-setup-row.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(26 86 219 / 12%);
+}
+
+.mock-setup-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.mock-setup-copy strong,
+.mock-setup-copy span,
+.mock-setup-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mock-setup-copy span,
+.mock-setup-copy small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mock-setup-status {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+}
+
+.mock-setup-status code {
+  max-width: 96px;
+  overflow: hidden;
+  color: #334155;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .node-detail {

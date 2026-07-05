@@ -35,6 +35,7 @@ import {
   nodeStatuses,
   portNameFromHandle,
   simulationChecklist,
+  simulationFixtureRows,
   simulationTraceRows,
   summarizeCanvas,
   summarizeOperator,
@@ -254,8 +255,22 @@ export default function AuthorCanvas() {
     () => compileFixtureDrafts(fixtureDrafts, fixtureInputDrafts),
     [fixtureDrafts, fixtureInputDrafts],
   );
+  const fixtureRows = useMemo(
+    () => simulationFixtureRows(
+      canvasNodes,
+      operators,
+      fixtureCompilation,
+      fixtureDrafts,
+      fixtureInputDrafts,
+      result,
+    ),
+    [canvasNodes, fixtureCompilation, fixtureDrafts, fixtureInputDrafts, operators, result],
+  );
   const fixtureCount = Object.keys(fixtureCompilation.fixtures).length;
   const fixtureErrorCount = Object.keys(fixtureCompilation.errors).length;
+  const mockAttentionCount = fixtureRows
+    .filter((row) => row.state === 'warning' || row.state === 'blocked')
+    .length;
   const hasFixtureErrors = fixtureErrorCount > 0;
   const selectedFixtureDraft = selectedNode ? fixtureDrafts[selectedNode.id] ?? '' : '';
   const selectedExpectedInputDraft = selectedNode ? fixtureInputDrafts[selectedNode.id] ?? '' : '';
@@ -527,6 +542,9 @@ export default function AuthorCanvas() {
               {fixtureCount} fixture{fixtureCount === 1 ? '' : 's'}
             </span>
           )}
+          {mockAttentionCount > 0 && (
+            <span className="canvas-chip">Mock setup {mockAttentionCount}</span>
+          )}
           {hasFixtureErrors && (
             <span className="connection-notice error">
               {fixtureErrorCount} fixture JSON error{fixtureErrorCount === 1 ? '' : 's'}
@@ -573,6 +591,37 @@ export default function AuthorCanvas() {
             </li>
           ))}
         </ol>
+
+        <h2>Mock Setup</h2>
+        {fixtureRows.length > 0 ? (
+          <ol className="mock-setup-list">
+            {fixtureRows.map((row) => (
+              <li key={row.nodeId}>
+                <button
+                  className={[
+                    'mock-setup-row',
+                    row.state,
+                    row.nodeId === selectedNodeId ? 'selected' : '',
+                  ].filter(Boolean).join(' ')}
+                  onClick={() => setSelectedNodeId(row.nodeId)}
+                  title={row.detail}
+                >
+                  <span className="mock-setup-copy">
+                    <strong>{row.label}</strong>
+                    <span>{row.operatorRef}</span>
+                    <small>{row.detail}</small>
+                  </span>
+                  <span className="mock-setup-status">
+                    <span className={`run-pill ${row.runMode}`}>{row.runMode}</span>
+                    <code>{row.fixtureLabel}</code>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="muted">No nodes.</p>
+        )}
 
         <h2>Selected Node</h2>
         {selectedNode ? (
