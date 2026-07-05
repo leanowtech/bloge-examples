@@ -1,14 +1,22 @@
 package com.leanowtech.bloge.gateway.visual.simulation;
 
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
+import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.DefaultVisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualDecisionTable;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunRequest;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunResponse;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunner;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunnerFactory;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunLayout;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visualadapter.DynamicGatewayComposerVisualDslRunner;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -204,6 +212,30 @@ class VisualGraphSimulationServiceTest {
         assertThat(response.output()).isEqualTo(requestOutput);
     }
 
+    @Test
+    void simulationTimeoutReturnsDiagnosticInsteadOfHanging() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        VisualGraphSimulationService service = new VisualGraphSimulationService(
+                new GraphDraftValidator(catalog),
+                catalog,
+                new JsonSchemaSampleGenerator(),
+                new SlowVisualDslRunnerFactory(),
+                Duration.ofMillis(25));
+
+        VisualGraphSimulationResponse response = service.simulate(eligibilityDraft(), Map.of(), "");
+
+        assertThat(response.validated()).isTrue();
+        assertThat(response.compiled()).isFalse();
+        assertThat(response.success()).isFalse();
+        assertThat(response.elapsedMs()).isEqualTo(25L);
+        assertThat(response.mockedNodeIds()).containsExactly("eligibility");
+        assertThat(response.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.simulate.timeout"));
+        assertThat(response.errors()).contains("Simulation exceeded the execution timeout.");
+    }
+
     private static VisualGraphSimulationService simulationService(DefaultVisualOperatorCatalog catalog) {
         return new VisualGraphSimulationService(
                 new GraphDraftValidator(catalog),
@@ -227,5 +259,34 @@ class VisualGraphSimulationServiceTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("eligibility", ""));
+    }
+
+    private static final class SlowVisualDslRunnerFactory implements VisualDslRunnerFactory {
+
+        @Override
+        public VisualDslRunner forRegistry(OperatorRegistry registry) {
+            return new SlowVisualDslRunner();
+        }
+    }
+
+    private static final class SlowVisualDslRunner implements VisualDslRunner {
+
+        @Override
+        public VisualDslRunResponse run(VisualDslRunRequest request) {
+            try {
+                Thread.sleep(Duration.ofSeconds(5));
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+            return new VisualDslRunResponse(
+                    true, true, "slowGraph", request.outputNode(), null,
+                    Map.of(), Map.of(), 0, Map.of(), List.of(), List.of(),
+                    (VisualRunLayout) null, (VisualDecisionTable) null);
+        }
+
+        @Override
+        public List<VisualDslRunResponse.Diagnostic> compileDiagnostics(String dsl) {
+            return List.of();
+        }
     }
 }

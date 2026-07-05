@@ -15,8 +15,10 @@ import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,6 +26,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Executes a visual graph draft as a <b>mock run</b> (simulate) for runtime-correctness validation.
@@ -45,9 +53,9 @@ import java.util.Set;
  * is a conservative, safe realization of the D19 allowlist.</p>
  *
  * <h2>Safety (D21)</h2>
- * <p>Simulation is bounded by node and edge caps; sample synthesis is itself depth/size bounded by
- * {@link JsonSchemaSampleGenerator}; and because HTTP/resource operators are mocked, simulation performs
- * no outbound calls (no SSRF surface).</p>
+ * <p>Simulation is bounded by a generated-run timeout plus node and edge caps; sample synthesis is
+ * itself depth/size bounded by {@link JsonSchemaSampleGenerator}; and because HTTP/resource operators
+ * are mocked, simulation performs no outbound calls (no SSRF surface).</p>
  */
 @Service
 public class VisualGraphSimulationService {
@@ -61,6 +69,9 @@ public class VisualGraphSimulationService {
     /** Maximum number of edges a single simulation may contain (D21 resource guard). */
     static final int MAX_SIMULATION_EDGES = 400;
 
+    /** Maximum time spent inside the generated DSL runner for one simulation (D21 timeout guard). */
+    static final Duration DEFAULT_SIMULATION_RUN_TIMEOUT = Duration.ofSeconds(10);
+
     /** Lowering modes that emit a real, pure BLOGE DSL primitive rather than an operator invocation. */
     private static final Set<String> PRIMITIVE_LOWERING_MODES = Set.of("transform", "branch");
 
@@ -71,6 +82,7 @@ public class VisualGraphSimulationService {
     private final VisualOperatorCatalog catalog;
     private final JsonSchemaSampleGenerator sampleGenerator;
     private final VisualDslRunnerFactory runnerFactory;
+    private final Duration runTimeout;
 
     /**
      * @param validator visual draft validator (reused; the action-readiness run gate is intentionally
@@ -79,14 +91,31 @@ public class VisualGraphSimulationService {
      * @param sampleGenerator deterministic JSON Schema sample generator
      * @param runnerFactory creates DSL runners for simulation-specific operator registries
      */
+    @Autowired
     public VisualGraphSimulationService(GraphDraftValidator validator,
                                         VisualOperatorCatalog catalog,
                                         JsonSchemaSampleGenerator sampleGenerator,
                                         VisualDslRunnerFactory runnerFactory) {
+        this(validator, catalog, sampleGenerator, runnerFactory, DEFAULT_SIMULATION_RUN_TIMEOUT);
+    }
+
+    /**
+     * Creates a simulation service with a custom runner timeout.
+     *
+     * <p>This constructor is package-private so tests can assert timeout behavior without slowing down
+     * the production default. The timeout guards the generated DSL execution stage, after validation
+     * and sample synthesis have already completed.</p>
+     */
+    VisualGraphSimulationService(GraphDraftValidator validator,
+                                 VisualOperatorCatalog catalog,
+                                 JsonSchemaSampleGenerator sampleGenerator,
+                                 VisualDslRunnerFactory runnerFactory,
+                                 Duration runTimeout) {
         this.validator = validator;
         this.catalog = catalog;
         this.sampleGenerator = sampleGenerator;
         this.runnerFactory = runnerFactory;
+        this.runTimeout = normalizeTimeout(runTimeout);
     }
 
     /**
@@ -195,8 +224,31 @@ public class VisualGraphSimulationService {
                 ? draft.output().nodeId()
                 : outputNode;
 
-        VisualDslRunResponse dynamic = runnerFactory.forRegistry(simulationRegistry)
-                .run(new VisualDslRunRequest(generated.dsl(), effectiveContext, selectedOutputNode));
+        VisualDslRunResponse dynamic;
+        try {
+            dynamic = runDslWithTimeout(simulationRegistry,
+                    new VisualDslRunRequest(generated.dsl(), effectiveContext, selectedOutputNode));
+        } catch (TimeoutException ex) {
+            diagnostics.add(VisualDiagnostic.error("visual.simulate.timeout",
+                    "Simulation exceeded the %d ms execution timeout.".formatted(runTimeout.toMillis()),
+                    "/simulate"));
+            return executionBlocked(true, false, diagnostics,
+                    List.of("Simulation exceeded the execution timeout."), generated.dsl(),
+                    selectedOutputNode, mockedNodeIds, realNodeIds, runTimeout.toMillis());
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            diagnostics.add(VisualDiagnostic.error("visual.simulate.interrupted",
+                    "Simulation was interrupted before the generated graph finished.", "/simulate"));
+            return executionBlocked(true, false, diagnostics,
+                    List.of("Simulation was interrupted."), generated.dsl(),
+                    selectedOutputNode, mockedNodeIds, realNodeIds, 0);
+        } catch (ExecutionException ex) {
+            diagnostics.add(VisualDiagnostic.error("visual.simulate.runnerFailed",
+                    "Simulation runner failed: %s.".formatted(rootMessage(ex)), "/simulate"));
+            return executionBlocked(true, false, diagnostics,
+                    List.of("Simulation runner failed."), generated.dsl(),
+                    selectedOutputNode, mockedNodeIds, realNodeIds, 0);
+        }
         for (VisualDslRunResponse.Diagnostic diagnostic : dynamic.diagnostics()) {
             diagnostics.add(fromCompilerDiagnostic(diagnostic));
         }
@@ -227,6 +279,23 @@ public class VisualGraphSimulationService {
                 errors,
                 generated.dsl()
         );
+    }
+
+    private VisualDslRunResponse runDslWithTimeout(DefaultOperatorRegistry simulationRegistry,
+                                                   VisualDslRunRequest request)
+            throws InterruptedException, ExecutionException, TimeoutException {
+        ExecutorService executor = Executors.newThreadPerTaskExecutor(
+                Thread.ofVirtual().name("visual-simulate-", 0).factory());
+        Future<VisualDslRunResponse> future = executor.submit(() ->
+                runnerFactory.forRegistry(simulationRegistry).run(request));
+        try {
+            return future.get(runTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException ex) {
+            future.cancel(true);
+            throw ex;
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     private boolean isRealPrimitive(OperatorDefinition operator) {
@@ -375,11 +444,37 @@ public class VisualGraphSimulationService {
                                                          List<VisualDiagnostic> diagnostics,
                                                          List<String> errors,
                                                          String generatedDsl) {
+        return executionBlocked(validated, false, diagnostics, errors, generatedDsl, "",
+                List.of(), List.of(), 0);
+    }
+
+    private static VisualGraphSimulationResponse executionBlocked(boolean validated,
+                                                                  boolean compiled,
+                                                                  List<VisualDiagnostic> diagnostics,
+                                                                  List<String> errors,
+                                                                  String generatedDsl,
+                                                                  String outputNode,
+                                                                  List<String> mockedNodeIds,
+                                                                  List<String> realNodeIds,
+                                                                  long elapsedMs) {
         return new VisualGraphSimulationResponse(
-                validated, false, false, "", "", null,
-                Map.of(), Map.of(), 0, Map.of(),
-                List.of(), List.of(), false,
+                validated, compiled, false, "", outputNode, null,
+                Map.of(), Map.of(), elapsedMs, Map.of(),
+                mockedNodeIds, realNodeIds, false,
                 diagnostics, errors, generatedDsl
         );
+    }
+
+    private static Duration normalizeTimeout(Duration timeout) {
+        if (timeout == null || timeout.isZero() || timeout.isNegative()) {
+            return DEFAULT_SIMULATION_RUN_TIMEOUT;
+        }
+        return timeout;
+    }
+
+    private static String rootMessage(ExecutionException ex) {
+        Throwable cause = ex.getCause();
+        String message = cause == null ? ex.getMessage() : cause.getMessage();
+        return message == null || message.isBlank() ? "unknown error" : message;
     }
 }
