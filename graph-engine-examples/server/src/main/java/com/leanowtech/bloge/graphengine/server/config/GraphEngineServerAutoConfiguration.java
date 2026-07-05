@@ -32,6 +32,7 @@ import com.leanowtech.bloge.graphengine.server.rest.GraphInstanceEventController
 import com.leanowtech.bloge.graphengine.server.rest.GraphInstanceEventFeed;
 import com.leanowtech.bloge.graphengine.server.rest.GraphEngineRequestScopeResolver;
 import com.leanowtech.bloge.graphengine.server.rest.GraphInstanceController;
+import com.leanowtech.bloge.graphengine.server.rest.GraphOperationsController;
 import com.leanowtech.bloge.graphengine.server.rest.GraphOperatorInventoryController;
 import com.leanowtech.bloge.graphengine.server.rest.GraphRemoteWorkerController;
 import com.leanowtech.bloge.graphengine.server.rest.GraphSseConnectionLimiter;
@@ -292,6 +293,7 @@ public class GraphEngineServerAutoConfiguration {
             GraphDeploymentController.class,
             GraphInstanceController.class,
             GraphInstanceEventController.class,
+            GraphOperationsController.class,
             GraphOperatorInventoryController.class,
             GraphRemoteWorkerController.class,
             GraphDeadLetterController.class,

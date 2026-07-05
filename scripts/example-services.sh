@@ -220,7 +220,11 @@ build_service() {
     title="$(service_title "${service}")"
     case "${service}" in
         graph-engine)
-            return 0
+            echo "Packaging ${title}..."
+            (
+                cd "${ROOT_DIR}"
+                "${MVN}" -f graph-engine-examples/pom.xml -pl server -am -DskipTests package
+            )
             ;;
         resource-gateway)
             echo "Packaging ${title}..."
@@ -298,11 +302,11 @@ start_service() {
     echo "Starting ${title}..."
     case "${service}" in
         graph-engine)
+            workdir="$(service_workdir "${service}")"
+            jar="$(service_jar "${service}")"
             (
-                cd "${ROOT_DIR}"
-                nohup "${MVN}" -f graph-engine-examples/pom.xml -pl server spring-boot:run \
-                    "-Dspring-boot.run.arguments=--server.port=${port}" \
-                    > "${log}" 2>&1 &
+                cd "${workdir}"
+                nohup "${JAVA_BIN}" -jar "${jar}" "--server.port=${port}" > "${log}" 2>&1 &
                 echo $! > "$(pid_file "${service}")"
             )
             ;;

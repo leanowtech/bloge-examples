@@ -82,13 +82,16 @@ java -jar cli/target/bloge-graph-engine-cli-1.0.0.jar validate --strict src/bpmn
 ## Run the server
 
 ```bash
-mvn -f graph-engine-examples/pom.xml -pl server spring-boot:run
+./scripts/start-examples.sh graph-engine
 ```
 
 The server includes a static browser console at `http://localhost:8080/console`.
-It consumes the existing `/api/v1` definition, version, deployment, instance,
-operator, task, worker, dead-letter, diagram, node-state, context, audit,
-transition, event, operations snapshot, AI validation/generation, and version-diff endpoints.
+Its default Operations view calls the operations snapshot API and gives operators
+a first-screen view of health, action items, recent dead letters, instance
+counts, and deployment status. The same console also consumes the existing
+`/api/v1` definition, version, deployment, instance, operator, task, worker,
+dead-letter, diagram, node-state, context, audit, transition, event, AI
+validation/generation, and version-diff endpoints.
 
 For a quick operator-facing health view, call:
 
@@ -109,7 +112,9 @@ Instance event SSE (`GET /api/v1/instances/{id}/events`) depends on the durable
 execution event journal. Enable it when starting the server:
 
 ```bash
-mvn -f graph-engine-examples/pom.xml -pl server spring-boot:run -Dspring-boot.run.jvmArguments="-Dspring.bloge.event-journal.enabled=true"
+mvn -f graph-engine-examples/pom.xml -pl server -am -DskipTests package
+java -Dspring.bloge.event-journal.enabled=true \
+  -jar graph-engine-examples/server/target/bloge-graph-engine-server-1.0.0.jar
 ```
 
 ## Why standalone?

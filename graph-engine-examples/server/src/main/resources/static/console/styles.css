@@ -273,6 +273,136 @@ h2 {
   gap: 14px;
 }
 
+.operations-overview {
+  display: grid;
+  gap: 14px;
+}
+
+.operations-health {
+  display: grid;
+  gap: 5px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  box-shadow: inset 0 4px 0 var(--blue), var(--shadow-sm);
+}
+
+.operations-health span,
+.metric-card span,
+.metric-card small,
+.summary-row small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.operations-health strong {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.operations-health.warning {
+  background: var(--amber-soft);
+  box-shadow: inset 0 4px 0 var(--amber), var(--shadow-sm);
+}
+
+.operations-health.critical {
+  background: var(--red-soft);
+  box-shadow: inset 0 4px 0 var(--red), var(--shadow-sm);
+}
+
+.operations-health.ok {
+  background: var(--green-soft);
+  box-shadow: inset 0 4px 0 var(--green), var(--shadow-sm);
+}
+
+.operations-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.metric-card {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.metric-card strong {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.operations-section {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+}
+
+.operations-section h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.operations-summary-list {
+  display: grid;
+  gap: 8px;
+}
+
+.summary-row {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  background: #ffffff;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.summary-row:hover {
+  border-color: #6f8aaa;
+}
+
+.summary-row strong,
+.summary-row span,
+.summary-row small {
+  overflow-wrap: anywhere;
+}
+
+.summary-row.warning {
+  border-color: var(--amber);
+  background: var(--amber-soft);
+}
+
+.summary-row.critical {
+  border-color: var(--red);
+  background: var(--red-soft);
+}
+
+.summary-row.ok {
+  border-color: var(--green);
+  background: var(--green-soft);
+}
+
+.empty-inline {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .tool-card {
   display: grid;
   gap: 10px;
@@ -504,6 +634,10 @@ h2 {
   }
 
   .tool-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .operations-metrics {
     grid-template-columns: 1fr;
   }
 }

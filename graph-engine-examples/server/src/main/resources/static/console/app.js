@@ -1,5 +1,7 @@
+const CONSOLE_VIEWS = new Set(['operations', 'graphs', 'instances', 'deployments', 'operators', 'authoring', 'tasks']);
+
 const state = {
-  view: 'graphs',
+  view: initialViewFromPath(),
   list: [],
   selected: null,
   selectedVersion: null,
@@ -11,6 +13,11 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
+
+function initialViewFromPath() {
+  const segment = window.location.pathname.replace(/^\/console\/?/, '').split('/')[0];
+  return CONSOLE_VIEWS.has(segment) ? segment : 'operations';
+}
 
 function headers(extra = {}) {
   const roles = $('role-header').value.trim();
@@ -66,7 +73,9 @@ async function loadView() {
   setOutput('runtime', {});
   clearDiagram();
   showDiagram();
-  if (state.view === 'graphs') {
+  if (state.view === 'operations') {
+    await loadOperationsOverview();
+  } else if (state.view === 'graphs') {
     $('list-title').textContent = 'Graphs';
     state.list = await api('/api/v1/graphs');
     renderList(state.list, (item) => item.definitionKey, (item) => item.displayName || item.definitionKey, (item) => item.status || item.ownerTeam || '');
@@ -92,6 +101,181 @@ async function loadView() {
     $('list-title').textContent = 'Queues';
     await loadQueues();
   }
+}
+
+async function loadOperationsOverview() {
+  $('list-title').textContent = 'Operations';
+  const snapshot = await api('/api/v1/operations/snapshot');
+  state.list = operationsRows(snapshot);
+  renderList(
+    state.list,
+    (item) => item.id,
+    (item) => item.title,
+    (item) => item.meta
+  );
+  state.selected = snapshot;
+  $('entity-kicker').textContent = `Operations · ${snapshot.health || 'UNKNOWN'}`;
+  $('entity-title').textContent = `${snapshot.tenantId || 'default'} / ${snapshot.namespace || 'default'}`;
+  setOutput('details', snapshot);
+  setOutput('runtime', {
+    actionItems: snapshot.actionItems || [],
+    recentDeadLetters: snapshot.recentDeadLetters || []
+  });
+  renderOperationsActions();
+  renderOperationsPanel(snapshot);
+}
+
+function operationsRows(snapshot) {
+  const actionItems = (snapshot.actionItems || []).map((item, index) => ({
+    id: `action-${index}-${item.code}`,
+    kind: 'action',
+    title: item.code,
+    meta: `${item.severity || 'WARNING'} · ${item.targetType || 'scope'}`,
+    payload: item
+  }));
+  const deadLetters = (snapshot.recentDeadLetters || []).map((item, index) => ({
+    id: `dead-letter-${index}-${item.itemId}`,
+    kind: 'dead-letter',
+    title: item.nodeId || item.itemId,
+    meta: `${item.definitionKey || 'graph'} · ${item.deadLetterReason || item.lastError || item.itemId}`,
+    payload: item
+  }));
+  const rows = [...actionItems, ...deadLetters];
+  if (!rows.length) {
+    rows.push({
+      id: 'health-ok',
+      kind: 'health',
+      title: 'No action items',
+      meta: snapshot.generatedAt || 'snapshot',
+      payload: { health: snapshot.health, generatedAt: snapshot.generatedAt }
+    });
+  }
+  return rows;
+}
+
+function renderOperationsActions() {
+  const actions = $('actions');
+  actions.innerHTML = '';
+  actions.appendChild(actionButton('Queues', () => activateTab('tasks'), 'primary'));
+  actions.appendChild(actionButton('Instances', () => activateTab('instances')));
+  actions.appendChild(actionButton('Deployments', () => activateTab('deployments')));
+}
+
+function selectOperationsRow(item) {
+  state.selected = item;
+  $('entity-kicker').textContent = `Operations · ${item.kind}`;
+  $('entity-title').textContent = item.title || 'Operations';
+  setOutput('details', item.payload || item);
+  renderOperationsActions();
+}
+
+function renderOperationsPanel(snapshot) {
+  clearDiagram();
+  showToolPanel();
+  const panel = $('tool-panel');
+  panel.innerHTML = '';
+  const overview = document.createElement('div');
+  overview.className = 'operations-overview';
+
+  const health = document.createElement('section');
+  health.className = `operations-health ${healthClass(snapshot.health)}`;
+  const healthLabel = document.createElement('span');
+  healthLabel.textContent = 'Health';
+  const healthValue = document.createElement('strong');
+  healthValue.textContent = snapshot.health || 'UNKNOWN';
+  const generatedAt = document.createElement('span');
+  generatedAt.textContent = snapshot.generatedAt ? `Generated ${snapshot.generatedAt}` : 'Generated';
+  health.appendChild(healthLabel);
+  health.appendChild(healthValue);
+  health.appendChild(generatedAt);
+  overview.appendChild(health);
+
+  const metrics = document.createElement('section');
+  metrics.className = 'operations-metrics';
+  [
+    ['Sampled instances', snapshot.sampledInstanceCount, `active ${snapshot.activeInstanceCount || 0}`],
+    ['Terminal instances', snapshot.terminalInstanceCount, `failed ${countOf(snapshot.instancesByStatus, 'FAILED')}`],
+    ['Deployments', snapshot.deploymentCount, `active ${snapshot.activeDeploymentCount || 0}`],
+    ['Dead letters', snapshot.deadLetterCount, (snapshot.recentDeadLetters || []).length ? 'recent samples' : 'none'],
+    ['Running', countOf(snapshot.instancesByStatus, 'RUNNING'), `suspended ${countOf(snapshot.instancesByStatus, 'SUSPENDED')}`],
+    ['Sample limit', snapshot.sampleLimit, snapshot.truncated ? 'truncated' : 'complete sample']
+  ].forEach(([label, value, meta]) => metrics.appendChild(metricCard(label, value, meta)));
+  overview.appendChild(metrics);
+
+  overview.appendChild(summarySection('Action Items', snapshot.actionItems || [], renderActionItem));
+  overview.appendChild(summarySection('Recent Dead Letters', snapshot.recentDeadLetters || [], renderDeadLetterItem));
+  panel.appendChild(overview);
+}
+
+function metricCard(label, value, meta) {
+  const card = document.createElement('div');
+  card.className = 'metric-card';
+  const caption = document.createElement('span');
+  caption.textContent = label;
+  const number = document.createElement('strong');
+  number.textContent = value ?? 0;
+  const detail = document.createElement('small');
+  detail.textContent = meta || '';
+  card.appendChild(caption);
+  card.appendChild(number);
+  card.appendChild(detail);
+  return card;
+}
+
+function summarySection(title, items, renderItem) {
+  const section = document.createElement('section');
+  section.className = 'operations-section';
+  const heading = document.createElement('h3');
+  heading.textContent = title;
+  section.appendChild(heading);
+  if (!items.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-inline';
+    empty.textContent = 'No rows';
+    section.appendChild(empty);
+    return section;
+  }
+  const list = document.createElement('div');
+  list.className = 'operations-summary-list';
+  items.forEach((item) => list.appendChild(renderItem(item)));
+  section.appendChild(list);
+  return section;
+}
+
+function renderActionItem(item) {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = `summary-row ${healthClass(item.severity)}`;
+  row.addEventListener('click', () => setOutput('details', item));
+  row.innerHTML = `<strong>${escapeHtml(item.code)}</strong><span>${escapeHtml(item.message || '')}</span><small>${escapeHtml(item.targetType || 'scope')} ${escapeHtml(item.targetId || '')}</small>`;
+  return row;
+}
+
+function renderDeadLetterItem(item) {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'summary-row critical';
+  row.addEventListener('click', () => setOutput('details', item));
+  row.innerHTML = `<strong>${escapeHtml(item.nodeId || item.itemId)}</strong><span>${escapeHtml(item.deadLetterReason || item.lastError || '')}</span><small>${escapeHtml(item.definitionKey || '')} ${escapeHtml(item.deadLetteredAt || '')}</small>`;
+  return row;
+}
+
+function countOf(values, key) {
+  return values && values[key] ? values[key] : 0;
+}
+
+function healthClass(value) {
+  return String(value || 'ok').toLowerCase();
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[char]));
 }
 
 async function loadQueues() {
@@ -360,7 +544,8 @@ function renderList(items, idOf, titleOf, metaOf) {
     button.appendChild(title);
     button.appendChild(meta);
     button.addEventListener('click', () => {
-      if (state.view === 'graphs') selectGraph(item).catch(showError);
+      if (state.view === 'operations') selectOperationsRow(item);
+      else if (state.view === 'graphs') selectGraph(item).catch(showError);
       else if (state.view === 'instances') selectInstance(item).catch(showError);
       else if (state.view === 'authoring') selectAuthoringMode(item);
       else selectPlain(item, state.view);
@@ -617,6 +802,7 @@ function showError(error) {
 }
 
 document.querySelectorAll('.tab').forEach((tab) => {
+  tab.classList.toggle('active', tab.dataset.view === state.view);
   tab.addEventListener('click', () => activateTab(tab.dataset.view));
 });
 $('refresh').addEventListener('click', () => loadView().catch(showError));

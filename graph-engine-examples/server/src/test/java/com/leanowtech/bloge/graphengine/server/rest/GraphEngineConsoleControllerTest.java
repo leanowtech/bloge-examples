@@ -23,6 +23,10 @@ class GraphEngineConsoleControllerTest {
     void forwardsConsoleRoutesToStaticUi() throws Exception {
         MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new GraphEngineConsoleController()).build();
 
+        mockMvc.perform(get("/console/operations"))
+                .andExpect(status().isOk())
+                .andExpect(forwardedUrl("/console/index.html"));
+
         mockMvc.perform(get("/console/authoring"))
                 .andExpect(status().isOk())
                 .andExpect(forwardedUrl("/console/index.html"));
@@ -42,8 +46,9 @@ class GraphEngineConsoleControllerTest {
         String app = new ClassPathResource("static/console/app.js")
                 .getContentAsString(StandardCharsets.UTF_8);
 
-        assertThat(index).contains("Authoring", "Queues");
+        assertThat(index).contains("Operations", "Authoring", "Queues");
         assertThat(app)
+                .contains("/api/v1/operations/snapshot")
                 .contains("/api/v1/ai/validate")
                 .contains("/api/v1/ai/generate")
                 .contains("/diff/")
@@ -52,12 +57,13 @@ class GraphEngineConsoleControllerTest {
     }
 
     @Test
-    void webApiConfigurationImportsConsoleController() throws Exception {
+    void webApiConfigurationImportsConsoleAndOperationsControllers() throws Exception {
         Class<?> webApiConfiguration = Class.forName(
                 "com.leanowtech.bloge.graphengine.server.config.GraphEngineServerAutoConfiguration$WebApiConfiguration"
         );
         Import imported = webApiConfiguration.getAnnotation(Import.class);
 
-        assertThat(Arrays.asList(imported.value())).contains(GraphEngineConsoleController.class);
+        assertThat(Arrays.asList(imported.value()))
+                .contains(GraphEngineConsoleController.class, GraphOperationsController.class);
     }
 }

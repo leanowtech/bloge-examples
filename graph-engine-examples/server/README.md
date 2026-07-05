@@ -14,7 +14,8 @@ Boot's default `FlywayAutoConfiguration` is **excluded** because the BLOGE runti
 
 ```bash
 # From bloge-examples-graph-engine/
-mvn -pl server spring-boot:run
+mvn -pl server -am -DskipTests package
+java -jar server/target/bloge-graph-engine-server-1.0.0.jar
 ```
 
 The standalone server ships with `spring.bloge.durable.mode=local` in its default
@@ -26,11 +27,12 @@ and integration testing only.
 
 All endpoints are under `/api/v1`. Tenant and namespace scope are resolved per-request via `TenantContextHolder` (see `bloge-spring` tenant configuration).
 
-The module also serves a static browser console at `/console`. The console is
-read-mostly and consumes the same REST APIs listed below for diagrams, runtime
-state, authoring validation/generation, version diff, task queues, remote
-workers, and dead-letter recovery; it does not introduce another graph authoring
-or execution model.
+The module also serves a static browser console at `/console`. The console opens
+on an Operations overview backed by `/api/v1/operations/snapshot`, then lets
+operators move into graph definitions, instances, deployments, task queues,
+remote workers, dead-letter recovery, diagrams, runtime state, authoring
+validation/generation, and version diff. It does not introduce another graph
+authoring or execution model.
 
 | Prefix | Controller | Purpose |
 |---|---|---|
@@ -60,6 +62,11 @@ top-level `health` value (`OK`, `WARNING`, or `CRITICAL`), and recovery-oriented
 `actionItems`. The snapshot is a control-plane triage view, not a metrics
 backend; when `truncated = true`, use the paginated instance, deployment, and
 dead-letter APIs or external metrics for full-fleet accounting.
+
+The packaged console renders that snapshot as its default Operations page:
+health and key counts stay in the main panel, while action items and recent dead
+letters become the left-side operations queue. The page links directly into
+Queues, Instances, and Deployments for follow-up inspection.
 
 **Cancel vs. terminate.** Both instance actions require an optimistic-lock
 `expectedRevision` plus a human-readable `reason` in the

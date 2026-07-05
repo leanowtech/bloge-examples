@@ -22,6 +22,7 @@ public class GraphEngineConsoleController {
     @GetMapping({
             "/console",
             "/console/",
+            "/console/operations",
             "/console/graphs",
             "/console/instances",
             "/console/deployments",
