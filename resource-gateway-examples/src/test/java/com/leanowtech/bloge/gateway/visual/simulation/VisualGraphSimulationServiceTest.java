@@ -85,6 +85,40 @@ class VisualGraphSimulationServiceTest {
                         .isEqualTo("visual.simulate.nodeCapExceeded"));
     }
 
+    @Test
+    void fixtureOutputOverridesSchemaSampleForMockedNode() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        VisualGraphSimulationService service = simulationService(catalog);
+
+        Map<String, Object> pinnedOutput = Map.of("eligible", true, "ruleId", "PINNED_V1");
+        VisualGraphSimulationResponse response = service.simulate(
+                eligibilityDraft(), Map.of(), "",
+                Map.of("eligibility", new NodeFixture(pinnedOutput)));
+
+        assertThat(response.success()).isTrue();
+        assertThat(response.mockedNodeIds()).containsExactly("eligibility");
+        // The author-pinned output takes precedence over the schema-synthesized sample.
+        assertThat(response.output()).isEqualTo(pinnedOutput);
+    }
+
+    @Test
+    void fixturePinForcesMockOverRealPrimitive() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        VisualGraphSimulationService service = simulationService(catalog);
+
+        Map<String, Object> pinnedOutput = Map.of("eligible", false, "ruleId", "FORCED");
+        VisualGraphSimulationResponse response = service.simulate(
+                eligibilityDraft(), Map.of("score", 720, "amount", 250_000), "",
+                Map.of("eligibility", new NodeFixture(pinnedOutput)));
+
+        // Even though the node would normally run for real (a transform), the pin forces a mock.
+        assertThat(response.mockedNodeIds()).containsExactly("eligibility");
+        assertThat(response.realNodeIds()).isEmpty();
+        assertThat(response.output()).isEqualTo(pinnedOutput);
+    }
+
     private static VisualGraphSimulationService simulationService(DefaultVisualOperatorCatalog catalog) {
         return new VisualGraphSimulationService(
                 new GraphDraftValidator(catalog),

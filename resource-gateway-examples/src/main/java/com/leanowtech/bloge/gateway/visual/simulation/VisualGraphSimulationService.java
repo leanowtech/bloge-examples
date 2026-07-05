@@ -85,7 +85,7 @@ public class VisualGraphSimulationService {
     }
 
     /**
-     * Simulates a visual graph draft.
+     * Simulates a visual graph draft with no author fixtures.
      *
      * @param draft the graph draft
      * @param context the initial graph context (may be partial; missing inputs simply bind to null)
@@ -95,6 +95,27 @@ public class VisualGraphSimulationService {
     public VisualGraphSimulationResponse simulate(GraphDraft draft,
                                                   Map<String, Object> context,
                                                   String outputNode) {
+        return simulate(draft, context, outputNode, Map.of());
+    }
+
+    /**
+     * Simulates a visual graph draft, honouring per-node author fixtures.
+     *
+     * <p>A node with a fixture is always mocked and its output is the fixture value, taking precedence
+     * over both the schema-synthesized sample and the hybrid real-run classification (decisions D4,
+     * D20): pinning forces the node to be mocked even if it would otherwise execute for real.</p>
+     *
+     * @param draft the graph draft
+     * @param context the initial graph context (may be partial; missing inputs simply bind to null)
+     * @param outputNode optional output node override; defaults to the draft's selected output node
+     * @param fixtures per-node output pins keyed by node id; may be {@code null}
+     * @return the simulation result, including which nodes were mocked vs executed for real
+     */
+    public VisualGraphSimulationResponse simulate(GraphDraft draft,
+                                                  Map<String, Object> context,
+                                                  String outputNode,
+                                                  Map<String, NodeFixture> fixtures) {
+        Map<String, NodeFixture> safeFixtures = fixtures == null ? Map.of() : fixtures;
         if (draft == null) {
             return blocked(false, List.of(VisualDiagnostic.error("visual.simulate.draftMissing",
                     "Graph draft is required.", "/")), List.of("Graph draft is required."), "");
@@ -128,14 +149,17 @@ public class VisualGraphSimulationService {
                 return blocked(true, diagnostics,
                         List.of("Simulation cannot resolve one or more operators."), "");
             }
-            if (isRealPrimitive(operator.get())) {
+            boolean pinned = safeFixtures.containsKey(node.id());
+            if (!pinned && isRealPrimitive(operator.get())) {
                 realNodeIds.add(node.id());
                 simulationNodes.add(node);
             } else {
                 String simulationRef = SIM_OPERATOR_PREFIX + node.id();
                 mockedNodeIds.add(node.id());
-                mockOutputsByNodeId.put(node.id(),
-                        sampleGenerator.generate(firstOutputSchema(operator.get())));
+                Object mockOutput = pinned
+                        ? safeFixtures.get(node.id()).output()
+                        : sampleGenerator.generate(firstOutputSchema(operator.get()));
+                mockOutputsByNodeId.put(node.id(), mockOutput);
                 syntheticDefinitions.put(simulationRef,
                         syntheticNativeDefinition(simulationRef, operator.get()));
                 simulationNodes.add(rewriteToSimulation(node, simulationRef));

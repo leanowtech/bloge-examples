@@ -34,6 +34,7 @@ public class VisualGraphSimulationController {
      */
     @PostMapping("/simulate")
     public VisualGraphSimulationResponse simulate(@RequestBody VisualGraphSimulationRequest request) {
-        return simulationService.simulate(request.draft(), request.context(), request.outputNode());
+        return simulationService.simulate(
+                request.draft(), request.context(), request.outputNode(), request.fixtures());
     }
 }
