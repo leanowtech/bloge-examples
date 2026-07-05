@@ -107,6 +107,13 @@ operator keeps the new node and then routes the recommended connection through
 the same server-side `/api/visual/connections/check` gate before writing the
 input binding, so the palette recommendation improves authoring speed without
 becoming a second source of connection truth.
+The composer canvas keeps the authoring map visible through a compact HUD that
+summarizes draft identity, node/link/custom-operator counts, selected node,
+graph output, missing required inputs, and current issue state. Canvas nodes use
+business node labels ahead of raw operator type labels, keep operator refs in the
+metadata line, show an `In`/`Out` schema-port summary, and expose short selected
+port labels so authors can read the connection surface before opening the
+inspector.
 Java operators registered in the Spring `OperatorRegistry` also enter
 the same catalog from BLOGE metadata, with streaming and suspendable operators
 marked as distinct Java source kinds and suspendable operators marked as durable

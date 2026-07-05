@@ -189,6 +189,29 @@ class VisualAuthoringAppJsTest {
     }
 
     @Test
+    void composerCanvasHudSummarizesReadableAuthoringState() throws Exception {
+        assumeNodeAvailable();
+
+        Path tempDir = Files.createTempDirectory("bloge-composer-canvas-hud-test");
+        Path appJs = tempDir.resolve("app.js");
+        Path probe = tempDir.resolve("probe.js");
+        try {
+            Files.writeString(appJs, appJsSource(), StandardCharsets.UTF_8);
+            Files.writeString(probe, composerCanvasHudProbe(), StandardCharsets.UTF_8);
+
+            ProcessResult result = runProcess(List.of("node", probe.toString(), appJs.toString()), tempDir, 10);
+
+            assertThat(result.finished()).as(result.output()).isTrue();
+            assertThat(result.exitCode()).as(result.output()).isZero();
+            assertThat(result.output()).contains("browser composer canvas hud probe passed");
+        } finally {
+            Files.deleteIfExists(probe);
+            Files.deleteIfExists(appJs);
+            Files.deleteIfExists(tempDir);
+        }
+    }
+
+    @Test
     void operatorDetailProjectionEnvelopeFeedsInspectorReadiness() throws Exception {
         assumeNodeAvailable();
 
@@ -1235,6 +1258,156 @@ class VisualAuthoringAppJsTest {
                 .contains("visual-diagnostic-summary")
                 .contains("clearVisualDiagnosticNodeFilter();")
                 .contains("stepVisualDiagnosticNode(diagnosticDirection);");
+    }
+
+    private static String composerCanvasHudProbe() {
+        return String.join("", """
+                const fs = require('fs');
+                const vm = require('vm');
+                const source = fs.readFileSync(process.argv[2], 'utf8');
+
+                function functionSource(name) {
+                  const needle = `function ${name}(`;
+                  const start = source.indexOf(needle);
+                  if (start < 0) throw new Error(`missing function ${name}`);
+                  const openParen = source.indexOf('(', start);
+                  let parenDepth = 0;
+                  let brace = -1;
+                  for (let i = openParen; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '(') parenDepth += 1;
+                    if (ch === ')') {
+                      parenDepth -= 1;
+                      if (parenDepth === 0) {
+                        brace = source.indexOf('{', i + 1);
+                        break;
+                      }
+                    }
+                  }
+                  if (brace < 0) throw new Error(`missing body for function ${name}`);
+                  let depth = 0;
+                  for (let i = brace; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '{') depth += 1;
+                    if (ch === '}') {
+                      depth -= 1;
+                      if (depth === 0) return source.slice(start, i + 1);
+                    }
+                  }
+                  throw new Error(`unterminated function ${name}`);
+                }
+
+                const context = vm.createContext({ console });
+                for (const name of [
+                  'canonicalEdgeKind',
+                  'canvasEdgeLabel',
+                  'canvasText',
+                  'canvasPortKey',
+                  'canvasNodePortSummary',
+                  'composerCanvasNodeLabel',
+                  'composerCanvasHealthLevel',
+                  'composerCanvasSummary',
+                  'renderComposerCanvasHudHtml'
+                ]) {
+                  vm.runInContext(functionSource(name), context);
+                }
+                context.escapeHtml = (value) => String(value ?? '')
+                  .replaceAll('&', '&amp;')
+                  .replaceAll('<', '&lt;')
+                  .replaceAll('>', '&gt;')
+                  .replaceAll('"', '&quot;')
+                  .replaceAll("'", '&#39;');
+                context.endpointLabel = (endpoint) => {
+                  const port = endpoint?.port || '';
+                  const path = endpoint?.path || '';
+                  return path ? `${port}.${path}` : port;
+                };
+                context.targetHandlesForNode = (node) => node.targets || [];
+                context.canvasDataTargetHandlesForNode = (node) => node.targets || [];
+                context.sourceHandlesForNode = (node) => node.sources || [];
+                context.builderInputBindings = (node) => node.bindings || [];
+                context.specForNode = (node) => ({ label: node.label || '' });
+                context.currentDraftHasUnsavedGraphChanges = () => false;
+                context.diagnosticsForCanvasNode = (nodeId) => nodeId === 'riskEligibility'
+                  ? [{ level: 'ERROR', code: 'visual.input.required' }]
+                  : [];
+                context.runTraceForCanvasNode = () => null;
+                context.labelForNode = (node) => node.label || node.id;
+                context.builderEdges = () => [];
+                context.state = {
+                  currentDraftId: 'draft-readable',
+                  currentDraftRevision: 7,
+                  selectedNodeId: 'riskEligibility'
+                };
+                const builder = {
+                  graphName: 'customLoanPolicy',
+                  selectedId: 'riskEligibility',
+                  output: { nodeId: 'riskEligibility', path: 'eligible' },
+                  nodes: [
+                    {
+                      id: 'riskEligibility',
+                      label: 'Eligibility',
+                      type: 'customOperator',
+                      targets: [
+                        { port: 'inputs', path: 'score', required: true },
+                        { port: 'inputs', path: 'amount', required: true }
+                      ],
+                      sources: [
+                        { port: 'output', path: 'eligible', type: 'boolean' },
+                        { port: 'output', path: 'reason', type: 'string' }
+                      ],
+                      bindings: [
+                        { targetPort: 'inputs', targetPath: 'score', expression: 'loanPolicy.output.maxTerm' }
+                      ]
+                    },
+                    {
+                      id: 'response',
+                      label: 'Response',
+                      targets: [],
+                      sources: [{ port: 'output', path: '', type: 'object' }],
+                      bindings: []
+                    }
+                  ]
+                };
+                const layout = {
+                  rootId: 'customLoanPolicy',
+                  nodes: [
+                    { id: 'riskEligibility' },
+                    { id: 'response' }
+                  ],
+                  edges: [
+                    { source: 'loanPolicy', sourcePort: 'output', sourcePath: 'maxTerm', target: 'riskEligibility', targetPort: 'inputs', targetPath: 'score' }
+                  ]
+                };
+                const summary = context.composerCanvasSummary(builder, layout);
+                const hudHtml = context.renderComposerCanvasHudHtml(summary);
+                const nodeSummary = context.canvasNodePortSummary(builder.nodes[0]);
+                const fallbackEdgeLabel = context.canvasEdgeLabel(layout.edges[0]);
+                const clippedText = context.canvasText('abcdefghijklmnopqrstuvwxyz', 10);
+
+                const checks = [
+                  ['hud graph', String(hudHtml.includes('customLoanPolicy')), 'true'],
+                  ['hud nodes', String(hudHtml.includes('2 nodes')), 'true'],
+                  ['hud links', String(hudHtml.includes('1 link')), 'true'],
+                  ['hud output', String(hudHtml.includes('Output Eligibility.eligible')), 'true'],
+                  ['hud issue', String(hudHtml.includes('1 issue')), 'true'],
+                  ['summary issue count', summary.issueCount, 1],
+                  ['summary missing input', summary.missingRequiredInputCount, 1],
+                  ['health level', context.composerCanvasHealthLevel(summary), 'error'],
+                  ['node inputs', nodeSummary.inputCount, 2],
+                  ['node outputs', nodeSummary.outputCount, 2],
+                  ['node bound inputs', nodeSummary.boundInputCount, 1],
+                  ['node missing inputs', nodeSummary.missingRequiredInputs, 1],
+                  ['fallback edge label', fallbackEdgeLabel, 'output.maxTerm -> inputs.score'],
+                  ['clipped text', clippedText, 'abcdefg...']
+                ];
+                for (const [label, actual, expected] of checks) {
+                  if (actual !== expected) {
+                    throw new Error(`${label}: expected ${expected}, got ${actual}`);
+                  }
+                }
+                console.log('browser composer canvas hud probe passed');
+                """);
     }
 
     private static String appJsSource() throws IOException {

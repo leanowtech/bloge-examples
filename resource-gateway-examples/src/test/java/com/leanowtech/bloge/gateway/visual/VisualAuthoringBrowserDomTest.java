@@ -125,6 +125,15 @@ class VisualAuthoringBrowserDomTest {
 
         waitForComposer(wait);
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+        waitForText(wait, By.id("composer-canvas-hud"), "customLoanPolicy");
+        waitForText(wait, By.id("composer-canvas-hud"), "2 nodes");
+        waitForText(wait, By.id("composer-canvas-hud"), "1 link");
+        waitForText(wait, By.id("composer-canvas-hud"), "Output Response");
+        waitForText(wait, By.id("composer-canvas-hud"), "Inputs bound");
+        wait.until(ignored -> svgTextContent(".node-port-summary").contains("In 2")
+                && svgTextContent(".node-port-summary").contains("Out 5"));
+        wait.until(ignored -> svgTextContent(".canvas-port-label").contains("score")
+                && svgTextContent(".canvas-port-label").contains("decision"));
 
         click(wait, By.id("preview-resource-contract"));
         waitForText(wait,
@@ -171,6 +180,12 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ignored -> driver.findElements(By.cssSelector("#diagram [data-node-id]")).size() > before);
         assertThat(driver.findElements(By.cssSelector("#diagram [data-node-id='riskEligibility']")).size())
                 .isGreaterThanOrEqualTo(1);
+        wait.until(ignored -> {
+            String summary = svgTextContent("#diagram [data-node-id='riskEligibility'] .node-port-summary");
+            return summary.contains("In ") && summary.contains("Out ");
+        });
+        wait.until(ignored -> svgTextContent("#diagram [data-node-id='riskEligibility'] .canvas-port-label")
+                .contains("eligible"));
 
         dragConnection(
                 wait,
@@ -3403,6 +3418,14 @@ class VisualAuthoringBrowserDomTest {
         } catch (RuntimeException ex) {
             return "<missing>";
         }
+    }
+
+    private String svgTextContent(String selector) {
+        return String.valueOf(((JavascriptExecutor) driver).executeScript("""
+                return Array.from(document.querySelectorAll(arguments[0]))
+                    .map((element) => element.textContent || '')
+                    .join('|');
+                """, selector));
     }
 
     private List<String> optionTexts(WebDriverWait wait, By locator) {

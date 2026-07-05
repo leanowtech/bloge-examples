@@ -3236,7 +3236,8 @@ function renderCanvasNavigator() {
   const container = $('canvas-navigator');
   if (!container) return;
   const nodes = state.layout?.nodes || [];
-  if (!nodes.length) {
+  const composer = isComposerSelected();
+  if (!nodes.length && !composer) {
     container.hidden = true;
     return;
   }
@@ -3244,6 +3245,7 @@ function renderCanvasNavigator() {
     state.canvasFocusedNodeId = '';
   }
   container.hidden = false;
+  renderComposerCanvasHud();
   const input = $('canvas-search');
   if (input && document.activeElement !== input) {
     input.value = state.canvasSearchQuery || '';
@@ -3291,6 +3293,112 @@ function renderCanvasNavigator() {
   for (const button of resultList.querySelectorAll('[data-canvas-node]')) {
     button.addEventListener('click', () => focusCanvasNode(button.dataset.canvasNode));
   }
+}
+
+function renderComposerCanvasHud() {
+  const target = $('composer-canvas-hud');
+  if (!target) return;
+  if (!isComposerSelected()) {
+    target.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+  target.hidden = false;
+  const summary = composerCanvasSummary(state.builder, state.layout);
+  target.innerHTML = renderComposerCanvasHudHtml(summary);
+  for (const button of target.querySelectorAll('[data-canvas-node]')) {
+    button.addEventListener('click', () => focusCanvasNode(button.dataset.canvasNode));
+  }
+}
+
+function renderComposerCanvasHudHtml(summary) {
+  const level = composerCanvasHealthLevel(summary);
+  const selectedButton = summary.selectedNodeId
+    ? `<button class="composer-canvas-chip strong" type="button" data-canvas-node="${escapeHtml(summary.selectedNodeId)}">Selected ${escapeHtml(summary.selectedLabel)}</button>`
+    : '<span class="composer-canvas-chip muted">Selected none</span>';
+  const outputButton = summary.outputNodeId
+    ? `<button class="composer-canvas-chip ${summary.outputMissing ? 'warning' : 'success'}" type="button" data-canvas-node="${escapeHtml(summary.outputNodeId)}">Output ${escapeHtml(summary.outputLabel)}</button>`
+    : '<span class="composer-canvas-chip warning">Output missing</span>';
+  const issueChip = summary.issueCount
+    ? `<span class="composer-canvas-chip error">${escapeHtml(`${summary.issueCount} issue${summary.issueCount === 1 ? '' : 's'}`)}</span>`
+    : '<span class="composer-canvas-chip success">No issues</span>';
+  const missingChip = summary.missingRequiredInputCount
+    ? `<span class="composer-canvas-chip warning">${escapeHtml(`${summary.missingRequiredInputCount} required input${summary.missingRequiredInputCount === 1 ? '' : 's'} missing`)}</span>`
+    : '<span class="composer-canvas-chip success">Inputs bound</span>';
+  return `
+    <div class="composer-canvas-hud-main ${escapeHtml(level)}">
+      <div class="composer-canvas-title">
+        <strong>${escapeHtml(summary.graphName || 'Composer Map')}</strong>
+        <span>${escapeHtml(summary.draftLabel)}</span>
+      </div>
+      <div class="composer-canvas-stats">
+        <span>${escapeHtml(`${summary.nodeCount} node${summary.nodeCount === 1 ? '' : 's'}`)}</span>
+        <span>${escapeHtml(`${summary.edgeCount} link${summary.edgeCount === 1 ? '' : 's'}`)}</span>
+        <span>${escapeHtml(`${summary.customOperatorCount} custom`)}</span>
+      </div>
+    </div>
+    <div class="composer-canvas-state">
+      ${selectedButton}
+      ${outputButton}
+      ${missingChip}
+      ${issueChip}
+    </div>
+  `;
+}
+
+function composerCanvasSummary(builder = state.builder, layout = state.layout) {
+  const builderNodes = Array.isArray(builder?.nodes) ? builder.nodes : [];
+  const visualNodes = Array.isArray(layout?.nodes) ? layout.nodes : [];
+  const visualNodeIds = new Set(visualNodes.map((node) => node.id));
+  const nodes = builderNodes.length ? builderNodes : visualNodes;
+  const selectedNodeId = builder?.selectedId || state.selectedNodeId || '';
+  const selected = nodes.find((node) => node.id === selectedNodeId) || null;
+  const outputNodeId = builder?.output?.nodeId || '';
+  const output = nodes.find((node) => node.id === outputNodeId) || null;
+  const summaries = builderNodes.map((node) => canvasNodePortSummary(node));
+  const issueNodeIds = new Set();
+  for (const node of visualNodes) {
+    if (diagnosticsForCanvasNode(node.id).length) {
+      issueNodeIds.add(node.id);
+    }
+    const trace = runTraceForCanvasNode(node.id);
+    if ((Number(trace?.diagnosticCount) || 0) > 0 || (Number(trace?.errorCount) || 0) > 0) {
+      issueNodeIds.add(node.id);
+    }
+  }
+  const edgeCount = Array.isArray(layout?.edges)
+    ? layout.edges.length
+    : builderEdges(builder, { includeConfig: true }).length;
+  const customOperatorCount = builderNodes.filter((node) => node.type === 'customOperator').length;
+  const draftLabel = currentDraftHasUnsavedGraphChanges()
+    ? 'Unsaved draft'
+    : (state.currentDraftId ? `${state.currentDraftId}@${state.currentDraftRevision || 0}` : 'Local draft');
+  return {
+    graphName: builder?.graphName || layout?.rootId || 'Composer Map',
+    draftLabel,
+    nodeCount: nodes.length,
+    edgeCount,
+    customOperatorCount,
+    selectedNodeId: selected?.id || '',
+    selectedLabel: selected ? composerCanvasNodeLabel(selected) : '',
+    outputNodeId,
+    outputLabel: output
+      ? `${composerCanvasNodeLabel(output)}${builder?.output?.path ? `.${builder.output.path}` : ''}`
+      : (outputNodeId || ''),
+    outputMissing: Boolean(outputNodeId && visualNodeIds.size && !visualNodeIds.has(outputNodeId)),
+    issueCount: issueNodeIds.size,
+    missingRequiredInputCount: summaries.reduce((total, item) => total + item.missingRequiredInputs, 0)
+  };
+}
+
+function composerCanvasHealthLevel(summary) {
+  if (summary.issueCount || summary.outputMissing) {
+    return 'error';
+  }
+  if (summary.missingRequiredInputCount || !summary.outputNodeId) {
+    return 'warning';
+  }
+  return 'success';
 }
 
 function canvasSearchResults(query, builder = state.builder, layout = state.layout) {
@@ -15500,7 +15608,7 @@ function renderOperatorContractPanel(node) {
   const operatorRef = operatorDefinitionRefForNode(node);
   const definitionMessage = operatorRef ? (state.operatorDefinitionMessagesByRef || {})[operatorRef] || null : null;
   const definitionLoading = operatorRef && state.operatorDefinitionLoadingRef === operatorRef;
-  const targets = targetHandlesForNode(node);
+  const targets = canvasDataTargetHandlesForNode(node);
   const configFields = configFieldDescriptors(spec.configSchema);
   const requiredTargets = targets.filter((target) => target.required);
   const statuses = targets.map((target) => {
@@ -21681,7 +21789,7 @@ function layoutFromBuilder(builder) {
       id: node.id,
       kind: spec.kind,
       operatorRef: spec.visualOperatorRef || spec.operatorRef,
-      label: labelForNode(node),
+      label: composerCanvasNodeLabel(node),
       position: { x: node.x, y: node.y },
       size: { ...NODE_SIZE },
       group: null,
@@ -22568,6 +22676,17 @@ function labelForNode(node) {
   return readableName(node.id);
 }
 
+function composerCanvasNodeLabel(node) {
+  if (!node) {
+    return '';
+  }
+  if (node.type === 'customOperator') {
+    return specForNode(node).label || readableName(node.id);
+  }
+  const name = readableName(node.id);
+  return name || labelForNode(node);
+}
+
 function readableName(value) {
   if (!value) return '';
   return String(value)
@@ -22727,6 +22846,7 @@ function renderDiagram() {
     </defs>
   `;
   const byId = Object.fromEntries(nodes.map((node) => [node.id, node]));
+  renderComposerCanvasEmptyState(svg, width, height, nodes);
   for (const group of groupRegions) {
     renderLayoutGroup(svg, group);
   }
@@ -22752,7 +22872,13 @@ function renderDiagram() {
     label.setAttribute('class', 'edge-label');
     label.setAttribute('x', String(mid - 20));
     label.setAttribute('y', String((y1 + y2) / 2 - 6));
-    label.textContent = edge.label || '';
+    const edgeLabel = canvasEdgeLabel(edge);
+    label.textContent = canvasText(edgeLabel, 28);
+    if (edgeLabel) {
+      const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+      title.textContent = edgeLabel;
+      label.appendChild(title);
+    }
     svg.appendChild(label);
   }
   if (state.connectionDrag) {
@@ -22813,14 +22939,15 @@ function renderDiagram() {
     title.setAttribute('class', 'node-title');
     title.setAttribute('x', String(node.position.x + 12));
     title.setAttribute('y', String(node.position.y + 28));
-    title.textContent = node.label;
+    title.textContent = canvasText(node.label, 24);
     group.appendChild(title);
     const meta = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     meta.setAttribute('class', 'node-meta');
     meta.setAttribute('x', String(node.position.x + 12));
     meta.setAttribute('y', String(node.position.y + 52));
-    meta.textContent = node.operatorRef || node.kind;
+    meta.textContent = canvasText(node.operatorRef || node.kind, 28);
     group.appendChild(meta);
+    renderCanvasNodePortSummary(group, node, builderNode);
     if (traceNode) {
       renderNodeTraceBadge(group, node, traceNode);
     }
@@ -22832,6 +22959,111 @@ function renderDiagram() {
     }
     svg.appendChild(group);
   }
+}
+
+function renderComposerCanvasEmptyState(svg, width, height, nodes) {
+  if (!isComposerSelected() || nodes.length) {
+    return;
+  }
+  const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  group.setAttribute('class', 'canvas-empty-state');
+  const boxWidth = 280;
+  const boxHeight = 104;
+  const x = Math.max(40, width / 2 - boxWidth / 2);
+  const y = Math.max(80, height / 2 - boxHeight / 2);
+  const frame = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  frame.setAttribute('x', String(x));
+  frame.setAttribute('y', String(y));
+  frame.setAttribute('width', String(boxWidth));
+  frame.setAttribute('height', String(boxHeight));
+  frame.setAttribute('rx', '8');
+  group.appendChild(frame);
+  const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  title.setAttribute('class', 'canvas-empty-title');
+  title.setAttribute('x', String(x + 22));
+  title.setAttribute('y', String(y + 40));
+  title.textContent = 'No operators on canvas';
+  group.appendChild(title);
+  const meta = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  meta.setAttribute('class', 'canvas-empty-meta');
+  meta.setAttribute('x', String(x + 22));
+  meta.setAttribute('y', String(y + 66));
+  meta.textContent = 'Operator palette ready';
+  group.appendChild(meta);
+  svg.appendChild(group);
+}
+
+function canvasEdgeLabel(edge) {
+  if (edge?.label) {
+    return String(edge.label);
+  }
+  const kind = canonicalEdgeKind(edge?.kind);
+  if (kind === 'dependency') {
+    return 'depends';
+  }
+  if (kind === 'route') {
+    return edge?.condition || 'otherwise';
+  }
+  const source = endpointLabel({
+    port: edge?.sourcePort || '',
+    path: edge?.sourcePath || ''
+  });
+  const target = endpointLabel({
+    port: edge?.targetPort || '',
+    path: edge?.targetPath || ''
+  });
+  if (source && target) {
+    return `${source} -> ${target}`;
+  }
+  return 'data';
+}
+
+function canvasText(value, maxLength = 24) {
+  const text = String(value || '').trim();
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function renderCanvasNodePortSummary(group, visualNode, builderNode) {
+  if (!builderNode) {
+    return;
+  }
+  const summary = canvasNodePortSummary(builderNode);
+  const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  text.setAttribute('class', `node-port-summary ${summary.missingRequiredInputs ? 'warning' : 'clean'}`);
+  text.setAttribute('x', String(visualNode.position.x + 12));
+  text.setAttribute('y', String(visualNode.position.y + 68));
+  text.textContent = summary.missingRequiredInputs
+    ? `In ${summary.inputCount} · Out ${summary.outputCount} · Missing ${summary.missingRequiredInputs}`
+    : `In ${summary.inputCount} · Out ${summary.outputCount}`;
+  group.appendChild(text);
+}
+
+function canvasNodePortSummary(node) {
+  if (!node) {
+    return { inputCount: 0, outputCount: 0, boundInputCount: 0, missingRequiredInputs: 0 };
+  }
+  const targets = targetHandlesForNode(node);
+  const sources = sourceHandlesForNode(node);
+  const boundTargets = new Set(builderInputBindings(node)
+    .filter((binding) => String(binding.expression || '').trim())
+    .map((binding) => canvasPortKey(binding.targetPort, binding.targetPath)));
+  const missingRequiredInputs = targets
+    .filter((target) => target.required)
+    .filter((target) => !boundTargets.has(canvasPortKey(target.port, target.path)))
+    .length;
+  return {
+    inputCount: targets.length,
+    outputCount: sources.length,
+    boundInputCount: boundTargets.size,
+    missingRequiredInputs
+  };
+}
+
+function canvasPortKey(port, path) {
+  return `${port || ''}:${path || ''}`;
 }
 
 function renderOperatorUsageBadge(group, visualNode, usageSummary, belowTrace = false) {
@@ -22954,6 +23186,128 @@ function renderPortHandles(group, visualNode) {
     }
     group.appendChild(circle);
   });
+
+  if (shouldShowCanvasPortLabels(visualNode)) {
+    const activeSource = state.connectionDrag?.source?.nodeId === builderNode.id
+      ? state.connectionDrag.source
+      : null;
+    const activeTarget = state.connectionDrag?.hoverTarget?.nodeId === builderNode.id
+      ? state.connectionDrag.hoverTarget
+      : null;
+    renderCanvasPortLabels(group, visualNode, sourceHandles, 'source', activeSource);
+    renderCanvasPortLabels(group, visualNode, targetHandles, 'target', activeTarget);
+  }
+}
+
+function shouldShowCanvasPortLabels(visualNode) {
+  if (!isComposerSelected()) {
+    return false;
+  }
+  return state.selectedNodeId === visualNode.id
+    || state.canvasFocusedNodeId === visualNode.id
+    || state.connectionDrag?.source?.nodeId === visualNode.id
+    || state.connectionDrag?.hoverTarget?.nodeId === visualNode.id;
+}
+
+function renderCanvasPortLabels(group, visualNode, handles, role, activeHandle = null) {
+  const visible = visibleCanvasPortLabels(handles, activeHandle);
+  for (const item of visible) {
+    renderCanvasPortLabel(group, visualNode, item.index, handles.length, role, item.handle);
+  }
+  const hiddenCount = Math.max(0, handles.length - visible.length);
+  if (hiddenCount) {
+    renderCanvasPortOverflowLabel(group, visualNode, role, hiddenCount);
+  }
+}
+
+function visibleCanvasPortLabels(handles, activeHandle = null, limit = 4) {
+  const safeHandles = Array.isArray(handles) ? handles : [];
+  const indexes = safeHandles
+    .slice(0, Math.max(0, limit))
+    .map((_, index) => index);
+  const activeIndex = activeHandle
+    ? safeHandles.findIndex((handle) => sameCanvasEndpoint(handle, activeHandle))
+    : -1;
+  if (activeIndex >= 0 && !indexes.includes(activeIndex)) {
+    if (indexes.length >= limit) {
+      indexes[indexes.length - 1] = activeIndex;
+    } else {
+      indexes.push(activeIndex);
+    }
+  }
+  return [...new Set(indexes)]
+    .sort((left, right) => left - right)
+    .map((index) => ({ index, handle: safeHandles[index] }))
+    .filter((item) => item.handle);
+}
+
+function sameCanvasEndpoint(left, right) {
+  return (left?.port || '') === (right?.port || '')
+    && (left?.path || '') === (right?.path || '')
+    && (left?.kind || '') === (right?.kind || '');
+}
+
+function renderCanvasPortLabel(group, visualNode, index, total, role, handle) {
+  const point = portPoint(visualNode, index, Math.max(1, total), role);
+  const label = canvasText(canvasPortLabelText(handle), 18);
+  const width = Math.max(34, Math.min(118, label.length * 6 + 12));
+  const height = 16;
+  const x = role === 'source'
+    ? visualNode.position.x + visualNode.size.width - width - 10
+    : visualNode.position.x + 10;
+  const y = point.y - height / 2;
+  const labelGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  labelGroup.setAttribute('class', `canvas-port-label ${role}`);
+  const frame = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  frame.setAttribute('x', String(x));
+  frame.setAttribute('y', String(y));
+  frame.setAttribute('width', String(width));
+  frame.setAttribute('height', String(height));
+  frame.setAttribute('rx', '4');
+  labelGroup.appendChild(frame);
+  const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  text.setAttribute('x', String(role === 'source' ? x + width - 6 : x + 6));
+  text.setAttribute('y', String(y + 11));
+  text.setAttribute('text-anchor', role === 'source' ? 'end' : 'start');
+  text.textContent = label;
+  const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+  title.textContent = canvasPortLabelText(handle);
+  text.appendChild(title);
+  labelGroup.appendChild(text);
+  group.appendChild(labelGroup);
+}
+
+function renderCanvasPortOverflowLabel(group, visualNode, role, hiddenCount) {
+  const size = visualNode.size || NODE_SIZE;
+  const width = 42;
+  const x = role === 'source'
+    ? visualNode.position.x + size.width - width - 10
+    : visualNode.position.x + 10;
+  const y = visualNode.position.y + size.height - 18;
+  const labelGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  labelGroup.setAttribute('class', `canvas-port-label ${role} overflow`);
+  const frame = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  frame.setAttribute('x', String(x));
+  frame.setAttribute('y', String(y));
+  frame.setAttribute('width', String(width));
+  frame.setAttribute('height', '16');
+  frame.setAttribute('rx', '4');
+  labelGroup.appendChild(frame);
+  const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  text.setAttribute('x', String(x + width / 2));
+  text.setAttribute('y', String(y + 11));
+  text.setAttribute('text-anchor', 'middle');
+  text.textContent = `+${hiddenCount}`;
+  labelGroup.appendChild(text);
+  group.appendChild(labelGroup);
+}
+
+function canvasPortLabelText(handle) {
+  const label = endpointLabel(handle);
+  const type = handle?.type && !['route', 'dependency'].includes(handle.type)
+    ? `:${handle.type}`
+    : '';
+  return `${label || handle?.port || 'port'}${type}`;
 }
 
 function createPortCircle(point, role, node, handle) {
