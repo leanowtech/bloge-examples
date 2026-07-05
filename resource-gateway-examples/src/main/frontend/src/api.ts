@@ -3,6 +3,7 @@ import type {
   ConnectionCandidatesResponse,
   ConnectionCheckRequest,
   ConnectionCheckResponse,
+  GatewayExampleScenario,
   OperatorLibrary,
   OperatorLibraryValidationResult,
   OperatorDefinition,
@@ -53,6 +54,13 @@ export async function fetchOperators(): Promise<OperatorDefinition[]> {
   }
   const envelope = data as { operators?: OperatorDefinition[] };
   return envelope.operators ?? [];
+}
+
+/** Loads resource-gateway showcase scenarios in backend-defined order. */
+export async function fetchGatewayScenarios(): Promise<GatewayExampleScenario[]> {
+  return readJson<GatewayExampleScenario[]>(
+    await fetch('/api/gateway/examples/scenarios'),
+  );
 }
 
 /** Validates pasted operator-library JSON/YAML without storing it. */

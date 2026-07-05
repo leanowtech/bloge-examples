@@ -211,3 +211,42 @@ export interface SimulationResponse {
   errors: string[];
   generatedDsl: string;
 }
+
+/** A browser-selectable sample input for one resource-gateway showcase scenario. */
+export interface GatewayExamplePreset {
+  label?: string;
+  description?: string;
+  values?: Record<string, unknown>;
+  expected?: Record<string, unknown>;
+}
+
+/** The public gateway endpoint recipe used by one resource-gateway showcase scenario. */
+export interface GatewayExampleRun {
+  mode?: string;
+  method?: string;
+  pathTemplate?: string;
+  bodyTemplate?: Record<string, unknown>;
+  headers?: Record<string, string>;
+}
+
+/** Optional decision-table metadata exposed for matrix-oriented showcase scenarios. */
+export interface GatewayDecisionTable {
+  hitPolicy?: string;
+  columns?: unknown[];
+  rows?: unknown[];
+}
+
+/** Public scenario metadata returned by GET /api/gateway/examples/scenarios. */
+export interface GatewayExampleScenario {
+  graphName: string;
+  title: string;
+  graphFile?: string;
+  pattern?: string;
+  description?: string;
+  concepts?: string[];
+  sampleInput?: Record<string, unknown>;
+  samplePresets?: GatewayExamplePreset[];
+  run?: GatewayExampleRun;
+  decisionTable?: GatewayDecisionTable | null;
+  diagramPath?: string;
+}

@@ -85,6 +85,15 @@ class GatewayExampleControllerTest {
     }
 
     @Test
+    void pageControllerForwardsCleanUrlToReactShowcase() throws Exception {
+        MockMvc pageMvc = MockMvcBuilders.standaloneSetup(new GatewayExamplePageController()).build();
+
+        pageMvc.perform(get("/showcase"))
+                .andExpect(status().isOk())
+                .andExpect(forwardedUrl("/showcase/index.html"));
+    }
+
+    @Test
     void staticShowcaseAssetsArePackaged() {
         assertThat(new ClassPathResource("static/examples/gateway/index.html").exists()).isTrue();
         assertThat(new ClassPathResource("static/examples/gateway/app.js").exists()).isTrue();

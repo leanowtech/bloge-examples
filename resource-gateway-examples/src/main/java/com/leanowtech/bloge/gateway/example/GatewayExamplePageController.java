@@ -28,4 +28,14 @@ public class GatewayExamplePageController {
     public String authorCanvas() {
         return "forward:/author/index.html";
     }
+
+    /**
+     * Forwards the React showcase route to its Vite-built SPA entry point.
+     *
+     * @return static resource forward target
+     */
+    @GetMapping({"/showcase", "/showcase/"})
+    public String reactShowcase() {
+        return "forward:/showcase/index.html";
+    }
 }

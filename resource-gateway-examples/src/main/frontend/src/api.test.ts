@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { importOperatorLibraryText, validateOperatorLibraryText } from './api';
+import { fetchGatewayScenarios, importOperatorLibraryText, validateOperatorLibraryText } from './api';
 
 describe('operator library API client', () => {
   afterEach(() => {
@@ -55,5 +55,22 @@ describe('operator library API client', () => {
 
     await expect(importOperatorLibraryText('{}'))
       .rejects.toThrow('Request failed: 400 Unsupported schema version.');
+  });
+
+  it('loads gateway showcase scenarios in backend-defined order', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify([
+      { graphName: 'userDashboard', title: 'User Dashboard' },
+      { graphName: 'loanDecisionPolicy', title: 'Loan Decision Policy' },
+      { graphName: 'aiEnrichedSearch', title: 'AI Enriched Search' },
+    ])));
+
+    const scenarios = await fetchGatewayScenarios();
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/gateway/examples/scenarios');
+    expect(scenarios.map((scenario) => scenario.graphName)).toEqual([
+      'userDashboard',
+      'loanDecisionPolicy',
+      'aiEnrichedSearch',
+    ]);
   });
 });

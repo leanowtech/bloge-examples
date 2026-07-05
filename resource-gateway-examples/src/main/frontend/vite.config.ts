@@ -2,10 +2,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// The authoring app is served by Spring under /author/ and coexists with the vanilla
-// /examples/gateway showcase (decision D12: coexist, then unify).
+// The same SPA is copied under /author/ and /showcase/, so asset URLs stay relative.
 export default defineConfig({
-  base: '/author/',
+  base: './',
   plugins: [react()],
   build: {
     outDir: 'dist',

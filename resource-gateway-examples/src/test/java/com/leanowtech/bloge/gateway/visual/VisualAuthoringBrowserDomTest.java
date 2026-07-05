@@ -150,6 +150,30 @@ class VisualAuthoringBrowserDomTest {
     }
 
     @Test
+    void reactShowcaseLoadsPackagedScenarioParityInRealBrowser() {
+        assumeReactShowcaseBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/showcase/");
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='react-showcase']")));
+        assertThat(driver.getTitle()).contains("BLOGE Visual Canvas");
+        waitForText(wait, By.cssSelector(".topbar"), "Showcase");
+        wait.until(ExpectedConditions.numberOfElementsToBe(
+                By.cssSelector("[data-testid^='showcase-scenario:']"), 7
+        ));
+        waitForText(wait, By.cssSelector("[data-testid='showcase-detail']"), "User Dashboard");
+
+        driver.findElement(By.cssSelector("[data-testid='showcase-scenario:loanDecisionPolicy']")).click();
+
+        waitForText(wait, By.cssSelector("[data-testid='showcase-detail']"), "Loan Decision Policy");
+        waitForText(wait, By.cssSelector("[data-testid='showcase-detail']"),
+                "/api/gateway/loan-policy/{applicantId}?amount={amount}");
+        waitForText(wait, By.cssSelector("[data-testid='showcase-decision-table']"), "unique");
+        assertNoHorizontalOverflow(wait, By.cssSelector(".showcase"));
+    }
+
+    @Test
     void composerSupportsOpenApiSaveLibraryImportSchemaConnectionRunAndPublishInRealBrowser() {
         driver = newChromeDriverOrSkip();
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
@@ -2175,6 +2199,17 @@ class VisualAuthoringBrowserDomTest {
         Assumptions.assumeTrue(
                 new ClassPathResource("static/author/index.html").exists(),
                 "React author bundle is built only when Maven runs with -Pfrontend"
+        );
+    }
+
+    /**
+     * The React showcase uses the same Vite bundle as /author/ but is copied to a second static
+     * route by the opt-in frontend Maven profile.
+     */
+    private void assumeReactShowcaseBundlePresent() {
+        Assumptions.assumeTrue(
+                new ClassPathResource("static/showcase/index.html").exists(),
+                "React showcase bundle is built only when Maven runs with -Pfrontend"
         );
     }
 
