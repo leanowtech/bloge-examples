@@ -1,4 +1,10 @@
-import type { OperatorDefinition, SimulationRequest, SimulationResponse } from './types';
+import type {
+  ConnectionCheckRequest,
+  ConnectionCheckResponse,
+  OperatorDefinition,
+  SimulationRequest,
+  SimulationResponse,
+} from './types';
 
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -24,6 +30,19 @@ export async function fetchOperators(): Promise<OperatorDefinition[]> {
 export async function simulate(request: SimulationRequest): Promise<SimulationResponse> {
   return readJson<SimulationResponse>(
     await fetch('/api/visual/graphs/simulate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    }),
+  );
+}
+
+/** Preflights one proposed canvas connection with the server's schema gate. */
+export async function checkConnection(
+  request: ConnectionCheckRequest,
+): Promise<ConnectionCheckResponse> {
+  return readJson<ConnectionCheckResponse>(
+    await fetch('/api/visual/connections/check', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),

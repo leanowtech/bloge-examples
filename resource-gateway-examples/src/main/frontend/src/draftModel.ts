@@ -1,4 +1,14 @@
-import type { DraftEdge, DraftNode, GraphDraft, OperatorDefinition, SimulationResponse } from './types';
+import type {
+  ConnectionCheckRequest,
+  ConnectionCheckResponse,
+  DraftEdge,
+  DraftEndpoint,
+  DraftNode,
+  GraphDraft,
+  OperatorDefinition,
+  SimulationResponse,
+  VisualDiagnostic,
+} from './types';
 
 /**
  * The minimal shape of a canvas node needed to build a draft. Decouples the pure draft-building logic
@@ -16,6 +26,10 @@ export interface CanvasEdge {
   id: string;
   source: string;
   target: string;
+  sourcePort?: string;
+  targetPort?: string;
+  sourcePath?: string;
+  targetPath?: string;
 }
 
 /** Compact operator facts shown directly on canvas cards and palette rows. */
@@ -52,6 +66,34 @@ export interface SimulationChecklistItem {
   detail: string;
 }
 
+export type PortHandleDirection = 'in' | 'out';
+
+/** Encodes a port name into a stable React Flow handle id. */
+export function handleIdForPort(direction: PortHandleDirection, portName: string): string {
+  return `${direction}:${encodeURIComponent(portName || '')}`;
+}
+
+/** Decodes a React Flow handle id back into the BLOGE port name it represents. */
+export function portNameFromHandle(
+  handleId: string | null | undefined,
+  direction: PortHandleDirection,
+): string {
+  const prefix = `${direction}:`;
+  if (!handleId || !handleId.startsWith(prefix)) {
+    return '';
+  }
+  return decodeURIComponent(handleId.slice(prefix.length));
+}
+
+/** Converts one React Flow handle into the endpoint shape accepted by BLOGE visual APIs. */
+export function endpointFromHandle(
+  nodeId: string,
+  handleId: string | null | undefined,
+  direction: PortHandleDirection,
+): DraftEndpoint {
+  return endpoint(nodeId, portNameFromHandle(handleId, direction));
+}
+
 /**
  * Converts canvas nodes/edges into a {@link GraphDraft} suitable for the simulate endpoint.
  *
@@ -76,8 +118,8 @@ export function toGraphDraft(
   const draftEdges: DraftEdge[] = edges.map((edge) => ({
     id: edge.id,
     kind: 'data',
-    source: { nodeId: edge.source },
-    target: { nodeId: edge.target },
+    source: endpoint(edge.source, edge.sourcePort, edge.sourcePath),
+    target: endpoint(edge.target, edge.targetPort, edge.targetPath),
   }));
 
   const resolvedOutputNode =
@@ -88,6 +130,53 @@ export function toGraphDraft(
     nodes: draftNodes,
     edges: draftEdges,
     output: { nodeId: resolvedOutputNode, path: '' },
+  };
+}
+
+/**
+ * Converts a React Flow connection gesture into the server-authoritative schema preflight request.
+ */
+export function toConnectionCheckRequest(
+  graphName: string,
+  nodes: CanvasNode[],
+  edges: CanvasEdge[],
+  outputNodeId: string,
+  sourceNodeId: string,
+  targetNodeId: string,
+  sourceHandleId: string | null | undefined,
+  targetHandleId: string | null | undefined,
+): ConnectionCheckRequest {
+  return {
+    draft: toGraphDraft(graphName, nodes, edges, outputNodeId),
+    kind: 'data',
+    condition: '',
+    source: endpointFromHandle(sourceNodeId, sourceHandleId, 'out'),
+    target: endpointFromHandle(targetNodeId, targetHandleId, 'in'),
+  };
+}
+
+/** Human-readable feedback for a server connection-check response. */
+export function connectionDecisionMessage(response: ConnectionCheckResponse): string {
+  if (response.summary?.message) {
+    return response.summary.message;
+  }
+  const firstDiagnostic = firstConnectionDiagnostic(response.diagnostics);
+  if (firstDiagnostic) {
+    return `${firstDiagnostic.code ? `${firstDiagnostic.code}: ` : ''}${firstDiagnostic.message ?? ''}`.trim();
+  }
+  return response.accepted ? 'Connection accepted.' : 'Connection rejected.';
+}
+
+function firstConnectionDiagnostic(diagnostics: VisualDiagnostic[] | undefined): VisualDiagnostic | undefined {
+  return diagnostics?.find((diagnostic) => diagnostic.level === 'error')
+    ?? diagnostics?.find((diagnostic) => diagnostic.message || diagnostic.code);
+}
+
+function endpoint(nodeId: string, port = '', path = ''): DraftEndpoint {
+  return {
+    nodeId,
+    ...(port ? { port } : {}),
+    ...(path ? { path } : {}),
   };
 }
 

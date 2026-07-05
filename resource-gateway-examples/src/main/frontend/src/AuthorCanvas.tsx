@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactFlow, {
   addEdge,
   applyEdgeChanges,
@@ -17,17 +17,21 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import { fetchOperators, simulate } from './api';
+import { checkConnection, fetchOperators, simulate } from './api';
 import {
   autoLayoutCanvas,
   type CanvasEdge,
   type CanvasNode,
   type OperatorSummary,
+  connectionDecisionMessage,
+  handleIdForPort,
   isRunSuccessful,
   nodeStatuses,
+  portNameFromHandle,
   simulationChecklist,
   summarizeCanvas,
   summarizeOperator,
+  toConnectionCheckRequest,
   toGraphDraft,
 } from './draftModel';
 import type { OperatorDefinition, SimulationResponse } from './types';
@@ -39,11 +43,32 @@ interface NodeData {
   status?: 'mocked' | 'real' | 'unknown';
 }
 
+interface ConnectionNotice {
+  level: 'ok' | 'warning' | 'error' | 'pending';
+  message: string;
+}
+
+function handleOffset(index: number, count: number): CSSProperties {
+  return { top: `${((index + 1) / (count + 1)) * 100}%` };
+}
+
 function OperatorNode({ data, selected }: NodeProps<NodeData>) {
   const status = data.status ?? 'unknown';
+  const inputPorts = data.summary.inputNames;
+  const outputPorts = data.summary.outputNames.length ? data.summary.outputNames : [''];
   return (
     <div className={`operator-node ${status} ${selected ? 'selected' : ''}`}>
-      <Handle type="target" position={Position.Left} />
+      {inputPorts.map((port, index) => (
+        <Handle
+          key={`in:${port}`}
+          id={handleIdForPort('in', port)}
+          type="target"
+          position={Position.Left}
+          title={`Input: ${port}`}
+          className="port-handle target"
+          style={handleOffset(index, inputPorts.length)}
+        />
+      ))}
       <div className="operator-node-title">
         <span>{data.label}</span>
         {status !== 'unknown' && <span className={`run-pill ${status}`}>{status}</span>}
@@ -55,8 +80,24 @@ function OperatorNode({ data, selected }: NodeProps<NodeData>) {
         </span>
         <span>{data.summary.outputCount} outputs</span>
       </div>
+      <div className="operator-node-port-grid">
+        <span>In</span>
+        <strong>{inputPorts.join(', ') || 'none'}</strong>
+        <span>Out</span>
+        <strong>{data.summary.outputNames.join(', ') || 'value'}</strong>
+      </div>
       {data.summary.designOnly && <div className="operator-node-warning">design-only</div>}
-      <Handle type="source" position={Position.Right} />
+      {outputPorts.map((port, index) => (
+        <Handle
+          key={`out:${port}`}
+          id={handleIdForPort('out', port)}
+          type="source"
+          position={Position.Right}
+          title={port ? `Output: ${port}` : 'Output'}
+          className="port-handle source"
+          style={handleOffset(index, outputPorts.length)}
+        />
+      ))}
     </div>
   );
 }
@@ -75,8 +116,10 @@ export default function AuthorCanvas() {
   const [result, setResult] = useState<SimulationResponse | null>(null);
   const [error, setError] = useState<string>('');
   const [busy, setBusy] = useState(false);
+  const [checkingConnection, setCheckingConnection] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedNodeId, setSelectedNodeId] = useState('');
+  const [connectionNotice, setConnectionNotice] = useState<ConnectionNotice | null>(null);
   const counter = useRef(0);
 
   useEffect(() => {
@@ -108,11 +151,6 @@ export default function AuthorCanvas() {
     },
     [clearRunResult],
   );
-  const onConnect = useCallback((connection: Connection) => {
-    clearRunResult();
-    setEdges((current) => addEdge({ ...connection, animated: true }, current));
-  }, [clearRunResult]);
-
   const addOperator = useCallback((operator: OperatorDefinition) => {
     clearRunResult();
     counter.current += 1;
@@ -146,6 +184,8 @@ export default function AuthorCanvas() {
         id: edge.id,
         source: edge.source,
         target: edge.target,
+        sourcePort: portNameFromHandle(edge.sourceHandle, 'out'),
+        targetPort: portNameFromHandle(edge.targetHandle, 'in'),
       })),
     [edges],
   );
@@ -159,6 +199,53 @@ export default function AuthorCanvas() {
     [canvasSummary, result],
   );
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
+
+  const onConnect = useCallback(async (connection: Connection) => {
+    if (!connection.source || !connection.target) {
+      return;
+    }
+    setCheckingConnection(true);
+    setConnectionNotice({ level: 'pending', message: 'Checking schema compatibility...' });
+    try {
+      const check = await checkConnection(toConnectionCheckRequest(
+        'visualGraph',
+        canvasNodes,
+        canvasEdges,
+        outputNodeId,
+        connection.source,
+        connection.target,
+        connection.sourceHandle,
+        connection.targetHandle,
+      ));
+      const message = connectionDecisionMessage(check);
+      if (!check.accepted) {
+        setConnectionNotice({ level: 'error', message });
+        return;
+      }
+
+      clearRunResult();
+      const sourcePort = portNameFromHandle(connection.sourceHandle, 'out');
+      const targetPort = portNameFromHandle(connection.targetHandle, 'in');
+      const label = `${sourcePort || 'value'} -> ${targetPort || 'input'}`;
+      setEdges((current) =>
+        addEdge({
+          ...connection,
+          id: check.edge?.id || `${connection.source}:${sourcePort}->${connection.target}:${targetPort}`,
+          label,
+          animated: true,
+          className: 'accepted-edge',
+        }, current),
+      );
+      setConnectionNotice({
+        level: check.summary?.graphStillInvalid ? 'warning' : 'ok',
+        message,
+      });
+    } catch (cause: unknown) {
+      setConnectionNotice({ level: 'error', message: String(cause) });
+    } finally {
+      setCheckingConnection(false);
+    }
+  }, [canvasEdges, canvasNodes, clearRunResult, outputNodeId]);
 
   const runSimulation = useCallback(async () => {
     setBusy(true);
@@ -253,6 +340,11 @@ export default function AuthorCanvas() {
           <span className="canvas-chip">{canvasSummary.nodeCount} nodes</span>
           <span className="canvas-chip">{canvasSummary.edgeCount} edges</span>
           <span className="canvas-chip">Output {canvasSummary.outputNodeId || 'missing'}</span>
+          {connectionNotice && (
+            <span className={`connection-notice ${connectionNotice.level}`}>
+              {checkingConnection ? 'Checking...' : connectionNotice.message}
+            </span>
+          )}
           <span className="legend">
             <span className="swatch mocked" /> mocked
             <span className="swatch real" /> real

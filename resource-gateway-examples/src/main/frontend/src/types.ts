@@ -79,12 +79,43 @@ export interface SimulationRequest {
   fixtures?: Record<string, NodeFixture>;
 }
 
+/** The body of POST /api/visual/connections/check. */
+export interface ConnectionCheckRequest {
+  draft: GraphDraft;
+  source: DraftEndpoint;
+  target: DraftEndpoint;
+  kind: string;
+  condition?: string;
+}
+
 /** A visual diagnostic. */
 export interface VisualDiagnostic {
   level?: string;
   code?: string;
   message?: string;
   target?: string;
+}
+
+/** Stable server-authored summary of a proposed connection decision. */
+export interface ConnectionCheckSummary {
+  accepted?: boolean;
+  message?: string;
+  graphStillInvalid?: boolean;
+  readinessState?: string;
+  readinessLevel?: string;
+}
+
+/** The response of POST /api/visual/connections/check. */
+export interface ConnectionCheckResponse {
+  accepted: boolean;
+  edge?: DraftEdge;
+  bindingKey?: string;
+  diagnostics: VisualDiagnostic[];
+  validation?: {
+    valid?: boolean;
+    diagnostics?: VisualDiagnostic[];
+  };
+  summary?: ConnectionCheckSummary;
 }
 
 /** The response of POST /api/visual/graphs/simulate. */

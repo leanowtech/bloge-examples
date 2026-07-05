@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import {
   autoLayoutCanvas,
+  connectionDecisionMessage,
+  endpointFromHandle,
+  handleIdForPort,
   isRunSuccessful,
   nodeStatuses,
+  portNameFromHandle,
   simulationChecklist,
   summarizeCanvas,
   summarizeOperator,
+  toConnectionCheckRequest,
   toGraphDraft,
 } from './draftModel';
 import type { OperatorDefinition, SimulationResponse } from './types';
@@ -52,6 +57,91 @@ describe('toGraphDraft', () => {
     const draft = toGraphDraft('g', [], [], '');
     expect(draft.nodes).toHaveLength(0);
     expect(draft.output.nodeId).toBe('');
+  });
+
+  it('preserves port-qualified canvas edges in draft endpoints', () => {
+    const draft = toGraphDraft(
+      'myGraph',
+      [
+        { id: 'a', operatorRef: 'producer', position: { x: 0, y: 0 } },
+        { id: 'b', operatorRef: 'consumer', position: { x: 200, y: 0 } },
+      ],
+      [
+        {
+          id: 'e1',
+          source: 'a',
+          target: 'b',
+          sourcePort: 'decision',
+          targetPort: 'profile',
+        },
+      ],
+      'b',
+    );
+
+    expect(draft.edges[0]).toMatchObject({
+      source: { nodeId: 'a', port: 'decision' },
+      target: { nodeId: 'b', port: 'profile' },
+    });
+  });
+});
+
+describe('port handles', () => {
+  it('round-trips arbitrary port names through React Flow handle ids', () => {
+    const handleId = handleIdForPort('out', 'decision.score');
+    expect(handleId).toBe('out:decision.score');
+    expect(portNameFromHandle(handleId, 'out')).toBe('decision.score');
+    expect(portNameFromHandle(handleId, 'in')).toBe('');
+  });
+
+  it('creates BLOGE endpoints from handle ids', () => {
+    expect(endpointFromHandle('policy', handleIdForPort('in', 'profile'), 'in')).toEqual({
+      nodeId: 'policy',
+      port: 'profile',
+    });
+  });
+});
+
+describe('toConnectionCheckRequest', () => {
+  it('builds a server preflight request from a connection gesture', () => {
+    const request = toConnectionCheckRequest(
+      'myGraph',
+      [
+        { id: 'a', operatorRef: 'producer', position: { x: 0, y: 0 } },
+        { id: 'b', operatorRef: 'consumer', position: { x: 200, y: 0 } },
+      ],
+      [],
+      'b',
+      'a',
+      'b',
+      handleIdForPort('out', 'decision'),
+      handleIdForPort('in', 'profile'),
+    );
+
+    expect(request.kind).toBe('data');
+    expect(request.source).toEqual({ nodeId: 'a', port: 'decision' });
+    expect(request.target).toEqual({ nodeId: 'b', port: 'profile' });
+    expect(request.draft.output.nodeId).toBe('b');
+  });
+});
+
+describe('connectionDecisionMessage', () => {
+  it('prefers the server summary message', () => {
+    expect(
+      connectionDecisionMessage({
+        accepted: false,
+        diagnostics: [{ level: 'error', code: 'x', message: 'diagnostic' }],
+        summary: { message: 'server says no' },
+      }),
+    ).toBe('server says no');
+  });
+
+  it('falls back to the first diagnostic when no summary exists', () => {
+    expect(
+      connectionDecisionMessage({
+        accepted: false,
+        diagnostics: [{ level: 'error', code: 'visual.connection.schema', message: 'string -> number' }],
+      }),
+    ).toBe('visual.connection.schema: string -> number');
   });
 });
 

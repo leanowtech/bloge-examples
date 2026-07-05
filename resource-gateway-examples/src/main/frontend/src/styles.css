@@ -176,6 +176,7 @@ body {
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
+  overflow: hidden;
 }
 
 button.primary {
@@ -224,6 +225,34 @@ button.secondary:disabled {
   background: #fafafa;
   color: var(--muted);
   font-size: 12px;
+}
+
+.connection-notice {
+  min-width: 0;
+  max-width: 320px;
+  overflow: hidden;
+  padding: 4px 7px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connection-notice.ok {
+  background: #e8f5e9;
+  color: var(--success);
+}
+
+.connection-notice.warning,
+.connection-notice.pending {
+  background: #fff8e1;
+  color: var(--warning);
+}
+
+.connection-notice.error {
+  background: #fdecea;
+  color: var(--danger);
 }
 
 .legend {
@@ -309,6 +338,31 @@ button.secondary:disabled {
   font-size: 11px;
 }
 
+.operator-node-port-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e6e8ec;
+  font-size: 10px;
+}
+
+.operator-node-port-grid span {
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.operator-node-port-grid strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #293241;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .operator-node-warning {
   margin-top: 8px;
   padding: 4px 6px;
@@ -342,6 +396,25 @@ button.secondary:disabled {
   height: 9px;
   border: 2px solid #fff;
   background: var(--accent);
+}
+
+.react-flow__handle.port-handle.target {
+  left: -6px;
+  background: #64748b;
+}
+
+.react-flow__handle.port-handle.source {
+  right: -6px;
+  background: var(--accent);
+}
+
+.react-flow__edge.accepted-edge path {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.react-flow__edge-text {
+  font-size: 10px;
 }
 
 .checklist {

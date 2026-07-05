@@ -118,9 +118,11 @@ The React authoring workspace served at `/author/` is the progressive React Flow
 canvas for the same generic operator-library contract. Its palette and node
 cards now surface operator display names, required/total input counts, output
 counts, and design-only status; the toolbar adds deterministic Auto Layout plus
-node/edge/output HUD chips; and the inspector keeps a simulation checklist,
-selected-node port inventory, generated DSL, and unmistakable `real` versus
-`mocked` run badges in one context.
+node/edge/output HUD chips; each node renders schema port handles; connection
+gestures are checked through `/api/visual/connections/check` before an edge is
+written; and the inspector keeps a simulation checklist, selected-node port
+inventory, generated DSL, and unmistakable `real` versus `mocked` run badges in
+one context.
 Java operators registered in the Spring `OperatorRegistry` also enter
 the same catalog from BLOGE metadata, with streaming and suspendable operators
 marked as distinct Java source kinds and suspendable operators marked as durable
