@@ -5,6 +5,9 @@
   --ink: #1c2330;
   --muted: #6b7280;
   --accent: #1a56db;
+  --success: #2e7d32;
+  --warning: #b26a00;
+  --danger: #b3261e;
 }
 
 * {
@@ -109,7 +112,7 @@ body {
 .palette button {
   width: 100%;
   text-align: left;
-  padding: 8px 10px;
+  padding: 9px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: #fbfbfd;
@@ -130,12 +133,24 @@ body {
   white-space: nowrap;
 }
 
+.op-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.op-meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .badge {
   font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 999px;
+  padding: 2px 5px;
+  border-radius: 4px;
   background: #eef;
   color: #334;
+  flex: none;
 }
 
 .badge.design {
@@ -173,7 +188,18 @@ button.primary {
   font-weight: 600;
 }
 
-button.primary:disabled {
+button.secondary {
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid var(--border);
+  padding: 7px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button.primary:disabled,
+button.secondary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -184,11 +210,20 @@ button.primary:disabled {
 }
 
 .status.ok {
-  color: #2e7d32;
+  color: var(--success);
 }
 
 .status.fail {
-  color: #b3261e;
+  color: var(--danger);
+}
+
+.canvas-chip {
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #fafafa;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .legend {
@@ -223,6 +258,155 @@ button.primary:disabled {
   min-height: 0;
 }
 
+.operator-node {
+  min-width: 208px;
+  max-width: 240px;
+  padding: 10px;
+  border: 1px solid #c7ccd4;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 6px 16px rgb(28 35 48 / 10%);
+}
+
+.operator-node.selected {
+  outline: 3px solid rgb(26 86 219 / 18%);
+  border-color: var(--accent);
+}
+
+.operator-node.mocked {
+  border: 2px dashed var(--warning);
+  background: #fff8e1;
+}
+
+.operator-node.real {
+  border: 2px solid var(--success);
+  background: #e8f5e9;
+}
+
+.operator-node-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.operator-node-ref {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operator-node-metrics {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  color: #3b4452;
+  font-size: 11px;
+}
+
+.operator-node-warning {
+  margin-top: 8px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  background: #fff3cd;
+  color: #7a5b00;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.run-pill {
+  flex: none;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.run-pill.mocked {
+  background: #fff3cd;
+  color: #7a5b00;
+}
+
+.run-pill.real {
+  background: #dff3e3;
+  color: #1b5e20;
+}
+
+.react-flow__handle {
+  width: 9px;
+  height: 9px;
+  border: 2px solid #fff;
+  background: var(--accent);
+}
+
+.checklist {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.checklist li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: #fafafa;
+  font-size: 12px;
+}
+
+.checklist li.ready {
+  border-left-color: var(--success);
+}
+
+.checklist li.warning,
+.checklist li.pending {
+  border-left-color: var(--warning);
+}
+
+.checklist li.blocked {
+  border-left-color: var(--danger);
+}
+
+.checklist strong {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.node-detail {
+  margin-bottom: 16px;
+}
+
+.node-detail h3 {
+  margin-top: 0;
+}
+
+.port-list {
+  display: grid;
+  gap: 3px;
+  margin-top: 9px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fafafa;
+  font-size: 12px;
+}
+
+.port-list span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .inspector pre {
   background: #0f172a;
   color: #e2e8f0;
@@ -235,7 +419,7 @@ button.primary:disabled {
 
 .inspector pre.error {
   background: #fdecea;
-  color: #b3261e;
+  color: var(--danger);
 }
 
 .inspector h3 {
@@ -253,5 +437,5 @@ button.primary:disabled {
 }
 
 .diag.error {
-  color: #b3261e;
+  color: var(--danger);
 }
