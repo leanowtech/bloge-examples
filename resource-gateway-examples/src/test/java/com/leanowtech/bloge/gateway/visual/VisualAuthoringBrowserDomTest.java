@@ -18,6 +18,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.openqa.selenium.By;
 import org.openqa.selenium.Dimension;
 import org.openqa.selenium.JavascriptExecutor;
@@ -29,8 +30,10 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeDriverService;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.interactions.Actions;
+import org.openqa.selenium.remote.http.ClientConfig;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.Select;
 import org.openqa.selenium.support.ui.WebDriverWait;
@@ -61,9 +64,11 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "spring.datasource.url=jdbc:h2:mem:visual-authoring-browser-dom;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
         }
 )
+@Timeout(90)
 class VisualAuthoringBrowserDomTest {
 
     private static final Duration WAIT_TIMEOUT = Duration.ofSeconds(12);
+    private static final Duration WEBDRIVER_TIMEOUT = Duration.ofSeconds(15);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final YAMLMapper YAML_MAPPER = new YAMLMapper();
     private static final Path MAC_CHROME_BINARY = Path.of(
@@ -2096,13 +2101,32 @@ class VisualAuthoringBrowserDomTest {
         }
         Path chromeDriver = chromeDriverExecutableOrSkip();
         System.setProperty("webdriver.chrome.driver", chromeDriver.toString());
+        ChromeDriverService service = new ChromeDriverService.Builder()
+                .usingDriverExecutable(chromeDriver.toFile())
+                .usingAnyFreePort()
+                .withTimeout(WEBDRIVER_TIMEOUT)
+                .withSilent(true)
+                .build();
         try {
-            return new ChromeDriver(options);
+            ChromeDriver browser = new ChromeDriver(service, options, webdriverClientConfig());
+            browser.manage().timeouts()
+                    .pageLoadTimeout(WEBDRIVER_TIMEOUT)
+                    .scriptTimeout(WEBDRIVER_TIMEOUT)
+                    .implicitlyWait(Duration.ZERO);
+            return browser;
         } catch (WebDriverException ex) {
+            service.stop();
             chromeWebDriverUnavailableReason = "Chrome/WebDriver is unavailable: " + ex.getMessage();
             Assumptions.abort(chromeWebDriverUnavailableReason);
             return null;
         }
+    }
+
+    private ClientConfig webdriverClientConfig() {
+        return ClientConfig.defaultConfig()
+                .connectionTimeout(WEBDRIVER_TIMEOUT)
+                .readTimeout(WEBDRIVER_TIMEOUT)
+                .wsTimeout(WEBDRIVER_TIMEOUT);
     }
 
     private Path chromeDriverExecutableOrSkip() {
