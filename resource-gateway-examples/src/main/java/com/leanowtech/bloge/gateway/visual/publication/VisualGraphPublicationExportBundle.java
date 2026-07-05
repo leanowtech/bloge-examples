@@ -1,11 +1,16 @@
 package com.leanowtech.bloge.gateway.visual.publication;
 
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
+import com.leanowtech.bloge.gateway.visual.golden.VisualGraphGoldenCase;
+import com.leanowtech.bloge.gateway.visual.golden.VisualGraphGoldenCertification;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -21,6 +26,8 @@ import java.util.Map;
  * @param publication immutable publication snapshot
  * @param validation frozen publish-time validation/readiness snapshot
  * @param dependencyReport frozen publish-time dependency report
+ * @param goldenCases portable golden regression cases bound to this publication
+ * @param goldenCertification latest golden certification snapshot for this publication
  */
 public record VisualGraphPublicationExportBundle(
         String schemaVersion,
@@ -32,7 +39,9 @@ public record VisualGraphPublicationExportBundle(
         String sourceArtifactKind,
         VisualGraphPublication publication,
         VisualValidationResult validation,
-        GraphDraftDependencyReport dependencyReport
+        GraphDraftDependencyReport dependencyReport,
+        List<VisualGraphGoldenCase> goldenCases,
+        VisualGraphGoldenCertification goldenCertification
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualGraphPublicationExport.v1";
 
@@ -59,6 +68,7 @@ public record VisualGraphPublicationExportBundle(
                 ? publication.dependencyReport()
                 : dependencyReport;
         dependencyReport = dependencyReport == null ? GraphDraftDependencyReport.empty() : dependencyReport;
+        goldenCases = normalizedGoldenCases(goldenCases);
         bundleFingerprint = bundleFingerprint == null || bundleFingerprint.isBlank()
                 ? computedFingerprint(
                         schemaVersion,
@@ -68,8 +78,27 @@ public record VisualGraphPublicationExportBundle(
                         sourceArtifactKind,
                         publication,
                         validation,
-                        dependencyReport)
+                        dependencyReport,
+                        goldenCases,
+                        goldenCertification)
                 : bundleFingerprint.trim();
+    }
+
+    /**
+     * Backward-compatible constructor for callers that already supply a fingerprint but no golden snapshots.
+     */
+    public VisualGraphPublicationExportBundle(String schemaVersion,
+                                              Instant exportedAt,
+                                              String bundleFingerprint,
+                                              String sourcePublicationId,
+                                              String sourceDraftId,
+                                              long sourceDraftRevision,
+                                              String sourceArtifactKind,
+                                              VisualGraphPublication publication,
+                                              VisualValidationResult validation,
+                                              GraphDraftDependencyReport dependencyReport) {
+        this(schemaVersion, exportedAt, bundleFingerprint, sourcePublicationId, sourceDraftId, sourceDraftRevision,
+                sourceArtifactKind, publication, validation, dependencyReport, List.of(), null);
     }
 
     /**
@@ -85,7 +114,25 @@ public record VisualGraphPublicationExportBundle(
                                               VisualValidationResult validation,
                                               GraphDraftDependencyReport dependencyReport) {
         this(schemaVersion, exportedAt, "", sourcePublicationId, sourceDraftId, sourceDraftRevision,
-                sourceArtifactKind, publication, validation, dependencyReport);
+                sourceArtifactKind, publication, validation, dependencyReport, List.of(), null);
+    }
+
+    /**
+     * Constructor for callers that want a derived fingerprint over publication and golden snapshots.
+     */
+    public VisualGraphPublicationExportBundle(String schemaVersion,
+                                              Instant exportedAt,
+                                              String sourcePublicationId,
+                                              String sourceDraftId,
+                                              long sourceDraftRevision,
+                                              String sourceArtifactKind,
+                                              VisualGraphPublication publication,
+                                              VisualValidationResult validation,
+                                              GraphDraftDependencyReport dependencyReport,
+                                              List<VisualGraphGoldenCase> goldenCases,
+                                              VisualGraphGoldenCertification goldenCertification) {
+        this(schemaVersion, exportedAt, "", sourcePublicationId, sourceDraftId, sourceDraftRevision,
+                sourceArtifactKind, publication, validation, dependencyReport, goldenCases, goldenCertification);
     }
 
     /**
@@ -95,6 +142,20 @@ public record VisualGraphPublicationExportBundle(
      * @return portable publication export bundle
      */
     public static VisualGraphPublicationExportBundle from(VisualGraphPublication publication) {
+        return from(publication, List.of(), null);
+    }
+
+    /**
+     * Creates a portable bundle from a stored immutable publication and its golden regression snapshots.
+     *
+     * @param publication publication snapshot
+     * @param goldenCases golden regression cases tied to the publication
+     * @param goldenCertification latest certification tied to the publication
+     * @return portable publication export bundle with golden snapshots included in the fingerprint
+     */
+    public static VisualGraphPublicationExportBundle from(VisualGraphPublication publication,
+                                                          Collection<VisualGraphGoldenCase> goldenCases,
+                                                          VisualGraphGoldenCertification goldenCertification) {
         return new VisualGraphPublicationExportBundle(
                 SCHEMA_VERSION,
                 Instant.now(),
@@ -105,7 +166,9 @@ public record VisualGraphPublicationExportBundle(
                 publication == null ? "" : publication.artifactKind(),
                 publication,
                 publication == null ? null : publication.validation(),
-                publication == null ? null : publication.dependencyReport()
+                publication == null ? null : publication.dependencyReport(),
+                goldenCases == null ? List.of() : List.copyOf(goldenCases),
+                goldenCertification
         );
     }
 
@@ -123,7 +186,9 @@ public record VisualGraphPublicationExportBundle(
                 sourceArtifactKind,
                 publication,
                 validation,
-                dependencyReport);
+                dependencyReport,
+                goldenCases,
+                goldenCertification);
     }
 
     /**
@@ -142,7 +207,9 @@ public record VisualGraphPublicationExportBundle(
                                               String sourceArtifactKind,
                                               VisualGraphPublication publication,
                                               VisualValidationResult validation,
-                                              GraphDraftDependencyReport dependencyReport) {
+                                              GraphDraftDependencyReport dependencyReport,
+                                              List<VisualGraphGoldenCase> goldenCases,
+                                              VisualGraphGoldenCertification goldenCertification) {
         Map<String, Object> material = new LinkedHashMap<>();
         material.put("schemaVersion", schemaVersion);
         material.put("sourcePublicationId", sourcePublicationId);
@@ -152,6 +219,17 @@ public record VisualGraphPublicationExportBundle(
         material.put("publication", publication);
         material.put("validation", validation);
         material.put("dependencyReport", dependencyReport);
+        material.put("goldenCases", normalizedGoldenCases(goldenCases));
+        material.put("goldenCertification", goldenCertification);
         return VisualBundleFingerprint.fromMaterial(material);
+    }
+
+    private static List<VisualGraphGoldenCase> normalizedGoldenCases(Collection<VisualGraphGoldenCase> goldenCases) {
+        if (goldenCases == null || goldenCases.isEmpty()) {
+            return List.of();
+        }
+        return goldenCases.stream()
+                .sorted(Comparator.comparing(VisualGraphGoldenCase::caseId))
+                .toList();
     }
 }

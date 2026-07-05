@@ -6,6 +6,10 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
+import com.leanowtech.bloge.gateway.visual.golden.InMemoryVisualGraphGoldenCaseRepository;
+import com.leanowtech.bloge.gateway.visual.golden.InMemoryVisualGraphGoldenCertificationRepository;
+import com.leanowtech.bloge.gateway.visual.golden.VisualGraphGoldenCase;
+import com.leanowtech.bloge.gateway.visual.golden.VisualGraphGoldenCertification;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
@@ -150,6 +154,8 @@ class VisualGraphPublicationControllerTest {
         assertThat(response.getBody().publication()).isEqualTo(stored);
         assertThat(response.getBody().validation()).isEqualTo(stored.validation());
         assertThat(response.getBody().dependencyReport()).isEqualTo(stored.dependencyReport());
+        assertThat(response.getBody().goldenCases()).isEmpty();
+        assertThat(response.getBody().goldenCertification()).isNull();
 
         VisualGraphPublicationExportBundle sameMaterialDifferentExportTime =
                 new VisualGraphPublicationExportBundle(
@@ -162,6 +168,51 @@ class VisualGraphPublicationControllerTest {
                         response.getBody().publication(),
                         response.getBody().validation(),
                         response.getBody().dependencyReport());
+        assertThat(sameMaterialDifferentExportTime.bundleFingerprint())
+                .isEqualTo(response.getBody().bundleFingerprint());
+    }
+
+    @Test
+    void exportPublicationIncludesGoldenSnapshotsInPortableFingerprint() {
+        InMemoryVisualGraphPublicationRepository repository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication stored = repository.create(publication());
+        InMemoryVisualGraphGoldenCaseRepository goldenCases = new InMemoryVisualGraphGoldenCaseRepository();
+        VisualGraphGoldenCase goldenCase = goldenCases.save(goldenCase(stored.publicationId(), "case-1"));
+        InMemoryVisualGraphGoldenCertificationRepository goldenCertifications =
+                new InMemoryVisualGraphGoldenCertificationRepository();
+        VisualGraphGoldenCertification certification = goldenCertifications.save(
+                goldenCertification(stored.publicationId()));
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(
+                repository,
+                runner(),
+                new InMemoryVisualGraphRunRepository(),
+                null,
+                goldenCases,
+                goldenCertifications);
+
+        ResponseEntity<VisualGraphPublicationExportBundle> response = controller.export(stored.publicationId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().goldenCases()).containsExactly(goldenCase);
+        assertThat(response.getBody().goldenCertification()).isEqualTo(certification);
+        assertThat(response.getBody().bundleFingerprintVerified()).isTrue();
+        assertThat(VisualGraphPublicationExportBundle.from(stored).bundleFingerprint())
+                .isNotEqualTo(response.getBody().bundleFingerprint());
+
+        VisualGraphPublicationExportBundle sameMaterialDifferentExportTime =
+                new VisualGraphPublicationExportBundle(
+                        response.getBody().schemaVersion(),
+                        Instant.EPOCH,
+                        response.getBody().sourcePublicationId(),
+                        response.getBody().sourceDraftId(),
+                        response.getBody().sourceDraftRevision(),
+                        response.getBody().sourceArtifactKind(),
+                        response.getBody().publication(),
+                        response.getBody().validation(),
+                        response.getBody().dependencyReport(),
+                        response.getBody().goldenCases(),
+                        response.getBody().goldenCertification());
         assertThat(sameMaterialDifferentExportTime.bundleFingerprint())
                 .isEqualTo(response.getBody().bundleFingerprint());
     }
@@ -202,6 +253,37 @@ class VisualGraphPublicationControllerTest {
                 });
         assertThat(response.getBody().diagnostics()).isEmpty();
         assertThat(targetRepository.find(source.publicationId())).contains(response.getBody().publication());
+    }
+
+    @Test
+    void importBundleRestoresGoldenSnapshotsWithPublication() {
+        InMemoryVisualGraphPublicationRepository sourceRepository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication source = sourceRepository.create(publication("tenant-a", "risk", "prod"));
+        VisualGraphGoldenCase goldenCase = goldenCase(source.publicationId(), "case-1");
+        VisualGraphGoldenCertification certification = goldenCertification(source.publicationId());
+        VisualGraphPublicationExportBundle bundle =
+                VisualGraphPublicationExportBundle.from(source, List.of(goldenCase), certification);
+        InMemoryVisualGraphPublicationRepository targetRepository = new InMemoryVisualGraphPublicationRepository();
+        InMemoryVisualGraphGoldenCaseRepository targetGoldenCases = new InMemoryVisualGraphGoldenCaseRepository();
+        InMemoryVisualGraphGoldenCertificationRepository targetGoldenCertifications =
+                new InMemoryVisualGraphGoldenCertificationRepository();
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(
+                targetRepository,
+                runner(),
+                new InMemoryVisualGraphRunRepository(),
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")),
+                targetGoldenCases,
+                targetGoldenCertifications);
+
+        ResponseEntity<VisualGraphPublicationImportResult> response = controller.importBundle(bundle);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().imported()).isTrue();
+        assertThat(response.getBody().sourceBundleFingerprint()).isEqualTo(bundle.bundleFingerprint());
+        assertThat(targetRepository.find(source.publicationId())).contains(response.getBody().publication());
+        assertThat(targetGoldenCases.find(goldenCase.caseId())).contains(goldenCase);
+        assertThat(targetGoldenCertifications.find(source.publicationId())).contains(certification);
     }
 
     @Test
@@ -481,6 +563,55 @@ class VisualGraphPublicationControllerTest {
     }
 
     @Test
+    void importBundleRejectsGoldenSnapshotsForDifferentPublication() {
+        InMemoryVisualGraphPublicationRepository sourceRepository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication source = sourceRepository.create(publication("tenant-a", "risk", "prod"));
+        VisualGraphPublicationExportBundle bundle = VisualGraphPublicationExportBundle.from(
+                source,
+                List.of(goldenCase("other-publication", "case-1")),
+                goldenCertification("other-publication"));
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(
+                new InMemoryVisualGraphPublicationRepository(),
+                runner(),
+                new InMemoryVisualGraphRunRepository());
+
+        ResponseEntity<VisualGraphPublicationImportResult> response = controller.importBundle(bundle);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().imported()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .extracting("code")
+                .containsExactly(
+                        "visual.publication.goldenCasePublicationMismatch",
+                        "visual.publication.goldenCertificationPublicationMismatch");
+    }
+
+    @Test
+    void importBundleRejectsGoldenSnapshotsWithoutStablePublicationId() {
+        VisualGraphPublication source = publication("tenant-a", "risk", "prod");
+        VisualGraphPublicationExportBundle bundle = VisualGraphPublicationExportBundle.from(
+                source,
+                List.of(goldenCase("", "case-1")),
+                null);
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(
+                new InMemoryVisualGraphPublicationRepository(),
+                runner(),
+                new InMemoryVisualGraphRunRepository());
+
+        ResponseEntity<VisualGraphPublicationImportResult> response = controller.importBundle(bundle);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().diagnostics())
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.publication.goldenSnapshotPublicationMissing");
+                    assertThat(diagnostic.target()).isEqualTo("/publication/publicationId");
+                });
+    }
+
+    @Test
     void importBundleRejectsExistingPublicationId() {
         InMemoryVisualGraphPublicationRepository repository = new InMemoryVisualGraphPublicationRepository();
         VisualGraphPublication stored = repository.create(publication());
@@ -636,6 +767,35 @@ class VisualGraphPublicationControllerTest {
                 Map.of(),
                 new GraphDraft.OutputSelection("eligibility", ""),
                 Map.of("eligibility", operator.fingerprint())
+        );
+    }
+
+    private static VisualGraphGoldenCase goldenCase(String publicationId, String caseId) {
+        return new VisualGraphGoldenCase(
+                "",
+                caseId,
+                publicationId,
+                "Eligibility approval",
+                "Pins the published policy output for portable regression checks.",
+                "eligibility",
+                Map.of("score", 720, "amount", 1000),
+                Map.of("ok", true),
+                Instant.parse("2026-01-01T00:00:00Z")
+        );
+    }
+
+    private static VisualGraphGoldenCertification goldenCertification(String publicationId) {
+        return new VisualGraphGoldenCertification(
+                "",
+                publicationId,
+                true,
+                1,
+                1,
+                0,
+                List.of("run-1"),
+                "case-set-fingerprint",
+                List.of(),
+                Instant.parse("2026-01-01T00:00:01Z")
         );
     }
 

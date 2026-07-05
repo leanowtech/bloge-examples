@@ -3,6 +3,10 @@ package com.leanowtech.bloge.gateway.visual.publication;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
+import com.leanowtech.bloge.gateway.visual.golden.VisualGraphGoldenCase;
+import com.leanowtech.bloge.gateway.visual.golden.VisualGraphGoldenCaseRepository;
+import com.leanowtech.bloge.gateway.visual.golden.VisualGraphGoldenCertification;
+import com.leanowtech.bloge.gateway.visual.golden.VisualGraphGoldenCertificationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
@@ -20,7 +24,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,22 +42,40 @@ public class VisualGraphPublicationController {
     private final VisualGraphRunService runner;
     private final VisualGraphRunRepository runRepository;
     private final VisualOperatorCatalog catalog;
+    private final VisualGraphGoldenCaseRepository goldenCases;
+    private final VisualGraphGoldenCertificationRepository goldenCertifications;
 
     /**
      * @param repository publication repository
      * @param runner publication runner
      * @param runRepository run history repository
      * @param catalog current visual operator catalog used for target-environment import review
+     * @param goldenCases golden regression case repository used for portable publication snapshots
+     * @param goldenCertifications latest golden certification repository used for portable publication snapshots
      */
     @Autowired
     public VisualGraphPublicationController(VisualGraphPublicationRepository repository,
                                             VisualGraphRunService runner,
                                             VisualGraphRunRepository runRepository,
-                                            VisualOperatorCatalog catalog) {
+                                            VisualOperatorCatalog catalog,
+                                            VisualGraphGoldenCaseRepository goldenCases,
+                                            VisualGraphGoldenCertificationRepository goldenCertifications) {
         this.repository = repository;
         this.runner = runner;
         this.runRepository = runRepository;
         this.catalog = catalog;
+        this.goldenCases = goldenCases;
+        this.goldenCertifications = goldenCertifications;
+    }
+
+    /**
+     * Backward-compatible constructor for tests that do not need golden snapshot export/import.
+     */
+    VisualGraphPublicationController(VisualGraphPublicationRepository repository,
+                                     VisualGraphRunService runner,
+                                     VisualGraphRunRepository runRepository,
+                                     VisualOperatorCatalog catalog) {
+        this(repository, runner, runRepository, catalog, null, null);
     }
 
     /**
@@ -60,7 +84,7 @@ public class VisualGraphPublicationController {
     VisualGraphPublicationController(VisualGraphPublicationRepository repository,
                                      VisualGraphRunService runner,
                                      VisualGraphRunRepository runRepository) {
-        this(repository, runner, runRepository, null);
+        this(repository, runner, runRepository, null, null, null);
     }
 
     /**
@@ -181,7 +205,10 @@ public class VisualGraphPublicationController {
     @GetMapping("/{publicationId}/export")
     public ResponseEntity<VisualGraphPublicationExportBundle> export(@PathVariable String publicationId) {
         return repository.find(publicationId)
-                .map(publication -> ResponseEntity.ok(VisualGraphPublicationExportBundle.from(publication)))
+                .map(publication -> ResponseEntity.ok(VisualGraphPublicationExportBundle.from(
+                        publication,
+                        goldenCasesForExport(publication.publicationId()),
+                        goldenCertificationForExport(publication.publicationId()))))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
@@ -210,6 +237,11 @@ public class VisualGraphPublicationController {
         if (!VisualGraphPublication.SCHEMA_VERSION.equals(publication.schemaVersion())) {
             return ResponseEntity.badRequest().body(VisualGraphPublicationImportResult.rejected(
                     bundle, publication, publicationSchemaVersionDiagnostics(publication)));
+        }
+        List<VisualDiagnostic> goldenSnapshotDiagnostics = goldenSnapshotDiagnostics(bundle, publication);
+        if (!goldenSnapshotDiagnostics.isEmpty()) {
+            return ResponseEntity.badRequest().body(VisualGraphPublicationImportResult.rejected(
+                    bundle, publication, goldenSnapshotDiagnostics));
         }
         GraphDraftDependencyReport targetDependencyReport = targetDependencyReport(publication);
         if (!publication.publicationId().isBlank() && repository.find(publication.publicationId()).isPresent()) {
@@ -246,6 +278,11 @@ public class VisualGraphPublicationController {
             return ResponseEntity.badRequest().body(VisualGraphPublicationImportResult.rejected(
                     bundle, publication, publicationSchemaVersionDiagnostics(publication)));
         }
+        List<VisualDiagnostic> goldenSnapshotDiagnostics = goldenSnapshotDiagnostics(bundle, publication);
+        if (!goldenSnapshotDiagnostics.isEmpty()) {
+            return ResponseEntity.badRequest().body(VisualGraphPublicationImportResult.rejected(
+                    bundle, publication, goldenSnapshotDiagnostics));
+        }
         GraphDraftDependencyReport targetDependencyReport = targetDependencyReport(publication);
         if (!publication.publicationId().isBlank() && repository.find(publication.publicationId()).isPresent()) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(VisualGraphPublicationImportResult.rejected(
@@ -253,6 +290,7 @@ public class VisualGraphPublicationController {
         }
         try {
             VisualGraphPublication stored = repository.create(publication);
+            importGoldenSnapshots(bundle);
             return ResponseEntity.status(HttpStatus.CREATED).body(VisualGraphPublicationImportResult.imported(
                     bundle, stored, targetDependencyReport(stored)));
         } catch (IllegalArgumentException e) {
@@ -342,6 +380,48 @@ public class VisualGraphPublicationController {
         ));
     }
 
+    private static List<VisualDiagnostic> goldenSnapshotDiagnostics(VisualGraphPublicationExportBundle bundle,
+                                                                    VisualGraphPublication publication) {
+        if (bundle == null || publication == null) {
+            return List.of();
+        }
+        String expectedPublicationId = publication.publicationId();
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        List<VisualGraphGoldenCase> cases = bundle.goldenCases();
+        VisualGraphGoldenCertification certification = bundle.goldenCertification();
+        if (expectedPublicationId.isBlank() && (!cases.isEmpty() || certification != null)) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.publication.goldenSnapshotPublicationMissing",
+                    "Golden snapshots require a stable publicationId before they can be imported.",
+                    "/publication/publicationId"
+            ));
+        }
+        for (int i = 0; i < cases.size(); i++) {
+            VisualGraphGoldenCase goldenCase = cases.get(i);
+            if (!expectedPublicationId.equals(goldenCase.publicationId())) {
+                diagnostics.add(VisualDiagnostic.error(
+                        "visual.publication.goldenCasePublicationMismatch",
+                        "Golden case '%s' belongs to publication '%s', not imported publication '%s'."
+                                .formatted(goldenCase.caseId(), goldenCase.publicationId(), expectedPublicationId),
+                        "/goldenCases/%d/publicationId".formatted(i),
+                        Map.of("caseId", goldenCase.caseId(),
+                                "actual", goldenCase.publicationId(),
+                                "expected", expectedPublicationId)
+                ));
+            }
+        }
+        if (certification != null && !expectedPublicationId.equals(certification.publicationId())) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.publication.goldenCertificationPublicationMismatch",
+                    "Golden certification belongs to publication '%s', not imported publication '%s'."
+                            .formatted(certification.publicationId(), expectedPublicationId),
+                    "/goldenCertification/publicationId",
+                    Map.of("actual", certification.publicationId(), "expected", expectedPublicationId)
+            ));
+        }
+        return diagnostics;
+    }
+
     private static List<VisualDiagnostic> publicationAlreadyExistsDiagnostics(VisualGraphPublication publication) {
         String publicationId = publication == null ? "" : publication.publicationId();
         return List.of(VisualDiagnostic.error(
@@ -378,5 +458,33 @@ public class VisualGraphPublicationController {
     private GraphDraftDependencyReport targetDependencyReport(VisualGraphPublication publication) {
         return publication == null ? GraphDraftDependencyReport.empty()
                 : GraphDraftDependencyReport.from(publication.draft(), catalog);
+    }
+
+    private List<VisualGraphGoldenCase> goldenCasesForExport(String publicationId) {
+        if (goldenCases == null) {
+            return List.of();
+        }
+        return goldenCases.findByPublicationId(publicationId).stream()
+                .sorted(Comparator.comparing(VisualGraphGoldenCase::caseId))
+                .toList();
+    }
+
+    private VisualGraphGoldenCertification goldenCertificationForExport(String publicationId) {
+        if (goldenCertifications == null) {
+            return null;
+        }
+        return goldenCertifications.find(publicationId).orElse(null);
+    }
+
+    private void importGoldenSnapshots(VisualGraphPublicationExportBundle bundle) {
+        if (bundle == null) {
+            return;
+        }
+        if (goldenCases != null) {
+            bundle.goldenCases().forEach(goldenCases::save);
+        }
+        if (goldenCertifications != null && bundle.goldenCertification() != null) {
+            goldenCertifications.save(bundle.goldenCertification());
+        }
     }
 }

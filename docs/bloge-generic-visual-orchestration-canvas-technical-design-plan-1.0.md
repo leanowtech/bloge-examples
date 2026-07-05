@@ -112,11 +112,11 @@ A03 injection (identifier sanitize, `MAX_DSL_CHARS`); A04 resource exhaustion (s
 - **Phase 0 Foundations:** React/Vite app + `frontend-maven-plugin`; generic-core seam. *Verify:* default `mvn package` stays Java/offline; `mvn -Pfrontend package` builds jar+UI under `/author/`; no gateway types in core.
 - **Phase 1 Mock backend (#4, completed):** `SimulationOperator`, `JsonSchemaSampleGenerator`, `simulate()`, `nodeFixtures`, endpoint. *Verify:* unit — generator layers/bounds, classification, mixed-graph simulate, schema conformance, fingerprint ignores fixtures.
 - **Phase 2 Authoring UI (in progress):** static Custom Composer now has core-loop HUD + Simulate overlay/trace badges; React Flow has operator-library validate/import intake, palette grouping, typed handles, candidate preflight, selected-node connection guide, fixture editors, explicit output selection, and output-aligned simulate requests. React JS core-loop coverage now verifies pasted library validation/import, catalog refresh, palette exposure, add-to-canvas, target discovery, and direct connect. The `-Pfrontend` Selenium smoke now verifies the packaged `/author/` React bundle boots, loads the operator palette, and adds a node from the palette. Remaining work is polish/parity, not backend feasibility. *Verify:* Selenium/JS e2e core loop.
-- **Phase 3 Export + golden (partial):** virtual builtin library round-trip is done; golden snapshots remain. *Verify:* export→import resolves; deterministic golden.
+- **Phase 3 Export + golden (completed):** virtual builtin library round-trip is done; publication export bundles now carry golden case/certification snapshots, include them in the portable fingerprint, and import restores them with publication-id guardrails. *Verify:* export→import resolves; deterministic golden snapshot fingerprint.
 - **Phase 4 Showcase migration:** port to React. *Verify:* scenario parity.
 
 ## 9. Testing
-Unit (generator, classification, fixture non-semantics), integration (mixed-graph simulate, security caps, tenant isolation), Selenium e2e (`/author` via `mvn -Pfrontend ...`), golden determinism, `mvn clean verify`.
+Unit (generator, classification, fixture non-semantics), integration (mixed-graph simulate, security caps, tenant isolation), Selenium e2e (`/author` via `mvn -Pfrontend ...`), portable golden snapshot determinism/import, `mvn clean verify`.
 
 ## 10. Risks & future
 Frontend/Maven friction (mitigated); builtin export fidelity (introspection lossy — encourage `SchemaAware`); allowlist maintenance; coexistence window; future physical core extraction + optional advanced governance drawer.
