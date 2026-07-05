@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import Showcase from './Showcase';
-import type { GatewayExampleScenario } from './types';
+import type { GatewayExampleDiagram, GatewayExampleScenario } from './types';
 
 describe('Showcase', () => {
   let root: Root | null = null;
@@ -15,10 +15,20 @@ describe('Showcase', () => {
     host = document.createElement('div');
     document.body.appendChild(host);
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input) === '/api/gateway/examples/scenarios') {
+      const url = String(input);
+      if (url === '/api/gateway/examples/scenarios') {
         return jsonResponse(sampleScenarios());
       }
-      throw new Error(`Unexpected fetch: ${String(input)}`);
+      if (url === '/api/gateway/examples/scenarios/userDashboard/diagram') {
+        return jsonResponse(userDashboardDiagram());
+      }
+      if (url === '/api/gateway/examples/scenarios/loanDecisionPolicy/diagram') {
+        return jsonResponse(loanDecisionDiagram());
+      }
+      if (url === '/api/gateway/examples/scenarios/aiEnrichedSearch/diagram') {
+        return jsonResponse(aiSearchDiagram());
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
     }));
   });
 
@@ -50,9 +60,17 @@ describe('Showcase', () => {
       .toContain('/api/gateway/dashboard/{userId}');
     expect(query('[data-testid="showcase-sample"]').textContent)
       .toContain('"userId": "u1"');
+    await waitFor(() =>
+      expect(query('[data-testid="showcase-diagram-node:fetchProfile"]').textContent)
+        .toContain('Profile'),
+    );
+    expect(query('[data-testid="showcase-node-inspector"]').textContent)
+      .toContain('fetchProfile');
+    expect(query('[data-testid="showcase-node-inspector"]').textContent)
+      .toContain('user-service.getProfile');
   });
 
-  it('switches to decision-table metadata without losing catalog context', async () => {
+  it('switches to decision-table metadata and interactive diagram nodes', async () => {
     await renderShowcase();
     await waitFor(() => query('[data-testid="showcase-scenario:loanDecisionPolicy"]'));
 
@@ -67,6 +85,23 @@ describe('Showcase', () => {
     expect(query('[data-testid="showcase-decision-table"]').textContent).toContain('unique');
     expect(query('[data-testid="showcase-decision-table"]').textContent).toContain('Rows');
     expect(query('[data-testid="showcase-decision-table"]').textContent).toContain('2');
+
+    await waitFor(() =>
+      expect(query('[data-testid="showcase-diagram-node:loanPolicy"]').textContent)
+        .toContain('Loan Policy Matrix'),
+    );
+    await click(query<SVGGElement>('[data-testid="showcase-diagram-node:loanPolicy"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="showcase-node-inspector"]').textContent)
+        .toContain('loanPolicy'),
+    );
+    expect(query('[data-testid="showcase-node-inspector"]').textContent)
+      .toContain('DecisionTableOperator');
+    expect(query('[data-testid="showcase-node-inspector"]').textContent)
+      .toContain('rules');
+    expect(query('[data-testid="showcase-node-inspector"]').textContent)
+      .toContain('4');
   });
 
   async function renderShowcase() {
@@ -135,6 +170,91 @@ function sampleScenarios(): GatewayExampleScenario[] {
   ];
 }
 
+function userDashboardDiagram(): GatewayExampleDiagram {
+  return {
+    schemaVersion: 'bloge.visualLayout.v1',
+    rootId: 'userDashboard',
+    executionMode: 'GRAPH',
+    nodes: [
+      {
+        id: 'fetchProfile',
+        kind: 'resource',
+        operatorRef: 'httpResource',
+        label: 'Profile',
+        position: { x: 80, y: 80 },
+        size: { width: 180, height: 72 },
+        group: 'parallelFetch',
+        annotations: { resourceId: 'user-service.getProfile', timeout: '3s' },
+      },
+      {
+        id: 'assembleDashboard',
+        kind: 'transform',
+        label: 'Assemble Dashboard',
+        position: { x: 420, y: 80 },
+        size: { width: 180, height: 72 },
+        annotations: {},
+      },
+    ],
+    edges: [{ id: 'fetchProfile->assembleDashboard', source: 'fetchProfile', target: 'assembleDashboard', label: 'profile' }],
+    groups: [{ id: 'parallelFetch', label: 'Parallel API fan-out', kind: 'parallel' }],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  };
+}
+
+function loanDecisionDiagram(): GatewayExampleDiagram {
+  return {
+    schemaVersion: 'bloge.visualLayout.v1',
+    rootId: 'loanDecisionPolicy',
+    executionMode: 'GRAPH',
+    nodes: [
+      {
+        id: 'fetchApplicant',
+        kind: 'resource',
+        operatorRef: 'httpResource',
+        label: 'Applicant Profile',
+        position: { x: 80, y: 210 },
+        size: { width: 180, height: 72 },
+        annotations: { resourceId: 'loan-applicant-service.getProfile' },
+      },
+      {
+        id: 'loanPolicy',
+        kind: 'decision-table',
+        operatorRef: 'DecisionTableOperator',
+        label: 'Loan Policy Matrix',
+        position: { x: 360, y: 210 },
+        size: { width: 180, height: 72 },
+        group: 'policyMatrix',
+        annotations: { hitPolicy: 'unique', rules: 4 },
+      },
+    ],
+    edges: [{ id: 'fetchApplicant->loanPolicy', source: 'fetchApplicant', target: 'loanPolicy', label: 'risk facts' }],
+    groups: [{ id: 'policyMatrix', label: 'Auditable rule matrix', kind: 'decision-table' }],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  };
+}
+
+function aiSearchDiagram(): GatewayExampleDiagram {
+  return {
+    schemaVersion: 'bloge.visualLayout.v1',
+    rootId: 'aiEnrichedSearch',
+    executionMode: 'GRAPH',
+    nodes: [
+      {
+        id: 'llmStream',
+        kind: 'stream',
+        operatorRef: 'MockLlmTokenStreamingOperator',
+        label: 'LLM Tokens',
+        position: { x: 80, y: 240 },
+        size: { width: 180, height: 72 },
+        annotations: { event: 'token' },
+      },
+    ],
+    edges: [],
+    groups: [],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  };
+}
+
 function scenarioIds(): string[] {
   return Array.from(document.querySelectorAll('[data-testid^="showcase-scenario:"]'))
     .map((element) => element.getAttribute('data-testid') ?? '');
@@ -148,7 +268,7 @@ function query<T extends Element = Element>(selector: string): T {
   return element;
 }
 
-async function click(element: HTMLElement) {
+async function click(element: Element) {
   await act(async () => {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });

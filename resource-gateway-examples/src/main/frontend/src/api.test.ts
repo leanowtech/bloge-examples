@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { fetchGatewayScenarios, importOperatorLibraryText, validateOperatorLibraryText } from './api';
+import {
+  fetchGatewayDiagram,
+  fetchGatewayScenarios,
+  importOperatorLibraryText,
+  validateOperatorLibraryText,
+} from './api';
 
 describe('operator library API client', () => {
   afterEach(() => {
@@ -72,5 +77,20 @@ describe('operator library API client', () => {
       'loanDecisionPolicy',
       'aiEnrichedSearch',
     ]);
+  });
+
+  it('loads one gateway showcase diagram from the provided path', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      schemaVersion: 'bloge.visualLayout.v1',
+      rootId: 'loanDecisionPolicy',
+      nodes: [{ id: 'loanPolicy', label: 'Loan Policy Matrix' }],
+      edges: [],
+    })));
+
+    const diagram = await fetchGatewayDiagram('/api/gateway/examples/scenarios/loanDecisionPolicy/diagram');
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/gateway/examples/scenarios/loanDecisionPolicy/diagram');
+    expect(diagram.rootId).toBe('loanDecisionPolicy');
+    expect(diagram.nodes[0].id).toBe('loanPolicy');
   });
 });

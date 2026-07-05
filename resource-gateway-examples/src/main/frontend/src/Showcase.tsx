@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { fetchGatewayScenarios } from './api';
-import type { GatewayExampleScenario } from './types';
+import { fetchGatewayDiagram, fetchGatewayScenarios } from './api';
+import type {
+  GatewayDiagramEdge,
+  GatewayDiagramGroup,
+  GatewayDiagramNode,
+  GatewayExampleDiagram,
+  GatewayExampleScenario,
+} from './types';
+
+const DEFAULT_NODE_WIDTH = 180;
+const DEFAULT_NODE_HEIGHT = 72;
+const DIAGRAM_PADDING = 48;
 
 function previewJson(value: unknown): string {
   try {
@@ -15,12 +25,92 @@ function conceptList(scenario: GatewayExampleScenario): string[] {
   return scenario.concepts ?? [];
 }
 
+function nodeX(node: GatewayDiagramNode): number {
+  return node.position?.x ?? 0;
+}
+
+function nodeY(node: GatewayDiagramNode): number {
+  return node.position?.y ?? 0;
+}
+
+function nodeWidth(node: GatewayDiagramNode): number {
+  return node.size?.width ?? DEFAULT_NODE_WIDTH;
+}
+
+function nodeHeight(node: GatewayDiagramNode): number {
+  return node.size?.height ?? DEFAULT_NODE_HEIGHT;
+}
+
+function nodeCenter(node: GatewayDiagramNode): { x: number; y: number } {
+  return {
+    x: nodeX(node) + nodeWidth(node) / 2,
+    y: nodeY(node) + nodeHeight(node) / 2,
+  };
+}
+
+function diagramViewBox(diagram: GatewayExampleDiagram | null): string {
+  const nodes = diagram?.nodes ?? [];
+  if (nodes.length === 0) {
+    return '0 0 720 360';
+  }
+  const minX = Math.min(...nodes.map(nodeX)) - DIAGRAM_PADDING;
+  const minY = Math.min(...nodes.map(nodeY)) - DIAGRAM_PADDING;
+  const maxX = Math.max(...nodes.map((node) => nodeX(node) + nodeWidth(node))) + DIAGRAM_PADDING;
+  const maxY = Math.max(...nodes.map((node) => nodeY(node) + nodeHeight(node))) + DIAGRAM_PADDING;
+  return `${minX} ${minY} ${Math.max(320, maxX - minX)} ${Math.max(220, maxY - minY)}`;
+}
+
+function groupBounds(group: GatewayDiagramGroup, nodes: GatewayDiagramNode[]) {
+  const groupedNodes = nodes.filter((node) => node.group === group.id);
+  if (groupedNodes.length === 0) {
+    return null;
+  }
+  const minX = Math.min(...groupedNodes.map(nodeX)) - 24;
+  const minY = Math.min(...groupedNodes.map(nodeY)) - 32;
+  const maxX = Math.max(...groupedNodes.map((node) => nodeX(node) + nodeWidth(node))) + 24;
+  const maxY = Math.max(...groupedNodes.map((node) => nodeY(node) + nodeHeight(node))) + 24;
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+function edgeLine(edge: GatewayDiagramEdge, nodesById: Map<string, GatewayDiagramNode>) {
+  const source = nodesById.get(edge.source);
+  const target = nodesById.get(edge.target);
+  if (!source || !target) {
+    return null;
+  }
+  const from = nodeCenter(source);
+  const to = nodeCenter(target);
+  return { x1: from.x, y1: from.y, x2: to.x, y2: to.y };
+}
+
+function truncateLabel(value: string | undefined | null, maxLength: number): string {
+  const text = value?.trim() ?? '';
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function annotationValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'object') {
+    return previewJson(value).replace(/\s+/g, ' ');
+  }
+  return String(value);
+}
+
 /** Read-only scenario browser for the resource-gateway examples catalog. */
 export default function Showcase() {
   const [scenarios, setScenarios] = useState<GatewayExampleScenario[]>([]);
   const [selectedGraphName, setSelectedGraphName] = useState('');
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState('');
+  const [diagram, setDiagram] = useState<GatewayExampleDiagram | null>(null);
+  const [diagramStatus, setDiagramStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [diagramErrorMessage, setDiagramErrorMessage] = useState('');
+  const [selectedDiagramNodeId, setSelectedDiagramNodeId] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -57,6 +147,50 @@ export default function Showcase() {
   const presets = selectedScenario?.samplePresets ?? [];
   const decisionRows = selectedScenario?.decisionTable?.rows ?? [];
   const decisionColumns = selectedScenario?.decisionTable?.columns ?? [];
+  const nodesById = useMemo(
+    () => new Map((diagram?.nodes ?? []).map((node) => [node.id, node])),
+    [diagram],
+  );
+  const selectedDiagramNode = useMemo(
+    () => diagram?.nodes.find((node) => node.id === selectedDiagramNodeId) ?? diagram?.nodes[0],
+    [diagram, selectedDiagramNodeId],
+  );
+  const selectedDiagramAnnotations = Object.entries(selectedDiagramNode?.annotations ?? {}).slice(0, 6);
+
+  useEffect(() => {
+    const diagramPath = selectedScenario?.diagramPath;
+    if (!diagramPath) {
+      setDiagram(null);
+      setDiagramStatus('idle');
+      setDiagramErrorMessage('');
+      setSelectedDiagramNodeId('');
+      return;
+    }
+    let cancelled = false;
+    setDiagram(null);
+    setDiagramStatus('loading');
+    setDiagramErrorMessage('');
+    setSelectedDiagramNodeId('');
+    fetchGatewayDiagram(diagramPath)
+      .then((loadedDiagram) => {
+        if (cancelled) {
+          return;
+        }
+        setDiagram(loadedDiagram);
+        setSelectedDiagramNodeId(loadedDiagram.nodes[0]?.id ?? '');
+        setDiagramStatus('ready');
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        setDiagramErrorMessage(error instanceof Error ? error.message : 'Unable to load diagram.');
+        setDiagramStatus('error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedScenario?.diagramPath]);
 
   return (
     <main className="showcase" data-testid="react-showcase">
@@ -114,6 +248,136 @@ export default function Showcase() {
               </span>
             ))}
           </div>
+
+          <section className="showcase-diagram-panel" data-testid="showcase-diagram">
+            <div className="showcase-panel-heading">
+              <h3>Diagram</h3>
+              {diagram ? (
+                <span>{diagram.nodes.length} nodes · {diagram.edges.length} edges</span>
+              ) : null}
+            </div>
+            {diagramStatus === 'loading' ? (
+              <p className="showcase-status">Loading diagram...</p>
+            ) : null}
+            {diagramStatus === 'error' ? (
+              <p className="showcase-status error">{diagramErrorMessage}</p>
+            ) : null}
+            {diagramStatus === 'ready' && diagram ? (
+              <div className="showcase-diagram-layout">
+                <svg
+                  className="showcase-diagram-svg"
+                  viewBox={diagramViewBox(diagram)}
+                  role="img"
+                  aria-label={`${selectedScenario.title} graph diagram`}
+                >
+                  {(diagram.groups ?? []).map((group) => {
+                    const bounds = groupBounds(group, diagram.nodes);
+                    if (!bounds) {
+                      return null;
+                    }
+                    return (
+                      <g key={group.id} className="showcase-diagram-group">
+                        <rect
+                          x={bounds.x}
+                          y={bounds.y}
+                          width={bounds.width}
+                          height={bounds.height}
+                          rx="8"
+                        />
+                        <text x={bounds.x + 12} y={bounds.y + 20}>
+                          {truncateLabel(group.label ?? group.id, 28)}
+                        </text>
+                      </g>
+                    );
+                  })}
+                  {diagram.edges.map((edge) => {
+                    const line = edgeLine(edge, nodesById);
+                    if (!line) {
+                      return null;
+                    }
+                    return (
+                      <g key={edge.id ?? `${edge.source}->${edge.target}`} className="showcase-diagram-edge">
+                        <line x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} />
+                        {edge.label ? (
+                          <text x={(line.x1 + line.x2) / 2} y={(line.y1 + line.y2) / 2 - 8}>
+                            {truncateLabel(edge.label, 18)}
+                          </text>
+                        ) : null}
+                      </g>
+                    );
+                  })}
+                  {diagram.nodes.map((node) => {
+                    const selected = node.id === selectedDiagramNode?.id;
+                    return (
+                      <g
+                        key={node.id}
+                        role="button"
+                        tabIndex={0}
+                        className={`showcase-diagram-node ${selected ? 'selected' : ''}`}
+                        data-testid={`showcase-diagram-node:${node.id}`}
+                        aria-pressed={selected}
+                        transform={`translate(${nodeX(node)} ${nodeY(node)})`}
+                        onClick={() => setSelectedDiagramNodeId(node.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setSelectedDiagramNodeId(node.id);
+                          }
+                        }}
+                      >
+                        <rect width={nodeWidth(node)} height={nodeHeight(node)} rx="8" />
+                        <text x="14" y="24" className="showcase-diagram-node-title">
+                          {truncateLabel(node.label ?? node.id, 22)}
+                        </text>
+                        <text x="14" y="46" className="showcase-diagram-node-meta">
+                          {truncateLabel(node.operatorRef ?? node.kind ?? 'node', 24)}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+                <aside className="showcase-node-inspector" data-testid="showcase-node-inspector">
+                  {selectedDiagramNode ? (
+                    <>
+                      <h4>{selectedDiagramNode.label ?? selectedDiagramNode.id}</h4>
+                      <dl>
+                        <div>
+                          <dt>Node</dt>
+                          <dd>
+                            <code>{selectedDiagramNode.id}</code>
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Kind</dt>
+                          <dd>{selectedDiagramNode.kind ?? 'node'}</dd>
+                        </div>
+                        <div>
+                          <dt>Operator</dt>
+                          <dd>{selectedDiagramNode.operatorRef ?? 'n/a'}</dd>
+                        </div>
+                        <div>
+                          <dt>Group</dt>
+                          <dd>{selectedDiagramNode.group ?? 'none'}</dd>
+                        </div>
+                      </dl>
+                      {selectedDiagramAnnotations.length > 0 ? (
+                        <ul className="showcase-annotations">
+                          {selectedDiagramAnnotations.map(([key, value]) => (
+                            <li key={key}>
+                              <span>{key}</span>
+                              <strong>{annotationValue(value)}</strong>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="muted">No node selected.</p>
+                  )}
+                </aside>
+              </div>
+            ) : null}
+          </section>
 
           <div className="showcase-grid">
             <section className="showcase-panel">

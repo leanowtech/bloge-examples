@@ -250,3 +250,57 @@ export interface GatewayExampleScenario {
   decisionTable?: GatewayDecisionTable | null;
   diagramPath?: string;
 }
+
+/** Canvas coordinate used by resource-gateway showcase diagrams. */
+export interface GatewayDiagramPosition {
+  x?: number;
+  y?: number;
+}
+
+/** Stable node dimensions used by resource-gateway showcase diagrams. */
+export interface GatewayDiagramSize {
+  width?: number;
+  height?: number;
+}
+
+/** One visual node returned by the resource-gateway diagram endpoint. */
+export interface GatewayDiagramNode {
+  id: string;
+  kind?: string;
+  operatorRef?: string | null;
+  label?: string;
+  position?: GatewayDiagramPosition;
+  size?: GatewayDiagramSize;
+  group?: string | null;
+  annotations?: Record<string, unknown>;
+}
+
+/** One visual edge returned by the resource-gateway diagram endpoint. */
+export interface GatewayDiagramEdge {
+  id?: string;
+  source: string;
+  target: string;
+  label?: string;
+}
+
+/** Optional grouping hint returned by the resource-gateway diagram endpoint. */
+export interface GatewayDiagramGroup {
+  id: string;
+  label?: string;
+  kind?: string;
+}
+
+/** Presentation-only layout returned by GET /api/gateway/examples/scenarios/{graph}/diagram. */
+export interface GatewayExampleDiagram {
+  schemaVersion?: string;
+  rootId: string;
+  executionMode?: string;
+  nodes: GatewayDiagramNode[];
+  edges: GatewayDiagramEdge[];
+  groups?: GatewayDiagramGroup[];
+  viewport?: {
+    x?: number;
+    y?: number;
+    zoom?: number;
+  };
+}

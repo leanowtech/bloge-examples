@@ -1424,6 +1424,24 @@ button.secondary:disabled {
   gap: 10px;
 }
 
+.showcase-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.showcase-panel-heading h3 {
+  margin: 0;
+}
+
+.showcase-panel-heading span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .showcase-tags {
   display: flex;
   flex-wrap: wrap;
@@ -1441,6 +1459,164 @@ button.secondary:disabled {
   font-size: 12px;
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+.showcase-diagram-panel {
+  min-width: 0;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.showcase-diagram-layout {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.showcase-diagram-svg {
+  width: 100%;
+  min-height: 340px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.showcase-diagram-group rect {
+  fill: #e8f5e9;
+  stroke: #b7d9bd;
+  stroke-width: 1;
+}
+
+.showcase-diagram-group text {
+  fill: #1b5e20;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.showcase-diagram-edge line {
+  stroke: #8b95a5;
+  stroke-width: 2;
+}
+
+.showcase-diagram-edge text {
+  fill: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: #f8fafc;
+  stroke-width: 5px;
+}
+
+.showcase-diagram-node {
+  cursor: pointer;
+  outline: none;
+}
+
+.showcase-diagram-node rect {
+  fill: #fff;
+  stroke: #cbd5e1;
+  stroke-width: 2;
+}
+
+.showcase-diagram-node:hover rect,
+.showcase-diagram-node:focus-visible rect {
+  stroke: #8aa8e8;
+}
+
+.showcase-diagram-node.selected rect {
+  fill: #eef4ff;
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.showcase-diagram-node text {
+  pointer-events: none;
+}
+
+.showcase-diagram-node-title {
+  fill: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.showcase-diagram-node-meta {
+  fill: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.showcase-node-inspector {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fbfbfd;
+}
+
+.showcase-node-inspector h4 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+}
+
+.showcase-node-inspector dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.showcase-node-inspector dl div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.showcase-node-inspector dt,
+.showcase-annotations span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.showcase-node-inspector dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.showcase-node-inspector code {
+  color: #334155;
+}
+
+.showcase-annotations {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.showcase-annotations li {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.showcase-annotations strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
 }
 
 .showcase-grid {
@@ -1554,6 +1730,7 @@ button.secondary:disabled {
   }
 
   .showcase-grid,
+  .showcase-diagram-layout,
   .showcase-metrics {
     grid-template-columns: 1fr;
   }

@@ -3,6 +3,7 @@ import type {
   ConnectionCandidatesResponse,
   ConnectionCheckRequest,
   ConnectionCheckResponse,
+  GatewayExampleDiagram,
   GatewayExampleScenario,
   OperatorLibrary,
   OperatorLibraryValidationResult,
@@ -60,6 +61,13 @@ export async function fetchOperators(): Promise<OperatorDefinition[]> {
 export async function fetchGatewayScenarios(): Promise<GatewayExampleScenario[]> {
   return readJson<GatewayExampleScenario[]>(
     await fetch('/api/gateway/examples/scenarios'),
+  );
+}
+
+/** Loads the presentation-only diagram for one resource-gateway showcase scenario. */
+export async function fetchGatewayDiagram(path: string): Promise<GatewayExampleDiagram> {
+  return readJson<GatewayExampleDiagram>(
+    await fetch(path),
   );
 }
 
