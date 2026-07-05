@@ -531,6 +531,7 @@ const state = {
   },
   runHistoryMessage: null,
   runHistoryStats: null,
+  runHistoryTrend: null,
   runHistoryNodeStats: null,
   activeRunTrace: null,
   activeRunTraceId: '',
@@ -2578,6 +2579,7 @@ function renderInputForm() {
         </div>
         <div id="run-history-status" class="draft-status" hidden></div>
         <div id="run-history-stats" class="run-history-stats"></div>
+        <div id="run-history-trend" class="run-history-trend"></div>
         <div id="run-history-node-stats" class="run-history-node-stats"></div>
         <div id="run-history-list" class="run-history-list"></div>
       </div>
@@ -13183,6 +13185,7 @@ function renderRunHistoryControls() {
   reload.onclick = loadRunHistory;
   renderRunHistoryStatus();
   renderRunHistoryStats();
+  renderRunHistoryTrend();
   renderRunHistoryNodeStats();
   renderRunHistoryList();
 }
@@ -13220,6 +13223,56 @@ function runHistoryStatHtml(label, value) {
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(value)}</strong>
     </div>
+  `;
+}
+
+function renderRunHistoryTrend() {
+  const target = $('run-history-trend');
+  if (!target) return;
+  const trend = state.runHistoryTrend;
+  if (!trend || !trend.totalRuns) {
+    target.innerHTML = '<div class="run-history-empty">No trend samples</div>';
+    return;
+  }
+  const outcome = String(trend.latestOutcome || 'NONE').toUpperCase();
+  const level = outcome === 'SUCCESS' ? 'success' : outcome === 'BLOCKED' ? 'warning' : 'error';
+  const streak = Number(trend.latestFailureStreak) > 0
+    ? `${trend.latestFailureStreak} failing`
+    : `${trend.latestSuccessStreak || 0} passing`;
+  const regressions = Number(trend.successToFailureTransitions) || 0;
+  const recoveries = Number(trend.failureToSuccessTransitions) || 0;
+  const latencyDelta = Number(trend.latestLatencyDeltaMs) || 0;
+  const latencyText = latencyDelta > 0 ? `+${latencyDelta}ms` : `${latencyDelta}ms`;
+  const points = Array.isArray(trend.points) ? trend.points.slice(0, 16) : [];
+  target.innerHTML = `
+    <div class="run-history-trend-card ${escapeHtml(level)}">
+      <div class="run-history-trend-main">
+        <span>Latest</span>
+        <strong>${escapeHtml(outcome)}</strong>
+        <small>${escapeHtml(trend.totalRuns)} run${Number(trend.totalRuns) === 1 ? '' : 's'} · ${escapeHtml(streak)}</small>
+      </div>
+      <div class="run-history-trend-meta">
+        <span>${escapeHtml(regressions)} regressions</span>
+        <span>${escapeHtml(recoveries)} recoveries</span>
+        <span>${escapeHtml(latencyText)} latency</span>
+      </div>
+      <div class="run-history-trend-points" aria-label="Newest first run outcomes">
+        ${points.map((point) => runHistoryTrendPointHtml(point)).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function runHistoryTrendPointHtml(point) {
+  const outcome = String(point?.outcome || (point?.success ? 'SUCCESS' : 'FAILED')).toUpperCase();
+  const level = outcome === 'SUCCESS' ? 'success' : outcome === 'BLOCKED' ? 'warning' : 'error';
+  const label = outcome === 'SUCCESS' ? 'S' : outcome === 'BLOCKED' ? 'B' : 'F';
+  const runId = shortRunId(point?.runId || '');
+  const elapsed = Number(point?.elapsedMs) || 0;
+  return `
+    <span class="run-history-trend-point ${escapeHtml(level)}"
+          title="${escapeHtml(`${runId || 'run'} ${outcome} ${elapsed}ms`)}"
+          aria-label="${escapeHtml(`${outcome} ${elapsed} milliseconds`)}">${escapeHtml(label)}</span>
   `;
 }
 
@@ -13367,9 +13420,10 @@ function runTraceSummary(trace) {
 
 async function loadRunHistory(options = {}) {
   try {
-    const [historyResponse, statsResponse, nodeStatsResponse] = await Promise.all([
+    const [historyResponse, statsResponse, trendResponse, nodeStatsResponse] = await Promise.all([
       fetch(runHistoryUrl()),
       fetch(runHistoryStatsUrl()),
+      fetch(runHistoryTrendUrl()),
       fetch(runHistoryNodeStatsUrl())
     ]);
     if (!historyResponse.ok) {
@@ -13378,16 +13432,21 @@ async function loadRunHistory(options = {}) {
     if (!statsResponse.ok) {
       throw new Error(`Run history stats failed with ${statsResponse.status}`);
     }
+    if (!trendResponse.ok) {
+      throw new Error(`Run history trend failed with ${trendResponse.status}`);
+    }
     if (!nodeStatsResponse.ok) {
       throw new Error(`Run history node stats failed with ${nodeStatsResponse.status}`);
     }
     state.runHistory = await historyResponse.json();
     state.runHistoryStats = await statsResponse.json();
+    state.runHistoryTrend = await trendResponse.json();
     state.runHistoryNodeStats = await nodeStatsResponse.json();
     state.runHistoryMessage = null;
   } catch (error) {
     state.runHistory = [];
     state.runHistoryStats = null;
+    state.runHistoryTrend = null;
     state.runHistoryNodeStats = null;
     state.runHistoryMessage = { text: error.message, level: 'error' };
   }
@@ -13403,6 +13462,10 @@ function runHistoryUrl() {
 
 function runHistoryStatsUrl() {
   return runHistoryUrlFor('/api/visual/runs/stats');
+}
+
+function runHistoryTrendUrl() {
+  return runHistoryUrlFor('/api/visual/runs/trend');
 }
 
 function runHistoryNodeStatsUrl() {

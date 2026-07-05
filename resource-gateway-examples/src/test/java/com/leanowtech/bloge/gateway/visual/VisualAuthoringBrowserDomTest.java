@@ -229,6 +229,8 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("run-history-list"), "customLoanPolicy");
         waitForText(wait, By.id("run-history-stats"), "100%");
         waitForText(wait, By.id("run-history-stats"), "P95");
+        waitForText(wait, By.id("run-history-trend"), "LATEST");
+        waitForText(wait, By.id("run-history-trend"), "SUCCESS");
 
         publishVisualDraft(wait);
         String publicationId = valueOf(By.id("publication-select"));
@@ -327,6 +329,7 @@ class VisualAuthoringBrowserDomTest {
         scrollIntoView(wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("run-history-list"))));
         assertNoHorizontalOverflow(wait, By.cssSelector(".run-history-controls"));
         assertNoHorizontalOverflow(wait, By.id("run-history-stats"));
+        assertNoHorizontalOverflow(wait, By.id("run-history-trend"));
         assertNoHorizontalOverflow(wait, By.id("run-history-node-stats"));
         assertNoHorizontalOverflow(wait, By.id("run-history-list"));
         assertVisibleElementsNoHorizontalOverflow(wait, By.cssSelector(".run-history-row"));

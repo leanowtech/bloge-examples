@@ -844,7 +844,7 @@ summaries plus draft node snapshots so the
 audit trail does not persist raw runtime payload values by default. The browser
 Run History panel refreshes after visual draft and publication runs, supports
 source/artifact/outcome/limit filters, shows a compact SLO summary for the same filter
-window plus node health hot spots, and opens an individual record and shape-only run trace into the output
+window plus regression trend and node health hot spots, and opens an individual record and shape-only run trace into the output
 inspector while overlaying replay badges on matching canvas nodes; when an old
 run contains nodes no longer present on the current canvas, the replay coverage
 summary reports the missing nodes instead of silently implying a complete replay.
