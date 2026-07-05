@@ -15,18 +15,25 @@ vi.mock('reactflow', async () => {
   const React = await import('react');
 
   return {
-    default: function ReactFlowMock({ children, nodes, nodeTypes }: any) {
+    default: function ReactFlowMock({ children, nodes, nodeTypes, onNodeClick }: any) {
       return React.createElement(
         'div',
         { 'data-testid': 'react-flow' },
         nodes.map((node: any) => {
           const Component = nodeTypes?.[node.type] ?? (() => React.createElement('div', null, node.id));
-          return React.createElement(Component, {
-            key: node.id,
-            id: node.id,
-            data: node.data,
-            selected: false,
-          });
+          return React.createElement(
+            'div',
+            {
+              key: node.id,
+              'data-testid': `node-wrapper:${node.id}`,
+              onClick: () => onNodeClick?.({}, node),
+            },
+            React.createElement(Component, {
+              id: node.id,
+              data: node.data,
+              selected: Boolean(node.selected),
+            }),
+          );
         }),
         children,
       );
@@ -137,6 +144,108 @@ describe('AuthorCanvas operator-library intake', () => {
   });
 });
 
+describe('AuthorCanvas connection guide', () => {
+  let root: Root | null = null;
+  let host: HTMLDivElement;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({ operators: [scoreOperator(), decisionOperator()] });
+      }
+      if (url === '/api/visual/connections/candidates') {
+        const body = JSON.parse(String(init?.body));
+        expect(body.source).toEqual({ nodeId: 'n1', port: 'decision' });
+        expect(body.draft.nodes.map((node: { id: string }) => node.id)).toEqual(['n1', 'n2']);
+        return jsonResponse({
+          source: { nodeId: 'n1', port: 'decision' },
+          acceptedCount: 1,
+          rejectedCount: 0,
+          totalCandidateCount: 1,
+          candidates: [
+            {
+              targetNodeId: 'n2',
+              targetNodeLabel: 'Decision Consumer',
+              targetOperatorRef: 'risk:decision',
+              targetSurface: 'input',
+              target: { nodeId: 'n2', port: 'profile' },
+              accepted: true,
+              targetStatus: 'ready',
+              summary: { message: 'Schemas match.' },
+            },
+          ],
+        });
+      }
+      if (url === '/api/visual/connections/check') {
+        const body = JSON.parse(String(init?.body));
+        expect(body.source).toEqual({ nodeId: 'n1', port: 'decision' });
+        expect(body.target).toEqual({ nodeId: 'n2', port: 'profile' });
+        return jsonResponse({
+          accepted: true,
+          edge: {
+            id: 'n1:decision->n2:profile',
+            kind: 'data',
+            source: { nodeId: 'n1', port: 'decision' },
+            target: { nodeId: 'n2', port: 'profile' },
+          },
+          diagnostics: [],
+          summary: { message: 'Connection accepted.' },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(async () => {
+    if (root) {
+      await act(async () => root?.unmount());
+      root = null;
+    }
+    host.remove();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('discovers compatible targets for the selected source node and connects one directly', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:score"]').textContent).toContain('Risk Score'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:score"]'));
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:decision"]'));
+    await click(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="connection-guide"]').textContent).toContain('Connect Next'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="connection-guide-refresh"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="connection-guide-target:n2:profile"]').textContent)
+        .toContain('Decision Consumer'),
+    );
+    expect(query('[data-testid="connection-guide-target:n2:profile"]').textContent).toContain('ready');
+
+    const connectButton = query('[data-testid="connection-guide-target:n2:profile"]')
+      .querySelector<HTMLButtonElement>('button.secondary');
+    expect(connectButton).not.toBeNull();
+    await click(connectButton as HTMLButtonElement);
+
+    await waitFor(() => expect(document.body.textContent).toContain('1 edges'));
+    expect(document.body.textContent).toContain('Connection accepted.');
+  });
+});
+
 const sampleLibraryYaml = [
   'schemaVersion: bloge.visualOperatorLibrary.v1',
   'libraryId: risk-policy',
@@ -196,6 +305,65 @@ function eligibilityOperator(): OperatorDefinition {
               eligible: { type: 'boolean' },
             },
             required: ['eligible'],
+          }),
+        },
+      ],
+    },
+  };
+}
+
+function scoreOperator(): OperatorDefinition {
+  return {
+    operatorRef: 'risk:score',
+    display: { name: 'Risk Score', description: 'Scores an applicant.' },
+    source: { kind: 'operator-library', libraryId: 'risk-policy' },
+    lowering: { mode: 'design' },
+    ports: {
+      inputs: [],
+      outputs: [
+        {
+          name: 'decision',
+          schema: schema({
+            type: 'object',
+            properties: {
+              score: { type: 'number' },
+            },
+            required: ['score'],
+          }),
+        },
+      ],
+    },
+  };
+}
+
+function decisionOperator(): OperatorDefinition {
+  return {
+    operatorRef: 'risk:decision',
+    display: { name: 'Decision Consumer', description: 'Consumes a scored profile.' },
+    source: { kind: 'operator-library', libraryId: 'risk-policy' },
+    lowering: { mode: 'design' },
+    ports: {
+      inputs: [
+        {
+          name: 'profile',
+          required: true,
+          schema: schema({
+            type: 'object',
+            properties: {
+              score: { type: 'number' },
+            },
+            required: ['score'],
+          }),
+        },
+      ],
+      outputs: [
+        {
+          name: 'output',
+          schema: schema({
+            type: 'object',
+            properties: {
+              approved: { type: 'boolean' },
+            },
           }),
         },
       ],

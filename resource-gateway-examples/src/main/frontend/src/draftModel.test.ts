@@ -8,6 +8,7 @@ import {
   compileFixtureDrafts,
   connectionCandidatesMessage,
   connectionDecisionMessage,
+  connectionGuideRows,
   endpointFromHandle,
   fixtureDraftForOperator,
   handleIdForPort,
@@ -294,6 +295,78 @@ describe('indexConnectionCandidates', () => {
 
     expect(index.nodeStatuses.b).toBe('wired');
     expect(index.portStatuses.b.profile).toBe('wired');
+  });
+});
+
+describe('connectionGuideRows', () => {
+  it('turns server candidates into sorted actionable inspector rows', () => {
+    const index = indexConnectionCandidates({
+      source: { nodeId: 'source', port: 'decision' },
+      candidates: [
+        {
+          targetNodeId: 'blocked',
+          targetNodeLabel: 'Blocked Policy',
+          targetOperatorRef: 'risk:blocked',
+          targetSurface: 'input',
+          target: { nodeId: 'blocked', port: 'profile' },
+          accepted: false,
+          targetStatus: 'blocked',
+          diagnostics: [{ level: 'error', code: 'visual.connection.schema', message: 'object -> number' }],
+        },
+        {
+          targetNodeId: 'wired',
+          targetSurface: 'input',
+          target: { nodeId: 'wired', port: 'profile' },
+          accepted: false,
+          targetStatus: 'wired',
+        },
+        {
+          targetNodeId: 'ready',
+          targetSurface: 'input',
+          target: { nodeId: 'ready', port: 'case' },
+          accepted: true,
+          targetStatus: 'ready',
+          summary: { message: 'Schemas match.' },
+        },
+      ],
+    });
+
+    expect(connectionGuideRows([
+      { id: 'ready', operatorRef: 'risk:ready', label: 'Ready Policy', position: { x: 0, y: 0 } },
+      { id: 'wired', operatorRef: 'risk:wired', label: 'Wired Policy', position: { x: 0, y: 0 } },
+      { id: 'blocked', operatorRef: 'risk:blocked', position: { x: 0, y: 0 } },
+    ], index)).toEqual([
+      {
+        key: 'ready|case|',
+        targetNodeId: 'ready',
+        targetLabel: 'Ready Policy',
+        targetOperatorRef: 'risk:ready',
+        targetPort: 'case',
+        status: 'ready',
+        accepted: true,
+        detail: 'Schemas match.',
+      },
+      {
+        key: 'wired|profile|',
+        targetNodeId: 'wired',
+        targetLabel: 'Wired Policy',
+        targetOperatorRef: 'risk:wired',
+        targetPort: 'profile',
+        status: 'wired',
+        accepted: false,
+        detail: 'Already connected.',
+      },
+      {
+        key: 'blocked|profile|',
+        targetNodeId: 'blocked',
+        targetLabel: 'Blocked Policy',
+        targetOperatorRef: 'risk:blocked',
+        targetPort: 'profile',
+        status: 'blocked',
+        accepted: false,
+        detail: 'visual.connection.schema: object -> number',
+      },
+    ]);
   });
 });
 

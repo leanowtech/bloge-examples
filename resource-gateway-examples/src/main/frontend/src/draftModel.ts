@@ -175,9 +175,22 @@ export interface ConnectionCandidateIndex {
   nodeStatuses: Record<string, ConnectionCandidateStatus>;
   portStatuses: Record<string, Record<string, ConnectionCandidateStatus>>;
   candidatesByEndpointKey: Record<string, ConnectionCandidate>;
+  candidates: ConnectionCandidate[];
   acceptedCount: number;
   rejectedCount: number;
   totalCandidateCount: number;
+}
+
+/** One inspector row that turns server connection candidates into an actionable target list. */
+export interface ConnectionGuideRow {
+  key: string;
+  targetNodeId: string;
+  targetLabel: string;
+  targetOperatorRef: string;
+  targetPort: string;
+  status: ConnectionCandidateStatus;
+  accepted: boolean;
+  detail: string;
 }
 
 /** Parsed request fixtures plus per-node JSON errors from the inspector editor. */
@@ -376,10 +389,50 @@ export function indexConnectionCandidates(response: ConnectionCandidatesResponse
     nodeStatuses,
     portStatuses,
     candidatesByEndpointKey,
+    candidates: response.candidates,
     acceptedCount: response.acceptedCount ?? response.candidates.filter((candidate) => candidate.accepted).length,
     rejectedCount: response.rejectedCount ?? response.candidates.filter((candidate) => !candidate.accepted).length,
     totalCandidateCount: response.totalCandidateCount ?? response.candidates.length,
   };
+}
+
+/**
+ * Builds the selected-node connection guide shown in the inspector.
+ *
+ * <p>The server has already made the compatibility decision; this helper only labels and sorts those
+ * decisions so the UI can offer a clear next target without duplicating schema rules.</p>
+ */
+export function connectionGuideRows(
+  nodes: CanvasNode[],
+  index: ConnectionCandidateIndex | null | undefined,
+): ConnectionGuideRow[] {
+  if (!index) {
+    return [];
+  }
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  return [...index.candidates]
+    .map((candidate) => {
+      const status = candidateStatus(candidate);
+      const node = nodeById.get(candidate.target.nodeId || candidate.targetNodeId);
+      const targetNodeId = candidate.target.nodeId || candidate.targetNodeId;
+      return {
+        key: endpointKey(candidate.target),
+        targetNodeId,
+        targetLabel: candidate.targetNodeLabel || node?.label || targetNodeId,
+        targetOperatorRef: candidate.targetOperatorRef || node?.operatorRef || '',
+        targetPort: candidate.target.port ?? '',
+        status,
+        accepted: candidate.accepted,
+        detail: candidate.summary?.message
+          || firstDiagnosticText(candidate.diagnostics)
+          || defaultConnectionGuideDetail(status),
+      };
+    })
+    .sort((left, right) =>
+      connectionGuideRank(left.status) - connectionGuideRank(right.status)
+      || left.targetLabel.localeCompare(right.targetLabel)
+      || left.targetPort.localeCompare(right.targetPort),
+    );
 }
 
 /** Stable key for endpoint-indexed preview lookups. */
@@ -401,6 +454,26 @@ function candidateStatus(candidate: ConnectionCandidate): ConnectionCandidateSta
     return 'wired';
   }
   return candidate.accepted ? 'ready' : 'blocked';
+}
+
+function connectionGuideRank(status: ConnectionCandidateStatus): number {
+  if (status === 'ready') {
+    return 0;
+  }
+  if (status === 'wired') {
+    return 1;
+  }
+  return 2;
+}
+
+function defaultConnectionGuideDetail(status: ConnectionCandidateStatus): string {
+  if (status === 'ready') {
+    return 'Compatible.';
+  }
+  if (status === 'wired') {
+    return 'Already connected.';
+  }
+  return 'Blocked by schema.';
 }
 
 function strongerCandidateStatus(

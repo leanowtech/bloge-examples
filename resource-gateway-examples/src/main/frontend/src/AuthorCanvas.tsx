@@ -36,8 +36,10 @@ import {
   type AuthoringJourneyAction,
   type ConnectionCandidateIndex,
   type ConnectionCandidateStatus,
+  type ConnectionGuideRow,
   compileFixtureDrafts,
   connectionCandidatesMessage,
+  connectionGuideRows,
   type OperatorSummary,
   connectionDecisionMessage,
   fixtureDraftForOperator,
@@ -82,6 +84,12 @@ interface ConnectionStartParams {
   nodeId: string | null;
   handleId: string | null;
   handleType: string | null;
+}
+
+interface SelectedConnectionGuide {
+  nodeId: string;
+  sourcePort: string;
+  index: ConnectionCandidateIndex;
 }
 
 function handleOffset(index: number, count: number): CSSProperties {
@@ -177,9 +185,14 @@ export default function AuthorCanvas() {
   const [fixtureInputDrafts, setFixtureInputDrafts] = useState<Record<string, string>>({});
   const [connectionNotice, setConnectionNotice] = useState<ConnectionNotice | null>(null);
   const [candidatePreview, setCandidatePreview] = useState<ConnectionCandidateIndex | null>(null);
+  const [selectedConnectionSourcePort, setSelectedConnectionSourcePort] = useState('');
+  const [connectionGuide, setConnectionGuide] = useState<SelectedConnectionGuide | null>(null);
+  const [connectionGuideNotice, setConnectionGuideNotice] = useState<ConnectionNotice | null>(null);
+  const [connectionGuideBusy, setConnectionGuideBusy] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const counter = useRef(0);
   const candidatePreviewSequence = useRef(0);
+  const connectionGuideSequence = useRef(0);
 
   const reloadOperators = useCallback(async () => {
     setOperators(await fetchOperators());
@@ -217,6 +230,7 @@ export default function AuthorCanvas() {
       }
       if (changes.some((change) => change.type === 'remove' || change.type === 'add')) {
         clearRunResult();
+        setConnectionGuide(null);
       }
       if (removedNodeIds.length > 0) {
         setFixtureDrafts((current) => {
@@ -244,6 +258,7 @@ export default function AuthorCanvas() {
     (changes: EdgeChange[]) => {
       if (changes.some((change) => change.type === 'remove' || change.type === 'add')) {
         clearRunResult();
+        setConnectionGuide(null);
       }
       setEdges((current) => applyEdgeChanges(changes, current));
     },
@@ -251,6 +266,7 @@ export default function AuthorCanvas() {
   );
   const addOperator = useCallback((operator: OperatorDefinition) => {
     clearRunResult();
+    setConnectionGuide(null);
     counter.current += 1;
     const id = `n${counter.current}`;
     const summary = summarizeOperator(operator);
@@ -304,6 +320,14 @@ export default function AuthorCanvas() {
   );
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const selectedOperator = selectedNode ? operatorByRef.get(selectedNode.data.operatorRef) : undefined;
+  const selectedOutputPorts = useMemo(
+    () =>
+      selectedNode
+        ? (selectedNode.data.summary.outputNames.length ? selectedNode.data.summary.outputNames : [''])
+        : [],
+    [selectedNode],
+  );
+  const selectedOutputPortKey = selectedOutputPorts.join('\u0000');
   const fixtureCompilation = useMemo(
     () => compileFixtureDrafts(fixtureDrafts, fixtureInputDrafts),
     [fixtureDrafts, fixtureInputDrafts],
@@ -339,6 +363,13 @@ export default function AuthorCanvas() {
   const selectedFixtureHasDraft =
     selectedFixtureDraft.trim().length > 0 || selectedExpectedInputDraft.trim().length > 0;
   const selectedFixtureError = selectedNode ? fixtureCompilation.errors[selectedNode.id] : undefined;
+  const selectedGuideRows = useMemo(
+    () =>
+      connectionGuide?.nodeId === selectedNodeId
+        ? connectionGuideRows(canvasNodes, connectionGuide.index)
+        : [],
+    [canvasNodes, connectionGuide, selectedNodeId],
+  );
   const flowNodes = useMemo<Node<NodeData>[]>(
     () =>
       nodes.map((node) => {
@@ -552,6 +583,86 @@ export default function AuthorCanvas() {
       setCheckingConnection(false);
     }
   }, [canvasEdges, canvasNodes, clearRunResult, outputNodeId]);
+
+  useEffect(() => {
+    connectionGuideSequence.current += 1;
+    if (!selectedNodeId || selectedOutputPorts.length === 0) {
+      setSelectedConnectionSourcePort('');
+      setConnectionGuide(null);
+      setConnectionGuideNotice(null);
+      setCandidatePreview(null);
+      return;
+    }
+    setSelectedConnectionSourcePort((current) =>
+      selectedOutputPorts.includes(current) ? current : selectedOutputPorts[0] ?? '',
+    );
+    setConnectionGuide((current) => (current?.nodeId === selectedNodeId ? current : null));
+    setConnectionGuideNotice(null);
+    setCandidatePreview(null);
+  }, [selectedNodeId, selectedOutputPortKey, selectedOutputPorts]);
+
+  const loadSelectedConnectionGuide = useCallback(async () => {
+    if (!selectedNodeId) {
+      return;
+    }
+    const requestId = connectionGuideSequence.current + 1;
+    connectionGuideSequence.current = requestId;
+    setConnectionGuideBusy(true);
+    setConnectionGuide(null);
+    setConnectionGuideNotice({ level: 'pending', message: 'Finding targets...' });
+    try {
+      const response = await fetchConnectionCandidates(toConnectionCandidatesRequest(
+        'visualGraph',
+        canvasNodes,
+        canvasEdges,
+        outputNodeId,
+        selectedNodeId,
+        handleIdForPort('out', selectedConnectionSourcePort),
+      ));
+      if (connectionGuideSequence.current !== requestId) {
+        return;
+      }
+      const index = indexConnectionCandidates(response);
+      setConnectionGuide({
+        nodeId: selectedNodeId,
+        sourcePort: selectedConnectionSourcePort,
+        index,
+      });
+      setCandidatePreview(index);
+      setConnectionGuideNotice({
+        level: index.acceptedCount > 0 ? 'ok' : 'warning',
+        message: connectionCandidatesMessage(response),
+      });
+    } catch (cause: unknown) {
+      if (connectionGuideSequence.current === requestId) {
+        setConnectionGuideNotice({ level: 'error', message: String(cause) });
+      }
+    } finally {
+      if (connectionGuideSequence.current === requestId) {
+        setConnectionGuideBusy(false);
+      }
+    }
+  }, [
+    canvasEdges,
+    canvasNodes,
+    outputNodeId,
+    selectedConnectionSourcePort,
+    selectedNodeId,
+  ]);
+
+  const connectGuideRow = useCallback(async (row: ConnectionGuideRow) => {
+    if (!selectedNodeId || row.status !== 'ready') {
+      return;
+    }
+    await onConnect({
+      source: selectedNodeId,
+      target: row.targetNodeId,
+      sourceHandle: handleIdForPort('out', selectedConnectionSourcePort),
+      targetHandle: handleIdForPort('in', row.targetPort),
+    });
+    setConnectionGuide(null);
+    setConnectionGuideNotice(null);
+  }, [onConnect, selectedConnectionSourcePort, selectedNodeId]);
 
   const runSimulation = useCallback(async () => {
     setBusy(true);
@@ -965,6 +1076,81 @@ export default function AuthorCanvas() {
             <div className="port-list">
               <strong>Outputs</strong>
               <span>{selectedNode.data.summary.outputNames.join(', ') || 'none'}</span>
+            </div>
+            <div className="connection-guide" data-testid="connection-guide">
+              <div className="connection-guide-header">
+                <strong>Connect Next</strong>
+                <button
+                  type="button"
+                  className="secondary compact"
+                  data-testid="connection-guide-refresh"
+                  onClick={loadSelectedConnectionGuide}
+                  disabled={connectionGuideBusy || nodes.length < 2}
+                >
+                  {connectionGuideBusy ? 'Finding' : 'Find Targets'}
+                </button>
+              </div>
+              <label className="connection-source">
+                <span>Source</span>
+                <select
+                  aria-label="Connection source output"
+                  value={selectedConnectionSourcePort}
+                  onChange={(event) => {
+                    connectionGuideSequence.current += 1;
+                    setSelectedConnectionSourcePort(event.target.value);
+                    setConnectionGuide(null);
+                    setConnectionGuideNotice(null);
+                    setCandidatePreview(null);
+                  }}
+                  disabled={selectedOutputPorts.length <= 1}
+                >
+                  {selectedOutputPorts.map((port) => (
+                    <option key={port || 'value'} value={port}>
+                      {port || 'value'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {connectionGuideNotice && (
+                <p className={`connection-guide-notice ${connectionGuideNotice.level}`}>
+                  {connectionGuideNotice.message}
+                </p>
+              )}
+              {selectedGuideRows.length > 0 ? (
+                <ol className="connection-guide-list">
+                  {selectedGuideRows.map((row) => (
+                    <li
+                      key={row.key}
+                      className={row.status}
+                      data-testid={`connection-guide-target:${row.targetNodeId}:${row.targetPort}`}
+                    >
+                      <button
+                        type="button"
+                        className="connection-guide-target"
+                        onClick={() => setSelectedNodeId(row.targetNodeId)}
+                        title={row.detail}
+                      >
+                        <span>
+                          <strong>{row.targetLabel}</strong>
+                          <small>{row.targetOperatorRef || row.targetNodeId}</small>
+                          <code>{row.targetPort || 'input'}</code>
+                        </span>
+                        <em>{row.status}</em>
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary compact"
+                        onClick={() => connectGuideRow(row)}
+                        disabled={row.status !== 'ready' || connectionGuideBusy}
+                      >
+                        Connect
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="muted">No targets loaded.</p>
+              )}
             </div>
             <div className="output-control">
               <span>

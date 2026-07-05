@@ -978,6 +978,149 @@ button.secondary:disabled {
   overflow-wrap: anywhere;
 }
 
+.connection-guide {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fbfcff;
+}
+
+.connection-guide-header,
+.connection-source {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.connection-guide-header strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connection-source span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.connection-source select {
+  max-width: 150px;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #fff;
+}
+
+.connection-guide-notice {
+  margin: 0;
+  padding: 6px 7px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.connection-guide-notice.ok {
+  background: #e8f5e9;
+  color: var(--success);
+}
+
+.connection-guide-notice.warning,
+.connection-guide-notice.pending {
+  background: #fff8e1;
+  color: var(--warning);
+}
+
+.connection-guide-notice.error {
+  background: #fdecea;
+  color: var(--danger);
+}
+
+.connection-guide-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.connection-guide-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.connection-guide-list li.ready {
+  border-left-color: var(--success);
+}
+
+.connection-guide-list li.wired {
+  border-left-color: #1976d2;
+}
+
+.connection-guide-list li.blocked {
+  border-left-color: var(--danger);
+}
+
+.connection-guide-target {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.connection-guide-target span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.connection-guide-target strong,
+.connection-guide-target small,
+.connection-guide-target code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connection-guide-target small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.connection-guide-target code {
+  color: #334155;
+  font-size: 11px;
+}
+
+.connection-guide-target em {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .output-control {
   display: flex;
   align-items: center;
