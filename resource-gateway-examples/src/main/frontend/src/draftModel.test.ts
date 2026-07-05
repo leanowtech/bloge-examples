@@ -11,6 +11,7 @@ import {
   indexConnectionCandidates,
   isRunSuccessful,
   nodeStatuses,
+  operatorPaletteView,
   portNameFromHandle,
   sampleFromSchemaEnvelope,
   simulationChecklist,
@@ -306,6 +307,84 @@ describe('summarizeOperator', () => {
       outputCount: 0,
       designOnly: false,
     });
+  });
+});
+
+describe('operatorPaletteView', () => {
+  const operators: OperatorDefinition[] = [
+    {
+      operatorRef: 'risk:score',
+      display: { name: 'Risk Score', description: 'Scores an applicant.', tags: ['risk', 'score'] },
+      source: { kind: 'user-library', libraryId: 'risk-lib' },
+      ports: {
+        inputs: [{ name: 'profile', required: true, schema: { schema: { type: 'object' } } }],
+        outputs: [{ name: 'score', schema: { schema: { type: 'number' } } }],
+      },
+      lowering: { mode: 'transform' },
+    },
+    {
+      operatorRef: 'risk:fraudReview',
+      display: { name: 'Fraud Review', tags: ['risk', 'manual'] },
+      source: { kind: 'user-library', libraryId: 'risk-lib' },
+      ports: {
+        inputs: [{ name: 'case', schema: { schema: { type: 'object' } } }],
+        outputs: [{ name: 'decision', schema: { schema: { type: 'string' } } }],
+      },
+      lowering: { mode: 'design' },
+    },
+    {
+      operatorRef: 'payments:enrich',
+      display: { name: 'Payment Enrich', tags: ['payment'] },
+      source: { kind: 'builtin' },
+      ports: {
+        inputs: [{ name: 'transaction', schema: { schema: { type: 'object' } } }],
+        outputs: [{ name: 'enriched', schema: { schema: { type: 'object' } } }],
+      },
+      lowering: { mode: 'transform' },
+    },
+  ];
+
+  it('groups visible operators by explicit library id and namespace fallback', () => {
+    const view = operatorPaletteView(operators);
+
+    expect(view.totalCount).toBe(3);
+    expect(view.matchingCount).toBe(3);
+    expect(view.groups.map((group) => [group.libraryId, group.count])).toEqual([
+      ['payments', 1],
+      ['risk-lib', 2],
+    ]);
+    expect(view.groups[1].rows.map((row) => row.summary.name)).toEqual([
+      'Fraud Review',
+      'Risk Score',
+    ]);
+  });
+
+  it('applies runtime, source, tag, and search filters with stable facet counts', () => {
+    const view = operatorPaletteView(operators, {
+      search: 'risk',
+      facet: 'design',
+      sourceKind: 'user-library',
+      tag: 'manual',
+    });
+
+    expect(view.runtimeFacets).toEqual([
+      { key: 'all', label: 'All', count: 2 },
+      { key: 'runtime', label: 'Runtime', count: 1 },
+      { key: 'design', label: 'Design', count: 1 },
+    ]);
+    expect(view.sourceKindFacets).toEqual([
+      { key: 'user-library', label: 'user-library', count: 2 },
+    ]);
+    expect(view.tagFacets).toContainEqual({ key: 'risk', label: 'risk', count: 2 });
+    expect(view.matchingCount).toBe(1);
+    expect(view.groups[0].rows[0].summary.operatorRef).toBe('risk:fraudReview');
+  });
+
+  it('matches separate search terms across names, ports, tags, and library ids', () => {
+    const view = operatorPaletteView(operators, { search: 'risk-lib profile score' });
+
+    expect(view.matchingCount).toBe(1);
+    expect(view.groups[0].rows[0].summary.operatorRef).toBe('risk:score');
   });
 });
 

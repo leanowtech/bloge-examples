@@ -117,7 +117,9 @@ inspector.
 The React authoring workspace served at `/author/` is the progressive React Flow
 canvas for the same generic operator-library contract. Its palette and node
 cards now surface operator display names, required/total input counts, output
-counts, and design-only status; the toolbar adds deterministic Auto Layout plus
+counts, and design-only status; the palette is grouped by imported library,
+supports multi-term search, runtime/design facets, source/tag filters, and a
+Cmd/Ctrl-K search focus; the toolbar adds deterministic Auto Layout plus
 node/edge/output HUD chips; each node renders schema port handles; connection
 drags prefetch `/api/visual/connections/candidates` to highlight compatible,
 blocked, and already-wired target ports; dropped gestures are checked through

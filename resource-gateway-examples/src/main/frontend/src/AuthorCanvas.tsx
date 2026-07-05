@@ -33,6 +33,8 @@ import {
   indexConnectionCandidates,
   isRunSuccessful,
   nodeStatuses,
+  type OperatorPaletteFacet,
+  operatorPaletteView,
   portNameFromHandle,
   simulationChecklist,
   simulationFixtureRows,
@@ -137,11 +139,15 @@ export default function AuthorCanvas() {
   const [checkingConnection, setCheckingConnection] = useState(false);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [search, setSearch] = useState('');
+  const [paletteFacet, setPaletteFacet] = useState<OperatorPaletteFacet>('all');
+  const [sourceFilter, setSourceFilter] = useState('all');
+  const [tagFilter, setTagFilter] = useState('all');
   const [selectedNodeId, setSelectedNodeId] = useState('');
   const [fixtureDrafts, setFixtureDrafts] = useState<Record<string, string>>({});
   const [fixtureInputDrafts, setFixtureInputDrafts] = useState<Record<string, string>>({});
   const [connectionNotice, setConnectionNotice] = useState<ConnectionNotice | null>(null);
   const [candidatePreview, setCandidatePreview] = useState<ConnectionCandidateIndex | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const counter = useRef(0);
   const candidatePreviewSequence = useRef(0);
 
@@ -149,6 +155,18 @@ export default function AuthorCanvas() {
     fetchOperators()
       .then(setOperators)
       .catch((cause: unknown) => setError(String(cause)));
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
   const clearRunResult = useCallback(() => {
@@ -475,45 +493,123 @@ export default function AuthorCanvas() {
     );
   }, [canvasEdges, canvasNodes]);
 
-  const operatorRows = operators
-    .map((operator) => ({ operator, summary: summarizeOperator(operator) }))
-    .filter(({ summary }) => {
-      const query = search.toLowerCase();
-      return (
-        summary.name.toLowerCase().includes(query) ||
-        summary.operatorRef.toLowerCase().includes(query) ||
-        summary.tags.some((tag) => tag.toLowerCase().includes(query))
-      );
-    });
+  const paletteView = useMemo(
+    () => operatorPaletteView(operators, {
+      search,
+      facet: paletteFacet,
+      sourceKind: sourceFilter,
+      tag: tagFilter,
+    }),
+    [operators, paletteFacet, search, sourceFilter, tagFilter],
+  );
+
+  useEffect(() => {
+    if (
+      sourceFilter !== 'all'
+      && !paletteView.sourceKindFacets.some((facet) => facet.key === sourceFilter)
+    ) {
+      setSourceFilter('all');
+    }
+    if (tagFilter !== 'all' && !paletteView.tagFacets.some((facet) => facet.key === tagFilter)) {
+      setTagFilter('all');
+    }
+  }, [paletteView.sourceKindFacets, paletteView.tagFacets, sourceFilter, tagFilter]);
 
   return (
     <div className="workspace">
-      <aside className="palette">
-        <h2>Operators</h2>
+      <aside className="palette" id="operator-palette">
+        <div className="palette-heading">
+          <h2>Operators</h2>
+          <span>
+            {paletteView.matchingCount}/{paletteView.totalCount}
+          </span>
+        </div>
         <input
+          id="operator-palette-search"
+          ref={searchInputRef}
+          aria-label="Search operators"
+          aria-keyshortcuts="Meta+K Control+K"
           placeholder="Search…"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
-        <ul>
-          {operatorRows.map(({ operator, summary }) => (
-            <li key={operator.operatorRef}>
-              <button onClick={() => addOperator(operator)} title={operator.operatorRef}>
-                <span className="op-copy">
-                  <span className="op-name">{summary.name}</span>
-                  <span className="op-meta">
-                    {summary.requiredInputCount}/{summary.inputCount} inputs ·{' '}
-                    {summary.outputCount} outputs
-                  </span>
-                </span>
-                {summary.designOnly && <span className="badge design">design</span>}
-              </button>
-            </li>
+        <div className="palette-facets" role="group" aria-label="Operator runtime facet">
+          {paletteView.runtimeFacets.map((facet) => (
+            <button
+              key={facet.key}
+              type="button"
+              className={`palette-facet ${paletteFacet === facet.key ? 'active' : ''}`}
+              aria-pressed={paletteFacet === facet.key}
+              onClick={() => setPaletteFacet(facet.key)}
+            >
+              <span>{facet.label}</span>
+              <strong>{facet.count}</strong>
+            </button>
           ))}
-          {operatorRows.length === 0 && (
-            <li className="muted">No operators. Is the server running?</li>
+        </div>
+        <div className="palette-selects">
+          <select
+            aria-label="Source kind filter"
+            value={sourceFilter}
+            onChange={(event) => setSourceFilter(event.target.value)}
+          >
+            <option value="all">Any source</option>
+            {paletteView.sourceKindFacets.map((facet) => (
+              <option key={facet.key} value={facet.key}>
+                {facet.label} ({facet.count})
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Tag filter"
+            value={tagFilter}
+            onChange={(event) => setTagFilter(event.target.value)}
+            disabled={paletteView.tagFacets.length === 0}
+          >
+            <option value="all">Any tag</option>
+            {paletteView.tagFacets.map((facet) => (
+              <option key={facet.key} value={facet.key}>
+                {facet.label} ({facet.count})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="palette-groups">
+          {paletteView.groups.map((group) => (
+            <section className="palette-group" key={group.libraryId}>
+              <div className="palette-group-heading">
+                <h3 title={group.libraryId}>{group.label}</h3>
+                <span>{group.count}</span>
+              </div>
+              <ul className="operator-list">
+                {group.rows.map(({ operator, summary }) => (
+                  <li key={operator.operatorRef}>
+                    <button
+                      className="operator-button"
+                      onClick={() => addOperator(operator)}
+                      title={operator.operatorRef}
+                    >
+                      <span className="op-copy">
+                        <span className="op-name">{summary.name}</span>
+                        <span className="op-ref">{summary.operatorRef}</span>
+                        <span className="op-meta">
+                          {summary.requiredInputCount}/{summary.inputCount} inputs ·{' '}
+                          {summary.outputCount} outputs
+                        </span>
+                      </span>
+                      {summary.designOnly && <span className="badge design">design</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+          {paletteView.groups.length === 0 && (
+            <p className="muted">
+              {operators.length === 0 ? 'No operators. Is the server running?' : 'No matching operators.'}
+            </p>
           )}
-        </ul>
+        </div>
       </aside>
 
       <main className="canvas">

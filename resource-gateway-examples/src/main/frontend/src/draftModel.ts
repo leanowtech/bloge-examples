@@ -53,6 +53,44 @@ export interface OperatorSummary {
   designOnly: boolean;
 }
 
+export type OperatorPaletteFacet = 'all' | 'runtime' | 'design';
+
+export interface OperatorPaletteQuery {
+  search?: string;
+  facet?: OperatorPaletteFacet;
+  sourceKind?: string;
+  tag?: string;
+}
+
+export interface OperatorPaletteFacetCount<TKey extends string = string> {
+  key: TKey;
+  label: string;
+  count: number;
+}
+
+export interface OperatorPaletteRow {
+  operator: OperatorDefinition;
+  summary: OperatorSummary;
+  libraryId: string;
+}
+
+export interface OperatorPaletteGroup {
+  libraryId: string;
+  label: string;
+  count: number;
+  sourceKinds: string[];
+  rows: OperatorPaletteRow[];
+}
+
+export interface OperatorPaletteView {
+  totalCount: number;
+  matchingCount: number;
+  runtimeFacets: OperatorPaletteFacetCount<OperatorPaletteFacet>[];
+  sourceKindFacets: OperatorPaletteFacetCount[];
+  tagFacets: OperatorPaletteFacetCount[];
+  groups: OperatorPaletteGroup[];
+}
+
 /** A concise topology readout for the current canvas. */
 export interface CanvasSummary {
   nodeCount: number;
@@ -348,6 +386,64 @@ export function summarizeOperator(operator: OperatorDefinition): OperatorSummary
     requiredInputNames: requiredInputs.map((input) => input.name),
     outputNames: outputs.map((output) => output.name),
     designOnly: operator.lowering?.mode === 'design',
+  };
+}
+
+/**
+ * Builds the operator discovery view consumed by the palette.
+ *
+ * <p>The server owns the catalog; the browser only organizes the already-loaded window by imported
+ * library and cheap facets so authors can find the right operator without scanning a flat list.</p>
+ */
+export function operatorPaletteView(
+  operators: OperatorDefinition[],
+  query: OperatorPaletteQuery = {},
+): OperatorPaletteView {
+  const rows = operators.map((operator) => ({
+    operator,
+    summary: summarizeOperator(operator),
+    libraryId: operatorLibraryId(operator),
+  }));
+  const terms = searchTerms(query.search ?? '');
+  const searchedRows = rows.filter((row) => matchesOperatorSearch(row, terms));
+  const selectedFacet = query.facet ?? 'all';
+  const selectedSourceKind = normalizedFilter(query.sourceKind);
+  const selectedTag = normalizedFilter(query.tag);
+  const filteredRows = searchedRows.filter((row) => {
+    if (selectedFacet === 'runtime' && row.summary.designOnly) {
+      return false;
+    }
+    if (selectedFacet === 'design' && !row.summary.designOnly) {
+      return false;
+    }
+    if (selectedSourceKind !== 'all' && row.summary.sourceKind !== selectedSourceKind) {
+      return false;
+    }
+    if (selectedTag !== 'all' && !row.summary.tags.includes(selectedTag)) {
+      return false;
+    }
+    return true;
+  });
+
+  return {
+    totalCount: operators.length,
+    matchingCount: filteredRows.length,
+    runtimeFacets: [
+      { key: 'all', label: 'All', count: searchedRows.length },
+      {
+        key: 'runtime',
+        label: 'Runtime',
+        count: searchedRows.filter((row) => !row.summary.designOnly).length,
+      },
+      {
+        key: 'design',
+        label: 'Design',
+        count: searchedRows.filter((row) => row.summary.designOnly).length,
+      },
+    ],
+    sourceKindFacets: countedFacets(searchedRows.map((row) => row.summary.sourceKind)),
+    tagFacets: countedFacets(searchedRows.flatMap((row) => row.summary.tags)),
+    groups: groupPaletteRows(filteredRows),
   };
 }
 
@@ -714,6 +810,86 @@ function fixtureStateLabel(hasOutputPin: boolean, hasInputAssert: boolean): stri
     return 'input assert';
   }
   return 'server sample';
+}
+
+function operatorLibraryId(operator: OperatorDefinition): string {
+  const explicitLibraryId = operator.source?.libraryId?.trim();
+  if (explicitLibraryId) {
+    return explicitLibraryId;
+  }
+  const operatorRef = operator.operatorRef ?? '';
+  const namespaceEnd = operatorRef.indexOf(':');
+  if (namespaceEnd > 0) {
+    return operatorRef.slice(0, namespaceEnd);
+  }
+  return operator.source?.kind?.trim() || 'library';
+}
+
+function normalizedFilter(value: string | undefined): string {
+  return value?.trim() || 'all';
+}
+
+function searchTerms(search: string): string[] {
+  return search.toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+function matchesOperatorSearch(row: OperatorPaletteRow, terms: string[]): boolean {
+  if (terms.length === 0) {
+    return true;
+  }
+  const haystack = [
+    row.summary.name,
+    row.summary.operatorRef,
+    row.summary.description,
+    row.summary.sourceKind,
+    row.libraryId,
+    ...row.summary.tags,
+    ...row.summary.inputNames,
+    ...row.summary.outputNames,
+  ].join(' ').toLowerCase();
+  return terms.every((term) => haystack.includes(term));
+}
+
+function countedFacets(values: string[]): OperatorPaletteFacetCount[] {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    const normalized = value.trim();
+    if (!normalized) {
+      continue;
+    }
+    counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .sort(([leftKey, leftCount], [rightKey, rightCount]) =>
+      rightCount - leftCount || leftKey.localeCompare(rightKey))
+    .map(([key, count]) => ({ key, label: key, count }));
+}
+
+function groupPaletteRows(rows: OperatorPaletteRow[]): OperatorPaletteGroup[] {
+  const groups = new Map<string, OperatorPaletteRow[]>();
+  for (const row of rows) {
+    const groupRows = groups.get(row.libraryId);
+    if (groupRows) {
+      groupRows.push(row);
+    } else {
+      groups.set(row.libraryId, [row]);
+    }
+  }
+  return Array.from(groups.entries())
+    .map(([libraryId, groupRows]) => {
+      const sourceKinds = Array.from(new Set(groupRows.map((row) => row.summary.sourceKind))).sort();
+      const sortedRows = [...groupRows].sort((left, right) =>
+        left.summary.name.localeCompare(right.summary.name)
+        || left.summary.operatorRef.localeCompare(right.summary.operatorRef));
+      return {
+        libraryId,
+        label: libraryId,
+        count: sortedRows.length,
+        sourceKinds,
+        rows: sortedRows,
+      };
+    })
+    .sort((left, right) => left.label.localeCompare(right.label));
 }
 
 /** Generates the same deterministic schema sample shape used by the server mock-run generator. */

@@ -90,12 +90,124 @@ body {
   color: var(--muted);
 }
 
+.palette-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.palette-heading h2 {
+  margin: 0;
+}
+
+.palette-heading span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .palette input {
   width: 100%;
   padding: 6px 8px;
   margin-bottom: 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
+}
+
+.palette-facets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.palette-facet {
+  min-width: 0;
+  min-height: 44px;
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  padding: 6px 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.palette-facet.active {
+  border-color: var(--accent);
+  background: #eef4ff;
+  color: #174ea6;
+}
+
+.palette-facet span,
+.palette-facet strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-facet span {
+  font-size: 11px;
+}
+
+.palette-facet strong {
+  font-size: 12px;
+}
+
+.palette-selects {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.palette-selects select {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.palette-selects select:disabled {
+  color: var(--muted);
+  background: #f6f7f9;
+}
+
+.palette-group {
+  margin-bottom: 12px;
+}
+
+.palette-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 0 2px;
+}
+
+.palette-group-heading h3 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #3b4452;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-group-heading span {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .palette ul,
@@ -109,7 +221,7 @@ body {
   margin-bottom: 6px;
 }
 
-.palette button {
+.operator-button {
   width: 100%;
   text-align: left;
   padding: 9px 10px;
@@ -123,11 +235,12 @@ body {
   gap: 6px;
 }
 
-.palette button:hover {
+.operator-button:hover {
   border-color: var(--accent);
 }
 
-.op-name {
+.op-name,
+.op-ref {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -142,6 +255,11 @@ body {
 .op-meta {
   font-size: 11px;
   color: var(--muted);
+}
+
+.op-ref {
+  color: #475569;
+  font-size: 11px;
 }
 
 .badge {
