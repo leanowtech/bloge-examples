@@ -4,6 +4,9 @@ import type {
   ConnectionCheckRequest,
   ConnectionCheckResponse,
   GatewayExampleDiagram,
+  GatewayExampleRun,
+  GatewayExampleRunRequest,
+  GatewayExampleRunResult,
   GatewayExampleScenario,
   OperatorLibrary,
   OperatorLibraryValidationResult,
@@ -44,6 +47,43 @@ async function readJsonMutation<T>(response: Response): Promise<T> {
   return payload;
 }
 
+function fillTemplate(template: string, values: Record<string, unknown>): string {
+  return template.replace(/\{([^}]+)\}/g, (_, key: string) =>
+    encodeURIComponent(String(values[key] ?? '')),
+  );
+}
+
+function replacePlaceholders(value: unknown, values: Record<string, unknown>): unknown {
+  if (typeof value === 'string') {
+    const exact = value.match(/^\{([^}]+)\}$/);
+    if (exact) {
+      return values[exact[1]] ?? '';
+    }
+    return value.replace(/\{([^}]+)\}/g, (_, key: string) => String(values[key] ?? ''));
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => replacePlaceholders(item, values));
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, replacePlaceholders(item, values)]),
+    );
+  }
+  return value;
+}
+
+async function readFlexiblePayload(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
 /**
  * Loads the operator catalog. Tolerates either a bare array or a `{ operators: [...] }` envelope so the
  * palette works regardless of the catalog controller's exact response shape.
@@ -69,6 +109,48 @@ export async function fetchGatewayDiagram(path: string): Promise<GatewayExampleD
   return readJson<GatewayExampleDiagram>(
     await fetch(path),
   );
+}
+
+/** Resolves one scenario run recipe into the browser request used by the showcase runner. */
+export function buildGatewayRunRequest(
+  run: GatewayExampleRun,
+  values: Record<string, unknown>,
+): GatewayExampleRunRequest {
+  const mode = run.mode ?? 'request';
+  const headers = { ...(run.headers ?? {}) };
+  const init: RequestInit = {
+    method: run.method ?? 'GET',
+    headers,
+  };
+  if (mode === 'post') {
+    init.body = JSON.stringify(replacePlaceholders(run.bodyTemplate ?? {}, values));
+  }
+  return {
+    mode,
+    url: fillTemplate(run.pathTemplate ?? '/', values),
+    init,
+  };
+}
+
+/** Executes one non-streaming resource-gateway showcase scenario through its public gateway endpoint. */
+export async function runGatewayScenario(
+  run: GatewayExampleRun,
+  values: Record<string, unknown>,
+): Promise<GatewayExampleRunResult> {
+  const request = buildGatewayRunRequest(run, values);
+  if (request.mode === 'stream') {
+    throw new Error('Streaming scenarios must be executed with EventSource.');
+  }
+  const response = await fetch(request.url, request.init);
+  const payload = await readFlexiblePayload(response);
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status} ${response.statusText || 'Gateway run failed'}`);
+  }
+  return {
+    status: response.status,
+    url: request.url,
+    payload,
+  };
 }
 
 /** Validates pasted operator-library JSON/YAML without storing it. */

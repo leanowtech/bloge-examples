@@ -175,6 +175,10 @@ class VisualAuthoringBrowserDomTest {
         driver.findElement(By.cssSelector("[data-testid='showcase-diagram-node:loanPolicy']")).click();
         waitForText(wait, By.cssSelector("[data-testid='showcase-node-inspector']"), "Loan Policy Matrix");
         waitForText(wait, By.cssSelector("[data-testid='showcase-decision-table']"), "unique");
+        driver.findElement(By.cssSelector("[data-testid='showcase-run-button']")).click();
+        waitForText(wait, By.cssSelector("[data-testid='showcase-run-result']"), "HTTP 200");
+        waitForText(wait, By.cssSelector("[data-testid='showcase-run-result']"), "R1");
+        waitForText(wait, By.cssSelector("[data-testid='showcase-run-result']"), "approved");
         assertNoHorizontalOverflow(wait, By.cssSelector(".showcase"));
     }
 

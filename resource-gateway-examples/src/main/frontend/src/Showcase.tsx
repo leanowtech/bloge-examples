@@ -1,17 +1,28 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { fetchGatewayDiagram, fetchGatewayScenarios } from './api';
+import { buildGatewayRunRequest, fetchGatewayDiagram, fetchGatewayScenarios, runGatewayScenario } from './api';
 import type {
   GatewayDiagramEdge,
   GatewayDiagramGroup,
   GatewayDiagramNode,
   GatewayExampleDiagram,
+  GatewayExamplePreset,
   GatewayExampleScenario,
 } from './types';
 
 const DEFAULT_NODE_WIDTH = 180;
 const DEFAULT_NODE_HEIGHT = 72;
 const DIAGRAM_PADDING = 48;
+const STREAM_EVENT_NAMES = ['meta', 'token', 'citation'] as const;
+
+type ShowcaseRunStatus = 'idle' | 'running' | 'success' | 'error' | 'streaming';
+
+interface ShowcaseRunState {
+  status: ShowcaseRunStatus;
+  url: string;
+  message: string;
+  payload: unknown;
+}
 
 function previewJson(value: unknown): string {
   try {
@@ -19,6 +30,31 @@ function previewJson(value: unknown): string {
   } catch {
     return '{}';
   }
+}
+
+function inputText(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function scenarioInputValues(
+  scenario: GatewayExampleScenario | undefined,
+  preset?: GatewayExamplePreset,
+): Record<string, string> {
+  const base = scenario?.sampleInput ?? {};
+  const next = { ...base, ...(preset?.values ?? {}) };
+  return Object.fromEntries(
+    Object.entries(next).map(([key, value]) => [key, inputText(value)]),
+  );
+}
+
+function emptyRunState(): ShowcaseRunState {
+  return { status: 'idle', url: '', message: 'Not run yet.', payload: null };
 }
 
 function conceptList(scenario: GatewayExampleScenario): string[] {
@@ -111,6 +147,9 @@ export default function Showcase() {
   const [diagramStatus, setDiagramStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [diagramErrorMessage, setDiagramErrorMessage] = useState('');
   const [selectedDiagramNodeId, setSelectedDiagramNodeId] = useState('');
+  const [inputValues, setInputValues] = useState<Record<string, string>>({});
+  const [runState, setRunState] = useState<ShowcaseRunState>(emptyRunState);
+  const streamSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,6 +195,106 @@ export default function Showcase() {
     [diagram, selectedDiagramNodeId],
   );
   const selectedDiagramAnnotations = Object.entries(selectedDiagramNode?.annotations ?? {}).slice(0, 6);
+  const inputKeys = Object.keys(selectedScenario?.sampleInput ?? {});
+
+  function closeStream() {
+    streamSourceRef.current?.close();
+    streamSourceRef.current = null;
+  }
+
+  function updateInput(key: string, value: string) {
+    setInputValues((current) => ({ ...current, [key]: value }));
+  }
+
+  async function runSelectedScenario(values: Record<string, string> = inputValues) {
+    const run = selectedScenario?.run;
+    if (!run) {
+      setRunState({
+        status: 'error',
+        url: '',
+        message: 'Selected scenario has no run recipe.',
+        payload: null,
+      });
+      return;
+    }
+    closeStream();
+    const request = buildGatewayRunRequest(run, values);
+    setRunState({
+      status: request.mode === 'stream' ? 'streaming' : 'running',
+      url: request.url,
+      message: request.mode === 'stream' ? 'Opening stream...' : 'Running...',
+      payload: request.mode === 'stream' ? { meta: [], token: [], citation: [] } : null,
+    });
+    if (request.mode === 'stream') {
+      if (typeof EventSource === 'undefined') {
+        setRunState({
+          status: 'error',
+          url: request.url,
+          message: 'EventSource is not available in this browser.',
+          payload: null,
+        });
+        return;
+      }
+      const frames: Record<string, unknown[]> = { meta: [], token: [], citation: [] };
+      const source = new EventSource(request.url);
+      streamSourceRef.current = source;
+      STREAM_EVENT_NAMES.forEach((eventName) => {
+        source.addEventListener(eventName, (event) => {
+          const data = (event as MessageEvent).data;
+          try {
+            frames[eventName] = [...frames[eventName], JSON.parse(data)];
+          } catch {
+            frames[eventName] = [...frames[eventName], data];
+          }
+          setRunState({
+            status: 'streaming',
+            url: request.url,
+            message: 'Streaming...',
+            payload: { ...frames },
+          });
+        });
+      });
+      source.onerror = () => {
+        closeStream();
+        setRunState((current) => ({
+          ...current,
+          status: current.status === 'streaming' ? 'success' : current.status,
+          message: 'Stream closed.',
+        }));
+      };
+      return;
+    }
+    try {
+      const result = await runGatewayScenario(run, values);
+      setRunState({
+        status: 'success',
+        url: result.url,
+        message: `HTTP ${result.status}`,
+        payload: result.payload,
+      });
+    } catch (error) {
+      setRunState({
+        status: 'error',
+        url: request.url,
+        message: error instanceof Error ? error.message : 'Gateway run failed.',
+        payload: null,
+      });
+    }
+  }
+
+  function applyPreset(preset: GatewayExamplePreset) {
+    const next = scenarioInputValues(selectedScenario, preset);
+    setInputValues(next);
+    void runSelectedScenario(next);
+  }
+
+  useEffect(() => {
+    closeStream();
+    setInputValues(scenarioInputValues(selectedScenario));
+    setRunState(emptyRunState());
+  }, [selectedScenario?.graphName]);
+
+  useEffect(() => () => closeStream(), []);
 
   useEffect(() => {
     const diagramPath = selectedScenario?.diagramPath;
@@ -402,12 +541,92 @@ export default function Showcase() {
                   <dd>{presets.length}</dd>
                 </div>
               </dl>
+              {presets.length > 0 ? (
+                <div className="showcase-presets" aria-label="Sample presets">
+                  {presets.map((preset) => (
+                    <button
+                      key={preset.label ?? previewJson(preset.values)}
+                      type="button"
+                      className="showcase-preset-button"
+                      data-testid={`showcase-preset:${preset.label ?? 'preset'}`}
+                      onClick={() => applyPreset(preset)}
+                    >
+                      <strong>{preset.label ?? 'Preset'}</strong>
+                      <span>
+                        {[preset.expected?.ruleId, preset.expected?.decision].filter(Boolean).join(' / ') || 'sample'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {inputKeys.length > 0 ? (
+                <form className="showcase-inputs" onSubmit={(event) => {
+                  event.preventDefault();
+                  void runSelectedScenario();
+                }}
+                >
+                  {inputKeys.map((key) => (
+                    <label key={key}>
+                      <span>{key}</span>
+                      <input
+                        data-testid={`showcase-input:${key}`}
+                        name={key}
+                        value={inputValues[key] ?? ''}
+                        onChange={(event) => updateInput(key, event.currentTarget.value)}
+                      />
+                    </label>
+                  ))}
+                  <button
+                    type="submit"
+                    className="primary compact"
+                    data-testid="showcase-run-button"
+                    disabled={runState.status === 'running'}
+                  >
+                    {runState.status === 'running' ? 'Running...' : 'Run'}
+                  </button>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  className="primary compact"
+                  data-testid="showcase-run-button"
+                  disabled={runState.status === 'running'}
+                  onClick={() => void runSelectedScenario()}
+                >
+                  {runState.status === 'running' ? 'Running...' : 'Run'}
+                </button>
+              )}
             </section>
 
             <section className="showcase-panel">
               <h3>Sample Input</h3>
               <pre className="showcase-sample" data-testid="showcase-sample">
-                {previewJson(selectedScenario.sampleInput)}
+                {previewJson(inputValues)}
+              </pre>
+            </section>
+
+            <section
+              className={`showcase-panel showcase-run-result ${runState.status}`}
+              data-testid="showcase-run-result"
+            >
+              <div className="showcase-panel-heading">
+                <h3>Output</h3>
+                <span>{runState.status}</span>
+              </div>
+              <dl className="showcase-run">
+                <div>
+                  <dt>Status</dt>
+                  <dd>{runState.message}</dd>
+                </div>
+                <div>
+                  <dt>URL</dt>
+                  <dd>
+                    <code>{runState.url || 'n/a'}</code>
+                  </dd>
+                </div>
+              </dl>
+              <pre className="showcase-sample">
+                {previewJson(runState.payload)}
               </pre>
             </section>
           </div>

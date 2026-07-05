@@ -229,6 +229,20 @@ export interface GatewayExampleRun {
   headers?: Record<string, string>;
 }
 
+/** Resolved browser request for executing one resource-gateway showcase scenario. */
+export interface GatewayExampleRunRequest {
+  mode: string;
+  url: string;
+  init: RequestInit;
+}
+
+/** Result of executing one non-streaming resource-gateway showcase scenario. */
+export interface GatewayExampleRunResult {
+  status: number;
+  url: string;
+  payload: unknown;
+}
+
 /** Optional decision-table metadata exposed for matrix-oriented showcase scenarios. */
 export interface GatewayDecisionTable {
   hitPolicy?: string;

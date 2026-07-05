@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  buildGatewayRunRequest,
   fetchGatewayDiagram,
   fetchGatewayScenarios,
   importOperatorLibraryText,
+  runGatewayScenario,
   validateOperatorLibraryText,
 } from './api';
 
@@ -92,5 +94,52 @@ describe('operator library API client', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/gateway/examples/scenarios/loanDecisionPolicy/diagram');
     expect(diagram.rootId).toBe('loanDecisionPolicy');
     expect(diagram.nodes[0].id).toBe('loanPolicy');
+  });
+
+  it('resolves and runs a gateway showcase request scenario', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      data: { policy: { ruleId: 'R1' } },
+    }), { status: 200 }));
+
+    const result = await runGatewayScenario({
+      mode: 'request',
+      method: 'GET',
+      pathTemplate: '/api/gateway/loan-policy/{applicantId}?amount={amount}',
+    }, { applicantId: 'prime customer', amount: 450000 });
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/gateway/loan-policy/prime%20customer?amount=450000', {
+      method: 'GET',
+      headers: {},
+    });
+    expect(result.status).toBe(200);
+    expect(result.url).toBe('/api/gateway/loan-policy/prime%20customer?amount=450000');
+    expect(result.payload).toMatchObject({ success: true });
+  });
+
+  it('builds a gateway showcase POST body from nested placeholders', () => {
+    const request = buildGatewayRunRequest({
+      mode: 'post',
+      method: 'POST',
+      pathTemplate: '/api/gateway/resources/execute',
+      bodyTemplate: {
+        resourceId: '{resourceId}',
+        params: { userId: '{userId}' },
+      },
+      headers: { 'Content-Type': 'application/json' },
+    }, { resourceId: 'user-service.getProfile', userId: 'u1' });
+
+    expect(request).toMatchObject({
+      mode: 'post',
+      url: '/api/gateway/resources/execute',
+      init: {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      },
+    });
+    expect(request.init.body).toBe(JSON.stringify({
+      resourceId: 'user-service.getProfile',
+      params: { userId: 'u1' },
+    }));
   });
 });

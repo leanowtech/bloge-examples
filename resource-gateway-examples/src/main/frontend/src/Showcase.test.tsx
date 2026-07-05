@@ -28,6 +28,18 @@ describe('Showcase', () => {
       if (url === '/api/gateway/examples/scenarios/aiEnrichedSearch/diagram') {
         return jsonResponse(aiSearchDiagram());
       }
+      if (url === '/api/gateway/dashboard/u42') {
+        return jsonResponse({ success: true, data: { profile: { name: 'Taylor' } } });
+      }
+      if (url === '/api/gateway/dashboard/u1') {
+        return jsonResponse({ success: true, data: { profile: { name: 'Alice' } } });
+      }
+      if (url === '/api/gateway/loan-policy/prime?amount=450000') {
+        return jsonResponse({ success: true, data: { policy: { ruleId: 'R1', decision: 'approved' } } });
+      }
+      if (url === '/api/gateway/loan-policy/review?amount=450000') {
+        return jsonResponse({ success: true, data: { policy: { ruleId: 'R3', decision: 'manual_review' } } });
+      }
       throw new Error(`Unexpected fetch: ${url}`);
     }));
   });
@@ -102,6 +114,39 @@ describe('Showcase', () => {
       .toContain('rules');
     expect(query('[data-testid="showcase-node-inspector"]').textContent)
       .toContain('4');
+  });
+
+  it('runs the selected gateway scenario with edited sample input', async () => {
+    await renderShowcase();
+    await waitFor(() => query('[data-testid="showcase-input:userId"]'));
+
+    await setControlValue(query<HTMLInputElement>('[data-testid="showcase-input:userId"]'), 'u42');
+    await click(query<HTMLButtonElement>('[data-testid="showcase-run-button"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="showcase-run-result"]').textContent)
+        .toContain('/api/gateway/dashboard/u42'),
+    );
+    expect(query('[data-testid="showcase-run-result"]').textContent).toContain('HTTP 200');
+    expect(query('[data-testid="showcase-run-result"]').textContent).toContain('Taylor');
+  });
+
+  it('applies a preset and immediately runs the scenario', async () => {
+    await renderShowcase();
+    await waitFor(() => query('[data-testid="showcase-scenario:loanDecisionPolicy"]'));
+
+    await click(query<HTMLButtonElement>('[data-testid="showcase-scenario:loanDecisionPolicy"]'));
+    await waitFor(() => query('[data-testid="showcase-preset:Review"]'));
+    await click(query<HTMLButtonElement>('[data-testid="showcase-preset:Review"]'));
+
+    await waitFor(() =>
+      expect(query<HTMLInputElement>('[data-testid="showcase-input:applicantId"]').value)
+        .toBe('review'),
+    );
+    expect(query('[data-testid="showcase-run-result"]').textContent)
+      .toContain('/api/gateway/loan-policy/review?amount=450000');
+    expect(query('[data-testid="showcase-run-result"]').textContent).toContain('R3');
+    expect(query('[data-testid="showcase-run-result"]').textContent).toContain('manual_review');
   });
 
   async function renderShowcase() {
@@ -271,6 +316,14 @@ function query<T extends Element = Element>(selector: string): T {
 async function click(element: Element) {
   await act(async () => {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+}
+
+async function setControlValue(element: HTMLInputElement, value: string) {
+  await act(async () => {
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    valueSetter?.call(element, value);
+    element.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
 
