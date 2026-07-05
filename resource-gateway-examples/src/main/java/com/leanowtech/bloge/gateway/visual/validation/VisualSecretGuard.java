@@ -64,6 +64,8 @@ public final class VisualSecretGuard {
         }
         scan(draft.inputSchema().schema(), "/inputSchema/schema", "", diagnostics);
         scan(draft.visualLayout(), "/visualLayout", "", diagnostics);
+        draft.nodeFixtures().forEach((nodeId, fixture) -> scan(
+                fixture.output(), "/nodeFixtures/" + nodeId + "/output", "output", diagnostics));
         for (int i = 0; i < draft.nodes().size(); i++) {
             int nodeIndex = i;
             GraphDraft.DraftNode node = draft.nodes().get(i);

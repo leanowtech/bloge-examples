@@ -162,6 +162,9 @@ public record GraphDraftExportBundle(
     /**
      * Computes the canonical fingerprint for the current normalized draft export material.
      *
+     * <p>Author simulation fixtures travel inside {@link #draft()} for portability, but they are
+     * excluded from the fingerprint material because they do not change compile/run semantics.</p>
+     *
      * @return expected fingerprint derived from bundle content
      */
     public String computedBundleFingerprint() {
@@ -197,7 +200,7 @@ public record GraphDraftExportBundle(
         material.put("schemaVersion", schemaVersion);
         material.put("sourceDraftId", sourceDraftId);
         material.put("sourceRevision", sourceRevision);
-        material.put("draft", draft);
+        material.put("draft", draft == null ? null : draft.withNodeFixtures(Map.of()));
         material.put("operatorSnapshots", operatorSnapshots);
         material.put("diagnostics", diagnostics);
         material.put("validation", validation);

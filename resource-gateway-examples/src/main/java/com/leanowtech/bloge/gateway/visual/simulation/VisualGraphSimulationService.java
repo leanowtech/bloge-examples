@@ -85,7 +85,10 @@ public class VisualGraphSimulationService {
     }
 
     /**
-     * Simulates a visual graph draft with no author fixtures.
+     * Simulates a visual graph draft with no transient fixture overrides.
+     *
+     * <p>Persisted {@link GraphDraft#nodeFixtures()} still apply; use the overload with
+     * {@code fixtures} when a caller wants request-scoped overrides.</p>
      *
      * @param draft the graph draft
      * @param context the initial graph context (may be partial; missing inputs simply bind to null)
@@ -99,7 +102,7 @@ public class VisualGraphSimulationService {
     }
 
     /**
-     * Simulates a visual graph draft, honouring per-node author fixtures.
+     * Simulates a visual graph draft, honouring persisted and request-scoped per-node fixtures.
      *
      * <p>A node with a fixture is always mocked and its output is the fixture value, taking precedence
      * over both the schema-synthesized sample and the hybrid real-run classification (decisions D4,
@@ -108,18 +111,18 @@ public class VisualGraphSimulationService {
      * @param draft the graph draft
      * @param context the initial graph context (may be partial; missing inputs simply bind to null)
      * @param outputNode optional output node override; defaults to the draft's selected output node
-     * @param fixtures per-node output pins keyed by node id; may be {@code null}
+     * @param fixtures request-scoped per-node output pins keyed by node id; these override any persisted draft fixture
      * @return the simulation result, including which nodes were mocked vs executed for real
      */
     public VisualGraphSimulationResponse simulate(GraphDraft draft,
                                                   Map<String, Object> context,
                                                   String outputNode,
                                                   Map<String, NodeFixture> fixtures) {
-        Map<String, NodeFixture> safeFixtures = fixtures == null ? Map.of() : fixtures;
         if (draft == null) {
             return blocked(false, List.of(VisualDiagnostic.error("visual.simulate.draftMissing",
                     "Graph draft is required.", "/")), List.of("Graph draft is required."), "");
         }
+        Map<String, Object> fixtureOutputs = fixtureOutputs(draft, fixtures);
         List<VisualDiagnostic> capDiagnostics = enforceResourceCaps(draft);
         if (!capDiagnostics.isEmpty()) {
             return blocked(false, capDiagnostics, List.of("Simulation resource caps exceeded."), "");
@@ -149,7 +152,7 @@ public class VisualGraphSimulationService {
                 return blocked(true, diagnostics,
                         List.of("Simulation cannot resolve one or more operators."), "");
             }
-            boolean pinned = safeFixtures.containsKey(node.id());
+            boolean pinned = fixtureOutputs.containsKey(node.id());
             if (!pinned && isRealPrimitive(operator.get())) {
                 realNodeIds.add(node.id());
                 simulationNodes.add(node);
@@ -157,7 +160,7 @@ public class VisualGraphSimulationService {
                 String simulationRef = SIM_OPERATOR_PREFIX + node.id();
                 mockedNodeIds.add(node.id());
                 Object mockOutput = pinned
-                        ? safeFixtures.get(node.id()).output()
+                        ? fixtureOutputs.get(node.id())
                         : sampleGenerator.generate(firstOutputSchema(operator.get()));
                 mockOutputsByNodeId.put(node.id(), mockOutput);
                 syntheticDefinitions.put(simulationRef,
@@ -262,11 +265,25 @@ public class VisualGraphSimulationService {
                 nodes,
                 draft.edges(),
                 draft.visualLayout(),
+                draft.nodeFixtures(),
                 draft.output(),
                 draft.operatorFingerprints(),
                 draft.operatorSnapshots(),
                 draft.revisionMetadata()
         );
+    }
+
+    private static Map<String, Object> fixtureOutputs(GraphDraft draft, Map<String, NodeFixture> requestFixtures) {
+        Map<String, Object> outputs = new LinkedHashMap<>();
+        draft.nodeFixtures().forEach((nodeId, fixture) -> outputs.put(nodeId, fixture.output()));
+        if (requestFixtures != null) {
+            requestFixtures.forEach((nodeId, fixture) -> {
+                if (nodeId != null && !nodeId.isBlank() && fixture != null) {
+                    outputs.put(nodeId, fixture.output());
+                }
+            });
+        }
+        return outputs;
     }
 
     private static Map<String, Object> effectiveContext(GraphDraft draft, Map<String, Object> context) {

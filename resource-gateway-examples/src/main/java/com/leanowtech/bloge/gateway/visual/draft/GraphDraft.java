@@ -25,6 +25,7 @@ import java.util.Set;
  * @param nodes visual nodes
  * @param edges visual edges
  * @param visualLayout opaque visual layout model
+ * @param nodeFixtures non-semantic per-node simulation fixtures used only by the mock-run path
  * @param output selected graph output
  * @param operatorFingerprints operator fingerprint snapshot keyed by node id
  * @param operatorSnapshots operator definition snapshot keyed by node id
@@ -43,6 +44,7 @@ public record GraphDraft(
         List<DraftNode> nodes,
         List<DraftEdge> edges,
         Map<String, Object> visualLayout,
+        Map<String, NodeFixture> nodeFixtures,
         OutputSelection output,
         Map<String, String> operatorFingerprints,
         Map<String, OperatorDefinition> operatorSnapshots,
@@ -73,6 +75,7 @@ public record GraphDraft(
         nodes = nodes == null ? List.of() : List.copyOf(nodes);
         edges = edges == null ? List.of() : List.copyOf(edges);
         visualLayout = visualLayout == null ? Map.of() : new LinkedHashMap<>(visualLayout);
+        nodeFixtures = normalizeNodeFixtures(nodeFixtures);
         output = output == null ? OutputSelection.empty() : output;
         operatorFingerprints = operatorFingerprints == null ? Map.of() : new LinkedHashMap<>(operatorFingerprints);
         operatorSnapshots = operatorSnapshots == null ? Map.of() : new LinkedHashMap<>(operatorSnapshots);
@@ -85,6 +88,30 @@ public record GraphDraft(
      */
     public static boolean isSupportedStatus(String status) {
         return SUPPORTED_STATUSES.contains(normalizeStatus(status));
+    }
+
+    /**
+     * Backward-compatible constructor for drafts created before simulation fixtures were persisted.
+     */
+    public GraphDraft(String schemaVersion,
+                      String draftId,
+                      long revision,
+                      String graphName,
+                      String tenantId,
+                      String namespace,
+                      String environment,
+                      String status,
+                      SchemaEnvelope inputSchema,
+                      List<DraftNode> nodes,
+                      List<DraftEdge> edges,
+                      Map<String, Object> visualLayout,
+                      OutputSelection output,
+                      Map<String, String> operatorFingerprints,
+                      Map<String, OperatorDefinition> operatorSnapshots,
+                      RevisionMetadata revisionMetadata) {
+        this(schemaVersion, draftId, revision, graphName, tenantId, namespace, environment, status,
+                inputSchema, nodes, edges, visualLayout, Map.of(), output, operatorFingerprints,
+                operatorSnapshots, revisionMetadata);
     }
 
     /**
@@ -106,7 +133,8 @@ public record GraphDraft(
                       Map<String, String> operatorFingerprints,
                       RevisionMetadata revisionMetadata) {
         this(schemaVersion, draftId, revision, graphName, tenantId, namespace, environment, status,
-                inputSchema, nodes, edges, visualLayout, output, operatorFingerprints, Map.of(), revisionMetadata);
+                inputSchema, nodes, edges, visualLayout, Map.of(), output, operatorFingerprints, Map.of(),
+                revisionMetadata);
     }
 
     /**
@@ -127,7 +155,7 @@ public record GraphDraft(
                       OutputSelection output,
                       Map<String, String> operatorFingerprints) {
         this(schemaVersion, draftId, revision, graphName, tenantId, namespace, environment, status,
-                inputSchema, nodes, edges, visualLayout, output, operatorFingerprints, Map.of(),
+                inputSchema, nodes, edges, visualLayout, Map.of(), output, operatorFingerprints, Map.of(),
                 RevisionMetadata.empty());
     }
 
@@ -148,7 +176,8 @@ public record GraphDraft(
                       Map<String, Object> visualLayout,
                       OutputSelection output) {
         this(schemaVersion, draftId, revision, graphName, tenantId, namespace, environment, status,
-                inputSchema, nodes, edges, visualLayout, output, Map.of(), Map.of(), RevisionMetadata.empty());
+                inputSchema, nodes, edges, visualLayout, Map.of(), output, Map.of(), Map.of(),
+                RevisionMetadata.empty());
     }
 
     /**
@@ -160,7 +189,8 @@ public record GraphDraft(
      */
     public GraphDraft withIdentity(String newDraftId, long newRevision) {
         return new GraphDraft(schemaVersion, newDraftId, newRevision, graphName, tenantId, namespace,
-                environment, status, inputSchema, nodes, edges, visualLayout, output, operatorFingerprints,
+                environment, status, inputSchema, nodes, edges, visualLayout, nodeFixtures, output,
+                operatorFingerprints,
                 operatorSnapshots, revisionMetadata);
     }
 
@@ -172,7 +202,7 @@ public record GraphDraft(
      */
     public GraphDraft withOperatorFingerprints(Map<String, String> fingerprints) {
         return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
-                environment, status, inputSchema, nodes, edges, visualLayout, output, fingerprints,
+                environment, status, inputSchema, nodes, edges, visualLayout, nodeFixtures, output, fingerprints,
                 operatorSnapshots, revisionMetadata);
     }
 
@@ -184,7 +214,8 @@ public record GraphDraft(
      */
     public GraphDraft withOperatorSnapshots(Map<String, OperatorDefinition> snapshots) {
         return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
-                environment, status, inputSchema, nodes, edges, visualLayout, output, operatorFingerprints,
+                environment, status, inputSchema, nodes, edges, visualLayout, nodeFixtures, output,
+                operatorFingerprints,
                 snapshots, revisionMetadata);
     }
 
@@ -198,8 +229,24 @@ public record GraphDraft(
     public GraphDraft withOperatorSnapshotState(Map<String, String> fingerprints,
                                                 Map<String, OperatorDefinition> snapshots) {
         return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
-                environment, status, inputSchema, nodes, edges, visualLayout, output, fingerprints,
+                environment, status, inputSchema, nodes, edges, visualLayout, nodeFixtures, output, fingerprints,
                 snapshots, revisionMetadata);
+    }
+
+    /**
+     * Returns a copy with author-pinned simulation fixtures.
+     *
+     * <p>Fixtures are intentionally non-semantic: they are ignored by DSL generation, graph diffing,
+     * and publish-time executable behavior. They travel with a draft so authors can repeat the same
+     * mock-run without re-entering sample outputs.</p>
+     *
+     * @param fixtures per-node simulation fixtures keyed by node id
+     * @return updated draft
+     */
+    public GraphDraft withNodeFixtures(Map<String, NodeFixture> fixtures) {
+        return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
+                environment, status, inputSchema, nodes, edges, visualLayout, fixtures, output,
+                operatorFingerprints, operatorSnapshots, revisionMetadata);
     }
 
     /**
@@ -210,7 +257,8 @@ public record GraphDraft(
      */
     public GraphDraft withRevisionMetadata(RevisionMetadata metadata) {
         return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
-                environment, status, inputSchema, nodes, edges, visualLayout, output, operatorFingerprints,
+                environment, status, inputSchema, nodes, edges, visualLayout, nodeFixtures, output,
+                operatorFingerprints,
                 operatorSnapshots, metadata);
     }
 
@@ -385,6 +433,19 @@ public record GraphDraft(
         return normalized;
     }
 
+    private static Map<String, NodeFixture> normalizeNodeFixtures(Map<String, NodeFixture> fixtures) {
+        if (fixtures == null || fixtures.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, NodeFixture> normalized = new LinkedHashMap<>();
+        fixtures.forEach((nodeId, fixture) -> {
+            if (nodeId != null && !nodeId.isBlank() && fixture != null) {
+                normalized.put(sanitizeIdentifier(nodeId), fixture);
+            }
+        });
+        return normalized;
+    }
+
     /**
      * Explicit oneOf/anyOf branch selected for a binding target.
      *
@@ -492,6 +553,18 @@ public record GraphDraft(
      * @param y y coordinate
      */
     public record Position(double x, double y) {
+    }
+
+    /**
+     * Author-pinned output for one node during visual graph simulation.
+     *
+     * <p>The fixture belongs to the authoring draft, not to the executable graph contract. Simulation
+     * injects {@link #output()} when the node is mocked; normal run, compile, publication DSL, and graph
+     * validation ignore it.</p>
+     *
+     * @param output value injected as the node's simulated output; may be {@code null}
+     */
+    public record NodeFixture(Object output) {
     }
 
     /**

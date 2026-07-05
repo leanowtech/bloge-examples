@@ -119,6 +119,44 @@ class VisualGraphSimulationServiceTest {
         assertThat(response.output()).isEqualTo(pinnedOutput);
     }
 
+    @Test
+    void persistedDraftFixtureForcesMockOverRealPrimitive() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        VisualGraphSimulationService service = simulationService(catalog);
+
+        Map<String, Object> pinnedOutput = Map.of("eligible", false, "ruleId", "DRAFT_PIN");
+        GraphDraft draft = eligibilityDraft().withNodeFixtures(
+                Map.of("eligibility", new GraphDraft.NodeFixture(pinnedOutput)));
+
+        VisualGraphSimulationResponse response = service.simulate(
+                draft, Map.of("score", 720, "amount", 250_000), "");
+
+        assertThat(response.success()).isTrue();
+        assertThat(response.mockedNodeIds()).containsExactly("eligibility");
+        assertThat(response.realNodeIds()).isEmpty();
+        assertThat(response.output()).isEqualTo(pinnedOutput);
+    }
+
+    @Test
+    void requestFixtureOverridesPersistedDraftFixture() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        VisualGraphSimulationService service = simulationService(catalog);
+
+        GraphDraft draft = eligibilityDraft().withNodeFixtures(Map.of(
+                "eligibility", new GraphDraft.NodeFixture(Map.of("eligible", false, "ruleId", "DRAFT_PIN"))));
+        Map<String, Object> requestOutput = Map.of("eligible", true, "ruleId", "REQUEST_PIN");
+
+        VisualGraphSimulationResponse response = service.simulate(
+                draft, Map.of(), "",
+                Map.of("eligibility", new NodeFixture(requestOutput)));
+
+        assertThat(response.success()).isTrue();
+        assertThat(response.mockedNodeIds()).containsExactly("eligibility");
+        assertThat(response.output()).isEqualTo(requestOutput);
+    }
+
     private static VisualGraphSimulationService simulationService(DefaultVisualOperatorCatalog catalog) {
         return new VisualGraphSimulationService(
                 new GraphDraftValidator(catalog),

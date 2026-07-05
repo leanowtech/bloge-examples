@@ -162,6 +162,29 @@ class GraphDraftDiffTest {
         assertThat(diff.changeSummary()).isEqualTo("No graph draft surface changes.");
     }
 
+    @Test
+    void ignoresNodeFixtureOnlyChanges() {
+        GraphDraft base = draft(
+                1,
+                "riskGraph",
+                graphInputSchema("integer"),
+                List.of(eligibilityNode("eligibility", "risk:eligibility", "score")),
+                List.of(),
+                new GraphDraft.OutputSelection("eligibility", ""),
+                Map.of("eligibility", "fingerprint-v1"),
+                Map.of()
+        );
+        GraphDraft target = base.withNodeFixtures(Map.of(
+                "eligibility", new GraphDraft.NodeFixture(Map.of("eligible", true, "ruleId", "PINNED"))));
+
+        GraphDraftDiff diff = GraphDraftDiff.between(base, target);
+
+        assertThat(diff.changed()).isFalse();
+        assertThat(diff.graphChanges()).isEmpty();
+        assertThat(diff.nodeChanges()).isEmpty();
+        assertThat(diff.edgeChanges()).isEmpty();
+    }
+
     private static GraphDraft draft(long revision,
                                     String graphName,
                                     SchemaEnvelope inputSchema,
