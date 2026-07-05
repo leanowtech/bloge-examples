@@ -145,6 +145,35 @@ export interface VisualDiagnostic {
   target?: string;
 }
 
+/** Server-derived graph-level readiness returned by transient draft validation. */
+export interface VisualGraphReadiness {
+  state?: string;
+  level?: string;
+  executable?: boolean;
+  artifactKinds?: string[];
+  title?: string;
+  summary?: string;
+  nodeCount?: number;
+  runtimeBindingRequirementCount?: number;
+}
+
+/** Server-derived action gates returned by transient draft validation. */
+export interface VisualGraphActionReadiness {
+  state?: string;
+  compileNow?: boolean;
+  runNow?: boolean;
+  publishExecutableNow?: boolean;
+  publishDesignNow?: boolean;
+}
+
+/** The response of POST /api/visual/drafts/validate. */
+export interface VisualValidationResult {
+  valid: boolean;
+  diagnostics: VisualDiagnostic[];
+  readiness?: VisualGraphReadiness;
+  actionReadiness?: VisualGraphActionReadiness;
+}
+
 /** Stable server-authored summary of a proposed connection decision. */
 export interface ConnectionCheckSummary {
   accepted?: boolean;

@@ -8,11 +8,13 @@ import type {
   GatewayExampleRunRequest,
   GatewayExampleRunResult,
   GatewayExampleScenario,
+  GraphDraft,
   OperatorLibrary,
   OperatorLibraryValidationResult,
   OperatorDefinition,
   SimulationRequest,
   SimulationResponse,
+  VisualValidationResult,
 } from './types';
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -187,6 +189,17 @@ export async function simulate(request: SimulationRequest): Promise<SimulationRe
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
+    }),
+  );
+}
+
+/** Validates a transient visual graph draft through the server-authoritative schema/readiness gate. */
+export async function validateDraft(draft: GraphDraft): Promise<VisualValidationResult> {
+  return readJson<VisualValidationResult>(
+    await fetch('/api/visual/drafts/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(draft),
     }),
   );
 }

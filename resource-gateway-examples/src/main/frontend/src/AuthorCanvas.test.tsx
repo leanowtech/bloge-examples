@@ -326,6 +326,27 @@ describe('AuthorCanvas simulation summary', () => {
       if (url === '/api/visual/operators') {
         return jsonResponse({ operators: [eligibilityOperator()] });
       }
+      if (url === '/api/visual/drafts/validate') {
+        const body = JSON.parse(String(init?.body));
+        expect(body.schemaVersion).toBe('bloge.visualGraphDraft.v1');
+        expect(body.output.nodeId).toBe('n1');
+        expect(body.nodes).toHaveLength(1);
+        return jsonResponse({
+          valid: true,
+          diagnostics: [],
+          readiness: {
+            state: 'design-only',
+            level: 'info',
+            title: 'Design-only draft',
+            summary: 'Draft is structurally valid and ready for simulation.',
+            artifactKinds: ['DESIGN'],
+          },
+          actionReadiness: {
+            state: 'design-artifact-ready',
+            publishDesignNow: true,
+          },
+        });
+      }
       if (url === '/api/visual/graphs/simulate') {
         const body = JSON.parse(String(init?.body));
         expect(body.outputNode).toBe('n1');
@@ -390,6 +411,29 @@ describe('AuthorCanvas simulation summary', () => {
     );
     expect(query('[data-testid="simulation-run-summary:trust"]').textContent).toContain('0 real / 1 mocked');
     expect(query('[data-testid="simulation-run-summary:diagnostics"]').textContent).toContain('0 diagnostics');
+  });
+
+  it('validates the current draft through the server readiness gate', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:eligibility"]').textContent).toContain('Eligibility'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:eligibility"]'));
+    await click(query<HTMLButtonElement>('[data-testid="author-draft-validate"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="draft-validation-summary"]').textContent).toContain('Design-only draft'),
+    );
+    expect(query('[data-testid="draft-validation-summary"]').textContent)
+      .toContain('Draft is structurally valid and ready for simulation.');
+    expect(query('[data-testid="draft-validation-summary:state"]').textContent).toContain('design-only');
+    expect(query('[data-testid="draft-validation-summary:actions"]').textContent)
+      .toContain('design-artifact-ready');
+    expect(query('[data-testid="draft-validation-summary:diagnostics"]').textContent).toContain('0');
   });
 
   it('exports the current authoring draft with node fixtures', async () => {

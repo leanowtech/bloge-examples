@@ -6,6 +6,7 @@ import {
   fetchGatewayScenarios,
   importOperatorLibraryText,
   runGatewayScenario,
+  validateDraft,
   validateOperatorLibraryText,
 } from './api';
 
@@ -62,6 +63,37 @@ describe('operator library API client', () => {
 
     await expect(importOperatorLibraryText('{}'))
       .rejects.toThrow('Request failed: 400 Unsupported schema version.');
+  });
+
+  it('validates a transient visual graph draft', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      valid: true,
+      diagnostics: [],
+      readiness: { state: 'design-only', title: 'Design-only draft' },
+      actionReadiness: { state: 'design-artifact-ready' },
+    })));
+
+    const result = await validateDraft({
+      schemaVersion: 'bloge.visualGraphDraft.v1',
+      graphName: 'visualGraph',
+      nodes: [{ id: 'n1', operatorRef: 'risk:eligibility', position: { x: 0, y: 0 } }],
+      edges: [],
+      output: { nodeId: 'n1' },
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.readiness?.state).toBe('design-only');
+    expect(fetchMock).toHaveBeenCalledWith('/api/visual/drafts/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        schemaVersion: 'bloge.visualGraphDraft.v1',
+        graphName: 'visualGraph',
+        nodes: [{ id: 'n1', operatorRef: 'risk:eligibility', position: { x: 0, y: 0 } }],
+        edges: [],
+        output: { nodeId: 'n1' },
+      }),
+    });
   });
 
   it('loads gateway showcase scenarios in backend-defined order', async () => {

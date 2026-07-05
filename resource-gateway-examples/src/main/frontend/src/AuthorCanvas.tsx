@@ -23,6 +23,7 @@ import {
   fetchOperators,
   importOperatorLibraryText,
   simulate,
+  validateDraft,
   validateOperatorLibraryText,
 } from './api';
 import {
@@ -64,7 +65,7 @@ import {
   toExportableGraphDraft,
   toSimulationRequest,
 } from './draftModel';
-import type { OperatorDefinition, SimulationResponse, VisualDiagnostic } from './types';
+import type { OperatorDefinition, SimulationResponse, VisualDiagnostic, VisualValidationResult } from './types';
 
 interface NodeData {
   label: string;
@@ -170,8 +171,10 @@ export default function AuthorCanvas() {
   const [nodes, setNodes] = useState<Node<NodeData>[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [result, setResult] = useState<SimulationResponse | null>(null);
+  const [validationResult, setValidationResult] = useState<VisualValidationResult | null>(null);
   const [error, setError] = useState<string>('');
   const [busy, setBusy] = useState(false);
+  const [validatingDraft, setValidatingDraft] = useState(false);
   const [checkingConnection, setCheckingConnection] = useState(false);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [libraryBusy, setLibraryBusy] = useState(false);
@@ -222,6 +225,7 @@ export default function AuthorCanvas() {
 
   const clearRunResult = useCallback(() => {
     setResult(null);
+    setValidationResult(null);
     setError('');
   }, []);
 
@@ -772,6 +776,19 @@ export default function AuthorCanvas() {
     }
   }, [canvasEdges, canvasNodes, fixtureCompilation.fixtures, outputNodeId]);
 
+  const runDraftValidation = useCallback(async () => {
+    setValidatingDraft(true);
+    setError('');
+    try {
+      setValidationResult(await validateDraft(exportableDraft));
+    } catch (cause: unknown) {
+      setError(String(cause));
+      setValidationResult(null);
+    } finally {
+      setValidatingDraft(false);
+    }
+  }, [exportableDraft]);
+
   const runAuthoringAction = useCallback((action: AuthoringJourneyAction) => {
     if (action.kind === 'focus-palette') {
       searchInputRef.current?.focus();
@@ -1026,6 +1043,14 @@ export default function AuthorCanvas() {
           </button>
           <button className="secondary" onClick={autoLayout} disabled={nodes.length < 2}>
             Auto Layout
+          </button>
+          <button
+            className="secondary"
+            data-testid="author-draft-validate"
+            onClick={runDraftValidation}
+            disabled={validatingDraft || nodes.length === 0}
+          >
+            {validatingDraft ? 'Validating...' : 'Validate'}
           </button>
           <a
             className={`toolbar-link ${nodes.length === 0 || hasFixtureErrors ? 'disabled' : ''}`}
@@ -1322,6 +1347,36 @@ export default function AuthorCanvas() {
         )}
 
         <h2>Result</h2>
+        {validationResult ? (
+          <section
+            className={`validation-summary ${validationResult.valid ? 'ok' : 'fail'}`}
+            data-testid="draft-validation-summary"
+          >
+            <div className="validation-summary-heading">
+              <span>{validationResult.valid ? 'Validated' : 'Needs repair'}</span>
+              <strong>{validationResult.readiness?.title || (validationResult.valid ? 'Draft valid' : 'Draft invalid')}</strong>
+            </div>
+            {validationResult.readiness?.summary && (
+              <p>{validationResult.readiness.summary}</p>
+            )}
+            <div className="validation-summary-chips">
+              <span data-testid="draft-validation-summary:state">
+                <span>Readiness</span>
+                <strong>{validationResult.readiness?.state || 'unknown'}</strong>
+              </span>
+              <span data-testid="draft-validation-summary:actions">
+                <span>Actions</span>
+                <strong>{validationResult.actionReadiness?.state || 'unknown'}</strong>
+              </span>
+              <span data-testid="draft-validation-summary:diagnostics">
+                <span>Diagnostics</span>
+                <strong>{validationResult.diagnostics?.length ?? 0}</strong>
+              </span>
+            </div>
+          </section>
+        ) : (
+          <p className="muted" data-testid="draft-validation-summary">Not validated.</p>
+        )}
         <section className={`run-summary ${runSummary.state}`} data-testid="simulation-run-summary">
           <div className="run-summary-heading">
             <span>{runSummary.detail}</span>

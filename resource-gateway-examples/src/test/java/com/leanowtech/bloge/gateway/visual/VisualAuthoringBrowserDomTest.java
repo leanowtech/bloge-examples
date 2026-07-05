@@ -159,6 +159,9 @@ class VisualAuthoringBrowserDomTest {
                 .contains("\"schemaVersion\": \"bloge.visualGraphDraft.v1\"")
                 .contains("\"operatorRef\": \"" + operatorRef + "\"")
                 .contains("\"nodeId\": \"n1\"");
+        driver.findElement(By.cssSelector("[data-testid='author-draft-validate']")).click();
+        waitForText(wait, By.cssSelector("[data-testid='draft-validation-summary:state']"), "READINESS");
+        waitForText(wait, By.cssSelector("[data-testid='draft-validation-summary:diagnostics']"), "DIAGNOSTICS");
 
         WebElement flow = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='author-flow']")

@@ -1319,6 +1319,60 @@ button.secondary:disabled {
   border-color: #f2a6a6;
 }
 
+.validation-summary {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: #fbfcff;
+}
+
+.validation-summary.ok {
+  border-left-color: var(--success);
+}
+
+.validation-summary.fail {
+  border-left-color: var(--danger);
+}
+
+.validation-summary-heading,
+.validation-summary-chips {
+  display: grid;
+  gap: 6px;
+}
+
+.validation-summary-heading span,
+.validation-summary-chips span span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.validation-summary-heading strong,
+.validation-summary-chips span strong,
+.validation-summary p {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.validation-summary-chips {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.validation-summary-chips > span {
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+}
+
 .trace-list {
   display: grid;
   gap: 6px;
