@@ -165,7 +165,8 @@ bloge-examples/
 ## Additional Documentation
 
 - `graph-engine-examples/README.md` for module-by-module graph-engine details
-- `resource-gateway-examples/README.md` for API contract and test-layer breakdown
+- `resource-gateway-examples/README.md` for the focused Resource Gateway overview
+  and `resource-gateway-examples/REFERENCE.md` for the full API/test reference
 - `docs/bloge-visual-canvas-product-and-system-guide.md` for the visual canvas
   product guide, demo scripts, and system usage notes
 - `mono-examples/README.md` for the full example catalog
