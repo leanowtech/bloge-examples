@@ -1306,7 +1306,10 @@ class VisualAuthoringAppJsTest {
                   'canvasNodePortSummary',
                   'composerCanvasNodeLabel',
                   'composerCanvasHealthLevel',
+                  'composerCanvasReadinessQueue',
                   'composerCanvasSummary',
+                  'renderComposerCanvasReadinessQueueItem',
+                  'renderComposerCanvasReadinessQueue',
                   'renderComposerCanvasHudHtml'
                 ]) {
                   vm.runInContext(functionSource(name), context);
@@ -1391,8 +1394,14 @@ class VisualAuthoringAppJsTest {
                   ['hud links', String(hudHtml.includes('1 link')), 'true'],
                   ['hud output', String(hudHtml.includes('Output Eligibility.eligible')), 'true'],
                   ['hud issue', String(hudHtml.includes('1 issue')), 'true'],
+                  ['hud readiness queue', String(hudHtml.includes('Readiness queue')), 'true'],
+                  ['hud readiness diagnostic', String(hudHtml.includes('validation diagnostic')), 'true'],
                   ['summary issue count', summary.issueCount, 1],
                   ['summary missing input', summary.missingRequiredInputCount, 1],
+                  ['summary readiness count', summary.readinessQueue.length, 2],
+                  ['summary first readiness label', summary.readinessQueue[0].label, 'Eligibility'],
+                  ['summary first readiness level', summary.readinessQueue[0].level, 'error'],
+                  ['summary second readiness message', summary.readinessQueue[1].message, '1 required input missing.'],
                   ['health level', context.composerCanvasHealthLevel(summary), 'error'],
                   ['node inputs', nodeSummary.inputCount, 2],
                   ['node outputs', nodeSummary.outputCount, 2],

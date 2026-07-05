@@ -135,6 +135,7 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("composer-canvas-hud"), "1 link");
         waitForText(wait, By.id("composer-canvas-hud"), "Output Response");
         waitForText(wait, By.id("composer-canvas-hud"), "Inputs bound");
+        waitForText(wait, By.id("composer-canvas-hud"), "READY QUEUE CLEAR");
         wait.until(ignored -> svgTextContent(".node-port-summary").contains("In 2")
                 && svgTextContent(".node-port-summary").contains("Out 5"));
         wait.until(ignored -> svgTextContent(".canvas-port-label").contains("score")
@@ -1296,6 +1297,9 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("visual-diagnostics"), "visual.input.required");
         waitForText(wait, By.id("visual-diagnostics"), "score");
         waitForText(wait, By.id("visual-diagnostics"), "amount");
+        waitForText(wait, By.id("composer-canvas-hud"), "READINESS QUEUE");
+        waitForText(wait, By.id("composer-canvas-hud"), "Eligibility");
+        waitForText(wait, By.id("composer-canvas-hud"), "validation diagnostic");
         waitForText(wait, By.id("output"), "\"valid\": false");
     }
 

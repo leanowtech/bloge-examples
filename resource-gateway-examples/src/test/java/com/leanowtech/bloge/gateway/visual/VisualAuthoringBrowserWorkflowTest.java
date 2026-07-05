@@ -410,6 +410,8 @@ class VisualAuthoringBrowserWorkflowTest {
                 .contains("runTraceCanvasCoverage")
                 .contains("runTraceCoverageText")
                 .contains("node-trace-badge")
+                .contains("composerCanvasReadinessQueue")
+                .contains("composer-canvas-readiness")
                 .contains("save-golden-case")
                 .contains("golden-assertion-mode")
                 .contains("golden-assertion-value")

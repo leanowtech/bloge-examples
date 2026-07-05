@@ -113,7 +113,10 @@ graph output, missing required inputs, and current issue state. Canvas nodes use
 business node labels ahead of raw operator type labels, keep operator refs in the
 metadata line, show an `In`/`Out` schema-port summary, and expose short selected
 port labels so authors can read the connection surface before opening the
-inspector.
+inspector. The same HUD also keeps a clickable readiness queue for the highest
+priority authoring blockers, such as missing graph output, missing required
+inputs, validation diagnostics, or latest-run trace errors, so authors can jump
+from the canvas summary to the next node to repair.
 The React authoring workspace served at `/author/` is the progressive React Flow
 canvas for the same generic operator-library contract. Its palette and node
 cards now surface operator display names, required/total input counts, output

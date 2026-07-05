@@ -3327,6 +3327,7 @@ function renderComposerCanvasHudHtml(summary) {
   const missingChip = summary.missingRequiredInputCount
     ? `<span class="composer-canvas-chip warning">${escapeHtml(`${summary.missingRequiredInputCount} required input${summary.missingRequiredInputCount === 1 ? '' : 's'} missing`)}</span>`
     : '<span class="composer-canvas-chip success">Inputs bound</span>';
+  const readinessQueue = renderComposerCanvasReadinessQueue(summary.readinessQueue || []);
   return `
     <div class="composer-canvas-hud-main ${escapeHtml(level)}">
       <div class="composer-canvas-title">
@@ -3345,7 +3346,37 @@ function renderComposerCanvasHudHtml(summary) {
       ${missingChip}
       ${issueChip}
     </div>
+    ${readinessQueue}
   `;
+}
+
+function renderComposerCanvasReadinessQueue(queue) {
+  if (!queue.length) {
+    return `
+      <div class="composer-canvas-readiness success" aria-label="Canvas readiness queue">
+        <span>Ready queue clear</span>
+        <em>Validate, run, or publish from here.</em>
+      </div>
+    `;
+  }
+  return `
+    <div class="composer-canvas-readiness" aria-label="Canvas readiness queue">
+      <span>Readiness queue</span>
+      ${queue.slice(0, 4).map((item) => renderComposerCanvasReadinessQueueItem(item)).join('')}
+    </div>
+  `;
+}
+
+function renderComposerCanvasReadinessQueueItem(item) {
+  const content = `
+    <strong>${escapeHtml(item.label)}</strong>
+    <em>${escapeHtml(item.message)}</em>
+  `;
+  const className = `composer-canvas-readiness-item ${escapeHtml(item.level || 'warning')}`;
+  if (item.nodeId) {
+    return `<button class="${className}" type="button" data-canvas-node="${escapeHtml(item.nodeId)}">${content}</button>`;
+  }
+  return `<div class="${className}">${content}</div>`;
 }
 
 function composerCanvasSummary(builder = state.builder, layout = state.layout) {
@@ -3389,8 +3420,78 @@ function composerCanvasSummary(builder = state.builder, layout = state.layout) {
       : (outputNodeId || ''),
     outputMissing: Boolean(outputNodeId && visualNodeIds.size && !visualNodeIds.has(outputNodeId)),
     issueCount: issueNodeIds.size,
-    missingRequiredInputCount: summaries.reduce((total, item) => total + item.missingRequiredInputs, 0)
+    missingRequiredInputCount: summaries.reduce((total, item) => total + item.missingRequiredInputs, 0),
+    readinessQueue: composerCanvasReadinessQueue(builderNodes, visualNodes, summaries, {
+      outputNodeId,
+      outputMissing: Boolean(outputNodeId && visualNodeIds.size && !visualNodeIds.has(outputNodeId))
+    })
   };
+}
+
+function composerCanvasReadinessQueue(builderNodes, visualNodes, summaries, options = {}) {
+  const queue = [];
+  const visualById = Object.fromEntries((visualNodes || []).map((node) => [node.id, node]));
+  const builderById = Object.fromEntries((builderNodes || []).map((node) => [node.id, node]));
+  if (!options.outputNodeId) {
+    queue.push({
+      level: 'warning',
+      priority: 35,
+      nodeId: state.builder?.selectedId || builderNodes?.[0]?.id || '',
+      label: 'Graph output',
+      message: 'Choose a terminal output before publishing.'
+    });
+  } else if (options.outputMissing) {
+    queue.push({
+      level: 'error',
+      priority: 90,
+      nodeId: options.outputNodeId,
+      label: 'Output missing',
+      message: `${options.outputNodeId} is not on the canvas.`
+    });
+  }
+  (builderNodes || []).forEach((node, index) => {
+    const summary = summaries?.[index] || canvasNodePortSummary(node);
+    if (summary.missingRequiredInputs) {
+      queue.push({
+        level: 'warning',
+        priority: 70,
+        nodeId: node.id,
+        label: composerCanvasNodeLabel(node),
+        message: `${summary.missingRequiredInputs} required input${summary.missingRequiredInputs === 1 ? '' : 's'} missing.`
+      });
+    }
+  });
+  for (const node of visualNodes || []) {
+    const diagnostics = diagnosticsForCanvasNode(node.id);
+    if (diagnostics.length) {
+      const errorCount = diagnostics.filter((diagnostic) =>
+        String(diagnostic.level || '').toUpperCase() === 'ERROR').length;
+      queue.push({
+        level: errorCount ? 'error' : 'warning',
+        priority: errorCount ? 100 : 60,
+        nodeId: node.id,
+        label: composerCanvasNodeLabel(builderById[node.id] || visualById[node.id] || node),
+        message: `${diagnostics.length} validation diagnostic${diagnostics.length === 1 ? '' : 's'}.`
+      });
+    }
+    const trace = runTraceForCanvasNode(node.id);
+    const traceErrors = Number(trace?.errorCount) || 0;
+    const traceDiagnostics = Number(trace?.diagnosticCount) || 0;
+    if (traceErrors || traceDiagnostics) {
+      queue.push({
+        level: traceErrors ? 'error' : 'warning',
+        priority: traceErrors ? 95 : 55,
+        nodeId: node.id,
+        label: composerCanvasNodeLabel(builderById[node.id] || visualById[node.id] || node),
+        message: traceErrors
+          ? `${traceErrors} trace error${traceErrors === 1 ? '' : 's'} in latest run.`
+          : `${traceDiagnostics} trace warning${traceDiagnostics === 1 ? '' : 's'} in latest run.`
+      });
+    }
+  }
+  return queue
+    .sort((left, right) => right.priority - left.priority || left.label.localeCompare(right.label))
+    .slice(0, 6);
 }
 
 function composerCanvasHealthLevel(summary) {
