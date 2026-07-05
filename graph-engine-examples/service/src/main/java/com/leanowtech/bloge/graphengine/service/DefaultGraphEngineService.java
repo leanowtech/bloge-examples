@@ -987,11 +987,16 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
 
     @Override
     public void retryDeadLetter(String itemId) {
-        retryDeadLetter(itemId, RecoveryActionEvidence.empty());
+        retryDeadLetterWithResult(itemId, RecoveryActionEvidence.empty());
     }
 
     @Override
     public void retryDeadLetter(String itemId, RecoveryActionEvidence evidence) {
+        retryDeadLetterWithResult(itemId, evidence);
+    }
+
+    @Override
+    public RetryDeadLetterResult retryDeadLetterWithResult(String itemId, RecoveryActionEvidence evidence) {
         if (itemId == null || itemId.isBlank()) {
             throw new IllegalArgumentException("itemId must not be blank");
         }
@@ -1000,6 +1005,12 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                     GraphEngineServiceErrorCode.RUNTIME_UNAVAILABLE,
                     "Dead-letter replay requires work-item storage and control-plane support"
             );
+        }
+        RecoveryActionEvidence resolvedEvidence = evidence == null ? RecoveryActionEvidence.empty() : evidence;
+        Optional<GraphControlActionEntry> replayedFromWorkItem =
+                findDeadLetterRetryReplay(itemId, resolvedEvidence);
+        if (replayedFromWorkItem.isPresent()) {
+            return deadLetterResultFromReplay(itemId, replayedFromWorkItem.get());
         }
         Scope scope = resolveScope(null, null);
         List<DeadLetterEntry> matches = runtimeSupport.controlPlaneService().queryDeadLetters(DeadLetterQuery.builder()
@@ -1014,7 +1025,19 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
         }
         DeadLetterEntry deadLetter = matches.getFirst();
         enforceDeadLetterAdmin(deadLetter);
-        RecoveryActionEvidence resolvedEvidence = evidence == null ? RecoveryActionEvidence.empty() : evidence;
+        GraphInstance auditInstance = stores.graphInstanceStore()
+                .get(deadLetter.identity().executionId())
+                .orElse(null);
+        Optional<GraphControlActionEntry> replayedFromDeadLetter =
+                findTerminalControlAction(
+                        auditInstance,
+                        "RETRY_DEAD_LETTER",
+                        resolvedEvidence.requestId(),
+                        entry -> itemId.equals(entry.itemId())
+                );
+        if (replayedFromDeadLetter.isPresent()) {
+            return deadLetterResultFromReplay(itemId, replayedFromDeadLetter.get());
+        }
         recordDeadLetterRetryAttempt(deadLetter, resolvedEvidence);
         int restoredItemCount = 0;
         String failurePhase = CONTROL_ACTION_PHASE_RESTORE;
@@ -1024,6 +1047,19 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
             failurePhase = CONTROL_ACTION_PHASE_DISPATCH;
             dispatchReadyWorkItems();
             recordDeadLetterRetrySuccess(deadLetter, resolvedEvidence);
+            return new RetryDeadLetterResult(
+                    itemId,
+                    deadLetter.identity().executionId(),
+                    restoredItemCount,
+                    false,
+                    GraphControlActionEntry.AttemptStatus.SUCCEEDED,
+                    CONTROL_ACTION_RESULT_RESTORED,
+                    emptyToNull(resolvedEvidence.requestId()),
+                    null,
+                    null,
+                    null,
+                    null
+            );
         } catch (RuntimeException exception) {
             recordDeadLetterRetryFailure(deadLetter, resolvedEvidence, failurePhase, restoredItemCount, exception);
             throw exception;
@@ -1310,6 +1346,12 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                                            RecoveryActionEvidence evidence) {
         GraphInstance instance = getInstance(instanceId);
         enforceInstanceAdmin(instance);
+        RecoveryActionEvidence resolvedEvidence = evidence == null ? RecoveryActionEvidence.empty() : evidence;
+        Optional<GraphControlActionEntry> replayed =
+                findInstanceRetryReplay(instance, nodeIds, resolvedEvidence);
+        if (replayed.isPresent()) {
+            return instanceRetryResultFromReplay(instance, replayed.get());
+        }
         requireExpectedRevision(instance.revision(), expectedRevision, "Instance");
 
         if (runtimeSupport.workItemStore() == null) {
@@ -1335,7 +1377,6 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
             throw notFound("No dead-lettered work items found for instance '" + instanceId + "'");
         }
 
-        RecoveryActionEvidence resolvedEvidence = evidence == null ? RecoveryActionEvidence.empty() : evidence;
         recordInstanceRetryAttempt(instance, nodeIds, deadLettered, resolvedEvidence);
         List<WorkItem> restoredItems = new ArrayList<>(deadLettered.size());
         String failurePhase = CONTROL_ACTION_PHASE_RESTORE;
@@ -1354,7 +1395,18 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                     restoredItems,
                     resolvedEvidence
             );
-            return new RetryInstanceResult(refreshed, restoredItems.size());
+            return new RetryInstanceResult(
+                    refreshed,
+                    restoredItems.size(),
+                    false,
+                    GraphControlActionEntry.AttemptStatus.SUCCEEDED,
+                    CONTROL_ACTION_RESULT_RESTORED,
+                    emptyToNull(resolvedEvidence.requestId()),
+                    null,
+                    null,
+                    null,
+                    null
+            );
         } catch (RuntimeException exception) {
             recordInstanceRetryFailure(
                     instance,
@@ -1367,6 +1419,116 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
             );
             throw exception;
         }
+    }
+
+    private Optional<GraphControlActionEntry> findDeadLetterRetryReplay(String itemId, RecoveryActionEvidence evidence) {
+        if (!canCheckControlActionReplay(evidence) || runtimeSupport.workItemStore() == null) {
+            return Optional.empty();
+        }
+        Optional<WorkItem> workItem = runtimeSupport.workItemStore().get(itemId);
+        if (workItem.isEmpty()) {
+            return Optional.empty();
+        }
+        Optional<GraphInstance> instance = stores.graphInstanceStore().get(workItem.get().identity().executionId());
+        if (instance.isEmpty()) {
+            return Optional.empty();
+        }
+        enforceInstanceAdmin(instance.get());
+        return findTerminalControlAction(
+                instance.get(),
+                "RETRY_DEAD_LETTER",
+                evidence.requestId(),
+                entry -> itemId.equals(entry.itemId())
+        );
+    }
+
+    private Optional<GraphControlActionEntry> findInstanceRetryReplay(GraphInstance instance,
+                                                                      Set<String> nodeIds,
+                                                                      RecoveryActionEvidence evidence) {
+        return findTerminalControlAction(
+                instance,
+                "RETRY_INSTANCE_DEAD_LETTERS",
+                evidence == null ? null : evidence.requestId(),
+                entry -> instance.instanceId().equals(entry.targetInstanceId())
+                        && sameRequestedNodeIds(nodeIds, entry.requestedNodeIds())
+        );
+    }
+
+    private Optional<GraphControlActionEntry> findTerminalControlAction(GraphInstance instance,
+                                                                        String actionCode,
+                                                                        String requestId,
+                                                                        java.util.function.Predicate<GraphControlActionEntry> targetMatcher) {
+        if (instance == null || actionCode == null || actionCode.isBlank()
+                || requestId == null || requestId.isBlank()
+                || runtimeSupport.auditJournalStore() == null) {
+            return Optional.empty();
+        }
+        return runtimeSupport.auditJournalStore().queryByExecution(instance.instanceId()).stream()
+                .filter(entry -> entry.eventType() == AuditEventType.CONTROL_ACTION)
+                .map(entry -> mapControlActionEntry(instance, entry))
+                .filter(entry -> actionCode.equals(entry.actionCode()))
+                .filter(entry -> requestId.equals(entry.requestId()))
+                .filter(DefaultGraphEngineService::terminalControlAction)
+                .filter(targetMatcher)
+                .max(Comparator.comparing(GraphControlActionEntry::recordedAt));
+    }
+
+    private static boolean canCheckControlActionReplay(RecoveryActionEvidence evidence) {
+        return evidence != null && evidence.requestId() != null && !evidence.requestId().isBlank();
+    }
+
+    private static boolean terminalControlAction(GraphControlActionEntry entry) {
+        return entry.attemptStatus() == GraphControlActionEntry.AttemptStatus.SUCCEEDED
+                || entry.attemptStatus() == GraphControlActionEntry.AttemptStatus.FAILED;
+    }
+
+    private static boolean sameRequestedNodeIds(Set<String> requestedNodeIds, List<String> storedNodeIds) {
+        return normalizedNodeIdSet(requestedNodeIds == null ? List.of() : requestedNodeIds.stream().toList())
+                .equals(normalizedNodeIdSet(storedNodeIds));
+    }
+
+    private static Set<String> normalizedNodeIdSet(List<String> nodeIds) {
+        if (nodeIds == null || nodeIds.isEmpty()) {
+            return Set.of();
+        }
+        java.util.LinkedHashSet<String> normalized = new java.util.LinkedHashSet<>();
+        for (String nodeId : nodeIds) {
+            if (nodeId != null && !nodeId.isBlank()) {
+                normalized.add(nodeId);
+            }
+        }
+        return Set.copyOf(normalized);
+    }
+
+    private static RetryDeadLetterResult deadLetterResultFromReplay(String itemId, GraphControlActionEntry entry) {
+        return new RetryDeadLetterResult(
+                itemId,
+                entry.instanceId(),
+                entry.restoredItemCount(),
+                true,
+                entry.attemptStatus(),
+                entry.status(),
+                entry.requestId(),
+                entry.failurePhase(),
+                entry.failureClass(),
+                entry.failureMessage(),
+                entry.recordedAt()
+        );
+    }
+
+    private static RetryInstanceResult instanceRetryResultFromReplay(GraphInstance instance, GraphControlActionEntry entry) {
+        return new RetryInstanceResult(
+                instance,
+                entry.restoredItemCount(),
+                true,
+                entry.attemptStatus(),
+                entry.status(),
+                entry.requestId(),
+                entry.failurePhase(),
+                entry.failureClass(),
+                entry.failureMessage(),
+                entry.recordedAt()
+        );
     }
 
     private void recordDeadLetterRetryAttempt(DeadLetterEntry deadLetter, RecoveryActionEvidence evidence) {

@@ -40,6 +40,7 @@ import com.leanowtech.bloge.graphengine.service.OperatorInventoryEntry;
 import com.leanowtech.bloge.graphengine.service.OperatorInventoryQuery;
 import com.leanowtech.bloge.graphengine.service.PublishVersionResult;
 import com.leanowtech.bloge.graphengine.service.RecoveryActionEvidence;
+import com.leanowtech.bloge.graphengine.service.RetryDeadLetterResult;
 import com.leanowtech.bloge.graphengine.service.RetryInstanceResult;
 import com.leanowtech.bloge.graphengine.service.SignalInstanceResult;
 import com.leanowtech.bloge.graphengine.service.StartInstanceResult;
@@ -439,6 +440,7 @@ abstract class AbstractGraphControllerTest {
         List<GraphDeadLetter> queryDeadLettersResult = List.of();
         String retryDeadLetterItemId;
         RecoveryActionEvidence retryDeadLetterEvidence;
+        RetryDeadLetterResult retryDeadLetterResult;
         RegisterRemoteWorkerCommand registerRemoteWorkerCommand;
         GraphRemoteWorkerRegistration registerRemoteWorkerResult;
         PollRemoteWorkerJobsCommand pollRemoteWorkerJobsCommand;
@@ -651,6 +653,16 @@ abstract class AbstractGraphControllerTest {
         public void retryDeadLetter(String itemId, RecoveryActionEvidence evidence) {
             retryDeadLetterEvidence = evidence;
             retryDeadLetter(itemId);
+        }
+
+        @Override
+        public RetryDeadLetterResult retryDeadLetterWithResult(String itemId, RecoveryActionEvidence evidence) {
+            retryDeadLetterEvidence = evidence;
+            retryDeadLetterItemId = itemId;
+            if (retryDeadLetterResult != null) {
+                return retryDeadLetterResult;
+            }
+            return new RetryDeadLetterResult(itemId, null, 1);
         }
 
         @Override

@@ -304,7 +304,10 @@ class GraphInstanceControllerTest extends AbstractGraphControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.instance.instanceId").value("exec-1"))
-                .andExpect(jsonPath("$.retriedItemCount").value(2));
+                .andExpect(jsonPath("$.retriedItemCount").value(2))
+                .andExpect(jsonPath("$.idempotentReplay").value(false))
+                .andExpect(jsonPath("$.attemptStatus").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.status").value("RESTORED"));
 
         assertEquals("exec-1", graphEngineService.retryInstanceId);
         assertEquals(java.util.Set.of("validate", "process"), graphEngineService.retryNodeIds);

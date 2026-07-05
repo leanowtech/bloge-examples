@@ -1852,13 +1852,20 @@ class DefaultGraphEngineServiceTest {
             assertEquals(GraphInstanceStatus.CANCELLED, transitions.getFirst().toStatus());
             assertEquals(instance.versionId(), deadLetters.getFirst().versionId());
 
-            fixture.service.retryDeadLetter("dead-1", new RecoveryActionEvidence(
+            RecoveryActionEvidence evidence = new RecoveryActionEvidence(
                     "validated idempotent replay",
                     "RETRY_DEAD_LETTER",
                     "DEAD_LETTER_BACKLOG",
                     "ops-alice",
                     "INC-123"
-            ));
+            );
+            RetryDeadLetterResult firstRetry = fixture.service.retryDeadLetterWithResult("dead-1", evidence);
+
+            assertFalse(firstRetry.idempotentReplay());
+            assertEquals(GraphControlActionEntry.AttemptStatus.SUCCEEDED, firstRetry.attemptStatus());
+            assertEquals("RESTORED", firstRetry.status());
+            assertEquals("INC-123", firstRetry.requestId());
+            assertEquals(1, firstRetry.retriedItemCount());
 
             assertEquals(WorkItemStatus.READY, fixture.workItemStore.query(new WorkItemQuery(
                     instance.instanceId(),
@@ -1920,6 +1927,15 @@ class DefaultGraphEngineServiceTest {
             assertEquals("approval", succeeded.targetNodeId());
             assertEquals(1, succeeded.restoredItemCount());
             assertEquals(List.of("dead-1"), succeeded.restoredItemIds());
+
+            RetryDeadLetterResult replayed = fixture.service.retryDeadLetterWithResult("dead-1", evidence);
+
+            assertTrue(replayed.idempotentReplay());
+            assertEquals(GraphControlActionEntry.AttemptStatus.SUCCEEDED, replayed.attemptStatus());
+            assertEquals("RESTORED", replayed.status());
+            assertEquals("INC-123", replayed.requestId());
+            assertEquals(1, replayed.retriedItemCount());
+            assertEquals(2, controlActionAudits(fixture, instance.instanceId()).size());
         }
     }
 
@@ -1995,6 +2011,27 @@ class DefaultGraphEngineServiceTest {
             assertEquals(IllegalStateException.class.getName(), failed.failureClass());
             assertEquals("restore store unavailable", failed.failureMessage());
             assertEquals(0, failed.restoredItemCount());
+
+            RetryDeadLetterResult replayed = fixture.service.retryDeadLetterWithResult(
+                    "dead-fail",
+                    new RecoveryActionEvidence(
+                            "operator confirmed replay",
+                            "RETRY_DEAD_LETTER",
+                            "DEAD_LETTER_OLDEST_AGE",
+                            "ops-alice",
+                            "REQ-FAIL-1"
+                    )
+            );
+
+            assertTrue(replayed.idempotentReplay());
+            assertEquals(GraphControlActionEntry.AttemptStatus.FAILED, replayed.attemptStatus());
+            assertEquals("FAILED", replayed.status());
+            assertEquals("REQ-FAIL-1", replayed.requestId());
+            assertEquals("RESTORE", replayed.failurePhase());
+            assertEquals(IllegalStateException.class.getName(), replayed.failureClass());
+            assertEquals("restore store unavailable", replayed.failureMessage());
+            assertEquals(0, replayed.retriedItemCount());
+            assertEquals(2, controlActionAudits(fixture, instance.instanceId()).size());
         }
     }
 
@@ -3353,6 +3390,26 @@ class DefaultGraphEngineServiceTest {
             assertEquals(List.of("riskCheck"), succeeded.requestedNodeIds());
             assertEquals(1, succeeded.restoredItemCount());
             assertEquals(List.of(job.itemId()), succeeded.restoredItemIds());
+
+            RetryInstanceResult replayed = fixture.service.retryInstance(
+                    started.instance().instanceId(),
+                    Set.of("riskCheck"),
+                    -1,
+                    new RecoveryActionEvidence(
+                            "remote worker fixed",
+                            "RETRY_INSTANCE_DEAD_LETTERS",
+                            "FAILED_INSTANCE_BACKLOG",
+                            "ops-bot",
+                            "REQ-7788"
+                    )
+            );
+
+            assertTrue(replayed.idempotentReplay());
+            assertEquals(GraphControlActionEntry.AttemptStatus.SUCCEEDED, replayed.attemptStatus());
+            assertEquals("RESTORED", replayed.status());
+            assertEquals("REQ-7788", replayed.requestId());
+            assertEquals(1, replayed.retriedItemCount());
+            assertEquals(2, controlActionAudits(fixture, started.instance().instanceId()).size());
         }
     }
 
@@ -3424,6 +3481,29 @@ class DefaultGraphEngineServiceTest {
             assertEquals(List.of("remote-retry-1", "remote-retry-2"), failed.candidateItemIds());
             assertEquals(1, failed.restoredItemCount());
             assertEquals(List.of("remote-retry-1"), failed.restoredItemIds());
+
+            RetryInstanceResult replayed = fixture.service.retryInstance(
+                    instance.instanceId(),
+                    Set.of("riskCheck"),
+                    -1,
+                    new RecoveryActionEvidence(
+                            "second item should fail",
+                            "RETRY_INSTANCE_DEAD_LETTERS",
+                            "FAILED_INSTANCE_BACKLOG",
+                            "ops-bot",
+                            "REQ-PARTIAL"
+                    )
+            );
+
+            assertTrue(replayed.idempotentReplay());
+            assertEquals(GraphControlActionEntry.AttemptStatus.FAILED, replayed.attemptStatus());
+            assertEquals("FAILED", replayed.status());
+            assertEquals("REQ-PARTIAL", replayed.requestId());
+            assertEquals("RESTORE", replayed.failurePhase());
+            assertEquals(1, replayed.retriedItemCount());
+            assertEquals(2, controlActionAudits(fixture, instance.instanceId()).size());
+            assertEquals(WorkItemStatus.READY, fixture.workItemStore.get("remote-retry-1").orElseThrow().status());
+            assertEquals(WorkItemStatus.DEAD_LETTER, fixture.workItemStore.get("remote-retry-2").orElseThrow().status());
         }
     }
 

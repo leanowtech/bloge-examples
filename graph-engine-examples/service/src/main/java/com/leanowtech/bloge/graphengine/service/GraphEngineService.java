@@ -350,6 +350,19 @@ public interface GraphEngineService {
     }
 
     /**
+     * Replays one dead-lettered work item and returns whether the request was
+     * executed now or replayed from a prior terminal requestId result.
+     *
+     * @param itemId dead-letter item identifier
+     * @param evidence optional recovery evidence
+     * @return retry result with idempotency metadata
+     */
+    default RetryDeadLetterResult retryDeadLetterWithResult(String itemId, RecoveryActionEvidence evidence) {
+        retryDeadLetter(itemId, evidence);
+        return new RetryDeadLetterResult(itemId, null, 1);
+    }
+
+    /**
      * Registers one remote worker against the active deployment bindings visible in the current scope.
      *
      * @param command registration command

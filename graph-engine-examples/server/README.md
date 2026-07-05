@@ -153,7 +153,8 @@ dead-lettered work item back to `READY` through `WorkItemStore.restoreDeadLetter
 When the durable runtime facade is configured, the server then triggers a
 dispatch cycle so the item re-enters the normal ready → claim → execute flow.
 The body is optional for backward compatibility. When supplied, it attaches
-recovery evidence that is recorded in the `CONTROL_ACTION` audit timeline:
+recovery evidence that is recorded in the `CONTROL_ACTION` audit timeline and
+activates requestId replay idempotency:
 
 ```json
 {
@@ -161,6 +162,20 @@ recovery evidence that is recorded in the `CONTROL_ACTION` audit timeline:
   "sourceActionCode": "RETRY_DEAD_LETTER",
   "sourceIndicatorCode": "DEAD_LETTER_OLDEST_AGE",
   "actor": "ops-alice",
+  "requestId": "INC-123"
+}
+```
+
+The endpoint returns a `RetryDeadLetterResult` body instead of an empty response:
+
+```json
+{
+  "itemId": "dead-1",
+  "instanceId": "exec-1",
+  "retriedItemCount": 1,
+  "idempotentReplay": false,
+  "attemptStatus": "SUCCEEDED",
+  "status": "RESTORED",
   "requestId": "INC-123"
 }
 ```
@@ -176,6 +191,11 @@ timeline as structured `GraphControlActionEntry` rows, so consoles and
 automation can filter by `attemptStatus`, `requestId`, `actionCode`, restored
 item IDs, and failure fields without parsing raw audit JSON. Malformed legacy
 payloads degrade to `attemptStatus = UNKNOWN` while preserving the raw payloads.
+The retry endpoints also use this projection for terminal requestId replay:
+same action, same target, and same requestId with an existing `SUCCEEDED` or
+`FAILED` control action returns `idempotentReplay = true` and does not restore
+the work item again. This protects network/client retries after completion; it
+is not yet a persistent in-flight uniqueness lock.
 
 **Node execution view.** `GET /api/v1/instances/{id}/nodes` returns the inferred
 execution state of every execution node in a running instance. GRAPH instances
@@ -270,7 +290,11 @@ dead-lettered work items for an instance back to `READY` and triggers a dispatch
 cycle. The request body accepts an optional `nodeIds` set to restrict retries to
 specific nodes, a required `expectedRevision` for optimistic-lock guarding, and
 the same optional recovery-evidence fields used by dead-letter replay. Requires
-admin RBAC on the owning definition.
+admin RBAC on the owning definition. If the same
+`RETRY_INSTANCE_DEAD_LETTERS + instanceId + requested node set + requestId`
+already has a terminal control action, replay is returned before the
+`expectedRevision` guard is applied so clients can safely repeat a successful
+request after the instance revision has advanced.
 
 ```json
 {

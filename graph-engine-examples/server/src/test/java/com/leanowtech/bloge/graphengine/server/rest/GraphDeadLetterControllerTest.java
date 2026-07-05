@@ -1,8 +1,10 @@
 package com.leanowtech.bloge.graphengine.server.rest;
 
 import com.leanowtech.bloge.core.runtime.work.WorkItemType;
+import com.leanowtech.bloge.graphengine.model.GraphControlActionEntry;
 import com.leanowtech.bloge.graphengine.model.GraphInstance;
 import com.leanowtech.bloge.graphengine.model.GraphInstanceStatus;
+import com.leanowtech.bloge.graphengine.service.RetryDeadLetterResult;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -59,9 +61,17 @@ class GraphDeadLetterControllerTest extends AbstractGraphControllerTest {
     }
 
     @Test
-    void retryDeadLetterReturnsNoContent() throws Exception {
+    void retryDeadLetterReturnsResult() throws Exception {
+        graphEngineService.retryDeadLetterResult = new RetryDeadLetterResult("wi-1", "exec-1", 1);
+
         mockMvc.perform(post("/api/v1/dead-letters/wi-1/retry"))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.itemId").value("wi-1"))
+                .andExpect(jsonPath("$.instanceId").value("exec-1"))
+                .andExpect(jsonPath("$.retriedItemCount").value(1))
+                .andExpect(jsonPath("$.idempotentReplay").value(false))
+                .andExpect(jsonPath("$.attemptStatus").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.status").value("RESTORED"));
 
         assertEquals("wi-1", graphEngineService.retryDeadLetterItemId);
         assertTrue(graphEngineService.retryDeadLetterEvidence.emptyEvidence());
@@ -69,6 +79,20 @@ class GraphDeadLetterControllerTest extends AbstractGraphControllerTest {
 
     @Test
     void retryDeadLetterMapsRecoveryEvidence() throws Exception {
+        graphEngineService.retryDeadLetterResult = new RetryDeadLetterResult(
+                "wi-1",
+                "exec-1",
+                1,
+                true,
+                GraphControlActionEntry.AttemptStatus.SUCCEEDED,
+                "RESTORED",
+                "INC-123",
+                null,
+                null,
+                null,
+                Instant.parse("2026-07-06T00:00:00Z")
+        );
+
         mockMvc.perform(post("/api/v1/dead-letters/wi-1/retry")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -80,7 +104,9 @@ class GraphDeadLetterControllerTest extends AbstractGraphControllerTest {
                                   "requestId": "INC-123"
                                 }
                                 """))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.idempotentReplay").value(true))
+                .andExpect(jsonPath("$.requestId").value("INC-123"));
 
         assertEquals("wi-1", graphEngineService.retryDeadLetterItemId);
         assertEquals("validated idempotency", graphEngineService.retryDeadLetterEvidence.reason());

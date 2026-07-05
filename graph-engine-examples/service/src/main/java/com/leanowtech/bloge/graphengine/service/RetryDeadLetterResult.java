@@ -2,16 +2,15 @@ package com.leanowtech.bloge.graphengine.service;
 
 import com.leanowtech.bloge.core.spi.SystemTimeSource;
 import com.leanowtech.bloge.graphengine.model.GraphControlActionEntry;
-import com.leanowtech.bloge.graphengine.model.GraphInstance;
 
 import java.time.Instant;
-import java.util.Objects;
 
 /**
- * Result of retrying dead-lettered work items for a graph instance.
+ * Result of retrying one dead-lettered work item.
  *
- * @param instance         refreshed instance projection after the retry
- * @param retriedItemCount number of dead-lettered work items restored to {@code READY}
+ * @param itemId target work-item identifier
+ * @param instanceId owning graph-engine instance identifier, when known
+ * @param retriedItemCount number of work items restored by this request or its replayed result
  * @param idempotentReplay whether the result was replayed from an existing terminal control action
  * @param attemptStatus terminal control-action status represented by this result
  * @param status action result status, such as {@code RESTORED} or {@code FAILED}
@@ -21,8 +20,9 @@ import java.util.Objects;
  * @param failureMessage failure message of the replayed failure, when present
  * @param recordedAt timestamp of this result or the replayed control action
  */
-public record RetryInstanceResult(
-        GraphInstance instance,
+public record RetryDeadLetterResult(
+        String itemId,
+        String instanceId,
         int retriedItemCount,
         boolean idempotentReplay,
         GraphControlActionEntry.AttemptStatus attemptStatus,
@@ -33,8 +33,10 @@ public record RetryInstanceResult(
         String failureMessage,
         Instant recordedAt
 ) {
-    public RetryInstanceResult {
-        Objects.requireNonNull(instance, "instance");
+    public RetryDeadLetterResult {
+        if (itemId == null || itemId.isBlank()) {
+            throw new IllegalArgumentException("itemId must not be blank");
+        }
         if (retriedItemCount < 0) {
             throw new IllegalArgumentException("retriedItemCount must be >= 0");
         }
@@ -45,9 +47,10 @@ public record RetryInstanceResult(
     /**
      * Compatibility constructor for directly executed successful retries.
      */
-    public RetryInstanceResult(GraphInstance instance, int retriedItemCount) {
+    public RetryDeadLetterResult(String itemId, String instanceId, int retriedItemCount) {
         this(
-                instance,
+                itemId,
+                instanceId,
                 retriedItemCount,
                 false,
                 GraphControlActionEntry.AttemptStatus.SUCCEEDED,

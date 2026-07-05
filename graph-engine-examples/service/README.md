@@ -86,7 +86,9 @@ substrate rather than introducing a separate orchestration engine:
 - `retryDeadLetter` restores one dead-lettered work item back to `READY` and,
   when the durable runtime facade is configured, records `CONTROL_ACTION`
   attempt/success/failure audit entries with optional recovery evidence and
-  triggers a dispatch cycle
+  triggers a dispatch cycle. `retryDeadLetterWithResult` returns a structured
+  `RetryDeadLetterResult` that identifies whether the request executed now or
+  replayed a prior terminal requestId result.
 - `queryInstanceNodes` infers the execution status of every node in a running
   instance by combining the compiled artifact with durable runtime state.
   GRAPH instances project DAG nodes from checkpoints, waits, and work items.
@@ -112,7 +114,10 @@ substrate rather than introducing a separate orchestration engine:
   dispatch cycle. Requires admin RBAC and an optimistic-lock revision guard.
   The overload that accepts `RecoveryActionEvidence` records the source action,
   source indicator, reason, actor, request id, restored item count, and failure
-  details in the instance audit log as `CONTROL_ACTION` entries.
+  details in the instance audit log as `CONTROL_ACTION` entries. When requestId
+  replay hits a prior `SUCCEEDED` or `FAILED` control action for the same
+  instance/node target, it returns `RetryInstanceResult.idempotentReplay = true`
+  before applying the optimistic-lock revision guard.
 - `queryInstanceControlActions` filters instance audit history to control-plane
   actions and projects `inputJson` / `outputJson` into `GraphControlActionEntry`
   fields such as action code, request id, attempt status, restored item IDs, and
@@ -257,7 +262,7 @@ Recovery mutations can attach `RecoveryActionEvidence`:
   `DEAD_LETTER_OLDEST_AGE`.
 - `actor` identifies the human operator or automation identity.
 - `requestId` carries an external ticket, incident, or automation request id
-  for cross-system correlation. It is not an idempotency lock.
+  for cross-system correlation and terminal replay idempotency.
 
 When an `AuditJournalStore` is configured, dead-letter and instance retry write
 `AuditEventType.CONTROL_ACTION` entries as a control-action timeline. The audit
@@ -274,6 +279,12 @@ includes `attemptStatus`:
 parse raw JSON. It returns only `CONTROL_ACTION` entries and promotes
 `requestId`, `actionCode`, `sourceIndicatorCode`, `attemptStatus`,
 candidate/restored item details, and failure fields into stable DTO properties.
+The retry execution path now consumes the same projection for requestId replay:
+when an identical action/target/requestId already has a terminal `SUCCEEDED` or
+`FAILED` control action, the service returns an idempotent replay result and does
+not restore the work item again. This is deliberately not a distributed
+in-flight lock; concurrent duplicate requests still require a future persistent
+unique control-action key.
 
 Age-based operations thresholds are controlled by `GraphOperationsPolicy` on
 `GraphEngineRuntimeSupport`. Defaults remain dead-letter warning/critical at
