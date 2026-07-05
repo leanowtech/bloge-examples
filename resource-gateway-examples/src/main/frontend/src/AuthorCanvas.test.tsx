@@ -244,6 +244,17 @@ describe('AuthorCanvas connection guide', () => {
 
     await waitFor(() => expect(document.body.textContent).toContain('1 edges'));
     expect(document.body.textContent).toContain('Connection accepted.');
+
+    const layoutButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Auto Layout');
+    expect(layoutButton).toBeDefined();
+    expect(layoutButton?.disabled).toBe(false);
+    await click(layoutButton as HTMLButtonElement);
+
+    await waitFor(() =>
+      expect(query('[data-testid="node-wrapper:n1"]').getAttribute('data-position')).toBe('72,56'),
+    );
+    expect(query('[data-testid="node-wrapper:n2"]').getAttribute('data-position')).toBe('332,56');
   });
 
   it('opens compatible targets from the in-canvas coach action', async () => {
@@ -271,6 +282,33 @@ describe('AuthorCanvas connection guide', () => {
         .toContain('Decision Consumer'),
     );
     expect(query('[data-testid="connection-guide-target:n2:profile"]').textContent).toContain('ready');
+  });
+
+  it('focuses and filters the palette from the Cmd-K shortcut', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:score"]').textContent).toContain('Risk Score'),
+    );
+    const search = query<HTMLInputElement>('#operator-palette-search');
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'k',
+        metaKey: true,
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    expect(document.activeElement).toBe(search);
+    await setControlValue(search, 'consumer');
+
+    expect(query('[data-testid="operator-button:risk:decision"]').textContent).toContain('Decision Consumer');
+    expect(document.querySelector('[data-testid="operator-button:risk:score"]')).toBeNull();
   });
 
   it('drops palette operators onto the canvas at the pointer location', async () => {
