@@ -329,6 +329,15 @@ class VisualAuthoringBrowserWorkflowTest {
                 .containsEntry("STORED_DRAFT", 1)
                 .containsEntry("PUBLICATION", 4);
 
+        Map<String, Object> runTrend = getMap("/api/visual/runs/trend?graphName=browserSmokePolicy&limit=10");
+        assertThat(runTrend)
+                .containsEntry("schemaVersion", "bloge.visualGraphRunTrend.v1")
+                .containsEntry("totalRuns", 5)
+                .containsEntry("successfulRuns", 5)
+                .containsEntry("successToFailureTransitions", 0)
+                .containsEntry("latestOutcome", "SUCCESS");
+        assertThat((Collection<?>) runTrend.get("points")).isNotEmpty();
+
         Map<String, Object> nodeStats = getMap("/api/visual/runs/node-stats?graphName=browserSmokePolicy&limit=10");
         assertThat(nodeStats)
                 .containsEntry("schemaVersion", "bloge.visualGraphRunNodeStats.v1")

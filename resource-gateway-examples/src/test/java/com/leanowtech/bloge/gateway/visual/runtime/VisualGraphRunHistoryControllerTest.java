@@ -7,8 +7,11 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
+import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -157,6 +160,46 @@ class VisualGraphRunHistoryControllerTest {
     }
 
     @Test
+    void trendSummarizesOutcomeTransitions() {
+        Instant base = Instant.parse("2026-01-01T00:00:00Z");
+        VisualGraphRunHistoryController controller = new VisualGraphRunHistoryController(new FixedRunRepository(List.of(
+                recordAt("run-4", false, false, 0, base.plusSeconds(4)),
+                recordAt("run-3", true, true, 30, base.plusSeconds(3)),
+                recordAt("run-2", true, false, 40, base.plusSeconds(2)),
+                recordAt("run-1", true, true, 10, base.plusSeconds(1))
+        )));
+
+        VisualGraphRunTrend trend = controller.trend("stored_draft", "draft-1", null,
+                "visualPolicy", null, null);
+
+        assertThat(trend.schemaVersion()).isEqualTo(VisualGraphRunTrend.SCHEMA_VERSION);
+        assertThat(trend.totalRuns()).isEqualTo(4);
+        assertThat(trend.successfulRuns()).isEqualTo(2);
+        assertThat(trend.failedRuns()).isEqualTo(2);
+        assertThat(trend.blockedRuns()).isEqualTo(1);
+        assertThat(trend.executionFailedRuns()).isEqualTo(1);
+        assertThat(trend.successRate()).isEqualTo(0.5D);
+        assertThat(trend.latestOutcome()).isEqualTo("BLOCKED");
+        assertThat(trend.successToFailureTransitions()).isEqualTo(2);
+        assertThat(trend.failureToSuccessTransitions()).isEqualTo(1);
+        assertThat(trend.latestFailureStreak()).isEqualTo(1);
+        assertThat(trend.latestSuccessStreak()).isZero();
+        assertThat(trend.latestRunRegressed()).isTrue();
+        assertThat(trend.latestElapsedMs()).isZero();
+        assertThat(trend.previousSuccessfulElapsedMs()).isEqualTo(30);
+        assertThat(trend.latestLatencyDeltaMs()).isZero();
+        assertThat(trend.points())
+                .extracting(VisualGraphRunTrend.Point::index)
+                .containsExactly(0, 1, 2, 3);
+        assertThat(trend.points())
+                .extracting(VisualGraphRunTrend.Point::runId)
+                .containsExactly("run-4", "run-3", "run-2", "run-1");
+        assertThat(trend.points())
+                .extracting(VisualGraphRunTrend.Point::outcome)
+                .containsExactly("BLOCKED", "SUCCESS", "FAILED", "SUCCESS");
+    }
+
+    @Test
     void traceReturnsShapeOnlyNodeReplayView() {
         InMemoryVisualGraphRunRepository repository = new InMemoryVisualGraphRunRepository();
         VisualGraphRunRecord stored = repository.create(traceRecord());
@@ -279,6 +322,15 @@ class VisualGraphRunHistoryControllerTest {
         return VisualGraphRunRecord.storedDraft(draft, Map.of("score", 720), response);
     }
 
+    private static VisualGraphRunRecord recordAt(String runId,
+                                                 boolean compiled,
+                                                 boolean success,
+                                                 long elapsedMs,
+                                                 Instant createdAt) {
+        return record("draft-1", VisualGraphRunRecord.SOURCE_STORED_DRAFT, "", compiled, success, elapsedMs)
+                .withIdentity(runId, createdAt);
+    }
+
     private static VisualGraphRunRecord traceRecord() {
         return traceRecord(true, 25,
                 Map.of("loanPolicy", "COMPLETED", "response", "COMPLETED"),
@@ -339,5 +391,25 @@ class VisualGraphRunHistoryControllerTest {
                 "graph visualPolicy {}"
         );
         return VisualGraphRunRecord.storedDraft(draft, Map.of("score", 720), response);
+    }
+
+    private record FixedRunRepository(Collection<VisualGraphRunRecord> records) implements VisualGraphRunRepository {
+
+        @Override
+        public Collection<VisualGraphRunRecord> all() {
+            return records;
+        }
+
+        @Override
+        public Optional<VisualGraphRunRecord> find(String runId) {
+            return records.stream()
+                    .filter(record -> record.runId().equals(runId))
+                    .findFirst();
+        }
+
+        @Override
+        public VisualGraphRunRecord create(VisualGraphRunRecord record) {
+            throw new UnsupportedOperationException("Fixed run repository is read-only.");
+        }
     }
 }

@@ -107,6 +107,33 @@ public class VisualGraphRunHistoryController {
     }
 
     /**
+     * @return outcome trend for the same filter window as list
+     */
+    @GetMapping("/trend")
+    public VisualGraphRunTrend trend(@RequestParam(required = false) String sourceKind,
+                                     @RequestParam(required = false) String draftId,
+                                     @RequestParam(required = false) String publicationId,
+                                     @RequestParam(required = false) String sourceArtifactKind,
+                                     @RequestParam(required = false) String graphName,
+                                     @RequestParam(required = false) Boolean success,
+                                     @RequestParam(required = false) Integer limit) {
+        return VisualGraphRunTrend.from(repository.query(new VisualGraphRunQuery(sourceKind, draftId,
+                publicationId, sourceArtifactKind, graphName, success, limit == null ? 0 : limit)));
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
+    public VisualGraphRunTrend trend(String sourceKind,
+                                     String draftId,
+                                     String publicationId,
+                                     String graphName,
+                                     Boolean success,
+                                     Integer limit) {
+        return trend(sourceKind, draftId, publicationId, "", graphName, success, limit);
+    }
+
+    /**
      * Gets one run history record.
      *
      * @param runId run id

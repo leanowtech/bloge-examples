@@ -853,6 +853,9 @@ also accepts `sourceKind`, `draftId`, `publicationId`, `graphName`, `success`,
 and `limit` query parameters for browser and automation use;
 `/api/visual/runs/stats` reuses the same filters to aggregate total runs,
 success rate, blocked/error counts, and p50/p95 latency;
+`/api/visual/runs/trend` reuses the same filters to return newest-first outcome
+points, success/failure transitions, latest outcome streak, and latency delta
+against the previous successful run;
 `/api/visual/runs/node-stats` aggregates per-node run count, status distribution,
 diagnostic/error attribution, selected-output count, runtime per-node latency,
 and observed whole-run latency for legacy/correlation; `/api/visual/runs/{runId}/trace`
@@ -1066,6 +1069,7 @@ Showcase metadata APIs:
 | `GET` | `/api/visual/golden-cases/publications/{publicationId}/certification/status` | Load promotion-readiness status, including stale certification diagnostics |
 | `GET` | `/api/visual/runs` | List visual graph run history records, newest first; supports `sourceKind`, `draftId`, `publicationId`, `sourceArtifactKind`, `graphName`, `success`, and `limit` filters |
 | `GET` | `/api/visual/runs/stats` | Aggregate run-history health for the same filters, including success rate, blocked/error counts, publication artifact-kind counts, and p50/p95/max latency |
+| `GET` | `/api/visual/runs/trend` | Return newest-first run-history outcome points for the same filters, including success/failure transitions, latest outcome streak, and latency delta against the previous successful run |
 | `GET` | `/api/visual/runs/node-stats` | Aggregate node-level run-history health for the same filters, including status counts, diagnostic/error attribution, selected-output counts, runtime per-node latency, and observed whole-run latency for legacy/correlation |
 | `GET` | `/api/visual/runs/{runId}` | Load one visual graph run history record |
 | `GET` | `/api/visual/runs/{runId}/trace` | Load one shape-only replay trace with node statuses, operator metadata, per-node elapsed time when known, selected output marker, per-node diagnostics, result summaries, errors, and generated/frozen DSL |
