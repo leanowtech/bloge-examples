@@ -17,7 +17,14 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import { checkConnection, fetchConnectionCandidates, fetchOperators, simulate } from './api';
+import {
+  checkConnection,
+  fetchConnectionCandidates,
+  fetchOperators,
+  importOperatorLibraryText,
+  simulate,
+  validateOperatorLibraryText,
+} from './api';
 import {
   authoringJourney,
   autoLayoutCanvas,
@@ -40,6 +47,9 @@ import {
   nodeStatuses,
   type OperatorPaletteFacet,
   operatorPaletteView,
+  operatorLibraryImportMessage,
+  operatorLibraryValidationLevel,
+  operatorLibraryValidationMessage,
   portNameFromHandle,
   simulationChecklist,
   simulationFixtureRows,
@@ -50,7 +60,7 @@ import {
   toConnectionCheckRequest,
   toSimulationRequest,
 } from './draftModel';
-import type { OperatorDefinition, SimulationResponse } from './types';
+import type { OperatorDefinition, SimulationResponse, VisualDiagnostic } from './types';
 
 interface NodeData {
   label: string;
@@ -149,6 +159,10 @@ export default function AuthorCanvas() {
   const [busy, setBusy] = useState(false);
   const [checkingConnection, setCheckingConnection] = useState(false);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [libraryBusy, setLibraryBusy] = useState(false);
+  const [librarySourceText, setLibrarySourceText] = useState('');
+  const [libraryNotice, setLibraryNotice] = useState<ConnectionNotice | null>(null);
+  const [libraryDiagnostics, setLibraryDiagnostics] = useState<VisualDiagnostic[]>([]);
   const [search, setSearch] = useState('');
   const [paletteFacet, setPaletteFacet] = useState<OperatorPaletteFacet>('all');
   const [sourceFilter, setSourceFilter] = useState('all');
@@ -163,11 +177,14 @@ export default function AuthorCanvas() {
   const counter = useRef(0);
   const candidatePreviewSequence = useRef(0);
 
-  useEffect(() => {
-    fetchOperators()
-      .then(setOperators)
-      .catch((cause: unknown) => setError(String(cause)));
+  const reloadOperators = useCallback(async () => {
+    setOperators(await fetchOperators());
   }, []);
+
+  useEffect(() => {
+    reloadOperators()
+      .catch((cause: unknown) => setError(String(cause)));
+  }, [reloadOperators]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -365,6 +382,54 @@ export default function AuthorCanvas() {
       [selectedNodeId]: fixtureDraftForOperator(selectedOperator),
     }));
   }, [clearRunResult, selectedNodeId, selectedOperator]);
+
+  const validateLibrarySource = useCallback(async () => {
+    if (!librarySourceText.trim()) {
+      setLibraryDiagnostics([]);
+      setLibraryNotice({ level: 'error', message: 'Library source is empty.' });
+      return;
+    }
+    setLibraryBusy(true);
+    try {
+      const validation = await validateOperatorLibraryText(librarySourceText);
+      const level = operatorLibraryValidationLevel(validation);
+      setLibraryDiagnostics(validation.diagnostics ?? []);
+      setLibraryNotice({
+        level: level === 'ok' ? 'ok' : level,
+        message: operatorLibraryValidationMessage(validation),
+      });
+    } catch (cause: unknown) {
+      setLibraryDiagnostics([]);
+      setLibraryNotice({ level: 'error', message: String(cause) });
+    } finally {
+      setLibraryBusy(false);
+    }
+  }, [librarySourceText]);
+
+  const importLibrarySource = useCallback(async () => {
+    if (!librarySourceText.trim()) {
+      setLibraryDiagnostics([]);
+      setLibraryNotice({ level: 'error', message: 'Library source is empty.' });
+      return;
+    }
+    setLibraryBusy(true);
+    try {
+      const storedLibrary = await importOperatorLibraryText(librarySourceText);
+      await reloadOperators();
+      setLibrarySourceText(JSON.stringify(storedLibrary, null, 2));
+      setLibraryDiagnostics([]);
+      setLibraryNotice({ level: 'ok', message: operatorLibraryImportMessage(storedLibrary) });
+      setSearch('');
+      setPaletteFacet('all');
+      setSourceFilter('all');
+      setTagFilter('all');
+    } catch (cause: unknown) {
+      setLibraryDiagnostics([]);
+      setLibraryNotice({ level: 'error', message: String(cause) });
+    } finally {
+      setLibraryBusy(false);
+    }
+  }, [librarySourceText, reloadOperators]);
 
   const clearSelectedFixture = useCallback(() => {
     if (!selectedNodeId) {
@@ -575,6 +640,53 @@ export default function AuthorCanvas() {
             {paletteView.matchingCount}/{paletteView.totalCount}
           </span>
         </div>
+        <section className="library-intake" aria-label="Operator library intake">
+          <div className="library-intake-heading">
+            <h2>Library</h2>
+            {libraryBusy && <span>Working</span>}
+          </div>
+          <textarea
+            aria-label="Operator library JSON or YAML"
+            spellCheck={false}
+            placeholder="bloge.visualOperatorLibrary.v1 JSON/YAML"
+            value={librarySourceText}
+            onChange={(event) => {
+              setLibrarySourceText(event.target.value);
+              setLibraryNotice(null);
+              setLibraryDiagnostics([]);
+            }}
+          />
+          <div className="library-actions">
+            <button
+              type="button"
+              className="secondary compact"
+              onClick={validateLibrarySource}
+              disabled={libraryBusy}
+            >
+              Validate
+            </button>
+            <button
+              type="button"
+              className="primary compact"
+              onClick={importLibrarySource}
+              disabled={libraryBusy}
+            >
+              Import
+            </button>
+          </div>
+          {libraryNotice && (
+            <p className={`library-notice ${libraryNotice.level}`}>{libraryNotice.message}</p>
+          )}
+          {libraryDiagnostics.length > 0 && (
+            <ol className="library-diagnostics">
+              {libraryDiagnostics.slice(0, 3).map((diagnostic, index) => (
+                <li key={`${diagnostic.code ?? 'diagnostic'}:${index}`}>
+                  {diagnostic.code || diagnostic.level}: {diagnostic.message || diagnostic.target}
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
         <input
           id="operator-palette-search"
           ref={searchInputRef}

@@ -124,12 +124,15 @@ server-derived readiness, and paints the latest canvas trace with unmistakable
 `MOCKED`, `REAL`, and `OUTPUT` badges so design-time operators can be tested
 without being confused with a production run.
 The React authoring workspace served at `/author/` is the progressive React Flow
-canvas for the same generic operator-library contract. Its palette and node
-cards now surface operator display names, required/total input counts, output
-counts, and design-only status; the palette is grouped by imported library,
-supports multi-term search, runtime/design facets, source/tag filters, and a
-Cmd/Ctrl-K search focus; the canvas header shows the core-loop progress from
-library through simulation and exposes the next actionable step; the flow area
+canvas for the same generic operator-library contract. Its library intake panel
+validates and imports pasted operator-library JSON/YAML through the server
+admin API, then refreshes the catalog so newly supplied operators are immediately
+available to the palette. Palette rows and node cards surface operator display
+names, required/total input counts, output counts, and design-only status; the
+palette is grouped by imported library, supports multi-term search,
+runtime/design facets, source/tag filters, and a Cmd/Ctrl-K search focus; the
+canvas header shows the core-loop progress from library through simulation and
+exposes the next actionable step; the flow area
 mirrors that step as a compact in-canvas action prompt for empty, disconnected,
 mock-pending, simulation, diagnostic, and ready states; node-targeted prompt
 actions are projected back onto the React Flow graph as suggested or selected

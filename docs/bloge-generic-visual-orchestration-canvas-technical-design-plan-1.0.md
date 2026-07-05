@@ -101,7 +101,7 @@ flowchart LR
 
 - **Backend simulate engine:** `SimulationOperator` + `JsonSchemaSampleGenerator` (layered, bounded); a **simulation registry** layering allowlisted real built-ins over `SimulationOperator`s; `VisualGraphRunService.simulate()` bypasses `runNow()` and tags each node `REAL`/`MOCKED`; `POST /api/visual/graphs/simulate`.
 - **Data model:** `GraphDraft.nodeFixtures` (non-semantic); operator defaults via schema `examples`/`default`.
-- **Frontend:** routes `/showcase` + `/author`; React Flow typed handles + auto-layout; grouped+Cmd-K palette; candidate-prefetch highlight; Simulation tab + checklist; explicit output-node selection with request/draft output alignment; overlay + trace + mock badges; no governance panels.
+- **Frontend:** routes `/showcase` + `/author`; React Flow typed handles + auto-layout; pasted operator-library validate/import intake; grouped+Cmd-K palette; candidate-prefetch highlight; Simulation tab + checklist; explicit output-node selection with request/draft output alignment; overlay + trace + mock badges; no governance panels.
 - **Export:** virtual `builtin` library → portable bundle → round-trip.
 - **Seam:** adapter SPI for `resource:`/`httpResource`; `visual/*` imports no gateway types.
 
@@ -111,7 +111,7 @@ A03 injection (identifier sanitize, `MAX_DSL_CHARS`); A04 resource exhaustion (s
 ## 8. Phased plan
 - **Phase 0 Foundations:** React/Vite app + `frontend-maven-plugin`; generic-core seam. *Verify:* `mvn package` builds jar+UI; no gateway types in core.
 - **Phase 1 Mock backend (#4, completed):** `SimulationOperator`, `JsonSchemaSampleGenerator`, `simulate()`, `nodeFixtures`, endpoint. *Verify:* unit — generator layers/bounds, classification, mixed-graph simulate, schema conformance, fingerprint ignores fixtures.
-- **Phase 2 Authoring UI (in progress):** static Custom Composer now has core-loop HUD + Simulate overlay/trace badges; React Flow has palette grouping, typed handles, candidate preflight, fixture editors, explicit output selection, and output-aligned simulate requests. Remaining work is polish/parity, not backend feasibility. *Verify:* Selenium/JS e2e core loop.
+- **Phase 2 Authoring UI (in progress):** static Custom Composer now has core-loop HUD + Simulate overlay/trace badges; React Flow has operator-library validate/import intake, palette grouping, typed handles, candidate preflight, fixture editors, explicit output selection, and output-aligned simulate requests. Remaining work is polish/parity, not backend feasibility. *Verify:* Selenium/JS e2e core loop.
 - **Phase 3 Export + golden (partial):** virtual builtin library round-trip is done; golden snapshots remain. *Verify:* export→import resolves; deterministic golden.
 - **Phase 4 Showcase migration:** port to React. *Verify:* scenario parity.
 

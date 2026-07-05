@@ -15,6 +15,9 @@ import {
   isRunSuccessful,
   nodeStatuses,
   operatorPaletteView,
+  operatorLibraryImportMessage,
+  operatorLibraryValidationLevel,
+  operatorLibraryValidationMessage,
   portNameFromHandle,
   sampleFromSchemaEnvelope,
   simulationChecklist,
@@ -425,6 +428,65 @@ describe('operatorPaletteView', () => {
 
     expect(view.matchingCount).toBe(1);
     expect(view.groups[0].rows[0].summary.operatorRef).toBe('risk:score');
+  });
+});
+
+describe('operator library intake helpers', () => {
+  it('summarizes a valid library using server import readiness', () => {
+    const validation = {
+      valid: true,
+      diagnostics: [],
+      profile: { libraryId: 'risk-policy', operatorCount: 3 },
+      importReadiness: {
+        level: 'info',
+        operatorCount: 3,
+        message: 'Schema-only library is ready for design-time authoring.',
+      },
+    };
+
+    expect(operatorLibraryValidationLevel(validation)).toBe('ok');
+    expect(operatorLibraryValidationMessage(validation)).toBe(
+      'risk-policy: Schema-only library is ready for design-time authoring.',
+    );
+  });
+
+  it('surfaces warning and error diagnostics without losing the server code', () => {
+    expect(operatorLibraryValidationLevel({
+      valid: true,
+      diagnostics: [{ level: 'WARNING', code: 'visual.library.replacement' }],
+    })).toBe('warning');
+    expect(operatorLibraryValidationLevel({
+      valid: false,
+      diagnostics: [
+        {
+          level: 'ERROR',
+          code: 'visual.library.schemaVersion',
+          message: 'Unsupported schema version.',
+        },
+      ],
+    })).toBe('error');
+    expect(operatorLibraryValidationMessage({
+      valid: false,
+      diagnostics: [
+        {
+          level: 'ERROR',
+          code: 'visual.library.schemaVersion',
+          message: 'Unsupported schema version.',
+        },
+      ],
+    })).toBe('visual.library.schemaVersion: Unsupported schema version.');
+  });
+
+  it('formats a stored library import summary', () => {
+    expect(operatorLibraryImportMessage({
+      libraryId: 'risk-policy',
+      operators: [
+        {
+          operatorRef: 'risk:score',
+          ports: { inputs: [], outputs: [] },
+        },
+      ],
+    })).toBe('Imported risk-policy (1 operator).');
   });
 });
 

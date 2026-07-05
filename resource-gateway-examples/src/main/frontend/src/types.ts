@@ -25,6 +25,35 @@ export interface OperatorDefinition {
   lowering?: { mode?: string };
 }
 
+/** A user-provided operator library (bloge.visualOperatorLibrary.v1). */
+export interface OperatorLibrary {
+  schemaVersion?: string;
+  libraryId: string;
+  displayName?: string;
+  version?: string;
+  owner?: string;
+  status?: string;
+  operators: OperatorDefinition[];
+}
+
+/** Server-derived import readiness for one submitted operator library. */
+export interface OperatorLibraryImportReadiness {
+  state?: string;
+  level?: string;
+  operatorCount?: number;
+  diagnosticCount?: number;
+  message?: string;
+  recommendedAction?: string;
+}
+
+/** The response of POST /admin/visual-operator-libraries/validate-text. */
+export interface OperatorLibraryValidationResult {
+  valid: boolean;
+  diagnostics: VisualDiagnostic[];
+  profile?: { libraryId?: string; operatorCount?: number };
+  importReadiness?: OperatorLibraryImportReadiness;
+}
+
 /** A draft node input binding. */
 export interface DraftNodeBinding {
   kind: string;

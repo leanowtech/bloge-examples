@@ -10,6 +10,8 @@ import type {
   GraphDraft,
   NodeFixture,
   OperatorDefinition,
+  OperatorLibrary,
+  OperatorLibraryValidationResult,
   SchemaEnvelope,
   SimulationRequest,
   SimulationResponse,
@@ -91,6 +93,8 @@ export interface OperatorPaletteView {
   tagFacets: OperatorPaletteFacetCount[];
   groups: OperatorPaletteGroup[];
 }
+
+export type OperatorLibraryIntakeLevel = 'ok' | 'warning' | 'error';
 
 /** A concise topology readout for the current canvas. */
 export interface CanvasSummary {
@@ -502,6 +506,42 @@ export function operatorPaletteView(
     tagFacets: countedFacets(searchedRows.flatMap((row) => row.summary.tags)),
     groups: groupPaletteRows(filteredRows),
   };
+}
+
+/** Chooses the concise status level shown by the operator-library intake panel. */
+export function operatorLibraryValidationLevel(
+  result: OperatorLibraryValidationResult,
+): OperatorLibraryIntakeLevel {
+  if (!result.valid || hasDiagnosticLevel(result.diagnostics, 'ERROR')) {
+    return 'error';
+  }
+  if (hasDiagnosticLevel(result.diagnostics, 'WARNING')) {
+    return 'warning';
+  }
+  const readinessLevel = result.importReadiness?.level?.trim().toLowerCase();
+  return readinessLevel === 'warning' || readinessLevel === 'error' ? readinessLevel : 'ok';
+}
+
+/** Formats one validation result for the library intake panel without duplicating server diagnostics. */
+export function operatorLibraryValidationMessage(result: OperatorLibraryValidationResult): string {
+  const libraryId = result.profile?.libraryId?.trim() || '';
+  const operatorCount = result.importReadiness?.operatorCount ?? result.profile?.operatorCount ?? 0;
+  if (!result.valid) {
+    return firstDiagnosticText(result.diagnostics) || 'Operator library is invalid.';
+  }
+  const readinessMessage = result.importReadiness?.message?.trim();
+  if (readinessMessage) {
+    return libraryId ? `${libraryId}: ${readinessMessage}` : readinessMessage;
+  }
+  const label = libraryId || 'Operator library';
+  return `${label} is valid${operatorCount ? ` (${operatorCount} operators)` : ''}.`;
+}
+
+/** Formats the stored-library response after a successful import. */
+export function operatorLibraryImportMessage(library: OperatorLibrary): string {
+  const libraryId = library.libraryId?.trim() || 'operator library';
+  const operatorCount = library.operators?.length ?? 0;
+  return `Imported ${libraryId}${operatorCount ? ` (${operatorCount} operator${operatorCount === 1 ? '' : 's'})` : ''}.`;
 }
 
 /**
@@ -1116,6 +1156,18 @@ function matchesOperatorSearch(row: OperatorPaletteRow, terms: string[]): boolea
     ...row.summary.outputNames,
   ].join(' ').toLowerCase();
   return terms.every((term) => haystack.includes(term));
+}
+
+function hasDiagnosticLevel(diagnostics: VisualDiagnostic[] | undefined, level: string): boolean {
+  return (diagnostics ?? []).some((diagnostic) => diagnostic.level?.toUpperCase() === level);
+}
+
+function firstDiagnosticText(diagnostics: VisualDiagnostic[] | undefined): string {
+  const diagnostic = diagnostics?.find((item) => item.message || item.code);
+  if (!diagnostic) {
+    return '';
+  }
+  return `${diagnostic.code ? `${diagnostic.code}: ` : ''}${diagnostic.message ?? ''}`.trim();
 }
 
 function countedFacets(values: string[]): OperatorPaletteFacetCount[] {
