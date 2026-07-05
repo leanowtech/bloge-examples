@@ -1,0 +1,64 @@
+/// Resource Gateway dashboard migrated to Graph Engine durable remote workers.
+///
+/// This graph mirrors resource-gateway-examples/src/main/resources/bloge/gateway/user-dashboard.bloge.
+/// Each external resource call becomes a durable remote-worker node. The Graph
+/// Engine owns instance state, work item leases, retry/dead-letter recovery, and
+/// audit; a resource worker keeps the descriptor-first HTTP integration logic.
+///
+/// Context variables:
+///   ctx.userId - authenticated user whose dashboard should be assembled
+graph resourceGatewayDashboardDurable {
+
+  node fetchProfile : gatewayResource {
+    execution_mode = remote
+    worker_topic = "gateway.resources"
+    input {
+      resourceId = "user-service.getProfile"
+      params = { userId: ctx.userId }
+    }
+  }
+
+  node fetchOrders : gatewayResource {
+    execution_mode = remote
+    worker_topic = "gateway.resources"
+    input {
+      resourceId = "order-service.listOrders"
+      params = { userId: ctx.userId }
+    }
+  }
+
+  node fetchRecommendations : gatewayResource {
+    execution_mode = remote
+    worker_topic = "gateway.resources"
+    input {
+      resourceId = "recommendation-service.forUser"
+      params = { userId: ctx.userId }
+    }
+  }
+
+  node fetchWallet : gatewayResource {
+    execution_mode = remote
+    worker_topic = "gateway.resources"
+    input {
+      resourceId = "wallet-service.getBalance"
+      params = { userId: ctx.userId }
+    }
+  }
+
+  node fetchNotifications : gatewayResource {
+    execution_mode = remote
+    worker_topic = "gateway.resources"
+    input {
+      resourceId = "notification-service.unread"
+      params = { userId: ctx.userId }
+    }
+  }
+
+  transform assembleDashboard {
+    profile = fetchProfile.output.payload
+    orders = fetchOrders.output.payload
+    recommendations = fetchRecommendations.output.payload
+    wallet = fetchWallet.output.payload
+    notifications = fetchNotifications.output.payload
+  }
+}

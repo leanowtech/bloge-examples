@@ -218,6 +218,39 @@ described in the AI-native graph-engine design:
   `RETRY_WAIT` using the envelope's retry policy, or to `DEAD_LETTER` when the
   retry budget has been exhausted
 
+### Resource Gateway durable migration fixture
+
+The service tests include a runnable migration slice at
+`src/test/resources/bloge/resource-gateway-dashboard-durable.bloge`. It mirrors
+Resource Gateway's `userDashboard` graph: five independent resource calls fan
+out, then `assembleDashboard` joins their payloads.
+
+The durable version intentionally keeps one generic remote operator:
+
+```bloge
+node fetchProfile : gatewayResource {
+  execution_mode = remote
+  worker_topic = "gateway.resources"
+  input {
+    resourceId = "user-service.getProfile"
+    params = { userId: ctx.userId }
+  }
+}
+```
+
+This is the intended migration boundary. Graph Engine owns definition/version
+governance, instance state, work-item leases, retry/dead-letter recovery, audit,
+and control-plane APIs. A Resource Gateway-style worker owns descriptor-first
+HTTP execution by reading `input.resourceId` and `input.params` from the remote
+worker envelope.
+
+`DefaultGraphEngineServiceTest.resourceGatewayDashboardDurableMigrationCompletesFanoutThroughRemoteWorkers`
+publishes the fixture, starts an instance, polls five `gateway.resources` jobs,
+completes them with mock resource payloads, and verifies that
+`getInstanceContext(...)` exposes the final dashboard aggregation. That gives
+the Resource Gateway -> Graph Engine durable path a concrete executable proof
+instead of only a design narrative.
+
 ## Runtime naming strategy
 
 The service derives deterministic runtime artifact names from stable product identifiers instead of publishing raw DSL root names directly. This prevents collisions between different product definitions that may happen to reuse the same top-level DSL name while keeping graph versions evolution-compatible inside the shared runtime registry. Session and state-machine runtime renames preserve the compiler-provided `contentHash`, so durable checkpoint compatibility checks continue to compare the authored orchestration structure instead of the product-layer runtime name.

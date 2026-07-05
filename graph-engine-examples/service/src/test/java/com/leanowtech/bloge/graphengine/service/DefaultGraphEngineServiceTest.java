@@ -105,13 +105,17 @@ import com.leanowtech.bloge.runtime.timer.InMemoryTimerService;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -3260,6 +3264,139 @@ class DefaultGraphEngineServiceTest {
     }
 
     @Test
+    void resourceGatewayDashboardDurableMigrationCompletesFanoutThroughRemoteWorkers() throws Exception {
+        try (Fixture fixture = new Fixture()) {
+            GraphDefinition definition = fixture.service.createDefinition(new CreateDefinitionCommand(
+                    "resource-gateway-dashboard",
+                    "tenant-a",
+                    "gateway",
+                    "Resource Gateway dashboard durable migration",
+                    null,
+                    null,
+                    Map.of("source", "resource-gateway-examples/userDashboard"),
+                    null,
+                    null
+            ));
+            GraphVersion version = fixture.service.createVersion(new CreateVersionCommand(
+                    definition.definitionKey(),
+                    definition.tenantId(),
+                    definition.namespace(),
+                    "1.0.0",
+                    resourceGatewayDashboardDurableDsl(),
+                    null,
+                    GraphMigrationPolicy.PIN_VERSION
+            ));
+            GraphVersion published = fixture.service.publishVersion(version.versionId(), version.revision()).version();
+
+            assertTrue(published.metadata().operatorRefs().contains("gatewayResource"));
+            assertTrue(published.metadata().operatorRefs().contains("__transform__"));
+
+            StartInstanceResult started = fixture.service.startInstance(new StartInstanceCommand(
+                    definition.definitionKey(),
+                    definition.tenantId(),
+                    definition.namespace(),
+                    "1.0.0",
+                    null,
+                    "gateway-dashboard-u-100",
+                    "gateway-api",
+                    Map.of("userId", "u-100")
+            ));
+
+            assertEquals(GraphInstanceStatus.SUSPENDED, fixture.awaitInstanceStatus(
+                    started.instance().instanceId(),
+                    GraphInstanceStatus.SUSPENDED
+            ));
+
+            List<GraphRemoteWorkerJob> jobs = fixture.service.pollRemoteWorkerJobs(new PollRemoteWorkerJobsCommand(
+                    "worker-gateway",
+                    "gateway.resources",
+                    10,
+                    Duration.ofMinutes(5)
+            ));
+            assertEquals(5, jobs.size());
+
+            Map<String, GraphRemoteWorkerJob> jobsByNode = jobs.stream()
+                    .collect(Collectors.toMap(job -> job.envelope().nodeId(), Function.identity()));
+            assertEquals(Set.of(
+                    "fetchProfile",
+                    "fetchOrders",
+                    "fetchRecommendations",
+                    "fetchWallet",
+                    "fetchNotifications"
+            ), jobsByNode.keySet());
+
+            assertResourceGatewayJob(jobsByNode.get("fetchProfile"),
+                    "gatewayResource",
+                    "user-service.getProfile",
+                    "u-100");
+            assertResourceGatewayJob(jobsByNode.get("fetchOrders"),
+                    "gatewayResource",
+                    "order-service.listOrders",
+                    "u-100");
+            assertResourceGatewayJob(jobsByNode.get("fetchRecommendations"),
+                    "gatewayResource",
+                    "recommendation-service.forUser",
+                    "u-100");
+            assertResourceGatewayJob(jobsByNode.get("fetchWallet"),
+                    "gatewayResource",
+                    "wallet-service.getBalance",
+                    "u-100");
+            assertResourceGatewayJob(jobsByNode.get("fetchNotifications"),
+                    "gatewayResource",
+                    "notification-service.unread",
+                    "u-100");
+
+            completeGatewayResourceJob(jobsByNode.get("fetchProfile"),
+                    Map.of("id", "u-100", "name", "Ada Lovelace", "tier", "gold"),
+                    fixture);
+            completeGatewayResourceJob(jobsByNode.get("fetchOrders"),
+                    Map.of("orders", List.of(Map.of("orderId", "o-1", "total", 42))),
+                    fixture);
+            completeGatewayResourceJob(jobsByNode.get("fetchRecommendations"),
+                    Map.of("entries", List.of("keyboard", "monitor")),
+                    fixture);
+            completeGatewayResourceJob(jobsByNode.get("fetchWallet"),
+                    Map.of("balance", 128, "currency", "USD"),
+                    fixture);
+            completeGatewayResourceJob(jobsByNode.get("fetchNotifications"),
+                    Map.of("unread", 2, "entries", List.of("shipping", "coupon")),
+                    fixture);
+
+            assertEquals(GraphInstanceStatus.COMPLETED, fixture.awaitInstanceStatus(
+                    started.instance().instanceId(),
+                    GraphInstanceStatus.COMPLETED
+            ));
+            assertTrue(jobs.stream()
+                    .allMatch(job -> fixture.workItemStore.get(job.itemId()).orElseThrow().status() == WorkItemStatus.DONE));
+
+            GraphInstanceContext context = fixture.service.getInstanceContext(started.instance().instanceId());
+            Map<String, Object> dashboard = context.nodeOutputs().get("assembleDashboard");
+
+            Map<?, ?> profile = mapValue(dashboard, "profile");
+            assertEquals("u-100", profile.get("id"));
+            assertEquals("Ada Lovelace", profile.get("name"));
+            assertEquals("gold", profile.get("tier"));
+
+            Map<?, ?> orders = mapValue(dashboard, "orders");
+            Map<?, ?> firstOrder = mapValue(listValue(orders, "orders").getFirst());
+            assertEquals("o-1", firstOrder.get("orderId"));
+            assertEquals("42", String.valueOf(firstOrder.get("total")));
+
+            Map<?, ?> recommendations = mapValue(dashboard, "recommendations");
+            assertEquals(List.of("keyboard", "monitor"), listValue(recommendations, "entries"));
+
+            Map<?, ?> wallet = mapValue(dashboard, "wallet");
+            assertEquals("128", String.valueOf(wallet.get("balance")));
+            assertEquals("USD", wallet.get("currency"));
+
+            Map<?, ?> notifications = mapValue(dashboard, "notifications");
+            assertEquals("2", String.valueOf(notifications.get("unread")));
+            assertEquals(List.of("shipping", "coupon"), listValue(notifications, "entries"));
+            assertEquals(List.of("COMPLETED"), fixture.metricsObserver.instanceCompletedStatuses);
+        }
+    }
+
+    @Test
     void queryInstanceNodesPrefersWorkItemStateAndRetryRestoresDeadLetters() {
         try (Fixture fixture = new Fixture()) {
             GraphDefinition definition = fixture.service.createDefinition(new CreateDefinitionCommand(
@@ -4062,6 +4199,62 @@ class DefaultGraphEngineServiceTest {
         return fixture.service.publishVersion(created.versionId(), created.revision()).version();
     }
 
+    private static String resourceGatewayDashboardDurableDsl() throws Exception {
+        try (var input = Objects.requireNonNull(DefaultGraphEngineServiceTest.class.getResourceAsStream(
+                "/bloge/resource-gateway-dashboard-durable.bloge"))) {
+            return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private static void assertResourceGatewayJob(GraphRemoteWorkerJob job,
+                                                 String expectedOperatorRef,
+                                                 String expectedResourceId,
+                                                 String expectedUserId) {
+        assertNotNull(job);
+        assertEquals(WorkItemStatus.CLAIMED, job.status());
+        assertNotNull(job.claimToken());
+        assertEquals(expectedOperatorRef, job.envelope().operatorRef());
+        assertEquals("gateway.resources", job.envelope().workerTopic());
+        if (!(job.envelope().input() instanceof Map<?, ?> input)) {
+            throw new AssertionError("Expected remote-worker input to be a map");
+        }
+        assertEquals(expectedResourceId, input.get("resourceId"));
+        if (!(input.get("params") instanceof Map<?, ?> params)) {
+            throw new AssertionError("Expected remote-worker params to be a map");
+        }
+        assertEquals(expectedUserId, params.get("userId"));
+    }
+
+    private static void completeGatewayResourceJob(GraphRemoteWorkerJob job,
+                                                   Map<String, Object> payload,
+                                                   Fixture fixture) {
+        fixture.service.completeRemoteWorkerJob(new CompleteRemoteWorkerJobCommand(
+                job.itemId(),
+                job.claimToken(),
+                job.revision(),
+                Map.of("payload", payload, "success", true)
+        ));
+    }
+
+    private static Map<?, ?> mapValue(Map<String, Object> source, String key) {
+        return mapValue(source.get(key));
+    }
+
+    private static Map<?, ?> mapValue(Object value) {
+        if (!(value instanceof Map<?, ?> map)) {
+            throw new AssertionError("Expected map value but got " + value);
+        }
+        return map;
+    }
+
+    private static List<?> listValue(Map<?, ?> source, String key) {
+        Object value = source.get(key);
+        if (!(value instanceof List<?> list)) {
+            throw new AssertionError("Expected list value for " + key + " but got " + value);
+        }
+        return list;
+    }
+
     private static GraphVersion publishPendingSignals(Fixture fixture, GraphDefinition definition, String version) {
         GraphVersion created = fixture.service.createVersion(new CreateVersionCommand(
                 definition.definitionKey(),
@@ -4500,7 +4693,7 @@ class DefaultGraphEngineServiceTest {
                     ))
                     .listeners(List.of())
                     .interceptors(List.of())
-                    .inMemorySuspendTtl(Duration.ofMillis(200))
+                    .inMemorySuspendTtl(Duration.ofSeconds(5))
                     .build()
                     : null;
 
