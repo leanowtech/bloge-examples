@@ -22,7 +22,9 @@ import {
   authoringJourney,
   autoLayoutCanvas,
   canvasCoachPrompt,
+  canvasNodeFocusState,
   type CanvasEdge,
+  type CanvasNodeFocusState,
   type CanvasNode,
   type AuthoringJourneyAction,
   type ConnectionCandidateIndex,
@@ -57,6 +59,7 @@ interface NodeData {
   status?: 'mocked' | 'real' | 'unknown';
   candidateStatus?: ConnectionCandidateStatus;
   candidatePorts?: Record<string, ConnectionCandidateStatus>;
+  focusState?: CanvasNodeFocusState;
 }
 
 interface ConnectionNotice {
@@ -79,8 +82,9 @@ function OperatorNode({ data, selected }: NodeProps<NodeData>) {
   const inputPorts = data.summary.inputNames;
   const outputPorts = data.summary.outputNames.length ? data.summary.outputNames : [''];
   const candidateClass = data.candidateStatus ? `candidate-${data.candidateStatus}` : '';
+  const focusClass = data.focusState && data.focusState !== 'none' ? `focus-${data.focusState}` : '';
   return (
-    <div className={`operator-node ${status} ${candidateClass} ${selected ? 'selected' : ''}`}>
+    <div className={`operator-node ${status} ${candidateClass} ${focusClass} ${selected ? 'selected' : ''}`}>
       {inputPorts.map((port, index) => (
         <Handle
           key={`in:${port}`}
@@ -312,19 +316,19 @@ export default function AuthorCanvas() {
       nodes.map((node) => {
         const candidateStatus = candidatePreview?.nodeStatuses[node.id];
         const candidatePorts = candidatePreview?.portStatuses[node.id];
-        if (!candidateStatus && !candidatePorts) {
-          return node;
-        }
+        const focusState = canvasNodeFocusState(node.id, selectedNodeId, coachPrompt);
         return {
           ...node,
+          selected: focusState === 'selected',
           data: {
             ...node.data,
             candidateStatus,
             candidatePorts,
+            focusState,
           },
         };
       }),
-    [candidatePreview, nodes],
+    [candidatePreview, coachPrompt, nodes, selectedNodeId],
   );
 
   const updateSelectedFixtureDraft = useCallback((value: string) => {

@@ -159,6 +159,8 @@ export interface CanvasCoachPrompt {
   action: AuthoringJourneyAction;
 }
 
+export type CanvasNodeFocusState = 'none' | 'suggested' | 'selected';
+
 export type PortHandleDirection = 'in' | 'out';
 export type ConnectionCandidateStatus = 'ready' | 'blocked' | 'wired';
 
@@ -786,6 +788,27 @@ export function canvasCoachPrompt(
     detail: `${result.realNodeIds?.length ?? 0} real / ${result.mockedNodeIds?.length ?? 0} mocked`,
     action: { kind: 'none', label: 'Ready' },
   };
+}
+
+/**
+ * Projects the canvas-level coach action onto a single node's visual focus state.
+ *
+ * <p>This keeps the "what should I touch next?" hint testable and separate from React Flow. A
+ * manually selected node always wins over a suggested next node, and server-side validation remains
+ * the authoritative gate for actual connections and simulation.</p>
+ */
+export function canvasNodeFocusState(
+  nodeId: string,
+  selectedNodeId: string,
+  coachPrompt: CanvasCoachPrompt | null | undefined,
+): CanvasNodeFocusState {
+  if (nodeId && nodeId === selectedNodeId) {
+    return 'selected';
+  }
+  if (coachPrompt?.action.kind === 'select-node' && coachPrompt.action.nodeId === nodeId) {
+    return 'suggested';
+  }
+  return 'none';
 }
 
 function nextAuthoringAction(

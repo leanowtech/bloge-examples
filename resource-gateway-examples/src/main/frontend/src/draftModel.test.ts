@@ -4,6 +4,7 @@ import {
   authoringJourney,
   autoLayoutCanvas,
   canvasCoachPrompt,
+  canvasNodeFocusState,
   compileFixtureDrafts,
   connectionCandidatesMessage,
   connectionDecisionMessage,
@@ -694,6 +695,53 @@ describe('canvasCoachPrompt', () => {
       detail: '1 real / 1 mocked',
       action: { kind: 'none', label: 'Ready' },
     });
+  });
+});
+
+describe('canvasNodeFocusState', () => {
+  it('suggests the node targeted by the canvas coach action', () => {
+    const prompt = canvasCoachPrompt(
+      2,
+      summarizeCanvas(
+        [
+          { id: 'n1', operatorRef: 'risk:a', position: { x: 0, y: 0 } },
+          { id: 'n2', operatorRef: 'risk:b', position: { x: 0, y: 0 } },
+        ],
+        [],
+      ),
+      [],
+      null,
+    );
+
+    expect(canvasNodeFocusState('n1', '', prompt)).toBe('suggested');
+    expect(canvasNodeFocusState('n2', '', prompt)).toBe('none');
+  });
+
+  it('lets explicit selection override the suggested next node', () => {
+    const prompt = canvasCoachPrompt(
+      1,
+      summarizeCanvas([{ id: 'mocked', operatorRef: 'risk:design', position: { x: 0, y: 0 } }], []),
+      [
+        {
+          nodeId: 'mocked',
+          label: 'Risk',
+          operatorRef: 'risk:design',
+          state: 'warning',
+          runMode: 'mocked',
+          fixtureLabel: 'server sample',
+          detail: 'server sample',
+        },
+      ],
+      null,
+    );
+
+    expect(canvasNodeFocusState('mocked', 'mocked', prompt)).toBe('selected');
+  });
+
+  it('does not suggest a node for palette or simulation actions', () => {
+    const addPrompt = canvasCoachPrompt(2, summarizeCanvas([], []), [], null);
+
+    expect(canvasNodeFocusState('n1', '', addPrompt)).toBe('none');
   });
 });
 

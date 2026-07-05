@@ -584,6 +584,16 @@ button.secondary:disabled {
   border-color: var(--accent);
 }
 
+.operator-node.focus-suggested {
+  outline: 3px solid rgb(178 106 0 / 22%);
+  border-color: var(--warning);
+}
+
+.operator-node.focus-selected {
+  outline: 3px solid rgb(26 86 219 / 20%);
+  border-color: var(--accent);
+}
+
 .operator-node.candidate-ready {
   box-shadow: 0 0 0 2px rgba(17, 125, 75, 0.22), 0 6px 16px rgb(28 35 48 / 10%);
 }
