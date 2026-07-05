@@ -72,6 +72,24 @@ PID files are written to `target/example-pids/`, and logs are written to
 `spring-boot:run` target and runs Resource Gateway from its repackaged Spring
 Boot jar.
 
+For the newer BLOGE visual canvas product demo, use the dedicated Resource
+Gateway script. It builds the React `/author/` and `/showcase/` bundle by
+default, starts the service on port `8080`, and prints the demo URLs:
+
+```bash
+./scripts/start-visual-canvas-demo.sh
+./scripts/visual-canvas-demo.sh status
+./scripts/stop-visual-canvas-demo.sh
+```
+
+Common demo options:
+
+```bash
+./scripts/start-visual-canvas-demo.sh --open
+./scripts/start-visual-canvas-demo.sh --port 18080
+./scripts/start-visual-canvas-demo.sh --no-build
+```
+
 ### Graph Engine Server
 
 ```bash
@@ -148,6 +166,8 @@ bloge-examples/
 
 - `graph-engine-examples/README.md` for module-by-module graph-engine details
 - `resource-gateway-examples/README.md` for API contract and test-layer breakdown
+- `docs/bloge-visual-canvas-product-and-system-guide.md` for the visual canvas
+  product guide, demo scripts, and system usage notes
 - `mono-examples/README.md` for the full example catalog
 - `docs/ai/README.md` for AI prompt and DSL benchmark usage
 - `docs/example-ux-visualization-evolution.md` for the example UX visualization

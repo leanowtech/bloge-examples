@@ -37,7 +37,48 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 schema-fir
 | `/showcase/` | React 版 resource gateway 场景目录，按后端场景顺序展示案例、图、请求执行和 SSE 流 | 演示与验证 |
 | `/examples/gateway` | 旧版 Custom Composer/Showcase，保留兼容和功能回归价值 | 兼容入口 |
 
-### 3.1 启动方式
+### 3.1 演示脚本启动方式
+
+推荐演示时直接使用仓库根目录下的专用脚本。它默认执行 `resource-gateway-examples` 的 `-Pfrontend package`，把 React UI 打进 Spring Boot 静态资源，然后在 `8080` 启动服务。为缩短演示准备时间，脚本默认给 Maven 打包加 `-DskipTests`；需要把测试也跑进去时使用 `--run-tests`。
+
+```bash
+./scripts/start-visual-canvas-demo.sh
+```
+
+启动成功后脚本会打印：
+
+```text
+Author canvas:   http://localhost:8080/author/
+Showcase:        http://localhost:8080/showcase/
+Legacy composer: http://localhost:8080/examples/gateway
+```
+
+查看状态和日志位置：
+
+```bash
+./scripts/visual-canvas-demo.sh status
+```
+
+停止演示服务：
+
+```bash
+./scripts/stop-visual-canvas-demo.sh
+```
+
+常用参数：
+
+| 参数 | 用途 |
+| --- | --- |
+| `--open` | 启动后自动打开 `/author/` |
+| `--port 18080` | 改用指定端口 |
+| `--no-build` | 跳过打包，复用已有 jar |
+| `--api-only` | 不启用 `-Pfrontend`，只打包后端 API |
+| `--run-tests` | 打包时不跳过 Maven 测试 |
+| `-- --gateway.base-url=http://localhost:9091` | `--` 后面的参数透传给 Spring Boot 应用 |
+
+脚本使用 `target/example-pids/visual-canvas-demo.pid` 记录进程，使用 `target/example-logs/visual-canvas-demo.log` 记录日志；停止时会校验 PID/端口上的进程确实像 Resource Gateway demo，避免误停其它服务。
+
+### 3.2 手动启动方式
 
 如果只运行后端 API 或旧版静态资源：
 
