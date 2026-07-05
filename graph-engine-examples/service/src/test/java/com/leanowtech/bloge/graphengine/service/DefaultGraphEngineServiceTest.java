@@ -1888,6 +1888,15 @@ class DefaultGraphEngineServiceTest {
             assertEquals(0, snapshot.deadLetterCount());
             assertTrue(snapshot.actionItems().isEmpty());
             assertFalse(snapshot.truncated());
+            assertTrue(snapshot.sloIndicators().stream()
+                    .anyMatch(indicator -> indicator.code().equals("DEAD_LETTER_BACKLOG")
+                            && indicator.health() == GraphOperationsSnapshot.Health.OK
+                            && indicator.metricName().equals("ge.operations.dead_letters")));
+            assertEquals(1, fixture.metricsObserver.operationsSnapshotCount);
+            assertEquals(List.of("OK"), fixture.metricsObserver.operationsSnapshotHealthes);
+            assertEquals(0, fixture.metricsObserver.lastOperationsDeadLetterCount);
+            assertEquals(0, fixture.metricsObserver.lastOperationsFailedInstanceCount);
+            assertEquals(0, fixture.metricsObserver.lastOperationsSuspendedInstanceCount);
         }
     }
 
@@ -1922,6 +1931,14 @@ class DefaultGraphEngineServiceTest {
             assertTrue(snapshot.actionItems().stream()
                     .anyMatch(item -> item.code().equals("DEAD_LETTERS_PRESENT")
                             && item.severity() == GraphOperationsSnapshot.Health.CRITICAL));
+            assertTrue(snapshot.sloIndicators().stream()
+                    .anyMatch(indicator -> indicator.code().equals("DEAD_LETTER_BACKLOG")
+                            && indicator.health() == GraphOperationsSnapshot.Health.CRITICAL
+                            && indicator.metricName().equals("ge.operations.dead_letters")
+                            && indicator.criticalThreshold().equals(1.0)
+                            && indicator.actionCode().equals("DEAD_LETTERS_PRESENT")));
+            assertEquals(List.of("CRITICAL"), fixture.metricsObserver.operationsSnapshotHealthes);
+            assertEquals(1, fixture.metricsObserver.lastOperationsDeadLetterCount);
         }
     }
 
@@ -1938,6 +1955,13 @@ class DefaultGraphEngineServiceTest {
             assertTrue(snapshot.actionItems().stream()
                     .anyMatch(item -> item.code().equals("SUSPENDED_INSTANCES_PRESENT")
                             && item.severity() == GraphOperationsSnapshot.Health.WARNING));
+            assertTrue(snapshot.sloIndicators().stream()
+                    .anyMatch(indicator -> indicator.code().equals("SUSPENDED_INSTANCE_BACKLOG")
+                            && indicator.health() == GraphOperationsSnapshot.Health.WARNING
+                            && indicator.metricName().equals("ge.operations.suspended_instances")
+                            && indicator.warningThreshold().equals(1.0)
+                            && indicator.actionCode().equals("SUSPENDED_INSTANCES_PRESENT")));
+            assertEquals(1, fixture.metricsObserver.lastOperationsSuspendedInstanceCount);
         }
     }
 
@@ -3766,10 +3790,15 @@ class DefaultGraphEngineServiceTest {
     private static final class RecordingMetricsObserver implements GraphEngineMetricsObserver {
         private final List<String> instanceCompletedStatuses = new ArrayList<>();
         private final List<String> instanceStartModes = new ArrayList<>();
+        private final List<String> operationsSnapshotHealthes = new ArrayList<>();
         private int versionPublishedCount;
         private int instanceStartedCount;
         private int taskClaimedCount;
         private int taskCompletedCount;
+        private int operationsSnapshotCount;
+        private int lastOperationsDeadLetterCount;
+        private int lastOperationsFailedInstanceCount;
+        private int lastOperationsSuspendedInstanceCount;
 
         @Override
         public void onVersionPublished(String definitionKey, String tenantId, String namespace) {
@@ -3796,6 +3825,18 @@ class DefaultGraphEngineServiceTest {
         @Override
         public void onTaskCompleted(String definitionKey, String tenantId, String namespace, String nodeId) {
             taskCompletedCount++;
+        }
+
+        @Override
+        public void onOperationsSnapshot(String tenantId, String namespace, String health,
+                                         int deadLetterCount, int failedInstanceCount,
+                                         int suspendedInstanceCount, int activeDeploymentCount,
+                                         boolean truncated, boolean controlPlaneAvailable) {
+            operationsSnapshotCount++;
+            operationsSnapshotHealthes.add(health);
+            lastOperationsDeadLetterCount = deadLetterCount;
+            lastOperationsFailedInstanceCount = failedInstanceCount;
+            lastOperationsSuspendedInstanceCount = suspendedInstanceCount;
         }
     }
 

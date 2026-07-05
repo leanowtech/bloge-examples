@@ -49,6 +49,8 @@ class GraphEngineConsoleControllerTest {
         assertThat(index).contains("Operations", "Authoring", "Queues");
         assertThat(app)
                 .contains("/api/v1/operations/snapshot")
+                .contains("SLO Indicators")
+                .contains("sloIndicators")
                 .contains("/api/v1/ai/validate")
                 .contains("/api/v1/ai/generate")
                 .contains("/diff/")

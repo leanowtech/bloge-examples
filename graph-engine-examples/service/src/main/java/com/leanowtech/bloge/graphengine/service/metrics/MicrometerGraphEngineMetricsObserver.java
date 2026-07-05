@@ -2,7 +2,13 @@ package com.leanowtech.bloge.graphengine.service.metrics;
 
 import com.leanowtech.bloge.graphengine.service.GraphEngineMetricsObserver;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+
+import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Default Micrometer implementation of {@link GraphEngineMetricsObserver}.
@@ -18,6 +24,7 @@ public class MicrometerGraphEngineMetricsObserver implements GraphEngineMetricsO
 
     private final MeterRegistry registry;
     private final String prefix;
+    private final ConcurrentMap<GaugeKey, AtomicInteger> gauges = new ConcurrentHashMap<>();
 
     /**
      * Creates an observer that records metrics with the default {@code ge}
@@ -104,5 +111,49 @@ public class MicrometerGraphEngineMetricsObserver implements GraphEngineMetricsO
                 .tag("node", nodeId)
                 .register(registry)
                 .increment();
+    }
+
+    @Override
+    public void onOperationsSnapshot(String tenantId, String namespace, String health,
+                                     int deadLetterCount, int failedInstanceCount,
+                                     int suspendedInstanceCount, int activeDeploymentCount,
+                                     boolean truncated, boolean controlPlaneAvailable) {
+        setGauge("operations.health", tenantId, namespace, healthScore(health));
+        setGauge("operations.dead_letters", tenantId, namespace, deadLetterCount);
+        setGauge("operations.failed_instances", tenantId, namespace, failedInstanceCount);
+        setGauge("operations.suspended_instances", tenantId, namespace, suspendedInstanceCount);
+        setGauge("operations.active_deployments", tenantId, namespace, activeDeploymentCount);
+        setGauge("operations.snapshot_truncated", tenantId, namespace, truncated ? 1 : 0);
+        setGauge("operations.control_plane_available", tenantId, namespace, controlPlaneAvailable ? 1 : 0);
+    }
+
+    private void setGauge(String suffix, String tenantId, String namespace, int value) {
+        GaugeKey key = new GaugeKey(prefix + "." + suffix, safeTag(tenantId), safeTag(namespace));
+        gauges.computeIfAbsent(key, this::registerGauge).set(value);
+    }
+
+    private AtomicInteger registerGauge(GaugeKey key) {
+        AtomicInteger holder = new AtomicInteger();
+        Gauge.builder(key.name(), holder, AtomicInteger::get)
+                .tag("tenant", key.tenantId())
+                .tag("namespace", key.namespace())
+                .register(registry);
+        return holder;
+    }
+
+    private static int healthScore(String health) {
+        String normalized = health == null ? "OK" : health.toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "CRITICAL" -> 2;
+            case "WARNING" -> 1;
+            default -> 0;
+        };
+    }
+
+    private static String safeTag(String value) {
+        return value == null || value.isBlank() ? "unknown" : value;
+    }
+
+    private record GaugeKey(String name, String tenantId, String namespace) {
     }
 }

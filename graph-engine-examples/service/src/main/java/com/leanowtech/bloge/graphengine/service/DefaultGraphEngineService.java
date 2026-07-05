@@ -682,6 +682,9 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
         int activeDeployments = (int) deployments.stream()
                 .filter(GraphDeployment::active)
                 .count();
+        int deadLetterCount = deadLetters.size();
+        int failedInstances = instancesByStatus.getOrDefault(GraphInstanceStatus.FAILED, 0);
+        int suspendedInstances = instancesByStatus.getOrDefault(GraphInstanceStatus.SUSPENDED, 0);
         List<GraphOperationsSnapshot.DeadLetterSample> recentDeadLetters = deadLetters.stream()
                 .sorted(Comparator.comparing(GraphDeadLetter::deadLetteredAt).reversed())
                 .limit(OPERATIONS_SNAPSHOT_DEAD_LETTER_SAMPLE_SIZE)
@@ -693,7 +696,27 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                 instancesByStatus,
                 deployments.size(),
                 activeDeployments,
-                deadLetters.size()
+                deadLetterCount
+        );
+        GraphOperationsSnapshot.Health health = operationsHealth(actionItems);
+        List<GraphOperationsSnapshot.SloIndicator> sloIndicators = operationsSloIndicators(
+                controlPlaneAvailable,
+                truncated,
+                failedInstances,
+                suspendedInstances,
+                deployments.size(),
+                activeDeployments,
+                deadLetterCount
+        );
+        recordOperationsSnapshotMetrics(
+                scope,
+                health,
+                deadLetterCount,
+                failedInstances,
+                suspendedInstances,
+                activeDeployments,
+                truncated,
+                controlPlaneAvailable
         );
 
         return new GraphOperationsSnapshot(
@@ -702,7 +725,7 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                 runtimeSupport.timeSource().now(),
                 OPERATIONS_SNAPSHOT_SAMPLE_LIMIT,
                 truncated,
-                operationsHealth(actionItems),
+                health,
                 instancesByStatus,
                 instancesByExecutionMode,
                 instances.size(),
@@ -710,9 +733,10 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                 terminalInstances,
                 deployments.size(),
                 activeDeployments,
-                deadLetters.size(),
+                deadLetterCount,
                 recentDeadLetters,
-                actionItems
+                actionItems,
+                sloIndicators
         );
     }
 
@@ -3171,6 +3195,120 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
         boolean warning = actionItems.stream()
                 .anyMatch(item -> item.severity() == GraphOperationsSnapshot.Health.WARNING);
         return warning ? GraphOperationsSnapshot.Health.WARNING : GraphOperationsSnapshot.Health.OK;
+    }
+
+    private List<GraphOperationsSnapshot.SloIndicator> operationsSloIndicators(
+            boolean controlPlaneAvailable,
+            boolean truncated,
+            int failedInstances,
+            int suspendedInstances,
+            int deploymentCount,
+            int activeDeploymentCount,
+            int deadLetterCount) {
+        return List.of(
+                new GraphOperationsSnapshot.SloIndicator(
+                        "DEAD_LETTER_BACKLOG",
+                        deadLetterCount > 0 ? GraphOperationsSnapshot.Health.CRITICAL : GraphOperationsSnapshot.Health.OK,
+                        "ge.operations.dead_letters",
+                        deadLetterCount,
+                        null,
+                        1.0,
+                        "items",
+                        deadLetterCount > 0
+                                ? "Dead-letter backlog is present and requires retry, compensation, or manual repair."
+                                : "No dead-letter backlog was observed in the sampled scope.",
+                        deadLetterCount > 0 ? "DEAD_LETTERS_PRESENT" : ""
+                ),
+                new GraphOperationsSnapshot.SloIndicator(
+                        "FAILED_INSTANCE_BACKLOG",
+                        failedInstances > 0 ? GraphOperationsSnapshot.Health.CRITICAL : GraphOperationsSnapshot.Health.OK,
+                        "ge.operations.failed_instances",
+                        failedInstances,
+                        null,
+                        1.0,
+                        "instances",
+                        failedInstances > 0
+                                ? "Failed graph instances require transition/audit inspection before restart or compensation."
+                                : "No failed graph instances were observed in the sampled scope.",
+                        failedInstances > 0 ? "FAILED_INSTANCES_PRESENT" : ""
+                ),
+                new GraphOperationsSnapshot.SloIndicator(
+                        "SUSPENDED_INSTANCE_BACKLOG",
+                        suspendedInstances > 0 ? GraphOperationsSnapshot.Health.WARNING : GraphOperationsSnapshot.Health.OK,
+                        "ge.operations.suspended_instances",
+                        suspendedInstances,
+                        1.0,
+                        null,
+                        "instances",
+                        suspendedInstances > 0
+                                ? "Suspended instances are waiting for signal, task completion, or remote-worker callback."
+                                : "No suspended graph instances were observed in the sampled scope.",
+                        suspendedInstances > 0 ? "SUSPENDED_INSTANCES_PRESENT" : ""
+                ),
+                new GraphOperationsSnapshot.SloIndicator(
+                        "ACTIVE_DEPLOYMENT_AVAILABLE",
+                        deploymentCount > 0 && activeDeploymentCount == 0
+                                ? GraphOperationsSnapshot.Health.WARNING
+                                : GraphOperationsSnapshot.Health.OK,
+                        "ge.operations.active_deployments",
+                        activeDeploymentCount,
+                        deploymentCount > 0 ? 1.0 : null,
+                        null,
+                        "deployments",
+                        deploymentCount > 0 && activeDeploymentCount == 0
+                                ? "Deployments exist but none are active in this scope."
+                                : "Active deployment availability is acceptable for this scope.",
+                        deploymentCount > 0 && activeDeploymentCount == 0 ? "NO_ACTIVE_DEPLOYMENT" : ""
+                ),
+                new GraphOperationsSnapshot.SloIndicator(
+                        "SNAPSHOT_COMPLETENESS",
+                        truncated ? GraphOperationsSnapshot.Health.WARNING : GraphOperationsSnapshot.Health.OK,
+                        "ge.operations.snapshot_truncated",
+                        truncated ? 1 : 0,
+                        1.0,
+                        null,
+                        "boolean",
+                        truncated
+                                ? "Snapshot hit its sample limit; use paginated APIs or external metrics for full-fleet accounting."
+                                : "Snapshot did not hit the bounded sample limit.",
+                        truncated ? "SNAPSHOT_TRUNCATED" : ""
+                ),
+                new GraphOperationsSnapshot.SloIndicator(
+                        "CONTROL_PLANE_AVAILABLE",
+                        controlPlaneAvailable ? GraphOperationsSnapshot.Health.OK : GraphOperationsSnapshot.Health.WARNING,
+                        "ge.operations.control_plane_available",
+                        controlPlaneAvailable ? 1 : 0,
+                        1.0,
+                        null,
+                        "boolean",
+                        controlPlaneAvailable
+                                ? "Control-plane service is available for dead-letter and transition health projection."
+                                : "Control-plane service is not configured; dead-letter and transition health are incomplete.",
+                        controlPlaneAvailable ? "" : "CONTROL_PLANE_UNAVAILABLE"
+                )
+        );
+    }
+
+    private void recordOperationsSnapshotMetrics(
+            Scope scope,
+            GraphOperationsSnapshot.Health health,
+            int deadLetterCount,
+            int failedInstances,
+            int suspendedInstances,
+            int activeDeploymentCount,
+            boolean truncated,
+            boolean controlPlaneAvailable) {
+        metricsObserver.onOperationsSnapshot(
+                scope.tenantId(),
+                scope.namespace(),
+                health.name(),
+                deadLetterCount,
+                failedInstances,
+                suspendedInstances,
+                activeDeploymentCount,
+                truncated,
+                controlPlaneAvailable
+        );
     }
 
     private static <T> List<T> firstItems(List<T> values, int limit) {

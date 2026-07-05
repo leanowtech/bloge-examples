@@ -60,6 +60,17 @@ class GraphOperationsControllerTest extends AbstractGraphControllerTest {
                         "Dead-lettered work items require retry.",
                         "dead-letters",
                         ""
+                )),
+                java.util.List.of(new GraphOperationsSnapshot.SloIndicator(
+                        "DEAD_LETTER_BACKLOG",
+                        GraphOperationsSnapshot.Health.CRITICAL,
+                        "ge.operations.dead_letters",
+                        1,
+                        null,
+                        1.0,
+                        "items",
+                        "Dead-letter backlog is present.",
+                        "DEAD_LETTERS_PRESENT"
                 ))
         );
 
@@ -72,7 +83,9 @@ class GraphOperationsControllerTest extends AbstractGraphControllerTest {
                 .andExpect(jsonPath("$.instancesByExecutionMode.GRAPH").value(1))
                 .andExpect(jsonPath("$.deadLetterCount").value(1))
                 .andExpect(jsonPath("$.recentDeadLetters[0].itemId").value("dead-1"))
-                .andExpect(jsonPath("$.actionItems[0].code").value("DEAD_LETTERS_PRESENT"));
+                .andExpect(jsonPath("$.actionItems[0].code").value("DEAD_LETTERS_PRESENT"))
+                .andExpect(jsonPath("$.sloIndicators[0].code").value("DEAD_LETTER_BACKLOG"))
+                .andExpect(jsonPath("$.sloIndicators[0].metricName").value("ge.operations.dead_letters"));
 
         assertEquals("default", graphEngineService.operationsSnapshotTenantId);
         assertEquals("default", graphEngineService.operationsSnapshotNamespace);

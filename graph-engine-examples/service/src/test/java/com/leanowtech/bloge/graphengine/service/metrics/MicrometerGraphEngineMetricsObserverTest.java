@@ -2,6 +2,7 @@ package com.leanowtech.bloge.graphengine.service.metrics;
 
 import com.leanowtech.bloge.graphengine.service.GraphEngineMetricsObserver;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -172,6 +173,38 @@ class MicrometerGraphEngineMetricsObserverTest {
         assertEquals(3.0, counter.count());
     }
 
+    // ── operations snapshot gauges ──────────────────────────────────────
+
+    @Test
+    void operationsSnapshot_recordsCurrentStateGauges() {
+        observer.onOperationsSnapshot("acme", "prod", "CRITICAL",
+                2, 1, 3, 0, true, false);
+
+        assertGauge("ge.operations.health", "acme", "prod", 2.0);
+        assertGauge("ge.operations.dead_letters", "acme", "prod", 2.0);
+        assertGauge("ge.operations.failed_instances", "acme", "prod", 1.0);
+        assertGauge("ge.operations.suspended_instances", "acme", "prod", 3.0);
+        assertGauge("ge.operations.active_deployments", "acme", "prod", 0.0);
+        assertGauge("ge.operations.snapshot_truncated", "acme", "prod", 1.0);
+        assertGauge("ge.operations.control_plane_available", "acme", "prod", 0.0);
+    }
+
+    @Test
+    void operationsSnapshot_refreshesGaugeValuesInsteadOfAccumulating() {
+        observer.onOperationsSnapshot("acme", "prod", "CRITICAL",
+                2, 1, 3, 0, true, false);
+        observer.onOperationsSnapshot("acme", "prod", "OK",
+                0, 0, 0, 2, false, true);
+
+        assertGauge("ge.operations.health", "acme", "prod", 0.0);
+        assertGauge("ge.operations.dead_letters", "acme", "prod", 0.0);
+        assertGauge("ge.operations.failed_instances", "acme", "prod", 0.0);
+        assertGauge("ge.operations.suspended_instances", "acme", "prod", 0.0);
+        assertGauge("ge.operations.active_deployments", "acme", "prod", 2.0);
+        assertGauge("ge.operations.snapshot_truncated", "acme", "prod", 0.0);
+        assertGauge("ge.operations.control_plane_available", "acme", "prod", 1.0);
+    }
+
     // ── Custom prefix ────────────────────────────────────────────────────
 
     @Test
@@ -184,6 +217,10 @@ class MicrometerGraphEngineMetricsObserverTest {
                 .counter();
         assertNotNull(counter);
         assertEquals(1.0, counter.count());
+
+        custom.onOperationsSnapshot("acme", "prod", "WARNING",
+                0, 0, 1, 1, false, true);
+        assertGauge("myapp.ge.operations.health", "acme", "prod", 1.0);
     }
 
     @Test
@@ -225,6 +262,16 @@ class MicrometerGraphEngineMetricsObserverTest {
             noop.onInstanceCompleted("def", "t", "ns", "GRAPH", "COMPLETED");
             noop.onTaskClaimed("def", "t", "ns", "node-a");
             noop.onTaskCompleted("def", "t", "ns", "node-a");
+            noop.onOperationsSnapshot("t", "ns", "OK", 0, 0, 0, 1, false, true);
         });
+    }
+
+    private void assertGauge(String name, String tenantId, String namespace, double expected) {
+        Gauge gauge = registry.find(name)
+                .tag("tenant", tenantId)
+                .tag("namespace", namespace)
+                .gauge();
+        assertNotNull(gauge);
+        assertEquals(expected, gauge.value());
     }
 }

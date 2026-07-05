@@ -228,6 +228,33 @@ dependencies (all method parameters are low-cardinality strings), and this
 module now ships the default Micrometer implementation in
 `com.leanowtech.bloge.graphengine.service.metrics`.
 
+| Action | Observer method | Metric |
+|---|---|---|
+| Publish version | `onVersionPublished` | `ge.version.published` |
+| Start instance | `onInstanceStarted` | `ge.instance.started` |
+| Cancel / terminate / complete instance | `onInstanceCompleted` | `ge.instance.completed` |
+| Claim task | `onTaskClaimed` | `ge.task.claimed` |
+| Complete task | `onTaskCompleted` | `ge.task.completed` |
+| Query operations snapshot | `onOperationsSnapshot` | `ge.operations.*` gauges |
+
+Operations snapshot gauges are refreshed when `queryOperationsSnapshot` runs.
+They expose product control-plane state for the same tenant/namespace scope that
+the console renders:
+
+- `ge.operations.health` (`OK=0`, `WARNING=1`, `CRITICAL=2`)
+- `ge.operations.dead_letters`
+- `ge.operations.failed_instances`
+- `ge.operations.suspended_instances`
+- `ge.operations.active_deployments`
+- `ge.operations.snapshot_truncated`
+- `ge.operations.control_plane_available`
+
+When no observer is configured, `GraphEngineMetricsObserver.NOOP` is used (zero
+overhead). The Micrometer implementation lives in this module as
+`com.leanowtech.bloge.graphengine.service.metrics.MicrometerGraphEngineMetricsObserver`.
+Add `micrometer-core` to the classpath when wiring it manually through
+`GraphEngineRuntimeSupport.builder().metricsObserver(observer)`.
+
 ## RBAC enforcement
 
 The service enforces role-based access control at the service layer using the
@@ -258,17 +285,3 @@ mutations still raise `ACCESS_DENIED`.
 - `CallerContextHolder` — thread-local holder; `null` = system/internal call
 - `RbacEnforcer` — stateless helper that checks `CallerContext` against the
   definition's `RbacPolicy` and throws `ACCESS_DENIED` on mismatch
-
-| Action | Observer method | Metric |
-|---|---|---|
-| Publish version | `onVersionPublished` | `ge.version.published` |
-| Start instance | `onInstanceStarted` | `ge.instance.started` |
-| Cancel / terminate / complete instance | `onInstanceCompleted` | `ge.instance.completed` |
-| Claim task | `onTaskClaimed` | `ge.task.claimed` |
-| Complete task | `onTaskCompleted` | `ge.task.completed` |
-
-When no observer is configured, `GraphEngineMetricsObserver.NOOP` is used (zero
-overhead). The Micrometer implementation lives in this module as
-`com.leanowtech.bloge.graphengine.service.metrics.MicrometerGraphEngineMetricsObserver`.
-Add `micrometer-core` to the classpath when wiring it manually through
-`GraphEngineRuntimeSupport.builder().metricsObserver(observer)`.

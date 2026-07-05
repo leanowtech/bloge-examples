@@ -17,6 +17,13 @@ package com.leanowtech.bloge.graphengine.service;
  *   <li>{@code ge.instance.completed} — Counter (with status tag)</li>
  *   <li>{@code ge.task.claimed}      — Counter</li>
  *   <li>{@code ge.task.completed}    — Counter</li>
+ *   <li>{@code ge.operations.health} — Gauge (OK=0, WARNING=1, CRITICAL=2)</li>
+ *   <li>{@code ge.operations.dead_letters} — Gauge</li>
+ *   <li>{@code ge.operations.failed_instances} — Gauge</li>
+ *   <li>{@code ge.operations.suspended_instances} — Gauge</li>
+ *   <li>{@code ge.operations.active_deployments} — Gauge</li>
+ *   <li>{@code ge.operations.snapshot_truncated} — Gauge (false=0, true=1)</li>
+ *   <li>{@code ge.operations.control_plane_available} — Gauge (false=0, true=1)</li>
  * </ul>
  */
 public interface GraphEngineMetricsObserver {
@@ -95,4 +102,26 @@ public interface GraphEngineMetricsObserver {
      * @param nodeId        the node identifier within the graph
      */
     void onTaskCompleted(String definitionKey, String tenantId, String namespace, String nodeId);
+
+    /**
+     * Called when the operations snapshot for a tenant/namespace scope is queried.
+     * <p>
+     * Implementations should record current-state gauges, not counters. The
+     * snapshot query is the refresh boundary for these product-layer gauges.
+     *
+     * @param tenantId              the tenant identifier
+     * @param namespace             the namespace
+     * @param health                snapshot health (OK, WARNING, CRITICAL)
+     * @param deadLetterCount       dead-letter backlog count in the sampled scope
+     * @param failedInstanceCount   failed instance count in the sampled scope
+     * @param suspendedInstanceCount suspended instance count in the sampled scope
+     * @param activeDeploymentCount active deployment count in the sampled scope
+     * @param truncated             whether the snapshot hit the sample limit
+     * @param controlPlaneAvailable whether control-plane dead-letter data was available
+     */
+    default void onOperationsSnapshot(String tenantId, String namespace, String health,
+                                      int deadLetterCount, int failedInstanceCount,
+                                      int suspendedInstanceCount, int activeDeploymentCount,
+                                      boolean truncated, boolean controlPlaneAvailable) {
+    }
 }

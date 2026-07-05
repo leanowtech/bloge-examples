@@ -41,7 +41,7 @@ authoring or execution model.
 | `/api/v1/deployments` | `GraphDeploymentController` | Create and update deployment bindings (environment, routing policy) |
 | `/api/v1/graphs/{key}/instances` | `GraphInstanceController` | Start new instances for a definition |
 | `/api/v1/instances` | `GraphInstanceController` | Query, signal, cancel, terminate, audit, inspect transition history, and list pending GRAPH signals for instances |
-| `/api/v1/operations/snapshot` | `GraphOperationsController` | Aggregate current-scope instance, deployment, and dead-letter samples into health, recent dead letters, and action items |
+| `/api/v1/operations/snapshot` | `GraphOperationsController` | Aggregate current-scope instance, deployment, and dead-letter samples into health, SLO indicators, recent dead letters, and action items |
 | `/api/v1/tasks` | `GraphTaskController` | Query, claim, complete, reassign, and cancel human tasks, including candidate user/group/role claim metadata |
 | `/api/v1/dead-letters` | `GraphDeadLetterController` | Query tenant-scoped dead letters and retry individual work items |
 | `/api/v1/remote-workers` | `GraphRemoteWorkerController` | Register workers, poll and claim jobs, renew leases, and report completion or failure for remote-worker items |
@@ -59,14 +59,20 @@ tenant/namespace health projection for dashboards and operators. The response
 includes instance counts by lifecycle status and execution mode, deployment and
 active-deployment counts, dead-letter count, recent dead-letter samples, a
 top-level `health` value (`OK`, `WARNING`, or `CRITICAL`), and recovery-oriented
-`actionItems`. The snapshot is a control-plane triage view, not a metrics
-backend; when `truncated = true`, use the paginated instance, deployment, and
-dead-letter APIs or external metrics for full-fleet accounting.
+`actionItems`. It also includes `sloIndicators`, a stable metric-facing contract
+covering dead-letter backlog, failed instances, suspended instances, active
+deployment availability, snapshot completeness, and control-plane availability.
+The same rules refresh the `ge.operations.*` Micrometer gauges when a
+`GraphEngineMetricsObserver` is wired. The snapshot is a control-plane triage
+view, not a metrics backend; when `truncated = true`, use the paginated
+instance, deployment, and dead-letter APIs or external metrics for full-fleet
+accounting.
 
 The packaged console renders that snapshot as its default Operations page:
-health and key counts stay in the main panel, while action items and recent dead
-letters become the left-side operations queue. The page links directly into
-Queues, Instances, and Deployments for follow-up inspection.
+health, key counts, and SLO indicators stay in the main panel, while action
+items, unhealthy indicators, and recent dead letters become the left-side
+operations queue. The page links directly into Queues, Instances, and
+Deployments for follow-up inspection.
 
 **Cancel vs. terminate.** Both instance actions require an optimistic-lock
 `expectedRevision` plus a human-readable `reason` in the
@@ -437,7 +443,7 @@ The server also inherits all `spring.bloge.*` properties from `bloge-spring` (DS
 - `GraphEngineService` — product-layer service facade (`DefaultGraphEngineService`)
 - `DslValidationPipeline` — parse→lint→compile pipeline used by the AI authoring controller
 - `GraphAuthoringService` — AI generation/repair loop (conditional on `LlmProvider` bean)
-- `GraphEngineMetricsObserver` — Micrometer-backed product-layer metrics (conditional on `MeterRegistry` bean)
+- `GraphEngineMetricsObserver` — Micrometer-backed product-layer event counters and operations snapshot gauges (conditional on `MeterRegistry` bean)
 - `BpmnImportController` — BPMN 2.0 XML import endpoint (conditional on `bloge-bpmn-transformer` on classpath)
 - REST controllers (including governance / dead-letter endpoints) and `GlobalExceptionHandler` (servlet web only)
 - Jackson mix-ins for `VersionRoutingPolicy`, `SchemaCompatibility`, and `SchemaDescriptor` serialization

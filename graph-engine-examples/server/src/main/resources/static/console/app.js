@@ -119,6 +119,7 @@ async function loadOperationsOverview() {
   setOutput('details', snapshot);
   setOutput('runtime', {
     actionItems: snapshot.actionItems || [],
+    sloIndicators: snapshot.sloIndicators || [],
     recentDeadLetters: snapshot.recentDeadLetters || []
   });
   renderOperationsActions();
@@ -133,6 +134,15 @@ function operationsRows(snapshot) {
     meta: `${item.severity || 'WARNING'} · ${item.targetType || 'scope'}`,
     payload: item
   }));
+  const sloItems = (snapshot.sloIndicators || [])
+    .filter((item) => item.health && item.health !== 'OK')
+    .map((item, index) => ({
+      id: `slo-${index}-${item.code}`,
+      kind: 'slo',
+      title: item.code,
+      meta: `${item.health || 'WARNING'} · ${item.metricName || 'metric'}`,
+      payload: item
+    }));
   const deadLetters = (snapshot.recentDeadLetters || []).map((item, index) => ({
     id: `dead-letter-${index}-${item.itemId}`,
     kind: 'dead-letter',
@@ -140,7 +150,7 @@ function operationsRows(snapshot) {
     meta: `${item.definitionKey || 'graph'} · ${item.deadLetterReason || item.lastError || item.itemId}`,
     payload: item
   }));
-  const rows = [...actionItems, ...deadLetters];
+  const rows = [...actionItems, ...sloItems, ...deadLetters];
   if (!rows.length) {
     rows.push({
       id: 'health-ok',
@@ -202,6 +212,7 @@ function renderOperationsPanel(snapshot) {
   ].forEach(([label, value, meta]) => metrics.appendChild(metricCard(label, value, meta)));
   overview.appendChild(metrics);
 
+  overview.appendChild(summarySection('SLO Indicators', snapshot.sloIndicators || [], renderSloIndicator));
   overview.appendChild(summarySection('Action Items', snapshot.actionItems || [], renderActionItem));
   overview.appendChild(summarySection('Recent Dead Letters', snapshot.recentDeadLetters || [], renderDeadLetterItem));
   panel.appendChild(overview);
@@ -249,6 +260,35 @@ function renderActionItem(item) {
   row.addEventListener('click', () => setOutput('details', item));
   row.innerHTML = `<strong>${escapeHtml(item.code)}</strong><span>${escapeHtml(item.message || '')}</span><small>${escapeHtml(item.targetType || 'scope')} ${escapeHtml(item.targetId || '')}</small>`;
   return row;
+}
+
+function renderSloIndicator(item) {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = `summary-row ${healthClass(item.health)}`;
+  row.addEventListener('click', () => setOutput('details', item));
+  row.innerHTML = `<strong>${escapeHtml(item.code)}</strong><span>${escapeHtml(item.metricName || '')}: ${escapeHtml(formatObservedValue(item))}</span><small>${escapeHtml(thresholdText(item))}</small>`;
+  return row;
+}
+
+function formatObservedValue(item) {
+  const value = item.observedValue ?? 0;
+  const unit = item.unit || 'count';
+  return `${value} ${unit}`;
+}
+
+function thresholdText(item) {
+  const parts = [];
+  if (item.warningThreshold !== null && item.warningThreshold !== undefined) {
+    parts.push(`warning ${item.warningThreshold}`);
+  }
+  if (item.criticalThreshold !== null && item.criticalThreshold !== undefined) {
+    parts.push(`critical ${item.criticalThreshold}`);
+  }
+  if (item.actionCode) {
+    parts.push(`action ${item.actionCode}`);
+  }
+  return parts.length ? parts.join(' · ') : (item.message || 'no threshold');
 }
 
 function renderDeadLetterItem(item) {

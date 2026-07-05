@@ -33,6 +33,7 @@ import java.util.Objects;
  * @param deadLetterCount number of dead-letter rows inspected
  * @param recentDeadLetters recent dead-letter samples
  * @param actionItems recommended operations actions
+ * @param sloIndicators stable SLO/metric indicators derived from the same snapshot rules
  */
 public record GraphOperationsSnapshot(
         String tenantId,
@@ -50,7 +51,8 @@ public record GraphOperationsSnapshot(
         int activeDeploymentCount,
         int deadLetterCount,
         List<DeadLetterSample> recentDeadLetters,
-        List<ActionItem> actionItems
+        List<ActionItem> actionItems,
+        List<SloIndicator> sloIndicators
 ) {
     /**
      * Creates a snapshot.
@@ -73,6 +75,7 @@ public record GraphOperationsSnapshot(
         requireNonNegative(deadLetterCount, "deadLetterCount");
         recentDeadLetters = recentDeadLetters == null ? List.of() : List.copyOf(recentDeadLetters);
         actionItems = actionItems == null ? List.of() : List.copyOf(actionItems);
+        sloIndicators = sloIndicators == null ? List.of() : List.copyOf(sloIndicators);
     }
 
     /**
@@ -106,6 +109,44 @@ public record GraphOperationsSnapshot(
             message = message == null ? "" : message;
             targetType = targetType == null ? "" : targetType;
             targetId = targetId == null ? "" : targetId;
+        }
+    }
+
+    /**
+     * Stable operations SLO indicator that can be rendered by the console and
+     * bound to metrics/alerting systems.
+     *
+     * @param code stable indicator code
+     * @param health current health for this indicator
+     * @param metricName metric name that carries the same observed signal
+     * @param observedValue value observed in the snapshot
+     * @param warningThreshold warning threshold, or {@code null} when not applicable
+     * @param criticalThreshold critical threshold, or {@code null} when not applicable
+     * @param unit unit for the observed value
+     * @param message human-readable interpretation
+     * @param actionCode matching action item code, or empty when no action is emitted
+     */
+    public record SloIndicator(
+            String code,
+            Health health,
+            String metricName,
+            double observedValue,
+            Double warningThreshold,
+            Double criticalThreshold,
+            String unit,
+            String message,
+            String actionCode
+    ) {
+        public SloIndicator {
+            code = requireNonBlank(code, "code");
+            health = Objects.requireNonNullElse(health, Health.OK);
+            metricName = requireNonBlank(metricName, "metricName");
+            requireFiniteNonNegative(observedValue, "observedValue");
+            warningThreshold = optionalFiniteNonNegative(warningThreshold, "warningThreshold");
+            criticalThreshold = optionalFiniteNonNegative(criticalThreshold, "criticalThreshold");
+            unit = unit == null || unit.isBlank() ? "count" : unit;
+            message = message == null ? "" : message;
+            actionCode = actionCode == null ? "" : actionCode;
         }
     }
 
@@ -193,6 +234,20 @@ public record GraphOperationsSnapshot(
         if (value < 0) {
             throw new IllegalArgumentException(fieldName + " must be >= 0");
         }
+    }
+
+    private static void requireFiniteNonNegative(double value, String fieldName) {
+        if (!Double.isFinite(value) || value < 0) {
+            throw new IllegalArgumentException(fieldName + " must be finite and >= 0");
+        }
+    }
+
+    private static Double optionalFiniteNonNegative(Double value, String fieldName) {
+        if (value == null) {
+            return null;
+        }
+        requireFiniteNonNegative(value, fieldName);
+        return value;
     }
 
     private static String requireNonBlank(String value, String fieldName) {
