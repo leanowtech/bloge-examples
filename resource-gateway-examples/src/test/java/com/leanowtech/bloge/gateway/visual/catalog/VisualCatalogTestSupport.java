@@ -1,9 +1,9 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
-import com.leanowtech.bloge.gateway.resource.ParameterMapping;
-import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
-import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
-import com.leanowtech.bloge.gateway.resource.ResponseProtocol;
+import com.leanowtech.bloge.gateway.visual.resource.VisualResourceParameterMapping;
+import com.leanowtech.bloge.gateway.visual.resource.VisualResourceDescriptor;
+import com.leanowtech.bloge.gateway.visual.resource.VisualResourceRegistry;
+import com.leanowtech.bloge.gateway.visual.resource.VisualResourceResponseProtocol;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.resource.InMemoryResourceDesignContractRegistry;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
@@ -26,7 +26,7 @@ public final class VisualCatalogTestSupport {
     }
 
     public static DefaultVisualOperatorCatalog catalogWithLoanApplicantResource() {
-        ResourceDescriptor descriptor = loanApplicantDescriptor();
+        VisualResourceDescriptor descriptor = loanApplicantDescriptor();
         ResourceDesignContractRegistry contracts = new InMemoryResourceDesignContractRegistry();
         contracts.upsert(new ResourceDesignContract(
                 "contract:" + RESOURCE_ID,
@@ -90,10 +90,10 @@ public final class VisualCatalogTestSupport {
         );
     }
 
-    public static ResourceRegistry emptyResourceRegistry() {
-        return new ResourceRegistry() {
+    public static VisualResourceRegistry emptyResourceRegistry() {
+        return new VisualResourceRegistry() {
             @Override
-            public ResourceDescriptor resolve(String resourceId) {
+            public VisualResourceDescriptor resolve(String resourceId) {
                 throw new com.leanowtech.bloge.gateway.exception.ResourceNotFoundException(resourceId);
             }
 
@@ -103,7 +103,7 @@ public final class VisualCatalogTestSupport {
             }
 
             @Override
-            public Collection<ResourceDescriptor> all() {
+            public Collection<VisualResourceDescriptor> all() {
                 return List.of();
             }
         };
@@ -2553,23 +2553,23 @@ public final class VisualCatalogTestSupport {
         );
     }
 
-    public static ResourceDescriptor loanApplicantDescriptor() {
-        return new ResourceDescriptor(
+    public static VisualResourceDescriptor loanApplicantDescriptor() {
+        return new VisualResourceDescriptor(
                 RESOURCE_ID,
                 "https://example.test/api/loan-applicants/{applicantId}",
                 "GET",
                 Map.of("Accept", "application/json"),
                 null,
                 Duration.ofSeconds(3),
-                new ParameterMapping(Map.of("applicantId", "ctx.params.applicantId"), Map.of(), null),
-                new ResponseProtocol.HttpStatus(),
+                new VisualResourceParameterMapping(Map.of("applicantId", "ctx.params.applicantId"), Map.of(), null),
+                new VisualResourceResponseProtocol.HttpStatus(),
                 "data"
         );
     }
 
-    private record SingleResourceRegistry(ResourceDescriptor descriptor) implements ResourceRegistry {
+    private record SingleResourceRegistry(VisualResourceDescriptor descriptor) implements VisualResourceRegistry {
         @Override
-        public ResourceDescriptor resolve(String resourceId) {
+        public VisualResourceDescriptor resolve(String resourceId) {
             if (descriptor.resourceId().equals(resourceId)) {
                 return descriptor;
             }
@@ -2582,7 +2582,7 @@ public final class VisualCatalogTestSupport {
         }
 
         @Override
-        public Collection<ResourceDescriptor> all() {
+        public Collection<VisualResourceDescriptor> all() {
             return List.of(descriptor);
         }
     }

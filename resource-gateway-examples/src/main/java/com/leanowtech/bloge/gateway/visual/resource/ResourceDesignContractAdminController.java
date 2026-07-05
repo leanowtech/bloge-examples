@@ -1,7 +1,5 @@
 package com.leanowtech.bloge.gateway.visual.resource;
 
-import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
-import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinitionChangeSummary;
 import com.leanowtech.bloge.gateway.visual.catalog.ResourceVirtualOperatorProjector;
@@ -46,7 +44,7 @@ public class ResourceDesignContractAdminController {
     private final OpenApiResourceDesignContractImporter openApiImporter;
     private final GraphDraftRepository draftRepository;
     private final VisualGraphPublicationRepository publicationRepository;
-    private final ResourceRegistry resourceRegistry;
+    private final VisualResourceRegistry resourceRegistry;
     private final ResourceVirtualOperatorProjector projector;
 
     /**
@@ -54,7 +52,7 @@ public class ResourceDesignContractAdminController {
      * @param validator contract validator
      * @param draftRepository stored visual graph draft repository
      * @param publicationRepository immutable visual graph publication repository
-     * @param resourceRegistry resource descriptor registry
+     * @param resourceRegistry visual resource descriptor registry
      * @param projector resource virtual operator projector
      */
     public ResourceDesignContractAdminController(ResourceDesignContractRegistry registry,
@@ -62,7 +60,7 @@ public class ResourceDesignContractAdminController {
                                                  OpenApiResourceDesignContractImporter openApiImporter,
                                                  GraphDraftRepository draftRepository,
                                                  VisualGraphPublicationRepository publicationRepository,
-                                                 ResourceRegistry resourceRegistry,
+                                                 VisualResourceRegistry resourceRegistry,
                                                  ResourceVirtualOperatorProjector projector) {
         this.registry = registry;
         this.validator = validator;
@@ -145,7 +143,7 @@ public class ResourceDesignContractAdminController {
     }
 
     private List<VisualDiagnostic> openApiReplacementDiffDiagnostics(ResourceDesignContract candidate,
-                                                                     ResourceDescriptor descriptorSuggestion) {
+                                                                     VisualResourceDescriptor descriptorSuggestion) {
         List<VisualDiagnostic> diagnostics = new ArrayList<>();
         registry.findByResourceId(candidate.resourceId())
                 .ifPresent(existing -> addContractDiffDiagnostics(existing, candidate, diagnostics));
@@ -182,8 +180,8 @@ public class ResourceDesignContractAdminController {
         }
     }
 
-    private void addDescriptorDiffDiagnostics(ResourceDescriptor existing,
-                                              ResourceDescriptor candidate,
+    private void addDescriptorDiffDiagnostics(VisualResourceDescriptor existing,
+                                              VisualResourceDescriptor candidate,
                                               List<VisualDiagnostic> diagnostics) {
         List<String> changed = new ArrayList<>();
         addChanged(changed, "urlTemplate", existing.urlTemplate(), candidate.urlTemplate());
@@ -467,7 +465,7 @@ public class ResourceDesignContractAdminController {
             return List.of();
         }
 
-        ResourceDescriptor descriptor = resourceRegistry.resolve(replacement.resourceId());
+        VisualResourceDescriptor descriptor = resourceRegistry.resolve(replacement.resourceId());
         OperatorDefinition previousOperator = projector.project(descriptor, existing);
         OperatorDefinition replacementOperator = projector.project(descriptor, Optional.of(replacement));
         if (previousOperator.fingerprint().equals(replacementOperator.fingerprint())) {

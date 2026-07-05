@@ -1,7 +1,5 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
-import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
-import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.visual.asset.InMemoryVisualRuntimeBindingImplementationRepository;
 import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingImplementationBinding;
 import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingImplementationRepository;
@@ -12,6 +10,8 @@ import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegistry;
+import com.leanowtech.bloge.gateway.visual.resource.VisualResourceDescriptor;
+import com.leanowtech.bloge.gateway.visual.resource.VisualResourceRegistry;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegration;
@@ -37,7 +37,7 @@ import java.util.Optional;
 @Service
 public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
 
-    private final ResourceRegistry resourceRegistry;
+    private final VisualResourceRegistry resourceRegistry;
     private final ResourceDesignContractRegistry contractRegistry;
     private final ResourceVirtualOperatorProjector projector;
     private final OperatorLibraryRegistry libraryRegistry;
@@ -49,12 +49,12 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
     private final VisualExecutableLoweringIntegrationRepository executableLoweringIntegrationRepository;
 
     /**
-     * @param resourceRegistry resource descriptor registry
+     * @param resourceRegistry visual resource descriptor registry
      * @param contractRegistry visual design contract registry
      * @param projector resource operator projector
      */
     @Autowired
-    public DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
+    public DefaultVisualOperatorCatalog(VisualResourceRegistry resourceRegistry,
                                         ResourceDesignContractRegistry contractRegistry,
                                         ResourceVirtualOperatorProjector projector,
                                         OperatorLibraryRegistry libraryRegistry,
@@ -89,7 +89,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                 : executableLoweringIntegrationRepository;
     }
 
-    public DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
+    public DefaultVisualOperatorCatalog(VisualResourceRegistry resourceRegistry,
                                         ResourceDesignContractRegistry contractRegistry,
                                         ResourceVirtualOperatorProjector projector,
                                         OperatorLibraryRegistry libraryRegistry,
@@ -103,7 +103,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                 runtimeAdapterActivationRepository, new InMemoryVisualExecutableLoweringIntegrationRepository());
     }
 
-    public DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
+    public DefaultVisualOperatorCatalog(VisualResourceRegistry resourceRegistry,
                                         ResourceDesignContractRegistry contractRegistry,
                                         ResourceVirtualOperatorProjector projector,
                                         OperatorLibraryRegistry libraryRegistry,
@@ -116,7 +116,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                 new InMemoryVisualRuntimeAdapterActivationRepository());
     }
 
-    public DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
+    public DefaultVisualOperatorCatalog(VisualResourceRegistry resourceRegistry,
                                         ResourceDesignContractRegistry contractRegistry,
                                         ResourceVirtualOperatorProjector projector,
                                         OperatorLibraryRegistry libraryRegistry,
@@ -127,7 +127,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                 publicationRepository, publicationProjector, new InMemoryVisualRuntimeBindingImplementationRepository());
     }
 
-    DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
+    DefaultVisualOperatorCatalog(VisualResourceRegistry resourceRegistry,
                                  ResourceDesignContractRegistry contractRegistry,
                                  ResourceVirtualOperatorProjector projector) {
         this(resourceRegistry, contractRegistry, projector, OperatorLibraryRegistry.empty(),
@@ -135,7 +135,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                 new VisualGraphPublicationOperatorProjector());
     }
 
-    DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
+    DefaultVisualOperatorCatalog(VisualResourceRegistry resourceRegistry,
                                  ResourceDesignContractRegistry contractRegistry,
                                  ResourceVirtualOperatorProjector projector,
                                  OperatorLibraryRegistry libraryRegistry) {
@@ -143,7 +143,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                 new InMemoryVisualGraphPublicationRepository(), new VisualGraphPublicationOperatorProjector());
     }
 
-    public DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
+    public DefaultVisualOperatorCatalog(VisualResourceRegistry resourceRegistry,
                                         ResourceDesignContractRegistry contractRegistry,
                                         ResourceVirtualOperatorProjector projector,
                                         OperatorLibraryRegistry libraryRegistry,
@@ -166,7 +166,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                 }
             }
         }
-        for (ResourceDescriptor descriptor : resourceRegistry.all()) {
+        for (VisualResourceDescriptor descriptor : resourceRegistry.all()) {
             Optional<ResourceDesignContract> contract = contractRegistry.findByResourceId(descriptor.resourceId());
             if (contract.isPresent() && !contract.get().visibleInCatalog(effectiveQuery.includeDeprecated())) {
                 continue;

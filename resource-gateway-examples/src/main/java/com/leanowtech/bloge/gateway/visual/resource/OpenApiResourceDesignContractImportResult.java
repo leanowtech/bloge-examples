@@ -1,6 +1,5 @@
 package com.leanowtech.bloge.gateway.visual.resource;
 
-import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 /**
@@ -13,7 +12,7 @@ import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 public record OpenApiResourceDesignContractImportResult(
         ResourceDesignContract contract,
         ResourceDesignContractValidationResult validation,
-        ResourceDescriptor descriptorSuggestion
+        VisualResourceDescriptor descriptorSuggestion
 ) {
     /**
      * Backward-compatible constructor for callers that only project a design contract.
@@ -28,7 +27,7 @@ public record OpenApiResourceDesignContractImportResult(
      */
     public OpenApiResourceDesignContractImportResult(ResourceDesignContract contract,
                                                     VisualValidationResult validation,
-                                                    ResourceDescriptor descriptorSuggestion) {
+                                                    VisualResourceDescriptor descriptorSuggestion) {
         this(contract, ResourceDesignContractValidationResult.from(validation), descriptorSuggestion);
     }
 }

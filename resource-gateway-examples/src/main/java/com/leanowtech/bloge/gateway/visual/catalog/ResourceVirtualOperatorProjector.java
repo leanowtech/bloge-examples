@@ -1,9 +1,9 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
-import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
+import com.leanowtech.bloge.gateway.visual.resource.VisualResourceDescriptor;
 
 import org.springframework.stereotype.Component;
 
@@ -22,11 +22,11 @@ public class ResourceVirtualOperatorProjector {
     /**
      * Creates a virtual operator for one resource descriptor.
      *
-     * @param descriptor resource descriptor
+     * @param descriptor visual resource descriptor
      * @param contract optional visual contract
      * @return operator definition
      */
-    public OperatorDefinition project(ResourceDescriptor descriptor,
+    public OperatorDefinition project(VisualResourceDescriptor descriptor,
                                       Optional<ResourceDesignContract> contract) {
         ResourceDesignContract design = contract.orElse(null);
         List<VisualDiagnostic> diagnostics = new ArrayList<>();

@@ -12,11 +12,11 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Architecture guard for the visual runtime DSL execution seam.
+ * Architecture guard for the generic visual package boundary.
  *
- * <p>Decision D18 keeps gateway-specific execution behind adapters. Runtime and simulation services
- * may depend on visual-owned ports, but not on resource-gateway showcase, resource, or operator
- * implementation packages.</p>
+ * <p>Decision D18 keeps gateway-specific execution and resource descriptor types behind adapters.
+ * Visual services may depend on visual-owned ports, but not on resource-gateway showcase,
+ * resource, or operator implementation packages.</p>
  */
 class VisualRuntimeBoundaryTest {
 
@@ -24,10 +24,8 @@ class VisualRuntimeBoundaryTest {
             Pattern.compile("^import com\\.leanowtech\\.bloge\\.gateway\\.(?!visual\\.).*;");
 
     @Test
-    void runtimeAndSimulationPackagesDoNotImportGatewayImplementationTypes() throws IOException {
-        assertThat(forbiddenImportsUnder("src/main/java/com/leanowtech/bloge/gateway/visual/runtime"))
-                .isEmpty();
-        assertThat(forbiddenImportsUnder("src/main/java/com/leanowtech/bloge/gateway/visual/simulation"))
+    void visualPackageDoesNotImportGatewayImplementationTypes() throws IOException {
+        assertThat(forbiddenImportsUnder("src/main/java/com/leanowtech/bloge/gateway/visual"))
                 .isEmpty();
     }
 

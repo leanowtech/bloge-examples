@@ -2,10 +2,6 @@ package com.leanowtech.bloge.gateway.visual.resource;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.exception.ResourceNotFoundException;
-import com.leanowtech.bloge.gateway.resource.ParameterMapping;
-import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
-import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
-import com.leanowtech.bloge.gateway.resource.ResponseProtocol;
 import com.leanowtech.bloge.gateway.visual.catalog.ResourceVirtualOperatorProjector;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
@@ -44,7 +40,7 @@ class ResourceDesignContractAdminControllerTest {
     private InMemoryVisualGraphPublicationRepository publications;
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
-    private ResourceDescriptor descriptor;
+    private VisualResourceDescriptor descriptor;
     private ResourceVirtualOperatorProjector projector;
 
     @BeforeEach
@@ -970,16 +966,16 @@ class ResourceDesignContractAdminControllerTest {
                 .withIdentity("pub-1", null);
     }
 
-    private static ResourceDescriptor orderDescriptor() {
-        return new ResourceDescriptor(
+    private static VisualResourceDescriptor orderDescriptor() {
+        return new VisualResourceDescriptor(
                 "order-service.listOrders",
                 "http://test-host:1234/api/orders",
                 "GET",
                 Map.of(),
                 null,
                 Duration.ofSeconds(3),
-                ParameterMapping.empty(),
-                new ResponseProtocol.HttpStatus(),
+                VisualResourceParameterMapping.empty(),
+                new VisualResourceResponseProtocol.HttpStatus(),
                 "data"
         );
     }
@@ -1114,10 +1110,10 @@ class ResourceDesignContractAdminControllerTest {
                 """;
     }
 
-    private static ResourceRegistry resourceRegistry(ResourceDescriptor descriptor) {
-        return new ResourceRegistry() {
+    private static VisualResourceRegistry resourceRegistry(VisualResourceDescriptor descriptor) {
+        return new VisualResourceRegistry() {
             @Override
-            public ResourceDescriptor resolve(String resourceId) {
+            public VisualResourceDescriptor resolve(String resourceId) {
                 if (descriptor.resourceId().equals(resourceId)) {
                     return descriptor;
                 }
@@ -1130,7 +1126,7 @@ class ResourceDesignContractAdminControllerTest {
             }
 
             @Override
-            public Collection<ResourceDescriptor> all() {
+            public Collection<VisualResourceDescriptor> all() {
                 return List.of(descriptor);
             }
         };

@@ -1933,6 +1933,8 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 
 | Type | Role |
 |------|------|
+| `VisualResourceDescriptor` | Visual-owned resource descriptor surface used by catalog projection and OpenAPI previews without importing gateway runtime resource types |
+| `VisualResourceRegistry` | Visual-owned port for resource descriptors; resource-gateway registries are exposed through an adapter outside `gateway.visual` |
 | `ResourceDesignContract` | Schema contract that turns a resource descriptor into a canvas-ready operator |
 | `DatabaseResourceDesignContractRegistry` | H2-backed visual resource contract registry, so resource-backed operator schemas survive restart |
 | `ResourceDesignContractValidator` | Blocks invalid resource authoring schemas and raw secret examples before resource contracts enter the virtual operator catalog |

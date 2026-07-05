@@ -1,7 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
-import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
-import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.visual.resource.VisualResourceDescriptor;
+import com.leanowtech.bloge.gateway.visual.resource.VisualResourceRegistry;
 import com.leanowtech.bloge.gateway.visual.asset.InMemoryVisualRuntimeBindingImplementationRepository;
 import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingHandoffBundle;
 import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingImplementationBinding;
@@ -1304,7 +1304,7 @@ class DefaultVisualOperatorCatalogTest {
     }
 
     private static DefaultVisualOperatorCatalog catalogWithResourceContractStatus(String status) {
-        ResourceDescriptor descriptor = VisualCatalogTestSupport.loanApplicantDescriptor();
+        VisualResourceDescriptor descriptor = VisualCatalogTestSupport.loanApplicantDescriptor();
         InMemoryResourceDesignContractRegistry contracts = new InMemoryResourceDesignContractRegistry();
         contracts.upsert(new ResourceDesignContract(
                 "contract:" + VisualCatalogTestSupport.RESOURCE_ID,
@@ -1593,9 +1593,9 @@ class DefaultVisualOperatorCatalogTest {
         }
     }
 
-    private record SingleResourceRegistry(ResourceDescriptor descriptor) implements ResourceRegistry {
+    private record SingleResourceRegistry(VisualResourceDescriptor descriptor) implements VisualResourceRegistry {
         @Override
-        public ResourceDescriptor resolve(String resourceId) {
+        public VisualResourceDescriptor resolve(String resourceId) {
             if (descriptor.resourceId().equals(resourceId)) {
                 return descriptor;
             }
@@ -1608,7 +1608,7 @@ class DefaultVisualOperatorCatalogTest {
         }
 
         @Override
-        public Collection<ResourceDescriptor> all() {
+        public Collection<VisualResourceDescriptor> all() {
             return List.of(descriptor);
         }
     }

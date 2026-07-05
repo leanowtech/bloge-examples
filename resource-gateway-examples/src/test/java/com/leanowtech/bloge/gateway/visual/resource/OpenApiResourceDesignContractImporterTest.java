@@ -1,8 +1,5 @@
 package com.leanowtech.bloge.gateway.visual.resource;
 
-import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
-import com.leanowtech.bloge.operators.http.HttpRequestInput;
-
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,7 +31,7 @@ class OpenApiResourceDesignContractImporterTest {
         assertThat(contract.requestSchema().required()).containsExactly("userId");
         assertThat(contract.requestSchema().properties()).containsKey("userId");
         assertThat(validator.validate(contract).valid()).isTrue();
-        ResourceDescriptor descriptor = result.descriptorSuggestion();
+        VisualResourceDescriptor descriptor = result.descriptorSuggestion();
         assertThat(descriptor).isNotNull();
         assertThat(descriptor.resourceId()).isEqualTo("order-service.listOrders");
         assertThat(descriptor.urlTemplate()).isEqualTo("https://api.example.test/v1/orders");
@@ -206,7 +203,7 @@ class OpenApiResourceDesignContractImporterTest {
         );
 
         assertThat(result.validation().valid()).isTrue();
-        ResourceDescriptor descriptor = result.descriptorSuggestion();
+        VisualResourceDescriptor descriptor = result.descriptorSuggestion();
         assertThat(descriptor).isNotNull();
         assertThat(descriptor.urlTemplate()).isEqualTo("https://orders.example.test/orders/{orderId}");
         assertThat(descriptor.method()).isEqualTo("PUT");
@@ -380,7 +377,7 @@ class OpenApiResourceDesignContractImporterTest {
 
         assertThat(result.validation().valid()).isTrue();
         assertThat(result.descriptorSuggestion().authStrategy())
-                .isEqualTo(new HttpRequestInput.BearerAuth("CHANGE_ME_BEARER_TOKEN"));
+                .isEqualTo(new VisualResourceAuth.Bearer("CHANGE_ME_BEARER_TOKEN"));
         assertThat(result.validation().diagnostics())
                 .extracting("code")
                 .contains("visual.resourceContract.openapi.authPlaceholder");
@@ -403,7 +400,7 @@ class OpenApiResourceDesignContractImporterTest {
 
         assertThat(result.validation().valid()).isTrue();
         assertThat(result.descriptorSuggestion().authStrategy())
-                .isEqualTo(new HttpRequestInput.ApiKeyAuth("X-Api-Key", "CHANGE_ME_API_KEY"));
+                .isEqualTo(new VisualResourceAuth.ApiKey("X-Api-Key", "CHANGE_ME_API_KEY"));
         assertThat(result.validation().diagnostics())
                 .extracting("code")
                 .contains("visual.resourceContract.openapi.authPlaceholder");
@@ -431,7 +428,7 @@ class OpenApiResourceDesignContractImporterTest {
 
         assertThat(result.validation().valid()).isTrue();
         assertThat(result.descriptorSuggestion().authStrategy())
-                .isEqualTo(new HttpRequestInput.BasicAuth("CHANGE_ME_USERNAME", "CHANGE_ME_PASSWORD"));
+                .isEqualTo(new VisualResourceAuth.Basic("CHANGE_ME_USERNAME", "CHANGE_ME_PASSWORD"));
     }
 
     @Test

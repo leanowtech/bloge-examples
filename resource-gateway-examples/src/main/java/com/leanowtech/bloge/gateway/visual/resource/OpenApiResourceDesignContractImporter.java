@@ -4,13 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
-import com.leanowtech.bloge.gateway.resource.ParameterMapping;
-import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
-import com.leanowtech.bloge.gateway.resource.ResponseProtocol;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
-import com.leanowtech.bloge.operators.http.HttpRequestInput;
 
 import org.springframework.stereotype.Service;
 
@@ -114,7 +110,7 @@ public class OpenApiResourceDesignContractImporter {
                 examples(operation),
                 request.status()
         );
-        ResourceDescriptor descriptorSuggestion = descriptorSuggestion(openApi, operation,
+        VisualResourceDescriptor descriptorSuggestion = descriptorSuggestion(openApi, operation,
                 request.resourceId(), diagnostics);
         return result(contract, descriptorSuggestion, diagnostics);
     }
@@ -974,10 +970,10 @@ public class OpenApiResourceDesignContractImporter {
         return examples;
     }
 
-    private ResourceDescriptor descriptorSuggestion(Map<String, Object> openApi,
-                                                    SelectedOperation selected,
-                                                    String resourceId,
-                                                    List<VisualDiagnostic> diagnostics) {
+    private VisualResourceDescriptor descriptorSuggestion(Map<String, Object> openApi,
+                                                          SelectedOperation selected,
+                                                          String resourceId,
+                                                          List<VisualDiagnostic> diagnostics) {
         Map<String, String> pathExpressions = new LinkedHashMap<>();
         Map<String, String> queryExpressions = new LinkedHashMap<>();
         Map<String, String> headerExpressions = new LinkedHashMap<>();
@@ -1003,16 +999,16 @@ public class OpenApiResourceDesignContractImporter {
             headers.put("Content-Type", requestMediaType.get());
         }
 
-        return new ResourceDescriptor(
+        return new VisualResourceDescriptor(
                 resourceId,
                 joinUrl(serverUrl(openApi, selected, diagnostics), selected.path()),
                 selected.method(),
                 headers,
                 authStrategySuggestion(openApi, selected, diagnostics),
                 Duration.ofSeconds(30),
-                new ParameterMapping(pathExpressions, queryExpressions, headerExpressions, cookieExpressions,
-                        hasBody ? "ctx.params.body" : null),
-                new ResponseProtocol.HttpStatus(),
+                new VisualResourceParameterMapping(pathExpressions, queryExpressions, headerExpressions,
+                        cookieExpressions, hasBody ? "ctx.params.body" : null),
+                new VisualResourceResponseProtocol.HttpStatus(),
                 null
         );
     }
@@ -1127,9 +1123,9 @@ public class OpenApiResourceDesignContractImporter {
         return objectMap(content).keySet().stream().sorted().toList();
     }
 
-    private HttpRequestInput.HttpAuth authStrategySuggestion(Map<String, Object> openApi,
-                                                             SelectedOperation selected,
-                                                             List<VisualDiagnostic> diagnostics) {
+    private VisualResourceAuth authStrategySuggestion(Map<String, Object> openApi,
+                                                      SelectedOperation selected,
+                                                      List<VisualDiagnostic> diagnostics) {
         SecurityRequirements security = selectedSecurityRequirements(openApi, selected);
         if (security.rawSecurity() == null) {
             return null;
@@ -1173,7 +1169,7 @@ public class OpenApiResourceDesignContractImporter {
             if (scheme.isEmpty()) {
                 continue;
             }
-            Optional<HttpRequestInput.HttpAuth> auth = toAuthStrategy(scheme.get(), diagnostics);
+            Optional<VisualResourceAuth> auth = toAuthStrategy(scheme.get(), diagnostics);
             if (auth.isPresent()) {
                 return auth.get();
             }
@@ -1250,8 +1246,8 @@ public class OpenApiResourceDesignContractImporter {
         return Optional.of(new OpenApiSecurityScheme(schemeName, scheme, schemeTarget));
     }
 
-    private Optional<HttpRequestInput.HttpAuth> toAuthStrategy(OpenApiSecurityScheme scheme,
-                                                              List<VisualDiagnostic> diagnostics) {
+    private Optional<VisualResourceAuth> toAuthStrategy(OpenApiSecurityScheme scheme,
+                                                       List<VisualDiagnostic> diagnostics) {
         String type = string(scheme.scheme().get("type")).toLowerCase(Locale.ROOT);
         if ("http".equals(type)) {
             return httpAuthStrategy(scheme, diagnostics);
@@ -1278,16 +1274,16 @@ public class OpenApiResourceDesignContractImporter {
         return Optional.empty();
     }
 
-    private Optional<HttpRequestInput.HttpAuth> httpAuthStrategy(OpenApiSecurityScheme scheme,
-                                                                 List<VisualDiagnostic> diagnostics) {
+    private Optional<VisualResourceAuth> httpAuthStrategy(OpenApiSecurityScheme scheme,
+                                                          List<VisualDiagnostic> diagnostics) {
         String httpScheme = string(scheme.scheme().get("scheme")).toLowerCase(Locale.ROOT);
         if ("bearer".equals(httpScheme)) {
             warnAuthPlaceholder(scheme, diagnostics);
-            return Optional.of(new HttpRequestInput.BearerAuth(BEARER_TOKEN_PLACEHOLDER));
+            return Optional.of(new VisualResourceAuth.Bearer(BEARER_TOKEN_PLACEHOLDER));
         }
         if ("basic".equals(httpScheme)) {
             warnAuthPlaceholder(scheme, diagnostics);
-            return Optional.of(new HttpRequestInput.BasicAuth(
+            return Optional.of(new VisualResourceAuth.Basic(
                     BASIC_USERNAME_PLACEHOLDER,
                     BASIC_PASSWORD_PLACEHOLDER
             ));
@@ -1299,13 +1295,13 @@ public class OpenApiResourceDesignContractImporter {
         return Optional.empty();
     }
 
-    private Optional<HttpRequestInput.HttpAuth> apiKeyAuthStrategy(OpenApiSecurityScheme scheme,
-                                                                   List<VisualDiagnostic> diagnostics) {
+    private Optional<VisualResourceAuth> apiKeyAuthStrategy(OpenApiSecurityScheme scheme,
+                                                            List<VisualDiagnostic> diagnostics) {
         String location = string(scheme.scheme().get("in")).toLowerCase(Locale.ROOT);
         String headerName = string(scheme.scheme().get("name"));
         if ("header".equals(location) && !headerName.isBlank()) {
             warnAuthPlaceholder(scheme, diagnostics);
-            return Optional.of(new HttpRequestInput.ApiKeyAuth(headerName, API_KEY_PLACEHOLDER));
+            return Optional.of(new VisualResourceAuth.ApiKey(headerName, API_KEY_PLACEHOLDER));
         }
         diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.securitySchemeUnsupported",
                 "OpenAPI apiKey security scheme '%s' uses location '%s'; ResourceDescriptor authStrategy supports header api keys."
@@ -1467,7 +1463,7 @@ public class OpenApiResourceDesignContractImporter {
     }
 
     private OpenApiResourceDesignContractImportResult result(ResourceDesignContract contract,
-                                                            ResourceDescriptor descriptorSuggestion,
+                                                            VisualResourceDescriptor descriptorSuggestion,
                                                             List<VisualDiagnostic> diagnostics) {
         return new OpenApiResourceDesignContractImportResult(
                 contract,
