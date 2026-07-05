@@ -61,6 +61,7 @@ import {
   summarizeOperator,
   toConnectionCandidatesRequest,
   toConnectionCheckRequest,
+  toExportableGraphDraft,
   toSimulationRequest,
 } from './draftModel';
 import type { OperatorDefinition, SimulationResponse, VisualDiagnostic } from './types';
@@ -351,6 +352,24 @@ export default function AuthorCanvas() {
   const runSummary = useMemo(
     () => simulationRunSummary(canvasSummary, fixtureRows, result),
     [canvasSummary, fixtureRows, result],
+  );
+  const exportableDraft = useMemo(
+    () => toExportableGraphDraft(
+      'visualGraph',
+      canvasNodes,
+      canvasEdges,
+      outputNodeId,
+      fixtureCompilation.fixtures,
+    ),
+    [canvasEdges, canvasNodes, fixtureCompilation.fixtures, outputNodeId],
+  );
+  const draftExportJson = useMemo(
+    () => JSON.stringify(exportableDraft, null, 2),
+    [exportableDraft],
+  );
+  const draftExportUrl = useMemo(
+    () => `data:application/json;charset=utf-8,${encodeURIComponent(draftExportJson)}`,
+    [draftExportJson],
   );
   const journey = useMemo(
     () => authoringJourney(operators.length, canvasSummary, fixtureRows, result),
@@ -1008,6 +1027,20 @@ export default function AuthorCanvas() {
           <button className="secondary" onClick={autoLayout} disabled={nodes.length < 2}>
             Auto Layout
           </button>
+          <a
+            className={`toolbar-link ${nodes.length === 0 || hasFixtureErrors ? 'disabled' : ''}`}
+            data-testid="author-draft-export"
+            href={draftExportUrl}
+            download="visualGraph-draft.json"
+            aria-disabled={nodes.length === 0 || hasFixtureErrors}
+            onClick={(event) => {
+              if (nodes.length === 0 || hasFixtureErrors) {
+                event.preventDefault();
+              }
+            }}
+          >
+            Export Draft
+          </a>
           {result && (
             <span className={isRunSuccessful(result) ? 'status ok' : 'status fail'}>
               {isRunSuccessful(result) ? 'Success' : 'Blocked'}

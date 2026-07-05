@@ -29,6 +29,7 @@ import {
   summarizeOperator,
   toConnectionCandidatesRequest,
   toConnectionCheckRequest,
+  toExportableGraphDraft,
   toGraphDraft,
   toSimulationRequest,
 } from './draftModel';
@@ -136,6 +137,39 @@ describe('toSimulationRequest', () => {
     expect(request.outputNode).toBe('b');
     expect(request.draft.output.nodeId).toBe('b');
     expect(request).not.toHaveProperty('fixtures');
+  });
+});
+
+describe('toExportableGraphDraft', () => {
+  it('emits a portable graph draft snapshot with node fixtures', () => {
+    const draft = toExportableGraphDraft(
+      'visualGraph',
+      [{ id: 'n1', operatorRef: 'risk:eligibility', label: 'Eligibility', position: { x: 10, y: 20 } }],
+      [],
+      'n1',
+      { n1: { output: { eligible: true }, expectedInput: { score: 720 } } },
+    );
+
+    expect(draft).toMatchObject({
+      schemaVersion: 'bloge.visualGraphDraft.v1',
+      graphName: 'visualGraph',
+      nodes: [{ id: 'n1', operatorRef: 'risk:eligibility', label: 'Eligibility' }],
+      output: { nodeId: 'n1', path: '' },
+      nodeFixtures: {
+        n1: { output: { eligible: true }, expectedInput: { score: 720 } },
+      },
+    });
+  });
+
+  it('omits nodeFixtures when no fixture was authored', () => {
+    const draft = toExportableGraphDraft(
+      'visualGraph',
+      [{ id: 'n1', operatorRef: 'risk:eligibility', position: { x: 10, y: 20 } }],
+      [],
+      'n1',
+    );
+
+    expect(draft).not.toHaveProperty('nodeFixtures');
   });
 });
 

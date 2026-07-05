@@ -18,6 +18,8 @@ import type {
   VisualDiagnostic,
 } from './types';
 
+const GRAPH_DRAFT_SCHEMA_VERSION = 'bloge.visualGraphDraft.v1';
+
 /**
  * The minimal shape of a canvas node needed to build a draft. Decouples the pure draft-building logic
  * from React Flow's node type so it can be unit-tested without a DOM.
@@ -282,6 +284,27 @@ export function toGraphDraft(
     nodes: draftNodes,
     edges: draftEdges,
     output: { nodeId: resolvedOutputNode, path: '' },
+  };
+}
+
+/**
+ * Builds a portable draft snapshot for the Author canvas export control.
+ *
+ * <p>Simulation fixtures are intentionally stored as {@code nodeFixtures}, matching the backend
+ * GraphDraft contract, instead of the simulate request's transient {@code fixtures} envelope.</p>
+ */
+export function toExportableGraphDraft(
+  graphName: string,
+  nodes: CanvasNode[],
+  edges: CanvasEdge[],
+  outputNodeId: string,
+  nodeFixtures: Record<string, NodeFixture> = {},
+): GraphDraft {
+  const draft = toGraphDraft(graphName, nodes, edges, outputNodeId);
+  return {
+    schemaVersion: GRAPH_DRAFT_SCHEMA_VERSION,
+    ...draft,
+    ...(Object.keys(nodeFixtures).length > 0 ? { nodeFixtures } : {}),
   };
 }
 

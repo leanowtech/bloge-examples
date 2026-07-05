@@ -43,6 +43,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -146,6 +148,17 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.cssSelector(".toolbar"), "1 nodes");
         waitForText(wait, By.cssSelector(".toolbar"), "Output n1");
         waitForText(wait, By.cssSelector("[data-testid^='canvas-node:']"), operatorRef);
+        WebElement exportLink = wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='author-draft-export']")
+        ));
+        assertThat(exportLink.getAttribute("download")).isEqualTo("visualGraph-draft.json");
+        String exportedDraftJson = URLDecoder.decode(
+                exportLink.getAttribute("href").replace("data:application/json;charset=utf-8,", ""),
+                StandardCharsets.UTF_8);
+        assertThat(exportedDraftJson)
+                .contains("\"schemaVersion\": \"bloge.visualGraphDraft.v1\"")
+                .contains("\"operatorRef\": \"" + operatorRef + "\"")
+                .contains("\"nodeId\": \"n1\"");
 
         WebElement flow = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='author-flow']")

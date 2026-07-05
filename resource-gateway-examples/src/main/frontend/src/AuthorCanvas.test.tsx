@@ -391,6 +391,38 @@ describe('AuthorCanvas simulation summary', () => {
     expect(query('[data-testid="simulation-run-summary:trust"]').textContent).toContain('0 real / 1 mocked');
     expect(query('[data-testid="simulation-run-summary:diagnostics"]').textContent).toContain('0 diagnostics');
   });
+
+  it('exports the current authoring draft with node fixtures', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:eligibility"]').textContent).toContain('Eligibility'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:eligibility"]'));
+
+    const exportLink = query<HTMLAnchorElement>('[data-testid="author-draft-export"]');
+    expect(exportLink.getAttribute('aria-disabled')).toBe('false');
+    expect(authorDraftExport(exportLink)).toMatchObject({
+      schemaVersion: 'bloge.visualGraphDraft.v1',
+      graphName: 'visualGraph',
+      nodes: [{ id: 'n1', operatorRef: 'risk:eligibility', label: 'Eligibility' }],
+      output: { nodeId: 'n1', path: '' },
+    });
+
+    const useSample = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Use Sample');
+    expect(useSample).toBeDefined();
+    await click(useSample as HTMLButtonElement);
+
+    await waitFor(() =>
+      expect(authorDraftExport(exportLink).nodeFixtures).toEqual({
+        n1: { output: { eligible: false } },
+      }),
+    );
+  });
 });
 
 const sampleLibraryYaml = [
@@ -538,6 +570,14 @@ function query<TElement extends Element = Element>(selector: string): TElement {
   const element = document.querySelector<TElement>(selector);
   expect(element, `Expected selector ${selector}`).not.toBeNull();
   return element as TElement;
+}
+
+function authorDraftExport(link: HTMLAnchorElement): any {
+  const prefix = 'data:application/json;charset=utf-8,';
+  if (!link.href.startsWith(prefix)) {
+    throw new Error(`Unexpected export URL: ${link.href}`);
+  }
+  return JSON.parse(decodeURIComponent(link.href.slice(prefix.length)));
 }
 
 async function click(element: HTMLElement): Promise<void> {

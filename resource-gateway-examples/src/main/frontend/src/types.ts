@@ -87,11 +87,13 @@ export interface DraftEdge {
   condition?: string;
 }
 
-/** A visual graph draft (bloge.visualGraphDraft.v1) — the subset the authoring app sends. */
+/** A visual graph draft (bloge.visualGraphDraft.v1) — the subset the authoring app sends or exports. */
 export interface GraphDraft {
+  schemaVersion?: string;
   graphName: string;
   nodes: DraftNode[];
   edges: DraftEdge[];
+  nodeFixtures?: Record<string, NodeFixture>;
   output: { nodeId: string; path?: string };
 }
 
