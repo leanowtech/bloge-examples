@@ -12,6 +12,7 @@ import com.leanowtech.bloge.graphengine.model.GraphPendingSignal;
 import com.leanowtech.bloge.graphengine.model.PagedResult;
 import com.leanowtech.bloge.graphengine.model.GraphDeployment;
 import com.leanowtech.bloge.graphengine.model.GraphAuditEntry;
+import com.leanowtech.bloge.graphengine.model.GraphControlActionEntry;
 import com.leanowtech.bloge.graphengine.model.GraphInstance;
 import com.leanowtech.bloge.graphengine.model.GraphRemoteWorkerJob;
 import com.leanowtech.bloge.graphengine.model.GraphRemoteWorkerRegistration;
@@ -294,6 +295,18 @@ public interface GraphEngineService {
      * @return immutable page of audit events
      */
     List<GraphAuditEntry> queryInstanceAuditLog(String instanceId, int page, int size);
+
+    /**
+     * Queries control-plane action audit events for one instance as a structured timeline.
+     *
+     * @param instanceId instance identifier
+     * @param page zero-based page index
+     * @param size requested page size
+     * @return immutable page of structured control action events
+     */
+    default List<GraphControlActionEntry> queryInstanceControlActions(String instanceId, int page, int size) {
+        throw new UnsupportedOperationException("Structured control action timeline is not supported");
+    }
 
     /**
      * Queries durable status transitions for one instance.

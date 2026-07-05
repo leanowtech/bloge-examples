@@ -171,6 +171,12 @@ when restore and dispatch complete, or `FAILED` with failure phase/class/message
 and any already-restored item IDs when restore, dispatch, or projection refresh
 throws.
 
+`GET /api/v1/instances/{id}/control-actions` returns the same control-action
+timeline as structured `GraphControlActionEntry` rows, so consoles and
+automation can filter by `attemptStatus`, `requestId`, `actionCode`, restored
+item IDs, and failure fields without parsing raw audit JSON. Malformed legacy
+payloads degrade to `attemptStatus = UNKNOWN` while preserving the raw payloads.
+
 **Node execution view.** `GET /api/v1/instances/{id}/nodes` returns the inferred
 execution state of every execution node in a running instance. GRAPH instances
 project DAG nodes from durable checkpoints, waits, and work-item status. SESSION

@@ -126,6 +126,25 @@ class GraphInstanceControllerTest extends AbstractGraphControllerTest {
     }
 
     @Test
+    void controlActionsEndpointReturnsStructuredTimeline() throws Exception {
+        GraphInstance instance = instance("exec-1", "approval-flow", "ver-1", GraphInstanceStatus.COMPLETED);
+        graphEngineService.queryControlActionsResult = java.util.List.of(controlActionEntry(instance));
+
+        mockMvc.perform(get("/api/v1/instances/exec-1/control-actions?page=2&size=10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].actionCode").value("RETRY_DEAD_LETTER"))
+                .andExpect(jsonPath("$[0].attemptStatus").value("SUCCEEDED"))
+                .andExpect(jsonPath("$[0].status").value("RESTORED"))
+                .andExpect(jsonPath("$[0].requestId").value("INC-123"))
+                .andExpect(jsonPath("$[0].restoredItemCount").value(1))
+                .andExpect(jsonPath("$[0].restoredItemIds[0]").value("dead-1"));
+
+        assertEquals("exec-1", graphEngineService.controlActionsInstanceId);
+        assertEquals(2, graphEngineService.controlActionsPage);
+        assertEquals(10, graphEngineService.controlActionsSize);
+    }
+
+    @Test
     void transitionsEndpointReturnsTransitionHistory() throws Exception {
         GraphInstance instance = instance("exec-1", "approval-flow", "ver-1", GraphInstanceStatus.RUNNING);
         GraphTransitionEntry transition = transitionEntry(instance, GraphInstanceStatus.CANCELLED);

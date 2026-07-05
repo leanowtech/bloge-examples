@@ -3,6 +3,7 @@ package com.leanowtech.bloge.graphengine.server.rest;
 import com.leanowtech.bloge.core.context.TenantContext;
 import com.leanowtech.bloge.graphengine.model.GraphExecutionMode;
 import com.leanowtech.bloge.graphengine.model.GraphAuditEntry;
+import com.leanowtech.bloge.graphengine.model.GraphControlActionEntry;
 import com.leanowtech.bloge.graphengine.model.GraphInstance;
 import com.leanowtech.bloge.graphengine.model.GraphInstanceDiagram;
 import com.leanowtech.bloge.graphengine.model.GraphInstanceContext;
@@ -206,6 +207,21 @@ public class GraphInstanceController {
                                                @RequestParam(defaultValue = "0") int page,
                                                @RequestParam(defaultValue = "50") int size) {
         return graphEngineService.queryInstanceAuditLog(instanceId, page, size);
+    }
+
+    /**
+     * Lists structured control-plane action events for one instance.
+     *
+     * @param instanceId instance identifier
+     * @param page zero-based page index
+     * @param size requested page size
+     * @return matching control action events
+     */
+    @GetMapping("/api/v1/instances/{instanceId}/control-actions")
+    public List<GraphControlActionEntry> queryControlActions(@PathVariable String instanceId,
+                                                             @RequestParam(defaultValue = "0") int page,
+                                                             @RequestParam(defaultValue = "50") int size) {
+        return graphEngineService.queryInstanceControlActions(instanceId, page, size);
     }
 
     /**

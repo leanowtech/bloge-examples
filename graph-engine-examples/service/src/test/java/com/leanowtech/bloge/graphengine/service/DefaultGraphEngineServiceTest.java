@@ -46,6 +46,7 @@ import com.leanowtech.bloge.durable.store.memory.InMemoryTaskInboxStore;
 import com.leanowtech.bloge.durable.store.memory.InMemoryWaitStore;
 import com.leanowtech.bloge.durable.store.memory.InMemoryWorkItemStore;
 import com.leanowtech.bloge.graphengine.model.GraphAuditEntry;
+import com.leanowtech.bloge.graphengine.model.GraphControlActionEntry;
 import com.leanowtech.bloge.graphengine.model.GraphDefinition;
 import com.leanowtech.bloge.graphengine.model.GraphDeadLetter;
 import com.leanowtech.bloge.graphengine.model.GraphExecutionMode;
@@ -1899,6 +1900,26 @@ class DefaultGraphEngineServiceTest {
             assertTrue(attemptAudit.outputJson().contains("\"candidateItemCount\":1"));
             assertTrue(successAudit.outputJson().contains("\"status\":\"RESTORED\""));
             assertTrue(successAudit.outputJson().contains("\"restoredItemCount\":1"));
+
+            List<GraphControlActionEntry> controlActions =
+                    fixture.service.queryInstanceControlActions(instance.instanceId(), 0, 50);
+            assertEquals(2, controlActions.size());
+            assertEquals(
+                    List.of(
+                            GraphControlActionEntry.AttemptStatus.ATTEMPTED,
+                            GraphControlActionEntry.AttemptStatus.SUCCEEDED
+                    ),
+                    controlActions.stream().map(GraphControlActionEntry::attemptStatus).toList()
+            );
+            GraphControlActionEntry succeeded = controlActions.get(1);
+            assertEquals("RETRY_DEAD_LETTER", succeeded.actionCode());
+            assertEquals("DEAD_LETTER_BACKLOG", succeeded.sourceIndicatorCode());
+            assertEquals("ops-alice", succeeded.actor());
+            assertEquals("INC-123", succeeded.requestId());
+            assertEquals("dead-1", succeeded.itemId());
+            assertEquals("approval", succeeded.targetNodeId());
+            assertEquals(1, succeeded.restoredItemCount());
+            assertEquals(List.of("dead-1"), succeeded.restoredItemIds());
         }
     }
 
@@ -1963,6 +1984,56 @@ class DefaultGraphEngineServiceTest {
             assertTrue(failureAudit.outputJson().contains("java.lang.IllegalStateException"));
             assertTrue(failureAudit.outputJson().contains("restore store unavailable"));
             assertTrue(failureAudit.outputJson().contains("\"restoredItemCount\":0"));
+
+            List<GraphControlActionEntry> controlActions =
+                    fixture.service.queryInstanceControlActions(instance.instanceId(), 0, 50);
+            assertEquals(2, controlActions.size());
+            GraphControlActionEntry failed = controlActions.get(1);
+            assertEquals(GraphControlActionEntry.AttemptStatus.FAILED, failed.attemptStatus());
+            assertEquals("REQ-FAIL-1", failed.requestId());
+            assertEquals("RESTORE", failed.failurePhase());
+            assertEquals(IllegalStateException.class.getName(), failed.failureClass());
+            assertEquals("restore store unavailable", failed.failureMessage());
+            assertEquals(0, failed.restoredItemCount());
+        }
+    }
+
+    @Test
+    void queryInstanceControlActionsIgnoresNodeAuditAndToleratesMalformedPayloads() {
+        try (Fixture fixture = new Fixture(false)) {
+            Instant now = Instant.now();
+            GraphInstance instance = fixture.createManagedGraphInstance("exec-control-actions-malformed", GraphInstanceStatus.RUNNING);
+            fixture.auditJournalStore.append(AuditEntry.builder(
+                            instance.instanceId(),
+                            instance.definitionKey(),
+                            "business-node",
+                            AuditEventType.NODE_COMPLETE)
+                    .operatorRef("echo")
+                    .inputJson("{\"ok\":true}")
+                    .outputJson("{\"ok\":true}")
+                    .timestamp(now)
+                    .build());
+            fixture.auditJournalStore.append(AuditEntry.builder(
+                            instance.instanceId(),
+                            instance.definitionKey(),
+                            "__control_retry_dead_letter__",
+                            AuditEventType.CONTROL_ACTION)
+                    .operatorRef("graph-engine-service")
+                    .inputJson("{not-json")
+                    .outputJson("{also-not-json")
+                    .timestamp(now.plusSeconds(1))
+                    .build());
+
+            List<GraphControlActionEntry> controlActions =
+                    fixture.service.queryInstanceControlActions(instance.instanceId(), 0, 50);
+
+            assertEquals(1, controlActions.size());
+            GraphControlActionEntry entry = controlActions.getFirst();
+            assertEquals("__control_retry_dead_letter__", entry.nodeId());
+            assertEquals(GraphControlActionEntry.AttemptStatus.UNKNOWN, entry.attemptStatus());
+            assertNull(entry.actionCode());
+            assertEquals("{not-json", entry.rawInputJson());
+            assertEquals("{also-not-json", entry.rawOutputJson());
         }
     }
 
@@ -3269,6 +3340,19 @@ class DefaultGraphEngineServiceTest {
             assertTrue(attemptAudit.outputJson().contains("\"candidateItemCount\":1"));
             assertTrue(successAudit.outputJson().contains("\"status\":\"RESTORED\""));
             assertTrue(successAudit.outputJson().contains("\"restoredItemCount\":1"));
+
+            List<GraphControlActionEntry> controlActions =
+                    fixture.service.queryInstanceControlActions(started.instance().instanceId(), 0, 50);
+            assertEquals(2, controlActions.size());
+            GraphControlActionEntry attempted = controlActions.getFirst();
+            GraphControlActionEntry succeeded = controlActions.get(1);
+            assertEquals(GraphControlActionEntry.AttemptStatus.ATTEMPTED, attempted.attemptStatus());
+            assertEquals(GraphControlActionEntry.AttemptStatus.SUCCEEDED, succeeded.attemptStatus());
+            assertEquals("RETRY_INSTANCE_DEAD_LETTERS", succeeded.actionCode());
+            assertEquals("REQ-7788", succeeded.requestId());
+            assertEquals(List.of("riskCheck"), succeeded.requestedNodeIds());
+            assertEquals(1, succeeded.restoredItemCount());
+            assertEquals(List.of(job.itemId()), succeeded.restoredItemIds());
         }
     }
 
@@ -3328,6 +3412,18 @@ class DefaultGraphEngineServiceTest {
             assertTrue(failureAudit.outputJson().contains("\"candidateItemCount\":2"));
             assertTrue(failureAudit.outputJson().contains("\"restoredItemCount\":1"));
             assertTrue(failureAudit.outputJson().contains("remote-retry-1"));
+
+            List<GraphControlActionEntry> controlActions =
+                    fixture.service.queryInstanceControlActions(instance.instanceId(), 0, 50);
+            assertEquals(2, controlActions.size());
+            GraphControlActionEntry failed = controlActions.get(1);
+            assertEquals(GraphControlActionEntry.AttemptStatus.FAILED, failed.attemptStatus());
+            assertEquals("REQ-PARTIAL", failed.requestId());
+            assertEquals("RESTORE", failed.failurePhase());
+            assertEquals(2, failed.candidateItemCount());
+            assertEquals(List.of("remote-retry-1", "remote-retry-2"), failed.candidateItemIds());
+            assertEquals(1, failed.restoredItemCount());
+            assertEquals(List.of("remote-retry-1"), failed.restoredItemIds());
         }
     }
 

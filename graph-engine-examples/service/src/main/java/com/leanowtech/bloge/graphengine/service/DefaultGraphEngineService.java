@@ -50,6 +50,7 @@ import com.leanowtech.bloge.ext.model.RoundRecord;
 import com.leanowtech.bloge.ext.model.SessionStateSnapshot;
 import com.leanowtech.bloge.ext.model.SessionStatus;
 import com.leanowtech.bloge.graphengine.model.GraphAuditEntry;
+import com.leanowtech.bloge.graphengine.model.GraphControlActionEntry;
 import com.leanowtech.bloge.graphengine.model.GraphDefinition;
 import com.leanowtech.bloge.graphengine.model.GraphDeadLetter;
 import com.leanowtech.bloge.graphengine.model.GraphDefinitionStatus;
@@ -884,6 +885,28 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
         }
         return paginate(runtimeSupport.auditJournalStore().queryByExecution(instanceId), page, resolvedSize).stream()
                 .map(entry -> mapAuditEntry(instance, entry))
+                .toList();
+    }
+
+    @Override
+    public List<GraphControlActionEntry> queryInstanceControlActions(String instanceId, int page, int size) {
+        GraphInstance instance = getInstance(instanceId);
+        // getInstance already enforces view RBAC
+        int resolvedSize = size <= 0 ? 50 : size;
+        if (page < 0) {
+            throw new IllegalArgumentException("page must be >= 0");
+        }
+        if (runtimeSupport.auditJournalStore() == null) {
+            throw new GraphEngineServiceException(
+                    GraphEngineServiceErrorCode.RUNTIME_UNAVAILABLE,
+                    "Audit journal store is not configured"
+            );
+        }
+        List<AuditEntry> controlActions = runtimeSupport.auditJournalStore().queryByExecution(instanceId).stream()
+                .filter(entry -> entry.eventType() == AuditEventType.CONTROL_ACTION)
+                .toList();
+        return paginate(controlActions, page, resolvedSize).stream()
+                .map(entry -> mapControlActionEntry(instance, entry))
                 .toList();
     }
 
@@ -3078,6 +3101,133 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                 entry.elapsed() == null ? null : entry.elapsed().toMillis(),
                 entry.timestamp()
         );
+    }
+
+    private GraphControlActionEntry mapControlActionEntry(GraphInstance instance, AuditEntry entry) {
+        Map<String, Object> input = decodeControlActionPayload(entry.inputJson(), instance.instanceId(), "inputJson");
+        Map<String, Object> output = decodeControlActionPayload(entry.outputJson(), instance.instanceId(), "outputJson");
+        return new GraphControlActionEntry(
+                instance.instanceId(),
+                instance.definitionKey(),
+                instance.versionId(),
+                instance.tenantId(),
+                instance.namespace(),
+                entry.nodeId(),
+                entry.operatorRef(),
+                stringField(input, "actionCode"),
+                stringField(input, "sourceActionCode"),
+                stringField(input, "sourceIndicatorCode"),
+                stringField(input, "reason"),
+                stringField(input, "actor"),
+                stringField(input, "requestId"),
+                attemptStatus(output),
+                stringField(output, "status"),
+                stringField(input, "itemId"),
+                stringField(input, "itemType"),
+                stringField(input, "targetNodeId"),
+                stringField(input, "waitId"),
+                stringField(input, "taskId"),
+                stringField(input, "instanceId"),
+                longField(input, "expectedRevision"),
+                stringListField(input, "requestedNodeIds"),
+                stringField(input, "deadLetterReason"),
+                intField(output, "candidateItemCount"),
+                stringListField(output, "candidateItemIds"),
+                stringListField(output, "candidateNodeIds"),
+                intField(output, "restoredItemCount"),
+                stringListField(output, "restoredItemIds"),
+                stringListField(output, "restoredNodeIds"),
+                stringField(output, "failurePhase"),
+                stringField(output, "failureClass"),
+                stringField(output, "failureMessage"),
+                entry.inputJson(),
+                entry.outputJson(),
+                entry.timestamp()
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> decodeControlActionPayload(String payload, String instanceId, String fieldName) {
+        if (payload == null || payload.isBlank()) {
+            return Map.of();
+        }
+        try {
+            Object decoded = runtimeSupport.jsonCodec().deserialize(payload);
+            if (decoded instanceof Map<?, ?> map) {
+                return (Map<String, Object>) map;
+            }
+            return Map.of();
+        } catch (RuntimeException exception) {
+            logger.log(Level.WARNING,
+                    "Failed to decode control action " + fieldName + " for " + instanceId,
+                    exception);
+            return Map.of();
+        }
+    }
+
+    private static GraphControlActionEntry.AttemptStatus attemptStatus(Map<String, Object> output) {
+        String value = stringField(output, "attemptStatus");
+        if (value == null) {
+            return GraphControlActionEntry.AttemptStatus.UNKNOWN;
+        }
+        try {
+            return GraphControlActionEntry.AttemptStatus.valueOf(value);
+        } catch (IllegalArgumentException exception) {
+            return GraphControlActionEntry.AttemptStatus.UNKNOWN;
+        }
+    }
+
+    private static String stringField(Map<String, Object> payload, String fieldName) {
+        Object value = payload.get(fieldName);
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value);
+        return text.isBlank() ? null : text;
+    }
+
+    private static Long longField(Map<String, Object> payload, String fieldName) {
+        Object value = payload.get(fieldName);
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return Long.parseLong(text);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static int intField(Map<String, Object> payload, String fieldName) {
+        Object value = payload.get(fieldName);
+        if (value instanceof Number number) {
+            return Math.max(0, number.intValue());
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return Math.max(0, Integer.parseInt(text));
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
+    private static List<String> stringListField(Map<String, Object> payload, String fieldName) {
+        Object value = payload.get(fieldName);
+        if (value instanceof List<?> list) {
+            return list.stream()
+                    .filter(item -> item != null && !String.valueOf(item).isBlank())
+                    .map(String::valueOf)
+                    .toList();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            return List.of(text);
+        }
+        return List.of();
     }
 
     private GraphTransitionEntry mapTransitionEntry(GraphInstance instance, ExecutionTransitionLogEntry entry) {

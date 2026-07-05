@@ -113,6 +113,11 @@ substrate rather than introducing a separate orchestration engine:
   The overload that accepts `RecoveryActionEvidence` records the source action,
   source indicator, reason, actor, request id, restored item count, and failure
   details in the instance audit log as `CONTROL_ACTION` entries.
+- `queryInstanceControlActions` filters instance audit history to control-plane
+  actions and projects `inputJson` / `outputJson` into `GraphControlActionEntry`
+  fields such as action code, request id, attempt status, restored item IDs, and
+  failure details. Malformed legacy payloads degrade to `attemptStatus = UNKNOWN`
+  while preserving raw JSON for review.
 
 Session-mode lifecycle actions (start, signal, terminate) are handled through
 `DurableSessionManager`, which the service lazily initializes from the durable
@@ -264,6 +269,11 @@ includes `attemptStatus`:
   restored item IDs/counts are included.
 - `FAILED`: restore, dispatch, or projection refresh failed; failure phase,
   class, message, and any already-restored item IDs/counts are included.
+
+`queryInstanceControlActions` exposes the same data without requiring callers to
+parse raw JSON. It returns only `CONTROL_ACTION` entries and promotes
+`requestId`, `actionCode`, `sourceIndicatorCode`, `attemptStatus`,
+candidate/restored item details, and failure fields into stable DTO properties.
 
 Age-based operations thresholds are controlled by `GraphOperationsPolicy` on
 `GraphEngineRuntimeSupport`. Defaults remain dead-letter warning/critical at

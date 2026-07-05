@@ -7,6 +7,7 @@ import com.leanowtech.bloge.core.runtime.registry.VersionRoutingPolicy;
 import com.leanowtech.bloge.core.runtime.work.WorkItemType;
 import com.leanowtech.bloge.core.schema.SchemaCompatibility;
 import com.leanowtech.bloge.graphengine.model.GraphAuditEntry;
+import com.leanowtech.bloge.graphengine.model.GraphControlActionEntry;
 import com.leanowtech.bloge.graphengine.model.GraphDeadLetter;
 import com.leanowtech.bloge.graphengine.model.GraphDefinition;
 import com.leanowtech.bloge.graphengine.model.GraphDefinitionStatus;
@@ -244,6 +245,47 @@ abstract class AbstractGraphControllerTest {
         );
     }
 
+    protected GraphControlActionEntry controlActionEntry(GraphInstance instance) {
+        return new GraphControlActionEntry(
+                instance.instanceId(),
+                instance.definitionKey(),
+                instance.versionId(),
+                instance.tenantId(),
+                instance.namespace(),
+                "__control_retry_dead_letter__",
+                "graph-engine-service",
+                "RETRY_DEAD_LETTER",
+                "RETRY_DEAD_LETTER",
+                "DEAD_LETTER_OLDEST_AGE",
+                "validated replay",
+                "ops-alice",
+                "INC-123",
+                GraphControlActionEntry.AttemptStatus.SUCCEEDED,
+                "RESTORED",
+                "dead-1",
+                "EVENT_MATCHED",
+                "approval",
+                "wait-1",
+                null,
+                null,
+                null,
+                List.of(),
+                "manual intervention",
+                1,
+                List.of("dead-1"),
+                List.of("approval"),
+                1,
+                List.of("dead-1"),
+                List.of("approval"),
+                null,
+                null,
+                null,
+                "{\"actionCode\":\"RETRY_DEAD_LETTER\"}",
+                "{\"attemptStatus\":\"SUCCEEDED\"}",
+                java.time.Instant.now()
+        );
+    }
+
     protected GraphTransitionEntry transitionEntry(GraphInstance instance, GraphInstanceStatus toStatus) {
         return new GraphTransitionEntry(
                 "transition-1",
@@ -385,6 +427,10 @@ abstract class AbstractGraphControllerTest {
         int auditPage;
         int auditSize;
         List<GraphAuditEntry> queryAuditLogResult = List.of();
+        String controlActionsInstanceId;
+        int controlActionsPage;
+        int controlActionsSize;
+        List<GraphControlActionEntry> queryControlActionsResult = List.of();
         String transitionsInstanceId;
         int transitionsPage;
         int transitionsSize;
@@ -572,6 +618,14 @@ abstract class AbstractGraphControllerTest {
             auditPage = page;
             auditSize = size;
             return queryAuditLogResult;
+        }
+
+        @Override
+        public List<GraphControlActionEntry> queryInstanceControlActions(String instanceId, int page, int size) {
+            controlActionsInstanceId = instanceId;
+            controlActionsPage = page;
+            controlActionsSize = size;
+            return queryControlActionsResult;
         }
 
         @Override
