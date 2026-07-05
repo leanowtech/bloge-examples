@@ -19,6 +19,7 @@ import 'reactflow/dist/style.css';
 
 import { checkConnection, fetchConnectionCandidates, fetchOperators, simulate } from './api';
 import {
+  authoringJourney,
   autoLayoutCanvas,
   type CanvasEdge,
   type CanvasNode,
@@ -284,6 +285,11 @@ export default function AuthorCanvas() {
     ),
     [canvasNodes, fixtureCompilation, fixtureDrafts, fixtureInputDrafts, operators, result],
   );
+  const journey = useMemo(
+    () => authoringJourney(operators.length, canvasSummary, fixtureRows, result),
+    [canvasSummary, fixtureRows, operators.length, result],
+  );
+  const activeJourneyStepKey = journey.steps.find((step) => step.state !== 'ready')?.key ?? '';
   const fixtureCount = Object.keys(fixtureCompilation.fixtures).length;
   const fixtureErrorCount = Object.keys(fixtureCompilation.errors).length;
   const mockAttentionCount = fixtureRows
@@ -482,6 +488,21 @@ export default function AuthorCanvas() {
     }
   }, [canvasEdges, canvasNodes, fixtureCompilation.fixtures, fixtureCount]);
 
+  const runJourneyAction = useCallback(() => {
+    if (journey.action.kind === 'focus-palette') {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+      return;
+    }
+    if (journey.action.kind === 'select-node' && journey.action.nodeId) {
+      setSelectedNodeId(journey.action.nodeId);
+      return;
+    }
+    if (journey.action.kind === 'simulate') {
+      void runSimulation();
+    }
+  }, [journey.action, runSimulation]);
+
   const autoLayout = useCallback(() => {
     const layout = autoLayoutCanvas(canvasNodes, canvasEdges);
     const positions = new Map(layout.map((node) => [node.id, node.position]));
@@ -613,6 +634,36 @@ export default function AuthorCanvas() {
       </aside>
 
       <main className="canvas">
+        <div className="journey-bar" aria-label="Authoring workflow">
+          <ol className="journey-steps">
+            {journey.steps.map((step) => (
+              <li
+                key={step.key}
+                className={[
+                  'journey-step',
+                  step.state,
+                  step.key === activeJourneyStepKey ? 'active' : '',
+                ].filter(Boolean).join(' ')}
+              >
+                <span>{step.label}</span>
+                <strong>{step.detail}</strong>
+              </li>
+            ))}
+          </ol>
+          {journey.action.kind !== 'none' && (
+            <button
+              type="button"
+              className="secondary journey-action"
+              onClick={runJourneyAction}
+              disabled={busy}
+            >
+              {journey.action.label}
+            </button>
+          )}
+          <span className="journey-count">
+            {journey.completedCount}/{journey.steps.length}
+          </span>
+        </div>
         <div className="toolbar">
           <button
             className="primary"

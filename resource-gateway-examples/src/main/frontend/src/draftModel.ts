@@ -129,6 +129,27 @@ export interface SimulationFixtureRow {
   detail: string;
 }
 
+export type AuthoringJourneyActionKind = 'focus-palette' | 'select-node' | 'simulate' | 'none';
+
+export interface AuthoringJourneyStep {
+  key: 'library' | 'compose' | 'flow' | 'mocks' | 'simulate';
+  label: string;
+  state: SimulationChecklistItem['state'];
+  detail: string;
+}
+
+export interface AuthoringJourneyAction {
+  kind: AuthoringJourneyActionKind;
+  label: string;
+  nodeId?: string;
+}
+
+export interface AuthoringJourney {
+  steps: AuthoringJourneyStep[];
+  action: AuthoringJourneyAction;
+  completedCount: number;
+}
+
 export type PortHandleDirection = 'in' | 'out';
 export type ConnectionCandidateStatus = 'ready' | 'blocked' | 'wired';
 
@@ -594,6 +615,115 @@ export function simulationChecklist(
       detail: `${result.realNodeIds?.length ?? 0} real / ${result.mockedNodeIds?.length ?? 0} mocked`,
     },
   ];
+}
+
+/** Turns the canvas state into a compact core-loop progress model for the authoring toolbar. */
+export function authoringJourney(
+  operatorCount: number,
+  summary: CanvasSummary,
+  fixtureRows: SimulationFixtureRow[],
+  result: SimulationResponse | null,
+): AuthoringJourney {
+  const blockedFixtures = fixtureRows.filter((row) => row.state === 'blocked');
+  const warningFixtures = fixtureRows.filter((row) => row.state === 'warning');
+  const flowNeedsConnection = summary.nodeCount > 1 && summary.disconnectedNodeIds.length > 0;
+  const runSucceeded = result ? isRunSuccessful(result) : false;
+
+  const steps: AuthoringJourneyStep[] = [
+    {
+      key: 'library',
+      label: 'Library',
+      state: operatorCount > 0 ? 'ready' : 'blocked',
+      detail: operatorCount > 0 ? `${operatorCount} ops` : 'empty',
+    },
+    {
+      key: 'compose',
+      label: 'Compose',
+      state: summary.nodeCount > 0 ? 'ready' : operatorCount > 0 ? 'blocked' : 'pending',
+      detail: `${summary.nodeCount} node${summary.nodeCount === 1 ? '' : 's'}`,
+    },
+    {
+      key: 'flow',
+      label: 'Flow',
+      state:
+        summary.nodeCount === 0
+          ? 'pending'
+          : flowNeedsConnection
+            ? 'warning'
+            : 'ready',
+      detail:
+        summary.nodeCount <= 1
+          ? 'single'
+          : `${summary.edgeCount} edge${summary.edgeCount === 1 ? '' : 's'}`,
+    },
+    {
+      key: 'mocks',
+      label: 'Mocks',
+      state:
+        summary.nodeCount === 0
+          ? 'pending'
+          : blockedFixtures.length > 0
+            ? 'blocked'
+            : warningFixtures.length > 0
+              ? 'warning'
+              : 'ready',
+      detail:
+        blockedFixtures.length > 0
+          ? `${blockedFixtures.length} blocked`
+          : warningFixtures.length > 0
+            ? `${warningFixtures.length} sample`
+            : summary.nodeCount > 0
+              ? 'ready'
+              : 'pending',
+    },
+    {
+      key: 'simulate',
+      label: 'Simulate',
+      state:
+        runSucceeded
+          ? 'ready'
+          : result
+            ? 'blocked'
+            : summary.nodeCount > 0 && blockedFixtures.length === 0
+              ? 'pending'
+              : 'blocked',
+      detail: result ? (runSucceeded ? 'success' : 'blocked') : 'not run',
+    },
+  ];
+
+  return {
+    steps,
+    action: nextAuthoringAction(operatorCount, summary, blockedFixtures, warningFixtures, result),
+    completedCount: steps.filter((step) => step.state === 'ready').length,
+  };
+}
+
+function nextAuthoringAction(
+  operatorCount: number,
+  summary: CanvasSummary,
+  blockedFixtures: SimulationFixtureRow[],
+  warningFixtures: SimulationFixtureRow[],
+  result: SimulationResponse | null,
+): AuthoringJourneyAction {
+  if (operatorCount === 0) {
+    return { kind: 'none', label: 'Catalog empty' };
+  }
+  if (summary.nodeCount === 0) {
+    return { kind: 'focus-palette', label: 'Add operator' };
+  }
+  if (blockedFixtures.length > 0) {
+    return { kind: 'select-node', label: 'Fix mock JSON', nodeId: blockedFixtures[0].nodeId };
+  }
+  if (!result && warningFixtures.length > 0) {
+    return { kind: 'select-node', label: 'Pin mock output', nodeId: warningFixtures[0].nodeId };
+  }
+  if (!result) {
+    return { kind: 'simulate', label: 'Simulate' };
+  }
+  if (!isRunSuccessful(result)) {
+    return { kind: 'simulate', label: 'Retry simulate' };
+  }
+  return { kind: 'none', label: 'Ready' };
 }
 
 /** How a node behaved during a mock run. */

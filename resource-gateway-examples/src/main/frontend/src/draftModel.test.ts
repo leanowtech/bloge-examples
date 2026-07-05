@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  authoringJourney,
   autoLayoutCanvas,
   compileFixtureDrafts,
   connectionCandidatesMessage,
@@ -490,6 +491,114 @@ describe('simulationChecklist', () => {
       state: 'warning',
       detail: '1 real / 1 mocked',
     });
+  });
+});
+
+describe('authoringJourney', () => {
+  const successfulResponse: SimulationResponse = {
+    validated: true,
+    compiled: true,
+    success: true,
+    graphName: 'g',
+    outputNode: 'n1',
+    output: { ok: true },
+    results: {},
+    statusMap: {},
+    mockedNodeIds: [],
+    realNodeIds: ['n1'],
+    terminalOutputConforms: true,
+    diagnostics: [],
+    errors: [],
+    generatedDsl: '',
+  };
+
+  it('starts blocked when no operator library is available', () => {
+    const journey = authoringJourney(0, summarizeCanvas([], []), [], null);
+
+    expect(journey.steps.map((step) => [step.key, step.state])).toEqual([
+      ['library', 'blocked'],
+      ['compose', 'pending'],
+      ['flow', 'pending'],
+      ['mocks', 'pending'],
+      ['simulate', 'blocked'],
+    ]);
+    expect(journey.action).toEqual({ kind: 'none', label: 'Catalog empty' });
+    expect(journey.completedCount).toBe(0);
+  });
+
+  it('points the primary action at the palette before nodes exist', () => {
+    const journey = authoringJourney(3, summarizeCanvas([], []), [], null);
+
+    expect(journey.steps.find((step) => step.key === 'library')).toMatchObject({ state: 'ready' });
+    expect(journey.steps.find((step) => step.key === 'compose')).toMatchObject({ state: 'blocked' });
+    expect(journey.action).toEqual({ kind: 'focus-palette', label: 'Add operator' });
+  });
+
+  it('surfaces disconnected flow without blocking fixture repair priority', () => {
+    const summary = summarizeCanvas(
+      [
+        { id: 'n1', operatorRef: 'risk:a', position: { x: 0, y: 0 } },
+        { id: 'n2', operatorRef: 'risk:b', position: { x: 0, y: 0 } },
+      ],
+      [],
+    );
+    const journey = authoringJourney(
+      2,
+      summary,
+      [
+        {
+          nodeId: 'n2',
+          label: 'Broken',
+          operatorRef: 'risk:b',
+          state: 'blocked',
+          runMode: 'mocked',
+          fixtureLabel: 'json error',
+          detail: 'Invalid JSON',
+        },
+      ],
+      null,
+    );
+
+    expect(journey.steps.find((step) => step.key === 'flow')).toMatchObject({
+      state: 'warning',
+      detail: '0 edges',
+    });
+    expect(journey.steps.find((step) => step.key === 'mocks')).toMatchObject({
+      state: 'blocked',
+      detail: '1 blocked',
+    });
+    expect(journey.action).toEqual({ kind: 'select-node', label: 'Fix mock JSON', nodeId: 'n2' });
+  });
+
+  it('chooses mock pinning before the first run and then closes on success', () => {
+    const summary = summarizeCanvas(
+      [{ id: 'n1', operatorRef: 'risk:design', position: { x: 0, y: 0 } }],
+      [],
+    );
+    const fixtureRows = [
+      {
+        nodeId: 'n1',
+        label: 'Risk',
+        operatorRef: 'risk:design',
+        state: 'warning' as const,
+        runMode: 'mocked' as const,
+        fixtureLabel: 'server sample',
+        detail: 'server sample',
+      },
+    ];
+
+    expect(authoringJourney(1, summary, fixtureRows, null).action).toEqual({
+      kind: 'select-node',
+      label: 'Pin mock output',
+      nodeId: 'n1',
+    });
+
+    const completed = authoringJourney(1, summary, fixtureRows, successfulResponse);
+    expect(completed.steps.find((step) => step.key === 'simulate')).toMatchObject({
+      state: 'ready',
+      detail: 'success',
+    });
+    expect(completed.action).toEqual({ kind: 'none', label: 'Ready' });
   });
 });
 
