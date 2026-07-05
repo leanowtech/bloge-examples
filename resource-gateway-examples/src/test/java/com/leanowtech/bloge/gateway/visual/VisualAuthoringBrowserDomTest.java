@@ -146,6 +146,19 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.cssSelector(".toolbar"), "1 nodes");
         waitForText(wait, By.cssSelector(".toolbar"), "Output n1");
         waitForText(wait, By.cssSelector("[data-testid^='canvas-node:']"), operatorRef);
+
+        WebElement flow = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-flow']")
+        ));
+        WebElement draggableOperator = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid^='operator-button:']"
+        )));
+        dragReactOperatorToAuthorFlow(draggableOperator, flow, 420, 260);
+
+        waitForText(wait, By.cssSelector(".toolbar"), "2 nodes");
+        waitForText(wait, By.cssSelector(".toolbar"), "Output n2");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='canvas-node:n2']")));
+        waitForText(wait, By.cssSelector("[data-testid='canvas-node:n2']"), operatorRef);
         assertNoHorizontalOverflow(wait, By.cssSelector(".workspace"));
     }
 
@@ -3080,6 +3093,39 @@ class VisualAuthoringBrowserDomTest {
                 .pause(Duration.ofMillis(150))
                 .release()
                 .perform();
+    }
+
+    /**
+     * Performs the browser-level HTML5 drag/drop used by the React author palette.
+     * Selenium's pointer-only drag helper does not consistently populate {@code dataTransfer},
+     * while the React handler reads the operator reference from that payload.
+     */
+    private void dragReactOperatorToAuthorFlow(WebElement operator, WebElement flow, int xOffset, int yOffset) {
+        scrollIntoView(operator);
+        ((JavascriptExecutor) driver).executeAsyncScript("""
+                const operator = arguments[0];
+                const flow = arguments[1];
+                const xOffset = arguments[2];
+                const yOffset = arguments[3];
+                const done = arguments[4];
+                const rect = flow.getBoundingClientRect();
+                const x = rect.left + xOffset;
+                const y = rect.top + yOffset;
+                const dataTransfer = new DataTransfer();
+                const eventInit = {
+                  bubbles: true,
+                  cancelable: true,
+                  composed: true,
+                  dataTransfer,
+                  clientX: x,
+                  clientY: y
+                };
+                operator.dispatchEvent(new DragEvent('dragstart', eventInit));
+                flow.dispatchEvent(new DragEvent('dragover', eventInit));
+                flow.dispatchEvent(new DragEvent('drop', eventInit));
+                operator.dispatchEvent(new DragEvent('dragend', eventInit));
+                done();
+                """, operator, flow, xOffset, yOffset);
     }
 
     private void usePromptValue(String value) {
