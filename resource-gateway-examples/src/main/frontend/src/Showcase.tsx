@@ -7,6 +7,7 @@ import type {
   GatewayDiagramNode,
   GatewayExampleDiagram,
   GatewayExamplePreset,
+  GatewayExampleRunRequest,
   GatewayExampleScenario,
 } from './types';
 
@@ -23,6 +24,14 @@ interface ShowcaseRunState {
   url: string;
   message: string;
   payload: unknown;
+  request: ShowcaseRunRequestSummary | null;
+}
+
+interface ShowcaseRunRequestSummary {
+  mode: string;
+  method: string;
+  url: string;
+  bodyPreview: string;
 }
 
 interface ShowcaseExpectationCheck {
@@ -61,7 +70,7 @@ function scenarioInputValues(
 }
 
 function emptyRunState(): ShowcaseRunState {
-  return { status: 'idle', url: '', message: 'Not run yet.', payload: null };
+  return { status: 'idle', url: '', message: 'Not run yet.', payload: null, request: null };
 }
 
 function streamFrames(payload: unknown): Record<StreamEventName, unknown[]> {
@@ -215,6 +224,35 @@ function annotationValue(value: unknown): string {
   return String(value);
 }
 
+function requestBodyPreview(request: GatewayExampleRunRequest): string {
+  const body = request.init.body;
+  if (body === null || body === undefined) {
+    return '';
+  }
+  if (typeof body === 'string') {
+    return body;
+  }
+  if (body instanceof URLSearchParams) {
+    return body.toString();
+  }
+  if (typeof FormData !== 'undefined' && body instanceof FormData) {
+    return '[form data]';
+  }
+  if (typeof Blob !== 'undefined' && body instanceof Blob) {
+    return `[blob ${body.type || 'application/octet-stream'}]`;
+  }
+  return '[body not previewable]';
+}
+
+function runRequestSummary(request: GatewayExampleRunRequest): ShowcaseRunRequestSummary {
+  return {
+    mode: request.mode,
+    method: String(request.init.method ?? 'GET').toUpperCase(),
+    url: request.url,
+    bodyPreview: requestBodyPreview(request),
+  };
+}
+
 /** Read-only scenario browser for the resource-gateway examples catalog. */
 export default function Showcase() {
   const [scenarios, setScenarios] = useState<GatewayExampleScenario[]>([]);
@@ -305,16 +343,19 @@ export default function Showcase() {
         url: '',
         message: 'Selected scenario has no run recipe.',
         payload: null,
+        request: null,
       });
       return;
     }
     closeStream();
     const request = buildGatewayRunRequest(run, values);
+    const requestSummary = runRequestSummary(request);
     setRunState({
       status: request.mode === 'stream' ? 'streaming' : 'running',
       url: request.url,
       message: request.mode === 'stream' ? 'Opening stream...' : 'Running...',
       payload: request.mode === 'stream' ? { meta: [], token: [], citation: [] } : null,
+      request: requestSummary,
     });
     if (request.mode === 'stream') {
       if (typeof EventSource === 'undefined') {
@@ -323,6 +364,7 @@ export default function Showcase() {
           url: request.url,
           message: 'EventSource is not available in this browser.',
           payload: null,
+          request: requestSummary,
         });
         return;
       }
@@ -342,6 +384,7 @@ export default function Showcase() {
             url: request.url,
             message: 'Streaming...',
             payload: { ...frames },
+            request: requestSummary,
           });
         });
       });
@@ -362,6 +405,7 @@ export default function Showcase() {
         url: result.url,
         message: `HTTP ${result.status}`,
         payload: result.payload,
+        request: requestSummary,
       });
     } catch (error) {
       setRunState({
@@ -369,6 +413,7 @@ export default function Showcase() {
         url: request.url,
         message: error instanceof Error ? error.message : 'Gateway run failed.',
         payload: null,
+        request: requestSummary,
       });
     }
   }
@@ -728,6 +773,28 @@ export default function Showcase() {
                   </dd>
                 </div>
               </dl>
+              {runState.request ? (
+                <div className="showcase-run-receipt" data-testid="showcase-run-receipt">
+                  <div>
+                    <span>Mode</span>
+                    <strong>{runState.request.mode}</strong>
+                  </div>
+                  <div>
+                    <span>Method</span>
+                    <strong>{runState.request.method}</strong>
+                  </div>
+                  <div className="wide">
+                    <span>Endpoint</span>
+                    <code>{runState.request.url}</code>
+                  </div>
+                  {runState.request.bodyPreview ? (
+                    <div className="wide">
+                      <span>Body</span>
+                      <code>{runState.request.bodyPreview}</code>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               {(runState.status === 'streaming' || selectedScenario.run?.mode === 'stream') ? (
                 <div className="showcase-stream-lanes" data-testid="showcase-stream-lanes">
                   {STREAM_EVENT_NAMES.map((eventName) => (

@@ -133,6 +133,10 @@ describe('Showcase', () => {
     );
     expect(query('[data-testid="showcase-run-result"]').textContent).toContain('HTTP 200');
     expect(query('[data-testid="showcase-run-result"]').textContent).toContain('Taylor');
+    expect(query('[data-testid="showcase-run-receipt"]').textContent).toContain('request');
+    expect(query('[data-testid="showcase-run-receipt"]').textContent).toContain('GET');
+    expect(query('[data-testid="showcase-run-receipt"]').textContent)
+      .toContain('/api/gateway/dashboard/u42');
   });
 
   it('applies a preset and immediately runs the scenario', async () => {
@@ -192,6 +196,10 @@ describe('Showcase', () => {
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
     const source = FakeEventSource.instances[0];
     expect(source.url).toBe('/api/gateway/ai/search/stream?q=risk%20intel');
+    expect(query('[data-testid="showcase-run-receipt"]').textContent).toContain('stream');
+    expect(query('[data-testid="showcase-run-receipt"]').textContent).toContain('GET');
+    expect(query('[data-testid="showcase-run-receipt"]').textContent)
+      .toContain('/api/gateway/ai/search/stream?q=risk%20intel');
     expect(query('[data-testid="showcase-stream-lane:meta"]').textContent).toContain('0');
     expect(query('[data-testid="showcase-stream-lane:token"]').textContent).toContain('0');
     expect(query('[data-testid="showcase-stream-lane:citation"]').textContent).toContain('0');
