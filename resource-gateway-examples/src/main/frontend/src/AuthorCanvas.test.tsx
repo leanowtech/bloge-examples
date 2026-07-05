@@ -244,6 +244,33 @@ describe('AuthorCanvas connection guide', () => {
     await waitFor(() => expect(document.body.textContent).toContain('1 edges'));
     expect(document.body.textContent).toContain('Connection accepted.');
   });
+
+  it('opens compatible targets from the in-canvas coach action', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:score"]').textContent).toContain('Risk Score'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:score"]'));
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:decision"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="canvas-coach"]').textContent).toContain('Find compatible targets for n1.'),
+    );
+    const coachAction = query('[data-testid="canvas-coach"]').querySelector<HTMLButtonElement>('button');
+    expect(coachAction).not.toBeNull();
+    expect(coachAction?.textContent).toContain('Find targets');
+    await click(coachAction as HTMLButtonElement);
+
+    await waitFor(() =>
+      expect(query('[data-testid="connection-guide-target:n2:profile"]').textContent)
+        .toContain('Decision Consumer'),
+    );
+    expect(query('[data-testid="connection-guide-target:n2:profile"]').textContent).toContain('ready');
+  });
 });
 
 const sampleLibraryYaml = [

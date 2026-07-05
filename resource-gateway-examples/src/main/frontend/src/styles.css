@@ -631,6 +631,14 @@ button.secondary:disabled {
   white-space: nowrap;
 }
 
+.canvas-coach-body {
+  min-width: 0;
+  color: #3b4452;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .canvas-coach.compose,
 .canvas-coach.simulate {
   border-left-color: var(--accent);

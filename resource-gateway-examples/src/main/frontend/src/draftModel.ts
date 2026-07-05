@@ -135,6 +135,7 @@ export interface SimulationFixtureRow {
 }
 
 export type AuthoringJourneyActionKind = 'focus-palette' | 'select-node' | 'simulate' | 'none';
+export type AuthoringJourneyActionGuide = 'connection-guide';
 
 export interface AuthoringJourneyStep {
   key: 'library' | 'compose' | 'flow' | 'mocks' | 'simulate';
@@ -147,6 +148,7 @@ export interface AuthoringJourneyAction {
   kind: AuthoringJourneyActionKind;
   label: string;
   nodeId?: string;
+  guide?: AuthoringJourneyActionGuide;
 }
 
 export interface AuthoringJourney {
@@ -161,6 +163,7 @@ export interface CanvasCoachPrompt {
   state: CanvasCoachState;
   title: string;
   detail: string;
+  body: string;
   action: AuthoringJourneyAction;
 }
 
@@ -869,6 +872,7 @@ export function canvasCoachPrompt(
       state: 'blocked',
       title: 'Catalog empty',
       detail: '0 operators',
+      body: 'Import an operator library before composing.',
       action: { kind: 'none', label: 'Catalog empty' },
     };
   }
@@ -877,31 +881,38 @@ export function canvasCoachPrompt(
       state: 'compose',
       title: 'Add first operator',
       detail: `${operatorCount} available`,
+      body: 'Choose one operator from the palette to create the first node.',
       action: { kind: 'focus-palette', label: 'Add operator' },
     };
   }
   if (summary.nodeCount > 1 && disconnectedCount > 0) {
+    const nodeId = summary.disconnectedNodeIds[0];
     return {
       state: 'connect',
       title: 'Connect open nodes',
       detail: `${disconnectedCount} open`,
-      action: { kind: 'select-node', label: 'Select open node', nodeId: summary.disconnectedNodeIds[0] },
+      body: `Find compatible targets for ${nodeId}.`,
+      action: { kind: 'select-node', label: 'Find targets', nodeId, guide: 'connection-guide' },
     };
   }
   if (blockedFixtures.length > 0) {
+    const fixture = blockedFixtures[0];
     return {
       state: 'blocked',
       title: 'Fix mock JSON',
       detail: `${blockedFixtures.length} blocked`,
-      action: { kind: 'select-node', label: 'Fix mock JSON', nodeId: blockedFixtures[0].nodeId },
+      body: `${fixture.label} has invalid fixture JSON.`,
+      action: { kind: 'select-node', label: 'Fix mock JSON', nodeId: fixture.nodeId },
     };
   }
   if (!result && warningFixtures.length > 0) {
+    const fixture = warningFixtures[0];
     return {
       state: 'mock',
       title: 'Pin mock output',
       detail: `${warningFixtures.length} sample`,
-      action: { kind: 'select-node', label: 'Pin mock output', nodeId: warningFixtures[0].nodeId },
+      body: `Review the generated sample for ${fixture.label}.`,
+      action: { kind: 'select-node', label: 'Pin mock output', nodeId: fixture.nodeId },
     };
   }
   if (!result) {
@@ -909,6 +920,7 @@ export function canvasCoachPrompt(
       state: 'simulate',
       title: 'Run simulation',
       detail: `${summary.nodeCount} node${summary.nodeCount === 1 ? '' : 's'}`,
+      body: `Use ${summary.outputNodeId || 'the output node'} as the terminal result.`,
       action: { kind: 'simulate', label: 'Simulate' },
     };
   }
@@ -917,6 +929,7 @@ export function canvasCoachPrompt(
       state: 'review',
       title: 'Review diagnostics',
       detail: `${result.errors?.length ?? 0} error${(result.errors?.length ?? 0) === 1 ? '' : 's'}`,
+      body: 'Fix the reported issue, then retry the simulation.',
       action: { kind: 'simulate', label: 'Retry simulate' },
     };
   }
@@ -924,6 +937,7 @@ export function canvasCoachPrompt(
     state: 'ready',
     title: 'Graph ready',
     detail: `${result.realNodeIds?.length ?? 0} real / ${result.mockedNodeIds?.length ?? 0} mocked`,
+    body: 'Simulation completed; mocked nodes remain marked on the canvas.',
     action: { kind: 'none', label: 'Ready' },
   };
 }

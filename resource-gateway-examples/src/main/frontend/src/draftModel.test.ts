@@ -801,6 +801,7 @@ describe('canvasCoachPrompt', () => {
       state: 'compose',
       title: 'Add first operator',
       detail: '4 available',
+      body: 'Choose one operator from the palette to create the first node.',
       action: { kind: 'focus-palette', label: 'Add operator' },
     });
   });
@@ -823,7 +824,8 @@ describe('canvasCoachPrompt', () => {
       state: 'connect',
       title: 'Connect open nodes',
       detail: '2 open',
-      action: { kind: 'select-node', label: 'Select open node', nodeId: 'n1' },
+      body: 'Find compatible targets for n1.',
+      action: { kind: 'select-node', label: 'Find targets', nodeId: 'n1', guide: 'connection-guide' },
     });
   });
 
@@ -849,6 +851,7 @@ describe('canvasCoachPrompt', () => {
       state: 'mock',
       title: 'Pin mock output',
       detail: '1 sample',
+      body: 'Review the generated sample for Risk.',
       action: { kind: 'select-node', label: 'Pin mock output', nodeId: 'n1' },
     });
   });
@@ -865,6 +868,7 @@ describe('canvasCoachPrompt', () => {
       state: 'ready',
       title: 'Graph ready',
       detail: '1 real / 1 mocked',
+      body: 'Simulation completed; mocked nodes remain marked on the canvas.',
       action: { kind: 'none', label: 'Ready' },
     });
   });

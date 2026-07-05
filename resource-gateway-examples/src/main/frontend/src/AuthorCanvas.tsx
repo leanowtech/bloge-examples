@@ -189,6 +189,7 @@ export default function AuthorCanvas() {
   const [connectionGuide, setConnectionGuide] = useState<SelectedConnectionGuide | null>(null);
   const [connectionGuideNotice, setConnectionGuideNotice] = useState<ConnectionNotice | null>(null);
   const [connectionGuideBusy, setConnectionGuideBusy] = useState(false);
+  const [pendingConnectionGuideNodeId, setPendingConnectionGuideNodeId] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const counter = useRef(0);
   const candidatePreviewSequence = useRef(0);
@@ -650,6 +651,27 @@ export default function AuthorCanvas() {
     selectedNodeId,
   ]);
 
+  useEffect(() => {
+    if (!pendingConnectionGuideNodeId || pendingConnectionGuideNodeId !== selectedNodeId) {
+      return;
+    }
+    const sourcePortReady =
+      selectedOutputPorts.length > 0
+      && selectedOutputPorts.includes(selectedConnectionSourcePort);
+    if (!sourcePortReady) {
+      return;
+    }
+    setPendingConnectionGuideNodeId('');
+    void loadSelectedConnectionGuide();
+  }, [
+    loadSelectedConnectionGuide,
+    pendingConnectionGuideNodeId,
+    selectedConnectionSourcePort,
+    selectedNodeId,
+    selectedOutputPortKey,
+    selectedOutputPorts,
+  ]);
+
   const connectGuideRow = useCallback(async (row: ConnectionGuideRow) => {
     if (!selectedNodeId || row.status !== 'ready') {
       return;
@@ -702,6 +724,9 @@ export default function AuthorCanvas() {
     }
     if (action.kind === 'select-node' && action.nodeId) {
       setSelectedNodeId(action.nodeId);
+      if (action.guide === 'connection-guide') {
+        setPendingConnectionGuideNodeId(action.nodeId);
+      }
       return;
     }
     if (action.kind === 'simulate') {
@@ -987,6 +1012,7 @@ export default function AuthorCanvas() {
             >
               <span className="canvas-coach-kicker">{coachPrompt.detail}</span>
               <strong>{coachPrompt.title}</strong>
+              <span className="canvas-coach-body">{coachPrompt.body}</span>
               {coachPrompt.action.kind !== 'none' && (
                 <button
                   type="button"
