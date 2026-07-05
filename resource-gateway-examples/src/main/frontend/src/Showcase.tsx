@@ -5,6 +5,7 @@ import type {
   GatewayDiagramEdge,
   GatewayDiagramGroup,
   GatewayDiagramNode,
+  GatewayDecisionColumn,
   GatewayExampleDiagram,
   GatewayExamplePreset,
   GatewayExampleRunRequest,
@@ -91,6 +92,10 @@ function scalarValue(value: unknown): string {
     return previewJson(value).replace(/\s+/g, ' ');
   }
   return String(value);
+}
+
+function decisionColumnLabel(column: GatewayDecisionColumn): string {
+  return column.label?.trim() || column.key;
 }
 
 function valuesMatch(actual: unknown, expected: unknown): boolean {
@@ -300,8 +305,13 @@ export default function Showcase() {
     [scenarios, selectedGraphName],
   );
   const presets = selectedScenario?.samplePresets ?? [];
-  const decisionRows = selectedScenario?.decisionTable?.rows ?? [];
-  const decisionColumns = selectedScenario?.decisionTable?.columns ?? [];
+  const decisionTable = selectedScenario?.decisionTable ?? null;
+  const decisionRows = decisionTable?.rows ?? [];
+  const decisionInputColumns = decisionTable?.inputs ?? [];
+  const decisionOutputColumns = decisionTable?.outputs ?? [];
+  const decisionTableColumnSpan = 2
+    + Math.max(decisionInputColumns.length, 1)
+    + Math.max(decisionOutputColumns.length, 1);
   const nodesById = useMemo(
     () => new Map((diagram?.nodes ?? []).map((node) => [node.id, node])),
     [diagram],
@@ -836,19 +846,102 @@ export default function Showcase() {
             </section>
           </div>
 
-          {selectedScenario.decisionTable ? (
+          {decisionTable ? (
             <section className="showcase-decision-table" data-testid="showcase-decision-table">
-              <h3>Decision Table</h3>
+              <div className="decision-table-heading">
+                <h3>{decisionTable.title ?? 'Decision Table'}</h3>
+              </div>
               <div className="showcase-metrics">
                 <span>
-                  Hit policy <strong>{selectedScenario.decisionTable.hitPolicy ?? 'unknown'}</strong>
+                  Hit policy <strong>{decisionTable.hitPolicy ?? 'unknown'}</strong>
                 </span>
                 <span>
-                  Rows <strong>{decisionRows.length}</strong>
+                  Rules (OR) <strong>{decisionRows.length}</strong>
                 </span>
                 <span>
-                  Columns <strong>{decisionColumns.length}</strong>
+                  Conditions (AND) <strong>{decisionInputColumns.length}</strong>
                 </span>
+                <span>
+                  Actions <strong>{decisionOutputColumns.length}</strong>
+                </span>
+              </div>
+              <div className="decision-table-scroll">
+                <table className="decision-rule-table">
+                  <thead>
+                    <tr>
+                      <th scope="col" rowSpan={2}>Rule</th>
+                      <th
+                        scope="colgroup"
+                        colSpan={Math.max(decisionInputColumns.length, 1)}
+                        className="condition-band"
+                      >
+                        Conditions (AND)
+                      </th>
+                      <th
+                        scope="colgroup"
+                        colSpan={Math.max(decisionOutputColumns.length, 1)}
+                        className="action-band"
+                      >
+                        Decision actions
+                      </th>
+                      <th scope="col" rowSpan={2}>Explanation</th>
+                    </tr>
+                    <tr>
+                      {decisionInputColumns.length ? (
+                        decisionInputColumns.map((column) => (
+                          <th key={`input:${column.key}`} scope="col" className="condition-column">
+                            {decisionColumnLabel(column)}
+                          </th>
+                        ))
+                      ) : (
+                        <th scope="col" className="condition-column">Any input</th>
+                      )}
+                      {decisionOutputColumns.length ? (
+                        decisionOutputColumns.map((column) => (
+                          <th key={`output:${column.key}`} scope="col" className="action-column">
+                            {decisionColumnLabel(column)}
+                          </th>
+                        ))
+                      ) : (
+                        <th scope="col" className="action-column">No action</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {decisionRows.length ? (
+                      decisionRows.map((row) => (
+                        <tr key={row.id} data-testid={`showcase-decision-row:${row.id}`}>
+                          <th scope="row">{row.id}</th>
+                          {decisionInputColumns.length ? (
+                            decisionInputColumns.map((column) => (
+                              <td key={`${row.id}:condition:${column.key}`} className="condition-cell">
+                                <code>{scalarValue(row.conditions?.[column.key]) || 'any'}</code>
+                              </td>
+                            ))
+                          ) : (
+                            <td className="condition-cell"><code>any</code></td>
+                          )}
+                          {decisionOutputColumns.length ? (
+                            decisionOutputColumns.map((column) => (
+                              <td key={`${row.id}:output:${column.key}`} className="action-cell">
+                                {scalarValue(row.output?.[column.key]) || '-'}
+                              </td>
+                            ))
+                          ) : (
+                            <td className="action-cell">-</td>
+                          )}
+                          <td className="explanation-cell">{row.explanation || '-'}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={decisionTableColumnSpan} className="decision-table-empty">
+                          No decision rules supplied.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </section>
           ) : null}

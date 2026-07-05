@@ -143,6 +143,28 @@ describe('AuthorCanvas operator-library intake', () => {
     expect(document.body.textContent).toContain('1 nodes');
     expect(document.body.textContent).toContain('Output n1');
   });
+
+  it('loads concrete operator-library schema examples into the source editor', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/visual/operators'));
+    await click(query<HTMLButtonElement>('[data-testid="operator-library-example:risk-policy"]'));
+
+    const source = query<HTMLTextAreaElement>('[data-testid="operator-library-source"]');
+    expect(source.value).toContain('"libraryId": "risk-policy-starter"');
+    expect(source.value).toContain('"inputs"');
+    expect(source.value).toContain('"outputs"');
+    expect(query('[data-testid="operator-library-notice"]').textContent)
+      .toContain('Loaded Risk policy example. Validate before importing.');
+
+    await click(query<HTMLButtonElement>('[data-testid="operator-library-example:order-fulfillment"]'));
+
+    expect(source.value).toContain('"libraryId": "order-fulfillment-starter"');
+    expect(source.value).toContain('"operatorRef": "orders:route-sla"');
+  });
 });
 
 describe('AuthorCanvas connection guide', () => {

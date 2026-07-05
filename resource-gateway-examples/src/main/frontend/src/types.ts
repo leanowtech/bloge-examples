@@ -274,11 +274,27 @@ export interface GatewayExampleRunResult {
   payload: unknown;
 }
 
+/** One input or output column in a matrix-oriented decision table. */
+export interface GatewayDecisionColumn {
+  key: string;
+  label?: string;
+}
+
+/** One rule row in a matrix-oriented decision table. */
+export interface GatewayDecisionRow {
+  id: string;
+  conditions?: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  explanation?: string;
+}
+
 /** Optional decision-table metadata exposed for matrix-oriented showcase scenarios. */
 export interface GatewayDecisionTable {
+  title?: string;
   hitPolicy?: string;
-  columns?: unknown[];
-  rows?: unknown[];
+  inputs?: GatewayDecisionColumn[];
+  outputs?: GatewayDecisionColumn[];
+  rows?: GatewayDecisionRow[];
 }
 
 /** Public scenario metadata returned by GET /api/gateway/examples/scenarios. */

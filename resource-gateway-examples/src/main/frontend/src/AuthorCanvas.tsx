@@ -161,6 +161,297 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
 const NODE_TYPES = { operator: OperatorNode };
 const OPERATOR_DRAG_MIME = 'application/bloge-operator-ref';
 
+interface OperatorLibraryExample {
+  key: string;
+  label: string;
+  description: string;
+  sourceText: string;
+}
+
+const OPERATOR_LIBRARY_EXAMPLES: OperatorLibraryExample[] = [
+  {
+    key: 'risk-policy',
+    label: 'Risk policy',
+    description: 'Eligibility + policy decision',
+    sourceText: JSON.stringify({
+      schemaVersion: 'bloge.visualOperatorLibrary.v1',
+      libraryId: 'risk-policy-starter',
+      displayName: 'Risk Policy Starter',
+      version: '1.0.0',
+      owner: 'risk-team',
+      status: 'ACTIVE',
+      operators: [
+        {
+          schemaVersion: 'bloge.visualOperator.v1',
+          operatorRef: 'risk:eligibility',
+          operatorVersion: '1.0.0',
+          display: {
+            name: 'Eligibility Gate',
+            description: 'Checks applicant facts and emits an eligibility decision.',
+            tags: ['risk', 'decision', 'policy'],
+          },
+          source: { kind: 'user-library' },
+          ports: {
+            inputs: [
+              {
+                name: 'applicant',
+                required: true,
+                description: 'Applicant risk facts collected upstream.',
+                schema: {
+                  format: 'json-schema',
+                  version: '2020-12',
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      score: { type: 'integer', minimum: 300, maximum: 850 },
+                      requestedAmount: { type: 'number', minimum: 0 },
+                      segment: { type: 'string' },
+                    },
+                    required: ['score', 'requestedAmount'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+            ],
+            outputs: [
+              {
+                name: 'decision',
+                description: 'Policy decision that can feed routing or response shaping.',
+                schema: {
+                  format: 'json-schema',
+                  version: '2020-12',
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      eligible: { type: 'boolean' },
+                      tier: { type: 'string', enum: ['prime', 'standard', 'review', 'decline'] },
+                      reason: { type: 'string' },
+                    },
+                    required: ['eligible', 'tier'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+            ],
+          },
+          capabilities: {
+            effect: 'PURE',
+            idempotency: 'DETERMINISTIC',
+            streaming: false,
+            durable: false,
+            requiresSecrets: false,
+          },
+          lowering: { mode: 'design', operatorRef: '' },
+        },
+      ],
+    }, null, 2),
+  },
+  {
+    key: 'order-fulfillment',
+    label: 'Order flow',
+    description: 'Normalize order + route SLA',
+    sourceText: JSON.stringify({
+      schemaVersion: 'bloge.visualOperatorLibrary.v1',
+      libraryId: 'order-fulfillment-starter',
+      displayName: 'Order Fulfillment Starter',
+      version: '1.0.0',
+      owner: 'commerce-platform',
+      status: 'ACTIVE',
+      operators: [
+        {
+          schemaVersion: 'bloge.visualOperator.v1',
+          operatorRef: 'orders:normalize',
+          operatorVersion: '1.0.0',
+          display: {
+            name: 'Normalize Order',
+            description: 'Projects raw checkout payloads into a stable order contract.',
+            tags: ['order', 'transform'],
+          },
+          source: { kind: 'user-library' },
+          ports: {
+            inputs: [
+              {
+                name: 'checkout',
+                required: true,
+                schema: {
+                  format: 'json-schema',
+                  version: '2020-12',
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      orderId: { type: 'string' },
+                      total: { type: 'number' },
+                      region: { type: 'string' },
+                      items: {
+                        type: 'array',
+                        items: { type: 'object', additionalProperties: true },
+                      },
+                    },
+                    required: ['orderId', 'total', 'items'],
+                    additionalProperties: true,
+                  },
+                },
+              },
+            ],
+            outputs: [
+              {
+                name: 'order',
+                schema: {
+                  format: 'json-schema',
+                  version: '2020-12',
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      orderId: { type: 'string' },
+                      total: { type: 'number' },
+                      region: { type: 'string' },
+                      itemCount: { type: 'integer' },
+                    },
+                    required: ['orderId', 'total', 'itemCount'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+            ],
+          },
+          lowering: { mode: 'design', operatorRef: '' },
+        },
+        {
+          schemaVersion: 'bloge.visualOperator.v1',
+          operatorRef: 'orders:route-sla',
+          operatorVersion: '1.0.0',
+          display: {
+            name: 'Route SLA',
+            description: 'Chooses the fulfillment lane from normalized order facts.',
+            tags: ['order', 'routing', 'sla'],
+          },
+          source: { kind: 'user-library' },
+          ports: {
+            inputs: [
+              {
+                name: 'order',
+                required: true,
+                schema: {
+                  format: 'json-schema',
+                  version: '2020-12',
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      orderId: { type: 'string' },
+                      total: { type: 'number' },
+                      region: { type: 'string' },
+                      itemCount: { type: 'integer' },
+                    },
+                    required: ['orderId', 'total', 'itemCount'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+            ],
+            outputs: [
+              {
+                name: 'route',
+                schema: {
+                  format: 'json-schema',
+                  version: '2020-12',
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      lane: { type: 'string', enum: ['standard', 'expedite', 'manual_review'] },
+                      promisedHours: { type: 'integer' },
+                      reason: { type: 'string' },
+                    },
+                    required: ['lane', 'promisedHours'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+            ],
+          },
+          lowering: { mode: 'design', operatorRef: '' },
+        },
+      ],
+    }, null, 2),
+  },
+  {
+    key: 'support-triage',
+    label: 'Support triage',
+    description: 'Ticket signal + action plan',
+    sourceText: JSON.stringify({
+      schemaVersion: 'bloge.visualOperatorLibrary.v1',
+      libraryId: 'support-triage-starter',
+      displayName: 'Support Triage Starter',
+      version: '1.0.0',
+      owner: 'customer-ops',
+      status: 'ACTIVE',
+      operators: [
+        {
+          schemaVersion: 'bloge.visualOperator.v1',
+          operatorRef: 'support:classify-ticket',
+          operatorVersion: '1.0.0',
+          display: {
+            name: 'Classify Ticket',
+            description: 'Turns a customer ticket into priority, topic, and next action.',
+            tags: ['support', 'triage', 'decision'],
+          },
+          source: { kind: 'user-library' },
+          ports: {
+            inputs: [
+              {
+                name: 'ticket',
+                required: true,
+                schema: {
+                  format: 'json-schema',
+                  version: '2020-12',
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      subject: { type: 'string' },
+                      body: { type: 'string' },
+                      customerTier: { type: 'string', enum: ['free', 'pro', 'enterprise'] },
+                      openHours: { type: 'number', minimum: 0 },
+                    },
+                    required: ['subject', 'body', 'customerTier'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+            ],
+            outputs: [
+              {
+                name: 'triage',
+                schema: {
+                  format: 'json-schema',
+                  version: '2020-12',
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      priority: { type: 'string', enum: ['p0', 'p1', 'p2', 'p3'] },
+                      topic: { type: 'string' },
+                      action: { type: 'string', enum: ['auto_reply', 'assign_agent', 'escalate'] },
+                      confidence: { type: 'number', minimum: 0, maximum: 1 },
+                    },
+                    required: ['priority', 'topic', 'action'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+            ],
+          },
+          capabilities: {
+            effect: 'PURE',
+            idempotency: 'DETERMINISTIC',
+            streaming: false,
+            durable: false,
+            requiresSecrets: false,
+          },
+          lowering: { mode: 'design', operatorRef: '' },
+        },
+      ],
+    }, null, 2),
+  },
+];
+
 /**
  * The authoring workspace: an operator palette, a React Flow canvas, and a result inspector wired to
  * the mock-run (simulate) endpoint. Non-trivial graph<->request logic lives in the pure, unit-tested
@@ -870,6 +1161,30 @@ export default function AuthorCanvas() {
               setLibraryDiagnostics([]);
             }}
           />
+          <div className="library-examples" aria-label="Operator library examples">
+            <span>Examples</span>
+            <div className="library-example-buttons">
+              {OPERATOR_LIBRARY_EXAMPLES.map((example) => (
+                <button
+                  key={example.key}
+                  type="button"
+                  className="library-example"
+                  data-testid={`operator-library-example:${example.key}`}
+                  onClick={() => {
+                    setLibrarySourceText(example.sourceText);
+                    setLibraryNotice({
+                      level: 'pending',
+                      message: `Loaded ${example.label} example. Validate before importing.`,
+                    });
+                    setLibraryDiagnostics([]);
+                  }}
+                >
+                  <strong>{example.label}</strong>
+                  <span>{example.description}</span>
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="library-actions">
             <button
               type="button"

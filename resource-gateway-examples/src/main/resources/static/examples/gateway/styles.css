@@ -1059,6 +1059,11 @@ body.connecting-edge * {
   color: var(--amber);
 }
 
+.decision-table tbody th {
+  color: #24532b;
+  white-space: nowrap;
+}
+
 .decision-table tr.matched th,
 .decision-table tr.matched td {
   background: var(--green-soft);
@@ -3984,6 +3989,21 @@ body.dragging-operator * {
 .rule-editor-table th {
   background: var(--surface-strong);
   color: #1f2937;
+}
+
+.rule-editor-table tbody th {
+  color: #24532b;
+  white-space: nowrap;
+}
+
+.rule-editor-table .rule-editor-condition-band,
+.rule-editor-table .rule-editor-condition {
+  color: var(--amber);
+}
+
+.rule-editor-table .rule-editor-action-band,
+.rule-editor-table .rule-editor-action {
+  color: var(--blue);
 }
 
 .field {

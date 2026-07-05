@@ -15949,7 +15949,7 @@ function operatorEditorBody(node) {
   if (node.type === 'decisionTable') {
     const rows = node.rules.map((rule, index) => `
       <tr>
-        <td>${escapeHtml(rule.id)}</td>
+        <th scope="row">${escapeHtml(rule.id)}</th>
         <td><input data-rule-index="${index}" data-rule-field="score" value="${escapeHtml(rule.score)}" ${rule.otherwise ? 'disabled' : ''}></td>
         <td><input data-rule-index="${index}" data-rule-field="amount" value="${escapeHtml(rule.amount)}" ${rule.otherwise ? 'disabled' : ''}></td>
         <td><input data-rule-index="${index}" data-rule-field="decision" value="${escapeHtml(rule.decision)}"></td>
@@ -15976,13 +15976,17 @@ function operatorEditorBody(node) {
           <table class="rule-editor-table">
             <thead>
               <tr>
-                <th>Rule</th>
-                <th>Score</th>
-                <th>Amount</th>
-                <th>Decision</th>
-                <th>Rate</th>
-                <th>Term</th>
-                <th>Lane</th>
+                <th scope="col" rowspan="2">Rule (OR)</th>
+                <th scope="colgroup" class="rule-editor-condition-band" colspan="2">Conditions (AND)</th>
+                <th scope="colgroup" class="rule-editor-action-band" colspan="4">Decision actions</th>
+              </tr>
+              <tr>
+                <th scope="col" class="rule-editor-condition">Score</th>
+                <th scope="col" class="rule-editor-condition">Amount</th>
+                <th scope="col" class="rule-editor-action">Decision</th>
+                <th scope="col" class="rule-editor-action">Rate</th>
+                <th scope="col" class="rule-editor-action">Term</th>
+                <th scope="col" class="rule-editor-action">Lane</th>
               </tr>
             </thead>
             <tbody>${rows}</tbody>
@@ -30344,9 +30348,13 @@ function renderDecisionTable() {
       <table>
         <thead>
           <tr>
-            <th scope="col">Rule</th>
-            ${inputHeaders}
-            ${outputHeaders}
+            <th scope="col" rowspan="2">Rule (OR)</th>
+            <th scope="colgroup" class="input-column" colspan="${escapeHtml(Math.max(model.inputs.length, 1))}">Conditions (AND)</th>
+            <th scope="colgroup" colspan="${escapeHtml(Math.max(model.outputs.length, 1))}">Decision actions</th>
+          </tr>
+          <tr>
+            ${inputHeaders || '<th scope="col" class="input-column">Any input</th>'}
+            ${outputHeaders || '<th scope="col">No action</th>'}
           </tr>
         </thead>
         <tbody>${rows}</tbody>

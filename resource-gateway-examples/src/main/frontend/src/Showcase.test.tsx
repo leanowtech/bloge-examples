@@ -98,9 +98,15 @@ describe('Showcase', () => {
     );
     expect(query('[data-testid="showcase-detail"]').textContent).toContain('Presets');
     expect(query('[data-testid="showcase-detail"]').textContent).toContain('4');
-    expect(query('[data-testid="showcase-decision-table"]').textContent).toContain('unique');
-    expect(query('[data-testid="showcase-decision-table"]').textContent).toContain('Rows');
-    expect(query('[data-testid="showcase-decision-table"]').textContent).toContain('2');
+    const decisionTable = query('[data-testid="showcase-decision-table"]');
+    expect(decisionTable.textContent).toContain('unique');
+    expect(decisionTable.textContent).toContain('Conditions (AND)');
+    expect(decisionTable.textContent).toContain('Decision actions');
+    expect(decisionTable.textContent).toContain('Credit score');
+    expect(decisionTable.textContent).toContain('score >= 760');
+    expect(decisionTable.textContent).toContain('manual_review');
+    expect(query('[data-testid="showcase-decision-row:R3"]').textContent)
+      .toContain('senior-underwriter');
 
     await waitFor(() =>
       expect(query('[data-testid="showcase-diagram-node:loanPolicy"]').textContent)
@@ -271,9 +277,44 @@ function sampleScenarios(): GatewayExampleScenario[] {
         pathTemplate: '/api/gateway/loan-policy/{applicantId}?amount={amount}',
       },
       decisionTable: {
+        title: 'Loan policy matrix',
         hitPolicy: 'unique',
-        columns: [{ id: 'score' }, { id: 'amount' }],
-        rows: [{ ruleId: 'R1' }, { ruleId: 'R2' }],
+        inputs: [
+          { key: 'score', label: 'Credit score' },
+          { key: 'amount', label: 'Requested amount' },
+        ],
+        outputs: [
+          { key: 'decision', label: 'Decision' },
+          { key: 'rate', label: 'Rate' },
+          { key: 'reviewLane', label: 'Review lane' },
+          { key: 'ruleId', label: 'Rule' },
+        ],
+        rows: [
+          {
+            id: 'R1',
+            conditions: { score: 'score >= 760', amount: 'amount <= 500000' },
+            output: { decision: 'approved', rate: 3.5, reviewLane: 'auto-approve', ruleId: 'R1' },
+            explanation: 'Prime applicant under jumbo threshold.',
+          },
+          {
+            id: 'R2',
+            conditions: { score: '700 <= score < 760', amount: 'amount <= 300000' },
+            output: { decision: 'approved', rate: 4.5, reviewLane: 'standard', ruleId: 'R2' },
+            explanation: 'Standard credit applicant within conservative amount.',
+          },
+          {
+            id: 'R3',
+            conditions: { score: '650 <= score < 700', amount: 'amount <= 200000' },
+            output: { decision: 'manual_review', rate: 5.75, reviewLane: 'senior-underwriter', ruleId: 'R3' },
+            explanation: 'Borderline credit requires human review.',
+          },
+          {
+            id: 'R4',
+            conditions: { score: 'otherwise', amount: 'otherwise' },
+            output: { decision: 'declined', rate: 0, reviewLane: 'decline', ruleId: 'R4' },
+            explanation: 'No approval policy matched.',
+          },
+        ],
       },
       diagramPath: '/api/gateway/examples/scenarios/loanDecisionPolicy/diagram',
     },
