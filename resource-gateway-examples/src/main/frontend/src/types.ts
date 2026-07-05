@@ -88,6 +88,23 @@ export interface ConnectionCheckRequest {
   condition?: string;
 }
 
+/** The body of POST /api/visual/connections/candidates. */
+export interface ConnectionCandidatesRequest {
+  draft: GraphDraft;
+  source: DraftEndpoint;
+  kind?: string;
+  includeRejected?: boolean;
+  limit?: number;
+  offset?: number;
+  targetNodeId?: string;
+  targetSurface?: string;
+  targetPort?: string;
+  targetPath?: string;
+  query?: string;
+  targetStatus?: string;
+  facetFilters?: Record<string, string[]>;
+}
+
 /** A visual diagnostic. */
 export interface VisualDiagnostic {
   level?: string;
@@ -116,6 +133,35 @@ export interface ConnectionCheckResponse {
     diagnostics?: VisualDiagnostic[];
   };
   summary?: ConnectionCheckSummary;
+}
+
+/** One server-enumerated target candidate for a connection source. */
+export interface ConnectionCandidate {
+  targetNodeId: string;
+  targetNodeLabel?: string;
+  targetOperatorRef?: string;
+  targetSurface?: string;
+  target: DraftEndpoint;
+  accepted: boolean;
+  targetStatus?: string;
+  bindingKey?: string;
+  summary?: ConnectionCheckSummary;
+  diagnostics?: VisualDiagnostic[];
+}
+
+/** The response of POST /api/visual/connections/candidates. */
+export interface ConnectionCandidatesResponse {
+  schemaVersion?: string;
+  source: DraftEndpoint;
+  kind?: string;
+  offset?: number;
+  totalCandidateCount?: number;
+  acceptedCount?: number;
+  rejectedCount?: number;
+  displayedCount?: number;
+  truncated?: boolean;
+  candidates: ConnectionCandidate[];
+  diagnostics?: VisualDiagnostic[];
 }
 
 /** The response of POST /api/visual/graphs/simulate. */

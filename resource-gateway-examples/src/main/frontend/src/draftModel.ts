@@ -1,4 +1,7 @@
 import type {
+  ConnectionCandidate,
+  ConnectionCandidatesRequest,
+  ConnectionCandidatesResponse,
   ConnectionCheckRequest,
   ConnectionCheckResponse,
   DraftEdge,
@@ -67,6 +70,18 @@ export interface SimulationChecklistItem {
 }
 
 export type PortHandleDirection = 'in' | 'out';
+export type ConnectionCandidateStatus = 'ready' | 'blocked' | 'wired';
+
+/** Canvas-ready lookup tables derived from the server candidate response. */
+export interface ConnectionCandidateIndex {
+  sourceKey: string;
+  nodeStatuses: Record<string, ConnectionCandidateStatus>;
+  portStatuses: Record<string, Record<string, ConnectionCandidateStatus>>;
+  candidatesByEndpointKey: Record<string, ConnectionCandidate>;
+  acceptedCount: number;
+  rejectedCount: number;
+  totalCandidateCount: number;
+}
 
 /** Encodes a port name into a stable React Flow handle id. */
 export function handleIdForPort(direction: PortHandleDirection, portName: string): string {
@@ -155,6 +170,27 @@ export function toConnectionCheckRequest(
   };
 }
 
+/**
+ * Converts a source-handle drag into the server candidate-discovery request.
+ */
+export function toConnectionCandidatesRequest(
+  graphName: string,
+  nodes: CanvasNode[],
+  edges: CanvasEdge[],
+  outputNodeId: string,
+  sourceNodeId: string,
+  sourceHandleId: string | null | undefined,
+): ConnectionCandidatesRequest {
+  return {
+    draft: toGraphDraft(graphName, nodes, edges, outputNodeId),
+    source: endpointFromHandle(sourceNodeId, sourceHandleId, 'out'),
+    kind: 'data',
+    includeRejected: true,
+    limit: 250,
+    targetSurface: 'input',
+  };
+}
+
 /** Human-readable feedback for a server connection-check response. */
 export function connectionDecisionMessage(response: ConnectionCheckResponse): string {
   if (response.summary?.message) {
@@ -167,9 +203,86 @@ export function connectionDecisionMessage(response: ConnectionCheckResponse): st
   return response.accepted ? 'Connection accepted.' : 'Connection rejected.';
 }
 
+/** Human-readable feedback for a server candidate-discovery response. */
+export function connectionCandidatesMessage(response: ConnectionCandidatesResponse): string {
+  const accepted = response.acceptedCount ?? response.candidates.filter((candidate) => candidate.accepted).length;
+  const rejected = response.rejectedCount
+    ?? response.candidates.filter((candidate) => !candidate.accepted).length;
+  const suffix = response.truncated ? ' Showing first results.' : '';
+  if (accepted > 0) {
+    return `${accepted} compatible target${accepted === 1 ? '' : 's'} · ${rejected} blocked.${suffix}`;
+  }
+  const firstDiagnostic = firstConnectionDiagnostic(response.diagnostics);
+  if (firstDiagnostic) {
+    return `${firstDiagnostic.code ? `${firstDiagnostic.code}: ` : ''}${firstDiagnostic.message ?? ''}`.trim();
+  }
+  return `0 compatible targets · ${rejected} blocked.${suffix}`;
+}
+
+/** Indexes server candidates for fast canvas node and handle highlighting. */
+export function indexConnectionCandidates(response: ConnectionCandidatesResponse): ConnectionCandidateIndex {
+  const nodeStatuses: Record<string, ConnectionCandidateStatus> = {};
+  const portStatuses: Record<string, Record<string, ConnectionCandidateStatus>> = {};
+  const candidatesByEndpointKey: Record<string, ConnectionCandidate> = {};
+
+  for (const candidate of response.candidates) {
+    const status = candidateStatus(candidate);
+    const nodeId = candidate.target.nodeId || candidate.targetNodeId;
+    if (!nodeId) {
+      continue;
+    }
+    nodeStatuses[nodeId] = strongerCandidateStatus(nodeStatuses[nodeId], status);
+    const port = candidate.target.port ?? '';
+    if (port) {
+      portStatuses[nodeId] = portStatuses[nodeId] ?? {};
+      portStatuses[nodeId][port] = strongerCandidateStatus(portStatuses[nodeId][port], status);
+    }
+    candidatesByEndpointKey[endpointKey(candidate.target)] = candidate;
+  }
+
+  return {
+    sourceKey: endpointKey(response.source),
+    nodeStatuses,
+    portStatuses,
+    candidatesByEndpointKey,
+    acceptedCount: response.acceptedCount ?? response.candidates.filter((candidate) => candidate.accepted).length,
+    rejectedCount: response.rejectedCount ?? response.candidates.filter((candidate) => !candidate.accepted).length,
+    totalCandidateCount: response.totalCandidateCount ?? response.candidates.length,
+  };
+}
+
+/** Stable key for endpoint-indexed preview lookups. */
+export function endpointKey(target: DraftEndpoint): string {
+  return [
+    encodeURIComponent(target.nodeId || ''),
+    encodeURIComponent(target.port || ''),
+    encodeURIComponent(target.path || ''),
+  ].join('|');
+}
+
 function firstConnectionDiagnostic(diagnostics: VisualDiagnostic[] | undefined): VisualDiagnostic | undefined {
   return diagnostics?.find((diagnostic) => diagnostic.level === 'error')
     ?? diagnostics?.find((diagnostic) => diagnostic.message || diagnostic.code);
+}
+
+function candidateStatus(candidate: ConnectionCandidate): ConnectionCandidateStatus {
+  if (candidate.targetStatus === 'wired') {
+    return 'wired';
+  }
+  return candidate.accepted ? 'ready' : 'blocked';
+}
+
+function strongerCandidateStatus(
+  current: ConnectionCandidateStatus | undefined,
+  next: ConnectionCandidateStatus,
+): ConnectionCandidateStatus {
+  if (!current || current === 'blocked') {
+    return next;
+  }
+  if (current === 'wired' && next === 'ready') {
+    return next;
+  }
+  return current;
 }
 
 function endpoint(nodeId: string, port = '', path = ''): DraftEndpoint {

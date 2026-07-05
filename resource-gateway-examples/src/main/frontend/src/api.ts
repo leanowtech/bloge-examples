@@ -1,4 +1,6 @@
 import type {
+  ConnectionCandidatesRequest,
+  ConnectionCandidatesResponse,
   ConnectionCheckRequest,
   ConnectionCheckResponse,
   OperatorDefinition,
@@ -43,6 +45,19 @@ export async function checkConnection(
 ): Promise<ConnectionCheckResponse> {
   return readJson<ConnectionCheckResponse>(
     await fetch('/api/visual/connections/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    }),
+  );
+}
+
+/** Discovers server-authoritative target candidates for a source handle drag. */
+export async function fetchConnectionCandidates(
+  request: ConnectionCandidatesRequest,
+): Promise<ConnectionCandidatesResponse> {
+  return readJson<ConnectionCandidatesResponse>(
+    await fetch('/api/visual/connections/candidates', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),

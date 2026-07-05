@@ -17,20 +17,25 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import { checkConnection, fetchOperators, simulate } from './api';
+import { checkConnection, fetchConnectionCandidates, fetchOperators, simulate } from './api';
 import {
   autoLayoutCanvas,
   type CanvasEdge,
   type CanvasNode,
+  type ConnectionCandidateIndex,
+  type ConnectionCandidateStatus,
+  connectionCandidatesMessage,
   type OperatorSummary,
   connectionDecisionMessage,
   handleIdForPort,
+  indexConnectionCandidates,
   isRunSuccessful,
   nodeStatuses,
   portNameFromHandle,
   simulationChecklist,
   summarizeCanvas,
   summarizeOperator,
+  toConnectionCandidatesRequest,
   toConnectionCheckRequest,
   toGraphDraft,
 } from './draftModel';
@@ -41,11 +46,19 @@ interface NodeData {
   operatorRef: string;
   summary: OperatorSummary;
   status?: 'mocked' | 'real' | 'unknown';
+  candidateStatus?: ConnectionCandidateStatus;
+  candidatePorts?: Record<string, ConnectionCandidateStatus>;
 }
 
 interface ConnectionNotice {
   level: 'ok' | 'warning' | 'error' | 'pending';
   message: string;
+}
+
+interface ConnectionStartParams {
+  nodeId: string | null;
+  handleId: string | null;
+  handleType: string | null;
 }
 
 function handleOffset(index: number, count: number): CSSProperties {
@@ -56,16 +69,17 @@ function OperatorNode({ data, selected }: NodeProps<NodeData>) {
   const status = data.status ?? 'unknown';
   const inputPorts = data.summary.inputNames;
   const outputPorts = data.summary.outputNames.length ? data.summary.outputNames : [''];
+  const candidateClass = data.candidateStatus ? `candidate-${data.candidateStatus}` : '';
   return (
-    <div className={`operator-node ${status} ${selected ? 'selected' : ''}`}>
+    <div className={`operator-node ${status} ${candidateClass} ${selected ? 'selected' : ''}`}>
       {inputPorts.map((port, index) => (
         <Handle
           key={`in:${port}`}
           id={handleIdForPort('in', port)}
           type="target"
           position={Position.Left}
-          title={`Input: ${port}`}
-          className="port-handle target"
+          title={data.candidatePorts?.[port] ? `Input: ${port} · ${data.candidatePorts[port]}` : `Input: ${port}`}
+          className={`port-handle target ${data.candidatePorts?.[port] ?? ''}`}
           style={handleOffset(index, inputPorts.length)}
         />
       ))}
@@ -117,10 +131,13 @@ export default function AuthorCanvas() {
   const [error, setError] = useState<string>('');
   const [busy, setBusy] = useState(false);
   const [checkingConnection, setCheckingConnection] = useState(false);
+  const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedNodeId, setSelectedNodeId] = useState('');
   const [connectionNotice, setConnectionNotice] = useState<ConnectionNotice | null>(null);
+  const [candidatePreview, setCandidatePreview] = useState<ConnectionCandidateIndex | null>(null);
   const counter = useRef(0);
+  const candidatePreviewSequence = useRef(0);
 
   useEffect(() => {
     fetchOperators()
@@ -199,11 +216,76 @@ export default function AuthorCanvas() {
     [canvasSummary, result],
   );
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
+  const flowNodes = useMemo<Node<NodeData>[]>(
+    () =>
+      nodes.map((node) => {
+        const candidateStatus = candidatePreview?.nodeStatuses[node.id];
+        const candidatePorts = candidatePreview?.portStatuses[node.id];
+        if (!candidateStatus && !candidatePorts) {
+          return node;
+        }
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            candidateStatus,
+            candidatePorts,
+          },
+        };
+      }),
+    [candidatePreview, nodes],
+  );
+
+  const onConnectStart = useCallback(async (_event: unknown, params: ConnectionStartParams) => {
+    if (params.handleType !== 'source' || !params.nodeId) {
+      return;
+    }
+    const requestId = candidatePreviewSequence.current + 1;
+    candidatePreviewSequence.current = requestId;
+    setLoadingCandidates(true);
+    setCandidatePreview(null);
+    setConnectionNotice({ level: 'pending', message: 'Discovering compatible targets...' });
+    try {
+      const response = await fetchConnectionCandidates(toConnectionCandidatesRequest(
+        'visualGraph',
+        canvasNodes,
+        canvasEdges,
+        outputNodeId,
+        params.nodeId,
+        params.handleId,
+      ));
+      if (candidatePreviewSequence.current !== requestId) {
+        return;
+      }
+      const index = indexConnectionCandidates(response);
+      setCandidatePreview(index);
+      setConnectionNotice({
+        level: index.acceptedCount > 0 ? 'ok' : 'warning',
+        message: connectionCandidatesMessage(response),
+      });
+    } catch (cause: unknown) {
+      if (candidatePreviewSequence.current === requestId) {
+        setConnectionNotice({ level: 'error', message: String(cause) });
+      }
+    } finally {
+      if (candidatePreviewSequence.current === requestId) {
+        setLoadingCandidates(false);
+      }
+    }
+  }, [canvasEdges, canvasNodes, outputNodeId]);
+
+  const onConnectEnd = useCallback(() => {
+    candidatePreviewSequence.current += 1;
+    setCandidatePreview(null);
+    setLoadingCandidates(false);
+  }, []);
 
   const onConnect = useCallback(async (connection: Connection) => {
     if (!connection.source || !connection.target) {
       return;
     }
+    candidatePreviewSequence.current += 1;
+    setCandidatePreview(null);
     setCheckingConnection(true);
     setConnectionNotice({ level: 'pending', message: 'Checking schema compatibility...' });
     try {
@@ -342,7 +424,7 @@ export default function AuthorCanvas() {
           <span className="canvas-chip">Output {canvasSummary.outputNodeId || 'missing'}</span>
           {connectionNotice && (
             <span className={`connection-notice ${connectionNotice.level}`}>
-              {checkingConnection ? 'Checking...' : connectionNotice.message}
+              {checkingConnection ? 'Checking...' : loadingCandidates ? 'Discovering...' : connectionNotice.message}
             </span>
           )}
           <span className="legend">
@@ -352,12 +434,14 @@ export default function AuthorCanvas() {
         </div>
         <div className="flow">
           <ReactFlow
-            nodes={nodes}
+            nodes={flowNodes}
             edges={edges}
             nodeTypes={NODE_TYPES}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onConnectStart={onConnectStart}
+            onConnectEnd={onConnectEnd}
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
             onPaneClick={() => setSelectedNodeId('')}
             fitView

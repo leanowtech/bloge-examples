@@ -302,6 +302,18 @@ button.secondary:disabled {
   border-color: var(--accent);
 }
 
+.operator-node.candidate-ready {
+  box-shadow: 0 0 0 2px rgba(17, 125, 75, 0.22), 0 6px 16px rgb(28 35 48 / 10%);
+}
+
+.operator-node.candidate-wired {
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2), 0 6px 16px rgb(28 35 48 / 10%);
+}
+
+.operator-node.candidate-blocked {
+  box-shadow: 0 0 0 2px rgba(198, 40, 40, 0.18), 0 6px 16px rgb(28 35 48 / 10%);
+}
+
 .operator-node.mocked {
   border: 2px dashed var(--warning);
   background: #fff8e1;
@@ -406,6 +418,18 @@ button.secondary:disabled {
 .react-flow__handle.port-handle.source {
   right: -6px;
   background: var(--accent);
+}
+
+.react-flow__handle.port-handle.ready {
+  background: var(--success);
+}
+
+.react-flow__handle.port-handle.wired {
+  background: #1976d2;
+}
+
+.react-flow__handle.port-handle.blocked {
+  background: var(--danger);
 }
 
 .react-flow__edge.accepted-edge path {

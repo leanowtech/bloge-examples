@@ -2,15 +2,18 @@ import { describe, expect, it } from 'vitest';
 
 import {
   autoLayoutCanvas,
+  connectionCandidatesMessage,
   connectionDecisionMessage,
   endpointFromHandle,
   handleIdForPort,
+  indexConnectionCandidates,
   isRunSuccessful,
   nodeStatuses,
   portNameFromHandle,
   simulationChecklist,
   summarizeCanvas,
   summarizeOperator,
+  toConnectionCandidatesRequest,
   toConnectionCheckRequest,
   toGraphDraft,
 } from './draftModel';
@@ -124,6 +127,31 @@ describe('toConnectionCheckRequest', () => {
   });
 });
 
+describe('toConnectionCandidatesRequest', () => {
+  it('builds a server candidate request from a source handle drag', () => {
+    const request = toConnectionCandidatesRequest(
+      'myGraph',
+      [
+        { id: 'a', operatorRef: 'producer', position: { x: 0, y: 0 } },
+        { id: 'b', operatorRef: 'consumer', position: { x: 200, y: 0 } },
+      ],
+      [],
+      'b',
+      'a',
+      handleIdForPort('out', 'decision'),
+    );
+
+    expect(request).toMatchObject({
+      kind: 'data',
+      includeRejected: true,
+      limit: 250,
+      targetSurface: 'input',
+      source: { nodeId: 'a', port: 'decision' },
+    });
+    expect(request.draft.output.nodeId).toBe('b');
+  });
+});
+
 describe('connectionDecisionMessage', () => {
   it('prefers the server summary message', () => {
     expect(
@@ -142,6 +170,81 @@ describe('connectionDecisionMessage', () => {
         diagnostics: [{ level: 'error', code: 'visual.connection.schema', message: 'string -> number' }],
       }),
     ).toBe('visual.connection.schema: string -> number');
+  });
+});
+
+describe('connectionCandidatesMessage', () => {
+  it('summarizes compatible and blocked candidate counts', () => {
+    expect(
+      connectionCandidatesMessage({
+        source: { nodeId: 'a', port: 'decision' },
+        acceptedCount: 2,
+        rejectedCount: 1,
+        candidates: [],
+      }),
+    ).toBe('2 compatible targets · 1 blocked.');
+  });
+
+  it('falls back to request diagnostics when no target is compatible', () => {
+    expect(
+      connectionCandidatesMessage({
+        source: { nodeId: 'a' },
+        acceptedCount: 0,
+        rejectedCount: 0,
+        candidates: [],
+        diagnostics: [{ level: 'error', code: 'visual.connection.source', message: 'Unknown source.' }],
+      }),
+    ).toBe('visual.connection.source: Unknown source.');
+  });
+});
+
+describe('indexConnectionCandidates', () => {
+  it('indexes target nodes and ports with ready status taking precedence', () => {
+    const index = indexConnectionCandidates({
+      source: { nodeId: 'a', port: 'decision' },
+      acceptedCount: 1,
+      rejectedCount: 1,
+      totalCandidateCount: 2,
+      candidates: [
+        {
+          targetNodeId: 'b',
+          targetSurface: 'input',
+          target: { nodeId: 'b', port: 'profile' },
+          accepted: false,
+          targetStatus: 'blocked',
+        },
+        {
+          targetNodeId: 'b',
+          targetSurface: 'input',
+          target: { nodeId: 'b', port: 'score' },
+          accepted: true,
+          targetStatus: 'ready',
+        },
+      ],
+    });
+
+    expect(index.nodeStatuses.b).toBe('ready');
+    expect(index.portStatuses.b).toEqual({ profile: 'blocked', score: 'ready' });
+    expect(index.acceptedCount).toBe(1);
+    expect(index.rejectedCount).toBe(1);
+  });
+
+  it('keeps already-wired targets distinct from blocked targets', () => {
+    const index = indexConnectionCandidates({
+      source: { nodeId: 'a' },
+      candidates: [
+        {
+          targetNodeId: 'b',
+          targetSurface: 'input',
+          target: { nodeId: 'b', port: 'profile' },
+          accepted: false,
+          targetStatus: 'wired',
+        },
+      ],
+    });
+
+    expect(index.nodeStatuses.b).toBe('wired');
+    expect(index.portStatuses.b.profile).toBe('wired');
   });
 });
 
