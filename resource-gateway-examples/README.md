@@ -117,6 +117,12 @@ inspector. The same HUD also keeps a clickable readiness queue for the highest
 priority authoring blockers, such as missing graph output, missing required
 inputs, validation diagnostics, or latest-run trace errors, so authors can jump
 from the canvas summary to the next node to repair.
+The HUD also exposes the same core loop as a clickable strip: Library, Add,
+Wire, Check, Simulate, and Export. The Server Check panel has a dedicated
+Simulate action that calls `/api/visual/graphs/simulate`, preserves
+server-derived readiness, and paints the latest canvas trace with unmistakable
+`MOCKED`, `REAL`, and `OUTPUT` badges so design-time operators can be tested
+without being confused with a production run.
 The React authoring workspace served at `/author/` is the progressive React Flow
 canvas for the same generic operator-library contract. Its palette and node
 cards now surface operator display names, required/total input counts, output

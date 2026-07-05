@@ -136,6 +136,9 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("composer-canvas-hud"), "Output Response");
         waitForText(wait, By.id("composer-canvas-hud"), "Inputs bound");
         waitForText(wait, By.id("composer-canvas-hud"), "READY QUEUE CLEAR");
+        waitForText(wait, By.id("composer-canvas-hud"), "Simulate");
+        assertThat(driver.findElements(By.cssSelector("[data-composer-core-action='simulate']")))
+                .hasSize(1);
         wait.until(ignored -> svgTextContent(".node-port-summary").contains("In 2")
                 && svgTextContent(".node-port-summary").contains("Out 5"));
         wait.until(ignored -> svgTextContent(".canvas-port-label").contains("score")

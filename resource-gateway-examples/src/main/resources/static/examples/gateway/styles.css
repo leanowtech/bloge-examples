@@ -357,6 +357,69 @@ h2 {
   min-width: 0;
 }
 
+.composer-core-loop {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.composer-core-step {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer-core-step:hover,
+.composer-core-step:focus-visible {
+  border-color: var(--blue);
+  outline: 2px solid rgba(23, 78, 166, 0.16);
+}
+
+.composer-core-step strong,
+.composer-core-step span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-core-step strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.composer-core-step span {
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.composer-core-step.done {
+  border-color: #94c9a8;
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.composer-core-step.current {
+  border-color: #e4bd76;
+  background: var(--amber-soft);
+  color: #8a5a13;
+}
+
+.composer-core-step.waiting {
+  background: #f8fafc;
+}
+
 button.composer-canvas-chip {
   cursor: pointer;
 }
@@ -4107,6 +4170,10 @@ body.dragging-operator * {
 
   .composer-canvas-hud-main {
     grid-template-columns: 1fr;
+  }
+
+  .composer-core-loop {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .composer-canvas-stats {

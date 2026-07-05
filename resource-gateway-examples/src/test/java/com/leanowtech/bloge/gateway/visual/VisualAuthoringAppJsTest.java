@@ -1308,9 +1308,15 @@ class VisualAuthoringAppJsTest {
                   'composerCanvasHealthLevel',
                   'composerCanvasReadinessQueue',
                   'composerCanvasSummary',
+                  'composerCoreLoopStatus',
+                  'renderComposerCoreLoop',
                   'renderComposerCanvasReadinessQueueItem',
                   'renderComposerCanvasReadinessQueue',
-                  'renderComposerCanvasHudHtml'
+                  'renderComposerCanvasHudHtml',
+                  'normalizeDiagnostics',
+                  'simulationTraceFromResponse',
+                  'runTraceLevel',
+                  'nodeTraceBadgeText'
                 ]) {
                   vm.runInContext(functionSource(name), context);
                 }
@@ -1340,7 +1346,11 @@ class VisualAuthoringAppJsTest {
                 context.state = {
                   currentDraftId: 'draft-readable',
                   currentDraftRevision: 7,
-                  selectedNodeId: 'riskEligibility'
+                  selectedNodeId: 'riskEligibility',
+                  operatorLibraries: [{ libraryId: 'risk-policy' }],
+                  visualCheck: { message: 'Valid visual graph.', diagnostics: [] },
+                  activeRunTrace: null,
+                  activeRunTraceId: ''
                 };
                 const builder = {
                   graphName: 'customLoanPolicy',
@@ -1387,6 +1397,25 @@ class VisualAuthoringAppJsTest {
                 const nodeSummary = context.canvasNodePortSummary(builder.nodes[0]);
                 const fallbackEdgeLabel = context.canvasEdgeLabel(layout.edges[0]);
                 const clippedText = context.canvasText('abcdefghijklmnopqrstuvwxyz', 10);
+                const simulationTrace = context.simulationTraceFromResponse({
+                  validated: true,
+                  compiled: true,
+                  success: true,
+                  outputNode: 'response',
+                  mockedNodeIds: ['riskEligibility'],
+                  realNodeIds: ['response'],
+                  statusMap: {
+                    riskEligibility: 'COMPLETED',
+                    response: 'COMPLETED'
+                  },
+                  nodeElapsedMs: {
+                    riskEligibility: 7,
+                    response: 2
+                  },
+                  diagnostics: []
+                }, builder);
+                const mockedTrace = simulationTrace.nodes.find((node) => node.nodeId === 'riskEligibility');
+                const realOutputTrace = simulationTrace.nodes.find((node) => node.nodeId === 'response');
 
                 const checks = [
                   ['hud graph', String(hudHtml.includes('customLoanPolicy')), 'true'],
@@ -1394,6 +1423,9 @@ class VisualAuthoringAppJsTest {
                   ['hud links', String(hudHtml.includes('1 link')), 'true'],
                   ['hud output', String(hudHtml.includes('Output Eligibility.eligible')), 'true'],
                   ['hud issue', String(hudHtml.includes('1 issue')), 'true'],
+                  ['hud core loop', String(hudHtml.includes('composer-core-loop')), 'true'],
+                  ['hud simulate action', String(hudHtml.includes('data-composer-core-action="simulate"')), 'true'],
+                  ['hud simulate copy', String(hudHtml.includes('Mock-run logic')), 'true'],
                   ['hud readiness queue', String(hudHtml.includes('Readiness queue')), 'true'],
                   ['hud readiness diagnostic', String(hudHtml.includes('validation diagnostic')), 'true'],
                   ['summary issue count', summary.issueCount, 1],
@@ -1408,7 +1440,14 @@ class VisualAuthoringAppJsTest {
                   ['node bound inputs', nodeSummary.boundInputCount, 1],
                   ['node missing inputs', nodeSummary.missingRequiredInputs, 1],
                   ['fallback edge label', fallbackEdgeLabel, 'output.maxTerm -> inputs.score'],
-                  ['clipped text', clippedText, 'abcdefg...']
+                  ['clipped text', clippedText, 'abcdefg...'],
+                  ['trace source', simulationTrace.source, 'SIMULATION'],
+                  ['trace mocked status', mockedTrace.status, 'MOCKED'],
+                  ['trace mocked level', context.runTraceLevel(mockedTrace), 'warning'],
+                  ['trace mocked badge', context.nodeTraceBadgeText(mockedTrace), 'MOCKED'],
+                  ['trace real status', realOutputTrace.status, 'REAL'],
+                  ['trace real level', context.runTraceLevel(realOutputTrace), 'success'],
+                  ['trace output badge', context.nodeTraceBadgeText(realOutputTrace), 'OUTPUT']
                 ];
                 for (const [label, actual, expected] of checks) {
                   if (actual !== expected) {

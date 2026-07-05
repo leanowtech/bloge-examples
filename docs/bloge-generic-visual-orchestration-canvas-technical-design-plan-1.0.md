@@ -13,10 +13,10 @@ Status: Draft for review · Scope: resource-gateway-examples · Extends `docs/bl
 | 1 Generic schema-constrained canvas | Built | `visual/` 13 sub-pkgs |
 | 2 Operator-library JSON Schema | Built | `bloge.visualOperatorLibrary.v1` |
 | 3 Valid-but-unimplemented → logical correctness | Built | `lowering.mode=design`, ADR-007 |
-| 4 **Mock-invoke unimplemented ops** | **MISSING** | `bloge-test` test-scope only |
-| 5 Export default registry as library | Mostly | Java projects into `/api/visual/operators`; `/{id}/export` for user libs |
+| 4 **Mock-invoke unimplemented ops** | Built | `visual/simulation/*`; `POST /api/visual/graphs/simulate`; Custom Composer Simulate action |
+| 5 Export default registry as library | Built | `GET /api/visual-operator-libraries/builtin/export`; portable bundle import path |
 
-**Conclusion:** not greenfield. Real work = close **mock-run (#4)**, fix **canvas UX**, trim to a **core loop**, close **portable builtin export (#5)**. Greenfield is rejected — it would discard a tested schema engine and re-derive solved JSON Schema problems.
+**Conclusion:** not greenfield. The backend mock-run and builtin export gaps are now closed; the remaining work is primarily **canvas UX coherence**, **core-loop clarity**, and eventual separability. Greenfield is rejected — it would discard a tested schema engine and re-derive solved JSON Schema problems.
 
 ## 2. Vision, scope, non-goals
 
@@ -36,9 +36,10 @@ upload/adopt operator library
 
 ## 4. Current-state grounding
 - **Run path:** `VisualGraphRunService.run()` → validate → **`actionReadiness().runNow()` gate (blocks design-only)** → DSL gen → `DynamicGatewayComposerService.run()`. The composer builds `GraphEngine` from an **injectable `OperatorRegistry`** — the clean mock seam.
+- **Static Custom Composer path:** `/examples/gateway` now exposes the authoring core loop directly in the canvas HUD and a Server Check `Simulate` action. The action posts a transient draft to `/api/visual/graphs/simulate`, preserves server readiness, and turns the response into canvas trace badges (`MOCKED`, `REAL`, `OUTPUT`).
 - **bloge-core:** `Operator.sideEffectType(): SideEffectType = READ_ONLY|WRITE|EXTERNAL_CALL|MIXED` (default **MIXED**); `Idempotency` default **UNKNOWN**; `OperatorRegistry` supports dynamic runtime registration.
 - **bloge-test:** `MockOperator` is a plain operator returning a caller value; **test-scope only**.
-- **`GraphDraft`** has **no fixtures field**; `visualLayout` is presentation-only (ADR-002) — the precedent we reuse for fixtures.
+- **`GraphDraft`** has **`nodeFixtures`** and treats them as non-semantic authoring/test evidence alongside presentation-only `visualLayout` (ADR-002 precedent).
 
 ## 5. Decision Record (context · options · WHY · trade-offs)
 
@@ -109,9 +110,9 @@ A03 injection (identifier sanitize, `MAX_DSL_CHARS`); A04 resource exhaustion (s
 
 ## 8. Phased plan
 - **Phase 0 Foundations:** React/Vite app + `frontend-maven-plugin`; generic-core seam. *Verify:* `mvn package` builds jar+UI; no gateway types in core.
-- **Phase 1 Mock backend (#4, parallel):** `SimulationOperator`, `JsonSchemaSampleGenerator`, `simulate()`, `nodeFixtures`, endpoint. *Verify:* unit — generator layers/bounds, classification, mixed-graph simulate, schema conformance, fingerprint ignores fixtures.
-- **Phase 2 Authoring UI (dep 0,1):** canvas + auto-layout + palette + live highlight + Simulation tab + overlay/trace/badges. *Verify:* Selenium e2e core loop.
-- **Phase 3 Export + golden (dep 1):** virtual builtin library + round-trip; golden snapshots. *Verify:* export→import resolves; deterministic golden.
+- **Phase 1 Mock backend (#4, completed):** `SimulationOperator`, `JsonSchemaSampleGenerator`, `simulate()`, `nodeFixtures`, endpoint. *Verify:* unit — generator layers/bounds, classification, mixed-graph simulate, schema conformance, fingerprint ignores fixtures.
+- **Phase 2 Authoring UI (in progress):** static Custom Composer now has core-loop HUD + Simulate overlay/trace badges; React Flow remains the higher-polish canvas + auto-layout + Simulation tab target. *Verify:* Selenium/JS e2e core loop.
+- **Phase 3 Export + golden (partial):** virtual builtin library round-trip is done; golden snapshots remain. *Verify:* export→import resolves; deterministic golden.
 - **Phase 4 Showcase migration:** port to React. *Verify:* scenario parity.
 
 ## 9. Testing

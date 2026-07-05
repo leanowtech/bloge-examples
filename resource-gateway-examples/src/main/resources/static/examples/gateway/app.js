@@ -2590,6 +2590,7 @@ function renderInputForm() {
         <div class="visual-check-actions">
           <button id="validate-visual-draft" class="secondary compact" type="button">Validate</button>
           <button id="compile-visual-draft" class="secondary compact" type="button">Compile</button>
+          <button id="simulate-visual-draft" class="secondary compact" type="button">Simulate</button>
           <select id="publish-artifact-kind" aria-label="Publication artifact kind">
             <option value="EXECUTABLE"${state.publishArtifactKind === 'DESIGN' ? '' : ' selected'}>Executable</option>
             <option value="DESIGN"${state.publishArtifactKind === 'DESIGN' ? ' selected' : ''}>Design artifact</option>
@@ -2655,6 +2656,7 @@ function renderInputForm() {
     $('apply-scope').addEventListener('click', applyBuilderScopeFromControls);
     $('validate-visual-draft').addEventListener('click', validateVisualDraft);
     $('compile-visual-draft').addEventListener('click', compileVisualDraft);
+    $('simulate-visual-draft').addEventListener('click', simulateVisualDraft);
     $('publish-artifact-kind').addEventListener('change', (event) => {
       state.publishArtifactKind = normalizePublishArtifactKind(event.target.value);
       state.pendingPublishWarningKey = '';
@@ -3311,6 +3313,9 @@ function renderComposerCanvasHud() {
   for (const button of target.querySelectorAll('[data-canvas-node]')) {
     button.addEventListener('click', () => focusCanvasNode(button.dataset.canvasNode));
   }
+  for (const button of target.querySelectorAll('[data-composer-core-action]')) {
+    button.addEventListener('click', () => handleComposerCoreAction(button.dataset.composerCoreAction));
+  }
 }
 
 function renderComposerCanvasHudHtml(summary) {
@@ -3346,8 +3351,110 @@ function renderComposerCanvasHudHtml(summary) {
       ${missingChip}
       ${issueChip}
     </div>
+    ${renderComposerCoreLoop(summary)}
     ${readinessQueue}
   `;
+}
+
+function renderComposerCoreLoop(summary) {
+  const steps = [
+    ['library', 'Library', 'Adopt', 'operator library'],
+    ['add', 'Add', 'Place', 'operators'],
+    ['connect', 'Wire', 'Bind', 'inputs'],
+    ['validate', 'Check', 'Validate', 'schemas'],
+    ['simulate', 'Simulate', 'Mock-run', 'logic'],
+    ['export', 'Export', 'Bundle', 'artifact']
+  ];
+  return `
+    <div class="composer-core-loop" aria-label="Composer core loop">
+      ${steps.map(([action, label, verb, noun]) => `
+        <button class="composer-core-step ${escapeHtml(composerCoreLoopStatus(summary, action))}" type="button" data-composer-core-action="${escapeHtml(action)}">
+          <strong>${escapeHtml(label)}</strong>
+          <span>${escapeHtml(`${verb} ${noun}`)}</span>
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
+
+function composerCoreLoopStatus(summary, action) {
+  const libraries = Array.isArray(state.operatorLibraries) ? state.operatorLibraries.length : 0;
+  const builtins = typeof OPERATOR_TYPES !== 'undefined' && OPERATOR_TYPES && typeof OPERATOR_TYPES === 'object'
+    ? Object.keys(OPERATOR_TYPES).length
+    : 0;
+  const diagnostics = Array.isArray(state.visualCheck?.diagnostics) ? state.visualCheck.diagnostics : [];
+  const checkMessage = String(state.visualCheck?.message || '');
+  const checked = Boolean(checkMessage && checkMessage !== 'Not checked.');
+  const hasErrors = diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR');
+  const validated = checked && !hasErrors;
+  const simulated = state.activeRunTraceId === 'simulate'
+    || String(state.activeRunTrace?.source || '').toUpperCase() === 'SIMULATION';
+  if (action === 'library') {
+    return libraries || builtins ? 'done' : 'current';
+  }
+  if (action === 'add') {
+    return summary.nodeCount > 0 ? 'done' : 'current';
+  }
+  if (action === 'connect') {
+    if (!summary.nodeCount) return 'waiting';
+    return summary.edgeCount > 0 && summary.missingRequiredInputCount === 0 ? 'done' : 'current';
+  }
+  if (action === 'validate') {
+    if (validated) return 'done';
+    return summary.nodeCount > 0 ? 'current' : 'waiting';
+  }
+  if (action === 'simulate') {
+    if (simulated) return 'done';
+    return validated ? 'current' : 'waiting';
+  }
+  if (action === 'export') {
+    return simulated || validated ? 'current' : 'waiting';
+  }
+  return 'waiting';
+}
+
+function handleComposerCoreAction(action) {
+  if (action === 'library') {
+    focusComposerControl('operator-library-json') || focusComposerControl('library-select');
+    return;
+  }
+  if (action === 'add') {
+    focusComposerControl('operator-palette-search');
+    return;
+  }
+  if (action === 'connect') {
+    const selectedNodeId = state.builder?.selectedId || state.selectedNodeId || '';
+    if (selectedNodeId) {
+      focusCanvasNode(selectedNodeId);
+    }
+    focusComposerControl('selected-operator-editor') || focusComposerControl('operator-palette-search');
+    return;
+  }
+  if (action === 'validate') {
+    void validateVisualDraft();
+    return;
+  }
+  if (action === 'simulate') {
+    void simulateVisualDraft();
+    return;
+  }
+  if (action === 'export') {
+    void exportDraft();
+  }
+}
+
+function focusComposerControl(id) {
+  const element = $(id);
+  if (!element) {
+    return false;
+  }
+  if (typeof element.scrollIntoView === 'function') {
+    element.scrollIntoView({ block: 'center', inline: 'nearest' });
+  }
+  if (typeof element.focus === 'function') {
+    element.focus({ preventScroll: true });
+  }
+  return true;
 }
 
 function renderComposerCanvasReadinessQueue(queue) {
@@ -3702,6 +3809,12 @@ function runTraceLevel(traceNode) {
   if (status === 'COMPLETED' || status === 'SUCCESS' || status === 'SUCCEEDED') {
     return 'success';
   }
+  if (status === 'REAL') {
+    return 'success';
+  }
+  if (status === 'MOCKED') {
+    return 'warning';
+  }
   return status ? 'info' : 'clean';
 }
 
@@ -3716,6 +3829,62 @@ function runTraceStatusLabel(traceNode) {
 function clearActiveRunTrace() {
   state.activeRunTrace = null;
   state.activeRunTraceId = '';
+}
+
+function simulationTraceFromResponse(payload, builder = state.builder) {
+  const nodes = Array.isArray(builder?.nodes) ? builder.nodes : [];
+  const outputNode = String(payload?.outputNode || composerOutputNode() || '');
+  const mocked = new Set((Array.isArray(payload?.mockedNodeIds) ? payload.mockedNodeIds : [])
+    .map((nodeId) => String(nodeId || ''))
+    .filter(Boolean));
+  const real = new Set((Array.isArray(payload?.realNodeIds) ? payload.realNodeIds : [])
+    .map((nodeId) => String(nodeId || ''))
+    .filter(Boolean));
+  const statusMap = payload?.statusMap && typeof payload.statusMap === 'object' ? payload.statusMap : {};
+  const elapsed = payload?.nodeElapsedMs && typeof payload.nodeElapsedMs === 'object' ? payload.nodeElapsedMs : {};
+  const diagnostics = normalizeDiagnostics(payload?.diagnostics);
+  return {
+    schemaVersion: 'bloge.visualGraphSimulationTrace.v1',
+    runId: 'simulate',
+    source: 'SIMULATION',
+    outputNode,
+    nodes: nodes.map((node) => {
+      const nodeId = String(node?.id || '');
+      const spec = typeof specForNode === 'function' ? specForNode(node) : {};
+      const nodeDiagnostics = diagnostics
+        .filter((diagnostic) => {
+          const targetNodeId = typeof diagnosticTargetNodeId === 'function'
+            ? diagnosticTargetNodeId(diagnostic, builder)
+            : String(diagnostic?.nodeId || diagnostic?.node || diagnostic?.targetNodeId || '');
+          return targetNodeId === nodeId;
+        });
+      const errorCount = nodeDiagnostics
+        .filter((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR')
+        .length;
+      let status = '';
+      if (mocked.has(nodeId)) {
+        status = 'MOCKED';
+      } else if (real.has(nodeId)) {
+        status = 'REAL';
+      } else {
+        status = String(statusMap[nodeId] || '').trim();
+      }
+      if (!status) {
+        status = payload?.success ? 'SIMULATED' : 'BLOCKED';
+      }
+      const timingKnown = Object.prototype.hasOwnProperty.call(elapsed, nodeId);
+      return {
+        nodeId,
+        operatorRef: spec.visualOperatorRef || spec.operatorRef || node.operatorRef || node.paletteType || node.type || '',
+        status,
+        elapsedMs: Number(elapsed[nodeId]) || 0,
+        timingKnown,
+        outputSelected: nodeId === outputNode,
+        diagnosticCount: nodeDiagnostics.length,
+        errorCount
+      };
+    })
+  };
 }
 
 function runTraceCanvasCoverage(trace = state.activeRunTrace, builder = state.builder, layout = state.layout) {
@@ -7789,6 +7958,76 @@ async function compileVisualDraft() {
     $('output').textContent = pretty({ status: response.status, compile: payload });
   } catch (error) {
     setVisualCheck(error.message, 'error', [], readinessBeforeCompile, actionReadinessBeforeCompile);
+  }
+}
+
+async function simulateVisualDraft() {
+  const readinessBeforeSimulate = state.visualCheck?.readiness || null;
+  const actionReadinessBeforeSimulate = state.visualCheck?.actionReadiness || null;
+  const diagnosticsBeforeSimulate = normalizeDiagnostics(state.visualCheck?.diagnostics);
+  let context;
+  try {
+    context = JSON.parse(state.customContextText || '{}');
+  } catch (error) {
+    setVisualCheck(error.message, 'error', diagnosticsBeforeSimulate,
+      readinessBeforeSimulate, actionReadinessBeforeSimulate);
+    $('output').textContent = pretty({ status: 'invalid_context', error: error.message });
+    return;
+  }
+  if (!context || Array.isArray(context) || typeof context !== 'object') {
+    setVisualCheck('Context JSON must be an object.', 'error', diagnosticsBeforeSimulate,
+      readinessBeforeSimulate, actionReadinessBeforeSimulate);
+    $('output').textContent = pretty({ status: 'invalid_context', error: 'Context JSON must be an object.' });
+    return;
+  }
+  clearActiveRunTrace();
+  setVisualCheck('Simulating...', 'info', diagnosticsBeforeSimulate,
+    readinessBeforeSimulate, actionReadinessBeforeSimulate);
+  $('output').textContent = pretty({ status: 'simulating', graph: state.builder?.graphName || 'customGraph' });
+  try {
+    const response = await fetch('/api/visual/graphs/simulate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        draft: builderToVisualDraft(state.builder),
+        context,
+        outputNode: composerOutputNode()
+      })
+    });
+    const payload = await response.json();
+    const diagnostics = normalizeDiagnostics(payload.diagnostics);
+    const ok = Boolean(payload.validated && payload.compiled && payload.success);
+    state.activeRunTrace = simulationTraceFromResponse(payload, state.builder);
+    state.activeRunTraceId = 'simulate';
+    if (payload.generatedDsl) {
+      state.customDsl = payload.generatedDsl;
+      state.lastGeneratedVisualDsl = payload.generatedDsl;
+      const dslBox = $('composer-dsl');
+      if (dslBox) {
+        dslBox.value = payload.generatedDsl;
+      }
+    }
+    state.lastPayload = payload.output == null ? null : { data: payload.output, simulation: payload };
+    const mockedCount = Array.isArray(payload.mockedNodeIds) ? payload.mockedNodeIds.length : 0;
+    const realCount = Array.isArray(payload.realNodeIds) ? payload.realNodeIds.length : 0;
+    setVisualCheck(
+      ok ? `Simulation completed: ${mockedCount} mocked, ${realCount} real.` : 'Simulation returned errors.',
+      visualCheckLevel(diagnostics, ok),
+      diagnostics,
+      payload.validation?.readiness || readinessBeforeSimulate,
+      payload.validation?.actionReadiness || actionReadinessBeforeSimulate
+    );
+    $('output').textContent = pretty({ status: response.status, simulation: payload });
+    renderDecisionTable();
+    highlightDecisionRow(state.lastPayload);
+    renderDecisionSummary(state.lastPayload);
+    renderDiagram();
+    renderSelectedOperatorEditor();
+  } catch (error) {
+    clearActiveRunTrace();
+    setVisualCheck(error.message, 'error', diagnosticsBeforeSimulate,
+      readinessBeforeSimulate, actionReadinessBeforeSimulate);
+    $('output').textContent = pretty({ status: 'simulation_error', error: error.message });
   }
 }
 
