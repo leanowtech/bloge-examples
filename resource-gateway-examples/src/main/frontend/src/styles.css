@@ -158,6 +158,11 @@ body {
   color: #7a5b00;
 }
 
+.badge.fixture {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
 .muted {
   color: var(--muted);
   font-size: 13px;
@@ -197,6 +202,11 @@ button.secondary {
   border-radius: 6px;
   cursor: pointer;
   font-weight: 600;
+}
+
+button.secondary.compact {
+  padding: 5px 8px;
+  font-size: 12px;
 }
 
 button.primary:disabled,
@@ -501,6 +511,49 @@ button.secondary:disabled {
 
 .port-list span {
   color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.fixture-editor {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fbfbfd;
+}
+
+.fixture-header,
+.fixture-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fixture-header strong {
+  font-size: 12px;
+}
+
+.fixture-editor textarea {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink);
+  background: #fff;
+}
+
+.fixture-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 

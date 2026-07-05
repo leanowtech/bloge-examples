@@ -2,14 +2,17 @@ import { describe, expect, it } from 'vitest';
 
 import {
   autoLayoutCanvas,
+  compileFixtureDrafts,
   connectionCandidatesMessage,
   connectionDecisionMessage,
   endpointFromHandle,
+  fixtureDraftForOperator,
   handleIdForPort,
   indexConnectionCandidates,
   isRunSuccessful,
   nodeStatuses,
   portNameFromHandle,
+  sampleFromSchemaEnvelope,
   simulationChecklist,
   summarizeCanvas,
   summarizeOperator,
@@ -432,5 +435,80 @@ describe('isRunSuccessful', () => {
     expect(isRunSuccessful({ ...base, success: false })).toBe(false);
     expect(isRunSuccessful({ ...base, errors: ['boom'] })).toBe(false);
     expect(isRunSuccessful({ ...base, compiled: false })).toBe(false);
+  });
+});
+
+describe('simulation fixtures', () => {
+  it('generates samples with the same explicit-value precedence as the server generator', () => {
+    const sample = sampleFromSchemaEnvelope({
+      schema: {
+        type: 'string',
+        const: 'CONST',
+        default: 'DEFAULT',
+        examples: ['EXAMPLE'],
+        enum: ['ENUM'],
+      },
+    });
+
+    expect(sample).toBe('CONST');
+  });
+
+  it('generates deterministic canonical samples for nested schemas', () => {
+    expect(
+      sampleFromSchemaEnvelope({
+        schema: {
+          type: 'object',
+          properties: {
+            email: { type: 'string', format: 'email' },
+            score: { type: 'integer', minimum: 620 },
+            active: { type: 'boolean' },
+            tags: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['missing'],
+        },
+      }),
+    ).toEqual({
+      email: 'user@example.com',
+      score: 620,
+      active: false,
+      tags: ['string'],
+      missing: null,
+    });
+  });
+
+  it('prefills multi-output operators as one object keyed by output port', () => {
+    const operator: OperatorDefinition = {
+      operatorRef: 'risk:decision',
+      ports: {
+        inputs: [],
+        outputs: [
+          {
+            name: 'decision',
+            schema: { schema: { type: 'object', properties: { eligible: { const: true } } } },
+          },
+          {
+            name: 'reason',
+            schema: { schema: { type: 'string', default: 'ok' } },
+          },
+        ],
+      },
+    };
+
+    expect(JSON.parse(fixtureDraftForOperator(operator))).toEqual({
+      decision: { eligible: true },
+      reason: 'ok',
+    });
+  });
+
+  it('compiles fixture JSON text into simulate request fixtures and reports invalid drafts', () => {
+    const compiled = compileFixtureDrafts({
+      a: '{"eligible":true}',
+      b: '',
+      c: '{nope',
+    });
+
+    expect(compiled.fixtures).toEqual({ a: { output: { eligible: true } } });
+    expect(compiled.errors.b).toBeUndefined();
+    expect(compiled.errors.c).toContain('Invalid JSON');
   });
 });

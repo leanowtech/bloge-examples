@@ -8,7 +8,9 @@ import type {
   DraftEndpoint,
   DraftNode,
   GraphDraft,
+  NodeFixture,
   OperatorDefinition,
+  SchemaEnvelope,
   SimulationResponse,
   VisualDiagnostic,
 } from './types';
@@ -82,6 +84,16 @@ export interface ConnectionCandidateIndex {
   rejectedCount: number;
   totalCandidateCount: number;
 }
+
+/** Parsed request fixtures plus per-node JSON errors from the inspector editor. */
+export interface FixtureDraftCompilation {
+  fixtures: Record<string, NodeFixture>;
+  errors: Record<string, string>;
+}
+
+const MAX_SAMPLE_DEPTH = 12;
+const MAX_SAMPLE_NODES = 512;
+const MAX_ARRAY_ITEMS = 25;
 
 /** Encodes a port name into a stable React Flow handle id. */
 export function handleIdForPort(direction: PortHandleDirection, portName: string): string {
@@ -494,4 +506,279 @@ export function isRunSuccessful(response: SimulationResponse): boolean {
     response.success &&
     (response.errors?.length ?? 0) === 0
   );
+}
+
+/**
+ * Builds the initial JSON text for a node output fixture from its operator contract.
+ *
+ * <p>A single-output operator pins that output value directly. Multi-output operators pin an object
+ * keyed by output port name so authors can override the whole mocked node result in one JSON payload.</p>
+ */
+export function fixtureDraftForOperator(operator: OperatorDefinition): string {
+  return JSON.stringify(sampleFromOperatorOutput(operator), null, 2);
+}
+
+/**
+ * Converts inspector JSON text into the request-scoped fixture map accepted by simulate.
+ */
+export function compileFixtureDrafts(drafts: Record<string, string>): FixtureDraftCompilation {
+  const fixtures: Record<string, NodeFixture> = {};
+  const errors: Record<string, string> = {};
+
+  for (const [nodeId, text] of Object.entries(drafts)) {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      continue;
+    }
+    try {
+      fixtures[nodeId] = { output: JSON.parse(trimmed) };
+    } catch (cause: unknown) {
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      errors[nodeId] = `Invalid JSON: ${detail}`;
+    }
+  }
+
+  return { fixtures, errors };
+}
+
+/** Generates the same deterministic schema sample shape used by the server mock-run generator. */
+export function sampleFromSchemaEnvelope(envelope: SchemaEnvelope | undefined): unknown {
+  return sampleFromJsonSchema(envelope?.schema);
+}
+
+function sampleFromOperatorOutput(operator: OperatorDefinition): unknown {
+  const outputs = operator.ports?.outputs ?? [];
+  if (outputs.length === 0) {
+    return null;
+  }
+  if (outputs.length === 1) {
+    return sampleFromSchemaEnvelope(outputs[0].schema);
+  }
+
+  const sample: Record<string, unknown> = {};
+  for (const output of outputs) {
+    sample[output.name || 'output'] = sampleFromSchemaEnvelope(output.schema);
+  }
+  return sample;
+}
+
+function sampleFromJsonSchema(schema: Record<string, unknown> | undefined): unknown {
+  if (!schema || Object.keys(schema).length === 0) {
+    return null;
+  }
+  return sampleValue(schema, 0, { remaining: MAX_SAMPLE_NODES });
+}
+
+function sampleValue(rawSchema: unknown, depth: number, budget: { remaining: number }): unknown {
+  if (depth > MAX_SAMPLE_DEPTH || budget.remaining <= 0 || !isRecord(rawSchema)) {
+    return null;
+  }
+  budget.remaining -= 1;
+  const schema = rawSchema;
+
+  if (hasOwn(schema, 'const')) {
+    return deepCopy(schema.const);
+  }
+  if (hasOwn(schema, 'default')) {
+    return deepCopy(schema.default);
+  }
+  const example = firstOf(schema.examples);
+  if (example !== undefined && example !== null) {
+    return deepCopy(example);
+  }
+  const enumValue = firstOf(schema.enum);
+  if (enumValue !== undefined && enumValue !== null) {
+    return deepCopy(enumValue);
+  }
+
+  const unionBranch = firstOf(schema.oneOf) ?? firstOf(schema.anyOf);
+  if (unionBranch !== undefined && unionBranch !== null) {
+    return sampleValue(unionBranch, depth, budget);
+  }
+  const allOfBranch = firstOf(schema.allOf);
+  if (
+    allOfBranch !== undefined &&
+    allOfBranch !== null &&
+    !hasOwn(schema, 'type') &&
+    !hasOwn(schema, 'properties')
+  ) {
+    return sampleValue(allOfBranch, depth, budget);
+  }
+
+  return sampleByType(effectiveType(schema), schema, depth, budget);
+}
+
+function sampleByType(
+  type: string,
+  schema: Record<string, unknown>,
+  depth: number,
+  budget: { remaining: number },
+): unknown {
+  switch (type) {
+    case 'object':
+      return sampleObject(schema, depth, budget);
+    case 'array':
+      return sampleArray(schema, depth, budget);
+    case 'string':
+      return canonicalString(schema);
+    case 'integer':
+      return canonicalInteger(schema);
+    case 'number':
+      return canonicalNumber(schema);
+    case 'boolean':
+      return false;
+    case 'null':
+      return null;
+    default:
+      return null;
+  }
+}
+
+function sampleObject(
+  schema: Record<string, unknown>,
+  depth: number,
+  budget: { remaining: number },
+): Record<string, unknown> {
+  const instance: Record<string, unknown> = {};
+  if (isRecord(schema.properties)) {
+    for (const [name, propertySchema] of Object.entries(schema.properties)) {
+      if (budget.remaining <= 0) {
+        break;
+      }
+      instance[name] = sampleValue(propertySchema, depth + 1, budget);
+    }
+  }
+  if (Array.isArray(schema.required)) {
+    for (const required of schema.required) {
+      const name = String(required);
+      if (!hasOwn(instance, name)) {
+        instance[name] = null;
+      }
+    }
+  }
+  return instance;
+}
+
+function sampleArray(schema: Record<string, unknown>, depth: number, budget: { remaining: number }): unknown[] {
+  const itemSchema = isRecord(schema.items) ? schema.items : firstOf(schema.prefixItems);
+  const minItems = numberValue(schema.minItems, 0);
+  const count = itemSchema == null
+    ? Math.min(minItems, MAX_ARRAY_ITEMS)
+    : Math.min(Math.max(minItems, 1), MAX_ARRAY_ITEMS);
+  const instance: unknown[] = [];
+  for (let index = 0; index < count; index += 1) {
+    if (budget.remaining <= 0) {
+      break;
+    }
+    instance.push(itemSchema == null ? null : sampleValue(itemSchema, depth + 1, budget));
+  }
+  return instance;
+}
+
+function canonicalString(schema: Record<string, unknown>): string {
+  const base = stringByFormat(String(schema.format ?? ''));
+  const minLength = numberValue(schema.minLength, 0);
+  const maxLength = numberValue(schema.maxLength, Number.MAX_SAFE_INTEGER);
+  let value = base;
+  while (value.length < minLength) {
+    value += 'x';
+  }
+  return value.length > maxLength ? value.slice(0, Math.max(maxLength, 0)) : value;
+}
+
+function stringByFormat(format: string): string {
+  switch (format) {
+    case 'date-time':
+      return '1970-01-01T00:00:00Z';
+    case 'date':
+      return '1970-01-01';
+    case 'time':
+      return '00:00:00Z';
+    case 'email':
+      return 'user@example.com';
+    case 'uri':
+    case 'url':
+    case 'iri':
+      return 'https://example.com';
+    case 'uuid':
+      return '00000000-0000-0000-0000-000000000000';
+    case 'hostname':
+      return 'example.com';
+    case 'ipv4':
+      return '127.0.0.1';
+    default:
+      return 'string';
+  }
+}
+
+function canonicalInteger(schema: Record<string, unknown>): number {
+  let value = numberValue(schema.minimum, numberValue(schema.exclusiveMinimum, 0));
+  if (typeof schema.exclusiveMinimum === 'number' && value <= schema.exclusiveMinimum) {
+    value = schema.exclusiveMinimum + 1;
+  }
+  return Math.min(value, numberValue(schema.maximum, Number.MAX_SAFE_INTEGER));
+}
+
+function canonicalNumber(schema: Record<string, unknown>): number {
+  if (typeof schema.minimum === 'number') {
+    return schema.minimum;
+  }
+  if (typeof schema.exclusiveMinimum === 'number') {
+    return schema.exclusiveMinimum + 1;
+  }
+  return 0;
+}
+
+function effectiveType(schema: Record<string, unknown>): string {
+  if (typeof schema.type === 'string' && schema.type) {
+    return schema.type;
+  }
+  if (Array.isArray(schema.type)) {
+    const candidate = schema.type.find((value) => typeof value === 'string' && value && value !== 'null');
+    if (typeof candidate === 'string') {
+      return candidate;
+    }
+  }
+  if (
+    hasOwn(schema, 'properties') ||
+    hasOwn(schema, 'required') ||
+    hasOwn(schema, 'additionalProperties') ||
+    hasOwn(schema, 'patternProperties')
+  ) {
+    return 'object';
+  }
+  if (hasOwn(schema, 'items') || hasOwn(schema, 'prefixItems')) {
+    return 'array';
+  }
+  return '';
+}
+
+function firstOf(value: unknown): unknown | undefined {
+  return Array.isArray(value) && value.length > 0 ? value[0] : undefined;
+}
+
+function numberValue(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function deepCopy(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => deepCopy(item));
+  }
+  if (isRecord(value)) {
+    const copy: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) {
+      copy[key] = deepCopy(item);
+    }
+    return copy;
+  }
+  return value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasOwn(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
 }

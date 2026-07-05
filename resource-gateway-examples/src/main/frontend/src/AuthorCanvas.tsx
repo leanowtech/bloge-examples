@@ -24,9 +24,11 @@ import {
   type CanvasNode,
   type ConnectionCandidateIndex,
   type ConnectionCandidateStatus,
+  compileFixtureDrafts,
   connectionCandidatesMessage,
   type OperatorSummary,
   connectionDecisionMessage,
+  fixtureDraftForOperator,
   handleIdForPort,
   indexConnectionCandidates,
   isRunSuccessful,
@@ -134,6 +136,7 @@ export default function AuthorCanvas() {
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedNodeId, setSelectedNodeId] = useState('');
+  const [fixtureDrafts, setFixtureDrafts] = useState<Record<string, string>>({});
   const [connectionNotice, setConnectionNotice] = useState<ConnectionNotice | null>(null);
   const [candidatePreview, setCandidatePreview] = useState<ConnectionCandidateIndex | null>(null);
   const counter = useRef(0);
@@ -152,8 +155,24 @@ export default function AuthorCanvas() {
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      const removedNodeIds: string[] = [];
+      for (const change of changes) {
+        if (change.type === 'remove') {
+          removedNodeIds.push(change.id);
+        }
+      }
       if (changes.some((change) => change.type === 'remove' || change.type === 'add')) {
         clearRunResult();
+      }
+      if (removedNodeIds.length > 0) {
+        setFixtureDrafts((current) => {
+          const next = { ...current };
+          for (const id of removedNodeIds) {
+            delete next[id];
+          }
+          return next;
+        });
+        setSelectedNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
       }
       setNodes((current) => applyNodeChanges(changes, current) as Node<NodeData>[]);
     },
@@ -215,7 +234,18 @@ export default function AuthorCanvas() {
     () => simulationChecklist(canvasSummary, result),
     [canvasSummary, result],
   );
+  const operatorByRef = useMemo(
+    () => new Map(operators.map((operator) => [operator.operatorRef, operator])),
+    [operators],
+  );
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
+  const selectedOperator = selectedNode ? operatorByRef.get(selectedNode.data.operatorRef) : undefined;
+  const fixtureCompilation = useMemo(() => compileFixtureDrafts(fixtureDrafts), [fixtureDrafts]);
+  const fixtureCount = Object.keys(fixtureCompilation.fixtures).length;
+  const fixtureErrorCount = Object.keys(fixtureCompilation.errors).length;
+  const hasFixtureErrors = fixtureErrorCount > 0;
+  const selectedFixtureDraft = selectedNode ? fixtureDrafts[selectedNode.id] ?? '' : '';
+  const selectedFixtureError = selectedNode ? fixtureCompilation.errors[selectedNode.id] : undefined;
   const flowNodes = useMemo<Node<NodeData>[]>(
     () =>
       nodes.map((node) => {
@@ -235,6 +265,37 @@ export default function AuthorCanvas() {
       }),
     [candidatePreview, nodes],
   );
+
+  const updateSelectedFixtureDraft = useCallback((value: string) => {
+    if (!selectedNodeId) {
+      return;
+    }
+    clearRunResult();
+    setFixtureDrafts((current) => ({ ...current, [selectedNodeId]: value }));
+  }, [clearRunResult, selectedNodeId]);
+
+  const useSelectedFixtureSample = useCallback(() => {
+    if (!selectedNodeId || !selectedOperator) {
+      return;
+    }
+    clearRunResult();
+    setFixtureDrafts((current) => ({
+      ...current,
+      [selectedNodeId]: fixtureDraftForOperator(selectedOperator),
+    }));
+  }, [clearRunResult, selectedNodeId, selectedOperator]);
+
+  const clearSelectedFixture = useCallback(() => {
+    if (!selectedNodeId) {
+      return;
+    }
+    clearRunResult();
+    setFixtureDrafts((current) => {
+      const next = { ...current };
+      delete next[selectedNodeId];
+      return next;
+    });
+  }, [clearRunResult, selectedNodeId]);
 
   const onConnectStart = useCallback(async (_event: unknown, params: ConnectionStartParams) => {
     if (params.handleType !== 'source' || !params.nodeId) {
@@ -334,7 +395,12 @@ export default function AuthorCanvas() {
     setError('');
     try {
       const draft = toGraphDraft('visualGraph', canvasNodes, canvasEdges, '');
-      const response = await simulate({ draft, context: {}, outputNode: '' });
+      const response = await simulate({
+        draft,
+        context: {},
+        outputNode: '',
+        ...(fixtureCount > 0 ? { fixtures: fixtureCompilation.fixtures } : {}),
+      });
       setResult(response);
 
       const statuses = nodeStatuses(response);
@@ -352,7 +418,7 @@ export default function AuthorCanvas() {
     } finally {
       setBusy(false);
     }
-  }, [canvasEdges, canvasNodes]);
+  }, [canvasEdges, canvasNodes, fixtureCompilation.fixtures, fixtureCount]);
 
   const autoLayout = useCallback(() => {
     const layout = autoLayoutCanvas(canvasNodes, canvasEdges);
@@ -408,7 +474,12 @@ export default function AuthorCanvas() {
 
       <main className="canvas">
         <div className="toolbar">
-          <button className="primary" onClick={runSimulation} disabled={busy || nodes.length === 0}>
+          <button
+            className="primary"
+            onClick={runSimulation}
+            disabled={busy || nodes.length === 0 || hasFixtureErrors}
+            title={hasFixtureErrors ? 'Fix fixture JSON before simulating.' : undefined}
+          >
             {busy ? 'Simulating…' : 'Simulate'}
           </button>
           <button className="secondary" onClick={autoLayout} disabled={nodes.length < 2}>
@@ -422,6 +493,16 @@ export default function AuthorCanvas() {
           <span className="canvas-chip">{canvasSummary.nodeCount} nodes</span>
           <span className="canvas-chip">{canvasSummary.edgeCount} edges</span>
           <span className="canvas-chip">Output {canvasSummary.outputNodeId || 'missing'}</span>
+          {fixtureCount > 0 && (
+            <span className="canvas-chip">
+              {fixtureCount} fixture{fixtureCount === 1 ? '' : 's'}
+            </span>
+          )}
+          {hasFixtureErrors && (
+            <span className="connection-notice error">
+              {fixtureErrorCount} fixture JSON error{fixtureErrorCount === 1 ? '' : 's'}
+            </span>
+          )}
           {connectionNotice && (
             <span className={`connection-notice ${connectionNotice.level}`}>
               {checkingConnection ? 'Checking...' : loadingCandidates ? 'Discovering...' : connectionNotice.message}
@@ -479,6 +560,38 @@ export default function AuthorCanvas() {
             <div className="port-list">
               <strong>Outputs</strong>
               <span>{selectedNode.data.summary.outputNames.join(', ') || 'none'}</span>
+            </div>
+            <div className="fixture-editor">
+              <div className="fixture-header">
+                <strong>Simulation</strong>
+                <span className={`badge ${selectedFixtureDraft.trim() ? 'fixture' : ''}`}>
+                  {selectedFixtureDraft.trim() ? 'pinned' : 'server sample'}
+                </span>
+              </div>
+              <div className="fixture-actions">
+                <button
+                  className="secondary compact"
+                  onClick={useSelectedFixtureSample}
+                  disabled={!selectedOperator}
+                >
+                  Use Sample
+                </button>
+                <button
+                  className="secondary compact"
+                  onClick={clearSelectedFixture}
+                  disabled={!selectedFixtureDraft}
+                >
+                  Clear
+                </button>
+              </div>
+              <textarea
+                aria-label="Simulation fixture JSON"
+                spellCheck={false}
+                placeholder="null"
+                value={selectedFixtureDraft}
+                onChange={(event) => updateSelectedFixtureDraft(event.target.value)}
+              />
+              {selectedFixtureError && <p className="fixture-error">{selectedFixtureError}</p>}
             </div>
           </section>
         ) : (
