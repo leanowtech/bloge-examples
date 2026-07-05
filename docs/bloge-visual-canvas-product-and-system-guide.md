@@ -345,33 +345,9 @@ GET /api/gateway/examples/scenarios/{graphName}/diagram
 
 ## 7. 系统架构说明
 
-```mermaid
-flowchart LR
-  User["业务编排者"] --> Author["/author React Flow Canvas"]
-  User --> Showcase["/showcase Scenario Catalog"]
+![BLOGE 通用可视化编排系统架构](assets/bloge-visual-canvas-architecture.svg)
 
-  Author --> CatalogAPI["Operator Catalog APIs"]
-  Author --> LibraryAPI["Operator Library Admin APIs"]
-  Author --> ConnAPI["Connection Candidates/Check"]
-  Author --> ValidateAPI["Draft Validate"]
-  Author --> SimAPI["Graph Simulate"]
-  Author --> ExportAPI["Draft/Publication/Library Export"]
-
-  Showcase --> ScenarioAPI["Gateway Example APIs"]
-  ScenarioAPI --> GatewayGraphs["Resource Gateway DSL Graphs"]
-
-  CatalogAPI --> Catalog["VisualOperatorCatalog"]
-  LibraryAPI --> Registry["OperatorLibraryRegistry"]
-  ConnAPI --> SchemaGate["VisualConnectionCheckService"]
-  ValidateAPI --> Validator["GraphDraftValidator"]
-  SimAPI --> SimEngine["VisualGraphSimulationService"]
-
-  Catalog --> Validator
-  Registry --> Catalog
-  SchemaGate --> Validator
-  SimEngine --> RealOps["Allowlisted Real Operators"]
-  SimEngine --> MockOps["SimulationOperator + JsonSchemaSampleGenerator"]
-```
+图源文件：[`assets/drawio/bloge-visual-canvas-architecture.drawio`](assets/drawio/bloge-visual-canvas-architecture.drawio)
 
 ### 7.1 前端职责
 
