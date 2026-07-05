@@ -84,8 +84,9 @@ substrate rather than introducing a separate orchestration engine:
 - `queryDeadLetters` maps `ControlPlaneService.queryDeadLetters(...)` into
   tenant-scoped `GraphDeadLetter` records
 - `retryDeadLetter` restores one dead-lettered work item back to `READY` and,
-  when the durable runtime facade is configured, records a `CONTROL_ACTION`
-  audit entry with optional recovery evidence and triggers a dispatch cycle
+  when the durable runtime facade is configured, records `CONTROL_ACTION`
+  attempt/success/failure audit entries with optional recovery evidence and
+  triggers a dispatch cycle
 - `queryInstanceNodes` infers the execution status of every node in a running
   instance by combining the compiled artifact with durable runtime state.
   GRAPH instances project DAG nodes from checkpoints, waits, and work items.
@@ -110,8 +111,8 @@ substrate rather than introducing a separate orchestration engine:
   (optionally filtered to specific node IDs) back to `READY` and triggers a
   dispatch cycle. Requires admin RBAC and an optimistic-lock revision guard.
   The overload that accepts `RecoveryActionEvidence` records the source action,
-  source indicator, reason, actor, request id, and restored item count in the
-  instance audit log as a `CONTROL_ACTION`.
+  source indicator, reason, actor, request id, restored item count, and failure
+  details in the instance audit log as `CONTROL_ACTION` entries.
 
 Session-mode lifecycle actions (start, signal, terminate) are handled through
 `DurableSessionManager`, which the service lazily initializes from the durable
@@ -254,8 +255,15 @@ Recovery mutations can attach `RecoveryActionEvidence`:
   for cross-system correlation. It is not an idempotency lock.
 
 When an `AuditJournalStore` is configured, dead-letter and instance retry write
-`AuditEventType.CONTROL_ACTION` entries. The audit entry `inputJson` carries the
-evidence and target, while `outputJson` carries restored item IDs and counts.
+`AuditEventType.CONTROL_ACTION` entries as a control-action timeline. The audit
+entry `inputJson` carries the evidence and target. The `outputJson` always
+includes `attemptStatus`:
+
+- `ATTEMPTED`: target has been resolved and admin permission has passed.
+- `SUCCEEDED`: restore and dispatch completed; `status` remains `RESTORED` and
+  restored item IDs/counts are included.
+- `FAILED`: restore, dispatch, or projection refresh failed; failure phase,
+  class, message, and any already-restored item IDs/counts are included.
 
 Age-based operations thresholds are controlled by `GraphOperationsPolicy` on
 `GraphEngineRuntimeSupport`. Defaults remain dead-letter warning/critical at

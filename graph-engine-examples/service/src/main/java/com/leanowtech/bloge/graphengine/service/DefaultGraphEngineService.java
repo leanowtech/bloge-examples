@@ -166,6 +166,13 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
     private static final int OPERATIONS_SNAPSHOT_DEAD_LETTER_SAMPLE_SIZE = 5;
     private static final String CONTROL_ACTION_NODE_DEAD_LETTER_RETRY = "__control_retry_dead_letter__";
     private static final String CONTROL_ACTION_NODE_INSTANCE_RETRY = "__control_retry_instance__";
+    private static final String CONTROL_ACTION_STATUS_ATTEMPTED = "ATTEMPTED";
+    private static final String CONTROL_ACTION_STATUS_SUCCEEDED = "SUCCEEDED";
+    private static final String CONTROL_ACTION_STATUS_FAILED = "FAILED";
+    private static final String CONTROL_ACTION_RESULT_RESTORED = "RESTORED";
+    private static final String CONTROL_ACTION_PHASE_RESTORE = "RESTORE";
+    private static final String CONTROL_ACTION_PHASE_DISPATCH = "DISPATCH";
+    private static final String CONTROL_ACTION_PHASE_REFRESH_PROJECTION = "REFRESH_PROJECTION";
 
     private final GraphEngineStores stores;
     private final GraphEngineRuntimeSupport runtimeSupport;
@@ -984,9 +991,20 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
         }
         DeadLetterEntry deadLetter = matches.getFirst();
         enforceDeadLetterAdmin(deadLetter);
-        runtimeSupport.workItemStore().restoreDeadLetter(itemId);
-        recordDeadLetterRetryAudit(deadLetter, evidence == null ? RecoveryActionEvidence.empty() : evidence);
-        dispatchReadyWorkItems();
+        RecoveryActionEvidence resolvedEvidence = evidence == null ? RecoveryActionEvidence.empty() : evidence;
+        recordDeadLetterRetryAttempt(deadLetter, resolvedEvidence);
+        int restoredItemCount = 0;
+        String failurePhase = CONTROL_ACTION_PHASE_RESTORE;
+        try {
+            runtimeSupport.workItemStore().restoreDeadLetter(itemId);
+            restoredItemCount = 1;
+            failurePhase = CONTROL_ACTION_PHASE_DISPATCH;
+            dispatchReadyWorkItems();
+            recordDeadLetterRetrySuccess(deadLetter, resolvedEvidence);
+        } catch (RuntimeException exception) {
+            recordDeadLetterRetryFailure(deadLetter, resolvedEvidence, failurePhase, restoredItemCount, exception);
+            throw exception;
+        }
     }
 
     @Override
@@ -1294,46 +1312,88 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
             throw notFound("No dead-lettered work items found for instance '" + instanceId + "'");
         }
 
-        // Restore each dead-lettered item
-        int count = 0;
-        for (WorkItem item : deadLettered) {
-            runtimeSupport.workItemStore().restoreDeadLetter(item.itemId());
-            count++;
+        RecoveryActionEvidence resolvedEvidence = evidence == null ? RecoveryActionEvidence.empty() : evidence;
+        recordInstanceRetryAttempt(instance, nodeIds, deadLettered, resolvedEvidence);
+        List<WorkItem> restoredItems = new ArrayList<>(deadLettered.size());
+        String failurePhase = CONTROL_ACTION_PHASE_RESTORE;
+        try {
+            for (WorkItem item : deadLettered) {
+                runtimeSupport.workItemStore().restoreDeadLetter(item.itemId());
+                restoredItems.add(item);
+            }
+            failurePhase = CONTROL_ACTION_PHASE_DISPATCH;
+            dispatchReadyWorkItems();
+            failurePhase = CONTROL_ACTION_PHASE_REFRESH_PROJECTION;
+            GraphInstance refreshed = refreshProjection(instance);
+            recordInstanceRetrySuccess(
+                    instance,
+                    nodeIds,
+                    restoredItems,
+                    resolvedEvidence
+            );
+            return new RetryInstanceResult(refreshed, restoredItems.size());
+        } catch (RuntimeException exception) {
+            recordInstanceRetryFailure(
+                    instance,
+                    nodeIds,
+                    deadLettered,
+                    restoredItems,
+                    resolvedEvidence,
+                    failurePhase,
+                    exception
+            );
+            throw exception;
         }
-        recordInstanceRetryAudit(
-                instance,
-                nodeIds,
-                deadLettered,
-                count,
-                evidence == null ? RecoveryActionEvidence.empty() : evidence
-        );
-
-        dispatchReadyWorkItems();
-
-        GraphInstance refreshed = refreshProjection(instance);
-        return new RetryInstanceResult(refreshed, count);
     }
 
-    private void recordDeadLetterRetryAudit(DeadLetterEntry deadLetter, RecoveryActionEvidence evidence) {
+    private void recordDeadLetterRetryAttempt(DeadLetterEntry deadLetter, RecoveryActionEvidence evidence) {
         if (runtimeSupport.auditJournalStore() == null) {
             return;
         }
+        java.util.LinkedHashMap<String, Object> output =
+                controlActionOutput(CONTROL_ACTION_STATUS_ATTEMPTED, CONTROL_ACTION_STATUS_ATTEMPTED);
+        output.put("candidateItemCount", 1);
+        output.put("candidateItemIds", List.of(deadLetter.itemId()));
+        appendDeadLetterRetryAudit(deadLetter, deadLetterRetryInput(deadLetter, evidence), output);
+    }
+
+    private void recordDeadLetterRetrySuccess(DeadLetterEntry deadLetter, RecoveryActionEvidence evidence) {
+        if (runtimeSupport.auditJournalStore() == null) {
+            return;
+        }
+        java.util.LinkedHashMap<String, Object> output =
+                controlActionOutput(CONTROL_ACTION_STATUS_SUCCEEDED, CONTROL_ACTION_RESULT_RESTORED);
+        output.put("restoredItemCount", 1);
+        output.put("restoredItemIds", List.of(deadLetter.itemId()));
+        output.put("restoredNodeIds", nonBlankSingleton(deadLetter.nodeId()));
+        appendDeadLetterRetryAudit(deadLetter, deadLetterRetryInput(deadLetter, evidence), output);
+    }
+
+    private void recordDeadLetterRetryFailure(DeadLetterEntry deadLetter,
+                                              RecoveryActionEvidence evidence,
+                                              String failurePhase,
+                                              int restoredItemCount,
+                                              RuntimeException exception) {
+        if (runtimeSupport.auditJournalStore() == null) {
+            return;
+        }
+        java.util.LinkedHashMap<String, Object> output =
+                controlActionOutput(CONTROL_ACTION_STATUS_FAILED, CONTROL_ACTION_STATUS_FAILED);
+        output.put("failurePhase", failurePhase);
+        output.put("failureClass", exception.getClass().getName());
+        output.put("failureMessage", emptyToNull(exception.getMessage()));
+        output.put("restoredItemCount", restoredItemCount);
+        output.put("restoredItemIds", restoredItemCount > 0 ? List.of(deadLetter.itemId()) : List.of());
+        output.put("restoredNodeIds", restoredItemCount > 0 ? nonBlankSingleton(deadLetter.nodeId()) : List.of());
+        appendDeadLetterRetryAudit(deadLetter, deadLetterRetryInput(deadLetter, evidence), output);
+    }
+
+    private void appendDeadLetterRetryAudit(DeadLetterEntry deadLetter,
+                                            Map<String, Object> input,
+                                            Map<String, Object> output) {
         GraphInstance instance = stores.graphInstanceStore()
                 .get(deadLetter.identity().executionId())
                 .orElse(null);
-        java.util.LinkedHashMap<String, Object> input = controlActionInput("RETRY_DEAD_LETTER", evidence);
-        input.put("itemId", deadLetter.itemId());
-        input.put("itemType", deadLetter.itemType().name());
-        input.put("targetNodeId", emptyToNull(deadLetter.nodeId()));
-        input.put("waitId", emptyToNull(deadLetter.waitId()));
-        input.put("taskId", emptyToNull(deadLetter.taskId()));
-        input.put("deadLetterReason", emptyToNull(deadLetter.deadLetterReason()));
-
-        java.util.LinkedHashMap<String, Object> output = new java.util.LinkedHashMap<>();
-        output.put("status", "RESTORED");
-        output.put("restoredItemCount", 1);
-        output.put("restoredItemIds", List.of(deadLetter.itemId()));
-
         appendControlActionAudit(
                 deadLetter.identity().executionId(),
                 controlActionGraphName(instance, deadLetter.identity().graphName()),
@@ -1343,24 +1403,68 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
         );
     }
 
-    private void recordInstanceRetryAudit(GraphInstance instance,
-                                          Set<String> requestedNodeIds,
-                                          List<WorkItem> restoredItems,
-                                          int restoredItemCount,
-                                          RecoveryActionEvidence evidence) {
+    private void recordInstanceRetryAttempt(GraphInstance instance,
+                                            Set<String> requestedNodeIds,
+                                            List<WorkItem> candidateItems,
+                                            RecoveryActionEvidence evidence) {
         if (runtimeSupport.auditJournalStore() == null) {
             return;
         }
+        java.util.LinkedHashMap<String, Object> output =
+                controlActionOutput(CONTROL_ACTION_STATUS_ATTEMPTED, CONTROL_ACTION_STATUS_ATTEMPTED);
+        output.put("candidateItemCount", candidateItems.size());
+        output.put("candidateItemIds", candidateItems.stream().map(WorkItem::itemId).toList());
+        output.put("candidateNodeIds", distinctNonBlank(candidateItems.stream().map(WorkItem::nodeId).toList()));
+        appendInstanceRetryAudit(instance, requestedNodeIds, evidence, output);
+    }
+
+    private void recordInstanceRetrySuccess(GraphInstance instance,
+                                            Set<String> requestedNodeIds,
+                                            List<WorkItem> restoredItems,
+                                            RecoveryActionEvidence evidence) {
+        if (runtimeSupport.auditJournalStore() == null) {
+            return;
+        }
+        java.util.LinkedHashMap<String, Object> output =
+                controlActionOutput(CONTROL_ACTION_STATUS_SUCCEEDED, CONTROL_ACTION_RESULT_RESTORED);
+        output.put("restoredItemCount", restoredItems.size());
+        output.put("restoredItemIds", restoredItems.stream().map(WorkItem::itemId).toList());
+        output.put("restoredNodeIds", distinctNonBlank(restoredItems.stream().map(WorkItem::nodeId).toList()));
+        appendInstanceRetryAudit(instance, requestedNodeIds, evidence, output);
+    }
+
+    private void recordInstanceRetryFailure(GraphInstance instance,
+                                            Set<String> requestedNodeIds,
+                                            List<WorkItem> candidateItems,
+                                            List<WorkItem> restoredItems,
+                                            RecoveryActionEvidence evidence,
+                                            String failurePhase,
+                                            RuntimeException exception) {
+        if (runtimeSupport.auditJournalStore() == null) {
+            return;
+        }
+        java.util.LinkedHashMap<String, Object> output =
+                controlActionOutput(CONTROL_ACTION_STATUS_FAILED, CONTROL_ACTION_STATUS_FAILED);
+        output.put("failurePhase", failurePhase);
+        output.put("failureClass", exception.getClass().getName());
+        output.put("failureMessage", emptyToNull(exception.getMessage()));
+        output.put("candidateItemCount", candidateItems.size());
+        output.put("candidateItemIds", candidateItems.stream().map(WorkItem::itemId).toList());
+        output.put("candidateNodeIds", distinctNonBlank(candidateItems.stream().map(WorkItem::nodeId).toList()));
+        output.put("restoredItemCount", restoredItems.size());
+        output.put("restoredItemIds", restoredItems.stream().map(WorkItem::itemId).toList());
+        output.put("restoredNodeIds", distinctNonBlank(restoredItems.stream().map(WorkItem::nodeId).toList()));
+        appendInstanceRetryAudit(instance, requestedNodeIds, evidence, output);
+    }
+
+    private void appendInstanceRetryAudit(GraphInstance instance,
+                                          Set<String> requestedNodeIds,
+                                          RecoveryActionEvidence evidence,
+                                          Map<String, Object> output) {
         java.util.LinkedHashMap<String, Object> input = controlActionInput("RETRY_INSTANCE_DEAD_LETTERS", evidence);
         input.put("instanceId", instance.instanceId());
         input.put("expectedRevision", instance.revision());
         input.put("requestedNodeIds", requestedNodeIds == null ? List.of() : distinctNonBlank(requestedNodeIds.stream().toList()));
-
-        java.util.LinkedHashMap<String, Object> output = new java.util.LinkedHashMap<>();
-        output.put("status", "RESTORED");
-        output.put("restoredItemCount", restoredItemCount);
-        output.put("restoredItemIds", restoredItems.stream().map(WorkItem::itemId).toList());
-        output.put("restoredNodeIds", distinctNonBlank(restoredItems.stream().map(WorkItem::nodeId).toList()));
 
         appendControlActionAudit(
                 instance.instanceId(),
@@ -1369,6 +1473,18 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                 input,
                 output
         );
+    }
+
+    private java.util.LinkedHashMap<String, Object> deadLetterRetryInput(DeadLetterEntry deadLetter,
+                                                                         RecoveryActionEvidence evidence) {
+        java.util.LinkedHashMap<String, Object> input = controlActionInput("RETRY_DEAD_LETTER", evidence);
+        input.put("itemId", deadLetter.itemId());
+        input.put("itemType", deadLetter.itemType().name());
+        input.put("targetNodeId", emptyToNull(deadLetter.nodeId()));
+        input.put("waitId", emptyToNull(deadLetter.waitId()));
+        input.put("taskId", emptyToNull(deadLetter.taskId()));
+        input.put("deadLetterReason", emptyToNull(deadLetter.deadLetterReason()));
+        return input;
     }
 
     private java.util.LinkedHashMap<String, Object> controlActionInput(String actionCode,
@@ -1383,6 +1499,13 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
         input.put("requestId", emptyToNull(resolvedEvidence.requestId()));
         input.put("evidenceSupplied", !resolvedEvidence.emptyEvidence());
         return input;
+    }
+
+    private java.util.LinkedHashMap<String, Object> controlActionOutput(String attemptStatus, String status) {
+        java.util.LinkedHashMap<String, Object> output = new java.util.LinkedHashMap<>();
+        output.put("attemptStatus", attemptStatus);
+        output.put("status", status);
+        return output;
     }
 
     private void appendControlActionAudit(String executionId,
@@ -1431,6 +1554,11 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
             }
         }
         return List.copyOf(distinct);
+    }
+
+    private static List<String> nonBlankSingleton(String value) {
+        String normalized = emptyToNull(value);
+        return normalized == null ? List.of() : List.of(normalized);
     }
 
     private int workItemPriority(WorkItemStatus status) {

@@ -153,7 +153,7 @@ dead-lettered work item back to `READY` through `WorkItemStore.restoreDeadLetter
 When the durable runtime facade is configured, the server then triggers a
 dispatch cycle so the item re-enters the normal ready → claim → execute flow.
 The body is optional for backward compatibility. When supplied, it attaches
-recovery evidence that is recorded as a `CONTROL_ACTION` audit entry:
+recovery evidence that is recorded in the `CONTROL_ACTION` audit timeline:
 
 ```json
 {
@@ -164,6 +164,12 @@ recovery evidence that is recorded as a `CONTROL_ACTION` audit entry:
   "requestId": "INC-123"
 }
 ```
+
+The service writes an `ATTEMPTED` audit entry after the target is resolved and
+permission checks pass. It then records `SUCCEEDED` with `status = RESTORED`
+when restore and dispatch complete, or `FAILED` with failure phase/class/message
+and any already-restored item IDs when restore, dispatch, or projection refresh
+throws.
 
 **Node execution view.** `GET /api/v1/instances/{id}/nodes` returns the inferred
 execution state of every execution node in a running instance. GRAPH instances

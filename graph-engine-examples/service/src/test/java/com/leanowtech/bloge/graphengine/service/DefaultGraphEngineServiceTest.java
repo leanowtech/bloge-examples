@@ -1881,15 +1881,88 @@ class DefaultGraphEngineServiceTest {
                     0,
                     10
             )).isEmpty());
-            GraphAuditEntry recoveryAudit = fixture.service.queryInstanceAuditLog(instance.instanceId(), 0, 50).stream()
-                    .filter(entry -> entry.eventType() == AuditEventType.CONTROL_ACTION)
-                    .findFirst()
-                    .orElseThrow();
-            assertEquals("__control_retry_dead_letter__", recoveryAudit.nodeId());
-            assertTrue(recoveryAudit.inputJson().contains("validated idempotent replay"));
-            assertTrue(recoveryAudit.inputJson().contains("RETRY_DEAD_LETTER"));
-            assertTrue(recoveryAudit.inputJson().contains("INC-123"));
-            assertTrue(recoveryAudit.outputJson().contains("\"restoredItemCount\":1"));
+            List<GraphAuditEntry> recoveryAudits = controlActionAudits(fixture, instance.instanceId());
+            assertEquals(2, recoveryAudits.size());
+            GraphAuditEntry attemptAudit = controlActionWithAttemptStatus(
+                    recoveryAudits,
+                    "ATTEMPTED"
+            );
+            GraphAuditEntry successAudit = controlActionWithAttemptStatus(
+                    recoveryAudits,
+                    "SUCCEEDED"
+            );
+            assertEquals("__control_retry_dead_letter__", attemptAudit.nodeId());
+            assertEquals("__control_retry_dead_letter__", successAudit.nodeId());
+            assertTrue(successAudit.inputJson().contains("validated idempotent replay"));
+            assertTrue(successAudit.inputJson().contains("RETRY_DEAD_LETTER"));
+            assertTrue(successAudit.inputJson().contains("INC-123"));
+            assertTrue(attemptAudit.outputJson().contains("\"candidateItemCount\":1"));
+            assertTrue(successAudit.outputJson().contains("\"status\":\"RESTORED\""));
+            assertTrue(successAudit.outputJson().contains("\"restoredItemCount\":1"));
+        }
+    }
+
+    @Test
+    void retryDeadLetterRecordsFailedControlActionWhenRestoreFails() {
+        try (Fixture fixture = new Fixture(false)) {
+            Instant now = Instant.now();
+            GraphInstance instance = fixture.createManagedGraphInstance("exec-dead-letter-failure", GraphInstanceStatus.RUNNING);
+            ExecutionIdentity identity = fixture.identity(instance);
+            fixture.workItemStore.create(WorkItem.builder()
+                    .itemId("dead-fail")
+                    .executionIdentity(identity)
+                    .itemType(WorkItemType.EVENT_MATCHED)
+                    .nodeId("approval")
+                    .waitId("wait-dead-fail")
+                    .priority(5)
+                    .nextAttemptAt(now.minusSeconds(30))
+                    .payload("{\"orderId\":\"A-1\"}")
+                    .lastError("boom")
+                    .createdAt(now.minusSeconds(30))
+                    .updatedAt(now.minusSeconds(30))
+                    .build());
+            fixture.workItemStore.markDeadLetter("dead-fail", "manual intervention");
+            fixture.controlPlaneService.deadLetters.add(new DeadLetterEntry(
+                    "dead-fail",
+                    identity,
+                    WorkItemType.EVENT_MATCHED,
+                    "approval",
+                    "wait-dead-fail",
+                    null,
+                    5,
+                    0,
+                    3,
+                    "{\"orderId\":\"A-1\"}",
+                    null,
+                    "boom",
+                    "manual intervention",
+                    now.minusSeconds(30),
+                    now
+            ));
+            fixture.workItemStore.failRestore("dead-fail", new IllegalStateException("restore store unavailable"));
+
+            assertThrows(IllegalStateException.class, () -> fixture.service.retryDeadLetter(
+                    "dead-fail",
+                    new RecoveryActionEvidence(
+                            "operator confirmed replay",
+                            "RETRY_DEAD_LETTER",
+                            "DEAD_LETTER_OLDEST_AGE",
+                            "ops-alice",
+                            "REQ-FAIL-1"
+                    )
+            ));
+
+            List<GraphAuditEntry> recoveryAudits = controlActionAudits(fixture, instance.instanceId());
+            assertEquals(2, recoveryAudits.size());
+            GraphAuditEntry attemptAudit = controlActionWithAttemptStatus(recoveryAudits, "ATTEMPTED");
+            GraphAuditEntry failureAudit = controlActionWithAttemptStatus(recoveryAudits, "FAILED");
+            assertEquals("__control_retry_dead_letter__", attemptAudit.nodeId());
+            assertEquals("__control_retry_dead_letter__", failureAudit.nodeId());
+            assertTrue(failureAudit.inputJson().contains("REQ-FAIL-1"));
+            assertTrue(failureAudit.outputJson().contains("\"failurePhase\":\"RESTORE\""));
+            assertTrue(failureAudit.outputJson().contains("java.lang.IllegalStateException"));
+            assertTrue(failureAudit.outputJson().contains("restore store unavailable"));
+            assertTrue(failureAudit.outputJson().contains("\"restoredItemCount\":0"));
         }
     }
 
@@ -3184,15 +3257,77 @@ class DefaultGraphEngineServiceTest {
             assertEquals(1, retried.retriedItemCount());
             List<GraphNodeState> retriedNodes = fixture.service.queryInstanceNodes(started.instance().instanceId());
             assertEquals(GraphNodeStatus.PENDING, retriedNodes.getFirst().status());
-            GraphAuditEntry recoveryAudit = fixture.service.queryInstanceAuditLog(started.instance().instanceId(), 0, 50).stream()
-                    .filter(entry -> entry.eventType() == AuditEventType.CONTROL_ACTION)
-                    .findFirst()
-                    .orElseThrow();
-            assertEquals("__control_retry_instance__", recoveryAudit.nodeId());
-            assertTrue(recoveryAudit.inputJson().contains("remote worker fixed"));
-            assertTrue(recoveryAudit.inputJson().contains("RETRY_INSTANCE_DEAD_LETTERS"));
-            assertTrue(recoveryAudit.inputJson().contains("REQ-7788"));
-            assertTrue(recoveryAudit.outputJson().contains("\"restoredItemCount\":1"));
+            List<GraphAuditEntry> recoveryAudits = controlActionAudits(fixture, started.instance().instanceId());
+            assertEquals(2, recoveryAudits.size());
+            GraphAuditEntry attemptAudit = controlActionWithAttemptStatus(recoveryAudits, "ATTEMPTED");
+            GraphAuditEntry successAudit = controlActionWithAttemptStatus(recoveryAudits, "SUCCEEDED");
+            assertEquals("__control_retry_instance__", attemptAudit.nodeId());
+            assertEquals("__control_retry_instance__", successAudit.nodeId());
+            assertTrue(successAudit.inputJson().contains("remote worker fixed"));
+            assertTrue(successAudit.inputJson().contains("RETRY_INSTANCE_DEAD_LETTERS"));
+            assertTrue(successAudit.inputJson().contains("REQ-7788"));
+            assertTrue(attemptAudit.outputJson().contains("\"candidateItemCount\":1"));
+            assertTrue(successAudit.outputJson().contains("\"status\":\"RESTORED\""));
+            assertTrue(successAudit.outputJson().contains("\"restoredItemCount\":1"));
+        }
+    }
+
+    @Test
+    void retryInstanceRecordsFailedControlActionWithPartialRestoreCount() {
+        try (Fixture fixture = new Fixture(false)) {
+            Instant now = Instant.now();
+            GraphInstance instance = fixture.createManagedGraphInstance("exec-instance-retry-failure", GraphInstanceStatus.SUSPENDED);
+            ExecutionIdentity identity = fixture.identity(instance);
+            fixture.workItemStore.create(remoteWorkerItem(
+                    "remote-retry-1",
+                    identity,
+                    WorkItemStatus.DEAD_LETTER,
+                    3,
+                    3,
+                    null,
+                    0,
+                    now
+            ));
+            fixture.workItemStore.create(remoteWorkerItem(
+                    "remote-retry-2",
+                    identity,
+                    WorkItemStatus.DEAD_LETTER,
+                    3,
+                    3,
+                    null,
+                    0,
+                    now.plusSeconds(1)
+            ));
+            fixture.workItemStore.failRestore("remote-retry-2", new IllegalStateException("restore loop failed"));
+
+            assertThrows(IllegalStateException.class, () -> fixture.service.retryInstance(
+                    instance.instanceId(),
+                    Set.of("riskCheck"),
+                    fixture.service.getInstance(instance.instanceId()).revision(),
+                    new RecoveryActionEvidence(
+                            "second item should fail",
+                            "RETRY_INSTANCE_DEAD_LETTERS",
+                            "FAILED_INSTANCE_BACKLOG",
+                            "ops-bot",
+                            "REQ-PARTIAL"
+                    )
+            ));
+
+            assertEquals(WorkItemStatus.READY, fixture.workItemStore.get("remote-retry-1").orElseThrow().status());
+            assertEquals(WorkItemStatus.DEAD_LETTER, fixture.workItemStore.get("remote-retry-2").orElseThrow().status());
+            List<GraphAuditEntry> recoveryAudits = controlActionAudits(fixture, instance.instanceId());
+            assertEquals(2, recoveryAudits.size());
+            GraphAuditEntry attemptAudit = controlActionWithAttemptStatus(recoveryAudits, "ATTEMPTED");
+            GraphAuditEntry failureAudit = controlActionWithAttemptStatus(recoveryAudits, "FAILED");
+            assertEquals("__control_retry_instance__", attemptAudit.nodeId());
+            assertEquals("__control_retry_instance__", failureAudit.nodeId());
+            assertTrue(attemptAudit.outputJson().contains("\"candidateItemCount\":2"));
+            assertTrue(failureAudit.inputJson().contains("REQ-PARTIAL"));
+            assertTrue(failureAudit.outputJson().contains("\"failurePhase\":\"RESTORE\""));
+            assertTrue(failureAudit.outputJson().contains("restore loop failed"));
+            assertTrue(failureAudit.outputJson().contains("\"candidateItemCount\":2"));
+            assertTrue(failureAudit.outputJson().contains("\"restoredItemCount\":1"));
+            assertTrue(failureAudit.outputJson().contains("remote-retry-1"));
         }
     }
 
@@ -3978,6 +4113,19 @@ class DefaultGraphEngineServiceTest {
                 .build();
     }
 
+    private static List<GraphAuditEntry> controlActionAudits(Fixture fixture, String instanceId) {
+        return fixture.service.queryInstanceAuditLog(instanceId, 0, 50).stream()
+                .filter(entry -> entry.eventType() == AuditEventType.CONTROL_ACTION)
+                .toList();
+    }
+
+    private static GraphAuditEntry controlActionWithAttemptStatus(List<GraphAuditEntry> entries, String attemptStatus) {
+        return entries.stream()
+                .filter(entry -> entry.outputJson().contains("\"attemptStatus\":\"" + attemptStatus + "\""))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Missing control action audit with attemptStatus=" + attemptStatus));
+    }
+
     private static final class RecordingMetricsObserver implements GraphEngineMetricsObserver {
         private final List<String> instanceCompletedStatuses = new ArrayList<>();
         private final List<String> instanceStartModes = new ArrayList<>();
@@ -4374,11 +4522,27 @@ class DefaultGraphEngineServiceTest {
 
     private static final class RecordingWorkItemStore extends InMemoryWorkItemStore {
         private volatile WorkItemQuery lastQuery;
+        private volatile String restoreFailureItemId;
+        private volatile RuntimeException restoreFailure;
 
         @Override
         public List<WorkItem> query(WorkItemQuery query) {
             lastQuery = query;
             return super.query(query);
+        }
+
+        @Override
+        public WorkItem restoreDeadLetter(String itemId) {
+            RuntimeException failure = restoreFailure;
+            if (restoreFailureItemId != null && restoreFailureItemId.equals(itemId) && failure != null) {
+                throw failure;
+            }
+            return super.restoreDeadLetter(itemId);
+        }
+
+        private void failRestore(String itemId, RuntimeException failure) {
+            restoreFailureItemId = itemId;
+            restoreFailure = failure;
         }
 
         private WorkItemQuery lastQuery() {
