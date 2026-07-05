@@ -88,14 +88,18 @@ function handleOffset(index: number, count: number): CSSProperties {
   return { top: `${((index + 1) / (count + 1)) * 100}%` };
 }
 
-function OperatorNode({ data, selected }: NodeProps<NodeData>) {
+function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
   const status = data.status ?? 'unknown';
   const inputPorts = data.summary.inputNames;
   const outputPorts = data.summary.outputNames.length ? data.summary.outputNames : [''];
   const candidateClass = data.candidateStatus ? `candidate-${data.candidateStatus}` : '';
   const focusClass = data.focusState && data.focusState !== 'none' ? `focus-${data.focusState}` : '';
   return (
-    <div className={`operator-node ${status} ${candidateClass} ${focusClass} ${selected ? 'selected' : ''}`}>
+    <div
+      className={`operator-node ${status} ${candidateClass} ${focusClass} ${selected ? 'selected' : ''}`}
+      data-testid={`canvas-node:${id}`}
+      data-operator-ref={data.operatorRef}
+    >
       {inputPorts.map((port, index) => (
         <Handle
           key={`in:${port}`}
@@ -640,13 +644,14 @@ export default function AuthorCanvas() {
             {paletteView.matchingCount}/{paletteView.totalCount}
           </span>
         </div>
-        <section className="library-intake" aria-label="Operator library intake">
+        <section className="library-intake" aria-label="Operator library intake" data-testid="library-intake">
           <div className="library-intake-heading">
             <h2>Library</h2>
             {libraryBusy && <span>Working</span>}
           </div>
           <textarea
             aria-label="Operator library JSON or YAML"
+            data-testid="operator-library-source"
             spellCheck={false}
             placeholder="bloge.visualOperatorLibrary.v1 JSON/YAML"
             value={librarySourceText}
@@ -660,6 +665,7 @@ export default function AuthorCanvas() {
             <button
               type="button"
               className="secondary compact"
+              data-testid="operator-library-validate"
               onClick={validateLibrarySource}
               disabled={libraryBusy}
             >
@@ -668,6 +674,7 @@ export default function AuthorCanvas() {
             <button
               type="button"
               className="primary compact"
+              data-testid="operator-library-import"
               onClick={importLibrarySource}
               disabled={libraryBusy}
             >
@@ -675,7 +682,9 @@ export default function AuthorCanvas() {
             </button>
           </div>
           {libraryNotice && (
-            <p className={`library-notice ${libraryNotice.level}`}>{libraryNotice.message}</p>
+            <p className={`library-notice ${libraryNotice.level}`} data-testid="operator-library-notice">
+              {libraryNotice.message}
+            </p>
           )}
           {libraryDiagnostics.length > 0 && (
             <ol className="library-diagnostics">
@@ -739,7 +748,11 @@ export default function AuthorCanvas() {
         </div>
         <div className="palette-groups">
           {paletteView.groups.map((group) => (
-            <section className="palette-group" key={group.libraryId}>
+            <section
+              className="palette-group"
+              data-testid={`operator-group:${group.libraryId}`}
+              key={group.libraryId}
+            >
               <div className="palette-group-heading">
                 <h3 title={group.libraryId}>{group.label}</h3>
                 <span>{group.count}</span>
@@ -749,6 +762,8 @@ export default function AuthorCanvas() {
                   <li key={operator.operatorRef}>
                     <button
                       className="operator-button"
+                      data-testid={`operator-button:${operator.operatorRef}`}
+                      data-operator-ref={operator.operatorRef}
                       onClick={() => addOperator(operator)}
                       title={operator.operatorRef}
                     >
