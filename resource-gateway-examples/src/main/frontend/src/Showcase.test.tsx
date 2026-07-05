@@ -41,6 +41,9 @@ describe('Showcase', () => {
       if (url === '/api/gateway/loan-policy/review?amount=450000') {
         return jsonResponse({ success: true, data: { policy: { ruleId: 'R3', decision: 'manual_review' } } });
       }
+      if (url === '/api/gateway/loan-policy/nearPrime?amount=450000') {
+        return jsonResponse({ success: true, data: { policy: { ruleId: 'RX', decision: 'manual_review' } } });
+      }
       throw new Error(`Unexpected fetch: ${url}`);
     }));
   });
@@ -148,6 +151,32 @@ describe('Showcase', () => {
       .toContain('/api/gateway/loan-policy/review?amount=450000');
     expect(query('[data-testid="showcase-run-result"]').textContent).toContain('R3');
     expect(query('[data-testid="showcase-run-result"]').textContent).toContain('manual_review');
+    expect(query('[data-testid="showcase-expectations"]').textContent).toContain('Review expectations');
+    expect(query('[data-testid="showcase-expectations"]').textContent).toContain('2/2');
+    expect(query('[data-testid="showcase-expectation:ruleId"]').textContent).toContain('R3');
+    expect(query('[data-testid="showcase-expectation:ruleId"]').textContent).toContain('matched');
+    expect(query('[data-testid="showcase-expectation:decision"]').textContent).toContain('manual_review');
+    expect(query('[data-testid="showcase-expectation:decision"]').textContent).toContain('matched');
+  });
+
+  it('marks preset expectations as missing when the response does not contain them', async () => {
+    await renderShowcase();
+    await waitFor(() => query('[data-testid="showcase-scenario:loanDecisionPolicy"]'));
+
+    await click(query<HTMLButtonElement>('[data-testid="showcase-scenario:loanDecisionPolicy"]'));
+    await waitFor(() => query('[data-testid="showcase-preset:Near prime"]'));
+    await click(query<HTMLButtonElement>('[data-testid="showcase-preset:Near prime"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="showcase-run-result"]').textContent)
+        .toContain('/api/gateway/loan-policy/nearPrime?amount=450000'),
+    );
+    expect(query('[data-testid="showcase-expectations"]').textContent).toContain('Near prime expectations');
+    expect(query('[data-testid="showcase-expectations"]').textContent).toContain('0/2');
+    expect(query('[data-testid="showcase-expectation:ruleId"]').textContent).toContain('R2');
+    expect(query('[data-testid="showcase-expectation:ruleId"]').textContent).toContain('missing');
+    expect(query('[data-testid="showcase-expectation:decision"]').textContent).toContain('approved');
+    expect(query('[data-testid="showcase-expectation:decision"]').textContent).toContain('missing');
   });
 
   it('streams SSE lanes and lets the reader stop the stream', async () => {
@@ -223,10 +252,10 @@ function sampleScenarios(): GatewayExampleScenario[] {
       concepts: ['decision_table', 'hit=unique'],
       sampleInput: { applicantId: 'prime', amount: 450000 },
       samplePresets: [
-        { label: 'Prime', values: { applicantId: 'prime' }, expected: { ruleId: 'R1' } },
-        { label: 'Near prime', values: { applicantId: 'nearPrime' }, expected: { ruleId: 'R2' } },
-        { label: 'Review', values: { applicantId: 'review' }, expected: { ruleId: 'R3' } },
-        { label: 'Decline', values: { applicantId: 'decline' }, expected: { ruleId: 'R4' } },
+        { label: 'Prime', values: { applicantId: 'prime' }, expected: { ruleId: 'R1', decision: 'approved' } },
+        { label: 'Near prime', values: { applicantId: 'nearPrime' }, expected: { ruleId: 'R2', decision: 'approved' } },
+        { label: 'Review', values: { applicantId: 'review' }, expected: { ruleId: 'R3', decision: 'manual_review' } },
+        { label: 'Decline', values: { applicantId: 'decline' }, expected: { ruleId: 'R4', decision: 'declined' } },
       ],
       run: {
         mode: 'request',

@@ -25,6 +25,12 @@ interface ShowcaseRunState {
   payload: unknown;
 }
 
+interface ShowcaseExpectationCheck {
+  key: string;
+  expected: unknown;
+  state: 'pending' | 'matched' | 'missing';
+}
+
 function previewJson(value: unknown): string {
   try {
     return JSON.stringify(value ?? {}, null, 2);
@@ -66,6 +72,67 @@ function streamFrames(payload: unknown): Record<StreamEventName, unknown[]> {
       Array.isArray(source[eventName]) ? source[eventName] : [],
     ]),
   ) as Record<StreamEventName, unknown[]>;
+}
+
+function scalarValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'object') {
+    return previewJson(value).replace(/\s+/g, ' ');
+  }
+  return String(value);
+}
+
+function valuesMatch(actual: unknown, expected: unknown): boolean {
+  if (actual === expected) {
+    return true;
+  }
+  if (typeof actual !== 'object' && typeof expected !== 'object') {
+    return String(actual) === String(expected);
+  }
+  return scalarValue(actual) === scalarValue(expected);
+}
+
+function payloadContainsExpected(payload: unknown, key: string, expected: unknown): boolean {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  if (Array.isArray(payload)) {
+    return payload.some((item) => payloadContainsExpected(item, key, expected));
+  }
+  const record = payload as Record<string, unknown>;
+  if (Object.prototype.hasOwnProperty.call(record, key) && valuesMatch(record[key], expected)) {
+    return true;
+  }
+  return Object.values(record).some((value) => payloadContainsExpected(value, key, expected));
+}
+
+function recordsEqual(left: Record<string, string>, right: Record<string, string>): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return leftKeys.length === rightKeys.length && leftKeys.every((key) => left[key] === right[key]);
+}
+
+function matchingPreset(
+  scenario: GatewayExampleScenario | undefined,
+  presets: GatewayExamplePreset[],
+  values: Record<string, string>,
+): GatewayExamplePreset | undefined {
+  return presets.find((preset) => recordsEqual(scenarioInputValues(scenario, preset), values));
+}
+
+function expectationChecks(
+  preset: GatewayExamplePreset | undefined,
+  payload: unknown,
+  status: ShowcaseRunStatus,
+): ShowcaseExpectationCheck[] {
+  return Object.entries(preset?.expected ?? {}).map(([key, expected]) => {
+    const state = status === 'success'
+      ? payloadContainsExpected(payload, key, expected) ? 'matched' : 'missing'
+      : 'pending';
+    return { key, expected, state };
+  });
 }
 
 function conceptList(scenario: GatewayExampleScenario): string[] {
@@ -208,6 +275,9 @@ export default function Showcase() {
   const selectedDiagramAnnotations = Object.entries(selectedDiagramNode?.annotations ?? {}).slice(0, 6);
   const inputKeys = Object.keys(selectedScenario?.sampleInput ?? {});
   const runStreamFrames = streamFrames(runState.payload);
+  const activePreset = matchingPreset(selectedScenario, presets, inputValues);
+  const runExpectationChecks = expectationChecks(activePreset, runState.payload, runState.status);
+  const matchedExpectationCount = runExpectationChecks.filter((check) => check.state === 'matched').length;
 
   function closeStream() {
     streamSourceRef.current?.close();
@@ -670,6 +740,27 @@ export default function Showcase() {
                       <strong>{runStreamFrames[eventName].length}</strong>
                     </div>
                   ))}
+                </div>
+              ) : null}
+              {runExpectationChecks.length > 0 ? (
+                <div className="showcase-expectations" data-testid="showcase-expectations">
+                  <div className="showcase-expectations-heading">
+                    <span>{activePreset?.label ?? 'Preset'} expectations</span>
+                    <strong>{matchedExpectationCount}/{runExpectationChecks.length}</strong>
+                  </div>
+                  <div className="showcase-expectation-list">
+                    {runExpectationChecks.map((check) => (
+                      <span
+                        key={check.key}
+                        className={`showcase-expectation ${check.state}`}
+                        data-testid={`showcase-expectation:${check.key}`}
+                      >
+                        <span>{check.key}</span>
+                        <strong>{scalarValue(check.expected)}</strong>
+                        <em>{check.state}</em>
+                      </span>
+                    ))}
+                  </div>
                 </div>
               ) : null}
               <pre className="showcase-sample">
