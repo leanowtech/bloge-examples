@@ -1855,7 +1855,8 @@ class DefaultGraphEngineServiceTest {
                     "validated idempotent replay",
                     "RETRY_DEAD_LETTER",
                     "DEAD_LETTER_BACKLOG",
-                    "ops-alice"
+                    "ops-alice",
+                    "INC-123"
             ));
 
             assertEquals(WorkItemStatus.READY, fixture.workItemStore.query(new WorkItemQuery(
@@ -1887,6 +1888,7 @@ class DefaultGraphEngineServiceTest {
             assertEquals("__control_retry_dead_letter__", recoveryAudit.nodeId());
             assertTrue(recoveryAudit.inputJson().contains("validated idempotent replay"));
             assertTrue(recoveryAudit.inputJson().contains("RETRY_DEAD_LETTER"));
+            assertTrue(recoveryAudit.inputJson().contains("INC-123"));
             assertTrue(recoveryAudit.outputJson().contains("\"restoredItemCount\":1"));
         }
     }
@@ -2065,6 +2067,76 @@ class DefaultGraphEngineServiceTest {
                             && item.severity() == GraphOperationsSnapshot.Health.CRITICAL));
             assertTrue(fixture.metricsObserver.lastOperationsDeadLetterOldestAgeSeconds >= 1_800);
             assertTrue(fixture.metricsObserver.lastOperationsSuspendedOldestAgeSeconds >= 7_200);
+        }
+    }
+
+    @Test
+    void operationsSnapshotUsesRuntimeOperationsPolicyThresholds() {
+        GraphOperationsPolicy policy = new GraphOperationsPolicy(
+                Duration.ofSeconds(10),
+                Duration.ofSeconds(20),
+                Duration.ofSeconds(30),
+                Duration.ofSeconds(40)
+        );
+        try (Fixture fixture = new Fixture(false, new InMemoryExecutionCheckpointStore(), policy)) {
+            fixture.createManagedGraphInstance("seed-ops-policy", GraphInstanceStatus.RUNNING);
+            Instant staleSuspendedAt = Instant.now().minusSeconds(45);
+            GraphInstance staleSuspended = new GraphInstance(
+                    "exec-ops-policy-stale",
+                    "approval-flow",
+                    "ver-1",
+                    "default",
+                    "default",
+                    "business-exec-ops-policy-stale",
+                    GraphExecutionMode.GRAPH,
+                    GraphInstanceStatus.SUSPENDED,
+                    "starter",
+                    Map.of("orderId", "A-1"),
+                    0,
+                    staleSuspendedAt.minusSeconds(60),
+                    staleSuspendedAt,
+                    null
+            );
+            fixture.graphInstanceStore.create(staleSuspended);
+            Instant oldDeadLetteredAt = Instant.now().minusSeconds(25);
+            fixture.controlPlaneService.deadLetters.add(new DeadLetterEntry(
+                    "dead-ops-policy",
+                    fixture.identity(staleSuspended),
+                    WorkItemType.EVENT_MATCHED,
+                    "approval",
+                    "wait-ops-policy",
+                    null,
+                    5,
+                    3,
+                    3,
+                    "{\"orderId\":\"A-1\"}",
+                    null,
+                    "retry budget exhausted",
+                    "manual intervention",
+                    oldDeadLetteredAt.minusSeconds(30),
+                    oldDeadLetteredAt
+            ));
+
+            GraphOperationsSnapshot snapshot = fixture.service.queryOperationsSnapshot("default", "default");
+
+            GraphOperationsSnapshot.SloIndicator deadLetterAge = snapshot.sloIndicators().stream()
+                    .filter(indicator -> indicator.code().equals("DEAD_LETTER_OLDEST_AGE"))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(GraphOperationsSnapshot.Health.CRITICAL, deadLetterAge.health());
+            assertEquals(10.0, deadLetterAge.warningThreshold());
+            assertEquals(20.0, deadLetterAge.criticalThreshold());
+
+            GraphOperationsSnapshot.SloIndicator suspendedAge = snapshot.sloIndicators().stream()
+                    .filter(indicator -> indicator.code().equals("SUSPENDED_INSTANCE_OLDEST_AGE"))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(GraphOperationsSnapshot.Health.CRITICAL, suspendedAge.health());
+            assertEquals(30.0, suspendedAge.warningThreshold());
+            assertEquals(40.0, suspendedAge.criticalThreshold());
+            assertTrue(snapshot.actionItems().stream()
+                    .anyMatch(item -> item.code().equals("SUSPENDED_INSTANCES_PRESENT")
+                            && item.severity() == GraphOperationsSnapshot.Health.CRITICAL));
         }
     }
 
@@ -3104,7 +3176,8 @@ class DefaultGraphEngineServiceTest {
                             "remote worker fixed",
                             "RETRY_INSTANCE_DEAD_LETTERS",
                             "FAILED_INSTANCE_BACKLOG",
-                            "ops-bot"
+                            "ops-bot",
+                            "REQ-7788"
                     )
             );
 
@@ -3118,6 +3191,7 @@ class DefaultGraphEngineServiceTest {
             assertEquals("__control_retry_instance__", recoveryAudit.nodeId());
             assertTrue(recoveryAudit.inputJson().contains("remote worker fixed"));
             assertTrue(recoveryAudit.inputJson().contains("RETRY_INSTANCE_DEAD_LETTERS"));
+            assertTrue(recoveryAudit.inputJson().contains("REQ-7788"));
             assertTrue(recoveryAudit.outputJson().contains("\"restoredItemCount\":1"));
         }
     }
@@ -4044,6 +4118,12 @@ class DefaultGraphEngineServiceTest {
         }
 
         private Fixture(boolean withDurableEngine, InMemoryExecutionCheckpointStore checkpointStore) {
+            this(withDurableEngine, checkpointStore, null);
+        }
+
+        private Fixture(boolean withDurableEngine,
+                        InMemoryExecutionCheckpointStore checkpointStore,
+                        GraphOperationsPolicy operationsPolicy) {
             this.checkpointStore = checkpointStore;
             registry.register("echo", (Operator<Object, Object>) (input, ctx) -> input);
             registry.register("slowEcho", (Operator<Object, Object>) (input, ctx) -> {
@@ -4123,6 +4203,9 @@ class DefaultGraphEngineServiceTest {
                     .metricsObserver(metricsObserver);
             if (durableEngine != null) {
                 runtimeSupportBuilder.durableGraphEngine(durableEngine);
+            }
+            if (operationsPolicy != null) {
+                runtimeSupportBuilder.operationsPolicy(operationsPolicy);
             }
             service = new DefaultGraphEngineService(stores, runtimeSupportBuilder.build());
         }

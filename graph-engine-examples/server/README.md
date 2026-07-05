@@ -68,10 +68,12 @@ active deployment availability, snapshot completeness, and control-plane
 availability. The same rules refresh the `ge.operations.*` Micrometer gauges
 when a `GraphEngineMetricsObserver` is wired, including
 `ge.operations.dead_letter_oldest_age_seconds` and
-`ge.operations.suspended_oldest_age_seconds`. The snapshot is
-a control-plane triage view, not a metrics backend; when `truncated = true`, use
-the paginated instance, deployment, and dead-letter APIs or external metrics for
-full-fleet accounting.
+`ge.operations.suspended_oldest_age_seconds`. Age thresholds come from
+`spring.bloge.graph-engine.server.operations.*`, so local demos and production
+deployments can use different wait windows without changing service code. The
+snapshot is a control-plane triage view, not a metrics backend; when
+`truncated = true`, use the paginated instance, deployment, and dead-letter APIs
+or external metrics for full-fleet accounting.
 
 The packaged console renders that snapshot as its default Operations page:
 health, key counts, SLO indicators, action items, and recovery-action affordances
@@ -158,7 +160,8 @@ recovery evidence that is recorded as a `CONTROL_ACTION` audit entry:
   "reason": "validated idempotency after downstream fix",
   "sourceActionCode": "RETRY_DEAD_LETTER",
   "sourceIndicatorCode": "DEAD_LETTER_OLDEST_AGE",
-  "actor": "ops-alice"
+  "actor": "ops-alice",
+  "requestId": "INC-123"
 }
 ```
 
@@ -264,7 +267,8 @@ admin RBAC on the owning definition.
   "reason": "remote worker deployment fixed",
   "sourceActionCode": "RETRY_INSTANCE_DEAD_LETTERS",
   "sourceIndicatorCode": "FAILED_INSTANCE_BACKLOG",
-  "actor": "ops-bot"
+  "actor": "ops-bot",
+  "requestId": "REQ-7788"
 }
 ```
 
@@ -455,6 +459,10 @@ Properties are bound under `spring.bloge.graph-engine.server`:
 | `spring.bloge.graph-engine.server.compile-cache.enabled` | `true` | Enable the in-process `VersionCompiler` result cache used by node and diagram projections |
 | `spring.bloge.graph-engine.server.compile-cache.max-size` | `1000` | Maximum number of cached `VersionCompileResult` entries retained in memory |
 | `spring.bloge.graph-engine.server.compile-cache.ttl` | `60m` | Expire-after-access TTL for cached compile results (`Duration` syntax) |
+| `spring.bloge.graph-engine.server.operations.dead-letter-age-warning` | `5m` | Warning threshold for the oldest sampled dead-lettered work item |
+| `spring.bloge.graph-engine.server.operations.dead-letter-age-critical` | `30m` | Critical threshold for the oldest sampled dead-lettered work item |
+| `spring.bloge.graph-engine.server.operations.suspended-instance-age-warning` | `15m` | Warning threshold for the oldest sampled suspended instance |
+| `spring.bloge.graph-engine.server.operations.suspended-instance-age-critical` | `2h` | Critical threshold for the oldest sampled suspended instance |
 
 The server also inherits all `spring.bloge.*` properties from `bloge-spring` (DSL locations, tenant resolution, durable stores, recovery, audit, dispatch, etc.).
 

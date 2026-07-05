@@ -76,7 +76,8 @@ class GraphDeadLetterControllerTest extends AbstractGraphControllerTest {
                                   "reason": "validated idempotency",
                                   "sourceActionCode": "RETRY_DEAD_LETTER",
                                   "sourceIndicatorCode": "DEAD_LETTER_OLDEST_AGE",
-                                  "actor": "ops-alice"
+                                  "actor": "ops-alice",
+                                  "requestId": "INC-123"
                                 }
                                 """))
                 .andExpect(status().isNoContent());
@@ -86,5 +87,6 @@ class GraphDeadLetterControllerTest extends AbstractGraphControllerTest {
         assertEquals("RETRY_DEAD_LETTER", graphEngineService.retryDeadLetterEvidence.sourceActionCode());
         assertEquals("DEAD_LETTER_OLDEST_AGE", graphEngineService.retryDeadLetterEvidence.sourceIndicatorCode());
         assertEquals("ops-alice", graphEngineService.retryDeadLetterEvidence.actor());
+        assertEquals("INC-123", graphEngineService.retryDeadLetterEvidence.requestId());
     }
 }

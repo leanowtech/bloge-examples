@@ -164,10 +164,6 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
     /** Bounded sample size for product operations snapshots. */
     private static final int OPERATIONS_SNAPSHOT_SAMPLE_LIMIT = 500;
     private static final int OPERATIONS_SNAPSHOT_DEAD_LETTER_SAMPLE_SIZE = 5;
-    private static final int OPERATIONS_DEAD_LETTER_AGE_WARNING_SECONDS = (int) Duration.ofMinutes(5).toSeconds();
-    private static final int OPERATIONS_DEAD_LETTER_AGE_CRITICAL_SECONDS = (int) Duration.ofMinutes(30).toSeconds();
-    private static final int OPERATIONS_SUSPENDED_AGE_WARNING_SECONDS = (int) Duration.ofMinutes(15).toSeconds();
-    private static final int OPERATIONS_SUSPENDED_AGE_CRITICAL_SECONDS = (int) Duration.ofHours(2).toSeconds();
     private static final String CONTROL_ACTION_NODE_DEAD_LETTER_RETRY = "__control_retry_dead_letter__";
     private static final String CONTROL_ACTION_NODE_INSTANCE_RETRY = "__control_retry_instance__";
 
@@ -177,6 +173,7 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
     private final VisualLayoutGenerator visualLayoutGenerator;
     private final DurableGraphEngine durableGraphEngine;
     private final GraphEngineMetricsObserver metricsObserver;
+    private final GraphOperationsPolicy operationsPolicy;
     private final String stateMachineOwnerId = "graph-engine-service-" + UUID.randomUUID();
     private final String sessionOwnerId = "graph-engine-session-service-" + UUID.randomUUID();
     private final ConcurrentHashMap<String, SessionGraph> sessionDefinitions = new ConcurrentHashMap<>();
@@ -195,6 +192,7 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
         this.visualLayoutGenerator = new VisualLayoutGenerator(runtimeSupport.jsonCodec());
         this.durableGraphEngine = runtimeSupport.durableGraphEngine();
         this.metricsObserver = runtimeSupport.metricsObserver();
+        this.operationsPolicy = runtimeSupport.operationsPolicy();
     }
 
     @Override
@@ -1382,6 +1380,7 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
         input.put("sourceActionCode", emptyToNull(resolvedEvidence.sourceActionCode()));
         input.put("sourceIndicatorCode", emptyToNull(resolvedEvidence.sourceIndicatorCode()));
         input.put("actor", emptyToNull(resolvedEvidence.actor()));
+        input.put("requestId", emptyToNull(resolvedEvidence.requestId()));
         input.put("evidenceSupplied", !resolvedEvidence.emptyEvidence());
         return input;
     }
@@ -3392,13 +3391,14 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
         }
         int suspendedInstances = instancesByStatus.getOrDefault(GraphInstanceStatus.SUSPENDED, 0);
         if (suspendedInstances > 0) {
-            GraphOperationsSnapshot.Health suspendedSeverity = oldestSuspendedAgeSeconds >= OPERATIONS_SUSPENDED_AGE_CRITICAL_SECONDS
+            int suspendedCriticalSeconds = operationsPolicy.suspendedInstanceAgeCriticalSeconds();
+            GraphOperationsSnapshot.Health suspendedSeverity = oldestSuspendedAgeSeconds >= suspendedCriticalSeconds
                     ? GraphOperationsSnapshot.Health.CRITICAL
                     : GraphOperationsSnapshot.Health.WARNING;
             items.add(new GraphOperationsSnapshot.ActionItem(
                     "SUSPENDED_INSTANCES_PRESENT",
                     suspendedSeverity,
-                    oldestSuspendedAgeSeconds >= OPERATIONS_SUSPENDED_AGE_CRITICAL_SECONDS
+                    oldestSuspendedAgeSeconds >= suspendedCriticalSeconds
                             ? "Suspended instances have exceeded the critical wait-age threshold and require triage."
                             : "Suspended instances are waiting for signal, task completion, or remote-worker callback.",
                     "instances",
@@ -3584,6 +3584,10 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
             int deadLetterCount,
             int oldestDeadLetterAgeSeconds,
             int oldestSuspendedAgeSeconds) {
+        int deadLetterWarningSeconds = operationsPolicy.deadLetterAgeWarningSeconds();
+        int deadLetterCriticalSeconds = operationsPolicy.deadLetterAgeCriticalSeconds();
+        int suspendedWarningSeconds = operationsPolicy.suspendedInstanceAgeWarningSeconds();
+        int suspendedCriticalSeconds = operationsPolicy.suspendedInstanceAgeCriticalSeconds();
         return List.of(
                 new GraphOperationsSnapshot.SloIndicator(
                         "DEAD_LETTER_BACKLOG",
@@ -3602,20 +3606,20 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                         "DEAD_LETTER_OLDEST_AGE",
                         ageHealth(
                                 oldestDeadLetterAgeSeconds,
-                                OPERATIONS_DEAD_LETTER_AGE_WARNING_SECONDS,
-                                OPERATIONS_DEAD_LETTER_AGE_CRITICAL_SECONDS
+                                deadLetterWarningSeconds,
+                                deadLetterCriticalSeconds
                         ),
                         "ge.operations.dead_letter_oldest_age_seconds",
                         oldestDeadLetterAgeSeconds,
-                        (double) OPERATIONS_DEAD_LETTER_AGE_WARNING_SECONDS,
-                        (double) OPERATIONS_DEAD_LETTER_AGE_CRITICAL_SECONDS,
+                        (double) deadLetterWarningSeconds,
+                        (double) deadLetterCriticalSeconds,
                         "seconds",
-                        oldestDeadLetterAgeSeconds >= OPERATIONS_DEAD_LETTER_AGE_CRITICAL_SECONDS
+                        oldestDeadLetterAgeSeconds >= deadLetterCriticalSeconds
                                 ? "The oldest dead-lettered work item has exceeded the critical age threshold."
-                                : oldestDeadLetterAgeSeconds >= OPERATIONS_DEAD_LETTER_AGE_WARNING_SECONDS
+                                : oldestDeadLetterAgeSeconds >= deadLetterWarningSeconds
                                 ? "The oldest dead-lettered work item has exceeded the warning age threshold."
                                 : "Dead-letter age is within the sampled scope's default threshold.",
-                        oldestDeadLetterAgeSeconds >= OPERATIONS_DEAD_LETTER_AGE_WARNING_SECONDS
+                        oldestDeadLetterAgeSeconds >= deadLetterWarningSeconds
                                 ? "DEAD_LETTERS_PRESENT"
                                 : ""
                 ),
@@ -3649,20 +3653,20 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                         "SUSPENDED_INSTANCE_OLDEST_AGE",
                         ageHealth(
                                 oldestSuspendedAgeSeconds,
-                                OPERATIONS_SUSPENDED_AGE_WARNING_SECONDS,
-                                OPERATIONS_SUSPENDED_AGE_CRITICAL_SECONDS
+                                suspendedWarningSeconds,
+                                suspendedCriticalSeconds
                         ),
                         "ge.operations.suspended_oldest_age_seconds",
                         oldestSuspendedAgeSeconds,
-                        (double) OPERATIONS_SUSPENDED_AGE_WARNING_SECONDS,
-                        (double) OPERATIONS_SUSPENDED_AGE_CRITICAL_SECONDS,
+                        (double) suspendedWarningSeconds,
+                        (double) suspendedCriticalSeconds,
                         "seconds",
-                        oldestSuspendedAgeSeconds >= OPERATIONS_SUSPENDED_AGE_CRITICAL_SECONDS
+                        oldestSuspendedAgeSeconds >= suspendedCriticalSeconds
                                 ? "The oldest suspended instance has exceeded the critical wait-age threshold."
-                                : oldestSuspendedAgeSeconds >= OPERATIONS_SUSPENDED_AGE_WARNING_SECONDS
+                                : oldestSuspendedAgeSeconds >= suspendedWarningSeconds
                                 ? "The oldest suspended instance has exceeded the warning wait-age threshold."
                                 : "Suspended instance age is within the sampled scope's default threshold.",
-                        oldestSuspendedAgeSeconds >= OPERATIONS_SUSPENDED_AGE_WARNING_SECONDS
+                        oldestSuspendedAgeSeconds >= suspendedWarningSeconds
                                 ? "SUSPENDED_INSTANCES_PRESENT"
                                 : ""
                 ),

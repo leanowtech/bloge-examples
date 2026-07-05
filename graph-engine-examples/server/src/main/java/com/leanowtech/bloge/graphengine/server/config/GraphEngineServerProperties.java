@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.graphengine.server.config;
 
+import com.leanowtech.bloge.graphengine.service.GraphOperationsPolicy;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
@@ -14,6 +16,7 @@ public class GraphEngineServerProperties {
     private String defaultEnvironment = "production";
     private int maxSseConnectionsPerTenant = 10;
     private final CompileCacheProperties compileCache = new CompileCacheProperties();
+    private final OperationsProperties operations = new OperationsProperties();
 
     /**
      * Returns whether the server should apply the product-layer {@code ge_*}
@@ -83,6 +86,15 @@ public class GraphEngineServerProperties {
     }
 
     /**
+     * Returns operations SLO and recovery policy settings.
+     *
+     * @return operations policy properties
+     */
+    public OperationsProperties getOperations() {
+        return operations;
+    }
+
+    /**
      * Nested Spring Boot properties for the in-process version compile cache.
      */
     public static final class CompileCacheProperties {
@@ -142,6 +154,76 @@ public class GraphEngineServerProperties {
          */
         public void setTtl(Duration ttl) {
             this.ttl = ttl == null || ttl.isNegative() || ttl.isZero() ? Duration.ofMinutes(60) : ttl;
+        }
+    }
+
+    /**
+     * Nested Spring Boot properties for operations SLO thresholds.
+     */
+    public static final class OperationsProperties {
+        private Duration deadLetterAgeWarning = GraphOperationsPolicy.DEFAULT_DEAD_LETTER_AGE_WARNING;
+        private Duration deadLetterAgeCritical = GraphOperationsPolicy.DEFAULT_DEAD_LETTER_AGE_CRITICAL;
+        private Duration suspendedInstanceAgeWarning = GraphOperationsPolicy.DEFAULT_SUSPENDED_INSTANCE_AGE_WARNING;
+        private Duration suspendedInstanceAgeCritical = GraphOperationsPolicy.DEFAULT_SUSPENDED_INSTANCE_AGE_CRITICAL;
+
+        public Duration getDeadLetterAgeWarning() {
+            return deadLetterAgeWarning;
+        }
+
+        public void setDeadLetterAgeWarning(Duration deadLetterAgeWarning) {
+            this.deadLetterAgeWarning = positiveOrDefault(
+                    deadLetterAgeWarning,
+                    GraphOperationsPolicy.DEFAULT_DEAD_LETTER_AGE_WARNING
+            );
+        }
+
+        public Duration getDeadLetterAgeCritical() {
+            return deadLetterAgeCritical;
+        }
+
+        public void setDeadLetterAgeCritical(Duration deadLetterAgeCritical) {
+            this.deadLetterAgeCritical = positiveOrDefault(
+                    deadLetterAgeCritical,
+                    GraphOperationsPolicy.DEFAULT_DEAD_LETTER_AGE_CRITICAL
+            );
+        }
+
+        public Duration getSuspendedInstanceAgeWarning() {
+            return suspendedInstanceAgeWarning;
+        }
+
+        public void setSuspendedInstanceAgeWarning(Duration suspendedInstanceAgeWarning) {
+            this.suspendedInstanceAgeWarning = positiveOrDefault(
+                    suspendedInstanceAgeWarning,
+                    GraphOperationsPolicy.DEFAULT_SUSPENDED_INSTANCE_AGE_WARNING
+            );
+        }
+
+        public Duration getSuspendedInstanceAgeCritical() {
+            return suspendedInstanceAgeCritical;
+        }
+
+        public void setSuspendedInstanceAgeCritical(Duration suspendedInstanceAgeCritical) {
+            this.suspendedInstanceAgeCritical = positiveOrDefault(
+                    suspendedInstanceAgeCritical,
+                    GraphOperationsPolicy.DEFAULT_SUSPENDED_INSTANCE_AGE_CRITICAL
+            );
+        }
+
+        /**
+         * Converts externalized properties to the service-layer operations policy.
+         */
+        public GraphOperationsPolicy toPolicy() {
+            return new GraphOperationsPolicy(
+                    deadLetterAgeWarning,
+                    deadLetterAgeCritical,
+                    suspendedInstanceAgeWarning,
+                    suspendedInstanceAgeCritical
+            );
+        }
+
+        private static Duration positiveOrDefault(Duration value, Duration fallback) {
+            return value == null || value.isNegative() || value.isZero() ? fallback : value;
         }
     }
 }

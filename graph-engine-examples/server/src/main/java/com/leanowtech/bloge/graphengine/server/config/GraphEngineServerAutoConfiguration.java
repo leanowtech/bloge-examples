@@ -220,6 +220,7 @@ public class GraphEngineServerAutoConfiguration {
                         properties.getCompileCache().getMaxSize(),
                         properties.getCompileCache().getTtl()
                 ))
+                .operationsPolicy(properties.getOperations().toPolicy())
                 .build();
     }
 

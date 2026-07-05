@@ -9,12 +9,14 @@ import com.leanowtech.bloge.graphengine.service.RecoveryActionEvidence;
  * @param sourceActionCode operations action code that suggested this retry
  * @param sourceIndicatorCode SLO indicator code that triggered this retry
  * @param actor operator or automation identity initiating the retry
+ * @param requestId caller-supplied request or ticket identifier used for correlation
  */
 public record DeadLetterRetryRequest(
         String reason,
         String sourceActionCode,
         String sourceIndicatorCode,
-        String actor
+        String actor,
+        String requestId
 ) {
     /**
      * Converts an optional HTTP payload to service-layer recovery evidence.
@@ -26,7 +28,8 @@ public record DeadLetterRetryRequest(
                         request.reason(),
                         request.sourceActionCode(),
                         request.sourceIndicatorCode(),
-                        request.actor()
+                        request.actor(),
+                        request.requestId()
                 );
     }
 }

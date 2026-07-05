@@ -110,8 +110,8 @@ substrate rather than introducing a separate orchestration engine:
   (optionally filtered to specific node IDs) back to `READY` and triggers a
   dispatch cycle. Requires admin RBAC and an optimistic-lock revision guard.
   The overload that accepts `RecoveryActionEvidence` records the source action,
-  source indicator, reason, actor, and restored item count in the instance audit
-  log as a `CONTROL_ACTION`.
+  source indicator, reason, actor, request id, and restored item count in the
+  instance audit log as a `CONTROL_ACTION`.
 
 Session-mode lifecycle actions (start, signal, terminate) are handled through
 `DurableSessionManager`, which the service lazily initializes from the durable
@@ -250,10 +250,18 @@ Recovery mutations can attach `RecoveryActionEvidence`:
 - `sourceIndicatorCode` links the execution back to an SLO indicator such as
   `DEAD_LETTER_OLDEST_AGE`.
 - `actor` identifies the human operator or automation identity.
+- `requestId` carries an external ticket, incident, or automation request id
+  for cross-system correlation. It is not an idempotency lock.
 
 When an `AuditJournalStore` is configured, dead-letter and instance retry write
 `AuditEventType.CONTROL_ACTION` entries. The audit entry `inputJson` carries the
 evidence and target, while `outputJson` carries restored item IDs and counts.
+
+Age-based operations thresholds are controlled by `GraphOperationsPolicy` on
+`GraphEngineRuntimeSupport`. Defaults remain dead-letter warning/critical at
+5m/30m and suspended-instance warning/critical at 15m/2h, but embedded callers
+can provide a process-level policy when those windows do not match their
+business SLO.
 
 ## Product-layer metrics
 

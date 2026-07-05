@@ -47,6 +47,7 @@ public final class GraphEngineRuntimeSupport {
     private final TimeSource timeSource;
     private final GraphEngineMetricsObserver metricsObserver;
     private final VersionCompilerCacheSettings versionCompilerCacheSettings;
+    private final GraphOperationsPolicy operationsPolicy;
 
     private GraphEngineRuntimeSupport(Builder builder) {
         this.durableGraphEngine = builder.durableGraphEngine;
@@ -72,6 +73,9 @@ public final class GraphEngineRuntimeSupport {
         this.versionCompilerCacheSettings = builder.versionCompilerCacheSettings == null
                 ? VersionCompilerCacheSettings.DEFAULT
                 : builder.versionCompilerCacheSettings;
+        this.operationsPolicy = builder.operationsPolicy == null
+                ? GraphOperationsPolicy.defaultPolicy()
+                : builder.operationsPolicy;
     }
 
     /**
@@ -267,6 +271,15 @@ public final class GraphEngineRuntimeSupport {
     }
 
     /**
+     * Returns the process-level operations policy used for SLO thresholding.
+     *
+     * @return operations policy
+     */
+    public GraphOperationsPolicy operationsPolicy() {
+        return operationsPolicy;
+    }
+
+    /**
      * Builder for assembling one runtime-support aggregate.
      */
     public static final class Builder {
@@ -290,6 +303,7 @@ public final class GraphEngineRuntimeSupport {
         private TimeSource timeSource;
         private GraphEngineMetricsObserver metricsObserver;
         private VersionCompilerCacheSettings versionCompilerCacheSettings;
+        private GraphOperationsPolicy operationsPolicy;
 
         private Builder() {
         }
@@ -391,6 +405,11 @@ public final class GraphEngineRuntimeSupport {
 
         public Builder versionCompilerCacheSettings(VersionCompilerCacheSettings versionCompilerCacheSettings) {
             this.versionCompilerCacheSettings = versionCompilerCacheSettings;
+            return this;
+        }
+
+        public Builder operationsPolicy(GraphOperationsPolicy operationsPolicy) {
+            this.operationsPolicy = operationsPolicy;
             return this;
         }
 

@@ -279,7 +279,8 @@ class GraphInstanceControllerTest extends AbstractGraphControllerTest {
                                   "reason": "retry after downstream fix",
                                   "sourceActionCode": "RETRY_INSTANCE_DEAD_LETTERS",
                                   "sourceIndicatorCode": "FAILED_INSTANCE_BACKLOG",
-                                  "actor": "ops-bot"
+                                  "actor": "ops-bot",
+                                  "requestId": "REQ-7788"
                                 }
                                 """))
                 .andExpect(status().isOk())
@@ -293,6 +294,7 @@ class GraphInstanceControllerTest extends AbstractGraphControllerTest {
         assertEquals("RETRY_INSTANCE_DEAD_LETTERS", graphEngineService.retryInstanceEvidence.sourceActionCode());
         assertEquals("FAILED_INSTANCE_BACKLOG", graphEngineService.retryInstanceEvidence.sourceIndicatorCode());
         assertEquals("ops-bot", graphEngineService.retryInstanceEvidence.actor());
+        assertEquals("REQ-7788", graphEngineService.retryInstanceEvidence.requestId());
     }
 
     @Test
