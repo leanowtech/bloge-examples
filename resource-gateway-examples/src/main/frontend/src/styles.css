@@ -557,6 +557,63 @@ button.secondary:disabled {
   overflow-wrap: anywhere;
 }
 
+.trace-list {
+  display: grid;
+  gap: 6px;
+}
+
+.trace-row {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: #fafafa;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.trace-row.mocked {
+  border-left-color: var(--warning);
+}
+
+.trace-row.real {
+  border-left-color: var(--success);
+}
+
+.trace-row.unknown {
+  border-left-color: var(--muted);
+}
+
+.trace-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.trace-copy strong,
+.trace-copy span,
+.trace-copy code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-copy span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.trace-copy code {
+  color: #334155;
+  font-size: 11px;
+}
+
 .inspector pre {
   background: #0f172a;
   color: #e2e8f0;

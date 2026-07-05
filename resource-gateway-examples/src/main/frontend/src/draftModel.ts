@@ -71,6 +71,15 @@ export interface SimulationChecklistItem {
   detail: string;
 }
 
+/** One readable node row in the simulation trace panel. */
+export interface SimulationTraceRow {
+  nodeId: string;
+  label: string;
+  operatorRef: string;
+  status: NodeRunStatus;
+  outputPreview: string;
+}
+
 export type PortHandleDirection = 'in' | 'out';
 export type ConnectionCandidateStatus = 'ready' | 'blocked' | 'wired';
 
@@ -509,6 +518,26 @@ export function isRunSuccessful(response: SimulationResponse): boolean {
 }
 
 /**
+ * Converts a simulation response into compact node-level trace rows for the inspector.
+ */
+export function simulationTraceRows(
+  nodes: CanvasNode[],
+  response: SimulationResponse | null,
+): SimulationTraceRow[] {
+  if (!response) {
+    return [];
+  }
+  const statuses = nodeStatuses(response);
+  return nodes.map((node) => ({
+    nodeId: node.id,
+    label: node.label || node.id,
+    operatorRef: node.operatorRef,
+    status: statuses[node.id] ?? 'unknown',
+    outputPreview: previewValue(response.results?.[node.id]),
+  }));
+}
+
+/**
  * Builds the initial JSON text for a node output fixture from its operator contract.
  *
  * <p>A single-output operator pins that output value directly. Multi-output operators pin an object
@@ -781,4 +810,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function hasOwn(value: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function previewValue(value: unknown): string {
+  if (value === undefined) {
+    return 'no output';
+  }
+  if (typeof value === 'string') {
+    return truncate(value);
+  }
+  try {
+    return truncate(JSON.stringify(value));
+  } catch {
+    return String(value);
+  }
+}
+
+function truncate(value: string): string {
+  return value.length > 120 ? `${value.slice(0, 117)}...` : value;
 }

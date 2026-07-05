@@ -123,10 +123,11 @@ drags prefetch `/api/visual/connections/candidates` to highlight compatible,
 blocked, and already-wired target ports; dropped gestures are checked through
 `/api/visual/connections/check` before an edge is written; and the inspector
 keeps a simulation checklist, selected-node port inventory, node-level fixture
-JSON with deterministic schema-sample prefill, generated DSL, and unmistakable
-`real` versus `mocked` run badges in one context. Valid fixture JSON is sent as
-request-scoped `/api/visual/graphs/simulate` overrides, while invalid fixture
-drafts block the run before they can become misleading mock evidence.
+JSON with deterministic schema-sample prefill, a node trace panel, generated
+DSL, and unmistakable `real` versus `mocked` run badges in one context. Valid
+fixture JSON is sent as request-scoped `/api/visual/graphs/simulate` overrides,
+while invalid fixture drafts block the run before they can become misleading
+mock evidence.
 Java operators registered in the Spring `OperatorRegistry` also enter
 the same catalog from BLOGE metadata, with streaming and suspendable operators
 marked as distinct Java source kinds and suspendable operators marked as durable

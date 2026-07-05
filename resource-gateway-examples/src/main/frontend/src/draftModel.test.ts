@@ -14,6 +14,7 @@ import {
   portNameFromHandle,
   sampleFromSchemaEnvelope,
   simulationChecklist,
+  simulationTraceRows,
   summarizeCanvas,
   summarizeOperator,
   toConnectionCandidatesRequest,
@@ -409,6 +410,67 @@ describe('simulationChecklist', () => {
       state: 'warning',
       detail: '1 real / 1 mocked',
     });
+  });
+});
+
+describe('simulationTraceRows', () => {
+  it('maps simulate results into node-level trace rows', () => {
+    const response: SimulationResponse = {
+      validated: true,
+      compiled: true,
+      success: true,
+      graphName: 'g',
+      outputNode: 'b',
+      output: null,
+      results: {
+        a: { eligible: true },
+        b: 'approved',
+      },
+      statusMap: {},
+      mockedNodeIds: ['a'],
+      realNodeIds: ['b'],
+      terminalOutputConforms: true,
+      diagnostics: [],
+      errors: [],
+      generatedDsl: '',
+    };
+
+    expect(
+      simulationTraceRows(
+        [
+          { id: 'a', operatorRef: 'risk:score', label: 'Score', position: { x: 0, y: 0 } },
+          { id: 'b', operatorRef: 'risk:decision', position: { x: 0, y: 0 } },
+          { id: 'c', operatorRef: 'risk:unused', position: { x: 0, y: 0 } },
+        ],
+        response,
+      ),
+    ).toEqual([
+      {
+        nodeId: 'a',
+        label: 'Score',
+        operatorRef: 'risk:score',
+        status: 'mocked',
+        outputPreview: '{"eligible":true}',
+      },
+      {
+        nodeId: 'b',
+        label: 'b',
+        operatorRef: 'risk:decision',
+        status: 'real',
+        outputPreview: 'approved',
+      },
+      {
+        nodeId: 'c',
+        label: 'c',
+        operatorRef: 'risk:unused',
+        status: 'unknown',
+        outputPreview: 'no output',
+      },
+    ]);
+  });
+
+  it('returns no rows before a simulation result exists', () => {
+    expect(simulationTraceRows([], null)).toEqual([]);
   });
 });
 

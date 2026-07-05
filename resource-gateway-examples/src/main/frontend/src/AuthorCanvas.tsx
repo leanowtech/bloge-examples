@@ -35,6 +35,7 @@ import {
   nodeStatuses,
   portNameFromHandle,
   simulationChecklist,
+  simulationTraceRows,
   summarizeCanvas,
   summarizeOperator,
   toConnectionCandidatesRequest,
@@ -234,6 +235,7 @@ export default function AuthorCanvas() {
     () => simulationChecklist(canvasSummary, result),
     [canvasSummary, result],
   );
+  const traceRows = useMemo(() => simulationTraceRows(canvasNodes, result), [canvasNodes, result]);
   const operatorByRef = useMemo(
     () => new Map(operators.map((operator) => [operator.operatorRef, operator])),
     [operators],
@@ -609,6 +611,28 @@ export default function AuthorCanvas() {
             <p>
               <strong>Real:</strong> {result.realNodeIds.join(', ') || '—'}
             </p>
+            {traceRows.length > 0 && (
+              <>
+                <h3>Trace</h3>
+                <ol className="trace-list">
+                  {traceRows.map((row) => (
+                    <li key={row.nodeId}>
+                      <button
+                        className={`trace-row ${row.status}`}
+                        onClick={() => setSelectedNodeId(row.nodeId)}
+                      >
+                        <span className="trace-copy">
+                          <strong>{row.label}</strong>
+                          <span>{row.operatorRef}</span>
+                          <code>{row.outputPreview}</code>
+                        </span>
+                        <span className={`run-pill ${row.status}`}>{row.status}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              </>
+            )}
             <h3>Output</h3>
             <pre>{JSON.stringify(result.output, null, 2)}</pre>
             {result.diagnostics.length > 0 && (
