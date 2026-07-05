@@ -4,7 +4,7 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 
 /**
- * Serves the Resource Gateway Showcase entry point at a clean example URL.
+ * Serves browser entry points at clean URLs while the concrete assets stay under static resources.
  */
 @Controller
 public class GatewayExamplePageController {
@@ -17,5 +17,15 @@ public class GatewayExamplePageController {
     @GetMapping({"/examples/gateway", "/examples/gateway/"})
     public String gatewayShowcase() {
         return "forward:/examples/gateway/index.html";
+    }
+
+    /**
+     * Forwards the React authoring workspace route to its Vite-built SPA entry point.
+     *
+     * @return static resource forward target
+     */
+    @GetMapping({"/author", "/author/"})
+    public String authorCanvas() {
+        return "forward:/author/index.html";
     }
 }

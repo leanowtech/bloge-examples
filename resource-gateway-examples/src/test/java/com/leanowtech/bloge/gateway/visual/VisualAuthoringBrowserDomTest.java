@@ -40,6 +40,7 @@ import org.openqa.selenium.support.ui.WebDriverWait;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -120,6 +121,32 @@ class VisualAuthoringBrowserDomTest {
         if (driver != null) {
             driver.quit();
         }
+    }
+
+    @Test
+    void reactAuthorCanvasLoadsPackagedBundleInRealBrowser() {
+        assumeReactAuthorBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/author/");
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(".workspace")));
+        assertThat(driver.getTitle()).contains("BLOGE Visual Canvas");
+        waitForText(wait, By.cssSelector(".topbar"), "Author");
+        waitForText(wait, By.id("operator-palette"), "OPERATORS");
+        WebElement firstOperator = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "[data-testid^='operator-button:']"
+        )));
+        waitForText(wait, By.cssSelector("[data-testid='canvas-coach']"), "Add first operator");
+
+        String operatorRef = firstOperator.getAttribute("data-operator-ref");
+        firstOperator.click();
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid^='canvas-node:']")));
+        waitForText(wait, By.cssSelector(".toolbar"), "1 nodes");
+        waitForText(wait, By.cssSelector(".toolbar"), "Output n1");
+        waitForText(wait, By.cssSelector("[data-testid^='canvas-node:']"), operatorRef);
+        assertNoHorizontalOverflow(wait, By.cssSelector(".workspace"));
     }
 
     @Test
@@ -2137,6 +2164,18 @@ class VisualAuthoringBrowserDomTest {
                 .connectionTimeout(WEBDRIVER_TIMEOUT)
                 .readTimeout(WEBDRIVER_TIMEOUT)
                 .wsTimeout(WEBDRIVER_TIMEOUT);
+    }
+
+    /**
+     * The React author canvas is copied into target/classes only by the opt-in Maven frontend
+     * profile. Default Java verification should stay offline, while -Pfrontend must prove the
+     * packaged app really boots from Spring's /author/ static path.
+     */
+    private void assumeReactAuthorBundlePresent() {
+        Assumptions.assumeTrue(
+                new ClassPathResource("static/author/index.html").exists(),
+                "React author bundle is built only when Maven runs with -Pfrontend"
+        );
     }
 
     private Path chromeDriverExecutableOrSkip() {

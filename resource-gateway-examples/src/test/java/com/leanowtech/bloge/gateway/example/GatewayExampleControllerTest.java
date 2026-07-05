@@ -76,6 +76,15 @@ class GatewayExampleControllerTest {
     }
 
     @Test
+    void pageControllerForwardsCleanUrlToReactAuthorCanvas() throws Exception {
+        MockMvc pageMvc = MockMvcBuilders.standaloneSetup(new GatewayExamplePageController()).build();
+
+        pageMvc.perform(get("/author"))
+                .andExpect(status().isOk())
+                .andExpect(forwardedUrl("/author/index.html"));
+    }
+
+    @Test
     void staticShowcaseAssetsArePackaged() {
         assertThat(new ClassPathResource("static/examples/gateway/index.html").exists()).isTrue();
         assertThat(new ClassPathResource("static/examples/gateway/app.js").exists()).isTrue();
