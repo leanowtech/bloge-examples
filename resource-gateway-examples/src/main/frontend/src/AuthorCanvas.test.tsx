@@ -273,6 +273,87 @@ describe('AuthorCanvas connection guide', () => {
   });
 });
 
+describe('AuthorCanvas simulation summary', () => {
+  let root: Root | null = null;
+  let host: HTMLDivElement;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({ operators: [eligibilityOperator()] });
+      }
+      if (url === '/api/visual/graphs/simulate') {
+        const body = JSON.parse(String(init?.body));
+        expect(body.outputNode).toBe('n1');
+        expect(body.draft.output.nodeId).toBe('n1');
+        expect(body.draft.nodes).toHaveLength(1);
+        return jsonResponse({
+          validated: true,
+          compiled: true,
+          success: true,
+          graphName: 'visualGraph',
+          outputNode: 'n1',
+          output: { eligible: true },
+          results: { n1: { eligible: true } },
+          statusMap: {},
+          mockedNodeIds: ['n1'],
+          realNodeIds: [],
+          terminalOutputConforms: true,
+          diagnostics: [],
+          errors: [],
+          generatedDsl: 'graph visualGraph {}',
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(async () => {
+    if (root) {
+      await act(async () => root?.unmount());
+      root = null;
+    }
+    host.remove();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('shows a readable run summary before and after simulation', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:eligibility"]').textContent).toContain('Eligibility'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:eligibility"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="simulation-run-summary"]').textContent).toContain('Ready to simulate'),
+    );
+    expect(query('[data-testid="simulation-run-summary:terminal"]').textContent).toContain('n1');
+    expect(query('[data-testid="simulation-run-summary:mock-samples"]').textContent).toContain('1 sample');
+
+    const simulateButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Simulate' && button.className.includes('primary'));
+    expect(simulateButton).toBeDefined();
+    await click(simulateButton as HTMLButtonElement);
+
+    await waitFor(() =>
+      expect(query('[data-testid="simulation-run-summary"]').textContent).toContain('Simulation succeeded'),
+    );
+    expect(query('[data-testid="simulation-run-summary:trust"]').textContent).toContain('0 real / 1 mocked');
+    expect(query('[data-testid="simulation-run-summary:diagnostics"]').textContent).toContain('0 diagnostics');
+  });
+});
+
 const sampleLibraryYaml = [
   'schemaVersion: bloge.visualOperatorLibrary.v1',
   'libraryId: risk-policy',

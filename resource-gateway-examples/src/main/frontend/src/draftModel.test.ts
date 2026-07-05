@@ -23,6 +23,7 @@ import {
   sampleFromSchemaEnvelope,
   simulationChecklist,
   simulationFixtureRows,
+  simulationRunSummary,
   simulationTraceRows,
   summarizeCanvas,
   summarizeOperator,
@@ -664,6 +665,124 @@ describe('simulationChecklist', () => {
       label: 'Trust',
       state: 'warning',
       detail: '1 real / 1 mocked',
+    });
+  });
+});
+
+describe('simulationRunSummary', () => {
+  const summary = summarizeCanvas(
+    [
+      { id: 'n1', operatorRef: 'risk:score', position: { x: 0, y: 0 } },
+      { id: 'n2', operatorRef: 'risk:decision', position: { x: 0, y: 0 } },
+    ],
+    [{ id: 'e1', source: 'n1', target: 'n2' }],
+    'n2',
+  );
+
+  it('summarizes a not-yet-run graph without hiding mock sample work', () => {
+    const run = simulationRunSummary(
+      summary,
+      [
+        {
+          nodeId: 'n1',
+          label: 'Risk Score',
+          operatorRef: 'risk:score',
+          state: 'warning',
+          runMode: 'mocked',
+          fixtureLabel: 'server sample',
+          detail: 'server sample',
+        },
+      ],
+      null,
+    );
+
+    expect(run).toMatchObject({
+      state: 'pending',
+      title: 'Ready to simulate',
+      detail: '2 nodes selected',
+    });
+    expect(run.chips).toEqual([
+      { key: 'terminal', label: 'Terminal', value: 'n2', state: 'ready' },
+      { key: 'fixtures', label: 'Fixtures', value: 'none', state: 'pending' },
+      { key: 'mock-samples', label: 'Mock Samples', value: '1 sample', state: 'warning' },
+    ]);
+  });
+
+  it('blocks the run summary when fixture JSON is invalid', () => {
+    const run = simulationRunSummary(
+      summary,
+      [
+        {
+          nodeId: 'n1',
+          label: 'Risk Score',
+          operatorRef: 'risk:score',
+          state: 'blocked',
+          runMode: 'mocked',
+          fixtureLabel: 'json error',
+          detail: 'Invalid JSON',
+        },
+      ],
+      null,
+    );
+
+    expect(run.state).toBe('blocked');
+    expect(run.title).toBe('Simulation blocked');
+    expect(run.detail).toBe('1 fixture JSON error');
+    expect(run.chips.find((chip) => chip.key === 'fixtures')).toEqual({
+      key: 'fixtures',
+      label: 'Fixtures',
+      value: '1 invalid',
+      state: 'blocked',
+    });
+  });
+
+  it('summarizes a completed run with terminal, trust, fixture, and diagnostic facts', () => {
+    const response: SimulationResponse = {
+      validated: true,
+      compiled: true,
+      success: true,
+      graphName: 'g',
+      outputNode: 'n2',
+      output: { approved: true },
+      results: {},
+      statusMap: {},
+      mockedNodeIds: ['n1'],
+      realNodeIds: ['n2'],
+      terminalOutputConforms: true,
+      diagnostics: [],
+      errors: [],
+      generatedDsl: '',
+    };
+
+    const run = simulationRunSummary(
+      summary,
+      [
+        {
+          nodeId: 'n1',
+          label: 'Risk Score',
+          operatorRef: 'risk:score',
+          state: 'ready',
+          runMode: 'mocked',
+          fixtureLabel: 'output pin',
+          detail: 'fixture set',
+        },
+      ],
+      response,
+    );
+
+    expect(run).toMatchObject({
+      state: 'success',
+      title: 'Simulation succeeded',
+      detail: '1 real / 1 mocked',
+    });
+    expect(run.chips).toContainEqual({ key: 'terminal', label: 'Terminal', value: 'n2', state: 'ready' });
+    expect(run.chips).toContainEqual({ key: 'trust', label: 'Trust', value: '1 real / 1 mocked', state: 'warning' });
+    expect(run.chips).toContainEqual({ key: 'fixtures', label: 'Fixtures', value: '1 pinned', state: 'ready' });
+    expect(run.chips).toContainEqual({
+      key: 'diagnostics',
+      label: 'Diagnostics',
+      value: '0 diagnostics',
+      state: 'ready',
     });
   });
 });

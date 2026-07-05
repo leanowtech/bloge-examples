@@ -123,6 +123,20 @@ export interface SimulationTraceRow {
   outputPreview: string;
 }
 
+export interface SimulationRunSummaryChip {
+  key: string;
+  label: string;
+  value: string;
+  state: SimulationChecklistItem['state'];
+}
+
+export interface SimulationRunSummary {
+  state: 'pending' | 'success' | 'blocked';
+  title: string;
+  detail: string;
+  chips: SimulationRunSummaryChip[];
+}
+
 /** One row in the fixture setup list that guides authors to mocked nodes. */
 export interface SimulationFixtureRow {
   nodeId: string;
@@ -1037,6 +1051,100 @@ export function simulationTraceRows(
     status: statuses[node.id] ?? 'unknown',
     outputPreview: previewValue(response.results?.[node.id]),
   }));
+}
+
+/**
+ * Compresses the latest simulation state into one scan-friendly result header.
+ *
+ * <p>The detailed trace remains below it; this summary exists so authors can immediately see whether
+ * a run is trustworthy, which node produced the terminal output, and whether fixtures shaped the
+ * result.</p>
+ */
+export function simulationRunSummary(
+  summary: CanvasSummary,
+  fixtureRows: SimulationFixtureRow[],
+  response: SimulationResponse | null,
+): SimulationRunSummary {
+  const blockedFixtures = fixtureRows.filter((row) => row.state === 'blocked').length;
+  const pinnedFixtures = fixtureRows.filter((row) => row.fixtureLabel !== 'server sample').length;
+  const sampleMocks = fixtureRows.filter((row) => row.state === 'warning').length;
+
+  if (!response) {
+    return {
+      state: blockedFixtures > 0 ? 'blocked' : 'pending',
+      title: blockedFixtures > 0 ? 'Simulation blocked' : 'Ready to simulate',
+      detail: blockedFixtures > 0
+        ? `${blockedFixtures} fixture JSON error${blockedFixtures === 1 ? '' : 's'}`
+        : `${summary.nodeCount} node${summary.nodeCount === 1 ? '' : 's'} selected`,
+      chips: [
+        {
+          key: 'terminal',
+          label: 'Terminal',
+          value: summary.outputNodeId || 'missing',
+          state: summary.outputNodeId ? 'ready' : 'blocked',
+        },
+        {
+          key: 'fixtures',
+          label: 'Fixtures',
+          value: blockedFixtures > 0
+            ? `${blockedFixtures} invalid`
+            : pinnedFixtures > 0
+              ? `${pinnedFixtures} pinned`
+              : 'none',
+          state: blockedFixtures > 0 ? 'blocked' : pinnedFixtures > 0 ? 'ready' : 'pending',
+        },
+        {
+          key: 'mock-samples',
+          label: 'Mock Samples',
+          value: sampleMocks > 0 ? `${sampleMocks} sample${sampleMocks === 1 ? '' : 's'}` : 'none',
+          state: sampleMocks > 0 ? 'warning' : 'ready',
+        },
+      ],
+    };
+  }
+
+  const successful = isRunSuccessful(response);
+  const mockedCount = response.mockedNodeIds?.length ?? 0;
+  const realCount = response.realNodeIds?.length ?? 0;
+  const errorCount = response.errors?.length ?? 0;
+  const diagnosticCount = response.diagnostics?.length ?? 0;
+  return {
+    state: successful ? 'success' : 'blocked',
+    title: successful ? 'Simulation succeeded' : 'Simulation blocked',
+    detail: successful
+      ? `${realCount} real / ${mockedCount} mocked`
+      : `${errorCount} error${errorCount === 1 ? '' : 's'}`,
+    chips: [
+      {
+        key: 'terminal',
+        label: 'Terminal',
+        value: response.outputNode || summary.outputNodeId || 'missing',
+        state: response.outputNode || summary.outputNodeId ? 'ready' : 'blocked',
+      },
+      {
+        key: 'trust',
+        label: 'Trust',
+        value: `${realCount} real / ${mockedCount} mocked`,
+        state: mockedCount > 0 ? 'warning' : 'ready',
+      },
+      {
+        key: 'fixtures',
+        label: 'Fixtures',
+        value: blockedFixtures > 0
+          ? `${blockedFixtures} invalid`
+          : pinnedFixtures > 0
+            ? `${pinnedFixtures} pinned`
+            : 'none',
+        state: blockedFixtures > 0 ? 'blocked' : pinnedFixtures > 0 ? 'ready' : 'pending',
+      },
+      {
+        key: 'diagnostics',
+        label: 'Diagnostics',
+        value: `${diagnosticCount} diagnostic${diagnosticCount === 1 ? '' : 's'}`,
+        state: diagnosticCount > 0 || errorCount > 0 ? 'warning' : 'ready',
+      },
+    ],
+  };
 }
 
 /**

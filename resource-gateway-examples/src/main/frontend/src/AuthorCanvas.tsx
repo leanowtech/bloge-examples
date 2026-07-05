@@ -55,6 +55,7 @@ import {
   portNameFromHandle,
   simulationChecklist,
   simulationFixtureRows,
+  simulationRunSummary,
   simulationTraceRows,
   summarizeCanvas,
   summarizeOperator,
@@ -343,6 +344,10 @@ export default function AuthorCanvas() {
       result,
     ),
     [canvasNodes, fixtureCompilation, fixtureDrafts, fixtureInputDrafts, operators, result],
+  );
+  const runSummary = useMemo(
+    () => simulationRunSummary(canvasSummary, fixtureRows, result),
+    [canvasSummary, fixtureRows, result],
   );
   const journey = useMemo(
     () => authoringJourney(operators.length, canvasSummary, fixtureRows, result),
@@ -1244,6 +1249,24 @@ export default function AuthorCanvas() {
         )}
 
         <h2>Result</h2>
+        <section className={`run-summary ${runSummary.state}`} data-testid="simulation-run-summary">
+          <div className="run-summary-heading">
+            <span>{runSummary.detail}</span>
+            <strong>{runSummary.title}</strong>
+          </div>
+          <div className="run-summary-chips">
+            {runSummary.chips.map((chip) => (
+              <span
+                key={chip.key}
+                className={`run-summary-chip ${chip.state}`}
+                data-testid={`simulation-run-summary:${chip.key}`}
+              >
+                <span>{chip.label}</span>
+                <strong>{chip.value}</strong>
+              </span>
+            ))}
+          </div>
+        </section>
         {error && <pre className="error">{error}</pre>}
         {!result && !error && <p className="muted">No simulation result.</p>}
         {result && (

@@ -1199,6 +1199,101 @@ button.secondary:disabled {
   overflow-wrap: anywhere;
 }
 
+.run-summary {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.run-summary.pending {
+  border-left-color: var(--muted);
+}
+
+.run-summary.success {
+  border-left-color: var(--success);
+  background: #effaf3;
+}
+
+.run-summary.blocked {
+  border-left-color: var(--danger);
+  background: #fff4f4;
+}
+
+.run-summary-heading {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.run-summary-heading span,
+.run-summary-heading strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.run-summary-heading span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.run-summary-heading strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.run-summary-chips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.run-summary-chip {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.run-summary-chip span,
+.run-summary-chip strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.run-summary-chip span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.run-summary-chip strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.run-summary-chip.ready {
+  border-color: #9bd3b0;
+}
+
+.run-summary-chip.warning,
+.run-summary-chip.pending {
+  border-color: #f5cf83;
+}
+
+.run-summary-chip.blocked {
+  border-color: #f2a6a6;
+}
+
 .trace-list {
   display: grid;
   gap: 6px;
