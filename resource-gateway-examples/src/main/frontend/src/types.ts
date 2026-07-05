@@ -66,9 +66,10 @@ export interface GraphDraft {
   output: { nodeId: string; path?: string };
 }
 
-/** A per-node author-supplied mock output fixture. */
+/** A per-node author-supplied simulation fixture. */
 export interface NodeFixture {
   output: unknown;
+  expectedInput?: unknown;
 }
 
 /** The body of POST /api/visual/graphs/simulate. */

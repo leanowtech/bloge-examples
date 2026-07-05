@@ -5197,6 +5197,30 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsRawSecretInNodeFixtureExpectedInputWithoutEchoingValue() {
+        String rawSecret = "Bearer fixture-input-token";
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.configurablePolicyLibrary()));
+        GraphDraft draft = configurablePolicyDraft(Map.of(
+                "threshold", 700,
+                "mode", "strict"
+        )).withNodeFixtures(Map.of(
+                "policy", new GraphDraft.NodeFixture(Map.of("ok", true),
+                        Map.of("authorization", rawSecret))));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.secret.raw");
+                    assertThat(diagnostic.message()).doesNotContain(rawSecret);
+                    assertThat(diagnostic.target()).contains("/nodeFixtures/policy/expectedInput/authorization");
+                });
+    }
+
+    @Test
     void rejectsEdgeWhenSourcePathDoesNotExist() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(

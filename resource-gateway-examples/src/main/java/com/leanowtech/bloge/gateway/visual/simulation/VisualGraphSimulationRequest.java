@@ -11,7 +11,8 @@ import java.util.Map;
  * @param draft the transient graph draft to simulate
  * @param context the initial graph context (may be partial)
  * @param outputNode optional output node override; defaults to the draft's selected output node
- * @param fixtures optional per-node output pins keyed by node id (author-supplied mock outputs)
+ * @param fixtures optional per-node fixtures keyed by node id; output pins replace mock outputs and
+ *                 expected inputs assert what the stand-in observed
  */
 public record VisualGraphSimulationRequest(
         GraphDraft draft,

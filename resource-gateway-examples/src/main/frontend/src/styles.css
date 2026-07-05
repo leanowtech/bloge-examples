@@ -536,9 +536,21 @@ button.secondary:disabled {
   font-size: 12px;
 }
 
+.fixture-field {
+  display: grid;
+  gap: 4px;
+}
+
+.fixture-field span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .fixture-editor textarea {
   width: 100%;
-  min-height: 132px;
+  min-height: 104px;
   resize: vertical;
   padding: 8px;
   border: 1px solid var(--border);

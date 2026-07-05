@@ -123,11 +123,12 @@ drags prefetch `/api/visual/connections/candidates` to highlight compatible,
 blocked, and already-wired target ports; dropped gestures are checked through
 `/api/visual/connections/check` before an edge is written; and the inspector
 keeps a simulation checklist, selected-node port inventory, node-level fixture
-JSON with deterministic schema-sample prefill, a node trace panel, generated
-DSL, and unmistakable `real` versus `mocked` run badges in one context. Valid
-fixture JSON is sent as request-scoped `/api/visual/graphs/simulate` overrides,
-while invalid fixture drafts block the run before they can become misleading
-mock evidence.
+JSON with deterministic schema-sample prefill, expected-input assertion JSON, a
+node trace panel, generated DSL, and unmistakable `real` versus `mocked` run
+badges in one context. Valid fixture JSON is sent as request-scoped
+`/api/visual/graphs/simulate` overrides, where output pins replace mock outputs
+and expected inputs assert what the stand-in observed; invalid fixture drafts
+block the run before they can become misleading mock evidence.
 Java operators registered in the Spring `OperatorRegistry` also enter
 the same catalog from BLOGE metadata, with streaming and suspendable operators
 marked as distinct Java source kinds and suspendable operators marked as durable
@@ -988,7 +989,7 @@ Showcase metadata APIs:
 | `GET` | `/api/gateway/examples/scenarios/{graphName}` | Load scenario metadata and run recipe |
 | `GET` | `/api/gateway/examples/scenarios/{graphName}/diagram` | Load the `bloge.visualLayout.v1` diagram for a scenario |
 | `POST` | `/api/gateway/examples/compose/run` | Compile and run submitted DSL with JSON context, returning diagnostics, output, layout, and decision-table metadata |
-| `POST` | `/api/visual/graphs/simulate` | Mock-run a transient visual graph draft, honoring persisted `draft.nodeFixtures` and request-scoped fixture overrides while marking mocked versus real DSL-primitive nodes |
+| `POST` | `/api/visual/graphs/simulate` | Mock-run a transient visual graph draft, honoring persisted `draft.nodeFixtures` and request-scoped fixture overrides for output pins and expected-input assertions while marking mocked versus real DSL-primitive nodes |
 | `GET` | `/api/visual/operators` | List native, Java registry, imported, executable publication-backed subgraph, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering, `sourceKind` / `operatorLibraryId` / `loweringMode` / `capability` / `runtimeReadiness` catalog facets, plus multi-term schema-aware search across input/output/config fields, field types, JSON Schema field annotations, library owner ids, and readiness summaries; response includes `facets.total/sourceKinds/operatorLibraryIds/loweringModes/capabilities/runtimeReadinessStates` counts plus server-derived `runtimeBindingProjections[]` / `runtimeBindingProjectionStateCounts` and `executablePromotionProjections[]` / `executablePromotionStateCounts`; projection detail arrays follow the returned catalog page, while projection state counts cover the full filtered match set, so palette clients can distinguish missing, bound, drifted, adapter-active, still-executor-blocked, and readiness-recompute-required implementation state without trusting imported libraries to declare runtime readiness or loading every operator detail |
 | `POST` | `/api/visual/operators/fit-candidates` | Return `bloge.visualOperatorFitCatalog.v1`, a paged schema-fit operator window for one draft source endpoint; applies the same catalog scope/facet filters before evaluating declared input/config target schemas with the shared JSON Schema compatibility rules, returns aligned `operators[]` and `fitCandidates[]`, accepted/rejected counts, facets, runtime binding projections, and executable promotion projections so palette clients can recommend addable operators that can consume the selected output without fetching or checking the whole catalog in the browser |
 | `GET` | `/api/visual/operators/{operatorRef}` | Return one visible `bloge.visualOperator.v1` definition under the same `tenantId` / `namespace` / `environment`, `includeDeprecated`, `resourceOnly`, `operatorLibraryId`, and catalog facet visibility gates used by the operator catalog; `includeProjections=true` returns `bloge.visualOperatorDetail.v1` with the operator plus server-derived runtime binding and executable promotion projections for detail panels; returns `404` when the operator is hidden or missing |

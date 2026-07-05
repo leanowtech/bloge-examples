@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -111,7 +112,7 @@ public class VisualGraphSimulationService {
      * @param draft the graph draft
      * @param context the initial graph context (may be partial; missing inputs simply bind to null)
      * @param outputNode optional output node override; defaults to the draft's selected output node
-     * @param fixtures request-scoped per-node output pins keyed by node id; these override any persisted draft fixture
+     * @param fixtures request-scoped per-node fixtures keyed by node id; these override any persisted draft fixture
      * @return the simulation result, including which nodes were mocked vs executed for real
      */
     public VisualGraphSimulationResponse simulate(GraphDraft draft,
@@ -122,7 +123,7 @@ public class VisualGraphSimulationService {
             return blocked(false, List.of(VisualDiagnostic.error("visual.simulate.draftMissing",
                     "Graph draft is required.", "/")), List.of("Graph draft is required."), "");
         }
-        Map<String, Object> fixtureOutputs = fixtureOutputs(draft, fixtures);
+        Map<String, NodeFixture> effectiveFixtures = effectiveFixtures(draft, fixtures);
         List<VisualDiagnostic> capDiagnostics = enforceResourceCaps(draft);
         if (!capDiagnostics.isEmpty()) {
             return blocked(false, capDiagnostics, List.of("Simulation resource caps exceeded."), "");
@@ -152,7 +153,7 @@ public class VisualGraphSimulationService {
                 return blocked(true, diagnostics,
                         List.of("Simulation cannot resolve one or more operators."), "");
             }
-            boolean pinned = fixtureOutputs.containsKey(node.id());
+            boolean pinned = effectiveFixtures.containsKey(node.id());
             if (!pinned && isRealPrimitive(operator.get())) {
                 realNodeIds.add(node.id());
                 simulationNodes.add(node);
@@ -160,7 +161,7 @@ public class VisualGraphSimulationService {
                 String simulationRef = SIM_OPERATOR_PREFIX + node.id();
                 mockedNodeIds.add(node.id());
                 Object mockOutput = pinned
-                        ? fixtureOutputs.get(node.id())
+                        ? effectiveFixtures.get(node.id()).output()
                         : sampleGenerator.generate(firstOutputSchema(operator.get()));
                 mockOutputsByNodeId.put(node.id(), mockOutput);
                 syntheticDefinitions.put(simulationRef,
@@ -178,8 +179,12 @@ public class VisualGraphSimulationService {
         }
 
         DefaultOperatorRegistry simulationRegistry = new DefaultOperatorRegistry();
-        mockOutputsByNodeId.forEach((nodeId, output) -> simulationRegistry.register(
-                SIM_OPERATOR_PREFIX + nodeId, SimulationOperator.returning(nodeId, output)));
+        Map<String, SimulationOperator> simulationOperators = new LinkedHashMap<>();
+        mockOutputsByNodeId.forEach((nodeId, output) -> {
+            SimulationOperator operator = SimulationOperator.returning(nodeId, output);
+            simulationOperators.put(nodeId, operator);
+            simulationRegistry.register(SIM_OPERATOR_PREFIX + nodeId, operator);
+        });
 
         Map<String, Object> effectiveContext = effectiveContext(draft, context);
         String selectedOutputNode = outputNode == null || outputNode.isBlank()
@@ -191,13 +196,19 @@ public class VisualGraphSimulationService {
         for (DynamicGraphRunResponse.Diagnostic diagnostic : dynamic.diagnostics()) {
             diagnostics.add(fromCompilerDiagnostic(diagnostic));
         }
+        List<VisualDiagnostic> assertionDiagnostics =
+                inputAssertionDiagnostics(effectiveFixtures, simulationOperators);
+        diagnostics.addAll(assertionDiagnostics);
+        List<String> errors = new ArrayList<>(dynamic.errors());
+        assertionDiagnostics.forEach(diagnostic -> errors.add(diagnostic.message()));
 
+        boolean assertionsPass = assertionDiagnostics.isEmpty();
         boolean terminalConforms = terminalOutputConforms(draft, dynamic.outputNode(), dynamic.output());
 
         return new VisualGraphSimulationResponse(
                 true,
                 dynamic.compiled(),
-                dynamic.success(),
+                dynamic.success() && assertionsPass,
                 dynamic.graphName(),
                 dynamic.outputNode(),
                 dynamic.output(),
@@ -209,7 +220,7 @@ public class VisualGraphSimulationService {
                 realNodeIds,
                 terminalConforms,
                 diagnostics,
-                dynamic.errors(),
+                errors,
                 generated.dsl()
         );
     }
@@ -273,17 +284,39 @@ public class VisualGraphSimulationService {
         );
     }
 
-    private static Map<String, Object> fixtureOutputs(GraphDraft draft, Map<String, NodeFixture> requestFixtures) {
-        Map<String, Object> outputs = new LinkedHashMap<>();
-        draft.nodeFixtures().forEach((nodeId, fixture) -> outputs.put(nodeId, fixture.output()));
+    private static Map<String, NodeFixture> effectiveFixtures(GraphDraft draft,
+                                                              Map<String, NodeFixture> requestFixtures) {
+        Map<String, NodeFixture> effective = new LinkedHashMap<>();
+        draft.nodeFixtures().forEach((nodeId, fixture) ->
+                effective.put(nodeId, new NodeFixture(fixture.output(), fixture.expectedInput())));
         if (requestFixtures != null) {
             requestFixtures.forEach((nodeId, fixture) -> {
                 if (nodeId != null && !nodeId.isBlank() && fixture != null) {
-                    outputs.put(nodeId, fixture.output());
+                    effective.put(nodeId, fixture);
                 }
             });
         }
-        return outputs;
+        return effective;
+    }
+
+    private static List<VisualDiagnostic> inputAssertionDiagnostics(
+            Map<String, NodeFixture> fixtures,
+            Map<String, SimulationOperator> simulationOperators) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        fixtures.forEach((nodeId, fixture) -> {
+            if (fixture == null || fixture.expectedInput() == null) {
+                return;
+            }
+            SimulationOperator operator = simulationOperators.get(nodeId);
+            Object actualInput = operator == null ? null : operator.lastInput();
+            if (!Objects.equals(fixture.expectedInput(), actualInput)) {
+                diagnostics.add(VisualDiagnostic.error("visual.simulate.inputAssertionMismatch",
+                        "Node '%s' input assertion failed: expected %s but observed %s."
+                                .formatted(nodeId, fixture.expectedInput(), actualInput),
+                        "/fixtures/" + nodeId + "/expectedInput"));
+            }
+        });
+        return diagnostics;
     }
 
     private static Map<String, Object> effectiveContext(GraphDraft draft, Map<String, Object> context) {

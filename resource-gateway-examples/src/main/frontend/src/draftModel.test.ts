@@ -573,4 +573,26 @@ describe('simulation fixtures', () => {
     expect(compiled.errors.b).toBeUndefined();
     expect(compiled.errors.c).toContain('Invalid JSON');
   });
+
+  it('compiles expected input assertion JSON alongside output pins', () => {
+    const compiled = compileFixtureDrafts(
+      {
+        a: '{"eligible":true}',
+        b: '',
+        c: '{nope',
+      },
+      {
+        a: '{"score":720,"amount":250000}',
+        b: '{"score":680}',
+        d: '{nope',
+      },
+    );
+
+    expect(compiled.fixtures).toEqual({
+      a: { output: { eligible: true }, expectedInput: { score: 720, amount: 250000 } },
+      b: { output: null, expectedInput: { score: 680 } },
+    });
+    expect(compiled.errors.c).toContain('Invalid JSON in output');
+    expect(compiled.errors.d).toContain('Invalid JSON in expected input');
+  });
 });

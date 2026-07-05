@@ -120,6 +120,51 @@ class VisualGraphSimulationServiceTest {
     }
 
     @Test
+    void fixtureExpectedInputPassesWhenStandInObservesMatchingInput() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        VisualGraphSimulationService service = simulationService(catalog);
+
+        Map<String, Object> pinnedOutput = Map.of("eligible", true, "ruleId", "PINNED_V1");
+        Map<String, Object> expectedInput = Map.of("score", 720, "amount", 250_000);
+
+        VisualGraphSimulationResponse response = service.simulate(
+                eligibilityDraft(), expectedInput, "",
+                Map.of("eligibility", new NodeFixture(pinnedOutput, expectedInput)));
+
+        assertThat(response.success()).isTrue();
+        assertThat(response.errors()).isEmpty();
+        assertThat(response.diagnostics())
+                .noneMatch(diagnostic -> "visual.simulate.inputAssertionMismatch".equals(diagnostic.code()));
+    }
+
+    @Test
+    void fixtureExpectedInputMismatchBlocksSimulationWithoutChangingPinnedOutput() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        VisualGraphSimulationService service = simulationService(catalog);
+
+        Map<String, Object> pinnedOutput = Map.of("eligible", true, "ruleId", "PINNED_V1");
+        Map<String, Object> actualContext = Map.of("score", 720, "amount", 250_000);
+        Map<String, Object> expectedInput = Map.of("score", 680, "amount", 250_000);
+
+        VisualGraphSimulationResponse response = service.simulate(
+                eligibilityDraft(), actualContext, "",
+                Map.of("eligibility", new NodeFixture(pinnedOutput, expectedInput)));
+
+        assertThat(response.success()).isFalse();
+        assertThat(response.output()).isEqualTo(pinnedOutput);
+        assertThat(response.errors()).anySatisfy(error -> assertThat(error)
+                .contains("eligibility")
+                .contains("input assertion failed"));
+        assertThat(response.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.simulate.inputAssertionMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/fixtures/eligibility/expectedInput");
+                });
+    }
+
+    @Test
     void persistedDraftFixtureForcesMockOverRealPrimitive() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));

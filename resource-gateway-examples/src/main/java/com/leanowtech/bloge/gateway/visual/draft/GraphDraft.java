@@ -556,15 +556,27 @@ public record GraphDraft(
     }
 
     /**
-     * Author-pinned output for one node during visual graph simulation.
+     * Author-pinned simulation fixture for one node during visual graph simulation.
      *
      * <p>The fixture belongs to the authoring draft, not to the executable graph contract. Simulation
-     * injects {@link #output()} when the node is mocked; normal run, compile, publication DSL, and graph
-     * validation ignore it.</p>
+     * injects {@link #output()} when the node is mocked and can assert {@link #expectedInput()} after
+     * the stand-in observes its runtime input. Normal run, compile, publication DSL, fingerprinting,
+     * and action-readiness checks ignore both values, while raw-secret hygiene still scans them before
+     * persistence or validation succeeds.</p>
      *
      * @param output value injected as the node's simulated output; may be {@code null}
+     * @param expectedInput optional input payload expected by the node during simulation; {@code null}
+     *                      means no input assertion is evaluated
      */
-    public record NodeFixture(Object output) {
+    public record NodeFixture(Object output, Object expectedInput) {
+        /**
+         * Backward-compatible constructor for output-only pins.
+         *
+         * @param output value injected as the node's simulated output; may be {@code null}
+         */
+        public NodeFixture(Object output) {
+            this(output, null);
+        }
     }
 
     /**

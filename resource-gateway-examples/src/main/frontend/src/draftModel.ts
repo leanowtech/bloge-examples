@@ -550,20 +550,51 @@ export function fixtureDraftForOperator(operator: OperatorDefinition): string {
 /**
  * Converts inspector JSON text into the request-scoped fixture map accepted by simulate.
  */
-export function compileFixtureDrafts(drafts: Record<string, string>): FixtureDraftCompilation {
+export function compileFixtureDrafts(
+  outputDrafts: Record<string, string>,
+  expectedInputDrafts: Record<string, string> = {},
+): FixtureDraftCompilation {
   const fixtures: Record<string, NodeFixture> = {};
   const errors: Record<string, string> = {};
+  const nodeIds = new Set([...Object.keys(outputDrafts), ...Object.keys(expectedInputDrafts)]);
 
-  for (const [nodeId, text] of Object.entries(drafts)) {
-    const trimmed = text.trim();
-    if (!trimmed) {
+  for (const nodeId of nodeIds) {
+    const outputText = outputDrafts[nodeId]?.trim() ?? '';
+    const expectedInputText = expectedInputDrafts[nodeId]?.trim() ?? '';
+    const messages: string[] = [];
+    let hasOutput = false;
+    let hasExpectedInput = false;
+    let output: unknown = null;
+    let expectedInput: unknown;
+
+    if (outputText) {
+      try {
+        output = JSON.parse(outputText);
+        hasOutput = true;
+      } catch (cause: unknown) {
+        const detail = cause instanceof Error ? cause.message : String(cause);
+        messages.push(`Invalid JSON in output: ${detail}`);
+      }
+    }
+    if (expectedInputText) {
+      try {
+        expectedInput = JSON.parse(expectedInputText);
+        hasExpectedInput = true;
+      } catch (cause: unknown) {
+        const detail = cause instanceof Error ? cause.message : String(cause);
+        messages.push(`Invalid JSON in expected input: ${detail}`);
+      }
+    }
+
+    if (messages.length > 0) {
+      errors[nodeId] = messages.join(' ');
       continue;
     }
-    try {
-      fixtures[nodeId] = { output: JSON.parse(trimmed) };
-    } catch (cause: unknown) {
-      const detail = cause instanceof Error ? cause.message : String(cause);
-      errors[nodeId] = `Invalid JSON: ${detail}`;
+    if (hasOutput || hasExpectedInput) {
+      fixtures[nodeId] = {
+        output: hasOutput ? output : null,
+        ...(hasExpectedInput ? { expectedInput } : {}),
+      };
     }
   }
 

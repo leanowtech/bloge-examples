@@ -138,6 +138,7 @@ export default function AuthorCanvas() {
   const [search, setSearch] = useState('');
   const [selectedNodeId, setSelectedNodeId] = useState('');
   const [fixtureDrafts, setFixtureDrafts] = useState<Record<string, string>>({});
+  const [fixtureInputDrafts, setFixtureInputDrafts] = useState<Record<string, string>>({});
   const [connectionNotice, setConnectionNotice] = useState<ConnectionNotice | null>(null);
   const [candidatePreview, setCandidatePreview] = useState<ConnectionCandidateIndex | null>(null);
   const counter = useRef(0);
@@ -167,6 +168,13 @@ export default function AuthorCanvas() {
       }
       if (removedNodeIds.length > 0) {
         setFixtureDrafts((current) => {
+          const next = { ...current };
+          for (const id of removedNodeIds) {
+            delete next[id];
+          }
+          return next;
+        });
+        setFixtureInputDrafts((current) => {
           const next = { ...current };
           for (const id of removedNodeIds) {
             delete next[id];
@@ -242,11 +250,17 @@ export default function AuthorCanvas() {
   );
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const selectedOperator = selectedNode ? operatorByRef.get(selectedNode.data.operatorRef) : undefined;
-  const fixtureCompilation = useMemo(() => compileFixtureDrafts(fixtureDrafts), [fixtureDrafts]);
+  const fixtureCompilation = useMemo(
+    () => compileFixtureDrafts(fixtureDrafts, fixtureInputDrafts),
+    [fixtureDrafts, fixtureInputDrafts],
+  );
   const fixtureCount = Object.keys(fixtureCompilation.fixtures).length;
   const fixtureErrorCount = Object.keys(fixtureCompilation.errors).length;
   const hasFixtureErrors = fixtureErrorCount > 0;
   const selectedFixtureDraft = selectedNode ? fixtureDrafts[selectedNode.id] ?? '' : '';
+  const selectedExpectedInputDraft = selectedNode ? fixtureInputDrafts[selectedNode.id] ?? '' : '';
+  const selectedFixtureHasDraft =
+    selectedFixtureDraft.trim().length > 0 || selectedExpectedInputDraft.trim().length > 0;
   const selectedFixtureError = selectedNode ? fixtureCompilation.errors[selectedNode.id] : undefined;
   const flowNodes = useMemo<Node<NodeData>[]>(
     () =>
@@ -276,6 +290,14 @@ export default function AuthorCanvas() {
     setFixtureDrafts((current) => ({ ...current, [selectedNodeId]: value }));
   }, [clearRunResult, selectedNodeId]);
 
+  const updateSelectedExpectedInputDraft = useCallback((value: string) => {
+    if (!selectedNodeId) {
+      return;
+    }
+    clearRunResult();
+    setFixtureInputDrafts((current) => ({ ...current, [selectedNodeId]: value }));
+  }, [clearRunResult, selectedNodeId]);
+
   const useSelectedFixtureSample = useCallback(() => {
     if (!selectedNodeId || !selectedOperator) {
       return;
@@ -293,6 +315,11 @@ export default function AuthorCanvas() {
     }
     clearRunResult();
     setFixtureDrafts((current) => {
+      const next = { ...current };
+      delete next[selectedNodeId];
+      return next;
+    });
+    setFixtureInputDrafts((current) => {
       const next = { ...current };
       delete next[selectedNodeId];
       return next;
@@ -566,8 +593,8 @@ export default function AuthorCanvas() {
             <div className="fixture-editor">
               <div className="fixture-header">
                 <strong>Simulation</strong>
-                <span className={`badge ${selectedFixtureDraft.trim() ? 'fixture' : ''}`}>
-                  {selectedFixtureDraft.trim() ? 'pinned' : 'server sample'}
+                <span className={`badge ${selectedFixtureHasDraft ? 'fixture' : ''}`}>
+                  {selectedFixtureHasDraft ? 'custom' : 'server sample'}
                 </span>
               </div>
               <div className="fixture-actions">
@@ -581,18 +608,31 @@ export default function AuthorCanvas() {
                 <button
                   className="secondary compact"
                   onClick={clearSelectedFixture}
-                  disabled={!selectedFixtureDraft}
+                  disabled={!selectedFixtureHasDraft}
                 >
                   Clear
                 </button>
               </div>
-              <textarea
-                aria-label="Simulation fixture JSON"
-                spellCheck={false}
-                placeholder="null"
-                value={selectedFixtureDraft}
-                onChange={(event) => updateSelectedFixtureDraft(event.target.value)}
-              />
+              <label className="fixture-field">
+                <span>Output Pin</span>
+                <textarea
+                  aria-label="Simulation output fixture JSON"
+                  spellCheck={false}
+                  placeholder="null"
+                  value={selectedFixtureDraft}
+                  onChange={(event) => updateSelectedFixtureDraft(event.target.value)}
+                />
+              </label>
+              <label className="fixture-field">
+                <span>Expected Input</span>
+                <textarea
+                  aria-label="Simulation expected input JSON"
+                  spellCheck={false}
+                  placeholder="{}"
+                  value={selectedExpectedInputDraft}
+                  onChange={(event) => updateSelectedExpectedInputDraft(event.target.value)}
+                />
+              </label>
               {selectedFixtureError && <p className="fixture-error">{selectedFixtureError}</p>}
             </div>
           </section>
