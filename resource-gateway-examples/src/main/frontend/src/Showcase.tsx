@@ -15,6 +15,7 @@ const DEFAULT_NODE_HEIGHT = 72;
 const DIAGRAM_PADDING = 48;
 const STREAM_EVENT_NAMES = ['meta', 'token', 'citation'] as const;
 
+type StreamEventName = (typeof STREAM_EVENT_NAMES)[number];
 type ShowcaseRunStatus = 'idle' | 'running' | 'success' | 'error' | 'streaming';
 
 interface ShowcaseRunState {
@@ -55,6 +56,16 @@ function scenarioInputValues(
 
 function emptyRunState(): ShowcaseRunState {
   return { status: 'idle', url: '', message: 'Not run yet.', payload: null };
+}
+
+function streamFrames(payload: unknown): Record<StreamEventName, unknown[]> {
+  const source = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>;
+  return Object.fromEntries(
+    STREAM_EVENT_NAMES.map((eventName) => [
+      eventName,
+      Array.isArray(source[eventName]) ? source[eventName] : [],
+    ]),
+  ) as Record<StreamEventName, unknown[]>;
 }
 
 function conceptList(scenario: GatewayExampleScenario): string[] {
@@ -196,10 +207,20 @@ export default function Showcase() {
   );
   const selectedDiagramAnnotations = Object.entries(selectedDiagramNode?.annotations ?? {}).slice(0, 6);
   const inputKeys = Object.keys(selectedScenario?.sampleInput ?? {});
+  const runStreamFrames = streamFrames(runState.payload);
 
   function closeStream() {
     streamSourceRef.current?.close();
     streamSourceRef.current = null;
+  }
+
+  function stopStream() {
+    closeStream();
+    setRunState((current) => ({
+      ...current,
+      status: current.status === 'streaming' ? 'success' : current.status,
+      message: 'Stream stopped.',
+    }));
   }
 
   function updateInput(key: string, value: string) {
@@ -611,7 +632,19 @@ export default function Showcase() {
             >
               <div className="showcase-panel-heading">
                 <h3>Output</h3>
-                <span>{runState.status}</span>
+                <div className="showcase-output-actions">
+                  <span>{runState.status}</span>
+                  {runState.status === 'streaming' ? (
+                    <button
+                      type="button"
+                      className="secondary compact"
+                      data-testid="showcase-stop-stream"
+                      onClick={stopStream}
+                    >
+                      Stop
+                    </button>
+                  ) : null}
+                </div>
               </div>
               <dl className="showcase-run">
                 <div>
@@ -625,6 +658,20 @@ export default function Showcase() {
                   </dd>
                 </div>
               </dl>
+              {(runState.status === 'streaming' || selectedScenario.run?.mode === 'stream') ? (
+                <div className="showcase-stream-lanes" data-testid="showcase-stream-lanes">
+                  {STREAM_EVENT_NAMES.map((eventName) => (
+                    <div
+                      key={eventName}
+                      className="showcase-stream-lane"
+                      data-testid={`showcase-stream-lane:${eventName}`}
+                    >
+                      <span>{eventName}</span>
+                      <strong>{runStreamFrames[eventName].length}</strong>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <pre className="showcase-sample">
                 {previewJson(runState.payload)}
               </pre>

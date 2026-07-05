@@ -12,6 +12,7 @@ describe('Showcase', () => {
 
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    FakeEventSource.instances = [];
     host = document.createElement('div');
     document.body.appendChild(host);
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -147,6 +148,44 @@ describe('Showcase', () => {
       .toContain('/api/gateway/loan-policy/review?amount=450000');
     expect(query('[data-testid="showcase-run-result"]').textContent).toContain('R3');
     expect(query('[data-testid="showcase-run-result"]').textContent).toContain('manual_review');
+  });
+
+  it('streams SSE lanes and lets the reader stop the stream', async () => {
+    vi.stubGlobal('EventSource', FakeEventSource as unknown as typeof EventSource);
+    await renderShowcase();
+    await waitFor(() => query('[data-testid="showcase-scenario:aiEnrichedSearch"]'));
+
+    await click(query<HTMLButtonElement>('[data-testid="showcase-scenario:aiEnrichedSearch"]'));
+    await waitFor(() => query('[data-testid="showcase-input:query"]'));
+    await setControlValue(query<HTMLInputElement>('[data-testid="showcase-input:query"]'), 'risk intel');
+    await click(query<HTMLButtonElement>('[data-testid="showcase-run-button"]'));
+
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const source = FakeEventSource.instances[0];
+    expect(source.url).toBe('/api/gateway/ai/search/stream?q=risk%20intel');
+    expect(query('[data-testid="showcase-stream-lane:meta"]').textContent).toContain('0');
+    expect(query('[data-testid="showcase-stream-lane:token"]').textContent).toContain('0');
+    expect(query('[data-testid="showcase-stream-lane:citation"]').textContent).toContain('0');
+
+    await act(async () => {
+      source.emit('meta', { requestId: 'm1' });
+      source.emit('token', { text: 'hello' });
+      source.emit('token', { text: 'world' });
+      source.emit('citation', { title: 'Design note' });
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="showcase-run-result"]').textContent)
+        .toContain('Design note'),
+    );
+    expect(query('[data-testid="showcase-stream-lane:meta"]').textContent).toContain('1');
+    expect(query('[data-testid="showcase-stream-lane:token"]').textContent).toContain('2');
+    expect(query('[data-testid="showcase-stream-lane:citation"]').textContent).toContain('1');
+
+    await click(query<HTMLButtonElement>('[data-testid="showcase-stop-stream"]'));
+
+    expect(source.closed).toBe(true);
+    expect(query('[data-testid="showcase-run-result"]').textContent).toContain('Stream stopped.');
   });
 
   async function renderShowcase() {
@@ -325,6 +364,37 @@ async function setControlValue(element: HTMLInputElement, value: string) {
     valueSetter?.call(element, value);
     element.dispatchEvent(new Event('input', { bubbles: true }));
   });
+}
+
+class FakeEventSource {
+  static instances: FakeEventSource[] = [];
+
+  readonly url: string;
+  closed = false;
+  onerror: ((event: Event) => void) | null = null;
+  private readonly listeners = new Map<string, Array<(event: MessageEvent) => void>>();
+
+  constructor(url: string | URL) {
+    this.url = String(url);
+    FakeEventSource.instances.push(this);
+  }
+
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+    const current = this.listeners.get(type) ?? [];
+    const callback = typeof listener === 'function'
+      ? listener as (event: MessageEvent) => void
+      : (event: MessageEvent) => listener.handleEvent(event);
+    this.listeners.set(type, [...current, callback]);
+  }
+
+  close() {
+    this.closed = true;
+  }
+
+  emit(type: string, data: unknown) {
+    const event = { data: JSON.stringify(data) } as MessageEvent;
+    (this.listeners.get(type) ?? []).forEach((listener) => listener(event));
+  }
 }
 
 async function waitFor(assertion: () => void) {
