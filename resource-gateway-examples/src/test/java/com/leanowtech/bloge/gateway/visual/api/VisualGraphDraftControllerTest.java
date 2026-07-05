@@ -32,6 +32,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRequest;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualStoredDraftRunRequest;
+import com.leanowtech.bloge.gateway.visualadapter.DynamicGatewayComposerVisualDslRunner;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualGraphActionReadiness;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
@@ -2963,7 +2964,8 @@ class VisualGraphDraftControllerTest {
         GraphDraftValidator validator = validator(catalog);
         GraphDraftDslGenerator generator = generator(catalog);
         return new VisualGraphRunService(validator, generator,
-                new DynamicGatewayComposerService(httpResourceOperatorStub()));
+                new DynamicGatewayComposerVisualDslRunner(
+                        new DynamicGatewayComposerService(httpResourceOperatorStub())));
     }
 
     private static HttpResourceOperator httpResourceOperatorStub() {

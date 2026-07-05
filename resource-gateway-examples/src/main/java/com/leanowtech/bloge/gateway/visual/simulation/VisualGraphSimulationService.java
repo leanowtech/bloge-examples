@@ -1,9 +1,6 @@
 package com.leanowtech.bloge.gateway.visual.simulation;
 
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
-import com.leanowtech.bloge.gateway.example.DynamicGatewayComposerService;
-import com.leanowtech.bloge.gateway.example.DynamicGraphRunRequest;
-import com.leanowtech.bloge.gateway.example.DynamicGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
@@ -11,6 +8,9 @@ import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunRequest;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunResponse;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunnerFactory;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
@@ -70,19 +70,23 @@ public class VisualGraphSimulationService {
     private final GraphDraftValidator validator;
     private final VisualOperatorCatalog catalog;
     private final JsonSchemaSampleGenerator sampleGenerator;
+    private final VisualDslRunnerFactory runnerFactory;
 
     /**
      * @param validator visual draft validator (reused; the action-readiness run gate is intentionally
      *                  not consulted so design-only graphs can be simulated)
      * @param catalog visual operator catalog used for classification and schema lookup
      * @param sampleGenerator deterministic JSON Schema sample generator
+     * @param runnerFactory creates DSL runners for simulation-specific operator registries
      */
     public VisualGraphSimulationService(GraphDraftValidator validator,
                                         VisualOperatorCatalog catalog,
-                                        JsonSchemaSampleGenerator sampleGenerator) {
+                                        JsonSchemaSampleGenerator sampleGenerator,
+                                        VisualDslRunnerFactory runnerFactory) {
         this.validator = validator;
         this.catalog = catalog;
         this.sampleGenerator = sampleGenerator;
+        this.runnerFactory = runnerFactory;
     }
 
     /**
@@ -191,9 +195,9 @@ public class VisualGraphSimulationService {
                 ? draft.output().nodeId()
                 : outputNode;
 
-        DynamicGraphRunResponse dynamic = new DynamicGatewayComposerService(simulationRegistry)
-                .run(new DynamicGraphRunRequest(generated.dsl(), effectiveContext, selectedOutputNode));
-        for (DynamicGraphRunResponse.Diagnostic diagnostic : dynamic.diagnostics()) {
+        VisualDslRunResponse dynamic = runnerFactory.forRegistry(simulationRegistry)
+                .run(new VisualDslRunRequest(generated.dsl(), effectiveContext, selectedOutputNode));
+        for (VisualDslRunResponse.Diagnostic diagnostic : dynamic.diagnostics()) {
             diagnostics.add(fromCompilerDiagnostic(diagnostic));
         }
         List<VisualDiagnostic> assertionDiagnostics =
@@ -353,7 +357,7 @@ public class VisualGraphSimulationService {
         return diagnostics;
     }
 
-    private static VisualDiagnostic fromCompilerDiagnostic(DynamicGraphRunResponse.Diagnostic diagnostic) {
+    private static VisualDiagnostic fromCompilerDiagnostic(VisualDslRunResponse.Diagnostic diagnostic) {
         String target = diagnostic.nodeId().isBlank()
                 ? ""
                 : "/nodes/" + diagnostic.nodeId() + (diagnostic.field().isBlank() ? "" : "/" + diagnostic.field());

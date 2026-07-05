@@ -23,6 +23,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
+import com.leanowtech.bloge.gateway.visualadapter.DynamicGatewayComposerVisualDslRunner;
 import com.leanowtech.bloge.test.MockOperator;
 
 import org.springframework.beans.factory.ObjectProvider;
@@ -46,7 +47,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService service = new VisualGraphRunService(
                 new GraphDraftValidator(catalog),
                 new GraphDraftDslGenerator(catalog),
-                new DynamicGatewayComposerService(MockOperator.returning(null))
+                visualRunner(MockOperator.returning(null))
         );
         GraphDraft draft = withFingerprints(new GraphDraft(
                 "",
@@ -91,7 +92,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService service = new VisualGraphRunService(
                 new GraphDraftValidator(catalog),
                 new GraphDraftDslGenerator(catalog),
-                new DynamicGatewayComposerService(MockOperator.returning(null))
+                visualRunner(MockOperator.returning(null))
         );
         GraphDraft draft = withFingerprints(new GraphDraft(
                 "",
@@ -136,7 +137,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService service = new VisualGraphRunService(
                 new GraphDraftValidator(catalog),
                 new GraphDraftDslGenerator(catalog),
-                new DynamicGatewayComposerService(MockOperator.returning(null))
+                visualRunner(MockOperator.returning(null))
         );
         GraphDraft draft = withFingerprints(new GraphDraft(
                 "",
@@ -217,7 +218,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService service = new VisualGraphRunService(
                 new GraphDraftValidator(catalog),
                 new GraphDraftDslGenerator(catalog),
-                new DynamicGatewayComposerService(registry)
+                visualRunner(registry)
         );
         GraphDraft draft = withFingerprints(new GraphDraft(
                 "",
@@ -263,7 +264,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService service = new VisualGraphRunService(
                 new GraphDraftValidator(catalog),
                 new GraphDraftDslGenerator(catalog),
-                new DynamicGatewayComposerService(MockOperator.returning(null))
+                visualRunner(MockOperator.returning(null))
         );
         GraphDraft draft = withFingerprints(new GraphDraft(
                 "",
@@ -309,7 +310,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService service = new VisualGraphRunService(
                 new GraphDraftValidator(catalog),
                 new GraphDraftDslGenerator(catalog),
-                new DynamicGatewayComposerService(MockOperator.returning(null))
+                visualRunner(MockOperator.returning(null))
         );
         GraphDraft draft = withFingerprints(new GraphDraft(
                 "",
@@ -354,7 +355,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService service = new VisualGraphRunService(
                 new GraphDraftValidator(catalog),
                 new GraphDraftDslGenerator(catalog),
-                new DynamicGatewayComposerService(MockOperator.returning(null))
+                visualRunner(MockOperator.returning(null))
         );
         GraphDraft draft = withFingerprints(new GraphDraft(
                 "",
@@ -404,7 +405,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService service = new VisualGraphRunService(
                 new GraphDraftValidator(catalog),
                 new GraphDraftDslGenerator(catalog),
-                new DynamicGatewayComposerService(MockOperator.returning(null))
+                visualRunner(MockOperator.returning(null))
         );
         GraphDraft draft = withFingerprints(new GraphDraft(
                 "",
@@ -457,7 +458,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService service = new VisualGraphRunService(
                 new GraphDraftValidator(catalog),
                 new GraphDraftDslGenerator(catalog),
-                new DynamicGatewayComposerService(MockOperator.returning(null))
+                visualRunner(MockOperator.returning(null))
         );
         GraphDraft draft = withFingerprints(new GraphDraft(
                 "",
@@ -509,7 +510,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService service = new VisualGraphRunService(
                 new GraphDraftValidator(catalog),
                 new GraphDraftDslGenerator(catalog),
-                new DynamicGatewayComposerService(MockOperator.returning(null))
+                visualRunner(MockOperator.returning(null))
         );
         GraphDraft draft = withFingerprints(new GraphDraft(
                 "",
@@ -565,7 +566,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService service = new VisualGraphRunService(
                 new GraphDraftValidator(catalog),
                 new GraphDraftDslGenerator(catalog),
-                new DynamicGatewayComposerService(MockOperator.returning(null))
+                visualRunner(MockOperator.returning(null))
         );
         GraphDraft draft = withFingerprints(new GraphDraft(
                 "",
@@ -615,7 +616,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService service = new VisualGraphRunService(
                 null,
                 null,
-                new DynamicGatewayComposerService(MockOperator.returning(null))
+                visualRunner(MockOperator.returning(null))
         );
         GraphDraft draft = new GraphDraft(
                 "",
@@ -681,7 +682,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService service = new VisualGraphRunService(
                 null,
                 null,
-                new DynamicGatewayComposerService(MockOperator.returning(null))
+                visualRunner(MockOperator.returning(null))
         );
         VisualGraphPublication executable = publishedScoreGraph();
         VisualGraphPublication design = VisualGraphPublication.design(
@@ -710,7 +711,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService service = new VisualGraphRunService(
                 null,
                 null,
-                new DynamicGatewayComposerService(MockOperator.returning(null))
+                visualRunner(MockOperator.returning(null))
         );
         VisualGraphPublication publication = publishedScoreGraph();
 
@@ -737,7 +738,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService frozenPublicationRunner = new VisualGraphRunService(
                 null,
                 null,
-                new DynamicGatewayComposerService(MockOperator.returning(null))
+                visualRunner(MockOperator.returning(null))
         );
         VisualGraphPublicationOperator publicationOperator = new VisualGraphPublicationOperator(
                 publications,
@@ -757,7 +758,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService service = new VisualGraphRunService(
                 new GraphDraftValidator(catalog),
                 new GraphDraftDslGenerator(catalog),
-                new DynamicGatewayComposerService(runtimeRegistry)
+                visualRunner(runtimeRegistry)
         );
         OperatorDefinition operator = catalog.find(VisualGraphPublicationOperatorProjector.operatorRef(
                 publication.publicationId())).orElseThrow();
@@ -803,7 +804,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService frozenPublicationRunner = new VisualGraphRunService(
                 null,
                 null,
-                new DynamicGatewayComposerService(MockOperator.returning(null))
+                visualRunner(MockOperator.returning(null))
         );
         VisualGraphPublicationOperator publicationOperator = new VisualGraphPublicationOperator(
                 publications,
@@ -823,7 +824,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService service = new VisualGraphRunService(
                 new GraphDraftValidator(catalog),
                 new GraphDraftDslGenerator(catalog),
-                new DynamicGatewayComposerService(runtimeRegistry)
+                visualRunner(runtimeRegistry)
         );
         OperatorDefinition operator = catalog.find(VisualGraphPublicationOperatorProjector.operatorRef(
                 publication.publicationId())).orElseThrow();
@@ -866,7 +867,7 @@ class VisualGraphRunServiceTest {
         VisualGraphRunService service = new VisualGraphRunService(
                 null,
                 null,
-                new DynamicGatewayComposerService(MockOperator.returning(null))
+                visualRunner(MockOperator.returning(null))
         );
         GraphDraft draft = new GraphDraft(
                 "",
@@ -1176,6 +1177,14 @@ class VisualGraphRunServiceTest {
                 return service;
             }
         };
+    }
+
+    private static DynamicGatewayComposerVisualDslRunner visualRunner(Operator<Object, ?> operator) {
+        return new DynamicGatewayComposerVisualDslRunner(new DynamicGatewayComposerService(operator));
+    }
+
+    private static DynamicGatewayComposerVisualDslRunner visualRunner(DefaultOperatorRegistry registry) {
+        return new DynamicGatewayComposerVisualDslRunner(registry);
     }
 
     private record NormalizeInput(String raw) {

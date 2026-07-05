@@ -1,9 +1,11 @@
 package com.leanowtech.bloge.gateway.visual.simulation;
 
+import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.DefaultVisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
+import com.leanowtech.bloge.gateway.visualadapter.DynamicGatewayComposerVisualDslRunner;
 
 import org.junit.jupiter.api.Test;
 
@@ -206,7 +208,8 @@ class VisualGraphSimulationServiceTest {
         return new VisualGraphSimulationService(
                 new GraphDraftValidator(catalog),
                 catalog,
-                new JsonSchemaSampleGenerator());
+                new JsonSchemaSampleGenerator(),
+                new DynamicGatewayComposerVisualDslRunner(new DefaultOperatorRegistry()));
     }
 
     private static GraphDraft eligibilityDraft() {

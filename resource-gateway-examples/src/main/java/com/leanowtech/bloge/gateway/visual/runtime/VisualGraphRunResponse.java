@@ -1,7 +1,5 @@
 package com.leanowtech.bloge.gateway.visual.runtime;
 
-import com.leanowtech.bloge.gateway.example.ExampleVisualLayout;
-import com.leanowtech.bloge.gateway.example.GatewayDecisionTable;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
@@ -43,8 +41,8 @@ public record VisualGraphRunResponse(
         Map<String, Long> nodeElapsedMs,
         List<VisualDiagnostic> diagnostics,
         List<String> errors,
-        ExampleVisualLayout layout,
-        GatewayDecisionTable decisionTable,
+        VisualRunLayout layout,
+        VisualDecisionTable decisionTable,
         String generatedDsl,
         VisualValidationResult validation,
         String runId
@@ -79,8 +77,8 @@ public record VisualGraphRunResponse(
                                   long elapsedMs,
                                   List<VisualDiagnostic> diagnostics,
                                   List<String> errors,
-                                  ExampleVisualLayout layout,
-                                  GatewayDecisionTable decisionTable,
+                                  VisualRunLayout layout,
+                                  VisualDecisionTable decisionTable,
                                   String generatedDsl) {
         this(validated, compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs,
                 Map.of(), diagnostics, errors, layout, decisionTable, generatedDsl,
@@ -102,8 +100,8 @@ public record VisualGraphRunResponse(
                                   Map<String, Long> nodeElapsedMs,
                                   List<VisualDiagnostic> diagnostics,
                                   List<String> errors,
-                                  ExampleVisualLayout layout,
-                                  GatewayDecisionTable decisionTable,
+                                  VisualRunLayout layout,
+                                  VisualDecisionTable decisionTable,
                                   String generatedDsl) {
         this(validated, compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs,
                 nodeElapsedMs, diagnostics, errors, layout, decisionTable, generatedDsl,
@@ -125,8 +123,8 @@ public record VisualGraphRunResponse(
                                   Map<String, Long> nodeElapsedMs,
                                   List<VisualDiagnostic> diagnostics,
                                   List<String> errors,
-                                  ExampleVisualLayout layout,
-                                  GatewayDecisionTable decisionTable,
+                                  VisualRunLayout layout,
+                                  VisualDecisionTable decisionTable,
                                   String generatedDsl,
                                   VisualValidationResult validation) {
         this(validated, compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs,

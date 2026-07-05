@@ -1,8 +1,5 @@
 package com.leanowtech.bloge.gateway.visual.runtime;
 
-import com.leanowtech.bloge.gateway.example.DynamicGatewayComposerService;
-import com.leanowtech.bloge.gateway.example.DynamicGraphRunRequest;
-import com.leanowtech.bloge.gateway.example.DynamicGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
@@ -34,19 +31,19 @@ public class VisualGraphRunService {
 
     private final GraphDraftValidator validator;
     private final GraphDraftDslGenerator generator;
-    private final DynamicGatewayComposerService dynamicRunner;
+    private final VisualDslRunner dslRunner;
 
     /**
      * @param validator visual draft validator
      * @param generator visual draft DSL generator
-     * @param dynamicRunner existing dynamic BLOGE runner
+     * @param dslRunner BLOGE DSL execution adapter
      */
     public VisualGraphRunService(GraphDraftValidator validator,
                                  GraphDraftDslGenerator generator,
-                                 DynamicGatewayComposerService dynamicRunner) {
+                                 VisualDslRunner dslRunner) {
         this.validator = validator;
         this.generator = generator;
-        this.dynamicRunner = dynamicRunner;
+        this.dslRunner = dslRunner;
     }
 
     /**
@@ -74,7 +71,7 @@ public class VisualGraphRunService {
             return new DslGenerationResult(false, generated.dsl(), generated.diagnostics(), validation);
         }
         List<VisualDiagnostic> diagnostics = new ArrayList<>(generated.diagnostics());
-        diagnostics.addAll(dynamicRunner.compileDiagnostics(generated.dsl()).stream()
+        diagnostics.addAll(dslRunner.compileDiagnostics(generated.dsl()).stream()
                 .map(VisualGraphRunService::fromCompilerDiagnostic)
                 .toList());
         return new DslGenerationResult(true, generated.dsl(), diagnostics, validation);
@@ -134,7 +131,7 @@ public class VisualGraphRunService {
                     generated.dsl(), validation);
         }
 
-        DynamicGraphRunResponse dynamic = dynamicRunner.run(new DynamicGraphRunRequest(
+        VisualDslRunResponse dynamic = dslRunner.run(new VisualDslRunRequest(
                 generated.dsl(),
                 effectiveContext,
                 selectedOutputNode
@@ -223,7 +220,7 @@ public class VisualGraphRunService {
                     publication.dsl(), validation);
         }
 
-        DynamicGraphRunResponse dynamic = dynamicRunner.run(new DynamicGraphRunRequest(
+        VisualDslRunResponse dynamic = dslRunner.run(new VisualDslRunRequest(
                 publication.dsl(),
                 effectiveContext,
                 selectedOutputNode
@@ -380,7 +377,7 @@ public class VisualGraphRunService {
         );
     }
 
-    private static VisualDiagnostic fromCompilerDiagnostic(DynamicGraphRunResponse.Diagnostic diagnostic) {
+    private static VisualDiagnostic fromCompilerDiagnostic(VisualDslRunResponse.Diagnostic diagnostic) {
         String target = diagnostic.nodeId().isBlank()
                 ? ""
                 : "/nodes/" + diagnostic.nodeId() + (diagnostic.field().isBlank() ? "" : "/" + diagnostic.field());
