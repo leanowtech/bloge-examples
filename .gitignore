@@ -67,6 +67,7 @@ tmp/
 worknotes/
 .opencode/
 node_modules/
+resource-gateway-examples/src/main/frontend/dist/
 bloge-studio/dist/
 bloge-studio/node_modules/
 bloge-lang/dist/
