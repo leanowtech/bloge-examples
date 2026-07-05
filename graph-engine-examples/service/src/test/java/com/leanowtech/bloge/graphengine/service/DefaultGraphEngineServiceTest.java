@@ -1931,6 +1931,18 @@ class DefaultGraphEngineServiceTest {
             assertTrue(snapshot.actionItems().stream()
                     .anyMatch(item -> item.code().equals("DEAD_LETTERS_PRESENT")
                             && item.severity() == GraphOperationsSnapshot.Health.CRITICAL));
+            GraphOperationsSnapshot.ActionItem deadLetterAction = snapshot.actionItems().stream()
+                    .filter(item -> item.code().equals("DEAD_LETTERS_PRESENT"))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals("GE-RUNBOOK-DEAD-LETTER-REPLAY", deadLetterAction.runbookCode());
+            assertEquals("runbook://graph-engine/dead-letter-replay", deadLetterAction.runbookHref());
+            assertTrue(deadLetterAction.recoveryActions().stream()
+                    .anyMatch(action -> action.code().equals("RETRY_DEAD_LETTER")
+                            && action.method().equals("POST")
+                            && action.apiHref().equals("/api/v1/dead-letters/{itemId}/retry")
+                            && action.riskLevel() == GraphOperationsSnapshot.RiskLevel.MEDIUM
+                            && action.requiresReason()));
             assertTrue(snapshot.sloIndicators().stream()
                     .anyMatch(indicator -> indicator.code().equals("DEAD_LETTER_BACKLOG")
                             && indicator.health() == GraphOperationsSnapshot.Health.CRITICAL
@@ -1955,6 +1967,16 @@ class DefaultGraphEngineServiceTest {
             assertTrue(snapshot.actionItems().stream()
                     .anyMatch(item -> item.code().equals("SUSPENDED_INSTANCES_PRESENT")
                             && item.severity() == GraphOperationsSnapshot.Health.WARNING));
+            GraphOperationsSnapshot.ActionItem suspendedAction = snapshot.actionItems().stream()
+                    .filter(item -> item.code().equals("SUSPENDED_INSTANCES_PRESENT"))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals("GE-RUNBOOK-SUSPENDED-INSTANCE-TRIAGE", suspendedAction.runbookCode());
+            assertTrue(suspendedAction.recoveryActions().stream()
+                    .anyMatch(action -> action.code().equals("CHECK_PENDING_SIGNALS")
+                            && action.method().equals("GET")
+                            && action.apiHref().equals("/api/v1/instances/{instanceId}/pending-signals")
+                            && action.riskLevel() == GraphOperationsSnapshot.RiskLevel.LOW));
             assertTrue(snapshot.sloIndicators().stream()
                     .anyMatch(indicator -> indicator.code().equals("SUSPENDED_INSTANCE_BACKLOG")
                             && indicator.health() == GraphOperationsSnapshot.Health.WARNING

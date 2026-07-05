@@ -3133,7 +3133,23 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                     GraphOperationsSnapshot.Health.WARNING,
                     "Control-plane service is not configured; dead-letter and transition health are incomplete.",
                     "control-plane",
-                    ""
+                    "",
+                    "GE-RUNBOOK-CONTROL-PLANE-AVAILABILITY",
+                    "Restore control-plane availability",
+                    "runbook://graph-engine/control-plane-availability",
+                    List.of(
+                            recoveryAction(
+                                    "CHECK_OPERATIONS_SNAPSHOT",
+                                    "Reload operations snapshot",
+                                    "Reload the operations snapshot after restoring the control-plane service.",
+                                    "GET",
+                                    "/api/v1/operations/snapshot",
+                                    "/console/operations",
+                                    GraphOperationsSnapshot.RiskLevel.LOW,
+                                    false,
+                                    false
+                            )
+                    )
             ));
         }
         if (deadLetterCount > 0) {
@@ -3142,7 +3158,34 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                     GraphOperationsSnapshot.Health.CRITICAL,
                     "Dead-lettered work items require retry, compensation, or manual repair.",
                     "dead-letters",
-                    ""
+                    "",
+                    "GE-RUNBOOK-DEAD-LETTER-REPLAY",
+                    "Dead-letter replay and compensation",
+                    "runbook://graph-engine/dead-letter-replay",
+                    List.of(
+                            recoveryAction(
+                                    "OPEN_DEAD_LETTER_QUEUE",
+                                    "Open dead-letter queue",
+                                    "Inspect dead-lettered work items before choosing retry or compensation.",
+                                    "GET",
+                                    "/api/v1/dead-letters?size=50",
+                                    "/console/tasks",
+                                    GraphOperationsSnapshot.RiskLevel.LOW,
+                                    false,
+                                    false
+                            ),
+                            recoveryAction(
+                                    "RETRY_DEAD_LETTER",
+                                    "Retry selected dead letter",
+                                    "Replay one dead-lettered work item after validating idempotency and downstream safety.",
+                                    "POST",
+                                    "/api/v1/dead-letters/{itemId}/retry",
+                                    "/console/tasks",
+                                    GraphOperationsSnapshot.RiskLevel.MEDIUM,
+                                    true,
+                                    false
+                            )
+                    )
             ));
         }
         int failedInstances = instancesByStatus.getOrDefault(GraphInstanceStatus.FAILED, 0);
@@ -3152,7 +3195,34 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                     GraphOperationsSnapshot.Health.CRITICAL,
                     "Failed graph instances require transition/audit inspection before restart or compensation.",
                     "instances",
-                    "FAILED"
+                    "FAILED",
+                    "GE-RUNBOOK-FAILED-INSTANCE-RECOVERY",
+                    "Failed instance recovery",
+                    "runbook://graph-engine/failed-instance-recovery",
+                    List.of(
+                            recoveryAction(
+                                    "OPEN_FAILED_INSTANCES",
+                                    "Open failed instances",
+                                    "Inspect failed instances, transition history, and audit context.",
+                                    "GET",
+                                    "/api/v1/instances?statuses=FAILED&size=50",
+                                    "/console/instances",
+                                    GraphOperationsSnapshot.RiskLevel.LOW,
+                                    false,
+                                    false
+                            ),
+                            recoveryAction(
+                                    "RETRY_INSTANCE_DEAD_LETTERS",
+                                    "Retry instance dead letters",
+                                    "Restore dead-lettered work items for one instance, optionally scoped by node.",
+                                    "POST",
+                                    "/api/v1/instances/{instanceId}/retry",
+                                    "/console/instances",
+                                    GraphOperationsSnapshot.RiskLevel.HIGH,
+                                    true,
+                                    true
+                            )
+                    )
             ));
         }
         int suspendedInstances = instancesByStatus.getOrDefault(GraphInstanceStatus.SUSPENDED, 0);
@@ -3162,7 +3232,34 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                     GraphOperationsSnapshot.Health.WARNING,
                     "Suspended instances are waiting for signal, task completion, or remote-worker callback.",
                     "instances",
-                    "SUSPENDED"
+                    "SUSPENDED",
+                    "GE-RUNBOOK-SUSPENDED-INSTANCE-TRIAGE",
+                    "Suspended instance triage",
+                    "runbook://graph-engine/suspended-instance-triage",
+                    List.of(
+                            recoveryAction(
+                                    "OPEN_SUSPENDED_INSTANCES",
+                                    "Open suspended instances",
+                                    "Inspect suspended instances and determine whether they are waiting legitimately or stuck.",
+                                    "GET",
+                                    "/api/v1/instances?statuses=SUSPENDED&size=50",
+                                    "/console/instances",
+                                    GraphOperationsSnapshot.RiskLevel.LOW,
+                                    false,
+                                    false
+                            ),
+                            recoveryAction(
+                                    "CHECK_PENDING_SIGNALS",
+                                    "Check pending signals",
+                                    "Inspect pending signal matchers for one suspended GRAPH instance.",
+                                    "GET",
+                                    "/api/v1/instances/{instanceId}/pending-signals",
+                                    "/console/instances",
+                                    GraphOperationsSnapshot.RiskLevel.LOW,
+                                    false,
+                                    false
+                            )
+                    )
             ));
         }
         if (deploymentCount > 0 && activeDeploymentCount == 0) {
@@ -3171,7 +3268,34 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                     GraphOperationsSnapshot.Health.WARNING,
                     "Deployments exist but none are active in this scope; new starts may require explicit version routing.",
                     "deployments",
-                    ""
+                    "",
+                    "GE-RUNBOOK-ACTIVE-DEPLOYMENT-RESTORE",
+                    "Restore active deployment routing",
+                    "runbook://graph-engine/active-deployment-restore",
+                    List.of(
+                            recoveryAction(
+                                    "OPEN_DEPLOYMENTS",
+                                    "Open deployments",
+                                    "Inspect deployment routing and decide which deployment should become active.",
+                                    "GET",
+                                    "/api/v1/deployments?size=50",
+                                    "/console/deployments",
+                                    GraphOperationsSnapshot.RiskLevel.LOW,
+                                    false,
+                                    false
+                            ),
+                            recoveryAction(
+                                    "UPDATE_DEPLOYMENT_ACTIVE",
+                                    "Update deployment active state",
+                                    "Activate a deployment through the deployment update API with the expected revision.",
+                                    "PUT",
+                                    "/api/v1/deployments/{deploymentId}",
+                                    "/console/deployments",
+                                    GraphOperationsSnapshot.RiskLevel.MEDIUM,
+                                    true,
+                                    true
+                            )
+                    )
             ));
         }
         if (truncated) {
@@ -3180,10 +3304,60 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
                     GraphOperationsSnapshot.Health.WARNING,
                     "Snapshot hit its sample limit; use paginated APIs or external metrics for full-fleet accounting.",
                     "operations-snapshot",
-                    ""
+                    "",
+                    "GE-RUNBOOK-SNAPSHOT-COMPLETENESS",
+                    "Inspect truncated operations snapshot",
+                    "runbook://graph-engine/snapshot-completeness",
+                    List.of(
+                            recoveryAction(
+                                    "PAGE_INSTANCES",
+                                    "Page instances",
+                                    "Use paginated instance APIs for full-fleet accounting.",
+                                    "GET",
+                                    "/api/v1/instances?page=0&size=50",
+                                    "/console/instances",
+                                    GraphOperationsSnapshot.RiskLevel.LOW,
+                                    false,
+                                    false
+                            ),
+                            recoveryAction(
+                                    "PAGE_DEAD_LETTERS",
+                                    "Page dead letters",
+                                    "Use paginated dead-letter APIs for full-fleet accounting.",
+                                    "GET",
+                                    "/api/v1/dead-letters?page=0&size=50",
+                                    "/console/tasks",
+                                    GraphOperationsSnapshot.RiskLevel.LOW,
+                                    false,
+                                    false
+                            )
+                    )
             ));
         }
         return List.copyOf(items);
+    }
+
+    private GraphOperationsSnapshot.RecoveryAction recoveryAction(
+            String code,
+            String label,
+            String description,
+            String method,
+            String apiHref,
+            String consoleHref,
+            GraphOperationsSnapshot.RiskLevel riskLevel,
+            boolean requiresReason,
+            boolean requiresRevision) {
+        return new GraphOperationsSnapshot.RecoveryAction(
+                code,
+                label,
+                description,
+                method,
+                apiHref,
+                consoleHref,
+                riskLevel,
+                requiresReason,
+                requiresRevision
+        );
     }
 
     private GraphOperationsSnapshot.Health operationsHealth(List<GraphOperationsSnapshot.ActionItem> actionItems) {

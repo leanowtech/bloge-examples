@@ -59,7 +59,21 @@ class GraphOperationsControllerTest extends AbstractGraphControllerTest {
                         GraphOperationsSnapshot.Health.CRITICAL,
                         "Dead-lettered work items require retry.",
                         "dead-letters",
-                        ""
+                        "",
+                        "GE-RUNBOOK-DEAD-LETTER-REPLAY",
+                        "Dead-letter replay and compensation",
+                        "runbook://graph-engine/dead-letter-replay",
+                        java.util.List.of(new GraphOperationsSnapshot.RecoveryAction(
+                                "RETRY_DEAD_LETTER",
+                                "Retry selected dead letter",
+                                "Replay one dead-lettered work item.",
+                                "POST",
+                                "/api/v1/dead-letters/{itemId}/retry",
+                                "/console/tasks",
+                                GraphOperationsSnapshot.RiskLevel.MEDIUM,
+                                true,
+                                false
+                        ))
                 )),
                 java.util.List.of(new GraphOperationsSnapshot.SloIndicator(
                         "DEAD_LETTER_BACKLOG",
@@ -84,6 +98,9 @@ class GraphOperationsControllerTest extends AbstractGraphControllerTest {
                 .andExpect(jsonPath("$.deadLetterCount").value(1))
                 .andExpect(jsonPath("$.recentDeadLetters[0].itemId").value("dead-1"))
                 .andExpect(jsonPath("$.actionItems[0].code").value("DEAD_LETTERS_PRESENT"))
+                .andExpect(jsonPath("$.actionItems[0].runbookCode").value("GE-RUNBOOK-DEAD-LETTER-REPLAY"))
+                .andExpect(jsonPath("$.actionItems[0].recoveryActions[0].code").value("RETRY_DEAD_LETTER"))
+                .andExpect(jsonPath("$.actionItems[0].recoveryActions[0].apiHref").value("/api/v1/dead-letters/{itemId}/retry"))
                 .andExpect(jsonPath("$.sloIndicators[0].code").value("DEAD_LETTER_BACKLOG"))
                 .andExpect(jsonPath("$.sloIndicators[0].metricName").value("ge.operations.dead_letters"));
 

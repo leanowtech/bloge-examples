@@ -59,20 +59,24 @@ tenant/namespace health projection for dashboards and operators. The response
 includes instance counts by lifecycle status and execution mode, deployment and
 active-deployment counts, dead-letter count, recent dead-letter samples, a
 top-level `health` value (`OK`, `WARNING`, or `CRITICAL`), and recovery-oriented
-`actionItems`. It also includes `sloIndicators`, a stable metric-facing contract
-covering dead-letter backlog, failed instances, suspended instances, active
-deployment availability, snapshot completeness, and control-plane availability.
-The same rules refresh the `ge.operations.*` Micrometer gauges when a
-`GraphEngineMetricsObserver` is wired. The snapshot is a control-plane triage
-view, not a metrics backend; when `truncated = true`, use the paginated
-instance, deployment, and dead-letter APIs or external metrics for full-fleet
-accounting.
+`actionItems`. Each action item carries a stable runbook code/title/reference
+and machine-readable `recoveryActions` with console routes, API path templates,
+risk level, and reason/revision requirements. It also includes `sloIndicators`,
+a stable metric-facing contract covering dead-letter backlog, failed instances,
+suspended instances, active deployment availability, snapshot completeness, and
+control-plane availability. The same rules refresh the `ge.operations.*`
+Micrometer gauges when a `GraphEngineMetricsObserver` is wired. The snapshot is
+a control-plane triage view, not a metrics backend; when `truncated = true`, use
+the paginated instance, deployment, and dead-letter APIs or external metrics for
+full-fleet accounting.
 
 The packaged console renders that snapshot as its default Operations page:
-health, key counts, and SLO indicators stay in the main panel, while action
-items, unhealthy indicators, and recent dead letters become the left-side
-operations queue. The page links directly into Queues, Instances, and
-Deployments for follow-up inspection.
+health, key counts, SLO indicators, action items, and recovery-action affordances
+stay in the main panel, while action items, unhealthy indicators, and recent
+dead letters become the left-side operations queue. The page links directly into
+Queues, Instances, and Deployments for follow-up inspection. Risky recovery
+actions are exposed as contracts and navigation affordances; execution still
+goes through the dedicated REST endpoint and service-layer RBAC.
 
 **Cancel vs. terminate.** Both instance actions require an optimistic-lock
 `expectedRevision` plus a human-readable `reason` in the

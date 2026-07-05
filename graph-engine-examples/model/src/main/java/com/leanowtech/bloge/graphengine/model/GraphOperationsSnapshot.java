@@ -95,21 +95,85 @@ public record GraphOperationsSnapshot(
      * @param message human-readable action message
      * @param targetType target resource kind
      * @param targetId target resource identifier or empty when aggregate-scoped
+     * @param runbookCode stable runbook code for this action
+     * @param runbookTitle human-readable runbook title
+     * @param runbookHref runbook link or stable logical reference
+     * @param recoveryActions machine-readable recovery affordances
      */
     public record ActionItem(
             String code,
             Health severity,
             String message,
             String targetType,
-            String targetId
+            String targetId,
+            String runbookCode,
+            String runbookTitle,
+            String runbookHref,
+            List<RecoveryAction> recoveryActions
     ) {
+        public ActionItem(String code,
+                          Health severity,
+                          String message,
+                          String targetType,
+                          String targetId) {
+            this(code, severity, message, targetType, targetId, "", "", "", List.of());
+        }
+
         public ActionItem {
             code = requireNonBlank(code, "code");
             severity = Objects.requireNonNullElse(severity, Health.WARNING);
             message = message == null ? "" : message;
             targetType = targetType == null ? "" : targetType;
             targetId = targetId == null ? "" : targetId;
+            runbookCode = runbookCode == null ? "" : runbookCode;
+            runbookTitle = runbookTitle == null ? "" : runbookTitle;
+            runbookHref = runbookHref == null ? "" : runbookHref;
+            recoveryActions = recoveryActions == null ? List.of() : List.copyOf(recoveryActions);
         }
+    }
+
+    /**
+     * Machine-readable recovery affordance attached to an operations action.
+     *
+     * @param code stable action code
+     * @param label short label for consoles
+     * @param description human-readable action description
+     * @param method HTTP method or action verb
+     * @param apiHref API path or path template for automation
+     * @param consoleHref console route for human follow-up
+     * @param riskLevel operational risk level
+     * @param requiresReason whether execution requires a human reason
+     * @param requiresRevision whether execution requires an optimistic-lock revision
+     */
+    public record RecoveryAction(
+            String code,
+            String label,
+            String description,
+            String method,
+            String apiHref,
+            String consoleHref,
+            RiskLevel riskLevel,
+            boolean requiresReason,
+            boolean requiresRevision
+    ) {
+        public RecoveryAction {
+            code = requireNonBlank(code, "code");
+            label = requireNonBlank(label, "label");
+            description = description == null ? "" : description;
+            method = method == null || method.isBlank() ? "GET" : method.toUpperCase(java.util.Locale.ROOT);
+            apiHref = apiHref == null ? "" : apiHref;
+            consoleHref = consoleHref == null ? "" : consoleHref;
+            riskLevel = Objects.requireNonNullElse(riskLevel, RiskLevel.LOW);
+        }
+    }
+
+    /**
+     * Operational risk level for recovery actions.
+     */
+    public enum RiskLevel {
+        LOW,
+        MEDIUM,
+        HIGH
     }
 
     /**

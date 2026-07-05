@@ -220,6 +220,24 @@ When `GraphEngineRuntimeSupport` includes a `WorkItemStore`, `VersionCompiler` a
 
 In embedded deployments, the service can sit directly on top of the durable Spring auto-configuration. In standalone deployments, `bloge-graph-engine-server` exposes the same facade over REST.
 
+## Operations action contract
+
+`queryOperationsSnapshot` returns the current tenant/namespace operations
+projection. Besides health counts and SLO indicators, each non-OK action item
+now carries a runbook and recovery-action contract:
+
+- `runbookCode`, `runbookTitle`, `runbookHref` identify the operating procedure.
+- `recoveryActions` list stable action codes, labels, API path templates,
+  console routes, risk level, and whether execution requires a reason or
+  optimistic-lock revision.
+- The contract is intentionally descriptive. It lets consoles, alerts, and
+  automation route operators to the right recovery surface, while the actual
+  mutation still goes through dedicated service methods such as
+  `retryDeadLetter`, `retryInstance`, deployment update, cancel, or terminate.
+
+This keeps operations guidance close to the health rules without bypassing RBAC,
+validation, or future audit capture at the execution endpoint.
+
 ## Product-layer metrics
 
 `DefaultGraphEngineService` calls an optional `GraphEngineMetricsObserver`

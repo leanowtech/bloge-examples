@@ -131,7 +131,7 @@ function operationsRows(snapshot) {
     id: `action-${index}-${item.code}`,
     kind: 'action',
     title: item.code,
-    meta: `${item.severity || 'WARNING'} · ${item.targetType || 'scope'}`,
+    meta: `${item.severity || 'WARNING'} · ${item.runbookCode || item.targetType || 'scope'}`,
     payload: item
   }));
   const sloItems = (snapshot.sloIndicators || [])
@@ -214,6 +214,7 @@ function renderOperationsPanel(snapshot) {
 
   overview.appendChild(summarySection('SLO Indicators', snapshot.sloIndicators || [], renderSloIndicator));
   overview.appendChild(summarySection('Action Items', snapshot.actionItems || [], renderActionItem));
+  overview.appendChild(summarySection('Recovery Actions', recoveryActionRows(snapshot.actionItems || []), renderRecoveryAction));
   overview.appendChild(summarySection('Recent Dead Letters', snapshot.recentDeadLetters || [], renderDeadLetterItem));
   panel.appendChild(overview);
 }
@@ -258,7 +259,40 @@ function renderActionItem(item) {
   row.type = 'button';
   row.className = `summary-row ${healthClass(item.severity)}`;
   row.addEventListener('click', () => setOutput('details', item));
-  row.innerHTML = `<strong>${escapeHtml(item.code)}</strong><span>${escapeHtml(item.message || '')}</span><small>${escapeHtml(item.targetType || 'scope')} ${escapeHtml(item.targetId || '')}</small>`;
+  const runbook = item.runbookCode
+    ? `${item.runbookCode} · ${item.runbookTitle || item.runbookHref || 'runbook'}`
+    : `${item.targetType || 'scope'} ${item.targetId || ''}`;
+  const actionCount = (item.recoveryActions || []).length;
+  row.innerHTML = `<strong>${escapeHtml(item.code)}</strong><span>${escapeHtml(item.message || '')}</span><small>${escapeHtml(runbook)}${actionCount ? ` · ${actionCount} recovery actions` : ''}</small>`;
+  return row;
+}
+
+function recoveryActionRows(actionItems) {
+  return (actionItems || []).flatMap((item) => (item.recoveryActions || []).map((action) => ({
+    parentCode: item.code,
+    runbookCode: item.runbookCode,
+    ...action
+  })));
+}
+
+function renderRecoveryAction(action) {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = `summary-row ${riskClass(action.riskLevel)}`;
+  row.addEventListener('click', () => {
+    setOutput('details', action);
+    if (action.consoleHref) {
+      window.location.href = action.consoleHref;
+    }
+  });
+  const flags = [
+    action.method || 'GET',
+    action.riskLevel || 'LOW',
+    action.requiresReason ? 'reason required' : '',
+    action.requiresRevision ? 'revision required' : '',
+    action.apiHref || ''
+  ].filter(Boolean).join(' · ');
+  row.innerHTML = `<strong>${escapeHtml(action.label || action.code)}</strong><span>${escapeHtml(action.description || action.parentCode || '')}</span><small>${escapeHtml(flags)}</small>`;
   return row;
 }
 
@@ -306,6 +340,13 @@ function countOf(values, key) {
 
 function healthClass(value) {
   return String(value || 'ok').toLowerCase();
+}
+
+function riskClass(value) {
+  const normalized = String(value || 'LOW').toLowerCase();
+  if (normalized === 'high') return 'critical';
+  if (normalized === 'medium') return 'warning';
+  return 'ok';
 }
 
 function escapeHtml(value) {
