@@ -74,6 +74,8 @@ React authoring canvas 的核心循环提示也进一步闭环：`canvasCoachPro
 
 本轮继续把移动回归从 Connectability 后置路径扩到作者入口路径：`composerImportsYamlOperatorLibraryAndUsesItOnCanvasInRealBrowser` 在完成 YAML 用户算子库导入、palette 搜索、拖入 `risk:eligibility`、schema port 渲染和 selected operator inspector 校验后，切到 390x980 mobile viewport，并断言 operator palette、palette controls、diagram panel、selected operator editor 和页面级横向滚动均无溢出。现在移动证据覆盖“导入/选算子/看 inspector”和“大候选连接”两条核心链路。
 
+本轮补齐 D16 的 portable builtin export：当没有同名存储库覆盖时，`GET /admin/visual-operator-libraries/builtin/export` 会把 server Java operator registry 作为虚拟 `builtin` library 导出为 `bloge.visualOperatorLibraryExport.v1` bundle。导出器保留旧的 raw runtime view 给 `/api/visual/builtin-library/export` 使用，同时为 bundle 路径生成可迁移 snapshot：受信任的 Java source kind 会重标记为 `user-library`、保留 native lowering 的原始 `operatorRef`，并把 Java projector 的 `input` 端口规整为 BLOGE DSL 安全的 `inputs`，从而复用目标环境已有的 validate/import-bundle 路径并避免源环境 runtime-owned 自冲突。
+
 ## 2. 已落地能力
 
 | 能力域 | 当前状态 | 代码证据 |

@@ -3,8 +3,10 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.leanowtech.bloge.core.operator.Idempotency;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.OperatorContext;
+import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -852,6 +854,72 @@ class OperatorLibraryAdminControllerTest {
                 bundle.latestRevision(),
                 bundle.validation());
         assertThat(sameMaterialDifferentExportTime.bundleFingerprint()).isEqualTo(bundle.bundleFingerprint());
+    }
+
+    @Test
+    void exportBuiltinLibraryUsesPortableBundleWithoutRuntimeOwnershipSelfConflict() throws Exception {
+        useRuntimeJavaOperator("runtimeScorePolicy");
+
+        MvcResult result = mockMvc.perform(get("/admin/visual-operator-libraries/builtin/export"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(OperatorLibraryExportBundle.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.sourceLibraryId").value(BuiltinOperatorLibraryExporter.BUILTIN_LIBRARY_ID))
+                .andExpect(jsonPath("$.sourceRevision").value(0))
+                .andExpect(jsonPath("$.bundleFingerprint").exists())
+                .andExpect(jsonPath("$.library.libraryId").value(BuiltinOperatorLibraryExporter.BUILTIN_LIBRARY_ID))
+                .andExpect(jsonPath("$.library.operators[0].operatorRef").value("runtimeScorePolicy"))
+                .andExpect(jsonPath("$.latestRevision").doesNotExist())
+                .andExpect(jsonPath("$.validation.valid").value(true))
+                .andExpect(jsonPath("$.validation.profile.libraryId")
+                        .value(BuiltinOperatorLibraryExporter.BUILTIN_LIBRARY_ID))
+                .andExpect(jsonPath("$.validation.profile.governanceReviewOperatorCount").value(1))
+                .andExpect(jsonPath("$.validation.profile.facets.runtimeReadinessStates['governance-review']")
+                        .value(1))
+                .andExpect(jsonPath("$.library.operators[0].source.kind").value("user-library"))
+                .andExpect(jsonPath("$.library.operators[0].source.libraryId")
+                        .value(BuiltinOperatorLibraryExporter.BUILTIN_LIBRARY_ID))
+                .andExpect(jsonPath("$.library.operators[0].ports.inputs[0].name").value("inputs"))
+                .andExpect(jsonPath("$.library.operators[0].lowering.mode").value("native"))
+                .andExpect(jsonPath("$.library.operators[0].lowering.operatorRef").value("runtimeScorePolicy"))
+                .andReturn();
+
+        OperatorLibraryExportBundle bundle = objectMapper.readValue(
+                result.getResponse().getContentAsString(),
+                OperatorLibraryExportBundle.class);
+        assertThat(bundle.bundleFingerprintVerified()).isTrue();
+        assertThat(bundle.validation().diagnostics())
+                .noneMatch(diagnostic -> "visual.library.operatorRefRuntimeOwned".equals(diagnostic.code()));
+
+        InMemoryOperatorLibraryRegistry targetRegistry = new InMemoryOperatorLibraryRegistry();
+        OperatorLibraryAdminController targetController = new OperatorLibraryAdminController(
+                targetRegistry,
+                new OperatorLibraryValidator(),
+                new InMemoryGraphDraftRepository(),
+                new InMemoryVisualGraphPublicationRepository()
+        );
+        MockMvc targetMvc = MockMvcBuilders.standaloneSetup(targetController).build();
+        String bundleJson = objectMapper.writeValueAsString(bundle);
+
+        targetMvc.perform(post("/admin/visual-operator-libraries/validate-bundle")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bundleJson))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sourceLibraryId").value(BuiltinOperatorLibraryExporter.BUILTIN_LIBRARY_ID))
+                .andExpect(jsonPath("$.mutationAction").value(OperatorLibraryRevision.ACTION_CREATE))
+                .andExpect(jsonPath("$.validation.valid").value(true));
+
+        targetMvc.perform(post("/admin/visual-operator-libraries/import-bundle")
+                        .param("actor", "stage-sync")
+                        .param("changeSource", "builtin-export")
+                        .param("changeSummary", "Imported virtual builtin operator registry.")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bundleJson))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.imported").value(true))
+                .andExpect(jsonPath("$.importedLibraryId")
+                        .value(BuiltinOperatorLibraryExporter.BUILTIN_LIBRARY_ID))
+                .andExpect(jsonPath("$.latestRevision.action").value(OperatorLibraryRevision.ACTION_CREATE));
+        assertThat(targetRegistry.find(BuiltinOperatorLibraryExporter.BUILTIN_LIBRARY_ID)).isPresent();
     }
 
     @Test
@@ -3572,6 +3640,16 @@ class OperatorLibraryAdminControllerTest {
     }
 
     private static final class EchoRuntimeOperator implements Operator<Object, Object> {
+        @Override
+        public SideEffectType sideEffectType() {
+            return SideEffectType.READ_ONLY;
+        }
+
+        @Override
+        public Idempotency idempotency() {
+            return Idempotency.IDEMPOTENT;
+        }
+
         @Override
         public Object execute(Object input, OperatorContext ctx) {
             return input;

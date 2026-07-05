@@ -37,12 +37,31 @@ class BuiltinOperatorLibraryExporterTest {
         registry.register("myBuiltin", MockOperator.returning(Map.of("ok", true)));
         BuiltinOperatorLibraryExporter exporter = exporterFor(registry);
 
-        OperatorLibrary exported = exporter.export();
+        OperatorLibrary exported = exporter.exportImportable();
 
         // Round-trip: load the exported built-in library into a brand-new catalog instance and resolve
-        // its operators — demonstrating the generic canvas can consume the gateway's own library.
+        // its operators - demonstrating the generic canvas can consume the gateway's own library.
         DefaultVisualOperatorCatalog freshCatalog = VisualCatalogTestSupport.catalogWithLibrary(exported);
         assertThat(freshCatalog.find("myBuiltin")).isPresent();
+    }
+
+    @Test
+    void importableExportRelabelsSystemOwnedJavaSourceForBundleRoundTrip() {
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.register("myBuiltin", MockOperator.returning(Map.of("ok", true)));
+        BuiltinOperatorLibraryExporter exporter = exporterFor(registry);
+
+        OperatorLibrary raw = exporter.export();
+        OperatorLibrary importable = exporter.exportImportable();
+
+        assertThat(raw.operators().getFirst().source().kind()).isEqualTo("java-operator");
+        assertThat(importable.operators().getFirst().source().kind()).isEqualTo("user-library");
+        assertThat(importable.operators().getFirst().source().libraryId())
+                .isEqualTo(BuiltinOperatorLibraryExporter.BUILTIN_LIBRARY_ID);
+        assertThat(importable.operators().getFirst().ports().inputs().getFirst().name()).isEqualTo("inputs");
+        assertThat(importable.operators().getFirst().lowering().mode()).isEqualTo("native");
+        assertThat(importable.operators().getFirst().lowering().operatorRef()).isEqualTo("myBuiltin");
+        assertThat(importable.operators().getFirst().diagnostics()).isEmpty();
     }
 
     @Test

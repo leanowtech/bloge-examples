@@ -370,10 +370,18 @@ public class OperatorLibraryAdminController {
      * Exports the current library as a portable, reviewable operator-library artifact.
      *
      * @param libraryId library id
-     * @return current library snapshot, latest revision evidence, and export-time validation
+     * @return current library snapshot, latest revision evidence, and export-time validation; when
+     *         {@code libraryId=builtin} and no stored library shadows it, this returns a virtual
+     *         export bundle for the server's built-in Java operator registry
      */
     @GetMapping("/{libraryId}/export")
     public ResponseEntity<OperatorLibraryExportBundle> export(@PathVariable String libraryId) {
+        if (BuiltinOperatorLibraryExporter.BUILTIN_LIBRARY_ID.equals(libraryId)
+                && registry.find(libraryId).isEmpty()) {
+            OperatorLibrary builtin = new BuiltinOperatorLibraryExporter(javaOperatorProjector).exportImportable();
+            return ResponseEntity.ok(OperatorLibraryExportBundle.from(builtin, null,
+                    validateBuiltinExport(builtin)));
+        }
         return registry.find(libraryId)
                 .map(library -> {
                     OperatorLibraryRevision latestRevision = registry.revisions(libraryId).stream()
@@ -383,6 +391,11 @@ public class OperatorLibraryAdminController {
                     return ResponseEntity.ok(OperatorLibraryExportBundle.from(library, latestRevision, validation));
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private OperatorLibraryValidationResult validateBuiltinExport(OperatorLibrary library) {
+        VisualValidationResult structural = validator.validate(library);
+        return validationResult(library, new ArrayList<>(structural.diagnostics()));
     }
 
     /**
