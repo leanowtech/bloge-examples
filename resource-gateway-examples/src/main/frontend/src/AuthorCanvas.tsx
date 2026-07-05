@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactFlow, {
   addEdge,
   applyEdgeChanges,
@@ -157,6 +157,7 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
 }
 
 const NODE_TYPES = { operator: OperatorNode };
+const OPERATOR_DRAG_MIME = 'application/bloge-operator-ref';
 
 /**
  * The authoring workspace: an operator palette, a React Flow canvas, and a result inspector wired to
@@ -192,6 +193,7 @@ export default function AuthorCanvas() {
   const [connectionGuideBusy, setConnectionGuideBusy] = useState(false);
   const [pendingConnectionGuideNodeId, setPendingConnectionGuideNodeId] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const flowRef = useRef<HTMLDivElement>(null);
   const counter = useRef(0);
   const candidatePreviewSequence = useRef(0);
   const connectionGuideSequence = useRef(0);
@@ -266,18 +268,19 @@ export default function AuthorCanvas() {
     },
     [clearRunResult],
   );
-  const addOperator = useCallback((operator: OperatorDefinition) => {
+  const addOperator = useCallback((operator: OperatorDefinition, position?: { x: number; y: number }) => {
     clearRunResult();
     setConnectionGuide(null);
-    counter.current += 1;
-    const id = `n${counter.current}`;
+    const nextIndex = counter.current + 1;
+    counter.current = nextIndex;
+    const id = `n${nextIndex}`;
     const summary = summarizeOperator(operator);
     setNodes((current) => [
       ...current,
       {
         id,
         type: 'operator',
-        position: { x: 72 + (counter.current % 4) * 36, y: 56 + counter.current * 40 },
+        position: position ?? { x: 72 + (nextIndex % 4) * 36, y: 56 + nextIndex * 40 },
         data: { label: summary.name, operatorRef: operator.operatorRef, summary },
       },
     ]);
@@ -396,6 +399,35 @@ export default function AuthorCanvas() {
       }),
     [candidatePreview, coachPrompt, nodes, outputNodeId, selectedNodeId],
   );
+
+  const startOperatorDrag = useCallback((event: DragEvent<HTMLButtonElement>, operator: OperatorDefinition) => {
+    event.dataTransfer.effectAllowed = 'copy';
+    event.dataTransfer.setData(OPERATOR_DRAG_MIME, operator.operatorRef);
+    event.dataTransfer.setData('text/plain', operator.operatorRef);
+  }, []);
+
+  const allowOperatorDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const dropOperatorOnFlow = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const operatorRef =
+      event.dataTransfer.getData(OPERATOR_DRAG_MIME) || event.dataTransfer.getData('text/plain');
+    const operator = operatorByRef.get(operatorRef);
+    if (!operator) {
+      return;
+    }
+    const bounds = flowRef.current?.getBoundingClientRect();
+    const position = bounds
+      ? {
+          x: Math.max(24, event.clientX - bounds.left - 120),
+          y: Math.max(24, event.clientY - bounds.top - 54),
+        }
+      : undefined;
+    addOperator(operator, position);
+  }, [addOperator, operatorByRef]);
 
   const updateSelectedFixtureDraft = useCallback((value: string) => {
     if (!selectedNodeId) {
@@ -905,6 +937,8 @@ export default function AuthorCanvas() {
                       className="operator-button"
                       data-testid={`operator-button:${operator.operatorRef}`}
                       data-operator-ref={operator.operatorRef}
+                      draggable
+                      onDragStart={(event) => startOperatorDrag(event, operator)}
                       onClick={() => addOperator(operator)}
                       title={operator.operatorRef}
                     >
@@ -1005,7 +1039,13 @@ export default function AuthorCanvas() {
             <span className="swatch real" /> real
           </span>
         </div>
-        <div className="flow">
+        <div
+          ref={flowRef}
+          className="flow"
+          data-testid="author-flow"
+          onDragOver={allowOperatorDrop}
+          onDrop={dropOperatorOnFlow}
+        >
           {coachPrompt && (
             <div
               className={[

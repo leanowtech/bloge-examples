@@ -315,6 +315,14 @@ body {
   gap: 6px;
 }
 
+.operator-button[draggable='true'] {
+  cursor: grab;
+}
+
+.operator-button[draggable='true']:active {
+  cursor: grabbing;
+}
+
 .operator-button:hover {
   border-color: var(--accent);
 }

@@ -26,6 +26,7 @@ vi.mock('reactflow', async () => {
             {
               key: node.id,
               'data-testid': `node-wrapper:${node.id}`,
+              'data-position': `${node.position.x},${node.position.y}`,
               onClick: () => onNodeClick?.({}, node),
             },
             React.createElement(Component, {
@@ -271,6 +272,44 @@ describe('AuthorCanvas connection guide', () => {
     );
     expect(query('[data-testid="connection-guide-target:n2:profile"]').textContent).toContain('ready');
   });
+
+  it('drops palette operators onto the canvas at the pointer location', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:score"]').textContent).toContain('Risk Score'),
+    );
+    const flow = query<HTMLElement>('[data-testid="author-flow"]');
+    Object.defineProperty(flow, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        left: 40,
+        top: 80,
+        right: 840,
+        bottom: 680,
+        width: 800,
+        height: 600,
+        x: 40,
+        y: 80,
+        toJSON: () => ({}),
+      }),
+    });
+
+    const transfer = fakeDataTransfer();
+    await drag(query<HTMLButtonElement>('[data-testid="operator-button:risk:score"]'), 'dragstart', transfer);
+    await drag(flow, 'dragover', transfer, { clientX: 360, clientY: 260 });
+    await drag(flow, 'drop', transfer, { clientX: 360, clientY: 260 });
+
+    await waitFor(() =>
+      expect(query('[data-testid="canvas-node:n1"][data-operator-ref="risk:score"]').textContent)
+        .toContain('Risk Score'),
+    );
+    expect(query('[data-testid="node-wrapper:n1"]').getAttribute('data-position')).toBe('200,126');
+    expect(document.body.textContent).toContain('Output n1');
+  });
 });
 
 describe('AuthorCanvas simulation summary', () => {
@@ -505,6 +544,49 @@ async function click(element: HTMLElement): Promise<void> {
   await act(async () => {
     element.click();
   });
+}
+
+async function drag(
+  element: HTMLElement,
+  eventName: string,
+  dataTransfer: DataTransfer,
+  position: { clientX?: number; clientY?: number } = {},
+): Promise<void> {
+  await act(async () => {
+    const event = new Event(eventName, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+    Object.defineProperty(event, 'clientX', { value: position.clientX ?? 0 });
+    Object.defineProperty(event, 'clientY', { value: position.clientY ?? 0 });
+    element.dispatchEvent(event);
+  });
+}
+
+function fakeDataTransfer(): DataTransfer {
+  const values = new Map<string, string>();
+  const transfer = {
+    dropEffect: 'none',
+    effectAllowed: 'all',
+    files: [] as unknown as FileList,
+    items: [] as unknown as DataTransferItemList,
+    types: [] as string[],
+    clearData(type?: string) {
+      if (type) {
+        values.delete(type);
+      } else {
+        values.clear();
+      }
+      transfer.types = Array.from(values.keys());
+    },
+    getData(type: string) {
+      return values.get(type) ?? '';
+    },
+    setData(type: string, value: string) {
+      values.set(type, value);
+      transfer.types = Array.from(values.keys());
+    },
+    setDragImage() {},
+  };
+  return transfer as unknown as DataTransfer;
 }
 
 async function setControlValue(element: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<void> {
