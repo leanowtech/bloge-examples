@@ -393,7 +393,7 @@ describe('connectionGuideRows', () => {
       { id: 'blocked', operatorRef: 'risk:blocked', position: { x: 0, y: 0 } },
     ], index)).toEqual([
       {
-        key: 'ready|case|score',
+        key: 'ready|case|',
         targetNodeId: 'ready',
         targetLabel: 'Ready Policy',
         targetOperatorRef: 'risk:ready',
@@ -402,6 +402,17 @@ describe('connectionGuideRows', () => {
         status: 'ready',
         accepted: true,
         detail: 'Schemas match.',
+        actionHint: 'Connect to case.score.',
+        fieldOptions: [
+          {
+            key: 'ready|case|score',
+            path: 'score',
+            label: 'case.score',
+            status: 'ready',
+            accepted: true,
+            detail: 'Schemas match.',
+          },
+        ],
       },
       {
         key: 'wired|profile|',
@@ -413,6 +424,8 @@ describe('connectionGuideRows', () => {
         status: 'wired',
         accepted: false,
         detail: 'Already connected.',
+        actionHint: 'Already connected; remove the current edge before reconnecting.',
+        fieldOptions: [],
       },
       {
         key: 'blocked|profile|',
@@ -424,8 +437,87 @@ describe('connectionGuideRows', () => {
         status: 'blocked',
         accepted: false,
         detail: 'visual.connection.schema: object -> number',
+        actionHint: 'Try a nested field, add a transform, or choose another target.',
+        fieldOptions: [],
       },
     ]);
+  });
+
+  it('groups field-level target choices and makes blocked rows actionable', () => {
+    const index = indexConnectionCandidates({
+      source: { nodeId: 'source', port: 'profile' },
+      candidates: [
+        {
+          targetNodeId: 'review',
+          targetNodeLabel: 'Risk Review',
+          targetOperatorRef: 'risk:review',
+          targetSurface: 'input',
+          target: { nodeId: 'review', port: 'facts' },
+          accepted: false,
+          targetStatus: 'blocked',
+          summary: { message: 'Connection rejected by server.' },
+          diagnostics: [{ level: 'error', code: 'visual.connection.schema', message: 'object -> number' }],
+        },
+        {
+          targetNodeId: 'review',
+          targetNodeLabel: 'Risk Review',
+          targetOperatorRef: 'risk:review',
+          targetSurface: 'input',
+          target: { nodeId: 'review', port: 'facts', path: 'score' },
+          accepted: true,
+          targetStatus: 'ready',
+          summary: { message: 'Schemas match.' },
+        },
+        {
+          targetNodeId: 'review',
+          targetNodeLabel: 'Risk Review',
+          targetOperatorRef: 'risk:review',
+          targetSurface: 'input',
+          target: { nodeId: 'review', port: 'facts', path: 'amount' },
+          accepted: true,
+          targetStatus: 'ready',
+          summary: { message: 'Schemas match.' },
+        },
+        {
+          targetNodeId: 'blocked',
+          targetNodeLabel: 'Legacy Check',
+          targetOperatorRef: 'risk:legacy',
+          targetSurface: 'input',
+          target: { nodeId: 'blocked', port: 'payload' },
+          accepted: false,
+          targetStatus: 'blocked',
+          summary: { message: 'Connection rejected by server.' },
+          diagnostics: [{ level: 'error', code: 'visual.connection.schema', message: 'object -> string' }],
+        },
+      ],
+    });
+
+    const rows = connectionGuideRows([
+      { id: 'review', operatorRef: 'risk:review', label: 'Risk Review', position: { x: 0, y: 0 } },
+      { id: 'blocked', operatorRef: 'risk:legacy', label: 'Legacy Check', position: { x: 0, y: 0 } },
+    ], index);
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      key: 'review|facts|',
+      targetNodeId: 'review',
+      targetPort: 'facts',
+      targetPath: 'score',
+      status: 'ready',
+      detail: '2 compatible fields found.',
+      actionHint: 'Choose the field path that should feed this input.',
+      fieldOptions: [
+        { path: 'score', label: 'facts.score', status: 'ready', accepted: true },
+        { path: 'amount', label: 'facts.amount', status: 'ready', accepted: true },
+      ],
+    });
+    expect(rows[1]).toMatchObject({
+      key: 'blocked|payload|',
+      status: 'blocked',
+      detail: 'visual.connection.schema: object -> string',
+      actionHint: 'Try a nested field, add a transform, or choose another target.',
+      fieldOptions: [],
+    });
   });
 });
 

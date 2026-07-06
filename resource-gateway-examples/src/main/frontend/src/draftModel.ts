@@ -28,6 +28,7 @@ export interface CanvasNode {
   id: string;
   operatorRef: string;
   label?: string;
+  config?: Record<string, unknown>;
   position: { x: number; y: number };
 }
 
@@ -216,6 +217,18 @@ export interface ConnectionGuideRow {
   status: ConnectionCandidateStatus;
   accepted: boolean;
   detail: string;
+  actionHint: string;
+  fieldOptions: ConnectionGuideFieldOption[];
+}
+
+/** One explicit field-level choice under a target input row. */
+export interface ConnectionGuideFieldOption {
+  key: string;
+  path: string;
+  label: string;
+  status: ConnectionCandidateStatus;
+  accepted: boolean;
+  detail: string;
 }
 
 /** Parsed request fixtures plus per-node JSON errors from the inspector editor. */
@@ -271,7 +284,7 @@ export function toGraphDraft(
     operatorRef: node.operatorRef,
     label: node.label ?? '',
     inputs: {},
-    config: {},
+    config: node.config ?? {},
     position: node.position,
   }));
 
@@ -460,23 +473,59 @@ export function connectionGuideRows(
     return [];
   }
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  return [...index.candidates]
-    .map((candidate) => {
-      const status = candidateStatus(candidate);
-      const node = nodeById.get(candidate.target.nodeId || candidate.targetNodeId);
-      const targetNodeId = candidate.target.nodeId || candidate.targetNodeId;
+  const groups = new Map<string, ConnectionCandidate[]>();
+  for (const candidate of index.candidates) {
+    const targetNodeId = candidate.target.nodeId || candidate.targetNodeId;
+    const key = endpointKey({
+      nodeId: targetNodeId,
+      port: candidate.target.port ?? '',
+    });
+    groups.set(key, [...(groups.get(key) ?? []), candidate]);
+  }
+
+  return [...groups.entries()]
+    .map(([key, candidates]) => {
+      const representative =
+        candidates.find((candidate) => candidateStatus(candidate) === 'ready')
+        ?? candidates.find((candidate) => candidateStatus(candidate) === 'wired')
+        ?? candidates[0];
+      const status = candidates.reduce<ConnectionCandidateStatus>(
+        (current, candidate) => strongerCandidateStatus(current, candidateStatus(candidate)),
+        'blocked',
+      );
+      const fieldOptions = candidates
+        .filter((candidate) => Boolean(candidate.target.path))
+        .map((candidate) => {
+          const optionStatus = candidateStatus(candidate);
+          return {
+            key: endpointKey(candidate.target),
+            path: candidate.target.path ?? '',
+            label: endpointLabel(candidate.target.port ?? '', candidate.target.path ?? '', 'input'),
+            status: optionStatus,
+            accepted: candidate.accepted,
+            detail: connectionCandidateDetail(candidate, optionStatus),
+          };
+        });
+      const readyFieldOptions = fieldOptions.filter((option) => option.accepted);
+      const targetPath = readyFieldOptions[0]?.path ?? representative.target.path ?? '';
+      const node = nodeById.get(representative.target.nodeId || representative.targetNodeId);
+      const targetNodeId = representative.target.nodeId || representative.targetNodeId;
       return {
-        key: endpointKey(candidate.target),
+        key,
         targetNodeId,
-        targetLabel: candidate.targetNodeLabel || node?.label || targetNodeId,
-        targetOperatorRef: candidate.targetOperatorRef || node?.operatorRef || '',
-        targetPort: candidate.target.port ?? '',
-        targetPath: candidate.target.path ?? '',
+        targetLabel: representative.targetNodeLabel || node?.label || targetNodeId,
+        targetOperatorRef: representative.targetOperatorRef || node?.operatorRef || '',
+        targetPort: representative.target.port ?? '',
+        targetPath,
         status,
-        accepted: candidate.accepted,
-        detail: candidate.summary?.message
-          || firstDiagnosticText(candidate.diagnostics)
-          || defaultConnectionGuideDetail(status),
+        accepted: status === 'ready',
+        detail: connectionGuideGroupDetail(candidates, status, readyFieldOptions.length),
+        actionHint: connectionGuideActionHint(
+          status,
+          readyFieldOptions.length,
+          endpointLabel(representative.target.port ?? '', targetPath, 'input'),
+        ),
+        fieldOptions: readyFieldOptions,
       };
     })
     .sort((left, right) =>
@@ -525,6 +574,62 @@ function defaultConnectionGuideDetail(status: ConnectionCandidateStatus): string
     return 'Already connected.';
   }
   return 'Blocked by schema.';
+}
+
+function connectionGuideGroupDetail(
+  candidates: ConnectionCandidate[],
+  status: ConnectionCandidateStatus,
+  readyFieldCount: number,
+): string {
+  if (status === 'ready' && readyFieldCount > 1) {
+    return `${readyFieldCount} compatible fields found.`;
+  }
+  const representative =
+    candidates.find((candidate) => candidateStatus(candidate) === status && candidate.accepted)
+    ?? candidates.find((candidate) => candidateStatus(candidate) === status)
+    ?? candidates[0];
+  return connectionCandidateDetail(representative, status);
+}
+
+function connectionGuideActionHint(
+  status: ConnectionCandidateStatus,
+  readyFieldCount: number,
+  targetLabel: string,
+): string {
+  if (status === 'ready' && readyFieldCount > 1) {
+    return 'Choose the field path that should feed this input.';
+  }
+  if (status === 'ready') {
+    return `Connect to ${targetLabel}.`;
+  }
+  if (status === 'wired') {
+    return 'Already connected; remove the current edge before reconnecting.';
+  }
+  return 'Try a nested field, add a transform, or choose another target.';
+}
+
+function connectionCandidateDetail(
+  candidate: ConnectionCandidate | undefined,
+  status: ConnectionCandidateStatus,
+): string {
+  if (!candidate) {
+    return defaultConnectionGuideDetail(status);
+  }
+  const diagnostic = firstDiagnosticText(candidate.diagnostics);
+  const summary = candidate.summary?.message?.trim();
+  if (summary && !isGenericConnectionRejection(summary)) {
+    return summary;
+  }
+  return diagnostic || summary || defaultConnectionGuideDetail(status);
+}
+
+function isGenericConnectionRejection(message: string): boolean {
+  return /^connection rejected(?: by server)?\.?$/i.test(message.trim());
+}
+
+function endpointLabel(port: string, path: string, fallback: string): string {
+  const base = port || fallback;
+  return path ? `${base}.${path}` : base;
 }
 
 function strongerCandidateStatus(

@@ -138,6 +138,113 @@ npm run build
 4. 做浏览器矩阵验证：至少覆盖真实 catalog 下的 desktop 和 390px mobile，无横向溢出，关键文本不重叠。
 5. 如果 `AuthorCanvas.tsx` 继续膨胀，拆出 connection orchestration helper 与 operator visual summary helper，保持后续迭代可控。
 
-## 7. 当前结论
+## 7. Iteration 2：行动化连接解释、字段选择和移动端复核
 
-Iteration 1 已经把最核心的字段路径丢失问题和算子族同质化问题往前推进了一大步，但还不能宣布目标完成。剩余 12% 主要集中在“失败解释可行动化”和“复杂算子专有 inspector”上；下一轮应围绕这两个点继续收敛，而不是扩大到新的平台能力。
+本轮目标：把 Iteration 1 剩余的 12% 缺口继续收敛，重点处理“失败解释不可行动”“多个字段兼容但无法显式选择”“复杂算子只靠节点颜色表达”以及真实浏览器中可能存在的隐藏布局问题。
+
+### 7.1 本轮改动
+
+| 文件 | 改动 |
+| --- | --- |
+| `resource-gateway-examples/src/main/frontend/src/draftModel.ts` | `connectionGuideRows()` 从 candidate 行升级为 target input 分组；新增 `fieldOptions` 与 `actionHint`，blocked 行优先展示结构化 diagnostic，过滤泛化的 `Connection rejected by server.` |
+| `resource-gateway-examples/src/main/frontend/src/AuthorCanvas.tsx` | Connect Next 渲染字段 path chip；点击 chip 会携带 `target.path` 调用服务端 check；直接拖线遇到多字段兼容时自动选中 source 节点并打开 Connect Next；selected inspector 新增 operator family focus panel；点击添加节点按画布宽度选择横向网格或移动端纵向摆放 |
+| `resource-gateway-examples/src/main/frontend/src/styles.css` | 新增 connection field chip、operator focus panel、author workspace mobile layout；390px 下 palette/canvas/inspector 纵向堆叠，toolbar、journey、guide、summary chips 可换行 |
+| `resource-gateway-examples/src/main/frontend/src/draftModel.test.ts` | 覆盖字段级 target 分组、blocked actionable hint、泛化拒绝文案降级 |
+| `resource-gateway-examples/src/main/frontend/src/AuthorCanvas.test.tsx` | 覆盖字段 chip 点击后携带 `target.path`、foreach/decision-table inspector 专有表达、窄画布纵向默认摆放 |
+
+### 7.2 验证证据
+
+自动化验证：
+
+```bash
+cd resource-gateway-examples/src/main/frontend
+npm test -- --run src/draftModel.test.ts src/AuthorCanvas.test.tsx
+npm run build
+```
+
+结果：
+
+| 验证项 | 结果 |
+| --- | --- |
+| `draftModel.test.ts` | 61 tests passed |
+| `AuthorCanvas.test.tsx` | 12 tests passed |
+| 合计 | 73 tests passed |
+| Vite/TypeScript build | passed |
+
+浏览器检视证据：
+
+| 场景 | 观察 |
+| --- | --- |
+| desktop 真实 catalog | `/author/` 加载 22 个真实算子 |
+| desktop 添加 foreach + decision table | 两个节点不重叠；foreach 节点显示 `Foreach`、`item source -> result list`；decision table 节点显示 `Decision table`、`conditions -> decision row` |
+| desktop selected decision table | inspector 显示 `Rule contract`、`Condition inputs`、`Decision output`、`Rule matrix` |
+| desktop resource -> decision table guide | 服务端返回 `1 compatible target · 2 blocked.`；ready 行可直接 connect；blocked 行显示 `visual.binding.typeMismatch...` 与 `Try a nested field, add a transform, or choose another target.` |
+| 390px mobile author workspace | `scrollWidth=390`、`clientWidth=390`，页面级无横向溢出 |
+| 390px mobile 添加 foreach + decision table | 两个节点纵向摆放、不重叠；页面级无横向溢出；decision table inspector focus panel 可见 |
+
+### 7.3 新发现并修复的隐藏 UX 问题
+
+| 隐藏问题 | 证据 | 修复 |
+| --- | --- | --- |
+| 点击 palette 连续添加两个算子时节点重叠 | 真实浏览器中 foreach 和 decision table 的 bounding box 重叠，导致 foreach 难以选中 | 默认坐标改为 280px 横向网格；窄画布改为纵向堆叠 |
+| 390px 下 author workspace 仍是三列布局 | 浏览器显示 `.workspace` 为 `240px 0px 320px`，页面横向溢出到 `scrollWidth=560` | author workspace 在移动断点下改为 palette/canvas/inspector 纵向布局 |
+| React Flow 内部节点在移动端横向跑出可视区域 | 390px 下第二个节点 x=431，虽未撑宽页面但操作不直观 | 默认摆放按 `author-flow.clientWidth` 判断，小于 640px 时纵向堆叠 |
+
+## 8. Iteration 2 后差距复核
+
+本轮后估计完成度：96/100
+剩余目标差距：4%
+
+| 维度 | Iteration 1 | Iteration 2 | 结论 |
+| --- | ---: | ---: | --- |
+| Schema 连线体验 | 26/30 | 29/30 | 字段 path 保真、唯一字段自动重试、多字段 chip 选择、blocked 行行动建议均已落地 |
+| 算子专有表达 | 21/25 | 24/25 | 节点、palette、selected inspector 已区分 foreach / decision table / resource / transform / streaming |
+| 任务流可发现性 | 18/20 | 19/20 | coach、guide、notice、field chip 已形成更连续的下一步动作 |
+| 浏览器视觉证据 | 13/15 | 14/15 | desktop 与 390px mobile 均已验证；仍缺更大设备矩阵 |
+| 回归与可维护性 | 10/10 | 10/10 | 本轮测试覆盖新增交互 |
+
+剩余 4% 是可接受的后续增强，不阻断本目标完成：
+
+| 残留项 | 原因 |
+| --- | --- |
+| decision table 规则矩阵编辑器 | 已在后续 UX refinement 中补齐，见第 10 节 |
+| foreach 还没有 item mapping 子画布 | 当前已突出 collection/item/result 合同；子画布属于下一阶段能力 |
+| 浏览器矩阵只覆盖默认桌面与 390px mobile | 已足以证明本轮新增布局不重叠、不横向溢出；更广矩阵可进入常规回归 |
+
+## 9. 当前结论
+
+Iteration 2 后，原目标可以认为达成：用户拖入算子后，连接失败不再停留在泛化的 `connection rejected by server`；唯一字段路径会被自动承接，多字段路径会显式展示为可点击 chip，blocked 行会给出可行动诊断；foreach 和 decision table 在 palette、节点和 selected inspector 中都有不同的信息侧重；真实浏览器还发现并修复了节点重叠与移动端横向溢出两个隐藏 UX 问题。
+
+按本文第 2 节的完成度量尺，本轮剩余差距为 4%，小于 5% 达成线。
+
+## 10. UX Refinement：Decision Table 双击规则矩阵
+
+触发反馈：decision table 被双击选中时，应弹出浮层表格编辑规则，这比只在 inspector 展示规则合同更符合规则节点的操作直觉。
+
+改动日期：2026-07-06
+
+| 改动 | 结果 |
+| --- | --- |
+| React Flow decision table 节点双击 | 打开 `Decision table` 规则矩阵浮层 |
+| 规则矩阵浮层 | 支持编辑 hit policy、output type、condition、decision、ruleId、otherwise 行，并可新增/删除规则 |
+| Draft config 持久化 | 编辑结果写入节点 `config.hitPolicy`、`config.outputType`、`config.rules[]`，导出、校验、模拟链路可消费 |
+| 移动端 | 390px 下浮层不撑开页面；宽表格在浮层内部局部滚动 |
+
+验证：
+
+```bash
+cd resource-gateway-examples/src/main/frontend
+npm test -- --run src/draftModel.test.ts src/AuthorCanvas.test.tsx
+npm run build
+```
+
+浏览器证据：
+
+| 场景 | 观察 |
+| --- | --- |
+| desktop 双击 `bloge:decisionTable` | 弹出规则矩阵浮层；默认规则行可见 |
+| desktop 编辑第一条规则 | draft export 中出现 `rules[0].conditions = "score: score >= 700"`、`decision = "approve"`、`ruleId = "prime"` |
+| 390px mobile 双击 `bloge:decisionTable` | 浮层宽度约 370px；页面 `scrollWidth=390`；表格 `scrollWidth=720` 但约束在局部滚动容器 |
+
+更新后估计完成度：98/100
+剩余目标差距：2%

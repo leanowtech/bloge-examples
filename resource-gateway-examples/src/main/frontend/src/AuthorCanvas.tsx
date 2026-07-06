@@ -36,6 +36,7 @@ import {
   type CanvasNode,
   type AuthoringJourneyAction,
   type ConnectionCandidateIndex,
+  type ConnectionGuideFieldOption,
   type ConnectionCandidateStatus,
   type ConnectionGuideRow,
   compileFixtureDrafts,
@@ -65,13 +66,20 @@ import {
   toExportableGraphDraft,
   toSimulationRequest,
 } from './draftModel';
-import type { OperatorDefinition, SimulationResponse, VisualDiagnostic, VisualValidationResult } from './types';
+import type {
+  OperatorDefinition,
+  OperatorPort,
+  SimulationResponse,
+  VisualDiagnostic,
+  VisualValidationResult,
+} from './types';
 import type { ConnectionCandidate } from './types';
 
 interface NodeData {
   label: string;
   operatorRef: string;
   summary: OperatorSummary;
+  config?: Record<string, unknown>;
   status?: 'mocked' | 'real' | 'unknown';
   isOutput?: boolean;
   candidateStatus?: ConnectionCandidateStatus;
@@ -110,8 +118,34 @@ type CanvasFlowEdge = Edge & {
   targetPath?: string;
 };
 
+interface OperatorFocusRow {
+  key: string;
+  label: string;
+  value: string;
+}
+
+interface DecisionTableRuleRow {
+  conditions: string;
+  decision: string;
+  ruleId: string;
+  otherwise: boolean;
+}
+
+interface DecisionTableEditorModel {
+  hitPolicy: string;
+  outputType: string;
+  rows: DecisionTableRuleRow[];
+}
+
 function handleOffset(index: number, count: number): CSSProperties {
   return { top: `${((index + 1) / (count + 1)) * 100}%` };
+}
+
+function defaultOperatorPosition(index: number, canvasWidth: number): { x: number; y: number } {
+  if (canvasWidth > 0 && canvasWidth < 640) {
+    return { x: 72, y: 56 + index * 190 };
+  }
+  return { x: 72 + (index % 3) * 280, y: 56 + Math.floor(index / 3) * 170 };
 }
 
 function endpointLabel(port: string, path: string, fallback: string): string {
@@ -216,6 +250,387 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
 
 const NODE_TYPES = { operator: OperatorNode };
 const OPERATOR_DRAG_MIME = 'application/bloge-operator-ref';
+const DEFAULT_DECISION_OUTPUT_TYPE = '{ decision: String, ruleId: String }';
+
+function decisionTableEditorModel(config: Record<string, unknown> | undefined): DecisionTableEditorModel {
+  const rows = Array.isArray(config?.rules)
+    ? config.rules.map(decisionTableRuleRow).filter(Boolean) as DecisionTableRuleRow[]
+    : [];
+  return {
+    hitPolicy: typeof config?.hitPolicy === 'string' && config.hitPolicy ? config.hitPolicy : 'unique',
+    outputType: typeof config?.outputType === 'string' && config.outputType
+      ? config.outputType
+      : DEFAULT_DECISION_OUTPUT_TYPE,
+    rows: rows.length > 0 ? rows : defaultDecisionTableRows(),
+  };
+}
+
+function decisionTableRuleRow(rawRule: unknown): DecisionTableRuleRow | null {
+  if (!isRecord(rawRule)) {
+    return null;
+  }
+  const output = isRecord(rawRule.output) ? rawRule.output : rawRule;
+  const rawConditions = rawRule.conditions;
+  return {
+    conditions: typeof rawConditions === 'string' ? rawConditions : conditionMapLabel(rawConditions),
+    decision: stringField(output.decision, 'matched'),
+    ruleId: stringField(output.ruleId, stringField(rawRule.id, 'rule')),
+    otherwise: rawRule.otherwise === true,
+  };
+}
+
+function defaultDecisionTableRows(): DecisionTableRuleRow[] {
+  return [
+    {
+      conditions: 'value: value != null',
+      decision: 'matched',
+      ruleId: 'rule-1',
+      otherwise: false,
+    },
+    {
+      conditions: '',
+      decision: 'fallback',
+      ruleId: 'otherwise',
+      otherwise: true,
+    },
+  ];
+}
+
+function decisionTableConfigFromEditor(
+  existing: Record<string, unknown> | undefined,
+  editor: DecisionTableEditorModel,
+): Record<string, unknown> {
+  return {
+    ...(existing ?? {}),
+    hitPolicy: editor.hitPolicy || 'unique',
+    outputType: editor.outputType || DEFAULT_DECISION_OUTPUT_TYPE,
+    rules: editor.rows.map((row) => {
+      const output = {
+        decision: row.decision || 'matched',
+        ruleId: row.ruleId || (row.otherwise ? 'otherwise' : 'rule'),
+      };
+      if (row.otherwise) {
+        return { otherwise: true, output };
+      }
+      return {
+        conditions: row.conditions || 'value: value != null',
+        output,
+      };
+    }),
+  };
+}
+
+function conditionMapLabel(rawConditions: unknown): string {
+  if (!isRecord(rawConditions)) {
+    return '';
+  }
+  return Object.entries(rawConditions)
+    .map(([key, value]) => `${key}: ${String(value)}`)
+    .join(', ');
+}
+
+function stringField(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value ? value : fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function OperatorFocusPanel({
+  operator,
+  summary,
+}: {
+  operator: OperatorDefinition | undefined;
+  summary: OperatorSummary;
+}) {
+  const inputs = operator?.ports?.inputs ?? [];
+  const outputs = operator?.ports?.outputs ?? [];
+  const rows = operatorFocusRows(summary, inputs, outputs, operator);
+  if (rows.length === 0) {
+    return null;
+  }
+  return (
+    <div
+      className={`operator-focus ${summary.visualKind}`}
+      data-testid={`operator-focus:${summary.visualKind}`}
+    >
+      <div className="operator-focus-heading">
+        <span>{summary.visualLabel}</span>
+        <strong>{operatorFocusTitle(summary.visualKind)}</strong>
+      </div>
+      <dl className="operator-focus-grid">
+        {rows.map((row) => (
+          <div key={row.key}>
+            <dt>{row.label}</dt>
+            <dd>{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function DecisionTableRuleEditor({
+  node,
+  onClose,
+  onChange,
+}: {
+  node: Node<NodeData>;
+  onClose: () => void;
+  onChange: (editor: DecisionTableEditorModel) => void;
+}) {
+  const editor = decisionTableEditorModel(node.data.config);
+  const updateEditor = (next: DecisionTableEditorModel) => onChange(next);
+  const updateRow = (index: number, patch: Partial<DecisionTableRuleRow>) => {
+    updateEditor({
+      ...editor,
+      rows: editor.rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)),
+    });
+  };
+  const deleteRow = (index: number) => {
+    const rows = editor.rows.filter((_, rowIndex) => rowIndex !== index);
+    updateEditor({ ...editor, rows: rows.length > 0 ? rows : defaultDecisionTableRows() });
+  };
+  const addRow = () => {
+    updateEditor({
+      ...editor,
+      rows: [
+        ...editor.rows,
+        {
+          conditions: 'value: value != null',
+          decision: 'matched',
+          ruleId: `rule-${editor.rows.length + 1}`,
+          otherwise: false,
+        },
+      ],
+    });
+  };
+  return (
+    <div className="rule-editor-backdrop" role="presentation">
+      <section
+        className="rule-editor"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="decision-rule-editor-title"
+        data-testid="decision-table-editor"
+      >
+        <div className="rule-editor-heading">
+          <span>Decision table</span>
+          <strong id="decision-rule-editor-title">{node.data.label}</strong>
+          <button
+            type="button"
+            className="secondary compact"
+            onClick={onClose}
+            aria-label="Close decision table editor"
+          >
+            Done
+          </button>
+        </div>
+        <div className="rule-editor-meta">
+          <label>
+            <span>Hit policy</span>
+            <select
+              aria-label="Decision table hit policy"
+              value={editor.hitPolicy}
+              onChange={(event) => updateEditor({ ...editor, hitPolicy: event.target.value })}
+            >
+              <option value="unique">unique</option>
+              <option value="first">first</option>
+              <option value="collect">collect</option>
+            </select>
+          </label>
+          <label>
+            <span>Output type</span>
+            <input
+              aria-label="Decision table output type"
+              value={editor.outputType}
+              onChange={(event) => updateEditor({ ...editor, outputType: event.target.value })}
+            />
+          </label>
+        </div>
+        <div className="rule-editor-table-wrap">
+          <table className="rule-editor-table">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Decision</th>
+                <th>Rule ID</th>
+                <th>Otherwise</th>
+                <th aria-label="Rule actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {editor.rows.map((row, index) => (
+                <tr key={`${index}:${row.ruleId}:${row.otherwise ? 'otherwise' : 'rule'}`}>
+                  <td>
+                    <input
+                      aria-label={`Rule ${index + 1} condition`}
+                      data-testid={`decision-rule-condition:${index}`}
+                      value={row.conditions}
+                      disabled={row.otherwise}
+                      onChange={(event) => updateRow(index, { conditions: event.target.value })}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      aria-label={`Rule ${index + 1} decision`}
+                      data-testid={`decision-rule-decision:${index}`}
+                      value={row.decision}
+                      onChange={(event) => updateRow(index, { decision: event.target.value })}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      aria-label={`Rule ${index + 1} id`}
+                      data-testid={`decision-rule-id:${index}`}
+                      value={row.ruleId}
+                      onChange={(event) => updateRow(index, { ruleId: event.target.value })}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={`Rule ${index + 1} otherwise`}
+                      data-testid={`decision-rule-otherwise:${index}`}
+                      checked={row.otherwise}
+                      onChange={(event) => updateRow(index, {
+                        otherwise: event.target.checked,
+                        conditions: event.target.checked ? '' : row.conditions || 'value: value != null',
+                      })}
+                    />
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="secondary compact"
+                      onClick={() => deleteRow(index)}
+                      disabled={editor.rows.length <= 1}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="rule-editor-actions">
+          <button type="button" className="secondary compact" onClick={addRow}>
+            Add Rule
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function operatorFocusRows(
+  summary: OperatorSummary,
+  inputs: OperatorPort[],
+  outputs: OperatorPort[],
+  operator: OperatorDefinition | undefined,
+): OperatorFocusRow[] {
+  const inputSignature = portSignatures(inputs, summary.inputContractLabel || 'input');
+  const outputSignature = portSignatures(outputs, summary.outputContractLabel || 'output');
+  if (summary.visualKind === 'decision-table') {
+    return [
+      { key: 'conditions', label: 'Condition inputs', value: inputSignature },
+      { key: 'decision', label: 'Decision output', value: outputSignature },
+      { key: 'rules', label: 'Rule matrix', value: 'typed conditions -> matched row' },
+      { key: 'lowering', label: 'Lowering', value: operator?.lowering?.mode || 'dsl' },
+    ];
+  }
+  if (summary.visualKind === 'foreach') {
+    return [
+      { key: 'collection', label: 'Collection', value: inputSignature },
+      { key: 'item', label: 'Item context', value: itemContextLabel(inputs) },
+      { key: 'result', label: 'Result list', value: outputSignature },
+      { key: 'cardinality', label: 'Cardinality', value: 'per item -> aggregated list' },
+    ];
+  }
+  if (summary.visualKind === 'resource') {
+    return [
+      { key: 'params', label: 'Request params', value: inputSignature },
+      { key: 'payload', label: 'Response payload', value: outputSignature },
+      { key: 'boundary', label: 'Boundary', value: operator?.source?.kind || summary.sourceKind },
+    ];
+  }
+  if (summary.visualKind === 'transform') {
+    return [
+      { key: 'source', label: 'Source fields', value: inputSignature },
+      { key: 'mapped', label: 'Mapped output', value: outputSignature },
+      { key: 'lowering', label: 'Lowering', value: operator?.lowering?.mode || 'transform' },
+    ];
+  }
+  if (summary.visualKind === 'streaming') {
+    return [
+      { key: 'request', label: 'Request', value: inputSignature },
+      { key: 'stream', label: 'Event stream', value: outputSignature },
+      { key: 'boundary', label: 'Boundary', value: operator?.source?.kind || summary.sourceKind },
+    ];
+  }
+  return [
+    { key: 'inputs', label: 'Input contract', value: inputSignature },
+    { key: 'outputs', label: 'Output contract', value: outputSignature },
+  ];
+}
+
+function operatorFocusTitle(kind: OperatorSummary['visualKind']): string {
+  if (kind === 'decision-table') {
+    return 'Rule contract';
+  }
+  if (kind === 'foreach') {
+    return 'Loop contract';
+  }
+  if (kind === 'resource') {
+    return 'Resource contract';
+  }
+  if (kind === 'transform') {
+    return 'Mapping contract';
+  }
+  if (kind === 'streaming') {
+    return 'Stream contract';
+  }
+  return 'Schema contract';
+}
+
+function portSignatures(ports: OperatorPort[], fallback: string): string {
+  if (ports.length === 0) {
+    return fallback;
+  }
+  return ports.map((port) => `${port.name || 'value'}:${schemaKindLabel(port.schema?.schema)}`).join(', ');
+}
+
+function itemContextLabel(inputs: OperatorPort[]): string {
+  const collection = inputs.find((port) => schemaKindLabel(port.schema?.schema) === 'array') ?? inputs[0];
+  const schema = collection?.schema?.schema;
+  const items = schema && typeof schema.items === 'object' && schema.items
+    ? schema.items as Record<string, unknown>
+    : undefined;
+  return `${collection?.name || 'item'} item:${schemaKindLabel(items)}`;
+}
+
+function schemaKindLabel(schema: Record<string, unknown> | undefined): string {
+  if (!schema) {
+    return 'any';
+  }
+  const rawType = schema.type;
+  if (typeof rawType === 'string' && rawType) {
+    return rawType;
+  }
+  if (Array.isArray(rawType)) {
+    const nonNull = rawType.find((value) => typeof value === 'string' && value !== 'null');
+    return typeof nonNull === 'string' ? nonNull : 'any';
+  }
+  if (schema.properties || schema.required || schema.additionalProperties) {
+    return 'object';
+  }
+  if (schema.items || schema.prefixItems || schema.contains) {
+    return 'array';
+  }
+  return 'any';
+}
 
 interface OperatorLibraryExample {
   key: string;
@@ -533,6 +948,7 @@ export default function AuthorCanvas() {
   const [sourceFilter, setSourceFilter] = useState('all');
   const [tagFilter, setTagFilter] = useState('all');
   const [selectedNodeId, setSelectedNodeId] = useState('');
+  const [ruleEditorNodeId, setRuleEditorNodeId] = useState('');
   const [explicitOutputNodeId, setExplicitOutputNodeId] = useState('');
   const [fixtureDrafts, setFixtureDrafts] = useState<Record<string, string>>({});
   const [fixtureInputDrafts, setFixtureInputDrafts] = useState<Record<string, string>>({});
@@ -604,6 +1020,7 @@ export default function AuthorCanvas() {
           return next;
         });
         setSelectedNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
+        setRuleEditorNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
         setExplicitOutputNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
       }
       setNodes((current) => applyNodeChanges(changes, current) as Node<NodeData>[]);
@@ -626,17 +1043,42 @@ export default function AuthorCanvas() {
     const nextIndex = counter.current + 1;
     counter.current = nextIndex;
     const id = `n${nextIndex}`;
+    const placementIndex = nextIndex - 1;
+    const canvasWidth = flowRef.current?.clientWidth ?? 0;
     const summary = summarizeOperator(operator);
     setNodes((current) => [
       ...current,
       {
         id,
         type: 'operator',
-        position: position ?? { x: 72 + (nextIndex % 4) * 36, y: 56 + nextIndex * 40 },
+        position: position ?? defaultOperatorPosition(placementIndex, canvasWidth),
         data: { label: summary.name, operatorRef: operator.operatorRef, summary },
       },
     ]);
     setSelectedNodeId(id);
+  }, [clearRunResult]);
+
+  const openRuleEditor = useCallback((node: Node<NodeData>) => {
+    if (node.data.summary.visualKind !== 'decision-table') {
+      return;
+    }
+    setSelectedNodeId(node.id);
+    setRuleEditorNodeId(node.id);
+  }, []);
+
+  const updateDecisionTableRules = useCallback((nodeId: string, editor: DecisionTableEditorModel) => {
+    clearRunResult();
+    setNodes((current) => current.map((node) => (
+      node.id === nodeId
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              config: decisionTableConfigFromEditor(node.data.config, editor),
+            },
+          }
+        : node
+    )));
   }, [clearRunResult]);
 
   const canvasNodes = useMemo<CanvasNode[]>(
@@ -645,6 +1087,7 @@ export default function AuthorCanvas() {
         id: node.id,
         operatorRef: node.data.operatorRef,
         label: node.data.label,
+        config: node.data.config,
         position: node.position,
       })),
     [nodes],
@@ -683,6 +1126,7 @@ export default function AuthorCanvas() {
   );
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const selectedOperator = selectedNode ? operatorByRef.get(selectedNode.data.operatorRef) : undefined;
+  const ruleEditorNode = nodes.find((node) => node.id === ruleEditorNodeId);
   const selectedOutputPorts = useMemo(
     () =>
       selectedNode
@@ -978,6 +1422,7 @@ export default function AuthorCanvas() {
         const targetPort = portNameFromHandle(params.targetHandleId, 'in');
         const sourceHandleId = params.sourceHandleId;
         let candidateLabels: string[] = [];
+        let candidateIndex: ConnectionCandidateIndex | null = null;
         try {
           const response = await fetchConnectionCandidates(toConnectionCandidatesRequest(
             'visualGraph',
@@ -988,6 +1433,7 @@ export default function AuthorCanvas() {
             sourceHandleId,
           ));
           const index = indexConnectionCandidates(response);
+          candidateIndex = index;
           setCandidatePreview(index);
           candidateLabels = acceptedFieldCandidateLabels(index.candidates, params.targetNodeId, targetPort);
           const fieldCandidate = singleAcceptedFieldCandidate(index.candidates, params.targetNodeId, targetPort);
@@ -1013,7 +1459,21 @@ export default function AuthorCanvas() {
           candidateLabels = [];
         }
         if (!check.accepted && candidateLabels.length > 1) {
-          message = `${message} Multiple compatible fields exist (${candidateLabels.slice(0, 4).join(', ')}). Use Connect Next to choose one.`;
+          const sourcePort = portNameFromHandle(sourceHandleId, 'out');
+          if (candidateIndex) {
+            setSelectedNodeId(params.sourceNodeId);
+            setSelectedConnectionSourcePort(sourcePort);
+            setConnectionGuide({
+              nodeId: params.sourceNodeId,
+              sourcePort,
+              index: candidateIndex,
+            });
+            setConnectionGuideNotice({
+              level: 'warning',
+              message: `Choose a field path for ${endpointLabel(targetPort, '', 'input')}.`,
+            });
+          }
+          message = `${message} Choose a compatible field path in Connect Next (${candidateLabels.slice(0, 4).join(', ')}).`;
         }
       }
 
@@ -1160,6 +1620,24 @@ export default function AuthorCanvas() {
       sourceHandleId: handleIdForPort('out', selectedConnectionSourcePort),
       targetHandleId: handleIdForPort('in', row.targetPort),
       targetPath: row.targetPath,
+    });
+    setConnectionGuide(null);
+    setConnectionGuideNotice(null);
+  }, [applyCheckedConnection, selectedConnectionSourcePort, selectedNodeId]);
+
+  const connectGuideFieldOption = useCallback(async (
+    row: ConnectionGuideRow,
+    option: ConnectionGuideFieldOption,
+  ) => {
+    if (!selectedNodeId || !option.accepted) {
+      return;
+    }
+    await applyCheckedConnection({
+      sourceNodeId: selectedNodeId,
+      targetNodeId: row.targetNodeId,
+      sourceHandleId: handleIdForPort('out', selectedConnectionSourcePort),
+      targetHandleId: handleIdForPort('in', row.targetPort),
+      targetPath: option.path,
     });
     setConnectionGuide(null);
     setConnectionGuideNotice(null);
@@ -1582,6 +2060,7 @@ export default function AuthorCanvas() {
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd}
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+            onNodeDoubleClick={(_, node) => openRuleEditor(node)}
             onPaneClick={() => setSelectedNodeId('')}
             fitView
           >
@@ -1642,6 +2121,7 @@ export default function AuthorCanvas() {
             {selectedNode.data.summary.description && (
               <p>{selectedNode.data.summary.description}</p>
             )}
+            <OperatorFocusPanel operator={selectedOperator} summary={selectedNode.data.summary} />
             <div className="port-list">
               <strong>Inputs</strong>
               <span>{selectedNode.data.summary.inputNames.join(', ') || 'none'}</span>
@@ -1697,20 +2177,40 @@ export default function AuthorCanvas() {
                       className={row.status}
                       data-testid={`connection-guide-target:${row.targetNodeId}:${row.targetPort}`}
                     >
-                      <button
-                        type="button"
-                        className="connection-guide-target"
-                        onClick={() => setSelectedNodeId(row.targetNodeId)}
-                        title={row.detail}
-                      >
-                        <span>
-                          <strong>{row.targetLabel}</strong>
-                          <small>{row.targetOperatorRef || row.targetNodeId}</small>
-                          <code>{endpointLabel(row.targetPort, row.targetPath, 'input')}</code>
-                          <small className="connection-guide-detail">{row.detail}</small>
-                        </span>
-                        <em>{row.status}</em>
-                      </button>
+                      <div className="connection-guide-main">
+                        <button
+                          type="button"
+                          className="connection-guide-target"
+                          onClick={() => setSelectedNodeId(row.targetNodeId)}
+                          title={`${row.detail} ${row.actionHint}`}
+                        >
+                          <span>
+                            <strong>{row.targetLabel}</strong>
+                            <small>{row.targetOperatorRef || row.targetNodeId}</small>
+                            <code>{endpointLabel(row.targetPort, row.targetPath, 'input')}</code>
+                            <small className="connection-guide-detail">{row.detail}</small>
+                            <small className="connection-guide-action">{row.actionHint}</small>
+                          </span>
+                          <em>{row.status}</em>
+                        </button>
+                        {row.fieldOptions.length > 1 && (
+                          <div className="connection-guide-fields" aria-label="Compatible field paths">
+                            {row.fieldOptions.map((option) => (
+                              <button
+                                key={option.key}
+                                type="button"
+                                className={`connection-guide-field ${option.status}`}
+                                data-testid={`connection-guide-field:${row.targetNodeId}:${row.targetPort}:${option.path}`}
+                                onClick={() => connectGuideFieldOption(row, option)}
+                                disabled={!option.accepted || connectionGuideBusy}
+                                title={option.detail}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <button
                         type="button"
                         className="secondary compact"
@@ -1891,6 +2391,13 @@ export default function AuthorCanvas() {
           </>
         )}
       </aside>
+      {ruleEditorNode && (
+        <DecisionTableRuleEditor
+          node={ruleEditorNode}
+          onClose={() => setRuleEditorNodeId('')}
+          onChange={(editor) => updateDecisionTableRules(ruleEditorNode.id, editor)}
+        />
+      )}
     </div>
   );
 }

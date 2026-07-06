@@ -15,7 +15,7 @@ vi.mock('reactflow', async () => {
   const React = await import('react');
 
   return {
-    default: function ReactFlowMock({ children, nodes, nodeTypes, onNodeClick }: any) {
+    default: function ReactFlowMock({ children, nodes, nodeTypes, onNodeClick, onNodeDoubleClick }: any) {
       return React.createElement(
         'div',
         { 'data-testid': 'react-flow' },
@@ -28,6 +28,7 @@ vi.mock('reactflow', async () => {
               'data-testid': `node-wrapper:${node.id}`,
               'data-position': `${node.position.x},${node.position.y}`,
               onClick: () => onNodeClick?.({}, node),
+              onDoubleClick: () => onNodeDoubleClick?.({}, node),
             },
             React.createElement(Component, {
               id: node.id,
@@ -306,6 +307,102 @@ describe('AuthorCanvas connection guide', () => {
     expect(query('[data-testid="connection-guide-target:n2:profile"]').textContent).toContain('ready');
   });
 
+  it('renders field-level choices when a target input has multiple compatible paths', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({ operators: [scoreOperator(), decisionOperator()] });
+      }
+      if (url === '/api/visual/connections/candidates') {
+        return jsonResponse({
+          source: { nodeId: 'n1', port: 'decision' },
+          acceptedCount: 2,
+          rejectedCount: 1,
+          totalCandidateCount: 3,
+          candidates: [
+            {
+              targetNodeId: 'n2',
+              targetNodeLabel: 'Decision Consumer',
+              targetOperatorRef: 'risk:decision',
+              targetSurface: 'input',
+              target: { nodeId: 'n2', port: 'profile' },
+              accepted: false,
+              targetStatus: 'blocked',
+              summary: { message: 'Connection rejected by server.' },
+              diagnostics: [{ level: 'error', code: 'visual.connection.schema', message: 'object -> number' }],
+            },
+            {
+              targetNodeId: 'n2',
+              targetNodeLabel: 'Decision Consumer',
+              targetOperatorRef: 'risk:decision',
+              targetSurface: 'input',
+              target: { nodeId: 'n2', port: 'profile', path: 'score' },
+              accepted: true,
+              targetStatus: 'ready',
+              summary: { message: 'Schemas match.' },
+            },
+            {
+              targetNodeId: 'n2',
+              targetNodeLabel: 'Decision Consumer',
+              targetOperatorRef: 'risk:decision',
+              targetSurface: 'input',
+              target: { nodeId: 'n2', port: 'profile', path: 'amount' },
+              accepted: true,
+              targetStatus: 'ready',
+              summary: { message: 'Schemas match.' },
+            },
+          ],
+        });
+      }
+      if (url === '/api/visual/connections/check') {
+        const body = JSON.parse(String(init?.body));
+        expect(body.target).toEqual({ nodeId: 'n2', port: 'profile', path: 'amount' });
+        return jsonResponse({
+          accepted: true,
+          edge: {
+            id: 'n1:decision->n2:profile.amount',
+            kind: 'data',
+            source: { nodeId: 'n1', port: 'decision' },
+            target: { nodeId: 'n2', port: 'profile', path: 'amount' },
+          },
+          diagnostics: [],
+          summary: { message: 'Connection accepted.' },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:score"]').textContent).toContain('Risk Score'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:score"]'));
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:decision"]'));
+    await click(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    await click(query<HTMLButtonElement>('[data-testid="connection-guide-refresh"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="connection-guide-target:n2:profile"]').textContent)
+        .toContain('2 compatible fields found.'),
+    );
+    expect(query('[data-testid="connection-guide-target:n2:profile"]').textContent)
+      .toContain('Choose the field path that should feed this input.');
+    expect(query('[data-testid="connection-guide-field:n2:profile:score"]').textContent).toContain('profile.score');
+    expect(query('[data-testid="connection-guide-field:n2:profile:amount"]').textContent).toContain('profile.amount');
+
+    await click(query<HTMLButtonElement>('[data-testid="connection-guide-field:n2:profile:amount"]'));
+
+    await waitFor(() => expect(document.body.textContent).toContain('1 edges'));
+    const exportLink = query<HTMLAnchorElement>('[data-testid="author-draft-export"]');
+    expect(authorDraftExport(exportLink).edges).toMatchObject([
+      { target: { nodeId: 'n2', port: 'profile', path: 'amount' } },
+    ]);
+  });
+
   it('focuses and filters the palette from the Cmd-K shortcut', async () => {
     await act(async () => {
       root = createRoot(host);
@@ -371,6 +468,29 @@ describe('AuthorCanvas connection guide', () => {
     expect(document.body.textContent).toContain('Output n1');
   });
 
+  it('stacks clicked palette operators on narrow canvases', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:score"]').textContent).toContain('Risk Score'),
+    );
+    Object.defineProperty(query<HTMLElement>('[data-testid="author-flow"]'), 'clientWidth', {
+      configurable: true,
+      value: 390,
+    });
+
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:score"]'));
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:decision"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="node-wrapper:n1"]').getAttribute('data-position')).toBe('72,56'),
+    );
+    expect(query('[data-testid="node-wrapper:n2"]').getAttribute('data-position')).toBe('72,246');
+  });
+
   it('renders foreach and decision-table nodes with family-specific contract hints', async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -399,12 +519,59 @@ describe('AuthorCanvas connection guide', () => {
       expect(query('[data-testid="canvas-node:n1"][data-operator-ref="__foreach__:enrichOrders"]').textContent)
         .toContain('collection'),
     );
+    expect(query('[data-testid="node-wrapper:n1"]').getAttribute('data-position')).toBe('72,56');
+    expect(query('[data-testid="node-wrapper:n2"]').getAttribute('data-position')).toBe('352,56');
     expect(query('[data-testid="canvas-node:n1"][data-operator-ref="__foreach__:enrichOrders"]').textContent)
       .toContain('result list');
     expect(query('[data-testid="canvas-node:n2"][data-operator-ref="bloge:decisionTable"]').textContent)
       .toContain('conditions');
     expect(query('[data-testid="canvas-node:n2"][data-operator-ref="bloge:decisionTable"]').textContent)
       .toContain('decision row');
+
+    await click(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    expect(query('[data-testid="operator-focus:foreach"]').textContent).toContain('Loop contract');
+    expect(query('[data-testid="operator-focus:foreach"]').textContent).toContain('Collection');
+    expect(query('[data-testid="operator-focus:foreach"]').textContent).toContain('Item context');
+    expect(query('[data-testid="operator-focus:foreach"]').textContent).toContain('Result list');
+
+    await click(query<HTMLElement>('[data-testid="node-wrapper:n2"]'));
+    expect(query('[data-testid="operator-focus:decision-table"]').textContent).toContain('Rule contract');
+    expect(query('[data-testid="operator-focus:decision-table"]').textContent).toContain('Condition inputs');
+    expect(query('[data-testid="operator-focus:decision-table"]').textContent).toContain('Decision output');
+    expect(query('[data-testid="operator-focus:decision-table"]').textContent).toContain('Rule matrix');
+
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n2"]'));
+    await waitFor(() =>
+      expect(query('[data-testid="decision-table-editor"]').textContent).toContain('Decision Table'),
+    );
+    expect(query('[data-testid="decision-table-editor"]').textContent).toContain('When');
+    expect(query('[data-testid="decision-table-editor"]').textContent).toContain('Decision');
+
+    await setControlValue(query<HTMLInputElement>('[data-testid="decision-rule-condition:0"]'), 'score: score >= 700');
+    await setControlValue(query<HTMLInputElement>('[data-testid="decision-rule-decision:0"]'), 'approve');
+    await setControlValue(query<HTMLInputElement>('[data-testid="decision-rule-id:0"]'), 'prime');
+
+    const exportLink = query<HTMLAnchorElement>('[data-testid="author-draft-export"]');
+    expect(authorDraftExport(exportLink).nodes[1].config).toMatchObject({
+      hitPolicy: 'unique',
+      outputType: '{ decision: String, ruleId: String }',
+      rules: [
+        {
+          conditions: 'score: score >= 700',
+          output: {
+            decision: 'approve',
+            ruleId: 'prime',
+          },
+        },
+        {
+          otherwise: true,
+          output: {
+            decision: 'fallback',
+            ruleId: 'otherwise',
+          },
+        },
+      ],
+    });
   });
 });
 
@@ -775,6 +942,12 @@ function authorDraftExport(link: HTMLAnchorElement): any {
 async function click(element: HTMLElement): Promise<void> {
   await act(async () => {
     element.click();
+  });
+}
+
+async function doubleClick(element: HTMLElement): Promise<void> {
+  await act(async () => {
+    element.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
   });
 }
 
