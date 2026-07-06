@@ -66,6 +66,7 @@ import {
   toSimulationRequest,
 } from './draftModel';
 import type { OperatorDefinition, SimulationResponse, VisualDiagnostic, VisualValidationResult } from './types';
+import type { ConnectionCandidate } from './types';
 
 interface NodeData {
   label: string;
@@ -95,8 +96,56 @@ interface SelectedConnectionGuide {
   index: ConnectionCandidateIndex;
 }
 
+interface CheckedConnectionParams {
+  sourceNodeId: string;
+  targetNodeId: string;
+  sourceHandleId?: string | null;
+  targetHandleId?: string | null;
+  sourcePath?: string;
+  targetPath?: string;
+}
+
+type CanvasFlowEdge = Edge & {
+  sourcePath?: string;
+  targetPath?: string;
+};
+
 function handleOffset(index: number, count: number): CSSProperties {
   return { top: `${((index + 1) / (count + 1)) * 100}%` };
+}
+
+function endpointLabel(port: string, path: string, fallback: string): string {
+  const base = port || fallback;
+  return path ? `${base}.${path}` : base;
+}
+
+function singleAcceptedFieldCandidate(
+  candidates: ConnectionCandidate[] | undefined,
+  targetNodeId: string,
+  targetPort: string,
+): ConnectionCandidate | null {
+  const matches = (candidates ?? []).filter((candidate) =>
+    candidate.accepted
+    && (candidate.target.nodeId || candidate.targetNodeId) === targetNodeId
+    && (candidate.target.port ?? '') === targetPort
+    && Boolean(candidate.target.path),
+  );
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function acceptedFieldCandidateLabels(
+  candidates: ConnectionCandidate[] | undefined,
+  targetNodeId: string,
+  targetPort: string,
+): string[] {
+  return (candidates ?? [])
+    .filter((candidate) =>
+      candidate.accepted
+      && (candidate.target.nodeId || candidate.targetNodeId) === targetNodeId
+      && (candidate.target.port ?? '') === targetPort
+      && Boolean(candidate.target.path),
+    )
+    .map((candidate) => endpointLabel(candidate.target.port ?? '', candidate.target.path ?? '', 'input'));
 }
 
 function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
@@ -105,9 +154,10 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
   const outputPorts = data.summary.outputNames.length ? data.summary.outputNames : [''];
   const candidateClass = data.candidateStatus ? `candidate-${data.candidateStatus}` : '';
   const focusClass = data.focusState && data.focusState !== 'none' ? `focus-${data.focusState}` : '';
+  const kindClass = `kind-${data.summary.visualKind}`;
   return (
     <div
-      className={`operator-node ${status} ${candidateClass} ${focusClass} ${selected ? 'selected' : ''}`}
+      className={`operator-node ${kindClass} ${status} ${candidateClass} ${focusClass} ${selected ? 'selected' : ''}`}
       data-testid={`canvas-node:${id}`}
       data-operator-ref={data.operatorRef}
     >
@@ -125,11 +175,17 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
       <div className="operator-node-title">
         <span>{data.label}</span>
         <span className="operator-node-pills">
+          <span className={`operator-kind-pill ${data.summary.visualKind}`}>{data.summary.visualLabel}</span>
           {data.isOutput && <span className="output-pill">output</span>}
           {status !== 'unknown' && <span className={`run-pill ${status}`}>{status}</span>}
         </span>
       </div>
       <div className="operator-node-ref">{data.operatorRef}</div>
+      <div className="operator-node-contract" title={data.summary.contractHint}>
+        <span>{data.summary.inputContractLabel}</span>
+        <strong>→</strong>
+        <span>{data.summary.outputContractLabel}</span>
+      </div>
       <div className="operator-node-metrics">
         <span>
           {data.summary.requiredInputCount}/{data.summary.inputCount} inputs
@@ -595,13 +651,19 @@ export default function AuthorCanvas() {
   );
   const canvasEdges = useMemo<CanvasEdge[]>(
     () =>
-      edges.map((edge) => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        sourcePort: portNameFromHandle(edge.sourceHandle, 'out'),
-        targetPort: portNameFromHandle(edge.targetHandle, 'in'),
-      })),
+      edges.map((edge) => {
+        const pathEdge = edge as CanvasFlowEdge;
+        const edgeData = edge.data as { sourcePath?: string; targetPath?: string } | undefined;
+        return {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          sourcePort: portNameFromHandle(edge.sourceHandle, 'out'),
+          targetPort: portNameFromHandle(edge.targetHandle, 'in'),
+          sourcePath: pathEdge.sourcePath ?? edgeData?.sourcePath,
+          targetPath: pathEdge.targetPath ?? edgeData?.targetPath,
+        };
+      }),
     [edges],
   );
   const implicitOutputNodeId = nodes.length > 0 ? nodes[nodes.length - 1].id : '';
@@ -887,8 +949,8 @@ export default function AuthorCanvas() {
     setLoadingCandidates(false);
   }, []);
 
-  const onConnect = useCallback(async (connection: Connection) => {
-    if (!connection.source || !connection.target) {
+  const applyCheckedConnection = useCallback(async (params: CheckedConnectionParams) => {
+    if (!params.sourceNodeId || !params.targetNodeId) {
       return;
     }
     candidatePreviewSequence.current += 1;
@@ -896,34 +958,90 @@ export default function AuthorCanvas() {
     setCheckingConnection(true);
     setConnectionNotice({ level: 'pending', message: 'Checking schema compatibility...' });
     try {
-      const check = await checkConnection(toConnectionCheckRequest(
+      let sourcePath = params.sourcePath ?? '';
+      let targetPath = params.targetPath ?? '';
+      let check = await checkConnection(toConnectionCheckRequest(
         'visualGraph',
         canvasNodes,
         canvasEdges,
         outputNodeId,
-        connection.source,
-        connection.target,
-        connection.sourceHandle,
-        connection.targetHandle,
+        params.sourceNodeId,
+        params.targetNodeId,
+        params.sourceHandleId,
+        params.targetHandleId,
+        sourcePath,
+        targetPath,
       ));
-      const message = connectionDecisionMessage(check);
+      let message = connectionDecisionMessage(check);
+
+      if (!check.accepted && !sourcePath && !targetPath) {
+        const targetPort = portNameFromHandle(params.targetHandleId, 'in');
+        const sourceHandleId = params.sourceHandleId;
+        let candidateLabels: string[] = [];
+        try {
+          const response = await fetchConnectionCandidates(toConnectionCandidatesRequest(
+            'visualGraph',
+            canvasNodes,
+            canvasEdges,
+            outputNodeId,
+            params.sourceNodeId,
+            sourceHandleId,
+          ));
+          const index = indexConnectionCandidates(response);
+          setCandidatePreview(index);
+          candidateLabels = acceptedFieldCandidateLabels(index.candidates, params.targetNodeId, targetPort);
+          const fieldCandidate = singleAcceptedFieldCandidate(index.candidates, params.targetNodeId, targetPort);
+          if (fieldCandidate) {
+            targetPath = fieldCandidate.target.path ?? '';
+            check = await checkConnection(toConnectionCheckRequest(
+              'visualGraph',
+              canvasNodes,
+              canvasEdges,
+              outputNodeId,
+              params.sourceNodeId,
+              params.targetNodeId,
+              params.sourceHandleId,
+              params.targetHandleId,
+              sourcePath,
+              targetPath,
+            ));
+            if (check.accepted) {
+              message = `${connectionDecisionMessage(check)} Bound field ${endpointLabel(targetPort, targetPath, 'input')}.`;
+            }
+          }
+        } catch {
+          candidateLabels = [];
+        }
+        if (!check.accepted && candidateLabels.length > 1) {
+          message = `${message} Multiple compatible fields exist (${candidateLabels.slice(0, 4).join(', ')}). Use Connect Next to choose one.`;
+        }
+      }
+
       if (!check.accepted) {
         setConnectionNotice({ level: 'error', message });
         return;
       }
 
       clearRunResult();
-      const sourcePort = portNameFromHandle(connection.sourceHandle, 'out');
-      const targetPort = portNameFromHandle(connection.targetHandle, 'in');
-      const label = `${sourcePort || 'value'} -> ${targetPort || 'input'}`;
+      sourcePath = check.edge?.source?.path ?? sourcePath;
+      targetPath = check.edge?.target?.path ?? targetPath;
+      const sourcePort = portNameFromHandle(params.sourceHandleId, 'out');
+      const targetPort = portNameFromHandle(params.targetHandleId, 'in');
+      const label = `${endpointLabel(sourcePort, sourcePath, 'value')} -> ${endpointLabel(targetPort, targetPath, 'input')}`;
       setEdges((current) =>
         addEdge({
-          ...connection,
-          id: check.edge?.id || `${connection.source}:${sourcePort}->${connection.target}:${targetPort}`,
+          source: params.sourceNodeId,
+          target: params.targetNodeId,
+          sourceHandle: params.sourceHandleId,
+          targetHandle: params.targetHandleId,
+          sourcePath,
+          targetPath,
+          data: { sourcePath, targetPath },
+          id: check.edge?.id || `${params.sourceNodeId}:${sourcePort}.${sourcePath}->${params.targetNodeId}:${targetPort}.${targetPath}`,
           label,
           animated: true,
           className: 'accepted-edge',
-        }, current),
+        } as CanvasFlowEdge, current),
       );
       setConnectionNotice({
         level: check.summary?.graphStillInvalid ? 'warning' : 'ok',
@@ -935,6 +1053,15 @@ export default function AuthorCanvas() {
       setCheckingConnection(false);
     }
   }, [canvasEdges, canvasNodes, clearRunResult, outputNodeId]);
+
+  const onConnect = useCallback(async (connection: Connection) => {
+    await applyCheckedConnection({
+      sourceNodeId: connection.source ?? '',
+      targetNodeId: connection.target ?? '',
+      sourceHandleId: connection.sourceHandle,
+      targetHandleId: connection.targetHandle,
+    });
+  }, [applyCheckedConnection]);
 
   useEffect(() => {
     connectionGuideSequence.current += 1;
@@ -1027,15 +1154,16 @@ export default function AuthorCanvas() {
     if (!selectedNodeId || row.status !== 'ready') {
       return;
     }
-    await onConnect({
-      source: selectedNodeId,
-      target: row.targetNodeId,
-      sourceHandle: handleIdForPort('out', selectedConnectionSourcePort),
-      targetHandle: handleIdForPort('in', row.targetPort),
+    await applyCheckedConnection({
+      sourceNodeId: selectedNodeId,
+      targetNodeId: row.targetNodeId,
+      sourceHandleId: handleIdForPort('out', selectedConnectionSourcePort),
+      targetHandleId: handleIdForPort('in', row.targetPort),
+      targetPath: row.targetPath,
     });
     setConnectionGuide(null);
     setConnectionGuideNotice(null);
-  }, [onConnect, selectedConnectionSourcePort, selectedNodeId]);
+  }, [applyCheckedConnection, selectedConnectionSourcePort, selectedNodeId]);
 
   const runSimulation = useCallback(async () => {
     setBusy(true);
@@ -1294,10 +1422,11 @@ export default function AuthorCanvas() {
                       title={operator.operatorRef}
                     >
                       <span className="op-copy">
+                        <span className={`op-kind ${summary.visualKind}`}>{summary.visualLabel}</span>
                         <span className="op-name">{summary.name}</span>
                         <span className="op-ref">{summary.operatorRef}</span>
                         <span className="op-meta">
-                          {summary.requiredInputCount}/{summary.inputCount} inputs ·{' '}
+                          {summary.contractHint} · {summary.requiredInputCount}/{summary.inputCount} inputs ·{' '}
                           {summary.outputCount} outputs
                         </span>
                       </span>
@@ -1577,7 +1706,8 @@ export default function AuthorCanvas() {
                         <span>
                           <strong>{row.targetLabel}</strong>
                           <small>{row.targetOperatorRef || row.targetNodeId}</small>
-                          <code>{row.targetPort || 'input'}</code>
+                          <code>{endpointLabel(row.targetPort, row.targetPath, 'input')}</code>
+                          <small className="connection-guide-detail">{row.detail}</small>
                         </span>
                         <em>{row.status}</em>
                       </button>

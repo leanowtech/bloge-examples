@@ -196,7 +196,7 @@ describe('AuthorCanvas connection guide', () => {
               targetNodeLabel: 'Decision Consumer',
               targetOperatorRef: 'risk:decision',
               targetSurface: 'input',
-              target: { nodeId: 'n2', port: 'profile' },
+              target: { nodeId: 'n2', port: 'profile', path: 'score' },
               accepted: true,
               targetStatus: 'ready',
               summary: { message: 'Schemas match.' },
@@ -207,14 +207,14 @@ describe('AuthorCanvas connection guide', () => {
       if (url === '/api/visual/connections/check') {
         const body = JSON.parse(String(init?.body));
         expect(body.source).toEqual({ nodeId: 'n1', port: 'decision' });
-        expect(body.target).toEqual({ nodeId: 'n2', port: 'profile' });
+        expect(body.target).toEqual({ nodeId: 'n2', port: 'profile', path: 'score' });
         return jsonResponse({
           accepted: true,
           edge: {
             id: 'n1:decision->n2:profile',
             kind: 'data',
             source: { nodeId: 'n1', port: 'decision' },
-            target: { nodeId: 'n2', port: 'profile' },
+            target: { nodeId: 'n2', port: 'profile', path: 'score' },
           },
           diagnostics: [],
           summary: { message: 'Connection accepted.' },
@@ -369,6 +369,42 @@ describe('AuthorCanvas connection guide', () => {
     );
     expect(query('[data-testid="node-wrapper:n1"]').getAttribute('data-position')).toBe('200,126');
     expect(document.body.textContent).toContain('Output n1');
+  });
+
+  it('renders foreach and decision-table nodes with family-specific contract hints', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({ operators: [foreachOperator(), decisionTableOperator()] });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:__foreach__:enrichOrders"]').textContent)
+        .toContain('Foreach'),
+    );
+    expect(query('[data-testid="operator-button:bloge:decisionTable"]').textContent)
+      .toContain('conditions -> matched decision');
+
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:__foreach__:enrichOrders"]'));
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:bloge:decisionTable"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="canvas-node:n1"][data-operator-ref="__foreach__:enrichOrders"]').textContent)
+        .toContain('collection'),
+    );
+    expect(query('[data-testid="canvas-node:n1"][data-operator-ref="__foreach__:enrichOrders"]').textContent)
+      .toContain('result list');
+    expect(query('[data-testid="canvas-node:n2"][data-operator-ref="bloge:decisionTable"]').textContent)
+      .toContain('conditions');
+    expect(query('[data-testid="canvas-node:n2"][data-operator-ref="bloge:decisionTable"]').textContent)
+      .toContain('decision row');
   });
 });
 
@@ -648,6 +684,58 @@ function decisionOperator(): OperatorDefinition {
               approved: { type: 'boolean' },
             },
           }),
+        },
+      ],
+    },
+  };
+}
+
+function foreachOperator(): OperatorDefinition {
+  return {
+    operatorRef: '__foreach__:enrichOrders',
+    display: { name: 'foreach enrich orders', description: 'Loops order enrichment.' },
+    source: { kind: 'java-operator' },
+    ports: {
+      inputs: [
+        {
+          name: 'input',
+          required: true,
+          schema: schema({
+            type: 'array',
+            items: { type: 'object', additionalProperties: true },
+          }),
+        },
+      ],
+      outputs: [
+        {
+          name: 'output',
+          schema: schema({
+            type: 'array',
+            items: { type: 'object', additionalProperties: true },
+          }),
+        },
+      ],
+    },
+  };
+}
+
+function decisionTableOperator(): OperatorDefinition {
+  return {
+    operatorRef: 'bloge:decisionTable',
+    display: { name: 'Decision Table', description: 'Rules with typed inputs.', tags: ['logic', 'rules'] },
+    source: { kind: 'bloge-dsl' },
+    ports: {
+      inputs: [
+        {
+          name: 'inputs',
+          required: true,
+          schema: schema({ type: 'object', additionalProperties: true }),
+        },
+      ],
+      outputs: [
+        {
+          name: 'output',
+          schema: schema({ type: 'object', additionalProperties: true }),
         },
       ],
     },

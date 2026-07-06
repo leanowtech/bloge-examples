@@ -22,6 +22,7 @@ export interface OperatorDefinition {
   display?: { name?: string; description?: string; tags?: string[] };
   source?: { kind?: string; libraryId?: string };
   ports?: { inputs: OperatorPort[]; outputs: OperatorPort[] };
+  capabilities?: { streaming?: boolean };
   lowering?: { mode?: string };
 }
 

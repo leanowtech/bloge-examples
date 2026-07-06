@@ -49,6 +49,11 @@ export interface OperatorSummary {
   description: string;
   tags: string[];
   sourceKind: string;
+  visualKind: 'decision-table' | 'foreach' | 'transform' | 'resource' | 'streaming' | 'generic';
+  visualLabel: string;
+  contractHint: string;
+  inputContractLabel: string;
+  outputContractLabel: string;
   requiredInputCount: number;
   inputCount: number;
   outputCount: number;
@@ -207,6 +212,7 @@ export interface ConnectionGuideRow {
   targetLabel: string;
   targetOperatorRef: string;
   targetPort: string;
+  targetPath: string;
   status: ConnectionCandidateStatus;
   accepted: boolean;
   detail: string;
@@ -344,13 +350,17 @@ export function toConnectionCheckRequest(
   targetNodeId: string,
   sourceHandleId: string | null | undefined,
   targetHandleId: string | null | undefined,
+  sourcePath = '',
+  targetPath = '',
 ): ConnectionCheckRequest {
+  const source = endpointFromHandle(sourceNodeId, sourceHandleId, 'out');
+  const target = endpointFromHandle(targetNodeId, targetHandleId, 'in');
   return {
     draft: toGraphDraft(graphName, nodes, edges, outputNodeId),
     kind: 'data',
     condition: '',
-    source: endpointFromHandle(sourceNodeId, sourceHandleId, 'out'),
-    target: endpointFromHandle(targetNodeId, targetHandleId, 'in'),
+    source: sourcePath ? { ...source, path: sourcePath } : source,
+    target: targetPath ? { ...target, path: targetPath } : target,
   };
 }
 
@@ -461,6 +471,7 @@ export function connectionGuideRows(
         targetLabel: candidate.targetNodeLabel || node?.label || targetNodeId,
         targetOperatorRef: candidate.targetOperatorRef || node?.operatorRef || '',
         targetPort: candidate.target.port ?? '',
+        targetPath: candidate.target.path ?? '',
         status,
         accepted: candidate.accepted,
         detail: candidate.summary?.message
@@ -547,12 +558,21 @@ export function summarizeOperator(operator: OperatorDefinition): OperatorSummary
   const inputs = operator.ports?.inputs ?? [];
   const outputs = operator.ports?.outputs ?? [];
   const requiredInputs = inputs.filter((input) => input.required);
+  const visualKind = operatorVisualKind(operator);
+  const firstInputType = schemaRootLabel(inputs[0]?.schema, 'input');
+  const firstOutputType = schemaRootLabel(outputs[0]?.schema, 'output');
+  const visualContract = operatorVisualContract(visualKind, firstInputType, firstOutputType);
   return {
     operatorRef: operator.operatorRef,
     name: operator.display?.name || operator.operatorRef,
     description: operator.display?.description || '',
     tags: operator.display?.tags ?? [],
     sourceKind: operator.source?.kind || 'library',
+    visualKind,
+    visualLabel: visualContract.visualLabel,
+    contractHint: visualContract.contractHint,
+    inputContractLabel: visualContract.inputContractLabel,
+    outputContractLabel: visualContract.outputContractLabel,
     requiredInputCount: requiredInputs.length,
     inputCount: inputs.length,
     outputCount: outputs.length,
@@ -561,6 +581,107 @@ export function summarizeOperator(operator: OperatorDefinition): OperatorSummary
     outputNames: outputs.map((output) => output.name),
     designOnly: operator.lowering?.mode === 'design',
   };
+}
+
+function operatorVisualKind(operator: OperatorDefinition): OperatorSummary['visualKind'] {
+  const ref = operator.operatorRef.toLowerCase();
+  const name = (operator.display?.name ?? '').toLowerCase();
+  const tags = (operator.display?.tags ?? []).map((tag) => tag.toLowerCase());
+  const sourceKind = operator.source?.kind?.toLowerCase() ?? '';
+  const loweringMode = operator.lowering?.mode?.toLowerCase() ?? '';
+  const capabilities = operator as OperatorDefinition & { capabilities?: { streaming?: boolean } };
+
+  if (ref.includes('decisiontable') || ref.includes('decision_table') || name.includes('decision table')) {
+    return 'decision-table';
+  }
+  if (ref.includes('foreach') || name.includes('foreach') || name.includes('for each')) {
+    return 'foreach';
+  }
+  if (loweringMode === 'transform' || ref.includes('transform')) {
+    return 'transform';
+  }
+  if (ref.startsWith('resource:') || sourceKind === 'resource-descriptor') {
+    return 'resource';
+  }
+  if (capabilities.capabilities?.streaming || sourceKind.includes('streaming')) {
+    return 'streaming';
+  }
+  if (tags.includes('rules') || tags.includes('logic')) {
+    return 'decision-table';
+  }
+  return 'generic';
+}
+
+function operatorVisualContract(
+  visualKind: OperatorSummary['visualKind'],
+  firstInputType: string,
+  firstOutputType: string,
+): Pick<OperatorSummary, 'visualLabel' | 'contractHint' | 'inputContractLabel' | 'outputContractLabel'> {
+  switch (visualKind) {
+    case 'decision-table':
+      return {
+        visualLabel: 'Decision table',
+        contractHint: 'conditions -> matched decision',
+        inputContractLabel: 'conditions',
+        outputContractLabel: 'decision row',
+      };
+    case 'foreach':
+      return {
+        visualLabel: 'Foreach',
+        contractHint: 'collection -> per-item results',
+        inputContractLabel: firstInputType === 'array' ? 'collection' : 'item source',
+        outputContractLabel: firstOutputType === 'array' ? 'result list' : 'per-item output',
+      };
+    case 'transform':
+      return {
+        visualLabel: 'Transform',
+        contractHint: 'source fields -> mapped output',
+        inputContractLabel: 'source fields',
+        outputContractLabel: 'mapped output',
+      };
+    case 'resource':
+      return {
+        visualLabel: 'Resource',
+        contractHint: 'params -> payload',
+        inputContractLabel: 'params',
+        outputContractLabel: 'payload',
+      };
+    case 'streaming':
+      return {
+        visualLabel: 'Streaming',
+        contractHint: 'request -> event stream',
+        inputContractLabel: firstInputType,
+        outputContractLabel: 'stream',
+      };
+    default:
+      return {
+        visualLabel: 'Operator',
+        contractHint: `${firstInputType} -> ${firstOutputType}`,
+        inputContractLabel: firstInputType,
+        outputContractLabel: firstOutputType,
+      };
+  }
+}
+
+function schemaRootLabel(envelope: SchemaEnvelope | undefined, fallback: string): string {
+  const schema = envelope?.schema;
+  if (!schema) {
+    return fallback;
+  }
+  const rawKind = schema.kind ?? schema.type;
+  if (typeof rawKind === 'string' && rawKind.trim()) {
+    return rawKind.trim();
+  }
+  if (schema.values || schema.enum) {
+    return 'enum';
+  }
+  if (schema.properties || schema.required || schema.additionalProperties) {
+    return 'object';
+  }
+  if (schema.items || schema.prefixItems || schema.contains) {
+    return 'array';
+  }
+  return fallback;
 }
 
 /**
@@ -1368,6 +1489,9 @@ function matchesOperatorSearch(row: OperatorPaletteRow, terms: string[]): boolea
     row.summary.operatorRef,
     row.summary.description,
     row.summary.sourceKind,
+    row.summary.visualKind,
+    row.summary.visualLabel,
+    row.summary.contractHint,
     row.libraryId,
     ...row.summary.tags,
     ...row.summary.inputNames,

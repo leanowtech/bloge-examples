@@ -210,6 +210,27 @@ describe('toConnectionCheckRequest', () => {
     expect(request.target).toEqual({ nodeId: 'b', port: 'profile' });
     expect(request.draft.output.nodeId).toBe('b');
   });
+
+  it('can preserve server-selected source and target field paths', () => {
+    const request = toConnectionCheckRequest(
+      'myGraph',
+      [
+        { id: 'a', operatorRef: 'producer', position: { x: 0, y: 0 } },
+        { id: 'b', operatorRef: 'consumer', position: { x: 200, y: 0 } },
+      ],
+      [],
+      'b',
+      'a',
+      'b',
+      handleIdForPort('out', 'decision'),
+      handleIdForPort('in', 'profile'),
+      'score',
+      'score',
+    );
+
+    expect(request.source).toEqual({ nodeId: 'a', port: 'decision', path: 'score' });
+    expect(request.target).toEqual({ nodeId: 'b', port: 'profile', path: 'score' });
+  });
 });
 
 describe('toConnectionCandidatesRequest', () => {
@@ -358,7 +379,7 @@ describe('connectionGuideRows', () => {
         {
           targetNodeId: 'ready',
           targetSurface: 'input',
-          target: { nodeId: 'ready', port: 'case' },
+          target: { nodeId: 'ready', port: 'case', path: 'score' },
           accepted: true,
           targetStatus: 'ready',
           summary: { message: 'Schemas match.' },
@@ -372,11 +393,12 @@ describe('connectionGuideRows', () => {
       { id: 'blocked', operatorRef: 'risk:blocked', position: { x: 0, y: 0 } },
     ], index)).toEqual([
       {
-        key: 'ready|case|',
+        key: 'ready|case|score',
         targetNodeId: 'ready',
         targetLabel: 'Ready Policy',
         targetOperatorRef: 'risk:ready',
         targetPort: 'case',
+        targetPath: 'score',
         status: 'ready',
         accepted: true,
         detail: 'Schemas match.',
@@ -387,6 +409,7 @@ describe('connectionGuideRows', () => {
         targetLabel: 'Wired Policy',
         targetOperatorRef: 'risk:wired',
         targetPort: 'profile',
+        targetPath: '',
         status: 'wired',
         accepted: false,
         detail: 'Already connected.',
@@ -397,6 +420,7 @@ describe('connectionGuideRows', () => {
         targetLabel: 'Blocked Policy',
         targetOperatorRef: 'risk:blocked',
         targetPort: 'profile',
+        targetPath: '',
         status: 'blocked',
         accepted: false,
         detail: 'visual.connection.schema: object -> number',
@@ -457,6 +481,38 @@ describe('summarizeOperator', () => {
       inputCount: 0,
       outputCount: 0,
       designOnly: false,
+    });
+  });
+
+  it('classifies special operator families with contract hints', () => {
+    expect(summarizeOperator({
+      operatorRef: 'bloge:decisionTable',
+      display: { name: 'Decision Table', tags: ['logic', 'rules'] },
+      ports: {
+        inputs: [{ name: 'inputs', schema: { schema: { type: 'object' } } }],
+        outputs: [{ name: 'output', schema: { schema: { type: 'object' } } }],
+      },
+    })).toMatchObject({
+      visualKind: 'decision-table',
+      visualLabel: 'Decision table',
+      contractHint: 'conditions -> matched decision',
+      inputContractLabel: 'conditions',
+      outputContractLabel: 'decision row',
+    });
+
+    expect(summarizeOperator({
+      operatorRef: '__foreach__:enrichOrders',
+      display: { name: 'foreach enrich orders' },
+      ports: {
+        inputs: [{ name: 'input', schema: { schema: { type: 'object' } } }],
+        outputs: [{ name: 'output', schema: { schema: { type: 'array', items: { type: 'object' } } } }],
+      },
+    })).toMatchObject({
+      visualKind: 'foreach',
+      visualLabel: 'Foreach',
+      contractHint: 'collection -> per-item results',
+      inputContractLabel: 'item source',
+      outputContractLabel: 'result list',
     });
   });
 });
