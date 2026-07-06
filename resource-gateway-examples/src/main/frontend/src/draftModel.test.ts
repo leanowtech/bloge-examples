@@ -949,6 +949,61 @@ describe('autoLayoutCanvas', () => {
     expect(layout[0].position.x).toBe(72);
     expect(layout[1].position.y).toBeGreaterThan(layout[0].position.y);
   });
+
+  it('keeps dense fan-out nodes far enough apart to avoid card and edge-label overlap', () => {
+    const layout = autoLayoutCanvas(
+      [
+        { id: 'root', operatorRef: 'root', position: { x: 0, y: 0 } },
+        { id: 'profile', operatorRef: 'resource:profile', position: { x: 0, y: 0 } },
+        { id: 'wallet', operatorRef: 'resource:wallet', position: { x: 0, y: 0 } },
+        { id: 'orders', operatorRef: 'resource:orders', position: { x: 0, y: 0 } },
+        { id: 'notifications', operatorRef: 'resource:notifications', position: { x: 0, y: 0 } },
+        { id: 'join', operatorRef: 'bloge:transform', position: { x: 0, y: 0 } },
+      ],
+      [
+        { id: 'e1', source: 'root', target: 'profile', sourcePath: 'customer.profile.primaryFacts', targetPath: 'params.customerId' },
+        { id: 'e2', source: 'root', target: 'wallet', sourcePath: 'customer.wallet.balance', targetPath: 'params.customerId' },
+        { id: 'e3', source: 'root', target: 'orders', sourcePath: 'customer.orders.items', targetPath: 'params.customerId' },
+        { id: 'e4', source: 'root', target: 'notifications', sourcePath: 'customer.notifications.unread', targetPath: 'params.customerId' },
+        { id: 'e5', source: 'profile', target: 'join', sourcePath: 'payload', targetPath: 'inputs.profile' },
+        { id: 'e6', source: 'wallet', target: 'join', sourcePath: 'payload', targetPath: 'inputs.wallet' },
+        { id: 'e7', source: 'orders', target: 'join', sourcePath: 'payload', targetPath: 'inputs.orders' },
+        { id: 'e8', source: 'notifications', target: 'join', sourcePath: 'payload', targetPath: 'inputs.notifications' },
+      ],
+    );
+
+    const byId = new Map(layout.map((node) => [node.id, node.position]));
+    const middleLayer = ['profile', 'wallet', 'orders', 'notifications']
+      .map((id) => byId.get(id)?.y ?? 0)
+      .sort((left, right) => left - right);
+    for (let index = 1; index < middleLayer.length; index += 1) {
+      expect(middleLayer[index] - middleLayer[index - 1]).toBeGreaterThanOrEqual(184);
+    }
+    expect((byId.get('profile')?.x ?? 0) - (byId.get('root')?.x ?? 0)).toBeGreaterThanOrEqual(320);
+    expect((byId.get('join')?.x ?? 0) - (byId.get('profile')?.x ?? 0)).toBeGreaterThanOrEqual(320);
+  });
+
+  it('expands column spacing for long edge labels so paths have readable room', () => {
+    const layout = autoLayoutCanvas(
+      [
+        { id: 'source', operatorRef: 'source', position: { x: 0, y: 0 } },
+        { id: 'target', operatorRef: 'target', position: { x: 0, y: 0 } },
+      ],
+      [
+        {
+          id: 'long',
+          source: 'source',
+          target: 'target',
+          sourcePort: 'payload',
+          sourcePath: 'customer.profile.primaryRiskSignal.longNestedField',
+          targetPort: 'inputs',
+          targetPath: 'riskFacts.customerProfile.primaryRiskSignal',
+        },
+      ],
+    );
+
+    expect(layout[1].position.x - layout[0].position.x).toBeGreaterThanOrEqual(416);
+  });
 });
 
 describe('simulationChecklist', () => {

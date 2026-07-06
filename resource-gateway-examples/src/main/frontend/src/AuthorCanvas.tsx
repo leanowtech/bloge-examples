@@ -141,6 +141,12 @@ type CanvasFlowEdge = Edge & {
   bindingKey?: string;
 };
 
+const EDGE_LABEL_OPTIONS = {
+  labelShowBg: true,
+  labelBgPadding: [8, 4] as [number, number],
+  labelBgBorderRadius: 4,
+};
+
 interface OperatorFocusRow {
   key: string;
   label: string;
@@ -2783,6 +2789,7 @@ export default function AuthorCanvas() {
         bindingKey: edge.bindingKey ?? '',
       },
       label: exampleEdgeLabel(edge),
+      ...EDGE_LABEL_OPTIONS,
       animated: true,
       className: 'accepted-edge',
     } as CanvasFlowEdge));
@@ -3275,6 +3282,7 @@ export default function AuthorCanvas() {
           data: { sourcePath, targetPath, bindingKey },
           id: check.edge?.id || `${params.sourceNodeId}:${sourcePort}.${sourcePath}->${params.targetNodeId}:${targetPort}.${targetPath}`,
           label,
+          ...EDGE_LABEL_OPTIONS,
           animated: true,
           className: 'accepted-edge',
         } as CanvasFlowEdge, current),

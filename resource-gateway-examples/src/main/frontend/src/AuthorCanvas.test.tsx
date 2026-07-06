@@ -507,7 +507,7 @@ describe('AuthorCanvas connection guide', () => {
     await waitFor(() =>
       expect(query('[data-testid="node-wrapper:n1"]').getAttribute('data-position')).toBe('72,56'),
     );
-    expect(query('[data-testid="node-wrapper:n2"]').getAttribute('data-position')).toBe('332,56');
+    expect(query('[data-testid="node-wrapper:n2"]').getAttribute('data-position')).toBe('408,56');
   });
 
   it('opens compatible targets from the in-canvas coach action', async () => {

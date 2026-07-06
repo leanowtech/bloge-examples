@@ -20,6 +20,15 @@ import type {
 } from './types';
 
 const GRAPH_DRAFT_SCHEMA_VERSION = 'bloge.visualGraphDraft.v1';
+const AUTO_LAYOUT_LEFT = 72;
+const AUTO_LAYOUT_TOP = 56;
+const AUTO_LAYOUT_NODE_WIDTH = 240;
+const AUTO_LAYOUT_NODE_HEIGHT = 148;
+const AUTO_LAYOUT_NODE_ROW_GAP = 36;
+const AUTO_LAYOUT_MIN_COLUMN_GAP = 96;
+const AUTO_LAYOUT_MAX_COLUMN_PITCH = 560;
+const AUTO_LAYOUT_EDGE_LABEL_CHAR_WIDTH = 3.3;
+const AUTO_LAYOUT_EDGE_LABEL_PADDING = 80;
 
 /**
  * The minimal shape of a canvas node needed to build a draft. Decouples the pure draft-building logic
@@ -1134,18 +1143,23 @@ export function summarizeCanvas(
 /**
  * Produces a deterministic left-to-right layout for a directed canvas.
  *
- * <p>The algorithm is deliberately small: DAGs are layered by predecessor depth, while cyclic or
- * partially disconnected nodes fall back to their insertion order. This gives authors a quick readable
- * arrangement without taking ownership of manual positioning.</p>
+ * <p>DAGs are layered by predecessor depth, while cyclic or partially disconnected nodes fall back to
+ * insertion order. Within each layer, nodes are spaced by the rendered card footprint and lightly
+ * ordered by neighbouring edge barycenters. Column gaps expand only when edge labels need more room,
+ * so small graphs stay dense and high-fanout graphs avoid card and label overlap.</p>
  */
 export function autoLayoutCanvas(nodes: CanvasNode[], edges: CanvasEdge[]): CanvasNode[] {
   const nodeIds = new Set(nodes.map((node) => node.id));
   const indegree = new Map<string, number>();
   const outgoing = new Map<string, string[]>();
+  const incoming = new Map<string, string[]>();
   const layers = new Map<string, number>();
+  const originalIndex = new Map<string, number>();
   for (const node of nodes) {
+    originalIndex.set(node.id, originalIndex.size);
     indegree.set(node.id, 0);
     outgoing.set(node.id, []);
+    incoming.set(node.id, []);
     layers.set(node.id, 0);
   }
   for (const edge of edges) {
@@ -1153,6 +1167,7 @@ export function autoLayoutCanvas(nodes: CanvasNode[], edges: CanvasEdge[]): Canv
       continue;
     }
     outgoing.get(edge.source)?.push(edge.target);
+    incoming.get(edge.target)?.push(edge.source);
     indegree.set(edge.target, (indegree.get(edge.target) ?? 0) + 1);
   }
 
@@ -1170,19 +1185,148 @@ export function autoLayoutCanvas(nodes: CanvasNode[], edges: CanvasEdge[]): Canv
     }
   }
 
-  const rowByLayer = new Map<number, number>();
-  return nodes.map((node, index) => {
+  const layerByNode = new Map<string, number>();
+  const nodesByLayer = new Map<number, string[]>();
+  for (const node of nodes) {
     const layer = visited.has(node.id) ? layers.get(node.id) ?? 0 : 0;
-    const row = rowByLayer.get(layer) ?? 0;
-    rowByLayer.set(layer, row + 1);
+    layerByNode.set(node.id, layer);
+    nodesByLayer.set(layer, [...(nodesByLayer.get(layer) ?? []), node.id]);
+  }
+
+  const maxLayer = Math.max(0, ...nodes.map((node) => layerByNode.get(node.id) ?? 0));
+  const orderedLayers = orderLayoutLayers(nodesByLayer, incoming, outgoing, originalIndex, layerByNode, maxLayer);
+  const maxLayerSize = Math.max(1, ...Array.from(orderedLayers.values()).map((layerNodes) => layerNodes.length));
+  const rowPitch = AUTO_LAYOUT_NODE_HEIGHT + AUTO_LAYOUT_NODE_ROW_GAP;
+  const yByNode = new Map<string, number>();
+  for (let layer = 0; layer <= maxLayer; layer += 1) {
+    const layerNodes = orderedLayers.get(layer) ?? [];
+    const layerOffset = ((maxLayerSize - layerNodes.length) * rowPitch) / 2;
+    layerNodes.forEach((nodeId, row) => {
+      yByNode.set(nodeId, AUTO_LAYOUT_TOP + layerOffset + row * rowPitch);
+    });
+  }
+
+  const layerX = layoutLayerXPositions(maxLayer, edges, layerByNode, nodeIds);
+  return nodes.map((node, index) => {
+    const layer = layerByNode.get(node.id) ?? 0;
     return {
       ...node,
       position: {
-        x: 72 + layer * 260,
-        y: 56 + row * 132 + (visited.has(node.id) ? 0 : index * 8),
+        x: layerX.get(layer) ?? AUTO_LAYOUT_LEFT,
+        y: (yByNode.get(node.id) ?? AUTO_LAYOUT_TOP) + (visited.has(node.id) ? 0 : index * 8),
       },
     };
   });
+}
+
+function orderLayoutLayers(
+  nodesByLayer: Map<number, string[]>,
+  incoming: Map<string, string[]>,
+  outgoing: Map<string, string[]>,
+  originalIndex: Map<string, number>,
+  layerByNode: Map<string, number>,
+  maxLayer: number,
+): Map<number, string[]> {
+  const ordered = new Map<number, string[]>();
+  const rowByNode = new Map<string, number>();
+
+  for (let layer = 0; layer <= maxLayer; layer += 1) {
+    const layerNodes = [...(nodesByLayer.get(layer) ?? [])];
+    layerNodes.sort((left, right) => {
+      const leftWeight = layoutBarycenter(left, layer, incoming, rowByNode, layerByNode);
+      const rightWeight = layoutBarycenter(right, layer, incoming, rowByNode, layerByNode);
+      if (leftWeight !== rightWeight) {
+        return leftWeight - rightWeight;
+      }
+      return (originalIndex.get(left) ?? 0) - (originalIndex.get(right) ?? 0);
+    });
+    ordered.set(layer, layerNodes);
+    layerNodes.forEach((nodeId, row) => rowByNode.set(nodeId, row));
+  }
+
+  for (let layer = maxLayer; layer >= 0; layer -= 1) {
+    const layerNodes = [...(ordered.get(layer) ?? [])];
+    layerNodes.sort((left, right) => {
+      const leftWeight = layoutBarycenter(left, layer, outgoing, rowByNode, layerByNode);
+      const rightWeight = layoutBarycenter(right, layer, outgoing, rowByNode, layerByNode);
+      if (leftWeight !== rightWeight) {
+        return leftWeight - rightWeight;
+      }
+      return (originalIndex.get(left) ?? 0) - (originalIndex.get(right) ?? 0);
+    });
+    ordered.set(layer, layerNodes);
+    layerNodes.forEach((nodeId, row) => rowByNode.set(nodeId, row));
+  }
+
+  return ordered;
+}
+
+function layoutBarycenter(
+  nodeId: string,
+  layer: number,
+  neighborMap: Map<string, string[]>,
+  rowByNode: Map<string, number>,
+  layerByNode: Map<string, number>,
+): number {
+  const neighborRows = (neighborMap.get(nodeId) ?? [])
+    .filter((neighborId) => (layerByNode.get(neighborId) ?? layer) !== layer)
+    .map((neighborId) => rowByNode.get(neighborId))
+    .filter((row): row is number => row !== undefined);
+  if (neighborRows.length === 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return neighborRows.reduce((sum, row) => sum + row, 0) / neighborRows.length;
+}
+
+function layoutLayerXPositions(
+  maxLayer: number,
+  edges: CanvasEdge[],
+  layerByNode: Map<string, number>,
+  nodeIds: Set<string>,
+): Map<number, number> {
+  const minPitch = AUTO_LAYOUT_NODE_WIDTH + AUTO_LAYOUT_MIN_COLUMN_GAP;
+  const gapPitch = new Map<number, number>();
+  for (let layer = 0; layer < maxLayer; layer += 1) {
+    gapPitch.set(layer, minPitch);
+  }
+
+  for (const edge of edges) {
+    if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
+      continue;
+    }
+    const sourceLayer = layerByNode.get(edge.source) ?? 0;
+    const targetLayer = layerByNode.get(edge.target) ?? 0;
+    if (targetLayer <= sourceLayer) {
+      continue;
+    }
+    const span = targetLayer - sourceLayer;
+    const requiredPitch = Math.ceil(layoutRequiredPitchForEdge(edge) / span);
+    for (let layer = sourceLayer; layer < targetLayer; layer += 1) {
+      gapPitch.set(layer, Math.max(gapPitch.get(layer) ?? minPitch, requiredPitch));
+    }
+  }
+
+  const xByLayer = new Map<number, number>([[0, AUTO_LAYOUT_LEFT]]);
+  for (let layer = 1; layer <= maxLayer; layer += 1) {
+    xByLayer.set(layer, (xByLayer.get(layer - 1) ?? AUTO_LAYOUT_LEFT) + (gapPitch.get(layer - 1) ?? minPitch));
+  }
+  return xByLayer;
+}
+
+function layoutRequiredPitchForEdge(edge: CanvasEdge): number {
+  const label = `${layoutEndpointLabel(edge.sourcePort, edge.sourcePath, 'value')} -> ${
+    layoutEndpointLabel(edge.targetPort, edge.targetPath, 'input')
+  }`;
+  const estimatedLabelWidth = label.length * AUTO_LAYOUT_EDGE_LABEL_CHAR_WIDTH + AUTO_LAYOUT_EDGE_LABEL_PADDING;
+  return Math.min(
+    AUTO_LAYOUT_MAX_COLUMN_PITCH,
+    Math.max(AUTO_LAYOUT_NODE_WIDTH + AUTO_LAYOUT_MIN_COLUMN_GAP, Math.ceil(estimatedLabelWidth)),
+  );
+}
+
+function layoutEndpointLabel(port: string | undefined, path: string | undefined, fallback: string): string {
+  const base = port || fallback;
+  return path ? `${base}.${path}` : base;
 }
 
 /**

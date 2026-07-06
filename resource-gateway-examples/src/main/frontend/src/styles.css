@@ -1364,7 +1364,19 @@ button.secondary:disabled {
 }
 
 .react-flow__edge-text {
+  paint-order: stroke;
+  fill: #263144;
+  stroke: #fff;
+  stroke-linejoin: round;
+  stroke-width: 3px;
   font-size: 10px;
+  font-weight: 700;
+}
+
+.react-flow__edge-textbg {
+  fill: rgb(255 255 255 / 94%);
+  stroke: rgb(148 163 184 / 32%);
+  stroke-width: 1px;
 }
 
 .checklist {
