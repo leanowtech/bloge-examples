@@ -4,7 +4,7 @@
 日期：2026-07-06
 范围：`resource-gateway-examples` / `/author/` React Flow 画布
 
-本文用于约束 Resource Gateway 新版可视化画布的 UX 改进节奏：先定义目标，再按轮次记录证据、差距和下一轮针对性计划。只有当某轮复核后目标差距小于或等于 5%，才认为本目标闭环完成。
+本文用于约束 Resource Gateway 新版可视化画布的 UX 改进节奏：先定义目标，再按轮次记录证据、差距和下一轮针对性计划。当前目标达成线按最新要求收紧为：只有当某轮复核后目标差距小于或等于 3%，才认为本目标闭环完成。
 
 ## 1. UX 目标
 
@@ -28,7 +28,7 @@
 | 浏览器视觉证据 | 15 | 真实 catalog、桌面视口和移动视口均有可复核证据 |
 | 回归与可维护性 | 10 | 关键逻辑有单测/组件测试，复杂度增长被限制在局部 |
 
-目标达成线：95/100 或以上，即差距不超过 5%。
+目标达成线：97/100 或以上，即差距不超过 3%。
 
 ## 3. Iteration 0 基线判断
 
@@ -368,3 +368,44 @@ accepted edge target inputs.score
       -> decision table editor locked condition column score
         -> config.rules[].conditions.score
 ```
+
+## 13. 3% 目标完成审计
+
+审计日期：2026-07-06
+目标口径：不仅处理 decision table，还要主动审查其它算子族；每轮差距复核和后续计划必须落文档；使用浏览器验证视觉调整；当目标差距小于或等于 3% 后才可闭环。
+
+### 13.1 要求与证据
+
+| 要求 | 当前证据 | 结论 |
+| --- | --- | --- |
+| 不只处理 decision table | Iteration 3 同时补齐 `bloge:transform` 双击 mapping editor；Iteration 3.2 审查 foreach、resource-backed、streaming 的边界与后续路线 | 满足 |
+| 主动审查其它算子族 | 第 11.2 节逐项记录 `bloge:decisionTable`、`bloge:transform`、`foreach`、resource-backed、streaming 的 UX 判断 | 满足 |
+| 针对性改进计划落文档 | 第 5、6、8、11.4、12、13 节记录差距、下一轮动作、残留项和闭环判断 | 满足 |
+| 每轮迭代后复核差距 | Iteration 1、2、3 均有分数与剩余差距；最新复核为 99/100、剩余 1% | 满足 |
+| 浏览器验证视觉调整 | 第 7.2、10、11.3、12 节记录 desktop 与 390px mobile 证据；本轮继续用浏览器复核真实 `/author/` 页面 | 满足 |
+| 差距小于或等于 3% | Iteration 3 后为 99/100、剩余 1%；Iteration 12 修复 incoming data 条件列后没有引入新的未覆盖 UX 缺口 | 满足 |
+
+### 13.1.1 最新浏览器复核证据
+
+复核方式：本地启动 `/author/`，使用浏览器打开真实页面；catalog 实际加载 26 个算子，覆盖 foreach、decision table、transform、resource、streaming 五类。
+
+| 视口 | 观察 |
+| --- | --- |
+| 默认桌面视口 | 添加 `foreach`、`bloge:decisionTable`、`bloge:transform`、`resource:loan-applicant-service.getProfile`、`MockCitationStreamingOperator` 后，节点分别带 `kind-foreach`、`kind-decision-table`、`kind-transform`、`kind-resource`、`kind-streaming` |
+| 默认桌面视口 | 选中 foreach/resource/streaming 后，inspector 分别显示 `Loop contract`、`Resource contract`、`Stream contract` |
+| 默认桌面视口 | 双击 transform 打开 `transform-assignment-editor`；双击 decision table 打开 `decision-table-editor` |
+| 默认桌面视口 | 页面 `scrollWidth=725`、`clientWidth=725`，无页面级横向溢出 |
+| 390px mobile | 添加同样五类节点后，页面 `scrollWidth=390`、`clientWidth=390`，workspace 为单列 `390px` |
+
+### 13.2 最新剩余差距
+
+当前估计完成度：99/100
+剩余目标差距：1%
+
+| 残留项 | 为什么不阻断 3% 目标 | 后续路线 |
+| --- | --- | --- |
+| foreach 子图/loop body editor | 当前 foreach 已有 family 视觉、contract inspector、collection/item/result 合同提示；子图编辑涉及 graph draft 嵌套语义，需要独立设计 | 后续定义 loop body draft 边界后再实现 |
+| resource descriptor 可视化编辑 | resource-backed operator 的权威配置来自 resource registry / OpenAPI contract，前端局部表单不应绕过治理 | 后续和 resource contract registry 版本治理一起设计 |
+| streaming runtime binding 面板 | streaming 当前主要是运行态与 runtime binding 问题，不是 author canvas 的局部规则编辑问题 | 后续进入 runtime binding 管理视图 |
+
+结论：按 3% 达成线审计，当前 `/author/` 已覆盖复杂规则、字段映射、schema 连接、候选字段选择、移动端布局和关键算子族表达。剩余项属于更大阶段的子图/registry/runtime binding 设计，不构成本轮 UX 目标阻断。
