@@ -4,6 +4,7 @@ import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.context.TenantContext;
 import com.leanowtech.bloge.core.engine.GraphResult;
 import com.leanowtech.bloge.gateway.exception.ResourceNotFoundException;
+import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,7 +12,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Unified public API for executing any registered resource by {@code resourceId}.
@@ -98,10 +101,18 @@ public class ResourceExecuteController {
         GraphResult result = graphService.execute(DISPATCH_GRAPH, ctx);
 
         if (result.isSuccess()) {
-            Object output = result.findOutput(DISPATCH_NODE, Object.class).orElse(null);
+            GatewayGraphOutput output = graphService.resolveOutput(DISPATCH_GRAPH, result, DISPATCH_NODE);
+            if (!output.valid()) {
+                return ResponseEntity.status(502).body(new GatewayResponse(
+                        false,
+                        null,
+                        diagnosticSummary(output.diagnostics()),
+                        result.elapsed().toMillis()
+                ));
+            }
             return ResponseEntity.ok(new GatewayResponse(
                     true,
-                    output,
+                    output.output(),
                     null,
                     result.elapsed().toMillis()
             ));
@@ -123,5 +134,11 @@ public class ResourceExecuteController {
                 errorMessage,
                 result.elapsed().toMillis()
         ));
+    }
+
+    private static String diagnosticSummary(List<VisualDiagnostic> diagnostics) {
+        return diagnostics.stream()
+                .map(diagnostic -> "%s: %s".formatted(diagnostic.code(), diagnostic.message()))
+                .collect(Collectors.joining("; "));
     }
 }

@@ -13,8 +13,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.Collection;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -127,6 +131,65 @@ public class GatewayGraphService {
     }
 
     /**
+     * Selects the graph's public terminal output and validates it against the
+     * graph-level output schema.
+     *
+     * <p>Callers may provide preferred nodes to preserve endpoint-specific fallback
+     * order. When omitted, the contract's {@code outputNodes} define the canonical
+     * integration order.</p>
+     *
+     * @param graphName resource graph name
+     * @param result graph execution result
+     * @param preferredOutputNodes optional output-node override order
+     * @return selected and schema-validated terminal output
+     */
+    public GatewayGraphOutput resolveOutput(String graphName,
+                                            GraphResult result,
+                                            String... preferredOutputNodes) {
+        GatewayGraphContract contract = requireContract(graphName);
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        if (result == null) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "gateway.graphOutput.resultMissing",
+                    "Graph execution result is required before resolving terminal output.",
+                    "/result"));
+            return new GatewayGraphOutput(graphName, "", null, diagnostics);
+        }
+
+        List<String> candidates = outputNodeCandidates(contract, preferredOutputNodes);
+        if (candidates.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "gateway.graphOutput.outputNodeContractMissing",
+                    "Graph '%s' contract must declare at least one output node.".formatted(graphName),
+                    "/outputNodes"));
+            return new GatewayGraphOutput(graphName, "", null, diagnostics);
+        }
+
+        String outputNode = "";
+        Object output = null;
+        for (String candidate : candidates) {
+            output = result.findOutput(candidate, Object.class).orElse(null);
+            if (output != null) {
+                outputNode = candidate;
+                break;
+            }
+        }
+        if (output == null) {
+            outputNode = candidates.getFirst();
+            diagnostics.add(VisualDiagnostic.error(
+                    "gateway.graphOutput.outputMissing",
+                    "None of graph '%s' outputNodes produced output. Tried: %s."
+                            .formatted(graphName, candidates),
+                    "/outputNodes"));
+            return new GatewayGraphOutput(graphName, outputNode, null, diagnostics);
+        }
+
+        diagnostics.addAll(VisualSchemaValidator.validateValue(contract.outputSchema(), schemaVisibleValue(output),
+                "/output"));
+        return new GatewayGraphOutput(graphName, outputNode, output, diagnostics);
+    }
+
+    /**
      * Returns the underlying {@link GraphEngine} for callers that need direct access
      * (e.g. the streaming controller).
      *
@@ -159,5 +222,56 @@ public class GatewayGraphService {
             throw new IllegalArgumentException(
                     "Graph '%s' input context does not satisfy inputSchema: %s".formatted(graphName, details));
         }
+    }
+
+    private static List<String> outputNodeCandidates(GatewayGraphContract contract,
+                                                     String... preferredOutputNodes) {
+        Set<String> candidates = new LinkedHashSet<>();
+        if (preferredOutputNodes != null) {
+            Arrays.stream(preferredOutputNodes)
+                    .filter(node -> node != null && !node.isBlank())
+                    .map(String::trim)
+                    .forEach(candidates::add);
+        }
+        contract.outputNodes().stream()
+                .filter(node -> node != null && !node.isBlank())
+                .map(String::trim)
+                .forEach(candidates::add);
+        return List.copyOf(candidates);
+    }
+
+    private static Object schemaVisibleValue(Object value) {
+        if (value == null
+                || value instanceof String
+                || value instanceof Number
+                || value instanceof Boolean) {
+            return value;
+        }
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> normalized = new java.util.LinkedHashMap<>();
+            map.forEach((key, item) -> {
+                if (key != null) {
+                    normalized.put(String.valueOf(key), schemaVisibleValue(item));
+                }
+            });
+            return normalized;
+        }
+        if (value instanceof List<?> list) {
+            return list.stream()
+                    .map(GatewayGraphService::schemaVisibleValue)
+                    .toList();
+        }
+        if (value.getClass().isRecord()) {
+            Map<String, Object> normalized = new java.util.LinkedHashMap<>();
+            for (var component : value.getClass().getRecordComponents()) {
+                try {
+                    normalized.put(component.getName(), schemaVisibleValue(component.getAccessor().invoke(value)));
+                } catch (ReflectiveOperationException ex) {
+                    return value;
+                }
+            }
+            return normalized;
+        }
+        return value;
     }
 }

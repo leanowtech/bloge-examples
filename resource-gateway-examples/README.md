@@ -41,6 +41,7 @@ demo on `http://localhost:8080`.
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
 | `http://localhost:8080/api/gateway/graphs/contracts` | Inspect resource graph input/output contracts |
 | `POST http://localhost:8080/api/gateway/graphs/contracts/tests/run` | Run schema-gated mock/table contract suites |
+| `POST http://localhost:8080/api/gateway/graphs/contracts/tests/suites/run-all` | Run every stored contract suite with coverage policy checks |
 
 Stop it with:
 
@@ -97,10 +98,15 @@ also add a `GatewayGraphContract` entry. This is not optional: `GatewayGraphServ
 fails startup when a loaded graph has no contract, and
 `GatewayGraphContractCatalogTest` scans every gateway `.bloge` file to catch
 schema drift in CI. Runtime execution validates each context against the graph
-`inputSchema`; `/api/gateway/graphs/contracts` exposes both `inputSchema` and
-`outputSchema`; and `/api/gateway/graphs/contracts/tests/run` lets integrators
-run table-driven suites against the real graph with downstream APIs replaced by
-deterministic resource mocks.
+`inputSchema`, and public gateway endpoints resolve terminal output through the
+contract `outputNodes` before validating it against `outputSchema`;
+`/api/gateway/graphs/contracts` exposes both schemas; and
+`/api/gateway/graphs/contracts/tests/run` lets integrators run table-driven
+suites against the real graph with downstream APIs replaced by deterministic
+resource mocks. Stored suites are available under
+`/api/gateway/graphs/contracts/tests/suites`; each suite can carry a coverage
+policy so batch runs fail when they lack enough cases, schema validations,
+mocked calls, assertions, or required output-node coverage.
 
 For the detailed contract-test design, request format, verification evidence,
 and remaining industrialization gaps, see

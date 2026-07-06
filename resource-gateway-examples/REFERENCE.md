@@ -98,14 +98,21 @@ GET /api/gateway/graphs/contracts/{graphName}
 ```
 
 `GatewayGraphService` validates runtime context against `inputSchema` before
-execution and fails startup if any loaded gateway graph is missing a contract.
-`GatewayGraphContractCatalogTest` also scans every gateway `.bloge` file so CI
-does not let schema-less graphs drift into the example.
+execution, resolves terminal output through contract `outputNodes`, validates the
+selected output against `outputSchema`, and fails startup if any loaded gateway
+graph is missing a contract. `GatewayGraphContractCatalogTest` also scans every
+gateway `.bloge` file so CI does not let schema-less graphs drift into the
+example.
 
 Schema-gated contract suites run through:
 
 ```text
 POST /api/gateway/graphs/contracts/tests/run
+GET  /api/gateway/graphs/contracts/tests/suites
+GET  /api/gateway/graphs/contracts/tests/suites/{suiteId}
+PUT  /api/gateway/graphs/contracts/tests/suites/{suiteId}
+POST /api/gateway/graphs/contracts/tests/suites/{suiteId}/run
+POST /api/gateway/graphs/contracts/tests/suites/run-all
 ```
 
 The suite executes the real BLOGE graph and production topology, but overrides
@@ -115,6 +122,23 @@ case can provide `context`, `resourceMocks`, terminal output `assertions`, and
 selected output, node status map, mocked resource invocations, diagnostics, and
 coverage counters for input schema validation, output schema validation, mocked
 resource calls, and evaluated assertions.
+
+Stored suites use `bloge.gatewayGraphContractTestSuite.v1` and add durable test
+asset metadata: `suiteId`, `displayName`, `description`, `tags`, the table
+`request`, and a `coveragePolicy`. Batch runs aggregate every selected suite and
+fail if any suite fails its graph execution, output assertions, schema gates, or
+coverage policy. The built-in in-memory catalog includes
+`loan-decision-policy-smoke`, which covers the approval and decline lanes of the
+resource-backed decision table.
+
+Coverage policy fields:
+
+- `minCases`
+- `minInputSchemaValidated`
+- `minContractOutputSchemaValidated`
+- `minMockedResourceCalls`
+- `minAssertionCount`
+- `requiredOutputNodes`
 
 Minimal request shape:
 
@@ -1207,10 +1231,11 @@ All return a `GatewayResponse` wrapper:
 ```
 
 On graph failure the controller returns HTTP 502 with `success: false` and the error
-message. Branched graphs may cancel their convergence transform node; the controller
-falls back to branch-specific assemble nodes (e.g. `assemblePhysical`, `assembleDigital`,
-`assembleGeneric` for product-detail; `assemblePrimary`, `assembleSecondary` for
-credit-score).
+message. On graph success, public gateway controllers ask `GatewayGraphService` to
+select the first available terminal node from the graph contract `outputNodes` and
+validate the selected output against `outputSchema`; output contract failures are
+reported as HTTP 502 diagnostics instead of silently returning an integration-breaking
+payload.
 
 ### Graph contract endpoints (`GatewayGraphContractController`)
 
@@ -1221,7 +1246,9 @@ Every built-in resource graph has a formal `GatewayGraphContract` with:
 - `outputNodes`: terminal node ids that may provide that output when branches are involved.
 
 `GatewayGraphService` validates incoming execution context against `inputSchema`
-before handing the graph to the engine.
+before handing the graph to the engine, and public gateway endpoints validate the
+selected terminal output against `outputSchema` before returning a successful
+response.
 
 | Method | Path | Description |
 |--------|------|-------------|

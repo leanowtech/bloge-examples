@@ -83,6 +83,25 @@ class GatewayGraphContractCatalogTest {
                 .hasMessageContaining("userId");
     }
 
+    @Test
+    void gatewayGraphServiceRejectsRegisteredGraphWithoutFormalContract() throws IOException {
+        Graph graph = loadGatewayGraph("user-dashboard");
+        var registry = new DefaultOperatorRegistry();
+        registry.registerRaw("httpResource", new StubOperator());
+        GraphEngine engine = GraphEngine.builder().registry(registry).build();
+        GatewayGraphContractCatalog missingCatalog = new GatewayGraphContractCatalog() {
+            @Override
+            public boolean contains(String graphName) {
+                return false;
+            }
+        };
+
+        assertThatThrownBy(() -> new GatewayGraphService(engine, List.of(graph), missingCatalog))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Gateway graph contract(s) missing")
+                .hasMessageContaining("userDashboard");
+    }
+
     private static Graph loadGatewayGraph(String resourceName) throws IOException {
         var registry = new DefaultOperatorRegistry();
         registry.registerRaw("httpResource", new StubOperator());

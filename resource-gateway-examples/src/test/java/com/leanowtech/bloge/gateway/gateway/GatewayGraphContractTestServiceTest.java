@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -107,7 +108,9 @@ class GatewayGraphContractTestServiceTest {
     @Test
     void contractTestApiRunsTableSuites() throws Exception {
         MockMvc mockMvc = MockMvcBuilders
-                .standaloneSetup(new GatewayGraphContractTestController(testService("loan-decision-policy")))
+                .standaloneSetup(new GatewayGraphContractTestController(
+                        testService("loan-decision-policy"),
+                        new InMemoryGatewayGraphContractTestSuiteRepository(List.of())))
                 .build();
 
         GatewayGraphContractTestSuiteRequest request = new GatewayGraphContractTestSuiteRequest(
@@ -135,6 +138,84 @@ class GatewayGraphContractTestServiceTest {
                 .andExpect(jsonPath("$.coverage.assertionCount").value(1))
                 .andExpect(jsonPath("$.results[0].mockedResourceInvocations[0].resourceId")
                         .value("loan-applicant-service.getProfile"));
+    }
+
+    @Test
+    void storedSuiteRunEnforcesCoveragePolicy() throws IOException {
+        GatewayGraphContractTestService service = testService("loan-decision-policy");
+
+        GatewayGraphContractTestSuite suite = new GatewayGraphContractTestSuite(
+                "under-covered-loan-policy",
+                "Under-covered loan policy",
+                "",
+                List.of("policy"),
+                new GatewayGraphContractTestSuiteRequest(
+                        "loanDecisionPolicy",
+                        List.of(new GatewayGraphContractTestCase(
+                                "prime applicant",
+                                Map.of("applicantId", "prime", "requestedAmount", 450_000.0),
+                                List.of(new GatewayGraphResourceMock(
+                                        "loan-applicant-service.getProfile",
+                                        Map.of("applicantId", "prime"),
+                                        Map.of("applicantId", "prime", "score", 780))),
+                                "assembleLoanDecision",
+                                List.of(new GatewayGraphTestAssertion(
+                                        GatewayGraphTestAssertion.Mode.PATH_EQUALS,
+                                        "/policy/ruleId",
+                                        "R1"))))),
+                new GatewayGraphContractTestCoveragePolicy(2, 2, 2, 2, 4, List.of("assembleLoanDecision")));
+
+        GatewayGraphContractTestSuiteResult result = service.run(suite);
+
+        assertThat(result.passed()).isFalse();
+        assertThat(result.policyResult().passed()).isFalse();
+        assertThat(result.policyResult().diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message()).contains("at least 2 cases"));
+    }
+
+    @Test
+    void batchRunAggregatesStoredSuiteEvidence() throws IOException {
+        GatewayGraphContractTestService service = testService("loan-decision-policy");
+        GatewayGraphContractTestSuiteRepository repository = new InMemoryGatewayGraphContractTestSuiteRepository();
+
+        GatewayGraphContractTestBatchResult result = service.runAll(repository.all());
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.totalSuites()).isEqualTo(1);
+        assertThat(result.passedSuites()).isEqualTo(1);
+        assertThat(result.totalCases()).isEqualTo(2);
+        assertThat(result.coverage().contractOutputSchemaValidated()).isEqualTo(2);
+        assertThat(result.coverage().mockedResourceCalls()).isEqualTo(2);
+        assertThat(result.coverage().assertionCount()).isEqualTo(4);
+    }
+
+    @Test
+    void contractTestApiListsRunsAndBatchesStoredSuites() throws Exception {
+        MockMvc mockMvc = MockMvcBuilders
+                .standaloneSetup(new GatewayGraphContractTestController(
+                        testService("loan-decision-policy"),
+                        new InMemoryGatewayGraphContractTestSuiteRepository()))
+                .build();
+
+        mockMvc.perform(get("/api/gateway/graphs/contracts/tests/suites"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion")
+                        .value(GatewayGraphContractTestSuiteCatalogResponse.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.suites[0].suiteId").value("loan-decision-policy-smoke"))
+                .andExpect(jsonPath("$.suites[0].caseCount").value(2));
+
+        mockMvc.perform(post("/api/gateway/graphs/contracts/tests/suites/loan-decision-policy-smoke/run"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.passed").value(true))
+                .andExpect(jsonPath("$.policyResult.passed").value(true))
+                .andExpect(jsonPath("$.coverage.assertionCount").value(4));
+
+        mockMvc.perform(post("/api/gateway/graphs/contracts/tests/suites/run-all"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(GatewayGraphContractTestBatchResult.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.passed").value(true))
+                .andExpect(jsonPath("$.totalSuites").value(1))
+                .andExpect(jsonPath("$.coverage.mockedResourceCalls").value(2));
     }
 
     private static GatewayGraphContractTestService testService(String resourceName) throws IOException {

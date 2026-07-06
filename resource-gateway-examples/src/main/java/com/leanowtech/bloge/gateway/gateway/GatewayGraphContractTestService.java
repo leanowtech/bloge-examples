@@ -19,11 +19,13 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -56,12 +58,102 @@ public class GatewayGraphContractTestService {
      * @return suite result
      */
     public GatewayGraphContractTestSuiteResult run(GatewayGraphContractTestSuiteRequest request) {
+        return run(request, GatewayGraphContractTestCoveragePolicy.none());
+    }
+
+    /**
+     * Runs a stored resource graph contract-test suite.
+     *
+     * @param suite stored suite
+     * @return suite result
+     */
+    public GatewayGraphContractTestSuiteResult run(GatewayGraphContractTestSuite suite) {
+        GatewayGraphContractTestSuite safeSuite = suite == null
+                ? new GatewayGraphContractTestSuite("", "", "", List.of(),
+                        new GatewayGraphContractTestSuiteRequest("", List.of()),
+                        GatewayGraphContractTestCoveragePolicy.none())
+                : suite;
+        return run(safeSuite.request(), safeSuite.coveragePolicy());
+    }
+
+    /**
+     * Runs all selected stored suites and returns an aggregate result.
+     *
+     * @param suites suites to run
+     * @return batch result
+     */
+    public GatewayGraphContractTestBatchResult runAll(Collection<GatewayGraphContractTestSuite> suites) {
+        Collection<GatewayGraphContractTestSuite> safeSuites = suites == null ? List.of() : suites;
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        if (safeSuites.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "gateway.graphContractTest.batchNoSuites",
+                    "At least one stored contract-test suite is required for a batch run.",
+                    "/suites"));
+        }
+
+        List<GatewayGraphContractTestSuiteRunResult> results = new ArrayList<>();
+        for (GatewayGraphContractTestSuite suite : safeSuites) {
+            GatewayGraphContractTestSuite safeSuite = suite == null
+                    ? new GatewayGraphContractTestSuite("", "", "", List.of(),
+                            new GatewayGraphContractTestSuiteRequest("", List.of()),
+                            GatewayGraphContractTestCoveragePolicy.none())
+                    : suite;
+            GatewayGraphContractTestSuiteResult result = run(safeSuite);
+            results.add(new GatewayGraphContractTestSuiteRunResult(
+                    safeSuite.suiteId(),
+                    safeSuite.displayName(),
+                    safeSuite.request().graphName(),
+                    safeSuite.tags(),
+                    result));
+        }
+
+        int totalSuites = results.size();
+        int passedSuites = (int) results.stream()
+                .filter(row -> row.result() != null && row.result().passed())
+                .count();
+        int failedSuites = totalSuites - passedSuites;
+        int totalCases = results.stream()
+                .map(GatewayGraphContractTestSuiteRunResult::result)
+                .filter(Objects::nonNull)
+                .mapToInt(GatewayGraphContractTestSuiteResult::totalCases)
+                .sum();
+        int passedCases = results.stream()
+                .map(GatewayGraphContractTestSuiteRunResult::result)
+                .filter(Objects::nonNull)
+                .mapToInt(GatewayGraphContractTestSuiteResult::passedCases)
+                .sum();
+        int failedCases = results.stream()
+                .map(GatewayGraphContractTestSuiteRunResult::result)
+                .filter(Objects::nonNull)
+                .mapToInt(GatewayGraphContractTestSuiteResult::failedCases)
+                .sum();
+        GatewayGraphContractTestSuiteResult.Coverage coverage = aggregateCoverage(results);
+        boolean passed = diagnostics.stream().noneMatch(VisualDiagnostic::error)
+                && totalSuites > 0
+                && failedSuites == 0;
+        return new GatewayGraphContractTestBatchResult(
+                GatewayGraphContractTestBatchResult.SCHEMA_VERSION,
+                passed,
+                totalSuites,
+                passedSuites,
+                failedSuites,
+                totalCases,
+                passedCases,
+                failedCases,
+                coverage,
+                results,
+                diagnostics);
+    }
+
+    private GatewayGraphContractTestSuiteResult run(GatewayGraphContractTestSuiteRequest request,
+                                                    GatewayGraphContractTestCoveragePolicy coveragePolicy) {
         GatewayGraphContractTestSuiteRequest safeRequest = request == null
                 ? new GatewayGraphContractTestSuiteRequest("", List.of())
                 : request;
         List<VisualDiagnostic> suiteDiagnostics = validateSuiteRequest(safeRequest);
         if (!suiteDiagnostics.isEmpty()) {
-            return suiteResult(safeRequest.graphName(), List.of(), suiteDiagnostics);
+            return suiteResult(safeRequest.graphName(), List.of(), suiteDiagnostics, coveragePolicy);
         }
 
         Graph graph;
@@ -73,14 +165,14 @@ public class GatewayGraphContractTestService {
             return suiteResult(safeRequest.graphName(), List.of(), List.of(VisualDiagnostic.error(
                     "gateway.graphContractTest.graphUnknown",
                     ex.getMessage(),
-                    "/graphName")));
+                    "/graphName")), coveragePolicy);
         }
 
         List<GatewayGraphContractTestCaseResult> results = new ArrayList<>();
         for (GatewayGraphContractTestCase testCase : safeRequest.cases()) {
             results.add(runCase(graph, contract, testCase));
         }
-        return suiteResult(contract.graphName(), results, List.of());
+        return suiteResult(contract.graphName(), results, List.of(), coveragePolicy);
     }
 
     private GatewayGraphContractTestCaseResult runCase(Graph graph,
@@ -122,28 +214,17 @@ public class GatewayGraphContractTestService {
                     "/graph")));
         }
 
-        String outputNode = selectedOutputNode(contract, safeCase, result);
-        Object output = outputNode.isBlank()
-                ? null
-                : result.findOutput(outputNode, Object.class).orElse(null);
-        if (outputNode.isBlank()) {
-            diagnostics.add(VisualDiagnostic.error("gateway.graphContractTest.outputNodeMissing",
-                    "No output node was selected and none of the contract outputNodes produced output.",
-                    "/outputNode"));
-        } else if (output == null) {
-            diagnostics.add(VisualDiagnostic.error("gateway.graphContractTest.outputMissing",
-                    "Output node '%s' did not produce an output.".formatted(outputNode),
-                    "/outputNode"));
-        }
-
-        List<VisualDiagnostic> outputSchemaDiagnostics = output == null
-                ? List.of()
-                : VisualSchemaValidator.validateValue(contract.outputSchema(), output, "/output");
-        diagnostics.addAll(outputSchemaDiagnostics);
+        GatewayGraphOutput terminalOutput = safeCase.outputNode().isBlank()
+                ? graphService.resolveOutput(contract.graphName(), result)
+                : graphService.resolveOutput(contract.graphName(), result, safeCase.outputNode());
+        String outputNode = terminalOutput.outputNode();
+        Object output = terminalOutput.output();
+        List<VisualDiagnostic> outputDiagnostics = terminalOutput.diagnostics();
+        diagnostics.addAll(outputDiagnostics);
         diagnostics.addAll(outputAssertionDiagnostics(safeCase, output));
         diagnostics.addAll(nodeAssertionDiagnostics(safeCase, result));
 
-        boolean outputConforms = output != null && outputSchemaDiagnostics.isEmpty();
+        boolean outputConforms = terminalOutput.valid();
         boolean passed = result.isSuccess()
                 && outputConforms
                 && diagnostics.stream().noneMatch(VisualDiagnostic::error);
@@ -203,18 +284,6 @@ public class GatewayGraphContractTestService {
                         .formatted(mock.resourceId(), mock.expectedParams()),
                 "/resourceMocks")));
         return diagnostics;
-    }
-
-    private String selectedOutputNode(GatewayGraphContract contract,
-                                      GatewayGraphContractTestCase testCase,
-                                      GraphResult result) {
-        if (!testCase.outputNode().isBlank()) {
-            return testCase.outputNode();
-        }
-        return contract.outputNodes().stream()
-                .filter(node -> result.findOutput(node, Object.class).isPresent())
-                .findFirst()
-                .orElse(contract.outputNodes().isEmpty() ? "" : contract.outputNodes().getFirst());
     }
 
     private static Map<String, Operator<?, ?>> httpResourceOverrides(Graph graph,
@@ -410,6 +479,14 @@ public class GatewayGraphContractTestService {
             String graphName,
             List<GatewayGraphContractTestCaseResult> results,
             List<VisualDiagnostic> diagnostics) {
+        return suiteResult(graphName, results, diagnostics, GatewayGraphContractTestCoveragePolicy.none());
+    }
+
+    private GatewayGraphContractTestSuiteResult suiteResult(
+            String graphName,
+            List<GatewayGraphContractTestCaseResult> results,
+            List<VisualDiagnostic> diagnostics,
+            GatewayGraphContractTestCoveragePolicy coveragePolicy) {
         int totalCases = results.size();
         int passedCases = (int) results.stream().filter(GatewayGraphContractTestCaseResult::passed).count();
         int failedCases = totalCases - passedCases;
@@ -425,9 +502,20 @@ public class GatewayGraphContractTestService {
         int assertions = results.stream()
                 .mapToInt(GatewayGraphContractTestCaseResult::assertionCount)
                 .sum();
+        GatewayGraphContractTestSuiteResult.Coverage coverage = new GatewayGraphContractTestSuiteResult.Coverage(
+                inputSchemaValidated,
+                outputSchemaValidated,
+                mockedCalls,
+                assertions);
+        GatewayGraphContractTestPolicyResult policyResult = evaluateCoveragePolicy(
+                coveragePolicy,
+                totalCases,
+                results,
+                coverage);
         boolean passed = diagnostics.stream().noneMatch(VisualDiagnostic::error)
                 && totalCases > 0
-                && failedCases == 0;
+                && failedCases == 0
+                && policyResult.passed();
         return new GatewayGraphContractTestSuiteResult(
                 GatewayGraphContractTestSuiteResult.SCHEMA_VERSION,
                 graphName,
@@ -435,13 +523,81 @@ public class GatewayGraphContractTestService {
                 totalCases,
                 passedCases,
                 failedCases,
-                new GatewayGraphContractTestSuiteResult.Coverage(
-                        inputSchemaValidated,
-                        outputSchemaValidated,
-                        mockedCalls,
-                        assertions),
+                coverage,
+                policyResult,
                 results,
                 diagnostics);
+    }
+
+    private GatewayGraphContractTestPolicyResult evaluateCoveragePolicy(
+            GatewayGraphContractTestCoveragePolicy policy,
+            int totalCases,
+            List<GatewayGraphContractTestCaseResult> results,
+            GatewayGraphContractTestSuiteResult.Coverage coverage) {
+        GatewayGraphContractTestCoveragePolicy safePolicy = policy == null
+                ? GatewayGraphContractTestCoveragePolicy.none()
+                : policy;
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        addMinDiagnostic(diagnostics, "cases", totalCases, safePolicy.minCases(), "/coverage/minCases");
+        addMinDiagnostic(diagnostics, "input schema validations", coverage.inputSchemaValidated(),
+                safePolicy.minInputSchemaValidated(), "/coverage/minInputSchemaValidated");
+        addMinDiagnostic(diagnostics, "output schema validations", coverage.contractOutputSchemaValidated(),
+                safePolicy.minContractOutputSchemaValidated(), "/coverage/minContractOutputSchemaValidated");
+        addMinDiagnostic(diagnostics, "mocked resource calls", coverage.mockedResourceCalls(),
+                safePolicy.minMockedResourceCalls(), "/coverage/minMockedResourceCalls");
+        addMinDiagnostic(diagnostics, "assertions", coverage.assertionCount(),
+                safePolicy.minAssertionCount(), "/coverage/minAssertionCount");
+
+        Set<String> passingOutputNodes = results.stream()
+                .filter(GatewayGraphContractTestCaseResult::passed)
+                .map(GatewayGraphContractTestCaseResult::outputNode)
+                .filter(outputNode -> outputNode != null && !outputNode.isBlank())
+                .collect(Collectors.toSet());
+        for (String requiredOutputNode : safePolicy.requiredOutputNodes()) {
+            if (!passingOutputNodes.contains(requiredOutputNode)) {
+                diagnostics.add(VisualDiagnostic.error(
+                        "gateway.graphContractTest.coveragePolicyFailed",
+                        "Coverage policy expected at least one passing case for output node '%s'."
+                                .formatted(requiredOutputNode),
+                        "/coverage/requiredOutputNodes"));
+            }
+        }
+        return diagnostics.isEmpty()
+                ? GatewayGraphContractTestPolicyResult.passing()
+                : new GatewayGraphContractTestPolicyResult(false, diagnostics);
+    }
+
+    private static void addMinDiagnostic(List<VisualDiagnostic> diagnostics,
+                                         String label,
+                                         int actual,
+                                         int expected,
+                                         String target) {
+        if (expected <= 0 || actual >= expected) {
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error(
+                "gateway.graphContractTest.coveragePolicyFailed",
+                "Coverage policy expected at least %d %s but observed %d."
+                        .formatted(expected, label, actual),
+                target));
+    }
+
+    private static GatewayGraphContractTestSuiteResult.Coverage aggregateCoverage(
+            List<GatewayGraphContractTestSuiteRunResult> results) {
+        int input = 0;
+        int output = 0;
+        int mocked = 0;
+        int assertions = 0;
+        for (GatewayGraphContractTestSuiteRunResult row : results) {
+            if (row.result() == null || row.result().coverage() == null) {
+                continue;
+            }
+            input += row.result().coverage().inputSchemaValidated();
+            output += row.result().coverage().contractOutputSchemaValidated();
+            mocked += row.result().coverage().mockedResourceCalls();
+            assertions += row.result().coverage().assertionCount();
+        }
+        return new GatewayGraphContractTestSuiteResult.Coverage(input, output, mocked, assertions);
     }
 
     private static boolean hasDiagnostic(List<VisualDiagnostic> diagnostics, String code) {

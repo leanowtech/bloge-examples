@@ -57,6 +57,8 @@ GET /api/gateway/graphs/contracts/{graphName}
 - `GatewayGraphService` 初始化时检查所有已加载 graph。
 - 如果某张 graph 没有 `GatewayGraphContract`，应用启动失败。
 - 每次执行 graph 前，`GatewayGraphService` 使用 `inputSchema` 校验 `GraphContext`。
+- 公开 gateway endpoint 成功返回前，会按合同 `outputNodes` 选择终态输出并用 `outputSchema` 校验。
+- Java record 等运行时对象会按 JSON 可见形态进行 schema 校验，避免 Java 内部类型和 HTTP 集成契约混淆。
 
 测试守卫：
 
@@ -100,6 +102,8 @@ bloge.gatewayGraphContractTestSuiteResult.v1
 ```text
 GatewayGraphContractTestController
 GatewayGraphContractTestService
+GatewayGraphContractTestSuiteRepository
+InMemoryGatewayGraphContractTestSuiteRepository
 ```
 
 测试行模型：
@@ -114,6 +118,52 @@ GatewayGraphContractTestService
 | `nodeAssertions` | 对中间节点输出执行的断言，key 是 node id |
 
 `resourceMocks` 只替换 descriptor-backed `httpResource` 调用。Graph topology、DSL 编译产物、decision table、branch、transform、fallback 等仍然通过真实 BLOGE engine 执行。
+
+## 4.1 Suite Registry、Batch Runner 与 Coverage Policy
+
+一次性 `POST /run` 适合调试，但工业化测试需要把 suite 作为可治理资产保存和批量执行。本轮新增：
+
+```text
+GET  /api/gateway/graphs/contracts/tests/suites
+GET  /api/gateway/graphs/contracts/tests/suites/{suiteId}
+PUT  /api/gateway/graphs/contracts/tests/suites/{suiteId}
+POST /api/gateway/graphs/contracts/tests/suites/{suiteId}/run
+POST /api/gateway/graphs/contracts/tests/suites/run-all
+```
+
+Stored suite 版本：
+
+```text
+bloge.gatewayGraphContractTestSuite.v1
+```
+
+Stored suite 字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `suiteId` | 稳定 suite id，可被 CI 或演示脚本引用 |
+| `displayName` | 人类可读名称 |
+| `description` | 说明 |
+| `tags` | 批量选择、报告聚合的标签 |
+| `request` | 原始 table suite request |
+| `coveragePolicy` | 最低验证证据阈值 |
+
+Coverage policy 字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `minCases` | 至少需要多少个 table case |
+| `minInputSchemaValidated` | 至少多少个 case 需要通过 input schema |
+| `minContractOutputSchemaValidated` | 至少多少个 case 需要通过 output schema |
+| `minMockedResourceCalls` | 至少观察到多少次下游 resource mock 调用 |
+| `minAssertionCount` | 至少配置并评估多少个终态/节点断言 |
+| `requiredOutputNodes` | 至少要被 passing case 覆盖的 output node |
+
+内置 in-memory suite：
+
+| suiteId | 覆盖 |
+| --- | --- |
+| `loan-decision-policy-smoke` | loan decision table 的 R1 approval 与 R4 decline 两条路径；覆盖 `assembleLoanDecision` 输出节点、2 次 resource mock、4 个断言 |
 
 ## 5. 断言能力
 
@@ -209,6 +259,8 @@ GatewayGraphContractTestService
 | `coverage.contractOutputSchemaValidated` | 输出通过 graph output schema 的 case 数 |
 | `coverage.mockedResourceCalls` | 实际 mock resource 调用次数 |
 | `coverage.assertionCount` | 已评估断言数 |
+| `policyResult.passed` | coverage policy 是否满足 |
+| `policyResult.diagnostics` | 覆盖阈值不足时的诊断 |
 | `results[].mockedResourceInvocations` | 每次 mock resource 调用的 resourceId、params、是否匹配 mock |
 | `results[].statusMap` | graph 节点执行状态 |
 | `results[].diagnostics` | schema、mock、执行、断言诊断 |
@@ -251,8 +303,10 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 | 命令 | 结果 |
 | --- | --- |
-| `mvn -f resource-gateway-examples/pom.xml -Dtest=GatewayGraphContractTestServiceTest -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，3 tests |
-| `mvn -f resource-gateway-examples/pom.xml -Dtest=GatewayGraphContractCatalogTest,GatewayGraphContractTestServiceTest -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，6 tests |
+| `mvn -f resource-gateway-examples/pom.xml -Dtest=GatewayGraphContractTestServiceTest -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，6 tests |
+| `mvn -f resource-gateway-examples/pom.xml -Dtest=GatewayGraphContractCatalogTest,GatewayGraphContractTestServiceTest -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，10 tests |
+| `mvn -f resource-gateway-examples/pom.xml -Dtest=GatewayIntegrationTest,ResourceExecuteIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，14 tests；验证公开 gateway endpoint 返回前执行 output schema gate |
+| `mvn -f resource-gateway-examples/pom.xml -Dtest=GatewayGraphContractCatalogTest,GatewayGraphContractTestServiceTest,ResourceGatewayApplicationTest -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，14 tests；覆盖 contract catalog、stored suite、Spring wiring、graph-level I/O schema guard |
 | `mvn -f resource-gateway-examples/pom.xml clean verify` | Reached 1390 tests; failed on one existing browser DOM test with Selenium `StaleElementReferenceException` |
 | `mvn -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerPersistsConfigUnionBranchSelectionInRealBrowser -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，confirms the full-run failure was browser timing/flakiness rather than the resource graph contract path |
 
@@ -262,26 +316,27 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 | --- | --- | --- |
 | 每张内置资源 graph 有 formal input/output schema | Done | catalog + startup guard + scan test |
 | Runtime context schema gate | Done | graph 执行前校验 `inputSchema` |
+| Public endpoint output schema gate | Done | graph 成功后按 `outputNodes` 选择终态输出，并用 `outputSchema` 校验后再返回 |
 | Contract catalog API | Done | `/api/gateway/graphs/contracts` |
 | Mock table suite API | Done | `/api/gateway/graphs/contracts/tests/run` |
 | 下游 API 无真实调用验证 | Done | 只 mock `httpResource`，真实 graph engine 仍执行 |
-| 终态输出 schema 校验 | Done | 使用 graph `outputSchema` |
+| 终态输出 schema 校验 | Done | runtime endpoint 与 contract test 都使用 graph `outputSchema` |
 | 中间节点/算子输出断言 | Done | `nodeAssertions` keyed by node id |
 | 自动 mock 数据生成 | Partial | visual simulation 已有 schema sample generator；resource graph contract suite 目前要求显式 mock row |
-| 持久化 suite 仓库 | Missing | 目前是 request-scoped API |
-| 批量 CI 报告与阈值 | Partial | Maven tests 有基础证据；缺少多 graph suite registry 与统一 HTML/JSON report |
+| Suite registry | Done | in-memory repository + list/get/put/run API + 内置 smoke suite |
+| Batch runner | Done | `POST /api/gateway/graphs/contracts/tests/suites/run-all` 聚合 suite、case、coverage |
+| Coverage policy | Done | suite 级阈值可要求 case、schema validation、mock call、assertion、output node 覆盖 |
+| 批量 CI 报告 | Partial | 已有机器可读 batch result；还缺独立 HTML/历史趋势报告 |
 | Standalone operator table suite | Partial | 目前通过 graph 内 node assertions 覆盖；还没有直接对任意 operator schema 跑表格用例的独立 endpoint |
 
 ## 9. 差距与补强路线
 
-按“工业化可用”目标估算，当前差距约 8% 到 12%。关键差距不在 schema 是否存在，而在测试资产治理和规模化报告。
+按“工业化可用”目标估算，当前差距从 8% 到 12% 收敛到约 5% 到 7%。最大缺口已经不再是资源 graph 的 suite 治理，而是 graph 外的 standalone operator table runner、自动 mock 草稿生成、以及更正式的 CI/历史报告。
 
 建议下一轮补强顺序：
 
-1. Suite registry：为 resource graph contract suites 增加内存/数据库仓库，支持保存、列出、版本化、运行历史。
-2. Batch runner：支持按 graph、tag、suite id 批量运行，并输出机器可读 report。
-3. Mock generator：基于 `GatewayGraphContract.inputSchema` 和 resource design contract 自动生成可编辑 mock row 草稿。
-4. Operator unit table runner：对单个 operator definition 的 input/output schema 直接跑表格用例，补齐 graph 外的算子单测层。
-5. Coverage policy：定义每张 graph 的最低 case 数、每个 outputNode 覆盖数、关键 nodeAssertions 覆盖数。
+1. Mock generator：基于 `GatewayGraphContract.inputSchema` 和 resource design contract 自动生成可编辑 mock row 草稿。
+2. Operator unit table runner：对单个 operator definition 的 input/output schema 直接跑表格用例，补齐 graph 外的算子单测层。
+3. CI/report adapter：把 batch result 落成稳定 JSON/HTML 报告，并保留运行历史趋势。
 
 做到这些之后，schema + mock + table test 才能从“可执行能力”升级为“可治理的测试资产平台”。

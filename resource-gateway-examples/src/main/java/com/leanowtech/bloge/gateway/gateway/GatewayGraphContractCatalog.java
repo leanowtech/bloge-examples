@@ -142,7 +142,7 @@ public class GatewayGraphContractCatalog {
                         field("profile", object(Map.of(), List.of(), true)),
                         field("orders", object(Map.of(), List.of(), true)),
                         field("recommendations", object(Map.of(), List.of(), true)),
-                        field("wallet", object(Map.of(), List.of(), true)),
+                        field("wallet", anyOf(number(), object(Map.of(), List.of(), true))),
                         field("notifications", object(Map.of(), List.of(), true)))),
                 List.of("assembleDashboard")));
         return contracts;
@@ -227,6 +227,13 @@ public class GatewayGraphContractCatalog {
         Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("type", "array");
         schema.put("items", itemSchema);
+        return schema;
+    }
+
+    @SafeVarargs
+    private static Map<String, Object> anyOf(Map<String, Object>... options) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("anyOf", List.of(options));
         return schema;
     }
 }

@@ -14,6 +14,7 @@ import java.util.List;
  * @param passedCases passing cases
  * @param failedCases failing cases
  * @param coverage lightweight evidence counters for industrialization reporting
+ * @param policyResult coverage policy evaluation
  * @param results case results
  * @param diagnostics suite-level diagnostics
  */
@@ -25,6 +26,7 @@ public record GatewayGraphContractTestSuiteResult(
         int passedCases,
         int failedCases,
         Coverage coverage,
+        GatewayGraphContractTestPolicyResult policyResult,
         List<GatewayGraphContractTestCaseResult> results,
         List<VisualDiagnostic> diagnostics
 ) {
@@ -37,6 +39,7 @@ public record GatewayGraphContractTestSuiteResult(
         schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
         graphName = graphName == null ? "" : graphName;
         coverage = coverage == null ? new Coverage(0, 0, 0, 0) : coverage;
+        policyResult = policyResult == null ? GatewayGraphContractTestPolicyResult.passing() : policyResult;
         results = results == null ? List.of() : List.copyOf(results);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
     }
