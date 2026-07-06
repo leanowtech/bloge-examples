@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.gateway;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.context.GraphContext;
+import com.leanowtech.bloge.core.context.NodeResults;
 import com.leanowtech.bloge.core.engine.GraphResult;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.model.NodeStatus;
@@ -13,8 +14,12 @@ import com.leanowtech.bloge.gateway.operator.HttpResourceInput;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOutput;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
+import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegistry;
+import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -41,14 +46,32 @@ public class GatewayGraphContractTestService {
 
     private final GatewayGraphService graphService;
     private final ObjectMapper objectMapper;
+    private final JsonSchemaSampleGenerator sampleGenerator;
+    private final ResourceDesignContractRegistry resourceContracts;
 
     /**
      * @param graphService resource graph service
      * @param objectMapper JSON mapper for assertion evaluation
      */
     public GatewayGraphContractTestService(GatewayGraphService graphService, ObjectMapper objectMapper) {
+        this(graphService, objectMapper, new JsonSchemaSampleGenerator(), null);
+    }
+
+    /**
+     * @param graphService resource graph service
+     * @param objectMapper JSON mapper for assertion evaluation
+     * @param sampleGenerator deterministic JSON Schema sample generator
+     * @param resourceContracts resource design contract registry used for mock payload drafts
+     */
+    @Autowired
+    public GatewayGraphContractTestService(GatewayGraphService graphService,
+                                           ObjectMapper objectMapper,
+                                           JsonSchemaSampleGenerator sampleGenerator,
+                                           ResourceDesignContractRegistry resourceContracts) {
         this.graphService = graphService;
         this.objectMapper = objectMapper;
+        this.sampleGenerator = sampleGenerator == null ? new JsonSchemaSampleGenerator() : sampleGenerator;
+        this.resourceContracts = resourceContracts;
     }
 
     /**
@@ -143,6 +166,70 @@ public class GatewayGraphContractTestService {
                 failedCases,
                 coverage,
                 results,
+                diagnostics);
+    }
+
+    /**
+     * Generates an editable graph contract-test suite from formal graph/resource schemas.
+     *
+     * @param request draft request
+     * @return generated draft
+     */
+    public GatewayGraphContractTestDraftResponse draft(GatewayGraphContractTestDraftRequest request) {
+        GatewayGraphContractTestDraftRequest safeRequest = request == null
+                ? new GatewayGraphContractTestDraftRequest("", "", "", Map.of(), Map.of())
+                : request;
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        if (!GatewayGraphContractTestDraftRequest.SCHEMA_VERSION.equals(safeRequest.schemaVersion())) {
+            diagnostics.add(VisualDiagnostic.error("gateway.graphContractTest.draftSchemaVersionUnsupported",
+                    "Contract-test draft schemaVersion '%s' is unsupported; expected '%s'."
+                            .formatted(safeRequest.schemaVersion(),
+                                    GatewayGraphContractTestDraftRequest.SCHEMA_VERSION),
+                    "/schemaVersion"));
+        }
+        if (safeRequest.graphName().isBlank()) {
+            diagnostics.add(VisualDiagnostic.error("gateway.graphContractTest.graphNameMissing",
+                    "graphName is required.", "/graphName"));
+        }
+        if (diagnostics.stream().anyMatch(VisualDiagnostic::error)) {
+            return new GatewayGraphContractTestDraftResponse(
+                    safeRequest.graphName(),
+                    null,
+                    new GatewayGraphContractTestSuiteRequest(safeRequest.graphName(), List.of()),
+                    diagnostics);
+        }
+
+        Graph graph;
+        GatewayGraphContract contract;
+        try {
+            graph = graphService.requireGraph(safeRequest.graphName());
+            contract = graphService.requireContract(safeRequest.graphName());
+        } catch (IllegalArgumentException ex) {
+            diagnostics.add(VisualDiagnostic.error("gateway.graphContractTest.graphUnknown",
+                    ex.getMessage(), "/graphName"));
+            return new GatewayGraphContractTestDraftResponse(
+                    safeRequest.graphName(),
+                    null,
+                    new GatewayGraphContractTestSuiteRequest(safeRequest.graphName(), List.of()),
+                    diagnostics);
+        }
+
+        Map<String, Object> context = generatedContext(contract, safeRequest.contextOverrides());
+        List<GatewayGraphResourceMock> mocks = generatedResourceMocks(graph, context,
+                safeRequest.resourcePayloadOverrides(), diagnostics);
+        GatewayGraphContractTestCase testCase = new GatewayGraphContractTestCase(
+                safeRequest.caseName(),
+                context,
+                mocks,
+                safeRequest.outputNode(),
+                List.of(new GatewayGraphTestAssertion(
+                        GatewayGraphTestAssertion.Mode.OUTPUT_MATCHES_SCHEMA,
+                        "",
+                        contract.outputSchema().schema())));
+        return new GatewayGraphContractTestDraftResponse(
+                contract.graphName(),
+                contract,
+                new GatewayGraphContractTestSuiteRequest(contract.graphName(), List.of(testCase)),
                 diagnostics);
     }
 
@@ -491,7 +578,7 @@ public class GatewayGraphContractTestService {
         int passedCases = (int) results.stream().filter(GatewayGraphContractTestCaseResult::passed).count();
         int failedCases = totalCases - passedCases;
         int inputSchemaValidated = (int) results.stream()
-                .filter(result -> !hasDiagnostic(result.diagnostics(), "visual.context.schemaMismatch"))
+                .filter(result -> !hasContextSchemaError(result.diagnostics()))
                 .count();
         int outputSchemaValidated = (int) results.stream()
                 .filter(GatewayGraphContractTestCaseResult::outputConformsToSchema)
@@ -600,9 +687,11 @@ public class GatewayGraphContractTestService {
         return new GatewayGraphContractTestSuiteResult.Coverage(input, output, mocked, assertions);
     }
 
-    private static boolean hasDiagnostic(List<VisualDiagnostic> diagnostics, String code) {
+    private static boolean hasContextSchemaError(List<VisualDiagnostic> diagnostics) {
         return diagnostics != null
-                && diagnostics.stream().anyMatch(diagnostic -> diagnostic != null && code.equals(diagnostic.code()));
+                && diagnostics.stream().anyMatch(diagnostic -> diagnostic != null
+                        && diagnostic.error()
+                        && diagnostic.target().startsWith("/context"));
     }
 
     private static int assertionCount(GatewayGraphContractTestCase testCase) {
@@ -611,6 +700,106 @@ public class GatewayGraphContractTestService {
                 .mapToInt(List::size)
                 .sum();
         return outputAssertions + nodeAssertions;
+    }
+
+    private Map<String, Object> generatedContext(GatewayGraphContract contract, Map<String, Object> overrides) {
+        Object generated = sampleGenerator.generate(contract.inputSchema());
+        Map<String, Object> context = generated instanceof Map<?, ?> map ? stringKeyMap(map) : new LinkedHashMap<>();
+        overrides.forEach(context::put);
+        return context;
+    }
+
+    private List<GatewayGraphResourceMock> generatedResourceMocks(Graph graph,
+                                                                  Map<String, Object> context,
+                                                                  Map<String, Object> payloadOverrides,
+                                                                  List<VisualDiagnostic> diagnostics) {
+        List<GatewayGraphResourceMock> mocks = new ArrayList<>();
+        NodeResults emptyResults = new NodeResults();
+        GraphContext graphContext = new GraphContext(context);
+        for (NodeSpec node : orderedHttpResourceNodes(graph)) {
+            String target = "/resourceMocks/" + mocks.size();
+            ResourceCall call;
+            try {
+                Object input = node.inputAssembler() == null
+                        ? Map.of()
+                        : node.inputAssembler().assemble(emptyResults, graphContext);
+                call = ResourceCall.from(input);
+            } catch (RuntimeException ex) {
+                diagnostics.add(VisualDiagnostic.warning(
+                        "gateway.graphContractTest.mockDraftInputUnresolved",
+                        "Could not generate mock row for httpResource node '%s': %s"
+                                .formatted(node.id(), ex.getMessage()),
+                        target));
+                continue;
+            }
+            if (call.resourceId().isBlank()) {
+                diagnostics.add(VisualDiagnostic.warning(
+                        "gateway.graphContractTest.mockDraftResourceUnknown",
+                        "Could not resolve resourceId for httpResource node '%s'."
+                                .formatted(node.id()),
+                        target + "/resourceId"));
+                continue;
+            }
+            Object payload = payloadFor(call.resourceId(), payloadOverrides, diagnostics, target + "/payload");
+            mocks.add(new GatewayGraphResourceMock(
+                    call.resourceId(),
+                    call.params(),
+                    payload,
+                    200,
+                    rawJson(payload),
+                    0,
+                    true,
+                    false));
+        }
+        return mocks;
+    }
+
+    private Object payloadFor(String resourceId,
+                              Map<String, Object> payloadOverrides,
+                              List<VisualDiagnostic> diagnostics,
+                              String target) {
+        if (payloadOverrides.containsKey(resourceId)) {
+            return payloadOverrides.get(resourceId);
+        }
+        Optional<ResourceDesignContract> contract = resourceContracts == null
+                ? Optional.empty()
+                : resourceContracts.findByResourceId(resourceId);
+        if (contract.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "gateway.graphContractTest.resourceContractMissing",
+                    "No resource design contract found for '%s'; generated mock payload is empty."
+                            .formatted(resourceId),
+                    target));
+            return Map.of();
+        }
+        Object generated = sampleGenerator.generate(contract.get().responseSchema());
+        return generated == null ? Map.of() : generated;
+    }
+
+    private List<NodeSpec> orderedHttpResourceNodes(Graph graph) {
+        Map<String, NodeSpec> nodes = graph.nodes();
+        List<NodeSpec> ordered = new ArrayList<>();
+        graph.topologicalOrder().stream()
+                .map(nodes::get)
+                .filter(Objects::nonNull)
+                .filter(node -> "httpResource".equals(node.operatorRef()))
+                .forEach(ordered::add);
+        nodes.values().stream()
+                .filter(node -> "httpResource".equals(node.operatorRef()))
+                .filter(node -> !ordered.contains(node))
+                .sorted((left, right) -> left.id().compareTo(right.id()))
+                .forEach(ordered::add);
+        return ordered;
+    }
+
+    private String rawJson(Object payload) {
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (RuntimeException ex) {
+            return "";
+        } catch (java.io.IOException ex) {
+            return "";
+        }
     }
 
     private static String escapeJsonPointer(String segment) {

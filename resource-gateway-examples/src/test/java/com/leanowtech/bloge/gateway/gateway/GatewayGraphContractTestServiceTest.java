@@ -7,6 +7,9 @@ import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.dsl.compiler.GraphLoader;
+import com.leanowtech.bloge.gateway.visual.resource.InMemoryResourceDesignContractRegistry;
+import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractBootstrap;
+import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -101,6 +104,7 @@ class GatewayGraphContractTestServiceTest {
 
         assertThat(result.passed()).isFalse();
         assertThat(result.failedCases()).isEqualTo(1);
+        assertThat(result.coverage().inputSchemaValidated()).isZero();
         assertThat(result.results().getFirst().diagnostics())
                 .anySatisfy(diagnostic -> assertThat(diagnostic.message()).contains("requestedAmount"));
     }
@@ -138,6 +142,67 @@ class GatewayGraphContractTestServiceTest {
                 .andExpect(jsonPath("$.coverage.assertionCount").value(1))
                 .andExpect(jsonPath("$.results[0].mockedResourceInvocations[0].resourceId")
                         .value("loan-applicant-service.getProfile"));
+    }
+
+    @Test
+    void draftGeneratesEditableGraphMockSuiteFromFormalSchemas() throws IOException {
+        GatewayGraphContractTestService service = testService("loan-decision-policy");
+
+        GatewayGraphContractTestDraftResponse draft = service.draft(new GatewayGraphContractTestDraftRequest(
+                GatewayGraphContractTestDraftRequest.SCHEMA_VERSION,
+                "loanDecisionPolicy",
+                "generated prime applicant",
+                "assembleLoanDecision",
+                Map.of("applicantId", "prime", "requestedAmount", 450_000.0),
+                Map.of("loan-applicant-service.getProfile",
+                        Map.of("applicantId", "prime", "score", 780, "segment", "private-bank"))));
+        GatewayGraphContractTestSuiteResult result = service.run(draft.suite());
+
+        assertThat(draft.diagnostics()).isEmpty();
+        assertThat(draft.contract().inputSchema().schema().get("type")).isEqualTo("object");
+        assertThat(draft.contract().outputSchema().schema().get("type")).isEqualTo("object");
+        assertThat(draft.suite().cases().getFirst().context())
+                .containsEntry("applicantId", "prime")
+                .containsEntry("requestedAmount", 450_000.0);
+        assertThat(draft.suite().cases().getFirst().resourceMocks().getFirst().expectedParams())
+                .containsEntry("applicantId", "prime");
+        assertThat(draft.suite().cases().getFirst().assertions().getFirst().mode())
+                .isEqualTo(GatewayGraphTestAssertion.Mode.OUTPUT_MATCHES_SCHEMA);
+        assertThat(result.passed()).isTrue();
+        assertThat(result.coverage().contractOutputSchemaValidated()).isEqualTo(1);
+    }
+
+    @Test
+    void contractTestApiDraftsGraphMockSuites() throws Exception {
+        MockMvc mockMvc = MockMvcBuilders
+                .standaloneSetup(new GatewayGraphContractTestController(
+                        testService("loan-decision-policy"),
+                        new InMemoryGatewayGraphContractTestSuiteRepository(List.of())))
+                .build();
+
+        GatewayGraphContractTestDraftRequest request = new GatewayGraphContractTestDraftRequest(
+                GatewayGraphContractTestDraftRequest.SCHEMA_VERSION,
+                "loanDecisionPolicy",
+                "generated prime applicant",
+                "assembleLoanDecision",
+                Map.of("applicantId", "prime", "requestedAmount", 450_000.0),
+                Map.of("loan-applicant-service.getProfile",
+                        Map.of("applicantId", "prime", "score", 780, "segment", "private-bank")));
+
+        mockMvc.perform(post("/api/gateway/graphs/contracts/tests/draft")
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(GatewayGraphContractTestDraftResponse.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.contract.schemaVersion").value(GatewayGraphContract.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.contract.inputSchema.schema.properties.applicantId.type").value("string"))
+                .andExpect(jsonPath("$.contract.outputSchema.schema.properties.policy.type").value("object"))
+                .andExpect(jsonPath("$.suite.graphName").value("loanDecisionPolicy"))
+                .andExpect(jsonPath("$.suite.cases[0].context.applicantId").value("prime"))
+                .andExpect(jsonPath("$.suite.cases[0].resourceMocks[0].resourceId")
+                        .value("loan-applicant-service.getProfile"))
+                .andExpect(jsonPath("$.suite.cases[0].resourceMocks[0].required").value(false))
+                .andExpect(jsonPath("$.suite.cases[0].assertions[0].mode").value("OUTPUT_MATCHES_SCHEMA"));
     }
 
     @Test
@@ -228,7 +293,13 @@ class GatewayGraphContractTestServiceTest {
                 GraphEngine.builder().registry(registry).build(),
                 List.of(graph),
                 GatewayGraphContractCatalog.builtIn());
-        return new GatewayGraphContractTestService(graphService, new ObjectMapper());
+        InMemoryResourceDesignContractRegistry resourceContracts = new InMemoryResourceDesignContractRegistry();
+        new ResourceDesignContractBootstrap(resourceContracts).seedContracts();
+        return new GatewayGraphContractTestService(
+                graphService,
+                new ObjectMapper(),
+                new JsonSchemaSampleGenerator(),
+                resourceContracts);
     }
 
     private static class NoopOperator implements Operator<Object, Object> {

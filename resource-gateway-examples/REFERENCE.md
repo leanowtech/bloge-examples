@@ -107,6 +107,7 @@ example.
 Schema-gated contract suites run through:
 
 ```text
+POST /api/gateway/graphs/contracts/tests/draft
 POST /api/gateway/graphs/contracts/tests/run
 GET  /api/gateway/graphs/contracts/tests/suites
 GET  /api/gateway/graphs/contracts/tests/suites/{suiteId}
@@ -122,6 +123,15 @@ case can provide `context`, `resourceMocks`, terminal output `assertions`, and
 selected output, node status map, mocked resource invocations, diagnostics, and
 coverage counters for input schema validation, output schema validation, mocked
 resource calls, and evaluated assertions.
+
+`/draft` generates an editable `bloge.gatewayGraphContractTestSuiteRequest.v1`
+from the formal graph contract and resource design contracts. It uses
+`GatewayGraphContract.inputSchema` to synthesize a context sample, evaluates
+`httpResource` input assemblers against that sample to prefill resource ids and
+expected params, uses each resource contract's `responseSchema` to synthesize
+mock payloads, and adds a default `OUTPUT_MATCHES_SCHEMA` assertion for the
+graph `outputSchema`. Nodes whose inputs depend on unresolved upstream runtime
+values are returned as warnings so the author can complete the draft row.
 
 Stored suites use `bloge.gatewayGraphContractTestSuite.v1` and add durable test
 asset metadata: `suiteId`, `displayName`, `description`, `tags`, the table
@@ -139,6 +149,33 @@ Coverage policy fields:
 - `minMockedResourceCalls`
 - `minAssertionCount`
 - `requiredOutputNodes`
+
+### Operator schema mock/table tests
+
+Visual operators can be contract-tested without invoking real downstream APIs or
+requiring a production runtime binding. `VisualOperatorContractTestService`
+reads the target `OperatorDefinition` from the visual operator catalog and runs
+table rows against the declared input port schemas, config schema, and output
+port schemas.
+
+```text
+POST /api/visual/operators/tests/draft
+POST /api/visual/operators/tests/run
+GET  /api/visual/operators/tests/suites
+GET  /api/visual/operators/tests/suites/{suiteId}
+PUT  /api/visual/operators/tests/suites/{suiteId}
+POST /api/visual/operators/tests/suites/{suiteId}/run
+POST /api/visual/operators/tests/suites/run-all
+```
+
+`/draft` synthesizes an editable `bloge.visualOperatorContractTestSuiteRequest.v1`
+from the operator's schemas using `JsonSchemaSampleGenerator`, then adds schema
+assertions for generated output ports. `/run` validates each row's `inputs`,
+`config`, and `mockedOutputs`; assertions are keyed by output port and support
+`OUTPUT_EQUALS`, `OUTPUT_MATCHES_SCHEMA`, `PATH_EQUALS`, `PATH_EXISTS`, and
+`PATH_ABSENT`. Stored suites use `bloge.visualOperatorContractTestSuite.v1`,
+and `run-all` aggregates suite, case, input/config/output schema,
+mocked-output, and assertion evidence counters for CI automation.
 
 Minimal request shape:
 

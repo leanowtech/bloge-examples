@@ -39,6 +39,18 @@ public class GatewayGraphContractTestController {
     }
 
     /**
+     * Generates an editable graph contract-test suite from graph and resource schemas.
+     *
+     * @param request draft request
+     * @return generated suite draft
+     */
+    @PostMapping("/draft")
+    public GatewayGraphContractTestDraftResponse draft(
+            @RequestBody GatewayGraphContractTestDraftRequest request) {
+        return testService.draft(request);
+    }
+
+    /**
      * @return stored suite catalog
      */
     @GetMapping("/suites")

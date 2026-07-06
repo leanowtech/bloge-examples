@@ -40,8 +40,11 @@ demo on `http://localhost:8080`.
 | `http://localhost:8080/showcase/` | Explore guided product scenarios and sample outputs |
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
 | `http://localhost:8080/api/gateway/graphs/contracts` | Inspect resource graph input/output contracts |
+| `POST http://localhost:8080/api/gateway/graphs/contracts/tests/draft` | Generate editable graph mock/table suites from graph and resource schemas |
 | `POST http://localhost:8080/api/gateway/graphs/contracts/tests/run` | Run schema-gated mock/table contract suites |
 | `POST http://localhost:8080/api/gateway/graphs/contracts/tests/suites/run-all` | Run every stored contract suite with coverage policy checks |
+| `POST http://localhost:8080/api/visual/operators/tests/draft` | Generate editable operator mock/table suites from operator schemas |
+| `POST http://localhost:8080/api/visual/operators/tests/suites/run-all` | Run every stored operator schema mock/table suite |
 
 Stop it with:
 
@@ -65,7 +68,8 @@ Useful variants:
 2. **Compose the business flow**: connect descriptors, transforms, decisions,
    subgraphs, and design-only operators under JSON Schema constraints.
 3. **Prove and promote it**: validate, simulate with mock or real evidence,
-   publish reusable graph products, and protect them with golden cases.
+   run graph/operator schema table suites, publish reusable graph products, and
+   protect them with golden cases.
 
 The showcase covers dashboard aggregation, product enrichment, enriched orders,
 credit fallback, loan policy, and SSE search. The full endpoint catalog lives in
@@ -101,9 +105,11 @@ schema drift in CI. Runtime execution validates each context against the graph
 `inputSchema`, and public gateway endpoints resolve terminal output through the
 contract `outputNodes` before validating it against `outputSchema`;
 `/api/gateway/graphs/contracts` exposes both schemas; and
-`/api/gateway/graphs/contracts/tests/run` lets integrators run table-driven
-suites against the real graph with downstream APIs replaced by deterministic
-resource mocks. Stored suites are available under
+`/api/gateway/graphs/contracts/tests/draft` generates editable mock rows from
+the graph input schema and resource response schemas before
+`/api/gateway/graphs/contracts/tests/run` executes table-driven suites against
+the real graph with downstream APIs replaced by deterministic resource mocks.
+Stored suites are available under
 `/api/gateway/graphs/contracts/tests/suites`; each suite can carry a coverage
 policy so batch runs fail when they lack enough cases, schema validations,
 mocked calls, assertions, or required output-node coverage.
@@ -121,7 +127,11 @@ To add a user-supplied visual operator library:
 2. Paste a `bloge.visualOperatorLibrary.v1` JSON or YAML document that follows
    the [operator library schema guide](../docs/bloge-visual-operator-library-schema.md)
    and [machine schema](../docs/schemas/bloge-visual-operator-library.schema.json).
-3. Validate, import, drag operators, wire schemas, simulate, and export.
+3. Validate and import it.
+4. Use `/api/visual/operators/tests/draft` to generate editable operator mock
+   rows from each operator's input/config/output schemas, then save or batch-run
+   them through `/api/visual/operators/tests/suites`.
+5. Drag operators, wire schemas, simulate, and export.
 
 ## Build And Verify
 

@@ -1,0 +1,63 @@
+package com.leanowtech.bloge.gateway.visual.testing;
+
+import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+
+import java.util.List;
+
+/**
+ * Result for one operator contract-test suite.
+ *
+ * @param schemaVersion result schema version
+ * @param operatorRef visual operator reference
+ * @param operatorVersion catalog operator version
+ * @param passed whether every row passed
+ * @param totalCases total rows
+ * @param passedCases passing rows
+ * @param failedCases failing rows
+ * @param coverage schema and assertion evidence counters
+ * @param results row results
+ * @param diagnostics suite diagnostics
+ */
+public record VisualOperatorContractTestSuiteResult(
+        String schemaVersion,
+        String operatorRef,
+        String operatorVersion,
+        boolean passed,
+        int totalCases,
+        int passedCases,
+        int failedCases,
+        Coverage coverage,
+        List<VisualOperatorContractTestCaseResult> results,
+        List<VisualDiagnostic> diagnostics
+) {
+    public static final String SCHEMA_VERSION = "bloge.visualOperatorContractTestSuiteResult.v1";
+
+    /**
+     * Creates a suite result.
+     */
+    public VisualOperatorContractTestSuiteResult {
+        schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
+        operatorRef = operatorRef == null ? "" : operatorRef;
+        operatorVersion = operatorVersion == null ? "" : operatorVersion;
+        coverage = coverage == null ? new Coverage(0, 0, 0, 0, 0) : coverage;
+        results = results == null ? List.of() : List.copyOf(results);
+        diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
+    }
+
+    /**
+     * Evidence counters for the executed operator suite.
+     *
+     * @param inputPortSchemaValidated mocked input port values that passed schema validation
+     * @param configSchemaValidated rows whose config passed schema validation
+     * @param mockedOutputSchemaValidated mocked output port values that passed schema validation
+     * @param mockedOutputCount mocked output values supplied by rows
+     * @param assertionCount assertions evaluated
+     */
+    public record Coverage(
+            int inputPortSchemaValidated,
+            int configSchemaValidated,
+            int mockedOutputSchemaValidated,
+            int mockedOutputCount,
+            int assertionCount
+    ) {}
+}

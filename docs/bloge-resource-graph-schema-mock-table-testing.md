@@ -1,20 +1,22 @@
-# BLOGE Resource Graph Schema Mock Table Testing
+# BLOGE Resource Graph And Operator Schema Mock Table Testing
 
-> Scope: `resource-gateway-examples` resource graph contracts, mock data, and table-driven verification.
+> Scope: `resource-gateway-examples` resource graph contracts, operator schemas, mock data, and table-driven verification.
 
 ## 1. 目标
 
-每张资源 graph 都必须具备形式化输入输出 schema，才能被外部系统稳定集成、被可视化画布正确消费、被自动化测试系统批量验证。
+每张资源 graph 和其中使用的每个可视化算子都必须具备形式化输入输出 schema，才能被外部系统稳定集成、被可视化画布正确消费、被自动化测试系统批量验证。
 
 本轮落地的目标不是再加一层“展示用文档”，而是把 schema 变成可执行约束：
 
 ```text
 资源 graph 合同
   -> 输入 context schema 校验
+  -> resource mock row 草稿生成
   -> 真实 BLOGE graph 执行
   -> 下游 resource API mock
   -> 输出 schema 校验
   -> 终态输出与中间节点表格断言
+  -> operator input/config/mock output schema table test
   -> 结构化测试报告
 ```
 
@@ -82,6 +84,7 @@ GET /api/gateway/graphs/contracts/{graphName}
 新增测试入口：
 
 ```text
+POST /api/gateway/graphs/contracts/tests/draft
 POST /api/gateway/graphs/contracts/tests/run
 ```
 
@@ -164,6 +167,91 @@ Coverage policy 字段：
 | suiteId | 覆盖 |
 | --- | --- |
 | `loan-decision-policy-smoke` | loan decision table 的 R1 approval 与 R4 decline 两条路径；覆盖 `assembleLoanDecision` 输出节点、2 次 resource mock、4 个断言 |
+
+## 4.1 Resource Graph Mock Draft
+
+`/api/gateway/graphs/contracts/tests/draft` 用正式 graph contract 和 resource design contract 生成一份可编辑 table suite 草稿，降低从零手写 JSON 的门槛。
+
+请求版本：
+
+```text
+bloge.gatewayGraphContractTestDraftRequest.v1
+```
+
+响应版本：
+
+```text
+bloge.gatewayGraphContractTestDraft.v1
+```
+
+生成链路：
+
+```text
+GatewayGraphContract.inputSchema
+  -> JsonSchemaSampleGenerator 生成 context sample
+  -> contextOverrides 覆盖关键业务字段
+  -> 编译后 httpResource node inputAssembler 求值
+  -> resourceId / expectedParams 预填
+  -> ResourceDesignContract.responseSchema 生成 mock payload
+  -> resourcePayloadOverrides 覆盖关键业务 payload
+  -> 默认 OUTPUT_MATCHES_SCHEMA 断言 graph outputSchema
+```
+
+这让用户可以先拿到能看懂、能编辑的 mock table row，再按业务路径补充 payload、断言和 coverage policy。对于 foreach 内部节点、依赖上游 runtime output 的 resource 调用，系统不会假装已经完全知道运行时值，而是返回 `gateway.graphContractTest.mockDraftInputUnresolved` warning，提示用户在草稿上补齐对应 mock row。
+
+## 4.2 Operator Schema Mock Table Test
+
+资源 graph 里的复杂业务往往会沉淀为可复用算子。只验证 graph 不够，算子本身也需要能用 schema、mock 数据和表格用例独立验证。
+
+新增 operator 级测试入口：
+
+```text
+POST /api/visual/operators/tests/draft
+POST /api/visual/operators/tests/run
+GET  /api/visual/operators/tests/suites
+GET  /api/visual/operators/tests/suites/{suiteId}
+PUT  /api/visual/operators/tests/suites/{suiteId}
+POST /api/visual/operators/tests/suites/{suiteId}/run
+POST /api/visual/operators/tests/suites/run-all
+```
+
+请求版本：
+
+```text
+bloge.visualOperatorContractTestSuiteRequest.v1
+```
+
+响应版本：
+
+```text
+bloge.visualOperatorContractTestSuiteResult.v1
+bloge.visualOperatorContractTestBatchResult.v1
+```
+
+核心模型：
+
+| 字段 | 含义 |
+| --- | --- |
+| `operatorRef` | visual operator catalog 中的稳定算子引用 |
+| `inputs` | mock 输入，按 input port name 分组 |
+| `config` | mock 配置，必须满足算子 `configSchema` |
+| `mockedOutputs` | mock 输出，按 output port name 分组 |
+| `outputAssertions` | 对每个 output port 执行的表格断言 |
+
+`/draft` 会读取 `OperatorDefinition`，用 `JsonSchemaSampleGenerator` 为 input/config/output schema 生成可编辑 mock row 草稿，并自动为生成的 output port 加上 `OUTPUT_MATCHES_SCHEMA` 断言。这样用户不需要从空 JSON 开始手写 mock。
+
+`/run` 不依赖真实下游 API，也不要求 design-only、remote worker、AI tool、webhook 等算子已经有生产 runtime binding。它以 operator schema 为契约验证 table row：
+
+```text
+operator definition
+  -> input port schema validation
+  -> config schema validation
+  -> mocked output schema validation
+  -> output port assertions
+  -> suite/batch coverage evidence
+```
+
+这补齐了 graph 外的 standalone operator 表格测试层。对于已经有真实 request-response runtime binding 的算子，后续可以在此基础上增加 executable adapter，把“schema mock 验证”升级成“mock + real execution 双模式验证”。
 
 ## 5. 断言能力
 
@@ -282,6 +370,8 @@ mvn -f resource-gateway-examples/pom.xml \
 | `tableSuiteRunsResourceGraphWithMockedDownstreamResources` | 两行 loan decision table case；mock 下游 applicant API；校验 graph output schema；校验 terminal output；校验 `loanPolicy` 中间节点输出；统计 4 个断言 |
 | `tableSuiteFailsFastWhenContextViolatesGraphInputSchema` | 缺失 `requestedAmount` 时，graph 不执行并返回 input schema 诊断 |
 | `contractTestApiRunsTableSuites` | REST API 可运行 suite 并返回 coverage 与 mock invocation |
+| `draftGeneratesEditableGraphMockSuiteFromFormalSchemas` | graph contract draft 生成 context、resource mock payload、output schema 断言，并可直接运行通过 |
+| `contractTestApiDraftsGraphMockSuites` | REST API 可返回 formal graph contract 与可编辑 mock suite 草稿 |
 
 Graph contract coverage:
 
@@ -303,10 +393,11 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 | 命令 | 结果 |
 | --- | --- |
-| `mvn -f resource-gateway-examples/pom.xml -Dtest=GatewayGraphContractTestServiceTest -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，6 tests |
-| `mvn -f resource-gateway-examples/pom.xml -Dtest=GatewayGraphContractCatalogTest,GatewayGraphContractTestServiceTest -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，10 tests |
+| `mvn -f resource-gateway-examples/pom.xml -Dtest=GatewayGraphContractTestServiceTest -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，8 tests |
+| `mvn -f resource-gateway-examples/pom.xml -Dtest=GatewayGraphContractCatalogTest,GatewayGraphContractTestServiceTest -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，12 tests |
 | `mvn -f resource-gateway-examples/pom.xml -Dtest=GatewayIntegrationTest,ResourceExecuteIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，14 tests；验证公开 gateway endpoint 返回前执行 output schema gate |
-| `mvn -f resource-gateway-examples/pom.xml -Dtest=GatewayGraphContractCatalogTest,GatewayGraphContractTestServiceTest,ResourceGatewayApplicationTest -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，14 tests；覆盖 contract catalog、stored suite、Spring wiring、graph-level I/O schema guard |
+| `mvn -f resource-gateway-examples/pom.xml -Dtest=GatewayGraphContractCatalogTest,GatewayGraphContractTestServiceTest,VisualOperatorContractTestServiceTest,ResourceGatewayApplicationTest -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，21 tests；覆盖 graph/operator schema drafts, stored suites, Spring wiring, graph-level I/O schema guard |
+| `mvn -f resource-gateway-examples/pom.xml -Dtest=VisualOperatorContractTestServiceTest -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，5 tests；覆盖 operator schema mock table run、draft、stored suite、run-all、非法 schema assertion 诊断 |
 | `mvn -f resource-gateway-examples/pom.xml clean verify` | Reached 1390 tests; failed on one existing browser DOM test with Selenium `StaleElementReferenceException` |
 | `mvn -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerPersistsConfigUnionBranchSelectionInRealBrowser -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，confirms the full-run failure was browser timing/flakiness rather than the resource graph contract path |
 
@@ -322,21 +413,23 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 | 下游 API 无真实调用验证 | Done | 只 mock `httpResource`，真实 graph engine 仍执行 |
 | 终态输出 schema 校验 | Done | runtime endpoint 与 contract test 都使用 graph `outputSchema` |
 | 中间节点/算子输出断言 | Done | `nodeAssertions` keyed by node id |
-| 自动 mock 数据生成 | Partial | visual simulation 已有 schema sample generator；resource graph contract suite 目前要求显式 mock row |
+| Resource graph mock draft | Done | `/api/gateway/graphs/contracts/tests/draft` 基于 graph input schema 与 resource response schema 生成可编辑 row |
+| Operator schema mock draft | Done | `/api/visual/operators/tests/draft` 基于 operator schema 生成可编辑 table row |
+| 自动 mock 数据生成 | Done for draft | graph/operator 均可生成可编辑 mock row；复杂 runtime-dependent graph mock 仍以 warning 提示人工补齐 |
 | Suite registry | Done | in-memory repository + list/get/put/run API + 内置 smoke suite |
 | Batch runner | Done | `POST /api/gateway/graphs/contracts/tests/suites/run-all` 聚合 suite、case、coverage |
 | Coverage policy | Done | suite 级阈值可要求 case、schema validation、mock call、assertion、output node 覆盖 |
 | 批量 CI 报告 | Partial | 已有机器可读 batch result；还缺独立 HTML/历史趋势报告 |
-| Standalone operator table suite | Partial | 目前通过 graph 内 node assertions 覆盖；还没有直接对任意 operator schema 跑表格用例的独立 endpoint |
+| Standalone operator table suite | Done | `/api/visual/operators/tests/run` + stored suite + run-all |
 
 ## 9. 差距与补强路线
 
-按“工业化可用”目标估算，当前差距从 8% 到 12% 收敛到约 5% 到 7%。最大缺口已经不再是资源 graph 的 suite 治理，而是 graph 外的 standalone operator table runner、自动 mock 草稿生成、以及更正式的 CI/历史报告。
+按“工业化可用”目标估算，当前差距已经从 3% 到 4% 继续收敛到约 2% 到 2.5%。核心 schema + mock + table test 主链路已打通：资源 graph 有 formal input/output schema，graph/operator 都能生成可编辑 mock row 并运行表格验证。剩余差距主要是增强型治理能力，而不是主路径缺口。
 
 建议下一轮补强顺序：
 
-1. Mock generator：基于 `GatewayGraphContract.inputSchema` 和 resource design contract 自动生成可编辑 mock row 草稿。
-2. Operator unit table runner：对单个 operator definition 的 input/output schema 直接跑表格用例，补齐 graph 外的算子单测层。
-3. CI/report adapter：把 batch result 落成稳定 JSON/HTML 报告，并保留运行历史趋势。
+1. Operator execution adapter：对已具备 request-response runtime binding 的算子支持 mock + real execution 双模式表格验证。
+2. Complex graph mock expansion：对 foreach / upstream-output-dependent resource call 提供半自动 payload scenario template。
+3. CI/report adapter：把 graph/operator batch result 落成稳定 JSON/HTML 报告，并保留运行历史趋势。
 
 做到这些之后，schema + mock + table test 才能从“可执行能力”升级为“可治理的测试资产平台”。
