@@ -194,6 +194,20 @@ operators:
 
 校验不只是 JSON/YAML 语法检查。服务端还会做 namespace、operatorRef、端口、JSON Schema、lowering、远程 `$ref`、高风险 runtime capability 等检查。warning 需要显式确认时，服务端会在 validation/import response 中返回 readiness 和 diagnostics。
 
+### 5.2.1 直接从内置复杂示例开始
+
+新版 `/author/` 在画布上方内置了复杂编排示例入口。它不是只展示图片或说明文字，而是把一张可编辑的 `GraphDraft` 直接加载到当前画布，包括节点、连线、字段绑定、规则表/转换配置、输出节点和 mock fixtures。
+
+当前内置示例：
+
+| 示例 | 覆盖模式 | 典型学习点 |
+| --- | --- | --- |
+| Loan policy fallback | 风控 fan-out、双 provider、decision table、response transform | 多资源并行取数、字段级条件绑定、规则表输出进入最终响应 |
+| Order fulfillment lane | 订单列表、foreach enrich、shipping quote、SLA decision | 列表 enrichment、资源参数从上游字段派生、履约 lane 规则 |
+| Personalized dashboard | 用户画像 fan-out 到钱包、推荐、通知，再聚合成 dashboard | 多资源聚合、最终响应映射、mock resource + real transform 的混合模拟 |
+
+如果示例依赖的 operatorRef 不在当前 catalog 中，Load 按钮会禁用并提示缺失数量。此时先导入对应算子库，或确认 resource descriptor / built-in operator catalog 是否已经启动完成。示例加载后会替换当前画布；需要保留当前草稿时，先使用 Export Draft 导出。
+
 ### 5.3 第三步：把算子放到画布上
 
 在 palette 中可以点击算子添加，也可以拖拽到 canvas。每个节点卡片会显示：

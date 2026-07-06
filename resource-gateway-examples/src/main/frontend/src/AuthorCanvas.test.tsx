@@ -168,6 +168,110 @@ describe('AuthorCanvas operator-library intake', () => {
   });
 });
 
+describe('AuthorCanvas built-in canvas examples', () => {
+  let root: Root | null = null;
+  let host: HTMLDivElement;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({
+          operators: [
+            loanApplicantResourceOperator(),
+            primaryCreditResourceOperator(),
+            secondaryCreditResourceOperator(),
+            decisionTableOperator(),
+            transformOperator(),
+          ],
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(async () => {
+    if (root) {
+      await act(async () => root?.unmount());
+      root = null;
+    }
+    host.remove();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('loads a complex built-in example into the editable canvas draft', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="canvas-example-load:loan-policy-fallback"]').textContent).toContain('Load'),
+    );
+    expect(query<HTMLButtonElement>('[data-testid="canvas-example-load:order-fulfillment-lane"]').disabled)
+      .toBe(true);
+
+    await click(query<HTMLButtonElement>('[data-testid="canvas-example-load:loan-policy-fallback"]'));
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain('Loaded Loan policy fallback: 5 nodes / 12 edges.'),
+    );
+    expect(document.body.textContent).toContain('5 nodes');
+    expect(document.body.textContent).toContain('12 edges');
+    expect(document.body.textContent).toContain('3 fixtures');
+    expect(document.body.textContent).toContain('Output n5');
+    expect(query('[data-testid="canvas-node:n1"][data-operator-ref="resource:loan-applicant-service.getProfile"]').textContent)
+      .toContain('Fetch applicant');
+    expect(query('[data-testid="canvas-node:n5"][data-operator-ref="bloge:transform"]').textContent)
+      .toContain('Decision response');
+
+    const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
+    expect(exported.nodes.map((node: { id: string; operatorRef: string }) => [node.id, node.operatorRef]))
+      .toEqual([
+        ['n1', 'resource:loan-applicant-service.getProfile'],
+        ['n2', 'resource:credit-provider.primary'],
+        ['n3', 'resource:credit-provider.secondary'],
+        ['n4', 'bloge:decisionTable'],
+        ['n5', 'bloge:transform'],
+      ]);
+    expect(exported.nodes[0].inputs).toMatchObject({
+      applicantId: { kind: 'constant', value: 'applicant-1001', targetPort: 'params' },
+    });
+    expect(exported.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: { nodeId: 'n2', port: 'payload', path: 'score' },
+          target: { nodeId: 'n4', port: 'inputs', path: 'score' },
+        }),
+        expect.objectContaining({
+          source: { nodeId: 'n4', port: 'output', path: 'decision' },
+          target: { nodeId: 'n5', port: 'inputs', path: 'decision' },
+        }),
+      ]),
+    );
+    expect(exported.nodes[3].config).toMatchObject({
+      conditionColumns: ['score', 'income', 'employmentYears'],
+      outputColumns: ['decision', 'tier', 'reason'],
+    });
+    expect(exported.nodes[4].config.assignments).toMatchObject({
+      applicantId: 'n1.output.payload.applicantId',
+      decision: 'n4.output.decision',
+      reason: 'n4.output.reason',
+    });
+    expect(exported.nodeFixtures).toMatchObject({
+      n1: { output: { applicantId: 'applicant-1001', score: 715 } },
+      n2: { output: { score: 728, provider: 'primary' } },
+      n3: { output: { score: 701, provider: 'secondary' } },
+    });
+  });
+});
+
 describe('AuthorCanvas connection guide', () => {
   let root: Root | null = null;
   let host: HTMLDivElement;
@@ -1203,6 +1307,77 @@ function streamingOperator(): OperatorDefinition {
         {
           name: 'output',
           schema: schema({ type: 'object', additionalProperties: true }),
+        },
+      ],
+    },
+  };
+}
+
+function loanApplicantResourceOperator(): OperatorDefinition {
+  return resourceOperator(
+    'resource:loan-applicant-service.getProfile',
+    'Loan applicant profile',
+    ['applicantId'],
+    {
+      applicantId: { type: 'string' },
+      score: { type: 'integer' },
+      segment: { type: 'string' },
+      income: { type: 'number' },
+      employmentYears: { type: 'number' },
+    },
+  );
+}
+
+function primaryCreditResourceOperator(): OperatorDefinition {
+  return creditResourceOperator('resource:credit-provider.primary', 'Primary credit score');
+}
+
+function secondaryCreditResourceOperator(): OperatorDefinition {
+  return creditResourceOperator('resource:credit-provider.secondary', 'Secondary credit score');
+}
+
+function creditResourceOperator(operatorRef: string, name: string): OperatorDefinition {
+  return resourceOperator(operatorRef, name, ['userId'], {
+    score: { type: 'integer' },
+    provider: { type: 'string' },
+    band: { type: 'string' },
+  });
+}
+
+function resourceOperator(
+  operatorRef: string,
+  name: string,
+  requiredParams: string[],
+  payloadProperties: Record<string, unknown>,
+): OperatorDefinition {
+  const requestProperties = Object.fromEntries(
+    requiredParams.map((param) => [param, { type: 'string' }]),
+  );
+  return {
+    operatorRef,
+    display: { name, description: `${name} resource.`, tags: ['resource'] },
+    source: { kind: 'resource-descriptor', libraryId: operatorRef.slice('resource:'.length) },
+    lowering: { mode: 'resource-descriptor' },
+    ports: {
+      inputs: [
+        {
+          name: 'params',
+          required: true,
+          schema: schema({
+            type: 'object',
+            properties: requestProperties,
+            required: requiredParams,
+          }),
+        },
+      ],
+      outputs: [
+        {
+          name: 'payload',
+          schema: schema({
+            type: 'object',
+            properties: payloadProperties,
+            required: Object.keys(payloadProperties),
+          }),
         },
       ],
     },

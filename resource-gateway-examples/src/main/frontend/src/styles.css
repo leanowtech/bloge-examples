@@ -620,6 +620,134 @@ body {
   text-align: center;
 }
 
+.canvas-examples {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: #f6f8fb;
+}
+
+.canvas-examples-heading {
+  min-width: 84px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+}
+
+.canvas-examples-heading span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.canvas-examples-heading strong {
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.canvas-example-list {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.canvas-example {
+  min-width: 0;
+  min-height: 112px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid #cfd7e5;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.canvas-example.missing {
+  background: #fafafa;
+  color: var(--muted);
+}
+
+.canvas-example-copy {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 2px;
+}
+
+.canvas-example-copy span,
+.canvas-example-copy small,
+.canvas-example-copy strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-example-copy span {
+  color: #2459a6;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.canvas-example-copy strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.canvas-example-copy small {
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.canvas-example-copy p {
+  display: -webkit-box;
+  min-width: 0;
+  margin: 3px 0 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.canvas-example-meta {
+  grid-column: 1 / 2;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.canvas-example-meta span {
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 5px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-example button {
+  grid-column: 2 / 3;
+  grid-row: 1 / 3;
+  align-self: end;
+}
+
 .toolbar {
   display: flex;
   align-items: center;
@@ -2873,7 +3001,7 @@ button.secondary:disabled {
   .workspace {
     flex: none;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(520px, 72vh) auto;
+    grid-template-rows: auto auto auto;
     min-height: 0;
     overflow: visible;
   }
@@ -2895,7 +3023,7 @@ button.secondary:disabled {
 
   .canvas {
     min-width: 0;
-    min-height: 520px;
+    min-height: 0;
   }
 
   .journey-bar {
@@ -2910,6 +3038,21 @@ button.secondary:disabled {
   .journey-action,
   .journey-count {
     width: 100%;
+  }
+
+  .canvas-examples {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .canvas-examples-heading {
+    min-width: 0;
+    grid-template-columns: auto auto;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .canvas-example-list {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .toolbar {

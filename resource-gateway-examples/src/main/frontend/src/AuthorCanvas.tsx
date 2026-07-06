@@ -68,6 +68,7 @@ import {
   toSimulationRequest,
 } from './draftModel';
 import type {
+  DraftNodeBinding,
   OperatorDefinition,
   OperatorPort,
   SimulationResponse,
@@ -75,11 +76,21 @@ import type {
   VisualValidationResult,
 } from './types';
 import type { ConnectionCandidate } from './types';
+import {
+  CANVAS_EXAMPLE_TEMPLATES,
+  exampleEdgeLabel,
+  exampleRequiredOperatorRefs,
+  hasOwnValue,
+  maxNumericNodeId,
+  type CanvasExampleAvailability,
+  type CanvasExampleTemplate,
+} from './canvasExamples';
 
 interface NodeData {
   label: string;
   operatorRef: string;
   summary: OperatorSummary;
+  inputs?: Record<string, DraftNodeBinding>;
   config?: Record<string, unknown>;
   status?: 'mocked' | 'real' | 'unknown';
   isOutput?: boolean;
@@ -1785,6 +1796,7 @@ export default function AuthorCanvas() {
         id: node.id,
         operatorRef: node.data.operatorRef,
         label: node.data.label,
+        inputs: node.data.inputs,
         config: node.data.config,
         position: node.position,
       })),
@@ -1823,6 +1835,103 @@ export default function AuthorCanvas() {
     () => new Map(operators.map((operator) => [operator.operatorRef, operator])),
     [operators],
   );
+  const canvasExamples = useMemo<CanvasExampleAvailability[]>(
+    () =>
+      CANVAS_EXAMPLE_TEMPLATES.map((template) => ({
+        template,
+        missingOperatorRefs: exampleRequiredOperatorRefs(template)
+          .filter((operatorRef) => !operatorByRef.has(operatorRef)),
+      })),
+    [operatorByRef],
+  );
+  const loadCanvasExample = useCallback((template: CanvasExampleTemplate) => {
+    const missingOperatorRefs = exampleRequiredOperatorRefs(template)
+      .filter((operatorRef) => !operatorByRef.has(operatorRef));
+    if (missingOperatorRefs.length > 0) {
+      setConnectionNotice({
+        level: 'warning',
+        message: `Example needs ${missingOperatorRefs.length} missing operator${missingOperatorRefs.length === 1 ? '' : 's'}.`,
+      });
+      return;
+    }
+
+    const nextNodes: Node<NodeData>[] = [];
+    for (const templateNode of template.nodes) {
+      const operator = operatorByRef.get(templateNode.operatorRef);
+      if (!operator) {
+        setConnectionNotice({
+          level: 'warning',
+          message: `Example needs missing operator ${templateNode.operatorRef}.`,
+        });
+        return;
+      }
+      nextNodes.push({
+        id: templateNode.id,
+        type: 'operator',
+        position: templateNode.position,
+        data: {
+          label: templateNode.label,
+          operatorRef: templateNode.operatorRef,
+          summary: summarizeOperator(operator),
+          inputs: templateNode.inputs,
+          config: templateNode.config,
+        },
+      });
+    }
+
+    const nextEdges = template.edges.map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: handleIdForPort('out', edge.sourcePort),
+      targetHandle: handleIdForPort('in', edge.targetPort),
+      sourcePath: edge.sourcePath,
+      targetPath: edge.targetPath,
+      bindingKey: edge.bindingKey,
+      data: {
+        sourcePath: edge.sourcePath ?? '',
+        targetPath: edge.targetPath ?? '',
+        bindingKey: edge.bindingKey ?? '',
+      },
+      label: exampleEdgeLabel(edge),
+      animated: true,
+      className: 'accepted-edge',
+    } as CanvasFlowEdge));
+    const nextFixtureDrafts: Record<string, string> = {};
+    const nextFixtureInputDrafts: Record<string, string> = {};
+    for (const templateNode of template.nodes) {
+      if (hasOwnValue(templateNode, 'fixtureOutput')) {
+        nextFixtureDrafts[templateNode.id] = JSON.stringify(templateNode.fixtureOutput, null, 2);
+      }
+      if (hasOwnValue(templateNode, 'expectedInput')) {
+        nextFixtureInputDrafts[templateNode.id] = JSON.stringify(templateNode.expectedInput, null, 2);
+      }
+    }
+
+    clearRunResult();
+    counter.current = maxNumericNodeId(template.nodes);
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    setFixtureDrafts(nextFixtureDrafts);
+    setFixtureInputDrafts(nextFixtureInputDrafts);
+    setExplicitOutputNodeId(template.outputNodeId);
+    setSelectedNodeId(template.outputNodeId);
+    setRuleEditorNodeId('');
+    setMappingEditorNodeId('');
+    setConnectionGuide(null);
+    setConnectionGuideNotice(null);
+    setCandidatePreview(null);
+    setSelectedConnectionSourcePort('');
+    setPendingConnectionGuideNodeId('');
+    setSearch('');
+    setPaletteFacet('all');
+    setSourceFilter('all');
+    setTagFilter('all');
+    setConnectionNotice({
+      level: 'ok',
+      message: `Loaded ${template.label}: ${template.nodes.length} nodes / ${template.edges.length} edges.`,
+    });
+  }, [clearRunResult, operatorByRef]);
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const selectedOperator = selectedNode ? operatorByRef.get(selectedNode.data.operatorRef) : undefined;
   const ruleEditorNode = nodes.find((node) => node.id === ruleEditorNodeId);
@@ -2663,6 +2772,42 @@ export default function AuthorCanvas() {
             {journey.completedCount}/{journey.steps.length}
           </span>
         </div>
+        <section className="canvas-examples" aria-label="Built-in canvas examples">
+          <div className="canvas-examples-heading">
+            <span>Examples</span>
+            <strong>{canvasExamples.length}</strong>
+          </div>
+          <div className="canvas-example-list">
+            {canvasExamples.map(({ template, missingOperatorRefs }) => {
+              const available = missingOperatorRefs.length === 0;
+              return (
+                <article className={`canvas-example ${available ? '' : 'missing'}`} key={template.key}>
+                  <div className="canvas-example-copy">
+                    <span>{template.domain}</span>
+                    <strong>{template.label}</strong>
+                    <small>{template.pattern}</small>
+                    <p>{template.description}</p>
+                  </div>
+                  <div className="canvas-example-meta">
+                    <span>{template.nodes.length} nodes</span>
+                    <span>{template.edges.length} edges</span>
+                    {!available && <span>{missingOperatorRefs.length} missing</span>}
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary compact"
+                    data-testid={`canvas-example-load:${template.key}`}
+                    onClick={() => loadCanvasExample(template)}
+                    disabled={!available}
+                    title={available ? `Load ${template.label}` : `Missing ${missingOperatorRefs.join(', ')}`}
+                  >
+                    Load
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+        </section>
         <div className="toolbar">
           <button
             className="primary"
