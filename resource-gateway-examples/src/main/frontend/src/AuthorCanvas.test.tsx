@@ -1052,6 +1052,81 @@ describe('AuthorCanvas simulation summary', () => {
     });
   });
 
+  it('creates runtime context variables and binds them to selected node inputs', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:eligibility"]').textContent).toContain('Eligibility'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:eligibility"]'));
+    await click(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+
+    await click(query<HTMLButtonElement>('[data-testid="context-variable-add"]'));
+    await setControlValue(query<HTMLInputElement>('[data-testid="context-variable-path:0"]'), 'applicant.score');
+    await setControlValue(query<HTMLSelectElement>('[data-testid="context-variable-type:0"]'), 'number');
+    await setControlValue(query<HTMLInputElement>('[data-testid="context-variable-value:0"]'), '720');
+
+    expect(query('[data-testid="context-preview-json"]').textContent).toContain('"score": 720');
+
+    await click(query<HTMLButtonElement>('[data-testid="context-variable-bind:0"]'));
+
+    const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
+    expect(exported.nodes[0].inputs).toEqual({
+      score: {
+        kind: 'contextPath',
+        path: 'applicant.score',
+        targetPort: 'inputs',
+        targetPath: 'score',
+      },
+    });
+
+    const simulateButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Simulate' && button.className.includes('primary'));
+    expect(simulateButton).toBeDefined();
+    await click(simulateButton as HTMLButtonElement);
+
+    await waitFor(() =>
+      expect(query('[data-testid="simulation-run-summary"]').textContent).toContain('Simulation succeeded'),
+    );
+    const simulateCalls = fetchMock.mock.calls
+      .filter(([input]) => String(input) === '/api/visual/graphs/simulate');
+    const simulateCall = simulateCalls[simulateCalls.length - 1];
+    expect(simulateCall).toBeDefined();
+    const request = JSON.parse(String(simulateCall?.[1]?.body));
+    expect(request.context).toEqual({ applicant: { score: 720 } });
+  });
+
+  it('binds runtime context variables by dragging them onto node inputs', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:eligibility"]').textContent).toContain('Eligibility'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:eligibility"]'));
+    await click(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+
+    await click(query<HTMLButtonElement>('[data-testid="context-variable-add"]'));
+    await setControlValue(query<HTMLInputElement>('[data-testid="context-variable-path:0"]'), 'applicant.score');
+    const transfer = fakeDataTransfer();
+    await drag(query<HTMLButtonElement>('[data-testid="context-variable-chip:0"]'), 'dragstart', transfer);
+    await drag(query<HTMLElement>('[data-testid="node-input-editor"]'), 'dragover', transfer);
+    await drag(query<HTMLElement>('[data-testid="node-input-editor"]'), 'drop', transfer);
+
+    const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
+    expect(exported.nodes[0].inputs.score).toMatchObject({
+      kind: 'contextPath',
+      path: 'applicant.score',
+      targetPort: 'inputs',
+      targetPath: 'score',
+    });
+  });
+
   it('validates the current draft through the server readiness gate', async () => {
     await act(async () => {
       root = createRoot(host);
@@ -1526,7 +1601,10 @@ function fakeDataTransfer(): DataTransfer {
   return transfer as unknown as DataTransfer;
 }
 
-async function setControlValue(element: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<void> {
+async function setControlValue(
+  element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+  value: string,
+): Promise<void> {
   await act(async () => {
     const valueSetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value')?.set;
     valueSetter?.call(element, value);

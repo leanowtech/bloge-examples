@@ -221,15 +221,15 @@ operators:
 
 ### 5.3.1 配置起始节点输入
 
-起始节点通常没有上游边，但它仍然需要业务入参，例如 `userId`、`orderId`、`applicant.score` 或请求上下文里的租户信息。新版 `/author/` 在 selected-node inspector 中提供 `Node Inputs` 区域：
+起始节点通常没有上游边，但它仍然需要业务入参，例如 `userId`、`orderId`、`applicant.score` 或请求上下文里的租户信息。新版 `/author/` 在右侧 inspector 中提供图形化的 `Runtime Context -> Context Variables`：
 
-1. 选中需要配置输入的节点。
-2. 点击 Add Binding。
-3. 在 Key 中填写稳定输入名，例如 `score` 或 `applicantId`。
-4. Source 选择 `ctx` 时，在 Context path 中填写运行上下文路径，例如 `applicant.score`；运行时会 lower 为 `ctx.applicant.score`。
-5. Source 选择 `constant` 时，填写 JSON literal 或普通字符串。
-6. Target port 默认使用该算子的第一个输入端口；如果算子有多个输入端口，可以在 Target port 中切换。
-7. Target path 用来把值写入端口内的嵌套字段，例如 `params.userId` 可以表达为 `targetPort=params`、`targetPath=userId`。
+1. 在 `Runtime Context` 点击 Add Variable。
+2. 在 Path 中填写上下文路径，例如 `applicant.score`。
+3. 在 Type 中选择 `string`、`number`、`boolean` 或 `json`。
+4. 在 Sample 中填写本次模拟使用的样例值；下方 Preview 会即时生成最终 context JSON。
+5. 选中需要配置输入的节点，点击变量行上的 Bind；也可以把 `ctx.applicant.score` chip 直接拖到该节点的 `Node Inputs` 区域。
+6. 画布会自动创建 `contextPath` 输入绑定，并把 Target port 默认设为算子的第一个输入端口、Target path 默认设为上下文路径最后一段。
+7. 如果需要常量或复杂目标字段，仍可在 `Node Inputs` 中手动调整 Source、Target port 和 Target path。
 
 例如，一个风控起始节点要从运行上下文读取 `applicant.score`，导出的 draft 会包含：
 
@@ -239,13 +239,14 @@ operators:
     "score": {
       "kind": "contextPath",
       "path": "applicant.score",
-      "targetPort": "inputs"
+      "targetPort": "inputs",
+      "targetPath": "score"
     }
   }
 }
 ```
 
-模拟时，右侧 `Runtime Context` 区域提供本次 run 的 JSON context，例如：
+模拟时，`Context Variables` 会生成本次 run 的 JSON context，例如：
 
 ```json
 {
@@ -256,6 +257,8 @@ operators:
 ```
 
 `Runtime Context` 会进入 `POST /api/visual/graphs/simulate` 的 `context` 字段；它不会写进导出的 `GraphDraft`。导出的 draft 只保存 `contextPath` / `constant` 等输入绑定语义，方便后续在真实网关运行时由外部请求上下文提供变量。
+
+`Advanced JSON` 仍然保留给专家模式。没有配置 Context Variables 时，模拟会使用 `Advanced JSON` 中的对象；一旦配置了变量，模拟优先使用变量表生成的 context。
 
 ### 5.4 第四步：连线
 

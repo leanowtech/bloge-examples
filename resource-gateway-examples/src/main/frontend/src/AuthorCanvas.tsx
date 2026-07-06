@@ -178,6 +178,17 @@ interface JsonObjectCompilation {
   error?: string;
 }
 
+type ContextVariableType = 'string' | 'number' | 'boolean' | 'json';
+
+interface ContextVariableRow {
+  id: string;
+  path: string;
+  valueType: ContextVariableType;
+  sample: string;
+}
+
+const CONTEXT_VARIABLE_DRAG_TYPE = 'application/bloge-context-path';
+
 function handleOffset(index: number, count: number): CSSProperties {
   return { top: `${((index + 1) / (count + 1)) * 100}%` };
 }
@@ -256,6 +267,103 @@ function compileJsonObjectDraft(text: string, label: string): JsonObjectCompilat
   }
 }
 
+function contextPathSegments(path: string): string[] {
+  return path
+    .trim()
+    .replace(/^ctx\./, '')
+    .split('.')
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function normalizedContextPath(path: string): string {
+  return contextPathSegments(path).join('.');
+}
+
+function contextBindingKey(path: string): string {
+  const segments = contextPathSegments(path);
+  return decisionFieldName(segments[segments.length - 1] ?? path, 'input');
+}
+
+function parseContextVariableValue(row: ContextVariableRow, index: number): { value: unknown; error?: string } {
+  const label = row.path.trim() || `context variable ${index + 1}`;
+  const raw = row.sample.trim();
+  if (row.valueType === 'number') {
+    const value = Number(raw);
+    if (!raw || !Number.isFinite(value)) {
+      return { value: 0, error: `${label} must use a numeric sample value.` };
+    }
+    return { value };
+  }
+  if (row.valueType === 'boolean') {
+    if (raw.toLowerCase() === 'true') {
+      return { value: true };
+    }
+    if (raw.toLowerCase() === 'false') {
+      return { value: false };
+    }
+    return { value: false, error: `${label} must be true or false.` };
+  }
+  if (row.valueType === 'json') {
+    if (!raw) {
+      return { value: null };
+    }
+    try {
+      return { value: JSON.parse(raw) as unknown };
+    } catch {
+      return { value: null, error: `${label} must use valid JSON sample value.` };
+    }
+  }
+  return { value: row.sample };
+}
+
+function assignContextVariableValue(
+  target: Record<string, unknown>,
+  segments: string[],
+  value: unknown,
+): string | undefined {
+  let cursor = target;
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    const segment = segments[index];
+    const existing = cursor[segment];
+    if (existing === undefined) {
+      const next: Record<string, unknown> = {};
+      cursor[segment] = next;
+      cursor = next;
+      continue;
+    }
+    if (!isRecord(existing)) {
+      return `${segments.slice(0, index + 1).join('.')} already contains a scalar value.`;
+    }
+    cursor = existing;
+  }
+  cursor[segments[segments.length - 1]] = value;
+  return undefined;
+}
+
+function compileContextVariables(rows: ContextVariableRow[]): JsonObjectCompilation {
+  const context: Record<string, unknown> = {};
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (!row.path.trim()) {
+      continue;
+    }
+    const segments = contextPathSegments(row.path);
+    if (segments.length === 0) {
+      return { value: {}, error: `Context variable ${index + 1} needs a path.` };
+    }
+    const parsed = parseContextVariableValue(row, index);
+    if (parsed.error) {
+      return { value: {}, error: parsed.error };
+    }
+    const conflict = assignContextVariableValue(context, segments, parsed.value);
+    if (conflict) {
+      return { value: {}, error: conflict };
+    }
+  }
+  return { value: context };
+}
+
 function parseConstantInputValue(text: string): unknown {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -306,6 +414,7 @@ function NodeInputBindingsEditor({
   onRename,
   onChange,
   onKindChange,
+  onDropContextPath,
 }: {
   node: Node<NodeData>;
   onAdd: () => void;
@@ -313,11 +422,29 @@ function NodeInputBindingsEditor({
   onRename: (bindingKey: string, value: string) => void;
   onChange: (bindingKey: string, patch: Partial<DraftNodeBinding>) => void;
   onKindChange: (bindingKey: string, kind: 'contextPath' | 'constant') => void;
+  onDropContextPath: (path: string) => void;
 }) {
   const inputPorts = node.data.summary.inputNames.length ? node.data.summary.inputNames : ['inputs'];
   const rows = Object.entries(node.data.inputs ?? {});
   return (
-    <div className="input-binding-editor" data-testid="node-input-editor">
+    <div
+      className="input-binding-editor"
+      data-testid="node-input-editor"
+      onDragOver={(event) => {
+        if (Array.from(event.dataTransfer.types).includes(CONTEXT_VARIABLE_DRAG_TYPE)) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+        }
+      }}
+      onDrop={(event) => {
+        const path = event.dataTransfer.getData(CONTEXT_VARIABLE_DRAG_TYPE);
+        if (!path) {
+          return;
+        }
+        event.preventDefault();
+        onDropContextPath(path);
+      }}
+    >
       <div className="input-binding-header">
         <strong>Node Inputs</strong>
         <button
@@ -426,6 +553,156 @@ function NodeInputBindingsEditor({
         </ol>
       ) : (
         <p className="muted">No input bindings.</p>
+      )}
+    </div>
+  );
+}
+
+function ContextVariablesEditor({
+  rows,
+  compilation,
+  selectedNodeId,
+  rawJson,
+  onAdd,
+  onUpdate,
+  onRemove,
+  onBind,
+  onRawJsonChange,
+}: {
+  rows: ContextVariableRow[];
+  compilation: JsonObjectCompilation;
+  selectedNodeId: string;
+  rawJson: string;
+  onAdd: () => void;
+  onUpdate: (id: string, patch: Partial<ContextVariableRow>) => void;
+  onRemove: (id: string) => void;
+  onBind: (path: string) => void;
+  onRawJsonChange: (value: string) => void;
+}) {
+  const contextPreview = JSON.stringify(compilation.value, null, 2);
+  return (
+    <div className="fixture-editor context-editor">
+      <div className="fixture-header">
+        <strong>Context Variables</strong>
+        <span className={`badge ${compilation.error ? 'error' : 'fixture'}`}>
+          {compilation.error ? 'invalid' : 'ready'}
+        </span>
+      </div>
+      {rows.length > 0 ? (
+        <ol className="context-variable-list">
+          {rows.map((row, index) => {
+            const path = normalizedContextPath(row.path);
+            return (
+              <li key={row.id} className="context-variable-row">
+                <button
+                  type="button"
+                  className="context-variable-chip"
+                  draggable={Boolean(path)}
+                  data-testid={`context-variable-chip:${index}`}
+                  onDragStart={(event: DragEvent<HTMLButtonElement>) => {
+                    if (!path) {
+                      return;
+                    }
+                    event.dataTransfer.effectAllowed = 'copy';
+                    event.dataTransfer.setData(CONTEXT_VARIABLE_DRAG_TYPE, path);
+                    event.dataTransfer.setData('text/plain', `ctx.${path}`);
+                  }}
+                >
+                  ctx.{path || 'path'}
+                </button>
+                <div className="context-variable-fields">
+                  <label>
+                    <span>Path</span>
+                    <input
+                      aria-label={`Context variable path ${index + 1}`}
+                      data-testid={`context-variable-path:${index}`}
+                      placeholder="applicant.score"
+                      value={row.path}
+                      onChange={(event) => onUpdate(row.id, { path: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Type</span>
+                    <select
+                      aria-label={`Context variable type ${index + 1}`}
+                      data-testid={`context-variable-type:${index}`}
+                      value={row.valueType}
+                      onChange={(event) =>
+                        onUpdate(row.id, { valueType: event.target.value as ContextVariableType })
+                      }
+                    >
+                      <option value="string">string</option>
+                      <option value="number">number</option>
+                      <option value="boolean">boolean</option>
+                      <option value="json">json</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Sample</span>
+                    <input
+                      aria-label={`Context variable sample ${index + 1}`}
+                      data-testid={`context-variable-value:${index}`}
+                      placeholder={row.valueType === 'json' ? '{"tier":"gold"}' : 'value'}
+                      value={row.sample}
+                      onChange={(event) => onUpdate(row.id, { sample: event.target.value })}
+                    />
+                  </label>
+                </div>
+                <div className="context-variable-actions">
+                  <button
+                    type="button"
+                    className="secondary compact"
+                    data-testid={`context-variable-bind:${index}`}
+                    disabled={!selectedNodeId || !path}
+                    onClick={() => onBind(path)}
+                  >
+                    Bind
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary compact"
+                    data-testid={`context-variable-remove:${index}`}
+                    onClick={() => onRemove(row.id)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <p className="muted">No context variables.</p>
+      )}
+      <div className="context-variable-footer">
+        <button
+          type="button"
+          className="secondary compact"
+          data-testid="context-variable-add"
+          onClick={onAdd}
+        >
+          Add Variable
+        </button>
+      </div>
+      <pre className="context-preview" data-testid="context-preview-json">{contextPreview}</pre>
+      <details className="context-advanced">
+        <summary>Advanced JSON</summary>
+        <label className="fixture-field">
+          <span>JSON</span>
+          <textarea
+            aria-label="Simulation runtime context JSON"
+            data-testid="simulation-context-json"
+            spellCheck={false}
+            placeholder="{}"
+            value={rawJson}
+            onChange={(event) => onRawJsonChange(event.target.value)}
+          />
+        </label>
+      </details>
+      {compilation.error && (
+        <p className="fixture-error" data-testid="simulation-context-error">
+          {compilation.error}
+        </p>
       )}
     </div>
   );
@@ -1863,6 +2140,7 @@ export default function AuthorCanvas() {
   const [fixtureDrafts, setFixtureDrafts] = useState<Record<string, string>>({});
   const [fixtureInputDrafts, setFixtureInputDrafts] = useState<Record<string, string>>({});
   const [simulationContextDraft, setSimulationContextDraft] = useState('{}');
+  const [contextVariables, setContextVariables] = useState<ContextVariableRow[]>([]);
   const [connectionNotice, setConnectionNotice] = useState<ConnectionNotice | null>(null);
   const [candidatePreview, setCandidatePreview] = useState<ConnectionCandidateIndex | null>(null);
   const [selectedConnectionSourcePort, setSelectedConnectionSourcePort] = useState('');
@@ -1873,6 +2151,7 @@ export default function AuthorCanvas() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const flowRef = useRef<HTMLDivElement>(null);
   const counter = useRef(0);
+  const contextVariableCounter = useRef(0);
   const candidatePreviewSequence = useRef(0);
   const connectionGuideSequence = useRef(0);
 
@@ -2110,6 +2389,59 @@ export default function AuthorCanvas() {
     });
   }, [updateSelectedNodeInputs]);
 
+  const addContextVariable = useCallback(() => {
+    clearRunResult();
+    const nextIndex = contextVariableCounter.current + 1;
+    contextVariableCounter.current = nextIndex;
+    setContextVariables((current) => [
+      ...current,
+      {
+        id: `ctx-${nextIndex}`,
+        path: '',
+        valueType: 'string',
+        sample: '',
+      },
+    ]);
+  }, [clearRunResult]);
+
+  const updateContextVariable = useCallback((id: string, patch: Partial<ContextVariableRow>) => {
+    clearRunResult();
+    setContextVariables((current) => current.map((row) => (
+      row.id === id ? { ...row, ...patch } : row
+    )));
+  }, [clearRunResult]);
+
+  const removeContextVariable = useCallback((id: string) => {
+    clearRunResult();
+    setContextVariables((current) => current.filter((row) => row.id !== id));
+  }, [clearRunResult]);
+
+  const updateSimulationContextDraft = useCallback((value: string) => {
+    clearRunResult();
+    setSimulationContextDraft(value);
+  }, [clearRunResult]);
+
+  const bindContextVariableToSelectedNode = useCallback((path: string) => {
+    const normalizedPath = normalizedContextPath(path);
+    if (!normalizedPath) {
+      return;
+    }
+    updateSelectedNodeInputs((inputs, node) => {
+      const targetPort = defaultInputTargetPort(node);
+      const targetPath = contextBindingKey(normalizedPath);
+      const bindingKey = uniqueInputBindingKey(inputs, targetPath);
+      return {
+        ...inputs,
+        [bindingKey]: {
+          kind: 'contextPath',
+          path: normalizedPath,
+          targetPort,
+          targetPath,
+        },
+      };
+    });
+  }, [updateSelectedNodeInputs]);
+
   const canvasNodes = useMemo<CanvasNode[]>(
     () =>
       nodes.map((node) => ({
@@ -2271,10 +2603,16 @@ export default function AuthorCanvas() {
     () => compileFixtureDrafts(fixtureDrafts, fixtureInputDrafts),
     [fixtureDrafts, fixtureInputDrafts],
   );
-  const contextCompilation = useMemo(
+  const rawContextCompilation = useMemo(
     () => compileJsonObjectDraft(simulationContextDraft, 'Runtime context'),
     [simulationContextDraft],
   );
+  const variableContextCompilation = useMemo(
+    () => compileContextVariables(contextVariables),
+    [contextVariables],
+  );
+  const hasContextVariables = contextVariables.some((row) => row.path.trim());
+  const contextCompilation = hasContextVariables ? variableContextCompilation : rawContextCompilation;
   const fixtureRows = useMemo(
     () => simulationFixtureRows(
       canvasNodes,
@@ -3143,7 +3481,7 @@ export default function AuthorCanvas() {
               hasFixtureErrors
                 ? 'Fix fixture JSON before simulating.'
                 : hasContextError
-                  ? 'Fix runtime context JSON before simulating.'
+                  ? 'Fix runtime context before simulating.'
                   : undefined
             }
           >
@@ -3300,30 +3638,17 @@ export default function AuthorCanvas() {
         )}
 
         <h2>Runtime Context</h2>
-        <div className="fixture-editor context-editor">
-          <div className="fixture-header">
-            <strong>Context</strong>
-            <span className={`badge ${hasContextError ? 'error' : 'fixture'}`}>
-              {hasContextError ? 'invalid' : 'ready'}
-            </span>
-          </div>
-          <label className="fixture-field">
-            <span>JSON</span>
-            <textarea
-              aria-label="Simulation runtime context JSON"
-              data-testid="simulation-context-json"
-              spellCheck={false}
-              placeholder="{}"
-              value={simulationContextDraft}
-              onChange={(event) => setSimulationContextDraft(event.target.value)}
-            />
-          </label>
-          {contextCompilation.error && (
-            <p className="fixture-error" data-testid="simulation-context-error">
-              {contextCompilation.error}
-            </p>
-          )}
-        </div>
+        <ContextVariablesEditor
+          rows={contextVariables}
+          compilation={contextCompilation}
+          selectedNodeId={selectedNodeId}
+          rawJson={simulationContextDraft}
+          onAdd={addContextVariable}
+          onUpdate={updateContextVariable}
+          onRemove={removeContextVariable}
+          onBind={bindContextVariableToSelectedNode}
+          onRawJsonChange={updateSimulationContextDraft}
+        />
 
         <h2>Selected Node</h2>
         {selectedNode ? (
@@ -3349,6 +3674,7 @@ export default function AuthorCanvas() {
               onRename={renameSelectedInputBinding}
               onChange={updateSelectedInputBinding}
               onKindChange={updateSelectedInputBindingKind}
+              onDropContextPath={bindContextVariableToSelectedNode}
             />
             <div className="connection-guide" data-testid="connection-guide">
               <div className="connection-guide-header">
