@@ -80,6 +80,79 @@ no new Java class.
 
 ## Public gateway API
 
+### Resource graph contracts and table tests
+
+Every built-in resource graph loaded from `src/main/resources/bloge/gateway/*.bloge`
+must have a formal `GatewayGraphContract`. The contract declares:
+
+- `graphName`: the BLOGE graph name.
+- `inputSchema`: the JSON Schema envelope for request context.
+- `outputSchema`: the JSON Schema envelope for the public terminal output.
+- `outputNodes`: terminal node ids that may expose that public output.
+
+The contract catalog is available through:
+
+```text
+GET /api/gateway/graphs/contracts
+GET /api/gateway/graphs/contracts/{graphName}
+```
+
+`GatewayGraphService` validates runtime context against `inputSchema` before
+execution and fails startup if any loaded gateway graph is missing a contract.
+`GatewayGraphContractCatalogTest` also scans every gateway `.bloge` file so CI
+does not let schema-less graphs drift into the example.
+
+Schema-gated contract suites run through:
+
+```text
+POST /api/gateway/graphs/contracts/tests/run
+```
+
+The suite executes the real BLOGE graph and production topology, but overrides
+descriptor-backed `httpResource` nodes with deterministic mock rows. Each table
+case can provide `context`, `resourceMocks`, terminal output `assertions`, and
+`nodeAssertions` keyed by node id. The response reports pass/fail status,
+selected output, node status map, mocked resource invocations, diagnostics, and
+coverage counters for input schema validation, output schema validation, mocked
+resource calls, and evaluated assertions.
+
+Minimal request shape:
+
+```json
+{
+  "graphName": "loanDecisionPolicy",
+  "cases": [
+    {
+      "name": "prime applicant",
+      "context": {
+        "applicantId": "prime",
+        "requestedAmount": 450000.0
+      },
+      "resourceMocks": [
+        {
+          "resourceId": "loan-applicant-service.getProfile",
+          "expectedParams": { "applicantId": "prime" },
+          "payload": {
+            "applicantId": "prime",
+            "score": 780,
+            "segment": "private-bank"
+          }
+        }
+      ],
+      "outputNode": "assembleLoanDecision",
+      "assertions": [
+        { "mode": "PATH_EQUALS", "path": "/policy/ruleId", "expectedValue": "R1" }
+      ],
+      "nodeAssertions": {
+        "loanPolicy": [
+          { "mode": "PATH_EQUALS", "path": "/decision", "expectedValue": "approved" }
+        ]
+      }
+    }
+  ]
+}
+```
+
 ### Browser showcase
 
 The resource gateway now ships a static browser showcase at:
