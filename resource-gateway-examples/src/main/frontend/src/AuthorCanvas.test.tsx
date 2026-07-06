@@ -1004,6 +1004,54 @@ describe('AuthorCanvas simulation summary', () => {
     expect(query('[data-testid="simulation-run-summary:diagnostics"]').textContent).toContain('0 diagnostics');
   });
 
+  it('binds start-node inputs to runtime context paths', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:eligibility"]').textContent).toContain('Eligibility'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:eligibility"]'));
+    await click(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+
+    await click(query<HTMLButtonElement>('[data-testid="node-input-add"]'));
+    await setControlValue(query<HTMLInputElement>('[data-testid="node-input-key:0"]'), 'score');
+    await setControlValue(query<HTMLInputElement>('[data-testid="node-input-context-path:0"]'), 'applicant.score');
+    await setControlValue(
+      query<HTMLTextAreaElement>('[data-testid="simulation-context-json"]'),
+      '{\n  "applicant": { "score": 720 }\n}',
+    );
+
+    const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
+    expect(exported.nodes[0].inputs.score).toMatchObject({
+      kind: 'contextPath',
+      path: 'applicant.score',
+      targetPort: 'inputs',
+    });
+
+    const simulateButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Simulate' && button.className.includes('primary'));
+    expect(simulateButton).toBeDefined();
+    await click(simulateButton as HTMLButtonElement);
+
+    await waitFor(() =>
+      expect(query('[data-testid="simulation-run-summary"]').textContent).toContain('Simulation succeeded'),
+    );
+    const simulateCalls = fetchMock.mock.calls
+      .filter(([input]) => String(input) === '/api/visual/graphs/simulate');
+    const simulateCall = simulateCalls[simulateCalls.length - 1];
+    expect(simulateCall).toBeDefined();
+    const request = JSON.parse(String(simulateCall?.[1]?.body));
+    expect(request.context).toEqual({ applicant: { score: 720 } });
+    expect(request.draft.nodes[0].inputs.score).toMatchObject({
+      kind: 'contextPath',
+      path: 'applicant.score',
+      targetPort: 'inputs',
+    });
+  });
+
   it('validates the current draft through the server readiness gate', async () => {
     await act(async () => {
       root = createRoot(host);

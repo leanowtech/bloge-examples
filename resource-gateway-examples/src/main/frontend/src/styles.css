@@ -522,6 +522,11 @@ body {
   color: #1b5e20;
 }
 
+.badge.error {
+  background: #fdecea;
+  color: var(--danger);
+}
+
 .muted {
   color: var(--muted);
   font-size: 13px;
@@ -1937,6 +1942,89 @@ button.secondary:disabled {
   color: #174ea6;
   font-size: 12px;
   font-weight: 700;
+}
+
+.input-binding-editor {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fbfbfd;
+}
+
+.input-binding-header,
+.input-binding-row-header,
+.input-binding-targets {
+  display: grid;
+  align-items: end;
+  gap: 7px;
+}
+
+.input-binding-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.input-binding-header strong {
+  font-size: 12px;
+}
+
+.input-binding-row-header,
+.input-binding-targets {
+  grid-template-columns: minmax(0, 1fr) minmax(92px, 0.75fr);
+}
+
+.input-binding-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.input-binding-list li {
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.input-binding-editor label {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.input-binding-editor label span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.input-binding-editor input,
+.input-binding-editor select,
+.input-binding-editor textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+}
+
+.input-binding-editor textarea {
+  min-height: 68px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1.4;
 }
 
 .fixture-editor {

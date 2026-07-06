@@ -219,6 +219,44 @@ operators:
 
 当画布变乱时，点击 Auto Layout。新版画布会用确定性布局把 DAG 拉开，让节点和边更容易读。
 
+### 5.3.1 配置起始节点输入
+
+起始节点通常没有上游边，但它仍然需要业务入参，例如 `userId`、`orderId`、`applicant.score` 或请求上下文里的租户信息。新版 `/author/` 在 selected-node inspector 中提供 `Node Inputs` 区域：
+
+1. 选中需要配置输入的节点。
+2. 点击 Add Binding。
+3. 在 Key 中填写稳定输入名，例如 `score` 或 `applicantId`。
+4. Source 选择 `ctx` 时，在 Context path 中填写运行上下文路径，例如 `applicant.score`；运行时会 lower 为 `ctx.applicant.score`。
+5. Source 选择 `constant` 时，填写 JSON literal 或普通字符串。
+6. Target port 默认使用该算子的第一个输入端口；如果算子有多个输入端口，可以在 Target port 中切换。
+7. Target path 用来把值写入端口内的嵌套字段，例如 `params.userId` 可以表达为 `targetPort=params`、`targetPath=userId`。
+
+例如，一个风控起始节点要从运行上下文读取 `applicant.score`，导出的 draft 会包含：
+
+```json
+{
+  "inputs": {
+    "score": {
+      "kind": "contextPath",
+      "path": "applicant.score",
+      "targetPort": "inputs"
+    }
+  }
+}
+```
+
+模拟时，右侧 `Runtime Context` 区域提供本次 run 的 JSON context，例如：
+
+```json
+{
+  "applicant": {
+    "score": 720
+  }
+}
+```
+
+`Runtime Context` 会进入 `POST /api/visual/graphs/simulate` 的 `context` 字段；它不会写进导出的 `GraphDraft`。导出的 draft 只保存 `contextPath` / `constant` 等输入绑定语义，方便后续在真实网关运行时由外部请求上下文提供变量。
+
 ### 5.4 第四步：连线
 
 从一个节点的输出 handle 拖到另一个节点的输入 handle。拖拽过程中，画布会调用：

@@ -402,12 +402,13 @@ export function toSimulationRequest(
   edges: CanvasEdge[],
   outputNodeId: string,
   fixtures: Record<string, NodeFixture> = {},
+  context: Record<string, unknown> = {},
 ): SimulationRequest {
   const draft = toGraphDraft(graphName, nodes, edges, outputNodeId);
   const selectedOutputNode = draft.output.nodeId;
   return {
     draft,
-    context: {},
+    context,
     outputNode: selectedOutputNode,
     ...(Object.keys(fixtures).length > 0 ? { fixtures } : {}),
   };

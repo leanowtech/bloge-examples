@@ -173,6 +173,11 @@ interface OperatorNodeMetrics {
   outputCount: number;
 }
 
+interface JsonObjectCompilation {
+  value: Record<string, unknown>;
+  error?: string;
+}
+
 function handleOffset(index: number, count: number): CSSProperties {
   return { top: `${((index + 1) / (count + 1)) * 100}%` };
 }
@@ -233,6 +238,197 @@ function operatorNodeMetrics(summary: OperatorSummary, config: Record<string, un
     inputCount,
     outputCount: editor.outputColumns.length || summary.outputCount,
   };
+}
+
+function compileJsonObjectDraft(text: string, label: string): JsonObjectCompilation {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { value: {} };
+  }
+  try {
+    const value = JSON.parse(trimmed) as unknown;
+    if (!isRecord(value)) {
+      return { value: {}, error: `${label} must be a JSON object.` };
+    }
+    return { value };
+  } catch {
+    return { value: {}, error: `${label} must be valid JSON.` };
+  }
+}
+
+function parseConstantInputValue(text: string): unknown {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return '';
+  }
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    return text;
+  }
+}
+
+function constantInputValueText(value: unknown): string {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+}
+
+function uniqueInputBindingKey(
+  bindings: Record<string, DraftNodeBinding>,
+  rawBase: string,
+  currentKey = '',
+): string {
+  const normalized = decisionFieldName(rawBase, currentKey || 'input');
+  const taken = new Set(Object.keys(bindings).filter((key) => key !== currentKey));
+  let candidate = normalized;
+  let suffix = 2;
+  while (taken.has(candidate)) {
+    candidate = `${normalized}${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function defaultInputTargetPort(node: Node<NodeData>): string {
+  return node.data.summary.inputNames[0] || 'inputs';
+}
+
+function editableInputBindingKind(binding: DraftNodeBinding): 'contextPath' | 'constant' {
+  return binding.kind === 'constant' ? 'constant' : 'contextPath';
+}
+
+function NodeInputBindingsEditor({
+  node,
+  onAdd,
+  onRemove,
+  onRename,
+  onChange,
+  onKindChange,
+}: {
+  node: Node<NodeData>;
+  onAdd: () => void;
+  onRemove: (bindingKey: string) => void;
+  onRename: (bindingKey: string, value: string) => void;
+  onChange: (bindingKey: string, patch: Partial<DraftNodeBinding>) => void;
+  onKindChange: (bindingKey: string, kind: 'contextPath' | 'constant') => void;
+}) {
+  const inputPorts = node.data.summary.inputNames.length ? node.data.summary.inputNames : ['inputs'];
+  const rows = Object.entries(node.data.inputs ?? {});
+  return (
+    <div className="input-binding-editor" data-testid="node-input-editor">
+      <div className="input-binding-header">
+        <strong>Node Inputs</strong>
+        <button
+          type="button"
+          className="secondary compact"
+          data-testid="node-input-add"
+          onClick={onAdd}
+        >
+          Add Binding
+        </button>
+      </div>
+      {rows.length > 0 ? (
+        <ol className="input-binding-list">
+          {rows.map(([bindingKey, binding], index) => {
+            const kind = editableInputBindingKind(binding);
+            const targetPort = binding.targetPort || defaultInputTargetPort(node);
+            return (
+              <li key={bindingKey} data-testid={`node-input-binding:${index}`}>
+                <div className="input-binding-row-header">
+                  <label>
+                    <span>Key</span>
+                    <input
+                      aria-label={`Input binding key ${index + 1}`}
+                      data-testid={`node-input-key:${index}`}
+                      value={bindingKey}
+                      onChange={(event) => onRename(bindingKey, event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Source</span>
+                    <select
+                      aria-label={`Input binding source ${index + 1}`}
+                      data-testid={`node-input-kind:${index}`}
+                      value={kind}
+                      onChange={(event) =>
+                        onKindChange(bindingKey, event.target.value === 'constant' ? 'constant' : 'contextPath')
+                      }
+                    >
+                      <option value="contextPath">ctx</option>
+                      <option value="constant">constant</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="input-binding-targets">
+                  <label>
+                    <span>Target port</span>
+                    <select
+                      aria-label={`Input target port ${index + 1}`}
+                      data-testid={`node-input-target-port:${index}`}
+                      value={targetPort}
+                      onChange={(event) => onChange(bindingKey, { targetPort: event.target.value })}
+                    >
+                      {inputPorts.map((port) => (
+                        <option key={port} value={port}>
+                          {port}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Target path</span>
+                    <input
+                      aria-label={`Input target path ${index + 1}`}
+                      data-testid={`node-input-target-path:${index}`}
+                      placeholder={bindingKey}
+                      value={binding.targetPath ?? ''}
+                      onChange={(event) => onChange(bindingKey, { targetPath: event.target.value })}
+                    />
+                  </label>
+                </div>
+                {kind === 'contextPath' ? (
+                  <label className="input-binding-source">
+                    <span>Context path</span>
+                    <input
+                      aria-label={`Context path ${index + 1}`}
+                      data-testid={`node-input-context-path:${index}`}
+                      placeholder="user.id"
+                      value={binding.path ?? ''}
+                      onChange={(event) => onChange(bindingKey, { kind: 'contextPath', path: event.target.value })}
+                    />
+                  </label>
+                ) : (
+                  <label className="input-binding-source">
+                    <span>Constant</span>
+                    <textarea
+                      aria-label={`Constant input value ${index + 1}`}
+                      data-testid={`node-input-constant:${index}`}
+                      value={constantInputValueText(binding.value)}
+                      onChange={(event) =>
+                        onChange(bindingKey, { kind: 'constant', value: parseConstantInputValue(event.target.value) })
+                      }
+                    />
+                  </label>
+                )}
+                <button
+                  type="button"
+                  className="secondary compact"
+                  data-testid={`node-input-remove:${index}`}
+                  onClick={() => onRemove(bindingKey)}
+                >
+                  Remove
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <p className="muted">No input bindings.</p>
+      )}
+    </div>
+  );
 }
 
 function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
@@ -1666,6 +1862,7 @@ export default function AuthorCanvas() {
   const [explicitOutputNodeId, setExplicitOutputNodeId] = useState('');
   const [fixtureDrafts, setFixtureDrafts] = useState<Record<string, string>>({});
   const [fixtureInputDrafts, setFixtureInputDrafts] = useState<Record<string, string>>({});
+  const [simulationContextDraft, setSimulationContextDraft] = useState('{}');
   const [connectionNotice, setConnectionNotice] = useState<ConnectionNotice | null>(null);
   const [candidatePreview, setCandidatePreview] = useState<ConnectionCandidateIndex | null>(null);
   const [selectedConnectionSourcePort, setSelectedConnectionSourcePort] = useState('');
@@ -1813,6 +2010,105 @@ export default function AuthorCanvas() {
         : node
     )));
   }, [clearRunResult]);
+
+  const updateSelectedNodeInputs = useCallback((
+    update: (inputs: Record<string, DraftNodeBinding>, node: Node<NodeData>) => Record<string, DraftNodeBinding>,
+  ) => {
+    if (!selectedNodeId) {
+      return;
+    }
+    clearRunResult();
+    setNodes((current) => current.map((node) => {
+      if (node.id !== selectedNodeId) {
+        return node;
+      }
+      const inputs = update(node.data.inputs ?? {}, node);
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          inputs: Object.keys(inputs).length > 0 ? inputs : undefined,
+        },
+      };
+    }));
+  }, [clearRunResult, selectedNodeId]);
+
+  const addSelectedInputBinding = useCallback(() => {
+    updateSelectedNodeInputs((inputs, node) => {
+      const targetPort = defaultInputTargetPort(node);
+      const bindingKey = uniqueInputBindingKey(inputs, targetPort === 'inputs' ? 'input' : targetPort);
+      return {
+        ...inputs,
+        [bindingKey]: {
+          kind: 'contextPath',
+          path: bindingKey,
+          targetPort,
+        },
+      };
+    });
+  }, [updateSelectedNodeInputs]);
+
+  const renameSelectedInputBinding = useCallback((bindingKey: string, value: string) => {
+    updateSelectedNodeInputs((inputs) => {
+      const binding = inputs[bindingKey];
+      if (!binding) {
+        return inputs;
+      }
+      const nextKey = uniqueInputBindingKey(inputs, value, bindingKey);
+      if (nextKey === bindingKey) {
+        return inputs;
+      }
+      const next: Record<string, DraftNodeBinding> = {};
+      Object.entries(inputs).forEach(([key, candidate]) => {
+        next[key === bindingKey ? nextKey : key] = key === bindingKey
+          ? {
+              ...candidate,
+              path: candidate.kind === 'contextPath' && candidate.path === bindingKey ? nextKey : candidate.path,
+              targetPath: candidate.targetPath === bindingKey ? nextKey : candidate.targetPath,
+            }
+          : candidate;
+      });
+      return next;
+    });
+  }, [updateSelectedNodeInputs]);
+
+  const updateSelectedInputBinding = useCallback((bindingKey: string, patch: Partial<DraftNodeBinding>) => {
+    updateSelectedNodeInputs((inputs) => {
+      const current = inputs[bindingKey];
+      if (!current) {
+        return inputs;
+      }
+      return {
+        ...inputs,
+        [bindingKey]: { ...current, ...patch },
+      };
+    });
+  }, [updateSelectedNodeInputs]);
+
+  const updateSelectedInputBindingKind = useCallback((bindingKey: string, kind: 'contextPath' | 'constant') => {
+    updateSelectedNodeInputs((inputs) => {
+      const current = inputs[bindingKey];
+      if (!current) {
+        return inputs;
+      }
+      const nextBinding: DraftNodeBinding = { ...current, kind, path: current.path || bindingKey };
+      delete nextBinding.value;
+      return {
+        ...inputs,
+        [bindingKey]: kind === 'constant'
+          ? { ...current, kind, path: '', value: current.value ?? '' }
+          : nextBinding,
+      };
+    });
+  }, [updateSelectedNodeInputs]);
+
+  const removeSelectedInputBinding = useCallback((bindingKey: string) => {
+    updateSelectedNodeInputs((inputs) => {
+      const next = { ...inputs };
+      delete next[bindingKey];
+      return next;
+    });
+  }, [updateSelectedNodeInputs]);
 
   const canvasNodes = useMemo<CanvasNode[]>(
     () =>
@@ -1975,6 +2271,10 @@ export default function AuthorCanvas() {
     () => compileFixtureDrafts(fixtureDrafts, fixtureInputDrafts),
     [fixtureDrafts, fixtureInputDrafts],
   );
+  const contextCompilation = useMemo(
+    () => compileJsonObjectDraft(simulationContextDraft, 'Runtime context'),
+    [simulationContextDraft],
+  );
   const fixtureRows = useMemo(
     () => simulationFixtureRows(
       canvasNodes,
@@ -2023,6 +2323,7 @@ export default function AuthorCanvas() {
     .filter((row) => row.state === 'warning' || row.state === 'blocked')
     .length;
   const hasFixtureErrors = fixtureErrorCount > 0;
+  const hasContextError = Boolean(contextCompilation.error);
   const selectedFixtureDraft = selectedNode ? fixtureDrafts[selectedNode.id] ?? '' : '';
   const selectedExpectedInputDraft = selectedNode ? fixtureInputDrafts[selectedNode.id] ?? '' : '';
   const selectedFixtureHasDraft =
@@ -2491,6 +2792,7 @@ export default function AuthorCanvas() {
         canvasEdges,
         outputNodeId,
         fixtureCompilation.fixtures,
+        contextCompilation.value,
       ));
       setResult(response);
 
@@ -2509,7 +2811,7 @@ export default function AuthorCanvas() {
     } finally {
       setBusy(false);
     }
-  }, [canvasEdges, canvasNodes, fixtureCompilation.fixtures, outputNodeId]);
+  }, [canvasEdges, canvasNodes, contextCompilation.value, fixtureCompilation.fixtures, outputNodeId]);
 
   const runDraftValidation = useCallback(async () => {
     setValidatingDraft(true);
@@ -2836,8 +3138,14 @@ export default function AuthorCanvas() {
           <button
             className="primary"
             onClick={runSimulation}
-            disabled={busy || nodes.length === 0 || hasFixtureErrors}
-            title={hasFixtureErrors ? 'Fix fixture JSON before simulating.' : undefined}
+            disabled={busy || nodes.length === 0 || hasFixtureErrors || hasContextError}
+            title={
+              hasFixtureErrors
+                ? 'Fix fixture JSON before simulating.'
+                : hasContextError
+                  ? 'Fix runtime context JSON before simulating.'
+                  : undefined
+            }
           >
             {busy ? 'Simulating…' : 'Simulate'}
           </button>
@@ -2991,6 +3299,32 @@ export default function AuthorCanvas() {
           <p className="muted">No nodes.</p>
         )}
 
+        <h2>Runtime Context</h2>
+        <div className="fixture-editor context-editor">
+          <div className="fixture-header">
+            <strong>Context</strong>
+            <span className={`badge ${hasContextError ? 'error' : 'fixture'}`}>
+              {hasContextError ? 'invalid' : 'ready'}
+            </span>
+          </div>
+          <label className="fixture-field">
+            <span>JSON</span>
+            <textarea
+              aria-label="Simulation runtime context JSON"
+              data-testid="simulation-context-json"
+              spellCheck={false}
+              placeholder="{}"
+              value={simulationContextDraft}
+              onChange={(event) => setSimulationContextDraft(event.target.value)}
+            />
+          </label>
+          {contextCompilation.error && (
+            <p className="fixture-error" data-testid="simulation-context-error">
+              {contextCompilation.error}
+            </p>
+          )}
+        </div>
+
         <h2>Selected Node</h2>
         {selectedNode ? (
           <section className="node-detail">
@@ -3008,6 +3342,14 @@ export default function AuthorCanvas() {
               <strong>Outputs</strong>
               <span>{selectedNode.data.summary.outputNames.join(', ') || 'none'}</span>
             </div>
+            <NodeInputBindingsEditor
+              node={selectedNode}
+              onAdd={addSelectedInputBinding}
+              onRemove={removeSelectedInputBinding}
+              onRename={renameSelectedInputBinding}
+              onChange={updateSelectedInputBinding}
+              onKindChange={updateSelectedInputBindingKind}
+            />
             <div className="connection-guide" data-testid="connection-guide">
               <div className="connection-guide-header">
                 <strong>Connect Next</strong>
