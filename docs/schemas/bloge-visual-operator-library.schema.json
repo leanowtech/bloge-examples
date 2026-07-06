@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://bloge.dev/schemas/bloge-visual-operator-library.schema.json",
+  "$id": "https://bloge.leanowtech.com/schemas/bloge-visual-operator-library.schema.json",
   "title": "BLOGE Visual Operator Library Authoring Schema",
   "description": "Authoring-time structural schema for user-supplied bloge.visualOperatorLibrary.v1 documents. The resource-gateway server remains authoritative for semantic validation, fingerprints, readiness, and diagnostics.",
   "type": "object",
