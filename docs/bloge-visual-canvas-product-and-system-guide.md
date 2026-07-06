@@ -239,25 +239,36 @@ POST /api/visual/connections/check
 
 Decision table 的规则矩阵支持“加行”和“加列”：
 
-1. 点击 Add Condition Column 增加条件列，例如 `score`、`segment`、`amount`。
-2. 点击 Add Output Column 增加输出列，例如 `tier`、`reason`。
-3. 在规则行中填写每个条件表达式，例如 `score >= 700`。
-4. 在输出列中填写匹配后的结构化结果，例如 `decision=approve`、`tier=platinum`。
-5. 勾选 Otherwise 的行会作为 fallback，条件列会禁用，只保留输出编辑。
+1. 先把上游节点输出连到 decision table 的输入字段，例如连到 `inputs.score`。
+2. 双击 decision table 后，规则矩阵会把传入边暴露为锁定条件列，例如 `score`。锁定列可以填写规则表达式，但不能改名或删除，因为列名就是后端 DSL 使用的 input key。
+3. 点击 Add Condition Column 增加手工条件列，例如 `segment`、`amount`。
+4. 点击 Add Output Column 增加输出列，例如 `tier`、`reason`。
+5. 在规则行中填写每个条件表达式，例如 `score >= 700`。
+6. 在输出列中填写匹配后的结构化结果，例如 `decision=approve`、`tier=platinum`。
+7. 勾选 Otherwise 的行会作为 fallback，条件列会禁用，只保留输出编辑。
 
 导出的 draft 会保持 schema-friendly 结构，而不是把整张表压成一段不可解析字符串：
 
 ```json
 {
+  "inputs": {
+    "score": {
+      "kind": "nodePath",
+      "nodeId": "riskScore",
+      "sourcePort": "decision",
+      "path": "score",
+      "targetPort": "inputs",
+      "targetPath": "score"
+    }
+  },
   "config": {
     "hitPolicy": "unique",
     "outputType": "{ decision: String, ruleId: String, tier: String }",
-    "conditionColumns": ["value", "score"],
+    "conditionColumns": ["score"],
     "outputColumns": ["decision", "ruleId", "tier"],
     "rules": [
       {
         "conditions": {
-          "value": "value != null",
           "score": "score >= 700"
         },
         "output": {

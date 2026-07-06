@@ -7,6 +7,7 @@ import type {
   DraftEdge,
   DraftEndpoint,
   DraftNode,
+  DraftNodeBinding,
   GraphDraft,
   NodeFixture,
   OperatorDefinition,
@@ -28,6 +29,7 @@ export interface CanvasNode {
   id: string;
   operatorRef: string;
   label?: string;
+  inputs?: Record<string, DraftNodeBinding>;
   config?: Record<string, unknown>;
   position: { x: number; y: number };
 }
@@ -41,6 +43,7 @@ export interface CanvasEdge {
   targetPort?: string;
   sourcePath?: string;
   targetPath?: string;
+  bindingKey?: string;
 }
 
 /** Compact operator facts shown directly on canvas cards and palette rows. */
@@ -279,11 +282,12 @@ export function toGraphDraft(
   edges: CanvasEdge[],
   outputNodeId: string,
 ): GraphDraft {
+  const edgeInputs = nodeInputsFromEdges(edges);
   const draftNodes: DraftNode[] = nodes.map((node) => ({
     id: node.id,
     operatorRef: node.operatorRef,
     label: node.label ?? '',
-    inputs: {},
+    inputs: { ...(node.inputs ?? {}), ...(edgeInputs[node.id] ?? {}) },
     config: node.config ?? {},
     position: node.position,
   }));
@@ -304,6 +308,59 @@ export function toGraphDraft(
     edges: draftEdges,
     output: { nodeId: resolvedOutputNode, path: '' },
   };
+}
+
+function nodeInputsFromEdges(edges: CanvasEdge[]): Record<string, Record<string, DraftNodeBinding>> {
+  const inputsByNode: Record<string, Record<string, DraftNodeBinding>> = {};
+  for (const edge of edges) {
+    if (!edge.source || !edge.target) {
+      continue;
+    }
+    const inputKey = canvasEdgeBindingKey(edge);
+    if (!inputKey) {
+      continue;
+    }
+    inputsByNode[edge.target] = {
+      ...(inputsByNode[edge.target] ?? {}),
+      [inputKey]: {
+        kind: 'nodePath',
+        nodeId: edge.source,
+        sourcePort: edge.sourcePort ?? '',
+        path: edge.sourcePath ?? '',
+        targetPort: edge.targetPort ?? '',
+        targetPath: edge.targetPath ?? '',
+      },
+    };
+  }
+  return inputsByNode;
+}
+
+export function canvasEdgeBindingKey(edge: CanvasEdge): string {
+  if (edge.bindingKey) {
+    return edge.bindingKey;
+  }
+  if (edge.targetPath) {
+    return edge.targetPath;
+  }
+  if (edge.targetPort && edge.targetPort !== 'inputs' && edge.targetPort !== 'input') {
+    return edge.targetPort;
+  }
+  const sourcePathTail = lastPathSegment(edge.sourcePath);
+  if (sourcePathTail) {
+    return sourcePathTail;
+  }
+  if (edge.sourcePort && edge.sourcePort !== 'output') {
+    return edge.sourcePort;
+  }
+  return edge.targetPort || 'input';
+}
+
+function lastPathSegment(path: string | undefined): string {
+  if (!path) {
+    return '';
+  }
+  const segments = path.split('.').filter(Boolean);
+  return segments[segments.length - 1] ?? '';
 }
 
 /**

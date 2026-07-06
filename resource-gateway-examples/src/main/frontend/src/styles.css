@@ -1363,8 +1363,31 @@ button.secondary:disabled {
 .rule-editor-column-tools {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.rule-editor-incoming {
+  min-width: 0;
+  display: flex;
+  flex: 1 1 260px;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.rule-editor-incoming span {
+  max-width: 180px;
+  overflow: hidden;
+  padding: 4px 7px;
+  border: 1px solid #b7e5dd;
+  border-radius: 999px;
+  background: #eefbf7;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rule-editor-table-wrap {
@@ -1442,6 +1465,17 @@ button.secondary:disabled {
   font-size: 10px;
   font-weight: 900;
   text-transform: uppercase;
+}
+
+.rule-editor-column-header small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
 }
 
 .rule-editor-column-header input {

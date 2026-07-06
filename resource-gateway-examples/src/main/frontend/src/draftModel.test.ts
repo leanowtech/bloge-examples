@@ -102,6 +102,40 @@ describe('toGraphDraft', () => {
       target: { nodeId: 'b', port: 'profile' },
     });
   });
+
+  it('derives nodePath input bindings from data edges so configurable operators can reference incoming data', () => {
+    const draft = toGraphDraft(
+      'myGraph',
+      [
+        { id: 'score', operatorRef: 'risk:score', position: { x: 0, y: 0 } },
+        { id: 'decision', operatorRef: 'bloge:decisionTable', position: { x: 200, y: 0 } },
+      ],
+      [
+        {
+          id: 'e1',
+          source: 'score',
+          target: 'decision',
+          sourcePort: 'decision',
+          sourcePath: 'score',
+          targetPort: 'inputs',
+          targetPath: 'score',
+          bindingKey: 'score',
+        },
+      ],
+      'decision',
+    );
+
+    expect(draft.nodes[1].inputs).toMatchObject({
+      score: {
+        kind: 'nodePath',
+        nodeId: 'score',
+        sourcePort: 'decision',
+        path: 'score',
+        targetPort: 'inputs',
+        targetPath: 'score',
+      },
+    });
+  });
 });
 
 describe('toSimulationRequest', () => {

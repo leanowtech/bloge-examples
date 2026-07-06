@@ -590,6 +590,114 @@ describe('AuthorCanvas connection guide', () => {
     });
   });
 
+  it('uses incoming edge bindings as decision-table condition columns', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({ operators: [scoreOperator(), decisionTableOperator()] });
+      }
+      if (url === '/api/visual/connections/candidates') {
+        const body = JSON.parse(String(init?.body));
+        expect(body.source).toEqual({ nodeId: 'n1', port: 'decision' });
+        return jsonResponse({
+          source: { nodeId: 'n1', port: 'decision' },
+          acceptedCount: 1,
+          rejectedCount: 0,
+          totalCandidateCount: 1,
+          candidates: [
+            {
+              targetNodeId: 'n2',
+              targetNodeLabel: 'Decision Table',
+              targetOperatorRef: 'bloge:decisionTable',
+              targetSurface: 'input',
+              target: { nodeId: 'n2', port: 'inputs', path: 'score' },
+              accepted: true,
+              targetStatus: 'ready',
+              summary: { message: 'Schemas match.' },
+            },
+          ],
+        });
+      }
+      if (url === '/api/visual/connections/check') {
+        const body = JSON.parse(String(init?.body));
+        expect(body.target).toEqual({ nodeId: 'n2', port: 'inputs', path: 'score' });
+        return jsonResponse({
+          accepted: true,
+          bindingKey: 'score',
+          edge: {
+            id: 'n1:decision.score->n2:inputs.score',
+            kind: 'data',
+            source: { nodeId: 'n1', port: 'decision', path: 'score' },
+            target: { nodeId: 'n2', port: 'inputs', path: 'score' },
+          },
+          diagnostics: [],
+          summary: { message: 'Connection accepted.' },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:score"]').textContent).toContain('Risk Score'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:score"]'));
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:bloge:decisionTable"]'));
+    await click(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    await click(query<HTMLButtonElement>('[data-testid="connection-guide-refresh"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="connection-guide-target:n2:inputs"]').textContent)
+        .toContain('Decision Table'),
+    );
+    const connectButton = query('[data-testid="connection-guide-target:n2:inputs"]')
+      .querySelector<HTMLButtonElement>('button.secondary');
+    expect(connectButton).not.toBeNull();
+    await click(connectButton as HTMLButtonElement);
+
+    await waitFor(() => expect(document.body.textContent).toContain('1 edges'));
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n2"]'));
+    await waitFor(() =>
+      expect(query('[data-testid="decision-table-editor"]').textContent).toContain('Decision Table'),
+    );
+
+    expect(query('[data-testid="decision-incoming-inputs"]').textContent).toContain('score');
+    expect(query<HTMLInputElement>('[data-testid="decision-condition-column-name:0"]').value).toBe('score');
+    expect(query<HTMLInputElement>('[data-testid="decision-condition-column-name:0"]').disabled).toBe(true);
+
+    await setControlValue(
+      query<HTMLInputElement>('[data-testid="decision-rule-condition:0:score"]'),
+      'score >= 700',
+    );
+    await setControlValue(query<HTMLInputElement>('[data-testid="decision-rule-output:0:decision"]'), 'approve');
+
+    const exportLink = query<HTMLAnchorElement>('[data-testid="author-draft-export"]');
+    const exported = authorDraftExport(exportLink);
+    expect(exported.nodes[1].inputs).toMatchObject({
+      score: {
+        kind: 'nodePath',
+        nodeId: 'n1',
+        sourcePort: 'decision',
+        path: 'score',
+        targetPort: 'inputs',
+        targetPath: 'score',
+      },
+    });
+    expect(exported.nodes[1].config.conditionColumns).toEqual(['score']);
+    expect(exported.nodes[1].config.rules[0]).toMatchObject({
+      conditions: {
+        score: 'score >= 700',
+      },
+      output: {
+        decision: 'approve',
+      },
+    });
+  });
+
   it('opens a transform mapping editor on double click and exports assignments', async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);

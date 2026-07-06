@@ -60,6 +60,12 @@ export interface DraftNodeBinding {
   kind: string;
   value?: unknown;
   path?: string;
+  nodeId?: string;
+  sourcePort?: string;
+  targetPort?: string;
+  targetPath?: string;
+  expr?: string;
+  fields?: Record<string, DraftNodeBinding>;
 }
 
 /** A visual graph draft node. */

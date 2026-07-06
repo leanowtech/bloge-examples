@@ -29,6 +29,7 @@ import {
 import {
   authoringJourney,
   autoLayoutCanvas,
+  canvasEdgeBindingKey,
   canvasCoachPrompt,
   canvasNodeFocusState,
   type CanvasEdge,
@@ -116,6 +117,7 @@ interface CheckedConnectionParams {
 type CanvasFlowEdge = Edge & {
   sourcePath?: string;
   targetPath?: string;
+  bindingKey?: string;
 };
 
 interface OperatorFocusRow {
@@ -127,6 +129,8 @@ interface OperatorFocusRow {
 interface DecisionTableColumn {
   id: string;
   label: string;
+  locked?: boolean;
+  sourceLabel?: string;
 }
 
 interface DecisionTableRuleRow {
@@ -272,7 +276,10 @@ const DEFAULT_DECISION_OUTPUT_COLUMNS: DecisionTableColumn[] = [
   { id: 'ruleId', label: 'ruleId' },
 ];
 
-function decisionTableEditorModel(config: Record<string, unknown> | undefined): DecisionTableEditorModel {
+function decisionTableEditorModel(
+  config: Record<string, unknown> | undefined,
+  incomingConditionColumns: DecisionTableColumn[] = [],
+): DecisionTableEditorModel {
   const conditionColumns = decisionTableColumns(config?.conditionColumns);
   const outputColumns = decisionTableColumns(config?.outputColumns);
   const rows: DecisionTableRuleRow[] = [];
@@ -287,6 +294,13 @@ function decisionTableEditorModel(config: Record<string, unknown> | undefined): 
       rows.push(row);
     }
   }
+  incomingConditionColumns.forEach((column) =>
+    addDecisionColumn(conditionColumns, column.id, {
+      label: column.label,
+      locked: true,
+      sourceLabel: column.sourceLabel,
+    }),
+  );
   const effectiveConditionColumns = conditionColumns.length > 0
     ? conditionColumns
     : cloneDecisionColumns(DEFAULT_DECISION_CONDITION_COLUMNS);
@@ -428,12 +442,21 @@ function cloneDecisionColumns(columns: DecisionTableColumn[]): DecisionTableColu
   return columns.map((column) => ({ ...column }));
 }
 
-function addDecisionColumn(columns: DecisionTableColumn[], rawId: string): void {
+function addDecisionColumn(
+  columns: DecisionTableColumn[],
+  rawId: string,
+  patch: Partial<DecisionTableColumn> = {},
+): void {
   const id = decisionFieldName(rawId, '');
-  if (!id || columns.some((column) => column.id === id)) {
+  if (!id) {
     return;
   }
-  columns.push({ id, label: id });
+  const existing = columns.find((column) => column.id === id);
+  if (existing) {
+    Object.assign(existing, patch);
+    return;
+  }
+  columns.push({ id, label: patch.label ?? id, ...patch });
 }
 
 function nextDecisionColumn(columns: DecisionTableColumn[], prefix: string): DecisionTableColumn {
@@ -596,6 +619,48 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function decisionTableIncomingConditionColumns(
+  node: Node<NodeData>,
+  edges: Edge[],
+  nodes: Node<NodeData>[],
+): DecisionTableColumn[] {
+  const nodeById = new Map(nodes.map((candidate) => [candidate.id, candidate]));
+  const columns = new Map<string, DecisionTableColumn>();
+  for (const edge of edges) {
+    if (edge.target !== node.id || edge.source === node.id) {
+      continue;
+    }
+    const flowEdge = edge as CanvasFlowEdge;
+    const edgeData = edge.data as { sourcePath?: string; targetPath?: string; bindingKey?: string } | undefined;
+    const sourcePort = portNameFromHandle(edge.sourceHandle, 'out');
+    const targetPort = portNameFromHandle(edge.targetHandle, 'in');
+    const sourcePath = flowEdge.sourcePath ?? edgeData?.sourcePath ?? '';
+    const targetPath = flowEdge.targetPath ?? edgeData?.targetPath ?? '';
+    const bindingKey = flowEdge.bindingKey ?? edgeData?.bindingKey ?? canvasEdgeBindingKey({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      sourcePort,
+      targetPort,
+      sourcePath,
+      targetPath,
+    });
+    const id = decisionFieldName(bindingKey, '');
+    if (!id || columns.has(id)) {
+      continue;
+    }
+    const sourceNode = nodeById.get(edge.source);
+    const sourceLabel = `${sourceNode?.data.label ?? edge.source}.${endpointLabel(sourcePort, sourcePath, 'output')}`;
+    columns.set(id, {
+      id,
+      label: id,
+      locked: true,
+      sourceLabel,
+    });
+  }
+  return Array.from(columns.values());
+}
+
 function OperatorFocusPanel({
   operator,
   summary,
@@ -632,14 +697,16 @@ function OperatorFocusPanel({
 
 function DecisionTableRuleEditor({
   node,
+  incomingColumns,
   onClose,
   onChange,
 }: {
   node: Node<NodeData>;
+  incomingColumns: DecisionTableColumn[];
   onClose: () => void;
   onChange: (editor: DecisionTableEditorModel) => void;
 }) {
-  const editor = decisionTableEditorModel(node.data.config);
+  const editor = decisionTableEditorModel(node.data.config, incomingColumns);
   const updateEditor = (next: DecisionTableEditorModel) => onChange(next);
   const updateRow = (index: number, patch: Partial<DecisionTableRuleRow>) => {
     updateEditor({
@@ -703,7 +770,7 @@ function DecisionTableRuleEditor({
   };
   const renameConditionColumn = (columnIndex: number, value: string) => {
     const current = editor.conditionColumns[columnIndex];
-    if (!current) {
+    if (!current || current.locked) {
       return;
     }
     const id = uniqueDecisionColumnId(
@@ -761,6 +828,9 @@ function DecisionTableRuleEditor({
       return;
     }
     const removed = editor.conditionColumns[columnIndex];
+    if (removed.locked) {
+      return;
+    }
     const conditionColumns = editor.conditionColumns.filter((_, index) => index !== columnIndex);
     updateEditor({
       ...editor,
@@ -833,6 +903,15 @@ function DecisionTableRuleEditor({
           </label>
         </div>
         <div className="rule-editor-column-tools">
+          {incomingColumns.length > 0 && (
+            <div className="rule-editor-incoming" data-testid="decision-incoming-inputs">
+              {incomingColumns.map((column) => (
+                <span key={column.id} title={column.sourceLabel || column.id}>
+                  {column.id}
+                </span>
+              ))}
+            </div>
+          )}
           <button
             type="button"
             className="secondary compact"
@@ -863,13 +942,15 @@ function DecisionTableRuleEditor({
                         aria-label={`Condition column ${index + 1} name`}
                         data-testid={`decision-condition-column-name:${index}`}
                         value={column.label}
+                        disabled={column.locked}
                         onChange={(event) => renameConditionColumn(index, event.target.value)}
                       />
+                      {column.sourceLabel && <small>{column.sourceLabel}</small>}
                       <button
                         type="button"
                         className="secondary compact"
                         onClick={() => deleteConditionColumn(index)}
-                        disabled={editor.conditionColumns.length <= 1}
+                        disabled={editor.conditionColumns.length <= 1 || column.locked}
                         aria-label={`Delete condition column ${column.label}`}
                       >
                         Delete
@@ -1675,7 +1756,7 @@ export default function AuthorCanvas() {
     () =>
       edges.map((edge) => {
         const pathEdge = edge as CanvasFlowEdge;
-        const edgeData = edge.data as { sourcePath?: string; targetPath?: string } | undefined;
+        const edgeData = edge.data as { sourcePath?: string; targetPath?: string; bindingKey?: string } | undefined;
         return {
           id: edge.id,
           source: edge.source,
@@ -1684,6 +1765,7 @@ export default function AuthorCanvas() {
           targetPort: portNameFromHandle(edge.targetHandle, 'in'),
           sourcePath: pathEdge.sourcePath ?? edgeData?.sourcePath,
           targetPath: pathEdge.targetPath ?? edgeData?.targetPath,
+          bindingKey: pathEdge.bindingKey ?? edgeData?.bindingKey,
         };
       }),
     [edges],
@@ -1706,6 +1788,9 @@ export default function AuthorCanvas() {
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const selectedOperator = selectedNode ? operatorByRef.get(selectedNode.data.operatorRef) : undefined;
   const ruleEditorNode = nodes.find((node) => node.id === ruleEditorNodeId);
+  const ruleEditorIncomingColumns = ruleEditorNode
+    ? decisionTableIncomingConditionColumns(ruleEditorNode, edges, nodes)
+    : [];
   const mappingEditorNode = nodes.find((node) => node.id === mappingEditorNodeId);
   const selectedOutputPorts = useMemo(
     () =>
@@ -2065,6 +2150,7 @@ export default function AuthorCanvas() {
       clearRunResult();
       sourcePath = check.edge?.source?.path ?? sourcePath;
       targetPath = check.edge?.target?.path ?? targetPath;
+      const bindingKey = check.bindingKey ?? '';
       const sourcePort = portNameFromHandle(params.sourceHandleId, 'out');
       const targetPort = portNameFromHandle(params.targetHandleId, 'in');
       const label = `${endpointLabel(sourcePort, sourcePath, 'value')} -> ${endpointLabel(targetPort, targetPath, 'input')}`;
@@ -2076,7 +2162,8 @@ export default function AuthorCanvas() {
           targetHandle: params.targetHandleId,
           sourcePath,
           targetPath,
-          data: { sourcePath, targetPath },
+          bindingKey,
+          data: { sourcePath, targetPath, bindingKey },
           id: check.edge?.id || `${params.sourceNodeId}:${sourcePort}.${sourcePath}->${params.targetNodeId}:${targetPort}.${targetPath}`,
           label,
           animated: true,
@@ -2974,6 +3061,7 @@ export default function AuthorCanvas() {
       {ruleEditorNode && (
         <DecisionTableRuleEditor
           node={ruleEditorNode}
+          incomingColumns={ruleEditorIncomingColumns}
           onClose={() => setRuleEditorNodeId('')}
           onChange={(editor) => updateDecisionTableRules(ruleEditorNode.id, editor)}
         />

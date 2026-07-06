@@ -330,3 +330,41 @@ npm run build
 | 更广浏览器矩阵 | 当前覆盖桌面与 390px mobile；后续常规回归可加入 tablet 和高缩放场景 |
 
 结论：本轮把用户指出的“只有行没有列”的核心问题改成可用的动态规则矩阵，并主动补齐 transform 的同类配置缺口。按第 2 节标尺，剩余差距约 1%，目标闭环完成。
+
+## 12. UX Refinement：Decision Table 条件列引用传入边数据
+
+触发反馈：decision table 的 `Condition` 应该能引用到传入边的数据信息，而不是只依赖用户手工创建一个同名条件列。
+
+问题判断：
+
+| 层面 | 旧行为 | 影响 |
+| --- | --- | --- |
+| Draft 模型 | 前端只保存 `edges`，没有从 accepted edge 派生目标节点 `inputs` binding | 后端 DSL codegen 读取 `node.inputs()` 时拿不到上游数据 |
+| 规则矩阵 UI | decision table 浮层只读取 `config.conditionColumns` / `rules[].conditions` | 用户无法直观看到 `inputs.score` 这类传入字段应该写成哪个条件列 |
+
+改动：
+
+| 文件 | 改动 |
+| --- | --- |
+| `resource-gateway-examples/src/main/frontend/src/draftModel.ts` | `toGraphDraft()` 从 data edges 派生目标节点 `inputs` 的 `nodePath` binding；`CanvasEdge` 支持保存服务端返回的 `bindingKey` |
+| `resource-gateway-examples/src/main/frontend/src/AuthorCanvas.tsx` | accepted connection 持久化 `bindingKey`；decision table 双击浮层读取 incoming edges，生成锁定条件列，并显示来源边 |
+| `resource-gateway-examples/src/main/frontend/src/AuthorCanvas.test.tsx` | 覆盖 score -> decision table `inputs.score` 连接后，规则矩阵自动出现 `score` 条件列，导出 `nodes[].inputs.score` 与 `rules[0].conditions.score` |
+| `docs/bloge-visual-canvas-product-and-system-guide.md` | 更新 decision table 使用说明，明确条件列来自传入边且锁定列不能改名/删除 |
+
+验证口径：
+
+```bash
+cd resource-gateway-examples/src/main/frontend
+npm test -- --run src/draftModel.test.ts src/AuthorCanvas.test.tsx
+npm run build
+```
+
+本次修正后，decision table 的条件列与传入边形成闭环：
+
+```text
+accepted edge target inputs.score
+  -> canvas edge bindingKey score
+    -> GraphDraft nodes[n].inputs.score nodePath binding
+      -> decision table editor locked condition column score
+        -> config.rules[].conditions.score
+```
