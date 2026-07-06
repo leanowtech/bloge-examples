@@ -6,7 +6,7 @@
 
 ## 1. 定位
 
-算子库是通用 BLOGE 可视化编排画布的外部能力入口。平台或业务团队把自己的业务动作、远程 worker、AI tool、事件入口、webhook 或 schema-only 设计节点描述成 `OperatorLibrary`，画布再把它们投影成可搜索、可拖拽、可连线、可校验、可导出和可治理的 `OperatorDefinition`。
+算子库是通用 BLOGE 可视化编排画布的外部能力入口。平台或业务团队把自己的业务动作、远程 worker、AI tool、事件入口、webhook 或 schema-only 设计节点描述成 `OperatorLibrary`，也可以把通用数据转换能力描述成 `builtInFunctions`。画布再把它们投影成可搜索、可拖拽、可连线、可校验、可导出、可治理的 `OperatorDefinition`，以及 transform/branch 表达式可补全、可提示签名的函数目录。
 
 当前实现的 Java source of truth 是：
 
@@ -14,6 +14,7 @@
 | --- | --- | --- |
 | `OperatorLibrary` | `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/visual/catalog/OperatorLibrary.java` | 用户导入的算子库根对象 |
 | `OperatorDefinition` | `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/visual/catalog/OperatorDefinition.java` | 单个可编排算子定义 |
+| `BuiltInFunctionCatalog` | `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/visual/catalog/BuiltInFunctionCatalog.java` | BLOGE 表达式内置函数目录 |
 | `SchemaEnvelope` | `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/visual/model/SchemaEnvelope.java` | 端口和配置 schema 包装 |
 | `OperatorLibraryValidator` | `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/visual/catalog/OperatorLibraryValidator.java` | 导入前权威语义校验 |
 | `VisualSchemaValidator` | `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/visual/validation/VisualSchemaValidator.java` | JSON Schema 2020-12 子集校验 |
@@ -26,7 +27,8 @@
 
 | 层级 | 字段 | 用途 |
 | --- | --- | --- |
-| Library | `schemaVersion`、`libraryId`、`version`、`status`、`operators` | 标识一个可审计、可版本化、可替换的算子包 |
+| Library | `schemaVersion`、`libraryId`、`version`、`status`、`builtInFunctions`、`operators` | 标识一个可审计、可版本化、可替换的算子与函数包 |
+| Expression Function | `name`、`namespace`、`signatures`、`parameters`、`returns`、`examples` | 定义 transform/branch/config 表达式里可调用的数据转换函数 |
 | Operator | `operatorRef`、`display`、`source`、`ports`、`configSchema`、`capabilities`、`policy`、`lowering` | 定义一个能被画布使用的业务节点 |
 | Schema | `ports.inputs[].schema`、`ports.outputs[].schema`、`configSchema` | 约束连线、配置、模拟输入输出和 drift 审阅 |
 | Governance | `capabilities`、`policy`、`lowering`、server-derived readiness | 判断是否可执行、是否需要 ack/force/evidence/runtime binding |
@@ -42,6 +44,19 @@ displayName: Risk Policy
 version: 1.0.0
 owner: risk-platform
 status: ACTIVE
+builtInFunctions:
+  - name: coalesce
+    namespace: risk
+    description: Return the first non-null value.
+    signatures:
+      - label: coalesce(value, fallback)
+        parameters:
+          - name: value
+            type: any
+          - name: fallback
+            type: any
+        returns:
+          type: any
 operators: []
 ```
 
@@ -53,6 +68,7 @@ operators: []
 | `version` | 建议 | SemVer：`MAJOR.MINOR.PATCH`，可带 prerelease/build；省略时服务端默认 `1.0.0` |
 | `owner` | 否 | 发布团队、系统或负责人 |
 | `status` | 否 | `ACTIVE`、`DEPRECATED`、`DISABLED`；省略默认 `ACTIVE` |
+| `builtInFunctions` | 否 | 该 library 贡献给表达式编辑器的函数定义；服务端会和系统默认函数合并 |
 | `operators` | 是 | 至少 1 个 `OperatorDefinition` |
 
 `libraryId` 和 `operatorRef` 使用同一类 namespace-safe token：
@@ -60,6 +76,59 @@ operators: []
 ```text
 ^[A-Za-z_][A-Za-z0-9_]*(?:(?::|\.|-)[A-Za-z_][A-Za-z0-9_]*)*$
 ```
+
+### 3.1 builtInFunctions 表达式函数
+
+`builtInFunctions` 用来把 BLOGE 表达式里的通用函数正式文档化。它不是普通节点，不会出现在左侧算子 palette；它会通过 `GET /api/visual/operators` 的 `builtInFunctions` 字段下发给画布，并用于 `bloge:transform` 等表达式编辑器的函数名补全和签名提示。
+
+```yaml
+builtInFunctions:
+  - name: jsonPath
+    namespace: risk
+    displayName: JSON Path
+    description: Reads a value from an object by JSONPath-like path.
+    category: object
+    signatures:
+      - label: jsonPath(object, path, fallback?)
+        description: Returns fallback when the path is absent.
+        parameters:
+          - name: object
+            type: object
+          - name: path
+            type: string
+          - name: fallback
+            type: any
+            optional: true
+        returns:
+          type: any
+    examples:
+      - jsonPath(inputs.profile, "$.address.city", "unknown")
+```
+
+| 字段 | 必填 | 规则 |
+| --- | --- | --- |
+| `name` | 是 | 函数调用名，可为 `coalesce` 或 `string.trim`，使用 Java/DSL identifier 与点号组合 |
+| `namespace` | 否 | 函数来源命名空间；用于去重、展示和治理，不参与表达式调用文本 |
+| `displayName` | 否 | UI 展示名；省略时回退到 `name` |
+| `description` | 否 | 签名提示中的短说明 |
+| `category` | 否 | UI 分组提示，例如 `null-handling`、`string`、`conversion`、`object` |
+| `signatures` | 是 | 至少 1 个 overload；每个 signature 需要 `label` |
+| `examples` | 否 | 可直接复制的表达式片段 |
+
+`signatures[].parameters[]` 支持：
+
+| 字段 | 说明 |
+| --- | --- |
+| `name` | 参数名；必须是单个 identifier，不能重复 |
+| `type` | 轻量类型提示；省略默认 `any`。支持 `any`、`string`、`number`、`integer`、`boolean`、`object`、`array`、`json`、`date`、`datetime`、`unknown` |
+| `schema` | 可选 JSON Schema envelope；用于比 `type` 更细的工具提示或未来静态校验 |
+| `optional` | 参数可省略，例如 `fallback?` |
+| `variadic` | 可变参数；必须是最后一个参数 |
+| `description` | 参数说明 |
+
+`signatures[].returns` 使用同样的 `type` 和可选 `schema`，省略时默认 `any`。服务端 validator 会拒绝重复函数名、非法函数名、缺失 signature、非法参数名、unsupported type、非末尾 variadic 参数，以及无法通过 `VisualSchemaValidator` 的参数/返回 schema。
+
+系统默认提供的函数目录由 `BuiltInFunctionCatalog.defaults()` 管理，当前包括 `coalesce`、`defaultIfBlank`、`toNumber`、`toString`、`jsonPath`、`contains`、`round`、`formatDate`。用户 library 可以追加业务函数；同一 `namespace:name` 出现多次时，catalog 保留先出现的定义，避免编辑器出现重复候选。
 
 ## 4. OperatorDefinition
 
@@ -356,6 +425,7 @@ lowering:
 | 输出 | 必须只有一个输出端口，名称为 `output` |
 | target | assignment key 必须是输出 schema 中存在的 dotted path |
 | expression | 可以是 `{{input.path}}` / `{{port.path}}` 模板，也可以是静态 literal |
+| 函数调用 | 可使用 catalog 下发的 `builtInFunctions`，例如 `coalesce(inputs.primaryScore, 0)`；画布会提供函数名补全和签名提示 |
 | required | 输出 schema 的 required path 必须被 assignment 覆盖 |
 | 类型 | 可证明不兼容的 assignment 会被拒绝 |
 
@@ -600,6 +670,10 @@ validate/import 返回的不只是 `valid=true/false`，还包括：
 | `visual.operator.source.loweringModeMismatch` | `source.kind` 和外部 boundary lowering 不一致 | 让二者同名，例如都为 `remote-worker` |
 | `visual.operator.policy.scopeWildcardMixed` | `*` 和具体 scope 混用 | 只保留 `*` 或只保留具体值 |
 | `visual.operator.diagnostics.managed` | 用户导入了非空 diagnostics | 删除 `diagnostics` |
+| `visual.function.name.invalid` | `builtInFunctions[].name` 不是合法函数调用名 | 使用 `coalesce`、`string.trim` 这类 identifier/点号形式 |
+| `visual.function.signature.required` | 函数没有任何 signature | 至少声明 1 个 `signatures[]` |
+| `visual.function.type.unsupported` | 参数或返回类型不在支持集合中 | 使用 `any/string/number/integer/boolean/object/array/json/date/datetime/unknown` |
+| `visual.function.parameter.variadicPosition` | 可变参数不是最后一个参数 | 把 `variadic: true` 的参数移动到列表末尾 |
 
 ## 18. 文档兼容说明
 
@@ -607,6 +681,7 @@ validate/import 返回的不只是 `valid=true/false`，还包括：
 
 ```text
 bloge.visualOperatorLibrary.v1
+  -> builtInFunctions[]
   -> operators[]
     -> bloge.visualOperator.v1
       -> ports.inputs[] / ports.outputs[]

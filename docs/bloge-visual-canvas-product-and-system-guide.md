@@ -132,6 +132,7 @@ npm run dev
 | --- | --- |
 | Operator Library | 用户或系统提供的算子库，合同版本为 `bloge.visualOperatorLibrary.v1`；字段定义见 [BLOGE 可视化算子库 Schema 定义](./bloge-visual-operator-library-schema.md) |
 | Operator | 单个可编排算子，至少有 `operatorRef`，通常包含展示信息、输入/输出端口、schema、lowering |
+| Built-in Function | 算子库或系统默认目录提供的 BLOGE 表达式函数，用于 transform/branch 等表达式输入框的函数名补全和签名提示 |
 | Port Schema | 输入/输出端口的 JSON Schema envelope，画布用它判断可连接性 |
 | GraphDraft | 画布中的业务流程草稿，合同版本为 `bloge.visualGraphDraft.v1` |
 | Connection Candidate | 服务端根据当前 draft 和 schema 枚举出的可连接目标 |
@@ -176,7 +177,7 @@ Graph Contract 会同时显示：
 
 ### 5.1 第一步：准备算子库
 
-最小可用算子库可以是 schema-only 的 design operator。它还没有运行时实现，也能进入画布参与设计、连接校验和模拟。
+最小可用算子库可以是 schema-only 的 design operator。它还没有运行时实现，也能进入画布参与设计、连接校验和模拟。算子库也可以声明 `builtInFunctions`，用于补充 transform/branch 表达式里的业务函数；导入后这些函数会和系统默认函数一起出现在表达式编辑器中。
 完整字段合同、lowering 约束和机器校验 schema 见 [BLOGE 可视化算子库 Schema 定义](./bloge-visual-operator-library-schema.md) 与 [bloge-visual-operator-library.schema.json](./schemas/bloge-visual-operator-library.schema.json)。
 
 ```yaml
@@ -338,7 +339,7 @@ POST /api/visual/connections/check
 | 算子族 | 双击行为 | 写入 draft 的配置 |
 | --- | --- | --- |
 | `bloge:decisionTable` | 打开规则矩阵。可编辑 hit policy、output type、条件列、输出列、规则行和 otherwise fallback | `config.hitPolicy`、`config.outputType`、`config.conditionColumns`、`config.outputColumns`、`config.rules[]` |
-| `bloge:transform` | 打开字段映射表。可编辑输出字段名和 BLOGE 表达式，并可新增/删除 assignment | `config.assignments` |
+| `bloge:transform` | 打开字段映射表。可编辑输出字段名和 BLOGE 表达式，可新增/删除 assignment，并在 Expression 下方使用函数 chip、函数名补全和签名提示 | `config.assignments` |
 
 Decision table 双击后的页面重点如下：
 
@@ -410,11 +411,30 @@ Transform 映射表则会导出为：
   "config": {
     "assignments": {
       "tier": "inputs.score >= 700 ? \"prime\" : \"standard\"",
-      "reason": "\"score policy\""
+      "reason": "coalesce(inputs.reason, \"score policy\")"
     }
   }
 }
 ```
+
+Transform 浮层中的 Expression 输入框来自 `GET /api/visual/operators` 下发的 `builtInFunctions`：
+
+1. 双击 `bloge:transform` 节点，打开 `Transform mapping` 浮层。
+2. 在某一行 assignment 的 Expression 输入框下方，点击 `coalesce`、`jsonPath`、`round` 等函数 chip，系统会把调用片段插入当前表达式。
+3. 当表达式为空时，签名提示会显示常用函数；当输入里出现 `coalesce(` 这类函数调用时，提示区会聚焦对应 signature。
+4. 点击 Done 后，函数调用文本会作为普通 BLOGE 表达式写入 `config.assignments`，后续 validate、simulate、export 都读取同一份配置。
+
+当前系统默认函数包括：
+
+| 函数 | 典型用途 |
+| --- | --- |
+| `coalesce(value, fallback)` | 空值兜底，例如主评分缺失时使用备用评分 |
+| `defaultIfBlank(text, fallback)` | 文本为空或 blank 时兜底 |
+| `toNumber(value)` / `toString(value)` | 标量类型转换 |
+| `jsonPath(object, path, fallback?)` | 从 object 中按路径读取字段 |
+| `contains(collection, candidate)` | 判断字符串或集合是否包含某值 |
+| `round(value, scale?)` | 数值四舍五入 |
+| `formatDate(value, pattern)` | 日期/时间格式化 |
 
 `foreach` 和 resource-backed operator 目前不提供双击本地编辑器：前者主要由 Java/operator contract 定义集合、item 与结果列表语义，后者由 resource descriptor / OpenAPI contract 管理参数和响应合同。它们的下一步操作仍在 selected-node inspector、connection guide、fixture 和服务端校验中完成。
 

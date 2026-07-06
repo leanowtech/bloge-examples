@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AuthorCanvas from './AuthorCanvas';
 import { CANVAS_EXAMPLE_TEMPLATES } from './canvasExamples';
 import type {
+  BuiltInFunctionDefinition,
   OperatorDefinition,
   OperatorLibrary,
   OperatorLibraryValidationResult,
@@ -923,6 +924,48 @@ describe('AuthorCanvas connection guide', () => {
       },
     });
   });
+
+  it('shows built-in function completion and signature hints in transform expressions', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({
+          operators: [transformOperator()],
+          builtInFunctions: [coalesceFunction()],
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:bloge:transform"]').textContent)
+        .toContain('Transform'),
+    );
+
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:bloge:transform"]'));
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    await waitFor(() =>
+      expect(query('[data-testid="transform-assignment-editor"]').textContent).toContain('Transform mapping'),
+    );
+
+    expect(query('[data-testid="transform-function-signature:0:coalesce"]').textContent)
+      .toContain('coalesce(value, fallback)');
+    await click(query<HTMLButtonElement>('[data-testid="transform-function-insert:0:coalesce"]'));
+
+    expect(query<HTMLInputElement>('[data-testid="transform-assignment-expression:0"]').value)
+      .toBe('coalesce(value, fallback)');
+    expect(authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]')).nodes[0].config)
+      .toEqual({
+        assignments: {
+          result: 'coalesce(value, fallback)',
+        },
+      });
+  });
 });
 
 describe('AuthorCanvas simulation summary', () => {
@@ -1403,6 +1446,26 @@ function transformOperator(): OperatorDefinition {
         },
       ],
     },
+  };
+}
+
+function coalesceFunction(): BuiltInFunctionDefinition {
+  return {
+    name: 'coalesce',
+    namespace: 'bloge',
+    description: 'Returns the first non-null argument.',
+    category: 'null-handling',
+    signatures: [
+      {
+        label: 'coalesce(value, fallback)',
+        parameters: [
+          { name: 'value', type: 'any' },
+          { name: 'fallback', type: 'any' },
+        ],
+        returns: { type: 'any' },
+      },
+    ],
+    examples: ['coalesce(inputs.primaryScore, 0)'],
   };
 }
 

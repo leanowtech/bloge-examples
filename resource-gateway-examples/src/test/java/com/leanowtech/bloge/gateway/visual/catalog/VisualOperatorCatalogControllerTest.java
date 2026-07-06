@@ -42,6 +42,9 @@ class VisualOperatorCatalogControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.schemaVersion").value("bloge.visualOperatorCatalog.v1"))
                 .andExpect(jsonPath("$.operators").isArray())
+                .andExpect(jsonPath("$.builtInFunctions[0].name").value("coalesce"))
+                .andExpect(jsonPath("$.builtInFunctions[0].signatures[0].label")
+                        .value("coalesce(value, fallback)"))
                 .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
                 .andExpect(jsonPath("$.diagnostics[0].code").value("visual.catalog.operatorHiddenMalformed"))
                 .andExpect(jsonPath("$.diagnostics[0].target").value("/libraries/risk-policy/operators/0"));

@@ -4,6 +4,7 @@ import {
   buildGatewayRunRequest,
   fetchGatewayDiagram,
   fetchGatewayScenarios,
+  fetchOperatorCatalog,
   importOperatorLibraryText,
   runGatewayScenario,
   validateDraft,
@@ -63,6 +64,22 @@ describe('operator library API client', () => {
 
     await expect(importOperatorLibraryText('{}'))
       .rejects.toThrow('Request failed: 400 Unsupported schema version.');
+  });
+
+  it('loads operator catalog functions from the visual catalog envelope', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      operators: [{ operatorRef: 'bloge:transform' }],
+      builtInFunctions: [{
+        name: 'coalesce',
+        signatures: [{ label: 'coalesce(value, fallback)' }],
+      }],
+    })));
+
+    const catalog = await fetchOperatorCatalog();
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/visual/operators');
+    expect(catalog.operators).toHaveLength(1);
+    expect(catalog.builtInFunctions?.[0].name).toBe('coalesce');
   });
 
   it('validates a transient visual graph draft', async () => {

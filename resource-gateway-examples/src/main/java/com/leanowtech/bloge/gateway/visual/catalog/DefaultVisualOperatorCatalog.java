@@ -230,6 +230,35 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
     }
 
     @Override
+    public List<OperatorLibrary.BuiltInFunction> builtInFunctions(OperatorCatalogQuery query) {
+        OperatorCatalogQuery effectiveQuery = query == null ? OperatorCatalogQuery.all() : query;
+        Map<String, OperatorLibrary.BuiltInFunction> functions = new LinkedHashMap<>();
+        for (OperatorLibrary.BuiltInFunction function : BuiltInFunctionCatalog.defaults()) {
+            functions.putIfAbsent(functionKey(function), function);
+        }
+        if (!effectiveQuery.sourceKinds().isEmpty()
+                && !effectiveQuery.sourceKinds().contains("user-library")) {
+            return List.copyOf(functions.values());
+        }
+        for (OperatorLibrary library : libraryRegistry.all()) {
+            if (!library.visibleInCatalog(effectiveQuery.includeDeprecated())) {
+                continue;
+            }
+            if (!effectiveQuery.operatorLibraryIds().isEmpty()
+                    && !effectiveQuery.operatorLibraryIds().contains(library.libraryId())) {
+                continue;
+            }
+            for (OperatorLibrary.BuiltInFunction function : library.builtInFunctions()) {
+                if (function == null) {
+                    continue;
+                }
+                functions.putIfAbsent(functionKey(function), function);
+            }
+        }
+        return List.copyOf(functions.values());
+    }
+
+    @Override
     public List<OperatorRuntimeBindingProjection> runtimeBindingProjections(OperatorCatalogQuery query,
                                                                             List<OperatorDefinition> operators) {
         List<OperatorDefinition> safeOperators = operators == null ? list(query) : operators;
@@ -258,6 +287,14 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         return list(new OperatorCatalogQuery("", List.of(), false, true)).stream()
                 .filter(operator -> operator.operatorRef().equals(operatorRef))
                 .findFirst();
+    }
+
+    private static String functionKey(OperatorLibrary.BuiltInFunction function) {
+        if (function == null) {
+            return "";
+        }
+        String namespace = function.namespace().isBlank() ? "default" : function.namespace();
+        return namespace + ":" + function.name();
     }
 
     private static boolean queryCanMatchNullOperator(OperatorCatalogQuery query) {

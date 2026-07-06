@@ -34,6 +34,14 @@
       ],
       "default": "ACTIVE"
     },
+    "builtInFunctions": {
+      "type": "array",
+      "description": "BLOGE expression functions exposed to visual expression editors for completion and signature help.",
+      "items": {
+        "$ref": "#/$defs/builtInFunction"
+      },
+      "default": []
+    },
     "operators": {
       "type": "array",
       "minItems": 1,
@@ -106,6 +114,135 @@
     "portName": {
       "type": "string",
       "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "functionName": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+    },
+    "functionValueType": {
+      "enum": [
+        "any",
+        "unknown",
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "object",
+        "array",
+        "json",
+        "date",
+        "datetime"
+      ],
+      "default": "any"
+    },
+    "functionParameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/portName"
+        },
+        "type": {
+          "$ref": "#/$defs/functionValueType"
+        },
+        "schema": {
+          "$ref": "#/$defs/schemaEnvelope"
+        },
+        "optional": {
+          "type": "boolean",
+          "default": false
+        },
+        "variadic": {
+          "type": "boolean",
+          "default": false
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "functionReturn": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/functionValueType"
+        },
+        "schema": {
+          "$ref": "#/$defs/schemaEnvelope"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "functionSignature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/functionParameter"
+          },
+          "default": []
+        },
+        "returns": {
+          "$ref": "#/$defs/functionReturn"
+        }
+      }
+    },
+    "builtInFunction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "signatures"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/functionName"
+        },
+        "namespace": {
+          "$ref": "#/$defs/visualToken"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "signatures": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/functionSignature"
+          }
+        },
+        "examples": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      }
     },
     "display": {
       "type": "object",

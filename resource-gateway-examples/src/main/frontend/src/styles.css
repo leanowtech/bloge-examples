@@ -1747,6 +1747,58 @@ button.secondary:disabled {
   min-width: 360px;
 }
 
+.expression-assist {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.expression-function-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.function-chip {
+  max-width: 140px;
+  overflow: hidden;
+  padding: 4px 7px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signature-hints {
+  display: grid;
+  gap: 4px;
+}
+
+.signature-hint {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 5px 7px;
+  border: 1px solid #e0e7ff;
+  border-radius: 6px;
+  background: #f8fbff;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.signature-hint code {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .rule-editor-column.condition {
   background: #eefbf7;
   color: #0f766e;

@@ -44,6 +44,16 @@ public interface VisualOperatorCatalog {
     }
 
     /**
+     * Returns BLOGE expression functions visible to expression editors for the current authoring scope.
+     *
+     * @param query query options used to shape the catalog window
+     * @return function catalog for auto-completion and signature help
+     */
+    default List<OperatorLibrary.BuiltInFunction> builtInFunctions(OperatorCatalogQuery query) {
+        return BuiltInFunctionCatalog.defaults();
+    }
+
+    /**
      * Returns server-derived runtime binding projections for a catalog window.
      *
      * <p>The projection is intentionally separate from {@link OperatorDefinition#runtimeReadiness()}:

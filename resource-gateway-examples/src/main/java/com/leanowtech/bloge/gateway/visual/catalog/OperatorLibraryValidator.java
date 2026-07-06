@@ -81,6 +81,19 @@ public class OperatorLibraryValidator {
             "NON_IDEMPOTENT",
             "UNKNOWN"
     );
+    private static final Set<String> SUPPORTED_FUNCTION_TYPES = Set.of(
+            "any",
+            "unknown",
+            "string",
+            "number",
+            "integer",
+            "boolean",
+            "object",
+            "array",
+            "json",
+            "date",
+            "datetime"
+    );
     private static final Set<String> RESERVED_SOURCE_KINDS = Set.of(
             "resource-descriptor",
             "visual-publication",
@@ -142,6 +155,8 @@ public class OperatorLibraryValidator {
     private static final Pattern PORT_NAME = Pattern.compile(IDENTIFIER_PATTERN);
     private static final Pattern EXECUTABLE_OPERATOR_REF = Pattern.compile(
             IDENTIFIER_PATTERN + "(?:(?::|\\.|-)" + IDENTIFIER_PATTERN + ")*");
+    private static final Pattern FUNCTION_NAME = Pattern.compile(
+            IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*");
     private static final Pattern PATH_PATTERN = Pattern.compile(
             IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*");
     private static final Pattern ARRAY_INDEX = Pattern.compile(ARRAY_INDEX_PATTERN);
@@ -196,6 +211,7 @@ public class OperatorLibraryValidator {
                             .formatted(library.status()),
                     "/status"));
         }
+        validateBuiltInFunctions(library.builtInFunctions(), diagnostics);
         Set<String> operatorRefs = new LinkedHashSet<>();
         for (int i = 0; i < library.operators().size(); i++) {
             OperatorDefinition operator = library.operators().get(i);
@@ -246,6 +262,132 @@ public class OperatorLibraryValidator {
             validateOperator(operator, operatorPath, diagnostics);
         }
         return new VisualValidationResult(true, diagnostics);
+    }
+
+    private static void validateBuiltInFunctions(List<OperatorLibrary.BuiltInFunction> functions,
+                                                 List<VisualDiagnostic> diagnostics) {
+        Set<String> names = new LinkedHashSet<>();
+        for (int i = 0; i < functions.size(); i++) {
+            OperatorLibrary.BuiltInFunction function = functions.get(i);
+            String path = "/builtInFunctions/" + i;
+            if (function == null) {
+                diagnostics.add(VisualDiagnostic.error("visual.function.missing",
+                        "Operator library contains a null built-in function entry.",
+                        path));
+                continue;
+            }
+            if (function.name().isBlank()) {
+                diagnostics.add(VisualDiagnostic.error("visual.function.name.required",
+                        "Built-in function entries must declare a name.",
+                        path + "/name"));
+            } else if (!FUNCTION_NAME.matcher(function.name()).matches()) {
+                diagnostics.add(VisualDiagnostic.error("visual.function.name.invalid",
+                        "Built-in function name '%s' must be a callable BLOGE expression token."
+                                .formatted(function.name()),
+                        path + "/name"));
+            }
+            if (!function.namespace().isBlank()
+                    && !VISUAL_LIBRARY_ID.matcher(function.namespace()).matches()) {
+                diagnostics.add(VisualDiagnostic.error("visual.function.namespace.invalid",
+                        "Built-in function namespace '%s' must be a namespace-safe token."
+                                .formatted(function.namespace()),
+                        path + "/namespace"));
+            }
+            String key = (function.namespace().isBlank() ? "default" : function.namespace())
+                    + ":" + function.name();
+            if (!function.name().isBlank() && !names.add(key)) {
+                diagnostics.add(VisualDiagnostic.error("visual.function.name.duplicate",
+                        "Operator library declares duplicate built-in function '%s'."
+                                .formatted(function.name()),
+                        path + "/name"));
+            }
+            if (function.signatures().isEmpty()) {
+                diagnostics.add(VisualDiagnostic.error("visual.function.signature.required",
+                        "Built-in function '%s' must declare at least one signature."
+                                .formatted(function.name()),
+                        path + "/signatures"));
+            }
+            for (int signatureIndex = 0; signatureIndex < function.signatures().size(); signatureIndex++) {
+                validateFunctionSignature(function, function.signatures().get(signatureIndex),
+                        path + "/signatures/" + signatureIndex, diagnostics);
+            }
+        }
+    }
+
+    private static void validateFunctionSignature(OperatorLibrary.BuiltInFunction function,
+                                                  OperatorLibrary.Signature signature,
+                                                  String path,
+                                                  List<VisualDiagnostic> diagnostics) {
+        if (signature == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.function.signature.missing",
+                    "Built-in function '%s' contains a null signature entry."
+                            .formatted(function.name()),
+                    path));
+            return;
+        }
+        if (signature.label().isBlank()) {
+            diagnostics.add(VisualDiagnostic.error("visual.function.signature.label.required",
+                    "Built-in function '%s' signature must declare a display label."
+                            .formatted(function.name()),
+                    path + "/label"));
+        }
+        validateFunctionType(function, signature.returns().type(), path + "/returns/type", diagnostics);
+        if (signature.returns().schema() != null) {
+            diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
+                    signature.returns().schema(), path + "/returns/schema"));
+        }
+        Set<String> parameterNames = new LinkedHashSet<>();
+        for (int i = 0; i < signature.parameters().size(); i++) {
+            OperatorLibrary.Parameter parameter = signature.parameters().get(i);
+            String parameterPath = path + "/parameters/" + i;
+            if (parameter == null) {
+                diagnostics.add(VisualDiagnostic.error("visual.function.parameter.missing",
+                        "Built-in function '%s' contains a null parameter entry."
+                                .formatted(function.name()),
+                        parameterPath));
+                continue;
+            }
+            if (parameter.name().isBlank()) {
+                diagnostics.add(VisualDiagnostic.error("visual.function.parameter.name.required",
+                        "Built-in function '%s' parameter must declare a name."
+                                .formatted(function.name()),
+                        parameterPath + "/name"));
+            } else if (!PORT_NAME.matcher(parameter.name()).matches()) {
+                diagnostics.add(VisualDiagnostic.error("visual.function.parameter.name.invalid",
+                        "Built-in function '%s' parameter '%s' must be a single identifier token."
+                                .formatted(function.name(), parameter.name()),
+                        parameterPath + "/name"));
+            } else if (!parameterNames.add(parameter.name())) {
+                diagnostics.add(VisualDiagnostic.error("visual.function.parameter.name.duplicate",
+                        "Built-in function '%s' declares duplicate parameter '%s'."
+                                .formatted(function.name(), parameter.name()),
+                        parameterPath + "/name"));
+            }
+            if (parameter.variadic() && i != signature.parameters().size() - 1) {
+                diagnostics.add(VisualDiagnostic.error("visual.function.parameter.variadicPosition",
+                        "Built-in function '%s' variadic parameter '%s' must be the final parameter."
+                                .formatted(function.name(), parameter.name()),
+                        parameterPath + "/variadic"));
+            }
+            validateFunctionType(function, parameter.type(), parameterPath + "/type", diagnostics);
+            if (parameter.schema() != null) {
+                diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
+                        parameter.schema(), parameterPath + "/schema"));
+            }
+        }
+    }
+
+    private static void validateFunctionType(OperatorLibrary.BuiltInFunction function,
+                                             String type,
+                                             String path,
+                                             List<VisualDiagnostic> diagnostics) {
+        if (SUPPORTED_FUNCTION_TYPES.contains(type)) {
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error("visual.function.type.unsupported",
+                "Built-in function '%s' uses unsupported compact type '%s'; supported types are %s."
+                        .formatted(function.name(), type, SUPPORTED_FUNCTION_TYPES),
+                path));
     }
 
     private static boolean isReservedOperatorRef(String operatorRef) {

@@ -109,6 +109,7 @@ public class VisualOperatorCatalogController {
                 "bloge.visualOperatorCatalog.v1",
                 operators,
                 catalog.diagnostics(query),
+                catalog.builtInFunctions(query),
                 OperatorCatalogFacets.from(matchingOperators),
                 runtimeBindingProjections,
                 OperatorRuntimeBindingProjection.stateCounts(allRuntimeBindingProjections),

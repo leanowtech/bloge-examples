@@ -33,6 +33,42 @@ export interface OperatorDefinition {
   };
 }
 
+/** A BLOGE expression function exposed to authoring editors. */
+export interface BuiltInFunctionDefinition {
+  name: string;
+  namespace?: string;
+  displayName?: string;
+  description?: string;
+  category?: string;
+  signatures?: BuiltInFunctionSignature[];
+  examples?: string[];
+}
+
+/** One callable overload for a BLOGE expression function. */
+export interface BuiltInFunctionSignature {
+  label: string;
+  description?: string;
+  parameters?: BuiltInFunctionParameter[];
+  returns?: BuiltInFunctionReturn;
+}
+
+/** One BLOGE expression function parameter. */
+export interface BuiltInFunctionParameter {
+  name: string;
+  type?: string;
+  schema?: SchemaEnvelope;
+  optional?: boolean;
+  variadic?: boolean;
+  description?: string;
+}
+
+/** BLOGE expression function return contract. */
+export interface BuiltInFunctionReturn {
+  type?: string;
+  schema?: SchemaEnvelope;
+  description?: string;
+}
+
 /** A user-provided operator library (bloge.visualOperatorLibrary.v1). */
 export interface OperatorLibrary {
   schemaVersion?: string;
@@ -41,7 +77,14 @@ export interface OperatorLibrary {
   version?: string;
   owner?: string;
   status?: string;
+  builtInFunctions?: BuiltInFunctionDefinition[];
   operators: OperatorDefinition[];
+}
+
+/** The response of GET /api/visual/operators. */
+export interface OperatorCatalogResponse {
+  operators: OperatorDefinition[];
+  builtInFunctions?: BuiltInFunctionDefinition[];
 }
 
 /** Server-derived import readiness for one submitted operator library. */

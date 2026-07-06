@@ -11,6 +11,7 @@ import java.util.Map;
  * @param schemaVersion response schema version
  * @param operators matching operators
  * @param diagnostics catalog diagnostics
+ * @param builtInFunctions BLOGE expression functions available to expression editors
  * @param facets count summary for matching operators
  * @param runtimeBindingProjections server-derived implementation binding projections
  * @param runtimeBindingProjectionStateCounts projection state counts
@@ -28,6 +29,7 @@ public record OperatorCatalogResponse(
         String schemaVersion,
         List<OperatorDefinition> operators,
         List<VisualDiagnostic> diagnostics,
+        List<OperatorLibrary.BuiltInFunction> builtInFunctions,
         OperatorCatalogFacets facets,
         List<OperatorRuntimeBindingProjection> runtimeBindingProjections,
         Map<String, Integer> runtimeBindingProjectionStateCounts,
@@ -152,7 +154,7 @@ public record OperatorCatalogResponse(
                                    Map<String, Integer> runtimeBindingProjectionStateCounts,
                                    List<OperatorExecutablePromotionProjection> executablePromotionProjections,
                                    Map<String, Integer> executablePromotionStateCounts) {
-        this(schemaVersion, operators, diagnostics, facets, runtimeBindingProjections,
+        this(schemaVersion, operators, diagnostics, List.of(), facets, runtimeBindingProjections,
                 runtimeBindingProjectionStateCounts, executablePromotionProjections, executablePromotionStateCounts,
                 operators == null ? 0 : operators.size(),
                 operators == null ? 0 : operators.size(),
@@ -172,6 +174,7 @@ public record OperatorCatalogResponse(
                 : schemaVersion;
         operators = operators == null ? List.of() : List.copyOf(operators);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
+        builtInFunctions = builtInFunctions == null ? List.of() : List.copyOf(builtInFunctions);
         facets = facets == null ? OperatorCatalogFacets.from(operators) : facets;
         runtimeBindingProjections = runtimeBindingProjections == null
                 ? List.of()

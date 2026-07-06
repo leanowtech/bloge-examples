@@ -28,6 +28,68 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsValidBuiltInFunctionCatalogEntries() {
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-functions",
+                "Risk function helpers",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(validFunction("riskDefault")),
+                List.of(VisualCatalogTestSupport.eligibilityOperator("integer"))
+        );
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void rejectsMalformedBuiltInFunctionSignatures() {
+        OperatorLibrary.BuiltInFunction malformed = new OperatorLibrary.BuiltInFunction(
+                "bad helper",
+                "risk",
+                "Bad helper",
+                "Invalid function fixture.",
+                "test",
+                List.of(new OperatorLibrary.Signature(
+                        "",
+                        "",
+                        List.of(
+                                new OperatorLibrary.Parameter("items", "array", null, false, true, ""),
+                                new OperatorLibrary.Parameter("fallback", "mystery", null, false, false, "")
+                        ),
+                        new OperatorLibrary.ReturnValue("record", null, "")
+                )),
+                List.of()
+        );
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "bad-functions",
+                "Bad functions",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(malformed),
+                List.of(VisualCatalogTestSupport.eligibilityOperator("integer"))
+        );
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains(
+                        "visual.function.name.invalid",
+                        "visual.function.signature.label.required",
+                        "visual.function.type.unsupported",
+                        "visual.function.parameter.variadicPosition"
+                );
+    }
+
+    @Test
     void acceptsImportedSchemaConstEnumMatchBySchemaValueEquality() {
         OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
         Map<String, Object> inputProperties = new LinkedHashMap<>();
@@ -4554,6 +4616,26 @@ class OperatorLibraryValidatorTest {
                 "risk-team",
                 "ACTIVE",
                 List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary.BuiltInFunction validFunction(String name) {
+        return new OperatorLibrary.BuiltInFunction(
+                name,
+                "risk",
+                name,
+                "Returns a fallback value for missing risk data.",
+                "risk",
+                List.of(new OperatorLibrary.Signature(
+                        name + "(value, fallback)",
+                        "",
+                        List.of(
+                                new OperatorLibrary.Parameter("value", "any", null, false, false, ""),
+                                new OperatorLibrary.Parameter("fallback", "any", null, false, false, "")
+                        ),
+                        OperatorLibrary.ReturnValue.any()
+                )),
+                List.of(name + "(inputs.score, 0)")
         );
     }
 

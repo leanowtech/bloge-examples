@@ -42,6 +42,7 @@ public class BuiltinOperatorLibraryExporter {
                 "1.0.0",
                 "bloge-platform",
                 OperatorLibrary.STATUS_ACTIVE,
+                BuiltInFunctionCatalog.defaults(),
                 projector.project()
         );
     }
@@ -71,6 +72,7 @@ public class BuiltinOperatorLibraryExporter {
                 library.version(),
                 library.owner(),
                 library.status(),
+                library.builtInFunctions(),
                 importableOperators
         );
     }

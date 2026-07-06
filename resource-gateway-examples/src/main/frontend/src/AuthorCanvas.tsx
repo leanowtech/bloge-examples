@@ -20,7 +20,7 @@ import 'reactflow/dist/style.css';
 import {
   checkConnection,
   fetchConnectionCandidates,
-  fetchOperators,
+  fetchOperatorCatalog,
   importOperatorLibraryText,
   simulate,
   validateDraft,
@@ -70,6 +70,7 @@ import {
 } from './draftModel';
 import type {
   DraftNodeBinding,
+  BuiltInFunctionDefinition,
   OperatorDefinition,
   OperatorPort,
   SchemaEnvelope,
@@ -1578,14 +1579,62 @@ function DecisionTableRuleEditor({
   );
 }
 
+function functionSignatureLabel(fn: BuiltInFunctionDefinition): string {
+  return fn.signatures?.[0]?.label || `${fn.name}()`;
+}
+
+function functionCallSnippet(fn: BuiltInFunctionDefinition): string {
+  const signature = fn.signatures?.[0];
+  const parameters = signature?.parameters ?? [];
+  if (parameters.length === 0) {
+    return `${fn.name}()`;
+  }
+  return `${fn.name}(${parameters.map((parameter) => parameter.name).join(', ')})`;
+}
+
+function insertFunctionSnippet(expression: string, fn: BuiltInFunctionDefinition): string {
+  const snippet = functionCallSnippet(fn);
+  const trimmed = expression.trim();
+  if (!trimmed || trimmed === '{}') {
+    return snippet;
+  }
+  return `${expression}${expression.endsWith(' ') ? '' : ' '}${snippet}`;
+}
+
+function expressionSignatureHints(
+  expression: string,
+  functions: BuiltInFunctionDefinition[],
+): BuiltInFunctionDefinition[] {
+  const trimmed = expression.trim().toLowerCase();
+  if (!trimmed || trimmed === '{}') {
+    return functions.slice(0, 6);
+  }
+  const referenced = functions.filter((fn) =>
+    new RegExp(`(?:^|[^A-Za-z0-9_.])${fn.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\(`)
+      .test(expression),
+  );
+  if (referenced.length > 0) {
+    return referenced.slice(0, 6);
+  }
+  return functions
+    .filter((fn) => {
+      const haystack = `${fn.name} ${fn.displayName ?? ''} ${fn.description ?? ''} ${fn.category ?? ''}`
+        .toLowerCase();
+      return haystack.includes(trimmed);
+    })
+    .slice(0, 6);
+}
+
 function TransformAssignmentEditor({
   node,
   onClose,
   onChange,
+  builtInFunctions,
 }: {
   node: Node<NodeData>;
   onClose: () => void;
   onChange: (editor: TransformEditorModel) => void;
+  builtInFunctions: BuiltInFunctionDefinition[];
 }) {
   const editor = transformEditorModel(node.data.config);
   const updateEditor = (next: TransformEditorModel) => onChange(next);
@@ -1641,39 +1690,83 @@ function TransformAssignmentEditor({
               </tr>
             </thead>
             <tbody>
-              {editor.assignments.map((assignment, index) => (
-                <tr key={`assignment:${index}:${assignment.field}`}>
-                  <td className="rule-editor-row-index">{index + 1}</td>
-                  <td className="rule-editor-output-cell">
-                    <input
-                      aria-label={`Assignment ${index + 1} output field`}
-                      data-testid={`transform-assignment-field:${index}`}
-                      value={assignment.field}
-                      onChange={(event) => updateAssignment(index, {
-                        field: decisionFieldName(event.target.value, assignment.field || `field${index + 1}`),
-                      })}
-                    />
-                  </td>
-                  <td className="rule-editor-expression-cell">
-                    <input
-                      aria-label={`Assignment ${index + 1} expression`}
-                      data-testid={`transform-assignment-expression:${index}`}
-                      value={assignment.expression}
-                      onChange={(event) => updateAssignment(index, { expression: event.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      className="secondary compact"
-                      onClick={() => deleteAssignment(index)}
-                      disabled={editor.assignments.length <= 1}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {editor.assignments.map((assignment, index) => {
+                const signatureHints = expressionSignatureHints(assignment.expression, builtInFunctions);
+                return (
+                  <tr key={`assignment:${index}:${assignment.field}`}>
+                    <td className="rule-editor-row-index">{index + 1}</td>
+                    <td className="rule-editor-output-cell">
+                      <input
+                        aria-label={`Assignment ${index + 1} output field`}
+                        data-testid={`transform-assignment-field:${index}`}
+                        value={assignment.field}
+                        onChange={(event) => updateAssignment(index, {
+                          field: decisionFieldName(event.target.value, assignment.field || `field${index + 1}`),
+                        })}
+                      />
+                    </td>
+                    <td className="rule-editor-expression-cell">
+                      <input
+                        aria-label={`Assignment ${index + 1} expression`}
+                        data-testid={`transform-assignment-expression:${index}`}
+                        value={assignment.expression}
+                        onChange={(event) => updateAssignment(index, { expression: event.target.value })}
+                        list={`transform-function-completions:${index}`}
+                      />
+                      {builtInFunctions.length > 0 && (
+                        <>
+                          <datalist id={`transform-function-completions:${index}`}>
+                            {builtInFunctions.map((fn) => (
+                              <option key={`${fn.namespace ?? 'default'}:${fn.name}`} value={fn.name}>
+                                {functionSignatureLabel(fn)}
+                              </option>
+                            ))}
+                          </datalist>
+                          <div className="expression-assist" data-testid={`transform-expression-assist:${index}`}>
+                            <div className="expression-function-buttons">
+                              {builtInFunctions.slice(0, 6).map((fn) => (
+                                <button
+                                  type="button"
+                                  className="function-chip"
+                                  key={`${fn.namespace ?? 'default'}:${fn.name}`}
+                                  data-testid={`transform-function-insert:${index}:${fn.name}`}
+                                  onClick={() => updateAssignment(index, {
+                                    expression: insertFunctionSnippet(assignment.expression, fn),
+                                  })}
+                                >
+                                  {fn.name}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="signature-hints">
+                              {signatureHints.map((fn) => (
+                                <div
+                                  className="signature-hint"
+                                  key={`${fn.namespace ?? 'default'}:${fn.name}`}
+                                  data-testid={`transform-function-signature:${index}:${fn.name}`}
+                                >
+                                  <code>{functionSignatureLabel(fn)}</code>
+                                  {fn.description && <span>{fn.description}</span>}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="secondary compact"
+                        onClick={() => deleteAssignment(index)}
+                        disabled={editor.assignments.length <= 1}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -2206,6 +2299,7 @@ const OPERATOR_LIBRARY_EXAMPLES: OperatorLibraryExample[] = [
  */
 export default function AuthorCanvas() {
   const [operators, setOperators] = useState<OperatorDefinition[]>([]);
+  const [builtInFunctions, setBuiltInFunctions] = useState<BuiltInFunctionDefinition[]>([]);
   const [nodes, setNodes] = useState<Node<NodeData>[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [result, setResult] = useState<SimulationResponse | null>(null);
@@ -2249,7 +2343,9 @@ export default function AuthorCanvas() {
   const connectionGuideSequence = useRef(0);
 
   const reloadOperators = useCallback(async () => {
-    setOperators(await fetchOperators());
+    const catalog = await fetchOperatorCatalog();
+    setOperators(catalog.operators);
+    setBuiltInFunctions(catalog.builtInFunctions ?? []);
   }, []);
 
   useEffect(() => {
@@ -4103,6 +4199,7 @@ export default function AuthorCanvas() {
           node={mappingEditorNode}
           onClose={() => setMappingEditorNodeId('')}
           onChange={(editor) => updateTransformAssignments(mappingEditorNode.id, editor)}
+          builtInFunctions={builtInFunctions}
         />
       )}
     </div>

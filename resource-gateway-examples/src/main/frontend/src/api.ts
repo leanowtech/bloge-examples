@@ -11,6 +11,7 @@ import type {
   GraphDraft,
   OperatorLibrary,
   OperatorLibraryValidationResult,
+  OperatorCatalogResponse,
   OperatorDefinition,
   SimulationRequest,
   SimulationResponse,
@@ -87,16 +88,24 @@ async function readFlexiblePayload(response: Response): Promise<unknown> {
 }
 
 /**
- * Loads the operator catalog. Tolerates either a bare array or a `{ operators: [...] }` envelope so the
- * palette works regardless of the catalog controller's exact response shape.
+ * Loads the operator catalog. Tolerates either a bare array or a full envelope so the palette works
+ * regardless of the catalog controller's exact response shape.
  */
-export async function fetchOperators(): Promise<OperatorDefinition[]> {
+export async function fetchOperatorCatalog(): Promise<OperatorCatalogResponse> {
   const data = await readJson<unknown>(await fetch('/api/visual/operators'));
   if (Array.isArray(data)) {
-    return data as OperatorDefinition[];
+    return { operators: data as OperatorDefinition[], builtInFunctions: [] };
   }
-  const envelope = data as { operators?: OperatorDefinition[] };
-  return envelope.operators ?? [];
+  const envelope = data as OperatorCatalogResponse;
+  return {
+    operators: envelope.operators ?? [],
+    builtInFunctions: envelope.builtInFunctions ?? [],
+  };
+}
+
+/** Loads only the operator list for legacy callers/tests. */
+export async function fetchOperators(): Promise<OperatorDefinition[]> {
+  return (await fetchOperatorCatalog()).operators;
 }
 
 /** Loads resource-gateway showcase scenarios in backend-defined order. */

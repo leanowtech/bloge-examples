@@ -93,6 +93,67 @@ class DefaultVisualOperatorCatalogTest {
     }
 
     @Test
+    void exposesDefaultAndUserProvidedBuiltInFunctions() {
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-functions",
+                "Risk functions",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(function("riskBand")),
+                List.of(VisualCatalogTestSupport.eligibilityOperator("integer"))
+        );
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(library);
+
+        assertThat(catalog.builtInFunctions(OperatorCatalogQuery.all()))
+                .extracting(OperatorLibrary.BuiltInFunction::name)
+                .contains("coalesce", "riskBand");
+    }
+
+    @Test
+    void filtersUserProvidedBuiltInFunctionsByVisibleLibraryOwner() {
+        OperatorLibrary active = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-functions",
+                "Risk functions",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(function("riskBand")),
+                List.of(VisualCatalogTestSupport.eligibilityOperator("integer"))
+        );
+        OperatorLibrary deprecated = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "old-functions",
+                "Old functions",
+                "1.0.0",
+                "risk-team",
+                "DEPRECATED",
+                List.of(function("legacyBand")),
+                List.of(VisualCatalogTestSupport.aiToolSummaryOperator())
+        );
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(active);
+        libraries.upsert(deprecated);
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries
+        );
+
+        assertThat(catalog.builtInFunctions(new OperatorCatalogQuery("", List.of(), false, false,
+                "", "", "", List.of("user-library"), List.of("risk-functions"), List.of(), List.of(), List.of())))
+                .extracting(OperatorLibrary.BuiltInFunction::name)
+                .contains("coalesce", "riskBand")
+                .doesNotContain("legacyBand");
+        assertThat(catalog.builtInFunctions(new OperatorCatalogQuery("", List.of(), false, true)))
+                .extracting(OperatorLibrary.BuiltInFunction::name)
+                .contains("legacyBand");
+    }
+
+    @Test
     void exposesOperatorLibraryOwnershipForVisibleImportedOperators() {
         InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
         libraries.upsert(VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
@@ -1591,6 +1652,23 @@ class DefaultVisualOperatorCatalogTest {
         public NormalizeOutput execute(NormalizeInput input, OperatorContext ctx) {
             return new NormalizeOutput(input.raw().trim().toLowerCase(java.util.Locale.ROOT));
         }
+    }
+
+    private static OperatorLibrary.BuiltInFunction function(String name) {
+        return new OperatorLibrary.BuiltInFunction(
+                name,
+                "risk",
+                name,
+                "Risk expression helper.",
+                "risk",
+                List.of(new OperatorLibrary.Signature(
+                        name + "(value)",
+                        "",
+                        List.of(new OperatorLibrary.Parameter("value", "any", null, false, false, "")),
+                        OperatorLibrary.ReturnValue.any()
+                )),
+                List.of(name + "(inputs.score)")
+        );
     }
 
     private record SingleResourceRegistry(VisualResourceDescriptor descriptor) implements VisualResourceRegistry {

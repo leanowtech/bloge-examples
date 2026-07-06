@@ -29,6 +29,9 @@ class BuiltinOperatorLibraryExporterTest {
         assertThat(library.operators())
                 .extracting(OperatorDefinition::operatorRef)
                 .contains("myBuiltin");
+        assertThat(library.builtInFunctions())
+                .extracting(OperatorLibrary.BuiltInFunction::name)
+                .contains("coalesce", "jsonPath");
     }
 
     @Test
@@ -43,6 +46,9 @@ class BuiltinOperatorLibraryExporterTest {
         // its operators - demonstrating the generic canvas can consume the gateway's own library.
         DefaultVisualOperatorCatalog freshCatalog = VisualCatalogTestSupport.catalogWithLibrary(exported);
         assertThat(freshCatalog.find("myBuiltin")).isPresent();
+        assertThat(freshCatalog.builtInFunctions(OperatorCatalogQuery.all()))
+                .extracting(OperatorLibrary.BuiltInFunction::name)
+                .contains("coalesce");
     }
 
     @Test
