@@ -2,6 +2,8 @@
 
 > Scope: `resource-gateway-examples` 新版通用编排画布 · Primary UI: `/author/` · Companion UI: `/showcase/`
 
+> 截图说明：本文后续页面图来自本地演示服务的真实 `/author/` 与 `/showcase/` 页面。蓝色框表示重点区域，橙色编号对应正文中的操作说明。
+
 ## 1. 产品定位
 
 BLOGE 通用可视化编排画布是一套面向复杂业务编排的 schema-first 工作台。它以 resource gateway 的资源编排能力为基版，但不再把画布绑定到固定几个内置算子，而是允许用户导入自己的算子库定义，再在服务端 schema 约束下拖拽、连线、校验、模拟和导出业务流程。
@@ -36,6 +38,18 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 schema-fir
 | `/author/` | 新版通用可视化编排画布，支持导入算子库、拖拽、连线、校验、模拟、导出 | 主要使用入口 |
 | `/showcase/` | React 版 resource gateway 场景目录，按后端场景顺序展示案例、图、请求执行和 SSE 流 | 演示与验证 |
 | `/examples/gateway` | 旧版 Custom Composer/Showcase，保留兼容和功能回归价值 | 兼容入口 |
+
+打开 `/author/` 后先按下面这张图定位页面：
+
+![Author 工作台总览标注](assets/bloge-author-overview-annotated.svg)
+
+图中 5 个区域分别承担不同任务：
+
+1. **算子库导入**：粘贴 JSON/YAML，先 Validate，再 Import。导入成功后算子会出现在下方 palette。
+2. **内置复杂示例**：直接加载可编辑的复杂业务 graph，适合第一次理解 fan-out、decision table、transform、fixture 的组合方式。
+3. **编排动作条**：执行 Simulate、Auto Layout、Validate、Export Draft，并查看节点数、边数、输出节点和 fixture 数。
+4. **Graph Contract**：显示当前 graph 的 input/output schema 摘要，告诉系统集成方这张图需要什么上下文、会产出什么结果。
+5. **Runtime Context**：以图形化变量表维护本次模拟的 context；高级用户也可以展开 Advanced JSON。
 
 ### 3.1 演示脚本启动方式
 
@@ -148,6 +162,16 @@ Graph Contract 会同时显示：
 
 对于 Resource Gateway showcase 示例，Graph Contract 来自 `GatewayGraphContractCatalog`，所以 `User Dashboard`、`Loan Decision Policy`、`Product Detail` 等示例各自有独立的 input/output schema。对于 `/author/` 的 3 个可编辑复杂示例，Graph Contract 定义在 `resource-gateway-examples/src/main/frontend/src/canvasExamples.ts`，并会随 draft 一起导出 `inputSchema`。对于 `Custom Composer`，Input 来自当前画布的 `Graph Input Schema`，Output 来自当前 `Graph Output` 选中的输出节点和 path；修改 schema 或切换输出节点后，Graph Contract 摘要会同步刷新。
 
+加载 `Loan policy fallback` 后，Graph Contract 与画布状态会像下图这样联动：
+
+![Author 加载 Loan policy fallback 后的 Graph Contract 标注](assets/bloge-author-loan-example-annotated.svg)
+
+1. **示例元数据**：每个内置示例直接显示节点数、边数、Input 字段数、Output 字段数；点击 Load 会把完整 draft 加载进画布。
+2. **运行/导出工具栏**：加载后节点、边、输出节点和 fixture 数会同步刷新，确认当前不是空草稿。
+3. **输入输出 schema**：这里就是 graph 级 input/output schema 的可视化入口；例子中输入需要 `applicantId`，输出暴露 `decision`、`tier`、`primaryScore` 等公共结果字段。
+4. **节点 mock/real 状态**：右侧 Mock Setup 告诉你哪些节点有 fixture、哪些节点可真实执行、哪些还只是 server sample。
+5. **可编辑 DAG**：图不是静态展示，节点、边、output node、fixture 和配置都仍然可以继续编辑。
+
 ## 5. `/author/` 怎么用
 
 ### 5.1 第一步：准备算子库
@@ -243,13 +267,17 @@ operators:
 
 起始节点通常没有上游边，但它仍然需要业务入参，例如 `userId`、`orderId`、`applicant.score` 或请求上下文里的租户信息。新版 `/author/` 在右侧 inspector 中提供图形化的 `Runtime Context -> Context Variables`：
 
-1. 在 `Runtime Context` 点击 Add Variable。
-2. 在 Path 中填写上下文路径，例如 `applicant.score`。
-3. 在 Type 中选择 `string`、`number`、`boolean` 或 `json`。
-4. 在 Sample 中填写本次模拟使用的样例值；下方 Preview 会即时生成最终 context JSON。
-5. 选中需要配置输入的节点，点击变量行上的 Bind；也可以把 `ctx.applicant.score` chip 直接拖到该节点的 `Node Inputs` 区域。
-6. 画布会自动创建 `contextPath` 输入绑定，并把 Target port 默认设为算子的第一个输入端口、Target path 默认设为上下文路径最后一段。
-7. 如果需要常量或复杂目标字段，仍可在 `Node Inputs` 中手动调整 Source、Target port 和 Target path。
+![Author Context Variables 绑定标注](assets/bloge-author-context-binding-annotated.svg)
+
+对着图操作：
+
+1. **Graph 输入字段**：先看 Graph Contract 的 Input 区，确认这张图需要哪些 ctx 字段。示例中 graph input 需要 `applicantId`。
+2. **Context 变量表**：在 `Runtime Context -> Context Variables` 点击 Add Variable，新增一行变量，Path 填 `applicantId` 或 `applicant.score` 这类上下文路径。
+3. **Bind 到节点输入**：选中需要配置输入的节点，再点击变量行上的 Bind；也可以把 `ctx.applicantId` chip 直接拖到节点的 `Node Inputs` 区域。
+4. **Preview JSON**：Sample 值会即时汇总成最终模拟 context，图中生成的是 `{ "applicantId": "prime" }`。
+5. **起始节点/字段来源**：画布中的起始节点可以从 ctx 字段获得输入，不必为了“没有上游边”再造一个假节点。
+
+画布会自动创建 `contextPath` 输入绑定，并把 Target port 默认设为算子的第一个输入端口、Target path 默认设为上下文路径最后一段。如果需要常量或复杂目标字段，仍可在 `Node Inputs` 中手动调整 Source、Target port 和 Target path。
 
 例如，一个风控起始节点要从运行上下文读取 `applicant.score`，导出的 draft 会包含：
 
@@ -311,6 +339,16 @@ POST /api/visual/connections/check
 | --- | --- | --- |
 | `bloge:decisionTable` | 打开规则矩阵。可编辑 hit policy、output type、条件列、输出列、规则行和 otherwise fallback | `config.hitPolicy`、`config.outputType`、`config.conditionColumns`、`config.outputColumns`、`config.rules[]` |
 | `bloge:transform` | 打开字段映射表。可编辑输出字段名和 BLOGE 表达式，并可新增/删除 assignment | `config.assignments` |
+
+Decision table 双击后的页面重点如下：
+
+![Author Decision Table 浮层编辑器标注](assets/bloge-author-decision-table-editor-annotated.svg)
+
+1. **双击浮层编辑器**：双击 `bloge:decisionTable` 节点后打开，不需要在右侧 inspector 里找隐藏 JSON。
+2. **来自传入边的条件列**：`score`、`income`、`employmentYears` 这类列来自上游边绑定，会以锁定列展示，避免规则表和边上的数据合同脱节。
+3. **输出列**：规则命中后产出的结构化字段，例如 `decision`、`tier`、`reason`。
+4. **规则行/otherwise**：每一行是一条匹配规则；otherwise 行作为 fallback，条件单元格禁用，只保留输出编辑。
+5. **Done 保存到节点**：点击 Done 后，表格配置写回当前节点的 `config`，画布节点上的 input/output 数量也会同步刷新。
 
 Decision table 的规则矩阵支持“加行”和“加列”：
 
@@ -446,6 +484,16 @@ POST /api/visual/graphs/simulate
 
 这能避免两个极端：一边是“所有东西都 mock 导致 transform/branch 逻辑没验证”，另一边是“设计期模拟误触真实外部副作用”。
 
+模拟完成后，页面重点看这几个位置：
+
+![Author 模拟结果标注](assets/bloge-author-simulation-result-annotated.svg)
+
+1. **Simulate 成功**：顶部状态卡和工具栏会从 `not run` 变成 `success`。
+2. **Run/Trust 检查**：Checklist 会显示 Run 是否成功，以及当前结果里有多少 real-run / mocked 节点。
+3. **Mocked/Real 节点状态**：Mock Setup 区会按节点列出 `MOCKED` 或 `REAL`，方便判断哪些结果来自 fixture，哪些来自真实 transform/decision 执行。
+4. **Graph ready 卡片**：画布左下角给出下一步行动提示；成功时会提示 graph ready，但仍标明 mocked 节点是否存在。
+5. **节点徽标同步**：画布节点上的 badge 会同步显示 real/mock 状态，便于沿着 DAG 追踪模拟路径。
+
 ### 5.9 第九步：Export
 
 当前 `/author/` 支持本地导出 draft JSON，包含：
@@ -477,6 +525,16 @@ POST /api/visual/graphs/simulate
 ## 6. `/showcase/` 怎么用
 
 `/showcase/` 是面向 resource gateway 示例的 React 场景目录，不是通用 authoring 工作台。它用于证明后端 resource gateway 场景、图、请求和 SSE 行为仍然可用。
+
+页面重点如下：
+
+![Showcase Loan Decision Policy 标注](assets/bloge-showcase-loan-policy-annotated.svg)
+
+1. **场景目录**：左侧按后端返回顺序列出 resource gateway 示例，适合演示时快速切换 `User Dashboard`、`Loan Decision Policy`、`Product Detail` 等场景。
+2. **场景说明/标签**：顶部展示业务模式、标签和解释文案，用于讲清这个 graph 证明了什么能力。
+3. **后端 graph 图**：中间 Diagram 是后端示例 graph 的可视化，不是可编辑 canvas；它用于解释运行路径和节点关系。
+4. **节点 Inspector**：点击图中的节点后，右侧显示 node kind、operator、payload、resourceId 等后端合同信息。
+5. **运行输入**：下方 Sample Input/Run 区用于选择 preset、编辑请求参数、执行真实 gateway endpoint，并查看 expectation matched/missing。
 
 使用方式：
 
