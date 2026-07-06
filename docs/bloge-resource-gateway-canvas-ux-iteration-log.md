@@ -248,3 +248,85 @@ npm run build
 
 更新后估计完成度：98/100
 剩余目标差距：2%
+
+## 11. Iteration 3：规则矩阵列张力与同类算子主动审查
+
+触发反馈：decision table 的表格张力仍不够，且只能增加行、无法增加列；同时需要主动审查其它算子是否存在类似“画布能看但核心配置不好编辑”的 UX 缺口。
+
+本轮目标：
+
+1. Decision table 必须成为真正的规则矩阵，而不是固定的 `condition/decision/ruleId` 三字段表单。
+2. 用户能按业务语义增加条件列和输出列，并把导出结构保持为后端 DSL codegen 可消费的 schema-friendly config。
+3. 主动审查 transform、foreach、resource 等算子族，至少补齐一个同类高价值配置缺口，并明确其它算子为什么暂不做本地浮层。
+4. 继续用自动化测试和浏览器桌面/移动端证据复核，不只凭代码判断。
+
+### 11.1 本轮改动
+
+| 文件 | 改动 |
+| --- | --- |
+| `resource-gateway-examples/src/main/frontend/src/AuthorCanvas.tsx` | Decision table editor 从固定字段模型升级为动态列模型；支持 `conditionColumns`、`outputColumns`、列重命名、列删除、条件/输出单元格编辑；默认输出类型在默认状态下跟随输出列同步 |
+| `resource-gateway-examples/src/main/frontend/src/AuthorCanvas.tsx` | 新增 transform 双击映射编辑器，支持编辑 `config.assignments` 的输出字段和表达式，并可新增/删除 assignment |
+| `resource-gateway-examples/src/main/frontend/src/styles.css` | 规则矩阵改为条件列/输出列分组视觉；宽表只在浮层内部横向滚动；transform 映射表使用更窄浮层 |
+| `resource-gateway-examples/src/main/frontend/src/AuthorCanvas.test.tsx` | 覆盖 decision table 新增条件列/输出列、导出对象结构、transform 双击映射编辑器和 assignments 导出 |
+| `docs/bloge-visual-canvas-product-and-system-guide.md` | 增加双击配置可编辑算子的使用说明，明确 decision table 与 transform 的 draft config 结构 |
+
+### 11.2 算子族主动审查
+
+| 算子族 | 审查结论 | 本轮处理 |
+| --- | --- | --- |
+| `bloge:decisionTable` | 核心语义是二维规则矩阵，旧版只能加行，列维度缺失，业务表达力不足 | 已补动态条件列、动态输出列、列名编辑、对象化导出 |
+| `bloge:transform` | 核心语义是字段映射，若只能靠 inspector 看合同，用户无法直觉配置输出对象 | 已补双击 transform mapping 浮层，直接编辑 `config.assignments` |
+| `foreach` | 当前核心语义来自 Java/operator contract：collection、item context、result list；缺少 item mapping 子画布，但这属于更大阶段能力 | 本轮不做本地浮层，保留 inspector 合同表达；后续可设计 foreach 子图/loop body editor |
+| resource-backed operator | 参数、响应、资源 id 由 descriptor/OpenAPI contract 管理，前端本地编辑容易绕过 registry 治理 | 本轮不做本地浮层，继续通过 resource descriptor import/validation 管理 |
+| streaming | 当前主要是运行/展示语义，配置入口依赖具体 event source 或 runtime binding | 本轮不做本地浮层，后续应和 runtime binding 管理一起设计 |
+
+### 11.3 验证证据
+
+自动化验证：
+
+```bash
+cd resource-gateway-examples/src/main/frontend
+npm test -- --run src/draftModel.test.ts src/AuthorCanvas.test.tsx
+npm run build
+```
+
+结果：
+
+| 验证项 | 结果 |
+| --- | --- |
+| `draftModel.test.ts` | 61 tests passed |
+| `AuthorCanvas.test.tsx` | 13 tests passed |
+| 合计 | 74 tests passed |
+| Vite/TypeScript build | passed |
+
+浏览器检视证据：
+
+| 场景 | 观察 |
+| --- | --- |
+| desktop decision table | 双击节点弹出规则矩阵；可新增 `score` 条件列和 `tier` 输出列；页面 `scrollWidth=1440`、`clientWidth=1440`，无页面级横向溢出 |
+| desktop decision table 导出 | `config.conditionColumns=["value","score"]`，`config.outputColumns=["decision","ruleId","tier"]`，`rules[0].conditions.score="score >= 700"` |
+| 390px mobile decision table | 浮层宽度约 370px；页面 `scrollWidth=390`、`clientWidth=390`；规则表 `scrollWidth=1055`，但被约束在局部滚动容器 |
+| desktop transform | 双击节点弹出 transform mapping；新增两条 assignment 后导出 `config.assignments.tier` 与 `config.assignments.reason` |
+
+### 11.4 Iteration 3 后差距复核
+
+本轮后估计完成度：99/100
+剩余目标差距：1%
+
+| 维度 | Iteration 2 | Iteration 3 | 结论 |
+| --- | ---: | ---: | --- |
+| Schema 连线体验 | 29/30 | 29/30 | 本轮未触碰连线主流程，保持既有能力 |
+| 算子专有表达 | 24/25 | 25/25 | decision table 和 transform 已具备双击配置浮层；foreach/resource/streaming 的边界已有审查结论 |
+| 任务流可发现性 | 19/20 | 20/20 | 双击复杂算子直接进入对应编辑器，减少“只看不知去哪改”的断点 |
+| 浏览器视觉证据 | 14/15 | 15/15 | desktop 与 390px mobile 均复核浮层、局部滚动和页面无溢出 |
+| 回归与可维护性 | 10/10 | 10/10 | 动态列、transform editor 都有组件测试覆盖 |
+
+剩余 1% 进入后续路线，不阻断本目标完成：
+
+| 残留项 | 后续计划 |
+| --- | --- |
+| foreach 子图/loop body editor | 需要先定义 loop body 与外层 graph draft 的边界，不宜在本轮以局部表单硬塞 |
+| resource descriptor 可视化编辑 | 应和 resource contract registry、OpenAPI import、版本治理一起设计 |
+| 更广浏览器矩阵 | 当前覆盖桌面与 390px mobile；后续常规回归可加入 tablet 和高缩放场景 |
+
+结论：本轮把用户指出的“只有行没有列”的核心问题改成可用的动态规则矩阵，并主动补齐 transform 的同类配置缺口。按第 2 节标尺，剩余差距约 1%，目标闭环完成。

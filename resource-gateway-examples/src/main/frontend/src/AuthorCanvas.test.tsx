@@ -544,23 +544,38 @@ describe('AuthorCanvas connection guide', () => {
     await waitFor(() =>
       expect(query('[data-testid="decision-table-editor"]').textContent).toContain('Decision Table'),
     );
-    expect(query('[data-testid="decision-table-editor"]').textContent).toContain('When');
-    expect(query('[data-testid="decision-table-editor"]').textContent).toContain('Decision');
+    expect(query('[data-testid="decision-table-editor"]').textContent).toContain('Condition');
+    expect(query('[data-testid="decision-table-editor"]').textContent).toContain('Output');
 
-    await setControlValue(query<HTMLInputElement>('[data-testid="decision-rule-condition:0"]'), 'score: score >= 700');
-    await setControlValue(query<HTMLInputElement>('[data-testid="decision-rule-decision:0"]'), 'approve');
-    await setControlValue(query<HTMLInputElement>('[data-testid="decision-rule-id:0"]'), 'prime');
+    await click(query<HTMLButtonElement>('[data-testid="decision-add-condition-column"]'));
+    await setControlValue(query<HTMLInputElement>('[data-testid="decision-condition-column-name:1"]'), 'score');
+    await click(query<HTMLButtonElement>('[data-testid="decision-add-output-column"]'));
+    await setControlValue(query<HTMLInputElement>('[data-testid="decision-output-column-name:2"]'), 'tier');
+
+    await setControlValue(
+      query<HTMLInputElement>('[data-testid="decision-rule-condition:0:score"]'),
+      'score >= 700',
+    );
+    await setControlValue(query<HTMLInputElement>('[data-testid="decision-rule-output:0:decision"]'), 'approve');
+    await setControlValue(query<HTMLInputElement>('[data-testid="decision-rule-output:0:ruleId"]'), 'prime');
+    await setControlValue(query<HTMLInputElement>('[data-testid="decision-rule-output:0:tier"]'), 'platinum');
 
     const exportLink = query<HTMLAnchorElement>('[data-testid="author-draft-export"]');
     expect(authorDraftExport(exportLink).nodes[1].config).toMatchObject({
       hitPolicy: 'unique',
-      outputType: '{ decision: String, ruleId: String }',
+      outputType: '{ decision: String, ruleId: String, tier: String }',
+      conditionColumns: ['value', 'score'],
+      outputColumns: ['decision', 'ruleId', 'tier'],
       rules: [
         {
-          conditions: 'score: score >= 700',
+          conditions: {
+            value: 'value != null',
+            score: 'score >= 700',
+          },
           output: {
             decision: 'approve',
             ruleId: 'prime',
+            tier: 'platinum',
           },
         },
         {
@@ -568,9 +583,63 @@ describe('AuthorCanvas connection guide', () => {
           output: {
             decision: 'fallback',
             ruleId: 'otherwise',
+            tier: '',
           },
         },
       ],
+    });
+  });
+
+  it('opens a transform mapping editor on double click and exports assignments', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({ operators: [transformOperator()] });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:bloge:transform"]').textContent)
+        .toContain('Transform'),
+    );
+
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:bloge:transform"]'));
+    await waitFor(() =>
+      expect(query('[data-testid="canvas-node:n1"][data-operator-ref="bloge:transform"]').textContent)
+        .toContain('source fields'),
+    );
+
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    await waitFor(() =>
+      expect(query('[data-testid="transform-assignment-editor"]').textContent).toContain('Transform mapping'),
+    );
+    expect(query('[data-testid="transform-assignment-editor"]').textContent).toContain('Output Field');
+    expect(query('[data-testid="transform-assignment-editor"]').textContent).toContain('Expression');
+
+    await setControlValue(query<HTMLInputElement>('[data-testid="transform-assignment-field:0"]'), 'tier');
+    await setControlValue(
+      query<HTMLInputElement>('[data-testid="transform-assignment-expression:0"]'),
+      'inputs.score >= 700 ? "prime" : "standard"',
+    );
+    await click(query<HTMLButtonElement>('[data-testid="transform-add-assignment"]'));
+    await setControlValue(query<HTMLInputElement>('[data-testid="transform-assignment-field:1"]'), 'reason');
+    await setControlValue(
+      query<HTMLInputElement>('[data-testid="transform-assignment-expression:1"]'),
+      '"score policy"',
+    );
+
+    const exportLink = query<HTMLAnchorElement>('[data-testid="author-draft-export"]');
+    expect(authorDraftExport(exportLink).nodes[0].config).toEqual({
+      assignments: {
+        tier: 'inputs.score >= 700 ? "prime" : "standard"',
+        reason: '"score policy"',
+      },
     });
   });
 });
@@ -896,6 +965,30 @@ function decisionTableOperator(): OperatorDefinition {
         {
           name: 'inputs',
           required: true,
+          schema: schema({ type: 'object', additionalProperties: true }),
+        },
+      ],
+      outputs: [
+        {
+          name: 'output',
+          schema: schema({ type: 'object', additionalProperties: true }),
+        },
+      ],
+    },
+  };
+}
+
+function transformOperator(): OperatorDefinition {
+  return {
+    operatorRef: 'bloge:transform',
+    display: { name: 'Transform', description: 'Maps fields into an output object.', tags: ['logic', 'mapping'] },
+    source: { kind: 'bloge-dsl' },
+    lowering: { mode: 'transform' },
+    ports: {
+      inputs: [
+        {
+          name: 'inputs',
+          required: false,
           schema: schema({ type: 'object', additionalProperties: true }),
         },
       ],

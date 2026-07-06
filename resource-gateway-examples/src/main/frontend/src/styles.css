@@ -1298,7 +1298,7 @@ button.secondary:disabled {
 }
 
 .rule-editor {
-  width: min(940px, 100%);
+  width: min(1080px, 100%);
   max-height: min(760px, calc(100vh - 36px));
   display: grid;
   gap: 12px;
@@ -1360,6 +1360,13 @@ button.secondary:disabled {
   font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+.rule-editor-column-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .rule-editor-table-wrap {
   min-width: 0;
   overflow: auto;
@@ -1369,9 +1376,17 @@ button.secondary:disabled {
 
 .rule-editor-table {
   width: 100%;
-  min-width: 720px;
+  min-width: 980px;
   border-collapse: collapse;
   background: #fff;
+}
+
+.transform-editor {
+  width: min(820px, 100%);
+}
+
+.transform-editor-table {
+  min-width: 640px;
 }
 
 .rule-editor-table th,
@@ -1390,26 +1405,59 @@ button.secondary:disabled {
   text-transform: uppercase;
 }
 
-.rule-editor-table th:nth-child(1),
-.rule-editor-table td:nth-child(1) {
-  width: 36%;
+.rule-editor-row-index {
+  width: 56px;
+  color: var(--muted);
+  font-weight: 800;
+  text-align: center;
 }
 
-.rule-editor-table th:nth-child(2),
-.rule-editor-table td:nth-child(2),
-.rule-editor-table th:nth-child(3),
-.rule-editor-table td:nth-child(3) {
-  width: 20%;
+.rule-editor-column,
+.rule-editor-condition-cell,
+.rule-editor-output-cell {
+  min-width: 172px;
 }
 
-.rule-editor-table th:nth-child(4),
-.rule-editor-table td:nth-child(4) {
+.rule-editor-expression-cell {
+  min-width: 360px;
+}
+
+.rule-editor-column.condition {
+  background: #eefbf7;
+  color: #0f766e;
+}
+
+.rule-editor-column.output {
+  background: #fff8e8;
+  color: #8a5a04;
+}
+
+.rule-editor-column-header {
+  display: grid;
+  gap: 5px;
+}
+
+.rule-editor-column-header span {
+  color: inherit;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.rule-editor-column-header input {
+  border-color: rgb(15 23 42 / 18%);
+  background: rgb(255 255 255 / 78%);
+  font-weight: 800;
+}
+
+.rule-editor-table th:nth-last-child(2),
+.rule-editor-table td:nth-last-child(2) {
   width: 92px;
   text-align: center;
 }
 
-.rule-editor-table th:nth-child(5),
-.rule-editor-table td:nth-child(5) {
+.rule-editor-table th:nth-last-child(1),
+.rule-editor-table td:nth-last-child(1) {
   width: 96px;
   text-align: right;
 }

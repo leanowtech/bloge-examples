@@ -124,17 +124,32 @@ interface OperatorFocusRow {
   value: string;
 }
 
+interface DecisionTableColumn {
+  id: string;
+  label: string;
+}
+
 interface DecisionTableRuleRow {
-  conditions: string;
-  decision: string;
-  ruleId: string;
+  conditions: Record<string, string>;
+  outputs: Record<string, string>;
   otherwise: boolean;
 }
 
 interface DecisionTableEditorModel {
   hitPolicy: string;
   outputType: string;
+  conditionColumns: DecisionTableColumn[];
+  outputColumns: DecisionTableColumn[];
   rows: DecisionTableRuleRow[];
+}
+
+interface TransformAssignmentRow {
+  field: string;
+  expression: string;
+}
+
+interface TransformEditorModel {
+  assignments: TransformAssignmentRow[];
 }
 
 function handleOffset(index: number, count: number): CSSProperties {
@@ -251,17 +266,43 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
 const NODE_TYPES = { operator: OperatorNode };
 const OPERATOR_DRAG_MIME = 'application/bloge-operator-ref';
 const DEFAULT_DECISION_OUTPUT_TYPE = '{ decision: String, ruleId: String }';
+const DEFAULT_DECISION_CONDITION_COLUMNS: DecisionTableColumn[] = [{ id: 'value', label: 'value' }];
+const DEFAULT_DECISION_OUTPUT_COLUMNS: DecisionTableColumn[] = [
+  { id: 'decision', label: 'decision' },
+  { id: 'ruleId', label: 'ruleId' },
+];
 
 function decisionTableEditorModel(config: Record<string, unknown> | undefined): DecisionTableEditorModel {
-  const rows = Array.isArray(config?.rules)
-    ? config.rules.map(decisionTableRuleRow).filter(Boolean) as DecisionTableRuleRow[]
-    : [];
+  const conditionColumns = decisionTableColumns(config?.conditionColumns);
+  const outputColumns = decisionTableColumns(config?.outputColumns);
+  const rows: DecisionTableRuleRow[] = [];
+  if (Array.isArray(config?.rules)) {
+    for (const rawRule of config.rules) {
+      const row = decisionTableRuleRow(rawRule);
+      if (!row) {
+        continue;
+      }
+      Object.keys(row.conditions).forEach((key) => addDecisionColumn(conditionColumns, key));
+      Object.keys(row.outputs).forEach((key) => addDecisionColumn(outputColumns, key));
+      rows.push(row);
+    }
+  }
+  const effectiveConditionColumns = conditionColumns.length > 0
+    ? conditionColumns
+    : cloneDecisionColumns(DEFAULT_DECISION_CONDITION_COLUMNS);
+  const effectiveOutputColumns = outputColumns.length > 0
+    ? outputColumns
+    : cloneDecisionColumns(DEFAULT_DECISION_OUTPUT_COLUMNS);
   return {
     hitPolicy: typeof config?.hitPolicy === 'string' && config.hitPolicy ? config.hitPolicy : 'unique',
     outputType: typeof config?.outputType === 'string' && config.outputType
       ? config.outputType
       : DEFAULT_DECISION_OUTPUT_TYPE,
-    rows: rows.length > 0 ? rows : defaultDecisionTableRows(),
+    conditionColumns: effectiveConditionColumns,
+    outputColumns: effectiveOutputColumns,
+    rows: rows.length > 0
+      ? rows.map((row) => normalizedDecisionTableRow(row, effectiveConditionColumns, effectiveOutputColumns))
+      : defaultDecisionTableRows(effectiveConditionColumns, effectiveOutputColumns),
   };
 }
 
@@ -269,28 +310,32 @@ function decisionTableRuleRow(rawRule: unknown): DecisionTableRuleRow | null {
   if (!isRecord(rawRule)) {
     return null;
   }
-  const output = isRecord(rawRule.output) ? rawRule.output : rawRule;
+  const output = decisionTableOutputMap(rawRule);
   const rawConditions = rawRule.conditions;
   return {
-    conditions: typeof rawConditions === 'string' ? rawConditions : conditionMapLabel(rawConditions),
-    decision: stringField(output.decision, 'matched'),
-    ruleId: stringField(output.ruleId, stringField(rawRule.id, 'rule')),
+    conditions: rawRule.otherwise === true ? {} : decisionTableConditionMap(rawConditions),
+    outputs: {
+      decision: stringField(output.decision, 'matched'),
+      ruleId: stringField(output.ruleId, stringField(rawRule.id, 'rule')),
+      ...output,
+    },
     otherwise: rawRule.otherwise === true,
   };
 }
 
-function defaultDecisionTableRows(): DecisionTableRuleRow[] {
+function defaultDecisionTableRows(
+  conditionColumns: DecisionTableColumn[],
+  outputColumns: DecisionTableColumn[],
+): DecisionTableRuleRow[] {
   return [
     {
-      conditions: 'value: value != null',
-      decision: 'matched',
-      ruleId: 'rule-1',
+      conditions: defaultDecisionConditions(conditionColumns),
+      outputs: defaultDecisionOutputs(outputColumns, false, 0),
       otherwise: false,
     },
     {
-      conditions: '',
-      decision: 'fallback',
-      ruleId: 'otherwise',
+      conditions: emptyDecisionValues(conditionColumns),
+      outputs: defaultDecisionOutputs(outputColumns, true, 1),
       otherwise: true,
     },
   ];
@@ -300,33 +345,247 @@ function decisionTableConfigFromEditor(
   existing: Record<string, unknown> | undefined,
   editor: DecisionTableEditorModel,
 ): Record<string, unknown> {
+  const conditionColumns = editor.conditionColumns.length > 0
+    ? editor.conditionColumns
+    : cloneDecisionColumns(DEFAULT_DECISION_CONDITION_COLUMNS);
+  const outputColumns = editor.outputColumns.length > 0
+    ? editor.outputColumns
+    : cloneDecisionColumns(DEFAULT_DECISION_OUTPUT_COLUMNS);
   return {
     ...(existing ?? {}),
     hitPolicy: editor.hitPolicy || 'unique',
-    outputType: editor.outputType || DEFAULT_DECISION_OUTPUT_TYPE,
-    rules: editor.rows.map((row) => {
-      const output = {
-        decision: row.decision || 'matched',
-        ruleId: row.ruleId || (row.otherwise ? 'otherwise' : 'rule'),
-      };
+    outputType: editor.outputType || decisionOutputTypeFromColumns(outputColumns),
+    conditionColumns: conditionColumns.map((column) => column.id),
+    outputColumns: outputColumns.map((column) => column.id),
+    rules: editor.rows.map((row, index) => {
+      const output = decisionOutputMapFromRow(row, outputColumns, index);
       if (row.otherwise) {
         return { otherwise: true, output };
       }
       return {
-        conditions: row.conditions || 'value: value != null',
+        conditions: decisionConditionMapFromRow(row, conditionColumns),
         output,
       };
     }),
   };
 }
 
-function conditionMapLabel(rawConditions: unknown): string {
+function decisionTableColumns(rawColumns: unknown): DecisionTableColumn[] {
+  if (!Array.isArray(rawColumns)) {
+    return [];
+  }
+  const columns: DecisionTableColumn[] = [];
+  for (const rawColumn of rawColumns) {
+    if (typeof rawColumn === 'string') {
+      addDecisionColumn(columns, rawColumn);
+    } else if (isRecord(rawColumn)) {
+      addDecisionColumn(columns, stringField(rawColumn.id, stringField(rawColumn.name, stringField(rawColumn.label, ''))));
+    }
+  }
+  return columns;
+}
+
+function decisionTableConditionMap(rawConditions: unknown): Record<string, string> {
+  if (typeof rawConditions === 'string' && rawConditions.trim()) {
+    return { value: rawConditions };
+  }
   if (!isRecord(rawConditions)) {
+    return {};
+  }
+  return recordStringMap(rawConditions);
+}
+
+function decisionTableOutputMap(rawRule: Record<string, unknown>): Record<string, string> {
+  if (isRecord(rawRule.output)) {
+    return recordStringMap(rawRule.output);
+  }
+  const output: Record<string, unknown> = { ...rawRule };
+  delete output.conditions;
+  delete output.condition;
+  delete output.otherwise;
+  delete output.id;
+  return recordStringMap(output);
+}
+
+function recordStringMap(record: Record<string, unknown>): Record<string, string> {
+  return Object.fromEntries(Object.entries(record).map(([key, value]) => [key, valueToCellString(value)]));
+}
+
+function valueToCellString(value: unknown): string {
+  if (value === undefined || value === null) {
     return '';
   }
-  return Object.entries(rawConditions)
-    .map(([key, value]) => `${key}: ${String(value)}`)
-    .join(', ');
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return JSON.stringify(value);
+}
+
+function cloneDecisionColumns(columns: DecisionTableColumn[]): DecisionTableColumn[] {
+  return columns.map((column) => ({ ...column }));
+}
+
+function addDecisionColumn(columns: DecisionTableColumn[], rawId: string): void {
+  const id = decisionFieldName(rawId, '');
+  if (!id || columns.some((column) => column.id === id)) {
+    return;
+  }
+  columns.push({ id, label: id });
+}
+
+function nextDecisionColumn(columns: DecisionTableColumn[], prefix: string): DecisionTableColumn {
+  const id = uniqueDecisionColumnId(`${prefix}${columns.length + 1}`, columns.map((column) => column.id));
+  return { id, label: id };
+}
+
+function uniqueDecisionColumnId(base: string, existing: string[]): string {
+  const normalized = decisionFieldName(base, 'field');
+  const taken = new Set(existing);
+  let candidate = normalized;
+  let suffix = 2;
+  while (taken.has(candidate)) {
+    candidate = `${normalized}${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function decisionFieldName(value: string, fallback: string): string {
+  const normalized = value
+    .trim()
+    .replace(/[^A-Za-z0-9_]/g, '_')
+    .replace(/^[^A-Za-z_]+/, '');
+  return normalized || fallback;
+}
+
+function normalizedDecisionTableRow(
+  row: DecisionTableRuleRow,
+  conditionColumns: DecisionTableColumn[],
+  outputColumns: DecisionTableColumn[],
+): DecisionTableRuleRow {
+  return {
+    otherwise: row.otherwise,
+    conditions: decisionValuesForColumns(conditionColumns, row.conditions),
+    outputs: decisionValuesForColumns(outputColumns, row.outputs),
+  };
+}
+
+function decisionValuesForColumns(
+  columns: DecisionTableColumn[],
+  values: Record<string, string>,
+): Record<string, string> {
+  return Object.fromEntries(columns.map((column) => [column.id, values[column.id] ?? '']));
+}
+
+function emptyDecisionValues(columns: DecisionTableColumn[]): Record<string, string> {
+  return Object.fromEntries(columns.map((column) => [column.id, '']));
+}
+
+function defaultDecisionConditions(columns: DecisionTableColumn[]): Record<string, string> {
+  return Object.fromEntries(columns.map((column, index) => [
+    column.id,
+    index === 0 ? `${column.id} != null` : '',
+  ]));
+}
+
+function defaultDecisionOutputs(
+  columns: DecisionTableColumn[],
+  otherwise: boolean,
+  rowIndex: number,
+): Record<string, string> {
+  return Object.fromEntries(columns.map((column) => [
+    column.id,
+    defaultDecisionOutputValue(column.id, otherwise, rowIndex),
+  ]));
+}
+
+function defaultDecisionOutputValue(field: string, otherwise: boolean, rowIndex: number): string {
+  if (field === 'decision') {
+    return otherwise ? 'fallback' : 'matched';
+  }
+  if (field === 'ruleId') {
+    return otherwise ? 'otherwise' : `rule-${rowIndex + 1}`;
+  }
+  return '';
+}
+
+function decisionConditionMapFromRow(
+  row: DecisionTableRuleRow,
+  columns: DecisionTableColumn[],
+): Record<string, string> {
+  const conditions: Record<string, string> = {};
+  for (const column of columns) {
+    const value = row.conditions[column.id]?.trim();
+    if (value) {
+      conditions[column.id] = value;
+    }
+  }
+  if (Object.keys(conditions).length > 0) {
+    return conditions;
+  }
+  const firstColumn = columns[0] ?? DEFAULT_DECISION_CONDITION_COLUMNS[0];
+  return { [firstColumn.id]: `${firstColumn.id} != null` };
+}
+
+function decisionOutputMapFromRow(
+  row: DecisionTableRuleRow,
+  columns: DecisionTableColumn[],
+  rowIndex: number,
+): Record<string, string> {
+  return Object.fromEntries(columns.map((column) => {
+    const value = row.outputs[column.id];
+    return [column.id, value || defaultDecisionOutputValue(column.id, row.otherwise, rowIndex)];
+  }));
+}
+
+function decisionOutputTypeFromColumns(columns: DecisionTableColumn[]): string {
+  return `{ ${columns.map((column) => `${column.id}: String`).join(', ')} }`;
+}
+
+function syncedDecisionOutputType(
+  currentOutputType: string,
+  previousColumns: DecisionTableColumn[],
+  nextColumns: DecisionTableColumn[],
+): string {
+  const previousAuto = decisionOutputTypeFromColumns(previousColumns);
+  const trimmed = currentOutputType.trim();
+  if (!trimmed || trimmed === DEFAULT_DECISION_OUTPUT_TYPE || trimmed === previousAuto) {
+    return decisionOutputTypeFromColumns(nextColumns);
+  }
+  return currentOutputType;
+}
+
+function transformEditorModel(config: Record<string, unknown> | undefined): TransformEditorModel {
+  const assignments = isRecord(config?.assignments)
+    ? Object.entries(config.assignments).map(([field, expression]) => ({
+        field: decisionFieldName(field, 'result'),
+        expression: valueToCellString(expression) || '{}',
+      }))
+    : [];
+  return { assignments: assignments.length > 0 ? assignments : [{ field: 'result', expression: '{}' }] };
+}
+
+function transformConfigFromEditor(
+  existing: Record<string, unknown> | undefined,
+  editor: TransformEditorModel,
+): Record<string, unknown> {
+  const fields: string[] = [];
+  const assignments: Record<string, string> = {};
+  editor.assignments.forEach((row, index) => {
+    const field = uniqueDecisionColumnId(row.field || `field${index + 1}`, fields);
+    fields.push(field);
+    assignments[field] = row.expression.trim() || '{}';
+  });
+  if (Object.keys(assignments).length === 0) {
+    assignments.result = '{}';
+  }
+  return {
+    ...(existing ?? {}),
+    assignments,
+  };
 }
 
 function stringField(value: unknown, fallback: string): string {
@@ -390,7 +649,12 @@ function DecisionTableRuleEditor({
   };
   const deleteRow = (index: number) => {
     const rows = editor.rows.filter((_, rowIndex) => rowIndex !== index);
-    updateEditor({ ...editor, rows: rows.length > 0 ? rows : defaultDecisionTableRows() });
+    updateEditor({
+      ...editor,
+      rows: rows.length > 0
+        ? rows
+        : defaultDecisionTableRows(editor.conditionColumns, editor.outputColumns),
+    });
   };
   const addRow = () => {
     updateEditor({
@@ -398,12 +662,131 @@ function DecisionTableRuleEditor({
       rows: [
         ...editor.rows,
         {
-          conditions: 'value: value != null',
-          decision: 'matched',
-          ruleId: `rule-${editor.rows.length + 1}`,
+          conditions: defaultDecisionConditions(editor.conditionColumns),
+          outputs: defaultDecisionOutputs(editor.outputColumns, false, editor.rows.length),
           otherwise: false,
         },
       ],
+    });
+  };
+  const updateConditionCell = (rowIndex: number, columnId: string, value: string) => {
+    const row = editor.rows[rowIndex];
+    updateRow(rowIndex, { conditions: { ...row.conditions, [columnId]: value } });
+  };
+  const updateOutputCell = (rowIndex: number, columnId: string, value: string) => {
+    const row = editor.rows[rowIndex];
+    updateRow(rowIndex, { outputs: { ...row.outputs, [columnId]: value } });
+  };
+  const addConditionColumn = () => {
+    const column = nextDecisionColumn(editor.conditionColumns, 'condition');
+    updateEditor({
+      ...editor,
+      conditionColumns: [...editor.conditionColumns, column],
+      rows: editor.rows.map((row) => ({
+        ...row,
+        conditions: { ...row.conditions, [column.id]: '' },
+      })),
+    });
+  };
+  const addOutputColumn = () => {
+    const column = nextDecisionColumn(editor.outputColumns, 'output');
+    const outputColumns = [...editor.outputColumns, column];
+    updateEditor({
+      ...editor,
+      outputColumns,
+      outputType: syncedDecisionOutputType(editor.outputType, editor.outputColumns, outputColumns),
+      rows: editor.rows.map((row) => ({
+        ...row,
+        outputs: { ...row.outputs, [column.id]: '' },
+      })),
+    });
+  };
+  const renameConditionColumn = (columnIndex: number, value: string) => {
+    const current = editor.conditionColumns[columnIndex];
+    if (!current) {
+      return;
+    }
+    const id = uniqueDecisionColumnId(
+      value,
+      editor.conditionColumns
+        .filter((_, index) => index !== columnIndex)
+        .map((column) => column.id),
+    );
+    const conditionColumns = editor.conditionColumns.map((column, index) =>
+      index === columnIndex ? { id, label: id } : column,
+    );
+    updateEditor({
+      ...editor,
+      conditionColumns,
+      rows: editor.rows.map((row) => {
+        const conditions = { ...row.conditions };
+        if (id !== current.id) {
+          conditions[id] = conditions[current.id] ?? '';
+          delete conditions[current.id];
+        }
+        return { ...row, conditions };
+      }),
+    });
+  };
+  const renameOutputColumn = (columnIndex: number, value: string) => {
+    const current = editor.outputColumns[columnIndex];
+    if (!current) {
+      return;
+    }
+    const id = uniqueDecisionColumnId(
+      value,
+      editor.outputColumns
+        .filter((_, index) => index !== columnIndex)
+        .map((column) => column.id),
+    );
+    const outputColumns = editor.outputColumns.map((column, index) =>
+      index === columnIndex ? { id, label: id } : column,
+    );
+    updateEditor({
+      ...editor,
+      outputColumns,
+      outputType: syncedDecisionOutputType(editor.outputType, editor.outputColumns, outputColumns),
+      rows: editor.rows.map((row) => {
+        const outputs = { ...row.outputs };
+        if (id !== current.id) {
+          outputs[id] = outputs[current.id] ?? '';
+          delete outputs[current.id];
+        }
+        return { ...row, outputs };
+      }),
+    });
+  };
+  const deleteConditionColumn = (columnIndex: number) => {
+    if (editor.conditionColumns.length <= 1) {
+      return;
+    }
+    const removed = editor.conditionColumns[columnIndex];
+    const conditionColumns = editor.conditionColumns.filter((_, index) => index !== columnIndex);
+    updateEditor({
+      ...editor,
+      conditionColumns,
+      rows: editor.rows.map((row) => {
+        const conditions = { ...row.conditions };
+        delete conditions[removed.id];
+        return { ...row, conditions };
+      }),
+    });
+  };
+  const deleteOutputColumn = (columnIndex: number) => {
+    if (editor.outputColumns.length <= 1) {
+      return;
+    }
+    const removed = editor.outputColumns[columnIndex];
+    const outputColumns = editor.outputColumns.filter((_, index) => index !== columnIndex);
+    updateEditor({
+      ...editor,
+      outputColumns,
+      outputType: syncedDecisionOutputType(editor.outputType, editor.outputColumns, outputColumns),
+      rows: editor.rows.map((row) => {
+        const outputs = { ...row.outputs };
+        delete outputs[removed.id];
+        return { ...row, outputs };
+      }),
     });
   };
   return (
@@ -449,45 +832,102 @@ function DecisionTableRuleEditor({
             />
           </label>
         </div>
+        <div className="rule-editor-column-tools">
+          <button
+            type="button"
+            className="secondary compact"
+            onClick={addConditionColumn}
+            data-testid="decision-add-condition-column"
+          >
+            Add Condition Column
+          </button>
+          <button
+            type="button"
+            className="secondary compact"
+            onClick={addOutputColumn}
+            data-testid="decision-add-output-column"
+          >
+            Add Output Column
+          </button>
+        </div>
         <div className="rule-editor-table-wrap">
           <table className="rule-editor-table">
             <thead>
               <tr>
-                <th>When</th>
-                <th>Decision</th>
-                <th>Rule ID</th>
+                <th className="rule-editor-row-index">Rule</th>
+                {editor.conditionColumns.map((column, index) => (
+                  <th key={`condition:${column.id}`} className="rule-editor-column condition">
+                    <div className="rule-editor-column-header">
+                      <span>Condition</span>
+                      <input
+                        aria-label={`Condition column ${index + 1} name`}
+                        data-testid={`decision-condition-column-name:${index}`}
+                        value={column.label}
+                        onChange={(event) => renameConditionColumn(index, event.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="secondary compact"
+                        onClick={() => deleteConditionColumn(index)}
+                        disabled={editor.conditionColumns.length <= 1}
+                        aria-label={`Delete condition column ${column.label}`}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </th>
+                ))}
+                {editor.outputColumns.map((column, index) => (
+                  <th key={`output:${column.id}`} className="rule-editor-column output">
+                    <div className="rule-editor-column-header">
+                      <span>Output</span>
+                      <input
+                        aria-label={`Output column ${index + 1} name`}
+                        data-testid={`decision-output-column-name:${index}`}
+                        value={column.label}
+                        onChange={(event) => renameOutputColumn(index, event.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="secondary compact"
+                        onClick={() => deleteOutputColumn(index)}
+                        disabled={editor.outputColumns.length <= 1}
+                        aria-label={`Delete output column ${column.label}`}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </th>
+                ))}
                 <th>Otherwise</th>
                 <th aria-label="Rule actions" />
               </tr>
             </thead>
             <tbody>
               {editor.rows.map((row, index) => (
-                <tr key={`${index}:${row.ruleId}:${row.otherwise ? 'otherwise' : 'rule'}`}>
-                  <td>
-                    <input
-                      aria-label={`Rule ${index + 1} condition`}
-                      data-testid={`decision-rule-condition:${index}`}
-                      value={row.conditions}
-                      disabled={row.otherwise}
-                      onChange={(event) => updateRow(index, { conditions: event.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      aria-label={`Rule ${index + 1} decision`}
-                      data-testid={`decision-rule-decision:${index}`}
-                      value={row.decision}
-                      onChange={(event) => updateRow(index, { decision: event.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      aria-label={`Rule ${index + 1} id`}
-                      data-testid={`decision-rule-id:${index}`}
-                      value={row.ruleId}
-                      onChange={(event) => updateRow(index, { ruleId: event.target.value })}
-                    />
-                  </td>
+                <tr key={`rule:${index}:${row.otherwise ? 'otherwise' : 'match'}`}>
+                  <td className="rule-editor-row-index">{index + 1}</td>
+                  {editor.conditionColumns.map((column) => (
+                    <td key={`condition:${column.id}`} className="rule-editor-condition-cell">
+                      <input
+                        aria-label={`Rule ${index + 1} ${column.label} condition`}
+                        data-testid={`decision-rule-condition:${index}:${column.id}`}
+                        value={row.conditions[column.id] ?? ''}
+                        disabled={row.otherwise}
+                        onChange={(event) => updateConditionCell(index, column.id, event.target.value)}
+                      />
+                    </td>
+                  ))}
+                  {editor.outputColumns.map((column) => (
+                    <td key={`output:${column.id}`} className="rule-editor-output-cell">
+                      <input
+                        aria-label={`Rule ${index + 1} ${column.label} output`}
+                        data-testid={`decision-rule-output:${index}:${column.id}`}
+                        value={row.outputs[column.id] ?? ''}
+                        onChange={(event) => updateOutputCell(index, column.id, event.target.value)}
+                      />
+                    </td>
+                  ))}
                   <td>
                     <input
                       type="checkbox"
@@ -496,7 +936,12 @@ function DecisionTableRuleEditor({
                       checked={row.otherwise}
                       onChange={(event) => updateRow(index, {
                         otherwise: event.target.checked,
-                        conditions: event.target.checked ? '' : row.conditions || 'value: value != null',
+                        conditions: event.target.checked
+                          ? emptyDecisionValues(editor.conditionColumns)
+                          : {
+                              ...row.conditions,
+                              ...decisionConditionMapFromRow(row, editor.conditionColumns),
+                            },
                       })}
                     />
                   </td>
@@ -518,6 +963,120 @@ function DecisionTableRuleEditor({
         <div className="rule-editor-actions">
           <button type="button" className="secondary compact" onClick={addRow}>
             Add Rule
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TransformAssignmentEditor({
+  node,
+  onClose,
+  onChange,
+}: {
+  node: Node<NodeData>;
+  onClose: () => void;
+  onChange: (editor: TransformEditorModel) => void;
+}) {
+  const editor = transformEditorModel(node.data.config);
+  const updateEditor = (next: TransformEditorModel) => onChange(next);
+  const updateAssignment = (index: number, patch: Partial<TransformAssignmentRow>) => {
+    updateEditor({
+      assignments: editor.assignments.map((row, rowIndex) =>
+        rowIndex === index ? { ...row, ...patch } : row,
+      ),
+    });
+  };
+  const addAssignment = () => {
+    const field = uniqueDecisionColumnId(`field${editor.assignments.length + 1}`, editor.assignments.map((row) => row.field));
+    updateEditor({
+      assignments: [
+        ...editor.assignments,
+        { field, expression: '{}' },
+      ],
+    });
+  };
+  const deleteAssignment = (index: number) => {
+    const assignments = editor.assignments.filter((_, rowIndex) => rowIndex !== index);
+    updateEditor({ assignments: assignments.length > 0 ? assignments : [{ field: 'result', expression: '{}' }] });
+  };
+  return (
+    <div className="rule-editor-backdrop" role="presentation">
+      <section
+        className="rule-editor transform-editor"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="transform-assignment-editor-title"
+        data-testid="transform-assignment-editor"
+      >
+        <div className="rule-editor-heading">
+          <span>Transform mapping</span>
+          <strong id="transform-assignment-editor-title">{node.data.label}</strong>
+          <button
+            type="button"
+            className="secondary compact"
+            onClick={onClose}
+            aria-label="Close transform mapping editor"
+          >
+            Done
+          </button>
+        </div>
+        <div className="rule-editor-table-wrap">
+          <table className="rule-editor-table transform-editor-table">
+            <thead>
+              <tr>
+                <th className="rule-editor-row-index">#</th>
+                <th>Output Field</th>
+                <th>Expression</th>
+                <th aria-label="Assignment actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {editor.assignments.map((assignment, index) => (
+                <tr key={`assignment:${index}:${assignment.field}`}>
+                  <td className="rule-editor-row-index">{index + 1}</td>
+                  <td className="rule-editor-output-cell">
+                    <input
+                      aria-label={`Assignment ${index + 1} output field`}
+                      data-testid={`transform-assignment-field:${index}`}
+                      value={assignment.field}
+                      onChange={(event) => updateAssignment(index, {
+                        field: decisionFieldName(event.target.value, assignment.field || `field${index + 1}`),
+                      })}
+                    />
+                  </td>
+                  <td className="rule-editor-expression-cell">
+                    <input
+                      aria-label={`Assignment ${index + 1} expression`}
+                      data-testid={`transform-assignment-expression:${index}`}
+                      value={assignment.expression}
+                      onChange={(event) => updateAssignment(index, { expression: event.target.value })}
+                    />
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="secondary compact"
+                      onClick={() => deleteAssignment(index)}
+                      disabled={editor.assignments.length <= 1}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="rule-editor-actions">
+          <button
+            type="button"
+            className="secondary compact"
+            onClick={addAssignment}
+            data-testid="transform-add-assignment"
+          >
+            Add Assignment
           </button>
         </div>
       </section>
@@ -949,6 +1508,7 @@ export default function AuthorCanvas() {
   const [tagFilter, setTagFilter] = useState('all');
   const [selectedNodeId, setSelectedNodeId] = useState('');
   const [ruleEditorNodeId, setRuleEditorNodeId] = useState('');
+  const [mappingEditorNodeId, setMappingEditorNodeId] = useState('');
   const [explicitOutputNodeId, setExplicitOutputNodeId] = useState('');
   const [fixtureDrafts, setFixtureDrafts] = useState<Record<string, string>>({});
   const [fixtureInputDrafts, setFixtureInputDrafts] = useState<Record<string, string>>({});
@@ -1021,6 +1581,7 @@ export default function AuthorCanvas() {
         });
         setSelectedNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
         setRuleEditorNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
+        setMappingEditorNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
         setExplicitOutputNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
       }
       setNodes((current) => applyNodeChanges(changes, current) as Node<NodeData>[]);
@@ -1058,12 +1619,15 @@ export default function AuthorCanvas() {
     setSelectedNodeId(id);
   }, [clearRunResult]);
 
-  const openRuleEditor = useCallback((node: Node<NodeData>) => {
-    if (node.data.summary.visualKind !== 'decision-table') {
-      return;
-    }
+  const openNodeEditor = useCallback((node: Node<NodeData>) => {
     setSelectedNodeId(node.id);
-    setRuleEditorNodeId(node.id);
+    if (node.data.summary.visualKind === 'decision-table') {
+      setRuleEditorNodeId(node.id);
+      setMappingEditorNodeId('');
+    } else if (node.data.summary.visualKind === 'transform') {
+      setMappingEditorNodeId(node.id);
+      setRuleEditorNodeId('');
+    }
   }, []);
 
   const updateDecisionTableRules = useCallback((nodeId: string, editor: DecisionTableEditorModel) => {
@@ -1075,6 +1639,21 @@ export default function AuthorCanvas() {
             data: {
               ...node.data,
               config: decisionTableConfigFromEditor(node.data.config, editor),
+            },
+          }
+        : node
+    )));
+  }, [clearRunResult]);
+
+  const updateTransformAssignments = useCallback((nodeId: string, editor: TransformEditorModel) => {
+    clearRunResult();
+    setNodes((current) => current.map((node) => (
+      node.id === nodeId
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              config: transformConfigFromEditor(node.data.config, editor),
             },
           }
         : node
@@ -1127,6 +1706,7 @@ export default function AuthorCanvas() {
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const selectedOperator = selectedNode ? operatorByRef.get(selectedNode.data.operatorRef) : undefined;
   const ruleEditorNode = nodes.find((node) => node.id === ruleEditorNodeId);
+  const mappingEditorNode = nodes.find((node) => node.id === mappingEditorNodeId);
   const selectedOutputPorts = useMemo(
     () =>
       selectedNode
@@ -2060,7 +2640,7 @@ export default function AuthorCanvas() {
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd}
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-            onNodeDoubleClick={(_, node) => openRuleEditor(node)}
+            onNodeDoubleClick={(_, node) => openNodeEditor(node)}
             onPaneClick={() => setSelectedNodeId('')}
             fitView
           >
@@ -2396,6 +2976,13 @@ export default function AuthorCanvas() {
           node={ruleEditorNode}
           onClose={() => setRuleEditorNodeId('')}
           onChange={(editor) => updateDecisionTableRules(ruleEditorNode.id, editor)}
+        />
+      )}
+      {mappingEditorNode && (
+        <TransformAssignmentEditor
+          node={mappingEditorNode}
+          onClose={() => setMappingEditorNodeId('')}
+          onChange={(editor) => updateTransformAssignments(mappingEditorNode.id, editor)}
         />
       )}
     </div>

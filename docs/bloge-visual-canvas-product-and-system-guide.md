@@ -228,6 +228,72 @@ POST /api/visual/connections/check
 - path/port 名称不是 DSL-safe。
 - draft 里存在阻断级诊断，导致连线后图仍不可用。
 
+### 5.4.1 双击配置可编辑算子
+
+新版 `/author/` 不再只把复杂算子当成普通卡片。对于内置可配置算子，双击节点会打开对应的浮层编辑器：
+
+| 算子族 | 双击行为 | 写入 draft 的配置 |
+| --- | --- | --- |
+| `bloge:decisionTable` | 打开规则矩阵。可编辑 hit policy、output type、条件列、输出列、规则行和 otherwise fallback | `config.hitPolicy`、`config.outputType`、`config.conditionColumns`、`config.outputColumns`、`config.rules[]` |
+| `bloge:transform` | 打开字段映射表。可编辑输出字段名和 BLOGE 表达式，并可新增/删除 assignment | `config.assignments` |
+
+Decision table 的规则矩阵支持“加行”和“加列”：
+
+1. 点击 Add Condition Column 增加条件列，例如 `score`、`segment`、`amount`。
+2. 点击 Add Output Column 增加输出列，例如 `tier`、`reason`。
+3. 在规则行中填写每个条件表达式，例如 `score >= 700`。
+4. 在输出列中填写匹配后的结构化结果，例如 `decision=approve`、`tier=platinum`。
+5. 勾选 Otherwise 的行会作为 fallback，条件列会禁用，只保留输出编辑。
+
+导出的 draft 会保持 schema-friendly 结构，而不是把整张表压成一段不可解析字符串：
+
+```json
+{
+  "config": {
+    "hitPolicy": "unique",
+    "outputType": "{ decision: String, ruleId: String, tier: String }",
+    "conditionColumns": ["value", "score"],
+    "outputColumns": ["decision", "ruleId", "tier"],
+    "rules": [
+      {
+        "conditions": {
+          "value": "value != null",
+          "score": "score >= 700"
+        },
+        "output": {
+          "decision": "approve",
+          "ruleId": "prime",
+          "tier": "platinum"
+        }
+      },
+      {
+        "otherwise": true,
+        "output": {
+          "decision": "fallback",
+          "ruleId": "otherwise",
+          "tier": ""
+        }
+      }
+    ]
+  }
+}
+```
+
+Transform 映射表则会导出为：
+
+```json
+{
+  "config": {
+    "assignments": {
+      "tier": "inputs.score >= 700 ? \"prime\" : \"standard\"",
+      "reason": "\"score policy\""
+    }
+  }
+}
+```
+
+`foreach` 和 resource-backed operator 目前不提供双击本地编辑器：前者主要由 Java/operator contract 定义集合、item 与结果列表语义，后者由 resource descriptor / OpenAPI contract 管理参数和响应合同。它们的下一步操作仍在 selected-node inspector、connection guide、fixture 和服务端校验中完成。
+
 ### 5.5 第五步：选择输出节点
 
 选中节点后，在 inspector 中使用 Set Output。GraphDraft 的 `output.nodeId` 决定 validate、simulate、export 时哪个节点代表整张图的业务结果。
