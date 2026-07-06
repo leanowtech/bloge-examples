@@ -17,6 +17,7 @@ integration something the business flow can see, reason about, test, and change.
 | Capability | Why it matters |
 | --- | --- |
 | Descriptor-first resources | Add most APIs by changing contracts, not cloning Java operators |
+| Graph-level contracts | Every built-in resource graph exposes formal input/output JSON Schema for system integration |
 | Schema-aware canvas | Drag, connect, validate, simulate, and publish under server-side schema checks |
 | Runtime-backed demos | Local upstreams, real gateway execution, mock simulation, SSE examples, and reusable publications |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
@@ -37,6 +38,7 @@ demo on `http://localhost:8080`.
 | `http://localhost:8080/author/` | Build a schema-constrained graph on the visual canvas |
 | `http://localhost:8080/showcase/` | Explore guided product scenarios and sample outputs |
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
+| `http://localhost:8080/api/gateway/graphs/contracts` | Inspect resource graph input/output contracts |
 
 Stop it with:
 
@@ -87,6 +89,11 @@ To add an external API:
 3. Use it as a `resource:<resourceId>` visual operator or lower it to
    `httpResource`.
 4. Compose it in a `.bloge` graph or on the visual canvas.
+
+When you add a new built-in `.bloge` graph under `src/main/resources/bloge/gateway`,
+also add a `GatewayGraphContract` entry. `GatewayGraphService` validates each
+execution context against the graph `inputSchema`, and `/api/gateway/graphs/contracts`
+exposes both `inputSchema` and `outputSchema` to external integrators.
 
 Create a provider-specific Java operator only when the provider behavior cannot
 be expressed cleanly as a descriptor-backed resource.

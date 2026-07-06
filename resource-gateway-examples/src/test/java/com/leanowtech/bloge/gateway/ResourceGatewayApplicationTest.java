@@ -75,6 +75,26 @@ class ResourceGatewayApplicationTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void resourceGraphContractsAreExposedForSystemIntegration() {
+        var contract = restTemplate.getForEntity(
+                "/api/gateway/graphs/contracts/loanDecisionPolicy",
+                Map.class);
+
+        assertThat(contract.getStatusCode()).isEqualTo(HttpStatusCode.valueOf(200));
+        assertThat(contract.getBody()).containsEntry("graphName", "loanDecisionPolicy");
+        var inputSchema = (Map<String, Object>) contract.getBody().get("inputSchema");
+        var inputBody = (Map<String, Object>) inputSchema.get("schema");
+        assertThat((Map<String, Object>) inputBody.get("properties"))
+                .containsKeys("applicantId", "requestedAmount");
+
+        var outputSchema = (Map<String, Object>) contract.getBody().get("outputSchema");
+        var outputBody = (Map<String, Object>) outputSchema.get("schema");
+        assertThat((Map<String, Object>) outputBody.get("properties"))
+                .containsKeys("applicant", "requestedAmount", "policy", "explanation");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void builtInDemoUpstreamMakesReadmeGatewayExamplesSucceed() {
         var dashboard = restTemplate.getForEntity("/api/gateway/dashboard/u1", Map.class);
         assertThat(dashboard.getStatusCode()).isEqualTo(HttpStatusCode.valueOf(200));

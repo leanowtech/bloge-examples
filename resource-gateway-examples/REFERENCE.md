@@ -1139,6 +1139,22 @@ falls back to branch-specific assemble nodes (e.g. `assemblePhysical`, `assemble
 `assembleGeneric` for product-detail; `assemblePrimary`, `assembleSecondary` for
 credit-score).
 
+### Graph contract endpoints (`GatewayGraphContractController`)
+
+Every built-in resource graph has a formal `GatewayGraphContract` with:
+
+- `inputSchema`: the JSON Schema shape required in `GraphContext` before execution.
+- `outputSchema`: the public terminal output shape returned by gateway endpoints.
+- `outputNodes`: terminal node ids that may provide that output when branches are involved.
+
+`GatewayGraphService` validates incoming execution context against `inputSchema`
+before handing the graph to the engine.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/gateway/graphs/contracts` | List all built-in resource graph input/output contracts |
+| `GET` | `/api/gateway/graphs/contracts/{graphName}` | Fetch one graph contract, e.g. `loanDecisionPolicy` |
+
 ### Unified execution endpoint (`ResourceExecuteController`)
 
 | Method | Path | Graph | Description |
