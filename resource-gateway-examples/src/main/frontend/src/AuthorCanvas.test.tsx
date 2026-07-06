@@ -664,6 +664,15 @@ describe('AuthorCanvas connection guide', () => {
     await setControlValue(query<HTMLInputElement>('[data-testid="decision-rule-output:0:ruleId"]'), 'prime');
     await setControlValue(query<HTMLInputElement>('[data-testid="decision-rule-output:0:tier"]'), 'platinum');
 
+    await click(query<HTMLButtonElement>('[aria-label="Close decision table editor"]'));
+    await waitFor(() =>
+      expect(document.querySelector('[data-testid="decision-table-editor"]')).toBeNull(),
+    );
+    expect(query('[data-testid="canvas-node:n2"][data-operator-ref="bloge:decisionTable"]').textContent)
+      .toContain('2/2 inputs');
+    expect(query('[data-testid="canvas-node:n2"][data-operator-ref="bloge:decisionTable"]').textContent)
+      .toContain('3 outputs');
+
     const exportLink = query<HTMLAnchorElement>('[data-testid="author-draft-export"]');
     expect(authorDraftExport(exportLink).nodes[1].config).toMatchObject({
       hitPolicy: 'unique',

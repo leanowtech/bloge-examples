@@ -167,6 +167,12 @@ interface TransformEditorModel {
   assignments: TransformAssignmentRow[];
 }
 
+interface OperatorNodeMetrics {
+  requiredInputCount: number;
+  inputCount: number;
+  outputCount: number;
+}
+
 function handleOffset(index: number, count: number): CSSProperties {
   return { top: `${((index + 1) / (count + 1)) * 100}%` };
 }
@@ -212,10 +218,28 @@ function acceptedFieldCandidateLabels(
     .map((candidate) => endpointLabel(candidate.target.port ?? '', candidate.target.path ?? '', 'input'));
 }
 
+function operatorNodeMetrics(summary: OperatorSummary, config: Record<string, unknown> | undefined): OperatorNodeMetrics {
+  if (summary.visualKind !== 'decision-table' || !config) {
+    return {
+      requiredInputCount: summary.requiredInputCount,
+      inputCount: summary.inputCount,
+      outputCount: summary.outputCount,
+    };
+  }
+  const editor = decisionTableEditorModel(config);
+  const inputCount = editor.conditionColumns.length || summary.inputCount;
+  return {
+    requiredInputCount: inputCount,
+    inputCount,
+    outputCount: editor.outputColumns.length || summary.outputCount,
+  };
+}
+
 function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
   const status = data.status ?? 'unknown';
   const inputPorts = data.summary.inputNames;
   const outputPorts = data.summary.outputNames.length ? data.summary.outputNames : [''];
+  const metrics = operatorNodeMetrics(data.summary, data.config);
   const candidateClass = data.candidateStatus ? `candidate-${data.candidateStatus}` : '';
   const focusClass = data.focusState && data.focusState !== 'none' ? `focus-${data.focusState}` : '';
   const kindClass = `kind-${data.summary.visualKind}`;
@@ -252,9 +276,9 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
       </div>
       <div className="operator-node-metrics">
         <span>
-          {data.summary.requiredInputCount}/{data.summary.inputCount} inputs
+          {metrics.requiredInputCount}/{metrics.inputCount} inputs
         </span>
-        <span>{data.summary.outputCount} outputs</span>
+        <span>{metrics.outputCount} outputs</span>
       </div>
       <div className="operator-node-port-grid">
         <span>In</span>
