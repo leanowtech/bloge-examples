@@ -33,10 +33,15 @@ class GatewayExampleControllerTest {
                 .andExpect(jsonPath("$.length()").value(7))
                 .andExpect(jsonPath("$[0].graphName").value("userDashboard"))
                 .andExpect(jsonPath("$[0].run.pathTemplate").value("/api/gateway/dashboard/{userId}"))
+                .andExpect(jsonPath("$[0].inputSchema.schema.properties.userId.type").value("string"))
+                .andExpect(jsonPath("$[0].outputSchema.schema.properties.profile.type").value("object"))
                 .andExpect(jsonPath("$[1].graphName").value("loanDecisionPolicy"))
                 .andExpect(jsonPath("$[1].decisionTable.hitPolicy").value("unique"))
+                .andExpect(jsonPath("$[1].inputSchema.schema.properties.requestedAmount.type").value("number"))
                 .andExpect(jsonPath("$[1].samplePresets.length()").value(4))
                 .andExpect(jsonPath("$[1].samplePresets[0].expected.ruleId").value("R1"))
+                .andExpect(jsonPath("$[2].inputSchema.schema.properties.productId.type").value("string"))
+                .andExpect(jsonPath("$[2].outputSchema.schema.properties.productType.type").value("string"))
                 .andExpect(jsonPath("$[6].graphName").value("aiEnrichedSearch"))
                 .andExpect(jsonPath("$[6].run.mode").value("stream"));
     }

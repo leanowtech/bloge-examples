@@ -78,6 +78,27 @@ describe('toGraphDraft', () => {
     expect(draft.output.nodeId).toBe('');
   });
 
+  it('carries graph-level input schema when provided', () => {
+    const inputSchema = {
+      format: 'json-schema',
+      version: '2020-12',
+      schema: {
+        type: 'object',
+        properties: { userId: { type: 'string' } },
+        required: ['userId'],
+      },
+    };
+    const draft = toGraphDraft(
+      'myGraph',
+      [{ id: 'a', operatorRef: 'x', position: { x: 0, y: 0 } }],
+      [],
+      'a',
+      inputSchema,
+    );
+
+    expect(draft.inputSchema).toEqual(inputSchema);
+  });
+
   it('preserves port-qualified canvas edges in draft endpoints', () => {
     const draft = toGraphDraft(
       'myGraph',
@@ -176,17 +197,28 @@ describe('toSimulationRequest', () => {
 
 describe('toExportableGraphDraft', () => {
   it('emits a portable graph draft snapshot with node fixtures', () => {
+    const inputSchema = {
+      format: 'json-schema',
+      version: '2020-12',
+      schema: {
+        type: 'object',
+        properties: { score: { type: 'integer' } },
+        required: ['score'],
+      },
+    };
     const draft = toExportableGraphDraft(
       'visualGraph',
       [{ id: 'n1', operatorRef: 'risk:eligibility', label: 'Eligibility', position: { x: 10, y: 20 } }],
       [],
       'n1',
       { n1: { output: { eligible: true }, expectedInput: { score: 720 } } },
+      inputSchema,
     );
 
     expect(draft).toMatchObject({
       schemaVersion: 'bloge.visualGraphDraft.v1',
       graphName: 'visualGraph',
+      inputSchema,
       nodes: [{ id: 'n1', operatorRef: 'risk:eligibility', label: 'Eligibility' }],
       output: { nodeId: 'n1', path: '' },
       nodeFixtures: {

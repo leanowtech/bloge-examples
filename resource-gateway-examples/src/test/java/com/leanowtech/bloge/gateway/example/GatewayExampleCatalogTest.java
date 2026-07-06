@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.example;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -36,6 +37,8 @@ class GatewayExampleCatalogTest {
             assertThat(scenario.sampleInput()).isNotEmpty();
             assertThat(scenario.concepts()).isNotEmpty();
             assertThat(scenario.run().pathTemplate()).startsWith("/api/gateway");
+            assertThat(scenario.inputSchema().schema()).containsEntry("type", "object");
+            assertThat(scenario.outputSchema().schema()).containsEntry("type", "object");
             assertThat(scenario.diagramPath()).isEqualTo(
                     "/api/gateway/examples/scenarios/" + scenario.graphName() + "/diagram");
 
@@ -44,6 +47,39 @@ class GatewayExampleCatalogTest {
             assertThat(layout.rootId()).isEqualTo(scenario.graphName());
             assertThat(layout.nodes()).isNotEmpty();
         }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void firstThreeShowcaseExamplesExposeTheirOwnGraphContracts() {
+        assertThat(catalog.scenarios().stream().limit(3).map(GatewayExampleScenario::graphName).toList())
+                .containsExactly("userDashboard", "loanDecisionPolicy", "productDetail");
+
+        Map<String, Object> dashboardInput = (Map<String, Object>) catalog.scenario("userDashboard")
+                .orElseThrow()
+                .inputSchema()
+                .schema()
+                .get("properties");
+        Map<String, Object> dashboardOutput = (Map<String, Object>) catalog.scenario("userDashboard")
+                .orElseThrow()
+                .outputSchema()
+                .schema()
+                .get("properties");
+        Map<String, Object> loanInput = (Map<String, Object>) catalog.scenario("loanDecisionPolicy")
+                .orElseThrow()
+                .inputSchema()
+                .schema()
+                .get("properties");
+        Map<String, Object> productOutput = (Map<String, Object>) catalog.scenario("productDetail")
+                .orElseThrow()
+                .outputSchema()
+                .schema()
+                .get("properties");
+
+        assertThat(dashboardInput).containsKey("userId");
+        assertThat(dashboardOutput).containsKeys("profile", "orders", "wallet");
+        assertThat(loanInput).containsKeys("applicantId", "requestedAmount");
+        assertThat(productOutput).containsKeys("product", "productType");
     }
 
     @Test

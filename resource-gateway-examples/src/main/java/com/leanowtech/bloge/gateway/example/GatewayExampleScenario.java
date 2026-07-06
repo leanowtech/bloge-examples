@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.example;
 
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+
 import java.util.List;
 import java.util.Map;
 
@@ -17,6 +19,8 @@ import java.util.Map;
  * @param run recipe for invoking the existing gateway endpoint
  * @param decisionTable optional decision-table metadata for matrix-oriented scenarios
  * @param diagramPath API path that returns the visual layout
+ * @param inputSchema formal graph context schema consumed by the runtime graph
+ * @param outputSchema formal public output schema produced by the runtime graph
  */
 public record GatewayExampleScenario(
         String graphName,
@@ -29,8 +33,25 @@ public record GatewayExampleScenario(
         List<GatewayExamplePreset> samplePresets,
         GatewayExampleRun run,
         GatewayDecisionTable decisionTable,
-        String diagramPath
+        String diagramPath,
+        SchemaEnvelope inputSchema,
+        SchemaEnvelope outputSchema
 ) {
+    public GatewayExampleScenario(String graphName,
+                                  String title,
+                                  String graphFile,
+                                  String pattern,
+                                  String description,
+                                  List<String> concepts,
+                                  Map<String, Object> sampleInput,
+                                  List<GatewayExamplePreset> samplePresets,
+                                  GatewayExampleRun run,
+                                  GatewayDecisionTable decisionTable,
+                                  String diagramPath) {
+        this(graphName, title, graphFile, pattern, description, concepts, sampleInput, samplePresets, run,
+                decisionTable, diagramPath, null, null);
+    }
+
     /**
      * Creates scenario metadata.
      */
@@ -51,5 +72,25 @@ public record GatewayExampleScenario(
         diagramPath = (diagramPath == null || diagramPath.isBlank())
                 ? "/api/gateway/examples/scenarios/" + graphName + "/diagram"
                 : diagramPath;
+        inputSchema = inputSchema == null ? SchemaEnvelope.opaque() : inputSchema;
+        outputSchema = outputSchema == null ? SchemaEnvelope.opaque() : outputSchema;
+    }
+
+    GatewayExampleScenario withSchemas(SchemaEnvelope inputSchema, SchemaEnvelope outputSchema) {
+        return new GatewayExampleScenario(
+                graphName,
+                title,
+                graphFile,
+                pattern,
+                description,
+                concepts,
+                sampleInput,
+                samplePresets,
+                run,
+                decisionTable,
+                diagramPath,
+                inputSchema,
+                outputSchema
+        );
     }
 }

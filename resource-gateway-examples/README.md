@@ -105,6 +105,8 @@ schema drift in CI. Runtime execution validates each context against the graph
 `inputSchema`, and public gateway endpoints resolve terminal output through the
 contract `outputNodes` before validating it against `outputSchema`;
 `/api/gateway/graphs/contracts` exposes both schemas; and
+`/api/gateway/examples/scenarios` mirrors the same schemas into showcase
+metadata so the browser can show each example's Graph Contract;
 `/api/gateway/graphs/contracts/tests/draft` generates editable mock rows from
 the graph input schema and resource response schemas before
 `/api/gateway/graphs/contracts/tests/run` executes table-driven suites against
@@ -132,6 +134,10 @@ To add a user-supplied visual operator library:
    rows from each operator's input/config/output schemas, then save or batch-run
    them through `/api/visual/operators/tests/suites`.
 5. Drag operators, wire schemas, simulate, and export.
+
+The `/author/` built-in canvas examples also carry their own graph-level
+input/output schemas, and exported drafts include the current `inputSchema` so
+the design can be integrated instead of remaining a diagram-only artifact.
 
 ## Build And Verify
 

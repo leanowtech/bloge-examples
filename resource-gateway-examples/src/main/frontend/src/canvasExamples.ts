@@ -1,4 +1,4 @@
-import type { DraftNodeBinding } from './types';
+import type { DraftNodeBinding, SchemaEnvelope } from './types';
 
 export interface CanvasExampleNode {
   id: string;
@@ -28,6 +28,8 @@ export interface CanvasExampleTemplate {
   domain: string;
   description: string;
   pattern: string;
+  inputSchema: SchemaEnvelope;
+  outputSchema: SchemaEnvelope;
   nodes: CanvasExampleNode[];
   edges: CanvasExampleEdge[];
   outputNodeId: string;
@@ -42,6 +44,35 @@ function constantInput(value: unknown, targetPort: string): DraftNodeBinding {
   return { kind: 'constant', value, targetPort };
 }
 
+function jsonSchema(schema: Record<string, unknown>): SchemaEnvelope {
+  return {
+    format: 'json-schema',
+    version: '2020-12',
+    schema,
+  };
+}
+
+function objectSchema(
+  properties: Record<string, Record<string, unknown>>,
+  required: string[] = Object.keys(properties),
+  additionalProperties = false,
+): Record<string, unknown> {
+  return {
+    type: 'object',
+    properties,
+    required,
+    additionalProperties,
+  };
+}
+
+function arrayOf(items: Record<string, unknown>): Record<string, unknown> {
+  return { type: 'array', items };
+}
+
+const stringSchema = { type: 'string' };
+const numberSchema = { type: 'number' };
+const integerSchema = { type: 'integer' };
+
 export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
   {
     key: 'loan-policy-fallback',
@@ -49,6 +80,18 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
     domain: 'Risk',
     description: 'Applicant profile, dual credit providers, policy rules, and final response mapping.',
     pattern: 'Fan-out / decision / transform',
+    inputSchema: jsonSchema(objectSchema({
+      applicantId: stringSchema,
+    })),
+    outputSchema: jsonSchema(objectSchema({
+      applicantId: stringSchema,
+      segment: stringSchema,
+      primaryScore: integerSchema,
+      secondaryScore: integerSchema,
+      decision: stringSchema,
+      tier: stringSchema,
+      reason: stringSchema,
+    })),
     outputNodeId: 'n5',
     nodes: [
       {
@@ -252,6 +295,21 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
     domain: 'Commerce',
     description: 'Order list, item enrichment, shipping quote, SLA decision, and customer response.',
     pattern: 'List / enrichment / SLA',
+    inputSchema: jsonSchema(objectSchema({
+      userId: stringSchema,
+    })),
+    outputSchema: jsonSchema(objectSchema({
+      orderCount: integerSchema,
+      enrichedOrders: arrayOf(objectSchema({
+        orderId: stringSchema,
+        productId: stringSchema,
+        priority: stringSchema,
+      }, ['orderId', 'productId', 'priority'], true)),
+      carrier: stringSchema,
+      lane: stringSchema,
+      promisedHours: integerSchema,
+      reason: stringSchema,
+    })),
     outputNodeId: 'n5',
     nodes: [
       {
@@ -435,6 +493,22 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
     domain: 'Experience',
     description: 'Profile fan-out into wallet, recommendations, notifications, and a final dashboard view.',
     pattern: 'Aggregator / fan-out',
+    inputSchema: jsonSchema(objectSchema({
+      userId: stringSchema,
+    })),
+    outputSchema: jsonSchema(objectSchema({
+      userId: stringSchema,
+      name: stringSchema,
+      tier: stringSchema,
+      segment: stringSchema,
+      walletAmount: numberSchema,
+      walletCurrency: stringSchema,
+      recommendations: arrayOf(objectSchema({
+        productId: stringSchema,
+        reason: stringSchema,
+      }, ['productId', 'reason'], true)),
+      unreadCount: integerSchema,
+    })),
     outputNodeId: 'n5',
     nodes: [
       {
@@ -642,4 +716,3 @@ export function exampleEdgeLabel(edge: CanvasExampleEdge): string {
 export function hasOwnValue(object: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(object, key);
 }
-

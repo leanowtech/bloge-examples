@@ -128,6 +128,26 @@ npm run dev
 
 关键原则：浏览器负责交互体验，规则由服务端兜底。客户端可以做提示和高亮，但连接是否有效、草稿是否可运行、模拟是否可信，都以服务端结果为准。
 
+### 4.1 Graph 级 input/output schema 在哪里看
+
+Resource Gateway 内置 graph 的正式合同定义在：
+
+- 代码：`resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/gateway/GatewayGraphContractCatalog.java`
+- API：`GET /api/gateway/graphs/contracts`
+- 示例场景 API：`GET /api/gateway/examples/scenarios`，每个 scenario 会携带自己的 `inputSchema` 和 `outputSchema`
+
+新版 `/author/` 和旧版 `/examples/gateway` 都把 graph 合同作为一等信息看待：
+
+- `/author/`：画布工具栏下方有 **Graph Contract** 条，显示当前 draft 的 Input/Output 摘要。3 个内置复杂示例各自携带 `inputSchema` 和 `outputSchema`；加载示例时会同步设置当前 graph contract，并用 input schema 生成一份 runtime context 样本。
+- `/examples/gateway`：右侧 Inspector 顶部有 **Graph Contract** 区块，会显示当前 showcase/composer 的 Input/Output 摘要。
+
+Graph Contract 会同时显示：
+
+- **Input / ctx**：这张 graph 执行前要求的上下文字段。
+- **Output / public result**：这张 graph 对系统集成暴露的终态输出字段。
+
+对于 Resource Gateway showcase 示例，Graph Contract 来自 `GatewayGraphContractCatalog`，所以 `User Dashboard`、`Loan Decision Policy`、`Product Detail` 等示例各自有独立的 input/output schema。对于 `/author/` 的 3 个可编辑复杂示例，Graph Contract 定义在 `resource-gateway-examples/src/main/frontend/src/canvasExamples.ts`，并会随 draft 一起导出 `inputSchema`。对于 `Custom Composer`，Input 来自当前画布的 `Graph Input Schema`，Output 来自当前 `Graph Output` 选中的输出节点和 path；修改 schema 或切换输出节点后，Graph Contract 摘要会同步刷新。
+
 ## 5. `/author/` 怎么用
 
 ### 5.1 第一步：准备算子库

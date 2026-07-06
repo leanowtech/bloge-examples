@@ -164,6 +164,30 @@ class VisualAuthoringAppJsTest {
     }
 
     @Test
+    void inspectorSurfacesGraphLevelInputAndOutputContracts() throws Exception {
+        String html = indexHtmlSource();
+        String source = appJsSource();
+        String styles = stylesCssSource();
+
+        assertThat(html)
+                .contains("Graph Contract")
+                .contains("id=\"graph-contract-summary\"");
+        assertThat(source)
+                .contains("function composerScenarioMetadata()")
+                .contains("inputSchema: currentGraphInputSchema(state.builder)")
+                .contains("outputSchema: currentGraphOutputSchemaEnvelope(state.builder)")
+                .contains("function renderGraphContractPanel()")
+                .contains("selectedGraphInputSchema()")
+                .contains("selectedGraphOutputSchema()")
+                .contains("function currentGraphOutputSchemaEnvelope(builder = state.builder)")
+                .contains("renderGraphContractPanel();");
+        assertThat(styles)
+                .contains(".graph-contract-summary")
+                .contains(".graph-contract-card")
+                .contains(".graph-contract-field");
+    }
+
+    @Test
     void selectedInspectorCanRefreshSingleOperatorDefinition() throws Exception {
         String source = appJsSource();
 
@@ -1460,6 +1484,11 @@ class VisualAuthoringAppJsTest {
 
     private static String appJsSource() throws IOException {
         return new ClassPathResource("static/examples/gateway/app.js")
+                .getContentAsString(StandardCharsets.UTF_8);
+    }
+
+    private static String indexHtmlSource() throws IOException {
+        return new ClassPathResource("static/examples/gateway/index.html")
                 .getContentAsString(StandardCharsets.UTF_8);
     }
 

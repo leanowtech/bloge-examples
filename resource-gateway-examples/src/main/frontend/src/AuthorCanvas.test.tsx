@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AuthorCanvas from './AuthorCanvas';
+import { CANVAS_EXAMPLE_TEMPLATES } from './canvasExamples';
 import type {
   OperatorDefinition,
   OperatorLibrary,
@@ -205,6 +206,16 @@ describe('AuthorCanvas built-in canvas examples', () => {
     vi.restoreAllMocks();
   });
 
+  it('defines graph-level input and output schemas for every built-in example', () => {
+    expect(CANVAS_EXAMPLE_TEMPLATES).toHaveLength(3);
+    for (const template of CANVAS_EXAMPLE_TEMPLATES) {
+      expect(template.inputSchema.schema).toMatchObject({ type: 'object' });
+      expect(template.outputSchema.schema).toMatchObject({ type: 'object' });
+      expect(Object.keys(template.inputSchema.schema.properties as Record<string, unknown>)).not.toHaveLength(0);
+      expect(Object.keys(template.outputSchema.schema.properties as Record<string, unknown>)).not.toHaveLength(0);
+    }
+  });
+
   it('loads a complex built-in example into the editable canvas draft', async () => {
     await act(async () => {
       root = createRoot(host);
@@ -224,6 +235,12 @@ describe('AuthorCanvas built-in canvas examples', () => {
     );
     expect(document.body.textContent).toContain('5 nodes');
     expect(document.body.textContent).toContain('12 edges');
+    expect(document.body.textContent).toContain('Input 1 fields');
+    expect(document.body.textContent).toContain('Output 7 fields');
+    expect(query('[data-testid="author-graph-contract"]').textContent).toContain('Graph Contract');
+    expect(query('[data-testid="author-graph-contract"]').textContent).toContain('Loan policy fallback');
+    expect(query('[data-testid="author-graph-contract"]').textContent).toContain('applicantId');
+    expect(query('[data-testid="author-graph-contract"]').textContent).toContain('decision');
     expect(document.body.textContent).toContain('3 fixtures');
     expect(document.body.textContent).toContain('Output n5');
     expect(query('[data-testid="canvas-node:n1"][data-operator-ref="resource:loan-applicant-service.getProfile"]').textContent)
@@ -242,6 +259,11 @@ describe('AuthorCanvas built-in canvas examples', () => {
       ]);
     expect(exported.nodes[0].inputs).toMatchObject({
       applicantId: { kind: 'constant', value: 'applicant-1001', targetPort: 'params' },
+    });
+    expect(exported.inputSchema.schema).toMatchObject({
+      properties: {
+        applicantId: { type: 'string' },
+      },
     });
     expect(exported.edges).toEqual(
       expect.arrayContaining([

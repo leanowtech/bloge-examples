@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.example;
 
+import com.leanowtech.bloge.gateway.gateway.GatewayGraphContractCatalog;
+
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -22,6 +24,7 @@ public class GatewayExampleCatalog {
 
     private static final double W = 184;
     private static final double H = 76;
+    private static final GatewayGraphContractCatalog GRAPH_CONTRACTS = GatewayGraphContractCatalog.builtIn();
 
     private final Map<String, ScenarioEntry> scenarios;
 
@@ -434,7 +437,10 @@ public class GatewayExampleCatalog {
     }
 
     private ScenarioEntry entry(GatewayExampleScenario scenario, ExampleVisualLayout layout) {
-        return new ScenarioEntry(scenario, layout);
+        GatewayExampleScenario contractedScenario = GRAPH_CONTRACTS.find(scenario.graphName())
+                .map(contract -> scenario.withSchemas(contract.inputSchema(), contract.outputSchema()))
+                .orElse(scenario);
+        return new ScenarioEntry(contractedScenario, layout);
     }
 
     private ExampleVisualLayout layout(String rootId,

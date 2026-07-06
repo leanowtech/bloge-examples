@@ -105,6 +105,7 @@ export interface DraftEdge {
 export interface GraphDraft {
   schemaVersion?: string;
   graphName: string;
+  inputSchema?: SchemaEnvelope;
   nodes: DraftNode[];
   edges: DraftEdge[];
   nodeFixtures?: Record<string, NodeFixture>;
@@ -324,6 +325,8 @@ export interface GatewayExampleScenario {
   run?: GatewayExampleRun;
   decisionTable?: GatewayDecisionTable | null;
   diagramPath?: string;
+  inputSchema?: SchemaEnvelope;
+  outputSchema?: SchemaEnvelope;
 }
 
 /** Canvas coordinate used by resource-gateway showcase diagrams. */

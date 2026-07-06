@@ -889,6 +889,98 @@ button.secondary:disabled {
   background: #e8f5e9;
 }
 
+.graph-contract-strip {
+  display: grid;
+  grid-template-columns: 140px repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: #f8fafc;
+}
+
+.graph-contract-heading {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+}
+
+.graph-contract-heading span,
+.graph-contract-card-head span,
+.graph-contract-field small,
+.graph-contract-more {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.graph-contract-heading span {
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.graph-contract-heading strong {
+  color: var(--ink);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.graph-contract-card {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #cfd7e5;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.graph-contract-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 8px;
+}
+
+.graph-contract-card-head strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.graph-contract-stat {
+  padding: 5px 7px;
+  border: 1px solid #e1e7f0;
+  border-radius: 5px;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.graph-contract-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.graph-contract-field,
+.graph-contract-more {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #f8fafc;
+}
+
+.graph-contract-field strong {
+  color: var(--ink);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .flow {
   flex: 1;
   min-height: 0;
@@ -3256,6 +3348,10 @@ button.secondary:disabled {
     flex-wrap: wrap;
     align-items: flex-start;
     overflow: visible;
+  }
+
+  .graph-contract-strip {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .connection-notice {

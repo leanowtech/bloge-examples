@@ -286,6 +286,7 @@ export function toGraphDraft(
   nodes: CanvasNode[],
   edges: CanvasEdge[],
   outputNodeId: string,
+  inputSchema?: SchemaEnvelope,
 ): GraphDraft {
   const edgeInputs = nodeInputsFromEdges(edges);
   const draftNodes: DraftNode[] = nodes.map((node) => ({
@@ -309,6 +310,7 @@ export function toGraphDraft(
 
   return {
     graphName: graphName || 'visualGraph',
+    ...(inputSchema ? { inputSchema } : {}),
     nodes: draftNodes,
     edges: draftEdges,
     output: { nodeId: resolvedOutputNode, path: '' },
@@ -380,8 +382,9 @@ export function toExportableGraphDraft(
   edges: CanvasEdge[],
   outputNodeId: string,
   nodeFixtures: Record<string, NodeFixture> = {},
+  inputSchema?: SchemaEnvelope,
 ): GraphDraft {
-  const draft = toGraphDraft(graphName, nodes, edges, outputNodeId);
+  const draft = toGraphDraft(graphName, nodes, edges, outputNodeId, inputSchema);
   return {
     schemaVersion: GRAPH_DRAFT_SCHEMA_VERSION,
     ...draft,
@@ -403,8 +406,9 @@ export function toSimulationRequest(
   outputNodeId: string,
   fixtures: Record<string, NodeFixture> = {},
   context: Record<string, unknown> = {},
+  inputSchema?: SchemaEnvelope,
 ): SimulationRequest {
-  const draft = toGraphDraft(graphName, nodes, edges, outputNodeId);
+  const draft = toGraphDraft(graphName, nodes, edges, outputNodeId, inputSchema);
   const selectedOutputNode = draft.output.nodeId;
   return {
     draft,

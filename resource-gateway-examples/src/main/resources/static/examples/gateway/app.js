@@ -667,9 +667,17 @@ async function loadScenarios() {
   state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
   syncGraphInputSchemaTextFromBuilder({ render: false });
   syncComposerFromBuilder({ render: false });
-  state.scenarios = [COMPOSER_SCENARIO, ...await response.json()];
+  state.scenarios = [composerScenarioMetadata(), ...await response.json()];
   renderScenarioButtons();
   await selectScenario(COMPOSER_GRAPH);
+}
+
+function composerScenarioMetadata() {
+  return {
+    ...COMPOSER_SCENARIO,
+    inputSchema: currentGraphInputSchema(state.builder),
+    outputSchema: currentGraphOutputSchemaEnvelope(state.builder)
+  };
 }
 
 async function loadVisualOperatorCatalog(options = {}) {
@@ -2343,6 +2351,7 @@ function renderScenario() {
   renderExampleBrief();
   $('inspector').classList.toggle('composer-mode', isComposerSelected());
   renderInputForm();
+  renderGraphContractPanel();
   renderDecisionTable();
   renderCanvasNavigator();
   renderDiagram();
@@ -2359,6 +2368,73 @@ function renderExampleBrief() {
   $('example-description').textContent = state.selected.description || `${state.selected.title} demonstrates ${state.selected.pattern}.`;
   $('example-capability').textContent = insight.capability;
   $('example-signal').textContent = insight.signal;
+}
+
+function renderGraphContractPanel() {
+  const target = $('graph-contract-summary');
+  if (!target || !state.selected) return;
+  target.innerHTML = `
+    ${renderGraphContractCard('Input', 'ctx', selectedGraphInputSchema())}
+    ${renderGraphContractCard('Output', 'public result', selectedGraphOutputSchema())}
+  `;
+}
+
+function selectedGraphInputSchema() {
+  return isComposerSelected()
+    ? currentGraphInputSchema(state.builder)
+    : normalizeGraphContractSchemaEnvelope(state.selected.inputSchema);
+}
+
+function selectedGraphOutputSchema() {
+  return isComposerSelected()
+    ? currentGraphOutputSchemaEnvelope(state.builder)
+    : normalizeGraphContractSchemaEnvelope(state.selected.outputSchema);
+}
+
+function renderGraphContractCard(title, rootLabel, schemaEnvelope) {
+  const summary = graphContractSchemaSummary(schemaEnvelope);
+  return `
+    <article class="graph-contract-card">
+      <div class="graph-contract-card-head">
+        <strong>${escapeHtml(title)}</strong>
+        <span>${escapeHtml(rootLabel)}</span>
+      </div>
+      <div class="graph-contract-stat">
+        ${escapeHtml(summary.type)} · ${summary.fieldCount} fields · ${summary.requiredCount} required
+      </div>
+      <div class="graph-contract-field-list">
+        ${renderGraphContractFields(summary.fields)}
+      </div>
+    </article>
+  `;
+}
+
+function graphContractSchemaSummary(schemaEnvelope) {
+  const normalized = normalizeGraphContractSchemaEnvelope(schemaEnvelope);
+  const fields = schemaFieldDescriptors(normalized);
+  return {
+    type: schemaType(normalized.schema) || 'any',
+    fieldCount: fields.length,
+    requiredCount: fields.filter((field) => field.required).length,
+    fields
+  };
+}
+
+function renderGraphContractFields(fields) {
+  if (!fields.length) {
+    return '<div class="graph-contract-empty">No named fields</div>';
+  }
+  const visible = fields.slice(0, 6);
+  const rows = visible.map((field) => `
+    <div class="graph-contract-field">
+      <span>${escapeHtml(field.path)}</span>
+      <strong>${escapeHtml(schemaType(field.schema) || 'any')}${field.required ? ' · required' : ''}</strong>
+    </div>
+  `).join('');
+  const remainder = fields.length > visible.length
+    ? `<div class="graph-contract-more">+${fields.length - visible.length} more fields</div>`
+    : '';
+  return rows + remainder;
 }
 
 function renderInputForm() {
@@ -15912,6 +15988,22 @@ function graphOutputSelectedSchema(spec, reference, selectedPath) {
   return schemaAtPath(portSchema, reference.path) || {};
 }
 
+function currentGraphOutputSchemaEnvelope(builder = state.builder) {
+  const output = ensureBuilderOutput(builder);
+  const selectedNode = builder.nodes.find((node) => node.id === output.nodeId);
+  if (!selectedNode) {
+    return opaqueGraphSchemaEnvelope();
+  }
+  const spec = specForNode(selectedNode);
+  const selectedPath = output?.path || '';
+  const reference = outputReferenceFromSelectionPath(spec, selectedPath);
+  return {
+    format: SUPPORTED_SCHEMA_FORMAT,
+    version: SUPPORTED_SCHEMA_VERSION,
+    schema: graphOutputSelectedSchema(spec, reference, selectedPath)
+  };
+}
+
 function operatorEditorBody(node) {
   if (node.type === 'httpResource') {
     return `
@@ -22179,6 +22271,7 @@ function syncComposerFromBuilder(options = {}) {
     graphInputSchemaBox.value = state.graphInputSchemaText;
   }
   renderGraphInputSchemaStatus();
+  renderGraphContractPanel();
   renderDraftDependencyReport();
   refreshSelectedOperatorFingerprintPanel();
   if (render && isComposerSelected()) {
@@ -24328,6 +24421,22 @@ function currentGraphInputSchema(builder = state.builder) {
   }
 }
 
+function normalizeGraphContractSchemaEnvelope(value) {
+  try {
+    return normalizeGraphInputSchemaEnvelope(value);
+  } catch {
+    return opaqueGraphSchemaEnvelope();
+  }
+}
+
+function opaqueGraphSchemaEnvelope() {
+  return {
+    format: SUPPORTED_SCHEMA_FORMAT,
+    version: SUPPORTED_SCHEMA_VERSION,
+    schema: { type: 'opaque' }
+  };
+}
+
 function defaultGraphInputSchema() {
   return schemaEnvelopeFromContextText(pretty(DEFAULT_COMPOSER_CONTEXT));
 }
@@ -24363,6 +24472,7 @@ function updateGraphInputSchemaFromText(text) {
     };
     state.graphInputSchemaDiagnostics = [];
     renderGraphInputSchemaStatus();
+    renderGraphContractPanel();
     renderSelectedOperatorEditor();
     renderGraphOutputEditor();
     renderDiagram();
@@ -24374,6 +24484,7 @@ function updateGraphInputSchemaFromText(text) {
     };
     state.graphInputSchemaDiagnostics = diagnostics;
     renderGraphInputSchemaStatus();
+    renderGraphContractPanel();
   }
 }
 

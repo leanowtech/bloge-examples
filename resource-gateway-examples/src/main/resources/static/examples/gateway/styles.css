@@ -1184,6 +1184,73 @@ body.connecting-edge * {
   margin-bottom: 12px;
 }
 
+.graph-contract-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.graph-contract-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+}
+
+.graph-contract-card-head,
+.graph-contract-field {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.graph-contract-card-head strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.graph-contract-card-head span,
+.graph-contract-stat,
+.graph-contract-field strong,
+.graph-contract-empty,
+.graph-contract-more {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.graph-contract-stat {
+  padding: 6px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 5px;
+  background: var(--surface);
+}
+
+.graph-contract-field-list {
+  display: grid;
+  gap: 5px;
+}
+
+.graph-contract-field {
+  padding-top: 5px;
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.graph-contract-field:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.graph-contract-field span {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
 .builder-panel {
   display: grid;
   gap: 10px;

@@ -56,6 +56,7 @@ import {
   operatorLibraryValidationLevel,
   operatorLibraryValidationMessage,
   portNameFromHandle,
+  sampleFromSchemaEnvelope,
   simulationChecklist,
   simulationFixtureRows,
   simulationRunSummary,
@@ -71,6 +72,7 @@ import type {
   DraftNodeBinding,
   OperatorDefinition,
   OperatorPort,
+  SchemaEnvelope,
   SimulationResponse,
   VisualDiagnostic,
   VisualValidationResult,
@@ -188,6 +190,16 @@ interface ContextVariableRow {
 }
 
 const CONTEXT_VARIABLE_DRAG_TYPE = 'application/bloge-context-path';
+const EMPTY_GRAPH_INPUT_SCHEMA: SchemaEnvelope = {
+  format: 'json-schema',
+  version: '2020-12',
+  schema: {
+    type: 'object',
+    properties: {},
+    required: [],
+    additionalProperties: true,
+  },
+};
 
 function handleOffset(index: number, count: number): CSSProperties {
   return { top: `${((index + 1) / (count + 1)) * 100}%` };
@@ -1818,6 +1830,84 @@ function schemaKindLabel(schema: Record<string, unknown> | undefined): string {
   return 'any';
 }
 
+function schemaEnvelope(schema: Record<string, unknown>): SchemaEnvelope {
+  return {
+    format: 'json-schema',
+    version: '2020-12',
+    schema,
+  };
+}
+
+function schemaProperties(schema: Record<string, unknown> | undefined): Record<string, Record<string, unknown>> {
+  const properties = schema?.properties;
+  return isRecord(properties)
+    ? Object.fromEntries(
+      Object.entries(properties)
+        .filter((entry): entry is [string, Record<string, unknown>] => isRecord(entry[1])),
+    )
+    : {};
+}
+
+function schemaRequiredSet(schema: Record<string, unknown> | undefined): Set<string> {
+  return new Set(Array.isArray(schema?.required) ? schema.required.map(String) : []);
+}
+
+function schemaFieldRows(envelope: SchemaEnvelope | undefined): Array<{
+  name: string;
+  type: string;
+  required: boolean;
+}> {
+  const properties = schemaProperties(envelope?.schema);
+  const required = schemaRequiredSet(envelope?.schema);
+  return Object.entries(properties).map(([name, schema]) => ({
+    name,
+    type: schemaKindLabel(schema),
+    required: required.has(name),
+  }));
+}
+
+function graphSchemaSummary(envelope: SchemaEnvelope | undefined): {
+  type: string;
+  fieldCount: number;
+  requiredCount: number;
+  fields: Array<{ name: string; type: string; required: boolean }>;
+} {
+  const fields = schemaFieldRows(envelope);
+  return {
+    type: schemaKindLabel(envelope?.schema),
+    fieldCount: fields.length,
+    requiredCount: fields.filter((field) => field.required).length,
+    fields,
+  };
+}
+
+function outputSchemaForCanvas(
+  nodes: Node<NodeData>[],
+  outputNodeId: string,
+  operatorByRef: Map<string, OperatorDefinition>,
+): SchemaEnvelope | undefined {
+  const node = nodes.find((item) => item.id === outputNodeId);
+  if (!node) {
+    return undefined;
+  }
+  const outputs = operatorByRef.get(node.data.operatorRef)?.ports?.outputs ?? [];
+  if (outputs.length === 1) {
+    return outputs[0].schema;
+  }
+  if (outputs.length > 1) {
+    return schemaEnvelope({
+      type: 'object',
+      properties: Object.fromEntries(outputs.map((port) => [
+        port.name || 'output',
+        port.schema?.schema ?? {},
+      ])),
+      required: outputs.filter((port) => port.required).map((port) => port.name || 'output'),
+      additionalProperties: false,
+    });
+  }
+  return undefined;
+}
+
 interface OperatorLibraryExample {
   key: string;
   label: string;
@@ -2141,6 +2231,9 @@ export default function AuthorCanvas() {
   const [fixtureInputDrafts, setFixtureInputDrafts] = useState<Record<string, string>>({});
   const [simulationContextDraft, setSimulationContextDraft] = useState('{}');
   const [contextVariables, setContextVariables] = useState<ContextVariableRow[]>([]);
+  const [graphInputSchema, setGraphInputSchema] = useState<SchemaEnvelope>(EMPTY_GRAPH_INPUT_SCHEMA);
+  const [graphOutputSchema, setGraphOutputSchema] = useState<SchemaEnvelope | null>(null);
+  const [graphContractSource, setGraphContractSource] = useState('Current draft');
   const [connectionNotice, setConnectionNotice] = useState<ConnectionNotice | null>(null);
   const [candidatePreview, setCandidatePreview] = useState<ConnectionCandidateIndex | null>(null);
   const [selectedConnectionSourcePort, setSelectedConnectionSourcePort] = useState('');
@@ -2487,6 +2580,18 @@ export default function AuthorCanvas() {
     () => new Map(operators.map((operator) => [operator.operatorRef, operator])),
     [operators],
   );
+  const effectiveGraphOutputSchema = useMemo(
+    () => graphOutputSchema ?? outputSchemaForCanvas(nodes, outputNodeId, operatorByRef),
+    [graphOutputSchema, nodes, operatorByRef, outputNodeId],
+  );
+  const graphInputSummary = useMemo(
+    () => graphSchemaSummary(graphInputSchema),
+    [graphInputSchema],
+  );
+  const graphOutputSummary = useMemo(
+    () => graphSchemaSummary(effectiveGraphOutputSchema),
+    [effectiveGraphOutputSchema],
+  );
   const canvasExamples = useMemo<CanvasExampleAvailability[]>(
     () =>
       CANVAS_EXAMPLE_TEMPLATES.map((template) => ({
@@ -2566,6 +2671,11 @@ export default function AuthorCanvas() {
     setEdges(nextEdges);
     setFixtureDrafts(nextFixtureDrafts);
     setFixtureInputDrafts(nextFixtureInputDrafts);
+    setGraphInputSchema(template.inputSchema);
+    setGraphOutputSchema(template.outputSchema);
+    setGraphContractSource(template.label);
+    setSimulationContextDraft(JSON.stringify(sampleFromSchemaEnvelope(template.inputSchema), null, 2));
+    setContextVariables([]);
     setExplicitOutputNodeId(template.outputNodeId);
     setSelectedNodeId(template.outputNodeId);
     setRuleEditorNodeId('');
@@ -2635,8 +2745,9 @@ export default function AuthorCanvas() {
       canvasEdges,
       outputNodeId,
       fixtureCompilation.fixtures,
+      graphInputSchema,
     ),
-    [canvasEdges, canvasNodes, fixtureCompilation.fixtures, outputNodeId],
+    [canvasEdges, canvasNodes, fixtureCompilation.fixtures, graphInputSchema, outputNodeId],
   );
   const draftExportJson = useMemo(
     () => JSON.stringify(exportableDraft, null, 2),
@@ -2822,6 +2933,8 @@ export default function AuthorCanvas() {
     }
     clearRunResult();
     setExplicitOutputNodeId(selectedNodeId);
+    setGraphOutputSchema(null);
+    setGraphContractSource('Current draft');
   }, [clearRunResult, selectedNodeId]);
 
   const onConnectStart = useCallback(async (_event: unknown, params: ConnectionStartParams) => {
@@ -3131,6 +3244,7 @@ export default function AuthorCanvas() {
         outputNodeId,
         fixtureCompilation.fixtures,
         contextCompilation.value,
+        graphInputSchema,
       ));
       setResult(response);
 
@@ -3149,7 +3263,7 @@ export default function AuthorCanvas() {
     } finally {
       setBusy(false);
     }
-  }, [canvasEdges, canvasNodes, contextCompilation.value, fixtureCompilation.fixtures, outputNodeId]);
+  }, [canvasEdges, canvasNodes, contextCompilation.value, fixtureCompilation.fixtures, graphInputSchema, outputNodeId]);
 
   const runDraftValidation = useCallback(async () => {
     setValidatingDraft(true);
@@ -3455,6 +3569,8 @@ export default function AuthorCanvas() {
                   <div className="canvas-example-meta">
                     <span>{template.nodes.length} nodes</span>
                     <span>{template.edges.length} edges</span>
+                    <span>Input {graphSchemaSummary(template.inputSchema).fieldCount} fields</span>
+                    <span>Output {graphSchemaSummary(template.outputSchema).fieldCount} fields</span>
                     {!available && <span>{missingOperatorRefs.length} missing</span>}
                   </div>
                   <button
@@ -3543,6 +3659,43 @@ export default function AuthorCanvas() {
             <span className="swatch real" /> real
           </span>
         </div>
+        <section className="graph-contract-strip" aria-label="Graph contract" data-testid="author-graph-contract">
+          <div className="graph-contract-heading">
+            <span>Graph Contract</span>
+            <strong>{graphContractSource}</strong>
+          </div>
+          {[
+            { key: 'input', label: 'Input', root: 'ctx', summary: graphInputSummary },
+            { key: 'output', label: 'Output', root: 'public result', summary: graphOutputSummary },
+          ].map((item) => (
+            <article className="graph-contract-card" key={item.key}>
+              <div className="graph-contract-card-head">
+                <strong>{item.label}</strong>
+                <span>{item.root}</span>
+              </div>
+              <div className="graph-contract-stat">
+                {item.summary.type} · {item.summary.fieldCount} fields · {item.summary.requiredCount} required
+              </div>
+              <div className="graph-contract-fields">
+                {item.summary.fields.length > 0 ? (
+                  <>
+                    {item.summary.fields.slice(0, 6).map((field) => (
+                      <span className="graph-contract-field" key={field.name}>
+                        <strong>{field.name}</strong>
+                        <small>{field.type}{field.required ? ' · required' : ''}</small>
+                      </span>
+                    ))}
+                    {item.summary.fields.length > 6 && (
+                      <span className="graph-contract-more">+{item.summary.fields.length - 6} more</span>
+                    )}
+                  </>
+                ) : (
+                  <span className="graph-contract-more">No named fields</span>
+                )}
+              </div>
+            </article>
+          ))}
+        </section>
         <div
           ref={flowRef}
           className="flow"
