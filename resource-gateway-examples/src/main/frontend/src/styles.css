@@ -394,6 +394,11 @@ body {
   background: #f5f8ff;
 }
 
+.operator-button:has(.op-kind.http) {
+  border-color: #88bfd8;
+  background: #f2fbff;
+}
+
 .operator-button:has(.op-kind.transform) {
   border-color: #d5b7f0;
   background: #fbf7ff;
@@ -443,6 +448,11 @@ body {
   color: #2459a6;
 }
 
+.op-kind.http {
+  background: #dff6ff;
+  color: #126078;
+}
+
 .op-kind.transform {
   background: #f2e6ff;
   color: #6d3aa5;
@@ -475,6 +485,26 @@ body {
 .badge.design {
   background: #fff3cd;
   color: #7a5b00;
+}
+
+.badge.readiness.info {
+  background: #eaf4ff;
+  color: #18548a;
+}
+
+.badge.readiness.warning {
+  background: #fff3cd;
+  color: #7a5b00;
+}
+
+.badge.readiness.error {
+  background: #fdecea;
+  color: var(--danger);
+}
+
+.badge.readiness.success {
+  background: #e8f5e9;
+  color: #1b5e20;
 }
 
 .badge.fixture {
@@ -821,6 +851,11 @@ button.secondary:disabled {
   background: #f5f8ff;
 }
 
+.operator-node.kind-http {
+  border-color: #74b7d2;
+  background: #f2fbff;
+}
+
 .operator-node.kind-transform {
   border-color: #c5a3e5;
   background: #fbf7ff;
@@ -1001,6 +1036,23 @@ button.secondary:disabled {
   color: #7a5b00;
   font-size: 11px;
   font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.operator-node-warning.info {
+  background: #eaf4ff;
+  color: #18548a;
+}
+
+.operator-node-warning.error {
+  background: #fdecea;
+  color: var(--danger);
+}
+
+.operator-node-warning.success {
+  background: #e8f5e9;
+  color: #1b5e20;
 }
 
 .run-pill {
@@ -1224,6 +1276,11 @@ button.secondary:disabled {
 .operator-focus.resource {
   border-left-color: #2459a6;
   background: #f5f8ff;
+}
+
+.operator-focus.http {
+  border-left-color: #126078;
+  background: #f2fbff;
 }
 
 .operator-focus.transform {

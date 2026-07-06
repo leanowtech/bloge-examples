@@ -640,6 +640,62 @@ describe('summarizeOperator', () => {
       inputContractLabel: 'item source',
       outputContractLabel: 'result list',
     });
+
+    expect(summarizeOperator({
+      operatorRef: 'httpResource',
+      display: { name: 'HTTP Resource', tags: ['resource', 'advanced'] },
+      source: { kind: 'bloge-operator' },
+      ports: {
+        inputs: [{ name: 'input', schema: { schema: { type: 'object' } } }],
+        outputs: [{ name: 'output', schema: { schema: { type: 'object' } } }],
+      },
+      lowering: { mode: 'native' },
+    })).toMatchObject({
+      visualKind: 'resource',
+      visualLabel: 'Resource',
+      contractHint: 'params -> payload',
+      inputContractLabel: 'params',
+      outputContractLabel: 'payload',
+    });
+
+    expect(summarizeOperator({
+      operatorRef: 'httpRequest',
+      display: { name: 'Http Request', tags: ['java', 'http', 'api', 'rest'] },
+      source: { kind: 'java-operator' },
+      ports: {
+        inputs: [{ name: 'input', schema: { schema: { type: 'object' } } }],
+        outputs: [{ name: 'output', schema: { schema: { type: 'object' } } }],
+      },
+    })).toMatchObject({
+      visualKind: 'http',
+      visualLabel: 'HTTP',
+      contractHint: 'request -> response',
+      inputContractLabel: 'request',
+      outputContractLabel: 'response',
+    });
+
+    expect(summarizeOperator({
+      operatorRef: 'MockCitationStreamingOperator',
+      display: { name: 'Mock Citation Streaming Operator', tags: ['streaming'] },
+      source: { kind: 'java-streaming-operator' },
+      capabilities: { streaming: true },
+      ports: {
+        inputs: [{ name: 'input', schema: { schema: { type: 'object' } } }],
+        outputs: [{ name: 'output', schema: { schema: { type: 'object' } } }],
+      },
+      runtimeReadiness: {
+        state: 'RUNTIME_BLOCKED',
+        level: 'warning',
+        executable: false,
+        summary: 'Streaming runtime not supported by this request-response runtime.',
+      },
+    })).toMatchObject({
+      visualKind: 'streaming',
+      readinessState: 'runtime-blocked',
+      readinessLevel: 'warning',
+      readinessBadgeLabel: 'blocked',
+      readinessNotice: 'Streaming runtime not supported by this request-response runtime.',
+    });
   });
 });
 

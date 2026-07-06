@@ -24,6 +24,13 @@ export interface OperatorDefinition {
   ports?: { inputs: OperatorPort[]; outputs: OperatorPort[] };
   capabilities?: { streaming?: boolean };
   lowering?: { mode?: string };
+  runtimeReadiness?: {
+    state?: string;
+    level?: string;
+    executable?: boolean;
+    title?: string;
+    summary?: string;
+  };
 }
 
 /** A user-provided operator library (bloge.visualOperatorLibrary.v1). */

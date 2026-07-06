@@ -409,3 +409,122 @@ accepted edge target inputs.score
 | streaming runtime binding 面板 | streaming 当前主要是运行态与 runtime binding 问题，不是 author canvas 的局部规则编辑问题 | 后续进入 runtime binding 管理视图 |
 
 结论：按 3% 达成线审计，当前 `/author/` 已覆盖复杂规则、字段映射、schema 连接、候选字段选择、移动端布局和关键算子族表达。剩余项属于更大阶段的子图/registry/runtime binding 设计，不构成本轮 UX 目标阻断。
+
+## 14. Iteration 14：逐算子 UX 审查与 HTTP/Readiness 补强
+
+触发反馈：此前第 13 节仍然停留在“算子族”口径，不能证明真实 catalog 中每个 operatorRef 都被逐个审查。新的目标要求是 26 个算子逐个形成 UX 审查报告，并继续用浏览器验证视觉调整。
+
+本轮目标：
+
+1. 从真实 `/api/visual/operators` catalog 冻结 operatorRef 清单，不用手工猜测。
+2. 对 26/26 operatorRef 逐个记录：当前 UX 判断、本轮动作、残留缺口和后续路线。
+3. 修复审查中发现的非 decision table 缺口，尤其是 `httpResource`、`httpRequest` 和 `runtimeReadiness` 的表达问题。
+4. 用自动化测试、构建和浏览器桌面/移动端证据复核，重新计算与 3% 目标的差距。
+
+### 14.1 本轮改动
+
+| 文件 | 改动 |
+| --- | --- |
+| `resource-gateway-examples/src/main/frontend/src/types.ts` | 前端 `OperatorDefinition` 接入服务端 `runtimeReadiness` wire contract |
+| `resource-gateway-examples/src/main/frontend/src/draftModel.ts` | `summarizeOperator()` 新增 readiness summary；`httpResource`/`resource` tag/resource-descriptor lowering 归为 Resource；新增 `HTTP` 视觉族用于 `httpRequest` |
+| `resource-gateway-examples/src/main/frontend/src/AuthorCanvas.tsx` | palette 展示 readiness badge；节点卡片展示 readiness notice；selected inspector 增加 Readiness 行；新增 HTTP contract panel |
+| `resource-gateway-examples/src/main/frontend/src/styles.css` | 新增 HTTP 族、readiness badge、节点状态条样式，保证长文案可换行 |
+| `resource-gateway-examples/src/main/frontend/src/draftModel.test.ts` | 覆盖 `httpResource` Resource 分类、`httpRequest` HTTP 分类、streaming runtime-blocked readiness |
+| `resource-gateway-examples/src/main/frontend/src/AuthorCanvas.test.tsx` | 覆盖 Resource/Streaming readiness 在 palette、节点、inspector 中可见 |
+| `docs/bloge-resource-gateway-operator-ux-audit.md` | 新增 26/26 operatorRef 逐算子 UX 审查报告 |
+
+### 14.2 逐算子审查结论
+
+完整报告见 [Resource Gateway `/author/` 逐算子 UX 审查报告](./bloge-resource-gateway-operator-ux-audit.md)。
+
+真实 catalog 返回 26 个 operator，已逐个审查：
+
+```text
+MockCitationStreamingOperator
+MockLlmTokenStreamingOperator
+MockMetaStreamingOperator
+__decision_table__
+__foreach__:enrichOrders
+__transform__
+bloge:decisionTable
+bloge:transform
+httpRequest
+httpResource
+orders:normalize
+orders:route-sla
+resource:catalog-service.getProduct
+resource:credit-provider.primary
+resource:credit-provider.secondary
+resource:invoice-service.getInvoice
+resource:license-service.getLicense
+resource:loan-applicant-service.getProfile
+resource:logistics-service.getShipping
+resource:notification-service.unread
+resource:order-service.listOrders
+resource:recommendation-service.forUser
+resource:user-service.getProfile
+resource:wallet-service.getBalance
+risk:eligibility
+support:classify-ticket
+```
+
+核心判断：
+
+| 类别 | 结论 |
+| --- | --- |
+| 已本轮修复 | `httpResource` 不再是 generic；`httpRequest` 有独立 HTTP 视觉族；streaming/resource/native/design-only 的 readiness 风险不再隐藏 |
+| 已有闭环 | `bloge:decisionTable`、`bloge:transform` 已有双击编辑浮层；resource virtual operators 有 Resource contract；foreach 有 Loop contract |
+| 不应硬做本地浮层 | 用户库 design-only operator 缺少 config/editor contract，不能凭 `decision`、`transform` tag 猜成内置编辑器 |
+| 后续路线 | operator-library `ux.editorHint`、native alias preferred/advanced 分层、resource registry drill-down、streaming runtime binding 视图 |
+
+### 14.3 验证证据
+
+自动化验证：
+
+```bash
+cd resource-gateway-examples/src/main/frontend
+npm test -- --run src/draftModel.test.ts src/AuthorCanvas.test.tsx
+npm run build
+```
+
+结果：
+
+| 验证项 | 结果 |
+| --- | --- |
+| `draftModel.test.ts` | 62 tests passed |
+| `AuthorCanvas.test.tsx` | 15 tests passed |
+| 合计 | 77 tests passed |
+| Vite/TypeScript build | passed |
+
+浏览器检视证据：
+
+| 视口 | 观察 |
+| --- | --- |
+| 默认桌面视口 | palette 显示 `26/26`；`httpRequest` 显示 `HTTP ... request -> response ... review`；`httpResource` 显示 `Resource ... params -> payload ... review`；streaming operator 显示 `Streaming ... request -> event stream ... blocked` |
+| 默认桌面视口 | 添加三类节点后，节点分别带 `kind-http`、`kind-resource`、`kind-streaming`，节点内显示 readiness notice；页面 `scrollWidth=725`、`clientWidth=725` |
+| 默认桌面视口 | 选中三类节点后，inspector 分别显示 `HTTP contract`、`Resource contract`、`Stream contract`，且都有 `Readiness` 行 |
+| 390px mobile | palette 显示 `26/26`；workspace 单列 `390px`；页面 `scrollWidth=390`、`clientWidth=390` |
+| 390px mobile | 添加三类节点后，三个节点 bounding box 均为 `left=18,right=372,width=355`，readiness 长文案未造成页面级横向溢出 |
+
+### 14.4 Iteration 14 后差距复核
+
+本轮后估计完成度：98/100
+剩余目标差距：2%
+
+| 维度 | Iteration 13 | Iteration 14 | 结论 |
+| --- | ---: | ---: | --- |
+| Schema 连线体验 | 29/30 | 29/30 | 保持 incoming data 条件列、字段候选和 schema check 闭环 |
+| 算子专有表达 | 25/25 | 25/25 | 不再只按算子族判断；逐个覆盖 26/26 operatorRef，补 HTTP 族与 Resource 误判 |
+| 任务流可发现性 | 20/20 | 20/20 | readiness badge/notice 让 runtime-blocked、governance-review、design-only 风险进入作者视线 |
+| 浏览器视觉证据 | 15/15 | 15/15 | 桌面和 390px mobile 均验证真实页面、真实 catalog、无页面级横向溢出 |
+| 回归与可维护性 | 10/10 | 9/10 | 新增分类/readiness 测试；仍需后续把 operator UX hint 设计进正式 schema |
+
+剩余 2% 不阻断当前 3% 目标，但必须作为后续路线保留：
+
+| 残留项 | 为什么不阻断本目标 | 后续路线 |
+| --- | --- | --- |
+| 用户库 design-only operator 的专用编辑器 | 当前没有 operator-library editor hint 合同，前端凭 tag 猜编辑器会误导用户 | 定义 `ux.editorHint` / `interactionModel` 后再开启 policy/triage/mapping 专用编辑体验 |
+| Java native alias 与 DSL 推荐入口并存 | readiness review 已提示治理风险，但 palette 还未明确推荐优先级 | 增加 preferred/advanced 分层 |
+| resource/streaming 深层治理信息 | author canvas 已展示 contract 与 readiness；auth、binding、adapter activation 属于 registry/runtime binding 视图 | resource registry drill-down 与 streaming runtime binding 管理视图 |
+
+结论：Iteration 14 把审查粒度从“算子族”提升到真实 catalog 的 26 个 operatorRef，并主动修复 `httpResource`、`httpRequest`、`runtimeReadiness` 三个非 decision table UX 缺口。按 3% 达成线，本轮剩余差距约 2%，目标可以闭环。

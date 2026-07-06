@@ -53,7 +53,7 @@ export interface OperatorSummary {
   description: string;
   tags: string[];
   sourceKind: string;
-  visualKind: 'decision-table' | 'foreach' | 'transform' | 'resource' | 'streaming' | 'generic';
+  visualKind: 'decision-table' | 'foreach' | 'transform' | 'resource' | 'http' | 'streaming' | 'generic';
   visualLabel: string;
   contractHint: string;
   inputContractLabel: string;
@@ -65,6 +65,10 @@ export interface OperatorSummary {
   requiredInputNames: string[];
   outputNames: string[];
   designOnly: boolean;
+  readinessState: string;
+  readinessLevel: 'success' | 'info' | 'warning' | 'error' | 'unknown';
+  readinessBadgeLabel: string;
+  readinessNotice: string;
 }
 
 export type OperatorPaletteFacet = 'all' | 'runtime' | 'design';
@@ -724,6 +728,7 @@ export function summarizeOperator(operator: OperatorDefinition): OperatorSummary
   const firstInputType = schemaRootLabel(inputs[0]?.schema, 'input');
   const firstOutputType = schemaRootLabel(outputs[0]?.schema, 'output');
   const visualContract = operatorVisualContract(visualKind, firstInputType, firstOutputType);
+  const readiness = operatorReadiness(operator);
   return {
     operatorRef: operator.operatorRef,
     name: operator.display?.name || operator.operatorRef,
@@ -741,8 +746,74 @@ export function summarizeOperator(operator: OperatorDefinition): OperatorSummary
     inputNames: inputs.map((input) => input.name),
     requiredInputNames: requiredInputs.map((input) => input.name),
     outputNames: outputs.map((output) => output.name),
-    designOnly: operator.lowering?.mode === 'design',
+    designOnly: operator.lowering?.mode === 'design' || readiness.state === 'design-only',
+    readinessState: readiness.state,
+    readinessLevel: readiness.level,
+    readinessBadgeLabel: readiness.badgeLabel,
+    readinessNotice: readiness.notice,
   };
+}
+
+function operatorReadiness(operator: OperatorDefinition): {
+  state: string;
+  level: OperatorSummary['readinessLevel'];
+  badgeLabel: string;
+  notice: string;
+} {
+  const state = normalizeReadinessState(operator.runtimeReadiness?.state);
+  const level = normalizeReadinessLevel(operator.runtimeReadiness?.level);
+  if (state === 'runtime-executable') {
+    return { state, level, badgeLabel: '', notice: '' };
+  }
+  if (state === 'runtime-blocked') {
+    return {
+      state,
+      level: level === 'unknown' ? 'warning' : level,
+      badgeLabel: 'blocked',
+      notice: operator.runtimeReadiness?.summary || 'Runtime blocked in this visual runtime.',
+    };
+  }
+  if (state === 'governance-review') {
+    return {
+      state,
+      level: level === 'unknown' ? 'warning' : level,
+      badgeLabel: 'review',
+      notice: operator.runtimeReadiness?.summary || 'Executable, but promotion should review governance risks.',
+    };
+  }
+  if (state === 'design-only' || operator.lowering?.mode?.toLowerCase() === 'design') {
+    return {
+      state: 'design-only',
+      level: level === 'unknown' ? 'info' : level,
+      badgeLabel: 'design',
+      notice: operator.runtimeReadiness?.summary || 'Design-only operator; executable lowering is not bound yet.',
+    };
+  }
+  if (state) {
+    return {
+      state,
+      level,
+      badgeLabel: readinessBadgeLabel(state),
+      notice: operator.runtimeReadiness?.summary || operator.runtimeReadiness?.title || state,
+    };
+  }
+  return { state: '', level: 'unknown', badgeLabel: '', notice: '' };
+}
+
+function normalizeReadinessState(value: string | undefined): string {
+  return (value ?? '').trim().toLowerCase().replace(/_/g, '-');
+}
+
+function normalizeReadinessLevel(value: string | undefined): OperatorSummary['readinessLevel'] {
+  const normalized = (value ?? '').trim().toLowerCase();
+  if (normalized === 'success' || normalized === 'info' || normalized === 'warning' || normalized === 'error') {
+    return normalized;
+  }
+  return 'unknown';
+}
+
+function readinessBadgeLabel(state: string): string {
+  return state.replace(/-/g, ' ');
 }
 
 function operatorVisualKind(operator: OperatorDefinition): OperatorSummary['visualKind'] {
@@ -762,8 +833,17 @@ function operatorVisualKind(operator: OperatorDefinition): OperatorSummary['visu
   if (loweringMode === 'transform' || ref.includes('transform')) {
     return 'transform';
   }
-  if (ref.startsWith('resource:') || sourceKind === 'resource-descriptor') {
+  if (
+    ref === 'httpresource'
+    || ref.startsWith('resource:')
+    || sourceKind === 'resource-descriptor'
+    || loweringMode === 'resource-descriptor'
+    || tags.includes('resource')
+  ) {
     return 'resource';
+  }
+  if (ref === 'httprequest' || tags.includes('http') || tags.includes('api') || tags.includes('rest')) {
+    return 'http';
   }
   if (capabilities.capabilities?.streaming || sourceKind.includes('streaming')) {
     return 'streaming';
@@ -807,6 +887,13 @@ function operatorVisualContract(
         contractHint: 'params -> payload',
         inputContractLabel: 'params',
         outputContractLabel: 'payload',
+      };
+    case 'http':
+      return {
+        visualLabel: 'HTTP',
+        contractHint: 'request -> response',
+        inputContractLabel: 'request',
+        outputContractLabel: 'response',
       };
     case 'streaming':
       return {

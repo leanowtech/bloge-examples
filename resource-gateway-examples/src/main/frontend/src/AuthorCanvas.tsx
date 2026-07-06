@@ -251,7 +251,11 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
         <span>Out</span>
         <strong>{data.summary.outputNames.join(', ') || 'value'}</strong>
       </div>
-      {data.summary.designOnly && <div className="operator-node-warning">design-only</div>}
+      {data.summary.readinessNotice && (
+        <div className={`operator-node-warning ${data.summary.readinessLevel}`}>
+          {data.summary.readinessBadgeLabel || data.summary.readinessState}: {data.summary.readinessNotice}
+        </div>
+      )}
       {outputPorts.map((port, index) => (
         <Handle
           key={`out:${port}`}
@@ -1173,12 +1177,16 @@ function operatorFocusRows(
 ): OperatorFocusRow[] {
   const inputSignature = portSignatures(inputs, summary.inputContractLabel || 'input');
   const outputSignature = portSignatures(outputs, summary.outputContractLabel || 'output');
+  const readiness = summary.readinessNotice
+    ? [{ key: 'readiness', label: 'Readiness', value: summary.readinessNotice }]
+    : [];
   if (summary.visualKind === 'decision-table') {
     return [
       { key: 'conditions', label: 'Condition inputs', value: inputSignature },
       { key: 'decision', label: 'Decision output', value: outputSignature },
       { key: 'rules', label: 'Rule matrix', value: 'typed conditions -> matched row' },
       { key: 'lowering', label: 'Lowering', value: operator?.lowering?.mode || 'dsl' },
+      ...readiness,
     ];
   }
   if (summary.visualKind === 'foreach') {
@@ -1187,6 +1195,7 @@ function operatorFocusRows(
       { key: 'item', label: 'Item context', value: itemContextLabel(inputs) },
       { key: 'result', label: 'Result list', value: outputSignature },
       { key: 'cardinality', label: 'Cardinality', value: 'per item -> aggregated list' },
+      ...readiness,
     ];
   }
   if (summary.visualKind === 'resource') {
@@ -1194,6 +1203,15 @@ function operatorFocusRows(
       { key: 'params', label: 'Request params', value: inputSignature },
       { key: 'payload', label: 'Response payload', value: outputSignature },
       { key: 'boundary', label: 'Boundary', value: operator?.source?.kind || summary.sourceKind },
+      ...readiness,
+    ];
+  }
+  if (summary.visualKind === 'http') {
+    return [
+      { key: 'request', label: 'HTTP request', value: inputSignature },
+      { key: 'response', label: 'HTTP response', value: outputSignature },
+      { key: 'boundary', label: 'Boundary', value: operator?.source?.kind || summary.sourceKind },
+      ...readiness,
     ];
   }
   if (summary.visualKind === 'transform') {
@@ -1201,6 +1219,7 @@ function operatorFocusRows(
       { key: 'source', label: 'Source fields', value: inputSignature },
       { key: 'mapped', label: 'Mapped output', value: outputSignature },
       { key: 'lowering', label: 'Lowering', value: operator?.lowering?.mode || 'transform' },
+      ...readiness,
     ];
   }
   if (summary.visualKind === 'streaming') {
@@ -1208,11 +1227,13 @@ function operatorFocusRows(
       { key: 'request', label: 'Request', value: inputSignature },
       { key: 'stream', label: 'Event stream', value: outputSignature },
       { key: 'boundary', label: 'Boundary', value: operator?.source?.kind || summary.sourceKind },
+      ...readiness,
     ];
   }
   return [
     { key: 'inputs', label: 'Input contract', value: inputSignature },
     { key: 'outputs', label: 'Output contract', value: outputSignature },
+    ...readiness,
   ];
 }
 
@@ -1225,6 +1246,9 @@ function operatorFocusTitle(kind: OperatorSummary['visualKind']): string {
   }
   if (kind === 'resource') {
     return 'Resource contract';
+  }
+  if (kind === 'http') {
+    return 'HTTP contract';
   }
   if (kind === 'transform') {
     return 'Mapping contract';
@@ -2575,7 +2599,11 @@ export default function AuthorCanvas() {
                           {summary.outputCount} outputs
                         </span>
                       </span>
-                      {summary.designOnly && <span className="badge design">design</span>}
+                      {summary.readinessBadgeLabel && (
+                        <span className={`badge readiness ${summary.readinessLevel}`}>
+                          {summary.readinessBadgeLabel}
+                        </span>
+                      )}
                     </button>
                   </li>
                 ))}

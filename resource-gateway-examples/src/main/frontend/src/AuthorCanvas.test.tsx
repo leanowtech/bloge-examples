@@ -590,6 +590,44 @@ describe('AuthorCanvas connection guide', () => {
     });
   });
 
+  it('surfaces resource and streaming readiness directly in palette, nodes, and inspector', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({ operators: [httpResourceOperator(), streamingOperator()] });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:httpResource"]').textContent).toContain('Resource'),
+    );
+    expect(query('[data-testid="operator-button:httpResource"]').textContent).toContain('review');
+    expect(query('[data-testid="operator-button:MockCitationStreamingOperator"]').textContent).toContain('Streaming');
+    expect(query('[data-testid="operator-button:MockCitationStreamingOperator"]').textContent).toContain('blocked');
+
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:httpResource"]'));
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:MockCitationStreamingOperator"]'));
+
+    expect(query('[data-testid="canvas-node:n1"][data-operator-ref="httpResource"]').textContent)
+      .toContain('params');
+    expect(query('[data-testid="canvas-node:n1"][data-operator-ref="httpResource"]').textContent)
+      .toContain('review');
+    expect(query('[data-testid="canvas-node:n2"][data-operator-ref="MockCitationStreamingOperator"]').textContent)
+      .toContain('blocked');
+
+    await click(query<HTMLElement>('[data-testid="node-wrapper:n2"]'));
+    expect(query('[data-testid="operator-focus:streaming"]').textContent).toContain('Stream contract');
+    expect(query('[data-testid="operator-focus:streaming"]').textContent).toContain('Readiness');
+    expect(query('[data-testid="operator-focus:streaming"]').textContent)
+      .toContain('Runtime blocked in this visual runtime');
+  });
+
   it('uses incoming edge bindings as decision-table condition columns', async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -1097,6 +1135,67 @@ function transformOperator(): OperatorDefinition {
         {
           name: 'inputs',
           required: false,
+          schema: schema({ type: 'object', additionalProperties: true }),
+        },
+      ],
+      outputs: [
+        {
+          name: 'output',
+          schema: schema({ type: 'object', additionalProperties: true }),
+        },
+      ],
+    },
+  };
+}
+
+function httpResourceOperator(): OperatorDefinition {
+  return {
+    operatorRef: 'httpResource',
+    display: { name: 'HTTP Resource', description: 'Descriptor-backed HTTP resource.', tags: ['resource'] },
+    source: { kind: 'bloge-operator' },
+    lowering: { mode: 'native' },
+    runtimeReadiness: {
+      state: 'GOVERNANCE_REVIEW',
+      level: 'warning',
+      executable: true,
+      summary: 'Executable, but promotion should review governance risks.',
+    },
+    ports: {
+      inputs: [
+        {
+          name: 'input',
+          required: true,
+          schema: schema({ type: 'object', additionalProperties: true }),
+        },
+      ],
+      outputs: [
+        {
+          name: 'output',
+          schema: schema({ type: 'object', additionalProperties: true }),
+        },
+      ],
+    },
+  };
+}
+
+function streamingOperator(): OperatorDefinition {
+  return {
+    operatorRef: 'MockCitationStreamingOperator',
+    display: { name: 'Mock Citation Streaming Operator', tags: ['java', 'streaming'] },
+    source: { kind: 'java-streaming-operator' },
+    capabilities: { streaming: true },
+    lowering: { mode: 'native' },
+    runtimeReadiness: {
+      state: 'RUNTIME_BLOCKED',
+      level: 'warning',
+      executable: false,
+      summary: 'Runtime blocked in this visual runtime.',
+    },
+    ports: {
+      inputs: [
+        {
+          name: 'input',
+          required: true,
           schema: schema({ type: 'object', additionalProperties: true }),
         },
       ],
