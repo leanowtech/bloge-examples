@@ -251,9 +251,12 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
         <span>Out</span>
         <strong>{data.summary.outputNames.join(', ') || 'value'}</strong>
       </div>
-      {data.summary.readinessNotice && (
-        <div className={`operator-node-warning ${data.summary.readinessLevel}`}>
-          {data.summary.readinessBadgeLabel || data.summary.readinessState}: {data.summary.readinessNotice}
+      {data.summary.readinessNodeNotice && (
+        <div
+          className={`operator-node-warning ${data.summary.readinessLevel}`}
+          title={data.summary.readinessNotice || data.summary.readinessNodeNotice}
+        >
+          {data.summary.readinessBadgeLabel || data.summary.readinessState}: {data.summary.readinessNodeNotice}
         </div>
       )}
       {outputPorts.map((port, index) => (
@@ -1230,6 +1233,14 @@ function operatorFocusRows(
       ...readiness,
     ];
   }
+  if (summary.visualKind === 'design') {
+    return [
+      { key: 'inputs', label: 'Schema input', value: inputSignature },
+      { key: 'outputs', label: 'Schema output', value: outputSignature },
+      { key: 'lowering', label: 'Lowering', value: operator?.lowering?.mode || 'design' },
+      ...readiness,
+    ];
+  }
   return [
     { key: 'inputs', label: 'Input contract', value: inputSignature },
     { key: 'outputs', label: 'Output contract', value: outputSignature },
@@ -1255,6 +1266,9 @@ function operatorFocusTitle(kind: OperatorSummary['visualKind']): string {
   }
   if (kind === 'streaming') {
     return 'Stream contract';
+  }
+  if (kind === 'design') {
+    return 'Design contract';
   }
   return 'Schema contract';
 }

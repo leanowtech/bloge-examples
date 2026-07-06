@@ -528,3 +528,93 @@ npm run build
 | resource/streaming 深层治理信息 | author canvas 已展示 contract 与 readiness；auth、binding、adapter activation 属于 registry/runtime binding 视图 | resource registry drill-down 与 streaming runtime binding 管理视图 |
 
 结论：Iteration 14 把审查粒度从“算子族”提升到真实 catalog 的 26 个 operatorRef，并主动修复 `httpResource`、`httpRequest`、`runtimeReadiness` 三个非 decision table UX 缺口。按 3% 达成线，本轮剩余差距约 2%，目标可以闭环。
+
+## 15. Iteration 15：逐算子真实浏览器操作审查与 Design 族补强
+
+触发反馈：Iteration 14 虽然有 26/26 文档审查，但浏览器视觉证据仍主要覆盖 `httpRequest`、`httpResource`、streaming 三类代表算子。新的完成口径要求每个 operatorRef 都必须经过真实浏览器操作审查，而不是只靠代码、文档或逻辑推断。
+
+本轮目标：
+
+1. 每个 operatorRef 都从真实 `/author/` 空画布开始，使用 palette 搜索、点击添加、选中 inspector、双击节点四个操作路径验证。
+2. 记录每个算子的 palette 视觉、节点 visual kind、inspector panel、双击结果和页面级 overflow。
+3. 对浏览器实测发现的问题继续改，而不是把“已有文档”当成完成。
+4. 继续复核与 3% 目标线的差距。
+
+### 15.1 浏览器实测发现
+
+| 发现 | 证据 | 处理 |
+| --- | --- | --- |
+| readiness 长文案曾直接进入节点卡片 | 第一批实测中 streaming/native 节点卡片显示完整 runtime summary，视觉过重 | 节点卡片改为短状态：`blocked: Runtime blocked`、`review: Executable with governance review`；完整说明留在 inspector 和 tooltip |
+| schema-only 用户库算子仍像普通 generic operator | `orders:normalize`、`orders:route-sla`、`risk:eligibility`、`support:classify-ticket` 在真实 UI 中显示 `Operator object -> object` | 新增 `Design` 视觉族，显示 `schema-only object -> object`、`schema input -> schema output`、`operator-focus:design` |
+
+### 15.2 本轮改动
+
+| 文件 | 改动 |
+| --- | --- |
+| `resource-gateway-examples/src/main/frontend/src/draftModel.ts` | `OperatorSummary` 新增 `readinessNodeNotice`；generic design-only lowering 归类为 `visualKind=design` |
+| `resource-gateway-examples/src/main/frontend/src/AuthorCanvas.tsx` | 节点卡片使用短 readiness notice；inspector 新增 Design contract 分支 |
+| `resource-gateway-examples/src/main/frontend/src/styles.css` | 新增 Design 族 palette、节点、inspector 样式 |
+| `resource-gateway-examples/src/main/frontend/src/draftModel.test.ts` | 覆盖 Design 族分类和短 readiness notice |
+| `docs/bloge-resource-gateway-operator-ux-audit.md` | 增加 26/26 逐算子真实浏览器操作证据表 |
+
+### 15.3 逐算子浏览器操作证据
+
+完整逐算子表见 [Resource Gateway `/author/` 逐算子 UX 审查报告](./bloge-resource-gateway-operator-ux-audit.md#7-逐算子浏览器操作证据)。
+
+复核方式：每个 operatorRef 单独从空画布开始：
+
+```text
+palette search -> click operator-button -> canvas-node:n1 -> selected inspector -> double-click node
+```
+
+结果摘要：
+
+| 覆盖面 | 结果 |
+| --- | --- |
+| operatorRef 覆盖 | 26/26 |
+| palette 搜索与点击 | 26/26 成功 |
+| 节点生成与 visual kind | 26/26 成功；覆盖 `streaming`、`decision-table`、`foreach`、`transform`、`http`、`resource`、`design` |
+| selected inspector | 26/26 成功；每个节点都有对应 `operator-focus:*` |
+| 双击行为 | 只有 decision table 与 transform 打开本地编辑器；resource/http/streaming/foreach/design 均不误开 |
+| 页面级横向溢出 | 桌面逐算子操作均为 `scrollWidth=1280`、`clientWidth=1280` |
+| 移动端补测 | 390px 下 `risk:eligibility` Design 节点宽 `354px`，页面 `scrollWidth=390`、`clientWidth=390` |
+
+### 15.4 验证证据
+
+自动化验证：
+
+```bash
+cd resource-gateway-examples/src/main/frontend
+npm test -- --run src/draftModel.test.ts src/AuthorCanvas.test.tsx
+```
+
+结果：
+
+| 验证项 | 结果 |
+| --- | --- |
+| `draftModel.test.ts` | 62 tests passed |
+| `AuthorCanvas.test.tsx` | 15 tests passed |
+| 合计 | 77 tests passed |
+
+### 15.5 Iteration 15 后差距复核
+
+本轮后估计完成度：99/100
+剩余目标差距：1%
+
+| 维度 | Iteration 14 | Iteration 15 | 结论 |
+| --- | ---: | ---: | --- |
+| Schema 连线体验 | 29/30 | 29/30 | 本轮未改连线主流程，保留 incoming data 条件列和字段候选闭环 |
+| 算子专有表达 | 25/25 | 25/25 | 不只按族审查，已逐个真实操作 26/26 operatorRef；新增 Design 族补掉 schema-only 泛化问题 |
+| 任务流可发现性 | 20/20 | 20/20 | 点击添加、选中 inspector、双击编辑边界均已逐个验证 |
+| 浏览器视觉证据 | 15/15 | 15/15 | 桌面逐算子操作全覆盖；移动端补测 Design 节点无溢出 |
+| 回归与可维护性 | 9/10 | 10/10 | Design 族和短 readiness notice 有模型测试；组件测试仍覆盖 readiness UI |
+
+剩余 1% 是下一阶段能力，不阻断当前目标：
+
+| 残留项 | 为什么不阻断本目标 | 后续路线 |
+| --- | --- | --- |
+| operator-library 专用编辑体验 | 已用 Design 族明确这是 schema-only 设计态，不再误导为内置 operator；但要做 policy/triage/mapping editor 需要正式 schema 合同 | 定义 `ux.editorHint` / `interactionModel` |
+| native alias 推荐优先级 | readiness 已暴露治理差异；不影响当前操作理解 | palette preferred/advanced 分层 |
+| resource/streaming 深层治理 | 当前 author canvas 已表达 contract 和 readiness；深层绑定属于其它控制面 | resource registry drill-down、streaming runtime binding 视图 |
+
+结论：Iteration 15 已把浏览器实测从代表性抽查提升为 26/26 operatorRef 逐个操作审查，并继续修复实测发现的问题。按 3% 达成线，本轮剩余差距约 1%，目标闭环完成。

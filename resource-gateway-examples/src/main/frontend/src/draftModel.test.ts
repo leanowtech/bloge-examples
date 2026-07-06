@@ -694,7 +694,27 @@ describe('summarizeOperator', () => {
       readinessState: 'runtime-blocked',
       readinessLevel: 'warning',
       readinessBadgeLabel: 'blocked',
+      readinessNodeNotice: 'Runtime blocked',
       readinessNotice: 'Streaming runtime not supported by this request-response runtime.',
+    });
+
+    expect(summarizeOperator({
+      operatorRef: 'risk:eligibility',
+      display: { name: 'Eligibility Gate', tags: ['risk', 'decision', 'policy'] },
+      source: { kind: 'user-library' },
+      lowering: { mode: 'design' },
+      ports: {
+        inputs: [{ name: 'applicant', schema: { schema: { type: 'object' } } }],
+        outputs: [{ name: 'decision', schema: { schema: { type: 'object' } } }],
+      },
+    })).toMatchObject({
+      visualKind: 'design',
+      visualLabel: 'Design',
+      contractHint: 'schema-only object -> object',
+      inputContractLabel: 'schema input',
+      outputContractLabel: 'schema output',
+      readinessBadgeLabel: 'design',
+      readinessNodeNotice: 'Design-only',
     });
   });
 });

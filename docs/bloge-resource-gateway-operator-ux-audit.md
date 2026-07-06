@@ -58,6 +58,7 @@ support:classify-ticket
 | 服务端 `runtimeReadiness` 未进入前端卡片 | streaming 的 `RUNTIME_BLOCKED`、resource/native 的 `GOVERNANCE_REVIEW`、schema-only 的 `DESIGN_ONLY` 被隐藏 | 已在 palette、节点卡片和 inspector 展示 readiness badge / notice |
 | 用户库 design-only operator 不应凭 tag 硬塞进内置编辑器 | `risk:eligibility`、`support:classify-ticket` 虽像规则/决策，但没有 config editor contract，硬打开 decision table 会误导 | 本轮保留 schema contract + design readiness；后续需要 operator-library 级 `ux.editorHint` / `interactionModel` |
 | Java native alias 与 BLOGE DSL 内置算子并存 | `__decision_table__` 与 `bloge:decisionTable`、`__transform__` 与 `bloge:transform` 容易让作者不知道优先用哪个 | 本轮通过 readiness review 暴露治理差异；后续可在 palette 增加 preferred/advanced 分层 |
+| 用户库 schema-only 算子仍显示 generic `Operator` | 真实浏览器逐个点击时，`orders:normalize`、`orders:route-sla`、`risk:eligibility`、`support:classify-ticket` 都显示 `Operator object -> object`，用户无法理解这是设计态 schema contract | 已新增 `Design` 视觉族，显示 `schema-only object -> object`、`schema input -> schema output`、`operator-focus:design` |
 
 ## 4. 逐算子 UX 审查报告
 
@@ -73,8 +74,8 @@ support:classify-ticket
 | 8 | `bloge:transform` | 字段映射是核心；已支持双击 mapping editor 和 assignments 导出 | 已完成本地 mapping 编辑闭环 | 后续可补表达式 autocomplete / type hint |
 | 9 | `httpRequest` | 原来像 generic object operator，无法看出 HTTP 边界 | 新增 HTTP 视觉族、`request -> response` contract、HTTP inspector | 后续可做 HTTP request builder，但需先定义 Java operator config contract |
 | 10 | `httpResource` | 原来被误判 generic；这是 Resource Gateway 的低级资源执行算子 | 改为 Resource 视觉族，展示 `params -> payload` 和 governance review | descriptor 编辑仍应走 resource registry / OpenAPI contract 治理 |
-| 11 | `orders:normalize` | 用户库 schema-only 订单归一化；tag 有 transform，但没有内置 mapping config contract | 保留 generic schema contract + design readiness，避免误开 transform editor | 后续由 operator library 声明 `ux.editorHint=mapping` 后再启用专用编辑器 |
-| 12 | `orders:route-sla` | 用户库 schema-only 路由决策；业务像 route/rules，但没有 decision table config contract | 保留 schema contract + design readiness | 后续需要 routing/decision UX hint，而不是凭 tag 推断 |
+| 11 | `orders:normalize` | 用户库 schema-only 订单归一化；tag 有 transform，但没有内置 mapping config contract | 改为 Design 视觉族，保留 schema-only 合同和 design readiness，避免误开 transform editor | 后续由 operator library 声明 `ux.editorHint=mapping` 后再启用专用编辑器 |
+| 12 | `orders:route-sla` | 用户库 schema-only 路由决策；业务像 route/rules，但没有 decision table config contract | 改为 Design 视觉族，显示 schema-only 合同 | 后续需要 routing/decision UX hint，而不是凭 tag 推断 |
 | 13 | `resource:catalog-service.getProduct` | 强类型 resource descriptor；params/payload 合同清楚 | Resource 族已覆盖；readiness 暴露 governance review | 后续 descriptor 版本、auth、timeout 编辑在 registry 视图处理 |
 | 14 | `resource:credit-provider.primary` | 外部 credit provider；同类 primary/secondary 容易混淆，但名称与 resource id 可区分 | Resource 族 + review readiness | 后续可以在 resource inspector 加 provider role / fallback chain 摘要 |
 | 15 | `resource:credit-provider.secondary` | secondary credit provider；与 primary 的差异靠名称表达 | Resource 族 + review readiness | 后续同上，补 provider/fallback topology 视图 |
@@ -87,15 +88,15 @@ support:classify-ticket
 | 22 | `resource:recommendation-service.forUser` | recommendation resource；payload items 适合后续 transform | Resource 族 + review readiness | 后续补推荐结果 fixture 示例 |
 | 23 | `resource:user-service.getProfile` | user profile resource；常作为 profile facts 源 | Resource 族 + review readiness | 后续补常用字段 chips，如 tier/segment/score |
 | 24 | `resource:wallet-service.getBalance` | wallet balance resource；finance 语义明确，输出 amount/currency | Resource 族 + review readiness | 后续补 money schema display，避免 number 语义过淡 |
-| 25 | `risk:eligibility` | 用户库 design-only policy gate；不能执行，也不能假装是内置 decision table | schema contract + design readiness 已可见 | 后续需要 operator-library UX metadata 声明 policy editor 或 runtime binding |
-| 26 | `support:classify-ticket` | 用户库 design-only support triage；输出 priority/topic/action | schema contract + design readiness 已可见 | 后续需要 triage classifier 的示例 fixture 和 editor hint |
+| 25 | `risk:eligibility` | 用户库 design-only policy gate；不能执行，也不能假装是内置 decision table | 改为 Design 视觉族，schema-only 合同和 design readiness 均可见 | 后续需要 operator-library UX metadata 声明 policy editor 或 runtime binding |
+| 26 | `support:classify-ticket` | 用户库 design-only support triage；输出 priority/topic/action | 改为 Design 视觉族，schema-only 合同和 design readiness 均可见 | 后续需要 triage classifier 的示例 fixture 和 editor hint |
 
 ## 5. 本轮后差距复核
 
 | 维度 | 上轮估计 | 本轮估计 | 结论 |
 | --- | ---: | ---: | --- |
 | Schema 连线体验 | 29/30 | 29/30 | 本轮未改连接主流程，保持 incoming data 条件列闭环 |
-| 算子专有表达 | 25/25 | 25/25 | 从算子族提升到 26/26 operatorRef 审查；新增 HTTP 族；修正 `httpResource` |
+| 算子专有表达 | 25/25 | 25/25 | 从算子族提升到 26/26 operatorRef 审查；新增 HTTP 族和 Design 族；修正 `httpResource` |
 | 任务流可发现性 | 20/20 | 20/20 | 双击编辑器、readiness、design/runtime 风险都在作者路径中可见 |
 | 浏览器视觉证据 | 15/15 | 15/15 | 真实 `/author/` 桌面与 390px mobile 均验证 HTTP/Resource/Streaming readiness，无页面级横向溢出 |
 | 回归与可维护性 | 10/10 | 10/10 | `summarizeOperator` 与组件测试覆盖新增分类和 readiness UI |
@@ -116,7 +117,42 @@ support:classify-ticket
 | 390px mobile | palette 显示 `26/26`；workspace 单列 `390px`；`httpRequest`、`httpResource`、streaming 的 readiness 文案仍可见 |
 | 390px mobile | 添加三类节点后，三个节点 bounding box 均为 `left=18,right=372,width=355`，页面 `scrollWidth=390`、`clientWidth=390`，readiness 长文案未撑破布局 |
 
-## 7. 下一轮针对性计划
+## 7. 逐算子浏览器操作证据
+
+复核方式：每个 operatorRef 都从真实 `/author/` 空画布开始，使用 palette 搜索框过滤，点击唯一 `operator-button:*`，生成 `canvas-node:n1`，选中节点读取 inspector，再双击节点确认是否出现配置浮层。
+
+| # | operatorRef | Palette 视觉 | 节点视觉 | Inspector | 双击结果 | 页面溢出 |
+| ---: | --- | --- | --- | --- | --- | --- |
+| 1 | `MockCitationStreamingOperator` | `Streaming ... blocked` | `kind-streaming`，`blocked: Runtime blocked` | `operator-focus:streaming` | 无本地编辑器 | `1280/1280` |
+| 2 | `MockLlmTokenStreamingOperator` | `Streaming ... blocked` | `kind-streaming`，`blocked: Runtime blocked` | `operator-focus:streaming` | 无本地编辑器 | `1280/1280` |
+| 3 | `MockMetaStreamingOperator` | `Streaming ... blocked` | `kind-streaming`，`blocked: Runtime blocked` | `operator-focus:streaming` | 无本地编辑器 | `1280/1280` |
+| 4 | `__decision_table__` | `Decision table ... review` | `kind-decision-table`，`review: Executable with governance review` | `operator-focus:decision-table` | `decision-table-editor` | `1280/1280` |
+| 5 | `__foreach__:enrichOrders` | `Foreach ... review` | `kind-foreach`，loop contract | `operator-focus:foreach` | 无本地编辑器 | `1280/1280` |
+| 6 | `__transform__` | `Transform ... review` | `kind-transform`，mapping contract | `operator-focus:transform` | `transform-assignment-editor` | `1280/1280` |
+| 7 | `bloge:decisionTable` | `Decision table ... conditions -> matched decision` | `kind-decision-table` | `operator-focus:decision-table` | `decision-table-editor` | `1280/1280` |
+| 8 | `bloge:transform` | `Transform ... source fields -> mapped output` | `kind-transform` | `operator-focus:transform` | `transform-assignment-editor` | `1280/1280` |
+| 9 | `httpRequest` | `HTTP ... request -> response ... review` | `kind-http`，HTTP contract | `operator-focus:http` | 无本地编辑器 | `1280/1280` |
+| 10 | `httpResource` | `Resource ... params -> payload ... review` | `kind-resource`，resource contract | `operator-focus:resource` | 无本地编辑器 | `1280/1280` |
+| 11 | `orders:normalize` | `Design ... schema-only object -> object ... design` | `kind-design`，schema contract | `operator-focus:design` | 无本地编辑器 | `1280/1280` |
+| 12 | `orders:route-sla` | `Design ... schema-only object -> object ... design` | `kind-design`，schema contract | `operator-focus:design` | 无本地编辑器 | `1280/1280` |
+| 13 | `resource:catalog-service.getProduct` | `Resource ... params -> payload ... review` | `kind-resource` | `operator-focus:resource` | 无本地编辑器 | `1280/1280` |
+| 14 | `resource:credit-provider.primary` | `Resource ... params -> payload ... review` | `kind-resource` | `operator-focus:resource` | 无本地编辑器 | `1280/1280` |
+| 15 | `resource:credit-provider.secondary` | `Resource ... params -> payload ... review` | `kind-resource` | `operator-focus:resource` | 无本地编辑器 | `1280/1280` |
+| 16 | `resource:invoice-service.getInvoice` | `Resource ... params -> payload ... review` | `kind-resource` | `operator-focus:resource` | 无本地编辑器 | `1280/1280` |
+| 17 | `resource:license-service.getLicense` | `Resource ... params -> payload ... review` | `kind-resource` | `operator-focus:resource` | 无本地编辑器 | `1280/1280` |
+| 18 | `resource:loan-applicant-service.getProfile` | `Resource ... params -> payload ... review` | `kind-resource` | `operator-focus:resource` | 无本地编辑器 | `1280/1280` |
+| 19 | `resource:logistics-service.getShipping` | `Resource ... params -> payload ... review` | `kind-resource` | `operator-focus:resource` | 无本地编辑器 | `1280/1280` |
+| 20 | `resource:notification-service.unread` | `Resource ... params -> payload ... review` | `kind-resource` | `operator-focus:resource` | 无本地编辑器 | `1280/1280` |
+| 21 | `resource:order-service.listOrders` | `Resource ... params -> payload ... review` | `kind-resource` | `operator-focus:resource` | 无本地编辑器 | `1280/1280` |
+| 22 | `resource:recommendation-service.forUser` | `Resource ... params -> payload ... review` | `kind-resource` | `operator-focus:resource` | 无本地编辑器 | `1280/1280` |
+| 23 | `resource:user-service.getProfile` | `Resource ... params -> payload ... review` | `kind-resource` | `operator-focus:resource` | 无本地编辑器 | `1280/1280` |
+| 24 | `resource:wallet-service.getBalance` | `Resource ... params -> payload ... review` | `kind-resource` | `operator-focus:resource` | 无本地编辑器 | `1280/1280` |
+| 25 | `risk:eligibility` | `Design ... schema-only object -> object ... design` | `kind-design`，schema contract | `operator-focus:design` | 无本地编辑器 | `1280/1280` |
+| 26 | `support:classify-ticket` | `Design ... schema-only object -> object ... design` | `kind-design`，schema contract | `operator-focus:design` | 无本地编辑器 | `1280/1280` |
+
+移动端补充证据：390px 视口下，`risk:eligibility` palette 显示 `DesignEligibility Gate...schema-only object -> object`；节点为 `kind-design`，bounding box `left=18,right=372,width=354`；workspace 单列 `390px`；页面 `scrollWidth=390`、`clientWidth=390`。
+
+## 8. 下一轮针对性计划
 
 1. operator-library 增加 `ux.editorHint` / `interactionModel`，让用户自定义 `risk:eligibility` 这类 design-only 算子能声明自己的编辑体验，而不是靠前端猜 tag。
 2. palette 增加 preferred/advanced 分层，把 `bloge:decisionTable`、`bloge:transform` 标为推荐入口，把 `__decision_table__`、`__transform__` 这类 Java native alias 收到高级区。

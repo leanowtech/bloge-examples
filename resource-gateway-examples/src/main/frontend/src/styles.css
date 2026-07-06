@@ -404,6 +404,11 @@ body {
   background: #fbf7ff;
 }
 
+.operator-button:has(.op-kind.design) {
+  border-color: #b8c2d6;
+  background: #f8fafc;
+}
+
 .op-name,
 .op-ref {
   overflow: hidden;
@@ -461,6 +466,11 @@ body {
 .op-kind.streaming {
   background: #e8f6f3;
   color: #1f7a68;
+}
+
+.op-kind.design {
+  background: #e9eef7;
+  color: #334155;
 }
 
 .op-meta {
@@ -864,6 +874,11 @@ button.secondary:disabled {
 .operator-node.kind-streaming {
   border-color: #6fb8a7;
   background: #f0faf7;
+}
+
+.operator-node.kind-design {
+  border-color: #aeb8ca;
+  background: #f8fafc;
 }
 
 .operator-node.selected {
@@ -1291,6 +1306,11 @@ button.secondary:disabled {
 .operator-focus.streaming {
   border-left-color: #1f7a68;
   background: #f0faf7;
+}
+
+.operator-focus.design {
+  border-left-color: #475569;
+  background: #f8fafc;
 }
 
 .operator-focus-heading {

@@ -53,7 +53,7 @@ export interface OperatorSummary {
   description: string;
   tags: string[];
   sourceKind: string;
-  visualKind: 'decision-table' | 'foreach' | 'transform' | 'resource' | 'http' | 'streaming' | 'generic';
+  visualKind: 'decision-table' | 'foreach' | 'transform' | 'resource' | 'http' | 'streaming' | 'design' | 'generic';
   visualLabel: string;
   contractHint: string;
   inputContractLabel: string;
@@ -68,6 +68,7 @@ export interface OperatorSummary {
   readinessState: string;
   readinessLevel: 'success' | 'info' | 'warning' | 'error' | 'unknown';
   readinessBadgeLabel: string;
+  readinessNodeNotice: string;
   readinessNotice: string;
 }
 
@@ -750,6 +751,7 @@ export function summarizeOperator(operator: OperatorDefinition): OperatorSummary
     readinessState: readiness.state,
     readinessLevel: readiness.level,
     readinessBadgeLabel: readiness.badgeLabel,
+    readinessNodeNotice: readiness.nodeNotice,
     readinessNotice: readiness.notice,
   };
 }
@@ -758,18 +760,20 @@ function operatorReadiness(operator: OperatorDefinition): {
   state: string;
   level: OperatorSummary['readinessLevel'];
   badgeLabel: string;
+  nodeNotice: string;
   notice: string;
 } {
   const state = normalizeReadinessState(operator.runtimeReadiness?.state);
   const level = normalizeReadinessLevel(operator.runtimeReadiness?.level);
   if (state === 'runtime-executable') {
-    return { state, level, badgeLabel: '', notice: '' };
+    return { state, level, badgeLabel: '', nodeNotice: '', notice: '' };
   }
   if (state === 'runtime-blocked') {
     return {
       state,
       level: level === 'unknown' ? 'warning' : level,
       badgeLabel: 'blocked',
+      nodeNotice: operator.runtimeReadiness?.title || 'Runtime blocked',
       notice: operator.runtimeReadiness?.summary || 'Runtime blocked in this visual runtime.',
     };
   }
@@ -778,6 +782,7 @@ function operatorReadiness(operator: OperatorDefinition): {
       state,
       level: level === 'unknown' ? 'warning' : level,
       badgeLabel: 'review',
+      nodeNotice: operator.runtimeReadiness?.title || 'Governance review',
       notice: operator.runtimeReadiness?.summary || 'Executable, but promotion should review governance risks.',
     };
   }
@@ -786,18 +791,21 @@ function operatorReadiness(operator: OperatorDefinition): {
       state: 'design-only',
       level: level === 'unknown' ? 'info' : level,
       badgeLabel: 'design',
+      nodeNotice: operator.runtimeReadiness?.title || 'Design-only',
       notice: operator.runtimeReadiness?.summary || 'Design-only operator; executable lowering is not bound yet.',
     };
   }
   if (state) {
+    const fallback = operator.runtimeReadiness?.title || readinessBadgeLabel(state);
     return {
       state,
       level,
       badgeLabel: readinessBadgeLabel(state),
-      notice: operator.runtimeReadiness?.summary || operator.runtimeReadiness?.title || state,
+      nodeNotice: fallback,
+      notice: operator.runtimeReadiness?.summary || fallback,
     };
   }
-  return { state: '', level: 'unknown', badgeLabel: '', notice: '' };
+  return { state: '', level: 'unknown', badgeLabel: '', nodeNotice: '', notice: '' };
 }
 
 function normalizeReadinessState(value: string | undefined): string {
@@ -847,6 +855,9 @@ function operatorVisualKind(operator: OperatorDefinition): OperatorSummary['visu
   }
   if (capabilities.capabilities?.streaming || sourceKind.includes('streaming')) {
     return 'streaming';
+  }
+  if (loweringMode === 'design') {
+    return 'design';
   }
   if (tags.includes('rules') || tags.includes('logic')) {
     return 'decision-table';
@@ -901,6 +912,13 @@ function operatorVisualContract(
         contractHint: 'request -> event stream',
         inputContractLabel: firstInputType,
         outputContractLabel: 'stream',
+      };
+    case 'design':
+      return {
+        visualLabel: 'Design',
+        contractHint: `schema-only ${firstInputType} -> ${firstOutputType}`,
+        inputContractLabel: 'schema input',
+        outputContractLabel: 'schema output',
       };
     default:
       return {
