@@ -1265,11 +1265,13 @@ function DecisionTableRuleEditor({
   incomingColumns,
   onClose,
   onChange,
+  embedded = false,
 }: {
   node: Node<NodeData>;
   incomingColumns: DecisionTableColumn[];
   onClose: () => void;
   onChange: (editor: DecisionTableEditorModel) => void;
+  embedded?: boolean;
 }) {
   const editor = decisionTableEditorModel(node.data.config, incomingColumns);
   const updateEditor = (next: DecisionTableEditorModel) => onChange(next);
@@ -1425,11 +1427,11 @@ function DecisionTableRuleEditor({
     });
   };
   return (
-    <div className="rule-editor-backdrop" role="presentation">
+    <div className={embedded ? 'rule-editor-embedded-wrap' : 'rule-editor-backdrop'} role="presentation">
       <section
-        className="rule-editor"
-        role="dialog"
-        aria-modal="true"
+        className={`rule-editor ${embedded ? 'embedded' : ''}`}
+        role={embedded ? 'group' : 'dialog'}
+        aria-modal={embedded ? undefined : true}
         aria-labelledby="decision-rule-editor-title"
         data-testid="decision-table-editor"
       >
@@ -1667,11 +1669,13 @@ function TransformAssignmentEditor({
   onClose,
   onChange,
   builtInFunctions,
+  embedded = false,
 }: {
   node: Node<NodeData>;
   onClose: () => void;
   onChange: (editor: TransformEditorModel) => void;
   builtInFunctions: BuiltInFunctionDefinition[];
+  embedded?: boolean;
 }) {
   const editor = transformEditorModel(node.data.config);
   const updateEditor = (next: TransformEditorModel) => onChange(next);
@@ -1696,11 +1700,11 @@ function TransformAssignmentEditor({
     updateEditor({ assignments: assignments.length > 0 ? assignments : [{ field: 'result', expression: '{}' }] });
   };
   return (
-    <div className="rule-editor-backdrop" role="presentation">
+    <div className={embedded ? 'rule-editor-embedded-wrap' : 'rule-editor-backdrop'} role="presentation">
       <section
-        className="rule-editor transform-editor"
-        role="dialog"
-        aria-modal="true"
+        className={`rule-editor transform-editor ${embedded ? 'embedded' : ''}`}
+        role={embedded ? 'group' : 'dialog'}
+        aria-modal={embedded ? undefined : true}
         aria-labelledby="transform-assignment-editor-title"
         data-testid="transform-assignment-editor"
       >
@@ -2009,6 +2013,197 @@ function graphSchemaSummary(envelope: SchemaEnvelope | undefined): {
     requiredCount: fields.filter((field) => field.required).length,
     fields,
   };
+}
+
+function schemaPreview(envelope: SchemaEnvelope | undefined): string {
+  return JSON.stringify(envelope?.schema ?? { type: 'any' }, null, 2);
+}
+
+function operatorConfigPreview(config: Record<string, unknown> | undefined): string {
+  return JSON.stringify(config ?? {}, null, 2);
+}
+
+function operatorPropertyRows(
+  node: Node<NodeData>,
+  operator: OperatorDefinition | undefined,
+): Array<{ label: string; value: string }> {
+  return [
+    { label: 'Operator Ref', value: node.data.operatorRef },
+    { label: 'Source', value: operator?.source?.kind || node.data.summary.sourceKind || 'unknown' },
+    { label: 'Lowering', value: operator?.lowering?.mode || 'not declared' },
+    { label: 'Readiness', value: node.data.summary.readinessNotice || node.data.summary.readinessState },
+    { label: 'Tags', value: operator?.display?.tags?.join(', ') || 'none' },
+  ];
+}
+
+function SchemaPortCards({
+  title,
+  direction,
+  ports,
+}: {
+  title: string;
+  direction: 'input' | 'output';
+  ports: OperatorPort[];
+}) {
+  return (
+    <section className="operator-detail-section">
+      <h3>{title}</h3>
+      {ports.length > 0 ? (
+        <div className="operator-schema-grid">
+          {ports.map((port, index) => (
+            <article className="operator-schema-card" key={`${direction}:${port.name || index}`}>
+              <div>
+                <strong>{port.name || (direction === 'input' ? 'input' : 'output')}</strong>
+                {port.required && <span className="schema-required">required</span>}
+              </div>
+              {port.description && <p>{port.description}</p>}
+              <pre data-testid={`operator-detail-schema:${direction}:${index}`}>
+                {schemaPreview(port.schema)}
+              </pre>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="muted">No declared {direction} ports.</p>
+      )}
+    </section>
+  );
+}
+
+function ForeachLoopGuide({
+  inputs,
+  outputs,
+}: {
+  inputs: OperatorPort[];
+  outputs: OperatorPort[];
+}) {
+  const collection = inputs.find((port) => schemaKindLabel(port.schema?.schema) === 'array') ?? inputs[0];
+  const result = outputs.find((port) => schemaKindLabel(port.schema?.schema) === 'array') ?? outputs[0];
+  return (
+    <section className="foreach-loop-guide" data-testid="foreach-loop-guide">
+      <h3>Loop guide</h3>
+      <div className="foreach-loop-steps">
+        <div>
+          <span>1</span>
+          <strong>Bind collection</strong>
+          <p>Connect an array into <code>{collection?.name || 'input'}</code>.</p>
+        </div>
+        <div>
+          <span>2</span>
+          <strong>Run per item</strong>
+          <p>Each item becomes the item context: <code>{itemContextLabel(inputs)}</code>.</p>
+        </div>
+        <div>
+          <span>3</span>
+          <strong>Collect result list</strong>
+          <p>Downstream nodes consume <code>{result?.name || 'output'}</code> as an array.</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function OperatorDetailDialog({
+  node,
+  operator,
+  incomingColumns,
+  builtInFunctions,
+  onClose,
+  onDecisionChange,
+  onTransformChange,
+}: {
+  node: Node<NodeData>;
+  operator: OperatorDefinition | undefined;
+  incomingColumns: DecisionTableColumn[];
+  builtInFunctions: BuiltInFunctionDefinition[];
+  onClose: () => void;
+  onDecisionChange: (editor: DecisionTableEditorModel) => void;
+  onTransformChange: (editor: TransformEditorModel) => void;
+}) {
+  const inputs = operator?.ports?.inputs ?? [];
+  const outputs = operator?.ports?.outputs ?? [];
+  const focusRows = operatorFocusRows(node.data.summary, inputs, outputs, operator);
+  return (
+    <div className="rule-editor-backdrop" role="presentation">
+      <section
+        className="operator-detail-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="operator-detail-title"
+        data-testid="operator-detail-dialog"
+      >
+        <div className="operator-detail-heading">
+          <span>{node.data.summary.visualLabel}</span>
+          <strong id="operator-detail-title">{node.data.label}</strong>
+          <button
+            type="button"
+            className="secondary compact"
+            onClick={onClose}
+            aria-label="Close operator details"
+          >
+            Done
+          </button>
+        </div>
+        <div className="operator-detail-body">
+          <section className="operator-detail-section">
+            <h3>{operatorFocusTitle(node.data.summary.visualKind)}</h3>
+            <div className="operator-detail-focus">
+              {focusRows.map((row) => (
+                <div key={row.key}>
+                  <span>{row.label}</span>
+                  <strong>{row.value}</strong>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {node.data.summary.visualKind === 'foreach' && (
+            <ForeachLoopGuide inputs={inputs} outputs={outputs} />
+          )}
+
+          <SchemaPortCards title="Input schema" direction="input" ports={inputs} />
+          <SchemaPortCards title="Output schema" direction="output" ports={outputs} />
+
+          <section className="operator-detail-section">
+            <h3>Operator properties</h3>
+            <dl className="operator-property-list">
+              {operatorPropertyRows(node, operator).map((row) => (
+                <div key={row.label}>
+                  <dt>{row.label}</dt>
+                  <dd>{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+
+          <section className="operator-detail-section">
+            <h3>Node config</h3>
+            <pre className="operator-config-preview">{operatorConfigPreview(node.data.config)}</pre>
+          </section>
+
+          {node.data.summary.visualKind === 'decision-table' && (
+            <DecisionTableRuleEditor
+              node={node}
+              incomingColumns={incomingColumns}
+              onClose={onClose}
+              onChange={onDecisionChange}
+              embedded
+            />
+          )}
+
+          {node.data.summary.visualKind === 'transform' && (
+            <TransformAssignmentEditor
+              node={node}
+              onClose={onClose}
+              onChange={onTransformChange}
+              builtInFunctions={builtInFunctions}
+              embedded
+            />
+          )}
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function outputSchemaForCanvas(
@@ -2355,8 +2550,8 @@ export default function AuthorCanvas() {
   const [sourceFilter, setSourceFilter] = useState('all');
   const [tagFilter, setTagFilter] = useState('all');
   const [selectedNodeId, setSelectedNodeId] = useState('');
-  const [ruleEditorNodeId, setRuleEditorNodeId] = useState('');
-  const [mappingEditorNodeId, setMappingEditorNodeId] = useState('');
+  const [operatorDetailNodeId, setOperatorDetailNodeId] = useState('');
+  const [testSuiteOpen, setTestSuiteOpen] = useState(false);
   const [explicitOutputNodeId, setExplicitOutputNodeId] = useState('');
   const [fixtureDrafts, setFixtureDrafts] = useState<Record<string, string>>({});
   const [fixtureInputDrafts, setFixtureInputDrafts] = useState<Record<string, string>>({});
@@ -2441,8 +2636,7 @@ export default function AuthorCanvas() {
           return next;
         });
         setSelectedNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
-        setRuleEditorNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
-        setMappingEditorNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
+        setOperatorDetailNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
         setExplicitOutputNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
       }
       setNodes((current) => applyNodeChanges(changes, current) as Node<NodeData>[]);
@@ -2482,13 +2676,7 @@ export default function AuthorCanvas() {
 
   const openNodeEditor = useCallback((node: Node<NodeData>) => {
     setSelectedNodeId(node.id);
-    if (node.data.summary.visualKind === 'decision-table') {
-      setRuleEditorNodeId(node.id);
-      setMappingEditorNodeId('');
-    } else if (node.data.summary.visualKind === 'transform') {
-      setMappingEditorNodeId(node.id);
-      setRuleEditorNodeId('');
-    }
+    setOperatorDetailNodeId(node.id);
   }, []);
 
   const updateDecisionTableRules = useCallback((nodeId: string, editor: DecisionTableEditorModel) => {
@@ -2821,8 +3009,8 @@ export default function AuthorCanvas() {
     setContextVariables([]);
     setExplicitOutputNodeId(template.outputNodeId);
     setSelectedNodeId(template.outputNodeId);
-    setRuleEditorNodeId('');
-    setMappingEditorNodeId('');
+    setOperatorDetailNodeId('');
+    setTestSuiteOpen(false);
     setConnectionGuide(null);
     setConnectionGuideNotice(null);
     setCandidatePreview(null);
@@ -2839,11 +3027,13 @@ export default function AuthorCanvas() {
   }, [clearRunResult, operatorByRef]);
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const selectedOperator = selectedNode ? operatorByRef.get(selectedNode.data.operatorRef) : undefined;
-  const ruleEditorNode = nodes.find((node) => node.id === ruleEditorNodeId);
-  const ruleEditorIncomingColumns = ruleEditorNode
-    ? decisionTableIncomingConditionColumns(ruleEditorNode, edges, nodes)
+  const operatorDetailNode = nodes.find((node) => node.id === operatorDetailNodeId);
+  const operatorDetailIncomingColumns = operatorDetailNode
+    ? decisionTableIncomingConditionColumns(operatorDetailNode, edges, nodes)
     : [];
-  const mappingEditorNode = nodes.find((node) => node.id === mappingEditorNodeId);
+  const operatorDetailDefinition = operatorDetailNode
+    ? operatorByRef.get(operatorDetailNode.data.operatorRef)
+    : undefined;
   const selectedOutputPorts = useMemo(
     () =>
       selectedNode
@@ -3610,6 +3800,148 @@ export default function AuthorCanvas() {
     }
   }, [paletteView.sourceKindFacets, paletteView.tagFacets, sourceFilter, tagFilter]);
 
+  const testTablePanel = (
+    <section
+      className={`simulation-test-table ${simulationTableRunSummary.state}`}
+      data-testid="simulation-test-table"
+    >
+      <div className="test-table-header">
+        <span>
+          <strong>{simulationTableRunSummary.label}</strong>
+          <small data-testid="test-table-summary">{simulationTableRunSummary.detail}</small>
+        </span>
+        <div className="test-table-actions">
+          <button
+            type="button"
+            className="primary compact"
+            data-testid="test-table-run"
+            onClick={runSimulationTable}
+            disabled={
+              tableTestingBusy
+              || nodes.length === 0
+              || simulationTableRows.length === 0
+              || hasFixtureErrors
+            }
+          >
+            {tableTestingBusy ? 'Running' : 'Run Table'}
+          </button>
+          <button
+            type="button"
+            className="secondary compact"
+            data-testid="test-table-add"
+            onClick={addSimulationTableRow}
+          >
+            Add Case
+          </button>
+          <button
+            type="button"
+            className="secondary compact"
+            data-testid="test-table-clear"
+            onClick={clearSimulationTableResults}
+            disabled={Object.keys(simulationTableResults).length === 0}
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+      {hasSimulationTableErrors && (
+        <p className="fixture-error" data-testid="test-table-error">
+          {Object.values(simulationTableCompilation.errors)[0]}
+        </p>
+      )}
+      {simulationTableRows.length > 0 ? (
+        <ol className="test-table-list">
+          {simulationTableRows.map((row, index) => {
+            const rowResult = simulationTableResults[row.id];
+            const rowError = simulationTableCompilation.errors[row.id];
+            const rowStatus = rowResult?.status ?? (rowError ? 'failed' : 'pending');
+            return (
+              <li
+                key={row.id}
+                className={`test-table-row ${rowStatus}`}
+                data-testid={`test-table-row:${index}`}
+              >
+                <div className="test-table-row-heading">
+                  <input
+                    aria-label={`Test case name ${index + 1}`}
+                    data-testid={`test-table-name:${index}`}
+                    value={row.name}
+                    onChange={(event) => updateSimulationTableRow(row.id, { name: event.target.value })}
+                  />
+                  <span
+                    className={`table-status ${rowStatus}`}
+                    data-testid={`test-table-status:${index}`}
+                  >
+                    {rowStatus}
+                  </span>
+                  <button
+                    type="button"
+                    className="secondary compact"
+                    aria-label={`Remove test case ${index + 1}`}
+                    data-testid={`test-table-remove:${index}`}
+                    onClick={() => removeSimulationTableRow(row.id)}
+                  >
+                    Remove
+                  </button>
+                </div>
+                <label className="fixture-field">
+                  <span>Context</span>
+                  <textarea
+                    aria-label={`Test case context ${index + 1}`}
+                    data-testid={`test-table-context:${index}`}
+                    spellCheck={false}
+                    value={row.contextText}
+                    onChange={(event) =>
+                      updateSimulationTableRow(row.id, { contextText: event.target.value })}
+                  />
+                </label>
+                <label className="fixture-field">
+                  <span>Fixture Overrides</span>
+                  <textarea
+                    aria-label={`Test case fixture overrides ${index + 1}`}
+                    data-testid={`test-table-fixtures:${index}`}
+                    spellCheck={false}
+                    value={row.fixturesText}
+                    onChange={(event) =>
+                      updateSimulationTableRow(row.id, { fixturesText: event.target.value })}
+                  />
+                </label>
+                <label className="fixture-field">
+                  <span>Expected Output</span>
+                  <textarea
+                    aria-label={`Test case expected output ${index + 1}`}
+                    data-testid={`test-table-expected:${index}`}
+                    spellCheck={false}
+                    value={row.expectedOutputText}
+                    onChange={(event) =>
+                      updateSimulationTableRow(row.id, { expectedOutputText: event.target.value })}
+                  />
+                </label>
+                {(rowResult || rowError) && (
+                  <div className="test-table-result">
+                    <strong>{rowResult?.detail ?? rowError}</strong>
+                    {rowResult?.actualOutput !== undefined && (
+                      <pre data-testid={`test-table-actual:${index}`}>
+                        {JSON.stringify(rowResult.actualOutput, null, 2)}
+                      </pre>
+                    )}
+                    {rowResult?.expectedOutput !== undefined && rowResult.status === 'failed' && (
+                      <pre data-testid={`test-table-expected-result:${index}`}>
+                        {JSON.stringify(rowResult.expectedOutput, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <p className="muted">No test cases.</p>
+      )}
+    </section>
+  );
+
   return (
     <div className="workspace">
       <aside className="palette" id="operator-palette">
@@ -4067,145 +4399,24 @@ export default function AuthorCanvas() {
           <p className="muted">No nodes.</p>
         )}
 
-        <h2>Test Table</h2>
+        <h2>Test Suite</h2>
         <section
-          className={`simulation-test-table ${simulationTableRunSummary.state}`}
-          data-testid="simulation-test-table"
+          className={`test-suite-summary ${simulationTableRunSummary.state}`}
+          data-testid="test-suite-summary"
         >
-          <div className="test-table-header">
-            <span>
-              <strong>{simulationTableRunSummary.label}</strong>
-              <small data-testid="test-table-summary">{simulationTableRunSummary.detail}</small>
-            </span>
-            <div className="test-table-actions">
-              <button
-                type="button"
-                className="primary compact"
-                data-testid="test-table-run"
-                onClick={runSimulationTable}
-                disabled={
-                  tableTestingBusy
-                  || nodes.length === 0
-                  || simulationTableRows.length === 0
-                  || hasFixtureErrors
-                }
-              >
-                {tableTestingBusy ? 'Running' : 'Run Table'}
-              </button>
-              <button
-                type="button"
-                className="secondary compact"
-                data-testid="test-table-add"
-                onClick={addSimulationTableRow}
-              >
-                Add Case
-              </button>
-              <button
-                type="button"
-                className="secondary compact"
-                data-testid="test-table-clear"
-                onClick={clearSimulationTableResults}
-                disabled={Object.keys(simulationTableResults).length === 0}
-              >
-                Clear
-              </button>
-            </div>
+          <div>
+            <span>{simulationTableRows.length} case{simulationTableRows.length === 1 ? '' : 's'}</span>
+            <strong>{simulationTableRunSummary.label}</strong>
+            <small>{simulationTableRunSummary.detail}</small>
           </div>
-          {hasSimulationTableErrors && (
-            <p className="fixture-error" data-testid="test-table-error">
-              {Object.values(simulationTableCompilation.errors)[0]}
-            </p>
-          )}
-          {simulationTableRows.length > 0 ? (
-            <ol className="test-table-list">
-              {simulationTableRows.map((row, index) => {
-                const rowResult = simulationTableResults[row.id];
-                const rowError = simulationTableCompilation.errors[row.id];
-                const rowStatus = rowResult?.status ?? (rowError ? 'failed' : 'pending');
-                return (
-                  <li
-                    key={row.id}
-                    className={`test-table-row ${rowStatus}`}
-                    data-testid={`test-table-row:${index}`}
-                  >
-                    <div className="test-table-row-heading">
-                      <input
-                        aria-label={`Test case name ${index + 1}`}
-                        data-testid={`test-table-name:${index}`}
-                        value={row.name}
-                        onChange={(event) => updateSimulationTableRow(row.id, { name: event.target.value })}
-                      />
-                      <span
-                        className={`table-status ${rowStatus}`}
-                        data-testid={`test-table-status:${index}`}
-                      >
-                        {rowStatus}
-                      </span>
-                      <button
-                        type="button"
-                        className="secondary compact"
-                        aria-label={`Remove test case ${index + 1}`}
-                        data-testid={`test-table-remove:${index}`}
-                        onClick={() => removeSimulationTableRow(row.id)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                    <label className="fixture-field">
-                      <span>Context</span>
-                      <textarea
-                        aria-label={`Test case context ${index + 1}`}
-                        data-testid={`test-table-context:${index}`}
-                        spellCheck={false}
-                        value={row.contextText}
-                        onChange={(event) =>
-                          updateSimulationTableRow(row.id, { contextText: event.target.value })}
-                      />
-                    </label>
-                    <label className="fixture-field">
-                      <span>Fixture Overrides</span>
-                      <textarea
-                        aria-label={`Test case fixture overrides ${index + 1}`}
-                        data-testid={`test-table-fixtures:${index}`}
-                        spellCheck={false}
-                        value={row.fixturesText}
-                        onChange={(event) =>
-                          updateSimulationTableRow(row.id, { fixturesText: event.target.value })}
-                      />
-                    </label>
-                    <label className="fixture-field">
-                      <span>Expected Output</span>
-                      <textarea
-                        aria-label={`Test case expected output ${index + 1}`}
-                        data-testid={`test-table-expected:${index}`}
-                        spellCheck={false}
-                        value={row.expectedOutputText}
-                        onChange={(event) =>
-                          updateSimulationTableRow(row.id, { expectedOutputText: event.target.value })}
-                      />
-                    </label>
-                    {(rowResult || rowError) && (
-                      <div className="test-table-result">
-                        <strong>{rowResult?.detail ?? rowError}</strong>
-                        {rowResult?.actualOutput !== undefined && (
-                          <pre data-testid={`test-table-actual:${index}`}>
-                            {JSON.stringify(rowResult.actualOutput, null, 2)}
-                          </pre>
-                        )}
-                        {rowResult?.expectedOutput !== undefined && rowResult.status === 'failed' && (
-                          <pre data-testid={`test-table-expected-result:${index}`}>
-                            {JSON.stringify(rowResult.expectedOutput, null, 2)}
-                          </pre>
-                        )}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ol>
-          ) : (
-            <p className="muted">No test cases.</p>
-          )}
+          <button
+            type="button"
+            className="primary compact"
+            data-testid="test-suite-open"
+            onClick={() => setTestSuiteOpen(true)}
+          >
+            Test Suite
+          </button>
         </section>
 
         <h2>Runtime Context</h2>
@@ -4508,20 +4719,40 @@ export default function AuthorCanvas() {
           </>
         )}
       </aside>
-      {ruleEditorNode && (
-        <DecisionTableRuleEditor
-          node={ruleEditorNode}
-          incomingColumns={ruleEditorIncomingColumns}
-          onClose={() => setRuleEditorNodeId('')}
-          onChange={(editor) => updateDecisionTableRules(ruleEditorNode.id, editor)}
-        />
+      {testSuiteOpen && (
+        <div className="rule-editor-backdrop" role="presentation">
+          <section
+            className="test-suite-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="test-suite-dialog-title"
+            data-testid="test-suite-dialog"
+          >
+            <div className="operator-detail-heading">
+              <span>Mock regression</span>
+              <strong id="test-suite-dialog-title">Test Suite</strong>
+              <button
+                type="button"
+                className="secondary compact"
+                aria-label="Close test suite"
+                onClick={() => setTestSuiteOpen(false)}
+              >
+                Done
+              </button>
+            </div>
+            {testTablePanel}
+          </section>
+        </div>
       )}
-      {mappingEditorNode && (
-        <TransformAssignmentEditor
-          node={mappingEditorNode}
-          onClose={() => setMappingEditorNodeId('')}
-          onChange={(editor) => updateTransformAssignments(mappingEditorNode.id, editor)}
+      {operatorDetailNode && (
+        <OperatorDetailDialog
+          node={operatorDetailNode}
+          operator={operatorDetailDefinition}
+          incomingColumns={operatorDetailIncomingColumns}
           builtInFunctions={builtInFunctions}
+          onClose={() => setOperatorDetailNodeId('')}
+          onDecisionChange={(editor) => updateDecisionTableRules(operatorDetailNode.id, editor)}
+          onTransformChange={(editor) => updateTransformAssignments(operatorDetailNode.id, editor)}
         />
       )}
     </div>

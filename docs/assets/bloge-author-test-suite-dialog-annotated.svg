@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">BLOGE Author Test Suite Dialog</title>
+  <desc id="desc">Annotated product diagram showing the right sidebar Test Suite button opening a modal table for context, fixture overrides, expected output, and run status.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f5f7fb}.panel{fill:#fff;stroke:#cbd5e1;stroke-width:2}.ink{fill:#172033}.muted{fill:#64748b}.blue{fill:#2563eb}.green{fill:#166534}.red{fill:#b42318}.line{stroke:#94a3b8;stroke-width:3;fill:none}.call{fill:#0f172a}.num{fill:#fff;font:700 18px Inter,Arial}.txt{font:600 18px Inter,Arial;fill:#172033}.small{font:500 14px Inter,Arial;fill:#475569}.mono{font:500 13px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#334155}
+    </style>
+  </defs>
+  <rect width="1280" height="720" class="bg"/>
+  <rect x="34" y="36" width="850" height="648" rx="10" class="panel"/>
+  <text x="64" y="78" class="txt">Author Canvas</text>
+  <rect x="96" y="164" width="218" height="118" rx="8" fill="#f5f8ff" stroke="#8fb2e8" stroke-width="3"/>
+  <text x="118" y="200" class="txt">Fetch applicant</text>
+  <text x="118" y="228" class="small">resource node</text>
+  <rect x="380" y="164" width="218" height="118" rx="8" fill="#f3fbf9" stroke="#6cc4b5" stroke-width="3"/>
+  <text x="402" y="200" class="txt">Policy decision</text>
+  <text x="402" y="228" class="small">decision table</text>
+  <rect x="664" y="164" width="218" height="118" rx="8" fill="#fbf7ff" stroke="#c5a3e5" stroke-width="3"/>
+  <text x="686" y="200" class="txt">Decision response</text>
+  <text x="686" y="228" class="small">transform</text>
+  <path d="M314 223 H380" class="line"/>
+  <path d="M598 223 H664" class="line"/>
+  <rect x="920" y="36" width="326" height="648" rx="10" class="panel"/>
+  <text x="948" y="78" class="txt">Inspector</text>
+  <rect x="948" y="112" width="270" height="88" rx="8" fill="#fbfcff" stroke="#cbd5e1"/>
+  <text x="970" y="144" class="small">Mock Setup</text>
+  <text x="970" y="172" class="mono">3 pinned fixtures</text>
+  <rect x="948" y="224" width="270" height="112" rx="8" fill="#effaf3" stroke="#9bd3b0" stroke-width="2"/>
+  <text x="970" y="256" class="small">Test Suite</text>
+  <text x="970" y="286" class="txt">2 cases · Not run</text>
+  <rect x="1082" y="294" width="112" height="30" rx="6" class="blue"/>
+  <text x="1102" y="315" fill="#fff" font-family="Inter,Arial" font-size="13" font-weight="700">Test Suite</text>
+  <circle cx="1214" cy="310" r="16" class="call"/><text x="1209" y="316" class="num">1</text>
+  <text x="928" y="374" class="txt">Right sidebar stays light</text>
+  <text x="928" y="400" class="small">The large table no longer occupies the inspector.</text>
+  <rect x="112" y="340" width="984" height="308" rx="12" fill="#fff" stroke="#94a3b8" stroke-width="3"/>
+  <rect x="142" y="370" width="924" height="44" rx="22" fill="#eef2f7"/>
+  <text x="164" y="398" class="small">MOCK REGRESSION</text>
+  <text x="334" y="398" class="txt">Test Suite</text>
+  <circle cx="1058" cy="392" r="15" fill="#e2e8f0"/><text x="1051" y="398" class="small">X</text>
+  <circle cx="142" cy="452" r="16" class="call"/><text x="137" y="458" class="num">2</text>
+  <text x="172" y="458" class="txt">Run all rows against transient simulate</text>
+  <rect x="774" y="436" width="102" height="34" rx="7" class="blue"/>
+  <text x="794" y="458" fill="#fff" font-family="Inter,Arial" font-size="13" font-weight="700">Run Table</text>
+  <rect x="886" y="436" width="82" height="34" rx="7" fill="#fff" stroke="#cbd5e1"/>
+  <text x="902" y="458" class="small">Add Case</text>
+  <rect x="142" y="490" width="924" height="52" rx="8" fill="#fbfcff" stroke="#cbd5e1"/>
+  <text x="162" y="522" class="txt">Prime approval path</text>
+  <rect x="352" y="502" width="154" height="26" rx="13" fill="#ecfdf3" stroke="#9bd3b0"/>
+  <text x="398" y="520" class="green" font-family="Inter,Arial" font-size="12" font-weight="800">PASSED</text>
+  <text x="540" y="520" class="mono">ctx: {"applicantId":"applicant-1001"}</text>
+  <rect x="142" y="558" width="924" height="52" rx="8" fill="#fbfcff" stroke="#cbd5e1"/>
+  <text x="162" y="590" class="txt">Policy decline path</text>
+  <rect x="352" y="570" width="154" height="26" rx="13" fill="#fff1f2" stroke="#f2a6a6"/>
+  <text x="398" y="588" class="red" font-family="Inter,Arial" font-size="12" font-weight="800">FAILED</text>
+  <text x="540" y="588" class="mono">fixtureOverrides: n2.output.payload.score = 650</text>
+  <circle cx="142" cy="632" r="16" class="call"/><text x="137" y="638" class="num">3</text>
+  <text x="172" y="638" class="txt">Each row keeps Context, Fixture Overrides, Expected Output, Actual Output</text>
+</svg>

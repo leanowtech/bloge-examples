@@ -50,7 +50,7 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 schema-fir
 3. **编排动作条**：执行 Simulate、Auto Layout、Validate、Export Draft，并查看节点数、边数、输出节点和 fixture 数。
 4. **Graph Contract**：显示当前 graph 的 input/output schema 摘要，告诉系统集成方这张图需要什么上下文、会产出什么结果。
 5. **Runtime Context**：以图形化变量表维护本次模拟的 context；高级用户也可以展开 Advanced JSON。
-6. **Mock Setup / Test Table**：右侧 inspector 会先列出节点级 mock fixture，再用 Test Table 组织多行 context、fixture overrides 和 expected output，用同一张画布批量跑回归。
+6. **Mock Setup / Test Suite**：右侧 inspector 保持轻量，只展示节点级 mock fixture 和 Test Suite 摘要；点击 `Test Suite` 后用浮层表格组织多行 context、fixture overrides 和 expected output。
 
 ### 3.1 演示脚本启动方式
 
@@ -139,7 +139,7 @@ npm run dev
 | Connection Candidate | 服务端根据当前 draft 和 schema 枚举出的可连接目标 |
 | Validate | 对当前 draft 做结构、schema、readiness、action readiness 校验 |
 | Node Fixture | 节点级模拟样本，可 pin mock 输出，也可断言该节点收到的 expected input |
-| Test Table | 画布内的表格测试入口；每行是一组 runtime context、节点 fixture override 和 expected terminal output |
+| Test Suite | 画布内的表格测试浮层；每行是一组 runtime context、节点 fixture override 和 expected terminal output |
 | Simulate | 混合模拟运行。安全且已实现的内置算子可 real-run；design-only 或高风险算子会 mock-run |
 | Export | 导出当前 draft、publication bundle 或内置 operator library bundle |
 
@@ -256,7 +256,7 @@ operators:
 这 3 个示例现在不再只是“看结构”。每个示例都内置了两类资产：
 
 - **Built-in function transform**：最终 `bloge:transform` 使用 `coalesce(...)`、`toNumber(...)`、`round(...)` 这类 BLOGE 表达式函数，展示如何把空值兜底、类型转换和数值规整写进可视化映射。
-- **Test Table cases**：每个示例提供 2 行表格测试。第一行通常是 happy path；第二行通过 fixture override 改变下游 mock 数据，覆盖 decline、standard lane、fallback default 等分支。
+- **Test Suite cases**：每个示例提供 2 行表格测试。第一行通常是 happy path；第二行通过 fixture override 改变下游 mock 数据，覆盖 decline、standard lane、fallback default 等分支。
 
 如果示例依赖的 operatorRef 不在当前 catalog 中，Load 按钮会禁用并提示缺失数量。此时先导入对应算子库，或确认 resource descriptor / built-in operator catalog 是否已经启动完成。示例加载后会替换当前画布；需要保留当前草稿时，先使用 Export Draft 导出。
 
@@ -339,14 +339,23 @@ POST /api/visual/connections/check
 - path/port 名称不是 DSL-safe。
 - draft 里存在阻断级诊断，导致连线后图仍不可用。
 
-### 5.4.1 双击配置可编辑算子
+### 5.4.1 双击查看算子详情与专属编辑
 
-新版 `/author/` 不再只把复杂算子当成普通卡片。对于内置可配置算子，双击节点会打开对应的浮层编辑器：
+新版 `/author/` 的双击行为统一了：**每个画布节点都可以双击打开 Operator Detail 浮层**。浮层先展示通用信息，再根据算子族提供专属交互。
 
-| 算子族 | 双击行为 | 写入 draft 的配置 |
+![Author Operator Detail 浮层标注](assets/bloge-author-operator-detail-annotated.svg)
+
+1. **任意节点双击**：resource、foreach、decision table、transform、用户导入的 design operator 都走同一个详情浮层入口。
+2. **合同摘要**：浮层上半部分展示 operatorRef、source、lowering、readiness、input/output contract 等信息，不需要再去右侧 inspector 翻找。
+3. **Input/Output schema**：每个端口都展示 JSON Schema 预览，用于确认这条边应该接什么数据、会吐出什么数据。
+4. **专属交互区**：decision table 和 transform 会在同一浮层内展开可编辑区域；foreach 会展开循环向导；普通 resource/design operator 展示合同和配置，不伪造本地编辑能力。
+
+| 算子族 | 双击后的浮层能力 | 写入 draft 的配置 |
 | --- | --- | --- |
-| `bloge:decisionTable` | 打开规则矩阵。可编辑 hit policy、output type、条件列、输出列、规则行和 otherwise fallback | `config.hitPolicy`、`config.outputType`、`config.conditionColumns`、`config.outputColumns`、`config.rules[]` |
-| `bloge:transform` | 打开字段映射表。可编辑输出字段名和 BLOGE 表达式，可新增/删除 assignment，并在 Expression 下方使用函数 chip、函数名补全和签名提示 | `config.assignments` |
+| `bloge:decisionTable` | 详情 + 规则矩阵。可编辑 hit policy、output type、条件列、输出列、规则行和 otherwise fallback | `config.hitPolicy`、`config.outputType`、`config.conditionColumns`、`config.outputColumns`、`config.rules[]` |
+| `bloge:transform` | 详情 + 字段映射表。可编辑输出字段名和 BLOGE 表达式，可新增/删除 assignment，并在 Expression 下方使用函数 chip、函数名补全和签名提示 | `config.assignments` |
+| `__foreach__:*` | 详情 + Loop guide。按 `Bind collection -> Run per item -> Collect result list` 展示循环语义，帮助用户理解 array 输入、item context 和 list 输出 | 通常由 operator contract / runtime 定义；画布不臆造 foreach 内部实现 |
+| resource / http / design operator | 详情 + input/output schema + source/lowering/readiness/config 预览 | 只展示合同和节点配置；真实资源语义仍由 descriptor / imported operator library 管理 |
 
 Decision table 双击后的页面重点如下：
 
@@ -443,7 +452,13 @@ Transform 浮层中的 Expression 输入框来自 `GET /api/visual/operators` �
 | `round(value, scale?)` | 数值四舍五入 |
 | `formatDate(value, pattern)` | 日期/时间格式化 |
 
-`foreach` 和 resource-backed operator 目前不提供双击本地编辑器：前者主要由 Java/operator contract 定义集合、item 与结果列表语义，后者由 resource descriptor / OpenAPI contract 管理参数和响应合同。它们的下一步操作仍在 selected-node inspector、connection guide、fixture 和服务端校验中完成。
+Foreach 的浮层不是另一个隐藏 JSON 编辑器，而是一个循环解释器：
+
+1. **Bind collection**：告诉用户应该把上游 array 接到哪个 input port。
+2. **Run per item**：说明每个 item 在运行期会成为单次处理的 item context。
+3. **Collect result list**：说明 foreach 的输出仍是 array，供下游 transform、decision 或 resource 节点继续消费。
+
+这解决了过去的问题：用户看到 `__foreach__:enrichOrders` 时不知道“循环在哪里发生”。现在双击节点即可看到集合输入、单项上下文、结果列表三段语义。
 
 ### 5.5 第五步：选择输出节点
 
@@ -469,11 +484,17 @@ Transform 浮层中的 Expression 输入框来自 `GET /api/visual/operators` �
 
 fixture 会写入 `GraphDraft.nodeFixtures`，属于 authoring/test evidence，不改变 DSL、fingerprint 或生产执行语义。
 
-### 5.6.1 用 Test Table 做批量 mock 回归
+### 5.6.1 用 Test Suite 做批量 mock 回归
 
-单次 Simulate 适合调试一条路径，但复杂业务编排不能只靠一条样例证明正确。新版 `/author/` 在 `Mock Setup` 下方新增 **Test Table**，把大规模系统化验证前移到画布内。
+单次 Simulate 适合调试一条路径，但复杂业务编排不能只靠一条样例证明正确。新版 `/author/` 在右侧 inspector 中保留 **Test Suite** 摘要按钮，点击后打开浮层表格，把大规模系统化验证前移到画布内，同时避免右侧栏被大表格挤爆。
 
-每一行 Test Table 都包含：
+![Author Test Suite 浮层表格标注](assets/bloge-author-test-suite-dialog-annotated.svg)
+
+1. **右栏轻量入口**：inspector 只显示 case 数、最新运行状态和 `Test Suite` 按钮。
+2. **浮层表格**：点击按钮后打开完整表格，可批量编辑、运行、清理测试结果。
+3. **行级验证数据**：每一行都包含 Context、Fixture Overrides、Expected Output；运行失败时展示 Actual Output。
+
+每一行 Test Suite 都包含：
 
 | 字段 | 作用 |
 | --- | --- |
@@ -487,27 +508,28 @@ fixture 会写入 `GraphDraft.nodeFixtures`，属于 authoring/test evidence，�
 使用方式：
 
 1. 加载任意内置复杂示例，例如 `Loan policy fallback`。
-2. 在右侧 `Test Table` 查看系统预置的 2 行 case。
-3. 需要新增路径时点击 `Add Case`，填写新的 context、fixture overrides 和 expected output。
-4. 点击 `Run Table`。画布会逐行调用 transient simulate endpoint，并把每行状态标成 `pending/running/passed/failed`。
-5. 如果某行失败，结果区会显示实际 output 和 expected output，便于判断是 mock 数据、decision table 规则、transform 函数还是预期断言错了。
-6. 批量运行后，最后一行的 run trace 会同步到画布节点 badge 和 Result 面板，因此仍可沿 DAG 排查 real/mocked 节点。
+2. 在右侧 `Test Suite` 摘要卡查看系统预置的 2 行 case。
+3. 点击 `Test Suite` 打开浮层表格。
+4. 需要新增路径时点击 `Add Case`，填写新的 context、fixture overrides 和 expected output。
+5. 点击 `Run Table`。画布会逐行调用 transient simulate endpoint，并把每行状态标成 `pending/running/passed/failed`。
+6. 如果某行失败，结果区会显示实际 output 和 expected output，便于判断是 mock 数据、decision table 规则、transform 函数还是预期断言错了。
+7. 批量运行后，最后一行的 run trace 会同步到画布节点 badge 和 Result 面板，因此仍可沿 DAG 排查 real/mocked 节点。
 
 Fixture 合并顺序是：
 
 ```text
 Mock Setup 基础 nodeFixtures
-  -> Test Table 当前行 fixtureOverrides
+  -> Test Suite 当前行 fixtureOverrides
     -> 本行 simulate request
 ```
 
 这使作者可以把“共用的下游 mock 数据”放在节点 Simulation 区，把“某条业务路径特殊的 mock 变化”放在表格行里。工业化测试的关键就在这里：大部分复杂场景不需要真实下游 API，也能稳定跑大量路径验证，避免测试环境被外部系统状态、限流、网络和脏数据拖垮。
 
-Test Table 是画布内的 authoring-side transient runner。需要把测试资产治理起来时，使用后端已经落地的 schema-gated suite/golden 能力：
+Test Suite 是画布内的 authoring-side transient runner。需要把测试资产治理起来时，使用后端已经落地的 schema-gated suite/golden 能力：
 
 | 层级 | 入口 | 用途 |
 | --- | --- | --- |
-| 画布内调试 | `/author/` Test Table | 作者快速构造路径、调试 mock、验证 transform/decision 逻辑 |
+| 画布内调试 | `/author/` Test Suite | 作者快速构造路径、调试 mock、验证 transform/decision/foreach 编排逻辑 |
 | Resource graph suite | `/api/gateway/graphs/contracts/tests/*` | 对正式 resource graph 按 input/output schema、resource mock 和 coverage policy 批量验证 |
 | Operator suite | `/api/visual/operators/tests/*` | 对单个 operator 的 input/config/output schema 和 mock output 断言做表格验证 |
 | Published golden | `/api/visual/golden-cases/*` | 对不可变 publication 做发布级回归和认证 |
@@ -641,7 +663,7 @@ GET /api/gateway/examples/scenarios/{graphName}/diagram
 - React Flow 渲染和拖拽体验。
 - Palette 搜索、分组、filter 和 Cmd/Ctrl-K。
 - Node inspector、fixture 编辑、output 选择。
-- Test Table 行编辑、fixture override 合并和逐行 transient simulate 调度。
+- Test Suite 浮层表格、fixture override 合并和逐行 transient simulate 调度。
 - 调用服务端候选连接、连线确认、validate、simulate。
 - 展示 readiness、diagnostics、trace、real/mocked badge。
 - 导出本地 draft JSON。

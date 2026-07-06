@@ -1671,6 +1671,78 @@ button.secondary:disabled {
   font-size: 11px;
 }
 
+.test-suite-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: #fbfbfd;
+}
+
+.test-suite-summary.pending {
+  border-left-color: var(--muted);
+}
+
+.test-suite-summary.running {
+  border-left-color: #2563eb;
+}
+
+.test-suite-summary.passed {
+  border-left-color: var(--success);
+  background: #effaf3;
+}
+
+.test-suite-summary.failed {
+  border-left-color: var(--danger);
+  background: #fff4f4;
+}
+
+.test-suite-summary div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.test-suite-summary span,
+.test-suite-summary small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.test-suite-summary strong {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.test-suite-dialog {
+  width: min(1180px, 100%);
+  max-height: min(820px, calc(100vh - 36px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  overflow: hidden;
+  padding: 14px;
+  border: 1px solid #9bb9e8;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 22px 60px rgb(15 23 42 / 24%);
+}
+
+.test-suite-dialog .simulation-test-table {
+  min-height: 0;
+  overflow: auto;
+  margin-bottom: 0;
+}
+
 .node-detail {
   margin-bottom: 16px;
 }
@@ -1776,6 +1848,213 @@ button.secondary:disabled {
   overflow-wrap: anywhere;
 }
 
+.operator-detail-dialog {
+  width: min(1180px, 100%);
+  max-height: min(840px, calc(100vh - 36px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  overflow: hidden;
+  padding: 14px;
+  border: 1px solid #b9c7dc;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 22px 60px rgb(15 23 42 / 24%);
+}
+
+.operator-detail-heading {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.operator-detail-heading span {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #475569;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.operator-detail-heading strong {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.operator-detail-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.2fr);
+  gap: 12px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.operator-detail-section {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  align-self: start;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fbfcff;
+}
+
+.operator-detail-section h3,
+.foreach-loop-guide h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.operator-detail-focus,
+.operator-property-list {
+  display: grid;
+  gap: 7px;
+}
+
+.operator-detail-focus div,
+.operator-property-list div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(96px, auto) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.operator-detail-focus span,
+.operator-property-list dt {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.operator-detail-focus strong,
+.operator-property-list dd {
+  min-width: 0;
+  margin: 0;
+  color: #243041;
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.operator-schema-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.operator-schema-card {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #d7dee9;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.operator-schema-card div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.operator-schema-card strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.operator-schema-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.operator-schema-card pre,
+.operator-config-preview {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 5px;
+  background: #111827;
+  color: #e5e7eb;
+  font-size: 11px;
+}
+
+.schema-required {
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: #fff1f2;
+  color: #b42318;
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.foreach-loop-guide {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #e0a33f;
+  border-radius: 7px;
+  background: #fff9ed;
+}
+
+.foreach-loop-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.foreach-loop-steps div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid #f1c775;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.foreach-loop-steps span {
+  width: 22px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #8a4b00;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.foreach-loop-steps strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.foreach-loop-steps p {
+  margin: 0;
+  color: #3b4452;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.foreach-loop-steps code {
+  overflow-wrap: anywhere;
+}
+
 .rule-editor-backdrop {
   position: fixed;
   inset: 0;
@@ -1797,6 +2076,24 @@ button.secondary:disabled {
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 22px 60px rgb(15 23 42 / 24%);
+}
+
+.rule-editor-embedded-wrap {
+  min-width: 0;
+  display: contents;
+}
+
+.rule-editor.embedded {
+  width: auto;
+  max-height: none;
+  grid-column: 1 / -1;
+  overflow: visible;
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+.operator-detail-dialog .rule-editor-table-wrap {
+  max-height: 320px;
 }
 
 .rule-editor-heading {
@@ -3638,8 +3935,20 @@ button.secondary:disabled {
     padding: 10px;
   }
 
+  .operator-detail-dialog,
+  .test-suite-dialog {
+    max-height: calc(100vh - 20px);
+    padding: 10px;
+  }
+
+  .operator-detail-heading,
   .rule-editor-heading,
   .rule-editor-meta {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .operator-detail-body,
+  .foreach-loop-steps {
     grid-template-columns: minmax(0, 1fr);
   }
 

@@ -355,7 +355,12 @@ describe('AuthorCanvas built-in canvas examples', () => {
       n2: { output: { payload: { score: 728, provider: 'primary' } } },
       n3: { output: { payload: { score: 701, provider: 'secondary' } } },
     });
-    expect(query('[data-testid="simulation-test-table"]').textContent).toContain('Not run');
+    expect(query('[data-testid="test-suite-summary"]').textContent).toContain('Not run');
+    expect(document.querySelector('[data-testid="simulation-test-table"]')).toBeNull();
+    await click(query<HTMLButtonElement>('[data-testid="test-suite-open"]'));
+    await waitFor(() =>
+      expect(query('[data-testid="test-suite-dialog"]').textContent).toContain('Test Suite'),
+    );
     expect(query<HTMLInputElement>('[data-testid="test-table-name:0"]').value).toBe('Prime approval path');
     expect(query<HTMLInputElement>('[data-testid="test-table-name:1"]').value).toBe('Policy decline path');
     expect(query<HTMLTextAreaElement>('[data-testid="test-table-context:0"]').value)
@@ -374,6 +379,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(query('[data-testid="canvas-example-load:loan-policy-fallback"]').textContent).toContain('Load'),
     );
     await click(query<HTMLButtonElement>('[data-testid="canvas-example-load:loan-policy-fallback"]'));
+    await click(query<HTMLButtonElement>('[data-testid="test-suite-open"]'));
     await waitFor(() =>
       expect(query('[data-testid="test-table-summary"]').textContent).toContain('0/2 passed'),
     );
@@ -508,6 +514,27 @@ describe('AuthorCanvas connection guide', () => {
       expect(query('[data-testid="node-wrapper:n1"]').getAttribute('data-position')).toBe('72,56'),
     );
     expect(query('[data-testid="node-wrapper:n2"]').getAttribute('data-position')).toBe('408,56');
+  });
+
+  it('opens operator details for a regular canvas node on double click', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:score"]').textContent).toContain('Risk Score'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:score"]'));
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-detail-dialog"]').textContent).toContain('Risk Score'),
+    );
+    expect(query('[data-testid="operator-detail-dialog"]').textContent).toContain('risk:score');
+    expect(query('[data-testid="operator-detail-dialog"]').textContent).toContain('Input schema');
+    expect(query('[data-testid="operator-detail-dialog"]').textContent).toContain('Output schema');
+    expect(query('[data-testid="operator-detail-schema:output:0"]').textContent).toContain('"score"');
   });
 
   it('opens compatible targets from the in-canvas coach action', async () => {
@@ -764,6 +791,17 @@ describe('AuthorCanvas connection guide', () => {
     expect(query('[data-testid="operator-focus:foreach"]').textContent).toContain('Item context');
     expect(query('[data-testid="operator-focus:foreach"]').textContent).toContain('Result list');
 
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    await waitFor(() =>
+      expect(query('[data-testid="operator-detail-dialog"]').textContent).toContain('foreach enrich orders'),
+    );
+    expect(query('[data-testid="operator-detail-dialog"]').textContent).toContain('Input schema');
+    expect(query('[data-testid="operator-detail-dialog"]').textContent).toContain('Output schema');
+    expect(query('[data-testid="foreach-loop-guide"]').textContent).toContain('Bind collection');
+    expect(query('[data-testid="foreach-loop-guide"]').textContent).toContain('Run per item');
+    expect(query('[data-testid="foreach-loop-guide"]').textContent).toContain('Collect result list');
+    await click(query<HTMLButtonElement>('[aria-label="Close operator details"]'));
+
     await click(query<HTMLElement>('[data-testid="node-wrapper:n2"]'));
     expect(query('[data-testid="operator-focus:decision-table"]').textContent).toContain('Rule contract');
     expect(query('[data-testid="operator-focus:decision-table"]').textContent).toContain('Condition inputs');
@@ -774,6 +812,7 @@ describe('AuthorCanvas connection guide', () => {
     await waitFor(() =>
       expect(query('[data-testid="decision-table-editor"]').textContent).toContain('Decision Table'),
     );
+    expect(query('[data-testid="operator-detail-dialog"]').textContent).toContain('Input schema');
     expect(query('[data-testid="decision-table-editor"]').textContent).toContain('Condition');
     expect(query('[data-testid="decision-table-editor"]').textContent).toContain('Output');
 

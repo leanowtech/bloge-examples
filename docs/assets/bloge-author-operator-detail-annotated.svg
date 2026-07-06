@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">BLOGE Author Operator Detail Dialog</title>
+  <desc id="desc">Annotated product diagram showing a canvas node double-click opening the operator details dialog with schema, properties, and foreach loop guide.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f5f7fb}.panel{fill:#fff;stroke:#cbd5e1;stroke-width:2}.muted{fill:#64748b}.ink{fill:#172033}.blue{fill:#2563eb}.green{fill:#0f766e}.amber{fill:#b26a00}.line{stroke:#94a3b8;stroke-width:3;fill:none}.call{fill:#0f172a}.num{fill:#fff;font:700 18px Inter,Arial}.txt{font:600 18px Inter,Arial;fill:#172033}.small{font:500 14px Inter,Arial;fill:#475569}.code{font:500 13px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#334155}
+    </style>
+  </defs>
+  <rect width="1280" height="720" class="bg"/>
+  <rect x="36" y="38" width="276" height="644" rx="10" class="panel"/>
+  <text x="62" y="76" class="txt">Operator Palette</text>
+  <rect x="62" y="104" width="214" height="74" rx="8" fill="#fff9ed" stroke="#e0a33f" stroke-width="2"/>
+  <text x="80" y="134" class="txt">foreach enrich orders</text>
+  <text x="80" y="158" class="small">array item -> result list</text>
+  <rect x="62" y="198" width="214" height="74" rx="8" fill="#f3fbf9" stroke="#6cc4b5" stroke-width="2"/>
+  <text x="80" y="228" class="txt">Decision Table</text>
+  <text x="80" y="252" class="small">conditions -> row</text>
+  <rect x="336" y="38" width="532" height="644" rx="10" class="panel"/>
+  <text x="364" y="76" class="txt">Canvas</text>
+  <rect x="408" y="154" width="238" height="132" rx="8" fill="#fff9ed" stroke="#e0a33f" stroke-width="3"/>
+  <text x="430" y="190" class="txt">Loop orders</text>
+  <text x="430" y="218" class="small">__foreach__:enrichOrders</text>
+  <text x="430" y="248" class="code">In: input[]</text>
+  <text x="430" y="270" class="code">Out: output[]</text>
+  <path d="M646 220 C705 220 715 220 770 220" class="line"/>
+  <rect x="770" y="154" width="238" height="132" rx="8" fill="#fbf7ff" stroke="#c5a3e5" stroke-width="3"/>
+  <text x="792" y="190" class="txt">Assemble response</text>
+  <text x="792" y="218" class="small">bloge:transform</text>
+  <text x="792" y="248" class="code">In: inputs</text>
+  <text x="792" y="270" class="code">Out: output</text>
+  <circle cx="526" cy="130" r="16" class="call"/><text x="521" y="136" class="num">1</text>
+  <text x="552" y="136" class="txt">Double-click any canvas operator</text>
+  <rect x="674" y="72" width="548" height="574" rx="12" fill="#ffffff" stroke="#94a3b8" stroke-width="3"/>
+  <rect x="704" y="102" width="488" height="44" rx="22" fill="#eef2f7"/>
+  <text x="724" y="130" class="small">FOREACH</text>
+  <text x="826" y="130" class="txt">Loop orders</text>
+  <circle cx="1190" cy="124" r="15" fill="#e2e8f0"/><text x="1183" y="130" class="small">X</text>
+  <circle cx="704" cy="186" r="16" class="call"/><text x="699" y="192" class="num">2</text>
+  <text x="732" y="192" class="txt">Operator contract summary</text>
+  <rect x="704" y="214" width="236" height="82" rx="8" fill="#fbfcff" stroke="#cbd5e1"/>
+  <text x="724" y="242" class="small">Collection</text><text x="824" y="242" class="code">input:array</text>
+  <text x="724" y="268" class="small">Item context</text><text x="824" y="268" class="code">input item:object</text>
+  <rect x="956" y="214" width="236" height="82" rx="8" fill="#fbfcff" stroke="#cbd5e1"/>
+  <text x="976" y="242" class="small">Result list</text><text x="1072" y="242" class="code">output:array</text>
+  <text x="976" y="268" class="small">Lowering</text><text x="1072" y="268" class="code">java-operator</text>
+  <circle cx="704" cy="336" r="16" class="call"/><text x="699" y="342" class="num">3</text>
+  <text x="732" y="342" class="txt">Foreach loop guide</text>
+  <g transform="translate(704 366)">
+    <rect width="150" height="104" rx="8" fill="#fff9ed" stroke="#f1c775"/>
+    <circle cx="24" cy="25" r="14" fill="#8a4b00"/><text x="20" y="31" class="num">1</text>
+    <text x="48" y="30" class="small">Bind collection</text>
+    <text x="18" y="68" class="code">input[]</text>
+    <path d="M160 52 H208" class="line"/>
+    <rect x="220" width="150" height="104" rx="8" fill="#fff9ed" stroke="#f1c775"/>
+    <circle cx="244" cy="25" r="14" fill="#8a4b00"/><text x="240" y="31" class="num">2</text>
+    <text x="268" y="30" class="small">Run per item</text>
+    <text x="238" y="68" class="code">item object</text>
+    <path d="M380 52 H428" class="line"/>
+    <rect x="440" width="150" height="104" rx="8" fill="#fff9ed" stroke="#f1c775"/>
+    <circle cx="464" cy="25" r="14" fill="#8a4b00"/><text x="460" y="31" class="num">3</text>
+    <text x="488" y="30" class="small">Collect result</text>
+    <text x="458" y="68" class="code">output[]</text>
+  </g>
+  <circle cx="704" cy="520" r="16" class="call"/><text x="699" y="526" class="num">4</text>
+  <text x="732" y="526" class="txt">Schemas and node config remain inspectable</text>
+  <rect x="704" y="552" width="232" height="62" rx="8" fill="#111827"/>
+  <text x="724" y="580" fill="#e5e7eb" font-family="ui-monospace,monospace" font-size="13">{"type":"array","items":{...}}</text>
+  <rect x="956" y="552" width="236" height="62" rx="8" fill="#111827"/>
+  <text x="976" y="580" fill="#e5e7eb" font-family="ui-monospace,monospace" font-size="13">{"config":{}}</text>
+</svg>
