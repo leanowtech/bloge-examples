@@ -1,4 +1,4 @@
-import type { DraftNodeBinding, SchemaEnvelope } from './types';
+import type { DraftNodeBinding, NodeFixture, SchemaEnvelope } from './types';
 
 export interface CanvasExampleNode {
   id: string;
@@ -33,11 +33,20 @@ export interface CanvasExampleTemplate {
   nodes: CanvasExampleNode[];
   edges: CanvasExampleEdge[];
   outputNodeId: string;
+  testCases?: CanvasExampleTestCase[];
 }
 
 export interface CanvasExampleAvailability {
   template: CanvasExampleTemplate;
   missingOperatorRefs: string[];
+}
+
+export interface CanvasExampleTestCase {
+  id: string;
+  name: string;
+  context: Record<string, unknown>;
+  fixtureOverrides?: Record<string, NodeFixture>;
+  expectedOutput: unknown;
 }
 
 function constantInput(value: unknown, targetPort: string): DraftNodeBinding {
@@ -101,11 +110,13 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         position: { x: 72, y: 96 },
         inputs: { applicantId: constantInput('applicant-1001', 'params') },
         fixtureOutput: {
-          applicantId: 'applicant-1001',
-          score: 715,
-          segment: 'prime',
-          income: 92000,
-          employmentYears: 4,
+          payload: {
+            applicantId: 'applicant-1001',
+            score: 715,
+            segment: 'prime',
+            income: 92000,
+            employmentYears: 4,
+          },
         },
       },
       {
@@ -113,14 +124,14 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         operatorRef: 'resource:credit-provider.primary',
         label: 'Primary credit',
         position: { x: 360, y: 24 },
-        fixtureOutput: { score: 728, provider: 'primary', band: 'A' },
+        fixtureOutput: { payload: { score: 728, provider: 'primary', band: 'A' } },
       },
       {
         id: 'n3',
         operatorRef: 'resource:credit-provider.secondary',
         label: 'Secondary credit',
         position: { x: 360, y: 168 },
-        fixtureOutput: { score: 701, provider: 'secondary', band: 'B' },
+        fixtureOutput: { payload: { score: 701, provider: 'secondary', band: 'B' } },
       },
       {
         id: 'n4',
@@ -156,12 +167,12 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         config: {
           assignments: {
             applicantId: 'n1.output.payload.applicantId',
-            segment: 'n1.output.payload.segment',
-            primaryScore: 'n2.output.payload.score',
-            secondaryScore: 'n3.output.payload.score',
+            segment: 'coalesce(n1.output.payload.segment, "unknown")',
+            primaryScore: 'toNumber(coalesce(n2.output.payload.score, 0))',
+            secondaryScore: 'toNumber(coalesce(n3.output.payload.score, 0))',
             decision: 'n4.output.decision',
             tier: 'n4.output.tier',
-            reason: 'n4.output.reason',
+            reason: 'coalesce(n4.output.reason, "policy fallback")',
           },
         },
       },
@@ -288,6 +299,51 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         bindingKey: 'reason',
       },
     ],
+    testCases: [
+      {
+        id: 'loan-prime-approval',
+        name: 'Prime approval path',
+        context: { applicantId: 'applicant-1001' },
+        expectedOutput: {
+          applicantId: 'applicant-1001',
+          segment: 'prime',
+          primaryScore: 728,
+          secondaryScore: 701,
+          decision: 'approve',
+          tier: 'prime',
+          reason: 'strong primary credit',
+        },
+      },
+      {
+        id: 'loan-policy-decline',
+        name: 'Policy decline path',
+        context: { applicantId: 'applicant-2002' },
+        fixtureOverrides: {
+          n1: {
+            output: {
+              payload: {
+                applicantId: 'applicant-2002',
+                score: 662,
+                segment: 'watchlist',
+                income: 54000,
+                employmentYears: 1,
+              },
+            },
+          },
+          n2: { output: { payload: { score: 650, provider: 'primary', band: 'C' } } },
+          n3: { output: { payload: { score: 688, provider: 'secondary', band: 'B' } } },
+        },
+        expectedOutput: {
+          applicantId: 'applicant-2002',
+          segment: 'watchlist',
+          primaryScore: 650,
+          secondaryScore: 688,
+          decision: 'decline',
+          tier: 'risk',
+          reason: 'policy threshold not met',
+        },
+      },
+    ],
   },
   {
     key: 'order-fulfillment-lane',
@@ -319,11 +375,13 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         position: { x: 72, y: 96 },
         inputs: { userId: constantInput('user-42', 'params') },
         fixtureOutput: {
-          items: [
-            { orderId: 'order-1001', productId: 'prod-8', total: 128, region: 'west' },
-            { orderId: 'order-1002', productId: 'prod-11', total: 42, region: 'west' },
-          ],
-          total: 2,
+          payload: {
+            items: [
+              { orderId: 'order-1001', productId: 'prod-8', total: 128, region: 'west' },
+              { orderId: 'order-1002', productId: 'prod-11', total: 42, region: 'west' },
+            ],
+            total: 2,
+          },
         },
       },
       {
@@ -341,7 +399,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         operatorRef: 'resource:logistics-service.getShipping',
         label: 'Shipping quote',
         position: { x: 360, y: 168 },
-        fixtureOutput: { carrier: 'DHL', etaDays: 2, cost: 16.5 },
+        fixtureOutput: { payload: { carrier: 'DHL', etaDays: 2, cost: 16.5 } },
       },
       {
         id: 'n4',
@@ -376,12 +434,12 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         position: { x: 940, y: 96 },
         config: {
           assignments: {
-            orderCount: 'n1.output.payload.total',
-            enrichedOrders: 'n2.output',
-            carrier: 'n3.output.payload.carrier',
+            orderCount: 'toNumber(coalesce(n1.output.payload.total, 0))',
+            enrichedOrders: 'coalesce(n2.output, [])',
+            carrier: 'coalesce(n3.output.payload.carrier, "manual")',
             lane: 'n4.output.lane',
-            promisedHours: 'n4.output.promisedHours',
-            reason: 'n4.output.reason',
+            promisedHours: 'toNumber(coalesce(n4.output.promisedHours, 96))',
+            reason: 'coalesce(n4.output.reason, "sla default")',
           },
         },
       },
@@ -486,6 +544,57 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         bindingKey: 'reason',
       },
     ],
+    testCases: [
+      {
+        id: 'order-expedite-lane',
+        name: 'Multi-order fast lane',
+        context: { userId: 'user-42' },
+        expectedOutput: {
+          orderCount: 2,
+          enrichedOrders: [
+            { orderId: 'order-1001', productId: 'prod-8', priority: 'expedite' },
+            { orderId: 'order-1002', productId: 'prod-11', priority: 'standard' },
+          ],
+          carrier: 'DHL',
+          lane: 'expedite',
+          promisedHours: 24,
+          reason: 'multi-order fast lane',
+        },
+      },
+      {
+        id: 'order-standard-lane',
+        name: 'Single-order standard lane',
+        context: { userId: 'user-77' },
+        fixtureOverrides: {
+          n1: {
+            output: {
+              payload: {
+                items: [
+                  { orderId: 'order-2001', productId: 'prod-21', total: 88, region: 'east' },
+                ],
+                total: 1,
+              },
+            },
+          },
+          n2: {
+            output: [
+              { orderId: 'order-2001', productId: 'prod-21', priority: 'standard' },
+            ],
+          },
+          n3: { output: { payload: { carrier: 'UPS', etaDays: 4, cost: 12.2 } } },
+        },
+        expectedOutput: {
+          orderCount: 1,
+          enrichedOrders: [
+            { orderId: 'order-2001', productId: 'prod-21', priority: 'standard' },
+          ],
+          carrier: 'UPS',
+          lane: 'standard',
+          promisedHours: 72,
+          reason: 'normal delivery window',
+        },
+      },
+    ],
   },
   {
     key: 'personalized-dashboard',
@@ -518,11 +627,13 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         position: { x: 72, y: 96 },
         inputs: { userId: constantInput('user-42', 'params') },
         fixtureOutput: {
-          userId: 'user-42',
-          name: 'Ada Chen',
-          tier: 'pro',
-          segment: 'high-value',
-          score: 742,
+          payload: {
+            userId: 'user-42',
+            name: 'Ada Chen',
+            tier: 'pro',
+            segment: 'high-value',
+            score: 742,
+          },
         },
       },
       {
@@ -530,7 +641,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         operatorRef: 'resource:wallet-service.getBalance',
         label: 'Wallet balance',
         position: { x: 360, y: 0 },
-        fixtureOutput: { amount: 128.45, currency: 'USD' },
+        fixtureOutput: { payload: { amount: 128.45, currency: 'USD' } },
       },
       {
         id: 'n3',
@@ -538,10 +649,12 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         label: 'Recommendations',
         position: { x: 360, y: 132 },
         fixtureOutput: {
-          items: [
-            { productId: 'prod-8', reason: 'segment match' },
-            { productId: 'prod-11', reason: 'recent activity' },
-          ],
+          payload: {
+            items: [
+              { productId: 'prod-8', reason: 'segment match' },
+              { productId: 'prod-11', reason: 'recent activity' },
+            ],
+          },
         },
       },
       {
@@ -550,11 +663,13 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         label: 'Unread notifications',
         position: { x: 360, y: 264 },
         fixtureOutput: {
-          count: 3,
-          items: [
-            { id: 'notif-1', title: 'Invoice ready' },
-            { id: 'notif-2', title: 'New recommendation' },
-          ],
+          payload: {
+            count: 3,
+            items: [
+              { id: 'notif-1', title: 'Invoice ready' },
+              { id: 'notif-2', title: 'New recommendation' },
+            ],
+          },
         },
       },
       {
@@ -565,13 +680,13 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         config: {
           assignments: {
             userId: 'n1.output.payload.userId',
-            name: 'n1.output.payload.name',
-            tier: 'n1.output.payload.tier',
-            segment: 'n1.output.payload.segment',
-            walletAmount: 'n2.output.payload.amount',
-            walletCurrency: 'n2.output.payload.currency',
-            recommendations: 'n3.output.payload.items',
-            unreadCount: 'n4.output.payload.count',
+            name: 'coalesce(n1.output.payload.name, "Customer")',
+            tier: 'coalesce(n1.output.payload.tier, "standard")',
+            segment: 'coalesce(n1.output.payload.segment, "unknown")',
+            walletAmount: 'round(toNumber(coalesce(n2.output.payload.amount, 0)))',
+            walletCurrency: 'coalesce(n2.output.payload.currency, "USD")',
+            recommendations: 'coalesce(n3.output.payload.items, [])',
+            unreadCount: 'toNumber(coalesce(n4.output.payload.count, 0))',
           },
         },
       },
@@ -686,6 +801,57 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         targetPort: 'inputs',
         targetPath: 'unreadCount',
         bindingKey: 'unreadCount',
+      },
+    ],
+    testCases: [
+      {
+        id: 'dashboard-high-value',
+        name: 'High-value dashboard',
+        context: { userId: 'user-42' },
+        expectedOutput: {
+          userId: 'user-42',
+          name: 'Ada Chen',
+          tier: 'pro',
+          segment: 'high-value',
+          walletAmount: 128,
+          walletCurrency: 'USD',
+          recommendations: [
+            { productId: 'prod-8', reason: 'segment match' },
+            { productId: 'prod-11', reason: 'recent activity' },
+          ],
+          unreadCount: 3,
+        },
+      },
+      {
+        id: 'dashboard-fallbacks',
+        name: 'Fallback defaults',
+        context: { userId: 'user-99' },
+        fixtureOverrides: {
+          n1: {
+            output: {
+              payload: {
+                userId: 'user-99',
+                name: null,
+                tier: null,
+                segment: null,
+                score: 512,
+              },
+            },
+          },
+          n2: { output: { payload: { amount: '99', currency: null } } },
+          n3: { output: { payload: { items: [] } } },
+          n4: { output: { payload: { count: '0', items: [] } } },
+        },
+        expectedOutput: {
+          userId: 'user-99',
+          name: 'Customer',
+          tier: 'standard',
+          segment: 'unknown',
+          walletAmount: 99,
+          walletCurrency: 'USD',
+          recommendations: [],
+          unreadCount: 0,
+        },
       },
     ],
   },

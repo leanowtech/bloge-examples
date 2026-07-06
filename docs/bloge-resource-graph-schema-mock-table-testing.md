@@ -122,6 +122,28 @@ InMemoryGatewayGraphContractTestSuiteRepository
 
 `resourceMocks` 只替换 descriptor-backed `httpResource` 调用。Graph topology、DSL 编译产物、decision table、branch、transform、fallback 等仍然通过真实 BLOGE engine 执行。
 
+### 4.0 画布内 Test Table 入口
+
+后端 schema-gated suite 是治理级能力；新版 `/author/` 现在还提供画布内 **Test Table**，作为作者构造表格用例的低门槛入口。
+
+画布内 Test Table 的一行包含：
+
+| 字段 | 含义 |
+| --- | --- |
+| `context` | 本行传入 transient simulate 的 runtime context |
+| `fixtureOverrides` | 本行覆盖节点级 Mock Setup 的 `nodeFixtures` |
+| `expectedOutput` | 本行断言的 terminal output |
+
+它复用 `POST /api/visual/graphs/simulate`，不直接落库，也不替代本章后面的 stored suite / batch runner。推荐使用路径是：
+
+```text
+/author/ Test Table 快速调试多路径
+  -> 后端 graph/operator schema suite 固化为治理资产
+    -> publication golden case 做发布级认证
+```
+
+这样用户不用一开始就手写完整 suite JSON，也不会让浏览器承担持久化测试平台的职责。
+
 ## 4.1 Suite Registry、Batch Runner 与 Coverage Policy
 
 一次性 `POST /run` 适合调试，但工业化测试需要把 suite 作为可治理资产保存和批量执行。本轮新增：
@@ -421,10 +443,11 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 | Coverage policy | Done | suite 级阈值可要求 case、schema validation、mock call、assertion、output node 覆盖 |
 | 批量 CI 报告 | Partial | 已有机器可读 batch result；还缺独立 HTML/历史趋势报告 |
 | Standalone operator table suite | Done | `/api/visual/operators/tests/run` + stored suite + run-all |
+| 画布内 Test Table authoring 入口 | Done | `/author/` 支持多行 context、fixture override、expected output，并逐行运行 transient simulate |
 
 ## 9. 差距与补强路线
 
-按“工业化可用”目标估算，当前差距已经从 3% 到 4% 继续收敛到约 2% 到 2.5%。核心 schema + mock + table test 主链路已打通：资源 graph 有 formal input/output schema，graph/operator 都能生成可编辑 mock row 并运行表格验证。剩余差距主要是增强型治理能力，而不是主路径缺口。
+按“工业化可用”目标估算，当前差距已经从 3% 到 4% 继续收敛到约 2% 到 2.5%。核心 schema + mock + table test 主链路已打通：资源 graph 有 formal input/output schema，graph/operator 都能生成可编辑 mock row 并运行表格验证；画布内也已经有 Test Table authoring 入口，可以直接基于当前 draft 批量验证多条 mock 路径。剩余差距主要是增强型治理能力，而不是主路径缺口。
 
 建议下一轮补强顺序：
 

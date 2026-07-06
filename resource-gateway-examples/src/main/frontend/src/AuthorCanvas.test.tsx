@@ -11,6 +11,7 @@ import type {
   OperatorLibrary,
   OperatorLibraryValidationResult,
   SchemaEnvelope,
+  SimulationResponse,
 } from './types';
 
 vi.mock('reactflow', async () => {
@@ -179,7 +180,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     host = document.createElement('div');
     document.body.appendChild(host);
-    fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === '/api/visual/operators') {
         return jsonResponse({
@@ -191,6 +192,31 @@ describe('AuthorCanvas built-in canvas examples', () => {
             transformOperator(),
           ],
         });
+      }
+      if (url === '/api/visual/graphs/simulate') {
+        const body = JSON.parse(String(init?.body));
+        const applicantId = body.context?.applicantId;
+        if (applicantId === 'applicant-2002') {
+          expect(body.fixtures.n2.output.payload.score).toBe(650);
+          return jsonResponse(loanSimulationResponse({
+            applicantId: 'applicant-2002',
+            segment: 'watchlist',
+            primaryScore: 650,
+            secondaryScore: 688,
+            decision: 'decline',
+            tier: 'risk',
+            reason: 'policy threshold not met',
+          }));
+        }
+        return jsonResponse(loanSimulationResponse({
+          applicantId: 'applicant-1001',
+          segment: 'prime',
+          primaryScore: 728,
+          secondaryScore: 701,
+          decision: 'approve',
+          tier: 'prime',
+          reason: 'strong primary credit',
+        }));
       }
       throw new Error(`Unexpected fetch: ${url}`);
     });
@@ -214,6 +240,42 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(template.outputSchema.schema).toMatchObject({ type: 'object' });
       expect(Object.keys(template.inputSchema.schema.properties as Record<string, unknown>)).not.toHaveLength(0);
       expect(Object.keys(template.outputSchema.schema.properties as Record<string, unknown>)).not.toHaveLength(0);
+      expect(template.testCases).toHaveLength(2);
+    }
+  });
+
+  it('uses built-in expression functions in every complex example transform', () => {
+    for (const template of CANVAS_EXAMPLE_TEMPLATES) {
+      const transform = template.nodes.find((node) => node.operatorRef === 'bloge:transform');
+      expect(transform, template.key).toBeDefined();
+      const assignments = transform?.config?.assignments as Record<string, string>;
+      expect(Object.values(assignments).join('\n'), template.key)
+        .toMatch(/\b(coalesce|toNumber|round)\(/);
+    }
+  });
+
+  it('models resource node fixtures as complete resource outputs with payload fields', () => {
+    for (const template of CANVAS_EXAMPLE_TEMPLATES) {
+      const resourceNodeIds = new Set(
+        template.nodes
+          .filter((node) => node.operatorRef.startsWith('resource:'))
+          .map((node) => node.id),
+      );
+
+      for (const node of template.nodes) {
+        if (resourceNodeIds.has(node.id) && node.fixtureOutput !== undefined) {
+          expect(node.fixtureOutput, `${template.key}:${node.id}`).toMatchObject({ payload: expect.anything() });
+        }
+      }
+
+      for (const testCase of template.testCases ?? []) {
+        for (const [nodeId, fixture] of Object.entries(testCase.fixtureOverrides ?? {})) {
+          if (resourceNodeIds.has(nodeId)) {
+            expect(fixture.output, `${template.key}:${testCase.id}:${nodeId}`)
+              .toMatchObject({ payload: expect.anything() });
+          }
+        }
+      }
     }
   });
 
@@ -284,13 +346,54 @@ describe('AuthorCanvas built-in canvas examples', () => {
     });
     expect(exported.nodes[4].config.assignments).toMatchObject({
       applicantId: 'n1.output.payload.applicantId',
+      primaryScore: 'toNumber(coalesce(n2.output.payload.score, 0))',
       decision: 'n4.output.decision',
-      reason: 'n4.output.reason',
+      reason: 'coalesce(n4.output.reason, "policy fallback")',
     });
     expect(exported.nodeFixtures).toMatchObject({
-      n1: { output: { applicantId: 'applicant-1001', score: 715 } },
-      n2: { output: { score: 728, provider: 'primary' } },
-      n3: { output: { score: 701, provider: 'secondary' } },
+      n1: { output: { payload: { applicantId: 'applicant-1001', score: 715 } } },
+      n2: { output: { payload: { score: 728, provider: 'primary' } } },
+      n3: { output: { payload: { score: 701, provider: 'secondary' } } },
+    });
+    expect(query('[data-testid="simulation-test-table"]').textContent).toContain('Not run');
+    expect(query<HTMLInputElement>('[data-testid="test-table-name:0"]').value).toBe('Prime approval path');
+    expect(query<HTMLInputElement>('[data-testid="test-table-name:1"]').value).toBe('Policy decline path');
+    expect(query<HTMLTextAreaElement>('[data-testid="test-table-context:0"]').value)
+      .toContain('"applicantId": "applicant-1001"');
+    expect(query<HTMLTextAreaElement>('[data-testid="test-table-fixtures:1"]').value)
+      .toContain('"score": 650');
+  });
+
+  it('runs built-in example test table cases through simulate with row fixture overrides', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="canvas-example-load:loan-policy-fallback"]').textContent).toContain('Load'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="canvas-example-load:loan-policy-fallback"]'));
+    await waitFor(() =>
+      expect(query('[data-testid="test-table-summary"]').textContent).toContain('0/2 passed'),
+    );
+
+    await click(query<HTMLButtonElement>('[data-testid="test-table-run"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="test-table-summary"]').textContent).toContain('2/2 passed'),
+    );
+    expect(query('[data-testid="test-table-status:0"]').textContent).toContain('passed');
+    expect(query('[data-testid="test-table-status:1"]').textContent).toContain('passed');
+
+    const simulateCalls = fetchMock.mock.calls
+      .filter(([input]) => String(input) === '/api/visual/graphs/simulate');
+    expect(simulateCalls).toHaveLength(2);
+    const secondRequest = JSON.parse(String(simulateCalls[1][1]?.body));
+    expect(secondRequest.context).toEqual({ applicantId: 'applicant-2002' });
+    expect(secondRequest.fixtures.n1.output.payload).toMatchObject({
+      applicantId: 'applicant-2002',
+      segment: 'watchlist',
     });
   });
 });
@@ -1466,6 +1569,25 @@ function coalesceFunction(): BuiltInFunctionDefinition {
       },
     ],
     examples: ['coalesce(inputs.primaryScore, 0)'],
+  };
+}
+
+function loanSimulationResponse(output: Record<string, unknown>): SimulationResponse {
+  return {
+    validated: true,
+    compiled: true,
+    success: true,
+    graphName: 'visualGraph',
+    outputNode: 'n5',
+    output,
+    results: { n5: output },
+    statusMap: {},
+    mockedNodeIds: ['n1', 'n2', 'n3'],
+    realNodeIds: ['n4', 'n5'],
+    terminalOutputConforms: true,
+    diagnostics: [],
+    errors: [],
+    generatedDsl: 'graph visualGraph {}',
   };
 }
 

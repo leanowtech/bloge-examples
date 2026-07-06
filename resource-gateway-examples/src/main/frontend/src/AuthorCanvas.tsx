@@ -41,14 +41,17 @@ import {
   type ConnectionCandidateStatus,
   type ConnectionGuideRow,
   compileFixtureDrafts,
+  compileSimulationTableRows,
   connectionCandidatesMessage,
   connectionGuideRows,
   type OperatorSummary,
   connectionDecisionMessage,
+  evaluateSimulationTableResult,
   fixtureDraftForOperator,
   handleIdForPort,
   indexConnectionCandidates,
   isRunSuccessful,
+  mergeNodeFixtures,
   nodeStatuses,
   type OperatorPaletteFacet,
   operatorPaletteView,
@@ -60,9 +63,12 @@ import {
   simulationChecklist,
   simulationFixtureRows,
   simulationRunSummary,
+  simulationTableSummary,
   simulationTraceRows,
   summarizeCanvas,
   summarizeOperator,
+  type SimulationTableCaseResult,
+  type SimulationTableTestDraftRow,
   toConnectionCandidatesRequest,
   toConnectionCheckRequest,
   toExportableGraphDraft,
@@ -86,6 +92,7 @@ import {
   hasOwnValue,
   maxNumericNodeId,
   type CanvasExampleAvailability,
+  type CanvasExampleTestCase,
   type CanvasExampleTemplate,
 } from './canvasExamples';
 
@@ -375,6 +382,30 @@ function compileContextVariables(rows: ContextVariableRow[]): JsonObjectCompilat
     }
   }
   return { value: context };
+}
+
+function formatDraftJson(value: unknown): string {
+  return JSON.stringify(value ?? {}, null, 2);
+}
+
+function simulationTableRowsFromExample(cases: CanvasExampleTestCase[] | undefined): SimulationTableTestDraftRow[] {
+  return (cases ?? []).map((testCase) => ({
+    id: testCase.id,
+    name: testCase.name,
+    contextText: formatDraftJson(testCase.context),
+    fixturesText: formatDraftJson(testCase.fixtureOverrides ?? {}),
+    expectedOutputText: JSON.stringify(testCase.expectedOutput, null, 2),
+  }));
+}
+
+function emptySimulationTableRow(id: string, inputSchema: SchemaEnvelope): SimulationTableTestDraftRow {
+  return {
+    id,
+    name: `Case ${id.replace(/^table-case-/, '')}`,
+    contextText: formatDraftJson(sampleFromSchemaEnvelope(inputSchema)),
+    fixturesText: '{}',
+    expectedOutputText: '',
+  };
 }
 
 function parseConstantInputValue(text: string): unknown {
@@ -2323,6 +2354,9 @@ export default function AuthorCanvas() {
   const [explicitOutputNodeId, setExplicitOutputNodeId] = useState('');
   const [fixtureDrafts, setFixtureDrafts] = useState<Record<string, string>>({});
   const [fixtureInputDrafts, setFixtureInputDrafts] = useState<Record<string, string>>({});
+  const [simulationTableRows, setSimulationTableRows] = useState<SimulationTableTestDraftRow[]>([]);
+  const [simulationTableResults, setSimulationTableResults] = useState<Record<string, SimulationTableCaseResult>>({});
+  const [tableTestingBusy, setTableTestingBusy] = useState(false);
   const [simulationContextDraft, setSimulationContextDraft] = useState('{}');
   const [contextVariables, setContextVariables] = useState<ContextVariableRow[]>([]);
   const [graphInputSchema, setGraphInputSchema] = useState<SchemaEnvelope>(EMPTY_GRAPH_INPUT_SCHEMA);
@@ -2339,6 +2373,7 @@ export default function AuthorCanvas() {
   const flowRef = useRef<HTMLDivElement>(null);
   const counter = useRef(0);
   const contextVariableCounter = useRef(0);
+  const tableTestCounter = useRef(0);
   const candidatePreviewSequence = useRef(0);
   const connectionGuideSequence = useRef(0);
 
@@ -2368,6 +2403,7 @@ export default function AuthorCanvas() {
   const clearRunResult = useCallback(() => {
     setResult(null);
     setValidationResult(null);
+    setSimulationTableResults({});
     setError('');
   }, []);
 
@@ -2760,13 +2796,17 @@ export default function AuthorCanvas() {
         nextFixtureInputDrafts[templateNode.id] = JSON.stringify(templateNode.expectedInput, null, 2);
       }
     }
+    const nextSimulationTableRows = simulationTableRowsFromExample(template.testCases);
 
     clearRunResult();
     counter.current = maxNumericNodeId(template.nodes);
+    tableTestCounter.current = nextSimulationTableRows.length;
     setNodes(nextNodes);
     setEdges(nextEdges);
     setFixtureDrafts(nextFixtureDrafts);
     setFixtureInputDrafts(nextFixtureInputDrafts);
+    setSimulationTableRows(nextSimulationTableRows);
+    setSimulationTableResults({});
     setGraphInputSchema(template.inputSchema);
     setGraphOutputSchema(template.outputSchema);
     setGraphContractSource(template.label);
@@ -2808,6 +2848,14 @@ export default function AuthorCanvas() {
   const fixtureCompilation = useMemo(
     () => compileFixtureDrafts(fixtureDrafts, fixtureInputDrafts),
     [fixtureDrafts, fixtureInputDrafts],
+  );
+  const simulationTableCompilation = useMemo(
+    () => compileSimulationTableRows(simulationTableRows),
+    [simulationTableRows],
+  );
+  const simulationTableRunSummary = useMemo(
+    () => simulationTableSummary(simulationTableRows, simulationTableResults, tableTestingBusy),
+    [simulationTableResults, simulationTableRows, tableTestingBusy],
   );
   const rawContextCompilation = useMemo(
     () => compileJsonObjectDraft(simulationContextDraft, 'Runtime context'),
@@ -2868,6 +2916,7 @@ export default function AuthorCanvas() {
     .filter((row) => row.state === 'warning' || row.state === 'blocked')
     .length;
   const hasFixtureErrors = fixtureErrorCount > 0;
+  const hasSimulationTableErrors = Object.keys(simulationTableCompilation.errors).length > 0;
   const hasContextError = Boolean(contextCompilation.error);
   const selectedFixtureDraft = selectedNode ? fixtureDrafts[selectedNode.id] ?? '' : '';
   const selectedExpectedInputDraft = selectedNode ? fixtureInputDrafts[selectedNode.id] ?? '' : '';
@@ -3022,6 +3071,47 @@ export default function AuthorCanvas() {
       return next;
     });
   }, [clearRunResult, selectedNodeId]);
+
+  const addSimulationTableRow = useCallback(() => {
+    const nextIndex = tableTestCounter.current + 1;
+    tableTestCounter.current = nextIndex;
+    const row = emptySimulationTableRow(`table-case-${nextIndex}`, graphInputSchema);
+    setSimulationTableRows((current) => [...current, row]);
+    setSimulationTableResults({});
+  }, [graphInputSchema]);
+
+  const updateSimulationTableRow = useCallback((
+    id: string,
+    patch: Partial<SimulationTableTestDraftRow>,
+  ) => {
+    setSimulationTableRows((current) => current.map((row) => (
+      row.id === id ? { ...row, ...patch } : row
+    )));
+    setSimulationTableResults((current) => {
+      if (!current[id]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
+  const removeSimulationTableRow = useCallback((id: string) => {
+    setSimulationTableRows((current) => current.filter((row) => row.id !== id));
+    setSimulationTableResults((current) => {
+      if (!current[id]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
+  const clearSimulationTableResults = useCallback(() => {
+    setSimulationTableResults({});
+  }, []);
 
   const setSelectedAsOutput = useCallback(() => {
     if (!selectedNodeId) {
@@ -3329,6 +3419,21 @@ export default function AuthorCanvas() {
     setConnectionGuideNotice(null);
   }, [applyCheckedConnection, selectedConnectionSourcePort, selectedNodeId]);
 
+  const showSimulationResponse = useCallback((response: SimulationResponse) => {
+    setResult(response);
+
+    const statuses = nodeStatuses(response);
+    setNodes((current) =>
+      current.map((node) => {
+        const status = statuses[node.id];
+        return {
+          ...node,
+          data: { ...node.data, status },
+        };
+      }),
+    );
+  }, []);
+
   const runSimulation = useCallback(async () => {
     setBusy(true);
     setError('');
@@ -3342,24 +3447,92 @@ export default function AuthorCanvas() {
         contextCompilation.value,
         graphInputSchema,
       ));
-      setResult(response);
-
-      const statuses = nodeStatuses(response);
-      setNodes((current) =>
-        current.map((node) => {
-          const status = statuses[node.id];
-          return {
-            ...node,
-            data: { ...node.data, status },
-          };
-        }),
-      );
+      showSimulationResponse(response);
     } catch (cause: unknown) {
       setError(String(cause));
     } finally {
       setBusy(false);
     }
-  }, [canvasEdges, canvasNodes, contextCompilation.value, fixtureCompilation.fixtures, graphInputSchema, outputNodeId]);
+  }, [
+    canvasEdges,
+    canvasNodes,
+    contextCompilation.value,
+    fixtureCompilation.fixtures,
+    graphInputSchema,
+    outputNodeId,
+    showSimulationResponse,
+  ]);
+
+  const runSimulationTable = useCallback(async () => {
+    setTableTestingBusy(true);
+    setError('');
+    const initialResults: Record<string, SimulationTableCaseResult> = {};
+    for (const row of simulationTableRows) {
+      const error = simulationTableCompilation.errors[row.id];
+      if (error) {
+        initialResults[row.id] = {
+          id: row.id,
+          name: row.name.trim() || row.id,
+          status: 'failed',
+          detail: error,
+        };
+      }
+    }
+    setSimulationTableResults(initialResults);
+
+    try {
+      for (const testCase of simulationTableCompilation.cases) {
+        setSimulationTableResults((current) => ({
+          ...current,
+          [testCase.id]: {
+            id: testCase.id,
+            name: testCase.name,
+            status: 'running',
+            detail: 'Running simulate.',
+          },
+        }));
+        try {
+          const response = await simulate(toSimulationRequest(
+            'visualGraph',
+            canvasNodes,
+            canvasEdges,
+            outputNodeId,
+            mergeNodeFixtures(fixtureCompilation.fixtures, testCase.fixtures),
+            testCase.context,
+            graphInputSchema,
+          ));
+          showSimulationResponse(response);
+          const rowResult = evaluateSimulationTableResult(testCase, response);
+          setSimulationTableResults((current) => ({
+            ...current,
+            [testCase.id]: rowResult,
+          }));
+        } catch (cause: unknown) {
+          setSimulationTableResults((current) => ({
+            ...current,
+            [testCase.id]: {
+              id: testCase.id,
+              name: testCase.name,
+              status: 'failed',
+              detail: String(cause),
+              ...(testCase.hasExpectedOutput ? { expectedOutput: testCase.expectedOutput } : {}),
+            },
+          }));
+        }
+      }
+    } finally {
+      setTableTestingBusy(false);
+    }
+  }, [
+    canvasEdges,
+    canvasNodes,
+    fixtureCompilation.fixtures,
+    graphInputSchema,
+    outputNodeId,
+    showSimulationResponse,
+    simulationTableCompilation,
+    simulationTableRows,
+  ]);
 
   const runDraftValidation = useCallback(async () => {
     setValidatingDraft(true);
@@ -3885,6 +4058,147 @@ export default function AuthorCanvas() {
         ) : (
           <p className="muted">No nodes.</p>
         )}
+
+        <h2>Test Table</h2>
+        <section
+          className={`simulation-test-table ${simulationTableRunSummary.state}`}
+          data-testid="simulation-test-table"
+        >
+          <div className="test-table-header">
+            <span>
+              <strong>{simulationTableRunSummary.label}</strong>
+              <small data-testid="test-table-summary">{simulationTableRunSummary.detail}</small>
+            </span>
+            <div className="test-table-actions">
+              <button
+                type="button"
+                className="primary compact"
+                data-testid="test-table-run"
+                onClick={runSimulationTable}
+                disabled={
+                  tableTestingBusy
+                  || nodes.length === 0
+                  || simulationTableRows.length === 0
+                  || hasFixtureErrors
+                }
+              >
+                {tableTestingBusy ? 'Running' : 'Run Table'}
+              </button>
+              <button
+                type="button"
+                className="secondary compact"
+                data-testid="test-table-add"
+                onClick={addSimulationTableRow}
+              >
+                Add Case
+              </button>
+              <button
+                type="button"
+                className="secondary compact"
+                data-testid="test-table-clear"
+                onClick={clearSimulationTableResults}
+                disabled={Object.keys(simulationTableResults).length === 0}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          {hasSimulationTableErrors && (
+            <p className="fixture-error" data-testid="test-table-error">
+              {Object.values(simulationTableCompilation.errors)[0]}
+            </p>
+          )}
+          {simulationTableRows.length > 0 ? (
+            <ol className="test-table-list">
+              {simulationTableRows.map((row, index) => {
+                const rowResult = simulationTableResults[row.id];
+                const rowError = simulationTableCompilation.errors[row.id];
+                const rowStatus = rowResult?.status ?? (rowError ? 'failed' : 'pending');
+                return (
+                  <li
+                    key={row.id}
+                    className={`test-table-row ${rowStatus}`}
+                    data-testid={`test-table-row:${index}`}
+                  >
+                    <div className="test-table-row-heading">
+                      <input
+                        aria-label={`Test case name ${index + 1}`}
+                        data-testid={`test-table-name:${index}`}
+                        value={row.name}
+                        onChange={(event) => updateSimulationTableRow(row.id, { name: event.target.value })}
+                      />
+                      <span
+                        className={`table-status ${rowStatus}`}
+                        data-testid={`test-table-status:${index}`}
+                      >
+                        {rowStatus}
+                      </span>
+                      <button
+                        type="button"
+                        className="secondary compact"
+                        aria-label={`Remove test case ${index + 1}`}
+                        data-testid={`test-table-remove:${index}`}
+                        onClick={() => removeSimulationTableRow(row.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <label className="fixture-field">
+                      <span>Context</span>
+                      <textarea
+                        aria-label={`Test case context ${index + 1}`}
+                        data-testid={`test-table-context:${index}`}
+                        spellCheck={false}
+                        value={row.contextText}
+                        onChange={(event) =>
+                          updateSimulationTableRow(row.id, { contextText: event.target.value })}
+                      />
+                    </label>
+                    <label className="fixture-field">
+                      <span>Fixture Overrides</span>
+                      <textarea
+                        aria-label={`Test case fixture overrides ${index + 1}`}
+                        data-testid={`test-table-fixtures:${index}`}
+                        spellCheck={false}
+                        value={row.fixturesText}
+                        onChange={(event) =>
+                          updateSimulationTableRow(row.id, { fixturesText: event.target.value })}
+                      />
+                    </label>
+                    <label className="fixture-field">
+                      <span>Expected Output</span>
+                      <textarea
+                        aria-label={`Test case expected output ${index + 1}`}
+                        data-testid={`test-table-expected:${index}`}
+                        spellCheck={false}
+                        value={row.expectedOutputText}
+                        onChange={(event) =>
+                          updateSimulationTableRow(row.id, { expectedOutputText: event.target.value })}
+                      />
+                    </label>
+                    {(rowResult || rowError) && (
+                      <div className="test-table-result">
+                        <strong>{rowResult?.detail ?? rowError}</strong>
+                        {rowResult?.actualOutput !== undefined && (
+                          <pre data-testid={`test-table-actual:${index}`}>
+                            {JSON.stringify(rowResult.actualOutput, null, 2)}
+                          </pre>
+                        )}
+                        {rowResult?.expectedOutput !== undefined && rowResult.status === 'failed' && (
+                          <pre data-testid={`test-table-expected-result:${index}`}>
+                            {JSON.stringify(rowResult.expectedOutput, null, 2)}
+                          </pre>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          ) : (
+            <p className="muted">No test cases.</p>
+          )}
+        </section>
 
         <h2>Runtime Context</h2>
         <ContextVariablesEditor

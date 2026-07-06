@@ -156,6 +156,21 @@ class BlgeExpressionEvaluatorTest {
         }
     }
 
+    @Nested
+    @DisplayName("built-in functions")
+    class BuiltInFunctions {
+
+        @Test
+        void evaluatesFunctionsUsedByVisualCanvasExamples() {
+            assertThat(evaluator.evaluate("coalesce(ctx.missing, \"fallback\")", Map.of()))
+                    .isEqualTo("fallback");
+            assertThat(((Number) evaluator.evaluate("toNumber(\"728\")", Map.of())).intValue())
+                    .isEqualTo(728);
+            assertThat(((Number) evaluator.evaluate("round(128.45)", Map.of())).intValue())
+                    .isEqualTo(128);
+        }
+    }
+
     // ── canCompile ──────────────────────────────────────────────────────
 
     @Nested

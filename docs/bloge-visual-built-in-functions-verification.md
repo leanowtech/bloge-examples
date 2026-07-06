@@ -22,6 +22,8 @@
 | 导入前语义校验 | `OperatorLibraryValidatorTest` 覆盖合法函数、非法函数名、缺失 signature label、unsupported type、variadic 位置错误 |
 | 前端保留函数目录 | `fetchOperatorCatalog()` 读取 `builtInFunctions`，`api.test.ts` 覆盖 envelope 解析 |
 | Transform 表达式补全/提示 | `AuthorCanvas.tsx` 在 transform 浮层 Expression 下方提供 datalist、函数 chip、signature hint；`AuthorCanvas.test.tsx` 覆盖插入 `coalesce(value, fallback)` 并导出到 `config.assignments` |
+| 内置复杂示例使用函数 | `canvasExamples.ts` 的 Loan、Order、Dashboard 3 个示例 transform assignments 使用 `coalesce(...)`、`toNumber(...)`、`round(...)` |
+| 运行时表达式兜底验证 | `BlgeExpressionEvaluatorTest` 覆盖示例使用的 `coalesce/toNumber/round` 能被 BLOGE expression evaluator 执行 |
 | 用户文档可查 | `docs/bloge-visual-operator-library-schema.md` 和 `docs/bloge-visual-canvas-product-and-system-guide.md` 已补充函数 schema 与页面操作说明 |
 
 ## 验证命令
@@ -31,7 +33,9 @@ python3 -m json.tool docs/schemas/bloge-visual-operator-library.schema.json >/de
 npm test -- src/api.test.ts src/AuthorCanvas.test.tsx
 npm run build
 mvn -f resource-gateway-examples/pom.xml -Dtest=OperatorLibraryValidatorTest,BuiltinOperatorLibraryExporterTest,DefaultVisualOperatorCatalogTest,VisualOperatorCatalogControllerTest test
+mvn -f resource-gateway-examples/pom.xml -Dtest=BlgeExpressionEvaluatorTest,VisualGraphSimulationServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
 mvn -f resource-gateway-examples/pom.xml clean verify
+mvn -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerConnectabilityHandlesLargeTargetWindowInRealBrowser -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 ## 结果
@@ -42,7 +46,10 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 | 前端 API/画布单测 | 30 tests passed |
 | 前端 production build | 通过，`tsc --noEmit && vite build` 成功 |
 | 后端定向测试 | 171 tests passed |
-| Resource Gateway 全量验证 | BUILD SUCCESS，1407 tests run，0 failures，0 errors，2 skipped |
+| 示例函数运行时验证 | `BlgeExpressionEvaluatorTest` 22 tests passed |
+| 示例函数 + simulation 定向验证 | `BlgeExpressionEvaluatorTest,VisualGraphSimulationServiceTest` 32 tests passed |
+| Resource Gateway 全量验证 | 最新一次 `clean verify` 跑到 1408 tests run，0 failures，1 error，2 skipped；唯一错误为 `VisualAuthoringBrowserDomTest#composerConnectabilityHandlesLargeTargetWindowInRealBrowser` 的 Selenium `StaleElementReferenceException` |
+| 浏览器失败用例复跑 | `VisualAuthoringBrowserDomTest#composerConnectabilityHandlesLargeTargetWindowInRealBrowser` 单独复跑 passed，1 test |
 
 ## 差距评估
 

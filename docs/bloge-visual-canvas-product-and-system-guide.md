@@ -50,6 +50,7 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 schema-fir
 3. **编排动作条**：执行 Simulate、Auto Layout、Validate、Export Draft，并查看节点数、边数、输出节点和 fixture 数。
 4. **Graph Contract**：显示当前 graph 的 input/output schema 摘要，告诉系统集成方这张图需要什么上下文、会产出什么结果。
 5. **Runtime Context**：以图形化变量表维护本次模拟的 context；高级用户也可以展开 Advanced JSON。
+6. **Mock Setup / Test Table**：右侧 inspector 会先列出节点级 mock fixture，再用 Test Table 组织多行 context、fixture overrides 和 expected output，用同一张画布批量跑回归。
 
 ### 3.1 演示脚本启动方式
 
@@ -138,6 +139,7 @@ npm run dev
 | Connection Candidate | 服务端根据当前 draft 和 schema 枚举出的可连接目标 |
 | Validate | 对当前 draft 做结构、schema、readiness、action readiness 校验 |
 | Node Fixture | 节点级模拟样本，可 pin mock 输出，也可断言该节点收到的 expected input |
+| Test Table | 画布内的表格测试入口；每行是一组 runtime context、节点 fixture override 和 expected terminal output |
 | Simulate | 混合模拟运行。安全且已实现的内置算子可 real-run；design-only 或高风险算子会 mock-run |
 | Export | 导出当前 draft、publication bundle 或内置 operator library bundle |
 
@@ -250,6 +252,11 @@ operators:
 | Loan policy fallback | 风控 fan-out、双 provider、decision table、response transform | 多资源并行取数、字段级条件绑定、规则表输出进入最终响应 |
 | Order fulfillment lane | 订单列表、foreach enrich、shipping quote、SLA decision | 列表 enrichment、资源参数从上游字段派生、履约 lane 规则 |
 | Personalized dashboard | 用户画像 fan-out 到钱包、推荐、通知，再聚合成 dashboard | 多资源聚合、最终响应映射、mock resource + real transform 的混合模拟 |
+
+这 3 个示例现在不再只是“看结构”。每个示例都内置了两类资产：
+
+- **Built-in function transform**：最终 `bloge:transform` 使用 `coalesce(...)`、`toNumber(...)`、`round(...)` 这类 BLOGE 表达式函数，展示如何把空值兜底、类型转换和数值规整写进可视化映射。
+- **Test Table cases**：每个示例提供 2 行表格测试。第一行通常是 happy path；第二行通过 fixture override 改变下游 mock 数据，覆盖 decline、standard lane、fallback default 等分支。
 
 如果示例依赖的 operatorRef 不在当前 catalog 中，Load 按钮会禁用并提示缺失数量。此时先导入对应算子库，或确认 resource descriptor / built-in operator catalog 是否已经启动完成。示例加载后会替换当前画布；需要保留当前草稿时，先使用 Export Draft 导出。
 
@@ -462,6 +469,51 @@ Transform 浮层中的 Expression 输入框来自 `GET /api/visual/operators` �
 
 fixture 会写入 `GraphDraft.nodeFixtures`，属于 authoring/test evidence，不改变 DSL、fingerprint 或生产执行语义。
 
+### 5.6.1 用 Test Table 做批量 mock 回归
+
+单次 Simulate 适合调试一条路径，但复杂业务编排不能只靠一条样例证明正确。新版 `/author/` 在 `Mock Setup` 下方新增 **Test Table**，把大规模系统化验证前移到画布内。
+
+每一行 Test Table 都包含：
+
+| 字段 | 作用 |
+| --- | --- |
+| Case name | 业务路径名称，例如 `Prime approval path` 或 `Fallback defaults` |
+| Context | 本行传给 `POST /api/visual/graphs/simulate` 的 runtime context |
+| Fixture Overrides | 本行覆盖节点级 Mock Setup 的 fixture，格式是 `{ "nodeId": { "output": ..., "expectedInput": ... } }` |
+| Expected Output | 本行断言的 graph terminal output；留空时只要求 simulate 成功 |
+
+资源节点的 fixture 要模拟完整资源输出，而不是只写 payload 本体。例如资源边和 transform 表达式通常读取 `n1.output.payload.score`，因此覆盖行应写成 `{ "n1": { "output": { "payload": { "score": 650 } } } }`。普通 primitive、transform 或 decision 节点则按节点真实输出结构填写。
+
+使用方式：
+
+1. 加载任意内置复杂示例，例如 `Loan policy fallback`。
+2. 在右侧 `Test Table` 查看系统预置的 2 行 case。
+3. 需要新增路径时点击 `Add Case`，填写新的 context、fixture overrides 和 expected output。
+4. 点击 `Run Table`。画布会逐行调用 transient simulate endpoint，并把每行状态标成 `pending/running/passed/failed`。
+5. 如果某行失败，结果区会显示实际 output 和 expected output，便于判断是 mock 数据、decision table 规则、transform 函数还是预期断言错了。
+6. 批量运行后，最后一行的 run trace 会同步到画布节点 badge 和 Result 面板，因此仍可沿 DAG 排查 real/mocked 节点。
+
+Fixture 合并顺序是：
+
+```text
+Mock Setup 基础 nodeFixtures
+  -> Test Table 当前行 fixtureOverrides
+    -> 本行 simulate request
+```
+
+这使作者可以把“共用的下游 mock 数据”放在节点 Simulation 区，把“某条业务路径特殊的 mock 变化”放在表格行里。工业化测试的关键就在这里：大部分复杂场景不需要真实下游 API，也能稳定跑大量路径验证，避免测试环境被外部系统状态、限流、网络和脏数据拖垮。
+
+Test Table 是画布内的 authoring-side transient runner。需要把测试资产治理起来时，使用后端已经落地的 schema-gated suite/golden 能力：
+
+| 层级 | 入口 | 用途 |
+| --- | --- | --- |
+| 画布内调试 | `/author/` Test Table | 作者快速构造路径、调试 mock、验证 transform/decision 逻辑 |
+| Resource graph suite | `/api/gateway/graphs/contracts/tests/*` | 对正式 resource graph 按 input/output schema、resource mock 和 coverage policy 批量验证 |
+| Operator suite | `/api/visual/operators/tests/*` | 对单个 operator 的 input/config/output schema 和 mock output 断言做表格验证 |
+| Published golden | `/api/visual/golden-cases/*` | 对不可变 publication 做发布级回归和认证 |
+
+更完整的后端表格测试模型见 [Resource Graph Schema Mock Table Testing](./bloge-resource-graph-schema-mock-table-testing.md)。
+
 ### 5.7 第七步：Validate
 
 点击 Validate 后，前端调用：
@@ -589,6 +641,7 @@ GET /api/gateway/examples/scenarios/{graphName}/diagram
 - React Flow 渲染和拖拽体验。
 - Palette 搜索、分组、filter 和 Cmd/Ctrl-K。
 - Node inspector、fixture 编辑、output 选择。
+- Test Table 行编辑、fixture override 合并和逐行 transient simulate 调度。
 - 调用服务端候选连接、连线确认、validate、simulate。
 - 展示 readiness、diagnostics、trace、real/mocked badge。
 - 导出本地 draft JSON。
@@ -598,6 +651,7 @@ GET /api/gateway/examples/scenarios/{graphName}/diagram
 - 私自判定连接一定有效。
 - 私自决定 draft 是否可运行。
 - 私自相信用户导入的 runtime readiness。
+- 在浏览器里直接执行 graph 或替代服务端模拟语义。
 - 真实执行 design-only 或高风险 operator。
 
 ### 7.2 后端职责

@@ -6,14 +6,17 @@ import {
   canvasCoachPrompt,
   canvasNodeFocusState,
   compileFixtureDrafts,
+  compileSimulationTableRows,
   connectionCandidatesMessage,
   connectionDecisionMessage,
   connectionGuideRows,
   endpointFromHandle,
+  evaluateSimulationTableResult,
   fixtureDraftForOperator,
   handleIdForPort,
   indexConnectionCandidates,
   isRunSuccessful,
+  mergeNodeFixtures,
   nodeStatuses,
   operatorPaletteView,
   operatorLibraryImportMessage,
@@ -24,6 +27,7 @@ import {
   simulationChecklist,
   simulationFixtureRows,
   simulationRunSummary,
+  simulationTableSummary,
   simulationTraceRows,
   summarizeCanvas,
   summarizeOperator,
@@ -1668,5 +1672,128 @@ describe('simulation fixtures', () => {
     });
     expect(compiled.errors.c).toContain('Invalid JSON in output');
     expect(compiled.errors.d).toContain('Invalid JSON in expected input');
+  });
+});
+
+describe('simulation table testing', () => {
+  it('compiles table rows into simulate-ready context, fixture overrides, and expected output', () => {
+    const compiled = compileSimulationTableRows([
+      {
+        id: 'case-1',
+        name: 'Happy path',
+        contextText: '{"applicantId":"a-1"}',
+        fixturesText: '{"score":{"output":{"value":720},"expectedInput":{"id":"a-1"}}}',
+        expectedOutputText: '{"decision":"approve"}',
+      },
+      {
+        id: 'case-2',
+        name: 'Bad context',
+        contextText: '[]',
+        fixturesText: '{}',
+        expectedOutputText: '',
+      },
+    ]);
+
+    expect(compiled.cases).toEqual([
+      {
+        id: 'case-1',
+        name: 'Happy path',
+        context: { applicantId: 'a-1' },
+        fixtures: {
+          score: {
+            output: { value: 720 },
+            expectedInput: { id: 'a-1' },
+          },
+        },
+        hasExpectedOutput: true,
+        expectedOutput: { decision: 'approve' },
+      },
+    ]);
+    expect(compiled.errors['case-2']).toContain('Context must be a JSON object');
+  });
+
+  it('merges row-local fixture overrides over base node fixtures', () => {
+    expect(mergeNodeFixtures(
+      {
+        n1: { output: { score: 710 } },
+        n2: { output: { decision: 'manual' } },
+      },
+      {
+        n2: { output: { decision: 'approve' } },
+      },
+    )).toEqual({
+      n1: { output: { score: 710 } },
+      n2: { output: { decision: 'approve' } },
+    });
+  });
+
+  it('evaluates table result by canonical JSON output equality', () => {
+    const response: SimulationResponse = {
+      validated: true,
+      compiled: true,
+      success: true,
+      graphName: 'visualGraph',
+      outputNode: 'n2',
+      output: { b: 2, a: 1 },
+      results: {},
+      statusMap: {},
+      mockedNodeIds: ['n1'],
+      realNodeIds: ['n2'],
+      terminalOutputConforms: true,
+      diagnostics: [],
+      errors: [],
+      generatedDsl: '',
+    };
+
+    expect(evaluateSimulationTableResult({
+      id: 'case-1',
+      name: 'Order-insensitive object',
+      context: {},
+      fixtures: {},
+      hasExpectedOutput: true,
+      expectedOutput: { a: 1, b: 2 },
+    }, response)).toMatchObject({
+      status: 'passed',
+      detail: 'Output matched.',
+    });
+
+    expect(evaluateSimulationTableResult({
+      id: 'case-2',
+      name: 'Mismatch',
+      context: {},
+      fixtures: {},
+      hasExpectedOutput: true,
+      expectedOutput: { a: 1, b: 3 },
+    }, response)).toMatchObject({
+      status: 'failed',
+      detail: 'Output mismatch.',
+      actualOutput: { b: 2, a: 1 },
+    });
+  });
+
+  it('summarizes table run progress', () => {
+    const rows = [
+      { id: 'a', name: 'A', contextText: '{}', fixturesText: '{}', expectedOutputText: '{}' },
+      { id: 'b', name: 'B', contextText: '{}', fixturesText: '{}', expectedOutputText: '{}' },
+    ];
+
+    expect(simulationTableSummary(rows, {}, false)).toMatchObject({
+      state: 'pending',
+      detail: '0/2 passed',
+    });
+    expect(simulationTableSummary(rows, {
+      a: { id: 'a', name: 'A', status: 'passed', detail: 'ok' },
+      b: { id: 'b', name: 'B', status: 'failed', detail: 'bad' },
+    }, false)).toMatchObject({
+      state: 'failed',
+      detail: '1/2 failed',
+    });
+    expect(simulationTableSummary(rows, {
+      a: { id: 'a', name: 'A', status: 'passed', detail: 'ok' },
+      b: { id: 'b', name: 'B', status: 'passed', detail: 'ok' },
+    }, false)).toMatchObject({
+      state: 'passed',
+      detail: '2/2 passed',
+    });
   });
 });

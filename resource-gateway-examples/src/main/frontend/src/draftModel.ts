@@ -245,6 +245,52 @@ export interface FixtureDraftCompilation {
   errors: Record<string, string>;
 }
 
+/** One editable row in the canvas-side mock/table test panel. */
+export interface SimulationTableTestDraftRow {
+  id: string;
+  name: string;
+  contextText: string;
+  fixturesText: string;
+  expectedOutputText: string;
+}
+
+/** Parsed table row ready to run against the transient simulate endpoint. */
+export interface SimulationTableTestCase {
+  id: string;
+  name: string;
+  context: Record<string, unknown>;
+  fixtures: Record<string, NodeFixture>;
+  hasExpectedOutput: boolean;
+  expectedOutput?: unknown;
+}
+
+/** Parsed table rows plus row-local JSON errors. */
+export interface SimulationTableCompilation {
+  cases: SimulationTableTestCase[];
+  errors: Record<string, string>;
+}
+
+export type SimulationTableCaseStatus = 'pending' | 'running' | 'passed' | 'failed';
+
+/** One table row result after running simulate. */
+export interface SimulationTableCaseResult {
+  id: string;
+  name: string;
+  status: SimulationTableCaseStatus;
+  detail: string;
+  actualOutput?: unknown;
+  expectedOutput?: unknown;
+}
+
+export interface SimulationTableSummary {
+  state: 'pending' | 'running' | 'passed' | 'failed';
+  label: string;
+  detail: string;
+  passed: number;
+  failed: number;
+  total: number;
+}
+
 const MAX_SAMPLE_DEPTH = 12;
 const MAX_SAMPLE_NODES = 512;
 const MAX_ARRAY_ITEMS = 25;
@@ -1716,6 +1762,227 @@ export function compileFixtureDrafts(
   }
 
   return { fixtures, errors };
+}
+
+/** Parses the canvas-side table test rows into request-ready cases. */
+export function compileSimulationTableRows(rows: SimulationTableTestDraftRow[]): SimulationTableCompilation {
+  const cases: SimulationTableTestCase[] = [];
+  const errors: Record<string, string> = {};
+
+  for (const row of rows) {
+    const messages: string[] = [];
+    const context = parseTableJsonObject(row.contextText, 'Context', messages);
+    const fixtures = parseTableFixtures(row.fixturesText, messages);
+    const trimmedExpected = row.expectedOutputText.trim();
+    let expectedOutput: unknown;
+
+    if (trimmedExpected) {
+      try {
+        expectedOutput = JSON.parse(trimmedExpected) as unknown;
+      } catch (cause: unknown) {
+        messages.push(`Expected output must be valid JSON: ${jsonErrorMessage(cause)}`);
+      }
+    }
+
+    if (messages.length > 0) {
+      errors[row.id] = messages.join(' ');
+      continue;
+    }
+
+    cases.push({
+      id: row.id,
+      name: row.name.trim() || row.id,
+      context,
+      fixtures,
+      hasExpectedOutput: Boolean(trimmedExpected),
+      ...(trimmedExpected ? { expectedOutput } : {}),
+    });
+  }
+
+  return { cases, errors };
+}
+
+/** Merges authored node fixtures with row-local overrides for one table run. */
+export function mergeNodeFixtures(
+  baseFixtures: Record<string, NodeFixture>,
+  overrideFixtures: Record<string, NodeFixture>,
+): Record<string, NodeFixture> {
+  return {
+    ...baseFixtures,
+    ...overrideFixtures,
+  };
+}
+
+/** Evaluates one simulation response against the row's expected terminal output. */
+export function evaluateSimulationTableResult(
+  testCase: SimulationTableTestCase,
+  response: SimulationResponse,
+): SimulationTableCaseResult {
+  if (!isRunSuccessful(response)) {
+    return {
+      id: testCase.id,
+      name: testCase.name,
+      status: 'failed',
+      detail: response.errors?.[0] || `${response.diagnostics?.length ?? 0} diagnostic(s)`,
+      actualOutput: response.output,
+      ...(testCase.hasExpectedOutput ? { expectedOutput: testCase.expectedOutput } : {}),
+    };
+  }
+
+  if (!testCase.hasExpectedOutput) {
+    return {
+      id: testCase.id,
+      name: testCase.name,
+      status: 'passed',
+      detail: 'Simulation succeeded; no output assertion.',
+      actualOutput: response.output,
+    };
+  }
+
+  if (jsonValuesEqual(response.output, testCase.expectedOutput)) {
+    return {
+      id: testCase.id,
+      name: testCase.name,
+      status: 'passed',
+      detail: 'Output matched.',
+      actualOutput: response.output,
+      expectedOutput: testCase.expectedOutput,
+    };
+  }
+
+  return {
+    id: testCase.id,
+    name: testCase.name,
+    status: 'failed',
+    detail: 'Output mismatch.',
+    actualOutput: response.output,
+    expectedOutput: testCase.expectedOutput,
+  };
+}
+
+/** Summarizes table testing progress for the inspector header. */
+export function simulationTableSummary(
+  rows: SimulationTableTestDraftRow[],
+  results: Record<string, SimulationTableCaseResult>,
+  running: boolean,
+): SimulationTableSummary {
+  const total = rows.length;
+  const passed = rows.filter((row) => results[row.id]?.status === 'passed').length;
+  const failed = rows.filter((row) => results[row.id]?.status === 'failed').length;
+
+  if (running) {
+    return {
+      state: 'running',
+      label: 'Running',
+      detail: `${passed}/${total} passed`,
+      passed,
+      failed,
+      total,
+    };
+  }
+  if (total === 0) {
+    return {
+      state: 'pending',
+      label: 'No cases',
+      detail: 'Add test rows',
+      passed,
+      failed,
+      total,
+    };
+  }
+  if (failed > 0) {
+    return {
+      state: 'failed',
+      label: 'Needs repair',
+      detail: `${failed}/${total} failed`,
+      passed,
+      failed,
+      total,
+    };
+  }
+  if (passed === total) {
+    return {
+      state: 'passed',
+      label: 'All passed',
+      detail: `${passed}/${total} passed`,
+      passed,
+      failed,
+      total,
+    };
+  }
+  return {
+    state: 'pending',
+    label: 'Not run',
+    detail: `${passed}/${total} passed`,
+    passed,
+    failed,
+    total,
+  };
+}
+
+function parseTableJsonObject(
+  text: string,
+  label: string,
+  messages: string[],
+): Record<string, unknown> {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return {};
+  }
+  try {
+    const value = JSON.parse(trimmed) as unknown;
+    if (!isRecord(value)) {
+      messages.push(`${label} must be a JSON object.`);
+      return {};
+    }
+    return value;
+  } catch (cause: unknown) {
+    messages.push(`${label} must be valid JSON: ${jsonErrorMessage(cause)}`);
+    return {};
+  }
+}
+
+function parseTableFixtures(text: string, messages: string[]): Record<string, NodeFixture> {
+  const raw = parseTableJsonObject(text, 'Fixture overrides', messages);
+  const fixtures: Record<string, NodeFixture> = {};
+  for (const [nodeId, fixture] of Object.entries(raw)) {
+    if (!isRecord(fixture)) {
+      messages.push(`Fixture override for ${nodeId} must be an object.`);
+      continue;
+    }
+    fixtures[nodeId] = {
+      output: hasOwn(fixture, 'output') ? fixture.output : null,
+      ...(hasOwn(fixture, 'expectedInput') ? { expectedInput: fixture.expectedInput } : {}),
+    };
+  }
+  return fixtures;
+}
+
+function jsonValuesEqual(left: unknown, right: unknown): boolean {
+  return canonicalJson(left) === canonicalJson(right);
+}
+
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(sortJsonValue(value));
+}
+
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sortJsonValue(item));
+  }
+  if (isRecord(value)) {
+    return Object.keys(value)
+      .sort()
+      .reduce<Record<string, unknown>>((sorted, key) => {
+        sorted[key] = sortJsonValue(value[key]);
+        return sorted;
+      }, {});
+  }
+  return value;
+}
+
+function jsonErrorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function fixtureStateLabel(hasOutputPin: boolean, hasInputAssert: boolean): string {
