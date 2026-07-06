@@ -1,0 +1,977 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/bloge-visual-operator-library.schema.json",
+  "title": "BLOGE Visual Operator Library Authoring Schema",
+  "description": "Authoring-time structural schema for user-supplied bloge.visualOperatorLibrary.v1 documents. The resource-gateway server remains authoritative for semantic validation, fingerprints, readiness, and diagnostics.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "libraryId",
+    "operators"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.visualOperatorLibrary.v1"
+    },
+    "libraryId": {
+      "$ref": "#/$defs/libraryId"
+    },
+    "displayName": {
+      "type": "string"
+    },
+    "version": {
+      "$ref": "#/$defs/semver"
+    },
+    "owner": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ACTIVE",
+        "DEPRECATED",
+        "DISABLED"
+      ],
+      "default": "ACTIVE"
+    },
+    "operators": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/operatorDefinition"
+      }
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+      "default": "1.0.0"
+    },
+    "visualToken": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:(?::|\\.|-)[A-Za-z_][A-Za-z0-9_]*)*$"
+    },
+    "libraryId": {
+      "$ref": "#/$defs/visualToken"
+    },
+    "operatorRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/visualToken"
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "enum": [
+                  "httpResource",
+                  "bloge:decisionTable",
+                  "bloge:transform",
+                  "visualPublication"
+                ]
+              },
+              {
+                "pattern": "^(?:resource|publication):"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "executableOperatorRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/visualToken"
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "enum": [
+                  "httpResource",
+                  "bloge:decisionTable",
+                  "bloge:transform",
+                  "visualPublication"
+                ]
+              },
+              {
+                "pattern": "^(?:resource|publication):"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "portName": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "display": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "user-library",
+            "remote-worker",
+            "ai-tool",
+            "event-source",
+            "message-handler",
+            "webhook"
+          ],
+          "default": "user-library"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "urlTemplate": {
+          "type": "string"
+        },
+        "virtual": {
+          "type": "boolean",
+          "default": false
+        },
+        "libraryId": {
+          "type": "string",
+          "readOnly": true
+        }
+      }
+    },
+    "schemaEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "version",
+        "schema"
+      ],
+      "properties": {
+        "format": {
+          "const": "json-schema"
+        },
+        "version": {
+          "const": "2020-12"
+        },
+        "schema": {
+          "$ref": "#/$defs/jsonSchemaObject"
+        }
+      }
+    },
+    "jsonSchemaObject": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "BLOGE visual authoring accepts a validated subset of JSON Schema 2020-12. See the operator-library schema guide for the supported keywords."
+    },
+    "port": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "schema"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/portName"
+        },
+        "schema": {
+          "$ref": "#/$defs/schemaEnvelope"
+        },
+        "required": {
+          "type": "boolean",
+          "default": false
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "ports": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inputs",
+        "outputs"
+      ],
+      "properties": {
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/port"
+          },
+          "default": []
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/port"
+          },
+          "default": []
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "effect": {
+          "enum": [
+            "PURE",
+            "EXTERNAL",
+            "READ_EXTERNAL",
+            "WRITE_EXTERNAL"
+          ],
+          "default": "PURE"
+        },
+        "idempotency": {
+          "enum": [
+            "DETERMINISTIC",
+            "IDEMPOTENT",
+            "NON_IDEMPOTENT",
+            "UNKNOWN"
+          ],
+          "default": "UNKNOWN"
+        },
+        "streaming": {
+          "type": "boolean",
+          "default": false
+        },
+        "durable": {
+          "type": "boolean",
+          "default": false
+        },
+        "requiresSecrets": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "scopeList": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tenants": {
+          "$ref": "#/$defs/scopeList"
+        },
+        "namespaces": {
+          "$ref": "#/$defs/scopeList"
+        },
+        "environments": {
+          "$ref": "#/$defs/scopeList"
+        }
+      }
+    },
+    "lowering": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "native",
+            "transform",
+            "branch",
+            "design",
+            "remote-worker",
+            "ai-tool",
+            "event-source",
+            "message-handler",
+            "webhook"
+          ],
+          "default": "native"
+        },
+        "operatorRef": {
+          "type": "string",
+          "default": ""
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": true,
+          "default": {}
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "native"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "required": [
+              "operatorRef"
+            ],
+            "properties": {
+              "operatorRef": {
+                "$ref": "#/$defs/executableOperatorRef"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "enum": [
+                  "design",
+                  "remote-worker",
+                  "ai-tool",
+                  "event-source",
+                  "message-handler",
+                  "webhook"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "operatorRef": {
+                "maxLength": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "transform"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "required": [
+                  "assignments"
+                ],
+                "properties": {
+                  "assignments": {
+                    "type": "object",
+                    "minProperties": 1,
+                    "additionalProperties": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "branch"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "required": [
+                  "expression"
+                ],
+                "properties": {
+                  "expression": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "remote-worker"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "required": [
+                  "workerTopic"
+                ],
+                "properties": {
+                  "workerTopic": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "ai-tool"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "required": [
+                  "toolRef"
+                ],
+                "properties": {
+                  "toolRef": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "event-source"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "required": [
+                  "eventType"
+                ],
+                "properties": {
+                  "eventType": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "message-handler"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "required": [
+                  "channel"
+                ],
+                "properties": {
+                  "channel": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "webhook"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "required": [
+                  "method",
+                  "path"
+                ],
+                "properties": {
+                  "method": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "enum": [
+            "ERROR",
+            "WARNING",
+            "INFO"
+          ]
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        },
+        "column": {
+          "type": "integer"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "runtimeReadiness": {
+      "type": "object",
+      "readOnly": true,
+      "additionalProperties": true,
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "level": {
+          "type": "string"
+        },
+        "executable": {
+          "type": "boolean"
+        },
+        "artifactKinds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "title": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    "operatorDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operatorRef",
+        "ports"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.visualOperator.v1",
+          "default": "bloge.visualOperator.v1"
+        },
+        "operatorRef": {
+          "$ref": "#/$defs/operatorRef"
+        },
+        "operatorVersion": {
+          "$ref": "#/$defs/semver"
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "readOnly": true
+        },
+        "display": {
+          "$ref": "#/$defs/display"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "ports": {
+          "$ref": "#/$defs/ports"
+        },
+        "configSchema": {
+          "$ref": "#/$defs/schemaEnvelope"
+        },
+        "capabilities": {
+          "$ref": "#/$defs/capabilities"
+        },
+        "policy": {
+          "$ref": "#/$defs/policy"
+        },
+        "policies": {
+          "$ref": "#/$defs/policy",
+          "deprecated": true
+        },
+        "lowering": {
+          "$ref": "#/$defs/lowering"
+        },
+        "diagnostics": {
+          "type": "array",
+          "readOnly": true,
+          "maxItems": 0,
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        },
+        "runtimeReadiness": {
+          "$ref": "#/$defs/runtimeReadiness"
+        }
+      },
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "policy",
+              "policies"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "lowering": {
+                "properties": {
+                  "mode": {
+                    "const": "branch"
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              }
+            },
+            "required": [
+              "lowering"
+            ]
+          },
+          "then": {
+            "properties": {
+              "ports": {
+                "properties": {
+                  "inputs": {
+                    "minItems": 1
+                  },
+                  "outputs": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "ports": {
+                "properties": {
+                  "outputs": {
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "lowering": {
+                "properties": {
+                  "mode": {
+                    "const": "transform"
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              }
+            },
+            "required": [
+              "lowering"
+            ]
+          },
+          "then": {
+            "properties": {
+              "ports": {
+                "properties": {
+                  "outputs": {
+                    "minItems": 1,
+                    "maxItems": 1,
+                    "prefixItems": [
+                      {
+                        "properties": {
+                          "name": {
+                            "const": "output"
+                          }
+                        },
+                        "required": [
+                          "name"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "lowering": {
+                "properties": {
+                  "mode": {
+                    "const": "remote-worker"
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              }
+            },
+            "required": [
+              "lowering"
+            ]
+          },
+          "then": {
+            "required": [
+              "source"
+            ],
+            "properties": {
+              "source": {
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "remote-worker"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "lowering": {
+                "properties": {
+                  "mode": {
+                    "const": "ai-tool"
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              }
+            },
+            "required": [
+              "lowering"
+            ]
+          },
+          "then": {
+            "required": [
+              "source"
+            ],
+            "properties": {
+              "source": {
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "ai-tool"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "lowering": {
+                "properties": {
+                  "mode": {
+                    "const": "event-source"
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              }
+            },
+            "required": [
+              "lowering"
+            ]
+          },
+          "then": {
+            "required": [
+              "source"
+            ],
+            "properties": {
+              "source": {
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "event-source"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "lowering": {
+                "properties": {
+                  "mode": {
+                    "const": "message-handler"
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              }
+            },
+            "required": [
+              "lowering"
+            ]
+          },
+          "then": {
+            "required": [
+              "source"
+            ],
+            "properties": {
+              "source": {
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "message-handler"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "lowering": {
+                "properties": {
+                  "mode": {
+                    "const": "webhook"
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              }
+            },
+            "required": [
+              "lowering"
+            ]
+          },
+          "then": {
+            "required": [
+              "source"
+            ],
+            "properties": {
+              "source": {
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "webhook"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

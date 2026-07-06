@@ -254,8 +254,12 @@ node fetchApplicant : httpResource {
 
 ## 8. Operator Catalog 设计
 
-本章给出架构层面的 catalog 形态。字段级合同、校验规则、API 请求响应和迁移路径见
-[BLOGE 可视化编排协议草案 v1](./bloge-visual-orchestration-protocol-v1.md)。
+本章给出架构层面的 catalog 形态。当前用户算子库的字段级合同、lowering 约束和
+机器校验 schema 见 [BLOGE 可视化算子库 Schema 定义](./bloge-visual-operator-library-schema.md)
+与 [bloge-visual-operator-library.schema.json](./schemas/bloge-visual-operator-library.schema.json)；
+API 请求响应和迁移路径见 [BLOGE 可视化编排协议草案 v1](./bloge-visual-orchestration-protocol-v1.md)。
+下方 `bloge.operatorCatalog.v1` / `inputSchema` / `outputSchema` 示例保留为早期架构草案，
+不作为当前 wire contract 使用。
 
 ### 8.1 OperatorDefinition v1
 

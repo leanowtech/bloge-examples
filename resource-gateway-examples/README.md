@@ -94,7 +94,9 @@ be expressed cleanly as a descriptor-backed resource.
 To add a user-supplied visual operator library:
 
 1. Open `/author/`.
-2. Paste a `bloge.visualOperatorLibrary.v1` JSON or YAML document.
+2. Paste a `bloge.visualOperatorLibrary.v1` JSON or YAML document that follows
+   the [operator library schema guide](../docs/bloge-visual-operator-library-schema.md)
+   and [machine schema](../docs/schemas/bloge-visual-operator-library.schema.json).
 3. Validate, import, drag operators, wire schemas, simulate, and export.
 
 ## Build And Verify

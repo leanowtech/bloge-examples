@@ -19,7 +19,10 @@
 > `bloge.visualGraphPublicationExport.v1` 和
 > `bloge.visualGraphPublicationImportResult.v1`；operator usage index 当前为
 > `bloge.visualOperatorUsage.v1`。继续实现时以代码和实现状态审计为准，
-> 不要把早期草案名误认为当前 API 字段。
+> 不要把早期草案名误认为当前 API 字段。用户算子库的当前字段级合同见
+> [BLOGE 可视化算子库 Schema 定义](./bloge-visual-operator-library-schema.md)，
+> 机器校验入口见
+> [bloge-visual-operator-library.schema.json](./schemas/bloge-visual-operator-library.schema.json)。
 
 ## 1. 协议目标
 

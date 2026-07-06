@@ -11,7 +11,7 @@ Status: Implemented for resource-gateway-examples core loop · Scope: resource-g
 | Idea | State | Evidence |
 |---|---|---|
 | 1 Generic schema-constrained canvas | Built | `visual/` 13 sub-pkgs |
-| 2 Operator-library JSON Schema | Built | `bloge.visualOperatorLibrary.v1` |
+| 2 Operator-library JSON Schema | Built | `bloge.visualOperatorLibrary.v1`，字段合同见 [BLOGE 可视化算子库 Schema 定义](./bloge-visual-operator-library-schema.md)，机器 schema 见 [bloge-visual-operator-library.schema.json](./schemas/bloge-visual-operator-library.schema.json) |
 | 3 Valid-but-unimplemented → logical correctness | Built | `lowering.mode=design`, ADR-007 |
 | 4 **Mock-invoke unimplemented ops** | Built | `visual/simulation/*`; `POST /api/visual/graphs/simulate`; Custom Composer Simulate action |
 | 5 Export default registry as library | Built | `GET /api/visual-operator-libraries/builtin/export`; portable bundle import path |

@@ -116,7 +116,7 @@ npm run dev
 
 | 概念 | 含义 |
 | --- | --- |
-| Operator Library | 用户或系统提供的算子库，合同版本为 `bloge.visualOperatorLibrary.v1` |
+| Operator Library | 用户或系统提供的算子库，合同版本为 `bloge.visualOperatorLibrary.v1`；字段定义见 [BLOGE 可视化算子库 Schema 定义](./bloge-visual-operator-library-schema.md) |
 | Operator | 单个可编排算子，至少有 `operatorRef`，通常包含展示信息、输入/输出端口、schema、lowering |
 | Port Schema | 输入/输出端口的 JSON Schema envelope，画布用它判断可连接性 |
 | GraphDraft | 画布中的业务流程草稿，合同版本为 `bloge.visualGraphDraft.v1` |
@@ -133,6 +133,7 @@ npm run dev
 ### 5.1 第一步：准备算子库
 
 最小可用算子库可以是 schema-only 的 design operator。它还没有运行时实现，也能进入画布参与设计、连接校验和模拟。
+完整字段合同、lowering 约束和机器校验 schema 见 [BLOGE 可视化算子库 Schema 定义](./bloge-visual-operator-library-schema.md) 与 [bloge-visual-operator-library.schema.json](./schemas/bloge-visual-operator-library.schema.json)。
 
 ```yaml
 schemaVersion: bloge.visualOperatorLibrary.v1
