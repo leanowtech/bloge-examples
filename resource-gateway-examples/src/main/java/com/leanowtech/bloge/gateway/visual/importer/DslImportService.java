@@ -1138,7 +1138,7 @@ public class DslImportService {
         Map<String, Object> semantic = new LinkedHashMap<>();
         semantic.put("graphName", draft.graphName());
         semantic.put("inputSchema", draft.inputSchema());
-        semantic.put("outputSchema", graphContractValue(draft, "outputSchema"));
+        semantic.put("outputSchema", draft.outputSchema());
         semantic.put("nodes", draft.nodes().stream()
                 .map(DslImportService::nodeSemantic)
                 .toList());
@@ -1188,14 +1188,6 @@ public class DslImportService {
             result.put(entry.getKey(), entry.getValue());
         }
         return result;
-    }
-
-    private static Object graphContractValue(GraphDraft draft, String key) {
-        Object rawContract = draft.visualLayout().get("graphContract");
-        if (!(rawContract instanceof Map<?, ?> contract)) {
-            return "";
-        }
-        return contract.get(key);
     }
 
     private static String canonicalValue(Object value) {

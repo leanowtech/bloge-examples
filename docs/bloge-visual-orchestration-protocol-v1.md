@@ -17,7 +17,9 @@
 > `bloge.visualGraphReadiness.v1`、`bloge.visualGraphActionReadiness.v1`、
 > `bloge.visualGraphDraftDependencies.v1`、`bloge.visualGraphPublication.v1`、
 > `bloge.visualGraphPublicationExport.v1` 和
-> `bloge.visualGraphPublicationImportResult.v1`；operator usage index 当前为
+> `bloge.visualGraphPublicationImportResult.v1`；存量 DSL 迁移入口当前为
+> `bloge.dslVisualProjection.v1`、`bloge.dslRewriteGate.v1` 和
+> `bloge.visualGraphDraftImportResult.v1`；operator usage index 当前为
 > `bloge.visualOperatorUsage.v1`。继续实现时以代码和实现状态审计为准，
 > 不要把早期草案名误认为当前 API 字段。用户算子库的当前字段级合同见
 > [BLOGE 可视化算子库 Schema 定义](./bloge-visual-operator-library-schema.md)，
@@ -30,9 +32,10 @@
 
 1. `bloge.visualOperator.v1` / `bloge.visualOperatorLibrary.v1` / `bloge.visualOperatorCatalog.v1` / `bloge.visualOperatorUsage.v1`：用户、运行时或 resource gateway 暴露给画布的算子定义、算子库、catalog response 和 operatorRef usage index。
 2. `bloge.visualGraphDraft.v1` / `bloge.visualGraphReadiness.v1` / `bloge.visualGraphActionReadiness.v1` / `bloge.visualGraphDraftDependencies.v1`：画布编辑中的图草稿模型、图级 runtime/design readiness、compile/run/publication 动作准入，以及 stored draft 的当前 catalog 依赖审阅报告。
-3. `VisualDiagnostic`：校验、编译、策略和运行错误如何定位回画布。
-4. `ResourceDesignContract`：`ResourceDescriptor` 如何补足设计时 schema，投影成虚拟算子。
-5. `bloge.visualGraphPublication.v1` / `bloge.visualGraphPublicationExport.v1` / `bloge.visualGraphPublicationImportResult.v1`：冻结 DSL、draft、operator snapshots、fingerprints、layout 和报告的不可变发布物，以及跨环境 portable bundle。
+3. `bloge.dslVisualProjection.v1` / `bloge.dslRewriteGate.v1` / `bloge.visualGraphDraftImportResult.v1`：存量 `.bloge` DSL 以 schema-neutral request 投影、预检源码替换和保存为 governed draft revision 的迁移合同。
+4. `VisualDiagnostic`：校验、编译、策略和运行错误如何定位回画布。
+5. `ResourceDesignContract`：`ResourceDescriptor` 如何补足设计时 schema，投影成虚拟算子。
+6. `bloge.visualGraphPublication.v1` / `bloge.visualGraphPublicationExport.v1` / `bloge.visualGraphPublicationImportResult.v1`：冻结 DSL、draft、operator snapshots、fingerprints、layout 和报告的不可变发布物，以及跨环境 portable bundle。
 
 边界判断：
 
@@ -69,12 +72,25 @@ artifact path，不回显 secret value。
 
 ### 3.1 schemaVersion
 
-所有协议对象必须带 `schemaVersion`：
+所有持久化或跨系统传递的协议对象必须带 `schemaVersion`。当前
+resource-gateway wire contract 的核心版本包括：
 
-- `bloge.operatorCatalog.v1`
-- `bloge.graphDraft.v1`
+- `bloge.visualOperator.v1`
+- `bloge.visualOperatorLibrary.v1`
+- `bloge.visualOperatorCatalog.v1`
+- `bloge.visualOperatorUsage.v1`
+- `bloge.visualGraphDraft.v1`
+- `bloge.visualGraphReadiness.v1`
+- `bloge.visualGraphActionReadiness.v1`
+- `bloge.visualGraphDraftDependencies.v1`
+- `bloge.dslVisualProjection.v1`
+- `bloge.dslRewriteGate.v1`
+- `bloge.visualGraphDraftImportResult.v1`
 - `bloge.visualDiagnostic.v1`
 - `bloge.resourceDesignContract.v1`
+- `bloge.visualGraphPublication.v1`
+- `bloge.visualGraphPublicationExport.v1`
+- `bloge.visualGraphPublicationImportResult.v1`
 
 兼容规则：
 
@@ -565,7 +581,7 @@ type、headers type、tags 和 projection readiness，浏览器可先 Discover �
 
 ```json
 {
-  "schemaVersion": "bloge.graphDraft.v1",
+  "schemaVersion": "bloge.visualGraphDraft.v1",
   "draftId": "draft-01H...",
   "revision": 7,
   "graphName": "customLoanPolicy",
@@ -573,13 +589,25 @@ type、headers type、tags 和 projection readiness，浏览器可先 Discover �
   "namespace": "local",
   "environment": "dev",
   "status": "DRAFT",
-  "graphInputSchema": {
-    "format": "bloge-schema",
+  "inputSchema": {
+    "format": "json-schema",
+    "version": "2020-12",
     "schema": {
-      "kind": "object",
+      "type": "object",
       "properties": {
-        "applicantId": { "kind": "string" },
-        "requestedAmount": { "kind": "decimal" }
+        "applicantId": { "type": "string" },
+        "requestedAmount": { "type": "number" }
+      }
+    }
+  },
+  "outputSchema": {
+    "format": "json-schema",
+    "version": "2020-12",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "decision": { "type": "string" },
+        "approved": { "type": "boolean" }
       }
     }
   },
@@ -621,13 +649,19 @@ type、headers type、tags 和 projection readiness，浏览器可先 Discover �
 }
 ```
 
-`graphInputSchema` 是图的设计时输入契约，不是某次调试 payload 的影子。
+`inputSchema` 是图的设计时输入契约，不是某次调试 payload 的影子。
 resource-gateway 示例在浏览器里把它暴露为独立的 Graph Input Schema 编辑区：
 默认值可以从初始 Context JSON 推断，但之后 schema 和 Context JSON 分离保存。
 浏览器在激活新 schema 前会执行与服务端 blocking 规则同口径的基础结构预检，
 并以内联 diagnostics 明细展示问题，避免把明显非法的 schema 误标为 valid。
 拖拽连线、`ctx.*` source picker、`contextPath` binding 校验和服务端 compile/run
 gate 都以这个 schema 为准；Context JSON 只作为一次运行或调试的样例输入。
+
+`outputSchema` 是图对外集成的正式输出契约。DSL `output { ... }`、内置复杂示例和
+画布当前输出节点推导都应落到这个一等字段。`visualLayout.graphContract.outputSchema`
+只是一份 UI/历史兼容副本：旧 draft 只有 layout 副本时 reader 可以回填到
+`outputSchema`，但新写入、DSL 生成、validation、simulation、export 和 rewrite
+semantic fingerprint 必须以 `GraphDraft.outputSchema` 为权威。
 
 ### 7.2 DraftStatus
 
@@ -738,7 +772,7 @@ gate 都以这个 schema 为准；Context JSON 只作为一次运行或调试的
 | kind | 字段 | 发布前校验 |
 | --- | --- | --- |
 | `constant` | `value` | value 类型满足 target schema |
-| `contextPath` | `path` | path 能从 graphInputSchema 推导，且推导 schema 与 target schema 兼容；无法推导时必须标记 dynamic/opaque |
+| `contextPath` | `path` | path 能从 `GraphDraft.inputSchema` 推导，且推导 schema 与 target schema 兼容；无法推导时必须标记 dynamic/opaque |
 | `nodePath` | `nodeId`、`sourcePort`、`targetPort`、`targetPath`、`path` | 上游存在、端口存在、可达、source/target schema 兼容 |
 | `expression` | `expr` | 语法、引用、结果类型校验；示例实现必须至少阻断不存在的 `ctx.*` / `node.output.*` 引用，并对纯引用表达式执行 source/target schema 兼容校验 |
 | `objectTemplate` | `fields` | 每个字段递归校验 |
@@ -2736,7 +2770,122 @@ drop 或写入 binding 前调用 `/api/visual/connections/check`，因为候选�
 某一时刻 draft 快照的读模型；任何本地编辑、revision rebase 或 catalog drift 都可能
 使候选结论失效。
 
-### 10.8 发布不可变 artifact
+### 10.8 存量 DSL 导入与源码替换预检
+
+```http
+POST /api/visual/dsl-imports/preview
+POST /api/visual/dsl-imports/rewrite-gate
+POST /api/visual/dsl-imports/commit
+Content-Type: application/json
+```
+
+这三个端点使用同一个 schema-neutral request。画布不关心 schema 是由
+Maven plugin、平台 registry、OpenAPI/AsyncAPI adapter、手写 JSON/YAML 还是其他工具生成；
+只要请求中的 `operatorLibraryIds` 指向已导入的合法 visual libraries，或
+`inlineLibraries[]` 本身能通过 `bloge.visualOperatorLibrary.v1` 校验，DSL 就可以被
+服务端投影为 visual draft。
+
+请求：
+
+```json
+{
+  "sourceId": "loan-approval.bloge",
+  "dsl": "graph loanApproval { input { score: Int } output { approved: Boolean } transform response { approved = ctx.score >= 700 } }",
+  "operatorLibraryIds": ["risk-policy"],
+  "inlineLibraries": [],
+  "mode": "preview",
+  "layout": {}
+}
+```
+
+`catalogIds` 和 `libraryIds` 是 `operatorLibraryIds` 的兼容 alias。`inlineLibraries`
+是 preview/commit/rewrite 本次请求的临时 effective catalog，不会被写入 operator
+library registry；结构校验失败的 inline library 不得进入投影绑定。
+
+`preview` 响应：
+
+```json
+{
+  "schemaVersion": "bloge.dslVisualProjection.v1",
+  "sourceId": "loan-approval.bloge",
+  "draft": {
+    "schemaVersion": "bloge.visualGraphDraft.v1",
+    "graphName": "loanApproval",
+    "inputSchema": { "format": "json-schema", "version": "2020-12", "schema": { "type": "object" } },
+    "outputSchema": { "format": "json-schema", "version": "2020-12", "schema": { "type": "object" } },
+    "nodes": [],
+    "edges": [],
+    "visualLayout": {
+      "import": { "schemaNeutral": true },
+      "graphContract": {
+        "outputSchema": { "format": "json-schema", "version": "2020-12", "schema": { "type": "object" } }
+      }
+    }
+  },
+  "sourceMap": {
+    "nodes": {},
+    "edges": {},
+    "bindings": {}
+  },
+  "coverage": {
+    "memberCount": 1,
+    "projectedNodeCount": 1,
+    "edgeCount": 0,
+    "unsupportedSyntaxCount": 0,
+    "missingOperatorCount": 0,
+    "missingFunctionCount": 0
+  },
+  "roundTrip": {
+    "supported": true,
+    "status": "SUPPORTED",
+    "message": "Generated DSL re-parsed into the same canonical visual semantics as the source DSL.",
+    "generatedDsl": "graph loanApproval { ... }",
+    "sourceFingerprint": "canonical-visual-semantics-a",
+    "generatedFingerprint": "canonical-visual-semantics-a",
+    "diagnostics": []
+  },
+  "diagnostics": []
+}
+```
+
+`draft.inputSchema` 来自 DSL graph `input { ... }`；`draft.outputSchema` 来自
+DSL graph `output { ... }`，并是 graph 级输出合同的正式字段。
+`draft.visualLayout.graphContract.outputSchema` 只为旧 UI/旧导出保留兼容副本。
+semantic round-trip 的 canonical visual semantics 必须读取 `draft.outputSchema`，
+不得读取 layout 兼容副本；否则旧 layout 会污染 rewrite gate 的源码替换证据。
+
+`roundTrip.status` 只能表达语义证据强度：
+
+| status | 含义 | rewrite gate |
+| --- | --- | --- |
+| `SUPPORTED` | generated DSL 可重新 parse/project，并得到同一 canonical visual semantics | `ALLOW_REWRITE` |
+| `DRIFT` | generated DSL 可解析，但 canonical visual semantics 与源 projection 不同 | `BLOCK_SEMANTIC_DRIFT` |
+| `PARTIAL` | import 或 generation 有 lossy/unsupported 证据，不能证明等价 | `BLOCK_INCOMPLETE_EVIDENCE` |
+| `NOT_ASSESSED` | 本次没有执行 round-trip，例如内部递归 projection | `BLOCK_NOT_ASSESSED` |
+
+`rewrite-gate` 不保存 draft、不写源码，只把 preview 证据压成 source replacement
+决策：
+
+```json
+{
+  "schemaVersion": "bloge.dslRewriteGate.v1",
+  "sourceId": "loan-approval.bloge",
+  "allowed": false,
+  "decision": "BLOCK_SEMANTIC_DRIFT",
+  "message": "DSL rewrite is blocked because generated DSL semantics drift from the source projection.",
+  "generatedDsl": "graph loanApproval { ... }",
+  "roundTrip": {},
+  "diagnostics": []
+}
+```
+
+`commit` 使用同一 request 在服务端重新投影，不信任浏览器回传的 preview draft。
+parse failure 和 unsupported root 会拒绝保存；missing operator/function 会保存为
+可修复迁移 draft，并通过 validation/dependency report 暴露。成功响应使用
+`bloge.visualGraphDraftImportResult.v1`，返回 repository 分配的 `draftId/revision`、
+`validation` 和 `dependencyReport`。
+
+### 10.9 发布不可变 artifact
 
 ```http
 POST /api/visual/drafts/{draftId}/publish
@@ -2819,7 +2968,7 @@ diagnostic 且调用方用 `ackWarnings=true` 继续发布时，服务端要求 
 }
 ```
 
-### 10.9 发布物跨环境 Bundle
+### 10.10 发布物跨环境 Bundle
 
 不可变 publication 既可能是可执行制品，也可能是 schema-valid 但尚未 runtime-bound
 的 `DESIGN` 制品。后者如果只能停留在当前环境，就不是真正的一等资产。因此当前
@@ -3072,7 +3221,7 @@ flowchart TD
 - target path 不存在。
 - 同一节点内多个 binding 写入同一 `targetPort + targetPath`，或 root/path 前缀重叠。
 - data edge 没有对应语义依赖，或 `nodePath` binding 没有对应 data edge。
-- contextPath 在严格 graphInputSchema 中不存在。
+- contextPath 在严格 `GraphDraft.inputSchema` 中不存在。
 - expression 引用的 `ctx.*` 或 `node.output.*` path 不存在。
 - constant 值不满足 target schema。
 - binding kind 不在允许列表中。
@@ -3223,5 +3372,5 @@ MVP 可以用 H2，但模型要按未来迁移设计。
 | GraphDraft 是否作为长期一等模型 | 是 | 前端拼 DSL 无法承载实时编辑和诊断定位 |
 | `visualLayout` 是否承载业务语义 | 否 | 避免第二真相 |
 | 缺 payload schema 是否允许发布 | 默认否 | 否则 schema 约束名存实亡 |
-| DSL 反向导入是否进 MVP | 否 | 先保证 GraphDraft -> DSL 单向稳定 |
+| DSL 反向导入是否进 MVP | 已进入迁移切片 | 当前已支持 schema-neutral preview/commit/rewrite-gate；仍不承诺自动覆盖源码，源码替换必须经过 rewrite gate、人工/VCS/source-writer 治理 |
 | AI 生成是否进 MVP | 否 | 必须先有确定性合同和校验链 |

@@ -334,7 +334,7 @@ Source map 是迁移可用性的关键，不是锦上添花：
 | imports | import session dependencies |
 | comments/description | node/display/revision metadata |
 
-当前 `GraphDraft` 已经同时具备一等 `inputSchema` 和 `outputSchema`。历史 draft 如果只有 `visualLayout.graphContract.outputSchema`，后端 record 构造器和前端 `fromGraphDraft` 会自动回填到一等输出合同；新导出的 draft 会同时携带 `outputSchema` 与兼容 layout 副本。
+当前 `GraphDraft` 已经同时具备一等 `inputSchema` 和 `outputSchema`。历史 draft 如果只有 `visualLayout.graphContract.outputSchema`，后端 record 构造器和前端 `fromGraphDraft` 会自动回填到一等输出合同；新导出的 draft 会同时携带 `outputSchema` 与兼容 layout 副本。语义 round-trip 和 rewrite gate 的 canonical visual semantics 以一等 `draft.outputSchema` 为准，不能再读取 layout 兼容副本作为输出合同来源。
 
 ### 7.2 普通 node
 
@@ -580,7 +580,7 @@ resource-gateway 当前实现口径：
 - `transform` 投影为 `bloge:transform` 节点，字段表达式写入 `config.assignments`。
 - `decision_table` 投影为 `bloge:decisionTable` 节点，入参表达式写入 `config.inputs`，入边数据会成为 decision table condition 可引用的局部参数。
 - DSL graph `input { ... }` 写入 `draft.inputSchema`；DSL graph `output { ... }` 写入一等 `draft.outputSchema`，并同步保留 `draft.visualLayout.graphContract.outputSchema` 兼容副本。
-- preview 会在无阻断 syntax 时执行 semantic round-trip：`GraphDraft -> GraphDraftDslGenerator -> generated DSL -> parseAst -> projectGraph`，比较源 projection 与 generated projection 的 canonical visual semantics 指纹；结果写入 `roundTrip.status`。
+- preview 会在无阻断 syntax 时执行 semantic round-trip：`GraphDraft -> GraphDraftDslGenerator -> generated DSL -> parseAst -> projectGraph`，比较源 projection 与 generated projection 的 canonical visual semantics 指纹；该指纹覆盖 graph name、`inputSchema`、一等 `outputSchema`、节点输入/config、边和 graph output selection，忽略坐标、source map、fixtures 与 `visualLayout.graphContract.outputSchema` 兼容副本；结果写入 `roundTrip.status`。
 - `foreach`、`loop`、`parallel`、`wait`、`await`、`script`、extension 等复杂语法第一版以 warning diagnostic 暴露，不静默丢弃。
 
 ### 9.3 DSL import commit

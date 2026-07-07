@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -109,6 +110,31 @@ class DslImportServiceTest {
         assertThat(projection.roundTrip().sourceFingerprint()).isNotBlank();
         assertThat(projection.roundTrip().generatedFingerprint())
                 .isEqualTo(projection.roundTrip().sourceFingerprint());
+    }
+
+    @Test
+    void semanticFingerprintUsesFirstClassOutputSchemaInsteadOfLegacyLayoutCopy() throws Exception {
+        SchemaEnvelope inputSchema = SchemaEnvelope.object(Map.of(
+                "score", Map.of("type", "integer")
+        ), List.of("score"));
+        SchemaEnvelope currentOutput = SchemaEnvelope.object(Map.of(
+                "decision", Map.of("type", "boolean")
+        ), List.of("decision"));
+        SchemaEnvelope staleLayoutOutput = SchemaEnvelope.object(Map.of(
+                "legacy", Map.of("type", "string")
+        ), List.of("legacy"));
+        SchemaEnvelope nextOutput = SchemaEnvelope.object(Map.of(
+                "decision", Map.of("type", "string")
+        ), List.of("decision"));
+
+        GraphDraft canonical = draftWithOutputSchema(inputSchema, currentOutput, staleLayoutOutput);
+        GraphDraft sameFirstClassContract = draftWithOutputSchema(inputSchema, currentOutput, SchemaEnvelope.opaque());
+        GraphDraft changedFirstClassContract = draftWithOutputSchema(inputSchema, nextOutput, staleLayoutOutput);
+
+        assertThat(semanticFingerprint(canonical))
+                .isEqualTo(semanticFingerprint(sameFirstClassContract));
+        assertThat(semanticFingerprint(canonical))
+                .isNotEqualTo(semanticFingerprint(changedFirstClassContract));
     }
 
     @Test
@@ -222,6 +248,37 @@ class DslImportServiceTest {
                 .visualLayout()
                 .get("graphContract");
         return (SchemaEnvelope) graphContract.get("outputSchema");
+    }
+
+    private static GraphDraft draftWithOutputSchema(SchemaEnvelope inputSchema,
+                                                    SchemaEnvelope outputSchema,
+                                                    SchemaEnvelope layoutOutputSchema) {
+        return new GraphDraft(
+                GraphDraft.SCHEMA_VERSION,
+                "",
+                0,
+                "contractFingerprint",
+                "demo-tenant",
+                "local",
+                "local",
+                GraphDraft.STATUS_DRAFT,
+                inputSchema,
+                outputSchema,
+                List.of(),
+                List.of(),
+                Map.of("graphContract", Map.of("outputSchema", layoutOutputSchema)),
+                Map.of(),
+                GraphDraft.OutputSelection.empty(),
+                Map.of(),
+                Map.of(),
+                GraphDraft.RevisionMetadata.empty()
+        );
+    }
+
+    private static String semanticFingerprint(GraphDraft draft) throws Exception {
+        Method method = DslImportService.class.getDeclaredMethod("semanticFingerprint", GraphDraft.class);
+        method.setAccessible(true);
+        return (String) method.invoke(null, draft);
     }
 
     private static String eligibilityDsl() {

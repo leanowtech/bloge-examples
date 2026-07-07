@@ -406,6 +406,11 @@ rewrite gate 返回 `bloge.dslRewriteGate.v1`。`allowed=true` / `decision=ALLOW
 | `diagnostics` | parse、missing operator、missing function、unsupported syntax、schema ref 等迁移诊断 |
 | `DslRewriteGateResult.allowed/decision/generatedDsl` | `rewrite-gate` 的源码替换预检结论、机器可读阻断原因和本次评估的 generated DSL |
 
+`roundTrip.sourceFingerprint` / `generatedFingerprint` 比较的是 canonical visual semantics：
+graph name、`draft.inputSchema`、一等 `draft.outputSchema`、节点输入/config、边和 graph output
+selection。坐标、source map、fixtures、描述文本和 `visualLayout.graphContract.outputSchema`
+兼容副本不参与语义等价判断。
+
 注意：如果 DSL operatorRef 含有冒号，BLOGE DSL 里要用字符串形式，例如 `node eligibility : "risk:eligibility"`；否则冒号会被 DSL 语法当成节点 id 与 operatorRef 的分隔符。
 
 更完整的迁移专线落地后，还应补齐：
