@@ -102,6 +102,20 @@ describe('AuthorCanvas operator-library intake', () => {
         imported = true;
         return jsonResponse(operatorLibrary(), { status: 201 });
       }
+      if (url === '/api/visual/dsl-imports/preview') {
+        expect(init).toMatchObject({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const body = JSON.parse(String(init?.body ?? '{}'));
+        expect(body).toMatchObject({
+          sourceId: 'migrated-eligibility.bloge',
+          mode: 'preview',
+        });
+        expect(body.dsl).toContain('graph migratedEligibility');
+        expect(body.operatorLibraryIds).toEqual(imported ? ['risk-policy'] : []);
+        return jsonResponse(dslProjection());
+      }
       throw new Error(`Unexpected fetch: ${url}`);
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -176,6 +190,66 @@ describe('AuthorCanvas operator-library intake', () => {
 
     expect(source.value).toContain('"libraryId": "order-fulfillment-starter"');
     expect(source.value).toContain('"operatorRef": "orders:route-sla"');
+  });
+
+  it('renders legacy DSL into the same editable canvas draft when schema structures are valid', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/visual/operators'));
+    await click(query<HTMLButtonElement>('[data-testid="legacy-dsl-preview"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="legacy-dsl-notice"]').textContent)
+        .toContain('Rendered 2 nodes / 1 edges.'),
+    );
+
+    expect(query('[data-testid="legacy-dsl-coverage"]').textContent).toContain('2 nodes');
+    expect(query('[data-testid="author-graph-contract"]').textContent)
+      .toContain('DSL migrated-eligibility.bloge');
+    expect(query('[data-testid="author-graph-contract"]').textContent).toContain('eligible');
+    expect(query<HTMLInputElement>('[data-testid="context-variable-path:0"]').value).toBe('score');
+    expect(query('[data-testid="canvas-node:eligibility"][data-operator-ref="risk:eligibility"]').textContent)
+      .toContain('eligibility');
+    expect(query('[data-testid="canvas-node:response"][data-operator-ref="bloge:transform"]').textContent)
+      .toContain('response');
+
+    const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
+    expect(exported).toMatchObject({
+      graphName: 'migratedEligibility',
+      inputSchema: {
+        schema: {
+          properties: {
+            score: { type: 'integer' },
+            amount: { type: 'number' },
+          },
+        },
+      },
+      visualLayout: {
+        graphContract: {
+          schemaSource: 'dsl',
+          outputSchema: {
+            schema: {
+              properties: {
+                eligible: { type: 'boolean' },
+              },
+            },
+          },
+        },
+      },
+      operatorFingerprints: { eligibility: 'fp-risk-eligibility' },
+      operatorSnapshots: {
+        eligibility: { operatorRef: 'risk:eligibility' },
+        response: { operatorRef: 'bloge:transform' },
+      },
+    });
+    expect(exported.edges[0]).toMatchObject({
+      kind: 'data',
+      source: { nodeId: 'eligibility', port: 'output', path: 'eligible' },
+      target: { nodeId: 'response', port: 'inputs', path: 'eligible' },
+    });
   });
 });
 
@@ -1580,6 +1654,96 @@ function operatorLibrary(): OperatorLibrary {
     libraryId: 'risk-policy',
     displayName: 'Risk policy',
     operators: [eligibilityOperator()],
+  };
+}
+
+function dslProjection(): unknown {
+  return {
+    schemaVersion: 'bloge.dslVisualProjection.v1',
+    sourceId: 'migrated-eligibility.bloge',
+    draft: {
+      schemaVersion: 'bloge.visualGraphDraft.v1',
+      graphName: 'migratedEligibility',
+      inputSchema: schema({
+        type: 'object',
+        properties: {
+          score: { type: 'integer' },
+          amount: { type: 'number' },
+        },
+        required: ['score', 'amount'],
+      }),
+      nodes: [
+        {
+          id: 'eligibility',
+          operatorRef: 'risk:eligibility',
+          label: 'eligibility',
+          inputs: {
+            score: { kind: 'contextPath', path: 'score', targetPort: 'inputs', targetPath: 'score' },
+            amount: { kind: 'contextPath', path: 'amount', targetPort: 'inputs', targetPath: 'amount' },
+          },
+          position: { x: 120, y: 120 },
+        },
+        {
+          id: 'response',
+          operatorRef: 'bloge:transform',
+          label: 'response',
+          config: {
+            assignments: [
+              { field: 'eligible', expression: 'eligibility.output.eligible' },
+              { field: 'ruleId', expression: 'eligibility.output.ruleId' },
+            ],
+          },
+          position: { x: 480, y: 120 },
+        },
+      ],
+      edges: [
+        {
+          id: 'data_eligibility_response_eligible',
+          kind: 'data',
+          source: { nodeId: 'eligibility', port: 'output', path: 'eligible' },
+          target: { nodeId: 'response', port: 'inputs', path: 'eligible' },
+        },
+      ],
+      visualLayout: {
+        import: { mode: 'preview', sourceId: 'migrated-eligibility.bloge', schemaNeutral: true },
+        graphContract: {
+          schemaSource: 'dsl',
+          inputSchema: schema({
+            type: 'object',
+            properties: {
+              score: { type: 'integer' },
+              amount: { type: 'number' },
+            },
+            required: ['score', 'amount'],
+          }),
+          outputSchema: schema({
+            type: 'object',
+            properties: {
+              eligible: { type: 'boolean' },
+              ruleId: { type: 'string' },
+            },
+            required: ['eligible', 'ruleId'],
+          }),
+        },
+      },
+      output: { nodeId: 'response', path: '' },
+      operatorFingerprints: {
+        eligibility: 'fp-risk-eligibility',
+      },
+      operatorSnapshots: {
+        eligibility: eligibilityOperator(),
+        response: transformOperator(),
+      },
+    },
+    coverage: {
+      memberCount: 2,
+      projectedNodeCount: 2,
+      edgeCount: 1,
+      unsupportedSyntaxCount: 0,
+      missingOperatorCount: 0,
+      missingFunctionCount: 0,
+    },
+    diagnostics: [],
   };
 }
 

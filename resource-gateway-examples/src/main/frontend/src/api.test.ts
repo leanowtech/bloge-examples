@@ -6,6 +6,7 @@ import {
   fetchGatewayScenarios,
   fetchOperatorCatalog,
   importOperatorLibraryText,
+  previewDslImport,
   runGatewayScenario,
   validateDraft,
   validateOperatorLibraryText,
@@ -109,6 +110,42 @@ describe('operator library API client', () => {
         nodes: [{ id: 'n1', operatorRef: 'risk:eligibility', position: { x: 0, y: 0 } }],
         edges: [],
         output: { nodeId: 'n1' },
+      }),
+    });
+  });
+
+  it('previews schema-neutral BLOGE DSL import as an editable visual projection', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      schemaVersion: 'bloge.dslVisualProjection.v1',
+      sourceId: 'migrated-eligibility.bloge',
+      draft: {
+        schemaVersion: 'bloge.visualGraphDraft.v1',
+        graphName: 'migratedEligibility',
+        nodes: [{ id: 'eligibility', operatorRef: 'risk:eligibility', position: { x: 120, y: 120 } }],
+        edges: [],
+        visualLayout: { import: { schemaNeutral: true } },
+        output: { nodeId: 'eligibility', path: '' },
+      },
+      coverage: { projectedNodeCount: 1, edgeCount: 0 },
+      diagnostics: [],
+    })));
+
+    const result = await previewDslImport({
+      sourceId: 'migrated-eligibility.bloge',
+      dsl: 'graph migratedEligibility {}',
+      operatorLibraryIds: ['risk-policy'],
+      mode: 'preview',
+    });
+
+    expect(result.draft.graphName).toBe('migratedEligibility');
+    expect(fetchMock).toHaveBeenCalledWith('/api/visual/dsl-imports/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceId: 'migrated-eligibility.bloge',
+        dsl: 'graph migratedEligibility {}',
+        operatorLibraryIds: ['risk-policy'],
+        mode: 'preview',
       }),
     });
   });

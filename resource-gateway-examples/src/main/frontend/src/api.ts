@@ -3,6 +3,8 @@ import type {
   ConnectionCandidatesResponse,
   ConnectionCheckRequest,
   ConnectionCheckResponse,
+  DslImportPreviewRequest,
+  DslVisualProjection,
   GatewayExampleDiagram,
   GatewayExampleRun,
   GatewayExampleRunRequest,
@@ -209,6 +211,17 @@ export async function validateDraft(draft: GraphDraft): Promise<VisualValidation
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(draft),
+    }),
+  );
+}
+
+/** Projects existing BLOGE DSL into an editable visual graph draft without persisting it. */
+export async function previewDslImport(request: DslImportPreviewRequest): Promise<DslVisualProjection> {
+  return readJsonMutation<DslVisualProjection>(
+    await fetch('/api/visual/dsl-imports/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
     }),
   );
 }

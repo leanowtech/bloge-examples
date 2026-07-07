@@ -6,9 +6,9 @@
 
 ## 1. 产品定位
 
-BLOGE 通用可视化编排画布是一套面向复杂业务编排的 schema-first 工作台。它以 resource gateway 的资源编排能力为基版，但不再把画布绑定到固定几个内置算子，而是允许用户导入自己的算子库定义，再在服务端 schema 约束下拖拽、连线、校验、模拟和导出业务流程。
+BLOGE 通用可视化编排画布是一套面向复杂业务编排的 schema-first 工作台。它以 resource gateway 的资源编排能力为基版，但不再把画布绑定到固定几个内置算子，而是允许用户导入自己的算子库定义，或粘贴已有 `.bloge` DSL，在服务端 schema 约束下拖拽、连线、校验、模拟和导出业务流程。
 
-一句话：用户先给系统一份 `bloge.visualOperatorLibrary.v1` 算子库，系统把它变成可拖拽的业务积木，并保证连线、输入、输出、模拟结果都由服务端合同校验。
+一句话：用户先给系统一份结构合法的算子/函数 schema，再选择从空白画布编排，或把既有 DSL 渲染成同一份可编辑 `GraphDraft`；系统保证连线、输入、输出、模拟结果都由服务端合同校验。
 
 它解决的问题不是“把图画出来”，而是把以下闭环产品化：
 
@@ -35,7 +35,7 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 schema-fir
 
 | 入口 | 用途 | 推荐人群 |
 | --- | --- | --- |
-| `/author/` | 新版通用可视化编排画布，支持导入算子库、拖拽、连线、校验、模拟、导出 | 主要使用入口 |
+| `/author/` | 新版通用可视化编排画布，支持导入算子库、Legacy DSL preview、拖拽、连线、校验、模拟、导出 | 主要使用入口 |
 | `/showcase/` | React 版 resource gateway 场景目录，按后端场景顺序展示案例、图、请求执行和 SSE 流 | 演示与验证 |
 | `/examples/gateway` | 旧版 Custom Composer/Showcase，保留兼容和功能回归价值 | 兼容入口 |
 
@@ -43,14 +43,15 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 schema-fir
 
 ![Author 工作台总览标注](assets/bloge-author-overview-annotated.svg)
 
-图中 5 个区域分别承担不同任务：
+图中 7 个区域分别承担不同任务：
 
-1. **算子库导入**：粘贴 JSON/YAML，先 Validate，再 Import。导入成功后算子会出现在下方 palette。
-2. **内置复杂示例**：直接加载可编辑的复杂业务 graph，适合第一次理解 fan-out、decision table、transform、fixture 的组合方式。
-3. **编排动作条**：执行 Simulate、Auto Layout、Validate、Export Draft，并查看节点数、边数、输出节点和 fixture 数。
-4. **Graph Contract**：显示当前 graph 的 input/output schema 摘要，告诉系统集成方这张图需要什么上下文、会产出什么结果。
-5. **Runtime Context**：以图形化变量表维护本次模拟的 context；高级用户也可以展开 Advanced JSON。
-6. **Mock Setup / Test Suite**：右侧 inspector 保持轻量，只展示节点级 mock fixture 和 Test Suite 摘要；点击 `Test Suite` 后用浮层表格组织多行 context、fixture overrides 和 expected output。
+1. **算子库导入**：粘贴 JSON/YAML，先 Validate，再 Import。导入成功后算子会出现在下方 palette；如果当前粘贴内容是 JSON 形式的合法 visual operator library，也可以作为本次 Legacy DSL preview 的 inline schema 使用。
+2. **Legacy DSL**：粘贴既有 `.bloge` DSL，点击 Render DSL，服务端会把它投影成可编辑画布 draft。这个入口不关心 schema 是 Maven 插件生成、平台接口下发、手写，还是 OpenAPI/resource descriptor 投影而来，只关心最终结构是否合法。
+3. **内置复杂示例**：直接加载可编辑的复杂业务 graph，适合第一次理解 fan-out、decision table、transform、fixture 的组合方式。
+4. **编排动作条**：执行 Simulate、Auto Layout、Validate、Export Draft，并查看节点数、边数、输出节点和 fixture 数。
+5. **Graph Contract**：显示当前 graph 的 input/output schema 摘要，告诉系统集成方这张图需要什么上下文、会产出什么结果。
+6. **Runtime Context**：以图形化变量表维护本次模拟的 context；高级用户也可以展开 Advanced JSON。
+7. **Mock Setup / Test Suite**：右侧 inspector 保持轻量，只展示节点级 mock fixture 和 Test Suite 摘要；点击 `Test Suite` 后用浮层表格组织多行 context、fixture overrides 和 expected output。
 
 ### 3.1 演示脚本启动方式
 
@@ -155,7 +156,7 @@ Resource Gateway 内置 graph 的正式合同定义在：
 
 新版 `/author/` 和旧版 `/examples/gateway` 都把 graph 合同作为一等信息看待：
 
-- `/author/`：画布工具栏下方有 **Graph Contract** 条，显示当前 draft 的 Input/Output 摘要。3 个内置复杂示例各自携带 `inputSchema` 和 `outputSchema`；加载示例时会同步设置当前 graph contract，并用 input schema 生成一份 runtime context 样本。
+- `/author/`：画布工具栏下方有 **Graph Contract** 条，显示当前 draft 的 Input/Output 摘要。3 个内置复杂示例各自携带 `inputSchema` 和 `outputSchema`；加载示例时会同步设置当前 graph contract，并用 input schema 生成一份 runtime context 样本。从 Legacy DSL 导入时，graph 级 `input { ... }` 会进入 `draft.inputSchema`，graph 级 `output { ... }` 会进入 `draft.visualLayout.graphContract.outputSchema`，页面和导出的 draft 保持一致。
 - `/examples/gateway`：右侧 Inspector 顶部有 **Graph Contract** 区块，会显示当前 showcase/composer 的 Input/Output 摘要。
 
 Graph Contract 会同时显示：
@@ -163,7 +164,7 @@ Graph Contract 会同时显示：
 - **Input / ctx**：这张 graph 执行前要求的上下文字段。
 - **Output / public result**：这张 graph 对系统集成暴露的终态输出字段。
 
-对于 Resource Gateway showcase 示例，Graph Contract 来自 `GatewayGraphContractCatalog`，所以 `User Dashboard`、`Loan Decision Policy`、`Product Detail` 等示例各自有独立的 input/output schema。对于 `/author/` 的 3 个可编辑复杂示例，Graph Contract 定义在 `resource-gateway-examples/src/main/frontend/src/canvasExamples.ts`，并会随 draft 一起导出 `inputSchema`。对于 `Custom Composer`，Input 来自当前画布的 `Graph Input Schema`，Output 来自当前 `Graph Output` 选中的输出节点和 path；修改 schema 或切换输出节点后，Graph Contract 摘要会同步刷新。
+对于 Resource Gateway showcase 示例，Graph Contract 来自 `GatewayGraphContractCatalog`，所以 `User Dashboard`、`Loan Decision Policy`、`Product Detail` 等示例各自有独立的 input/output schema。对于 `/author/` 的 3 个可编辑复杂示例，Graph Contract 定义在 `resource-gateway-examples/src/main/frontend/src/canvasExamples.ts`，并会随 draft 一起导出 `inputSchema` 和 `visualLayout.graphContract.outputSchema`。对于 Legacy DSL，Graph Contract 来自 `.bloge` 文件里的 `input` / `output` 声明。对于 `Custom Composer`，Input 来自当前画布的 `Graph Input Schema`，Output 来自当前 `Graph Output` 选中的输出节点和 path；修改 schema 或切换输出节点后，Graph Contract 摘要会同步刷新。
 
 加载 `Loan policy fallback` 后，Graph Contract 与画布状态会像下图这样联动：
 
@@ -268,10 +269,10 @@ operators:
 
 ```text
 业务代码库
-  -> mvn bloge:export-schema
-    -> target/bloge-capability-catalog.json
-      -> 画布导入 capability catalog
-        -> 画布导入 .bloge DSL
+  -> 生成或准备合法 operator/function schema
+    -> 导入或 inline 提供 bloge.visualOperatorLibrary.v1
+      -> 画布粘贴 .bloge DSL
+        -> Render DSL
           -> 生成可视化 GraphDraft + source map + diagnostics
 ```
 
@@ -288,12 +289,23 @@ operators:
 
 - 已落地：`/author/` 支持导入 `bloge.visualOperatorLibrary.v1` 和编辑 `GraphDraft`。
 - 已落地：后端提供 schema-neutral DSL preview API：`POST /api/visual/dsl-imports/preview`。它接受 `.bloge` 源码、当前已导入的 visual library id，或本次 preview 临时传入的 `inlineLibraries`，然后返回 `GraphDraft + sourceMap + diagnostics + coverage`。
-- 未落地：浏览器里的 Legacy DSL Import 面板、preview 后保存为 stored draft、semantic round-trip 回写校验。
+- 已落地：浏览器 `/author/` 左侧提供 **Legacy DSL** 面板。用户粘贴 DSL 后点击 `Render DSL`，画布会直接渲染 preview draft，并同步节点、边、Graph Contract、Runtime Context 变量表、Test Suite 初始行和 Export Draft。
+- 已落地：如果 Library 面板当前内容是 JSON 形式的合法 `bloge.visualOperatorLibrary.v1`，Render DSL 会把它作为 `inlineLibraries` 随 preview 一起提交；如果已经 Import 入库，则会通过当前 catalog 的 `operatorLibraryIds` 参与解析。
+- 未落地：preview 后保存为 stored draft、semantic round-trip 回写校验。
 - 未落地：`bloge.capabilityCatalog.v1` 到 `bloge.visualOperatorLibrary.v1` 的正式 adapter。现在如果 schema 已经是合法 visual operator library，可以直接用于 DSL preview。
 
 设计方案见 [存量 BLOGE DSL 业务迁移到可视化编排设计方案](./bloge-legacy-dsl-visual-migration-design.md)。
 
-当前后端 preview 的最小调用方式：
+页面上的当前操作方式：
+
+1. 在左侧 **Library** 面板导入或粘贴一份合法 `bloge.visualOperatorLibrary.v1`。如果只是想临时 preview，可以粘贴 JSON 形式 library，不必先 Import。
+2. 在左侧 **Legacy DSL** 面板确认 `Source`，粘贴 `.bloge` 文件内容，或使用内置 `Eligibility DSL` 示例。
+3. 点击 `Render DSL`。服务端解析 DSL，并按当前 catalog/inline library 投影成 `GraphDraft`。
+4. 画布渲染节点和边；Graph Contract 同步显示 DSL `input` / `output`；Runtime Context 会根据 input schema 生成变量行。
+5. 若出现 missing operator/function，画布仍会尽量渲染结构，并在 Legacy DSL 面板显示 diagnostics；补齐 schema 后再次 Render。
+6. 继续使用 Auto Layout、Validate、Simulate、Operator Test Suite、全图 Test Suite 和 Export Draft。
+
+对应 API 的最小调用方式：
 
 ```http
 POST /api/visual/dsl-imports/preview
@@ -324,15 +336,12 @@ Content-Type: application/json
 
 注意：如果 DSL operatorRef 含有冒号，BLOGE DSL 里要用字符串形式，例如 `node eligibility : "risk:eligibility"`；否则冒号会被 DSL 语法当成节点 id 与 operatorRef 的分隔符。
 
-完整迁移专线落地后的产品体验应是：
+更完整的迁移专线落地后，还应补齐：
 
-1. 准备一份结构合法的 operator/function schema；对已接入 BLOGE 的业务项目，推荐执行 `mvn bloge:export-schema`，把自定义算子和业务函数导出为框架级 capability catalog。
-2. 在 `/author/` 的 Legacy DSL Import 面板上传或粘贴 schema；如果输入是 capability catalog，系统自动适配成画布可消费的 operator/function library。
-3. 上传或粘贴 `.bloge` 文件，服务端使用 `DslCompiler.parseAst()` 解析，而不是前端自行猜语法。
-4. 画布生成 import preview：节点、边、context 绑定、graph input/output schema、函数调用和 source line 映射；当前后端 API 已可返回这类 preview，前端面板仍待接入。
-5. 对 missing operator、missing function、opaque schema 或 unsupported syntax 给出迁移诊断和修复向导。
-6. 确认后保存为 `GraphDraft`，继续使用现有 Validate、Simulate、Operator Test Suite、全图 Test Suite 和 Export。
-7. 需要回写 DSL 时，系统执行 semantic round-trip：原始 DSL -> AST，与 GraphDraft 生成的 DSL -> AST 做语义等价校验；不等价时不能自动覆盖原文件。
+1. `bloge.capabilityCatalog.v1` 自动适配成画布可消费的 `bloge.visualOperatorLibrary.v1`，业务项目可以直接交付框架级 export 产物。
+2. Legacy DSL preview 确认后保存为 stored draft，纳入 revision、dependency report、schema drift review 和 publication 流程。
+3. 对 missing operator、missing function、opaque schema 或 unsupported syntax 给出更细的修复向导和 source snippet。
+4. 需要回写 DSL 时，系统执行 semantic round-trip：原始 DSL -> AST，与 GraphDraft 生成的 DSL -> AST 做语义等价校验；不等价时不能自动覆盖原文件。
 
 这条路径的关键产品承诺是 **loss-aware import**：能结构化投影的 DSL 会变成可编辑画布节点；暂不支持的复杂语义会保留成带 source snippet 的 opaque 节点或诊断项，不会静默丢失。
 

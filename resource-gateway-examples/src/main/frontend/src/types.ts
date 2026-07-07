@@ -151,8 +151,11 @@ export interface GraphDraft {
   inputSchema?: SchemaEnvelope;
   nodes: DraftNode[];
   edges: DraftEdge[];
+  visualLayout?: Record<string, unknown>;
   nodeFixtures?: Record<string, NodeFixture>;
   output: { nodeId: string; path?: string };
+  operatorFingerprints?: Record<string, string>;
+  operatorSnapshots?: Record<string, OperatorDefinition>;
 }
 
 /** A per-node author-supplied simulation fixture. */
@@ -201,6 +204,61 @@ export interface VisualDiagnostic {
   code?: string;
   message?: string;
   target?: string;
+}
+
+/** Source span in an imported BLOGE DSL document. */
+export interface DslSourceSpan {
+  sourceId?: string;
+  startLine?: number;
+  startColumn?: number;
+  endLine?: number;
+  endColumn?: number;
+  dslKind?: string;
+}
+
+/** Source-map links from visual draft elements back to DSL source locations. */
+export interface DslSourceMap {
+  nodes?: Record<string, DslSourceSpan>;
+  edges?: Record<string, DslSourceSpan>;
+  bindings?: Record<string, DslSourceSpan>;
+}
+
+/** Import projection coverage summary. */
+export interface DslImportCoverage {
+  memberCount?: number;
+  projectedNodeCount?: number;
+  edgeCount?: number;
+  unsupportedSyntaxCount?: number;
+  missingOperatorCount?: number;
+  missingFunctionCount?: number;
+}
+
+/** Conservative round-trip readiness summary for an imported DSL preview. */
+export interface DslRoundTripSummary {
+  supported?: boolean;
+  status?: string;
+  message?: string;
+}
+
+/** Request body for schema-neutral DSL preview import. */
+export interface DslImportPreviewRequest {
+  sourceId?: string;
+  dsl: string;
+  operatorLibraryIds?: string[];
+  inlineLibraries?: OperatorLibrary[];
+  mode?: string;
+  layout?: Record<string, unknown>;
+}
+
+/** Response of POST /api/visual/dsl-imports/preview. */
+export interface DslVisualProjection {
+  schemaVersion?: string;
+  sourceId: string;
+  draft: GraphDraft;
+  sourceMap?: DslSourceMap;
+  coverage?: DslImportCoverage;
+  roundTrip?: DslRoundTripSummary;
+  diagnostics?: VisualDiagnostic[];
 }
 
 /** Server-derived graph-level readiness returned by transient draft validation. */

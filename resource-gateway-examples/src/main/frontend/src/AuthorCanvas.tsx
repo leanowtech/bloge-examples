@@ -28,6 +28,7 @@ import {
   fetchConnectionCandidates,
   fetchOperatorCatalog,
   importOperatorLibraryText,
+  previewDslImport,
   simulate,
   validateDraft,
   validateOperatorLibraryText,
@@ -54,6 +55,7 @@ import {
   connectionDecisionMessage,
   evaluateSimulationTableResult,
   fixtureDraftForOperator,
+  fromGraphDraft,
   handleIdForPort,
   indexConnectionCandidates,
   isRunSuccessful,
@@ -83,8 +85,11 @@ import {
 import type {
   DraftNodeBinding,
   BuiltInFunctionDefinition,
+  DslImportCoverage,
+  DslVisualProjection,
   NodeFixture,
   OperatorDefinition,
+  OperatorLibrary,
   OperatorPort,
   SchemaEnvelope,
   SimulationResponse,
@@ -146,6 +151,8 @@ interface CanvasEdgeData {
   sourcePath?: string;
   targetPath?: string;
   bindingKey?: string;
+  kind?: string;
+  condition?: string;
   labelLane?: number;
 }
 
@@ -153,6 +160,8 @@ type CanvasFlowEdge = Edge<CanvasEdgeData> & {
   sourcePath?: string;
   targetPath?: string;
   bindingKey?: string;
+  kind?: string;
+  condition?: string;
 };
 
 const CANVAS_DATA_EDGE_TYPE = 'canvasDataEdge';
@@ -3308,6 +3317,208 @@ const OPERATOR_LIBRARY_EXAMPLES: OperatorLibraryExample[] = [
   },
 ];
 
+interface LegacyDslExample {
+  key: string;
+  label: string;
+  sourceId: string;
+  sourceText: string;
+}
+
+const LEGACY_DSL_EXAMPLES: LegacyDslExample[] = [
+  {
+    key: 'migrated-eligibility',
+    label: 'Eligibility DSL',
+    sourceId: 'migrated-eligibility.bloge',
+    sourceText: [
+      'graph migratedEligibility {',
+      '  input {',
+      '    score: Int',
+      '    amount: Decimal',
+      '  }',
+      '  output {',
+      '    eligible: Boolean',
+      '    ruleId: String',
+      '  }',
+      '  node eligibility : "risk:eligibility" {',
+      '    input {',
+      '      score = ctx.score',
+      '      amount = ctx.amount',
+      '    }',
+      '  }',
+      '  transform response {',
+      '    eligible = eligibility.output.eligible',
+      '    ruleId = eligibility.output.ruleId',
+      '  }',
+      '}',
+    ].join('\n'),
+  },
+];
+
+function placeholderOperatorDefinition(operatorRef: string): OperatorDefinition {
+  return {
+    operatorRef,
+    display: {
+      name: operatorRef,
+      description: 'Schema is missing from the current operator catalog.',
+      tags: ['missing-schema'],
+    },
+    source: { kind: 'missing-schema' },
+    lowering: { mode: 'design' },
+    ports: {
+      inputs: [{ name: 'inputs', schema: schemaEnvelope({ type: 'object', additionalProperties: true }) }],
+      outputs: [{ name: 'output', schema: schemaEnvelope({ type: 'object', additionalProperties: true }) }],
+    },
+    runtimeReadiness: {
+      state: 'missing-schema',
+      level: 'warning',
+      executable: false,
+      title: 'Missing schema',
+      summary: 'Import rendered this node from DSL, but no operator schema is loaded yet.',
+    },
+  };
+}
+
+function operatorLibraryIds(operators: OperatorDefinition[]): string[] {
+  return Array.from(new Set(
+    operators
+      .map((operator) => operator.source?.libraryId ?? '')
+      .filter(Boolean),
+  ));
+}
+
+function inlineLibrariesFromSourceText(sourceText: string): OperatorLibrary[] {
+  const trimmed = sourceText.trim();
+  if (!trimmed || !trimmed.startsWith('{')) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (isRecord(parsed) && Array.isArray(parsed.operators)) {
+      return [parsed as unknown as OperatorLibrary];
+    }
+  } catch {
+    return [];
+  }
+  return [];
+}
+
+function projectionDiagnosticsLevel(diagnostics: VisualDiagnostic[]): ConnectionNotice['level'] {
+  if (diagnostics.some((diagnostic) => diagnostic.level === 'ERROR')) {
+    return 'error';
+  }
+  if (diagnostics.length > 0) {
+    return 'warning';
+  }
+  return 'ok';
+}
+
+function dslProjectionNotice(projection: DslVisualProjection): ConnectionNotice {
+  const diagnostics = projection.diagnostics ?? [];
+  const coverage = projection.coverage;
+  const nodeCount = projection.draft.nodes?.length ?? coverage?.projectedNodeCount ?? 0;
+  const edgeCount = projection.draft.edges?.length ?? coverage?.edgeCount ?? 0;
+  const missingOperatorCount = coverage?.missingOperatorCount ?? 0;
+  const missingFunctionCount = coverage?.missingFunctionCount ?? 0;
+  const repairHints = [
+    missingOperatorCount > 0 ? `${missingOperatorCount} missing operator schema` : '',
+    missingFunctionCount > 0 ? `${missingFunctionCount} missing function schema` : '',
+  ].filter(Boolean);
+  return {
+    level: projectionDiagnosticsLevel(diagnostics),
+    message: `Rendered ${nodeCount} nodes / ${edgeCount} edges${repairHints.length > 0 ? `; ${repairHints.join(', ')}` : ''}.`,
+  };
+}
+
+function edgeLabelFromCanvasEdge(edge: CanvasEdge): string {
+  if (edge.condition) {
+    return edge.condition;
+  }
+  if (edge.kind && edge.kind !== 'data') {
+    return edge.kind;
+  }
+  return `${endpointLabel(edge.sourcePort ?? '', edge.sourcePath ?? '', 'value')} -> ${
+    endpointLabel(edge.targetPort ?? '', edge.targetPath ?? '', 'input')
+  }`;
+}
+
+function importedContextVariables(inputSchema: SchemaEnvelope | undefined): ContextVariableRow[] {
+  const fields = schemaFieldRows(inputSchema);
+  const sample = sampleFromSchemaEnvelope(inputSchema);
+  const sampleObject = isRecord(sample) ? sample : {};
+  return fields.map((field, index) => {
+    const value = sampleObject[field.name];
+    return {
+      id: `ctx-${index + 1}`,
+      path: field.name,
+      valueType: contextVariableType(value),
+      sample: contextVariableSampleText(value),
+    };
+  });
+}
+
+function contextVariableType(value: unknown): ContextVariableType {
+  if (typeof value === 'number') {
+    return 'number';
+  }
+  if (typeof value === 'boolean') {
+    return 'boolean';
+  }
+  if (isRecord(value) || Array.isArray(value)) {
+    return 'json';
+  }
+  return 'string';
+}
+
+function contextVariableSampleText(value: unknown): string {
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value === undefined) {
+    return '';
+  }
+  return JSON.stringify(value, null, 2);
+}
+
+function visualLayoutWithGraphContract(
+  visualLayout: Record<string, unknown>,
+  inputSchema: SchemaEnvelope,
+  outputSchema: SchemaEnvelope | null | undefined,
+  schemaSource: string,
+): Record<string, unknown> {
+  const graphContract = isRecord(visualLayout.graphContract)
+    ? { ...visualLayout.graphContract }
+    : {};
+  return {
+    ...visualLayout,
+    graphContract: {
+      ...graphContract,
+      inputSchema,
+      ...(outputSchema ? { outputSchema } : {}),
+      schemaSource: String(graphContract.schemaSource ?? schemaSource),
+    },
+  };
+}
+
+function pickRecordByKeys<TValue>(
+  source: Record<string, TValue>,
+  keys: Iterable<string>,
+): Record<string, TValue> {
+  const selected = new Set(keys);
+  return Object.fromEntries(
+    Object.entries(source).filter(([key]) => selected.has(key)),
+  );
+}
+
+function maxCanvasNodeSequence(nodes: CanvasNode[]): number {
+  return nodes.reduce((max, node, index) => {
+    const match = node.id.match(/^n(\d+)$/);
+    return Math.max(max, match ? Number(match[1]) : index + 1);
+  }, 0);
+}
+
 /**
  * The authoring workspace: an operator palette, a React Flow canvas, and a result inspector wired to
  * the mock-run (simulate) endpoint. Non-trivial graph<->request logic lives in the pure, unit-tested
@@ -3329,6 +3540,12 @@ export default function AuthorCanvas() {
   const [librarySourceText, setLibrarySourceText] = useState('');
   const [libraryNotice, setLibraryNotice] = useState<ConnectionNotice | null>(null);
   const [libraryDiagnostics, setLibraryDiagnostics] = useState<VisualDiagnostic[]>([]);
+  const [dslSourceId, setDslSourceId] = useState(LEGACY_DSL_EXAMPLES[0].sourceId);
+  const [dslSourceText, setDslSourceText] = useState(LEGACY_DSL_EXAMPLES[0].sourceText);
+  const [dslImportBusy, setDslImportBusy] = useState(false);
+  const [dslImportNotice, setDslImportNotice] = useState<ConnectionNotice | null>(null);
+  const [dslImportDiagnostics, setDslImportDiagnostics] = useState<VisualDiagnostic[]>([]);
+  const [dslImportCoverage, setDslImportCoverage] = useState<DslImportCoverage | null>(null);
   const [search, setSearch] = useState('');
   const [paletteFacet, setPaletteFacet] = useState<OperatorPaletteFacet>('all');
   const [sourceFilter, setSourceFilter] = useState('all');
@@ -3346,9 +3563,13 @@ export default function AuthorCanvas() {
   const [tableTestingBusy, setTableTestingBusy] = useState(false);
   const [simulationContextDraft, setSimulationContextDraft] = useState('{}');
   const [contextVariables, setContextVariables] = useState<ContextVariableRow[]>([]);
+  const [graphName, setGraphName] = useState('visualGraph');
   const [graphInputSchema, setGraphInputSchema] = useState<SchemaEnvelope>(EMPTY_GRAPH_INPUT_SCHEMA);
   const [graphOutputSchema, setGraphOutputSchema] = useState<SchemaEnvelope | null>(null);
   const [graphContractSource, setGraphContractSource] = useState('Current draft');
+  const [graphVisualLayout, setGraphVisualLayout] = useState<Record<string, unknown>>({});
+  const [graphOperatorFingerprints, setGraphOperatorFingerprints] = useState<Record<string, string>>({});
+  const [graphOperatorSnapshots, setGraphOperatorSnapshots] = useState<Record<string, OperatorDefinition>>({});
   const [connectionNotice, setConnectionNotice] = useState<ConnectionNotice | null>(null);
   const [candidatePreview, setCandidatePreview] = useState<ConnectionCandidateIndex | null>(null);
   const [selectedConnectionSourcePort, setSelectedConnectionSourcePort] = useState('');
@@ -3772,16 +3993,18 @@ export default function AuthorCanvas() {
     () =>
       edges.map((edge) => {
         const pathEdge = edge as CanvasFlowEdge;
-        const edgeData = edge.data as { sourcePath?: string; targetPath?: string; bindingKey?: string } | undefined;
+        const edgeData = edge.data as CanvasEdgeData | undefined;
         return {
           id: edge.id,
           source: edge.source,
           target: edge.target,
+          kind: pathEdge.kind ?? edgeData?.kind,
           sourcePort: portNameFromHandle(edge.sourceHandle, 'out'),
           targetPort: portNameFromHandle(edge.targetHandle, 'in'),
           sourcePath: pathEdge.sourcePath ?? edgeData?.sourcePath,
           targetPath: pathEdge.targetPath ?? edgeData?.targetPath,
           bindingKey: pathEdge.bindingKey ?? edgeData?.bindingKey,
+          condition: pathEdge.condition ?? edgeData?.condition,
         };
       }),
     [edges],
@@ -3798,8 +4021,16 @@ export default function AuthorCanvas() {
   );
   const traceRows = useMemo(() => simulationTraceRows(canvasNodes, result), [canvasNodes, result]);
   const operatorByRef = useMemo(
-    () => new Map(operators.map((operator) => [operator.operatorRef, operator])),
-    [operators],
+    () => {
+      const next = new Map(operators.map((operator) => [operator.operatorRef, operator]));
+      for (const snapshot of Object.values(graphOperatorSnapshots)) {
+        if (!next.has(snapshot.operatorRef)) {
+          next.set(snapshot.operatorRef, snapshot);
+        }
+      }
+      return next;
+    },
+    [graphOperatorSnapshots, operators],
   );
   const effectiveGraphOutputSchema = useMemo(
     () => graphOutputSchema ?? outputSchemaForCanvas(nodes, outputNodeId, operatorByRef),
@@ -3915,9 +4146,13 @@ export default function AuthorCanvas() {
     setOperatorTestResults({});
     setSimulationTableRows(nextSimulationTableRows);
     setSimulationTableResults({});
+    setGraphName('visualGraph');
     setGraphInputSchema(template.inputSchema);
     setGraphOutputSchema(template.outputSchema);
     setGraphContractSource(template.label);
+    setGraphVisualLayout(visualLayoutWithGraphContract({}, template.inputSchema, template.outputSchema, 'example'));
+    setGraphOperatorFingerprints({});
+    setGraphOperatorSnapshots({});
     setSimulationContextDraft(JSON.stringify(sampleFromSchemaEnvelope(template.inputSchema), null, 2));
     setContextVariables([]);
     setExplicitOutputNodeId(template.outputNodeId);
@@ -3993,15 +4228,40 @@ export default function AuthorCanvas() {
     [canvasSummary, fixtureRows, result],
   );
   const exportableDraft = useMemo(
-    () => toExportableGraphDraft(
-      'visualGraph',
-      canvasNodes,
+    () => {
+      const nodeIds = canvasNodes.map((node) => node.id);
+      return toExportableGraphDraft(
+        graphName,
+        canvasNodes,
+        canvasEdges,
+        outputNodeId,
+        fixtureCompilation.fixtures,
+        graphInputSchema,
+        {
+          visualLayout: visualLayoutWithGraphContract(
+            graphVisualLayout,
+            graphInputSchema,
+            effectiveGraphOutputSchema,
+            graphContractSource,
+          ),
+          operatorFingerprints: pickRecordByKeys(graphOperatorFingerprints, nodeIds),
+          operatorSnapshots: pickRecordByKeys(graphOperatorSnapshots, nodeIds),
+        },
+      );
+    },
+    [
       canvasEdges,
-      outputNodeId,
+      canvasNodes,
+      effectiveGraphOutputSchema,
       fixtureCompilation.fixtures,
+      graphName,
+      graphContractSource,
       graphInputSchema,
-    ),
-    [canvasEdges, canvasNodes, fixtureCompilation.fixtures, graphInputSchema, outputNodeId],
+      graphOperatorFingerprints,
+      graphOperatorSnapshots,
+      graphVisualLayout,
+      outputNodeId,
+    ],
   );
   const draftExportJson = useMemo(
     () => JSON.stringify(exportableDraft, null, 2),
@@ -4200,6 +4460,161 @@ export default function AuthorCanvas() {
     }
   }, [librarySourceText, reloadOperators]);
 
+  const applyDslProjection = useCallback((projection: DslVisualProjection) => {
+    const imported = fromGraphDraft(projection.draft);
+    const nextNodes: Node<NodeData>[] = [];
+    const nextOperatorTestSuites: Record<string, OperatorTestSuiteDraftRow[]> = {};
+    const nextFixtureDrafts: Record<string, string> = {};
+    const nextFixtureInputDrafts: Record<string, string> = {};
+
+    for (const importedNode of imported.nodes) {
+      const operator = operatorByRef.get(importedNode.operatorRef)
+        ?? imported.operatorSnapshots[importedNode.id]
+        ?? placeholderOperatorDefinition(importedNode.operatorRef);
+      const summary = summarizeOperator(operator);
+      const nextNode: Node<NodeData> = {
+        id: importedNode.id,
+        type: 'operator',
+        position: importedNode.position,
+        data: {
+          label: importedNode.label ?? summary.name,
+          operatorRef: importedNode.operatorRef,
+          summary,
+          inputs: importedNode.inputs,
+          config: importedNode.config,
+        },
+      };
+      const testRows = defaultOperatorTestSuiteRows(nextNode, operator);
+      const fixture = imported.nodeFixtures[importedNode.id];
+      if (fixture) {
+        if (hasOwnValue(fixture, 'expectedInput')) {
+          nextFixtureInputDrafts[importedNode.id] = JSON.stringify(fixture.expectedInput, null, 2);
+          testRows[0] = {
+            ...testRows[0],
+            inputText: JSON.stringify(fixture.expectedInput, null, 2),
+          };
+        }
+        if (hasOwnValue(fixture, 'output')) {
+          nextFixtureDrafts[importedNode.id] = JSON.stringify(fixture.output, null, 2);
+          testRows[0] = {
+            ...testRows[0],
+            outputText: JSON.stringify(fixture.output, null, 2),
+          };
+        }
+      }
+      nextOperatorTestSuites[importedNode.id] = testRows;
+      nextNodes.push(nextNode);
+    }
+
+    const nextEdges = imported.edges.map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourcePort ? handleIdForPort('out', edge.sourcePort) : undefined,
+      targetHandle: edge.targetPort ? handleIdForPort('in', edge.targetPort) : undefined,
+      kind: edge.kind,
+      condition: edge.condition,
+      sourcePath: edge.sourcePath,
+      targetPath: edge.targetPath,
+      bindingKey: edge.bindingKey,
+      data: {
+        kind: edge.kind ?? 'data',
+        condition: edge.condition ?? '',
+        sourcePath: edge.sourcePath ?? '',
+        targetPath: edge.targetPath ?? '',
+        bindingKey: edge.bindingKey ?? '',
+      },
+      label: edgeLabelFromCanvasEdge(edge),
+      ...EDGE_LABEL_OPTIONS,
+      animated: true,
+      className: edge.kind && edge.kind !== 'data' ? 'accepted-edge route-edge' : 'accepted-edge',
+    } as CanvasFlowEdge));
+
+    const nextInputSchema = imported.inputSchema ?? EMPTY_GRAPH_INPUT_SCHEMA;
+    const nextOutputSchema = imported.outputSchema ?? null;
+    const nextContextVariables = importedContextVariables(nextInputSchema);
+    const nextSimulationTableRows = [emptySimulationTableRow('table-case-1', nextInputSchema)];
+    const notice = dslProjectionNotice(projection);
+
+    clearRunResult();
+    counter.current = maxCanvasNodeSequence(imported.nodes);
+    contextVariableCounter.current = nextContextVariables.length;
+    tableTestCounter.current = nextSimulationTableRows.length;
+    operatorTestCounter.current = 0;
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    setFixtureDrafts(nextFixtureDrafts);
+    setFixtureInputDrafts(nextFixtureInputDrafts);
+    setOperatorTestSuites(nextOperatorTestSuites);
+    setOperatorTestResults({});
+    setSimulationTableRows(nextSimulationTableRows);
+    setSimulationTableResults({});
+    setGraphName(imported.graphName);
+    setGraphInputSchema(nextInputSchema);
+    setGraphOutputSchema(nextOutputSchema);
+    setGraphContractSource(`DSL ${projection.sourceId || imported.graphName}`);
+    setGraphVisualLayout(visualLayoutWithGraphContract(
+      imported.visualLayout ?? {},
+      nextInputSchema,
+      nextOutputSchema,
+      'dsl',
+    ));
+    setGraphOperatorFingerprints(imported.operatorFingerprints);
+    setGraphOperatorSnapshots(imported.operatorSnapshots);
+    setSimulationContextDraft(JSON.stringify(sampleFromSchemaEnvelope(nextInputSchema), null, 2));
+    setContextVariables(nextContextVariables);
+    setExplicitOutputNodeId(imported.outputNodeId);
+    setSelectedNodeId(imported.outputNodeId || imported.nodes[0]?.id || '');
+    setOperatorDetailNodeId('');
+    setTestSuiteOpen(false);
+    setConnectionGuide(null);
+    setConnectionGuideNotice(null);
+    setCandidatePreview(null);
+    setSelectedConnectionSourcePort('');
+    setPendingConnectionGuideNodeId('');
+    setDslImportDiagnostics(projection.diagnostics ?? []);
+    setDslImportCoverage(projection.coverage ?? null);
+    setDslImportNotice(notice);
+    setConnectionNotice(notice);
+
+    const fitImportedGraph = () => {
+      flowInstanceRef.current?.fitView({ padding: 0.18, duration: 240 });
+    };
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(fitImportedGraph);
+    } else {
+      fitImportedGraph();
+    }
+  }, [clearRunResult, operatorByRef]);
+
+  const previewLegacyDsl = useCallback(async () => {
+    if (!dslSourceText.trim()) {
+      setDslImportDiagnostics([]);
+      setDslImportCoverage(null);
+      setDslImportNotice({ level: 'error', message: 'DSL source is empty.' });
+      return;
+    }
+    setDslImportBusy(true);
+    setDslImportNotice({ level: 'pending', message: 'Rendering DSL preview...' });
+    setError('');
+    try {
+      const projection = await previewDslImport({
+        sourceId: dslSourceId.trim() || 'inline.dsl',
+        dsl: dslSourceText,
+        operatorLibraryIds: operatorLibraryIds(operators),
+        inlineLibraries: inlineLibrariesFromSourceText(librarySourceText),
+        mode: 'preview',
+      });
+      applyDslProjection(projection);
+    } catch (cause: unknown) {
+      setDslImportDiagnostics([]);
+      setDslImportCoverage(null);
+      setDslImportNotice({ level: 'error', message: String(cause) });
+    } finally {
+      setDslImportBusy(false);
+    }
+  }, [applyDslProjection, dslSourceId, dslSourceText, librarySourceText, operators]);
+
   const clearFixtureForNode = useCallback((nodeId: string) => {
     clearRunResult();
     setFixtureDrafts((current) => {
@@ -4367,7 +4782,7 @@ export default function AuthorCanvas() {
     setConnectionNotice({ level: 'pending', message: 'Discovering compatible targets...' });
     try {
       const response = await fetchConnectionCandidates(toConnectionCandidatesRequest(
-        'visualGraph',
+        graphName,
         canvasNodes,
         canvasEdges,
         outputNodeId,
@@ -4392,7 +4807,7 @@ export default function AuthorCanvas() {
         setLoadingCandidates(false);
       }
     }
-  }, [canvasEdges, canvasNodes, outputNodeId]);
+  }, [canvasEdges, canvasNodes, graphName, outputNodeId]);
 
   const onConnectEnd = useCallback(() => {
     candidatePreviewSequence.current += 1;
@@ -4412,7 +4827,7 @@ export default function AuthorCanvas() {
       let sourcePath = params.sourcePath ?? '';
       let targetPath = params.targetPath ?? '';
       let check = await checkConnection(toConnectionCheckRequest(
-        'visualGraph',
+        graphName,
         canvasNodes,
         canvasEdges,
         outputNodeId,
@@ -4432,7 +4847,7 @@ export default function AuthorCanvas() {
         let candidateIndex: ConnectionCandidateIndex | null = null;
         try {
           const response = await fetchConnectionCandidates(toConnectionCandidatesRequest(
-            'visualGraph',
+            graphName,
             canvasNodes,
             canvasEdges,
             outputNodeId,
@@ -4447,7 +4862,7 @@ export default function AuthorCanvas() {
           if (fieldCandidate) {
             targetPath = fieldCandidate.target.path ?? '';
             check = await checkConnection(toConnectionCheckRequest(
-              'visualGraph',
+              graphName,
               canvasNodes,
               canvasEdges,
               outputNodeId,
@@ -4522,7 +4937,7 @@ export default function AuthorCanvas() {
     } finally {
       setCheckingConnection(false);
     }
-  }, [canvasEdges, canvasNodes, clearRunResult, outputNodeId]);
+  }, [canvasEdges, canvasNodes, clearRunResult, graphName, outputNodeId]);
 
   const onConnect = useCallback(async (connection: Connection) => {
     await applyCheckedConnection({
@@ -4561,7 +4976,7 @@ export default function AuthorCanvas() {
     setConnectionGuideNotice({ level: 'pending', message: 'Finding targets...' });
     try {
       const response = await fetchConnectionCandidates(toConnectionCandidatesRequest(
-        'visualGraph',
+        graphName,
         canvasNodes,
         canvasEdges,
         outputNodeId,
@@ -4594,6 +5009,7 @@ export default function AuthorCanvas() {
   }, [
     canvasEdges,
     canvasNodes,
+    graphName,
     outputNodeId,
     selectedConnectionSourcePort,
     selectedNodeId,
@@ -4733,7 +5149,7 @@ export default function AuthorCanvas() {
         const operatorGraph = operatorTestGraphSlice(nodeId, canvasNodes, canvasEdges);
         const operatorFixtures = fixturesForGraphSlice(fixtureCompilation.fixtures, operatorGraph.nodes);
         const response = await simulate(toSimulationRequest(
-          'visualGraph',
+          graphName,
           operatorGraph.nodes,
           operatorGraph.edges,
           nodeId,
@@ -4778,6 +5194,7 @@ export default function AuthorCanvas() {
     contextCompilation.value,
     fixtureCompilation.errors,
     fixtureCompilation.fixtures,
+    graphName,
     graphInputSchema,
     showSimulationResponse,
   ]);
@@ -4787,7 +5204,7 @@ export default function AuthorCanvas() {
     setError('');
     try {
       const response = await simulate(toSimulationRequest(
-        'visualGraph',
+        graphName,
         canvasNodes,
         canvasEdges,
         outputNodeId,
@@ -4806,6 +5223,7 @@ export default function AuthorCanvas() {
     canvasNodes,
     contextCompilation.value,
     fixtureCompilation.fixtures,
+    graphName,
     graphInputSchema,
     outputNodeId,
     showSimulationResponse,
@@ -4841,7 +5259,7 @@ export default function AuthorCanvas() {
         }));
         try {
           const response = await simulate(toSimulationRequest(
-            'visualGraph',
+            graphName,
             canvasNodes,
             canvasEdges,
             outputNodeId,
@@ -4875,6 +5293,7 @@ export default function AuthorCanvas() {
     canvasEdges,
     canvasNodes,
     fixtureCompilation.fixtures,
+    graphName,
     graphInputSchema,
     outputNodeId,
     showSimulationResponse,
@@ -5178,6 +5597,92 @@ export default function AuthorCanvas() {
           {libraryDiagnostics.length > 0 && (
             <ol className="library-diagnostics">
               {libraryDiagnostics.slice(0, 3).map((diagnostic, index) => (
+                <li key={`${diagnostic.code ?? 'diagnostic'}:${index}`}>
+                  {diagnostic.code || diagnostic.level}: {diagnostic.message || diagnostic.target}
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+        <section className="library-intake dsl-import" aria-label="Legacy DSL import" data-testid="legacy-dsl-import">
+          <div className="library-intake-heading">
+            <h2>Legacy DSL</h2>
+            {dslImportBusy && <span>Rendering</span>}
+          </div>
+          <label className="dsl-source-id">
+            <span>Source</span>
+            <input
+              aria-label="DSL source id"
+              data-testid="legacy-dsl-source-id"
+              value={dslSourceId}
+              onChange={(event) => setDslSourceId(event.target.value)}
+            />
+          </label>
+          <textarea
+            aria-label="BLOGE DSL source"
+            data-testid="legacy-dsl-source"
+            spellCheck={false}
+            placeholder="graph migratedFlow { ... }"
+            value={dslSourceText}
+            onChange={(event) => {
+              setDslSourceText(event.target.value);
+              setDslImportNotice(null);
+              setDslImportDiagnostics([]);
+              setDslImportCoverage(null);
+            }}
+          />
+          <div className="library-examples" aria-label="Legacy DSL examples">
+            <span>Examples</span>
+            <div className="library-example-buttons">
+              {LEGACY_DSL_EXAMPLES.map((example) => (
+                <button
+                  key={example.key}
+                  type="button"
+                  className="library-example"
+                  data-testid={`legacy-dsl-example:${example.key}`}
+                  onClick={() => {
+                    setDslSourceId(example.sourceId);
+                    setDslSourceText(example.sourceText);
+                    setDslImportNotice({
+                      level: 'pending',
+                      message: `Loaded ${example.label}. Render to visualize.`,
+                    });
+                    setDslImportDiagnostics([]);
+                    setDslImportCoverage(null);
+                  }}
+                >
+                  <strong>{example.label}</strong>
+                  <span>{example.sourceId}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="library-actions">
+            <button
+              type="button"
+              className="primary compact"
+              data-testid="legacy-dsl-preview"
+              onClick={previewLegacyDsl}
+              disabled={dslImportBusy}
+            >
+              Render DSL
+            </button>
+          </div>
+          {dslImportNotice && (
+            <p className={`library-notice ${dslImportNotice.level}`} data-testid="legacy-dsl-notice">
+              {dslImportNotice.message}
+            </p>
+          )}
+          {dslImportCoverage && (
+            <div className="dsl-import-stats" data-testid="legacy-dsl-coverage">
+              <span>{dslImportCoverage.memberCount ?? 0} members</span>
+              <span>{dslImportCoverage.projectedNodeCount ?? 0} nodes</span>
+              <span>{dslImportCoverage.edgeCount ?? 0} edges</span>
+            </div>
+          )}
+          {dslImportDiagnostics.length > 0 && (
+            <ol className="library-diagnostics" data-testid="legacy-dsl-diagnostics">
+              {dslImportDiagnostics.slice(0, 4).map((diagnostic, index) => (
                 <li key={`${diagnostic.code ?? 'diagnostic'}:${index}`}>
                   {diagnostic.code || diagnostic.level}: {diagnostic.message || diagnostic.target}
                 </li>

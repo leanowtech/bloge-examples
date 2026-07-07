@@ -151,6 +151,29 @@ body {
   font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+.dsl-import textarea {
+  min-height: 132px;
+}
+
+.dsl-source-id {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.dsl-source-id span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.dsl-source-id input {
+  margin-bottom: 0;
+}
+
 .library-examples {
   display: grid;
   gap: 5px;
@@ -209,6 +232,10 @@ body {
   gap: 6px;
 }
 
+.dsl-import .library-actions {
+  grid-template-columns: 1fr;
+}
+
 .library-notice {
   margin: 0;
   padding: 7px 8px;
@@ -246,6 +273,27 @@ body {
   overflow-wrap: anywhere;
   color: var(--danger);
   font-size: 11px;
+}
+
+.dsl-import-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.dsl-import-stats span {
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #f7f9fc;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
 }
 
 .palette-facets {
@@ -1361,6 +1409,11 @@ button.secondary:disabled {
 .react-flow__edge.accepted-edge path {
   stroke: var(--accent);
   stroke-width: 2;
+}
+
+.react-flow__edge.route-edge path {
+  stroke: #9a5b00;
+  stroke-dasharray: 8 5;
 }
 
 .react-flow__edge-text {

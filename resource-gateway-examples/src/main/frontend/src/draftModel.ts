@@ -49,11 +49,32 @@ export interface CanvasEdge {
   id: string;
   source: string;
   target: string;
+  kind?: string;
   sourcePort?: string;
   targetPort?: string;
   sourcePath?: string;
   targetPath?: string;
   bindingKey?: string;
+  condition?: string;
+}
+
+export interface CanvasDraftProjection {
+  graphName: string;
+  nodes: CanvasNode[];
+  edges: CanvasEdge[];
+  outputNodeId: string;
+  inputSchema?: SchemaEnvelope;
+  outputSchema?: SchemaEnvelope;
+  visualLayout?: Record<string, unknown>;
+  nodeFixtures: Record<string, NodeFixture>;
+  operatorFingerprints: Record<string, string>;
+  operatorSnapshots: Record<string, OperatorDefinition>;
+}
+
+export interface GraphDraftExportOptions {
+  visualLayout?: Record<string, unknown>;
+  operatorFingerprints?: Record<string, string>;
+  operatorSnapshots?: Record<string, OperatorDefinition>;
 }
 
 /** Compact operator facts shown directly on canvas cards and palette rows. */
@@ -356,9 +377,10 @@ export function toGraphDraft(
 
   const draftEdges: DraftEdge[] = edges.map((edge) => ({
     id: edge.id,
-    kind: 'data',
+    kind: edge.kind || 'data',
     source: endpoint(edge.source, edge.sourcePort, edge.sourcePath),
     target: endpoint(edge.target, edge.targetPort, edge.targetPath),
+    ...(edge.condition ? { condition: edge.condition } : {}),
   }));
 
   const resolvedOutputNode =
@@ -376,6 +398,9 @@ export function toGraphDraft(
 function nodeInputsFromEdges(edges: CanvasEdge[]): Record<string, Record<string, DraftNodeBinding>> {
   const inputsByNode: Record<string, Record<string, DraftNodeBinding>> = {};
   for (const edge of edges) {
+    if (edge.kind && edge.kind !== 'data') {
+      continue;
+    }
     if (!edge.source || !edge.target) {
       continue;
     }
@@ -426,6 +451,67 @@ function lastPathSegment(path: string | undefined): string {
   return segments[segments.length - 1] ?? '';
 }
 
+export function fromGraphDraft(draft: GraphDraft): CanvasDraftProjection {
+  const nodes = (draft.nodes ?? []).map((node, index) => ({
+    id: node.id,
+    operatorRef: node.operatorRef,
+    label: node.label || node.id,
+    inputs: node.inputs ?? {},
+    config: node.config ?? {},
+    position: validPosition(node.position)
+      ? node.position
+      : {
+          x: AUTO_LAYOUT_LEFT + (index % 4) * (AUTO_LAYOUT_NODE_WIDTH + AUTO_LAYOUT_MIN_COLUMN_GAP),
+          y: AUTO_LAYOUT_TOP + Math.floor(index / 4) * (AUTO_LAYOUT_NODE_HEIGHT + AUTO_LAYOUT_NODE_ROW_GAP),
+        },
+  }));
+  const edges = (draft.edges ?? []).map((edge) => ({
+    id: edge.id,
+    source: edge.source?.nodeId ?? '',
+    target: edge.target?.nodeId ?? '',
+    kind: edge.kind || 'data',
+    sourcePort: edge.source?.port ?? '',
+    targetPort: edge.target?.port ?? '',
+    sourcePath: edge.source?.path ?? '',
+    targetPath: edge.target?.path ?? '',
+    bindingKey: edge.target?.path || edge.target?.port || '',
+    condition: edge.condition ?? '',
+  }));
+  const visualLayout = isRecord(draft.visualLayout) ? draft.visualLayout : undefined;
+  return {
+    graphName: draft.graphName || 'visualGraph',
+    nodes,
+    edges,
+    outputNodeId: draft.output?.nodeId || (nodes.length > 0 ? nodes[nodes.length - 1].id : ''),
+    inputSchema: draft.inputSchema,
+    outputSchema: schemaEnvelopeFromGraphContract(visualLayout, 'outputSchema'),
+    visualLayout,
+    nodeFixtures: draft.nodeFixtures ?? {},
+    operatorFingerprints: draft.operatorFingerprints ?? {},
+    operatorSnapshots: draft.operatorSnapshots ?? {},
+  };
+}
+
+function validPosition(position: { x: number; y: number } | undefined): position is { x: number; y: number } {
+  return Boolean(position && Number.isFinite(position.x) && Number.isFinite(position.y));
+}
+
+function schemaEnvelopeFromGraphContract(
+  visualLayout: Record<string, unknown> | undefined,
+  key: string,
+): SchemaEnvelope | undefined {
+  const graphContract = visualLayout?.graphContract;
+  if (!isRecord(graphContract)) {
+    return undefined;
+  }
+  const candidate = graphContract[key];
+  return isSchemaEnvelope(candidate) ? candidate : undefined;
+}
+
+function isSchemaEnvelope(value: unknown): value is SchemaEnvelope {
+  return isRecord(value) && isRecord(value.schema);
+}
+
 /**
  * Builds a portable draft snapshot for the Author canvas export control.
  *
@@ -439,12 +525,22 @@ export function toExportableGraphDraft(
   outputNodeId: string,
   nodeFixtures: Record<string, NodeFixture> = {},
   inputSchema?: SchemaEnvelope,
+  options: GraphDraftExportOptions = {},
 ): GraphDraft {
   const draft = toGraphDraft(graphName, nodes, edges, outputNodeId, inputSchema);
   return {
     schemaVersion: GRAPH_DRAFT_SCHEMA_VERSION,
     ...draft,
+    ...(options.visualLayout && Object.keys(options.visualLayout).length > 0
+      ? { visualLayout: options.visualLayout }
+      : {}),
     ...(Object.keys(nodeFixtures).length > 0 ? { nodeFixtures } : {}),
+    ...(options.operatorFingerprints && Object.keys(options.operatorFingerprints).length > 0
+      ? { operatorFingerprints: options.operatorFingerprints }
+      : {}),
+    ...(options.operatorSnapshots && Object.keys(options.operatorSnapshots).length > 0
+      ? { operatorSnapshots: options.operatorSnapshots }
+      : {}),
   };
 }
 

@@ -13,6 +13,7 @@ import {
   endpointFromHandle,
   evaluateSimulationTableResult,
   fixtureDraftForOperator,
+  fromGraphDraft,
   handleIdForPort,
   indexConnectionCandidates,
   isRunSuccessful,
@@ -37,7 +38,7 @@ import {
   toGraphDraft,
   toSimulationRequest,
 } from './draftModel';
-import type { OperatorDefinition, SimulationResponse } from './types';
+import type { GraphDraft, OperatorDefinition, SimulationResponse } from './types';
 
 describe('toGraphDraft', () => {
   it('maps canvas nodes and edges into a draft', () => {
@@ -160,6 +161,119 @@ describe('toGraphDraft', () => {
         targetPath: 'score',
       },
     });
+  });
+
+  it('preserves non-data route edges without turning them into node input bindings', () => {
+    const draft = toGraphDraft(
+      'myGraph',
+      [
+        { id: 'source', operatorRef: 'risk:score', position: { x: 0, y: 0 } },
+        { id: 'approve', operatorRef: 'risk:approval', position: { x: 200, y: 0 } },
+      ],
+      [
+        {
+          id: 'route_source_approve',
+          source: 'source',
+          target: 'approve',
+          kind: 'route',
+          condition: 'source.output.score >= 760',
+        },
+      ],
+      'approve',
+    );
+
+    expect(draft.edges[0]).toMatchObject({
+      kind: 'route',
+      condition: 'source.output.score >= 760',
+    });
+    expect(draft.nodes[1].inputs).toEqual({});
+  });
+});
+
+describe('fromGraphDraft', () => {
+  it('restores canvas nodes, edges, graph schemas, and frozen operator snapshots from a draft', () => {
+    const draft: GraphDraft = {
+      schemaVersion: 'bloge.visualGraphDraft.v1',
+      graphName: 'migratedEligibility',
+      inputSchema: {
+        format: 'json-schema',
+        version: '2020-12',
+        schema: {
+          type: 'object',
+          properties: { score: { type: 'integer' } },
+          required: ['score'],
+        },
+      },
+      nodes: [
+        {
+          id: 'eligibility',
+          operatorRef: 'risk:eligibility',
+          label: 'eligibility',
+          position: { x: 120, y: 120 },
+        },
+        {
+          id: 'response',
+          operatorRef: 'bloge:transform',
+          label: 'response',
+          config: { assignments: [{ field: 'eligible', expression: 'eligibility.output.eligible' }] },
+          position: { x: 480, y: 120 },
+        },
+      ],
+      edges: [
+        {
+          id: 'data_eligibility_response_eligible',
+          kind: 'data',
+          source: { nodeId: 'eligibility', port: 'output', path: 'eligible' },
+          target: { nodeId: 'response', port: 'inputs', path: 'eligible' },
+        },
+        {
+          id: 'route_eligibility_response',
+          kind: 'route',
+          source: { nodeId: 'eligibility' },
+          target: { nodeId: 'response' },
+          condition: 'eligibility.output.eligible == true',
+        },
+      ],
+      visualLayout: {
+        graphContract: {
+          outputSchema: {
+            format: 'json-schema',
+            version: '2020-12',
+            schema: {
+              type: 'object',
+              properties: { eligible: { type: 'boolean' } },
+            },
+          },
+        },
+      },
+      output: { nodeId: 'response', path: '' },
+      operatorFingerprints: { eligibility: 'fp-risk' },
+      operatorSnapshots: { eligibility: { operatorRef: 'risk:eligibility' } },
+    };
+
+    const canvas = fromGraphDraft(draft);
+
+    expect(canvas.graphName).toBe('migratedEligibility');
+    expect(canvas.nodes.map((node) => node.id)).toEqual(['eligibility', 'response']);
+    expect(canvas.edges[0]).toMatchObject({
+      source: 'eligibility',
+      target: 'response',
+      sourcePort: 'output',
+      sourcePath: 'eligible',
+      targetPort: 'inputs',
+      targetPath: 'eligible',
+      bindingKey: 'eligible',
+    });
+    expect(canvas.edges[1]).toMatchObject({
+      kind: 'route',
+      condition: 'eligibility.output.eligible == true',
+    });
+    expect(canvas.outputNodeId).toBe('response');
+    expect(canvas.outputSchema?.schema).toMatchObject({
+      properties: { eligible: { type: 'boolean' } },
+    });
+    expect(canvas.operatorFingerprints).toEqual({ eligibility: 'fp-risk' });
+    expect(canvas.operatorSnapshots.eligibility.operatorRef).toBe('risk:eligibility');
   });
 });
 
