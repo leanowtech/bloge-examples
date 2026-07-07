@@ -295,6 +295,51 @@ describe('AuthorCanvas built-in canvas examples', () => {
     }
   });
 
+  it('keeps built-in run-table examples aligned with executable demo graphs', () => {
+    const loan = CANVAS_EXAMPLE_TEMPLATES.find((template) => template.key === 'loan-policy-fallback');
+    const loanDecision = loan?.nodes.find((node) => node.id === 'n4');
+    const loanRules = loanDecision?.config?.rules as Array<{ conditions?: Record<string, string> }> | undefined;
+    expect(loanRules?.[1].conditions?.score).toContain('score < 720');
+
+    const order = CANVAS_EXAMPLE_TEMPLATES.find((template) => template.key === 'order-fulfillment-lane');
+    const orderEnrichment = order?.nodes.find((node) => node.id === 'n2');
+    expect(orderEnrichment?.operatorRef).toBe('bloge:transform');
+    expect(orderEnrichment?.fixtureOutput).toMatchObject({ items: expect.any(Array) });
+    expect(orderEnrichment?.config?.assignments).toMatchObject({
+      items: 'coalesce(inputs.items, [])',
+    });
+
+    expect(order?.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'n1:payload.items->n2:inputs.items',
+        targetPort: 'inputs',
+        targetPath: 'items',
+        bindingKey: 'items',
+      }),
+      expect.objectContaining({
+        id: 'n2:output.items->n5:inputs.enrichedOrders',
+        sourcePort: 'output',
+        sourcePath: 'items',
+        targetPort: 'inputs',
+        targetPath: 'enrichedOrders',
+      }),
+    ]));
+
+    const orderDecision = order?.nodes.find((node) => node.id === 'n4');
+    const orderRules = orderDecision?.config?.rules as Array<{ conditions?: Record<string, string> }> | undefined;
+    expect(orderRules?.[1].conditions).toMatchObject({
+      total: 'total < 2',
+      etaDays: 'etaDays <= 5',
+    });
+    const orderResponse = order?.nodes.find((node) => node.id === 'n5');
+    expect(orderResponse?.config?.assignments).toMatchObject({
+      enrichedOrders: 'coalesce(n2.output.items, [])',
+    });
+    expect(order?.testCases?.[1].fixtureOverrides?.n2?.output).toMatchObject({
+      items: expect.any(Array),
+    });
+  });
+
   it('loads a complex built-in example into the editable canvas draft', async () => {
     await act(async () => {
       root = createRoot(host);

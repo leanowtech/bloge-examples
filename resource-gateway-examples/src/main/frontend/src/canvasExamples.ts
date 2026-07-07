@@ -152,7 +152,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
               output: { decision: 'approve', tier: 'prime', reason: 'strong primary credit' },
             },
             {
-              conditions: { score: 'score >= 680', employmentYears: 'employmentYears >= 2' },
+              conditions: { score: 'score >= 680 && score < 720', employmentYears: 'employmentYears >= 2' },
               output: { decision: 'manual_review', tier: 'standard', reason: 'borderline credit' },
             },
             {
@@ -390,13 +390,20 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
       },
       {
         id: 'n2',
-        operatorRef: '__foreach__:enrichOrders',
+        operatorRef: 'bloge:transform',
         label: 'Enrich order items',
         position: { x: 360, y: 24 },
-        fixtureOutput: [
-          { orderId: 'order-1001', productId: 'prod-8', priority: 'expedite' },
-          { orderId: 'order-1002', productId: 'prod-11', priority: 'standard' },
-        ],
+        config: {
+          assignments: {
+            items: 'coalesce(inputs.items, [])',
+          },
+        },
+        fixtureOutput: {
+          items: [
+            { orderId: 'order-1001', productId: 'prod-8', priority: 'expedite' },
+            { orderId: 'order-1002', productId: 'prod-11', priority: 'standard' },
+          ],
+        },
       },
       {
         id: 'n3',
@@ -422,7 +429,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
               output: { lane: 'expedite', promisedHours: 24, reason: 'multi-order fast lane' },
             },
             {
-              conditions: { etaDays: 'etaDays <= 5' },
+              conditions: { total: 'total < 2', etaDays: 'etaDays <= 5' },
               output: { lane: 'standard', promisedHours: 72, reason: 'normal delivery window' },
             },
             {
@@ -440,7 +447,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         config: {
           assignments: {
             orderCount: 'toNumber(coalesce(n1.output.payload.total, 0))',
-            enrichedOrders: 'coalesce(n2.output, [])',
+            enrichedOrders: 'coalesce(n2.output.items, [])',
             carrier: 'coalesce(n3.output.payload.carrier, "manual")',
             lane: 'n4.output.lane',
             promisedHours: 'toNumber(coalesce(n4.output.promisedHours, 96))',
@@ -451,13 +458,14 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
     ],
     edges: [
       {
-        id: 'n1:payload.items->n2:input',
+        id: 'n1:payload.items->n2:inputs.items',
         source: 'n1',
         target: 'n2',
         sourcePort: 'payload',
         sourcePath: 'items',
-        targetPort: 'input',
-        bindingKey: 'input',
+        targetPort: 'inputs',
+        targetPath: 'items',
+        bindingKey: 'items',
       },
       {
         id: 'n1:payload.items.0.orderId->n3:params.orderId',
@@ -500,10 +508,11 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         bindingKey: 'orderCount',
       },
       {
-        id: 'n2:output->n5:inputs.enrichedOrders',
+        id: 'n2:output.items->n5:inputs.enrichedOrders',
         source: 'n2',
         target: 'n5',
         sourcePort: 'output',
+        sourcePath: 'items',
         targetPort: 'inputs',
         targetPath: 'enrichedOrders',
         bindingKey: 'enrichedOrders',
@@ -582,9 +591,11 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
             },
           },
           n2: {
-            output: [
-              { orderId: 'order-2001', productId: 'prod-21', priority: 'standard' },
-            ],
+            output: {
+              items: [
+                { orderId: 'order-2001', productId: 'prod-21', priority: 'standard' },
+              ],
+            },
           },
           n3: { output: { payload: { carrier: 'UPS', etaDays: 4, cost: 12.2 } } },
         },
