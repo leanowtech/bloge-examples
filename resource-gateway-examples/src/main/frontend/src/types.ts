@@ -105,6 +105,29 @@ export interface OperatorLibraryValidationResult {
   importReadiness?: OperatorLibraryImportReadiness;
 }
 
+/** Projection review for adapting bloge.capabilityCatalog.v1 into a visual operator library. */
+export interface CapabilityCatalogProjectionReview {
+  schemaVersion?: string;
+  catalogId?: string;
+  sourceSchemaVersion?: string;
+  sourceOperatorCount?: number;
+  sourceFunctionCount?: number;
+  projectedOperatorCount?: number;
+  projectedFunctionCount?: number;
+  opaqueSchemaCount?: number;
+  sourceDiagnosticCount?: number;
+  coverageStatus?: string;
+  sourceKinds?: string[];
+}
+
+/** The response of POST /admin/visual-operator-libraries/from-capability-catalog-text. */
+export interface CapabilityCatalogVisualAdapterResult {
+  schemaVersion?: string;
+  library?: OperatorLibrary;
+  validation: OperatorLibraryValidationResult;
+  projectionReview?: CapabilityCatalogProjectionReview;
+}
+
 /** A draft node input binding. */
 export interface DraftNodeBinding {
   kind: string;

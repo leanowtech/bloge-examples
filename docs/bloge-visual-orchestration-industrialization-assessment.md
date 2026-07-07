@@ -94,6 +94,7 @@
 31. draft dependency schema drift issue 现在还携带 bounded `schemaPreview`：服务端在 drift path 上截取冻结快照与当前 catalog 的 JSON Schema 片段，限制深度、对象 key、数组项和字符串长度；selected contract 直接渲染并排 `Frozen schema` / `Current schema` review block，`Schema Search` 可按 preview 内容如 `frozen integer` 命中 drift row，真实浏览器覆盖 schema preview 文本、review row DOM 和 390px mobile no-overflow。
 32. draft dependency report 现在输出 `schemaRebaseDecisions` 和 `schemaRebaseDecisionStateCounts`：服务端把 drifted/missing/catalog/scope/schema drift 节点归入 `ready-rebase`、`ready-capture`、`repair-review`、`blocked` 决策队列；Draft Dependencies 面板可展示队列、focus 节点、在 dirty draft 时禁用 rebase，并通过现有 revision-guarded rebase API 批量刷新 eligible 节点；selected operator contract 也显示当前节点的 `Schema Rebase Queue`，真实浏览器覆盖 repair-review 队列、批量 rebase、selected inspector 队列和 390px mobile no-overflow。
 33. schema-neutral DSL preview/commit import 已落地到后端和 `/author/`：`POST /api/visual/dsl-imports/preview` 接受 `.bloge` 源码、已导入 catalog id 或 preview-only inline visual libraries，复用官方 DSL parser 投影为 `GraphDraft + sourceMap + coverage + diagnostics`；`POST /api/visual/dsl-imports/commit` 接受同一 request，服务端重新投影后保存 governed stored draft/revision，并返回 validation/dependency report。普通 node、transform、decision_table、graph input/output schema、source map 持久化和 missing operator/function diagnostics 已有单元/API/前端测试覆盖。浏览器 Legacy DSL 面板可以 Render DSL、Commit Draft、展示 source map 行列表、点击 source map 行选中画布节点，并在导出 draft 中保留 `visualLayout.import.sourceMap` 与 stored draft identity。
+34. `bloge.capabilityCatalog.v1` preview adapter 已落地：`CapabilityCatalogVisualAdapter` 和 `POST /admin/visual-operator-libraries/from-capability-catalog-text` 可把业务代码导出的 framework catalog JSON/YAML 投影为标准 `bloge.visualOperatorLibrary.v1` 草稿，包含 operator ports、capabilities、function signatures、projection review、opaque schema warning 和原始 implementation provenance。`/author/` Library 面板新增 `Adapt Catalog`，只负责 schema acquisition，之后仍然走现有 Validate / Import / DSL Render，保持通用画布“不关心 schema 生成方式，只消费合法 visual schema”的边界。后端 API 测试和前端 Library intake 测试已覆盖该路径。
 
 ### 尚未成立
 
@@ -102,7 +103,7 @@
 3. IAM/RBAC/secret/egress/审计查询还不是生产后台级别。
 4. durable、event、message、webhook、AI tool 的真实运行时还没有完整闭环。
 5. 前端仍是示例项目形态，复杂度已经接近需要模块化拆分的边界。
-6. 存量 DSL 迁移已经有后端 preview/commit、`/author/` 导入面板、source map 行定位和 stored draft 保存；opaque snippet 修复向导和 semantic round-trip 还没闭环。
+6. 存量 DSL 迁移已经有 capability catalog adapter、后端 preview/commit、`/author/` 导入面板、source map 行定位和 stored draft 保存；opaque snippet 修复向导和 semantic round-trip 还没闭环。
 
 ## 4. 本轮迭代复盘
 

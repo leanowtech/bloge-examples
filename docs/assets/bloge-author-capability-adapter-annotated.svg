@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="725" height="725" viewBox="0 0 725 725" role="img" aria-labelledby="title desc">
+  <title id="title">BLOGE Author Capability Catalog Adapter</title>
+  <desc id="desc">Annotated screenshot showing the capability catalog source, example loader, Adapt Catalog action, and generated visual library notice.</desc>
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#172033" flood-opacity="0.22"/>
+    </filter>
+    <style>
+      .mark { fill: none; stroke: #1f6feb; stroke-width: 3; rx: 8; }
+      .accent { fill: none; stroke: #16a34a; stroke-width: 3; rx: 8; }
+      .label { fill: #172033; font: 700 13px Arial, sans-serif; }
+      .bubble { fill: #ffffff; stroke: #1f6feb; stroke-width: 2; filter: url(#shadow); }
+      .bubble-accent { fill: #ffffff; stroke: #16a34a; stroke-width: 2; filter: url(#shadow); }
+      .num { fill: #1f6feb; font: 800 14px Arial, sans-serif; text-anchor: middle; dominant-baseline: central; }
+      .num-accent { fill: #15803d; font: 800 14px Arial, sans-serif; text-anchor: middle; dominant-baseline: central; }
+    </style>
+  </defs>
+  <image href="bloge-author-capability-adapter.png" x="0" y="0" width="725" height="725"/>
+
+  <rect class="mark" x="13" y="8" width="699" height="86"/>
+  <circle class="bubble" cx="34" cy="28" r="15"/>
+  <text class="num" x="34" y="28">1</text>
+  <text class="label" x="55" y="33">Generated visual library draft</text>
+
+  <rect class="mark" x="13" y="119" width="699" height="223"/>
+  <circle class="bubble" cx="34" cy="139" r="15"/>
+  <text class="num" x="34" y="139">2</text>
+  <text class="label" x="55" y="144">Capability catalog example</text>
+
+  <rect class="mark" x="14" y="350" width="346" height="26"/>
+  <circle class="bubble" cx="336" cy="363" r="15"/>
+  <text class="num" x="336" y="363">3</text>
+  <text class="label" x="151" y="367">Adapt Catalog</text>
+
+  <rect class="accent" x="14" y="413" width="698" height="29"/>
+  <circle class="bubble-accent" cx="684" cy="427" r="15"/>
+  <text class="num-accent" x="684" y="427">4</text>
+  <text class="label" x="22" y="432">Adapter result notice: projected operators/functions</text>
+</svg>

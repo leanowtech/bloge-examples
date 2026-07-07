@@ -1,6 +1,6 @@
 # 存量 BLOGE DSL 业务迁移到可视化编排设计方案
 
-状态：Partially Implemented / Phase 2.4 迁移专线；resource-gateway 已落地 schema-neutral DSL preview/commit 后端、`/author/` Legacy DSL 面板、source map 行定位和 stored draft 保存
+状态：Partially Implemented / Phase 2.4 迁移专线；resource-gateway 已落地 capability catalog adapter、schema-neutral DSL preview/commit 后端、`/author/` Legacy DSL 面板、source map 行定位和 stored draft 保存
 目标读者：BLOGE framework、resource-gateway visual canvas、Studio/LSP、业务平台迁移团队
 适用场景：业务系统已经集成 BLOGE 引擎和 DSL，已经自定义实现一批 Java 算子/表达式函数，并通过手写 `.bloge` DSL 承载业务逻辑，现在希望升级到可视化编排交付模式。
 
@@ -62,6 +62,7 @@ Canvas rendering: 只消费合法 schema + DSL，并投影成可视化 GraphDraf
 | `export-schema` 会合并 operator metadata 与 expression function registry | `BlogeCapabilityExporter` | 业务算子与 built-in function 可以统一进入迁移入口 |
 | resource-gateway 画布当前核心草稿是 `GraphDraft` | `resource-gateway-examples/.../visual/draft/GraphDraft.java` | DSL import 应输出现有 `bloge.visualGraphDraft.v1`，不要新增并行模型 |
 | 画布当前已有 GraphDraft -> DSL codegen | `GraphDraftDslGenerator` | 迁移后要做 semantic round-trip，而不是仅渲染一次 |
+| resource-gateway 已有 capability catalog adapter | `resource-gateway-examples/.../visual/catalog/CapabilityCatalogVisualAdapter.java`、`OperatorLibraryAdminController#fromCapabilityCatalogText`、`src/main/frontend/src/AuthorCanvas.tsx` | `POST /admin/visual-operator-libraries/from-capability-catalog-text` 可把 `bloge.capabilityCatalog.v1` JSON/YAML 预览投影为标准 `bloge.visualOperatorLibrary.v1` 草稿；`/author/` Library 面板提供 `Adapt Catalog`，但导入、DSL preview 和画布渲染仍只消费标准 visual library |
 | resource-gateway 已有 DSL preview/commit import 入口 | `resource-gateway-examples/.../visual/importer/DslImportService.java`、`DslImportController.java`、`src/main/frontend/src/AuthorCanvas.tsx` | 第一版已支持普通 node、transform、decision_table、graph input/output schema、source map、missing operator/function diagnostics，并已接入 `/author/` Legacy DSL 面板和 source map 行列表；点击 source map 行可以选中对应画布节点，`Commit Draft` 会用同一 schema-neutral request 服务端重投影后保存 stored draft，opaque snippet 修复向导和 round-trip 仍待接入 |
 
 结论：迁移方案应把现有 `bloge.capabilityCatalog.v1`、`DslCompiler.parseAst()`、`GraphDraft` 和 `GraphDraftDslGenerator` 串起来，而不是另造一个 Studio-only 或 canvas-only 格式。
@@ -108,7 +109,7 @@ src/main/resources/bloge/order-fulfillment.bloge
 2. 如果团队已经标准接入 BLOGE，推荐在业务项目接入 `bloge-maven-plugin:export-schema`，由 CI 生成 `target/bloge-capability-catalog.json`。
 3. 使用 `bloge:validate` 或等价校验能力对 `.bloge` 文件做 operator/function/schema 编译级校验。
 4. 在通用画布打开 Legacy DSL Import。
-5. 导入或 inline 提供合法 `bloge.visualOperatorLibrary.v1`；`bloge.capabilityCatalog.v1` 需要先经过 adapter，adapter 仍是后续切片。
+5. 导入或 inline 提供合法 `bloge.visualOperatorLibrary.v1`；如果手上是 `bloge.capabilityCatalog.v1`，先在 Library 面板点击 `Adapt Catalog` 生成 visual library 草稿，再 Validate / Import。
 6. 导入一个或多个 `.bloge` 文件。
 7. 查看 import preview：节点、边、graph input/output schema、函数引用、unsupported diagnostics。
 8. 对 unresolved 节点或函数执行修复：选择 catalog operator、补 schema、标记 opaque、确认 function alias。
@@ -212,15 +213,25 @@ DslImportSession -> DslVisualProjector -> GraphDraft + sourceMap + diagnostics
 ```json
 {
   "source": {
-    "kind": "bloge-capability-catalog",
+    "kind": "user-library",
     "libraryId": "risk-service"
   },
   "lowering": {
-    "mode": "native",
-    "operatorRef": "risk:score"
+    "mode": "design",
+    "operatorRef": "",
+    "parameters": {
+      "bindingTarget": "risk:score",
+      "capabilityCatalog": {
+        "catalogId": "risk-service",
+        "implementationKind": "java-operator",
+        "className": "com.acme.RiskScoreOperator"
+      }
+    }
   }
 }
 ```
+
+这里故意不把 capability catalog 投影成 `source.kind=java-operator` 或 `lowering.mode=native`。原因是通用画布运行在 resource-gateway 示例环境里，它能审阅和编排业务算子 schema，但并不天然拥有业务系统里的 Java operator runtime。adapter 默认生成 design-only operator，保证迁移阶段可以先可视化、连线、验证和生成 DSL；真正 executable lowering 由业务侧 BLOGE runtime、平台部署或后续 runtime binding 流程承接。
 
 ### 6.3 `DslImportSession`
 
@@ -471,25 +482,28 @@ inline visual library
 
 因此 API 设计上要避免把 capability catalog 写死在 DSL import request 里。Capability catalog 导入是独立入口，DSL preview import 接受的是“当前可用 catalog ids 或 inline schema”。
 
-### 9.1 Capability catalog 导入
+### 9.1 Capability catalog adapter preview
 
 ```http
-POST /admin/visual-operator-libraries/from-capability-catalog/validate
-POST /admin/visual-operator-libraries/from-capability-catalog/import
+POST /admin/visual-operator-libraries/from-capability-catalog-text
 ```
 
 输入：
 
-```json
-{
-  "catalog": { "schemaVersion": "bloge.capabilityCatalog.v1" },
-  "libraryIdOverride": "risk-service",
-  "importMode": "ADAPT_TO_VISUAL_LIBRARY",
-  "includeImplementationClass": false
-}
+```yaml
+schemaVersion: bloge.capabilityCatalog.v1
+catalogId: risk-service
+operators: []
+functions: []
 ```
 
-输出沿用现有 `OperatorLibraryValidationResult` / import readiness，并附加 adapter diagnostics。
+输出是 `CapabilityCatalogVisualAdapterResult`，包含：
+
+- `library`：生成的标准 `bloge.visualOperatorLibrary.v1` 草稿，不自动存储。
+- `validation`：同一套 `OperatorLibraryValidationResult` / import readiness。
+- `projectionReview`：source operator/function 数、projected 数、opaque schema 数和 coverage status。
+
+如果用户确认草稿，继续调用现有 `POST /admin/visual-operator-libraries/validate-text` 和 `POST /admin/visual-operator-libraries/import-text`。这条分层很重要：adapter 负责 schema acquisition，画布和 DSL import 仍只依赖合法 visual library。
 
 ### 9.2 DSL preview import
 
@@ -683,12 +697,12 @@ Step 4 Commit
 
 ### 11.2 Capability catalog
 
-已有 `bloge.capabilityCatalog.v1`，后续重点是：
+已有 `bloge.capabilityCatalog.v1`，resource-gateway 已有第一版 preview adapter。后续重点是：
 
 1. 函数 descriptor 覆盖率：旧式 `ExpressionFunction` fallback 要逐步替换为完整 descriptor。
 2. operator config schema：把运行配置、timeout/retry/fallback 等可视化编辑合同标准化。
 3. source provenance：明确 annotation、SchemaAware、runtime registry、manual override 的来源。
-4. visual adapter：提供 official `CapabilityCatalog -> VisualOperatorLibrary` 投影器，避免各业务重复写。
+4. visual adapter：把 resource-gateway 中的 `CapabilityCatalog -> VisualOperatorLibrary` 投影器沉淀为更官方、可复用的框架级 adapter SPI，避免各业务重复写。
 5. security profile：把 requiresSecrets、sideEffectType、determinism、runtime profile 暴露得更完整。
 
 ### 11.3 Maven 插件
@@ -792,18 +806,18 @@ visual/importer/
 
 交付：
 
-- Schema-neutral visual library validate/import 能力，保证手写、平台下发、工具生成的合法 schema 都可进入画布。
-- `bloge.capabilityCatalog.v1` validate/import API。
-- Capability -> visual library adapter。
-- functions -> `builtInFunctions` 映射。
-- adapter diagnostics。
+- 已完成：Schema-neutral visual library validate/import 能力，保证手写、平台下发、工具生成的合法 schema 都可进入画布。
+- 已完成：`bloge.capabilityCatalog.v1` preview adapter API：`POST /admin/visual-operator-libraries/from-capability-catalog-text`。
+- 已完成：Capability -> visual library adapter，默认生成 design-only operator 并保留 implementation provenance。
+- 已完成：functions -> `builtInFunctions` 映射。
+- 已完成：adapter diagnostics、projection review、opaque schema warning。
 
 验收：
 
-- 任意结构合法的 visual library 能进入 `/author/` palette。
-- 用真实业务导出的 capability catalog 能通过 adapter 进入 `/author/` palette。
-- transform expression editor 能看到业务函数。
-- catalog 中 opaque schema 被明确标记。
+- 已验证：任意结构合法的 visual library 能进入 `/author/` palette。
+- 已验证：capability catalog 能通过 adapter 生成 visual library 草稿；用户 Validate / Import 后进入 `/author/` palette。
+- 已验证：业务函数会投影到 `builtInFunctions`，随 visual catalog 下发给表达式编辑器。
+- 已验证：catalog 中无法投影的端口 schema 会以 opaque schema warning 标记。
 
 ### Phase 2.2：DSL import preview MVP
 
@@ -951,8 +965,9 @@ canvas rendering depends on Maven export / business code scan / specific schema 
 
 优先切片应该是：
 
-1. 在 resource-gateway visual 层实现 `CapabilityCatalogVisualAdapter`，支持把 `bloge.capabilityCatalog.v1` 适配为 visual library，但不把它作为唯一入口。
-2. 给 imported draft 增加一等 source provenance 字段；当前 source map 已在 preview response、`/author/` 面板、导出 draft 和 commit 后 stored draft 的 `visualLayout.import.sourceMap` 中保留。
-3. 增加 round-trip API，阻止不等价回写。
+1. 已完成：resource-gateway visual 层实现 `CapabilityCatalogVisualAdapter` 和 `/admin/visual-operator-libraries/from-capability-catalog-text`，支持把 `bloge.capabilityCatalog.v1` 预览适配为 visual library，但不把它作为唯一入口。
+2. 已完成：`/author/` Library 面板提供 `Adapt Catalog`，会把 framework catalog 回填成标准 `bloge.visualOperatorLibrary.v1` 草稿，之后仍走现有 Validate / Import。
+3. 待完成：给 imported draft 增加更完整的一等 source provenance 字段；当前 source map 已在 preview response、`/author/` 面板、导出 draft 和 commit 后 stored draft 的 `visualLayout.import.sourceMap` 中保留。
+4. 待完成：增加 round-trip API，阻止不等价回写。
 
 这个切片闭环之后，存量业务团队就能从“手写 DSL 黑盒”进入“可视化审阅 + schema 约束 + 测试验证”的交付路径。

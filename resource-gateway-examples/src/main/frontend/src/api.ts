@@ -1,4 +1,5 @@
 import type {
+  CapabilityCatalogVisualAdapterResult,
   ConnectionCandidatesRequest,
   ConnectionCandidatesResponse,
   ConnectionCheckRequest,
@@ -187,6 +188,17 @@ export async function importOperatorLibraryText(sourceText: string): Promise<Ope
   });
   return readJsonMutation<OperatorLibrary>(
     await fetch(`/admin/visual-operator-libraries/import-text?${query.toString()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: sourceText,
+    }),
+  );
+}
+
+/** Adapts pasted bloge.capabilityCatalog.v1 JSON/YAML into a visual operator-library draft. */
+export async function adaptCapabilityCatalogText(sourceText: string): Promise<CapabilityCatalogVisualAdapterResult> {
+  return readJsonMutation<CapabilityCatalogVisualAdapterResult>(
+    await fetch('/admin/visual-operator-libraries/from-capability-catalog-text', {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: sourceText,

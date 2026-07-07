@@ -24,6 +24,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 
 import {
+  adaptCapabilityCatalogText,
   checkConnection,
   commitDslImport,
   fetchConnectionCandidates,
@@ -3319,6 +3320,96 @@ const OPERATOR_LIBRARY_EXAMPLES: OperatorLibraryExample[] = [
       ],
     }, null, 2),
   },
+  {
+    key: 'capability-catalog',
+    label: 'Capability catalog',
+    description: 'Framework export adapter',
+    sourceText: JSON.stringify({
+      schemaVersion: 'bloge.capabilityCatalog.v1',
+      catalogId: 'risk-capabilities',
+      displayName: 'Risk Capabilities',
+      blogeVersion: '1.2.3',
+      generatedAt: '2026-07-07T09:00:00Z',
+      operators: [
+        {
+          operatorRef: 'risk:eligibility',
+          operatorVersion: '1.0.0',
+          display: {
+            name: 'Eligibility',
+            description: 'Existing BLOGE business operator exported from code.',
+            tags: ['risk', 'decision', 'legacy'],
+          },
+          implementation: {
+            kind: 'java-operator',
+            className: 'com.acme.risk.EligibilityOperator',
+            inputType: 'com.acme.risk.Applicant',
+            outputType: 'com.acme.risk.Decision',
+          },
+          ports: {
+            inputs: [
+              {
+                name: 'applicant',
+                required: true,
+                schema: {
+                  format: 'json-schema',
+                  version: '2020-12',
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      score: { type: 'integer', minimum: 300, maximum: 850 },
+                      requestedAmount: { type: 'number', minimum: 0 },
+                    },
+                    required: ['score', 'requestedAmount'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+            ],
+            outputs: [
+              {
+                name: 'decision',
+                schema: {
+                  format: 'json-schema',
+                  version: '2020-12',
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      eligible: { type: 'boolean' },
+                      reason: { type: 'string' },
+                    },
+                    required: ['eligible'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+            ],
+          },
+          capabilities: {
+            idempotency: 'IDEMPOTENT',
+            sideEffectType: 'READ_ONLY',
+            deterministic: true,
+          },
+        },
+      ],
+      functions: [
+        {
+          name: 'normalizeScore',
+          namespace: 'risk',
+          displayName: 'Normalize score',
+          description: 'Existing expression helper exported from business code.',
+          category: 'risk',
+          signatures: [
+            {
+              label: 'normalizeScore(score)',
+              parameters: [{ name: 'score', type: 'Integer' }],
+              returns: { type: 'Boolean' },
+            },
+          ],
+          examples: ['risk.normalizeScore(inputs.score)'],
+        },
+      ],
+    }, null, 2),
+  },
 ];
 
 interface LegacyDslExample {
@@ -4585,6 +4676,45 @@ export default function AuthorCanvas() {
     useFixtureSampleForNode(selectedNodeId, selectedOperator);
   }, [selectedNodeId, selectedOperator, useFixtureSampleForNode]);
 
+  const adaptCapabilityCatalogSource = useCallback(async () => {
+    if (!librarySourceText.trim()) {
+      setLibraryDiagnostics([]);
+      setLibraryNotice({ level: 'error', message: 'Capability catalog source is empty.' });
+      return;
+    }
+    setLibraryBusy(true);
+    try {
+      const adaptation = await adaptCapabilityCatalogText(librarySourceText);
+      setLibraryDiagnostics(adaptation.validation?.diagnostics ?? []);
+      if (!adaptation.library) {
+        const level = operatorLibraryValidationLevel(adaptation.validation);
+        setLibraryNotice({
+          level: level === 'ok' ? 'ok' : level,
+          message: operatorLibraryValidationMessage(adaptation.validation),
+        });
+        return;
+      }
+      setLibrarySourceText(JSON.stringify(adaptation.library, null, 2));
+      const projectedOperators = adaptation.projectionReview?.projectedOperatorCount
+        ?? adaptation.library.operators.length;
+      const projectedFunctions = adaptation.projectionReview?.projectedFunctionCount
+        ?? adaptation.library.builtInFunctions?.length
+        ?? 0;
+      const opaqueSchemas = adaptation.projectionReview?.opaqueSchemaCount ?? 0;
+      const coverage = adaptation.projectionReview?.coverageStatus ?? 'projected';
+      const suffix = opaqueSchemas > 0 ? `, ${opaqueSchemas} opaque schema fallbacks` : '';
+      setLibraryNotice({
+        level: adaptation.validation?.valid ? 'ok' : 'warning',
+        message: `Adapted ${adaptation.library.libraryId}: ${projectedOperators} operators / ${projectedFunctions} functions (${coverage}${suffix}). Validate before importing.`,
+      });
+    } catch (cause: unknown) {
+      setLibraryDiagnostics([]);
+      setLibraryNotice({ level: 'error', message: String(cause) });
+    } finally {
+      setLibraryBusy(false);
+    }
+  }, [librarySourceText]);
+
   const validateLibrarySource = useCallback(async () => {
     if (!librarySourceText.trim()) {
       setLibraryDiagnostics([]);
@@ -5775,7 +5905,7 @@ export default function AuthorCanvas() {
             aria-label="Operator library JSON or YAML"
             data-testid="operator-library-source"
             spellCheck={false}
-            placeholder="bloge.visualOperatorLibrary.v1 JSON/YAML"
+            placeholder="bloge.visualOperatorLibrary.v1 JSON/YAML, or bloge.capabilityCatalog.v1 for Adapt Catalog"
             value={librarySourceText}
             onChange={(event) => {
               setLibrarySourceText(event.target.value);
@@ -5796,7 +5926,9 @@ export default function AuthorCanvas() {
                     setLibrarySourceText(example.sourceText);
                     setLibraryNotice({
                       level: 'pending',
-                      message: `Loaded ${example.label} example. Validate before importing.`,
+                      message: example.key === 'capability-catalog'
+                        ? `Loaded ${example.label} example. Adapt Catalog before validating.`
+                        : `Loaded ${example.label} example. Validate before importing.`,
                     });
                     setLibraryDiagnostics([]);
                   }}
@@ -5808,6 +5940,15 @@ export default function AuthorCanvas() {
             </div>
           </div>
           <div className="library-actions">
+            <button
+              type="button"
+              className="secondary compact"
+              data-testid="operator-library-adapt-capability"
+              onClick={adaptCapabilityCatalogSource}
+              disabled={libraryBusy}
+            >
+              Adapt Catalog
+            </button>
             <button
               type="button"
               className="secondary compact"

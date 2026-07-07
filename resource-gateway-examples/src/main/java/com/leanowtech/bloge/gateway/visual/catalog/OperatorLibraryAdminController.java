@@ -50,6 +50,7 @@ public class OperatorLibraryAdminController {
     private final VisualGraphPublicationRepository publicationRepository;
     private final JavaOperatorInventoryProjector javaOperatorProjector;
     private final AsyncApiOperatorLibraryImporter asyncApiImporter;
+    private final CapabilityCatalogVisualAdapter capabilityCatalogAdapter;
 
     /**
      * @param registry library registry
@@ -58,6 +59,7 @@ public class OperatorLibraryAdminController {
      * @param publicationRepository immutable visual graph publication repository
      * @param javaOperatorProjector runtime Java operator projector
      * @param asyncApiImporter AsyncAPI operator-library preview importer
+     * @param capabilityCatalogAdapter BLOGE capability catalog to visual library preview adapter
      */
     @Autowired
     public OperatorLibraryAdminController(OperatorLibraryRegistry registry,
@@ -65,7 +67,8 @@ public class OperatorLibraryAdminController {
                                           GraphDraftRepository draftRepository,
                                           VisualGraphPublicationRepository publicationRepository,
                                           JavaOperatorInventoryProjector javaOperatorProjector,
-                                          AsyncApiOperatorLibraryImporter asyncApiImporter) {
+                                          AsyncApiOperatorLibraryImporter asyncApiImporter,
+                                          CapabilityCatalogVisualAdapter capabilityCatalogAdapter) {
         this.registry = registry;
         this.validator = validator;
         this.draftRepository = draftRepository;
@@ -76,6 +79,9 @@ public class OperatorLibraryAdminController {
         this.asyncApiImporter = asyncApiImporter == null
                 ? new AsyncApiOperatorLibraryImporter()
                 : asyncApiImporter;
+        this.capabilityCatalogAdapter = capabilityCatalogAdapter == null
+                ? new CapabilityCatalogVisualAdapter()
+                : capabilityCatalogAdapter;
     }
 
     OperatorLibraryAdminController(OperatorLibraryRegistry registry,
@@ -84,7 +90,7 @@ public class OperatorLibraryAdminController {
                                    VisualGraphPublicationRepository publicationRepository,
                                    JavaOperatorInventoryProjector javaOperatorProjector) {
         this(registry, validator, draftRepository, publicationRepository, javaOperatorProjector,
-                new AsyncApiOperatorLibraryImporter());
+                new AsyncApiOperatorLibraryImporter(), new CapabilityCatalogVisualAdapter());
     }
 
     OperatorLibraryAdminController(OperatorLibraryRegistry registry,
@@ -92,7 +98,7 @@ public class OperatorLibraryAdminController {
                                    GraphDraftRepository draftRepository,
                                    VisualGraphPublicationRepository publicationRepository) {
         this(registry, validator, draftRepository, publicationRepository, JavaOperatorInventoryProjector.empty(),
-                new AsyncApiOperatorLibraryImporter());
+                new AsyncApiOperatorLibraryImporter(), new CapabilityCatalogVisualAdapter());
     }
 
     /**
@@ -262,6 +268,40 @@ public class OperatorLibraryAdminController {
     public AsyncApiOperationDiscoveryResult fromAsyncApiOperations(
             @RequestBody(required = false) AsyncApiOperatorLibraryImportRequest request) {
         return asyncApiImporter.discoverOperations(request);
+    }
+
+    /**
+     * Projects BLOGE framework capability-catalog JSON or YAML into a visual
+     * operator-library draft without storing it.
+     *
+     * <p>This keeps the generic canvas schema-neutral: capability catalog is one
+     * upstream schema acquisition source, while the canvas still consumes the same
+     * {@code bloge.visualOperatorLibrary.v1} contract as hand-written or platform
+     * generated libraries.</p>
+     *
+     * @param sourceText raw JSON or YAML {@code bloge.capabilityCatalog.v1} source text
+     * @param force bypass stored-draft replacement impact diagnostics in preview
+     * @return generated library draft plus validation/profile/impact evidence
+     */
+    @PostMapping("/from-capability-catalog-text")
+    public ResponseEntity<CapabilityCatalogVisualAdapterResult> fromCapabilityCatalogText(
+            @RequestBody(required = false) String sourceText,
+            @RequestParam(defaultValue = "false") boolean force) {
+        CapabilityCatalogTextParseResult parsed = parseCapabilityCatalogSourceText(sourceText);
+        if (parsed.error() != null) {
+            return ResponseEntity.badRequest().body(parsed.error());
+        }
+        CapabilityCatalogVisualAdapterResult projected = capabilityCatalogAdapter.project(parsed.catalog());
+        if (projected.library() == null || !projected.validation().valid()) {
+            return ResponseEntity.ok(projected);
+        }
+        List<VisualDiagnostic> diagnostics = new ArrayList<>(projected.validation().diagnostics());
+        diagnostics.addAll(validateAgainstRegistry(projected.library(), force).diagnostics());
+        return ResponseEntity.ok(new CapabilityCatalogVisualAdapterResult(
+                projected.schemaVersion(),
+                projected.library(),
+                validationResult(projected.library(), diagnostics),
+                projected.projectionReview()));
     }
 
     /**
@@ -684,6 +724,30 @@ public class OperatorLibraryAdminController {
         }
     }
 
+    private static CapabilityCatalogTextParseResult parseCapabilityCatalogSourceText(String sourceText) {
+        if (sourceText == null || sourceText.isBlank()) {
+            return CapabilityCatalogTextParseResult.error(VisualDiagnostic.error(
+                    "visual.capabilityCatalog.source.missing",
+                    "Capability catalog source text is required as JSON or YAML.",
+                    "/sourceText"));
+        }
+        try {
+            Object decoded = OPERATOR_LIBRARY_TEXT_MAPPER.readValue(sourceText, Object.class);
+            if (!(decoded instanceof Map<?, ?> rawMap)) {
+                return CapabilityCatalogTextParseResult.error(VisualDiagnostic.error(
+                        "visual.capabilityCatalog.source.objectRequired",
+                        "Capability catalog source text must contain a JSON or YAML object.",
+                        "/sourceText"));
+            }
+            return new CapabilityCatalogTextParseResult(stringObjectMap(rawMap), null);
+        } catch (JsonProcessingException ex) {
+            return CapabilityCatalogTextParseResult.error(VisualDiagnostic.error(
+                    "visual.capabilityCatalog.source.malformed",
+                    "Capability catalog source must be valid JSON or YAML: " + ex.getOriginalMessage(),
+                    "/sourceText"));
+        }
+    }
+
     private record OperatorLibraryTextParseResult(
             OperatorLibrary library,
             OperatorLibraryValidationResult error
@@ -694,6 +758,29 @@ public class OperatorLibraryAdminController {
                     OperatorLibraryImpactReview.empty(),
                     OperatorLibraryProfile.empty()));
         }
+    }
+
+    private record CapabilityCatalogTextParseResult(
+            Map<String, Object> catalog,
+            CapabilityCatalogVisualAdapterResult error
+    ) {
+        private static CapabilityCatalogTextParseResult error(VisualDiagnostic diagnostic) {
+            OperatorLibraryValidationResult validation = new OperatorLibraryValidationResult(false,
+                    List.of(diagnostic),
+                    OperatorLibraryImpactReview.empty(),
+                    OperatorLibraryProfile.empty());
+            return new CapabilityCatalogTextParseResult(null, new CapabilityCatalogVisualAdapterResult(
+                    CapabilityCatalogVisualAdapterResult.SCHEMA_VERSION,
+                    null,
+                    validation,
+                    CapabilityCatalogProjectionReview.empty("", "")));
+        }
+    }
+
+    private static Map<String, Object> stringObjectMap(Map<?, ?> rawMap) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        rawMap.forEach((key, value) -> result.put(String.valueOf(key), value));
+        return result;
     }
 
     private OperatorLibraryValidationResult validateAgainstRegistry(OperatorLibrary library, boolean force) {

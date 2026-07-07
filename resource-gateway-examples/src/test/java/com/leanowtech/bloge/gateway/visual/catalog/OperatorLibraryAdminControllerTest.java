@@ -260,6 +260,104 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void fromCapabilityCatalogProjectsVisualLibraryDraftWithoutStoring() throws Exception {
+        String capabilityCatalog = """
+                schemaVersion: bloge.capabilityCatalog.v1
+                catalogId: risk-capabilities
+                displayName: Risk Capabilities
+                blogeVersion: 1.2.3
+                generatedAt: 2026-07-07T09:00:00Z
+                operators:
+                  - operatorRef: risk:eligibility
+                    operatorVersion: 1.0.0
+                    display:
+                      name: Eligibility
+                      description: Checks applicant facts.
+                      tags: [risk, decision]
+                    implementation:
+                      kind: java-operator
+                      className: com.acme.RiskEligibilityOperator
+                      inputType: com.acme.Applicant
+                      outputType: com.acme.Decision
+                    ports:
+                      inputs:
+                        - name: applicant
+                          required: true
+                          schema:
+                            format: json-schema
+                            version: 2020-12
+                            schema:
+                              type: object
+                              properties:
+                                score:
+                                  type: integer
+                              required: [score]
+                              additionalProperties: false
+                      outputs:
+                        - name: decision
+                          schema:
+                            format: json-schema
+                            version: 2020-12
+                            schema:
+                              type: object
+                              properties:
+                                eligible:
+                                  type: boolean
+                              required: [eligible]
+                              additionalProperties: false
+                    capabilities:
+                      idempotency: IDEMPOTENT
+                      sideEffectType: READ_ONLY
+                      deterministic: true
+                functions:
+                  - name: normalizeScore
+                    namespace: risk
+                    displayName: Normalize score
+                    description: Normalizes bureau scores.
+                    category: risk
+                    signatures:
+                      - label: normalizeScore(score)
+                        parameters:
+                          - name: score
+                            type: Integer
+                        returns:
+                          type: Boolean
+                    examples:
+                      - risk.normalizeScore(inputs.score)
+                """;
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/from-capability-catalog-text")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content(capabilityCatalog))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion")
+                        .value(CapabilityCatalogVisualAdapterResult.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.validation.valid").value(true))
+                .andExpect(jsonPath("$.validation.importReadiness.state").value("design-only-importable"))
+                .andExpect(jsonPath("$.library.schemaVersion").value("bloge.visualOperatorLibrary.v1"))
+                .andExpect(jsonPath("$.library.libraryId").value("risk-capabilities"))
+                .andExpect(jsonPath("$.library.builtInFunctions[0].name").value("normalizeScore"))
+                .andExpect(jsonPath("$.library.builtInFunctions[0].signatures[0].parameters[0].type")
+                        .value("integer"))
+                .andExpect(jsonPath("$.library.builtInFunctions[0].signatures[0].returns.type")
+                        .value("boolean"))
+                .andExpect(jsonPath("$.library.operators[0].operatorRef").value("risk:eligibility"))
+                .andExpect(jsonPath("$.library.operators[0].source.kind").value("user-library"))
+                .andExpect(jsonPath("$.library.operators[0].lowering.mode").value("design"))
+                .andExpect(jsonPath("$.library.operators[0].lowering.parameters.bindingTarget")
+                        .value("risk:eligibility"))
+                .andExpect(jsonPath("$.library.operators[0].lowering.parameters.capabilityCatalog.className")
+                        .value("com.acme.RiskEligibilityOperator"))
+                .andExpect(jsonPath("$.library.operators[0].capabilities.effect").value("READ_EXTERNAL"))
+                .andExpect(jsonPath("$.library.operators[0].capabilities.idempotency").value("IDEMPOTENT"))
+                .andExpect(jsonPath("$.projectionReview.coverageStatus").value("FULL"))
+                .andExpect(jsonPath("$.projectionReview.sourceOperatorCount").value(1))
+                .andExpect(jsonPath("$.projectionReview.projectedFunctionCount").value(1));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
     void fromAsyncApiProjectsExternalBoundaryOperatorsWithoutStoring() throws Exception {
         String asyncApi = """
                 asyncapi: '2.6.0'

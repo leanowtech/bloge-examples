@@ -83,6 +83,14 @@ describe('AuthorCanvas operator-library intake', () => {
       if (url === '/api/visual/operators') {
         return jsonResponse({ operators: imported ? [eligibilityOperator()] : [] });
       }
+      if (url === '/admin/visual-operator-libraries/from-capability-catalog-text') {
+        expect(init).toMatchObject({
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: sampleCapabilityCatalogJson,
+        });
+        return jsonResponse(capabilityAdapterResult());
+      }
       if (url === '/admin/visual-operator-libraries/validate-text') {
         expect(init).toMatchObject({
           method: 'POST',
@@ -184,6 +192,28 @@ describe('AuthorCanvas operator-library intake', () => {
     );
     expect(document.body.textContent).toContain('1 nodes');
     expect(document.body.textContent).toContain('Output n1');
+  });
+
+  it('adapts a framework capability catalog into the standard visual library draft', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/visual/operators'));
+    await setControlValue(query<HTMLTextAreaElement>('[data-testid="operator-library-source"]'),
+      sampleCapabilityCatalogJson);
+    await click(query<HTMLButtonElement>('[data-testid="operator-library-adapt-capability"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-library-notice"]').textContent)
+        .toContain('Adapted risk-capabilities: 1 operators / 1 functions (FULL). Validate before importing.'),
+    );
+    const source = query<HTMLTextAreaElement>('[data-testid="operator-library-source"]');
+    expect(source.value).toContain('"schemaVersion": "bloge.visualOperatorLibrary.v1"');
+    expect(source.value).toContain('"libraryId": "risk-capabilities"');
+    expect(source.value).toContain('"builtInFunctions"');
+    expect(source.value).toContain('"lowering"');
   });
 
   it('loads concrete operator-library schema examples into the source editor', async () => {
@@ -1686,6 +1716,38 @@ const sampleLibraryYaml = [
   '  - operatorRef: risk:eligibility',
 ].join('\n');
 
+const sampleCapabilityCatalogJson = JSON.stringify({
+  schemaVersion: 'bloge.capabilityCatalog.v1',
+  catalogId: 'risk-capabilities',
+  displayName: 'Risk Capabilities',
+  blogeVersion: '1.2.3',
+  operators: [
+    {
+      operatorRef: 'risk:eligibility',
+      display: { name: 'Eligibility', tags: ['risk'] },
+      implementation: { kind: 'java-operator', className: 'com.acme.RiskEligibilityOperator' },
+      ports: {
+        inputs: [{ name: 'applicant', required: true, schema: schema({ type: 'object' }) }],
+        outputs: [{ name: 'decision', schema: schema({ type: 'object' }) }],
+      },
+      capabilities: { idempotency: 'IDEMPOTENT', sideEffectType: 'READ_ONLY', deterministic: true },
+    },
+  ],
+  functions: [
+    {
+      name: 'normalizeScore',
+      namespace: 'risk',
+      signatures: [
+        {
+          label: 'normalizeScore(score)',
+          parameters: [{ name: 'score', type: 'Integer' }],
+          returns: { type: 'Boolean' },
+        },
+      ],
+    },
+  ],
+}, null, 2);
+
 function validationResult(): OperatorLibraryValidationResult {
   return {
     valid: true,
@@ -1695,6 +1757,43 @@ function validationResult(): OperatorLibraryValidationResult {
       level: 'info',
       operatorCount: 1,
       message: 'Schema-only library is ready for design-time authoring.',
+    },
+  };
+}
+
+function capabilityAdapterResult(): unknown {
+  return {
+    schemaVersion: 'bloge.capabilityCatalogVisualAdapterResult.v1',
+    library: {
+      schemaVersion: 'bloge.visualOperatorLibrary.v1',
+      libraryId: 'risk-capabilities',
+      displayName: 'Risk Capabilities',
+      version: '1.2.3',
+      builtInFunctions: [coalesceFunction()],
+      operators: [{
+        ...eligibilityOperator(),
+        source: { kind: 'user-library', libraryId: 'risk-capabilities' },
+        lowering: {
+          mode: 'design',
+          operatorRef: '',
+          parameters: {
+            bindingTarget: 'risk:eligibility',
+            capabilityCatalog: { className: 'com.acme.RiskEligibilityOperator' },
+          },
+        },
+      }],
+    },
+    validation: {
+      valid: true,
+      diagnostics: [],
+      profile: { libraryId: 'risk-capabilities', operatorCount: 1 },
+      importReadiness: { state: 'design-only-importable', level: 'info' },
+    },
+    projectionReview: {
+      coverageStatus: 'FULL',
+      projectedOperatorCount: 1,
+      projectedFunctionCount: 1,
+      opaqueSchemaCount: 0,
     },
   };
 }

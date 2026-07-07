@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  adaptCapabilityCatalogText,
   buildGatewayRunRequest,
   commitDslImport,
   fetchGatewayDiagram,
@@ -52,6 +53,23 @@ describe('operator library API client', () => {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: '{"libraryId":"risk-policy","operators":[]}',
+    });
+  });
+
+  it('adapts pasted capability catalog source as a visual library draft', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      library: { libraryId: 'risk-capabilities', operators: [] },
+      validation: { valid: true, diagnostics: [] },
+      projectionReview: { coverageStatus: 'FULL' },
+    })));
+
+    const result = await adaptCapabilityCatalogText('schemaVersion: bloge.capabilityCatalog.v1');
+
+    expect(result.library?.libraryId).toBe('risk-capabilities');
+    expect(fetchMock).toHaveBeenCalledWith('/admin/visual-operator-libraries/from-capability-catalog-text', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: 'schemaVersion: bloge.capabilityCatalog.v1',
     });
   });
 

@@ -21,6 +21,10 @@
 
 本文件定义用户手写 JSON/YAML 算子库的合同。内置 Java operator、resource descriptor 投影和 publication operator 也会进入 catalog，但它们是服务端派生 surface，不应该被用户导入合同伪造。
 
+通用画布不关心这个合同是怎么生成的。业务团队可以手写 `bloge.visualOperatorLibrary.v1`，也可以从平台 catalog、OpenAPI/AsyncAPI/resource descriptor 或其他工具投影得到它；只要最终结构通过同一套 validator，画布就可以用它渲染 DSL、约束连线和提供表达式函数提示。对于已经接入 BLOGE 的存量业务，`bloge.capabilityCatalog.v1` 是推荐的上游 source contract，但它不是画布消费合同；resource-gateway 提供 `POST /admin/visual-operator-libraries/from-capability-catalog-text` 作为 preview adapter，把 framework export 转成标准 visual library 草稿，再继续走本页定义的 Validate / Import 流程。
+
+当前 capability adapter 的默认策略是保守的：从 `bloge.capabilityCatalog.v1` 投影出的 operator 使用 `source.kind=user-library` 与 `lowering.mode=design`，并把原始 `implementation.kind`、`className`、`inputType`、`outputType` 等 provenance 放入 `lowering.parameters.capabilityCatalog`。这表示它已经可以被画布审阅、编排和生成 DSL，但不会假装 resource-gateway 示例环境已经拥有业务系统里的 Java runtime。需要 EXECUTABLE 发布时，再由业务侧 runtime 或平台 binding 补齐 native/resource/subgraph lowering。
+
 ## 2. 合同分层
 
 用户算子库分成四层：

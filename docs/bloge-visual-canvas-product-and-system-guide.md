@@ -45,7 +45,7 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 schema-fir
 
 图中 7 个区域分别承担不同任务：
 
-1. **算子库导入**：粘贴 JSON/YAML，先 Validate，再 Import。导入成功后算子会出现在下方 palette；如果当前粘贴内容是 JSON 形式的合法 visual operator library，也可以作为本次 Legacy DSL preview 的 inline schema 使用。
+1. **算子库导入**：粘贴 JSON/YAML，标准 `bloge.visualOperatorLibrary.v1` 先 Validate，再 Import；如果粘贴的是 `bloge.capabilityCatalog.v1`，先点击 `Adapt Catalog` 生成标准 visual library 草稿。导入成功后算子会出现在下方 palette；如果当前粘贴内容是 JSON 形式的合法 visual operator library，也可以作为本次 Legacy DSL preview 的 inline schema 使用。
 2. **Legacy DSL**：粘贴既有 `.bloge` DSL，点击 Render DSL，服务端会把它投影成可编辑画布 draft。这个入口不关心 schema 是 Maven 插件生成、平台接口下发、手写，还是 OpenAPI/resource descriptor 投影而来，只关心最终结构是否合法。
 3. **内置复杂示例**：直接加载可编辑的复杂业务 graph，适合第一次理解 fan-out、decision table、transform、fixture 的组合方式。
 4. **编排动作条**：执行 Simulate、Auto Layout、Validate、Export Draft，并查看节点数、边数、输出节点和 fixture 数。
@@ -293,11 +293,20 @@ operators:
 - 已落地：浏览器 `/author/` 左侧提供 **Legacy DSL** 面板。用户粘贴 DSL 后点击 `Render DSL`，画布会直接渲染 preview draft，并同步节点、边、Graph Contract、Runtime Context 变量表、Test Suite 初始行和 Export Draft。
 - 已落地：用户点击 `Commit Draft` 后，画布会调用 commit API 保存正式 draft；成功后提示 `Stored draft <draftId> @<revision>`，当前 Export Draft 会带上 stored draft identity 和 source map。
 - 已落地：如果 Library 面板当前内容是 JSON 形式的合法 `bloge.visualOperatorLibrary.v1`，Render DSL 会把它作为 `inlineLibraries` 随 preview 一起提交；如果已经 Import 入库，则会通过当前 catalog 的 `operatorLibraryIds` 参与解析。
+- 已落地：如果 Library 面板当前内容是 `bloge.capabilityCatalog.v1`，点击 `Adapt Catalog` 会调用 `POST /admin/visual-operator-libraries/from-capability-catalog-text`，把 framework export 预览投影为标准 `bloge.visualOperatorLibrary.v1` 草稿并回填到输入框。后续仍然点击 `Validate` / `Import`，因此画布渲染边界没有绑定到 capability catalog。
 - 已落地：Legacy DSL 面板会展示 source map 行列表。点击 `node` / `binding` / `edge` 行可以选中对应画布节点，导出的 draft 也会在 `visualLayout.import.sourceMap` 保留源码行列映射。
 - 未落地：semantic round-trip 回写校验。
-- 未落地：`bloge.capabilityCatalog.v1` 到 `bloge.visualOperatorLibrary.v1` 的正式 adapter。现在如果 schema 已经是合法 visual operator library，可以直接用于 DSL preview。
 
 设计方案见 [存量 BLOGE DSL 业务迁移到可视化编排设计方案](./bloge-legacy-dsl-visual-migration-design.md)。
+
+从 framework capability catalog 生成 visual library 草稿后，Library 面板会像下图这样展示：
+
+![Capability catalog adapter 标注](assets/bloge-author-capability-adapter-annotated.svg)
+
+1. **Generated visual library draft**：`Adapt Catalog` 成功后，输入框会从 `bloge.capabilityCatalog.v1` 自动回填成标准 `bloge.visualOperatorLibrary.v1`，后续所有画布能力都基于这个标准合同。
+2. **Capability catalog example**：内置示例展示了业务代码导出的 framework catalog 形态，适合演示存量业务从代码 schema 进入画布。
+3. **Adapt Catalog**：只做 schema acquisition preview，不写入 registry；要正式加入 palette 仍需继续 `Validate` / `Import`。
+4. **Adapter result notice**：显示 projected operator/function 数和 coverage；如果有端口 schema 无法投影，会显示 opaque schema fallback 数。
 
 成功导入一份合法 inline visual operator library 后，Legacy DSL 面板会像下图这样展示：
 
@@ -311,13 +320,14 @@ operators:
 页面上的当前操作方式：
 
 1. 在左侧 **Library** 面板导入或粘贴一份合法 `bloge.visualOperatorLibrary.v1`。如果只是想临时 preview，可以粘贴 JSON 形式 library，不必先 Import。
-2. 在左侧 **Legacy DSL** 面板确认 `Source`，粘贴 `.bloge` 文件内容，或使用内置 `Eligibility DSL` 示例。
-3. 点击 `Render DSL`。服务端解析 DSL，并按当前 catalog/inline library 投影成 `GraphDraft`。
-4. 画布渲染节点和边；Graph Contract 同步显示 DSL `input` / `output`；Runtime Context 会根据 input schema 生成变量行。
-5. 若出现 missing operator/function，画布仍会尽量渲染结构，并在 Legacy DSL 面板显示 diagnostics；补齐 schema 后再次 Render。
-6. 在 Source map 中点击行定位节点，确认 DSL 片段和画布元素对应关系。
-7. 如果确认迁移结果可作为资产继续协作，点击 `Commit Draft`，把 DSL 投影保存为 stored draft/revision；如果只是临时审阅，可以跳过保存。
-8. 继续使用 Auto Layout、Validate、Simulate、Operator Test Suite、全图 Test Suite 和 Export Draft。
+2. 如果当前输入是业务项目导出的 `bloge.capabilityCatalog.v1`，先点击 **Adapt Catalog**。系统会生成标准 `bloge.visualOperatorLibrary.v1` JSON 草稿；检查 notice 中的 operator/function/opaque schema 数后，再点击 `Validate` / `Import`。
+3. 在左侧 **Legacy DSL** 面板确认 `Source`，粘贴 `.bloge` 文件内容，或使用内置 `Eligibility DSL` 示例。
+4. 点击 `Render DSL`。服务端解析 DSL，并按当前 catalog/inline library 投影成 `GraphDraft`。
+5. 画布渲染节点和边；Graph Contract 同步显示 DSL `input` / `output`；Runtime Context 会根据 input schema 生成变量行。
+6. 若出现 missing operator/function，画布仍会尽量渲染结构，并在 Legacy DSL 面板显示 diagnostics；补齐 schema 后再次 Render。
+7. 在 Source map 中点击行定位节点，确认 DSL 片段和画布元素对应关系。
+8. 如果确认迁移结果可作为资产继续协作，点击 `Commit Draft`，把 DSL 投影保存为 stored draft/revision；如果只是临时审阅，可以跳过保存。
+9. 继续使用 Auto Layout、Validate、Simulate、Operator Test Suite、全图 Test Suite 和 Export Draft。
 
 对应 API 的最小调用方式：
 
@@ -371,9 +381,9 @@ commit 会返回 `bloge.visualGraphDraftImportResult.v1`，其中 `draft.draftId
 
 更完整的迁移专线落地后，还应补齐：
 
-1. `bloge.capabilityCatalog.v1` 自动适配成画布可消费的 `bloge.visualOperatorLibrary.v1`，业务项目可以直接交付框架级 export 产物。
-2. 对 missing operator、missing function、opaque schema 或 unsupported syntax 给出更细的修复向导和 source snippet。
-3. 需要回写 DSL 时，系统执行 semantic round-trip：原始 DSL -> AST，与 GraphDraft 生成的 DSL -> AST 做语义等价校验；不等价时不能自动覆盖原文件。
+1. 对 missing operator、missing function、opaque schema 或 unsupported syntax 给出更细的修复向导和 source snippet。
+2. 需要回写 DSL 时，系统执行 semantic round-trip：原始 DSL -> AST，与 GraphDraft 生成的 DSL -> AST 做语义等价校验；不等价时不能自动覆盖原文件。
+3. 把 resource-gateway 示例里的 capability adapter 沉淀成 BLOGE framework / Studio 可复用的 adapter SPI。
 
 这条路径的关键产品承诺是 **loss-aware import**：能结构化投影的 DSL 会变成可编辑画布节点；暂不支持的复杂语义会保留成带 source snippet 的 opaque 节点或诊断项，不会静默丢失。
 
@@ -897,6 +907,7 @@ resource gateway 自身继续保留：
 | `POST` | `/api/visual/operators/fit-candidates` | 根据当前输出找可添加的候选 operator |
 | `POST` | `/admin/visual-operator-libraries/validate-text` | 校验粘贴的算子库 JSON/YAML |
 | `POST` | `/admin/visual-operator-libraries/import-text` | 导入粘贴的算子库 JSON/YAML |
+| `POST` | `/admin/visual-operator-libraries/from-capability-catalog-text` | 将 `bloge.capabilityCatalog.v1` JSON/YAML 预览适配为标准 visual operator library 草稿，不自动存储 |
 | `GET` | `/admin/visual-operator-libraries/{libraryId}/export` | 导出指定用户算子库 |
 | `POST` | `/admin/visual-operator-libraries/import-bundle` | 导入算子库 bundle |
 | `GET` | `/api/visual/builtin-library/export` | 导出内置 operator registry 为 portable library |
