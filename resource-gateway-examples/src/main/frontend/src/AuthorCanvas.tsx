@@ -2023,6 +2023,30 @@ function operatorConfigPreview(config: Record<string, unknown> | undefined): str
   return JSON.stringify(config ?? {}, null, 2);
 }
 
+function configTextValue(config: Record<string, unknown> | undefined, key: string): string {
+  const value = config?.[key];
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return '';
+}
+
+function configPatchValue(value: string, coerce: 'string' | 'number' = 'string'): unknown {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (coerce === 'number') {
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : trimmed;
+  }
+  return trimmed;
+}
+
+function operatorDefaultResourceId(node: Node<NodeData>, operator: OperatorDefinition | undefined): string {
+  return operator?.source?.libraryId || node.data.operatorRef;
+}
+
 function operatorPropertyRows(
   node: Node<NodeData>,
   operator: OperatorDefinition | undefined,
@@ -2034,6 +2058,219 @@ function operatorPropertyRows(
     { label: 'Readiness', value: node.data.summary.readinessNotice || node.data.summary.readinessState },
     { label: 'Tags', value: operator?.display?.tags?.join(', ') || 'none' },
   ];
+}
+
+function OperatorKeyPropertiesEditor({
+  node,
+  operator,
+  onLabelChange,
+  onConfigPatch,
+}: {
+  node: Node<NodeData>;
+  operator: OperatorDefinition | undefined;
+  onLabelChange: (value: string) => void;
+  onConfigPatch: (patch: Record<string, unknown>) => void;
+}) {
+  const config = node.data.config ?? {};
+  const resourceLike = node.data.summary.visualKind === 'resource' || node.data.summary.visualKind === 'http';
+  return (
+    <section className="operator-detail-section operator-key-properties">
+      <h3>Key properties</h3>
+      <label className="operator-detail-field">
+        <span>Node label</span>
+        <input
+          aria-label="Operator node label"
+          data-testid="operator-detail-label"
+          value={node.data.label}
+          onChange={(event) => onLabelChange(event.target.value)}
+        />
+      </label>
+      <dl className="operator-property-list">
+        {operatorPropertyRows(node, operator).map((row) => (
+          <div key={row.label}>
+            <dt>{row.label}</dt>
+            <dd>{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+      {resourceLike && (
+        <div className="resource-config-grid" data-testid="operator-detail-resource-config">
+          <label className="operator-detail-field">
+            <span>Resource ID</span>
+            <input
+              aria-label="Resource ID"
+              data-testid="operator-detail-resource-id"
+              placeholder={operatorDefaultResourceId(node, operator)}
+              value={configTextValue(config, 'resourceId')}
+              onChange={(event) => onConfigPatch({ resourceId: configPatchValue(event.target.value) })}
+            />
+          </label>
+          <label className="operator-detail-field">
+            <span>Method</span>
+            <select
+              aria-label="HTTP method"
+              data-testid="operator-detail-http-method"
+              value={configTextValue(config, 'method')}
+              onChange={(event) => onConfigPatch({ method: configPatchValue(event.target.value) })}
+            >
+              <option value="">default</option>
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="PATCH">PATCH</option>
+              <option value="DELETE">DELETE</option>
+            </select>
+          </label>
+          <label className="operator-detail-field resource-url-field">
+            <span>URL / route</span>
+            <input
+              aria-label="Resource URL"
+              data-testid="operator-detail-resource-url"
+              placeholder="/resource/path"
+              value={configTextValue(config, 'url')}
+              onChange={(event) => onConfigPatch({ url: configPatchValue(event.target.value) })}
+            />
+          </label>
+          <label className="operator-detail-field">
+            <span>Timeout ms</span>
+            <input
+              aria-label="Resource timeout milliseconds"
+              data-testid="operator-detail-resource-timeout"
+              inputMode="numeric"
+              placeholder="3000"
+              value={configTextValue(config, 'timeoutMs')}
+              onChange={(event) => onConfigPatch({ timeoutMs: configPatchValue(event.target.value, 'number') })}
+            />
+          </label>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function OperatorConfigEditor({
+  config,
+  onApply,
+}: {
+  config: Record<string, unknown> | undefined;
+  onApply: (config: Record<string, unknown>) => void;
+}) {
+  const renderedConfig = operatorConfigPreview(config);
+  const [draft, setDraft] = useState(renderedConfig);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    setDraft(renderedConfig);
+    setError('');
+  }, [renderedConfig]);
+
+  const applyDraft = () => {
+    try {
+      const parsed = JSON.parse(draft || '{}') as unknown;
+      if (!isRecord(parsed)) {
+        setError('Node config must be a JSON object.');
+        return;
+      }
+      setError('');
+      onApply(parsed);
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  return (
+    <section className="operator-detail-section operator-config-editor">
+      <div className="operator-detail-section-heading">
+        <h3>Advanced config</h3>
+        <button
+          type="button"
+          className="secondary compact"
+          data-testid="operator-detail-config-apply"
+          onClick={applyDraft}
+        >
+          Apply
+        </button>
+      </div>
+      <textarea
+        aria-label="Operator node config JSON"
+        data-testid="operator-detail-config-json"
+        spellCheck={false}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+      {error && <p className="fixture-error" data-testid="operator-detail-config-error">{error}</p>}
+    </section>
+  );
+}
+
+function OperatorFixtureEditor({
+  fixtureDraft,
+  expectedInputDraft,
+  hasFixtureDraft,
+  fixtureError,
+  onOutputChange,
+  onExpectedInputChange,
+  onUseSample,
+  onClear,
+}: {
+  fixtureDraft: string;
+  expectedInputDraft: string;
+  hasFixtureDraft: boolean;
+  fixtureError: string | undefined;
+  onOutputChange: (value: string) => void;
+  onExpectedInputChange: (value: string) => void;
+  onUseSample: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="fixture-editor operator-detail-fixtures" data-testid="operator-detail-fixtures">
+      <div className="fixture-header">
+        <strong>Input / Output samples</strong>
+        <span className={`badge ${hasFixtureDraft ? 'fixture' : ''}`}>
+          {hasFixtureDraft ? 'custom' : 'server sample'}
+        </span>
+      </div>
+      <div className="fixture-actions">
+        <button
+          className="secondary compact"
+          data-testid="operator-detail-use-sample"
+          onClick={onUseSample}
+        >
+          Use Sample
+        </button>
+        <button
+          className="secondary compact"
+          data-testid="operator-detail-clear-fixture"
+          onClick={onClear}
+          disabled={!hasFixtureDraft}
+        >
+          Clear
+        </button>
+      </div>
+      <label className="fixture-field">
+        <span>Output sample</span>
+        <textarea
+          aria-label="Operator output sample JSON"
+          data-testid="operator-detail-output-fixture"
+          spellCheck={false}
+          placeholder="null"
+          value={fixtureDraft}
+          onChange={(event) => onOutputChange(event.target.value)}
+        />
+      </label>
+      <label className="fixture-field">
+        <span>Expected input</span>
+        <textarea
+          aria-label="Operator expected input JSON"
+          data-testid="operator-detail-expected-input"
+          spellCheck={false}
+          placeholder="{}"
+          value={expectedInputDraft}
+          onChange={(event) => onExpectedInputChange(event.target.value)}
+        />
+      </label>
+      {fixtureError && <p className="fixture-error" data-testid="operator-detail-fixture-error">{fixtureError}</p>}
+    </div>
+  );
 }
 
 function SchemaPortCards({
@@ -2050,18 +2287,44 @@ function SchemaPortCards({
       <h3>{title}</h3>
       {ports.length > 0 ? (
         <div className="operator-schema-grid">
-          {ports.map((port, index) => (
-            <article className="operator-schema-card" key={`${direction}:${port.name || index}`}>
-              <div>
-                <strong>{port.name || (direction === 'input' ? 'input' : 'output')}</strong>
-                {port.required && <span className="schema-required">required</span>}
-              </div>
-              {port.description && <p>{port.description}</p>}
-              <pre data-testid={`operator-detail-schema:${direction}:${index}`}>
-                {schemaPreview(port.schema)}
-              </pre>
-            </article>
-          ))}
+          {ports.map((port, index) => {
+            const fields = schemaFieldRows(port.schema);
+            return (
+              <article className="operator-schema-card" key={`${direction}:${port.name || index}`}>
+                <div>
+                  <strong>{port.name || (direction === 'input' ? 'input' : 'output')}</strong>
+                  {port.required && <span className="schema-required">required</span>}
+                </div>
+                <div className="operator-schema-summary">
+                  <span>{schemaKindLabel(port.schema?.schema)}</span>
+                  <span>{fields.length} field{fields.length === 1 ? '' : 's'}</span>
+                </div>
+                {port.description && <p>{port.description}</p>}
+                {fields.length > 0 && (
+                  <table
+                    className="schema-field-table"
+                    data-testid={`operator-detail-schema-fields:${direction}:${index}`}
+                  >
+                    <tbody>
+                      {fields.map((field) => (
+                        <tr key={field.name}>
+                          <th>{field.name}</th>
+                          <td>{field.type}</td>
+                          <td>{field.required ? 'required' : 'optional'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                <details>
+                  <summary>Raw schema</summary>
+                  <pre data-testid={`operator-detail-schema:${direction}:${index}`}>
+                    {schemaPreview(port.schema)}
+                  </pre>
+                </details>
+              </article>
+            );
+          })}
         </div>
       ) : (
         <p className="muted">No declared {direction} ports.</p>
@@ -2108,7 +2371,24 @@ function OperatorDetailDialog({
   operator,
   incomingColumns,
   builtInFunctions,
+  fixtureDraft,
+  expectedInputDraft,
+  hasFixtureDraft,
+  fixtureError,
   onClose,
+  onLabelChange,
+  onConfigPatch,
+  onConfigReplace,
+  onInputAdd,
+  onInputRemove,
+  onInputRename,
+  onInputChange,
+  onInputKindChange,
+  onDropContextPath,
+  onFixtureOutputChange,
+  onExpectedInputChange,
+  onUseFixtureSample,
+  onClearFixture,
   onDecisionChange,
   onTransformChange,
 }: {
@@ -2116,7 +2396,24 @@ function OperatorDetailDialog({
   operator: OperatorDefinition | undefined;
   incomingColumns: DecisionTableColumn[];
   builtInFunctions: BuiltInFunctionDefinition[];
+  fixtureDraft: string;
+  expectedInputDraft: string;
+  hasFixtureDraft: boolean;
+  fixtureError: string | undefined;
   onClose: () => void;
+  onLabelChange: (value: string) => void;
+  onConfigPatch: (patch: Record<string, unknown>) => void;
+  onConfigReplace: (config: Record<string, unknown>) => void;
+  onInputAdd: () => void;
+  onInputRemove: (bindingKey: string) => void;
+  onInputRename: (bindingKey: string, value: string) => void;
+  onInputChange: (bindingKey: string, patch: Partial<DraftNodeBinding>) => void;
+  onInputKindChange: (bindingKey: string, kind: 'contextPath' | 'constant') => void;
+  onDropContextPath: (path: string) => void;
+  onFixtureOutputChange: (value: string) => void;
+  onExpectedInputChange: (value: string) => void;
+  onUseFixtureSample: () => void;
+  onClearFixture: () => void;
   onDecisionChange: (editor: DecisionTableEditorModel) => void;
   onTransformChange: (editor: TransformEditorModel) => void;
 }) {
@@ -2145,6 +2442,13 @@ function OperatorDetailDialog({
           </button>
         </div>
         <div className="operator-detail-body">
+          <OperatorKeyPropertiesEditor
+            node={node}
+            operator={operator}
+            onLabelChange={onLabelChange}
+            onConfigPatch={onConfigPatch}
+          />
+
           <section className="operator-detail-section">
             <h3>{operatorFocusTitle(node.data.summary.visualKind)}</h3>
             <div className="operator-detail-focus">
@@ -2161,25 +2465,31 @@ function OperatorDetailDialog({
             <ForeachLoopGuide inputs={inputs} outputs={outputs} />
           )}
 
+          <NodeInputBindingsEditor
+            node={node}
+            onAdd={onInputAdd}
+            onRemove={onInputRemove}
+            onRename={onInputRename}
+            onChange={onInputChange}
+            onKindChange={onInputKindChange}
+            onDropContextPath={onDropContextPath}
+          />
+
+          <OperatorFixtureEditor
+            fixtureDraft={fixtureDraft}
+            expectedInputDraft={expectedInputDraft}
+            hasFixtureDraft={hasFixtureDraft}
+            fixtureError={fixtureError}
+            onOutputChange={onFixtureOutputChange}
+            onExpectedInputChange={onExpectedInputChange}
+            onUseSample={onUseFixtureSample}
+            onClear={onClearFixture}
+          />
+
           <SchemaPortCards title="Input schema" direction="input" ports={inputs} />
           <SchemaPortCards title="Output schema" direction="output" ports={outputs} />
 
-          <section className="operator-detail-section">
-            <h3>Operator properties</h3>
-            <dl className="operator-property-list">
-              {operatorPropertyRows(node, operator).map((row) => (
-                <div key={row.label}>
-                  <dt>{row.label}</dt>
-                  <dd>{row.value}</dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-
-          <section className="operator-detail-section">
-            <h3>Node config</h3>
-            <pre className="operator-config-preview">{operatorConfigPreview(node.data.config)}</pre>
-          </section>
+          <OperatorConfigEditor config={node.data.config} onApply={onConfigReplace} />
 
           {node.data.summary.visualKind === 'decision-table' && (
             <DecisionTableRuleEditor
@@ -2709,15 +3019,56 @@ export default function AuthorCanvas() {
     )));
   }, [clearRunResult]);
 
-  const updateSelectedNodeInputs = useCallback((
+  const updateNodeData = useCallback((
+    nodeId: string,
+    update: (data: NodeData, node: Node<NodeData>) => NodeData,
+  ) => {
+    clearRunResult();
+    setNodes((current) => current.map((node) => (
+      node.id === nodeId
+        ? {
+            ...node,
+            data: update(node.data, node),
+          }
+        : node
+    )));
+  }, [clearRunResult]);
+
+  const updateNodeLabel = useCallback((nodeId: string, label: string) => {
+    updateNodeData(nodeId, (data) => ({ ...data, label }));
+  }, [updateNodeData]);
+
+  const mergeNodeConfigPatch = useCallback((nodeId: string, patch: Record<string, unknown>) => {
+    updateNodeData(nodeId, (data) => {
+      const nextConfig = { ...(data.config ?? {}) };
+      Object.entries(patch).forEach(([key, value]) => {
+        if (value === undefined) {
+          delete nextConfig[key];
+        } else {
+          nextConfig[key] = value;
+        }
+      });
+      return {
+        ...data,
+        config: Object.keys(nextConfig).length > 0 ? nextConfig : undefined,
+      };
+    });
+  }, [updateNodeData]);
+
+  const replaceNodeConfig = useCallback((nodeId: string, config: Record<string, unknown>) => {
+    updateNodeData(nodeId, (data) => ({
+      ...data,
+      config: Object.keys(config).length > 0 ? config : undefined,
+    }));
+  }, [updateNodeData]);
+
+  const updateNodeInputs = useCallback((
+    nodeId: string,
     update: (inputs: Record<string, DraftNodeBinding>, node: Node<NodeData>) => Record<string, DraftNodeBinding>,
   ) => {
-    if (!selectedNodeId) {
-      return;
-    }
     clearRunResult();
     setNodes((current) => current.map((node) => {
-      if (node.id !== selectedNodeId) {
+      if (node.id !== nodeId) {
         return node;
       }
       const inputs = update(node.data.inputs ?? {}, node);
@@ -2729,10 +3080,10 @@ export default function AuthorCanvas() {
         },
       };
     }));
-  }, [clearRunResult, selectedNodeId]);
+  }, [clearRunResult]);
 
-  const addSelectedInputBinding = useCallback(() => {
-    updateSelectedNodeInputs((inputs, node) => {
+  const addInputBindingForNode = useCallback((nodeId: string) => {
+    updateNodeInputs(nodeId, (inputs, node) => {
       const targetPort = defaultInputTargetPort(node);
       const bindingKey = uniqueInputBindingKey(inputs, targetPort === 'inputs' ? 'input' : targetPort);
       return {
@@ -2744,10 +3095,17 @@ export default function AuthorCanvas() {
         },
       };
     });
-  }, [updateSelectedNodeInputs]);
+  }, [updateNodeInputs]);
 
-  const renameSelectedInputBinding = useCallback((bindingKey: string, value: string) => {
-    updateSelectedNodeInputs((inputs) => {
+  const addSelectedInputBinding = useCallback(() => {
+    if (!selectedNodeId) {
+      return;
+    }
+    addInputBindingForNode(selectedNodeId);
+  }, [addInputBindingForNode, selectedNodeId]);
+
+  const renameInputBindingForNode = useCallback((nodeId: string, bindingKey: string, value: string) => {
+    updateNodeInputs(nodeId, (inputs) => {
       const binding = inputs[bindingKey];
       if (!binding) {
         return inputs;
@@ -2768,10 +3126,21 @@ export default function AuthorCanvas() {
       });
       return next;
     });
-  }, [updateSelectedNodeInputs]);
+  }, [updateNodeInputs]);
 
-  const updateSelectedInputBinding = useCallback((bindingKey: string, patch: Partial<DraftNodeBinding>) => {
-    updateSelectedNodeInputs((inputs) => {
+  const renameSelectedInputBinding = useCallback((bindingKey: string, value: string) => {
+    if (!selectedNodeId) {
+      return;
+    }
+    renameInputBindingForNode(selectedNodeId, bindingKey, value);
+  }, [renameInputBindingForNode, selectedNodeId]);
+
+  const updateInputBindingForNode = useCallback((
+    nodeId: string,
+    bindingKey: string,
+    patch: Partial<DraftNodeBinding>,
+  ) => {
+    updateNodeInputs(nodeId, (inputs) => {
       const current = inputs[bindingKey];
       if (!current) {
         return inputs;
@@ -2781,10 +3150,21 @@ export default function AuthorCanvas() {
         [bindingKey]: { ...current, ...patch },
       };
     });
-  }, [updateSelectedNodeInputs]);
+  }, [updateNodeInputs]);
 
-  const updateSelectedInputBindingKind = useCallback((bindingKey: string, kind: 'contextPath' | 'constant') => {
-    updateSelectedNodeInputs((inputs) => {
+  const updateSelectedInputBinding = useCallback((bindingKey: string, patch: Partial<DraftNodeBinding>) => {
+    if (!selectedNodeId) {
+      return;
+    }
+    updateInputBindingForNode(selectedNodeId, bindingKey, patch);
+  }, [selectedNodeId, updateInputBindingForNode]);
+
+  const updateInputBindingKindForNode = useCallback((
+    nodeId: string,
+    bindingKey: string,
+    kind: 'contextPath' | 'constant',
+  ) => {
+    updateNodeInputs(nodeId, (inputs) => {
       const current = inputs[bindingKey];
       if (!current) {
         return inputs;
@@ -2798,15 +3178,29 @@ export default function AuthorCanvas() {
           : nextBinding,
       };
     });
-  }, [updateSelectedNodeInputs]);
+  }, [updateNodeInputs]);
 
-  const removeSelectedInputBinding = useCallback((bindingKey: string) => {
-    updateSelectedNodeInputs((inputs) => {
+  const updateSelectedInputBindingKind = useCallback((bindingKey: string, kind: 'contextPath' | 'constant') => {
+    if (!selectedNodeId) {
+      return;
+    }
+    updateInputBindingKindForNode(selectedNodeId, bindingKey, kind);
+  }, [selectedNodeId, updateInputBindingKindForNode]);
+
+  const removeInputBindingForNode = useCallback((nodeId: string, bindingKey: string) => {
+    updateNodeInputs(nodeId, (inputs) => {
       const next = { ...inputs };
       delete next[bindingKey];
       return next;
     });
-  }, [updateSelectedNodeInputs]);
+  }, [updateNodeInputs]);
+
+  const removeSelectedInputBinding = useCallback((bindingKey: string) => {
+    if (!selectedNodeId) {
+      return;
+    }
+    removeInputBindingForNode(selectedNodeId, bindingKey);
+  }, [removeInputBindingForNode, selectedNodeId]);
 
   const addContextVariable = useCallback(() => {
     clearRunResult();
@@ -2840,12 +3234,12 @@ export default function AuthorCanvas() {
     setSimulationContextDraft(value);
   }, [clearRunResult]);
 
-  const bindContextVariableToSelectedNode = useCallback((path: string) => {
+  const bindContextPathToNode = useCallback((nodeId: string, path: string) => {
     const normalizedPath = normalizedContextPath(path);
     if (!normalizedPath) {
       return;
     }
-    updateSelectedNodeInputs((inputs, node) => {
+    updateNodeInputs(nodeId, (inputs, node) => {
       const targetPort = defaultInputTargetPort(node);
       const targetPath = contextBindingKey(normalizedPath);
       const bindingKey = uniqueInputBindingKey(inputs, targetPath);
@@ -2859,7 +3253,14 @@ export default function AuthorCanvas() {
         },
       };
     });
-  }, [updateSelectedNodeInputs]);
+  }, [updateNodeInputs]);
+
+  const bindContextVariableToSelectedNode = useCallback((path: string) => {
+    if (!selectedNodeId) {
+      return;
+    }
+    bindContextPathToNode(selectedNodeId, path);
+  }, [bindContextPathToNode, selectedNodeId]);
 
   const canvasNodes = useMemo<CanvasNode[]>(
     () =>
@@ -3120,6 +3521,11 @@ export default function AuthorCanvas() {
   const selectedFixtureHasDraft =
     selectedFixtureDraft.trim().length > 0 || selectedExpectedInputDraft.trim().length > 0;
   const selectedFixtureError = selectedNode ? fixtureCompilation.errors[selectedNode.id] : undefined;
+  const operatorDetailFixtureDraft = operatorDetailNode ? fixtureDrafts[operatorDetailNode.id] ?? '' : '';
+  const operatorDetailExpectedInputDraft = operatorDetailNode ? fixtureInputDrafts[operatorDetailNode.id] ?? '' : '';
+  const operatorDetailFixtureHasDraft =
+    operatorDetailFixtureDraft.trim().length > 0 || operatorDetailExpectedInputDraft.trim().length > 0;
+  const operatorDetailFixtureError = operatorDetailNode ? fixtureCompilation.errors[operatorDetailNode.id] : undefined;
   const selectedGuideRows = useMemo(
     () =>
       connectionGuide?.nodeId === selectedNodeId
@@ -3177,32 +3583,47 @@ export default function AuthorCanvas() {
     addOperator(operator, position);
   }, [addOperator, operatorByRef]);
 
-  const updateSelectedFixtureDraft = useCallback((value: string) => {
-    if (!selectedNodeId) {
-      return;
-    }
+  const updateFixtureDraftForNode = useCallback((nodeId: string, value: string) => {
     clearRunResult();
-    setFixtureDrafts((current) => ({ ...current, [selectedNodeId]: value }));
-  }, [clearRunResult, selectedNodeId]);
+    setFixtureDrafts((current) => ({ ...current, [nodeId]: value }));
+  }, [clearRunResult]);
 
-  const updateSelectedExpectedInputDraft = useCallback((value: string) => {
-    if (!selectedNodeId) {
-      return;
-    }
+  const updateExpectedInputDraftForNode = useCallback((nodeId: string, value: string) => {
     clearRunResult();
-    setFixtureInputDrafts((current) => ({ ...current, [selectedNodeId]: value }));
-  }, [clearRunResult, selectedNodeId]);
+    setFixtureInputDrafts((current) => ({ ...current, [nodeId]: value }));
+  }, [clearRunResult]);
 
-  const useSelectedFixtureSample = useCallback(() => {
-    if (!selectedNodeId || !selectedOperator) {
+  const useFixtureSampleForNode = useCallback((nodeId: string, operator: OperatorDefinition | undefined) => {
+    if (!operator) {
       return;
     }
     clearRunResult();
     setFixtureDrafts((current) => ({
       ...current,
-      [selectedNodeId]: fixtureDraftForOperator(selectedOperator),
+      [nodeId]: fixtureDraftForOperator(operator),
     }));
-  }, [clearRunResult, selectedNodeId, selectedOperator]);
+  }, [clearRunResult]);
+
+  const updateSelectedFixtureDraft = useCallback((value: string) => {
+    if (!selectedNodeId) {
+      return;
+    }
+    updateFixtureDraftForNode(selectedNodeId, value);
+  }, [selectedNodeId, updateFixtureDraftForNode]);
+
+  const updateSelectedExpectedInputDraft = useCallback((value: string) => {
+    if (!selectedNodeId) {
+      return;
+    }
+    updateExpectedInputDraftForNode(selectedNodeId, value);
+  }, [selectedNodeId, updateExpectedInputDraftForNode]);
+
+  const useSelectedFixtureSample = useCallback(() => {
+    if (!selectedNodeId) {
+      return;
+    }
+    useFixtureSampleForNode(selectedNodeId, selectedOperator);
+  }, [selectedNodeId, selectedOperator, useFixtureSampleForNode]);
 
   const validateLibrarySource = useCallback(async () => {
     if (!librarySourceText.trim()) {
@@ -3252,22 +3673,26 @@ export default function AuthorCanvas() {
     }
   }, [librarySourceText, reloadOperators]);
 
-  const clearSelectedFixture = useCallback(() => {
-    if (!selectedNodeId) {
-      return;
-    }
+  const clearFixtureForNode = useCallback((nodeId: string) => {
     clearRunResult();
     setFixtureDrafts((current) => {
       const next = { ...current };
-      delete next[selectedNodeId];
+      delete next[nodeId];
       return next;
     });
     setFixtureInputDrafts((current) => {
       const next = { ...current };
-      delete next[selectedNodeId];
+      delete next[nodeId];
       return next;
     });
-  }, [clearRunResult, selectedNodeId]);
+  }, [clearRunResult]);
+
+  const clearSelectedFixture = useCallback(() => {
+    if (!selectedNodeId) {
+      return;
+    }
+    clearFixtureForNode(selectedNodeId);
+  }, [clearFixtureForNode, selectedNodeId]);
 
   const addSimulationTableRow = useCallback(() => {
     const nextIndex = tableTestCounter.current + 1;
@@ -4750,7 +5175,25 @@ export default function AuthorCanvas() {
           operator={operatorDetailDefinition}
           incomingColumns={operatorDetailIncomingColumns}
           builtInFunctions={builtInFunctions}
+          fixtureDraft={operatorDetailFixtureDraft}
+          expectedInputDraft={operatorDetailExpectedInputDraft}
+          hasFixtureDraft={operatorDetailFixtureHasDraft}
+          fixtureError={operatorDetailFixtureError}
           onClose={() => setOperatorDetailNodeId('')}
+          onLabelChange={(value) => updateNodeLabel(operatorDetailNode.id, value)}
+          onConfigPatch={(patch) => mergeNodeConfigPatch(operatorDetailNode.id, patch)}
+          onConfigReplace={(config) => replaceNodeConfig(operatorDetailNode.id, config)}
+          onInputAdd={() => addInputBindingForNode(operatorDetailNode.id)}
+          onInputRemove={(bindingKey) => removeInputBindingForNode(operatorDetailNode.id, bindingKey)}
+          onInputRename={(bindingKey, value) => renameInputBindingForNode(operatorDetailNode.id, bindingKey, value)}
+          onInputChange={(bindingKey, patch) => updateInputBindingForNode(operatorDetailNode.id, bindingKey, patch)}
+          onInputKindChange={(bindingKey, kind) =>
+            updateInputBindingKindForNode(operatorDetailNode.id, bindingKey, kind)}
+          onDropContextPath={(path) => bindContextPathToNode(operatorDetailNode.id, path)}
+          onFixtureOutputChange={(value) => updateFixtureDraftForNode(operatorDetailNode.id, value)}
+          onExpectedInputChange={(value) => updateExpectedInputDraftForNode(operatorDetailNode.id, value)}
+          onUseFixtureSample={() => useFixtureSampleForNode(operatorDetailNode.id, operatorDetailDefinition)}
+          onClearFixture={() => clearFixtureForNode(operatorDetailNode.id)}
           onDecisionChange={(editor) => updateDecisionTableRules(operatorDetailNode.id, editor)}
           onTransformChange={(editor) => updateTransformAssignments(operatorDetailNode.id, editor)}
         />

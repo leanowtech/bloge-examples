@@ -20,15 +20,15 @@ import type {
 } from './types';
 
 const GRAPH_DRAFT_SCHEMA_VERSION = 'bloge.visualGraphDraft.v1';
-const AUTO_LAYOUT_LEFT = 72;
-const AUTO_LAYOUT_TOP = 56;
-const AUTO_LAYOUT_NODE_WIDTH = 240;
-const AUTO_LAYOUT_NODE_HEIGHT = 148;
-const AUTO_LAYOUT_NODE_ROW_GAP = 36;
-const AUTO_LAYOUT_MIN_COLUMN_GAP = 96;
-const AUTO_LAYOUT_MAX_COLUMN_PITCH = 560;
-const AUTO_LAYOUT_EDGE_LABEL_CHAR_WIDTH = 3.3;
-const AUTO_LAYOUT_EDGE_LABEL_PADDING = 80;
+const AUTO_LAYOUT_LEFT = 96;
+const AUTO_LAYOUT_TOP = 72;
+const AUTO_LAYOUT_NODE_WIDTH = 260;
+const AUTO_LAYOUT_NODE_HEIGHT = 164;
+const AUTO_LAYOUT_NODE_ROW_GAP = 72;
+const AUTO_LAYOUT_MIN_COLUMN_GAP = 148;
+const AUTO_LAYOUT_MAX_COLUMN_PITCH = 760;
+const AUTO_LAYOUT_EDGE_LABEL_CHAR_WIDTH = 6.2;
+const AUTO_LAYOUT_EDGE_LABEL_PADDING = 160;
 
 /**
  * The minimal shape of a canvas node needed to build a draft. Decouples the pure draft-building logic
