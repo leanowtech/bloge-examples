@@ -260,6 +260,82 @@ operators:
 
 如果示例依赖的 operatorRef 不在当前 catalog 中，Load 按钮会禁用并提示缺失数量。此时先导入对应算子库，或确认 resource descriptor / built-in operator catalog 是否已经启动完成。示例加载后会替换当前画布；需要保留当前草稿时，先使用 Export Draft 导出。
 
+### 5.2.2 存量手写 DSL 业务升级路径
+
+还有一类常见业务不是从空白画布开始：业务系统已经集成 BLOGE engine 和 DSL，已经实现了自定义算子与 built-in function，并通过手写 `.bloge` 文件完成业务逻辑。这类团队的升级目标不是“重新拖一遍图”，而是把存量代码库和 DSL 迁移成可视化交付资产。
+
+对通用画布来说，schema 怎么生成不是核心问题。画布只关心：operator/function schema 结构合法、DSL 可解析、DSL 中的 operator/function 引用能在当前 catalog 中解析。存量 BLOGE 业务最推荐的迁移路径如下：
+
+```text
+业务代码库
+  -> mvn bloge:export-schema
+    -> target/bloge-capability-catalog.json
+      -> 画布导入 capability catalog
+        -> 画布导入 .bloge DSL
+          -> 生成可视化 GraphDraft + source map + diagnostics
+```
+
+这里有两个输入：
+
+| 输入 | 来源 | 作用 |
+| --- | --- | --- |
+| `bloge-capability-catalog.json` | 业务项目执行 `bloge-maven-plugin:export-schema` 生成，schemaVersion 为 `bloge.capabilityCatalog.v1` | 描述业务 operator、input/output schema、config schema、表达式函数签名和导出诊断 |
+| `.bloge` DSL 源码 | 业务项目已有 `src/main/resources/bloge/*.bloge` | 描述真实业务编排逻辑，由官方 DSL parser/compiler 解析后投影为 `GraphDraft` |
+
+`bloge-capability-catalog.json` 不是唯一入口。如果团队已经有手写的 `bloge.visualOperatorLibrary.v1`、平台接口下发的 catalog、OpenAPI/AsyncAPI/resource descriptor 投影后的 visual library，或者其他工具生成的合法 schema，画布都应该按同一套 validator 接收，并用它渲染对应 DSL。
+
+当前状态要分开看：
+
+- 已落地：`/author/` 支持导入 `bloge.visualOperatorLibrary.v1` 和编辑 `GraphDraft`。
+- 已落地：后端提供 schema-neutral DSL preview API：`POST /api/visual/dsl-imports/preview`。它接受 `.bloge` 源码、当前已导入的 visual library id，或本次 preview 临时传入的 `inlineLibraries`，然后返回 `GraphDraft + sourceMap + diagnostics + coverage`。
+- 未落地：浏览器里的 Legacy DSL Import 面板、preview 后保存为 stored draft、semantic round-trip 回写校验。
+- 未落地：`bloge.capabilityCatalog.v1` 到 `bloge.visualOperatorLibrary.v1` 的正式 adapter。现在如果 schema 已经是合法 visual operator library，可以直接用于 DSL preview。
+
+设计方案见 [存量 BLOGE DSL 业务迁移到可视化编排设计方案](./bloge-legacy-dsl-visual-migration-design.md)。
+
+当前后端 preview 的最小调用方式：
+
+```http
+POST /api/visual/dsl-imports/preview
+Content-Type: application/json
+```
+
+```json
+{
+  "sourceId": "loan-approval.bloge",
+  "dsl": "graph loanApproval { node eligibility : \"risk:eligibility\" { input { score = ctx.score } } }",
+  "catalogIds": ["risk-policy"],
+  "inlineLibraries": [],
+  "mode": "preview",
+  "layout": {}
+}
+```
+
+返回重点字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `draft` | 可被画布渲染的 `bloge.visualGraphDraft.v1`；普通 node、transform、decision_table 会被投影成可编辑节点 |
+| `draft.inputSchema` | DSL graph 级 `input { ... }` schema |
+| `draft.visualLayout.graphContract.outputSchema` | DSL graph 级 `output { ... }` schema；这是 `GraphDraft.outputSchema` 一等字段落地前的兼容位置 |
+| `sourceMap.nodes/edges/bindings` | visual 元素到 DSL 行列的映射 |
+| `coverage` | member、node、edge、missing operator/function、unsupported syntax 数量 |
+| `diagnostics` | parse、missing operator、missing function、unsupported syntax、schema ref 等迁移诊断 |
+
+注意：如果 DSL operatorRef 含有冒号，BLOGE DSL 里要用字符串形式，例如 `node eligibility : "risk:eligibility"`；否则冒号会被 DSL 语法当成节点 id 与 operatorRef 的分隔符。
+
+完整迁移专线落地后的产品体验应是：
+
+1. 准备一份结构合法的 operator/function schema；对已接入 BLOGE 的业务项目，推荐执行 `mvn bloge:export-schema`，把自定义算子和业务函数导出为框架级 capability catalog。
+2. 在 `/author/` 的 Legacy DSL Import 面板上传或粘贴 schema；如果输入是 capability catalog，系统自动适配成画布可消费的 operator/function library。
+3. 上传或粘贴 `.bloge` 文件，服务端使用 `DslCompiler.parseAst()` 解析，而不是前端自行猜语法。
+4. 画布生成 import preview：节点、边、context 绑定、graph input/output schema、函数调用和 source line 映射；当前后端 API 已可返回这类 preview，前端面板仍待接入。
+5. 对 missing operator、missing function、opaque schema 或 unsupported syntax 给出迁移诊断和修复向导。
+6. 确认后保存为 `GraphDraft`，继续使用现有 Validate、Simulate、Operator Test Suite、全图 Test Suite 和 Export。
+7. 需要回写 DSL 时，系统执行 semantic round-trip：原始 DSL -> AST，与 GraphDraft 生成的 DSL -> AST 做语义等价校验；不等价时不能自动覆盖原文件。
+
+这条路径的关键产品承诺是 **loss-aware import**：能结构化投影的 DSL 会变成可编辑画布节点；暂不支持的复杂语义会保留成带 source snippet 的 opaque 节点或诊断项，不会静默丢失。
+
 ### 5.3 第三步：把算子放到画布上
 
 在 palette 中可以点击算子添加，也可以拖拽到 canvas。每个节点卡片会显示：
@@ -697,6 +773,7 @@ GET /api/gateway/examples/scenarios/{graphName}/diagram
 | --- | --- |
 | `visual/catalog` | operator catalog、算子库导入/导出、builtin library projection、profile、impact、revision |
 | `visual/connection` | 服务端连接候选和连接预检 |
+| `visual/importer` | schema-neutral `.bloge` DSL preview import，投影 `GraphDraft`、source map、coverage 和 migration diagnostics |
 | `visual/validation` | GraphDraft 合同、schema、runtime/design readiness、action readiness |
 | `visual/simulation` | mock/real 混合模拟、fixture、trace、sample generator |
 | `visual/publication` | publication 冻结、导入导出、依赖报告 |
@@ -782,6 +859,7 @@ resource gateway 自身继续保留：
 | `GET` | `/admin/visual-operator-libraries/{libraryId}/export` | 导出指定用户算子库 |
 | `POST` | `/admin/visual-operator-libraries/import-bundle` | 导入算子库 bundle |
 | `GET` | `/api/visual/builtin-library/export` | 导出内置 operator registry 为 portable library |
+| `POST` | `/api/visual/dsl-imports/preview` | 以 schema-neutral 方式把 `.bloge` DSL + 当前 catalog/inline libraries 投影为 visual `GraphDraft` preview |
 | `POST` | `/api/visual/connections/candidates` | 枚举连接候选 |
 | `POST` | `/api/visual/connections/check` | 预检单条连接 |
 | `POST` | `/api/visual/drafts/validate` | 校验 transient draft |

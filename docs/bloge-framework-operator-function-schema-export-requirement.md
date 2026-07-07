@@ -42,6 +42,22 @@ operator library
 
 但这也暴露出一个更根本的问题：当前 schema 能力是在 resource-gateway example 层“反向补出来”的，不是 BLOGE 框架层的原生能力。
 
+### 2.1 与存量 DSL 可视化迁移的关系
+
+存量业务升级到可视化交付时，仅有 operator/function schema 还不够。业务团队通常已经在代码库里积累了两类资产：
+
+1. 自定义 Java operator 与 expression built-in function。
+2. 已上线或已验证的手写 `.bloge` DSL。
+
+因此完整迁移链路应该分成两段：
+
+```text
+任意合法 operator/function schema -> visual operator/function library
+手写 .bloge -> DslCompiler.parseAst() -> VisualGraphDraft + source map + diagnostics
+```
+
+本文件解决第一段里的一种高质量来源：**从 runtime / registry / build metadata 导出业务能力 schema**。对通用画布来说，schema provenance 不应进入渲染边界；只要输入的 operator/function schema 结构合法，就应该能和手写 `.bloge` 一起进入 DSL 可视化投影。第二段的后端 preview MVP 已在 resource-gateway 示例层以 `POST /api/visual/dsl-imports/preview` 验证，但完整浏览器导入、opaque 保留和 semantic round-trip 仍需继续推进，详见 [存量 BLOGE DSL 业务迁移到可视化编排设计方案](./bloge-legacy-dsl-visual-migration-design.md)。
+
 ## 3. 要解决的问题
 
 ### 3.1 算子运行能力没有标准机器合同

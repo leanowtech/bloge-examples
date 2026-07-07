@@ -1,7 +1,7 @@
 # BLOGE 可视化编排实现状态审计
 
 状态：Current Implementation Snapshot
-日期：2026-07-05
+日期：2026-07-07
 代码基线：`resource-gateway-examples`
 
 本文不是新的愿景文档，而是把当前代码事实、已完成闭环、仍缺口和下一步工程重点对齐起来。它用于防止设计文档、README 和实际实现发生语义漂移。
@@ -23,6 +23,8 @@ Operator Library / Resource Design Contract
 现在最重要的判断不是“有没有画布雏形”，而是：这个示例已经具备通用画布的控制面骨架，但仍不是完整低代码平台。它可以严肃演示用户算子库、Java OperatorRegistry 投影、资源虚拟算子、OpenAPI 辅助生成 resource design contract、AsyncAPI preview 生成 event/message/webhook operator-library 草案、remote-worker / AI-tool / event-source / message-handler / webhook binding 合同、schema 约束连线、草稿、发布和运行；并且已经能在 catalog/validator 层识别当前 request-response runtime 不能执行的 streaming/durable/remote-worker/AI-tool/event/message/webhook operator，其中 streaming/durable 草稿在 schema 有效时进入 runtime-blocked 设计态，允许 warning-acknowledged `DESIGN` publication，但仍阻断 compile/run/默认 executable promotion；还没有覆盖 durable 实例、真正的 worker/subgraph marketplace、AI tool invocation runtime、事件/消息/webhook ingress runtime、生产 IAM 后台和多人协作。
 
 React authoring canvas 的核心循环提示也进一步闭环：`canvasCoachPrompt` 选出的 node-targeted action 会通过纯前端读模型投影为节点级 `suggested` 或 `selected` 焦点状态，React Flow 节点和右侧 inspector 同步展示下一步对象。这样空画布、断连节点、mock fixture 节点和诊断复核不再只停留在工具栏文字上，而是在画布本体上给出可见落点；连接和仿真裁决仍由 `/api/visual/connections/check`、`/api/visual/connections/candidates` 与 simulate endpoint 保持服务端权威。
+
+2026-07-07 本轮新增 schema-neutral DSL preview import 后端切片：`visual/importer` 增加 `POST /api/visual/dsl-imports/preview`，请求可携带 `.bloge` 源码、当前 `catalogIds` / `operatorLibraryIds` 和本次 preview 临时 `inlineLibraries`。服务端复用 `DslCompiler.parseAst()`，不关心 schema provenance，只要求 visual operator/function catalog view 结构合法；普通 node、transform、decision_table、contextPath、nodePath、constant、expression、data/dependency/route edge、graph input schema、graph output schema 过渡承载、source map、coverage 和 missing operator/function diagnostics 已落地。缺失 operator 时仍生成可见 draft node，并返回 `visual.dslImport.operatorMissing`，避免存量 DSL 迁移时整图丢失；复杂 DSL primitive 暂以 warning diagnostic 暴露，等待后续 opaque/source snippet UI。
 
 本轮新增的关键实现事实：Java 侧 schema 结构类型识别已经进一步收敛。`VisualSchemaCompatibility`、`VisualSchemaValidator`、`GraphDraftValidator`、connection candidates、operator fit candidates 和 publication projector 的 object/array/nullable/const 结构类型入口开始共享 `VisualSchemaIntrospection`；`required`、`dependentRequired`、`dependentSchemas` 不再被内部风格要求强制出现在 `properties` 中，`contains/minContains/maxContains` 也可以作为 typeless array schema 的有效数组合同。这个调整让用户导入外部 operator schema 的容错面更接近 JSON Schema 语义，同时仍保留非法 shape、重复 dependent item、default/const/enum 约束违背、array items 形态错误和 unsupported type 的 blocking diagnostics。
 
@@ -167,6 +169,7 @@ React authoring canvas 的核心循环提示也进一步闭环：`canvasCoachPro
 | 未单列 | `bloge.visualOperatorLibraryImportReadiness.v1` | 当前实现新增用户算子库导入准入摘要，把 profile/impact/diagnostics 派生成控制面可路由的 ack/force/evidence/readiness 状态，并在导入前暴露 per-operator runtime binding requirement 明细、stable requirement keys、runtime binding handoff groups 和 binding/handoff/owner/source/lowering/readiness 分布计数。 |
 | 未单列 | `bloge.visualOperatorLibraryRevision.v1` | 当前实现新增用户算子库 create/replace/delete/restore 不可变审计快照。 |
 | `bloge.graphDraft.v1` | `bloge.visualGraphDraft.v1` | 当前实现明确这是 visual authoring draft，而不是 BLOGE runtime graph AST。 |
+| 未单列 | `bloge.dslVisualProjection.v1` | 当前实现新增 schema-neutral DSL preview import response，携带 `GraphDraft`、`sourceMap`、`coverage`、`roundTrip` 和迁移 diagnostics；入口为 `POST /api/visual/dsl-imports/preview`。 |
 | 未单列 | `bloge.visualGraphActionReadiness.v1` | 当前实现新增图级动作准入摘要，把 validation/readiness/diagnostics 派生成 compile/run/DESIGN publish/EXECUTABLE publish 的可执行、需复核或阻断状态。 |
 | 未单列 | `bloge.visualConnectionCandidates.v1` | 当前实现新增连接候选发现读模型，给定 source endpoint 后返回可接/阻断 target endpoint、target filter/window、query/status/facet 过滤回显、statusCounts、facetCounts、行级 targetStatus/facetValues、bindingKey、preflight summary、diagnostics 和 schema-aware explanation；target endpoint 枚举覆盖对象字段、schema-object array `items`、tuple `prefixItems` 下标路径和 schema-object `unevaluatedItems` residual item 代表路径；preflight summary 会携带 runtime binding requirement count、preview-scoped keys、owner counts 与 routing counts，用于生产画布拖拽过程中的服务端引导、schema-only/runtime-blocked 提示和外部控制面审阅。 |
 | 未单列 | `bloge.visualGraphReadiness.v1.runtimeBindingRequirements[]` | 当前实现把非执行图的运行时绑定缺口内嵌在 graph readiness 中，按节点暴露 binding kind、target、handoff lane/kind/target 和 recommended action，作为 runtime binding gap 的唯一事实来源。 |

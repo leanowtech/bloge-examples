@@ -1,7 +1,7 @@
 # BLOGE 可视化编排工业化评估报告
 
 状态：Current Gap Assessment
-日期：2026-07-05
+日期：2026-07-07
 基线：`resource-gateway-examples`
 
 关联文档：
@@ -93,6 +93,7 @@
 30. draft dependency schema drift issue 现在还携带 bounded `schemaChanges` keyword diff rows：服务端会在 drift path 上提取 `type`、`enum`、`const`、`format`、`pattern`、`multipleOf`、range、length、required、properties、items/contains 等关键 JSON Schema keyword 的 frozen/current compact value；selected contract 会把 `type: number -> integer` 这类 diff row 并入 port summary、outline drift label 和 `Schema Search`，真实浏览器覆盖 keyword diff 文本、ARIA label 和 390px mobile no-overflow。
 31. draft dependency schema drift issue 现在还携带 bounded `schemaPreview`：服务端在 drift path 上截取冻结快照与当前 catalog 的 JSON Schema 片段，限制深度、对象 key、数组项和字符串长度；selected contract 直接渲染并排 `Frozen schema` / `Current schema` review block，`Schema Search` 可按 preview 内容如 `frozen integer` 命中 drift row，真实浏览器覆盖 schema preview 文本、review row DOM 和 390px mobile no-overflow。
 32. draft dependency report 现在输出 `schemaRebaseDecisions` 和 `schemaRebaseDecisionStateCounts`：服务端把 drifted/missing/catalog/scope/schema drift 节点归入 `ready-rebase`、`ready-capture`、`repair-review`、`blocked` 决策队列；Draft Dependencies 面板可展示队列、focus 节点、在 dirty draft 时禁用 rebase，并通过现有 revision-guarded rebase API 批量刷新 eligible 节点；selected operator contract 也显示当前节点的 `Schema Rebase Queue`，真实浏览器覆盖 repair-review 队列、批量 rebase、selected inspector 队列和 390px mobile no-overflow。
+33. schema-neutral DSL preview import 后端已落地：`POST /api/visual/dsl-imports/preview` 接受 `.bloge` 源码、已导入 catalog id 或 preview-only inline visual libraries，复用官方 DSL parser 投影为 `GraphDraft + sourceMap + coverage + diagnostics`；普通 node、transform、decision_table、graph input/output schema 和 missing operator/function diagnostics 已有单元/API 测试覆盖。
 
 ### 尚未成立
 
@@ -101,8 +102,35 @@
 3. IAM/RBAC/secret/egress/审计查询还不是生产后台级别。
 4. durable、event、message、webhook、AI tool 的真实运行时还没有完整闭环。
 5. 前端仍是示例项目形态，复杂度已经接近需要模块化拆分的边界。
+6. 存量 DSL 迁移仍只有后端 preview MVP；`/author/` 导入面板、commit 保存、opaque snippet 展示和 semantic round-trip 还没闭环。
 
 ## 4. 本轮迭代复盘
+
+### 2026-07-07：Schema-Neutral DSL Import Preview Backend
+
+触发问题：
+
+存量业务已经手写 `.bloge` DSL，并可能用任意工具生成 operator/function schema。通用画布不能把 schema 生成方式绑定成前置条件；只要 schema 结构合法、DSL 可解析、operator/function 引用能解析，就应该可以渲染 DSL preview。
+
+本轮完成：
+
+1. 新增 `visual/importer` 后端模块和 `POST /api/visual/dsl-imports/preview`。
+2. 请求支持 `catalogIds` / `operatorLibraryIds` 和 preview-only `inlineLibraries`，inline library 复用正式 `OperatorLibraryValidator`，但不写入 registry。
+3. 使用 `DslCompiler.parseAst()` 解析 DSL，投影普通 node、transform、decision_table、contextPath、nodePath、constant/expression binding、data/dependency/route edge。
+4. DSL graph `input { ... }` 投影到 `draft.inputSchema`；`output { ... }` 过渡放入 `draft.visualLayout.graphContract.outputSchema`。
+5. 返回 `bloge.dslVisualProjection.v1`，包含 `GraphDraft`、`sourceMap`、`coverage`、`roundTrip` 和 migration diagnostics。
+6. 缺失 operator 仍生成占位 node，并返回 `visual.dslImport.operatorMissing`，避免迁移 preview 丢图。
+
+验证：
+
+```bash
+mvn -f resource-gateway-examples/pom.xml -DskipTests compile
+mvn -f resource-gateway-examples/pom.xml -Dtest=DslImportServiceTest,DslImportControllerTest test
+```
+
+剩余风险：
+
+这轮把“存量 DSL 能被服务端投影成可见 draft”的第一段打通了，但还不是完整迁移工作台。浏览器 Legacy DSL Import 面板、preview commit、source snippet/opaque 节点、复杂 DSL primitive、批量覆盖率报告和 semantic round-trip 仍是后续缺口，因此综合工业化分数暂不调整。
 
 ### 2026-07-05：Schema Rebase Decision Queue
 

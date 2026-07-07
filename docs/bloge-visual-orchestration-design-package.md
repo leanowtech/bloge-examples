@@ -1,7 +1,7 @@
 # BLOGE 可视化编排设计包索引
 
-状态：Draft v0.1
-日期：2026-06-29
+状态：Draft v0.2
+日期：2026-07-07
 
 这份索引用于把通用 BLOGE 可视化编排系统的设计资产串起来。它不替代详细文档，只负责说明阅读路径、目标覆盖、当前结论和待确认问题。
 
@@ -15,6 +15,7 @@
 | [BLOGE 可视化编排 Phase 1 实现蓝图](./bloge-visual-orchestration-phase1-implementation-blueprint.md) | 落地计划：包结构、DTO、controller、validator、DSL generator、前端迁移、测试和 DoD | 实施团队 |
 | [BLOGE 可视化编排实现状态审计](./bloge-visual-orchestration-implementation-status.md) | 当前代码事实：已落地能力、wire contract 命名、Phase 1 验收、剩余生产级缺口和下一步 | 所有人，尤其是继续实现前的工程师 |
 | [BLOGE 可视化编排工业化评估报告](./bloge-visual-orchestration-industrialization-assessment.md) | 多维度成熟度评分、当前工业级差距、本轮迭代复盘和下一轮优先级 | 架构负责人、技术负责人、继续迭代的工程师 |
+| [存量 BLOGE DSL 业务迁移到可视化编排设计方案](./bloge-legacy-dsl-visual-migration-design.md) | 迁移专线：消费任意合法 operator/function schema，导入手写 `.bloge` DSL，投影为 GraphDraft，并做 source map、诊断和 round-trip；业务代码导出 capability catalog 只是推荐来源之一 | 已接入 BLOGE 的业务团队、迁移平台团队、画布/Studio/LSP 实施团队 |
 
 ## 2. 推荐阅读路径
 
@@ -51,7 +52,8 @@
 | 支持 schema 约束下拖拽和连线 | 设计和实现均已覆盖 | 主方案第 10、13 章；协议草案第 7、9、11 章；Phase 1 蓝图第 6、7、8 章；实现状态审计第 2、4 章 |
 | 支持自由编排业务逻辑 | 已覆盖核心闭环，复杂能力分阶段 | 主方案第 11、13、16、20 章；Phase 1 蓝图第 9 章；实现状态审计第 5 章 |
 | 能吃下复杂业务编排场景 | 已覆盖架构方向，生产级能力仍分阶段补齐 | 主方案第 16、18、20 章；决策记录 ADR-008、ADR-009、ADR-010；实现状态审计第 5、6 章 |
-| 形成详尽设计方案 | 已覆盖，并新增实现状态审计防漂移 | 五份设计/状态文档合计覆盖架构、协议、决策、实现蓝图和当前代码事实 |
+| 支持存量手写 DSL 业务升级到可视化交付 | 迁移专线设计已补齐，resource-gateway 后端 DSL preview MVP 已落地；浏览器导入面板、commit 和 round-trip 仍未闭环 | 存量 DSL 迁移设计方案第 4-15 章；`POST /api/visual/dsl-imports/preview`；画布应 schema-neutral 地消费合法 operator/function catalog，框架 `bloge.capabilityCatalog.v1` / `export-schema` 是推荐迁移来源之一 |
+| 形成详尽设计方案 | 已覆盖，并新增实现状态审计与存量迁移专线防漂移 | 设计/状态文档合计覆盖架构、协议、决策、实现蓝图、当前代码事实和存量 DSL 迁移路径 |
 
 ## 4. 当前核心结论
 
@@ -98,7 +100,7 @@
 | 用户算子库第一来源 | `ResourceDescriptor + ResourceDesignContract`，然后 JSON/YAML catalog | 最贴近 resource-gateway 基版 |
 | OpenAPI 导入是否进 Phase 1 | 已作为 resource contract schema 辅助工具进入，不作为核心闭环前置条件 | 降低补 schema 成本，同时避免 OpenAPI 质量问题拖慢主线 |
 | `opaque` 输出是否允许发布 | 默认阻断类型安全发布，租户策略可放宽为 warning | 决定系统是否真正坚持 schema 约束 |
-| DSL 反向导入是否进 MVP | 不进 MVP | 先保证 GraphDraft -> DSL 稳定 |
+| DSL 反向导入是否进 MVP | 不进 Phase 1 MVP；作为 Phase 2 存量迁移专线推进 | 先保证 GraphDraft -> DSL 稳定，再用合法 operator/function catalog + `DslCompiler.parseAst()` 做 loss-aware DSL import；`bloge.capabilityCatalog.v1` 是推荐来源但不是画布硬依赖 |
 | AI authoring 是否进 MVP | 不进核心 MVP | 先建立确定性合同和校验链 |
 
 ## 6. Phase 1 最小验收
@@ -125,8 +127,9 @@ Phase 1 不以 UI 好看为验收，而以真实闭环为验收：
 1. Runtime binding implementation 与 readiness 派生闭环：在当前 implementation validate、字段级 contract-diff gate、semantic JSON Schema-compatible drift classification、runtime implementation SemVer/reimplementation submit gate、implementation rolloutPlan validate gate、proposal persistence、bind/supersede/unbind API、bind 写入失败诊断、adapter activation registry、runtime rollout observation registry、executable lowering integration registry、四类 runtime evidence submit stable-id 精确 replay 幂等返回、catalog response projection、executable promotion projection、readiness recompute preview、native governed apply mutation、external-runtime-bound governed apply mutation、apply revision-write failed result、post-apply evidence refresh/rebind mutation 和 governed unbind/deactivate mutation 之后，补跨 repository 事务/partial-failure 硬化、更广义 idempotency、更深跨系统 rollout/canary/rollback 编排、指标消费闭环和更完整 JSON Schema 兼容性推理门禁。
 2. 前端回归验证。
 3. Java operator inventory 深化。
-4. OpenAPI/resource contract/AsyncAPI 导入深化。
-5. Run history 查询、重放和 SLO 统计深化。
-6. 协议文档命名与当前 wire contract 收敛。
+4. 存量业务迁移专线：补 schema-neutral DSL import preview、source map、opaque diagnostics、semantic round-trip，并提供 `bloge.capabilityCatalog.v1` 到 visual library 的 adapter 作为推荐迁移路径。
+5. OpenAPI/resource contract/AsyncAPI 导入深化。
+6. Run history 查询、重放和 SLO 统计深化。
+7. 协议文档命名与当前 wire contract 收敛。
 
 不要把新的可拖拽能力只写进前端；任何新能力都必须先有 `OperatorDefinition`、schema gate、GraphDraft lowering 和服务端 diagnostics。
