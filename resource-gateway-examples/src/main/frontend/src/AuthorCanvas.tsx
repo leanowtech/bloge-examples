@@ -4545,6 +4545,7 @@ export default function AuthorCanvas() {
             effectiveGraphOutputSchema,
             graphContractSource,
           ),
+          outputSchema: effectiveGraphOutputSchema,
           operatorFingerprints: pickRecordByKeys(graphOperatorFingerprints, nodeIds),
           operatorSnapshots: pickRecordByKeys(graphOperatorSnapshots, nodeIds),
         },
@@ -5618,6 +5619,7 @@ export default function AuthorCanvas() {
           }),
           contextCompilation.value,
           graphInputSchema,
+          effectiveGraphOutputSchema,
         ));
         showSimulationResponse(response);
         setOperatorTestResults((current) => ({
@@ -5651,6 +5653,7 @@ export default function AuthorCanvas() {
     contextCompilation.value,
     fixtureCompilation.errors,
     fixtureCompilation.fixtures,
+    effectiveGraphOutputSchema,
     graphName,
     graphInputSchema,
     showSimulationResponse,
@@ -5668,6 +5671,7 @@ export default function AuthorCanvas() {
         fixtureCompilation.fixtures,
         contextCompilation.value,
         graphInputSchema,
+        effectiveGraphOutputSchema,
       ));
       showSimulationResponse(response);
     } catch (cause: unknown) {
@@ -5680,6 +5684,7 @@ export default function AuthorCanvas() {
     canvasNodes,
     contextCompilation.value,
     fixtureCompilation.fixtures,
+    effectiveGraphOutputSchema,
     graphName,
     graphInputSchema,
     outputNodeId,
@@ -5723,6 +5728,7 @@ export default function AuthorCanvas() {
             mergeNodeFixtures(fixtureCompilation.fixtures, testCase.fixtures),
             testCase.context,
             graphInputSchema,
+            effectiveGraphOutputSchema,
           ));
           showSimulationResponse(response);
           const rowResult = evaluateSimulationTableResult(testCase, response);
@@ -5750,6 +5756,7 @@ export default function AuthorCanvas() {
     canvasEdges,
     canvasNodes,
     fixtureCompilation.fixtures,
+    effectiveGraphOutputSchema,
     graphName,
     graphInputSchema,
     outputNodeId,

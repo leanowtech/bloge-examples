@@ -22,6 +22,7 @@ import java.util.Set;
  * @param environment authoring environment label
  * @param status draft lifecycle status
  * @param inputSchema graph input schema
+ * @param outputSchema graph output schema exposed to external integrators
  * @param nodes visual nodes
  * @param edges visual edges
  * @param visualLayout opaque visual layout model
@@ -41,6 +42,7 @@ public record GraphDraft(
         String environment,
         String status,
         SchemaEnvelope inputSchema,
+        SchemaEnvelope outputSchema,
         List<DraftNode> nodes,
         List<DraftEdge> edges,
         Map<String, Object> visualLayout,
@@ -72,6 +74,7 @@ public record GraphDraft(
         environment = environment == null || environment.isBlank() ? "local" : environment;
         status = normalizeStatus(status);
         inputSchema = inputSchema == null ? SchemaEnvelope.opaque() : inputSchema;
+        outputSchema = outputSchema == null ? outputSchemaFromVisualLayout(visualLayout) : outputSchema;
         nodes = nodes == null ? List.of() : List.copyOf(nodes);
         edges = edges == null ? List.of() : List.copyOf(edges);
         visualLayout = visualLayout == null ? Map.of() : new LinkedHashMap<>(visualLayout);
@@ -88,6 +91,31 @@ public record GraphDraft(
      */
     public static boolean isSupportedStatus(String status) {
         return SUPPORTED_STATUSES.contains(normalizeStatus(status));
+    }
+
+    /**
+     * Backward-compatible constructor for drafts created before graph output schema became a first-class field.
+     */
+    public GraphDraft(String schemaVersion,
+                      String draftId,
+                      long revision,
+                      String graphName,
+                      String tenantId,
+                      String namespace,
+                      String environment,
+                      String status,
+                      SchemaEnvelope inputSchema,
+                      List<DraftNode> nodes,
+                      List<DraftEdge> edges,
+                      Map<String, Object> visualLayout,
+                      Map<String, NodeFixture> nodeFixtures,
+                      OutputSelection output,
+                      Map<String, String> operatorFingerprints,
+                      Map<String, OperatorDefinition> operatorSnapshots,
+                      RevisionMetadata revisionMetadata) {
+        this(schemaVersion, draftId, revision, graphName, tenantId, namespace, environment, status,
+                inputSchema, outputSchemaFromVisualLayout(visualLayout), nodes, edges, visualLayout, nodeFixtures,
+                output, operatorFingerprints, operatorSnapshots, revisionMetadata);
     }
 
     /**
@@ -189,7 +217,7 @@ public record GraphDraft(
      */
     public GraphDraft withIdentity(String newDraftId, long newRevision) {
         return new GraphDraft(schemaVersion, newDraftId, newRevision, graphName, tenantId, namespace,
-                environment, status, inputSchema, nodes, edges, visualLayout, nodeFixtures, output,
+                environment, status, inputSchema, outputSchema, nodes, edges, visualLayout, nodeFixtures, output,
                 operatorFingerprints,
                 operatorSnapshots, revisionMetadata);
     }
@@ -202,8 +230,8 @@ public record GraphDraft(
      */
     public GraphDraft withOperatorFingerprints(Map<String, String> fingerprints) {
         return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
-                environment, status, inputSchema, nodes, edges, visualLayout, nodeFixtures, output, fingerprints,
-                operatorSnapshots, revisionMetadata);
+                environment, status, inputSchema, outputSchema, nodes, edges, visualLayout, nodeFixtures, output,
+                fingerprints, operatorSnapshots, revisionMetadata);
     }
 
     /**
@@ -214,7 +242,7 @@ public record GraphDraft(
      */
     public GraphDraft withOperatorSnapshots(Map<String, OperatorDefinition> snapshots) {
         return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
-                environment, status, inputSchema, nodes, edges, visualLayout, nodeFixtures, output,
+                environment, status, inputSchema, outputSchema, nodes, edges, visualLayout, nodeFixtures, output,
                 operatorFingerprints,
                 snapshots, revisionMetadata);
     }
@@ -229,8 +257,8 @@ public record GraphDraft(
     public GraphDraft withOperatorSnapshotState(Map<String, String> fingerprints,
                                                 Map<String, OperatorDefinition> snapshots) {
         return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
-                environment, status, inputSchema, nodes, edges, visualLayout, nodeFixtures, output, fingerprints,
-                snapshots, revisionMetadata);
+                environment, status, inputSchema, outputSchema, nodes, edges, visualLayout, nodeFixtures, output,
+                fingerprints, snapshots, revisionMetadata);
     }
 
     /**
@@ -245,7 +273,7 @@ public record GraphDraft(
      */
     public GraphDraft withNodeFixtures(Map<String, NodeFixture> fixtures) {
         return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
-                environment, status, inputSchema, nodes, edges, visualLayout, fixtures, output,
+                environment, status, inputSchema, outputSchema, nodes, edges, visualLayout, fixtures, output,
                 operatorFingerprints, operatorSnapshots, revisionMetadata);
     }
 
@@ -257,7 +285,19 @@ public record GraphDraft(
      */
     public GraphDraft withVisualLayout(Map<String, Object> nextVisualLayout) {
         return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
-                environment, status, inputSchema, nodes, edges, nextVisualLayout, nodeFixtures, output,
+                environment, status, inputSchema, outputSchema, nodes, edges, nextVisualLayout, nodeFixtures, output,
+                operatorFingerprints, operatorSnapshots, revisionMetadata);
+    }
+
+    /**
+     * Returns a copy with updated graph output schema.
+     *
+     * @param nextOutputSchema graph output schema
+     * @return updated draft
+     */
+    public GraphDraft withOutputSchema(SchemaEnvelope nextOutputSchema) {
+        return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
+                environment, status, inputSchema, nextOutputSchema, nodes, edges, visualLayout, nodeFixtures, output,
                 operatorFingerprints, operatorSnapshots, revisionMetadata);
     }
 
@@ -269,9 +309,45 @@ public record GraphDraft(
      */
     public GraphDraft withRevisionMetadata(RevisionMetadata metadata) {
         return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
-                environment, status, inputSchema, nodes, edges, visualLayout, nodeFixtures, output,
+                environment, status, inputSchema, outputSchema, nodes, edges, visualLayout, nodeFixtures, output,
                 operatorFingerprints,
                 operatorSnapshots, metadata);
+    }
+
+    private static SchemaEnvelope outputSchemaFromVisualLayout(Map<String, Object> visualLayout) {
+        if (visualLayout == null || visualLayout.isEmpty()) {
+            return SchemaEnvelope.opaque();
+        }
+        Object rawContract = visualLayout.get("graphContract");
+        if (!(rawContract instanceof Map<?, ?> contract)) {
+            return SchemaEnvelope.opaque();
+        }
+        return schemaEnvelopeFromObject(contract.get("outputSchema"));
+    }
+
+    private static SchemaEnvelope schemaEnvelopeFromObject(Object value) {
+        if (value instanceof SchemaEnvelope envelope) {
+            return envelope;
+        }
+        Map<String, Object> map = objectMap(value);
+        if (map.isEmpty() || !map.containsKey("schema")) {
+            return SchemaEnvelope.opaque();
+        }
+        return new SchemaEnvelope(stringValue(map.get("format")), stringValue(map.get("version")),
+                objectMap(map.get("schema")));
+    }
+
+    private static Map<String, Object> objectMap(Object value) {
+        if (!(value instanceof Map<?, ?> rawMap)) {
+            return Map.of();
+        }
+        Map<String, Object> map = new LinkedHashMap<>();
+        rawMap.forEach((key, item) -> map.put(String.valueOf(key), item));
+        return map;
+    }
+
+    private static String stringValue(Object value) {
+        return value == null ? "" : String.valueOf(value);
     }
 
     /**

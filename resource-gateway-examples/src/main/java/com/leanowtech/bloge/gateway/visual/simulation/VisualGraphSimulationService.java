@@ -346,6 +346,7 @@ public class VisualGraphSimulationService {
                 draft.environment(),
                 draft.status(),
                 draft.inputSchema(),
+                draft.outputSchema(),
                 nodes,
                 draft.edges(),
                 draft.visualLayout(),

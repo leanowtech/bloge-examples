@@ -156,7 +156,7 @@ Resource Gateway 内置 graph 的正式合同定义在：
 
 新版 `/author/` 和旧版 `/examples/gateway` 都把 graph 合同作为一等信息看待：
 
-- `/author/`：画布工具栏下方有 **Graph Contract** 条，显示当前 draft 的 Input/Output 摘要。3 个内置复杂示例各自携带 `inputSchema` 和 `outputSchema`；加载示例时会同步设置当前 graph contract，并用 input schema 生成一份 runtime context 样本。从 Legacy DSL 导入时，graph 级 `input { ... }` 会进入 `draft.inputSchema`，graph 级 `output { ... }` 会进入 `draft.visualLayout.graphContract.outputSchema`，页面和导出的 draft 保持一致。
+- `/author/`：画布工具栏下方有 **Graph Contract** 条，显示当前 draft 的 Input/Output 摘要。3 个内置复杂示例各自携带 `inputSchema` 和 `outputSchema`；加载示例时会同步设置当前 graph contract，并用 input schema 生成一份 runtime context 样本。从 Legacy DSL 导入时，graph 级 `input { ... }` 会进入 `draft.inputSchema`，graph 级 `output { ... }` 会进入一等 `draft.outputSchema`。`visualLayout.graphContract.outputSchema` 仍会保留一份兼容副本，供旧导出、UI 摘要和历史 draft 回读使用。
 - `/examples/gateway`：右侧 Inspector 顶部有 **Graph Contract** 区块，会显示当前 showcase/composer 的 Input/Output 摘要。
 
 Graph Contract 会同时显示：
@@ -164,7 +164,7 @@ Graph Contract 会同时显示：
 - **Input / ctx**：这张 graph 执行前要求的上下文字段。
 - **Output / public result**：这张 graph 对系统集成暴露的终态输出字段。
 
-对于 Resource Gateway showcase 示例，Graph Contract 来自 `GatewayGraphContractCatalog`，所以 `User Dashboard`、`Loan Decision Policy`、`Product Detail` 等示例各自有独立的 input/output schema。对于 `/author/` 的 3 个可编辑复杂示例，Graph Contract 定义在 `resource-gateway-examples/src/main/frontend/src/canvasExamples.ts`，并会随 draft 一起导出 `inputSchema` 和 `visualLayout.graphContract.outputSchema`。对于 Legacy DSL，Graph Contract 来自 `.bloge` 文件里的 `input` / `output` 声明。对于 `Custom Composer`，Input 来自当前画布的 `Graph Input Schema`，Output 来自当前 `Graph Output` 选中的输出节点和 path；修改 schema 或切换输出节点后，Graph Contract 摘要会同步刷新。
+对于 Resource Gateway showcase 示例，Graph Contract 来自 `GatewayGraphContractCatalog`，所以 `User Dashboard`、`Loan Decision Policy`、`Product Detail` 等示例各自有独立的 input/output schema。对于 `/author/` 的 3 个可编辑复杂示例，Graph Contract 定义在 `resource-gateway-examples/src/main/frontend/src/canvasExamples.ts`，并会随 draft 一起导出 `inputSchema`、一等 `outputSchema` 和兼容用 `visualLayout.graphContract.outputSchema`。对于 Legacy DSL，Graph Contract 来自 `.bloge` 文件里的 `input` / `output` 声明。对于 `Custom Composer`，Input 来自当前画布的 `Graph Input Schema`，Output 来自当前 `Graph Output` 选中的输出节点和 path；修改 schema 或切换输出节点后，Graph Contract 摘要会同步刷新。
 
 加载 `Loan policy fallback` 后，Graph Contract 与画布状态会像下图这样联动：
 
@@ -398,7 +398,8 @@ rewrite gate 返回 `bloge.dslRewriteGate.v1`。`allowed=true` / `decision=ALLOW
 | --- | --- |
 | `draft` | 可被画布渲染的 `bloge.visualGraphDraft.v1`；普通 node、transform、decision_table 会被投影成可编辑节点 |
 | `draft.inputSchema` | DSL graph 级 `input { ... }` schema |
-| `draft.visualLayout.graphContract.outputSchema` | DSL graph 级 `output { ... }` schema；这是 `GraphDraft.outputSchema` 一等字段落地前的兼容位置 |
+| `draft.outputSchema` | DSL graph 级 `output { ... }` schema；这是 graph 对外集成的正式输出合同 |
+| `draft.visualLayout.graphContract.outputSchema` | 输出 schema 的 UI/历史兼容副本；旧 draft 只有这个字段时，前后端会自动回填到一等 `outputSchema` |
 | `sourceMap.nodes/edges/bindings` | visual 元素到 DSL 行列的映射 |
 | `coverage` | member、node、edge、missing operator/function、unsupported syntax 数量 |
 | `roundTrip` | 本次 preview 的语义往返证据，包含 `status`、`message`、`generatedDsl`、`sourceFingerprint`、`generatedFingerprint` 和 generation/reparse diagnostics |

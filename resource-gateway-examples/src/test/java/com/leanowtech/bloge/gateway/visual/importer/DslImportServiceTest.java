@@ -51,10 +51,11 @@ class DslImportServiceTest {
         assertThat(projection.draft().inputSchema().properties())
                 .containsEntry("score", Map.of("type", "integer"))
                 .containsEntry("amount", Map.of("type", "number"));
-        SchemaEnvelope outputSchema = outputSchema(projection);
+        SchemaEnvelope outputSchema = projection.draft().outputSchema();
         assertThat(outputSchema.properties())
                 .containsEntry("eligible", Map.of("type", "boolean"))
                 .containsEntry("ruleId", Map.of("type", "string"));
+        assertThat(outputSchema(projection).properties()).isEqualTo(outputSchema.properties());
         assertThat(projection.sourceMap().nodes()).containsKey("eligibility");
         assertThat(projection.draft().visualLayout())
                 .extracting(layout -> ((Map<?, ?>) layout.get("import")).get("schemaNeutral"))

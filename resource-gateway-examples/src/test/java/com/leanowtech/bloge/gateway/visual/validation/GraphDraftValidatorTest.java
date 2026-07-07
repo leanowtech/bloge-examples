@@ -147,6 +147,32 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void validatesGraphOutputSchemaAsFirstClassDraftContract() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        )).withOutputSchema(new SchemaEnvelope("avro", "1.0", Map.of("type", "object")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.formatUnsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/outputSchema/format");
+                });
+    }
+
+    @Test
     void acceptsDesignOnlyOperatorsForSchemaConstrainedAuthoring() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(

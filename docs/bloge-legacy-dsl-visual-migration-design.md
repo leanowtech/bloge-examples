@@ -329,12 +329,12 @@ Source map 是迁移可用性的关键，不是锦上添花：
 | --- | --- |
 | `GraphDef.name` | `draft.graphName` |
 | `GraphDef.inputSchema` | `draft.inputSchema` |
-| `GraphDef.outputSchema` | `draft.outputSchema` 的后续扩展字段；当前可先放入 `visualLayout.graphContract.outputSchema` |
+| `GraphDef.outputSchema` | 一等 `draft.outputSchema`；同时写入 `visualLayout.graphContract.outputSchema` 作为 UI/历史兼容副本 |
 | `GraphDef.streamingOutputNodeId` | output selection + streaming diagnostic |
 | imports | import session dependencies |
 | comments/description | node/display/revision metadata |
 
-当前 `GraphDraft` 只有 `inputSchema`，而用户已经要求每张 graph 都有形式化 input/output schema。因此迁移专线应推动 `GraphDraft` 增加一等 `outputSchema` 字段；在字段落地前，导入器可以临时把 output schema 放在 `visualLayout.graphContract.outputSchema`，但这只能作为兼容过渡。
+当前 `GraphDraft` 已经同时具备一等 `inputSchema` 和 `outputSchema`。历史 draft 如果只有 `visualLayout.graphContract.outputSchema`，后端 record 构造器和前端 `fromGraphDraft` 会自动回填到一等输出合同；新导出的 draft 会同时携带 `outputSchema` 与兼容 layout 副本。
 
 ### 7.2 普通 node
 
@@ -579,7 +579,7 @@ resource-gateway 当前实现口径：
 - 普通 `node` 缺 operator schema 时仍生成占位 draft node，并返回 `visual.dslImport.operatorMissing`。
 - `transform` 投影为 `bloge:transform` 节点，字段表达式写入 `config.assignments`。
 - `decision_table` 投影为 `bloge:decisionTable` 节点，入参表达式写入 `config.inputs`，入边数据会成为 decision table condition 可引用的局部参数。
-- DSL graph `input { ... }` 写入 `draft.inputSchema`；DSL graph `output { ... }` 暂写入 `draft.visualLayout.graphContract.outputSchema`。
+- DSL graph `input { ... }` 写入 `draft.inputSchema`；DSL graph `output { ... }` 写入一等 `draft.outputSchema`，并同步保留 `draft.visualLayout.graphContract.outputSchema` 兼容副本。
 - preview 会在无阻断 syntax 时执行 semantic round-trip：`GraphDraft -> GraphDraftDslGenerator -> generated DSL -> parseAst -> projectGraph`，比较源 projection 与 generated projection 的 canonical visual semantics 指纹；结果写入 `roundTrip.status`。
 - `foreach`、`loop`、`parallel`、`wait`、`await`、`script`、extension 等复杂语法第一版以 warning diagnostic 暴露，不静默丢弃。
 
@@ -861,7 +861,7 @@ visual/importer/
 
 - DSL -> AST -> GraphDraft projector。
 - 普通 node、transform、decision_table、contextPath、nodePath、constant、expression、dependency/data/route edge 支持。
-- graph input schema 投影；graph output schema 通过 `visualLayout.graphContract.outputSchema` 过渡承载。
+- graph input schema 和 graph output schema 都投影为 `GraphDraft` 一等合同字段；`visualLayout.graphContract.outputSchema` 只作为历史兼容与 UI 摘要副本。
 - source map 基础支持。
 - diagnostics list。
 - `/author/` Legacy DSL 面板消费 preview response，并把返回 draft 加载为当前可编辑 canvas。
@@ -880,15 +880,15 @@ mvn -f resource-gateway-examples/pom.xml -Dtest=DslImportServiceTest,DslImportCo
 
 ### Phase 2.3：Round-trip 与修复闭环
 
-状态：preview 内置语义 round-trip 状态与 rewrite gate 预检已落地；真正覆盖原 DSL 的 source writer、unresolved repair wizard 和 output schema 一等字段仍待交付。
+状态：preview 内置语义 round-trip 状态、rewrite gate 预检和 `GraphDraft.outputSchema` 一等输出合同已落地；真正覆盖原 DSL 的 source writer 与 unresolved repair wizard 仍待交付。
 
 交付：
 
 - 已交付：GraphDraft -> DSL -> parseAst -> projectGraph -> canonical visual semantics equivalence verifier，并在 preview response 的 `roundTrip` 中返回 `SUPPORTED` / `DRIFT` / `PARTIAL` / `NOT_ASSESSED`。
 - 已交付：import session commit，使用同一 schema-neutral request 服务端重新投影并保存 stored draft/revision。
 - 已交付：`POST /api/visual/dsl-imports/rewrite-gate` 和 `/author/` `Check Rewrite`，把 round-trip 证据提升为 source replacement preflight，返回 `ALLOW_REWRITE` 或明确 block decision。
+- 已交付：`GraphDraft.outputSchema` 一等字段、旧 `visualLayout.graphContract.outputSchema` 回填兼容、validator/codegen/simulation/export 链路同步消费 graph 输出合同。
 - 待交付：unresolved mapping wizard。
-- 待交付：output schema 一等字段。
 - 待交付：源码回写 writer / VCS PR / Studio 批量迁移执行器，把 rewrite gate 结论接入“允许/禁止覆盖原 `.bloge` 文件”的治理流程。
 
 验收：

@@ -76,6 +76,7 @@ export interface CanvasDraftProjection {
 export interface GraphDraftExportOptions {
   draftId?: string;
   revision?: number;
+  outputSchema?: SchemaEnvelope;
   visualLayout?: Record<string, unknown>;
   operatorFingerprints?: Record<string, string>;
   operatorSnapshots?: Record<string, OperatorDefinition>;
@@ -368,6 +369,7 @@ export function toGraphDraft(
   edges: CanvasEdge[],
   outputNodeId: string,
   inputSchema?: SchemaEnvelope,
+  outputSchema?: SchemaEnvelope,
 ): GraphDraft {
   const edgeInputs = nodeInputsFromEdges(edges);
   const draftNodes: DraftNode[] = nodes.map((node) => ({
@@ -393,6 +395,7 @@ export function toGraphDraft(
   return {
     graphName: graphName || 'visualGraph',
     ...(inputSchema ? { inputSchema } : {}),
+    ...(outputSchema ? { outputSchema } : {}),
     nodes: draftNodes,
     edges: draftEdges,
     output: { nodeId: resolvedOutputNode, path: '' },
@@ -490,7 +493,7 @@ export function fromGraphDraft(draft: GraphDraft): CanvasDraftProjection {
     edges,
     outputNodeId: draft.output?.nodeId || (nodes.length > 0 ? nodes[nodes.length - 1].id : ''),
     inputSchema: draft.inputSchema,
-    outputSchema: schemaEnvelopeFromGraphContract(visualLayout, 'outputSchema'),
+    outputSchema: draft.outputSchema ?? schemaEnvelopeFromGraphContract(visualLayout, 'outputSchema'),
     visualLayout,
     nodeFixtures: draft.nodeFixtures ?? {},
     operatorFingerprints: draft.operatorFingerprints ?? {},
@@ -533,7 +536,7 @@ export function toExportableGraphDraft(
   inputSchema?: SchemaEnvelope,
   options: GraphDraftExportOptions = {},
 ): GraphDraft {
-  const draft = toGraphDraft(graphName, nodes, edges, outputNodeId, inputSchema);
+  const draft = toGraphDraft(graphName, nodes, edges, outputNodeId, inputSchema, options.outputSchema);
   return {
     schemaVersion: GRAPH_DRAFT_SCHEMA_VERSION,
     ...(options.draftId ? { draftId: options.draftId } : {}),
@@ -567,8 +570,9 @@ export function toSimulationRequest(
   fixtures: Record<string, NodeFixture> = {},
   context: Record<string, unknown> = {},
   inputSchema?: SchemaEnvelope,
+  outputSchema?: SchemaEnvelope,
 ): SimulationRequest {
-  const draft = toGraphDraft(graphName, nodes, edges, outputNodeId, inputSchema);
+  const draft = toGraphDraft(graphName, nodes, edges, outputNodeId, inputSchema, outputSchema);
   const selectedOutputNode = draft.output.nodeId;
   return {
     draft,

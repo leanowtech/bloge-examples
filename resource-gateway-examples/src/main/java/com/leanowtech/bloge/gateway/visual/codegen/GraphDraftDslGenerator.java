@@ -93,8 +93,8 @@ public class GraphDraftDslGenerator {
         boolean emittedSection = false;
         emittedSection = appendBoundarySchema(dsl, "input", draft.inputSchema(), "/inputSchema", diagnostics,
                 emittedSection);
-        emittedSection = appendBoundarySchema(dsl, "output", graphOutputSchema(draft),
-                "/visualLayout/graphContract/outputSchema", diagnostics, emittedSection);
+        emittedSection = appendBoundarySchema(dsl, "output", draft.outputSchema(), "/outputSchema", diagnostics,
+                emittedSection);
         for (GraphDraft.DraftNode node : orderedNodes(draft)) {
             if (!isDslFieldName(node.id())) {
                 diagnostics.add(VisualDiagnostic.error("visual.codegen.nodeId.invalid",
@@ -244,23 +244,6 @@ public class GraphDraftDslGenerator {
                 .filter(item -> item != null)
                 .map(String::valueOf)
                 .toList();
-    }
-
-    private static SchemaEnvelope graphOutputSchema(GraphDraft draft) {
-        Object rawContract = draft.visualLayout().get("graphContract");
-        if (!(rawContract instanceof Map<?, ?> contract)) {
-            return SchemaEnvelope.opaque();
-        }
-        Object rawOutput = contract.get("outputSchema");
-        if (rawOutput instanceof SchemaEnvelope envelope) {
-            return envelope;
-        }
-        Map<String, Object> map = objectMap(rawOutput);
-        if (map.containsKey("schema")) {
-            return new SchemaEnvelope(stringValue(map.get("format")), stringValue(map.get("version")),
-                    objectMap(map.get("schema")));
-        }
-        return SchemaEnvelope.opaque();
     }
 
     private String nodeToDsl(GraphDraft.DraftNode node,

@@ -63,6 +63,7 @@ public final class VisualSecretGuard {
             return diagnostics;
         }
         scan(draft.inputSchema().schema(), "/inputSchema/schema", "", diagnostics);
+        scan(draft.outputSchema().schema(), "/outputSchema/schema", "", diagnostics);
         scan(draft.visualLayout(), "/visualLayout", "", diagnostics);
         draft.nodeFixtures().forEach((nodeId, fixture) -> {
             scan(fixture.output(), "/nodeFixtures/" + nodeId + "/output", "output", diagnostics);

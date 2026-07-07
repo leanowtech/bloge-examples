@@ -171,6 +171,7 @@ public class GraphDraftValidator {
         validateGraphIdentifier(draft.graphName(), diagnostics);
         diagnostics.addAll(VisualSecretGuard.detectDraftSecrets(draft));
         diagnostics.addAll(VisualSchemaValidator.validateEnvelope(draft.inputSchema(), "/inputSchema"));
+        diagnostics.addAll(VisualSchemaValidator.validateEnvelope(draft.outputSchema(), "/outputSchema"));
         validateGraphInputSchemaDslPathFields(draft.inputSchema(), diagnostics);
 
         Set<String> nodeIds = new HashSet<>();

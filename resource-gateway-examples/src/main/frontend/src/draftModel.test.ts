@@ -204,6 +204,14 @@ describe('fromGraphDraft', () => {
           required: ['score'],
         },
       },
+      outputSchema: {
+        format: 'json-schema',
+        version: '2020-12',
+        schema: {
+          type: 'object',
+          properties: { finalDecision: { type: 'string' } },
+        },
+      },
       nodes: [
         {
           id: 'eligibility',
@@ -270,15 +278,51 @@ describe('fromGraphDraft', () => {
     });
     expect(canvas.outputNodeId).toBe('response');
     expect(canvas.outputSchema?.schema).toMatchObject({
-      properties: { eligible: { type: 'boolean' } },
+      properties: { finalDecision: { type: 'string' } },
     });
     expect(canvas.operatorFingerprints).toEqual({ eligibility: 'fp-risk' });
     expect(canvas.operatorSnapshots.eligibility.operatorRef).toBe('risk:eligibility');
+  });
+
+  it('restores output schema from legacy graphContract layout when the top-level field is absent', () => {
+    const canvas = fromGraphDraft({
+      schemaVersion: 'bloge.visualGraphDraft.v1',
+      graphName: 'legacyDraft',
+      nodes: [{ id: 'response', operatorRef: 'bloge:transform', position: { x: 0, y: 0 } }],
+      edges: [],
+      visualLayout: {
+        graphContract: {
+          outputSchema: {
+            format: 'json-schema',
+            version: '2020-12',
+            schema: {
+              type: 'object',
+              properties: { eligible: { type: 'boolean' } },
+            },
+          },
+        },
+      },
+      output: { nodeId: 'response', path: '' },
+    });
+
+    expect(canvas.outputSchema?.schema).toMatchObject({
+      properties: { eligible: { type: 'boolean' } },
+    });
   });
 });
 
 describe('toSimulationRequest', () => {
   it('keeps request outputNode aligned with the draft output selection', () => {
+    const inputSchema = {
+      format: 'json-schema',
+      version: '2020-12',
+      schema: { type: 'object', properties: { score: { type: 'integer' } } },
+    };
+    const outputSchema = {
+      format: 'json-schema',
+      version: '2020-12',
+      schema: { type: 'object', properties: { approved: { type: 'boolean' } } },
+    };
     const request = toSimulationRequest(
       'myGraph',
       [
@@ -289,10 +333,15 @@ describe('toSimulationRequest', () => {
       [{ id: 'e1', source: 'source', target: 'chosen' }],
       'chosen',
       { chosen: { output: { approved: true } } },
+      {},
+      inputSchema,
+      outputSchema,
     );
 
     expect(request.outputNode).toBe('chosen');
     expect(request.draft.output.nodeId).toBe('chosen');
+    expect(request.draft.inputSchema).toEqual(inputSchema);
+    expect(request.draft.outputSchema).toEqual(outputSchema);
     expect(request.fixtures).toEqual({ chosen: { output: { approved: true } } });
   });
 
@@ -324,6 +373,15 @@ describe('toExportableGraphDraft', () => {
         required: ['score'],
       },
     };
+    const outputSchema = {
+      format: 'json-schema',
+      version: '2020-12',
+      schema: {
+        type: 'object',
+        properties: { eligible: { type: 'boolean' } },
+        required: ['eligible'],
+      },
+    };
     const draft = toExportableGraphDraft(
       'visualGraph',
       [{ id: 'n1', operatorRef: 'risk:eligibility', label: 'Eligibility', position: { x: 10, y: 20 } }],
@@ -331,12 +389,14 @@ describe('toExportableGraphDraft', () => {
       'n1',
       { n1: { output: { eligible: true }, expectedInput: { score: 720 } } },
       inputSchema,
+      { outputSchema },
     );
 
     expect(draft).toMatchObject({
       schemaVersion: 'bloge.visualGraphDraft.v1',
       graphName: 'visualGraph',
       inputSchema,
+      outputSchema,
       nodes: [{ id: 'n1', operatorRef: 'risk:eligibility', label: 'Eligibility' }],
       output: { nodeId: 'n1', path: '' },
       nodeFixtures: {

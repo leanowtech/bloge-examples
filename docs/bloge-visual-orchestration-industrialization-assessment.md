@@ -97,6 +97,7 @@
 34. `bloge.capabilityCatalog.v1` preview adapter 已落地：`CapabilityCatalogVisualAdapter` 和 `POST /admin/visual-operator-libraries/from-capability-catalog-text` 可把业务代码导出的 framework catalog JSON/YAML 投影为标准 `bloge.visualOperatorLibrary.v1` 草稿，包含 operator ports、capabilities、function signatures、projection review、opaque schema warning 和原始 implementation provenance。`/author/` Library 面板新增 `Adapt Catalog`，只负责 schema acquisition，之后仍然走现有 Validate / Import / DSL Render，保持通用画布“不关心 schema 生成方式，只消费合法 visual schema”的边界。后端 API 测试和前端 Library intake 测试已覆盖该路径。
 35. Legacy DSL preview 已具备语义 round-trip 证据：`DslImportService` 在可生成 DSL 的场景下执行 `GraphDraft -> GraphDraftDslGenerator -> generated DSL -> parseAst -> projectGraph`，并比较源 projection 与 generated projection 的 canonical visual semantics 指纹；`roundTrip` 返回 `SUPPORTED`、`DRIFT`、`PARTIAL` 或 `NOT_ASSESSED`，同时携带 generated DSL、source/generated fingerprint 和 diagnostics。`/author/` Legacy DSL 面板会显示 Round trip 状态，前端 notice 也会提示 `round-trip <status>`；后端 importer/codegen 测试和前端/API 测试均覆盖该证据链。
 36. Legacy DSL rewrite gate 预检已落地：`POST /api/visual/dsl-imports/rewrite-gate` 复用 `.bloge + 当前 catalog/inline visual libraries` 的 schema-neutral request，基于 preview diagnostics 与 `roundTrip` 证据返回 `bloge.dslRewriteGate.v1`，包含 `allowed`、`decision`、`generatedDsl`、`roundTrip` 和 diagnostics。`SUPPORTED` 场景返回 `ALLOW_REWRITE`，semantic drift 返回 `BLOCK_SEMANTIC_DRIFT`；`/author/` Legacy DSL 面板新增 `Check Rewrite`，能在不保存 draft、不写源码的前提下展示 source replacement allow/block 结论。
+37. Graph output schema 已从 layout 兼容字段提升为 `GraphDraft.outputSchema` 一等合同：DSL `output { ... }`、内置复杂示例和画布当前输出节点推导都会进入 draft 级输出 schema；旧 `visualLayout.graphContract.outputSchema` 仍可回填兼容，但不再是系统集成主合同。`GraphDraftValidator`、`VisualSecretGuard`、`GraphDraftDslGenerator`、simulation request、frontend `fromGraphDraft` 和 Export Draft 都已消费该字段，并有 Java/TypeScript 单元测试覆盖。
 
 ### 尚未成立
 
@@ -105,7 +106,7 @@
 3. IAM/RBAC/secret/egress/审计查询还不是生产后台级别。
 4. durable、event、message、webhook、AI tool 的真实运行时还没有完整闭环。
 5. 前端仍是示例项目形态，复杂度已经接近需要模块化拆分的边界。
-6. 存量 DSL 迁移已经有 capability catalog adapter、后端 preview/commit/rewrite-gate、`/author/` 导入面板、source map 行定位、stored draft 保存和 semantic round-trip / source replacement 预检证据；opaque snippet 修复向导、批量迁移报告和真正覆盖原 DSL 的 source writer / VCS 集成还没闭环。
+6. 存量 DSL 迁移已经有 capability catalog adapter、后端 preview/commit/rewrite-gate、`/author/` 导入面板、source map 行定位、stored draft 保存、一等 graph input/output schema 和 semantic round-trip / source replacement 预检证据；opaque snippet 修复向导、批量迁移报告和真正覆盖原 DSL 的 source writer / VCS 集成还没闭环。
 
 ## 4. 本轮迭代复盘
 
@@ -120,7 +121,7 @@
 1. 新增 `visual/importer` 后端模块和 `POST /api/visual/dsl-imports/preview`。
 2. 请求支持 `catalogIds` / `operatorLibraryIds` 和 preview-only `inlineLibraries`，inline library 复用正式 `OperatorLibraryValidator`，但不写入 registry。
 3. 使用 `DslCompiler.parseAst()` 解析 DSL，投影普通 node、transform、decision_table、contextPath、nodePath、constant/expression binding、data/dependency/route edge。
-4. DSL graph `input { ... }` 投影到 `draft.inputSchema`；`output { ... }` 过渡放入 `draft.visualLayout.graphContract.outputSchema`。
+4. DSL graph `input { ... }` 投影到 `draft.inputSchema`；`output { ... }` 投影到一等 `draft.outputSchema`，并保留 `visualLayout.graphContract.outputSchema` 作为旧资产/UI 兼容副本。
 5. 返回 `bloge.dslVisualProjection.v1`，包含 `GraphDraft`、`sourceMap`、`coverage`、`roundTrip` 和 migration diagnostics。
 6. 缺失 operator 仍生成占位 node，并返回 `visual.dslImport.operatorMissing`，避免迁移 preview 丢图。
 
@@ -212,6 +213,31 @@ npm run test -- --run src/AuthorCanvas.test.tsx src/api.test.ts
 剩余风险：
 
 这轮只是 source replacement preflight。真正的源码覆盖还需要 source writer、VCS PR 或 Studio 批量迁移器，并且要把 `ALLOW_REWRITE`、人工 reviewed、审计原因和批量报告接成一个可治理流程。
+
+### 2026-07-07：Graph Output Schema First-Class Contract
+
+触发问题：
+
+通用画布已经能在 UI 上显示 graph input/output，但 `outputSchema` 仍主要藏在 `visualLayout.graphContract` 里。对系统集成来说，layout 是视图元数据，不应该承载正式输出合同；每张 graph 的输入输出 schema 必须在 `GraphDraft` 主合同里可直接读取、验证、导出和试跑。
+
+本轮完成：
+
+1. `GraphDraft` 增加一等 `outputSchema` 字段，缺省为 opaque schema。
+2. 旧 draft 如果只有 `visualLayout.graphContract.outputSchema`，Java record 构造器会自动回填到 `draft.outputSchema`；前端 `fromGraphDraft` 也保留相同兼容读取。
+3. `DslImportService` 把 DSL graph `output { ... }` 同时写入 `draft.outputSchema` 与兼容 layout 副本。
+4. `GraphDraftDslGenerator`、`GraphDraftValidator`、`VisualSecretGuard`、`VisualGraphSimulationService` 改为消费一等 output schema。
+5. `/author/` Export Draft 与模拟请求直接携带 `outputSchema`，Graph Contract UI 仍保留 layout 副本用于历史兼容。
+
+验证：
+
+```bash
+mvn -f resource-gateway-examples/pom.xml -Dtest=DslImportServiceTest,GraphDraftDslGeneratorTest,GraphDraftValidatorTest,VisualGraphSimulationServiceTest test
+npm run test -- --run src/draftModel.test.ts
+```
+
+剩余风险：
+
+这轮闭合的是 GraphDraft 合同层，不是完整外部集成治理。后续仍需要把 stored draft/publication 的 output schema 变化纳入更完整的版本治理、迁移报告和跨环境 bundle 差异审阅。
 
 ### 2026-07-05：Schema Rebase Decision Queue
 

@@ -174,6 +174,7 @@ export interface GraphDraft {
   revision?: number;
   graphName: string;
   inputSchema?: SchemaEnvelope;
+  outputSchema?: SchemaEnvelope;
   nodes: DraftNode[];
   edges: DraftEdge[];
   visualLayout?: Record<string, unknown>;
