@@ -2793,6 +2793,13 @@ Maven plugin、平台 registry、OpenAPI/AsyncAPI adapter、手写 JSON/YAML 还
 `inlineLibraries[]` 本身能通过 `bloge.visualOperatorLibrary.v1` 校验，DSL 就可以被
 服务端投影为 visual draft。
 
+schema 也不是首次可视化的硬前置条件。没有匹配的 operator/function schema 时，
+服务端仍必须尽量从 DSL AST 推演拓扑：operatorRef、built-in function 调用名、
+context input binding、node output reference、data/dependency/route edge、transform
+assignment、decision table input 和 graph input/output。此时响应是 `topology-only`
+projection：可用于理解和迁移审阅，但不能被误标为 schema 精确、rewrite safe 或
+runtime executable。
+
 请求：
 
 ```json
@@ -2824,7 +2831,15 @@ library registry；结构校验失败的 inline library 不得进入投影绑定
     "nodes": [],
     "edges": [],
     "visualLayout": {
-      "import": { "schemaNeutral": true },
+      "import": {
+        "schemaNeutral": true,
+        "projectionMode": "topology-only",
+        "schemaPrecision": "inferred",
+        "operatorRefs": ["risk:eligibility", "bloge:transform"],
+        "functionNames": ["businessRiskScore"],
+        "missingOperatorRefs": ["risk:eligibility"],
+        "missingFunctionNames": ["businessRiskScore"]
+      },
       "graphContract": {
         "outputSchema": { "format": "json-schema", "version": "2020-12", "schema": { "type": "object" } }
       }
@@ -2855,6 +2870,13 @@ library registry；结构校验失败的 inline library 不得进入投影绑定
   "diagnostics": []
 }
 ```
+
+`draft.visualLayout.import.projectionMode` 的语义：
+
+| projectionMode | 含义 | 产品动作 |
+| --- | --- | --- |
+| `schema-backed` | DSL 中引用的 operator/function 已在 effective catalog 中解析，schema 约束可参与校验、补全和后续 gate | 可继续执行 schema-aware validate、simulate、rewrite gate、publish |
+| `topology-only` | 至少有 operator/function schema 缺失；图结构、输入绑定、输出引用和函数调用来自 DSL AST 推演 | 可审阅拓扑、source map 和依赖；不得把缺失 schema 的结果当作 fully projected / executable / auto rewrite safe |
 
 `draft.inputSchema` 来自 DSL graph `input { ... }`；`draft.outputSchema` 来自
 DSL graph `output { ... }`，并是 graph 级输出合同的正式字段。

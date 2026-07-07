@@ -3520,15 +3520,27 @@ function projectionDiagnosticsLevel(diagnostics: VisualDiagnostic[]): Connection
   return 'ok';
 }
 
+function dslImportMetadata(projection: DslVisualProjection): Record<string, unknown> {
+  const visualLayout = projection.draft.visualLayout;
+  return isRecord(visualLayout) && isRecord(visualLayout.import)
+    ? visualLayout.import
+    : {};
+}
+
 function dslProjectionNotice(projection: DslVisualProjection): ConnectionNotice {
   const diagnostics = projection.diagnostics ?? [];
   const coverage = projection.coverage;
   const roundTrip = projection.roundTrip;
+  const importMetadata = dslImportMetadata(projection);
   const nodeCount = projection.draft.nodes?.length ?? coverage?.projectedNodeCount ?? 0;
   const edgeCount = projection.draft.edges?.length ?? coverage?.edgeCount ?? 0;
   const missingOperatorCount = coverage?.missingOperatorCount ?? 0;
   const missingFunctionCount = coverage?.missingFunctionCount ?? 0;
+  const projectionMode = typeof importMetadata.projectionMode === 'string'
+    ? importMetadata.projectionMode
+    : '';
   const repairHints = [
+    projectionMode === 'topology-only' ? 'topology-only projection' : '',
     missingOperatorCount > 0 ? `${missingOperatorCount} missing operator schema` : '',
     missingFunctionCount > 0 ? `${missingFunctionCount} missing function schema` : '',
     roundTrip && roundTrip.status && roundTrip.status !== 'NOT_ASSESSED' ? `round-trip ${roundTrip.status}` : '',

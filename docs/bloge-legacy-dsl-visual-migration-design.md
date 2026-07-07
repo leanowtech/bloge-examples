@@ -19,9 +19,10 @@
 
 因此需要同时解决三件事：
 
-1. 画布能消费结构合法的业务算子库和 business built-in function schema，不关心 schema 是怎么生成的。
-2. 画布能导入这些 schema，并把它们变成 palette、连线校验、表达式补全和测试能力。
-3. 画布能导入手写 DSL，把 DSL 内容可视化渲染成 GraphDraft，并用诊断明确哪些内容已完整投影、哪些内容需要人工修复。
+1. 画布能在没有 operator/function schema 的情况下，先基于 DSL AST 推演出 topology-only GraphDraft：节点、边、上下游依赖、输入绑定、输出引用、函数调用和 graph input/output。
+2. 画布能消费结构合法的业务算子库和 business built-in function schema，不关心 schema 是怎么生成的，并把这些 schema 作为 topology 的增强层。
+3. 画布能把 schema 增强层变成 palette、连线校验、表达式补全、测试能力和 rewrite/executable gate。
+4. 画布能导入手写 DSL，把 DSL 内容可视化渲染成 GraphDraft，并用诊断明确哪些内容已完整投影、哪些内容只是 topology-only 推演、哪些内容需要人工修复。
 
 产品承诺不能是“完美反编译”。正确承诺应该是：**loss-aware import，支持常用 DSL 无损投影；复杂或未知语义保留为可审阅 opaque 节点/片段，绝不静默丢逻辑。**
 
@@ -45,6 +46,8 @@ Canvas rendering: 只消费合法 schema + DSL，并投影成可视化 GraphDraf
 ```
 
 `bloge.capabilityCatalog.v1` 是存量 BLOGE 业务最推荐的 schema acquisition 路径，但它不是通用画布渲染 DSL 的唯一入口，更不能成为硬依赖。
+
+更进一步：**schema acquisition 也不是首次可视化的前置条件**。没有 operator/function schema 时，画布仍应进入 `topology-only` projection：从 DSL 语法提取 operatorRef、built-in function 调用名、输入 binding、node output reference、route/data/dependency edge 和 graph contract。缺失 schema 只降低精确度，不能阻止用户先理解整体业务拓扑。
 
 ## 2. 代码事实
 
@@ -438,8 +441,8 @@ Transform 是迁移成可视化编辑的高价值区域：
 | Code | Level | 含义 | 推荐动作 |
 | --- | --- | --- | --- |
 | `dsl.import.operatorResolved` | INFO | operatorRef 已绑定 catalog | 无需处理 |
-| `dsl.import.operatorMissing` | ERROR | DSL 引用了 catalog 中不存在的 operator | 导入正确 catalog 或手动映射 |
-| `dsl.import.functionMissing` | WARNING/ERROR | 表达式函数缺少 schema | 补 function descriptor 或标记 external |
+| `dsl.import.operatorMissing` | WARNING | DSL 引用了 catalog 中不存在的 operator；仍以 topology-only node 渲染 | 先审阅拓扑，再导入正确 catalog 或手动映射 |
+| `dsl.import.functionMissing` | WARNING | 表达式函数缺少 schema；表达式文本仍保留 | 先审阅表达式依赖，再补 function descriptor 或标记 external |
 | `dsl.import.schemaOpaque` | WARNING | port schema 只能投影为 opaque | 补 SchemaAware / 显式 schema |
 | `dsl.import.unsupportedSyntax` | WARNING | 语法能解析但暂不可视化编辑 | 保留 opaque snippet，后续补 projector |
 | `dsl.import.lossyProjection` | WARNING | 可渲染但回写可能改变结构 | 运行 round-trip |
@@ -576,7 +579,9 @@ resource-gateway 当前实现口径：
 - `catalogIds` 可用别名 `operatorLibraryIds`；inline visual libraries 只参与本次 preview，不写入 registry。
 - operator/function schema 来源不限，但 inline visual library 会走同一套 `OperatorLibraryValidator`。
 - DSL 使用官方 `DslCompiler.parseAst()`，并加载可发现的 DSL extension providers。
-- 普通 `node` 缺 operator schema 时仍生成占位 draft node，并返回 `visual.dslImport.operatorMissing`。
+- 普通 `node` 缺 operator schema 时仍生成 topology-only draft node，并返回 warning 级 `visual.dslImport.operatorMissing`。
+- built-in function 缺 descriptor 时仍保留表达式文本，并返回 warning 级 `visual.dslImport.functionMissing`。
+- `draft.visualLayout.import.projectionMode` 标识 `schema-backed` 或 `topology-only`；同一对象还记录 `operatorRefs`、`functionNames`、`missingOperatorRefs`、`missingFunctionNames` 和 `schemaPrecision`，方便 UI、CLI 和后续迁移 dashboard 判断“可理解”与“可精确执行”的差异。
 - `transform` 投影为 `bloge:transform` 节点，字段表达式写入 `config.assignments`。
 - `decision_table` 投影为 `bloge:decisionTable` 节点，入参表达式写入 `config.inputs`，入边数据会成为 decision table condition 可引用的局部参数。
 - DSL graph `input { ... }` 写入 `draft.inputSchema`；DSL graph `output { ... }` 写入一等 `draft.outputSchema`，并同步保留 `draft.visualLayout.graphContract.outputSchema` 兼容副本。

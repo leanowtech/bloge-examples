@@ -53,9 +53,9 @@
 | Runtime 扩展族 | 5.8 | remote-worker、AI-tool、event-source、message-handler、webhook、streaming/durable contract 已可设计态编排 | 真正 dispatcher、ingress runtime、AI tool invocation、durable instance 尚未落地 | 从 runtime-binding handoff 开始逐类接 executor |
 | 工程可维护性 | 7.2 | 服务端测试丰富，完整 `clean verify` 可跑通，Java 侧读模型、GraphDraftValidator、VisualSchemaCompatibility 与 VisualSchemaValidator 的结构类型推断已开始共享 schema helper；浏览器 helper probe 覆盖了本地 mirror 与服务端语义一致性 | 深层 compatibility/value matching 仍分散，前端 `app.js` 过大 | 继续迁移 compatibility/validator 深层校验 helpers，逐步拆分前端 authoring helpers |
 
-综合分：**97.1/100**。
+综合分：**97.4/100**。
 
-这个分数不是贬低当前成果。相反，它说明项目已经跨过“画布玩具”阶段，并且在“严肃生产级可用示例项目 / industrializable reference implementation”口径下已经进入 2.9% 左右差距；但它仍不是完整商业低代码平台，平台化阶段还差治理、runtime、观测和维护性闭环。
+这个分数不是贬低当前成果。相反，它说明项目已经跨过“画布玩具”阶段，并且在“严肃生产级可用示例项目 / industrializable reference implementation”口径下已经进入 2.6% 左右差距；但它仍不是完整商业低代码平台，平台化阶段还差治理、runtime、观测和维护性闭环。
 
 ## 3. 当前事实边界
 
@@ -93,14 +93,15 @@
 30. draft dependency schema drift issue 现在还携带 bounded `schemaChanges` keyword diff rows：服务端会在 drift path 上提取 `type`、`enum`、`const`、`format`、`pattern`、`multipleOf`、range、length、required、properties、items/contains 等关键 JSON Schema keyword 的 frozen/current compact value；selected contract 会把 `type: number -> integer` 这类 diff row 并入 port summary、outline drift label 和 `Schema Search`，真实浏览器覆盖 keyword diff 文本、ARIA label 和 390px mobile no-overflow。
 31. draft dependency schema drift issue 现在还携带 bounded `schemaPreview`：服务端在 drift path 上截取冻结快照与当前 catalog 的 JSON Schema 片段，限制深度、对象 key、数组项和字符串长度；selected contract 直接渲染并排 `Frozen schema` / `Current schema` review block，`Schema Search` 可按 preview 内容如 `frozen integer` 命中 drift row，真实浏览器覆盖 schema preview 文本、review row DOM 和 390px mobile no-overflow。
 32. draft dependency report 现在输出 `schemaRebaseDecisions` 和 `schemaRebaseDecisionStateCounts`：服务端把 drifted/missing/catalog/scope/schema drift 节点归入 `ready-rebase`、`ready-capture`、`repair-review`、`blocked` 决策队列；Draft Dependencies 面板可展示队列、focus 节点、在 dirty draft 时禁用 rebase，并通过现有 revision-guarded rebase API 批量刷新 eligible 节点；selected operator contract 也显示当前节点的 `Schema Rebase Queue`，真实浏览器覆盖 repair-review 队列、批量 rebase、selected inspector 队列和 390px mobile no-overflow。
-33. schema-neutral DSL preview/commit import 已落地到后端和 `/author/`：`POST /api/visual/dsl-imports/preview` 接受 `.bloge` 源码、已导入 catalog id 或 preview-only inline visual libraries，复用官方 DSL parser 投影为 `GraphDraft + sourceMap + coverage + diagnostics`；`POST /api/visual/dsl-imports/commit` 接受同一 request，服务端重新投影后保存 governed stored draft/revision，并返回 validation/dependency report。普通 node、transform、decision_table、graph input/output schema、source map 持久化和 missing operator/function diagnostics 已有单元/API/前端测试覆盖。浏览器 Legacy DSL 面板可以 Render DSL、Commit Draft、展示 source map 行列表、点击 source map 行选中画布节点，并在导出 draft 中保留 `visualLayout.import.sourceMap` 与 stored draft identity。
+33. schema-neutral DSL preview/commit import 已落地到后端和 `/author/`：`POST /api/visual/dsl-imports/preview` 接受 `.bloge` 源码、已导入 catalog id 或 preview-only inline visual libraries，复用官方 DSL parser 投影为 `GraphDraft + sourceMap + coverage + diagnostics`；没有 operator/function schema 时也会先从 DSL AST 推演 topology-only draft，保留普通 node、transform、decision_table、输入绑定、输出引用、data/dependency/route edge、函数调用名和 graph input/output schema，并在 `draft.visualLayout.import` 记录 `projectionMode=topology-only`、`schemaPrecision=inferred`、operator/function 引用和缺失清单。`POST /api/visual/dsl-imports/commit` 接受同一 request，服务端重新投影后保存 governed stored draft/revision，并返回 validation/dependency report。missing operator/function 现在是 warning diagnostics，而不是渲染级 error；浏览器 Legacy DSL 面板可以 Render DSL、Commit Draft、展示 source map 行列表、点击 source map 行选中画布节点，并在导出 draft 中保留 `visualLayout.import.sourceMap` 与 stored draft identity。
 34. `bloge.capabilityCatalog.v1` preview adapter 已落地：`CapabilityCatalogVisualAdapter` 和 `POST /admin/visual-operator-libraries/from-capability-catalog-text` 可把业务代码导出的 framework catalog JSON/YAML 投影为标准 `bloge.visualOperatorLibrary.v1` 草稿，包含 operator ports、capabilities、function signatures、projection review、opaque schema warning 和原始 implementation provenance。`/author/` Library 面板新增 `Adapt Catalog`，只负责 schema acquisition，之后仍然走现有 Validate / Import / DSL Render，保持通用画布“不关心 schema 生成方式，只消费合法 visual schema”的边界。后端 API 测试和前端 Library intake 测试已覆盖该路径。
 35. Legacy DSL preview 已具备语义 round-trip 证据：`DslImportService` 在可生成 DSL 的场景下执行 `GraphDraft -> GraphDraftDslGenerator -> generated DSL -> parseAst -> projectGraph`，并比较源 projection 与 generated projection 的 canonical visual semantics 指纹；该指纹已经以 `draft.inputSchema` 和一等 `draft.outputSchema` 为 graph contract 权威来源，不读取 `visualLayout.graphContract.outputSchema` 兼容副本，避免旧 layout 污染 rewrite gate。`roundTrip` 返回 `SUPPORTED`、`DRIFT`、`PARTIAL` 或 `NOT_ASSESSED`，同时携带 generated DSL、source/generated fingerprint 和 diagnostics。`/author/` Legacy DSL 面板会显示 Round trip 状态，前端 notice 也会提示 `round-trip <status>`；后端 importer/codegen 测试和前端/API 测试均覆盖该证据链。
 36. Legacy DSL rewrite gate 预检已落地：`POST /api/visual/dsl-imports/rewrite-gate` 复用 `.bloge + 当前 catalog/inline visual libraries` 的 schema-neutral request，基于 preview diagnostics 与 `roundTrip` 证据返回 `bloge.dslRewriteGate.v1`，包含 `allowed`、`decision`、`generatedDsl`、`roundTrip` 和 diagnostics。`SUPPORTED` 场景返回 `ALLOW_REWRITE`，semantic drift 返回 `BLOCK_SEMANTIC_DRIFT`；`/author/` Legacy DSL 面板新增 `Check Rewrite`，能在不保存 draft、不写源码的前提下展示 source replacement allow/block 结论。
 37. Graph output schema 已从 layout 兼容字段提升为 `GraphDraft.outputSchema` 一等合同：DSL `output { ... }`、内置复杂示例和画布当前输出节点推导都会进入 draft 级输出 schema；旧 `visualLayout.graphContract.outputSchema` 仍可回填兼容，但不再是系统集成主合同。`GraphDraftValidator`、`VisualSecretGuard`、`GraphDraftDslGenerator`、simulation request、frontend `fromGraphDraft`、Export Draft 和 DSL import semantic fingerprint 都已消费该字段，并有 Java/TypeScript 单元测试覆盖。
-38. 协议草案已补齐 schema-neutral DSL import/rewrite 的当前 wire contract：`docs/bloge-visual-orchestration-protocol-v1.md` 现在显式记录 `bloge.dslVisualProjection.v1`、`bloge.dslRewriteGate.v1`、`bloge.visualGraphDraftImportResult.v1`、`GraphDraft.inputSchema/outputSchema`、旧 layout output schema 兼容边界，以及 rewrite semantic fingerprint 以一等 `draft.outputSchema` 为准。剩余协议债务从“核心 DSL/GraphDraft 合同缺失”降为“全量 wire contract 长期维护”。
+38. 协议草案已补齐 schema-neutral DSL import/rewrite 的当前 wire contract：`docs/bloge-visual-orchestration-protocol-v1.md` 现在显式记录 `bloge.dslVisualProjection.v1`、`bloge.dslRewriteGate.v1`、`bloge.visualGraphDraftImportResult.v1`、GraphDraft input/output schema、topology-only projection metadata、旧 layout output schema 兼容边界，以及 rewrite semantic fingerprint 以一等 `draft.outputSchema` 为准。剩余协议债务从“核心 DSL/GraphDraft 合同缺失”降为“全量 wire contract 长期维护”。
 39. DSL 批量迁移报告 API 已落地：`POST /api/visual/dsl-imports/batch-report` 接受多份 `.bloge` DSL、已导入 library ids 和 preview-only inline visual libraries，逐份复用 single-source preview 与 rewrite gate，返回 `bloge.dslImportBatchReport.v1`。报告包含 source 级 `renderable`、`fullyProjected`、`needsRepair`、coverage、round-trip、rewrite decision 和 diagnostics，也包含仓库级 source count、render/repair/block count、rewrite allow/block count、coverage totals、round-trip status counts、rewrite decision counts 和 diagnostic level counts。它把存量业务从“逐文件 UI 试导入”推进到“CI/迁移前批量评估”。
 40. DSL 批量迁移保存 API 已落地：`POST /api/visual/dsl-imports/batch-commit` 接受与 batch-report 相同的 `sources[]` 和 schema-neutral catalog view，并按 `renderable`、`fully-projected` 或 `rewrite-allowed` 策略批量保存 governed draft。响应 `bloge.dslImportBatchCommitResult.v1` 同时返回 commit summary、`COMMITTED_*` / `SKIP_*` / `FAILED_PERSISTENCE` 计数、每个 source 的 report item 和 `GraphDraftImportResult`，让迁移脚本可以一次性产出可审阅 GraphDraft，而不是循环调用单源 commit 或只停在 readiness report。
+41. Legacy DSL 导入现在把“可理解”和“可精确执行/安全改写”分成两层：topology-only projection 面向业务理解和迁移审阅，不要求完整 schema；schema-backed projection 面向 schema-aware validation、模拟、执行、发布和 rewrite safe 证据。这让存量业务可以先把手写 DSL 的整体拓扑可视化出来，再渐进补齐 operator/function schema，而不是被 schema acquisition 卡在入口前。
 
 ### 尚未成立
 
@@ -109,7 +110,7 @@
 3. IAM/RBAC/secret/egress/审计查询还不是生产后台级别。
 4. durable、event、message、webhook、AI tool 的真实运行时还没有完整闭环。
 5. 前端仍是示例项目形态，复杂度已经接近需要模块化拆分的边界。
-6. 存量 DSL 迁移已经有 capability catalog adapter、后端 preview/commit/rewrite-gate/batch-report/batch-commit、`/author/` 导入面板、source map 行定位、stored draft 保存、一等 graph input/output schema、semantic round-trip、source replacement 预检证据、仓库级批量 readiness report、批量 governed draft 保存、命令行/CI batch import CLI 和前端 batch import API contract；opaque snippet 修复向导、Studio 迁移 dashboard、coverage dashboard 和真正覆盖原 DSL 的 source writer / VCS 集成还没闭环。
+6. 存量 DSL 迁移已经有 capability catalog adapter、topology-only 无 schema DSL 可视化、后端 preview/commit/rewrite-gate/batch-report/batch-commit、`/author/` 导入面板、source map 行定位、stored draft 保存、一等 graph input/output schema、semantic round-trip、source replacement 预检证据、仓库级批量 readiness report、批量 governed draft 保存、命令行/CI batch import CLI 和前端 batch import API contract；opaque snippet 修复向导、Studio 迁移 dashboard、coverage dashboard 和真正覆盖原 DSL 的 source writer / VCS 集成还没闭环。
 
 ## 4. 本轮迭代复盘
 
@@ -126,7 +127,7 @@
 3. 使用 `DslCompiler.parseAst()` 解析 DSL，投影普通 node、transform、decision_table、contextPath、nodePath、constant/expression binding、data/dependency/route edge。
 4. DSL graph `input { ... }` 投影到 `draft.inputSchema`；`output { ... }` 投影到一等 `draft.outputSchema`，并保留 `visualLayout.graphContract.outputSchema` 作为旧资产/UI 兼容副本。
 5. 返回 `bloge.dslVisualProjection.v1`，包含 `GraphDraft`、`sourceMap`、`coverage`、`roundTrip` 和 migration diagnostics。
-6. 缺失 operator 仍生成占位 node，并返回 `visual.dslImport.operatorMissing`，避免迁移 preview 丢图。
+6. 缺失 operator 仍生成 topology-only node，并返回 warning 级 `visual.dslImport.operatorMissing`，避免迁移 preview 丢图。
 
 ### 2026-07-07：Legacy DSL Source Map UI
 
@@ -342,6 +343,30 @@ mvn -f resource-gateway-examples/pom.xml -Dtest=DslImportControllerTest,DslImpor
 剩余风险：
 
 这轮把“批量迁移入口”从后端 API 推进到可在 CI/命令行执行，综合分从 96.5 提升到 97.1，按当前口径差距进入 `<3%`。但这仍不是完整迁移平台：Studio dashboard、coverage dashboard、opaque/unsupported 修复向导、人工 reviewed 状态、source writer / VCS PR 执行器仍是明确剩余项。下一轮不应该再证明 CLI 能调 API，而应该把 source replacement 前置治理和可视化审阅队列接起来。
+
+### 2026-07-07：Legacy DSL Topology-Only Projection
+
+触发问题：
+
+存量业务最先需要的是看懂手写 DSL 的整体拓扑，而不是立刻证明每个 operator/function 的 schema 都完整。把合法 schema 作为首次可视化前置条件，会让迁移用户在还没看到业务结构之前就被 schema acquisition 阻断。
+
+本轮完成：
+
+1. `DslImportService` 把 missing operator/function 从渲染级 error 调整为 warning，仍保留可见 draft node、表达式文本、输入绑定、输出引用、依赖边和 graph contract。
+2. `draft.visualLayout.import` 新增 topology metadata：`projectionMode`、`topologyOnly`、`schemaPrecision`、`operatorRefs`、`functionNames`、`missingOperatorRefs` 和 `missingFunctionNames`。
+3. `/author/` Legacy DSL notice 会直接提示 `topology-only projection`，让用户知道当前结果适合拓扑审阅，但不是 schema 精确或 rewrite safe 证据。
+4. 单元/API 测试覆盖 missing operator 和 missing built-in function 的 warning 级诊断、topology-only metadata，以及 batch report rewrite decision 从 import error 转为 incomplete evidence。
+5. 产品指南、迁移设计、协议草案、实现状态审计和覆盖矩阵同步改成“DSL AST 先可视化，schema-backed 后增强”的产品口径。
+
+验证：
+
+```bash
+mvn -f resource-gateway-examples/pom.xml -Dtest=DslImportServiceTest,DslImportControllerTest test
+```
+
+剩余风险：
+
+topology-only draft 只负责理解和迁移审阅，不能被当作 fully projected、runtime executable 或 auto rewrite safe。后续还需要把缺失 schema 的补齐动作、opaque snippet 修复向导和 Studio 迁移队列做成更顺手的协作流程。综合分从 97.1 提升到 97.4。
 
 ### 2026-07-05：Schema Rebase Decision Queue
 

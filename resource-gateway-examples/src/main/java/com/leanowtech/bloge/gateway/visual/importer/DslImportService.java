@@ -382,11 +382,12 @@ public class DslImportService {
                 DslSourceSpan.point(state.request.sourceId(), node.line(), node.column(), "NodeDef"));
         if (!effectiveCatalog.operators.containsKey(node.operatorRef())) {
             state.missingOperatorRefs.add(node.operatorRef());
-            state.diagnostics.add(new VisualDiagnostic("ERROR", "visual.dslImport.operatorMissing",
-                    "Operator schema '%s' is not present in the effective visual catalog."
+            state.diagnostics.add(new VisualDiagnostic("WARNING", "visual.dslImport.operatorMissing",
+                    "Operator schema '%s' is not present in the effective visual catalog; "
+                            + "rendering a topology-only node from DSL syntax."
                             .formatted(node.operatorRef()),
                     "/nodes/" + node.id(), node.line(), node.column(),
-                    Map.of("operatorRef", node.operatorRef())));
+                    Map.of("operatorRef", node.operatorRef(), "projectionMode", "topology-only")));
         }
         for (String dependency : node.dependsOn()) {
             addEdge(state, "dependency", dependency, "", "", node.id(), "", "",
@@ -640,11 +641,7 @@ public class DslImportService {
         }
 
         Map<String, Object> visualLayout = new LinkedHashMap<>(state.request.layout());
-        visualLayout.put("import", Map.of(
-                "mode", state.request.mode(),
-                "sourceId", state.request.sourceId(),
-                "schemaNeutral", true
-        ));
+        visualLayout.put("import", importView(state));
         visualLayout.put("graphContract", graphContract);
 
         Map<String, String> fingerprints = new LinkedHashMap<>();
@@ -680,6 +677,45 @@ public class DslImportService {
                 snapshots,
                 GraphDraft.RevisionMetadata.empty()
         );
+    }
+
+    private static Map<String, Object> importView(ProjectionState state) {
+        List<String> operatorRefs = state.nodes.stream()
+                .map(GraphDraft.DraftNode::operatorRef)
+                .filter(ref -> ref != null && !ref.isBlank())
+                .distinct()
+                .sorted()
+                .toList();
+        List<String> functionNames = state.referencedFunctionNames.stream()
+                .sorted()
+                .toList();
+        List<String> missingOperatorRefs = state.missingOperatorRefs.stream()
+                .sorted()
+                .toList();
+        List<String> missingFunctionNames = state.missingFunctionNames.stream()
+                .sorted()
+                .toList();
+        boolean topologyOnly = !missingOperatorRefs.isEmpty() || !missingFunctionNames.isEmpty();
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("mode", state.request.mode());
+        metadata.put("sourceId", state.request.sourceId());
+        metadata.put("schemaNeutral", true);
+        metadata.put("projectionMode", topologyOnly ? "topology-only" : "schema-backed");
+        metadata.put("topologyOnly", topologyOnly);
+        metadata.put("operatorRefs", operatorRefs);
+        metadata.put("functionNames", functionNames);
+        metadata.put("missingOperatorRefs", missingOperatorRefs);
+        metadata.put("missingFunctionNames", missingFunctionNames);
+        if (topologyOnly) {
+            metadata.put("schemaPrecision", "inferred");
+            metadata.put("schemaInferenceNote",
+                    "Topology, bindings, and dependency structure were inferred from DSL syntax; "
+                            + "operator/function schemas are incomplete until a catalog is provided.");
+        } else {
+            metadata.put("schemaPrecision", "catalog-backed");
+        }
+        return metadata;
     }
 
     private static GraphDraft emptyDraft(String graphName, DslImportPreviewRequest request) {
@@ -854,12 +890,14 @@ public class DslImportService {
                                            ProjectionState state,
                                            Set<String> availableFunctions) {
         for (String functionName : collectFunctionNames(expression)) {
+            state.referencedFunctionNames.add(functionName);
             if (!availableFunctions.contains(functionName) && state.missingFunctionNames.add(functionName)) {
-                state.diagnostics.add(new VisualDiagnostic("ERROR", "visual.dslImport.functionMissing",
-                        "Built-in function '%s' is not present in the effective function catalog."
+                state.diagnostics.add(new VisualDiagnostic("WARNING", "visual.dslImport.functionMissing",
+                        "Built-in function '%s' is not present in the effective function catalog; "
+                                + "preserving the expression text for topology-first review."
                                 .formatted(functionName),
                         "/expressions", expression.line(), expression.column(),
-                        Map.of("function", functionName)));
+                        Map.of("function", functionName, "projectionMode", "topology-only")));
             }
         }
     }
@@ -1437,6 +1475,7 @@ public class DslImportService {
         private final Set<String> unsupportedSyntaxTargets = new LinkedHashSet<>();
         private final Set<String> missingOperatorRefs = new LinkedHashSet<>();
         private final Set<String> missingFunctionNames = new LinkedHashSet<>();
+        private final Set<String> referencedFunctionNames = new LinkedHashSet<>();
         private final Set<String> expressionOutputTargets = new LinkedHashSet<>();
         private String parseFailureMessage = "";
 

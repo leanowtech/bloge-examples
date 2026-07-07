@@ -156,6 +156,25 @@ class DslImportServiceTest {
         assertThat(projection.diagnostics())
                 .extracting(VisualDiagnostic::code)
                 .contains("visual.dslImport.operatorMissing");
+        assertThat(projection.diagnostics()).noneMatch(VisualDiagnostic::error);
+        assertThat(projection.diagnostics())
+                .filteredOn(diagnostic -> "visual.dslImport.operatorMissing".equals(diagnostic.code()))
+                .first()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.metadata()).containsEntry("projectionMode", "topology-only");
+                });
+        Map<String, Object> importMetadata = importMetadata(projection);
+        assertThat(importMetadata)
+                .containsEntry("projectionMode", "topology-only")
+                .containsEntry("topologyOnly", true)
+                .containsEntry("schemaPrecision", "inferred");
+        assertThat(importMetadata.get("operatorRefs"))
+                .asList()
+                .contains("risk:eligibility", "bloge:transform");
+        assertThat(importMetadata.get("missingOperatorRefs"))
+                .asList()
+                .containsExactly("risk:eligibility");
     }
 
     @Test
@@ -183,6 +202,24 @@ class DslImportServiceTest {
         assertThat(projection.diagnostics())
                 .extracting(VisualDiagnostic::code)
                 .contains("visual.dslImport.functionMissing");
+        assertThat(projection.diagnostics()).noneMatch(VisualDiagnostic::error);
+        assertThat(projection.diagnostics())
+                .filteredOn(diagnostic -> "visual.dslImport.functionMissing".equals(diagnostic.code()))
+                .first()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.metadata()).containsEntry("projectionMode", "topology-only");
+                });
+        Map<String, Object> importMetadata = importMetadata(projection);
+        assertThat(importMetadata)
+                .containsEntry("projectionMode", "topology-only")
+                .containsEntry("schemaPrecision", "inferred");
+        assertThat(importMetadata.get("functionNames"))
+                .asList()
+                .containsExactly("businessRiskScore");
+        assertThat(importMetadata.get("missingFunctionNames"))
+                .asList()
+                .containsExactly("businessRiskScore");
     }
 
     @Test
@@ -248,6 +285,14 @@ class DslImportServiceTest {
                 .visualLayout()
                 .get("graphContract");
         return (SchemaEnvelope) graphContract.get("outputSchema");
+    }
+
+    private static Map<String, Object> importMetadata(DslVisualProjection projection) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> metadata = (Map<String, Object>) projection.draft()
+                .visualLayout()
+                .get("import");
+        return metadata;
     }
 
     private static GraphDraft draftWithOutputSchema(SchemaEnvelope inputSchema,
