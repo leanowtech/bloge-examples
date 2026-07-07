@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   adaptCapabilityCatalogText,
   buildGatewayRunRequest,
+  checkDslRewriteGate,
   commitDslImport,
   fetchGatewayDiagram,
   fetchGatewayScenarios,
@@ -219,6 +220,39 @@ describe('operator library API client', () => {
         dsl: 'graph migratedEligibility {}',
         operatorLibraryIds: ['risk-policy'],
         mode: 'commit',
+      }),
+    });
+  });
+
+  it('checks schema-neutral BLOGE DSL rewrite gate before source replacement', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      schemaVersion: 'bloge.dslRewriteGate.v1',
+      sourceId: 'migrated-eligibility.bloge',
+      allowed: true,
+      decision: 'ALLOW_REWRITE',
+      message: 'Generated DSL has the same canonical visual semantics as the source projection.',
+      generatedDsl: 'graph migratedEligibility {}',
+      roundTrip: { supported: true, status: 'SUPPORTED', diagnostics: [] },
+      diagnostics: [],
+    })));
+
+    const result = await checkDslRewriteGate({
+      sourceId: 'migrated-eligibility.bloge',
+      dsl: 'graph migratedEligibility {}',
+      operatorLibraryIds: ['risk-policy'],
+      mode: 'rewrite-gate',
+    });
+
+    expect(result.allowed).toBe(true);
+    expect(result.decision).toBe('ALLOW_REWRITE');
+    expect(fetchMock).toHaveBeenCalledWith('/api/visual/dsl-imports/rewrite-gate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceId: 'migrated-eligibility.bloge',
+        dsl: 'graph migratedEligibility {}',
+        operatorLibraryIds: ['risk-policy'],
+        mode: 'rewrite-gate',
       }),
     });
   });

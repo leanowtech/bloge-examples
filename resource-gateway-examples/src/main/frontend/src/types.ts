@@ -293,6 +293,18 @@ export interface DslVisualProjection {
   diagnostics?: VisualDiagnostic[];
 }
 
+/** Server-authoritative gate for generated DSL source replacement. */
+export interface DslRewriteGateResult {
+  schemaVersion?: string;
+  sourceId?: string;
+  allowed?: boolean;
+  decision?: string;
+  message?: string;
+  generatedDsl?: string;
+  roundTrip?: DslRoundTripSummary;
+  diagnostics?: VisualDiagnostic[];
+}
+
 /** Result of committing a DSL import projection into the stored draft repository. */
 export interface GraphDraftImportResult {
   schemaVersion?: string;

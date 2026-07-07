@@ -26,6 +26,7 @@ import 'reactflow/dist/style.css';
 import {
   adaptCapabilityCatalogText,
   checkConnection,
+  checkDslRewriteGate,
   commitDslImport,
   fetchConnectionCandidates,
   fetchOperatorCatalog,
@@ -89,6 +90,7 @@ import type {
   BuiltInFunctionDefinition,
   DslImportCoverage,
   DslRoundTripSummary,
+  DslRewriteGateResult,
   DslSourceMap,
   DslSourceSpan,
   DslVisualProjection,
@@ -3547,6 +3549,25 @@ function dslRoundTripNoticeLevel(roundTrip: DslRoundTripSummary): ConnectionNoti
   return 'pending';
 }
 
+function dslRewriteGateNoticeLevel(result: DslRewriteGateResult): ConnectionNotice['level'] {
+  if (result.allowed) {
+    return 'ok';
+  }
+  if (result.decision === 'BLOCK_IMPORT_DIAGNOSTICS') {
+    return 'error';
+  }
+  return 'warning';
+}
+
+function dslRewriteGateNotice(result: DslRewriteGateResult): ConnectionNotice {
+  return {
+    level: dslRewriteGateNoticeLevel(result),
+    message: result.message || (result.allowed
+      ? 'Rewrite gate passed.'
+      : 'Rewrite gate blocked automatic source replacement.'),
+  };
+}
+
 function edgeLabelFromCanvasEdge(edge: CanvasEdge): string {
   if (edge.condition) {
     return edge.condition;
@@ -3799,6 +3820,8 @@ export default function AuthorCanvas() {
   const [dslSourceText, setDslSourceText] = useState(LEGACY_DSL_EXAMPLES[0].sourceText);
   const [dslImportBusy, setDslImportBusy] = useState(false);
   const [dslCommitBusy, setDslCommitBusy] = useState(false);
+  const [dslRewriteGateBusy, setDslRewriteGateBusy] = useState(false);
+  const [dslRewriteGateResult, setDslRewriteGateResult] = useState<DslRewriteGateResult | null>(null);
   const [dslImportNotice, setDslImportNotice] = useState<ConnectionNotice | null>(null);
   const [dslImportDiagnostics, setDslImportDiagnostics] = useState<VisualDiagnostic[]>([]);
   const [dslImportCoverage, setDslImportCoverage] = useState<DslImportCoverage | null>(null);
@@ -4427,6 +4450,7 @@ export default function AuthorCanvas() {
     setDslImportCoverage(null);
     setDslImportSourceMap(null);
     setDslImportRoundTrip(null);
+    setDslRewriteGateResult(null);
     setDslImportNotice(null);
     setSimulationContextDraft(JSON.stringify(sampleFromSchemaEnvelope(template.inputSchema), null, 2));
     setContextVariables([]);
@@ -4710,6 +4734,7 @@ export default function AuthorCanvas() {
         return;
       }
       setLibrarySourceText(JSON.stringify(adaptation.library, null, 2));
+      setDslRewriteGateResult(null);
       const projectedOperators = adaptation.projectionReview?.projectedOperatorCount
         ?? adaptation.library.operators.length;
       const projectedFunctions = adaptation.projectionReview?.projectedFunctionCount
@@ -4764,6 +4789,7 @@ export default function AuthorCanvas() {
       const storedLibrary = await importOperatorLibraryText(librarySourceText);
       await reloadOperators();
       setLibrarySourceText(JSON.stringify(storedLibrary, null, 2));
+      setDslRewriteGateResult(null);
       setLibraryDiagnostics([]);
       setLibraryNotice({ level: 'ok', message: operatorLibraryImportMessage(storedLibrary) });
       setSearch('');
@@ -4899,6 +4925,7 @@ export default function AuthorCanvas() {
     setDslImportCoverage(projection.coverage ?? null);
     setDslImportSourceMap(projection.sourceMap ?? null);
     setDslImportRoundTrip(projection.roundTrip ?? null);
+    setDslRewriteGateResult(null);
     setDslImportNotice(notice);
     setConnectionNotice(notice);
 
@@ -4918,10 +4945,12 @@ export default function AuthorCanvas() {
       setDslImportCoverage(null);
       setDslImportSourceMap(null);
       setDslImportRoundTrip(null);
+      setDslRewriteGateResult(null);
       setDslImportNotice({ level: 'error', message: 'DSL source is empty.' });
       return;
     }
     setDslImportBusy(true);
+    setDslRewriteGateResult(null);
     setDslImportNotice({ level: 'pending', message: 'Rendering DSL preview...' });
     setError('');
     try {
@@ -4938,11 +4967,48 @@ export default function AuthorCanvas() {
       setDslImportCoverage(null);
       setDslImportSourceMap(null);
       setDslImportRoundTrip(null);
+      setDslRewriteGateResult(null);
       setDslImportNotice({ level: 'error', message: String(cause) });
     } finally {
       setDslImportBusy(false);
     }
   }, [applyDslProjection, dslSourceId, dslSourceText, librarySourceText, operators]);
+
+  const checkLegacyDslRewriteGate = useCallback(async () => {
+    if (!dslSourceText.trim()) {
+      setDslImportDiagnostics([]);
+      setDslImportCoverage(null);
+      setDslImportSourceMap(null);
+      setDslImportRoundTrip(null);
+      setDslRewriteGateResult(null);
+      setDslImportNotice({ level: 'error', message: 'DSL source is empty.' });
+      return;
+    }
+    setDslRewriteGateBusy(true);
+    setDslRewriteGateResult(null);
+    setDslImportNotice({ level: 'pending', message: 'Checking rewrite gate...' });
+    setError('');
+    try {
+      const result = await checkDslRewriteGate({
+        sourceId: dslSourceId.trim() || 'inline.dsl',
+        dsl: dslSourceText,
+        operatorLibraryIds: operatorLibraryIds(operators),
+        inlineLibraries: inlineLibrariesFromSourceText(librarySourceText),
+        mode: 'rewrite-gate',
+      });
+      const notice = dslRewriteGateNotice(result);
+      setDslRewriteGateResult(result);
+      setDslImportRoundTrip(result.roundTrip ?? null);
+      setDslImportDiagnostics(result.diagnostics ?? []);
+      setDslImportNotice(notice);
+      setConnectionNotice(notice);
+    } catch (cause: unknown) {
+      setDslRewriteGateResult(null);
+      setDslImportNotice({ level: 'error', message: String(cause) });
+    } finally {
+      setDslRewriteGateBusy(false);
+    }
+  }, [dslSourceId, dslSourceText, librarySourceText, operators]);
 
   const commitLegacyDsl = useCallback(async () => {
     if (!dslSourceText.trim()) {
@@ -4950,10 +5016,12 @@ export default function AuthorCanvas() {
       setDslImportCoverage(null);
       setDslImportSourceMap(null);
       setDslImportRoundTrip(null);
+      setDslRewriteGateResult(null);
       setDslImportNotice({ level: 'error', message: 'DSL source is empty.' });
       return;
     }
     setDslCommitBusy(true);
+    setDslRewriteGateResult(null);
     setDslImportNotice({ level: 'pending', message: 'Committing DSL draft...' });
     setError('');
     try {
@@ -5932,6 +6000,7 @@ export default function AuthorCanvas() {
               setLibrarySourceText(event.target.value);
               setLibraryNotice(null);
               setLibraryDiagnostics([]);
+              setDslRewriteGateResult(null);
             }}
           />
           <div className="library-examples" aria-label="Operator library examples">
@@ -5952,6 +6021,7 @@ export default function AuthorCanvas() {
                         : `Loaded ${example.label} example. Validate before importing.`,
                     });
                     setLibraryDiagnostics([]);
+                    setDslRewriteGateResult(null);
                   }}
                 >
                   <strong>{example.label}</strong>
@@ -6009,6 +6079,7 @@ export default function AuthorCanvas() {
             <h2>Legacy DSL</h2>
             {dslImportBusy && <span>Rendering</span>}
             {dslCommitBusy && <span>Saving</span>}
+            {dslRewriteGateBusy && <span>Checking</span>}
           </div>
           <label className="dsl-source-id">
             <span>Source</span>
@@ -6016,7 +6087,10 @@ export default function AuthorCanvas() {
               aria-label="DSL source id"
               data-testid="legacy-dsl-source-id"
               value={dslSourceId}
-              onChange={(event) => setDslSourceId(event.target.value)}
+              onChange={(event) => {
+                setDslSourceId(event.target.value);
+                setDslRewriteGateResult(null);
+              }}
             />
           </label>
           <textarea
@@ -6032,6 +6106,7 @@ export default function AuthorCanvas() {
               setDslImportCoverage(null);
               setDslImportSourceMap(null);
               setDslImportRoundTrip(null);
+              setDslRewriteGateResult(null);
             }}
           />
           <div className="library-examples" aria-label="Legacy DSL examples">
@@ -6054,6 +6129,7 @@ export default function AuthorCanvas() {
                     setDslImportCoverage(null);
                     setDslImportSourceMap(null);
                     setDslImportRoundTrip(null);
+                    setDslRewriteGateResult(null);
                   }}
                 >
                   <strong>{example.label}</strong>
@@ -6068,16 +6144,25 @@ export default function AuthorCanvas() {
               className="primary compact"
               data-testid="legacy-dsl-preview"
               onClick={previewLegacyDsl}
-              disabled={dslImportBusy || dslCommitBusy}
+              disabled={dslImportBusy || dslCommitBusy || dslRewriteGateBusy}
             >
               Render DSL
             </button>
             <button
               type="button"
               className="secondary compact"
+              data-testid="legacy-dsl-rewrite-gate"
+              onClick={checkLegacyDslRewriteGate}
+              disabled={dslImportBusy || dslCommitBusy || dslRewriteGateBusy}
+            >
+              Check Rewrite
+            </button>
+            <button
+              type="button"
+              className="secondary compact"
               data-testid="legacy-dsl-commit"
               onClick={commitLegacyDsl}
-              disabled={dslImportBusy || dslCommitBusy}
+              disabled={dslImportBusy || dslCommitBusy || dslRewriteGateBusy}
             >
               Commit Draft
             </button>
@@ -6111,6 +6196,23 @@ export default function AuthorCanvas() {
                 {(dslImportRoundTrip.diagnostics?.length ?? 0) > 0 && (
                   <span>{dslImportRoundTrip.diagnostics?.length} diagnostics</span>
                 )}
+              </div>
+            </div>
+          )}
+          {dslRewriteGateResult && (
+            <div
+              className={`dsl-rewrite-gate ${dslRewriteGateNoticeLevel(dslRewriteGateResult)}`}
+              data-testid="legacy-dsl-rewrite-gate-result"
+            >
+              <div className="dsl-rewrite-gate-heading">
+                <strong>Rewrite gate</strong>
+                <span>{dslRewriteGateResult.decision || 'BLOCK_NOT_ASSESSED'}</span>
+              </div>
+              {dslRewriteGateResult.message && <p>{dslRewriteGateResult.message}</p>}
+              <div className="dsl-round-trip-evidence">
+                <span>{dslRewriteGateResult.allowed ? 'Auto rewrite allowed' : 'Auto rewrite blocked'}</span>
+                {dslRewriteGateResult.generatedDsl && <span>Generated DSL ready</span>}
+                {dslRewriteGateResult.roundTrip?.status && <span>{dslRewriteGateResult.roundTrip.status}</span>}
               </div>
             </div>
           )}

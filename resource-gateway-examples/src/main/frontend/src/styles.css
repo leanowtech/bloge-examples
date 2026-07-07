@@ -296,7 +296,8 @@ body {
   text-align: center;
 }
 
-.dsl-round-trip {
+.dsl-round-trip,
+.dsl-rewrite-gate {
   display: grid;
   gap: 6px;
   padding: 7px;
@@ -305,34 +306,45 @@ body {
   background: #fff;
 }
 
-.dsl-round-trip.ok {
+.dsl-round-trip.ok,
+.dsl-rewrite-gate.ok {
   border-color: #8ccf98;
   background: #f2fbf3;
 }
 
-.dsl-round-trip.warning {
+.dsl-round-trip.warning,
+.dsl-rewrite-gate.warning {
   border-color: #e2b766;
   background: #fff8e8;
 }
 
-.dsl-round-trip.pending {
+.dsl-round-trip.pending,
+.dsl-rewrite-gate.pending {
   border-color: #c5ccd8;
   background: #f7f9fc;
 }
 
-.dsl-round-trip-heading {
+.dsl-rewrite-gate.error {
+  border-color: #f0a3a3;
+  background: #fff1f1;
+}
+
+.dsl-round-trip-heading,
+.dsl-rewrite-gate-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.dsl-round-trip-heading strong {
+.dsl-round-trip-heading strong,
+.dsl-rewrite-gate-heading strong {
   min-width: 0;
   font-size: 12px;
 }
 
-.dsl-round-trip-heading span {
+.dsl-round-trip-heading span,
+.dsl-rewrite-gate-heading span {
   flex: 0 0 auto;
   padding: 2px 5px;
   border-radius: 5px;
@@ -342,7 +354,8 @@ body {
   font-weight: 900;
 }
 
-.dsl-round-trip p {
+.dsl-round-trip p,
+.dsl-rewrite-gate p {
   margin: 0;
   color: var(--muted);
   font-size: 11px;

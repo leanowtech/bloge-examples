@@ -1,6 +1,6 @@
 # 存量 BLOGE DSL 业务迁移到可视化编排设计方案
 
-状态：Partially Implemented / Phase 2.4 迁移专线；resource-gateway 已落地 capability catalog adapter、schema-neutral DSL preview/commit 后端、`/author/` Legacy DSL 面板、source map 行定位、stored draft 保存和 preview 内置语义 round-trip 状态
+状态：Partially Implemented / Phase 2.4 迁移专线；resource-gateway 已落地 capability catalog adapter、schema-neutral DSL preview/commit/rewrite-gate 后端、`/author/` Legacy DSL 面板、source map 行定位、stored draft 保存和语义 round-trip / source replacement gate 状态
 目标读者：BLOGE framework、resource-gateway visual canvas、Studio/LSP、业务平台迁移团队
 适用场景：业务系统已经集成 BLOGE 引擎和 DSL，已经自定义实现一批 Java 算子/表达式函数，并通过手写 `.bloge` DSL 承载业务逻辑，现在希望升级到可视化编排交付模式。
 
@@ -63,7 +63,7 @@ Canvas rendering: 只消费合法 schema + DSL，并投影成可视化 GraphDraf
 | resource-gateway 画布当前核心草稿是 `GraphDraft` | `resource-gateway-examples/.../visual/draft/GraphDraft.java` | DSL import 应输出现有 `bloge.visualGraphDraft.v1`，不要新增并行模型 |
 | 画布当前已有 GraphDraft -> DSL codegen | `GraphDraftDslGenerator` | 迁移后要做 semantic round-trip，而不是仅渲染一次 |
 | resource-gateway 已有 capability catalog adapter | `resource-gateway-examples/.../visual/catalog/CapabilityCatalogVisualAdapter.java`、`OperatorLibraryAdminController#fromCapabilityCatalogText`、`src/main/frontend/src/AuthorCanvas.tsx` | `POST /admin/visual-operator-libraries/from-capability-catalog-text` 可把 `bloge.capabilityCatalog.v1` JSON/YAML 预览投影为标准 `bloge.visualOperatorLibrary.v1` 草稿；`/author/` Library 面板提供 `Adapt Catalog`，但导入、DSL preview 和画布渲染仍只消费标准 visual library |
-| resource-gateway 已有 DSL preview/commit import 入口 | `resource-gateway-examples/.../visual/importer/DslImportService.java`、`DslImportController.java`、`src/main/frontend/src/AuthorCanvas.tsx` | 第一版已支持普通 node、transform、decision_table、graph input/output schema、source map、missing operator/function diagnostics，并已接入 `/author/` Legacy DSL 面板和 source map 行列表；点击 source map 行可以选中对应画布节点，`Commit Draft` 会用同一 schema-neutral request 服务端重投影后保存 stored draft；preview 已返回 `roundTrip` 状态，基于 generated DSL 再解析再投影后的 canonical visual semantics 指纹比较；opaque snippet 修复向导和自动覆盖原 DSL 的 approval gate 仍待接入 |
+| resource-gateway 已有 DSL preview/commit/rewrite-gate import 入口 | `resource-gateway-examples/.../visual/importer/DslImportService.java`、`DslImportController.java`、`src/main/frontend/src/AuthorCanvas.tsx` | 第一版已支持普通 node、transform、decision_table、graph input/output schema、source map、missing operator/function diagnostics，并已接入 `/author/` Legacy DSL 面板和 source map 行列表；点击 source map 行可以选中对应画布节点，`Commit Draft` 会用同一 schema-neutral request 服务端重投影后保存 stored draft；preview 已返回 `roundTrip` 状态，`Check Rewrite` / `POST /api/visual/dsl-imports/rewrite-gate` 会基于 canonical visual semantics 指纹给出 `ALLOW_REWRITE` 或 block 结论；opaque snippet 修复向导、批量迁移报告和真正覆盖原 DSL 文件的 source writer 仍待接入 |
 
 结论：迁移方案应把现有 `bloge.capabilityCatalog.v1`、`DslCompiler.parseAst()`、`GraphDraft` 和 `GraphDraftDslGenerator` 串起来，而不是另造一个 Studio-only 或 canvas-only 格式。
 
@@ -113,8 +113,9 @@ src/main/resources/bloge/order-fulfillment.bloge
 6. 导入一个或多个 `.bloge` 文件。
 7. 查看 import preview：节点、边、graph input/output schema、函数引用、unsupported diagnostics。
 8. 对 unresolved 节点或函数执行修复：选择 catalog operator、补 schema、标记 opaque、确认 function alias。
-9. Commit 为 `GraphDraft`。
-10. 在画布上继续编辑、模拟、跑 test suite，并在需要时生成 DSL 回写。
+9. 点击 `Check Rewrite` 或调用 rewrite gate，确认 generated DSL 是否可安全作为源码替换候选。
+10. Commit 为 `GraphDraft`。
+11. 在画布上继续编辑、模拟、跑 test suite，并在需要时把 generated DSL 交给外部源码回写/VCS 流程。
 
 ### 4.2 平台团队
 
@@ -602,9 +603,9 @@ POST /api/visual/dsl-imports/commit
 
 返回 `bloge.visualGraphDraftImportResult.v1`，包含 stored `draft.draftId`、`draft.revision`、target validation、dependency report 和 runtime binding requirements。`visual.dslImport.parseFailed` / `visual.dslImport.rootUnsupported` 会阻断保存；missing operator/function 会保存为可修复迁移 draft，并通过 diagnostics 暴露。
 
-### 9.4 Round-trip 验证
+### 9.4 Round-trip 与 rewrite gate
 
-当前 resource-gateway 实现把 round-trip 验证内置在 `POST /api/visual/dsl-imports/preview` 的 `roundTrip` 字段中，而不是单独暴露覆盖源码的接口。这样做的产品含义是：先把“这份 DSL 迁移后是否有语义漂移”的证据交给用户审阅；只有未来接入源码回写时，才把这个证据升级为 approval gate。
+当前 resource-gateway 实现把 round-trip 验证内置在 `POST /api/visual/dsl-imports/preview` 的 `roundTrip` 字段中，并提供 `POST /api/visual/dsl-imports/rewrite-gate` 作为源码替换预检。这样做的产品含义是：preview 回答“这份 DSL 能否被可视化渲染”，rewrite gate 回答“generated DSL 是否有足够语义证据进入自动源码替换流程”。rewrite gate 不保存 draft，也不会直接改写 `.bloge` 文件。
 
 当前校验流程：
 
@@ -629,16 +630,40 @@ preview 返回：
 }
 ```
 
+rewrite gate 使用与 preview 相同的请求体：
+
+```http
+POST /api/visual/dsl-imports/rewrite-gate
+```
+
+返回 `bloge.dslRewriteGate.v1`：
+
+```json
+{
+  "schemaVersion": "bloge.dslRewriteGate.v1",
+  "sourceId": "loan-approval.bloge",
+  "allowed": true,
+  "decision": "ALLOW_REWRITE",
+  "message": "Generated DSL has the same canonical visual semantics as the source projection.",
+  "generatedDsl": "graph loanApproval { ... }",
+  "roundTrip": {
+    "supported": true,
+    "status": "SUPPORTED"
+  },
+  "diagnostics": []
+}
+```
+
 状态级别：
 
 | Status | 含义 |
 | --- | --- |
-| `SUPPORTED` | generated DSL 能重新解析并投影为同一份 canonical visual semantics，可作为后续回写的低风险证据 |
+| `SUPPORTED` | generated DSL 能重新解析并投影为同一份 canonical visual semantics；rewrite gate 会返回 `ALLOW_REWRITE` |
 | `DRIFT` | generated DSL 可解析，但 canonical visual semantics 与源 projection 不一致，不允许自动覆盖原 DSL |
 | `PARTIAL` | generated DSL 生成、解析或再投影证据不足；通常需要先处理 unsupported syntax、expression-valued decision output 或 codegen diagnostic |
 | `NOT_ASSESSED` | 本次 projection 未执行 round-trip，通常是内部递归投影或 preview 不适用 |
 
-未来可增加独立的 `POST /api/visual/dsl-imports/round-trip` 或源码回写 API，但它应该复用同一套 semantic fingerprint / diagnostics，而不是另起一套文本 diff gate。
+未来的源码回写 API、VCS PR bot 或 Studio 批量迁移器应该消费这个 gate 的 allow/block 结论和 generated DSL；不应另起一套文本 diff gate。
 
 ## 10. 前端体验
 
@@ -855,20 +880,22 @@ mvn -f resource-gateway-examples/pom.xml -Dtest=DslImportServiceTest,DslImportCo
 
 ### Phase 2.3：Round-trip 与修复闭环
 
-状态：preview 内置语义 round-trip 状态已落地；自动覆盖原 DSL 的回写 gate、unresolved repair wizard 和 output schema 一等字段仍待交付。
+状态：preview 内置语义 round-trip 状态与 rewrite gate 预检已落地；真正覆盖原 DSL 的 source writer、unresolved repair wizard 和 output schema 一等字段仍待交付。
 
 交付：
 
 - 已交付：GraphDraft -> DSL -> parseAst -> projectGraph -> canonical visual semantics equivalence verifier，并在 preview response 的 `roundTrip` 中返回 `SUPPORTED` / `DRIFT` / `PARTIAL` / `NOT_ASSESSED`。
 - 已交付：import session commit，使用同一 schema-neutral request 服务端重新投影并保存 stored draft/revision。
+- 已交付：`POST /api/visual/dsl-imports/rewrite-gate` 和 `/author/` `Check Rewrite`，把 round-trip 证据提升为 source replacement preflight，返回 `ALLOW_REWRITE` 或明确 block decision。
 - 待交付：unresolved mapping wizard。
 - 待交付：output schema 一等字段。
-- 待交付：源码回写 API / approval gate，把 preview round-trip 证据接入“允许/禁止覆盖原 `.bloge` 文件”的治理流程。
+- 待交付：源码回写 writer / VCS PR / Studio 批量迁移执行器，把 rewrite gate 结论接入“允许/禁止覆盖原 `.bloge` 文件”的治理流程。
 
 验收：
 
 - 已验证：纯 transform DSL 在未修改 imported graph 时可生成 DSL 并重新投影为相同 canonical visual semantics。
-- 待验证：用户确认后的源码回写 API 只能在 `SUPPORTED` 或人工批准的 reviewed 状态下覆盖原 DSL。
+- 已验证：rewrite gate 在 `SUPPORTED` 时返回 `ALLOW_REWRITE`，在 semantic drift 时返回 `BLOCK_SEMANTIC_DRIFT`。
+- 待验证：用户确认后的源码 writer 只能在 `ALLOW_REWRITE` 或人工批准的 reviewed 状态下覆盖原 DSL。
 - 有 unresolved/opaque 内容时不能误标为 executable ready。
 
 ### Phase 2.4：复杂 DSL 覆盖
@@ -981,6 +1008,7 @@ canvas rendering depends on Maven export / business code scan / specific schema 
 1. 已完成：resource-gateway visual 层实现 `CapabilityCatalogVisualAdapter` 和 `/admin/visual-operator-libraries/from-capability-catalog-text`，支持把 `bloge.capabilityCatalog.v1` 预览适配为 visual library，但不把它作为唯一入口。
 2. 已完成：`/author/` Library 面板提供 `Adapt Catalog`，会把 framework catalog 回填成标准 `bloge.visualOperatorLibrary.v1` 草稿，之后仍走现有 Validate / Import。
 3. 待完成：给 imported draft 增加更完整的一等 source provenance 字段；当前 source map 已在 preview response、`/author/` 面板、导出 draft 和 commit 后 stored draft 的 `visualLayout.import.sourceMap` 中保留。
-4. 待完成：增加源码回写 API / approval gate，复用当前 preview `roundTrip` 证据阻止不等价回写。
+4. 已完成：增加 rewrite gate 预检 API，复用当前 preview `roundTrip` 证据阻止不等价自动替换。
+5. 待完成：增加真正的源码 writer / VCS PR 集成，把 rewrite gate 结论接入业务代码库回写流程。
 
 这个切片闭环之后，存量业务团队就能从“手写 DSL 黑盒”进入“可视化审阅 + schema 约束 + 测试验证”的交付路径。

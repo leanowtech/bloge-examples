@@ -5,6 +5,7 @@ import type {
   ConnectionCheckRequest,
   ConnectionCheckResponse,
   DslImportPreviewRequest,
+  DslRewriteGateResult,
   DslVisualProjection,
   GatewayExampleDiagram,
   GatewayExampleRun,
@@ -232,6 +233,17 @@ export async function validateDraft(draft: GraphDraft): Promise<VisualValidation
 export async function previewDslImport(request: DslImportPreviewRequest): Promise<DslVisualProjection> {
   return readJsonMutation<DslVisualProjection>(
     await fetch('/api/visual/dsl-imports/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    }),
+  );
+}
+
+/** Checks whether generated DSL is safe enough to overwrite its source file. */
+export async function checkDslRewriteGate(request: DslImportPreviewRequest): Promise<DslRewriteGateResult> {
+  return readJsonMutation<DslRewriteGateResult>(
+    await fetch('/api/visual/dsl-imports/rewrite-gate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),

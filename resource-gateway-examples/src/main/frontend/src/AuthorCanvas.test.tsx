@@ -124,6 +124,20 @@ describe('AuthorCanvas operator-library intake', () => {
         expect(body.operatorLibraryIds).toEqual(imported ? ['risk-policy'] : []);
         return jsonResponse(dslProjection());
       }
+      if (url === '/api/visual/dsl-imports/rewrite-gate') {
+        expect(init).toMatchObject({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const body = JSON.parse(String(init?.body ?? '{}'));
+        expect(body).toMatchObject({
+          sourceId: 'migrated-eligibility.bloge',
+          mode: 'rewrite-gate',
+        });
+        expect(body.dsl).toContain('graph migratedEligibility');
+        expect(body.operatorLibraryIds).toEqual(imported ? ['risk-policy'] : []);
+        return jsonResponse(dslRewriteGate());
+      }
       if (url.startsWith('/api/visual/dsl-imports/commit?')) {
         expect(url).toContain('actor=author-canvas');
         expect(url).toContain('changeSource=legacy-dsl-import');
@@ -316,6 +330,16 @@ describe('AuthorCanvas operator-library intake', () => {
     await click(query<HTMLButtonElement>('[data-testid="legacy-dsl-source-map-row:node:eligibility"]'));
     expect(query('[data-testid="legacy-dsl-source-map-row:node:eligibility"]').className)
       .toContain('selected');
+
+    await click(query<HTMLButtonElement>('[data-testid="legacy-dsl-rewrite-gate"]'));
+    await waitFor(() =>
+      expect(query('[data-testid="legacy-dsl-rewrite-gate-result"]').textContent)
+        .toContain('Rewrite gateALLOW_REWRITE'),
+    );
+    expect(query('[data-testid="legacy-dsl-rewrite-gate-result"]').textContent)
+      .toContain('Auto rewrite allowed');
+    expect(query('[data-testid="legacy-dsl-notice"]').textContent)
+      .toContain('Generated DSL has the same canonical visual semantics');
 
     await click(query<HTMLButtonElement>('[data-testid="legacy-dsl-commit"]'));
     await waitFor(() =>
@@ -1957,6 +1981,22 @@ function dslProjection(): unknown {
         },
       },
     },
+    diagnostics: [],
+  };
+}
+
+function dslRewriteGate(): unknown {
+  const projection = dslProjection() as {
+    roundTrip: unknown;
+  };
+  return {
+    schemaVersion: 'bloge.dslRewriteGate.v1',
+    sourceId: 'migrated-eligibility.bloge',
+    allowed: true,
+    decision: 'ALLOW_REWRITE',
+    message: 'Generated DSL has the same canonical visual semantics as the source projection.',
+    generatedDsl: 'graph migratedEligibility { transform response { eligible = eligibility.output.eligible } }',
+    roundTrip: projection.roundTrip,
     diagnostics: [],
   };
 }

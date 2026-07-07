@@ -81,6 +81,96 @@ class DslImportControllerTest {
     }
 
     @Test
+    void rewriteGateAllowsSupportedTransformDsl() throws Exception {
+        OperatorLibrary emptyLibrary = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "empty-risk-policy",
+                "Empty risk policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of()
+        );
+        var catalog = VisualCatalogTestSupport.catalogWithLibrary(emptyLibrary);
+        DslImportService service = new DslImportService(catalog, new OperatorLibraryValidator());
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new DslImportController(
+                service,
+                new InMemoryGraphDraftRepository(),
+                new GraphDraftValidator(catalog),
+                catalog
+        )).build();
+
+        mockMvc.perform(post("/api/visual/dsl-imports/rewrite-gate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(OBJECT_MAPPER.writeValueAsString(Map.of(
+                                "sourceId", "transform-only.bloge",
+                                "dsl", """
+                                        graph transformOnly {
+                                          input {
+                                            score: Int
+                                          }
+                                          output {
+                                            score: Int
+                                          }
+                                          transform response {
+                                            score = ctx.score
+                                          }
+                                        }
+                                        """
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(DslRewriteGateResult.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.sourceId").value("transform-only.bloge"))
+                .andExpect(jsonPath("$.allowed").value(true))
+                .andExpect(jsonPath("$.decision").value("ALLOW_REWRITE"))
+                .andExpect(jsonPath("$.roundTrip.status").value("SUPPORTED"))
+                .andExpect(jsonPath("$.generatedDsl").isNotEmpty());
+    }
+
+    @Test
+    void rewriteGateBlocksSemanticDrift() throws Exception {
+        var catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer")
+        );
+        DslImportService service = new DslImportService(catalog, new OperatorLibraryValidator());
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new DslImportController(
+                service,
+                new InMemoryGraphDraftRepository(),
+                new GraphDraftValidator(catalog),
+                catalog
+        )).build();
+
+        mockMvc.perform(post("/api/visual/dsl-imports/rewrite-gate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(OBJECT_MAPPER.writeValueAsString(Map.of(
+                                "sourceId", "migrated-eligibility.bloge",
+                                "dsl", """
+                                        graph migratedEligibility {
+                                          input {
+                                            score: Int
+                                            amount: Decimal
+                                          }
+                                          node eligibility : "risk:eligibility" {
+                                            input {
+                                              score = ctx.score
+                                              amount = ctx.amount
+                                            }
+                                          }
+                                          transform response {
+                                            eligible = eligibility.output.eligible
+                                          }
+                                        }
+                                        """,
+                                "catalogIds", List.of("risk-policy")
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allowed").value(false))
+                .andExpect(jsonPath("$.decision").value("BLOCK_SEMANTIC_DRIFT"))
+                .andExpect(jsonPath("$.roundTrip.status").value("DRIFT"))
+                .andExpect(jsonPath("$.generatedDsl").isNotEmpty());
+    }
+
+    @Test
     void commitReprojectsDslAndStoresGovernedDraftWithSourceMap() throws Exception {
         var catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer")

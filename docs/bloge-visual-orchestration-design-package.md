@@ -53,7 +53,7 @@
 | 支持 schema 约束下拖拽和连线 | 设计和实现均已覆盖 | 主方案第 10、13 章；协议草案第 7、9、11 章；Phase 1 蓝图第 6、7、8 章；实现状态审计第 2、4 章 |
 | 支持自由编排业务逻辑 | 已覆盖核心闭环，复杂能力分阶段 | 主方案第 11、13、16、20 章；Phase 1 蓝图第 9 章；实现状态审计第 5 章 |
 | 能吃下复杂业务编排场景 | 已覆盖架构方向，生产级能力仍分阶段补齐 | 主方案第 16、18、20 章；决策记录 ADR-008、ADR-009、ADR-010；实现状态审计第 5、6 章 |
-| 支持存量手写 DSL 业务升级到可视化交付 | 迁移专线设计已补齐，resource-gateway 后端 DSL preview/commit、`/author/` Legacy DSL 面板、source map 行定位、stored draft 保存和 preview 内置 round-trip 状态已落地；自动覆盖原 DSL 的 approval gate 仍未闭环 | 存量 DSL 迁移设计方案第 4-15 章；`POST /api/visual/dsl-imports/preview`、`POST /api/visual/dsl-imports/commit`；画布应 schema-neutral 地消费合法 operator/function catalog，框架 `bloge.capabilityCatalog.v1` / `export-schema` 是推荐迁移来源之一 |
+| 支持存量手写 DSL 业务升级到可视化交付 | 迁移专线设计已补齐，resource-gateway 后端 DSL preview/commit/rewrite-gate、`/author/` Legacy DSL 面板、source map 行定位、stored draft 保存、preview 内置 round-trip 状态和 source replacement preflight 已落地；真正覆盖原 DSL 的 source writer / VCS 集成仍未闭环 | 存量 DSL 迁移设计方案第 4-15 章；`POST /api/visual/dsl-imports/preview`、`POST /api/visual/dsl-imports/commit`、`POST /api/visual/dsl-imports/rewrite-gate`；画布应 schema-neutral 地消费合法 operator/function catalog，框架 `bloge.capabilityCatalog.v1` / `export-schema` 是推荐迁移来源之一 |
 | 形成详尽设计方案 | 已覆盖，并新增实现状态审计与存量迁移专线防漂移 | 设计/状态文档合计覆盖架构、协议、决策、实现蓝图、当前代码事实和存量 DSL 迁移路径 |
 
 ## 4. 当前核心结论
@@ -128,7 +128,7 @@ Phase 1 不以 UI 好看为验收，而以真实闭环为验收：
 1. Runtime binding implementation 与 readiness 派生闭环：在当前 implementation validate、字段级 contract-diff gate、semantic JSON Schema-compatible drift classification、runtime implementation SemVer/reimplementation submit gate、implementation rolloutPlan validate gate、proposal persistence、bind/supersede/unbind API、bind 写入失败诊断、adapter activation registry、runtime rollout observation registry、executable lowering integration registry、四类 runtime evidence submit stable-id 精确 replay 幂等返回、catalog response projection、executable promotion projection、readiness recompute preview、native governed apply mutation、external-runtime-bound governed apply mutation、apply revision-write failed result、post-apply evidence refresh/rebind mutation 和 governed unbind/deactivate mutation 之后，补跨 repository 事务/partial-failure 硬化、更广义 idempotency、更深跨系统 rollout/canary/rollback 编排、指标消费闭环和更完整 JSON Schema 兼容性推理门禁。
 2. 前端回归验证。
 3. Java operator inventory 深化。
-4. 存量业务迁移专线：补 opaque diagnostics 修复向导、批量迁移报告和源码覆盖 approval gate；schema-neutral preview/commit、source map 行定位、`bloge.capabilityCatalog.v1` 到 visual library adapter、preview 内置 round-trip 状态已经落地。
+4. 存量业务迁移专线：补 opaque diagnostics 修复向导、批量迁移报告和源码 writer / VCS 集成；schema-neutral preview/commit/rewrite-gate、source map 行定位、`bloge.capabilityCatalog.v1` 到 visual library adapter、preview 内置 round-trip 状态已经落地。
 5. OpenAPI/resource contract/AsyncAPI 导入深化。
 6. Run history 查询、重放和 SLO 统计深化。
 7. 协议文档命名与当前 wire contract 收敛。

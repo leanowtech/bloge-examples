@@ -56,7 +56,7 @@ operator library
 手写 .bloge -> DslCompiler.parseAst() -> VisualGraphDraft + source map + diagnostics
 ```
 
-本文件解决第一段里的一种高质量来源：**从 runtime / registry / build metadata 导出业务能力 schema**。对通用画布来说，schema provenance 不应进入渲染边界；只要输入的 operator/function schema 结构合法，就应该能和手写 `.bloge` 一起进入 DSL 可视化投影。第二段已经在 resource-gateway 示例层以 `POST /api/visual/dsl-imports/preview`、`POST /api/visual/dsl-imports/commit` 和 `/author/` Legacy DSL 面板验证了浏览器 preview/render/source-map/stored-draft 路径；后续仍需继续推进 opaque 保留和 semantic round-trip，详见 [存量 BLOGE DSL 业务迁移到可视化编排设计方案](./bloge-legacy-dsl-visual-migration-design.md)。
+本文件解决第一段里的一种高质量来源：**从 runtime / registry / build metadata 导出业务能力 schema**。对通用画布来说，schema provenance 不应进入渲染边界；只要输入的 operator/function schema 结构合法，就应该能和手写 `.bloge` 一起进入 DSL 可视化投影。第二段已经在 resource-gateway 示例层以 `POST /api/visual/dsl-imports/preview`、`POST /api/visual/dsl-imports/commit`、`POST /api/visual/dsl-imports/rewrite-gate` 和 `/author/` Legacy DSL 面板验证了浏览器 preview/render/source-map/stored-draft/source-replacement-preflight 路径；后续仍需继续推进 opaque 保留和真正的源码 writer / VCS 集成，详见 [存量 BLOGE DSL 业务迁移到可视化编排设计方案](./bloge-legacy-dsl-visual-migration-design.md)。
 
 ## 3. 要解决的问题
 

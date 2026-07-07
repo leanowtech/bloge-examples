@@ -59,6 +59,21 @@ public class DslImportController {
     }
 
     /**
+     * Checks whether generated DSL is safe enough to overwrite the source DSL.
+     *
+     * <p>The rewrite gate does not persist drafts or modify source files. It is a deterministic
+     * preflight for tools that want to perform source replacement only when semantic round-trip
+     * evidence is strong enough.</p>
+     *
+     * @param request DSL source plus the already-normalized visual catalog view
+     * @return rewrite gate result with the generated DSL and blocking evidence
+     */
+    @PostMapping("/rewrite-gate")
+    public DslRewriteGateResult rewriteGate(@RequestBody DslImportPreviewRequest request) {
+        return DslRewriteGateResult.from(service.preview(request));
+    }
+
+    /**
      * Re-projects existing BLOGE DSL and stores the resulting visual draft as a governed revision.
      *
      * <p>The commit path intentionally accepts the same request shape as preview and re-runs
