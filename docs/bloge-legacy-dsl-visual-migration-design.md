@@ -913,10 +913,11 @@ mvn -f resource-gateway-examples/pom.xml -Dtest=DslImportServiceTest,DslImportCo
 
 ### Phase 2.5：工业化迁移
 
-状态：前两段已落地。`POST /api/visual/dsl-imports/batch-report` 已提供 CI/import report
-级别的 schema-neutral 批量评估；`POST /api/visual/dsl-imports/batch-commit` 已能把符合策略的
-source 批量保存为 governed draft revision。但还没有完整批量导入 UI/CLI、coverage
-dashboard 和 source writer/VCS PR 执行器。
+状态：前两段已落地，CLI 入口已补齐。`POST /api/visual/dsl-imports/batch-report` 已提供
+CI/import report 级别的 schema-neutral 批量评估；`POST /api/visual/dsl-imports/batch-commit`
+已能把符合策略的 source 批量保存为 governed draft revision；
+`scripts/bloge-dsl-batch-import.sh` 已能把这些能力接到命令行/CI。但还没有完整 Studio
+dashboard、source writer/VCS PR 执行器和 opaque 修复工作台。
 
 交付：
 
@@ -927,7 +928,10 @@ dashboard 和 source writer/VCS PR 执行器。
   按 `renderable`、`fully-projected` 或 `rewrite-allowed` 策略输出
   `bloge.dslImportBatchCommitResult.v1`，把可接受 source 保存为 governed draft，并逐份返回
   `GraphDraftImportResult`、validation 和 dependency report。
-- 待交付：batch import UI / CLI，把 batch report / batch commit 结果变成可视化迁移任务台。
+- 已交付：batch import CLI，通过 `scripts/bloge-dsl-batch-import.sh report|commit` 消费
+  batch report / batch commit API，支持目录扫描、inline visual library JSON、CI gate、
+  dry-run 请求体生成和 JSON evidence 输出。
+- 待交付：Studio / web dashboard，把 batch report / batch commit 结果变成可视化迁移任务台。
 - 待交付：coverage dashboard。
 - 待深化：schema drift + round-trip gate 在批量迁移任务台中的审阅、确认和告警策略。
 

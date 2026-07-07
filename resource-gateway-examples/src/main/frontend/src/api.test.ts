@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   adaptCapabilityCatalogText,
+  batchCommitDslImports,
+  batchReportDslImports,
   buildGatewayRunRequest,
   checkDslRewriteGate,
   commitDslImport,
@@ -253,6 +255,94 @@ describe('operator library API client', () => {
         dsl: 'graph migratedEligibility {}',
         operatorLibraryIds: ['risk-policy'],
         mode: 'rewrite-gate',
+      }),
+    });
+  });
+
+  it('requests a repository-level schema-neutral DSL batch report', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      schemaVersion: 'bloge.dslImportBatchReport.v1',
+      mode: 'batch-report',
+      summary: {
+        sourceCount: 2,
+        renderableSourceCount: 2,
+        fullyProjectedSourceCount: 1,
+        repairableSourceCount: 1,
+      },
+      items: [
+        { sourceId: 'loan-approval.bloge', renderable: true, rewriteDecision: 'ALLOW_REWRITE' },
+      ],
+    })));
+
+    const result = await batchReportDslImports({
+      operatorLibraryIds: ['risk-policy'],
+      mode: 'batch-report',
+      includeDrafts: false,
+      sources: [
+        { sourceId: 'loan-approval.bloge', dsl: 'graph loanApproval {}' },
+        { sourceId: 'fraud-review.bloge', dsl: 'graph fraudReview {}' },
+      ],
+    });
+
+    expect(result.summary?.sourceCount).toBe(2);
+    expect(result.items?.[0].rewriteDecision).toBe('ALLOW_REWRITE');
+    expect(fetchMock).toHaveBeenCalledWith('/api/visual/dsl-imports/batch-report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        operatorLibraryIds: ['risk-policy'],
+        mode: 'batch-report',
+        includeDrafts: false,
+        sources: [
+          { sourceId: 'loan-approval.bloge', dsl: 'graph loanApproval {}' },
+          { sourceId: 'fraud-review.bloge', dsl: 'graph fraudReview {}' },
+        ],
+      }),
+    });
+  });
+
+  it('requests a governed DSL batch commit with author-canvas audit metadata', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      schemaVersion: 'bloge.dslImportBatchCommitResult.v1',
+      mode: 'batch-commit',
+      commitPolicy: 'rewrite-allowed',
+      summary: {
+        sourceCount: 2,
+        committedSourceCount: 1,
+        skippedSourceCount: 1,
+      },
+      items: [
+        { sourceId: 'loan-approval.bloge', committed: true, commitDecision: 'COMMITTED_REWRITE_ALLOWED' },
+      ],
+    })));
+
+    const result = await batchCommitDslImports({
+      operatorLibraryIds: ['risk-policy'],
+      mode: 'batch-commit',
+      commitPolicy: 'rewrite-allowed',
+      sources: [
+        { sourceId: 'loan-approval.bloge', dsl: 'graph loanApproval {}' },
+        { sourceId: 'fraud-review.bloge', dsl: 'graph fraudReview {}' },
+      ],
+    });
+
+    expect(result.summary?.committedSourceCount).toBe(1);
+    expect(result.items?.[0].commitDecision).toBe('COMMITTED_REWRITE_ALLOWED');
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/api/visual/dsl-imports/batch-commit?');
+    expect(String(url)).toContain('actor=author-canvas');
+    expect(String(url)).toContain('changeSource=legacy-dsl-batch-import');
+    expect(init).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        operatorLibraryIds: ['risk-policy'],
+        mode: 'batch-commit',
+        commitPolicy: 'rewrite-allowed',
+        sources: [
+          { sourceId: 'loan-approval.bloge', dsl: 'graph loanApproval {}' },
+          { sourceId: 'fraud-review.bloge', dsl: 'graph fraudReview {}' },
+        ],
       }),
     });
   });

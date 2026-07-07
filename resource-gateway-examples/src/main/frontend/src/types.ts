@@ -294,6 +294,103 @@ export interface DslVisualProjection {
   diagnostics?: VisualDiagnostic[];
 }
 
+/** One source file in a repository-level DSL import batch. */
+export interface DslImportBatchSource {
+  sourceId?: string;
+  dsl: string;
+  layout?: Record<string, unknown>;
+}
+
+/** Request body for repository-level schema-neutral DSL import assessment. */
+export interface DslImportBatchReportRequest {
+  sources: DslImportBatchSource[];
+  operatorLibraryIds?: string[];
+  inlineLibraries?: OperatorLibrary[];
+  mode?: string;
+  includeDrafts?: boolean;
+}
+
+/** Aggregate render/repair/rewrite readiness for a DSL import batch. */
+export interface DslImportBatchSummary {
+  sourceCount?: number;
+  renderableSourceCount?: number;
+  fullyProjectedSourceCount?: number;
+  repairableSourceCount?: number;
+  blockedSourceCount?: number;
+  rewriteAllowedSourceCount?: number;
+  rewriteBlockedSourceCount?: number;
+  totalMemberCount?: number;
+  totalProjectedNodeCount?: number;
+  totalEdgeCount?: number;
+  totalUnsupportedSyntaxCount?: number;
+  totalMissingOperatorCount?: number;
+  totalMissingFunctionCount?: number;
+  totalSourceMapEntryCount?: number;
+  roundTripStatusCounts?: Record<string, number>;
+  rewriteDecisionCounts?: Record<string, number>;
+  diagnosticLevelCounts?: Record<string, number>;
+}
+
+/** Per-source readiness item returned by batch DSL import assessment. */
+export interface DslImportBatchReportItem {
+  sourceId?: string;
+  graphName?: string;
+  renderable?: boolean;
+  fullyProjected?: boolean;
+  needsRepair?: boolean;
+  sourceMapEntryCount?: number;
+  coverage?: DslImportCoverage;
+  roundTrip?: DslRoundTripSummary;
+  rewriteAllowed?: boolean;
+  rewriteDecision?: string;
+  diagnosticLevelCounts?: Record<string, number>;
+  diagnostics?: VisualDiagnostic[];
+  draft?: GraphDraft;
+}
+
+/** Response of POST /api/visual/dsl-imports/batch-report. */
+export interface DslImportBatchReport {
+  schemaVersion?: string;
+  mode?: string;
+  summary?: DslImportBatchSummary;
+  items?: DslImportBatchReportItem[];
+}
+
+/** Request body for repository-level governed draft creation from DSL imports. */
+export interface DslImportBatchCommitRequest extends DslImportBatchReportRequest {
+  commitPolicy?: string;
+}
+
+/** Aggregate commit outcome for a DSL import batch. */
+export interface DslImportBatchCommitSummary {
+  sourceCount?: number;
+  committedSourceCount?: number;
+  skippedSourceCount?: number;
+  failedSourceCount?: number;
+  reportSummary?: DslImportBatchSummary;
+  commitDecisionCounts?: Record<string, number>;
+}
+
+/** Per-source commit outcome returned by batch DSL import commit. */
+export interface DslImportBatchCommitItem {
+  sourceId?: string;
+  graphName?: string;
+  committed?: boolean;
+  commitDecision?: string;
+  message?: string;
+  reportItem?: DslImportBatchReportItem;
+  importResult?: GraphDraftImportResult;
+}
+
+/** Response of POST /api/visual/dsl-imports/batch-commit. */
+export interface DslImportBatchCommitResult {
+  schemaVersion?: string;
+  mode?: string;
+  commitPolicy?: string;
+  summary?: DslImportBatchCommitSummary;
+  items?: DslImportBatchCommitItem[];
+}
+
 /** Server-authoritative gate for generated DSL source replacement. */
 export interface DslRewriteGateResult {
   schemaVersion?: string;

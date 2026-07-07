@@ -4,6 +4,10 @@ import type {
   ConnectionCandidatesResponse,
   ConnectionCheckRequest,
   ConnectionCheckResponse,
+  DslImportBatchCommitRequest,
+  DslImportBatchCommitResult,
+  DslImportBatchReport,
+  DslImportBatchReportRequest,
   DslImportPreviewRequest,
   DslRewriteGateResult,
   DslVisualProjection,
@@ -244,6 +248,35 @@ export async function previewDslImport(request: DslImportPreviewRequest): Promis
 export async function checkDslRewriteGate(request: DslImportPreviewRequest): Promise<DslRewriteGateResult> {
   return readJsonMutation<DslRewriteGateResult>(
     await fetch('/api/visual/dsl-imports/rewrite-gate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    }),
+  );
+}
+
+/** Assesses multiple BLOGE DSL sources against the same schema-neutral catalog view. */
+export async function batchReportDslImports(request: DslImportBatchReportRequest): Promise<DslImportBatchReport> {
+  return readJsonMutation<DslImportBatchReport>(
+    await fetch('/api/visual/dsl-imports/batch-report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    }),
+  );
+}
+
+/** Stores eligible DSL projections from a batch as governed visual graph drafts. */
+export async function batchCommitDslImports(
+  request: DslImportBatchCommitRequest,
+): Promise<DslImportBatchCommitResult> {
+  const query = new URLSearchParams({
+    actor: 'author-canvas',
+    changeSource: 'legacy-dsl-batch-import',
+    changeSummary: `Batch imported ${(request.sources ?? []).length} Legacy DSL sources`,
+  });
+  return readJsonMutation<DslImportBatchCommitResult>(
+    await fetch(`/api/visual/dsl-imports/batch-commit?${query.toString()}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),

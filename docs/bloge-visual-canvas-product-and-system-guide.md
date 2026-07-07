@@ -301,6 +301,8 @@ operators:
 - 已落地：`POST /api/visual/dsl-imports/rewrite-gate` 和 `/author/` 的 `Check Rewrite` 按钮。它复用同一个 schema-neutral request，返回 `ALLOW_REWRITE`、`BLOCK_SEMANTIC_DRIFT`、`BLOCK_INCOMPLETE_EVIDENCE` 等判定和 generated DSL；这个 gate 只做预检，不保存 draft，也不会改写源码文件。
 - 已落地：后端提供仓库级批量迁移报告 API：`POST /api/visual/dsl-imports/batch-report`。它复用同一套 schema-neutral catalog/inlineLibraries 输入，但接受多份 `sources[]`，逐份返回 renderable / fullyProjected / needsRepair / rewrite decision，并聚合 coverage、round-trip status、diagnostic level 和 rewrite decision 计数，适合 CI 或迁移前评估。
 - 已落地：后端提供批量迁移保存 API：`POST /api/visual/dsl-imports/batch-commit`。它接受与 batch-report 相同的 `sources[]` 和 schema-neutral catalog view，并按 `commitPolicy=renderable|fully-projected|rewrite-allowed` 把合格 source 服务端重投影后保存为 governed draft revision；它不写 `.bloge` 源文件，也不创建 VCS PR。
+- 已落地：仓库根目录提供 `scripts/bloge-dsl-batch-import.sh`，迁移负责人可以从命令行或 CI 直接调用 batch-report / batch-commit。脚本支持 `--dsl-dir` 扫描 `.bloge` 文件、`--operator-library` 引用已导入算子库、`--inline-library-json` 临时传入标准 visual library、`--fail-on` 设置 CI gate，以及 `--dry-run` 生成请求体。
+- 已落地：React authoring API client 已有 `batchReportDslImports()` / `batchCommitDslImports()` 类型化封装，后续 Studio dashboard 可以直接复用同一 wire contract。
 - 未落地：真正写回业务代码库或覆盖原 `.bloge` 文件的 source writer / VCS 集成。当前系统只告诉调用方“是否可安全自动替换”，不直接动用户源码。
 
 设计方案见 [存量 BLOGE DSL 业务迁移到可视化编排设计方案](./bloge-legacy-dsl-visual-migration-design.md)。
@@ -476,6 +478,44 @@ Content-Type: application/json
 | `renderable` | 默认策略。只要 DSL 能渲染成 graph draft 就保存；missing operator/function 会成为可修复迁移 draft |
 | `fully-projected` | 只保存无 missing/unsupported/import error 的 DSL，适合迁移验收基线更严格的团队 |
 | `rewrite-allowed` | 只保存 rewrite gate 通过的 DSL，适合后续马上接 source replacement / VCS PR 的低风险批次 |
+
+命令行/CI 推荐直接使用批量迁移脚本。先启动服务并导入所需算子库，再运行：
+
+```bash
+./scripts/start-visual-canvas-demo.sh --port 18080
+
+./scripts/bloge-dsl-batch-import.sh report \
+  --base-url http://localhost:18080 \
+  --operator-library risk-policy \
+  --dsl-dir resource-gateway-examples/src/main/resources/bloge/gateway \
+  --out target/dsl-batch-report.json \
+  --fail-on blocked
+```
+
+如果迁移策略要求只有语义往返通过的 DSL 才能进入 governed draft，可以改用：
+
+```bash
+./scripts/bloge-dsl-batch-import.sh commit \
+  --base-url http://localhost:18080 \
+  --operator-library risk-policy \
+  --dsl-dir resource-gateway-examples/src/main/resources/bloge/gateway \
+  --commit-policy rewrite-allowed \
+  --out target/dsl-batch-commit.json \
+  --fail-on skipped-or-failed
+```
+
+脚本不会生成或绑定 schema。它只把已经合法的 schema view 与 `.bloge` 文件打包成同一份
+batch API 请求：`--operator-library` 指向已导入的 visual library；
+`--inline-library-json` 只接受标准 `bloge.visualOperatorLibrary.v1` JSON 对象；
+如果上游手里是 `bloge.capabilityCatalog.v1`，仍需先通过 Library 面板或
+`/admin/visual-operator-libraries/from-capability-catalog-text` 适配成 visual library。
+调试时可以加 `--dry-run`，先确认最终请求体：
+
+```bash
+./scripts/bloge-dsl-batch-import.sh report --dry-run \
+  --operator-library risk-policy \
+  --dsl resource-gateway-examples/src/main/resources/bloge/gateway/loan-decision-policy.bloge
+```
 
 返回重点字段：
 

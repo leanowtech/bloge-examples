@@ -60,6 +60,21 @@ Useful variants:
 ./scripts/start-visual-canvas-demo.sh --run-tests
 ```
 
+Batch-migrate existing `.bloge` files after the service is running:
+
+```bash
+./scripts/bloge-dsl-batch-import.sh report \
+  --base-url http://localhost:8080 \
+  --operator-library risk-policy \
+  --dsl-dir resource-gateway-examples/src/main/resources/bloge/gateway \
+  --out target/dsl-batch-report.json
+```
+
+Use `commit --commit-policy renderable|fully-projected|rewrite-allowed` with the
+same inputs to save eligible projections as governed visual drafts. The script
+does not write source `.bloge` files; source replacement still belongs behind
+rewrite gate evidence and a reviewed VCS/source-writer flow.
+
 ## Notice The Product Loop
 
 1. **Import or use a resource contract**: seeded resources such as
