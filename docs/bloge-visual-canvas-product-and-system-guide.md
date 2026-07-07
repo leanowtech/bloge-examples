@@ -269,7 +269,7 @@ operators:
 - design-only/runtime-blocked/ready 等状态。
 - typed handles：输出端口在一侧，输入端口在另一侧。
 
-当画布变乱时，点击 Auto Layout。新版画布会用确定性布局把 DAG 拉开，让节点和边更容易读。
+当画布变乱时，点击 Auto Layout。新版画布会用确定性布局把 DAG 拉开，让节点和边更容易读：同一依赖层内按上游/下游重心排序，列间距会为边标签预留空间，行间距会按节点卡片高度和必要空白展开。它的目标不是把所有节点压到最小面积，而是在保持信息密度的同时避免算子挤在一起、边上的 `source.path -> target.path` 被遮挡。
 
 ### 5.3.1 配置起始节点输入
 
@@ -281,11 +281,11 @@ operators:
 
 1. **Graph 输入字段**：先看 Graph Contract 的 Input 区，确认这张图需要哪些 ctx 字段。示例中 graph input 需要 `applicantId`。
 2. **Context 变量表**：在 `Runtime Context -> Context Variables` 点击 Add Variable，新增一行变量，Path 填 `applicantId` 或 `applicant.score` 这类上下文路径。
-3. **Bind 到节点输入**：选中需要配置输入的节点，再点击变量行上的 Bind；也可以把 `ctx.applicantId` chip 直接拖到节点的 `Node Inputs` 区域。
+3. **Bind 到节点输入**：选中需要配置输入的节点，再点击变量行上的 Bind；也可以把 `ctx.applicantId` chip 直接拖到右侧 inspector 或双击浮层里的 `Node Inputs` 区域。
 4. **Preview JSON**：Sample 值会即时汇总成最终模拟 context，图中生成的是 `{ "applicantId": "prime" }`。
 5. **起始节点/字段来源**：画布中的起始节点可以从 ctx 字段获得输入，不必为了“没有上游边”再造一个假节点。
 
-画布会自动创建 `contextPath` 输入绑定，并把 Target port 默认设为算子的第一个输入端口、Target path 默认设为上下文路径最后一段。如果需要常量或复杂目标字段，仍可在 `Node Inputs` 中手动调整 Source、Target port 和 Target path。
+画布会自动创建 `contextPath` 输入绑定，并把 Target port 默认设为算子的第一个输入端口、Target path 默认设为上下文路径最后一段。如果需要常量或复杂目标字段，仍可在 `Node Inputs` 中手动调整 Source、Target port 和 Target path。对起始节点，推荐直接双击节点打开 Operator Detail，在同一个浮层里完成关键属性、输入绑定、输出样例和 schema 对照。
 
 例如，一个风控起始节点要从运行上下文读取 `applicant.score`，导出的 draft 会包含：
 
@@ -341,21 +341,24 @@ POST /api/visual/connections/check
 
 ### 5.4.1 双击查看算子详情与专属编辑
 
-新版 `/author/` 的双击行为统一了：**每个画布节点都可以双击打开 Operator Detail 浮层**。浮层先展示通用信息，再根据算子族提供专属交互。
+新版 `/author/` 的双击行为统一了：**每个画布节点都可以双击打开 Operator Detail 浮层**。浮层不只是“查看详情”，也承担节点级编辑入口：能直接改关键属性、配置 input binding、维护 output/expected input 样例，再根据算子族展开专属编辑器。
 
 ![Author Operator Detail 浮层标注](assets/bloge-author-operator-detail-annotated.svg)
 
-1. **任意节点双击**：resource、foreach、decision table、transform、用户导入的 design operator 都走同一个详情浮层入口。
-2. **合同摘要**：浮层上半部分展示 operatorRef、source、lowering、readiness、input/output contract 等信息，不需要再去右侧 inspector 翻找。
-3. **Input/Output schema**：每个端口都展示 JSON Schema 预览，用于确认这条边应该接什么数据、会吐出什么数据。
-4. **专属交互区**：decision table 和 transform 会在同一浮层内展开可编辑区域；foreach 会展开循环向导；普通 resource/design operator 展示合同和配置，不伪造本地编辑能力。
+1. **任意节点双击**：resource、http resource、foreach、decision table、transform、用户导入的 design operator 都走同一个详情浮层入口。
+2. **关键属性可编辑**：所有节点都能改显示 label；resource/http 节点还提供 Resource ID、Method、URL/route、Timeout 等常用运行属性输入框，写回节点 `config`。
+3. **图形化输入绑定**：浮层内置 `Node Inputs`，可以 Add Binding、选择 `ctx` 或 `constant`、配置 Target port/path，也能接收 Runtime Context 变量 chip 拖拽。
+4. **Input/Output 样例**：Output sample 和 Expected input 可以在浮层内直接维护，写入 `GraphDraft.nodeFixtures`，用于 mock simulate 和表格测试。
+5. **Schema 摘要优先**：每个端口先显示 schema 类型、字段数和字段表；Raw schema 仍可展开查看，避免用户一上来就读大段 JSON。
+6. **专属交互区**：decision table 和 transform 会在同一浮层内展开可编辑区域；foreach 会展开循环向导；generic/design operator 保留高级 config JSON 入口。
 
 | 算子族 | 双击后的浮层能力 | 写入 draft 的配置 |
 | --- | --- | --- |
 | `bloge:decisionTable` | 详情 + 规则矩阵。可编辑 hit policy、output type、条件列、输出列、规则行和 otherwise fallback | `config.hitPolicy`、`config.outputType`、`config.conditionColumns`、`config.outputColumns`、`config.rules[]` |
 | `bloge:transform` | 详情 + 字段映射表。可编辑输出字段名和 BLOGE 表达式，可新增/删除 assignment，并在 Expression 下方使用函数 chip、函数名补全和签名提示 | `config.assignments` |
 | `__foreach__:*` | 详情 + Loop guide。按 `Bind collection -> Run per item -> Collect result list` 展示循环语义，帮助用户理解 array 输入、item context 和 list 输出 | 通常由 operator contract / runtime 定义；画布不臆造 foreach 内部实现 |
-| resource / http / design operator | 详情 + input/output schema + source/lowering/readiness/config 预览 | 只展示合同和节点配置；真实资源语义仍由 descriptor / imported operator library 管理 |
+| resource / http operator | 详情 + 可编辑 Resource ID、Method、URL/route、Timeout、Node Inputs、Input/Output samples、schema 摘要和高级 config JSON | `config.resourceId/method/url/timeoutMs`、`inputs.*`、`nodeFixtures[nodeId]` |
+| generic / design operator | 详情 + label、Node Inputs、Input/Output samples、schema 摘要和高级 config JSON | `label`、`inputs.*`、`config`、`nodeFixtures[nodeId]` |
 
 Decision table 双击后的页面重点如下：
 
@@ -468,7 +471,7 @@ Foreach 的浮层不是另一个隐藏 JSON 编辑器，而是一个循环解释
 
 ### 5.6 第六步：配置 fixture
 
-对 design-only 或尚未实现的算子，模拟时需要 mock output。新版画布把 fixture 放在 selected-node inspector 的 Simulation 区域：
+对 design-only 或尚未实现的算子，模拟时需要 mock output。新版画布同时在 selected-node inspector 的 Simulation 区域和双击 Operator Detail 浮层里提供 fixture 编辑：
 
 - Output fixture：指定该节点模拟时产出的值。
 - Expected input：断言该节点模拟时应该收到的输入。

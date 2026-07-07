@@ -946,7 +946,7 @@ describe('autoLayoutCanvas', () => {
     );
 
     expect(layout).toHaveLength(2);
-    expect(layout[0].position.x).toBe(72);
+    expect(layout[0].position.x).toBe(96);
     expect(layout[1].position.y).toBeGreaterThan(layout[0].position.y);
   });
 
@@ -977,10 +977,10 @@ describe('autoLayoutCanvas', () => {
       .map((id) => byId.get(id)?.y ?? 0)
       .sort((left, right) => left - right);
     for (let index = 1; index < middleLayer.length; index += 1) {
-      expect(middleLayer[index] - middleLayer[index - 1]).toBeGreaterThanOrEqual(184);
+      expect(middleLayer[index] - middleLayer[index - 1]).toBeGreaterThanOrEqual(236);
     }
-    expect((byId.get('profile')?.x ?? 0) - (byId.get('root')?.x ?? 0)).toBeGreaterThanOrEqual(320);
-    expect((byId.get('join')?.x ?? 0) - (byId.get('profile')?.x ?? 0)).toBeGreaterThanOrEqual(320);
+    expect((byId.get('profile')?.x ?? 0) - (byId.get('root')?.x ?? 0)).toBeGreaterThanOrEqual(408);
+    expect((byId.get('join')?.x ?? 0) - (byId.get('profile')?.x ?? 0)).toBeGreaterThanOrEqual(408);
   });
 
   it('expands column spacing for long edge labels so paths have readable room', () => {
@@ -1002,7 +1002,7 @@ describe('autoLayoutCanvas', () => {
       ],
     );
 
-    expect(layout[1].position.x - layout[0].position.x).toBeGreaterThanOrEqual(416);
+    expect(layout[1].position.x - layout[0].position.x).toBeGreaterThanOrEqual(680);
   });
 });
 

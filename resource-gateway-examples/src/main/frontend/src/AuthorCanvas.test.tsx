@@ -511,9 +511,9 @@ describe('AuthorCanvas connection guide', () => {
     await click(layoutButton as HTMLButtonElement);
 
     await waitFor(() =>
-      expect(query('[data-testid="node-wrapper:n1"]').getAttribute('data-position')).toBe('72,56'),
+      expect(query('[data-testid="node-wrapper:n1"]').getAttribute('data-position')).toBe('96,72'),
     );
-    expect(query('[data-testid="node-wrapper:n2"]').getAttribute('data-position')).toBe('408,56');
+    expect(query('[data-testid="node-wrapper:n2"]').getAttribute('data-position')).toBe('504,72');
   });
 
   it('opens operator details for a regular canvas node on double click', async () => {
@@ -904,6 +904,45 @@ describe('AuthorCanvas connection guide', () => {
     expect(query('[data-testid="operator-focus:streaming"]').textContent).toContain('Readiness');
     expect(query('[data-testid="operator-focus:streaming"]').textContent)
       .toContain('Runtime blocked in this visual runtime');
+
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    const dialog = query('[data-testid="operator-detail-dialog"]');
+    const dialogQuery = <TElement extends Element = Element>(selector: string): TElement => {
+      const element = dialog.querySelector<TElement>(selector);
+      expect(element, `Expected operator detail selector ${selector}`).not.toBeNull();
+      return element as TElement;
+    };
+    expect(dialog.textContent).toContain('Key properties');
+    expect(dialog.textContent).toContain('Resource contract');
+    expect(dialogQuery('[data-testid="operator-detail-resource-config"]').textContent).toContain('Resource ID');
+
+    await setControlValue(dialogQuery<HTMLInputElement>('[data-testid="operator-detail-label"]'), 'Customer HTTP call');
+    await setControlValue(dialogQuery<HTMLSelectElement>('[data-testid="operator-detail-http-method"]'), 'POST');
+    await setControlValue(dialogQuery<HTMLInputElement>('[data-testid="operator-detail-resource-url"]'), '/customers/{customerId}');
+    await click(dialogQuery<HTMLButtonElement>('[data-testid="node-input-add"]'));
+    await setControlValue(dialogQuery<HTMLInputElement>('[data-testid="node-input-context-path:0"]'), 'request.customerId');
+    await setControlValue(dialogQuery<HTMLTextAreaElement>('[data-testid="operator-detail-output-fixture"]'), '{"ok":true}');
+
+    const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
+    expect(exported.nodes[0]).toMatchObject({
+      label: 'Customer HTTP call',
+      inputs: {
+        input: {
+          kind: 'contextPath',
+          path: 'request.customerId',
+          targetPort: 'input',
+        },
+      },
+      config: {
+        method: 'POST',
+        url: '/customers/{customerId}',
+      },
+    });
+    expect(exported.nodeFixtures).toMatchObject({
+      n1: {
+        output: { ok: true },
+      },
+    });
   });
 
   it('uses incoming edge bindings as decision-table condition columns', async () => {
