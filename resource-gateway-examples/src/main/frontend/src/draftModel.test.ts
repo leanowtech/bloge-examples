@@ -983,6 +983,35 @@ describe('autoLayoutCanvas', () => {
     expect((byId.get('join')?.x ?? 0) - (byId.get('profile')?.x ?? 0)).toBeGreaterThanOrEqual(408);
   });
 
+  it('reserves a top bus lane for long-span edge labels across populated layers', () => {
+    const layout = autoLayoutCanvas(
+      [
+        { id: 'profile', operatorRef: 'resource:user-service.getProfile', position: { x: 0, y: 0 } },
+        { id: 'wallet', operatorRef: 'resource:wallet-service.getBalance', position: { x: 0, y: 0 } },
+        { id: 'recommendations', operatorRef: 'resource:recommendation-service.forUser', position: { x: 0, y: 0 } },
+        { id: 'notifications', operatorRef: 'resource:notification-service.unread', position: { x: 0, y: 0 } },
+        { id: 'response', operatorRef: 'bloge:transform', position: { x: 0, y: 0 } },
+      ],
+      [
+        { id: 'e1', source: 'profile', target: 'wallet', sourcePath: 'payload.userId', targetPath: 'params.userId' },
+        { id: 'e2', source: 'profile', target: 'recommendations', sourcePath: 'payload.userId', targetPath: 'params.userId' },
+        { id: 'e3', source: 'profile', target: 'notifications', sourcePath: 'payload.userId', targetPath: 'params.userId' },
+        { id: 'e4', source: 'profile', target: 'response', sourcePath: 'payload.name', targetPath: 'inputs.name' },
+        { id: 'e5', source: 'profile', target: 'response', sourcePath: 'payload.tier', targetPath: 'inputs.tier' },
+        { id: 'e6', source: 'wallet', target: 'response', sourcePath: 'payload.amount', targetPath: 'inputs.walletAmount' },
+        { id: 'e7', source: 'recommendations', target: 'response', sourcePath: 'payload.items', targetPath: 'inputs.recommendations' },
+        { id: 'e8', source: 'notifications', target: 'response', sourcePath: 'payload.count', targetPath: 'inputs.unreadCount' },
+      ],
+    );
+
+    const byId = new Map(layout.map((node) => [node.id, node.position]));
+    const busY = byId.get('profile')?.y ?? 0;
+    expect(byId.get('response')?.y).toBe(busY);
+    expect(byId.get('wallet')?.y).toBeGreaterThanOrEqual(busY + 236);
+    expect(byId.get('recommendations')?.y).toBeGreaterThanOrEqual(busY + 236);
+    expect(byId.get('notifications')?.y).toBeGreaterThanOrEqual(busY + 236);
+  });
+
   it('expands column spacing for long edge labels so paths have readable room', () => {
     const layout = autoLayoutCanvas(
       [

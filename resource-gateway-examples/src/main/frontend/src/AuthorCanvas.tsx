@@ -4,16 +4,22 @@ import ReactFlow, {
   applyEdgeChanges,
   applyNodeChanges,
   Background,
+  BaseEdge,
   Controls,
+  EdgeLabelRenderer,
   Handle,
   MiniMap,
   type Connection,
   type Edge,
   type EdgeChange,
+  type EdgeProps,
+  type EdgeTypes,
   type Node,
   type NodeChange,
   type NodeProps,
+  type ReactFlowInstance,
   Position,
+  getSmoothStepPath,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -135,17 +141,131 @@ interface CheckedConnectionParams {
   targetPath?: string;
 }
 
-type CanvasFlowEdge = Edge & {
+interface CanvasEdgeData {
+  sourcePath?: string;
+  targetPath?: string;
+  bindingKey?: string;
+  labelLane?: number;
+}
+
+type CanvasFlowEdge = Edge<CanvasEdgeData> & {
   sourcePath?: string;
   targetPath?: string;
   bindingKey?: string;
 };
 
+const CANVAS_DATA_EDGE_TYPE = 'canvasDataEdge';
+const EDGE_LABEL_DIAGONAL_OFFSET = 48;
+const EDGE_LABEL_LANE_STEP = 30;
+
 const EDGE_LABEL_OPTIONS = {
-  labelShowBg: true,
-  labelBgPadding: [8, 4] as [number, number],
-  labelBgBorderRadius: 4,
+  type: CANVAS_DATA_EDGE_TYPE,
+  interactionWidth: 18,
 };
+
+function CanvasDataEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  markerStart,
+  markerEnd,
+  style,
+  interactionWidth,
+  label,
+  selected,
+  data,
+}: EdgeProps<CanvasEdgeData>) {
+  const [edgePath, labelX, labelY] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+    borderRadius: 18,
+    offset: 42,
+  });
+  const labelText = typeof label === 'string' || typeof label === 'number' ? String(label) : '';
+  const labelLane = data?.labelLane ?? 0;
+  const labelOffsetX = Math.abs(targetY - sourceY) > 60
+    ? targetY > sourceY
+      ? -EDGE_LABEL_DIAGONAL_OFFSET
+      : EDGE_LABEL_DIAGONAL_OFFSET
+    : 0;
+  const labelOffsetY = labelLane * EDGE_LABEL_LANE_STEP;
+
+  return (
+    <>
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        markerStart={markerStart}
+        markerEnd={markerEnd}
+        style={style}
+        interactionWidth={interactionWidth}
+      />
+      {labelText && (
+        <EdgeLabelRenderer>
+          <div
+            className={['flow-edge-label', selected ? 'selected' : ''].filter(Boolean).join(' ')}
+            data-edge-id={id}
+            data-testid="canvas-edge-label"
+            style={{
+              transform: `translate(-50%, -50%) translate(${labelX + labelOffsetX}px, ${labelY + labelOffsetY}px)`,
+            }}
+          >
+            {labelText}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  );
+}
+
+const EDGE_TYPES: EdgeTypes = {
+  [CANVAS_DATA_EDGE_TYPE]: CanvasDataEdge,
+};
+
+function edgeLaneFor(index: number, count: number): number {
+  return index - (count - 1) / 2;
+}
+
+function edgeParallelKey(edge: Edge): string {
+  return [
+    edge.source,
+    edge.target,
+    edge.sourceHandle ?? '',
+    edge.targetHandle ?? '',
+  ].join('::');
+}
+
+function withEdgeLabelLanes(edges: Edge<CanvasEdgeData>[]): Edge<CanvasEdgeData>[] {
+  const groups = new Map<string, Edge<CanvasEdgeData>[]>();
+  for (const edge of edges) {
+    const key = edgeParallelKey(edge);
+    groups.set(key, [...(groups.get(key) ?? []), edge]);
+  }
+
+  return edges.map((edge) => {
+    const group = groups.get(edgeParallelKey(edge)) ?? [edge];
+    const index = group.findIndex((candidate) => candidate.id === edge.id);
+    const count = group.length;
+    return {
+      ...edge,
+      type: CANVAS_DATA_EDGE_TYPE,
+      interactionWidth: edge.interactionWidth ?? EDGE_LABEL_OPTIONS.interactionWidth,
+      labelShowBg: false,
+      data: {
+        ...(edge.data ?? {}),
+        labelLane: edgeLaneFor(Math.max(0, index), count),
+      },
+    };
+  });
+}
 
 interface OperatorFocusRow {
   key: string;
@@ -3047,7 +3167,7 @@ export default function AuthorCanvas() {
   const [operators, setOperators] = useState<OperatorDefinition[]>([]);
   const [builtInFunctions, setBuiltInFunctions] = useState<BuiltInFunctionDefinition[]>([]);
   const [nodes, setNodes] = useState<Node<NodeData>[]>([]);
-  const [edges, setEdges] = useState<Edge[]>([]);
+  const [edges, setEdges] = useState<Edge<CanvasEdgeData>[]>([]);
   const [result, setResult] = useState<SimulationResponse | null>(null);
   const [validationResult, setValidationResult] = useState<VisualValidationResult | null>(null);
   const [error, setError] = useState<string>('');
@@ -3087,6 +3207,7 @@ export default function AuthorCanvas() {
   const [pendingConnectionGuideNodeId, setPendingConnectionGuideNodeId] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const flowRef = useRef<HTMLDivElement>(null);
+  const flowInstanceRef = useRef<ReactFlowInstance<NodeData, CanvasEdgeData> | null>(null);
   const counter = useRef(0);
   const contextVariableCounter = useRef(0);
   const tableTestCounter = useRef(0);
@@ -3172,7 +3293,7 @@ export default function AuthorCanvas() {
         clearRunResult();
         setConnectionGuide(null);
       }
-      setEdges((current) => applyEdgeChanges(changes, current));
+      setEdges((current) => applyEdgeChanges(changes, current) as Edge<CanvasEdgeData>[]);
     },
     [clearRunResult],
   );
@@ -3789,6 +3910,7 @@ export default function AuthorCanvas() {
       }),
     [candidatePreview, coachPrompt, nodes, outputNodeId, selectedNodeId],
   );
+  const flowEdges = useMemo(() => withEdgeLabelLanes(edges), [edges]);
 
   const startOperatorDrag = useCallback((event: DragEvent<HTMLButtonElement>, operator: OperatorDefinition) => {
     event.dataTransfer.effectAllowed = 'copy';
@@ -4505,6 +4627,14 @@ export default function AuthorCanvas() {
         position: positions.get(node.id) ?? node.position,
       })),
     );
+    const fitLayout = () => {
+      flowInstanceRef.current?.fitView({ padding: 0.18, duration: 240 });
+    };
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(fitLayout);
+    } else {
+      fitLayout();
+    }
   }, [canvasEdges, canvasNodes]);
 
   const paletteView = useMemo(
@@ -5067,13 +5197,17 @@ export default function AuthorCanvas() {
           )}
           <ReactFlow
             nodes={flowNodes}
-            edges={edges}
+            edges={flowEdges}
             nodeTypes={NODE_TYPES}
+            edgeTypes={EDGE_TYPES}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd}
+            onInit={(instance) => {
+              flowInstanceRef.current = instance;
+            }}
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
             onNodeDoubleClick={(_, node) => openNodeEditor(node)}
             onPaneClick={() => setSelectedNodeId('')}

@@ -14,11 +14,18 @@ import type {
   SimulationResponse,
 } from './types';
 
+const reactFlowMocks = vi.hoisted(() => ({
+  fitView: vi.fn(),
+}));
+
 vi.mock('reactflow', async () => {
   const React = await import('react');
 
   return {
-    default: function ReactFlowMock({ children, nodes, nodeTypes, onNodeClick, onNodeDoubleClick }: any) {
+    default: function ReactFlowMock({ children, nodes, nodeTypes, onInit, onNodeClick, onNodeDoubleClick }: any) {
+      React.useEffect(() => {
+        onInit?.({ fitView: reactFlowMocks.fitView });
+      }, [onInit]);
       return React.createElement(
         'div',
         { 'data-testid': 'react-flow' },
@@ -67,6 +74,7 @@ describe('AuthorCanvas operator-library intake', () => {
 
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    reactFlowMocks.fitView.mockReset();
     imported = false;
     host = document.createElement('div');
     document.body.appendChild(host);
@@ -514,6 +522,9 @@ describe('AuthorCanvas connection guide', () => {
       expect(query('[data-testid="node-wrapper:n1"]').getAttribute('data-position')).toBe('96,72'),
     );
     expect(query('[data-testid="node-wrapper:n2"]').getAttribute('data-position')).toBe('504,72');
+    await waitFor(() =>
+      expect(reactFlowMocks.fitView).toHaveBeenCalledWith({ padding: 0.18, duration: 240 }),
+    );
   });
 
   it('opens operator details for a regular canvas node on double click', async () => {

@@ -1379,6 +1379,29 @@ button.secondary:disabled {
   stroke-width: 1px;
 }
 
+.flow-edge-label {
+  position: absolute;
+  z-index: 20;
+  max-width: 340px;
+  padding: 4px 7px;
+  border: 1px solid rgb(148 163 184 / 42%);
+  border-radius: 5px;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 6px 16px rgb(28 35 48 / 13%);
+  color: #263144;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  text-align: center;
+}
+
+.flow-edge-label.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(26 86 219 / 16%), 0 6px 16px rgb(28 35 48 / 13%);
+}
+
 .checklist {
   display: grid;
   gap: 6px;

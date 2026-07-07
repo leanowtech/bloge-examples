@@ -29,6 +29,7 @@ const AUTO_LAYOUT_MIN_COLUMN_GAP = 148;
 const AUTO_LAYOUT_MAX_COLUMN_PITCH = 760;
 const AUTO_LAYOUT_EDGE_LABEL_CHAR_WIDTH = 6.2;
 const AUTO_LAYOUT_EDGE_LABEL_PADDING = 160;
+const AUTO_LAYOUT_LONG_EDGE_BUS_LANES = 1;
 
 /**
  * The minimal shape of a canvas node needed to build a draft. Decouples the pure draft-building logic
@@ -1195,12 +1196,23 @@ export function autoLayoutCanvas(nodes: CanvasNode[], edges: CanvasEdge[]): Canv
 
   const maxLayer = Math.max(0, ...nodes.map((node) => layerByNode.get(node.id) ?? 0));
   const orderedLayers = orderLayoutLayers(nodesByLayer, incoming, outgoing, originalIndex, layerByNode, maxLayer);
-  const maxLayerSize = Math.max(1, ...Array.from(orderedLayers.values()).map((layerNodes) => layerNodes.length));
+  const topLanePlan = layoutTopLanePlan(edges, layerByNode, nodesByLayer, nodeIds);
+  const maxLayerSize = Math.max(
+    1,
+    ...Array.from(orderedLayers.values()).map((layerNodes) => layerNodes.length),
+  ) + (topLanePlan.reserved ? AUTO_LAYOUT_LONG_EDGE_BUS_LANES : 0);
   const rowPitch = AUTO_LAYOUT_NODE_HEIGHT + AUTO_LAYOUT_NODE_ROW_GAP;
   const yByNode = new Map<string, number>();
   for (let layer = 0; layer <= maxLayer; layer += 1) {
     const layerNodes = orderedLayers.get(layer) ?? [];
-    const layerOffset = ((maxLayerSize - layerNodes.length) * rowPitch) / 2;
+    const singleLongSpanEndpoint = layerNodes.length === 1 && topLanePlan.endpointNodeIds.has(layerNodes[0]);
+    const availableRows = maxLayerSize - (topLanePlan.reserved ? AUTO_LAYOUT_LONG_EDGE_BUS_LANES : 0);
+    const centeredOffset = ((Math.max(1, availableRows) - layerNodes.length) * rowPitch) / 2;
+    const layerOffset = singleLongSpanEndpoint
+      ? 0
+      : topLanePlan.intermediateLayers.has(layer)
+        ? AUTO_LAYOUT_LONG_EDGE_BUS_LANES * rowPitch + centeredOffset
+        : ((maxLayerSize - layerNodes.length) * rowPitch) / 2;
     layerNodes.forEach((nodeId, row) => {
       yByNode.set(nodeId, AUTO_LAYOUT_TOP + layerOffset + row * rowPitch);
     });
@@ -1217,6 +1229,45 @@ export function autoLayoutCanvas(nodes: CanvasNode[], edges: CanvasEdge[]): Canv
       },
     };
   });
+}
+
+function layoutTopLanePlan(
+  edges: CanvasEdge[],
+  layerByNode: Map<string, number>,
+  nodesByLayer: Map<number, string[]>,
+  nodeIds: Set<string>,
+): { reserved: boolean; endpointNodeIds: Set<string>; intermediateLayers: Set<number> } {
+  const endpointNodeIds = new Set<string>();
+  const intermediateLayers = new Set<number>();
+
+  for (const edge of edges) {
+    if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
+      continue;
+    }
+    const sourceLayer = layerByNode.get(edge.source) ?? 0;
+    const targetLayer = layerByNode.get(edge.target) ?? 0;
+    if (targetLayer - sourceLayer <= 1) {
+      continue;
+    }
+
+    let crossesPopulatedLayer = false;
+    for (let layer = sourceLayer + 1; layer < targetLayer; layer += 1) {
+      if ((nodesByLayer.get(layer)?.length ?? 0) > 0) {
+        crossesPopulatedLayer = true;
+        intermediateLayers.add(layer);
+      }
+    }
+    if (crossesPopulatedLayer) {
+      endpointNodeIds.add(edge.source);
+      endpointNodeIds.add(edge.target);
+    }
+  }
+
+  return {
+    reserved: endpointNodeIds.size > 0,
+    endpointNodeIds,
+    intermediateLayers,
+  };
 }
 
 function orderLayoutLayers(
