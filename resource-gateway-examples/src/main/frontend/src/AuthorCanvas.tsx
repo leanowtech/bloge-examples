@@ -25,6 +25,7 @@ import 'reactflow/dist/style.css';
 
 import {
   checkConnection,
+  commitDslImport,
   fetchConnectionCandidates,
   fetchOperatorCatalog,
   importOperatorLibraryText,
@@ -89,6 +90,7 @@ import type {
   DslSourceMap,
   DslSourceSpan,
   DslVisualProjection,
+  GraphDraftImportResult,
   NodeFixture,
   OperatorDefinition,
   OperatorLibrary,
@@ -3540,6 +3542,32 @@ function dslSourceMapEntryCount(sourceMap: DslSourceMap | null | undefined): num
     + Object.keys(sourceMap.bindings ?? {}).length;
 }
 
+function dslSourceMapFromImportResult(
+  result: GraphDraftImportResult,
+  fallback: DslSourceMap | null,
+): DslSourceMap | undefined {
+  const rawImportMetadata = result.draft?.visualLayout?.import;
+  const importMetadata = isRecord(rawImportMetadata) ? rawImportMetadata : null;
+  const sourceMap = importMetadata && isRecord(importMetadata.sourceMap)
+    ? importMetadata.sourceMap as DslSourceMap
+    : null;
+  return sourceMap ?? fallback ?? undefined;
+}
+
+function dslCommitNotice(result: GraphDraftImportResult): ConnectionNotice {
+  const draft = result.draft;
+  if (!result.imported || !draft) {
+    return { level: 'warning', message: 'DSL rendered but no draft was stored.' };
+  }
+  const diagnosticCount = result.validation?.diagnostics?.length ?? result.diagnostics?.length ?? 0;
+  const level = diagnosticCount > 0 ? 'warning' : 'ok';
+  const revision = draft.revision ? ` @${draft.revision}` : '';
+  return {
+    level,
+    message: `Stored draft ${draft.draftId || draft.graphName}${revision}.`,
+  };
+}
+
 function dslSourceMapRows(
   sourceMap: DslSourceMap | null,
   sourceText: string,
@@ -3666,6 +3694,7 @@ export default function AuthorCanvas() {
   const [dslSourceId, setDslSourceId] = useState(LEGACY_DSL_EXAMPLES[0].sourceId);
   const [dslSourceText, setDslSourceText] = useState(LEGACY_DSL_EXAMPLES[0].sourceText);
   const [dslImportBusy, setDslImportBusy] = useState(false);
+  const [dslCommitBusy, setDslCommitBusy] = useState(false);
   const [dslImportNotice, setDslImportNotice] = useState<ConnectionNotice | null>(null);
   const [dslImportDiagnostics, setDslImportDiagnostics] = useState<VisualDiagnostic[]>([]);
   const [dslImportCoverage, setDslImportCoverage] = useState<DslImportCoverage | null>(null);
@@ -3688,6 +3717,8 @@ export default function AuthorCanvas() {
   const [simulationContextDraft, setSimulationContextDraft] = useState('{}');
   const [contextVariables, setContextVariables] = useState<ContextVariableRow[]>([]);
   const [graphName, setGraphName] = useState('visualGraph');
+  const [graphDraftId, setGraphDraftId] = useState('');
+  const [graphDraftRevision, setGraphDraftRevision] = useState(0);
   const [graphInputSchema, setGraphInputSchema] = useState<SchemaEnvelope>(EMPTY_GRAPH_INPUT_SCHEMA);
   const [graphOutputSchema, setGraphOutputSchema] = useState<SchemaEnvelope | null>(null);
   const [graphContractSource, setGraphContractSource] = useState('Current draft');
@@ -4279,6 +4310,8 @@ export default function AuthorCanvas() {
     setSimulationTableRows(nextSimulationTableRows);
     setSimulationTableResults({});
     setGraphName('visualGraph');
+    setGraphDraftId('');
+    setGraphDraftRevision(0);
     setGraphInputSchema(template.inputSchema);
     setGraphOutputSchema(template.outputSchema);
     setGraphContractSource(template.label);
@@ -4374,6 +4407,8 @@ export default function AuthorCanvas() {
         fixtureCompilation.fixtures,
         graphInputSchema,
         {
+          draftId: graphDraftId,
+          revision: graphDraftRevision,
           visualLayout: visualLayoutWithGraphContract(
             graphVisualLayout,
             graphInputSchema,
@@ -4390,6 +4425,8 @@ export default function AuthorCanvas() {
       canvasNodes,
       effectiveGraphOutputSchema,
       fixtureCompilation.fixtures,
+      graphDraftId,
+      graphDraftRevision,
       graphName,
       graphContractSource,
       graphInputSchema,
@@ -4686,6 +4723,8 @@ export default function AuthorCanvas() {
     setSimulationTableRows(nextSimulationTableRows);
     setSimulationTableResults({});
     setGraphName(imported.graphName);
+    setGraphDraftId(imported.draftId ?? '');
+    setGraphDraftRevision(imported.revision ?? 0);
     setGraphInputSchema(nextInputSchema);
     setGraphOutputSchema(nextOutputSchema);
     setGraphContractSource(`DSL ${projection.sourceId || imported.graphName}`);
@@ -4756,6 +4795,63 @@ export default function AuthorCanvas() {
       setDslImportBusy(false);
     }
   }, [applyDslProjection, dslSourceId, dslSourceText, librarySourceText, operators]);
+
+  const commitLegacyDsl = useCallback(async () => {
+    if (!dslSourceText.trim()) {
+      setDslImportDiagnostics([]);
+      setDslImportCoverage(null);
+      setDslImportSourceMap(null);
+      setDslImportNotice({ level: 'error', message: 'DSL source is empty.' });
+      return;
+    }
+    setDslCommitBusy(true);
+    setDslImportNotice({ level: 'pending', message: 'Committing DSL draft...' });
+    setError('');
+    try {
+      const result = await commitDslImport({
+        sourceId: dslSourceId.trim() || 'inline.dsl',
+        dsl: dslSourceText,
+        operatorLibraryIds: operatorLibraryIds(operators),
+        inlineLibraries: inlineLibrariesFromSourceText(librarySourceText),
+        mode: 'commit',
+      });
+      if (!result.draft) {
+        setDslImportDiagnostics([
+          ...(result.diagnostics ?? []),
+          ...(result.validation?.diagnostics ?? []),
+        ]);
+        setDslImportNotice(dslCommitNotice(result));
+        return;
+      }
+      const sourceMap = dslSourceMapFromImportResult(result, dslImportSourceMap);
+      applyDslProjection({
+        schemaVersion: 'bloge.dslVisualProjection.v1',
+        sourceId: dslSourceId.trim() || 'inline.dsl',
+        draft: result.draft,
+        sourceMap,
+        coverage: dslImportCoverage ?? undefined,
+        diagnostics: [
+          ...(result.diagnostics ?? []),
+          ...(result.validation?.diagnostics ?? []),
+        ],
+      });
+      const notice = dslCommitNotice(result);
+      setDslImportNotice(notice);
+      setConnectionNotice(notice);
+    } catch (cause: unknown) {
+      setDslImportNotice({ level: 'error', message: String(cause) });
+    } finally {
+      setDslCommitBusy(false);
+    }
+  }, [
+    applyDslProjection,
+    dslImportCoverage,
+    dslImportSourceMap,
+    dslSourceId,
+    dslSourceText,
+    librarySourceText,
+    operators,
+  ]);
 
   const clearFixtureForNode = useCallback((nodeId: string) => {
     clearRunResult();
@@ -5750,6 +5846,7 @@ export default function AuthorCanvas() {
           <div className="library-intake-heading">
             <h2>Legacy DSL</h2>
             {dslImportBusy && <span>Rendering</span>}
+            {dslCommitBusy && <span>Saving</span>}
           </div>
           <label className="dsl-source-id">
             <span>Source</span>
@@ -5807,9 +5904,18 @@ export default function AuthorCanvas() {
               className="primary compact"
               data-testid="legacy-dsl-preview"
               onClick={previewLegacyDsl}
-              disabled={dslImportBusy}
+              disabled={dslImportBusy || dslCommitBusy}
             >
               Render DSL
+            </button>
+            <button
+              type="button"
+              className="secondary compact"
+              data-testid="legacy-dsl-commit"
+              onClick={commitLegacyDsl}
+              disabled={dslImportBusy || dslCommitBusy}
+            >
+              Commit Draft
             </button>
           </div>
           {dslImportNotice && (

@@ -250,6 +250,18 @@ public record GraphDraft(
     }
 
     /**
+     * Returns a copy with updated visual-only layout metadata.
+     *
+     * @param nextVisualLayout visual layout metadata
+     * @return updated draft
+     */
+    public GraphDraft withVisualLayout(Map<String, Object> nextVisualLayout) {
+        return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
+                environment, status, inputSchema, nodes, edges, nextVisualLayout, nodeFixtures, output,
+                operatorFingerprints, operatorSnapshots, revisionMetadata);
+    }
+
+    /**
      * Returns a copy with revision audit metadata.
      *
      * @param metadata revision metadata

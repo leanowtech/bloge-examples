@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryValidator;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -35,11 +38,17 @@ class DslImportControllerTest {
                 "ACTIVE",
                 List.of()
         );
+        var catalog = VisualCatalogTestSupport.catalogWithLibrary(emptyLibrary);
         DslImportService service = new DslImportService(
-                VisualCatalogTestSupport.catalogWithLibrary(emptyLibrary),
+                catalog,
                 new OperatorLibraryValidator()
         );
-        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new DslImportController(service)).build();
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new DslImportController(
+                service,
+                new InMemoryGraphDraftRepository(),
+                new GraphDraftValidator(catalog),
+                catalog
+        )).build();
 
         mockMvc.perform(post("/api/visual/dsl-imports/preview")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -69,5 +78,60 @@ class DslImportControllerTest {
                 .andExpect(jsonPath("$.coverage.missingOperatorCount").value(0))
                 .andExpect(jsonPath("$.draft.visualLayout.import.schemaNeutral").value(true))
                 .andExpect(jsonPath("$.sourceMap.nodes.eligibility.startLine").value(6));
+    }
+
+    @Test
+    void commitReprojectsDslAndStoresGovernedDraftWithSourceMap() throws Exception {
+        var catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer")
+        );
+        GraphDraftRepository repository = new InMemoryGraphDraftRepository();
+        DslImportService service = new DslImportService(catalog, new OperatorLibraryValidator());
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new DslImportController(
+                service,
+                repository,
+                new GraphDraftValidator(catalog),
+                catalog
+        )).build();
+
+        mockMvc.perform(post("/api/visual/dsl-imports/commit")
+                        .param("actor", "author")
+                        .param("changeSource", "legacy-dsl-import")
+                        .param("changeSummary", "Commit migrated DSL")
+                        .param("reason", "migration demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(OBJECT_MAPPER.writeValueAsString(Map.of(
+                                "sourceId", "migrated-eligibility.bloge",
+                                "dsl", """
+                                        graph migratedEligibility {
+                                          input {
+                                            score: Int
+                                            amount: Decimal
+                                          }
+                                          node eligibility : "risk:eligibility" {
+                                            input {
+                                              score = ctx.score
+                                              amount = ctx.amount
+                                            }
+                                          }
+                                        }
+                                        """,
+                                "catalogIds", List.of("risk-policy"),
+                                "mode", "commit"
+                        ))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.schemaVersion").value("bloge.visualGraphDraftImportResult.v1"))
+                .andExpect(jsonPath("$.imported").value(true))
+                .andExpect(jsonPath("$.draft.draftId").isNotEmpty())
+                .andExpect(jsonPath("$.draft.revision").value(1))
+                .andExpect(jsonPath("$.draft.graphName").value("migratedEligibility"))
+                .andExpect(jsonPath("$.draft.visualLayout.import.schemaNeutral").value(true))
+                .andExpect(jsonPath("$.draft.visualLayout.import.sourceMap.nodes.eligibility.startLine").value(6))
+                .andExpect(jsonPath("$.draft.revisionMetadata.createdBy").value("author"))
+                .andExpect(jsonPath("$.draft.revisionMetadata.updatedBy").value("author"))
+                .andExpect(jsonPath("$.draft.revisionMetadata.changeSource").value("legacy-dsl-import"))
+                .andExpect(jsonPath("$.draft.revisionMetadata.reason").value("migration demo"));
+
+        org.assertj.core.api.Assertions.assertThat(repository.all()).hasSize(1);
     }
 }

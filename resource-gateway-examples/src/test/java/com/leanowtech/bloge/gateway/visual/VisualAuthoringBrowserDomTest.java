@@ -3247,9 +3247,32 @@ class VisualAuthoringBrowserDomTest {
         waitForFocusedValue(wait, locator, "");
         StringBuilder typed = new StringBuilder();
         for (char character : value.toCharArray()) {
-            driver.switchTo().activeElement().sendKeys(String.valueOf(character));
+            String previous = typed.toString();
+            String expected = previous + character;
+            wait.until(ignored -> {
+                try {
+                    WebElement element = driver.findElement(locator);
+                    if (!element.isDisplayed() || !element.isEnabled()) {
+                        return false;
+                    }
+                    String currentValue = String.valueOf(element.getAttribute("value"));
+                    if (expected.equals(currentValue)) {
+                        return true;
+                    }
+                    if (!previous.equals(currentValue)) {
+                        return false;
+                    }
+                    if (!element.equals(driver.switchTo().activeElement())) {
+                        scrollIntoView(element);
+                        element.click();
+                    }
+                    driver.switchTo().activeElement().sendKeys(String.valueOf(character));
+                    return true;
+                } catch (NoSuchElementException | StaleElementReferenceException ex) {
+                    return false;
+                }
+            });
             typed.append(character);
-            String expected = typed.toString();
             waitForValue(wait, locator, expected);
             waitForFocusedValue(wait, locator, expected);
         }

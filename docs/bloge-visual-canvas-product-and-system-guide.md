@@ -283,16 +283,18 @@ operators:
 | `bloge-capability-catalog.json` | 业务项目执行 `bloge-maven-plugin:export-schema` 生成，schemaVersion 为 `bloge.capabilityCatalog.v1` | 描述业务 operator、input/output schema、config schema、表达式函数签名和导出诊断 |
 | `.bloge` DSL 源码 | 业务项目已有 `src/main/resources/bloge/*.bloge` | 描述真实业务编排逻辑，由官方 DSL parser/compiler 解析后投影为 `GraphDraft` |
 
-`bloge-capability-catalog.json` 不是唯一入口。如果团队已经有手写的 `bloge.visualOperatorLibrary.v1`、平台接口下发的 catalog、OpenAPI/AsyncAPI/resource descriptor 投影后的 visual library，或者其他工具生成的合法 schema，画布都应该按同一套 validator 接收，并用它渲染对应 DSL。
+`bloge-capability-catalog.json` 不是唯一入口。如果团队已经有手写的 `bloge.visualOperatorLibrary.v1`、平台接口下发的 catalog、OpenAPI/AsyncAPI/resource descriptor 投影后的 visual library，或者其他工具生成的合法 schema，画布都按同一套 validator 接收，并用它渲染对应 DSL。换句话说，**schema acquisition 是上游治理问题；通用画布的 rendering/commit 边界只关心 schema 结构是否合法、operator/function ref 能否解析、DSL 能否被 parser 接收**。
 
 当前状态要分开看：
 
 - 已落地：`/author/` 支持导入 `bloge.visualOperatorLibrary.v1` 和编辑 `GraphDraft`。
 - 已落地：后端提供 schema-neutral DSL preview API：`POST /api/visual/dsl-imports/preview`。它接受 `.bloge` 源码、当前已导入的 visual library id，或本次 preview 临时传入的 `inlineLibraries`，然后返回 `GraphDraft + sourceMap + diagnostics + coverage`。
+- 已落地：后端提供 schema-neutral DSL commit API：`POST /api/visual/dsl-imports/commit`。它接受与 preview 相同的 request，服务端重新投影 DSL，而不是信任浏览器临时 draft，然后保存为 governed `GraphDraft` revision，并返回 validation / dependency report。
 - 已落地：浏览器 `/author/` 左侧提供 **Legacy DSL** 面板。用户粘贴 DSL 后点击 `Render DSL`，画布会直接渲染 preview draft，并同步节点、边、Graph Contract、Runtime Context 变量表、Test Suite 初始行和 Export Draft。
+- 已落地：用户点击 `Commit Draft` 后，画布会调用 commit API 保存正式 draft；成功后提示 `Stored draft <draftId> @<revision>`，当前 Export Draft 会带上 stored draft identity 和 source map。
 - 已落地：如果 Library 面板当前内容是 JSON 形式的合法 `bloge.visualOperatorLibrary.v1`，Render DSL 会把它作为 `inlineLibraries` 随 preview 一起提交；如果已经 Import 入库，则会通过当前 catalog 的 `operatorLibraryIds` 参与解析。
 - 已落地：Legacy DSL 面板会展示 source map 行列表。点击 `node` / `binding` / `edge` 行可以选中对应画布节点，导出的 draft 也会在 `visualLayout.import.sourceMap` 保留源码行列映射。
-- 未落地：preview 后保存为 stored draft、semantic round-trip 回写校验。
+- 未落地：semantic round-trip 回写校验。
 - 未落地：`bloge.capabilityCatalog.v1` 到 `bloge.visualOperatorLibrary.v1` 的正式 adapter。现在如果 schema 已经是合法 visual operator library，可以直接用于 DSL preview。
 
 设计方案见 [存量 BLOGE DSL 业务迁移到可视化编排设计方案](./bloge-legacy-dsl-visual-migration-design.md)。
@@ -302,7 +304,7 @@ operators:
 ![Legacy DSL source map 标注](assets/bloge-author-legacy-dsl-source-map-annotated.svg)
 
 1. **Existing .bloge DSL**：这里粘贴或加载存量 `.bloge` 文件。示例中 DSL 声明了 graph 级 `input` / `output`，这些 schema 会进入 Graph Contract。
-2. **Render with valid schema**：点击 `Render DSL` 后，服务端用当前已导入 catalog 和本次 inline library 解析 operator/function 引用；成功态会显示节点/边数量。
+2. **Render with valid schema**：点击 `Render DSL` 后，服务端用当前已导入 catalog 和本次 inline library 解析 operator/function 引用；成功态会显示节点/边数量。点击 `Commit Draft` 会用同一 request 在服务端重新投影并保存为正式 draft revision。
 3. **Source map refs**：source map 会列出节点、输入绑定和数据边对应的 DSL 行列与源码片段，便于迁移审阅。
 4. **Click row to select node**：点击 source map 行会选中对应画布节点；如果缺 operator/function schema，系统仍尽量渲染图，并在同一区域显示 diagnostics。
 
@@ -314,7 +316,8 @@ operators:
 4. 画布渲染节点和边；Graph Contract 同步显示 DSL `input` / `output`；Runtime Context 会根据 input schema 生成变量行。
 5. 若出现 missing operator/function，画布仍会尽量渲染结构，并在 Legacy DSL 面板显示 diagnostics；补齐 schema 后再次 Render。
 6. 在 Source map 中点击行定位节点，确认 DSL 片段和画布元素对应关系。
-7. 继续使用 Auto Layout、Validate、Simulate、Operator Test Suite、全图 Test Suite 和 Export Draft。
+7. 如果确认迁移结果可作为资产继续协作，点击 `Commit Draft`，把 DSL 投影保存为 stored draft/revision；如果只是临时审阅，可以跳过保存。
+8. 继续使用 Auto Layout、Validate、Simulate、Operator Test Suite、全图 Test Suite 和 Export Draft。
 
 对应 API 的最小调用方式：
 
@@ -334,6 +337,25 @@ Content-Type: application/json
 }
 ```
 
+保存为正式 draft 时使用同一请求体，只需改调用路径和 `mode`：
+
+```http
+POST /api/visual/dsl-imports/commit
+Content-Type: application/json
+```
+
+```json
+{
+  "sourceId": "loan-approval.bloge",
+  "dsl": "graph loanApproval { node eligibility : \"risk:eligibility\" { input { score = ctx.score } } }",
+  "catalogIds": ["risk-policy"],
+  "inlineLibraries": [],
+  "mode": "commit"
+}
+```
+
+commit 会返回 `bloge.visualGraphDraftImportResult.v1`，其中 `draft.draftId` / `draft.revision` 是 repository 分配的正式身份，`draft.visualLayout.import.sourceMap` 会保留源码映射。parse failure 或 unsupported root 会拒绝保存；missing operator/function 会保存为可修复迁移 draft，并通过 validation/dependency diagnostics 暴露。
+
 返回重点字段：
 
 | 字段 | 含义 |
@@ -350,9 +372,8 @@ Content-Type: application/json
 更完整的迁移专线落地后，还应补齐：
 
 1. `bloge.capabilityCatalog.v1` 自动适配成画布可消费的 `bloge.visualOperatorLibrary.v1`，业务项目可以直接交付框架级 export 产物。
-2. Legacy DSL preview 确认后保存为 stored draft，纳入 revision、dependency report、schema drift review 和 publication 流程。
-3. 对 missing operator、missing function、opaque schema 或 unsupported syntax 给出更细的修复向导和 source snippet。
-4. 需要回写 DSL 时，系统执行 semantic round-trip：原始 DSL -> AST，与 GraphDraft 生成的 DSL -> AST 做语义等价校验；不等价时不能自动覆盖原文件。
+2. 对 missing operator、missing function、opaque schema 或 unsupported syntax 给出更细的修复向导和 source snippet。
+3. 需要回写 DSL 时，系统执行 semantic round-trip：原始 DSL -> AST，与 GraphDraft 生成的 DSL -> AST 做语义等价校验；不等价时不能自动覆盖原文件。
 
 这条路径的关键产品承诺是 **loss-aware import**：能结构化投影的 DSL 会变成可编辑画布节点；暂不支持的复杂语义会保留成带 source snippet 的 opaque 节点或诊断项，不会静默丢失。
 
@@ -793,7 +814,7 @@ GET /api/gateway/examples/scenarios/{graphName}/diagram
 | --- | --- |
 | `visual/catalog` | operator catalog、算子库导入/导出、builtin library projection、profile、impact、revision |
 | `visual/connection` | 服务端连接候选和连接预检 |
-| `visual/importer` | schema-neutral `.bloge` DSL preview import，投影 `GraphDraft`、source map、coverage 和 migration diagnostics |
+| `visual/importer` | schema-neutral `.bloge` DSL preview/commit import，投影并保存 `GraphDraft`、source map、coverage 和 migration diagnostics |
 | `visual/validation` | GraphDraft 合同、schema、runtime/design readiness、action readiness |
 | `visual/simulation` | mock/real 混合模拟、fixture、trace、sample generator |
 | `visual/publication` | publication 冻结、导入导出、依赖报告 |
@@ -880,6 +901,7 @@ resource gateway 自身继续保留：
 | `POST` | `/admin/visual-operator-libraries/import-bundle` | 导入算子库 bundle |
 | `GET` | `/api/visual/builtin-library/export` | 导出内置 operator registry 为 portable library |
 | `POST` | `/api/visual/dsl-imports/preview` | 以 schema-neutral 方式把 `.bloge` DSL + 当前 catalog/inline libraries 投影为 visual `GraphDraft` preview |
+| `POST` | `/api/visual/dsl-imports/commit` | 以同一 schema-neutral request 重新投影 DSL，并保存为 governed stored draft revision |
 | `POST` | `/api/visual/connections/candidates` | 枚举连接候选 |
 | `POST` | `/api/visual/connections/check` | 预检单条连接 |
 | `POST` | `/api/visual/drafts/validate` | 校验 transient draft |

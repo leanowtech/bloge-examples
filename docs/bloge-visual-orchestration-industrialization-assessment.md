@@ -93,7 +93,7 @@
 30. draft dependency schema drift issue 现在还携带 bounded `schemaChanges` keyword diff rows：服务端会在 drift path 上提取 `type`、`enum`、`const`、`format`、`pattern`、`multipleOf`、range、length、required、properties、items/contains 等关键 JSON Schema keyword 的 frozen/current compact value；selected contract 会把 `type: number -> integer` 这类 diff row 并入 port summary、outline drift label 和 `Schema Search`，真实浏览器覆盖 keyword diff 文本、ARIA label 和 390px mobile no-overflow。
 31. draft dependency schema drift issue 现在还携带 bounded `schemaPreview`：服务端在 drift path 上截取冻结快照与当前 catalog 的 JSON Schema 片段，限制深度、对象 key、数组项和字符串长度；selected contract 直接渲染并排 `Frozen schema` / `Current schema` review block，`Schema Search` 可按 preview 内容如 `frozen integer` 命中 drift row，真实浏览器覆盖 schema preview 文本、review row DOM 和 390px mobile no-overflow。
 32. draft dependency report 现在输出 `schemaRebaseDecisions` 和 `schemaRebaseDecisionStateCounts`：服务端把 drifted/missing/catalog/scope/schema drift 节点归入 `ready-rebase`、`ready-capture`、`repair-review`、`blocked` 决策队列；Draft Dependencies 面板可展示队列、focus 节点、在 dirty draft 时禁用 rebase，并通过现有 revision-guarded rebase API 批量刷新 eligible 节点；selected operator contract 也显示当前节点的 `Schema Rebase Queue`，真实浏览器覆盖 repair-review 队列、批量 rebase、selected inspector 队列和 390px mobile no-overflow。
-33. schema-neutral DSL preview import 已落地到后端和 `/author/`：`POST /api/visual/dsl-imports/preview` 接受 `.bloge` 源码、已导入 catalog id 或 preview-only inline visual libraries，复用官方 DSL parser 投影为 `GraphDraft + sourceMap + coverage + diagnostics`；普通 node、transform、decision_table、graph input/output schema 和 missing operator/function diagnostics 已有单元/API 测试覆盖。浏览器 Legacy DSL 面板可以 Render DSL、展示 source map 行列表、点击 source map 行选中画布节点，并在导出 draft 中保留 `visualLayout.import.sourceMap`。
+33. schema-neutral DSL preview/commit import 已落地到后端和 `/author/`：`POST /api/visual/dsl-imports/preview` 接受 `.bloge` 源码、已导入 catalog id 或 preview-only inline visual libraries，复用官方 DSL parser 投影为 `GraphDraft + sourceMap + coverage + diagnostics`；`POST /api/visual/dsl-imports/commit` 接受同一 request，服务端重新投影后保存 governed stored draft/revision，并返回 validation/dependency report。普通 node、transform、decision_table、graph input/output schema、source map 持久化和 missing operator/function diagnostics 已有单元/API/前端测试覆盖。浏览器 Legacy DSL 面板可以 Render DSL、Commit Draft、展示 source map 行列表、点击 source map 行选中画布节点，并在导出 draft 中保留 `visualLayout.import.sourceMap` 与 stored draft identity。
 
 ### 尚未成立
 
@@ -102,7 +102,7 @@
 3. IAM/RBAC/secret/egress/审计查询还不是生产后台级别。
 4. durable、event、message、webhook、AI tool 的真实运行时还没有完整闭环。
 5. 前端仍是示例项目形态，复杂度已经接近需要模块化拆分的边界。
-6. 存量 DSL 迁移已经有后端 preview、`/author/` 导入面板和 source map 行定位；commit 保存、opaque snippet 修复向导和 semantic round-trip 还没闭环。
+6. 存量 DSL 迁移已经有后端 preview/commit、`/author/` 导入面板、source map 行定位和 stored draft 保存；opaque snippet 修复向导和 semantic round-trip 还没闭环。
 
 ## 4. 本轮迭代复盘
 
@@ -134,6 +134,20 @@ DSL preview 返回 source map 后，如果浏览器只能看到“已渲染成�
 3. 导出的 draft 会保留 `visualLayout.import.sourceMap`，让 preview lineage 不随浏览器状态丢失。
 4. 产品指南新增真实浏览器截图和标注，明确合法 schema + DSL 的成功路径，以及缺失 schema 时的 loss-aware diagnostics。
 
+### 2026-07-07：Legacy DSL Commit Draft
+
+触发问题：
+
+通用画布不应关心 schema 是 Maven export、手写 JSON、平台 catalog 还是其他工具生成；但只渲染 preview 仍不足以支撑存量业务从手写 DSL 迁移到可视化交付。合法 schema + DSL 的投影结果需要能进入 draft repository，纳入 revision、validation、dependency report 和后续协作流程。
+
+本轮完成：
+
+1. 新增 `POST /api/visual/dsl-imports/commit`，请求体与 preview 一致，服务端重新执行 DSL projection，而不是保存浏览器回传的临时 draft。
+2. commit 成功后保存为 stored `GraphDraft`，repository 分配 `draftId/revision`，并在 `revisionMetadata` 中记录 actor/changeSource/changeSummary/reason。
+3. `visualLayout.import.sourceMap` 会随 stored draft 一起持久化，避免源码映射只停留在浏览器状态。
+4. parse failure/root unsupported 会拒绝保存；missing operator/function 仍可保存为 repairable migration draft，并通过 validation/dependency diagnostics 暴露。
+5. `/author/` Legacy DSL 面板新增 `Commit Draft`，成功后提示 `Stored draft <draftId> @<revision>`，当前 Export Draft 也携带 stored draft identity。
+
 验证：
 
 ```bash
@@ -145,7 +159,7 @@ npm --prefix resource-gateway-examples/src/main/frontend run build
 
 剩余风险：
 
-这轮把“存量 DSL 能被服务端投影成可见 draft”的第一段打通了，但还不是完整迁移工作台。浏览器 Legacy DSL Import 面板、preview commit、source snippet/opaque 节点、复杂 DSL primitive、批量覆盖率报告和 semantic round-trip 仍是后续缺口，因此综合工业化分数暂不调整。
+这轮把“存量 DSL 能被服务端投影成可见 draft 并保存为 governed draft revision”的第一段打通了，但还不是完整迁移工作台。source snippet/opaque 节点、复杂 DSL primitive、批量覆盖率报告和 semantic round-trip 仍是后续缺口，因此综合工业化分数暂不调整。
 
 ### 2026-07-05：Schema Rebase Decision Queue
 

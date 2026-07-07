@@ -147,6 +147,8 @@ export interface DraftEdge {
 /** A visual graph draft (bloge.visualGraphDraft.v1) — the subset the authoring app sends or exports. */
 export interface GraphDraft {
   schemaVersion?: string;
+  draftId?: string;
+  revision?: number;
   graphName: string;
   inputSchema?: SchemaEnvelope;
   nodes: DraftNode[];
@@ -259,6 +261,17 @@ export interface DslVisualProjection {
   coverage?: DslImportCoverage;
   roundTrip?: DslRoundTripSummary;
   diagnostics?: VisualDiagnostic[];
+}
+
+/** Result of committing a DSL import projection into the stored draft repository. */
+export interface GraphDraftImportResult {
+  schemaVersion?: string;
+  imported: boolean;
+  draft?: GraphDraft;
+  diagnostics?: VisualDiagnostic[];
+  validation?: VisualValidationResult;
+  dependencyReport?: Record<string, unknown>;
+  targetDependencyReport?: Record<string, unknown>;
 }
 
 /** Server-derived graph-level readiness returned by transient draft validation. */

@@ -11,6 +11,7 @@ import type {
   GatewayExampleRunResult,
   GatewayExampleScenario,
   GraphDraft,
+  GraphDraftImportResult,
   OperatorLibrary,
   OperatorLibraryValidationResult,
   OperatorCatalogResponse,
@@ -219,6 +220,22 @@ export async function validateDraft(draft: GraphDraft): Promise<VisualValidation
 export async function previewDslImport(request: DslImportPreviewRequest): Promise<DslVisualProjection> {
   return readJsonMutation<DslVisualProjection>(
     await fetch('/api/visual/dsl-imports/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    }),
+  );
+}
+
+/** Re-projects existing BLOGE DSL server-side and stores it as a governed visual draft revision. */
+export async function commitDslImport(request: DslImportPreviewRequest): Promise<GraphDraftImportResult> {
+  const query = new URLSearchParams({
+    actor: 'author-canvas',
+    changeSource: 'legacy-dsl-import',
+    changeSummary: `Imported ${request.sourceId || 'inline.dsl'} from Legacy DSL panel`,
+  });
+  return readJsonMutation<GraphDraftImportResult>(
+    await fetch(`/api/visual/dsl-imports/commit?${query.toString()}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),

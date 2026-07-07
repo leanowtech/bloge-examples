@@ -59,6 +59,8 @@ export interface CanvasEdge {
 }
 
 export interface CanvasDraftProjection {
+  draftId?: string;
+  revision?: number;
   graphName: string;
   nodes: CanvasNode[];
   edges: CanvasEdge[];
@@ -72,6 +74,8 @@ export interface CanvasDraftProjection {
 }
 
 export interface GraphDraftExportOptions {
+  draftId?: string;
+  revision?: number;
   visualLayout?: Record<string, unknown>;
   operatorFingerprints?: Record<string, string>;
   operatorSnapshots?: Record<string, OperatorDefinition>;
@@ -479,6 +483,8 @@ export function fromGraphDraft(draft: GraphDraft): CanvasDraftProjection {
   }));
   const visualLayout = isRecord(draft.visualLayout) ? draft.visualLayout : undefined;
   return {
+    draftId: draft.draftId,
+    revision: draft.revision,
     graphName: draft.graphName || 'visualGraph',
     nodes,
     edges,
@@ -530,6 +536,8 @@ export function toExportableGraphDraft(
   const draft = toGraphDraft(graphName, nodes, edges, outputNodeId, inputSchema);
   return {
     schemaVersion: GRAPH_DRAFT_SCHEMA_VERSION,
+    ...(options.draftId ? { draftId: options.draftId } : {}),
+    ...(typeof options.revision === 'number' && options.revision > 0 ? { revision: options.revision } : {}),
     ...draft,
     ...(options.visualLayout && Object.keys(options.visualLayout).length > 0
       ? { visualLayout: options.visualLayout }

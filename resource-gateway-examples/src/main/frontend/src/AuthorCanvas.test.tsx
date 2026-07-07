@@ -116,6 +116,22 @@ describe('AuthorCanvas operator-library intake', () => {
         expect(body.operatorLibraryIds).toEqual(imported ? ['risk-policy'] : []);
         return jsonResponse(dslProjection());
       }
+      if (url.startsWith('/api/visual/dsl-imports/commit?')) {
+        expect(url).toContain('actor=author-canvas');
+        expect(url).toContain('changeSource=legacy-dsl-import');
+        expect(init).toMatchObject({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const body = JSON.parse(String(init?.body ?? '{}'));
+        expect(body).toMatchObject({
+          sourceId: 'migrated-eligibility.bloge',
+          mode: 'commit',
+        });
+        expect(body.dsl).toContain('graph migratedEligibility');
+        expect(body.operatorLibraryIds).toEqual(imported ? ['risk-policy'] : []);
+        return jsonResponse(dslCommitResult(), { status: 201 });
+      }
       throw new Error(`Unexpected fetch: ${url}`);
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -203,11 +219,11 @@ describe('AuthorCanvas operator-library intake', () => {
 
     await waitFor(() =>
       expect(query('[data-testid="legacy-dsl-notice"]').textContent)
-        .toContain('Rendered 2 nodes / 1 edges.'),
+        .toContain('Rendered 2 nodes / 2 edges.'),
     );
 
     expect(query('[data-testid="legacy-dsl-coverage"]').textContent).toContain('2 nodes');
-    expect(query('[data-testid="legacy-dsl-source-map"]').textContent).toContain('4 refs');
+    expect(query('[data-testid="legacy-dsl-source-map"]').textContent).toContain('6 refs');
     expect(query('[data-testid="legacy-dsl-source-map"]').textContent).toContain('node · 10:3');
     expect(query('[data-testid="legacy-dsl-source-map"]').textContent)
       .toContain('node eligibility : "risk:eligibility"');
@@ -265,6 +281,26 @@ describe('AuthorCanvas operator-library intake', () => {
     await click(query<HTMLButtonElement>('[data-testid="legacy-dsl-source-map-row:node:eligibility"]'));
     expect(query('[data-testid="legacy-dsl-source-map-row:node:eligibility"]').className)
       .toContain('selected');
+
+    await click(query<HTMLButtonElement>('[data-testid="legacy-dsl-commit"]'));
+    await waitFor(() =>
+      expect(query('[data-testid="legacy-dsl-notice"]').textContent)
+        .toContain('Stored draft draft-migrated-eligibility @1.'),
+    );
+    const storedExport = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
+    expect(storedExport).toMatchObject({
+      draftId: 'draft-migrated-eligibility',
+      revision: 1,
+      visualLayout: {
+        import: {
+          sourceMap: {
+            nodes: {
+              eligibility: { startLine: 10, startColumn: 3 },
+            },
+          },
+        },
+      },
+    });
   });
 });
 
@@ -1718,6 +1754,12 @@ function dslProjection(): unknown {
           source: { nodeId: 'eligibility', port: 'output', path: 'eligible' },
           target: { nodeId: 'response', port: 'inputs', path: 'eligible' },
         },
+        {
+          id: 'data_eligibility_response_ruleId',
+          kind: 'data',
+          source: { nodeId: 'eligibility', port: 'output', path: 'ruleId' },
+          target: { nodeId: 'response', port: 'inputs', path: 'ruleId' },
+        },
       ],
       visualLayout: {
         import: { mode: 'preview', sourceId: 'migrated-eligibility.bloge', schemaNeutral: true },
@@ -1753,7 +1795,7 @@ function dslProjection(): unknown {
     coverage: {
       memberCount: 2,
       projectedNodeCount: 2,
-      edgeCount: 1,
+      edgeCount: 2,
       unsupportedSyntaxCount: 0,
       missingOperatorCount: 0,
       missingFunctionCount: 0,
@@ -1780,6 +1822,12 @@ function dslProjection(): unknown {
           startColumn: 16,
           dslKind: 'NodeOutputPath',
         },
+        data_eligibility_response_ruleId: {
+          sourceId: 'migrated-eligibility.bloge',
+          startLine: 18,
+          startColumn: 14,
+          dslKind: 'NodeOutputPath',
+        },
       },
       bindings: {
         '/nodes/eligibility/inputs/score': {
@@ -1788,9 +1836,42 @@ function dslProjection(): unknown {
           startColumn: 15,
           dslKind: 'InputBinding',
         },
+        '/nodes/eligibility/inputs/amount': {
+          sourceId: 'migrated-eligibility.bloge',
+          startLine: 13,
+          startColumn: 16,
+          dslKind: 'InputBinding',
+        },
       },
     },
     diagnostics: [],
+  };
+}
+
+function dslCommitResult(): unknown {
+  const projection = dslProjection() as {
+    draft: Record<string, unknown>;
+    sourceMap: Record<string, unknown>;
+  };
+  const visualLayout = projection.draft.visualLayout as { import?: Record<string, unknown> };
+  return {
+    schemaVersion: 'bloge.visualGraphDraftImportResult.v1',
+    imported: true,
+    draft: {
+      ...projection.draft,
+      draftId: 'draft-migrated-eligibility',
+      revision: 1,
+      visualLayout: {
+        ...visualLayout,
+        import: {
+          ...(visualLayout.import ?? {}),
+          mode: 'commit',
+          sourceMap: projection.sourceMap,
+        },
+      },
+    },
+    diagnostics: [],
+    validation: { valid: true, diagnostics: [] },
   };
 }
 

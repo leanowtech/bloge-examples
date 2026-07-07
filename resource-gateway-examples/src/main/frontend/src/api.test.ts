@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   buildGatewayRunRequest,
+  commitDslImport,
   fetchGatewayDiagram,
   fetchGatewayScenarios,
   fetchOperatorCatalog,
@@ -146,6 +147,49 @@ describe('operator library API client', () => {
         dsl: 'graph migratedEligibility {}',
         operatorLibraryIds: ['risk-policy'],
         mode: 'preview',
+      }),
+    });
+  });
+
+  it('commits schema-neutral BLOGE DSL import as a governed visual draft', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      schemaVersion: 'bloge.visualGraphDraftImportResult.v1',
+      imported: true,
+      draft: {
+        schemaVersion: 'bloge.visualGraphDraft.v1',
+        draftId: 'stored-draft-1',
+        revision: 1,
+        graphName: 'migratedEligibility',
+        nodes: [{ id: 'eligibility', operatorRef: 'risk:eligibility', position: { x: 120, y: 120 } }],
+        edges: [],
+        visualLayout: { import: { schemaNeutral: true } },
+        output: { nodeId: 'eligibility', path: '' },
+      },
+      diagnostics: [],
+      validation: { valid: true, diagnostics: [] },
+    }), { status: 201 }));
+
+    const result = await commitDslImport({
+      sourceId: 'migrated-eligibility.bloge',
+      dsl: 'graph migratedEligibility {}',
+      operatorLibraryIds: ['risk-policy'],
+      mode: 'commit',
+    });
+
+    expect(result.imported).toBe(true);
+    expect(result.draft?.draftId).toBe('stored-draft-1');
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/api/visual/dsl-imports/commit?');
+    expect(String(url)).toContain('actor=author-canvas');
+    expect(String(url)).toContain('changeSource=legacy-dsl-import');
+    expect(init).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceId: 'migrated-eligibility.bloge',
+        dsl: 'graph migratedEligibility {}',
+        operatorLibraryIds: ['risk-policy'],
+        mode: 'commit',
       }),
     });
   });
