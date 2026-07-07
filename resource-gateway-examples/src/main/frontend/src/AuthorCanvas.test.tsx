@@ -922,6 +922,21 @@ describe('AuthorCanvas connection guide', () => {
     await click(dialogQuery<HTMLButtonElement>('[data-testid="node-input-add"]'));
     await setControlValue(dialogQuery<HTMLInputElement>('[data-testid="node-input-context-path:0"]'), 'request.customerId');
     await setControlValue(dialogQuery<HTMLTextAreaElement>('[data-testid="operator-detail-output-fixture"]'), '{"ok":true}');
+    expect(dialogQuery('[data-testid="operator-test-suite"]').textContent).toContain('Operator Test Suite');
+    expect(dialogQuery('[data-testid="operator-test-status:0"]').textContent).toContain('valid');
+    await click(dialogQuery<HTMLButtonElement>('[data-testid="operator-test-add"]'));
+    await waitFor(() =>
+      expect(dialogQuery('[data-testid="operator-test-row:1"]').textContent).toContain('Apply Fixture'),
+    );
+    await setControlValue(
+      dialogQuery<HTMLTextAreaElement>('[data-testid="operator-test-input:1"]'),
+      '{"customerId":"c-42"}',
+    );
+    await setControlValue(
+      dialogQuery<HTMLTextAreaElement>('[data-testid="operator-test-output:1"]'),
+      '{"ok":false,"source":"operator-case"}',
+    );
+    await click(dialogQuery<HTMLButtonElement>('[data-testid="operator-test-apply:1"]'));
 
     const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
     expect(exported.nodes[0]).toMatchObject({
@@ -940,7 +955,8 @@ describe('AuthorCanvas connection guide', () => {
     });
     expect(exported.nodeFixtures).toMatchObject({
       n1: {
-        output: { ok: true },
+        expectedInput: { customerId: 'c-42' },
+        output: { ok: false, source: 'operator-case' },
       },
     });
   });

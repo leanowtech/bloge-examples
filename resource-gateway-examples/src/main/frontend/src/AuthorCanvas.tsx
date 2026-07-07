@@ -183,6 +183,19 @@ interface TransformEditorModel {
   assignments: TransformAssignmentRow[];
 }
 
+interface OperatorTestSuiteDraftRow {
+  id: string;
+  name: string;
+  inputText: string;
+  outputText: string;
+}
+
+interface OperatorTestSuiteCompilation {
+  input?: unknown;
+  output?: unknown;
+  error?: string;
+}
+
 interface OperatorNodeMetrics {
   requiredInputCount: number;
   inputCount: number;
@@ -411,6 +424,64 @@ function emptySimulationTableRow(id: string, inputSchema: SchemaEnvelope): Simul
     contextText: formatDraftJson(sampleFromSchemaEnvelope(inputSchema)),
     fixturesText: '{}',
     expectedOutputText: '',
+  };
+}
+
+function operatorInputSample(operator: OperatorDefinition | undefined): unknown {
+  const inputs = operator?.ports?.inputs ?? [];
+  if (inputs.length === 0) {
+    return {};
+  }
+  if (inputs.length === 1) {
+    return sampleFromSchemaEnvelope(inputs[0].schema);
+  }
+  return Object.fromEntries(
+    inputs.map((input) => [
+      input.name || 'input',
+      sampleFromSchemaEnvelope(input.schema),
+    ]),
+  );
+}
+
+function operatorTestOutputText(operator: OperatorDefinition | undefined): string {
+  return operator ? fixtureDraftForOperator(operator) : 'null';
+}
+
+function defaultOperatorTestSuiteRows(
+  node: Node<NodeData>,
+  operator: OperatorDefinition | undefined,
+): OperatorTestSuiteDraftRow[] {
+  return [
+    {
+      id: 'case-1',
+      name: `${node.data.label} contract case`,
+      inputText: formatDraftJson(operatorInputSample(operator)),
+      outputText: operatorTestOutputText(operator),
+    },
+  ];
+}
+
+function parseOperatorTestSuiteRow(row: OperatorTestSuiteDraftRow): OperatorTestSuiteCompilation {
+  const messages: string[] = [];
+  let input: unknown;
+  let output: unknown;
+
+  try {
+    input = JSON.parse(row.inputText.trim() || 'null') as unknown;
+  } catch {
+    messages.push('Input case must be valid JSON.');
+  }
+
+  try {
+    output = JSON.parse(row.outputText.trim() || 'null') as unknown;
+  } catch {
+    messages.push('Output sample must be valid JSON.');
+  }
+
+  return {
+    input,
+    output,
+    ...(messages.length > 0 ? { error: messages.join(' ') } : {}),
   };
 }
 
@@ -2273,6 +2344,121 @@ function OperatorFixtureEditor({
   );
 }
 
+function OperatorTestSuiteEditor({
+  rows,
+  onAdd,
+  onUpdate,
+  onRemove,
+  onApplyFixture,
+}: {
+  rows: OperatorTestSuiteDraftRow[];
+  onAdd: () => void;
+  onUpdate: (rowId: string, patch: Partial<OperatorTestSuiteDraftRow>) => void;
+  onRemove: (rowId: string) => void;
+  onApplyFixture: (row: OperatorTestSuiteDraftRow) => void;
+}) {
+  const invalidCount = rows
+    .map(parseOperatorTestSuiteRow)
+    .filter((compilation) => compilation.error)
+    .length;
+  return (
+    <section className="operator-detail-section operator-test-suite" data-testid="operator-test-suite">
+      <div className="operator-detail-section-heading">
+        <h3>Operator Test Suite</h3>
+        <div className="test-table-actions">
+          <span className={`table-status ${invalidCount > 0 ? 'failed' : 'passed'}`}>
+            {invalidCount > 0 ? `${invalidCount} invalid` : `${rows.length} valid`}
+          </span>
+          <button
+            type="button"
+            className="secondary compact"
+            data-testid="operator-test-add"
+            onClick={onAdd}
+          >
+            Add Case
+          </button>
+        </div>
+      </div>
+      {rows.length > 0 ? (
+        <ol className="test-table-list operator-test-table">
+          {rows.map((row, index) => {
+            const compilation = parseOperatorTestSuiteRow(row);
+            const rowStatus = compilation.error ? 'failed' : 'passed';
+            return (
+              <li
+                key={row.id}
+                className={`test-table-row ${rowStatus}`}
+                data-testid={`operator-test-row:${index}`}
+              >
+                <div className="test-table-row-heading">
+                  <input
+                    aria-label={`Operator test case name ${index + 1}`}
+                    data-testid={`operator-test-name:${index}`}
+                    value={row.name}
+                    onChange={(event) => onUpdate(row.id, { name: event.target.value })}
+                  />
+                  <span
+                    className={`table-status ${rowStatus}`}
+                    data-testid={`operator-test-status:${index}`}
+                  >
+                    {compilation.error ? 'invalid' : 'valid'}
+                  </span>
+                  <button
+                    type="button"
+                    className="secondary compact"
+                    data-testid={`operator-test-apply:${index}`}
+                    onClick={() => onApplyFixture(row)}
+                    disabled={Boolean(compilation.error)}
+                  >
+                    Apply Fixture
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary compact"
+                    aria-label={`Remove operator test case ${index + 1}`}
+                    data-testid={`operator-test-remove:${index}`}
+                    onClick={() => onRemove(row.id)}
+                    disabled={rows.length <= 1}
+                  >
+                    Remove
+                  </button>
+                </div>
+                <label className="fixture-field">
+                  <span>Input case</span>
+                  <textarea
+                    aria-label={`Operator test input case ${index + 1}`}
+                    data-testid={`operator-test-input:${index}`}
+                    spellCheck={false}
+                    value={row.inputText}
+                    onChange={(event) => onUpdate(row.id, { inputText: event.target.value })}
+                  />
+                </label>
+                <label className="fixture-field">
+                  <span>Output sample</span>
+                  <textarea
+                    aria-label={`Operator test output sample ${index + 1}`}
+                    data-testid={`operator-test-output:${index}`}
+                    spellCheck={false}
+                    value={row.outputText}
+                    onChange={(event) => onUpdate(row.id, { outputText: event.target.value })}
+                  />
+                </label>
+                {compilation.error && (
+                  <p className="fixture-error" data-testid={`operator-test-error:${index}`}>
+                    {compilation.error}
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <p className="muted">No operator test cases.</p>
+      )}
+    </section>
+  );
+}
+
 function SchemaPortCards({
   title,
   direction,
@@ -2375,6 +2561,7 @@ function OperatorDetailDialog({
   expectedInputDraft,
   hasFixtureDraft,
   fixtureError,
+  operatorTestRows,
   onClose,
   onLabelChange,
   onConfigPatch,
@@ -2389,6 +2576,10 @@ function OperatorDetailDialog({
   onExpectedInputChange,
   onUseFixtureSample,
   onClearFixture,
+  onOperatorTestAdd,
+  onOperatorTestUpdate,
+  onOperatorTestRemove,
+  onOperatorTestApplyFixture,
   onDecisionChange,
   onTransformChange,
 }: {
@@ -2400,6 +2591,7 @@ function OperatorDetailDialog({
   expectedInputDraft: string;
   hasFixtureDraft: boolean;
   fixtureError: string | undefined;
+  operatorTestRows: OperatorTestSuiteDraftRow[];
   onClose: () => void;
   onLabelChange: (value: string) => void;
   onConfigPatch: (patch: Record<string, unknown>) => void;
@@ -2414,6 +2606,10 @@ function OperatorDetailDialog({
   onExpectedInputChange: (value: string) => void;
   onUseFixtureSample: () => void;
   onClearFixture: () => void;
+  onOperatorTestAdd: () => void;
+  onOperatorTestUpdate: (rowId: string, patch: Partial<OperatorTestSuiteDraftRow>) => void;
+  onOperatorTestRemove: (rowId: string) => void;
+  onOperatorTestApplyFixture: (row: OperatorTestSuiteDraftRow) => void;
   onDecisionChange: (editor: DecisionTableEditorModel) => void;
   onTransformChange: (editor: TransformEditorModel) => void;
 }) {
@@ -2484,6 +2680,14 @@ function OperatorDetailDialog({
             onExpectedInputChange={onExpectedInputChange}
             onUseSample={onUseFixtureSample}
             onClear={onClearFixture}
+          />
+
+          <OperatorTestSuiteEditor
+            rows={operatorTestRows}
+            onAdd={onOperatorTestAdd}
+            onUpdate={onOperatorTestUpdate}
+            onRemove={onOperatorTestRemove}
+            onApplyFixture={onOperatorTestApplyFixture}
           />
 
           <SchemaPortCards title="Input schema" direction="input" ports={inputs} />
@@ -2865,6 +3069,7 @@ export default function AuthorCanvas() {
   const [explicitOutputNodeId, setExplicitOutputNodeId] = useState('');
   const [fixtureDrafts, setFixtureDrafts] = useState<Record<string, string>>({});
   const [fixtureInputDrafts, setFixtureInputDrafts] = useState<Record<string, string>>({});
+  const [operatorTestSuites, setOperatorTestSuites] = useState<Record<string, OperatorTestSuiteDraftRow[]>>({});
   const [simulationTableRows, setSimulationTableRows] = useState<SimulationTableTestDraftRow[]>([]);
   const [simulationTableResults, setSimulationTableResults] = useState<Record<string, SimulationTableCaseResult>>({});
   const [tableTestingBusy, setTableTestingBusy] = useState(false);
@@ -2885,6 +3090,7 @@ export default function AuthorCanvas() {
   const counter = useRef(0);
   const contextVariableCounter = useRef(0);
   const tableTestCounter = useRef(0);
+  const operatorTestCounter = useRef(0);
   const candidatePreviewSequence = useRef(0);
   const connectionGuideSequence = useRef(0);
 
@@ -2945,6 +3151,13 @@ export default function AuthorCanvas() {
           }
           return next;
         });
+        setOperatorTestSuites((current) => {
+          const next = { ...current };
+          for (const id of removedNodeIds) {
+            delete next[id];
+          }
+          return next;
+        });
         setSelectedNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
         setOperatorDetailNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
         setExplicitOutputNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
@@ -2972,15 +3185,17 @@ export default function AuthorCanvas() {
     const placementIndex = nextIndex - 1;
     const canvasWidth = flowRef.current?.clientWidth ?? 0;
     const summary = summarizeOperator(operator);
-    setNodes((current) => [
+    const node: Node<NodeData> = {
+      id,
+      type: 'operator',
+      position: position ?? defaultOperatorPosition(placementIndex, canvasWidth),
+      data: { label: summary.name, operatorRef: operator.operatorRef, summary },
+    };
+    setNodes((current) => [...current, node]);
+    setOperatorTestSuites((current) => ({
       ...current,
-      {
-        id,
-        type: 'operator',
-        position: position ?? defaultOperatorPosition(placementIndex, canvasWidth),
-        data: { label: summary.name, operatorRef: operator.operatorRef, summary },
-      },
-    ]);
+      [id]: defaultOperatorTestSuiteRows(node, operator),
+    }));
     setSelectedNodeId(id);
   }, [clearRunResult]);
 
@@ -3340,6 +3555,7 @@ export default function AuthorCanvas() {
     }
 
     const nextNodes: Node<NodeData>[] = [];
+    const nextOperatorTestSuites: Record<string, OperatorTestSuiteDraftRow[]> = {};
     for (const templateNode of template.nodes) {
       const operator = operatorByRef.get(templateNode.operatorRef);
       if (!operator) {
@@ -3349,7 +3565,7 @@ export default function AuthorCanvas() {
         });
         return;
       }
-      nextNodes.push({
+      const nextNode: Node<NodeData> = {
         id: templateNode.id,
         type: 'operator',
         position: templateNode.position,
@@ -3360,7 +3576,22 @@ export default function AuthorCanvas() {
           inputs: templateNode.inputs,
           config: templateNode.config,
         },
-      });
+      };
+      const testRows = defaultOperatorTestSuiteRows(nextNode, operator);
+      if (hasOwnValue(templateNode, 'expectedInput')) {
+        testRows[0] = {
+          ...testRows[0],
+          inputText: JSON.stringify(templateNode.expectedInput, null, 2),
+        };
+      }
+      if (hasOwnValue(templateNode, 'fixtureOutput')) {
+        testRows[0] = {
+          ...testRows[0],
+          outputText: JSON.stringify(templateNode.fixtureOutput, null, 2),
+        };
+      }
+      nextOperatorTestSuites[templateNode.id] = testRows;
+      nextNodes.push(nextNode);
     }
 
     const nextEdges = template.edges.map((edge) => ({
@@ -3401,6 +3632,7 @@ export default function AuthorCanvas() {
     setEdges(nextEdges);
     setFixtureDrafts(nextFixtureDrafts);
     setFixtureInputDrafts(nextFixtureInputDrafts);
+    setOperatorTestSuites(nextOperatorTestSuites);
     setSimulationTableRows(nextSimulationTableRows);
     setSimulationTableResults({});
     setGraphInputSchema(template.inputSchema);
@@ -3526,6 +3758,10 @@ export default function AuthorCanvas() {
   const operatorDetailFixtureHasDraft =
     operatorDetailFixtureDraft.trim().length > 0 || operatorDetailExpectedInputDraft.trim().length > 0;
   const operatorDetailFixtureError = operatorDetailNode ? fixtureCompilation.errors[operatorDetailNode.id] : undefined;
+  const operatorDetailTestRows = operatorDetailNode
+    ? operatorTestSuites[operatorDetailNode.id]
+      ?? defaultOperatorTestSuiteRows(operatorDetailNode, operatorDetailDefinition)
+    : [];
   const selectedGuideRows = useMemo(
     () =>
       connectionGuide?.nodeId === selectedNodeId
@@ -3693,6 +3929,74 @@ export default function AuthorCanvas() {
     }
     clearFixtureForNode(selectedNodeId);
   }, [clearFixtureForNode, selectedNodeId]);
+
+  const addOperatorTestRow = useCallback((node: Node<NodeData>, operator: OperatorDefinition | undefined) => {
+    const nextIndex = operatorTestCounter.current + 1;
+    operatorTestCounter.current = nextIndex;
+    setOperatorTestSuites((current) => {
+      const rows = current[node.id] ?? defaultOperatorTestSuiteRows(node, operator);
+      const defaultRow = defaultOperatorTestSuiteRows(node, operator)[0];
+      return {
+        ...current,
+        [node.id]: [
+          ...rows,
+          {
+            ...defaultRow,
+            id: `operator-case-${nextIndex}`,
+            name: `Case ${rows.length + 1}`,
+          },
+        ],
+      };
+    });
+  }, []);
+
+  const updateOperatorTestRow = useCallback((
+    node: Node<NodeData>,
+    operator: OperatorDefinition | undefined,
+    rowId: string,
+    patch: Partial<OperatorTestSuiteDraftRow>,
+  ) => {
+    setOperatorTestSuites((current) => {
+      const rows = current[node.id] ?? defaultOperatorTestSuiteRows(node, operator);
+      return {
+        ...current,
+        [node.id]: rows.map((row) => (row.id === rowId ? { ...row, ...patch } : row)),
+      };
+    });
+  }, []);
+
+  const removeOperatorTestRow = useCallback((
+    node: Node<NodeData>,
+    operator: OperatorDefinition | undefined,
+    rowId: string,
+  ) => {
+    setOperatorTestSuites((current) => {
+      const rows = current[node.id] ?? defaultOperatorTestSuiteRows(node, operator);
+      if (rows.length <= 1) {
+        return current;
+      }
+      return {
+        ...current,
+        [node.id]: rows.filter((row) => row.id !== rowId),
+      };
+    });
+  }, []);
+
+  const applyOperatorTestFixture = useCallback((nodeId: string, row: OperatorTestSuiteDraftRow) => {
+    const compilation = parseOperatorTestSuiteRow(row);
+    if (compilation.error) {
+      return;
+    }
+    clearRunResult();
+    setFixtureInputDrafts((current) => ({
+      ...current,
+      [nodeId]: JSON.stringify(compilation.input, null, 2),
+    }));
+    setFixtureDrafts((current) => ({
+      ...current,
+      [nodeId]: JSON.stringify(compilation.output, null, 2),
+    }));
+  }, [clearRunResult]);
 
   const addSimulationTableRow = useCallback(() => {
     const nextIndex = tableTestCounter.current + 1;
@@ -5179,6 +5483,7 @@ export default function AuthorCanvas() {
           expectedInputDraft={operatorDetailExpectedInputDraft}
           hasFixtureDraft={operatorDetailFixtureHasDraft}
           fixtureError={operatorDetailFixtureError}
+          operatorTestRows={operatorDetailTestRows}
           onClose={() => setOperatorDetailNodeId('')}
           onLabelChange={(value) => updateNodeLabel(operatorDetailNode.id, value)}
           onConfigPatch={(patch) => mergeNodeConfigPatch(operatorDetailNode.id, patch)}
@@ -5194,6 +5499,12 @@ export default function AuthorCanvas() {
           onExpectedInputChange={(value) => updateExpectedInputDraftForNode(operatorDetailNode.id, value)}
           onUseFixtureSample={() => useFixtureSampleForNode(operatorDetailNode.id, operatorDetailDefinition)}
           onClearFixture={() => clearFixtureForNode(operatorDetailNode.id)}
+          onOperatorTestAdd={() => addOperatorTestRow(operatorDetailNode, operatorDetailDefinition)}
+          onOperatorTestUpdate={(rowId, patch) =>
+            updateOperatorTestRow(operatorDetailNode, operatorDetailDefinition, rowId, patch)}
+          onOperatorTestRemove={(rowId) =>
+            removeOperatorTestRow(operatorDetailNode, operatorDetailDefinition, rowId)}
+          onOperatorTestApplyFixture={(row) => applyOperatorTestFixture(operatorDetailNode.id, row)}
           onDecisionChange={(editor) => updateDecisionTableRules(operatorDetailNode.id, editor)}
           onTransformChange={(editor) => updateTransformAssignments(operatorDetailNode.id, editor)}
         />

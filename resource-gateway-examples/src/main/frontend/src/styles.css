@@ -1969,9 +1969,35 @@ button.secondary:disabled {
 }
 
 .operator-detail-body > .input-binding-editor,
-.operator-detail-fixtures {
+.operator-detail-fixtures,
+.operator-detail-body > .operator-test-suite {
   align-self: start;
   margin-top: 0;
+}
+
+.operator-test-suite {
+  grid-column: 1 / -1;
+}
+
+.operator-test-suite .operator-detail-section-heading {
+  align-items: flex-start;
+}
+
+.operator-test-table .test-table-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.operator-test-table .test-table-row-heading,
+.operator-test-table .fixture-error {
+  grid-column: 1 / -1;
+}
+
+.operator-test-table .fixture-field {
+  min-width: 0;
+}
+
+.operator-test-table .fixture-field textarea {
+  min-height: 96px;
 }
 
 .operator-detail-focus,
@@ -4072,7 +4098,8 @@ button.secondary:disabled {
   }
 
   .operator-detail-body,
-  .foreach-loop-steps {
+  .foreach-loop-steps,
+  .operator-test-table .test-table-row {
     grid-template-columns: minmax(0, 1fr);
   }
 

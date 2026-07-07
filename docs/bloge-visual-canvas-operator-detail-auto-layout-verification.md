@@ -9,6 +9,7 @@
 | --- | --- |
 | http resource 双击后要直观 | 双击浮层升级为节点工作台：先展示 Key properties，再提供 Resource ID / Method / URL / Timeout 编辑 |
 | input/output 不应藏在右栏 | 浮层内直接复用 `Node Inputs` 图形化绑定，并提供 Output sample / Expected input fixture 编辑 |
+| 每个算子要有独立验证数据 | 双击浮层新增 Operator Test Suite，每个节点独立维护 Input case / Output sample 表格，可 Apply Fixture 到该节点 |
 | 每类算子都要过关 | 所有算子共享 label、输入绑定、样例、schema 摘要、高级 config；decision table / transform / foreach 叠加专属区域 |
 | schema 不能只给 raw JSON | 端口卡先展示 schema 类型、字段数、字段表；Raw schema 作为可展开专家入口 |
 | Auto Layout 不能只“不重叠” | 分层仍保持确定性，但提高左上留白、行距、列距和长边标签估宽，让 DAG 留出必要空白 |
@@ -17,21 +18,21 @@
 
 | 算子族 | 本轮修整 | 结果 |
 | --- | --- | --- |
-| resource / http resource | Key properties 可编辑；`Node Inputs` 可绑定 ctx/constant；Output sample / Expected input 可编辑；schema 摘要优先展示 | 主路径过关 |
-| decision table | 保留双击浮层表格编辑；传入边 condition 列继续锁定；同时获得通用输入绑定、样例和 schema 摘要 | 主路径过关 |
-| transform | 保留 assignment 编辑器与 built-in function 辅助；同时获得通用输入绑定、样例和 schema 摘要 | 主路径过关 |
-| foreach | 保留三段式 Loop guide；同时获得通用输入绑定、样例和 schema 摘要 | 主路径过关 |
-| streaming | readiness 仍直接显式展示；同时获得通用输入绑定、样例和 schema 摘要 | 主路径过关 |
-| generic / design | 从“只看合同”升级为可编辑 label、inputs、fixtures 和 advanced config | 主路径过关 |
+| resource / http resource | Key properties 可编辑；`Node Inputs` 可绑定 ctx/constant；Output sample / Expected input 可编辑；Operator Test Suite 独立维护节点验证样例；schema 摘要优先展示 | 主路径过关 |
+| decision table | 保留双击浮层表格编辑；传入边 condition 列继续锁定；同时获得通用输入绑定、样例、Operator Test Suite 和 schema 摘要 | 主路径过关 |
+| transform | 保留 assignment 编辑器与 built-in function 辅助；同时获得通用输入绑定、样例、Operator Test Suite 和 schema 摘要 | 主路径过关 |
+| foreach | 保留三段式 Loop guide；同时获得通用输入绑定、样例、Operator Test Suite 和 schema 摘要 | 主路径过关 |
+| streaming | readiness 仍直接显式展示；同时获得通用输入绑定、样例、Operator Test Suite 和 schema 摘要 | 主路径过关 |
+| generic / design | 从“只看合同”升级为可编辑 label、inputs、fixtures、Operator Test Suite 和 advanced config | 主路径过关 |
 
 ## 3. 实现清单
 
 | 文件 | 变更 |
 | --- | --- |
-| `resource-gateway-examples/src/main/frontend/src/AuthorCanvas.tsx` | 新增 Key properties、Advanced config、Input/Output samples；把输入绑定和 fixture 操作抽成 nodeId 版本供 inspector/浮层共用；SchemaPortCards 增加字段摘要 |
+| `resource-gateway-examples/src/main/frontend/src/AuthorCanvas.tsx` | 新增 Key properties、Advanced config、Input/Output samples、Operator Test Suite；把输入绑定和 fixture 操作抽成 nodeId 版本供 inspector/浮层共用；SchemaPortCards 增加字段摘要 |
 | `resource-gateway-examples/src/main/frontend/src/draftModel.ts` | 调整 Auto Layout 留白、节点估算尺寸、行距、列距、长边标签估宽和最大列 pitch |
 | `resource-gateway-examples/src/main/frontend/src/styles.css` | 增加详情浮层编辑控件、resource config 网格、schema field table、增强 edge label 字号/描边 |
-| `resource-gateway-examples/src/main/frontend/src/AuthorCanvas.test.tsx` | 覆盖 http resource 双击浮层编辑 label/method/url/input/output fixture 并验证导出 draft |
+| `resource-gateway-examples/src/main/frontend/src/AuthorCanvas.test.tsx` | 覆盖 http resource 双击浮层编辑 label/method/url/input，新增 Operator Test Suite case，Apply Fixture 并验证导出 draft |
 | `resource-gateway-examples/src/main/frontend/src/draftModel.test.ts` | 把 Auto Layout 验收从“避免覆盖”提高到行距、列距、长边标签空间都有明确下限 |
 | `docs/bloge-visual-canvas-product-and-system-guide.md` | 更新 Auto Layout、Context binding、Operator Detail、fixture 使用说明 |
 | `docs/assets/bloge-author-operator-detail-annotated.svg` | 替换为新版可编辑 Operator Detail 标注图 |
@@ -51,7 +52,8 @@
 - `httpResource` 双击后出现 Key properties 和 Resource config。
 - 在详情浮层里修改 label、HTTP method、URL 后，导出 draft 的 `nodes[0].label` 与 `nodes[0].config` 同步更新。
 - 在详情浮层里 Add Binding 并填写 `request.customerId` 后，导出 draft 的 `nodes[0].inputs.input.kind=contextPath`。
-- 在详情浮层里填写 Output sample 后，导出 draft 的 `nodeFixtures.n1.output` 同步更新。
+- 在详情浮层里每个节点都有 Operator Test Suite，新增 case 后可编辑 Input case / Output sample。
+- 点击 Operator Test Suite 的 Apply Fixture 后，导出 draft 的 `nodeFixtures.n1.expectedInput` 与 `nodeFixtures.n1.output` 同步更新。
 
 ## 5. 差距评估
 
@@ -61,6 +63,7 @@
 设计方案
   -> 双击浮层升级为节点工作台
   -> 通用编辑能力覆盖所有算子族
+  -> 每个节点拥有独立 Operator Test Suite 表格验证数据
   -> family-specific 编辑能力继续保留
   -> Auto Layout 改为舒展排版
   -> 测试与产品手册同步
