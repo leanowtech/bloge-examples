@@ -19,7 +19,8 @@
 > `bloge.visualGraphPublicationExport.v1` 和
 > `bloge.visualGraphPublicationImportResult.v1`；存量 DSL 迁移入口当前为
 > `bloge.dslVisualProjection.v1`、`bloge.dslRewriteGate.v1`、
-> `bloge.dslImportBatchReport.v1` 和 `bloge.visualGraphDraftImportResult.v1`；operator usage index 当前为
+> `bloge.dslImportBatchReport.v1`、`bloge.dslImportBatchCommitResult.v1` 和
+> `bloge.visualGraphDraftImportResult.v1`；operator usage index 当前为
 > `bloge.visualOperatorUsage.v1`。继续实现时以代码和实现状态审计为准，
 > 不要把早期草案名误认为当前 API 字段。用户算子库的当前字段级合同见
 > [BLOGE 可视化算子库 Schema 定义](./bloge-visual-operator-library-schema.md)，
@@ -32,7 +33,7 @@
 
 1. `bloge.visualOperator.v1` / `bloge.visualOperatorLibrary.v1` / `bloge.visualOperatorCatalog.v1` / `bloge.visualOperatorUsage.v1`：用户、运行时或 resource gateway 暴露给画布的算子定义、算子库、catalog response 和 operatorRef usage index。
 2. `bloge.visualGraphDraft.v1` / `bloge.visualGraphReadiness.v1` / `bloge.visualGraphActionReadiness.v1` / `bloge.visualGraphDraftDependencies.v1`：画布编辑中的图草稿模型、图级 runtime/design readiness、compile/run/publication 动作准入，以及 stored draft 的当前 catalog 依赖审阅报告。
-3. `bloge.dslVisualProjection.v1` / `bloge.dslRewriteGate.v1` / `bloge.dslImportBatchReport.v1` / `bloge.visualGraphDraftImportResult.v1`：存量 `.bloge` DSL 以 schema-neutral request 投影、预检源码替换、批量迁移覆盖率评估和保存为 governed draft revision 的迁移合同。
+3. `bloge.dslVisualProjection.v1` / `bloge.dslRewriteGate.v1` / `bloge.dslImportBatchReport.v1` / `bloge.dslImportBatchCommitResult.v1` / `bloge.visualGraphDraftImportResult.v1`：存量 `.bloge` DSL 以 schema-neutral request 投影、预检源码替换、批量迁移覆盖率评估、批量保存 governed draft revision 和单源保存的迁移合同。
 4. `VisualDiagnostic`：校验、编译、策略和运行错误如何定位回画布。
 5. `ResourceDesignContract`：`ResourceDescriptor` 如何补足设计时 schema，投影成虚拟算子。
 6. `bloge.visualGraphPublication.v1` / `bloge.visualGraphPublicationExport.v1` / `bloge.visualGraphPublicationImportResult.v1`：冻结 DSL、draft、operator snapshots、fingerprints、layout 和报告的不可变发布物，以及跨环境 portable bundle。
@@ -86,6 +87,7 @@ resource-gateway wire contract 的核心版本包括：
 - `bloge.dslVisualProjection.v1`
 - `bloge.dslRewriteGate.v1`
 - `bloge.dslImportBatchReport.v1`
+- `bloge.dslImportBatchCommitResult.v1`
 - `bloge.visualGraphDraftImportResult.v1`
 - `bloge.visualDiagnostic.v1`
 - `bloge.resourceDesignContract.v1`
@@ -2777,13 +2779,15 @@ drop 或写入 binding 前调用 `/api/visual/connections/check`，因为候选�
 POST /api/visual/dsl-imports/preview
 POST /api/visual/dsl-imports/rewrite-gate
 POST /api/visual/dsl-imports/batch-report
+POST /api/visual/dsl-imports/batch-commit
 POST /api/visual/dsl-imports/commit
 Content-Type: application/json
 ```
 
 `preview`、`rewrite-gate` 和 `commit` 使用同一个 schema-neutral request。
-`batch-report` 使用同一套 effective catalog 字段，但把单个 `dsl/sourceId` 提升为
-`sources[]`，用于业务仓库或 CI 级迁移覆盖率评估。画布不关心 schema 是由
+`batch-report` 和 `batch-commit` 使用同一套 effective catalog 字段，但把单个
+`dsl/sourceId` 提升为 `sources[]`，用于业务仓库或 CI 级迁移覆盖率评估与批量
+governed draft 产出。画布不关心 schema 是由
 Maven plugin、平台 registry、OpenAPI/AsyncAPI adapter、手写 JSON/YAML 还是其他工具生成；
 只要请求中的 `operatorLibraryIds` 指向已导入的合法 visual libraries，或
 `inlineLibraries[]` 本身能通过 `bloge.visualOperatorLibrary.v1` 校验，DSL 就可以被
@@ -2960,6 +2964,81 @@ semantic round-trip 的 canonical visual semantics 必须读取 `draft.outputSch
 | `needsRepair` | 已渲染但仍需要补 schema、修 DSL 或处理 loss-aware diagnostic |
 | `rewriteAllowed` / `rewriteDecision` | 与单文件 `rewrite-gate` 同源的源码替换预检结果 |
 | `includeDrafts` | 为 `true` 时，`items[].draft` 会携带对应 `GraphDraft`；默认报告只返回轻量 readiness 证据 |
+
+`batch-commit` 是 `batch-report` 的保存型 counterpart。它仍然不写 `.bloge` 源文件，
+也不直接创建 VCS PR；它只把符合策略的 source 重新投影并保存为 governed
+`GraphDraft` revision。请求体与 `batch-report` 相同，并增加 `commitPolicy`：
+
+```json
+{
+  "operatorLibraryIds": ["risk-policy"],
+  "inlineLibraries": [],
+  "mode": "batch-commit",
+  "commitPolicy": "renderable",
+  "includeDrafts": false,
+  "sources": [
+    {
+      "sourceId": "loan-approval.bloge",
+      "dsl": "graph loanApproval { ... }"
+    }
+  ]
+}
+```
+
+`commitPolicy` 的语义：
+
+| policy | 保存条件 | 适用场景 |
+| --- | --- | --- |
+| `renderable` | DSL 能 parse/project 成 graph；missing operator/function 会保存为 repairable draft | 批量把存量业务变成可审阅迁移资产 |
+| `fully-projected` | `renderable=true` 且无 import error、unsupported syntax、missing operator/function | 只接收结构化投影完整的 DSL |
+| `rewrite-allowed` | 与 `rewrite-gate` 同源，`rewriteAllowed=true` | 只产出可进入 source replacement 流程的低风险 draft |
+
+响应合同为 `bloge.dslImportBatchCommitResult.v1`：
+
+```json
+{
+  "schemaVersion": "bloge.dslImportBatchCommitResult.v1",
+  "mode": "batch-commit",
+  "commitPolicy": "renderable",
+  "summary": {
+    "sourceCount": 2,
+    "committedSourceCount": 1,
+    "skippedSourceCount": 1,
+    "failedSourceCount": 0,
+    "reportSummary": { "sourceCount": 2 },
+    "commitDecisionCounts": {
+      "COMMITTED_RENDERABLE": 1,
+      "SKIP_NOT_RENDERABLE": 1
+    }
+  },
+  "items": [
+    {
+      "sourceId": "loan-approval.bloge",
+      "graphName": "loanApproval",
+      "committed": true,
+      "commitDecision": "COMMITTED_RENDERABLE",
+      "message": "DSL source was stored as a governed visual graph draft.",
+      "reportItem": {},
+      "importResult": {
+        "schemaVersion": "bloge.visualGraphDraftImportResult.v1",
+        "imported": true,
+        "draft": { "draftId": "..." }
+      }
+    }
+  ]
+}
+```
+
+`commitDecision` 至少包括：
+
+| decision | 含义 |
+| --- | --- |
+| `COMMITTED_RENDERABLE` / `COMMITTED_FULLY_PROJECTED` / `COMMITTED_REWRITE_ALLOWED` | source 已按对应策略保存为 governed draft |
+| `SKIP_NOT_RENDERABLE` | parse failure 或 root 不是 graph，不能保存 |
+| `SKIP_NOT_FULLY_PROJECTED` | 当前策略要求完整投影，但该 source 仍需修复 |
+| `SKIP_REWRITE_NOT_ALLOWED` | 当前策略要求 rewrite gate 通过，但该 source 未通过 |
+| `SKIP_UNKNOWN_POLICY` | 请求给出未知策略，服务端不会猜测保存 |
+| `FAILED_PERSISTENCE` | projection 通过策略，但 repository 写入失败 |
 
 `commit` 使用同一 request 在服务端重新投影，不信任浏览器回传的 preview draft。
 parse failure 和 unsupported root 会拒绝保存；missing operator/function 会保存为

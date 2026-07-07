@@ -257,6 +257,160 @@ class DslImportControllerTest {
     }
 
     @Test
+    void batchCommitStoresRenderableAndRepairableDraftsButSkipsBrokenSources() throws Exception {
+        OperatorLibrary emptyLibrary = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "empty-risk-policy",
+                "Empty risk policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of()
+        );
+        var catalog = VisualCatalogTestSupport.catalogWithLibrary(emptyLibrary);
+        GraphDraftRepository repository = new InMemoryGraphDraftRepository();
+        DslImportService service = new DslImportService(catalog, new OperatorLibraryValidator());
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new DslImportController(
+                service,
+                repository,
+                new GraphDraftValidator(catalog),
+                catalog
+        )).build();
+
+        mockMvc.perform(post("/api/visual/dsl-imports/batch-commit")
+                        .param("actor", "migration-bot")
+                        .param("changeSource", "legacy-dsl-batch-import")
+                        .param("reason", "batch migration demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(OBJECT_MAPPER.writeValueAsString(Map.of(
+                                "sources", List.of(
+                                        Map.of(
+                                                "sourceId", "supported-transform.bloge",
+                                                "dsl", """
+                                                        graph supportedTransform {
+                                                          input {
+                                                            score: Int
+                                                          }
+                                                          output {
+                                                            score: Int
+                                                          }
+                                                          transform response {
+                                                            score = ctx.score
+                                                          }
+                                                        }
+                                                        """
+                                        ),
+                                        Map.of(
+                                                "sourceId", "missing-operator.bloge",
+                                                "dsl", """
+                                                        graph missingOperator {
+                                                          node eligibility : "risk:missing" {
+                                                          }
+                                                        }
+                                                        """
+                                        ),
+                                        Map.of(
+                                                "sourceId", "broken.bloge",
+                                                "dsl", "graph {"
+                                        )
+                                )
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(DslImportBatchCommitResult.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.commitPolicy").value("renderable"))
+                .andExpect(jsonPath("$.summary.sourceCount").value(3))
+                .andExpect(jsonPath("$.summary.committedSourceCount").value(2))
+                .andExpect(jsonPath("$.summary.skippedSourceCount").value(1))
+                .andExpect(jsonPath("$.summary.failedSourceCount").value(0))
+                .andExpect(jsonPath("$.summary.reportSummary.repairableSourceCount").value(1))
+                .andExpect(jsonPath("$.summary.commitDecisionCounts.COMMITTED_RENDERABLE").value(2))
+                .andExpect(jsonPath("$.summary.commitDecisionCounts.SKIP_NOT_RENDERABLE").value(1))
+                .andExpect(jsonPath("$.items[0].sourceId").value("supported-transform.bloge"))
+                .andExpect(jsonPath("$.items[0].committed").value(true))
+                .andExpect(jsonPath("$.items[0].commitDecision").value("COMMITTED_RENDERABLE"))
+                .andExpect(jsonPath("$.items[0].importResult.imported").value(true))
+                .andExpect(jsonPath("$.items[0].importResult.draft.draftId").isNotEmpty())
+                .andExpect(jsonPath("$.items[1].sourceId").value("missing-operator.bloge"))
+                .andExpect(jsonPath("$.items[1].committed").value(true))
+                .andExpect(jsonPath("$.items[1].reportItem.needsRepair").value(true))
+                .andExpect(jsonPath("$.items[1].importResult.imported").value(true))
+                .andExpect(jsonPath("$.items[2].sourceId").value("broken.bloge"))
+                .andExpect(jsonPath("$.items[2].committed").value(false))
+                .andExpect(jsonPath("$.items[2].commitDecision").value("SKIP_NOT_RENDERABLE"))
+                .andExpect(jsonPath("$.items[2].importResult.imported").value(false));
+
+        org.assertj.core.api.Assertions.assertThat(repository.all()).hasSize(2);
+    }
+
+    @Test
+    void batchCommitRewriteAllowedPolicyOnlyStoresRoundTripSafeDrafts() throws Exception {
+        OperatorLibrary emptyLibrary = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "empty-risk-policy",
+                "Empty risk policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of()
+        );
+        var catalog = VisualCatalogTestSupport.catalogWithLibrary(emptyLibrary);
+        GraphDraftRepository repository = new InMemoryGraphDraftRepository();
+        DslImportService service = new DslImportService(catalog, new OperatorLibraryValidator());
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new DslImportController(
+                service,
+                repository,
+                new GraphDraftValidator(catalog),
+                catalog
+        )).build();
+
+        mockMvc.perform(post("/api/visual/dsl-imports/batch-commit")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(OBJECT_MAPPER.writeValueAsString(Map.of(
+                                "commitPolicy", "rewrite-allowed",
+                                "sources", List.of(
+                                        Map.of(
+                                                "sourceId", "supported-transform.bloge",
+                                                "dsl", """
+                                                        graph supportedTransform {
+                                                          input {
+                                                            score: Int
+                                                          }
+                                                          output {
+                                                            score: Int
+                                                          }
+                                                          transform response {
+                                                            score = ctx.score
+                                                          }
+                                                        }
+                                                        """
+                                        ),
+                                        Map.of(
+                                                "sourceId", "missing-operator.bloge",
+                                                "dsl", """
+                                                        graph missingOperator {
+                                                          node eligibility : "risk:missing" {
+                                                          }
+                                                        }
+                                                        """
+                                        )
+                                )
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.commitPolicy").value("rewrite-allowed"))
+                .andExpect(jsonPath("$.summary.sourceCount").value(2))
+                .andExpect(jsonPath("$.summary.committedSourceCount").value(1))
+                .andExpect(jsonPath("$.summary.skippedSourceCount").value(1))
+                .andExpect(jsonPath("$.summary.commitDecisionCounts.COMMITTED_REWRITE_ALLOWED").value(1))
+                .andExpect(jsonPath("$.summary.commitDecisionCounts.SKIP_REWRITE_NOT_ALLOWED").value(1))
+                .andExpect(jsonPath("$.items[0].committed").value(true))
+                .andExpect(jsonPath("$.items[0].commitDecision").value("COMMITTED_REWRITE_ALLOWED"))
+                .andExpect(jsonPath("$.items[1].committed").value(false))
+                .andExpect(jsonPath("$.items[1].commitDecision").value("SKIP_REWRITE_NOT_ALLOWED"));
+
+        org.assertj.core.api.Assertions.assertThat(repository.all()).hasSize(1);
+    }
+
+    @Test
     void commitReprojectsDslAndStoresGovernedDraftWithSourceMap() throws Exception {
         var catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer")

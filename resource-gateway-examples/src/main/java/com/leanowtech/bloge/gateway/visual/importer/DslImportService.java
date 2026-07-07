@@ -108,33 +108,57 @@ public class DslImportService {
                     source.layout()
             );
             DslVisualProjection projection = preview(previewRequest);
-            DslRewriteGateResult gate = DslRewriteGateResult.from(projection);
-            DslImportCoverage coverage = projection.coverage();
-            boolean renderable = !hasBlockingProjectionDiagnostic(projection.diagnostics());
-            boolean fullyProjected = renderable
-                    && projection.diagnostics().stream().noneMatch(VisualDiagnostic::error)
-                    && coverage.unsupportedSyntaxCount() == 0
-                    && coverage.missingOperatorCount() == 0
-                    && coverage.missingFunctionCount() == 0;
-            boolean needsRepair = renderable && !fullyProjected;
-            items.add(new DslImportBatchReportItem(
-                    projection.sourceId(),
-                    projection.draft().graphName(),
-                    renderable,
-                    fullyProjected,
-                    needsRepair,
-                    sourceMapEntryCount(projection.sourceMap()),
-                    coverage,
-                    projection.roundTrip(),
-                    gate.allowed(),
-                    gate.decision(),
-                    diagnosticLevelCounts(projection.diagnostics()),
-                    projection.diagnostics(),
-                    normalized.includeDrafts() ? projection.draft() : null
-            ));
+            items.add(reportItem(projection, normalized.includeDrafts()));
         }
         return new DslImportBatchReport(DslImportBatchReport.SCHEMA_VERSION, normalized.mode(),
                 batchSummary(items), items);
+    }
+
+    /**
+     * Classifies one preview projection with the same rules used by batch reports.
+     *
+     * @param projection preview projection
+     * @param includeDraft whether to include the projected draft in the report item
+     * @return per-source migration readiness item
+     */
+    public DslImportBatchReportItem reportItem(DslVisualProjection projection, boolean includeDraft) {
+        DslVisualProjection safeProjection = projection == null
+                ? preview(new DslImportPreviewRequest("", "", List.of(), List.of(), "report-item", Map.of()))
+                : projection;
+        DslRewriteGateResult gate = DslRewriteGateResult.from(safeProjection);
+        DslImportCoverage coverage = safeProjection.coverage();
+        boolean renderable = !hasBlockingProjectionDiagnostic(safeProjection.diagnostics());
+        boolean fullyProjected = renderable
+                && safeProjection.diagnostics().stream().noneMatch(VisualDiagnostic::error)
+                && coverage.unsupportedSyntaxCount() == 0
+                && coverage.missingOperatorCount() == 0
+                && coverage.missingFunctionCount() == 0;
+        boolean needsRepair = renderable && !fullyProjected;
+        return new DslImportBatchReportItem(
+                safeProjection.sourceId(),
+                safeProjection.draft().graphName(),
+                renderable,
+                fullyProjected,
+                needsRepair,
+                sourceMapEntryCount(safeProjection.sourceMap()),
+                coverage,
+                safeProjection.roundTrip(),
+                gate.allowed(),
+                gate.decision(),
+                diagnosticLevelCounts(safeProjection.diagnostics()),
+                safeProjection.diagnostics(),
+                includeDraft ? safeProjection.draft() : null
+        );
+    }
+
+    /**
+     * Summarizes batch report items using the same aggregate rules as {@link #batchReport}.
+     *
+     * @param items per-source report items
+     * @return aggregate migration readiness summary
+     */
+    public DslImportBatchSummary summarize(List<DslImportBatchReportItem> items) {
+        return batchSummary(items == null ? List.of() : items);
     }
 
     private AstNode parseAst(String source, ProjectionState state) {
