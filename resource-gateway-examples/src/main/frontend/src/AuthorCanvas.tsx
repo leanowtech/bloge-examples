@@ -3872,6 +3872,7 @@ export default function AuthorCanvas() {
   const [connectionGuideNotice, setConnectionGuideNotice] = useState<ConnectionNotice | null>(null);
   const [connectionGuideBusy, setConnectionGuideBusy] = useState(false);
   const [pendingConnectionGuideNodeId, setPendingConnectionGuideNodeId] = useState('');
+  const [canvasFocusMode, setCanvasFocusMode] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const flowRef = useRef<HTMLDivElement>(null);
   const flowInstanceRef = useRef<ReactFlowInstance<NodeData, CanvasEdgeData> | null>(null);
@@ -3892,6 +3893,16 @@ export default function AuthorCanvas() {
     reloadOperators()
       .catch((cause: unknown) => setError(String(cause)));
   }, [reloadOperators]);
+
+  useEffect(() => {
+    if (!canvasFocusMode || !flowInstanceRef.current) {
+      return undefined;
+    }
+    const handle = window.setTimeout(() => {
+      flowInstanceRef.current?.fitView({ padding: 0.18 });
+    }, 80);
+    return () => window.clearTimeout(handle);
+  }, [canvasFocusMode, edges.length, nodes.length]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -5996,7 +6007,10 @@ export default function AuthorCanvas() {
   );
 
   return (
-    <div className="workspace">
+    <div
+      className={['workspace', canvasFocusMode ? 'canvas-focus' : ''].filter(Boolean).join(' ')}
+      data-layout-mode={canvasFocusMode ? 'focus' : 'standard'}
+    >
       <aside className="palette" id="operator-palette">
         <div className="palette-heading">
           <h2>Operators</h2>
@@ -6469,6 +6483,14 @@ export default function AuthorCanvas() {
           </button>
           <button className="secondary" onClick={autoLayout} disabled={nodes.length < 2}>
             Auto Layout
+          </button>
+          <button
+            className="secondary"
+            data-testid="canvas-focus-toggle"
+            aria-pressed={canvasFocusMode}
+            onClick={() => setCanvasFocusMode((current) => !current)}
+          >
+            {canvasFocusMode ? 'Exit Focus' : 'Canvas Focus'}
           </button>
           <button
             className="secondary"

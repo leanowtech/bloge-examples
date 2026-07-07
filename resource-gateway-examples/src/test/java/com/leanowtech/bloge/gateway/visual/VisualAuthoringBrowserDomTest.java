@@ -136,10 +136,34 @@ class VisualAuthoringBrowserDomTest {
         assertThat(driver.getTitle()).contains("BLOGE Visual Canvas");
         waitForText(wait, By.cssSelector(".topbar"), "Author");
         waitForText(wait, By.id("operator-palette"), "OPERATORS");
+        waitForText(wait, By.cssSelector("[data-testid='canvas-coach']"), "Add first operator");
+        WebElement initialFlow = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-flow']")
+        ));
+        double standardFlowHeight = elementClientHeight(initialFlow);
+        assertThat(standardFlowHeight)
+                .as("standard author canvas flow height")
+                .isGreaterThanOrEqualTo(620.0);
+
+        WebElement focusToggle = wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='canvas-focus-toggle']")
+        ));
+        focusToggle.click();
+        wait.until(ExpectedConditions.attributeToBe(By.cssSelector(".workspace"), "data-layout-mode", "focus"));
+        assertThat(driver.findElement(By.id("operator-palette")).isDisplayed()).isFalse();
+        double focusedFlowHeight = elementClientHeight(initialFlow);
+        assertThat(focusedFlowHeight)
+                .as("focused author canvas flow height")
+                .isGreaterThanOrEqualTo(760.0)
+                .isGreaterThan(standardFlowHeight + 100.0);
+        assertNoHorizontalOverflow(wait, By.cssSelector(".workspace"));
+
+        focusToggle.click();
+        wait.until(ExpectedConditions.attributeToBe(By.cssSelector(".workspace"), "data-layout-mode", "standard"));
+
         WebElement firstOperator = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
                 "[data-testid^='operator-button:']"
         )));
-        waitForText(wait, By.cssSelector("[data-testid='canvas-coach']"), "Add first operator");
 
         String operatorRef = firstOperator.getAttribute("data-operator-ref");
         firstOperator.click();
@@ -3303,6 +3327,14 @@ class VisualAuthoringBrowserDomTest {
                 element
         );
         assertThat(overflow.doubleValue()).isLessThanOrEqualTo(2.0);
+    }
+
+    private double elementClientHeight(WebElement element) {
+        Number height = (Number) ((JavascriptExecutor) driver).executeScript(
+                "return arguments[0].getBoundingClientRect().height;",
+                element
+        );
+        return height.doubleValue();
     }
 
     private void assertVisibleElementsNoHorizontalOverflow(WebDriverWait wait, By locator) {

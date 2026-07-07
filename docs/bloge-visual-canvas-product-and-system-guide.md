@@ -2,13 +2,13 @@
 
 > Scope: `resource-gateway-examples` 新版通用编排画布 · Primary UI: `/author/` · Companion UI: `/showcase/`
 
-> 截图说明：本文后续页面图来自本地演示服务的真实 `/author/` 与 `/showcase/` 页面。蓝色框表示重点区域，橙色编号对应正文中的操作说明。
+> 截图/标注图说明：本文后续页面截图来自本地演示服务的真实 `/author/` 与 `/showcase/` 页面；布局说明图用于标注本轮新增交互。蓝色框表示重点区域，橙色编号对应正文中的操作说明。
 
 ## 1. 产品定位
 
 BLOGE 通用可视化编排画布是一套面向复杂业务编排的 topology-first、schema-backed 工作台。它以 resource gateway 的资源编排能力为基版，但不再把画布绑定到固定几个内置算子，而是允许用户直接粘贴已有 `.bloge` DSL 先可视化整体拓扑，也可以导入自己的算子库定义，把 topology-only draft 渐进增强成可校验、可模拟、可发布和可安全改写的 schema-backed 业务流程。
 
-一句话：用户先给系统一份结构合法的算子/函数 schema，再选择从空白画布编排，或把既有 DSL 渲染成同一份可编辑 `GraphDraft`；系统保证连线、输入、输出、模拟结果都由服务端合同校验。
+一句话：用户可以直接粘贴既有 DSL 先看完整业务拓扑，也可以导入结构合法的算子/函数 schema 从空白画布编排；schema 会把 topology-only draft 渐进增强为可校验、可模拟、可发布和可安全改写的 `GraphDraft`。
 
 它解决的问题不是“把图画出来”，而是把以下闭环产品化：
 
@@ -48,10 +48,19 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 topology-f
 1. **算子库导入**：粘贴 JSON/YAML，标准 `bloge.visualOperatorLibrary.v1` 先 Validate，再 Import；如果粘贴的是 `bloge.capabilityCatalog.v1`，先点击 `Adapt Catalog` 生成标准 visual library 草稿。导入成功后算子会出现在下方 palette；如果当前粘贴内容是 JSON 形式的合法 visual operator library，也可以作为本次 Legacy DSL preview 的 inline schema 使用。
 2. **Legacy DSL**：粘贴既有 `.bloge` DSL，点击 Render DSL，服务端会先按 DSL AST 推演拓扑并投影成可编辑画布 draft。这个入口不要求先准备完整 operator/function schema；schema 只是后续把 topology-only draft 增强为 schema-backed draft 的精确层。
 3. **内置复杂示例**：直接加载可编辑的复杂业务 graph，适合第一次理解 fan-out、decision table、transform、fixture 的组合方式。
-4. **编排动作条**：执行 Simulate、Auto Layout、Validate、Export Draft，并查看节点数、边数、输出节点和 fixture 数。
+4. **编排动作条**：执行 Simulate、Auto Layout、Canvas Focus、Validate、Export Draft，并查看节点数、边数、输出节点和 fixture 数。
 5. **Graph Contract**：显示当前 graph 的 input/output schema 摘要，告诉系统集成方这张图需要什么上下文、会产出什么结果。
 6. **Runtime Context**：以图形化变量表维护本次模拟的 context；高级用户也可以展开 Advanced JSON。
 7. **Mock Setup / Test Suite**：右侧 inspector 保持轻量，只展示节点级 mock fixture 和 Test Suite 摘要；点击 `Test Suite` 后用浮层表格组织多行 context、fixture overrides 和 expected output。
+
+当业务图已经有多层依赖或边标签较多时，优先点击工具条里的 **Canvas Focus**。它会临时收起左侧 Library/Legacy DSL/Palette、右侧 Checklist/Runtime/Test Suite inspector、顶部 workflow 和示例卡，只保留 toolbar、Graph Contract 和主画布。这个模式适合做拓扑审阅、Auto Layout 后验收、拖线调试和演示复杂图。
+
+![Author Canvas Focus 模式标注](assets/bloge-author-canvas-focus-annotated.svg)
+
+1. **Focus toggle**：`Canvas Focus` / `Exit Focus` 是同一个按钮，切换后画布会重新 fit view，避免节点仍停在旧视窗位置。
+2. **辅助栏临时收起**：左侧算子库和右侧 inspector 不销毁状态，只在 Focus 模式下隐藏；退出后继续从原上下文编辑。
+3. **示例区压缩/隐藏**：默认态示例卡更紧凑，Focus 模式完全隐藏示例区，把垂直空间还给 React Flow。
+4. **主画布高度目标**：桌面真实浏览器回归要求标准态 author flow 至少 620px 高，Focus 态至少 760px 且比标准态多 100px 以上。
 
 ### 3.1 演示脚本启动方式
 
@@ -559,6 +568,8 @@ selection。坐标、source map、fixtures、描述文本和 `visualLayout.graph
 - typed handles：输出端口在一侧，输入端口在另一侧。
 
 当画布变乱时，点击 Auto Layout。新版画布会用确定性布局把 DAG 拉开，让节点和边更容易读：同一依赖层内按上游/下游重心排序，列间距会为边标签预留空间，行间距会按节点卡片高度和必要空白展开。它的目标不是把所有节点压到最小面积，而是在保持信息密度的同时避免算子挤在一起、边上的 `source.path -> target.path` 被遮挡。
+
+如果 Auto Layout 后仍需要更大视野审阅拓扑，点击工具条里的 `Canvas Focus`。Focus 模式会收起左右辅助栏、顶部 workflow 和示例卡，保留 toolbar、Graph Contract 与主画布；退出时点击 `Exit Focus`。这个模式适合检查跨层依赖、边标签、复杂 decision table 上下游，以及给业务方演示图结构。
 
 ### 5.3.1 配置起始节点输入
 

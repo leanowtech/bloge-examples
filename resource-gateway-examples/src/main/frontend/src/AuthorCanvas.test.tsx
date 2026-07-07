@@ -208,6 +208,34 @@ describe('AuthorCanvas operator-library intake', () => {
     expect(document.body.textContent).toContain('Output n1');
   });
 
+  it('offers a canvas focus mode for wide topology review', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/visual/operators'));
+    const workspace = query<HTMLElement>('.workspace');
+    const focusToggle = query<HTMLButtonElement>('[data-testid="canvas-focus-toggle"]');
+    expect(workspace.dataset.layoutMode).toBe('standard');
+    expect(workspace.classList.contains('canvas-focus')).toBe(false);
+    expect(focusToggle.getAttribute('aria-pressed')).toBe('false');
+    expect(focusToggle.textContent).toContain('Canvas Focus');
+
+    await click(focusToggle);
+
+    expect(workspace.dataset.layoutMode).toBe('focus');
+    expect(workspace.classList.contains('canvas-focus')).toBe(true);
+    expect(focusToggle.getAttribute('aria-pressed')).toBe('true');
+    expect(focusToggle.textContent).toContain('Exit Focus');
+
+    await click(focusToggle);
+
+    expect(workspace.dataset.layoutMode).toBe('standard');
+    expect(workspace.classList.contains('canvas-focus')).toBe(false);
+    expect(focusToggle.getAttribute('aria-pressed')).toBe('false');
+  });
+
   it('adapts a framework capability catalog into the standard visual library draft', async () => {
     await act(async () => {
       root = createRoot(host);

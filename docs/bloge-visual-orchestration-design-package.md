@@ -17,6 +17,7 @@
 | [BLOGE 可视化编排工业化评估报告](./bloge-visual-orchestration-industrialization-assessment.md) | 多维度成熟度评分、当前工业级差距、本轮迭代复盘和下一轮优先级 | 架构负责人、技术负责人、继续迭代的工程师 |
 | [存量 BLOGE DSL 业务迁移到可视化编排设计方案](./bloge-legacy-dsl-visual-migration-design.md) | 迁移专线：消费任意合法 operator/function schema，导入手写 `.bloge` DSL，投影为 GraphDraft，并做 source map、诊断和 round-trip；业务代码导出 capability catalog 只是推荐来源之一 | 已接入 BLOGE 的业务团队、迁移平台团队、画布/Studio/LSP 实施团队 |
 | [Legacy DSL Source Map UI 验证记录](./bloge-visual-canvas-legacy-dsl-source-map-verification.md) | 本轮浏览器验证证据：合法 inline visual library + `.bloge` 渲染、source map 行定位、导出 draft 保留源码映射和剩余差距 | 继续实现迁移专线的工程师、产品验收人员 |
+| [Author Canvas UX Focus 验证记录](./bloge-visual-canvas-ux-focus-verification.md) | 本轮 B 端 UX 验证证据：Canvas Focus 模式、默认辅助区压缩、真实浏览器画布高度门槛和剩余差距评估 | 产品负责人、UX 设计师、前端工程师、验收人员 |
 
 ## 2. 推荐阅读路径
 

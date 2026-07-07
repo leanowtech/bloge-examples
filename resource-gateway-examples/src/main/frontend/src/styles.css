@@ -64,8 +64,18 @@ body {
 .workspace {
   flex: 1;
   display: grid;
-  grid-template-columns: 240px 1fr 320px;
+  grid-template-columns: clamp(220px, 17vw, 280px) minmax(0, 1fr) clamp(280px, 21vw, 332px);
   min-height: 0;
+  overflow: hidden;
+}
+
+.workspace.canvas-focus {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.workspace.canvas-focus .palette,
+.workspace.canvas-focus .inspector {
+  display: none;
 }
 
 .palette,
@@ -760,6 +770,8 @@ body {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .journey-bar {
@@ -767,7 +779,7 @@ body {
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--border);
   background: #fbfcff;
 }
@@ -784,7 +796,7 @@ body {
 
 .journey-step {
   min-width: 0;
-  min-height: 44px;
+  min-height: 40px;
   display: grid;
   align-content: center;
   gap: 3px;
@@ -852,14 +864,14 @@ body {
 .canvas-examples {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px;
-  padding: 10px 14px;
+  gap: 7px;
+  padding: 5px 12px;
   border-bottom: 1px solid var(--border);
   background: #f6f8fb;
 }
 
 .canvas-examples-heading {
-  min-width: 84px;
+  min-width: 76px;
   display: grid;
   align-content: center;
   gap: 2px;
@@ -874,7 +886,7 @@ body {
 
 .canvas-examples-heading strong {
   color: var(--ink);
-  font-size: 18px;
+  font-size: 13px;
   line-height: 1;
 }
 
@@ -887,12 +899,11 @@ body {
 
 .canvas-example {
   min-width: 0;
-  min-height: 112px;
+  min-height: 44px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 8px;
-  padding: 9px;
+  gap: 5px;
+  padding: 6px;
   border: 1px solid #cfd7e5;
   border-radius: 7px;
   background: #fff;
@@ -971,20 +982,37 @@ body {
   white-space: nowrap;
 }
 
+.workspace:not(.canvas-focus) .canvas-example-meta span:nth-child(n + 3),
+.workspace:not(.canvas-focus) .canvas-example-copy p {
+  display: none;
+}
+
+.workspace:not(.canvas-focus) .canvas-example-meta {
+  display: none;
+}
+
 .canvas-example button {
   grid-column: 2 / 3;
-  grid-row: 1 / 3;
-  align-self: end;
+  align-self: center;
+}
+
+.workspace.canvas-focus .canvas-examples {
+  display: none;
+}
+
+.workspace.canvas-focus .journey-bar {
+  display: none;
 }
 
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 7px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
-  overflow: hidden;
+  overflow: visible;
 }
 
 button.primary {
@@ -1115,9 +1143,9 @@ button.secondary:disabled {
 
 .graph-contract-strip {
   display: grid;
-  grid-template-columns: 140px repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  padding: 10px 14px;
+  grid-template-columns: 112px repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding: 6px 14px;
   border-bottom: 1px solid var(--border);
   background: #f8fafc;
 }
@@ -1153,8 +1181,8 @@ button.secondary:disabled {
 .graph-contract-card {
   min-width: 0;
   display: grid;
-  gap: 6px;
-  padding: 8px;
+  gap: 5px;
+  padding: 6px;
   border: 1px solid #cfd7e5;
   border-radius: 7px;
   background: #fff;
@@ -1182,9 +1210,11 @@ button.secondary:disabled {
 }
 
 .graph-contract-fields {
-  display: flex;
+  display: none;
   flex-wrap: wrap;
   gap: 4px;
+  max-height: 28px;
+  overflow: hidden;
 }
 
 .graph-contract-field,
@@ -1209,6 +1239,23 @@ button.secondary:disabled {
   flex: 1;
   min-height: 0;
   position: relative;
+}
+
+.workspace.canvas-focus .graph-contract-strip {
+  grid-template-columns: 112px repeat(2, minmax(0, 1fr));
+  padding-block: 6px;
+}
+
+.workspace.canvas-focus .graph-contract-card {
+  padding: 6px 7px;
+}
+
+.workspace.canvas-focus .graph-contract-fields {
+  display: none;
+}
+
+.workspace.canvas-focus .flow {
+  min-height: 0;
 }
 
 .canvas-coach {
@@ -4281,6 +4328,7 @@ button.secondary:disabled {
   .canvas {
     min-width: 0;
     min-height: 0;
+    overflow: visible;
   }
 
   .journey-bar {
