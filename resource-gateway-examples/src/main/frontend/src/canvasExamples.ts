@@ -109,6 +109,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         label: 'Fetch applicant',
         position: { x: 72, y: 96 },
         inputs: { applicantId: constantInput('applicant-1001', 'params') },
+        expectedInput: { params: { applicantId: 'applicant-1001' } },
         fixtureOutput: {
           payload: {
             applicantId: 'applicant-1001',
@@ -124,6 +125,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         operatorRef: 'resource:credit-provider.primary',
         label: 'Primary credit',
         position: { x: 360, y: 24 },
+        expectedInput: { params: { userId: 'applicant-1001' } },
         fixtureOutput: { payload: { score: 728, provider: 'primary', band: 'A' } },
       },
       {
@@ -131,6 +133,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         operatorRef: 'resource:credit-provider.secondary',
         label: 'Secondary credit',
         position: { x: 360, y: 168 },
+        expectedInput: { params: { userId: 'applicant-1001' } },
         fixtureOutput: { payload: { score: 701, provider: 'secondary', band: 'B' } },
       },
       {
@@ -374,6 +377,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         label: 'Load orders',
         position: { x: 72, y: 96 },
         inputs: { userId: constantInput('user-42', 'params') },
+        expectedInput: { params: { userId: 'user-42' } },
         fixtureOutput: {
           payload: {
             items: [
@@ -399,6 +403,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         operatorRef: 'resource:logistics-service.getShipping',
         label: 'Shipping quote',
         position: { x: 360, y: 168 },
+        expectedInput: { params: { orderId: 'order-1001' } },
         fixtureOutput: { payload: { carrier: 'DHL', etaDays: 2, cost: 16.5 } },
       },
       {
@@ -626,6 +631,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         label: 'User profile',
         position: { x: 72, y: 96 },
         inputs: { userId: constantInput('user-42', 'params') },
+        expectedInput: { params: { userId: 'user-42' } },
         fixtureOutput: {
           payload: {
             userId: 'user-42',
@@ -641,6 +647,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         operatorRef: 'resource:wallet-service.getBalance',
         label: 'Wallet balance',
         position: { x: 360, y: 0 },
+        expectedInput: { params: { userId: 'user-42' } },
         fixtureOutput: { payload: { amount: 128.45, currency: 'USD' } },
       },
       {
@@ -648,6 +655,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         operatorRef: 'resource:recommendation-service.forUser',
         label: 'Recommendations',
         position: { x: 360, y: 132 },
+        expectedInput: { params: { userId: 'user-42' } },
         fixtureOutput: {
           payload: {
             items: [
@@ -662,6 +670,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
         operatorRef: 'resource:notification-service.unread',
         label: 'Unread notifications',
         position: { x: 360, y: 264 },
+        expectedInput: { params: { userId: 'user-42' } },
         fixtureOutput: {
           payload: {
             count: 3,

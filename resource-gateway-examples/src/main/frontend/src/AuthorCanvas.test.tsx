@@ -203,6 +203,13 @@ describe('AuthorCanvas built-in canvas examples', () => {
       }
       if (url === '/api/visual/graphs/simulate') {
         const body = JSON.parse(String(init?.body));
+        if (body.outputNode === 'n1') {
+          expect(body.draft.nodes.map((node: { id: string }) => node.id)).toEqual(['n1']);
+          expect(body.draft.edges).toEqual([]);
+          expect(Object.keys(body.fixtures)).toEqual(['n1']);
+          expect(body.fixtures.n1.expectedInput).toEqual({ params: { applicantId: 'applicant-1001' } });
+          return jsonResponse(operatorSimulationResponse('n1', body.fixtures.n1.output));
+        }
         const applicantId = body.context?.applicantId;
         if (applicantId === 'applicant-2002') {
           expect(body.fixtures.n2.output.payload.score).toBe(650);
@@ -273,6 +280,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
       for (const node of template.nodes) {
         if (resourceNodeIds.has(node.id) && node.fixtureOutput !== undefined) {
           expect(node.fixtureOutput, `${template.key}:${node.id}`).toMatchObject({ payload: expect.anything() });
+          expect(node.expectedInput, `${template.key}:${node.id}`).toBeDefined();
         }
       }
 
@@ -375,6 +383,33 @@ describe('AuthorCanvas built-in canvas examples', () => {
       .toContain('"applicantId": "applicant-1001"');
     expect(query<HTMLTextAreaElement>('[data-testid="test-table-fixtures:1"]').value)
       .toContain('"score": 650');
+  });
+
+  it('runs a built-in resource operator test case against a scoped graph slice', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="canvas-example-load:loan-policy-fallback"]').textContent).toContain('Load'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="canvas-example-load:loan-policy-fallback"]'));
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    await waitFor(() =>
+      expect(query('[data-testid="operator-test-suite"]').textContent).toContain('Operator Test Suite'),
+    );
+
+    expect(query<HTMLTextAreaElement>('[data-testid="operator-test-input:0"]').value)
+      .toContain('"applicantId": "applicant-1001"');
+    await click(query<HTMLButtonElement>('[data-testid="operator-test-run:0"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-test-status:0"]').textContent).toContain('passed'),
+    );
+    expect(query('[data-testid="operator-test-summary"]').textContent).toContain('1/1 passed');
+    expect(query('[data-testid="operator-test-result:0"]').textContent)
+      .toContain('Input assertion matched');
   });
 
   it('runs built-in example test table cases through simulate with row fixture overrides', async () => {
@@ -880,10 +915,22 @@ describe('AuthorCanvas connection guide', () => {
   });
 
   it('surfaces resource and streaming readiness directly in palette, nodes, and inspector', async () => {
-    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === '/api/visual/operators') {
         return jsonResponse({ operators: [httpResourceOperator(), streamingOperator()] });
+      }
+      if (url === '/api/visual/graphs/simulate') {
+        const body = JSON.parse(String(init?.body));
+        expect(body.outputNode).toBe('n1');
+        expect(body.draft.output.nodeId).toBe('n1');
+        expect(body.draft.nodes.map((node: { id: string }) => node.id)).toEqual(['n1']);
+        expect(body.draft.edges).toEqual([]);
+        expect(body.fixtures.n1).toMatchObject({
+          expectedInput: { customerId: 'c-42' },
+          output: { ok: false, source: 'operator-case' },
+        });
+        return jsonResponse(operatorSimulationResponse('n1', { ok: false, source: 'operator-case' }));
       }
       throw new Error(`Unexpected fetch: ${url}`);
     });
@@ -947,6 +994,12 @@ describe('AuthorCanvas connection guide', () => {
       dialogQuery<HTMLTextAreaElement>('[data-testid="operator-test-output:1"]'),
       '{"ok":false,"source":"operator-case"}',
     );
+    await click(dialogQuery<HTMLButtonElement>('[data-testid="operator-test-run:1"]'));
+    await waitFor(() =>
+      expect(dialogQuery('[data-testid="operator-test-status:1"]').textContent).toContain('passed'),
+    );
+    expect(dialogQuery('[data-testid="operator-test-result:1"]').textContent)
+      .toContain('Input assertion matched');
     await click(dialogQuery<HTMLButtonElement>('[data-testid="operator-test-apply:1"]'));
 
     const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
@@ -1689,6 +1742,25 @@ function loanSimulationResponse(output: Record<string, unknown>): SimulationResp
     statusMap: {},
     mockedNodeIds: ['n1', 'n2', 'n3'],
     realNodeIds: ['n4', 'n5'],
+    terminalOutputConforms: true,
+    diagnostics: [],
+    errors: [],
+    generatedDsl: 'graph visualGraph {}',
+  };
+}
+
+function operatorSimulationResponse(nodeId: string, output: Record<string, unknown>): SimulationResponse {
+  return {
+    validated: true,
+    compiled: true,
+    success: true,
+    graphName: 'visualGraph',
+    outputNode: nodeId,
+    output,
+    results: { [nodeId]: output },
+    statusMap: { [nodeId]: 'mocked' },
+    mockedNodeIds: [nodeId],
+    realNodeIds: [],
     terminalOutputConforms: true,
     diagnostics: [],
     errors: [],

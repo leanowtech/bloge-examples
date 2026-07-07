@@ -2011,7 +2011,8 @@ button.secondary:disabled {
 }
 
 .operator-test-table .test-table-row-heading,
-.operator-test-table .fixture-error {
+.operator-test-table .fixture-error,
+.operator-test-table .operator-test-result {
   grid-column: 1 / -1;
 }
 
@@ -2021,6 +2022,35 @@ button.secondary:disabled {
 
 .operator-test-table .fixture-field textarea {
   min-height: 96px;
+}
+
+.operator-test-result {
+  margin: 0;
+  padding: 7px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.operator-test-result.passed {
+  border-color: #9bd3b0;
+  background: #ecfdf3;
+  color: #166534;
+}
+
+.operator-test-result.failed {
+  border-color: #f2a6a6;
+  background: #fff1f2;
+  color: #b42318;
+}
+
+.operator-test-result.running {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .operator-detail-focus,

@@ -83,6 +83,7 @@ import {
 import type {
   DraftNodeBinding,
   BuiltInFunctionDefinition,
+  NodeFixture,
   OperatorDefinition,
   OperatorPort,
   SchemaEnvelope,
@@ -308,6 +309,18 @@ interface OperatorTestSuiteDraftRow {
   name: string;
   inputText: string;
   outputText: string;
+}
+
+type OperatorTestCaseStatus = 'pending' | 'running' | 'passed' | 'failed';
+
+interface OperatorTestCaseResult {
+  id: string;
+  name: string;
+  status: OperatorTestCaseStatus;
+  detail: string;
+  actualOutput?: unknown;
+  expectedInput?: unknown;
+  fixtureOutput?: unknown;
 }
 
 interface OperatorTestSuiteCompilation {
@@ -603,6 +616,78 @@ function parseOperatorTestSuiteRow(row: OperatorTestSuiteDraftRow): OperatorTest
     output,
     ...(messages.length > 0 ? { error: messages.join(' ') } : {}),
   };
+}
+
+function firstSimulationFailure(response: SimulationResponse): string {
+  return response.errors?.[0]
+    || response.diagnostics?.find((diagnostic) => diagnostic.message || diagnostic.code)?.message
+    || `${response.diagnostics?.length ?? 0} diagnostic(s)`;
+}
+
+function evaluateOperatorTestResult(
+  nodeId: string,
+  row: OperatorTestSuiteDraftRow,
+  compilation: OperatorTestSuiteCompilation,
+  response: SimulationResponse,
+): OperatorTestCaseResult {
+  const actualOutput = response.results?.[nodeId] ?? (response.outputNode === nodeId ? response.output : undefined);
+  if (!isRunSuccessful(response)) {
+    return {
+      id: row.id,
+      name: row.name.trim() || row.id,
+      status: 'failed',
+      detail: firstSimulationFailure(response),
+      actualOutput,
+      expectedInput: compilation.input,
+      fixtureOutput: compilation.output,
+    };
+  }
+
+  return {
+    id: row.id,
+    name: row.name.trim() || row.id,
+    status: 'passed',
+    detail: response.mockedNodeIds?.includes(nodeId)
+      ? 'Input assertion matched; fixture output accepted.'
+      : 'Simulation succeeded.',
+    actualOutput,
+    expectedInput: compilation.input,
+    fixtureOutput: compilation.output,
+  };
+}
+
+function operatorTestGraphSlice(
+  nodeId: string,
+  nodes: CanvasNode[],
+  edges: CanvasEdge[],
+): { nodes: CanvasNode[]; edges: CanvasEdge[] } {
+  const requiredNodeIds = new Set<string>([nodeId]);
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    for (const edge of edges) {
+      if (requiredNodeIds.has(edge.target) && !requiredNodeIds.has(edge.source)) {
+        requiredNodeIds.add(edge.source);
+        changed = true;
+      }
+    }
+  }
+
+  return {
+    nodes: nodes.filter((node) => requiredNodeIds.has(node.id)),
+    edges: edges.filter((edge) => requiredNodeIds.has(edge.source) && requiredNodeIds.has(edge.target)),
+  };
+}
+
+function fixturesForGraphSlice(
+  fixtures: Record<string, NodeFixture>,
+  nodes: CanvasNode[],
+): Record<string, NodeFixture> {
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  return Object.fromEntries(
+    Object.entries(fixtures).filter(([nodeId]) => nodeIds.has(nodeId)),
+  );
 }
 
 function parseConstantInputValue(text: string): unknown {
@@ -2466,29 +2551,60 @@ function OperatorFixtureEditor({
 
 function OperatorTestSuiteEditor({
   rows,
+  results,
+  running,
+  runDisabledReason,
   onAdd,
   onUpdate,
   onRemove,
   onApplyFixture,
+  onRun,
+  onRunAll,
 }: {
   rows: OperatorTestSuiteDraftRow[];
+  results: Record<string, OperatorTestCaseResult>;
+  running: boolean;
+  runDisabledReason?: string;
   onAdd: () => void;
   onUpdate: (rowId: string, patch: Partial<OperatorTestSuiteDraftRow>) => void;
   onRemove: (rowId: string) => void;
   onApplyFixture: (row: OperatorTestSuiteDraftRow) => void;
+  onRun: (row: OperatorTestSuiteDraftRow) => void;
+  onRunAll: () => void;
 }) {
   const invalidCount = rows
     .map(parseOperatorTestSuiteRow)
     .filter((compilation) => compilation.error)
     .length;
+  const resultValues = Object.values(results);
+  const passedCount = resultValues.filter((result) => result.status === 'passed').length;
+  const failedCount = resultValues.filter((result) => result.status === 'failed').length;
+  const resultLabel = running
+    ? 'running'
+    : resultValues.length > 0
+      ? `${passedCount}/${rows.length} passed${failedCount > 0 ? ` · ${failedCount} failed` : ''}`
+      : invalidCount > 0
+        ? `${invalidCount} invalid`
+        : `${rows.length} valid`;
+  const summaryStatus = running ? 'running' : failedCount > 0 || invalidCount > 0 ? 'failed' : passedCount > 0 ? 'passed' : 'pending';
   return (
     <section className="operator-detail-section operator-test-suite" data-testid="operator-test-suite">
       <div className="operator-detail-section-heading">
         <h3>Operator Test Suite</h3>
         <div className="test-table-actions">
-          <span className={`table-status ${invalidCount > 0 ? 'failed' : 'passed'}`}>
-            {invalidCount > 0 ? `${invalidCount} invalid` : `${rows.length} valid`}
+          <span className={`table-status ${summaryStatus}`} data-testid="operator-test-summary">
+            {resultLabel}
           </span>
+          <button
+            type="button"
+            className="primary compact"
+            data-testid="operator-test-run-all"
+            onClick={onRunAll}
+            disabled={running || rows.length === 0 || invalidCount > 0 || Boolean(runDisabledReason)}
+            title={runDisabledReason}
+          >
+            {running ? 'Running' : 'Run All'}
+          </button>
           <button
             type="button"
             className="secondary compact"
@@ -2503,7 +2619,8 @@ function OperatorTestSuiteEditor({
         <ol className="test-table-list operator-test-table">
           {rows.map((row, index) => {
             const compilation = parseOperatorTestSuiteRow(row);
-            const rowStatus = compilation.error ? 'failed' : 'passed';
+            const result = results[row.id];
+            const rowStatus = result?.status ?? (compilation.error ? 'failed' : 'pending');
             return (
               <li
                 key={row.id}
@@ -2521,14 +2638,24 @@ function OperatorTestSuiteEditor({
                     className={`table-status ${rowStatus}`}
                     data-testid={`operator-test-status:${index}`}
                   >
-                    {compilation.error ? 'invalid' : 'valid'}
+                    {compilation.error ? 'invalid' : result?.status ?? 'valid'}
                   </span>
+                  <button
+                    type="button"
+                    className="primary compact"
+                    data-testid={`operator-test-run:${index}`}
+                    onClick={() => onRun(row)}
+                    disabled={running || Boolean(compilation.error) || Boolean(runDisabledReason)}
+                    title={runDisabledReason}
+                  >
+                    Run Case
+                  </button>
                   <button
                     type="button"
                     className="secondary compact"
                     data-testid={`operator-test-apply:${index}`}
                     onClick={() => onApplyFixture(row)}
-                    disabled={Boolean(compilation.error)}
+                    disabled={running || Boolean(compilation.error)}
                   >
                     Apply Fixture
                   </button>
@@ -2566,6 +2693,14 @@ function OperatorTestSuiteEditor({
                 {compilation.error && (
                   <p className="fixture-error" data-testid={`operator-test-error:${index}`}>
                     {compilation.error}
+                  </p>
+                )}
+                {result && !compilation.error && (
+                  <p
+                    className={`operator-test-result ${result.status}`}
+                    data-testid={`operator-test-result:${index}`}
+                  >
+                    {result.detail}
                   </p>
                 )}
               </li>
@@ -2682,6 +2817,9 @@ function OperatorDetailDialog({
   hasFixtureDraft,
   fixtureError,
   operatorTestRows,
+  operatorTestResults,
+  operatorTestsRunning,
+  operatorTestRunDisabledReason,
   onClose,
   onLabelChange,
   onConfigPatch,
@@ -2700,6 +2838,8 @@ function OperatorDetailDialog({
   onOperatorTestUpdate,
   onOperatorTestRemove,
   onOperatorTestApplyFixture,
+  onOperatorTestRun,
+  onOperatorTestRunAll,
   onDecisionChange,
   onTransformChange,
 }: {
@@ -2712,6 +2852,9 @@ function OperatorDetailDialog({
   hasFixtureDraft: boolean;
   fixtureError: string | undefined;
   operatorTestRows: OperatorTestSuiteDraftRow[];
+  operatorTestResults: Record<string, OperatorTestCaseResult>;
+  operatorTestsRunning: boolean;
+  operatorTestRunDisabledReason?: string;
   onClose: () => void;
   onLabelChange: (value: string) => void;
   onConfigPatch: (patch: Record<string, unknown>) => void;
@@ -2730,6 +2873,8 @@ function OperatorDetailDialog({
   onOperatorTestUpdate: (rowId: string, patch: Partial<OperatorTestSuiteDraftRow>) => void;
   onOperatorTestRemove: (rowId: string) => void;
   onOperatorTestApplyFixture: (row: OperatorTestSuiteDraftRow) => void;
+  onOperatorTestRun: (row: OperatorTestSuiteDraftRow) => void;
+  onOperatorTestRunAll: () => void;
   onDecisionChange: (editor: DecisionTableEditorModel) => void;
   onTransformChange: (editor: TransformEditorModel) => void;
 }) {
@@ -2804,10 +2949,15 @@ function OperatorDetailDialog({
 
           <OperatorTestSuiteEditor
             rows={operatorTestRows}
+            results={operatorTestResults}
+            running={operatorTestsRunning}
+            runDisabledReason={operatorTestRunDisabledReason}
             onAdd={onOperatorTestAdd}
             onUpdate={onOperatorTestUpdate}
             onRemove={onOperatorTestRemove}
             onApplyFixture={onOperatorTestApplyFixture}
+            onRun={onOperatorTestRun}
+            onRunAll={onOperatorTestRunAll}
           />
 
           <SchemaPortCards title="Input schema" direction="input" ports={inputs} />
@@ -3190,6 +3340,7 @@ export default function AuthorCanvas() {
   const [fixtureDrafts, setFixtureDrafts] = useState<Record<string, string>>({});
   const [fixtureInputDrafts, setFixtureInputDrafts] = useState<Record<string, string>>({});
   const [operatorTestSuites, setOperatorTestSuites] = useState<Record<string, OperatorTestSuiteDraftRow[]>>({});
+  const [operatorTestResults, setOperatorTestResults] = useState<Record<string, Record<string, OperatorTestCaseResult>>>({});
   const [simulationTableRows, setSimulationTableRows] = useState<SimulationTableTestDraftRow[]>([]);
   const [simulationTableResults, setSimulationTableResults] = useState<Record<string, SimulationTableCaseResult>>({});
   const [tableTestingBusy, setTableTestingBusy] = useState(false);
@@ -3273,6 +3424,13 @@ export default function AuthorCanvas() {
           return next;
         });
         setOperatorTestSuites((current) => {
+          const next = { ...current };
+          for (const id of removedNodeIds) {
+            delete next[id];
+          }
+          return next;
+        });
+        setOperatorTestResults((current) => {
           const next = { ...current };
           for (const id of removedNodeIds) {
             delete next[id];
@@ -3754,6 +3912,7 @@ export default function AuthorCanvas() {
     setFixtureDrafts(nextFixtureDrafts);
     setFixtureInputDrafts(nextFixtureInputDrafts);
     setOperatorTestSuites(nextOperatorTestSuites);
+    setOperatorTestResults({});
     setSimulationTableRows(nextSimulationTableRows);
     setSimulationTableResults({});
     setGraphInputSchema(template.inputSchema);
@@ -3883,6 +4042,16 @@ export default function AuthorCanvas() {
     ? operatorTestSuites[operatorDetailNode.id]
       ?? defaultOperatorTestSuiteRows(operatorDetailNode, operatorDetailDefinition)
     : [];
+  const operatorDetailTestResults = operatorDetailNode
+    ? operatorTestResults[operatorDetailNode.id] ?? {}
+    : {};
+  const operatorDetailTestsRunning = Object.values(operatorDetailTestResults)
+    .some((testResult) => testResult.status === 'running');
+  const operatorDetailTestRunDisabledReason = hasContextError
+    ? contextCompilation.error
+    : hasFixtureErrors
+      ? Object.values(fixtureCompilation.errors)[0]
+      : undefined;
   const selectedGuideRows = useMemo(
     () =>
       connectionGuide?.nodeId === selectedNodeId
@@ -4085,6 +4254,14 @@ export default function AuthorCanvas() {
         [node.id]: rows.map((row) => (row.id === rowId ? { ...row, ...patch } : row)),
       };
     });
+    setOperatorTestResults((current) => {
+      if (!current[node.id]?.[rowId]) {
+        return current;
+      }
+      const nodeResults = { ...current[node.id] };
+      delete nodeResults[rowId];
+      return { ...current, [node.id]: nodeResults };
+    });
   }, []);
 
   const removeOperatorTestRow = useCallback((
@@ -4101,6 +4278,14 @@ export default function AuthorCanvas() {
         ...current,
         [node.id]: rows.filter((row) => row.id !== rowId),
       };
+    });
+    setOperatorTestResults((current) => {
+      if (!current[node.id]?.[rowId]) {
+        return current;
+      }
+      const nodeResults = { ...current[node.id] };
+      delete nodeResults[rowId];
+      return { ...current, [node.id]: nodeResults };
     });
   }, []);
 
@@ -4482,6 +4667,120 @@ export default function AuthorCanvas() {
       }),
     );
   }, []);
+
+  const runOperatorTestRows = useCallback(async (nodeId: string, rowsToRun: OperatorTestSuiteDraftRow[]) => {
+    if (rowsToRun.length === 0) {
+      return;
+    }
+
+    const contextError = contextCompilation.error;
+    const fixtureError = Object.values(fixtureCompilation.errors)[0];
+    if (contextError || fixtureError) {
+      const detail = contextError ?? fixtureError ?? 'Fix validation errors before running.';
+      setOperatorTestResults((current) => ({
+        ...current,
+        [nodeId]: {
+          ...(current[nodeId] ?? {}),
+          ...Object.fromEntries(rowsToRun.map((row) => [
+            row.id,
+            {
+              id: row.id,
+              name: row.name.trim() || row.id,
+              status: 'failed' as const,
+              detail,
+            },
+          ])),
+        },
+      }));
+      return;
+    }
+
+    setError('');
+    for (const row of rowsToRun) {
+      const compilation = parseOperatorTestSuiteRow(row);
+      if (compilation.error) {
+        setOperatorTestResults((current) => ({
+          ...current,
+          [nodeId]: {
+            ...(current[nodeId] ?? {}),
+            [row.id]: {
+              id: row.id,
+              name: row.name.trim() || row.id,
+              status: 'failed',
+              detail: compilation.error ?? 'Operator test JSON is invalid.',
+            },
+          },
+        }));
+        continue;
+      }
+
+      setOperatorTestResults((current) => ({
+        ...current,
+        [nodeId]: {
+          ...(current[nodeId] ?? {}),
+          [row.id]: {
+            id: row.id,
+            name: row.name.trim() || row.id,
+            status: 'running',
+            detail: 'Running scoped simulate with this operator fixture.',
+            expectedInput: compilation.input,
+            fixtureOutput: compilation.output,
+          },
+        },
+      }));
+
+      try {
+        const operatorGraph = operatorTestGraphSlice(nodeId, canvasNodes, canvasEdges);
+        const operatorFixtures = fixturesForGraphSlice(fixtureCompilation.fixtures, operatorGraph.nodes);
+        const response = await simulate(toSimulationRequest(
+          'visualGraph',
+          operatorGraph.nodes,
+          operatorGraph.edges,
+          nodeId,
+          mergeNodeFixtures(operatorFixtures, {
+            [nodeId]: {
+              output: compilation.output,
+              expectedInput: compilation.input,
+            },
+          }),
+          contextCompilation.value,
+          graphInputSchema,
+        ));
+        showSimulationResponse(response);
+        setOperatorTestResults((current) => ({
+          ...current,
+          [nodeId]: {
+            ...(current[nodeId] ?? {}),
+            [row.id]: evaluateOperatorTestResult(nodeId, row, compilation, response),
+          },
+        }));
+      } catch (cause: unknown) {
+        setOperatorTestResults((current) => ({
+          ...current,
+          [nodeId]: {
+            ...(current[nodeId] ?? {}),
+            [row.id]: {
+              id: row.id,
+              name: row.name.trim() || row.id,
+              status: 'failed',
+              detail: String(cause),
+              expectedInput: compilation.input,
+              fixtureOutput: compilation.output,
+            },
+          },
+        }));
+      }
+    }
+  }, [
+    canvasEdges,
+    canvasNodes,
+    contextCompilation.error,
+    contextCompilation.value,
+    fixtureCompilation.errors,
+    fixtureCompilation.fixtures,
+    graphInputSchema,
+    showSimulationResponse,
+  ]);
 
   const runSimulation = useCallback(async () => {
     setBusy(true);
@@ -5618,6 +5917,9 @@ export default function AuthorCanvas() {
           hasFixtureDraft={operatorDetailFixtureHasDraft}
           fixtureError={operatorDetailFixtureError}
           operatorTestRows={operatorDetailTestRows}
+          operatorTestResults={operatorDetailTestResults}
+          operatorTestsRunning={operatorDetailTestsRunning}
+          operatorTestRunDisabledReason={operatorDetailTestRunDisabledReason}
           onClose={() => setOperatorDetailNodeId('')}
           onLabelChange={(value) => updateNodeLabel(operatorDetailNode.id, value)}
           onConfigPatch={(patch) => mergeNodeConfigPatch(operatorDetailNode.id, patch)}
@@ -5639,6 +5941,12 @@ export default function AuthorCanvas() {
           onOperatorTestRemove={(rowId) =>
             removeOperatorTestRow(operatorDetailNode, operatorDetailDefinition, rowId)}
           onOperatorTestApplyFixture={(row) => applyOperatorTestFixture(operatorDetailNode.id, row)}
+          onOperatorTestRun={(row) => {
+            void runOperatorTestRows(operatorDetailNode.id, [row]);
+          }}
+          onOperatorTestRunAll={() => {
+            void runOperatorTestRows(operatorDetailNode.id, operatorDetailTestRows);
+          }}
           onDecisionChange={(editor) => updateDecisionTableRules(operatorDetailNode.id, editor)}
           onTransformChange={(editor) => updateTransformAssignments(operatorDetailNode.id, editor)}
         />
