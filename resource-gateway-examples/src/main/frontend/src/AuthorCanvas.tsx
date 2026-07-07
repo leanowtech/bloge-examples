@@ -86,6 +86,8 @@ import type {
   DraftNodeBinding,
   BuiltInFunctionDefinition,
   DslImportCoverage,
+  DslSourceMap,
+  DslSourceSpan,
   DslVisualProjection,
   NodeFixture,
   OperatorDefinition,
@@ -3324,6 +3326,16 @@ interface LegacyDslExample {
   sourceText: string;
 }
 
+interface DslSourceMapRow {
+  key: string;
+  kind: 'node' | 'edge' | 'binding';
+  targetNodeId?: string;
+  label: string;
+  location: string;
+  dslKind: string;
+  snippet: string;
+}
+
 const LEGACY_DSL_EXAMPLES: LegacyDslExample[] = [
   {
     key: 'migrated-eligibility',
@@ -3502,6 +3514,117 @@ function visualLayoutWithGraphContract(
   };
 }
 
+function visualLayoutWithImportSourceMap(
+  visualLayout: Record<string, unknown>,
+  sourceMap: DslSourceMap | undefined,
+): Record<string, unknown> {
+  if (!sourceMap || dslSourceMapEntryCount(sourceMap) === 0) {
+    return visualLayout;
+  }
+  const importMetadata = isRecord(visualLayout.import) ? { ...visualLayout.import } : {};
+  return {
+    ...visualLayout,
+    import: {
+      ...importMetadata,
+      sourceMap,
+    },
+  };
+}
+
+function dslSourceMapEntryCount(sourceMap: DslSourceMap | null | undefined): number {
+  if (!sourceMap) {
+    return 0;
+  }
+  return Object.keys(sourceMap.nodes ?? {}).length
+    + Object.keys(sourceMap.edges ?? {}).length
+    + Object.keys(sourceMap.bindings ?? {}).length;
+}
+
+function dslSourceMapRows(
+  sourceMap: DslSourceMap | null,
+  sourceText: string,
+  edgeTargetsById: Record<string, string>,
+): DslSourceMapRow[] {
+  if (!sourceMap) {
+    return [];
+  }
+  const rows: DslSourceMapRow[] = [];
+  Object.entries(sourceMap.nodes ?? {}).forEach(([nodeId, span]) => {
+    rows.push(dslSourceMapRow('node', nodeId, span, sourceText, nodeId));
+  });
+  Object.entries(sourceMap.edges ?? {}).forEach(([edgeId, span]) => {
+    rows.push(dslSourceMapRow('edge', edgeId, span, sourceText, edgeTargetsById[edgeId]));
+  });
+  Object.entries(sourceMap.bindings ?? {}).forEach(([pointer, span]) => {
+    rows.push(dslSourceMapRow('binding', pointer, span, sourceText, nodeIdFromJsonPointer(pointer)));
+  });
+  const kindOrder = { node: 0, edge: 1, binding: 2 };
+  return rows.sort((left, right) => (
+    sourceMapLineSortValue(left.location) - sourceMapLineSortValue(right.location)
+    || kindOrder[left.kind] - kindOrder[right.kind]
+    || left.label.localeCompare(right.label)
+  ));
+}
+
+function sourceMapLineSortValue(location: string): number {
+  const line = Number(location.split(':')[0]);
+  return Number.isFinite(line) ? line : Number.MAX_SAFE_INTEGER;
+}
+
+function dslSourceMapRow(
+  kind: DslSourceMapRow['kind'],
+  id: string,
+  span: DslSourceSpan,
+  sourceText: string,
+  targetNodeId?: string,
+): DslSourceMapRow {
+  return {
+    key: `${kind}:${id}`,
+    kind,
+    targetNodeId,
+    label: dslSourceMapLabel(kind, id),
+    location: dslSourceLocation(span),
+    dslKind: span.dslKind || kind,
+    snippet: dslSourceLine(sourceText, span.startLine),
+  };
+}
+
+function dslSourceMapLabel(kind: DslSourceMapRow['kind'], id: string): string {
+  if (kind === 'binding') {
+    const parts = id.split('/').filter(Boolean).map(decodeJsonPointerSegment);
+    const nodeId = parts[1] ?? '';
+    const bindingKey = parts[3] ?? parts[parts.length - 1] ?? id;
+    return nodeId ? `${nodeId}.${bindingKey}` : bindingKey;
+  }
+  return id;
+}
+
+function dslSourceLocation(span: DslSourceSpan): string {
+  const line = Number.isFinite(span.startLine ?? NaN) && (span.startLine ?? -1) > 0
+    ? span.startLine
+    : '?';
+  const column = Number.isFinite(span.startColumn ?? NaN) && (span.startColumn ?? -1) > 0
+    ? span.startColumn
+    : '?';
+  return `${line}:${column}`;
+}
+
+function dslSourceLine(sourceText: string, line: number | undefined): string {
+  if (!line || line < 1) {
+    return '';
+  }
+  return sourceText.split(/\r?\n/)[line - 1]?.trim() ?? '';
+}
+
+function nodeIdFromJsonPointer(pointer: string): string | undefined {
+  const [, root, rawNodeId] = pointer.split('/');
+  return root === 'nodes' && rawNodeId ? decodeJsonPointerSegment(rawNodeId) : undefined;
+}
+
+function decodeJsonPointerSegment(segment: string): string {
+  return segment.replace(/~1/g, '/').replace(/~0/g, '~');
+}
+
 function pickRecordByKeys<TValue>(
   source: Record<string, TValue>,
   keys: Iterable<string>,
@@ -3546,6 +3669,7 @@ export default function AuthorCanvas() {
   const [dslImportNotice, setDslImportNotice] = useState<ConnectionNotice | null>(null);
   const [dslImportDiagnostics, setDslImportDiagnostics] = useState<VisualDiagnostic[]>([]);
   const [dslImportCoverage, setDslImportCoverage] = useState<DslImportCoverage | null>(null);
+  const [dslImportSourceMap, setDslImportSourceMap] = useState<DslSourceMap | null>(null);
   const [search, setSearch] = useState('');
   const [paletteFacet, setPaletteFacet] = useState<OperatorPaletteFacet>('all');
   const [sourceFilter, setSourceFilter] = useState('all');
@@ -4009,6 +4133,14 @@ export default function AuthorCanvas() {
       }),
     [edges],
   );
+  const edgeTargetsById = useMemo(
+    () => Object.fromEntries(edges.map((edge) => [edge.id, edge.target])),
+    [edges],
+  );
+  const dslImportSourceRows = useMemo(
+    () => dslSourceMapRows(dslImportSourceMap, dslSourceText, edgeTargetsById),
+    [dslImportSourceMap, dslSourceText, edgeTargetsById],
+  );
   const implicitOutputNodeId = nodes.length > 0 ? nodes[nodes.length - 1].id : '';
   const outputNodeId = explicitOutputNodeId || implicitOutputNodeId;
   const canvasSummary = useMemo(
@@ -4153,6 +4285,10 @@ export default function AuthorCanvas() {
     setGraphVisualLayout(visualLayoutWithGraphContract({}, template.inputSchema, template.outputSchema, 'example'));
     setGraphOperatorFingerprints({});
     setGraphOperatorSnapshots({});
+    setDslImportDiagnostics([]);
+    setDslImportCoverage(null);
+    setDslImportSourceMap(null);
+    setDslImportNotice(null);
     setSimulationContextDraft(JSON.stringify(sampleFromSchemaEnvelope(template.inputSchema), null, 2));
     setContextVariables([]);
     setExplicitOutputNodeId(template.outputNodeId);
@@ -4553,11 +4689,14 @@ export default function AuthorCanvas() {
     setGraphInputSchema(nextInputSchema);
     setGraphOutputSchema(nextOutputSchema);
     setGraphContractSource(`DSL ${projection.sourceId || imported.graphName}`);
-    setGraphVisualLayout(visualLayoutWithGraphContract(
-      imported.visualLayout ?? {},
-      nextInputSchema,
-      nextOutputSchema,
-      'dsl',
+    setGraphVisualLayout(visualLayoutWithImportSourceMap(
+      visualLayoutWithGraphContract(
+        imported.visualLayout ?? {},
+        nextInputSchema,
+        nextOutputSchema,
+        'dsl',
+      ),
+      projection.sourceMap,
     ));
     setGraphOperatorFingerprints(imported.operatorFingerprints);
     setGraphOperatorSnapshots(imported.operatorSnapshots);
@@ -4574,6 +4713,7 @@ export default function AuthorCanvas() {
     setPendingConnectionGuideNodeId('');
     setDslImportDiagnostics(projection.diagnostics ?? []);
     setDslImportCoverage(projection.coverage ?? null);
+    setDslImportSourceMap(projection.sourceMap ?? null);
     setDslImportNotice(notice);
     setConnectionNotice(notice);
 
@@ -4591,6 +4731,7 @@ export default function AuthorCanvas() {
     if (!dslSourceText.trim()) {
       setDslImportDiagnostics([]);
       setDslImportCoverage(null);
+      setDslImportSourceMap(null);
       setDslImportNotice({ level: 'error', message: 'DSL source is empty.' });
       return;
     }
@@ -4609,6 +4750,7 @@ export default function AuthorCanvas() {
     } catch (cause: unknown) {
       setDslImportDiagnostics([]);
       setDslImportCoverage(null);
+      setDslImportSourceMap(null);
       setDslImportNotice({ level: 'error', message: String(cause) });
     } finally {
       setDslImportBusy(false);
@@ -5629,6 +5771,7 @@ export default function AuthorCanvas() {
               setDslImportNotice(null);
               setDslImportDiagnostics([]);
               setDslImportCoverage(null);
+              setDslImportSourceMap(null);
             }}
           />
           <div className="library-examples" aria-label="Legacy DSL examples">
@@ -5649,6 +5792,7 @@ export default function AuthorCanvas() {
                     });
                     setDslImportDiagnostics([]);
                     setDslImportCoverage(null);
+                    setDslImportSourceMap(null);
                   }}
                 >
                   <strong>{example.label}</strong>
@@ -5678,6 +5822,43 @@ export default function AuthorCanvas() {
               <span>{dslImportCoverage.memberCount ?? 0} members</span>
               <span>{dslImportCoverage.projectedNodeCount ?? 0} nodes</span>
               <span>{dslImportCoverage.edgeCount ?? 0} edges</span>
+            </div>
+          )}
+          {dslImportSourceRows.length > 0 && (
+            <div className="dsl-source-map" data-testid="legacy-dsl-source-map">
+              <div className="dsl-source-map-heading">
+                <strong>Source map</strong>
+                <span>{dslImportSourceRows.length} refs</span>
+              </div>
+              <ol>
+                {dslImportSourceRows.slice(0, 8).map((row) => (
+                  <li key={row.key}>
+                    <button
+                      type="button"
+                      data-testid={`legacy-dsl-source-map-row:${row.key}`}
+                      className={[
+                        'dsl-source-map-row',
+                        row.targetNodeId && row.targetNodeId === selectedNodeId ? 'selected' : '',
+                      ].filter(Boolean).join(' ')}
+                      disabled={!row.targetNodeId}
+                      onClick={() => {
+                        if (!row.targetNodeId) {
+                          return;
+                        }
+                        setSelectedNodeId(row.targetNodeId);
+                      }}
+                    >
+                      <span className="dsl-source-map-main">
+                        <strong>{row.label}</strong>
+                        <code>{row.kind} · {row.location}</code>
+                      </span>
+                      <span className="dsl-source-map-snippet">
+                        {row.snippet || row.dslKind}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
             </div>
           )}
           {dslImportDiagnostics.length > 0 && (

@@ -207,6 +207,10 @@ describe('AuthorCanvas operator-library intake', () => {
     );
 
     expect(query('[data-testid="legacy-dsl-coverage"]').textContent).toContain('2 nodes');
+    expect(query('[data-testid="legacy-dsl-source-map"]').textContent).toContain('4 refs');
+    expect(query('[data-testid="legacy-dsl-source-map"]').textContent).toContain('node · 10:3');
+    expect(query('[data-testid="legacy-dsl-source-map"]').textContent)
+      .toContain('node eligibility : "risk:eligibility"');
     expect(query('[data-testid="author-graph-contract"]').textContent)
       .toContain('DSL migrated-eligibility.bloge');
     expect(query('[data-testid="author-graph-contract"]').textContent).toContain('eligible');
@@ -228,6 +232,13 @@ describe('AuthorCanvas operator-library intake', () => {
         },
       },
       visualLayout: {
+        import: {
+          sourceMap: {
+            nodes: {
+              eligibility: { startLine: 10, startColumn: 3 },
+            },
+          },
+        },
         graphContract: {
           schemaSource: 'dsl',
           outputSchema: {
@@ -250,6 +261,10 @@ describe('AuthorCanvas operator-library intake', () => {
       source: { nodeId: 'eligibility', port: 'output', path: 'eligible' },
       target: { nodeId: 'response', port: 'inputs', path: 'eligible' },
     });
+
+    await click(query<HTMLButtonElement>('[data-testid="legacy-dsl-source-map-row:node:eligibility"]'));
+    expect(query('[data-testid="legacy-dsl-source-map-row:node:eligibility"]').className)
+      .toContain('selected');
   });
 });
 
@@ -1742,6 +1757,38 @@ function dslProjection(): unknown {
       unsupportedSyntaxCount: 0,
       missingOperatorCount: 0,
       missingFunctionCount: 0,
+    },
+    sourceMap: {
+      nodes: {
+        eligibility: {
+          sourceId: 'migrated-eligibility.bloge',
+          startLine: 10,
+          startColumn: 3,
+          dslKind: 'NodeDef',
+        },
+        response: {
+          sourceId: 'migrated-eligibility.bloge',
+          startLine: 16,
+          startColumn: 3,
+          dslKind: 'TransformDef',
+        },
+      },
+      edges: {
+        data_eligibility_response_eligible: {
+          sourceId: 'migrated-eligibility.bloge',
+          startLine: 17,
+          startColumn: 16,
+          dslKind: 'NodeOutputPath',
+        },
+      },
+      bindings: {
+        '/nodes/eligibility/inputs/score': {
+          sourceId: 'migrated-eligibility.bloge',
+          startLine: 12,
+          startColumn: 15,
+          dslKind: 'InputBinding',
+        },
+      },
     },
     diagnostics: [],
   };

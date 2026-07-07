@@ -1,6 +1,6 @@
 # 存量 BLOGE DSL 业务迁移到可视化编排设计方案
 
-状态：Partially Implemented / Phase 2.2 迁移专线；resource-gateway 已落地 schema-neutral DSL preview 后端与 `/author/` Legacy DSL 面板 MVP
+状态：Partially Implemented / Phase 2.3 迁移专线；resource-gateway 已落地 schema-neutral DSL preview 后端、`/author/` Legacy DSL 面板和 source map 行定位
 目标读者：BLOGE framework、resource-gateway visual canvas、Studio/LSP、业务平台迁移团队
 适用场景：业务系统已经集成 BLOGE 引擎和 DSL，已经自定义实现一批 Java 算子/表达式函数，并通过手写 `.bloge` DSL 承载业务逻辑，现在希望升级到可视化编排交付模式。
 
@@ -62,7 +62,7 @@ Canvas rendering: 只消费合法 schema + DSL，并投影成可视化 GraphDraf
 | `export-schema` 会合并 operator metadata 与 expression function registry | `BlogeCapabilityExporter` | 业务算子与 built-in function 可以统一进入迁移入口 |
 | resource-gateway 画布当前核心草稿是 `GraphDraft` | `resource-gateway-examples/.../visual/draft/GraphDraft.java` | DSL import 应输出现有 `bloge.visualGraphDraft.v1`，不要新增并行模型 |
 | 画布当前已有 GraphDraft -> DSL codegen | `GraphDraftDslGenerator` | 迁移后要做 semantic round-trip，而不是仅渲染一次 |
-| resource-gateway 已有 DSL preview import 入口 | `resource-gateway-examples/.../visual/importer/DslImportService.java`、`DslImportController.java`、`src/main/frontend/src/AuthorCanvas.tsx` | 第一版已支持普通 node、transform、decision_table、graph input/output schema、source map、missing operator/function diagnostics，并已接入 `/author/` Legacy DSL 面板；source map UI、commit 和 round-trip 仍待接入 |
+| resource-gateway 已有 DSL preview import 入口 | `resource-gateway-examples/.../visual/importer/DslImportService.java`、`DslImportController.java`、`src/main/frontend/src/AuthorCanvas.tsx` | 第一版已支持普通 node、transform、decision_table、graph input/output schema、source map、missing operator/function diagnostics，并已接入 `/author/` Legacy DSL 面板和 source map 行列表；点击 source map 行可以选中对应画布节点，commit、opaque snippet 修复向导和 round-trip 仍待接入 |
 
 结论：迁移方案应把现有 `bloge.capabilityCatalog.v1`、`DslCompiler.parseAst()`、`GraphDraft` 和 `GraphDraftDslGenerator` 串起来，而不是另造一个 Studio-only 或 canvas-only 格式。
 
@@ -618,13 +618,13 @@ A ~ B
 
 ### 10.1 Legacy DSL Import 入口
 
-`/author/` 增加一个 Import Existing DSL 面板：
+`/author/` 增加一个 Import Existing DSL 面板。第一步是 schema/catalog acquisition，不是强制 capability catalog；capability catalog 只是存量 BLOGE 业务的推荐高质量来源：
 
 ```text
-Step 1 Capability catalog
-  - paste/upload bloge-capability-catalog.json
-  - validate
-  - import/adapt to visual library
+Step 1 Schema / catalog
+  - paste/import bloge.visualOperatorLibrary.v1
+  - or adapt bloge.capabilityCatalog.v1 to visual library
+  - validate with the same visual operator-library validator
 
 Step 2 DSL source
   - paste/upload .bloge
@@ -649,7 +649,7 @@ Step 4 Commit
 - 使用自动布局，但给 edge label 和 route condition 留足空间。
 - 对 imported node 加轻量来源标记，不要干扰主要业务信息。
 - Opaque node 使用明确视觉状态，提醒用户它不是已完全结构化的节点。
-- source map 面板展示原 DSL snippet，可点击定位。
+- source map 面板展示原 DSL snippet，可点击 source map 行定位到画布节点；反向从画布节点跳转源码行是后续增强。
 - diagnostics 按严重程度、node、source line 分组。
 
 ### 10.3 修复向导
@@ -949,7 +949,7 @@ canvas rendering depends on Maven export / business code scan / specific schema 
 优先切片应该是：
 
 1. 在 resource-gateway visual 层实现 `CapabilityCatalogVisualAdapter`，支持把 `bloge.capabilityCatalog.v1` 适配为 visual library，但不把它作为唯一入口。
-2. 给 imported draft 增加 source provenance 和 source map 展示。
+2. 给 imported draft 增加一等 source provenance 字段；当前 source map 已在 preview response、`/author/` 面板和导出 draft 的 `visualLayout.import.sourceMap` 中保留。
 3. 实现 DSL import commit，把 preview draft 保存为 stored `GraphDraft`，并保留 source map / import provenance。
 4. 增加 round-trip API，阻止不等价回写。
 

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="721" height="450" viewBox="0 0 721 450" role="img" aria-labelledby="title desc">
+  <title id="title">BLOGE Author Legacy DSL Source Map</title>
+  <desc id="desc">Annotated screenshot showing DSL source, render result, source map, and selected source reference.</desc>
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#172033" flood-opacity="0.22"/>
+    </filter>
+    <style>
+      .mark { fill: none; stroke: #1f6feb; stroke-width: 3; rx: 8; }
+      .accent { fill: none; stroke: #f59e0b; stroke-width: 3; rx: 8; }
+      .label { fill: #172033; font: 700 13px Arial, sans-serif; }
+      .bubble { fill: #ffffff; stroke: #1f6feb; stroke-width: 2; filter: url(#shadow); }
+      .bubble-accent { fill: #ffffff; stroke: #f59e0b; stroke-width: 2; filter: url(#shadow); }
+      .num { fill: #1f6feb; font: 800 14px Arial, sans-serif; text-anchor: middle; dominant-baseline: central; }
+      .num-accent { fill: #b45309; font: 800 14px Arial, sans-serif; text-anchor: middle; dominant-baseline: central; }
+    </style>
+  </defs>
+  <image href="bloge-author-legacy-dsl-source-map.png" x="0" y="0" width="721" height="450"/>
+
+  <rect class="mark" x="13" y="0" width="698" height="129"/>
+  <circle class="bubble" cx="33" cy="24" r="15"/>
+  <text class="num" x="33" y="24">1</text>
+  <text class="label" x="54" y="29">Existing .bloge DSL</text>
+
+  <rect class="mark" x="13" y="212" width="698" height="63"/>
+  <circle class="bubble" cx="33" cy="229" r="15"/>
+  <text class="num" x="33" y="229">2</text>
+  <text class="label" x="54" y="234">Render with valid schema</text>
+
+  <rect class="mark" x="14" y="310" width="697" height="138"/>
+  <circle class="bubble" cx="33" cy="327" r="15"/>
+  <text class="num" x="33" y="327">3</text>
+  <text class="label" x="54" y="332">Source map refs</text>
+
+  <rect class="accent" x="22" y="342" width="680" height="40"/>
+  <circle class="bubble-accent" cx="673" cy="361" r="15"/>
+  <text class="num-accent" x="673" y="361">4</text>
+  <text class="label" x="498" y="366">Click row to select node</text>
+</svg>

@@ -291,10 +291,20 @@ operators:
 - 已落地：后端提供 schema-neutral DSL preview API：`POST /api/visual/dsl-imports/preview`。它接受 `.bloge` 源码、当前已导入的 visual library id，或本次 preview 临时传入的 `inlineLibraries`，然后返回 `GraphDraft + sourceMap + diagnostics + coverage`。
 - 已落地：浏览器 `/author/` 左侧提供 **Legacy DSL** 面板。用户粘贴 DSL 后点击 `Render DSL`，画布会直接渲染 preview draft，并同步节点、边、Graph Contract、Runtime Context 变量表、Test Suite 初始行和 Export Draft。
 - 已落地：如果 Library 面板当前内容是 JSON 形式的合法 `bloge.visualOperatorLibrary.v1`，Render DSL 会把它作为 `inlineLibraries` 随 preview 一起提交；如果已经 Import 入库，则会通过当前 catalog 的 `operatorLibraryIds` 参与解析。
+- 已落地：Legacy DSL 面板会展示 source map 行列表。点击 `node` / `binding` / `edge` 行可以选中对应画布节点，导出的 draft 也会在 `visualLayout.import.sourceMap` 保留源码行列映射。
 - 未落地：preview 后保存为 stored draft、semantic round-trip 回写校验。
 - 未落地：`bloge.capabilityCatalog.v1` 到 `bloge.visualOperatorLibrary.v1` 的正式 adapter。现在如果 schema 已经是合法 visual operator library，可以直接用于 DSL preview。
 
 设计方案见 [存量 BLOGE DSL 业务迁移到可视化编排设计方案](./bloge-legacy-dsl-visual-migration-design.md)。
+
+成功导入一份合法 inline visual operator library 后，Legacy DSL 面板会像下图这样展示：
+
+![Legacy DSL source map 标注](assets/bloge-author-legacy-dsl-source-map-annotated.svg)
+
+1. **Existing .bloge DSL**：这里粘贴或加载存量 `.bloge` 文件。示例中 DSL 声明了 graph 级 `input` / `output`，这些 schema 会进入 Graph Contract。
+2. **Render with valid schema**：点击 `Render DSL` 后，服务端用当前已导入 catalog 和本次 inline library 解析 operator/function 引用；成功态会显示节点/边数量。
+3. **Source map refs**：source map 会列出节点、输入绑定和数据边对应的 DSL 行列与源码片段，便于迁移审阅。
+4. **Click row to select node**：点击 source map 行会选中对应画布节点；如果缺 operator/function schema，系统仍尽量渲染图，并在同一区域显示 diagnostics。
 
 页面上的当前操作方式：
 
@@ -303,7 +313,8 @@ operators:
 3. 点击 `Render DSL`。服务端解析 DSL，并按当前 catalog/inline library 投影成 `GraphDraft`。
 4. 画布渲染节点和边；Graph Contract 同步显示 DSL `input` / `output`；Runtime Context 会根据 input schema 生成变量行。
 5. 若出现 missing operator/function，画布仍会尽量渲染结构，并在 Legacy DSL 面板显示 diagnostics；补齐 schema 后再次 Render。
-6. 继续使用 Auto Layout、Validate、Simulate、Operator Test Suite、全图 Test Suite 和 Export Draft。
+6. 在 Source map 中点击行定位节点，确认 DSL 片段和画布元素对应关系。
+7. 继续使用 Auto Layout、Validate、Simulate、Operator Test Suite、全图 Test Suite 和 Export Draft。
 
 对应 API 的最小调用方式：
 

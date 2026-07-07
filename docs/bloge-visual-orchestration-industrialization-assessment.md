@@ -93,7 +93,7 @@
 30. draft dependency schema drift issue 现在还携带 bounded `schemaChanges` keyword diff rows：服务端会在 drift path 上提取 `type`、`enum`、`const`、`format`、`pattern`、`multipleOf`、range、length、required、properties、items/contains 等关键 JSON Schema keyword 的 frozen/current compact value；selected contract 会把 `type: number -> integer` 这类 diff row 并入 port summary、outline drift label 和 `Schema Search`，真实浏览器覆盖 keyword diff 文本、ARIA label 和 390px mobile no-overflow。
 31. draft dependency schema drift issue 现在还携带 bounded `schemaPreview`：服务端在 drift path 上截取冻结快照与当前 catalog 的 JSON Schema 片段，限制深度、对象 key、数组项和字符串长度；selected contract 直接渲染并排 `Frozen schema` / `Current schema` review block，`Schema Search` 可按 preview 内容如 `frozen integer` 命中 drift row，真实浏览器覆盖 schema preview 文本、review row DOM 和 390px mobile no-overflow。
 32. draft dependency report 现在输出 `schemaRebaseDecisions` 和 `schemaRebaseDecisionStateCounts`：服务端把 drifted/missing/catalog/scope/schema drift 节点归入 `ready-rebase`、`ready-capture`、`repair-review`、`blocked` 决策队列；Draft Dependencies 面板可展示队列、focus 节点、在 dirty draft 时禁用 rebase，并通过现有 revision-guarded rebase API 批量刷新 eligible 节点；selected operator contract 也显示当前节点的 `Schema Rebase Queue`，真实浏览器覆盖 repair-review 队列、批量 rebase、selected inspector 队列和 390px mobile no-overflow。
-33. schema-neutral DSL preview import 后端已落地：`POST /api/visual/dsl-imports/preview` 接受 `.bloge` 源码、已导入 catalog id 或 preview-only inline visual libraries，复用官方 DSL parser 投影为 `GraphDraft + sourceMap + coverage + diagnostics`；普通 node、transform、decision_table、graph input/output schema 和 missing operator/function diagnostics 已有单元/API 测试覆盖。
+33. schema-neutral DSL preview import 已落地到后端和 `/author/`：`POST /api/visual/dsl-imports/preview` 接受 `.bloge` 源码、已导入 catalog id 或 preview-only inline visual libraries，复用官方 DSL parser 投影为 `GraphDraft + sourceMap + coverage + diagnostics`；普通 node、transform、decision_table、graph input/output schema 和 missing operator/function diagnostics 已有单元/API 测试覆盖。浏览器 Legacy DSL 面板可以 Render DSL、展示 source map 行列表、点击 source map 行选中画布节点，并在导出 draft 中保留 `visualLayout.import.sourceMap`。
 
 ### 尚未成立
 
@@ -102,7 +102,7 @@
 3. IAM/RBAC/secret/egress/审计查询还不是生产后台级别。
 4. durable、event、message、webhook、AI tool 的真实运行时还没有完整闭环。
 5. 前端仍是示例项目形态，复杂度已经接近需要模块化拆分的边界。
-6. 存量 DSL 迁移仍只有后端 preview MVP；`/author/` 导入面板、commit 保存、opaque snippet 展示和 semantic round-trip 还没闭环。
+6. 存量 DSL 迁移已经有后端 preview、`/author/` 导入面板和 source map 行定位；commit 保存、opaque snippet 修复向导和 semantic round-trip 还没闭环。
 
 ## 4. 本轮迭代复盘
 
@@ -121,11 +121,26 @@
 5. 返回 `bloge.dslVisualProjection.v1`，包含 `GraphDraft`、`sourceMap`、`coverage`、`roundTrip` 和 migration diagnostics。
 6. 缺失 operator 仍生成占位 node，并返回 `visual.dslImport.operatorMissing`，避免迁移 preview 丢图。
 
+### 2026-07-07：Legacy DSL Source Map UI
+
+触发问题：
+
+DSL preview 返回 source map 后，如果浏览器只能看到“已渲染成功”，迁移审阅仍然要靠人工在源码和图之间来回猜。source map 必须进入 `/author/` 的操作路径。
+
+本轮完成：
+
+1. `/author/` Legacy DSL 面板新增 source map 行列表，展示 node、binding 和 edge 的 DSL 行列与源码片段。
+2. 点击 source map 行会选中对应画布节点，降低存量 DSL 审阅时的定位成本。
+3. 导出的 draft 会保留 `visualLayout.import.sourceMap`，让 preview lineage 不随浏览器状态丢失。
+4. 产品指南新增真实浏览器截图和标注，明确合法 schema + DSL 的成功路径，以及缺失 schema 时的 loss-aware diagnostics。
+
 验证：
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml -DskipTests compile
 mvn -f resource-gateway-examples/pom.xml -Dtest=DslImportServiceTest,DslImportControllerTest test
+npm --prefix resource-gateway-examples/src/main/frontend test -- AuthorCanvas.test.tsx
+npm --prefix resource-gateway-examples/src/main/frontend run build
 ```
 
 剩余风险：

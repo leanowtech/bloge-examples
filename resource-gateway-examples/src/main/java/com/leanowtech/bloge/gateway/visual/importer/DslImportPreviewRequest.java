@@ -10,10 +10,16 @@ import java.util.Map;
 /**
  * Request for projecting existing BLOGE DSL into an editable visual draft.
  *
+ * <p>The visual canvas is schema-provenance agnostic: it does not care whether an operator/function
+ * schema was handwritten, generated from a BLOGE codebase, projected from OpenAPI/AsyncAPI, or served
+ * by a platform registry. The preview path only requires the effective visual catalog view to be a
+ * structurally valid {@code bloge.visualOperatorLibrary.v1} catalog.
+ *
  * @param sourceId logical source file id for source-map diagnostics
  * @param dsl source DSL text
  * @param operatorLibraryIds already-imported visual operator library ids to include
- * @param inlineLibraries temporary visual operator libraries to use for this preview only
+ * @param inlineLibraries temporary visual operator libraries to use for this preview only; callers may
+ *                        provide any provenance as long as the structure is valid
  * @param mode import mode label
  * @param layout optional caller layout hints
  */
