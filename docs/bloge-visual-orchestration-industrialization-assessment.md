@@ -95,6 +95,7 @@
 32. draft dependency report 现在输出 `schemaRebaseDecisions` 和 `schemaRebaseDecisionStateCounts`：服务端把 drifted/missing/catalog/scope/schema drift 节点归入 `ready-rebase`、`ready-capture`、`repair-review`、`blocked` 决策队列；Draft Dependencies 面板可展示队列、focus 节点、在 dirty draft 时禁用 rebase，并通过现有 revision-guarded rebase API 批量刷新 eligible 节点；selected operator contract 也显示当前节点的 `Schema Rebase Queue`，真实浏览器覆盖 repair-review 队列、批量 rebase、selected inspector 队列和 390px mobile no-overflow。
 33. schema-neutral DSL preview/commit import 已落地到后端和 `/author/`：`POST /api/visual/dsl-imports/preview` 接受 `.bloge` 源码、已导入 catalog id 或 preview-only inline visual libraries，复用官方 DSL parser 投影为 `GraphDraft + sourceMap + coverage + diagnostics`；`POST /api/visual/dsl-imports/commit` 接受同一 request，服务端重新投影后保存 governed stored draft/revision，并返回 validation/dependency report。普通 node、transform、decision_table、graph input/output schema、source map 持久化和 missing operator/function diagnostics 已有单元/API/前端测试覆盖。浏览器 Legacy DSL 面板可以 Render DSL、Commit Draft、展示 source map 行列表、点击 source map 行选中画布节点，并在导出 draft 中保留 `visualLayout.import.sourceMap` 与 stored draft identity。
 34. `bloge.capabilityCatalog.v1` preview adapter 已落地：`CapabilityCatalogVisualAdapter` 和 `POST /admin/visual-operator-libraries/from-capability-catalog-text` 可把业务代码导出的 framework catalog JSON/YAML 投影为标准 `bloge.visualOperatorLibrary.v1` 草稿，包含 operator ports、capabilities、function signatures、projection review、opaque schema warning 和原始 implementation provenance。`/author/` Library 面板新增 `Adapt Catalog`，只负责 schema acquisition，之后仍然走现有 Validate / Import / DSL Render，保持通用画布“不关心 schema 生成方式，只消费合法 visual schema”的边界。后端 API 测试和前端 Library intake 测试已覆盖该路径。
+35. Legacy DSL preview 已具备语义 round-trip 证据：`DslImportService` 在可生成 DSL 的场景下执行 `GraphDraft -> GraphDraftDslGenerator -> generated DSL -> parseAst -> projectGraph`，并比较源 projection 与 generated projection 的 canonical visual semantics 指纹；`roundTrip` 返回 `SUPPORTED`、`DRIFT`、`PARTIAL` 或 `NOT_ASSESSED`，同时携带 generated DSL、source/generated fingerprint 和 diagnostics。`/author/` Legacy DSL 面板会显示 Round trip 状态，前端 notice 也会提示 `round-trip <status>`；后端 importer/codegen 测试和前端/API 测试均覆盖该证据链。
 
 ### 尚未成立
 
@@ -103,7 +104,7 @@
 3. IAM/RBAC/secret/egress/审计查询还不是生产后台级别。
 4. durable、event、message、webhook、AI tool 的真实运行时还没有完整闭环。
 5. 前端仍是示例项目形态，复杂度已经接近需要模块化拆分的边界。
-6. 存量 DSL 迁移已经有 capability catalog adapter、后端 preview/commit、`/author/` 导入面板、source map 行定位和 stored draft 保存；opaque snippet 修复向导和 semantic round-trip 还没闭环。
+6. 存量 DSL 迁移已经有 capability catalog adapter、后端 preview/commit、`/author/` 导入面板、source map 行定位、stored draft 保存和 preview 内置 semantic round-trip 证据；opaque snippet 修复向导、批量迁移报告和自动覆盖原 DSL 的 approval gate 还没闭环。
 
 ## 4. 本轮迭代复盘
 
@@ -160,7 +161,32 @@ npm --prefix resource-gateway-examples/src/main/frontend run build
 
 剩余风险：
 
-这轮把“存量 DSL 能被服务端投影成可见 draft 并保存为 governed draft revision”的第一段打通了，但还不是完整迁移工作台。source snippet/opaque 节点、复杂 DSL primitive、批量覆盖率报告和 semantic round-trip 仍是后续缺口，因此综合工业化分数暂不调整。
+这轮把“存量 DSL 能被服务端投影成可见 draft 并保存为 governed draft revision”的第一段打通了，但还不是完整迁移工作台。source snippet/opaque 节点、复杂 DSL primitive、批量覆盖率报告和自动覆盖原 DSL 的 approval gate 仍是后续缺口，因此综合工业化分数暂不调整。
+
+### 2026-07-07：Legacy DSL Semantic Round-Trip Evidence
+
+触发问题：
+
+通用画布不关心 schema 是怎么生成的，只要结构合法就应该能渲染 DSL；但面向存量手写 DSL 迁移，用户还需要知道“渲染成画布后再生成 DSL，会不会改变业务语义”。不能只给出 generated DSL 文本，必须给出可执行的语义证据。
+
+本轮完成：
+
+1. `DslImportService` 在 preview 阶段增加 round-trip assessment：源 DSL 投影为 `GraphDraft A` 后，用 `GraphDraftDslGenerator` 生成 DSL，再用官方 parser 重新解析并投影为 `GraphDraft B`。
+2. 新增 canonical visual semantics fingerprint，只比较 graph contract、节点 operator/input/config、边和 output selection，明确忽略坐标、source map、fixture、描述文本等非执行语义字段。
+3. `DslRoundTripSummary` 扩展为 `supported/status/message/generatedDsl/sourceFingerprint/generatedFingerprint/diagnostics`，区分 `SUPPORTED`、`DRIFT`、`PARTIAL` 和 `NOT_ASSESSED`。
+4. `GraphDraftDslGenerator` 开始把 graph-level input/output schema 降成 DSL boundary block；不能无损表达的 schema constraint 会返回 blocking diagnostic，而不是静默丢失。
+5. `/author/` Legacy DSL 面板新增 Round trip 状态区；preview notice 会显示 `round-trip <status>`，并展示 generated DSL、source semantics、generated semantics 和 diagnostics 证据标签。
+
+验证：
+
+```bash
+mvn -f resource-gateway-examples/pom.xml -Dtest=DslImportServiceTest,GraphDraftDslGeneratorTest test
+npm run test -- --run src/AuthorCanvas.test.tsx src/api.test.ts
+```
+
+剩余风险：
+
+这轮闭合的是“preview 级语义往返证据”，不是“自动改写原 `.bloge` 文件”。源码覆盖还需要独立 approval gate、人工 reviewed 状态、批量迁移报告和对 opaque/unsupported snippet 的修复工作台。当前 semantic fingerprint 是 visual-semantics 级别，已经足够识别当前 GraphDraft/codegen/projection 的漂移，但还不是 BLOGE runtime 全 AST 规范化器。
 
 ### 2026-07-05：Schema Rebase Decision Queue
 

@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencies;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import org.springframework.stereotype.Service;
 
@@ -15,6 +16,7 @@ import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -87,7 +89,12 @@ public class GraphDraftDslGenerator {
                     "Graph name '%s' cannot be rendered as a BLOGE DSL identifier.".formatted(draft.graphName()),
                     "/graphName"));
         }
-        dsl.append("graph ").append(draft.graphName()).append(" {\n\n");
+        dsl.append("graph ").append(draft.graphName()).append(" {\n");
+        boolean emittedSection = false;
+        emittedSection = appendBoundarySchema(dsl, "input", draft.inputSchema(), "/inputSchema", diagnostics,
+                emittedSection);
+        emittedSection = appendBoundarySchema(dsl, "output", graphOutputSchema(draft),
+                "/visualLayout/graphContract/outputSchema", diagnostics, emittedSection);
         for (GraphDraft.DraftNode node : orderedNodes(draft)) {
             if (!isDslFieldName(node.id())) {
                 diagnostics.add(VisualDiagnostic.error("visual.codegen.nodeId.invalid",
@@ -119,7 +126,11 @@ public class GraphDraftDslGenerator {
                     routeEdges.getOrDefault(node.id(), List.of()),
                     diagnostics);
             if (!block.isBlank()) {
-                dsl.append(block).append("\n\n");
+                if (emittedSection) {
+                    dsl.append("\n");
+                }
+                dsl.append(block).append("\n");
+                emittedSection = true;
             }
         }
         dsl.append("}");
@@ -130,6 +141,126 @@ public class GraphDraftDslGenerator {
     private static boolean runtimeBindingBlocked(OperatorDefinition operator) {
         return operator != null && (RUNTIME_BINDING_BLOCKED_KINDS.contains(operator.source().kind())
                 || RUNTIME_BINDING_BLOCKED_KINDS.contains(operator.lowering().mode()));
+    }
+
+    private static boolean appendBoundarySchema(StringBuilder dsl,
+                                                String sectionName,
+                                                SchemaEnvelope envelope,
+                                                String path,
+                                                List<VisualDiagnostic> diagnostics,
+                                                boolean emittedSection) {
+        if (envelope == null || schemaIsOpaque(envelope)) {
+            return emittedSection;
+        }
+        Map<String, Object> properties = objectMap(envelope.schema().get("properties"));
+        if (properties.isEmpty()) {
+            return emittedSection;
+        }
+        if (emittedSection) {
+            dsl.append("\n");
+        }
+        dsl.append("  ").append(sectionName).append(" {\n");
+        List<String> required = requiredProperties(envelope);
+        properties.forEach((name, schema) -> appendSchemaField(dsl, name, objectMap(schema),
+                required.contains(name), path + "/properties/" + name, diagnostics, 4));
+        dsl.append("  }\n");
+        return true;
+    }
+
+    private static void appendSchemaField(StringBuilder dsl,
+                                          String name,
+                                          Map<String, Object> schema,
+                                          boolean required,
+                                          String path,
+                                          List<VisualDiagnostic> diagnostics,
+                                          int indent) {
+        String prefix = " ".repeat(indent);
+        if (!isDslFieldName(name)) {
+            diagnostics.add(VisualDiagnostic.error("visual.codegen.graphSchema.fieldName.invalid",
+                    "Graph schema field '%s' cannot be rendered as a BLOGE DSL field name.".formatted(name),
+                    path));
+            return;
+        }
+        Map<String, Object> nestedProperties = objectMap(schema.get("properties"));
+        if (!nestedProperties.isEmpty()) {
+            dsl.append(prefix).append(name).append(": {\n");
+            List<String> nestedRequired = requiredProperties(schema);
+            nestedProperties.forEach((nestedName, nestedSchema) -> appendSchemaField(dsl, nestedName,
+                    objectMap(nestedSchema), nestedRequired.contains(nestedName),
+                    path + "/properties/" + nestedName, diagnostics, indent + 2));
+            dsl.append(prefix).append("}").append(required ? "" : "?").append("\n");
+            return;
+        }
+        String type = dslType(schema);
+        if (type.isBlank()) {
+            diagnostics.add(VisualDiagnostic.error("visual.codegen.graphSchema.unsupported",
+                    "Graph schema field '%s' uses JSON Schema features that this DSL generator cannot render losslessly."
+                            .formatted(name),
+                    path));
+            return;
+        }
+        if (schema.containsKey("default") || schema.containsKey("enum") || schema.containsKey("oneOf")
+                || schema.containsKey("anyOf") || schema.containsKey("$ref")) {
+            diagnostics.add(VisualDiagnostic.error("visual.codegen.graphSchema.unsupported",
+                    "Graph schema field '%s' carries constraints that this DSL generator cannot render losslessly."
+                            .formatted(name),
+                    path));
+            return;
+        }
+        dsl.append(prefix).append(name).append(": ").append(type).append(required ? "" : "?").append("\n");
+    }
+
+    private static String dslType(Map<String, Object> schema) {
+        String type = stringValue(schema.get("type")).trim().toLowerCase(Locale.ROOT);
+        return switch (type) {
+            case "string" -> "String";
+            case "integer" -> "Int";
+            case "number" -> "Decimal";
+            case "boolean" -> "Boolean";
+            case "array" -> "Array";
+            case "object" -> schema.containsKey("additionalProperties") ? "Object" : "";
+            default -> "";
+        };
+    }
+
+    private static boolean schemaIsOpaque(SchemaEnvelope envelope) {
+        Map<String, Object> schema = envelope.schema();
+        Map<String, Object> properties = objectMap(schema.get("properties"));
+        return "object".equals(stringValue(schema.get("type")))
+                && properties.isEmpty()
+                && Boolean.TRUE.equals(schema.get("additionalProperties"));
+    }
+
+    private static List<String> requiredProperties(SchemaEnvelope envelope) {
+        return requiredProperties(envelope.schema());
+    }
+
+    private static List<String> requiredProperties(Map<String, Object> schema) {
+        Object raw = schema.get("required");
+        if (!(raw instanceof List<?> list)) {
+            return List.of();
+        }
+        return list.stream()
+                .filter(item -> item != null)
+                .map(String::valueOf)
+                .toList();
+    }
+
+    private static SchemaEnvelope graphOutputSchema(GraphDraft draft) {
+        Object rawContract = draft.visualLayout().get("graphContract");
+        if (!(rawContract instanceof Map<?, ?> contract)) {
+            return SchemaEnvelope.opaque();
+        }
+        Object rawOutput = contract.get("outputSchema");
+        if (rawOutput instanceof SchemaEnvelope envelope) {
+            return envelope;
+        }
+        Map<String, Object> map = objectMap(rawOutput);
+        if (map.containsKey("schema")) {
+            return new SchemaEnvelope(stringValue(map.get("format")), stringValue(map.get("version")),
+                    objectMap(map.get("schema")));
+        }
+        return SchemaEnvelope.opaque();
     }
 
     private String nodeToDsl(GraphDraft.DraftNode node,

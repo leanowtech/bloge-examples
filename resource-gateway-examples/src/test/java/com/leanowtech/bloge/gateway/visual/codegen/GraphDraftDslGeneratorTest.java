@@ -1471,6 +1471,66 @@ class GraphDraftDslGeneratorTest {
         assertThat(result.dsl()).contains("eligible = ctx.score >= 700");
     }
 
+    @Test
+    void lowersGraphInputAndOutputSchemasIntoDslBoundaryBlocks() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        SchemaEnvelope outputSchema = SchemaEnvelope.object(Map.of(
+                "decision", Map.of("type", "string"),
+                "score", Map.of("type", "integer"),
+                "review", Map.of(
+                        "type", "object",
+                        "properties", Map.of("required", Map.of("type", "boolean")),
+                        "required", List.of("required")
+                )
+        ), List.of("decision", "score"));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "schemaBoundary",
+                "",
+                "",
+                "",
+                "",
+                SchemaEnvelope.object(Map.of(
+                        "applicantId", Map.of("type", "string"),
+                        "requestedAmount", Map.of("type", "number")
+                ), List.of("applicantId")),
+                List.of(new GraphDraft.DraftNode(
+                        "response",
+                        "bloge:transform",
+                        "",
+                        Map.of(),
+                        Map.of("assignments", List.of(
+                                Map.of("field", "decision", "expression", "\"approve\""),
+                                Map.of("field", "score", "expression", "720"),
+                                Map.of("field", "review", "expression", "{ required: false }")
+                        )),
+                        null
+                )),
+                List.of(),
+                Map.of("graphContract", Map.of("outputSchema", outputSchema)),
+                new GraphDraft.OutputSelection("response", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl())
+                .contains("graph schemaBoundary")
+                .contains("input {")
+                .contains("applicantId: String")
+                .contains("requestedAmount: Decimal?")
+                .contains("output {")
+                .contains("decision: String")
+                .contains("score: Int")
+                .contains("review: {")
+                .contains("required: Boolean")
+                .contains("}?");
+    }
+
     private static OperatorLibrary arrayIndexTemplateLibrary() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",

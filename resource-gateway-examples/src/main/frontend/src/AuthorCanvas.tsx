@@ -88,6 +88,7 @@ import type {
   DraftNodeBinding,
   BuiltInFunctionDefinition,
   DslImportCoverage,
+  DslRoundTripSummary,
   DslSourceMap,
   DslSourceSpan,
   DslVisualProjection,
@@ -3520,6 +3521,7 @@ function projectionDiagnosticsLevel(diagnostics: VisualDiagnostic[]): Connection
 function dslProjectionNotice(projection: DslVisualProjection): ConnectionNotice {
   const diagnostics = projection.diagnostics ?? [];
   const coverage = projection.coverage;
+  const roundTrip = projection.roundTrip;
   const nodeCount = projection.draft.nodes?.length ?? coverage?.projectedNodeCount ?? 0;
   const edgeCount = projection.draft.edges?.length ?? coverage?.edgeCount ?? 0;
   const missingOperatorCount = coverage?.missingOperatorCount ?? 0;
@@ -3527,11 +3529,22 @@ function dslProjectionNotice(projection: DslVisualProjection): ConnectionNotice 
   const repairHints = [
     missingOperatorCount > 0 ? `${missingOperatorCount} missing operator schema` : '',
     missingFunctionCount > 0 ? `${missingFunctionCount} missing function schema` : '',
+    roundTrip && roundTrip.status && roundTrip.status !== 'NOT_ASSESSED' ? `round-trip ${roundTrip.status}` : '',
   ].filter(Boolean);
   return {
     level: projectionDiagnosticsLevel(diagnostics),
     message: `Rendered ${nodeCount} nodes / ${edgeCount} edges${repairHints.length > 0 ? `; ${repairHints.join(', ')}` : ''}.`,
   };
+}
+
+function dslRoundTripNoticeLevel(roundTrip: DslRoundTripSummary): ConnectionNotice['level'] {
+  if (roundTrip.supported) {
+    return 'ok';
+  }
+  if (roundTrip.status === 'DRIFT') {
+    return 'warning';
+  }
+  return 'pending';
 }
 
 function edgeLabelFromCanvasEdge(edge: CanvasEdge): string {
@@ -3790,6 +3803,7 @@ export default function AuthorCanvas() {
   const [dslImportDiagnostics, setDslImportDiagnostics] = useState<VisualDiagnostic[]>([]);
   const [dslImportCoverage, setDslImportCoverage] = useState<DslImportCoverage | null>(null);
   const [dslImportSourceMap, setDslImportSourceMap] = useState<DslSourceMap | null>(null);
+  const [dslImportRoundTrip, setDslImportRoundTrip] = useState<DslRoundTripSummary | null>(null);
   const [search, setSearch] = useState('');
   const [paletteFacet, setPaletteFacet] = useState<OperatorPaletteFacet>('all');
   const [sourceFilter, setSourceFilter] = useState('all');
@@ -4412,6 +4426,7 @@ export default function AuthorCanvas() {
     setDslImportDiagnostics([]);
     setDslImportCoverage(null);
     setDslImportSourceMap(null);
+    setDslImportRoundTrip(null);
     setDslImportNotice(null);
     setSimulationContextDraft(JSON.stringify(sampleFromSchemaEnvelope(template.inputSchema), null, 2));
     setContextVariables([]);
@@ -4883,6 +4898,7 @@ export default function AuthorCanvas() {
     setDslImportDiagnostics(projection.diagnostics ?? []);
     setDslImportCoverage(projection.coverage ?? null);
     setDslImportSourceMap(projection.sourceMap ?? null);
+    setDslImportRoundTrip(projection.roundTrip ?? null);
     setDslImportNotice(notice);
     setConnectionNotice(notice);
 
@@ -4901,6 +4917,7 @@ export default function AuthorCanvas() {
       setDslImportDiagnostics([]);
       setDslImportCoverage(null);
       setDslImportSourceMap(null);
+      setDslImportRoundTrip(null);
       setDslImportNotice({ level: 'error', message: 'DSL source is empty.' });
       return;
     }
@@ -4920,6 +4937,7 @@ export default function AuthorCanvas() {
       setDslImportDiagnostics([]);
       setDslImportCoverage(null);
       setDslImportSourceMap(null);
+      setDslImportRoundTrip(null);
       setDslImportNotice({ level: 'error', message: String(cause) });
     } finally {
       setDslImportBusy(false);
@@ -4931,6 +4949,7 @@ export default function AuthorCanvas() {
       setDslImportDiagnostics([]);
       setDslImportCoverage(null);
       setDslImportSourceMap(null);
+      setDslImportRoundTrip(null);
       setDslImportNotice({ level: 'error', message: 'DSL source is empty.' });
       return;
     }
@@ -4960,6 +4979,7 @@ export default function AuthorCanvas() {
         draft: result.draft,
         sourceMap,
         coverage: dslImportCoverage ?? undefined,
+        roundTrip: dslImportRoundTrip ?? undefined,
         diagnostics: [
           ...(result.diagnostics ?? []),
           ...(result.validation?.diagnostics ?? []),
@@ -4976,6 +4996,7 @@ export default function AuthorCanvas() {
   }, [
     applyDslProjection,
     dslImportCoverage,
+    dslImportRoundTrip,
     dslImportSourceMap,
     dslSourceId,
     dslSourceText,
@@ -6010,6 +6031,7 @@ export default function AuthorCanvas() {
               setDslImportDiagnostics([]);
               setDslImportCoverage(null);
               setDslImportSourceMap(null);
+              setDslImportRoundTrip(null);
             }}
           />
           <div className="library-examples" aria-label="Legacy DSL examples">
@@ -6031,6 +6053,7 @@ export default function AuthorCanvas() {
                     setDslImportDiagnostics([]);
                     setDslImportCoverage(null);
                     setDslImportSourceMap(null);
+                    setDslImportRoundTrip(null);
                   }}
                 >
                   <strong>{example.label}</strong>
@@ -6069,6 +6092,26 @@ export default function AuthorCanvas() {
               <span>{dslImportCoverage.memberCount ?? 0} members</span>
               <span>{dslImportCoverage.projectedNodeCount ?? 0} nodes</span>
               <span>{dslImportCoverage.edgeCount ?? 0} edges</span>
+            </div>
+          )}
+          {dslImportRoundTrip && (
+            <div
+              className={`dsl-round-trip ${dslRoundTripNoticeLevel(dslImportRoundTrip)}`}
+              data-testid="legacy-dsl-round-trip"
+            >
+              <div className="dsl-round-trip-heading">
+                <strong>Round trip</strong>
+                <span>{dslImportRoundTrip.status || 'NOT_ASSESSED'}</span>
+              </div>
+              {dslImportRoundTrip.message && <p>{dslImportRoundTrip.message}</p>}
+              <div className="dsl-round-trip-evidence">
+                <span>{dslImportRoundTrip.generatedDsl ? 'Generated DSL' : 'No generated DSL'}</span>
+                {dslImportRoundTrip.sourceFingerprint && <span>Source semantics</span>}
+                {dslImportRoundTrip.generatedFingerprint && <span>Generated semantics</span>}
+                {(dslImportRoundTrip.diagnostics?.length ?? 0) > 0 && (
+                  <span>{dslImportRoundTrip.diagnostics?.length} diagnostics</span>
+                )}
+              </div>
             </div>
           )}
           {dslImportSourceRows.length > 0 && (

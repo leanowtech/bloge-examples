@@ -48,9 +48,10 @@ Legacy DSL -> Commit Draft
 
 ```json
 {
-  "renderNotice": "Rendered 2 nodes / 2 edges.",
+  "renderNotice": "Rendered 2 nodes / 2 edges; round-trip <status>.",
   "commitNoticePrefix": "Stored draft ",
   "sourceMapRefs": 6,
+  "roundTripStatus": "SUPPORTED / DRIFT / PARTIAL / NOT_ASSESSED",
   "selectedRowClass": "dsl-source-map-row selected",
   "exportCarriesDraftIdentity": true
 }
@@ -60,8 +61,8 @@ Legacy DSL -> Commit Draft
 
 | 缺口 | 影响 | 下一步 |
 | --- | --- | --- |
-| `bloge.capabilityCatalog.v1` adapter 未落地 | 存量业务的 Maven export 产物还不能直接导入画布 | 增加 capability catalog -> visual operator library adapter；但不把它做成画布唯一入口 |
+| `bloge.capabilityCatalog.v1` adapter 已落地但仍是示例级 | 存量业务的 Maven export 产物已有 preview adapter，后续还需要沉淀为 framework/Studio 复用 SPI | 将 capability catalog -> visual operator library adapter 从 resource-gateway 示例推广为正式迁移工具；继续保持它不是画布唯一入口 |
 | opaque snippet 修复向导未落地 | 复杂 DSL primitive 只能 diagnostics，不够可操作 | 增加 `bloge:opaqueDslNode` / source snippet UI / unresolved mapping wizard |
-| semantic round-trip 未落地 | 还不能安全自动回写 `.bloge` | 增加 original AST vs generated AST equivalence API |
+| 源码覆盖 approval gate 未落地 | preview 已有 semantic round-trip 证据，但还不能自动安全覆盖原 `.bloge` | 增加源码回写 API / approval gate，复用 preview `roundTrip` 状态阻止不等价回写 |
 
-结论：本轮把“合法 schema + DSL 可以在通用画布渲染、审阅源码映射，并保存为 governed stored draft”的核心路径闭合到 API 和浏览器单元测试层。剩余差距集中在框架级 schema adapter、复杂语义保留和回写安全。
+结论：本轮把“合法 schema + DSL 可以在通用画布渲染、审阅源码映射，并保存为 governed stored draft”的核心路径闭合到 API 和浏览器单元测试层；后续迭代又补上了 capability catalog adapter 和 preview 级 semantic round-trip 证据。剩余差距集中在 framework/Studio 复用化、复杂语义保留和源码覆盖安全 gate。

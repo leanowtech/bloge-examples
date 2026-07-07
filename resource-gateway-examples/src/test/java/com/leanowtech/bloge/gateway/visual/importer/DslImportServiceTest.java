@@ -59,6 +59,55 @@ class DslImportServiceTest {
         assertThat(projection.draft().visualLayout())
                 .extracting(layout -> ((Map<?, ?>) layout.get("import")).get("schemaNeutral"))
                 .isEqualTo(true);
+        assertThat(projection.roundTrip().status()).isEqualTo("DRIFT");
+        assertThat(projection.roundTrip().generatedDsl()).contains("graph migratedEligibility");
+        assertThat(projection.roundTrip().sourceFingerprint()).isNotBlank();
+        assertThat(projection.roundTrip().generatedFingerprint()).isNotBlank();
+    }
+
+    @Test
+    void marksTransformOnlyDslAsRoundTripSupported() {
+        DslImportService service = service(emptyCatalog());
+
+        DslVisualProjection projection = service.preview(new DslImportPreviewRequest(
+                "transform-only.bloge",
+                """
+                        graph transformOnly {
+                          input {
+                            score: Int
+                            amount: Decimal
+                          }
+                          output {
+                            score: Int
+                            amount: Decimal
+                          }
+                          transform response {
+                            score = ctx.score
+                            amount = ctx.amount
+                          }
+                        }
+                        """,
+                List.of(),
+                List.of(),
+                "preview",
+                Map.of()
+        ));
+
+        assertThat(projection.diagnostics()).noneMatch(VisualDiagnostic::error);
+        assertThat(projection.roundTrip().supported()).isTrue();
+        assertThat(projection.roundTrip().status()).isEqualTo("SUPPORTED");
+        assertThat(projection.roundTrip().message())
+                .contains("same canonical visual semantics");
+        assertThat(projection.roundTrip().generatedDsl())
+                .contains("graph transformOnly")
+                .contains("input {")
+                .contains("score: Int")
+                .contains("output {")
+                .contains("amount: Decimal")
+                .contains("transform response");
+        assertThat(projection.roundTrip().sourceFingerprint()).isNotBlank();
+        assertThat(projection.roundTrip().generatedFingerprint())
+                .isEqualTo(projection.roundTrip().sourceFingerprint());
     }
 
     @Test

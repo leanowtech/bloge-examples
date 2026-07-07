@@ -229,6 +229,9 @@ export interface VisualDiagnostic {
   code?: string;
   message?: string;
   target?: string;
+  line?: number;
+  column?: number;
+  metadata?: Record<string, unknown>;
 }
 
 /** Source span in an imported BLOGE DSL document. */
@@ -263,6 +266,10 @@ export interface DslRoundTripSummary {
   supported?: boolean;
   status?: string;
   message?: string;
+  generatedDsl?: string;
+  sourceFingerprint?: string;
+  generatedFingerprint?: string;
+  diagnostics?: VisualDiagnostic[];
 }
 
 /** Request body for schema-neutral DSL preview import. */

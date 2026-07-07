@@ -249,10 +249,15 @@ describe('AuthorCanvas operator-library intake', () => {
 
     await waitFor(() =>
       expect(query('[data-testid="legacy-dsl-notice"]').textContent)
-        .toContain('Rendered 2 nodes / 2 edges.'),
+        .toContain('Rendered 2 nodes / 2 edges; round-trip SUPPORTED.'),
     );
 
     expect(query('[data-testid="legacy-dsl-coverage"]').textContent).toContain('2 nodes');
+    expect(query('[data-testid="legacy-dsl-round-trip"]').textContent)
+      .toContain('Round tripSUPPORTED');
+    expect(query('[data-testid="legacy-dsl-round-trip"]').textContent)
+      .toContain('Generated DSL re-parsed into the same canonical visual semantics');
+    expect(query('[data-testid="legacy-dsl-round-trip"]').textContent).toContain('Generated DSL');
     expect(query('[data-testid="legacy-dsl-source-map"]').textContent).toContain('6 refs');
     expect(query('[data-testid="legacy-dsl-source-map"]').textContent).toContain('node · 10:3');
     expect(query('[data-testid="legacy-dsl-source-map"]').textContent)
@@ -1898,6 +1903,15 @@ function dslProjection(): unknown {
       unsupportedSyntaxCount: 0,
       missingOperatorCount: 0,
       missingFunctionCount: 0,
+    },
+    roundTrip: {
+      supported: true,
+      status: 'SUPPORTED',
+      message: 'Generated DSL re-parsed into the same canonical visual semantics as the source DSL.',
+      generatedDsl: 'graph migratedEligibility { transform response { eligible = eligibility.output.eligible } }',
+      sourceFingerprint: 'source-fingerprint',
+      generatedFingerprint: 'source-fingerprint',
+      diagnostics: [],
     },
     sourceMap: {
       nodes: {

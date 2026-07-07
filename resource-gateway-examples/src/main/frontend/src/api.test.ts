@@ -146,6 +146,15 @@ describe('operator library API client', () => {
         output: { nodeId: 'eligibility', path: '' },
       },
       coverage: { projectedNodeCount: 1, edgeCount: 0 },
+      roundTrip: {
+        supported: true,
+        status: 'SUPPORTED',
+        message: 'Generated DSL re-parsed into the same canonical visual semantics as the source DSL.',
+        generatedDsl: 'graph migratedEligibility {}',
+        sourceFingerprint: 'same',
+        generatedFingerprint: 'same',
+        diagnostics: [],
+      },
       diagnostics: [],
     })));
 
@@ -157,6 +166,8 @@ describe('operator library API client', () => {
     });
 
     expect(result.draft.graphName).toBe('migratedEligibility');
+    expect(result.roundTrip?.status).toBe('SUPPORTED');
+    expect(result.roundTrip?.generatedDsl).toContain('graph migratedEligibility');
     expect(fetchMock).toHaveBeenCalledWith('/api/visual/dsl-imports/preview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

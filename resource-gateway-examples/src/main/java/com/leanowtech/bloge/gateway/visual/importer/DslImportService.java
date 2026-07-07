@@ -9,6 +9,8 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryValidator;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
+import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -18,6 +20,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -56,14 +59,10 @@ public class DslImportService {
                 : request;
         ProjectionState state = new ProjectionState(normalized);
         EffectiveCatalog effectiveCatalog = effectiveCatalog(normalized, state.diagnostics);
-        AstNode root;
-        try {
-            root = new DslCompiler(new DefaultOperatorRegistry())
-                    .withDiscoveredExtensionProviders()
-                    .parseAst(normalized.dsl());
-        } catch (RuntimeException ex) {
+        AstNode root = parseAst(normalized.dsl(), state);
+        if (root == null) {
             state.diagnostics.add(new VisualDiagnostic("ERROR", "visual.dslImport.parseFailed",
-                    "BLOGE DSL could not be parsed: " + ex.getMessage(), "/dsl", -1, -1,
+                    "BLOGE DSL could not be parsed: " + state.parseFailureMessage, "/dsl", -1, -1,
                     Map.of("sourceId", normalized.sourceId())));
             GraphDraft draft = emptyDraft("dslImport", normalized);
             return new DslVisualProjection(DslVisualProjection.SCHEMA_VERSION, normalized.sourceId(), draft,
@@ -80,6 +79,28 @@ public class DslImportService {
                     "The DSL root is not a graph definition."), state.diagnostics);
         }
 
+        return projectGraph(normalized, graph, effectiveCatalog, state, true);
+    }
+
+    private AstNode parseAst(String source, ProjectionState state) {
+        try {
+            return new DslCompiler(new DefaultOperatorRegistry())
+                    .withDiscoveredExtensionProviders()
+                    .parseAst(source);
+        } catch (RuntimeException ex) {
+            if (state != null) {
+                state.parseFailureMessage = ex.getMessage() == null ? ex.getClass().getSimpleName()
+                        : ex.getMessage();
+            }
+            return null;
+        }
+    }
+
+    private DslVisualProjection projectGraph(DslImportPreviewRequest normalized,
+                                             AstNode.GraphDef graph,
+                                             EffectiveCatalog effectiveCatalog,
+                                             ProjectionState state,
+                                             boolean assessRoundTrip) {
         Map<String, AstNode.SchemaDeclaration> namedSchemas = collectNamedSchemas(graph);
         for (AstNode member : graph.members()) {
             projectMember(member, state, effectiveCatalog);
@@ -97,14 +118,63 @@ public class DslImportService {
                 state.missingOperatorRefs.size(),
                 state.missingFunctionNames.size()
         );
-        DslRoundTripSummary roundTrip = state.unsupportedSyntaxTargets.isEmpty()
-                && state.expressionOutputTargets.isEmpty()
-                ? DslRoundTripSummary.notAssessed()
-                : DslRoundTripSummary.partial("Some DSL syntax or expression-valued decision outputs were projected "
-                + "for visual repair but are not yet guaranteed to regenerate byte-for-byte.");
+        DslRoundTripSummary roundTrip = assessRoundTrip
+                ? assessRoundTrip(normalized, draft, effectiveCatalog, state)
+                : DslRoundTripSummary.notAssessed();
         return new DslVisualProjection(DslVisualProjection.SCHEMA_VERSION, normalized.sourceId(), draft,
                 new DslSourceMap(state.nodeSpans, state.edgeSpans, state.bindingSpans),
                 coverage, roundTrip, state.diagnostics);
+    }
+
+    private DslRoundTripSummary assessRoundTrip(DslImportPreviewRequest sourceRequest,
+                                                GraphDraft draft,
+                                                EffectiveCatalog effectiveCatalog,
+                                                ProjectionState state) {
+        String sourceFingerprint = semanticFingerprint(draft);
+        if (!state.unsupportedSyntaxTargets.isEmpty() || !state.expressionOutputTargets.isEmpty()) {
+            return DslRoundTripSummary.partial(
+                    "Some DSL syntax or expression-valued decision outputs were projected for visual repair; "
+                            + "regeneration is intentionally blocked until the draft is repaired.",
+                    "", sourceFingerprint, "", List.of());
+        }
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(effectiveCatalog.asCatalog());
+        DslGenerationResult generation = generator.generate(draft);
+        if (!generation.generated()) {
+            return DslRoundTripSummary.partial(
+                    "Generated DSL could not be produced without blocking diagnostics.",
+                    generation.dsl(), sourceFingerprint, "", generation.diagnostics());
+        }
+
+        DslImportPreviewRequest generatedRequest = new DslImportPreviewRequest(
+                sourceRequest.sourceId() + "#round-trip",
+                generation.dsl(),
+                sourceRequest.operatorLibraryIds(),
+                sourceRequest.inlineLibraries(),
+                "round-trip",
+                sourceRequest.layout()
+        );
+        ProjectionState generatedState = new ProjectionState(generatedRequest);
+        AstNode generatedRoot = parseAst(generation.dsl(), generatedState);
+        if (!(generatedRoot instanceof AstNode.GraphDef generatedGraph)) {
+            VisualDiagnostic diagnostic = new VisualDiagnostic("ERROR", "visual.dslImport.roundTripParseFailed",
+                    "Generated BLOGE DSL could not be parsed: " + generatedState.parseFailureMessage,
+                    "/roundTrip/generatedDsl", -1, -1, Map.of("sourceId", sourceRequest.sourceId()));
+            return DslRoundTripSummary.partial(
+                    "Generated DSL could not be parsed back into a graph definition.",
+                    generation.dsl(), sourceFingerprint, "", List.of(diagnostic));
+        }
+
+        DslVisualProjection generatedProjection = projectGraph(generatedRequest, generatedGraph, effectiveCatalog,
+                generatedState, false);
+        String generatedFingerprint = semanticFingerprint(generatedProjection.draft());
+        if (generatedState.diagnostics.stream().anyMatch(VisualDiagnostic::error)) {
+            return DslRoundTripSummary.partial(
+                    "Generated DSL parsed, but the generated projection has blocking diagnostics.",
+                    generation.dsl(), sourceFingerprint, generatedFingerprint, generatedState.diagnostics);
+        }
+        return sourceFingerprint.equals(generatedFingerprint)
+                ? DslRoundTripSummary.supported(generation.dsl(), sourceFingerprint)
+                : DslRoundTripSummary.drift(generation.dsl(), sourceFingerprint, generatedFingerprint);
     }
 
     private EffectiveCatalog effectiveCatalog(DslImportPreviewRequest request,
@@ -1059,7 +1129,140 @@ public class DslImportService {
         return sanitized.isBlank() ? "edge" : sanitized;
     }
 
+    private static String semanticFingerprint(GraphDraft draft) {
+        if (draft == null) {
+            return "null";
+        }
+        Map<String, Object> semantic = new LinkedHashMap<>();
+        semantic.put("graphName", draft.graphName());
+        semantic.put("inputSchema", draft.inputSchema());
+        semantic.put("outputSchema", graphContractValue(draft, "outputSchema"));
+        semantic.put("nodes", draft.nodes().stream()
+                .map(DslImportService::nodeSemantic)
+                .toList());
+        semantic.put("edges", draft.edges().stream()
+                .map(DslImportService::edgeSemantic)
+                .sorted(Comparator.comparing(DslImportService::canonicalValue))
+                .toList());
+        semantic.put("output", Map.of(
+                "nodeId", draft.output().nodeId(),
+                "path", draft.output().path()
+        ));
+        return canonicalValue(semantic);
+    }
+
+    private static Map<String, Object> nodeSemantic(GraphDraft.DraftNode node) {
+        Map<String, Object> semantic = new LinkedHashMap<>();
+        semantic.put("id", node.id());
+        semantic.put("operatorRef", node.operatorRef());
+        semantic.put("inputs", sortedMap(node.inputs()));
+        semantic.put("config", sortedMap(semanticConfig(node.config())));
+        return semantic;
+    }
+
+    private static Map<String, Object> edgeSemantic(GraphDraft.DraftEdge edge) {
+        Map<String, Object> semantic = new LinkedHashMap<>();
+        semantic.put("kind", edge.kind());
+        semantic.put("source", endpointSemantic(edge.source()));
+        semantic.put("target", endpointSemantic(edge.target()));
+        semantic.put("condition", edge.condition());
+        return semantic;
+    }
+
+    private static Map<String, Object> endpointSemantic(GraphDraft.Endpoint endpoint) {
+        return Map.of(
+                "nodeId", endpoint.nodeId(),
+                "port", endpoint.port(),
+                "path", endpoint.path()
+        );
+    }
+
+    private static Map<String, Object> semanticConfig(Map<String, Object> config) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : config.entrySet()) {
+            if ("description".equals(entry.getKey())) {
+                continue;
+            }
+            result.put(entry.getKey(), entry.getValue());
+        }
+        return result;
+    }
+
+    private static Object graphContractValue(GraphDraft draft, String key) {
+        Object rawContract = draft.visualLayout().get("graphContract");
+        if (!(rawContract instanceof Map<?, ?> contract)) {
+            return "";
+        }
+        return contract.get(key);
+    }
+
+    private static String canonicalValue(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        if (value instanceof SchemaEnvelope envelope) {
+            return canonicalValue(Map.of(
+                    "format", envelope.format(),
+                    "version", envelope.version(),
+                    "schema", envelope.schema()
+            ));
+        }
+        if (value instanceof GraphDraft.Binding binding) {
+            Map<String, Object> fields = new LinkedHashMap<>();
+            fields.put("kind", binding.kind());
+            fields.put("value", binding.value());
+            fields.put("path", binding.path());
+            fields.put("nodeId", binding.nodeId());
+            fields.put("sourcePort", binding.sourcePort());
+            fields.put("targetPort", binding.targetPort());
+            fields.put("targetPath", binding.targetPath());
+            fields.put("expr", binding.expr());
+            fields.put("fields", sortedMap(binding.fields()));
+            return canonicalValue(fields);
+        }
+        if (value instanceof Map<?, ?> map) {
+            StringJoiner joiner = new StringJoiner(",", "{", "}");
+            map.entrySet().stream()
+                    .sorted(Comparator.comparing(entry -> String.valueOf(entry.getKey())))
+                    .forEach(entry -> joiner.add(String.valueOf(entry.getKey()) + ":"
+                            + canonicalValue(entry.getValue())));
+            return joiner.toString();
+        }
+        if (value instanceof Collection<?> collection) {
+            StringJoiner joiner = new StringJoiner(",", "[", "]");
+            collection.forEach(item -> joiner.add(canonicalValue(item)));
+            return joiner.toString();
+        }
+        return String.valueOf(value);
+    }
+
+    private static <T> Map<String, T> sortedMap(Map<String, T> source) {
+        Map<String, T> result = new LinkedHashMap<>();
+        if (source == null) {
+            return result;
+        }
+        source.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> result.put(entry.getKey(), entry.getValue()));
+        return result;
+    }
+
     private record EffectiveCatalog(Map<String, OperatorDefinition> operators, Set<String> functions) {
+        private VisualOperatorCatalog asCatalog() {
+            return new VisualOperatorCatalog() {
+                @Override
+                public List<OperatorDefinition> list(OperatorCatalogQuery query) {
+                    return operators.values().stream()
+                            .sorted(Comparator.comparing(OperatorDefinition::operatorRef))
+                            .toList();
+                }
+
+                @Override
+                public Optional<OperatorDefinition> find(String operatorRef) {
+                    return Optional.ofNullable(operators.get(operatorRef));
+                }
+            };
+        }
     }
 
     private static final class ProjectionState {
@@ -1075,6 +1278,7 @@ public class DslImportService {
         private final Set<String> missingOperatorRefs = new LinkedHashSet<>();
         private final Set<String> missingFunctionNames = new LinkedHashSet<>();
         private final Set<String> expressionOutputTargets = new LinkedHashSet<>();
+        private String parseFailureMessage = "";
 
         private ProjectionState(DslImportPreviewRequest request) {
             this.request = request;
