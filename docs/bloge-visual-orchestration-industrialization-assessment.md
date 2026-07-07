@@ -48,14 +48,14 @@
 | Design-only artifact 生命周期 | 8.0 | `DESIGN` publication、action-readiness gate、run/golden 禁用、runtime-binding requirements | DESIGN 到 external runtime bound 的组织流程仍依赖外部协作 | handoff bundle 与外部工单/事件系统对接 |
 | Runtime binding 闭环 | 6.5 | requirement index、handoff bundle、implementation proposal、bind/supersede/unbind、activation、rollout observation、lowering integration、readiness recompute | 跨 repository partial-failure、异步 workflow idempotency、指标消费闭环仍未全覆盖 | 继续硬化 runtime evidence lifecycle 和 replay/compensation |
 | 发布、可迁移性与版本治理 | 7.5 | draft/publication bundles、fingerprint gate、immutable publication、revision guard、operator/resource impact | 还有协议命名与当前 wire contract 的历史漂移 | 协议草案按现状收敛，保留平台化 ADR |
-| 观测、回归和认证 | 6.8 | run history、SLO stats、golden case、suite run、certification status | 事件流回放、趋势分析、长运行实例观测不足 | run trace/golden trend 与 durable runtime 对齐 |
+| 观测、回归和认证 | 6.9 | run history、SLO stats、golden case、suite run、certification status、DSL batch migration report | 事件流回放、趋势分析、长运行实例观测不足；DSL 批量报告已有 API 但还不是完整迁移 dashboard | run trace/golden trend 与 durable runtime 对齐；把 batch report 接入 CI/Studio dashboard |
 | 安全与治理 | 5.0 | tenant/namespace/environment policy、secret capability、actor/reason evidence gate | 不是完整 IAM/RBAC/secret/egress/admin audit 后台 | 平台化阶段引入权限模型和安全边界 |
 | Runtime 扩展族 | 5.8 | remote-worker、AI-tool、event-source、message-handler、webhook、streaming/durable contract 已可设计态编排 | 真正 dispatcher、ingress runtime、AI tool invocation、durable instance 尚未落地 | 从 runtime-binding handoff 开始逐类接 executor |
 | 工程可维护性 | 7.2 | 服务端测试丰富，完整 `clean verify` 可跑通，Java 侧读模型、GraphDraftValidator、VisualSchemaCompatibility 与 VisualSchemaValidator 的结构类型推断已开始共享 schema helper；浏览器 helper probe 覆盖了本地 mirror 与服务端语义一致性 | 深层 compatibility/value matching 仍分散，前端 `app.js` 过大 | 继续迁移 compatibility/validator 深层校验 helpers，逐步拆分前端 authoring helpers |
 
-综合分：**95/100**。
+综合分：**96/100**。
 
-这个分数不是贬低当前成果。相反，它说明项目已经跨过“画布玩具”阶段，并且在“严肃生产级可用示例项目 / industrializable reference implementation”口径下已经进入 5% 以内差距；但它仍不是完整商业低代码平台，平台化阶段还差治理、runtime、观测和维护性闭环。
+这个分数不是贬低当前成果。相反，它说明项目已经跨过“画布玩具”阶段，并且在“严肃生产级可用示例项目 / industrializable reference implementation”口径下已经进入 4% 左右差距；但它仍不是完整商业低代码平台，平台化阶段还差治理、runtime、观测和维护性闭环。
 
 ## 3. 当前事实边界
 
@@ -99,6 +99,7 @@
 36. Legacy DSL rewrite gate 预检已落地：`POST /api/visual/dsl-imports/rewrite-gate` 复用 `.bloge + 当前 catalog/inline visual libraries` 的 schema-neutral request，基于 preview diagnostics 与 `roundTrip` 证据返回 `bloge.dslRewriteGate.v1`，包含 `allowed`、`decision`、`generatedDsl`、`roundTrip` 和 diagnostics。`SUPPORTED` 场景返回 `ALLOW_REWRITE`，semantic drift 返回 `BLOCK_SEMANTIC_DRIFT`；`/author/` Legacy DSL 面板新增 `Check Rewrite`，能在不保存 draft、不写源码的前提下展示 source replacement allow/block 结论。
 37. Graph output schema 已从 layout 兼容字段提升为 `GraphDraft.outputSchema` 一等合同：DSL `output { ... }`、内置复杂示例和画布当前输出节点推导都会进入 draft 级输出 schema；旧 `visualLayout.graphContract.outputSchema` 仍可回填兼容，但不再是系统集成主合同。`GraphDraftValidator`、`VisualSecretGuard`、`GraphDraftDslGenerator`、simulation request、frontend `fromGraphDraft`、Export Draft 和 DSL import semantic fingerprint 都已消费该字段，并有 Java/TypeScript 单元测试覆盖。
 38. 协议草案已补齐 schema-neutral DSL import/rewrite 的当前 wire contract：`docs/bloge-visual-orchestration-protocol-v1.md` 现在显式记录 `bloge.dslVisualProjection.v1`、`bloge.dslRewriteGate.v1`、`bloge.visualGraphDraftImportResult.v1`、`GraphDraft.inputSchema/outputSchema`、旧 layout output schema 兼容边界，以及 rewrite semantic fingerprint 以一等 `draft.outputSchema` 为准。剩余协议债务从“核心 DSL/GraphDraft 合同缺失”降为“全量 wire contract 长期维护”。
+39. DSL 批量迁移报告 API 已落地：`POST /api/visual/dsl-imports/batch-report` 接受多份 `.bloge` DSL、已导入 library ids 和 preview-only inline visual libraries，逐份复用 single-source preview 与 rewrite gate，返回 `bloge.dslImportBatchReport.v1`。报告包含 source 级 `renderable`、`fullyProjected`、`needsRepair`、coverage、round-trip、rewrite decision 和 diagnostics，也包含仓库级 source count、render/repair/block count、rewrite allow/block count、coverage totals、round-trip status counts、rewrite decision counts 和 diagnostic level counts。它把存量业务从“逐文件 UI 试导入”推进到“CI/迁移前批量评估”，但还不是完整批量保存、coverage dashboard 或 VCS source writer。
 
 ### 尚未成立
 
@@ -107,7 +108,7 @@
 3. IAM/RBAC/secret/egress/审计查询还不是生产后台级别。
 4. durable、event、message、webhook、AI tool 的真实运行时还没有完整闭环。
 5. 前端仍是示例项目形态，复杂度已经接近需要模块化拆分的边界。
-6. 存量 DSL 迁移已经有 capability catalog adapter、后端 preview/commit/rewrite-gate、`/author/` 导入面板、source map 行定位、stored draft 保存、一等 graph input/output schema 和 semantic round-trip / source replacement 预检证据；opaque snippet 修复向导、批量迁移报告和真正覆盖原 DSL 的 source writer / VCS 集成还没闭环。
+6. 存量 DSL 迁移已经有 capability catalog adapter、后端 preview/commit/rewrite-gate/batch-report、`/author/` 导入面板、source map 行定位、stored draft 保存、一等 graph input/output schema、semantic round-trip、source replacement 预检证据和仓库级批量 readiness report；opaque snippet 修复向导、批量保存/coverage dashboard 和真正覆盖原 DSL 的 source writer / VCS 集成还没闭环。
 
 ## 4. 本轮迭代复盘
 
@@ -189,7 +190,7 @@ npm run test -- --run src/AuthorCanvas.test.tsx src/api.test.ts
 
 剩余风险：
 
-这轮闭合的是“preview 级语义往返证据”，不是“自动改写原 `.bloge` 文件”。源码覆盖还需要 source writer / VCS 集成、人工 reviewed 状态、批量迁移报告和对 opaque/unsupported snippet 的修复工作台。当前 semantic fingerprint 是 visual-semantics 级别，已经足够识别当前 GraphDraft/codegen/projection 的漂移，但还不是 BLOGE runtime 全 AST 规范化器。
+这轮闭合的是“preview 级语义往返证据”，不是“自动改写原 `.bloge` 文件”。源码覆盖还需要 source writer / VCS 集成、人工 reviewed 状态、批量迁移执行器和对 opaque/unsupported snippet 的修复工作台。当前 semantic fingerprint 是 visual-semantics 级别，已经足够识别当前 GraphDraft/codegen/projection 的漂移，但还不是 BLOGE runtime 全 AST 规范化器。
 
 ### 2026-07-07：Legacy DSL Rewrite Gate Preflight
 
@@ -263,6 +264,30 @@ mvn -f resource-gateway-examples/pom.xml -Dtest=DslImportServiceTest test
 剩余风险：
 
 这轮只收敛 DSL import / GraphDraft / rewrite gate 的核心协议漂移。完整协议文档仍然很大，后续还要继续把 runtime-binding、golden/run-history、operator contract test suite 等新增 wire contract 做结构化索引和机器可验证示例。
+
+### 2026-07-07：DSL Batch Migration Report
+
+触发问题：
+
+单文件 DSL preview/commit/rewrite gate 已经能证明“合法 schema + DSL 可以被画布渲染和预检”，但存量业务迁移通常面对的是一个代码库中的几十到上百份 `.bloge` 文件。让用户逐份打开 UI 试导入，无法回答迁移负责人最关心的问题：多少文件可直接投影、多少需要补 schema、多少不能进入自动源码替换流程。
+
+本轮完成：
+
+1. 新增 `POST /api/visual/dsl-imports/batch-report`，请求接受多份 `sources[]` 和同一套 schema-neutral `operatorLibraryIds/catalogIds` + `inlineLibraries`。
+2. 批量报告逐份复用现有 `DslImportService.preview()` 与 `DslRewriteGateResult.from()`，避免批量迁移和交互式画布产生两套 DSL 投影语义。
+3. 新增 `bloge.dslImportBatchReport.v1`、`DslImportBatchSummary` 和 `DslImportBatchReportItem`，输出 source 级 `renderable`、`fullyProjected`、`needsRepair`、coverage、round-trip、rewrite decision、diagnostics 和可选 `draft`。
+4. summary 聚合 source count、render/repair/block count、rewrite allow/block count、coverage totals、source-map entry totals、round-trip status counts、rewrite decision counts 和 diagnostic level counts。
+5. 协议、产品指南和迁移设计文档同步补齐 batch report 合同，并明确它只是仓库级 readiness report，不保存 draft、不写源码、不等于 source writer / VCS PR 流程。
+
+验证：
+
+```bash
+mvn -f resource-gateway-examples/pom.xml -Dtest=DslImportControllerTest,DslImportServiceTest test
+```
+
+剩余风险：
+
+这轮把 Phase 2.5 从“批量迁移报告未落地”推进到“后端 CI/import report 可用”。但完整工业化迁移仍缺 batch import UI/CLI、coverage dashboard、source writer / VCS PR 执行器，以及 unresolved/opaque snippet 修复向导。
 
 ### 2026-07-05：Schema Rebase Decision Queue
 

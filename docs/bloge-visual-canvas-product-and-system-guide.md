@@ -299,6 +299,7 @@ operators:
 - 已落地：Legacy DSL 面板会展示 source map 行列表。点击 `node` / `binding` / `edge` 行可以选中对应画布节点，导出的 draft 也会在 `visualLayout.import.sourceMap` 保留源码行列映射。
 - 已落地：Legacy DSL preview 会返回 `roundTrip` 状态。服务端会把源 DSL 投影成 draft，再用 `GraphDraftDslGenerator` 生成 DSL、重新解析并再次投影，比较两份 canonical visual semantics。状态会在页面显示为 `SUPPORTED`、`DRIFT`、`PARTIAL` 或 `NOT_ASSESSED`。
 - 已落地：`POST /api/visual/dsl-imports/rewrite-gate` 和 `/author/` 的 `Check Rewrite` 按钮。它复用同一个 schema-neutral request，返回 `ALLOW_REWRITE`、`BLOCK_SEMANTIC_DRIFT`、`BLOCK_INCOMPLETE_EVIDENCE` 等判定和 generated DSL；这个 gate 只做预检，不保存 draft，也不会改写源码文件。
+- 已落地：后端提供仓库级批量迁移报告 API：`POST /api/visual/dsl-imports/batch-report`。它复用同一套 schema-neutral catalog/inlineLibraries 输入，但接受多份 `sources[]`，逐份返回 renderable / fullyProjected / needsRepair / rewrite decision，并聚合 coverage、round-trip status、diagnostic level 和 rewrite decision 计数，适合 CI 或迁移前评估。
 - 未落地：真正写回业务代码库或覆盖原 `.bloge` 文件的 source writer / VCS 集成。当前系统只告诉调用方“是否可安全自动替换”，不直接动用户源码。
 
 设计方案见 [存量 BLOGE DSL 业务迁移到可视化编排设计方案](./bloge-legacy-dsl-visual-migration-design.md)。
@@ -391,6 +392,44 @@ Content-Type: application/json
 ```
 
 rewrite gate 返回 `bloge.dslRewriteGate.v1`。`allowed=true` / `decision=ALLOW_REWRITE` 表示 generated DSL 可交给外部工具进入源码替换流程；其他 decision 会携带 round-trip 和 diagnostics 说明阻断原因。这个接口不会持久化 draft，也不会直接修改 `.bloge` 文件。
+
+如果要评估一个业务仓库里的多份 DSL，不要循环调用 UI。使用批量报告接口：
+
+```http
+POST /api/visual/dsl-imports/batch-report
+Content-Type: application/json
+```
+
+```json
+{
+  "catalogIds": ["risk-policy"],
+  "inlineLibraries": [],
+  "mode": "batch-report",
+  "includeDrafts": false,
+  "sources": [
+    {
+      "sourceId": "loan-approval.bloge",
+      "dsl": "graph loanApproval { ... }"
+    },
+    {
+      "sourceId": "fraud-review.bloge",
+      "dsl": "graph fraudReview { ... }"
+    }
+  ]
+}
+```
+
+返回 `bloge.dslImportBatchReport.v1`。重点看：
+
+| 字段 | 含义 |
+| --- | --- |
+| `summary.renderableSourceCount` | 能成功 parse/project 成 graph draft 的 DSL 数量 |
+| `summary.fullyProjectedSourceCount` | 无 import error、无 missing operator/function、无 unsupported syntax 的 DSL 数量 |
+| `summary.repairableSourceCount` | 已渲染但需要补 schema 或处理 loss-aware diagnostic 的 DSL 数量 |
+| `summary.blockedSourceCount` | parse failure 或 unsupported root，当前不能进入可视化 draft 的 DSL 数量 |
+| `summary.rewriteAllowedSourceCount` | 可进入 source replacement 流程的 DSL 数量 |
+| `items[].rewriteDecision` | 每个文件的 `ALLOW_REWRITE` / `BLOCK_*` 机器可读结论 |
+| `items[].coverage` | 每个文件的 member/node/edge/missing/unsupported 覆盖率 |
 
 返回重点字段：
 
@@ -858,7 +897,7 @@ GET /api/gateway/examples/scenarios/{graphName}/diagram
 | --- | --- |
 | `visual/catalog` | operator catalog、算子库导入/导出、builtin library projection、profile、impact、revision |
 | `visual/connection` | 服务端连接候选和连接预检 |
-| `visual/importer` | schema-neutral `.bloge` DSL preview/commit/rewrite-gate import，投影并保存 `GraphDraft`、source map、coverage、round-trip 和 source replacement gate diagnostics |
+| `visual/importer` | schema-neutral `.bloge` DSL preview/commit/rewrite-gate/batch-report import，投影并保存 `GraphDraft`，输出 source map、coverage、round-trip、source replacement gate diagnostics 和仓库级迁移 readiness report |
 | `visual/validation` | GraphDraft 合同、schema、runtime/design readiness、action readiness |
 | `visual/simulation` | mock/real 混合模拟、fixture、trace、sample generator |
 | `visual/publication` | publication 冻结、导入导出、依赖报告 |
@@ -947,6 +986,7 @@ resource gateway 自身继续保留：
 | `GET` | `/api/visual/builtin-library/export` | 导出内置 operator registry 为 portable library |
 | `POST` | `/api/visual/dsl-imports/preview` | 以 schema-neutral 方式把 `.bloge` DSL + 当前 catalog/inline libraries 投影为 visual `GraphDraft` preview |
 | `POST` | `/api/visual/dsl-imports/rewrite-gate` | 以同一 schema-neutral request 判断 generated DSL 是否可安全替换源 DSL；只返回 gate 结论，不持久化、不写源码 |
+| `POST` | `/api/visual/dsl-imports/batch-report` | 以同一 schema-neutral catalog view 批量评估多份 DSL 的 render/repair/rewrite readiness 和覆盖率 |
 | `POST` | `/api/visual/dsl-imports/commit` | 以同一 schema-neutral request 重新投影 DSL，并保存为 governed stored draft revision |
 | `POST` | `/api/visual/connections/candidates` | 枚举连接候选 |
 | `POST` | `/api/visual/connections/check` | 预检单条连接 |

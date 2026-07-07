@@ -128,7 +128,7 @@ Phase 1 不以 UI 好看为验收，而以真实闭环为验收：
 1. Runtime binding implementation 与 readiness 派生闭环：在当前 implementation validate、字段级 contract-diff gate、semantic JSON Schema-compatible drift classification、runtime implementation SemVer/reimplementation submit gate、implementation rolloutPlan validate gate、proposal persistence、bind/supersede/unbind API、bind 写入失败诊断、adapter activation registry、runtime rollout observation registry、executable lowering integration registry、四类 runtime evidence submit stable-id 精确 replay 幂等返回、catalog response projection、executable promotion projection、readiness recompute preview、native governed apply mutation、external-runtime-bound governed apply mutation、apply revision-write failed result、post-apply evidence refresh/rebind mutation 和 governed unbind/deactivate mutation 之后，补跨 repository 事务/partial-failure 硬化、更广义 idempotency、更深跨系统 rollout/canary/rollback 编排、指标消费闭环和更完整 JSON Schema 兼容性推理门禁。
 2. 前端回归验证。
 3. Java operator inventory 深化。
-4. 存量业务迁移专线：补 opaque diagnostics 修复向导、批量迁移报告和源码 writer / VCS 集成；schema-neutral preview/commit/rewrite-gate、source map 行定位、`bloge.capabilityCatalog.v1` 到 visual library adapter、preview 内置 round-trip 状态已经落地。
+4. 存量业务迁移专线：补 opaque diagnostics 修复向导、批量保存/coverage dashboard 和源码 writer / VCS 集成；schema-neutral preview/commit/rewrite-gate/batch-report、source map 行定位、`bloge.capabilityCatalog.v1` 到 visual library adapter、preview 内置 round-trip 状态已经落地。
 5. OpenAPI/resource contract/AsyncAPI 导入深化。
 6. Run history 查询、重放和 SLO 统计深化。
 7. 协议文档命名与当前 wire contract 收敛。

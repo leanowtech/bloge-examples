@@ -82,6 +82,61 @@ public class DslImportService {
         return projectGraph(normalized, graph, effectiveCatalog, state, true);
     }
 
+    /**
+     * Builds a repository-level migration report by previewing every DSL source against the same
+     * effective schema view.
+     *
+     * <p>The report deliberately reuses the single-source preview and rewrite gate logic. That keeps
+     * CI/batch migration evidence aligned with the interactive canvas instead of creating a parallel
+     * importer with different semantics.</p>
+     *
+     * @param request batch report request
+     * @return aggregate report and per-source readiness details
+     */
+    public DslImportBatchReport batchReport(DslImportBatchReportRequest request) {
+        DslImportBatchReportRequest normalized = request == null
+                ? new DslImportBatchReportRequest(List.of(), List.of(), List.of(), "", false)
+                : request;
+        List<DslImportBatchReportItem> items = new ArrayList<>();
+        for (DslImportBatchSource source : normalized.sources()) {
+            DslImportPreviewRequest previewRequest = new DslImportPreviewRequest(
+                    source.sourceId(),
+                    source.dsl(),
+                    normalized.operatorLibraryIds(),
+                    normalized.inlineLibraries(),
+                    normalized.mode(),
+                    source.layout()
+            );
+            DslVisualProjection projection = preview(previewRequest);
+            DslRewriteGateResult gate = DslRewriteGateResult.from(projection);
+            DslImportCoverage coverage = projection.coverage();
+            boolean renderable = !hasBlockingProjectionDiagnostic(projection.diagnostics());
+            boolean fullyProjected = renderable
+                    && projection.diagnostics().stream().noneMatch(VisualDiagnostic::error)
+                    && coverage.unsupportedSyntaxCount() == 0
+                    && coverage.missingOperatorCount() == 0
+                    && coverage.missingFunctionCount() == 0;
+            boolean needsRepair = renderable && !fullyProjected;
+            items.add(new DslImportBatchReportItem(
+                    projection.sourceId(),
+                    projection.draft().graphName(),
+                    renderable,
+                    fullyProjected,
+                    needsRepair,
+                    sourceMapEntryCount(projection.sourceMap()),
+                    coverage,
+                    projection.roundTrip(),
+                    gate.allowed(),
+                    gate.decision(),
+                    diagnosticLevelCounts(projection.diagnostics()),
+                    projection.diagnostics(),
+                    normalized.includeDrafts() ? projection.draft() : null
+            ));
+        }
+        return new DslImportBatchReport(DslImportBatchReport.SCHEMA_VERSION, normalized.mode(),
+                batchSummary(items), items);
+    }
+
     private AstNode parseAst(String source, ProjectionState state) {
         try {
             return new DslCompiler(new DefaultOperatorRegistry())
@@ -1228,6 +1283,93 @@ public class DslImportService {
             return joiner.toString();
         }
         return String.valueOf(value);
+    }
+
+    private static DslImportBatchSummary batchSummary(List<DslImportBatchReportItem> items) {
+        int renderable = 0;
+        int fullyProjected = 0;
+        int repairable = 0;
+        int blocked = 0;
+        int rewriteAllowed = 0;
+        int rewriteBlocked = 0;
+        int totalMembers = 0;
+        int totalNodes = 0;
+        int totalEdges = 0;
+        int totalUnsupported = 0;
+        int totalMissingOperators = 0;
+        int totalMissingFunctions = 0;
+        int totalSourceMapEntries = 0;
+        Map<String, Integer> roundTripStatuses = new LinkedHashMap<>();
+        Map<String, Integer> rewriteDecisions = new LinkedHashMap<>();
+        Map<String, Integer> diagnosticLevels = new LinkedHashMap<>();
+
+        for (DslImportBatchReportItem item : items) {
+            DslImportCoverage coverage = item.coverage();
+            renderable += item.renderable() ? 1 : 0;
+            fullyProjected += item.fullyProjected() ? 1 : 0;
+            repairable += item.needsRepair() ? 1 : 0;
+            blocked += item.renderable() ? 0 : 1;
+            rewriteAllowed += item.rewriteAllowed() ? 1 : 0;
+            rewriteBlocked += item.rewriteAllowed() ? 0 : 1;
+            totalMembers += coverage.memberCount();
+            totalNodes += coverage.projectedNodeCount();
+            totalEdges += coverage.edgeCount();
+            totalUnsupported += coverage.unsupportedSyntaxCount();
+            totalMissingOperators += coverage.missingOperatorCount();
+            totalMissingFunctions += coverage.missingFunctionCount();
+            totalSourceMapEntries += item.sourceMapEntryCount();
+            increment(roundTripStatuses, item.roundTrip().status());
+            increment(rewriteDecisions, item.rewriteDecision());
+            mergeCounts(diagnosticLevels, item.diagnosticLevelCounts());
+        }
+        return new DslImportBatchSummary(
+                items.size(),
+                renderable,
+                fullyProjected,
+                repairable,
+                blocked,
+                rewriteAllowed,
+                rewriteBlocked,
+                totalMembers,
+                totalNodes,
+                totalEdges,
+                totalUnsupported,
+                totalMissingOperators,
+                totalMissingFunctions,
+                totalSourceMapEntries,
+                roundTripStatuses,
+                rewriteDecisions,
+                diagnosticLevels
+        );
+    }
+
+    private static Map<String, Integer> diagnosticLevelCounts(List<VisualDiagnostic> diagnostics) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (VisualDiagnostic diagnostic : diagnostics) {
+            increment(counts, diagnostic == null ? "" : diagnostic.level());
+        }
+        return counts;
+    }
+
+    private static void mergeCounts(Map<String, Integer> target, Map<String, Integer> source) {
+        source.forEach((key, count) -> target.merge(key, count, Integer::sum));
+    }
+
+    private static void increment(Map<String, Integer> counts, String key) {
+        counts.merge(key == null || key.isBlank() ? "UNKNOWN" : key, 1, Integer::sum);
+    }
+
+    private static int sourceMapEntryCount(DslSourceMap sourceMap) {
+        if (sourceMap == null) {
+            return 0;
+        }
+        return sourceMap.nodes().size() + sourceMap.edges().size() + sourceMap.bindings().size();
+    }
+
+    private static boolean hasBlockingProjectionDiagnostic(List<VisualDiagnostic> diagnostics) {
+        return diagnostics.stream().anyMatch(diagnostic -> diagnostic != null
+                && ("visual.dslImport.parseFailed".equals(diagnostic.code())
+                || "visual.dslImport.rootUnsupported".equals(diagnostic.code())));
     }
 
     private static <T> Map<String, T> sortedMap(Map<String, T> source) {

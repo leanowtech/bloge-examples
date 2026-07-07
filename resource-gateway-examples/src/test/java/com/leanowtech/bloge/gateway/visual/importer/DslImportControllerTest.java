@@ -171,6 +171,92 @@ class DslImportControllerTest {
     }
 
     @Test
+    void batchReportAggregatesSchemaNeutralMigrationReadiness() throws Exception {
+        OperatorLibrary emptyLibrary = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "empty-risk-policy",
+                "Empty risk policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of()
+        );
+        var catalog = VisualCatalogTestSupport.catalogWithLibrary(emptyLibrary);
+        DslImportService service = new DslImportService(catalog, new OperatorLibraryValidator());
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new DslImportController(
+                service,
+                new InMemoryGraphDraftRepository(),
+                new GraphDraftValidator(catalog),
+                catalog
+        )).build();
+
+        mockMvc.perform(post("/api/visual/dsl-imports/batch-report")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(OBJECT_MAPPER.writeValueAsString(Map.of(
+                                "includeDrafts", true,
+                                "sources", List.of(
+                                        Map.of(
+                                                "sourceId", "supported-transform.bloge",
+                                                "dsl", """
+                                                        graph supportedTransform {
+                                                          input {
+                                                            score: Int
+                                                          }
+                                                          output {
+                                                            score: Int
+                                                          }
+                                                          transform response {
+                                                            score = ctx.score
+                                                          }
+                                                        }
+                                                        """
+                                        ),
+                                        Map.of(
+                                                "sourceId", "missing-operator.bloge",
+                                                "dsl", """
+                                                        graph missingOperator {
+                                                          node eligibility : "risk:missing" {
+                                                          }
+                                                        }
+                                                        """
+                                        ),
+                                        Map.of(
+                                                "sourceId", "broken.bloge",
+                                                "dsl", "graph {"
+                                        )
+                                )
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(DslImportBatchReport.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.summary.sourceCount").value(3))
+                .andExpect(jsonPath("$.summary.renderableSourceCount").value(2))
+                .andExpect(jsonPath("$.summary.fullyProjectedSourceCount").value(1))
+                .andExpect(jsonPath("$.summary.repairableSourceCount").value(1))
+                .andExpect(jsonPath("$.summary.blockedSourceCount").value(1))
+                .andExpect(jsonPath("$.summary.rewriteAllowedSourceCount").value(1))
+                .andExpect(jsonPath("$.summary.rewriteBlockedSourceCount").value(2))
+                .andExpect(jsonPath("$.summary.totalMissingOperatorCount").value(1))
+                .andExpect(jsonPath("$.summary.roundTripStatusCounts.SUPPORTED").value(1))
+                .andExpect(jsonPath("$.summary.rewriteDecisionCounts.ALLOW_REWRITE").value(1))
+                .andExpect(jsonPath("$.summary.rewriteDecisionCounts.BLOCK_IMPORT_DIAGNOSTICS").value(2))
+                .andExpect(jsonPath("$.items[0].sourceId").value("supported-transform.bloge"))
+                .andExpect(jsonPath("$.items[0].renderable").value(true))
+                .andExpect(jsonPath("$.items[0].fullyProjected").value(true))
+                .andExpect(jsonPath("$.items[0].rewriteAllowed").value(true))
+                .andExpect(jsonPath("$.items[0].roundTrip.status").value("SUPPORTED"))
+                .andExpect(jsonPath("$.items[0].draft.graphName").value("supportedTransform"))
+                .andExpect(jsonPath("$.items[1].sourceId").value("missing-operator.bloge"))
+                .andExpect(jsonPath("$.items[1].renderable").value(true))
+                .andExpect(jsonPath("$.items[1].fullyProjected").value(false))
+                .andExpect(jsonPath("$.items[1].needsRepair").value(true))
+                .andExpect(jsonPath("$.items[1].coverage.missingOperatorCount").value(1))
+                .andExpect(jsonPath("$.items[1].rewriteDecision").value("BLOCK_IMPORT_DIAGNOSTICS"))
+                .andExpect(jsonPath("$.items[2].sourceId").value("broken.bloge"))
+                .andExpect(jsonPath("$.items[2].renderable").value(false))
+                .andExpect(jsonPath("$.items[2].rewriteDecision").value("BLOCK_IMPORT_DIAGNOSTICS"));
+    }
+
+    @Test
     void commitReprojectsDslAndStoresGovernedDraftWithSourceMap() throws Exception {
         var catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer")

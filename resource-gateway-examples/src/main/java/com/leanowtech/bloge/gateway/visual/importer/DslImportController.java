@@ -59,6 +59,21 @@ public class DslImportController {
     }
 
     /**
+     * Assesses multiple existing BLOGE DSL files against the same effective visual schema view.
+     *
+     * <p>This endpoint is meant for repository migration, CI import reports, and batch readiness
+     * dashboards. It does not persist drafts or write source files; each source reuses the same
+     * preview and rewrite-gate semantics as the interactive canvas.</p>
+     *
+     * @param request DSL sources plus the already-normalized visual catalog view
+     * @return aggregate migration coverage and per-source readiness details
+     */
+    @PostMapping("/batch-report")
+    public DslImportBatchReport batchReport(@RequestBody DslImportBatchReportRequest request) {
+        return service.batchReport(request);
+    }
+
+    /**
      * Checks whether generated DSL is safe enough to overwrite the source DSL.
      *
      * <p>The rewrite gate does not persist drafts or modify source files. It is a deterministic
