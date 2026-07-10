@@ -171,6 +171,10 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid^='canvas-node:']")));
         waitForText(wait, By.cssSelector(".toolbar"), "1 nodes");
         waitForText(wait, By.cssSelector(".toolbar"), "Output n1");
+        waitForText(wait, By.cssSelector("[data-testid='canvas-navigator']"), "MAP");
+        waitForText(wait, By.cssSelector("[data-testid='canvas-navigator']"), "1 nodes");
+        waitForText(wait, By.cssSelector("[data-testid='canvas-zoom-readout']"), "%");
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("[data-testid='author-fit-all']"))).click();
         waitForText(wait, By.cssSelector("[data-testid^='canvas-node:']"), operatorRef);
         WebElement exportLink = wait.until(ExpectedConditions.elementToBeClickable(
                 By.cssSelector("[data-testid='author-draft-export']")

@@ -59,6 +59,32 @@ async function readJsonMutation<T>(response: Response): Promise<T> {
   return payload;
 }
 
+export type BlogeApiTransport = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+const defaultBlogeApiTransport: BlogeApiTransport = (input, init) => (
+  init === undefined ? fetch(input) : fetch(input, init)
+);
+let blogeApiTransport: BlogeApiTransport = defaultBlogeApiTransport;
+
+/**
+ * Replaces the HTTP transport used by the visual authoring client.
+ *
+ * The browser demo keeps the default fetch-backed transport. A VSCode Webview can install a
+ * postMessage-backed transport and let the extension host satisfy the same contracts from local
+ * workspace files, lightweight DSL projection, or an optional remote BLOGE service.
+ */
+export function setBlogeApiTransport(transport: BlogeApiTransport): void {
+  blogeApiTransport = transport;
+}
+
+export function resetBlogeApiTransport(): void {
+  blogeApiTransport = defaultBlogeApiTransport;
+}
+
+function sendRequest(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  return blogeApiTransport(input, init);
+}
+
 function fillTemplate(template: string, values: Record<string, unknown>): string {
   return template.replace(/\{([^}]+)\}/g, (_, key: string) =>
     encodeURIComponent(String(values[key] ?? '')),
@@ -101,7 +127,7 @@ async function readFlexiblePayload(response: Response): Promise<unknown> {
  * regardless of the catalog controller's exact response shape.
  */
 export async function fetchOperatorCatalog(): Promise<OperatorCatalogResponse> {
-  const data = await readJson<unknown>(await fetch('/api/visual/operators'));
+  const data = await readJson<unknown>(await sendRequest('/api/visual/operators'));
   if (Array.isArray(data)) {
     return { operators: data as OperatorDefinition[], builtInFunctions: [] };
   }
@@ -120,14 +146,14 @@ export async function fetchOperators(): Promise<OperatorDefinition[]> {
 /** Loads resource-gateway showcase scenarios in backend-defined order. */
 export async function fetchGatewayScenarios(): Promise<GatewayExampleScenario[]> {
   return readJson<GatewayExampleScenario[]>(
-    await fetch('/api/gateway/examples/scenarios'),
+    await sendRequest('/api/gateway/examples/scenarios'),
   );
 }
 
 /** Loads the presentation-only diagram for one resource-gateway showcase scenario. */
 export async function fetchGatewayDiagram(path: string): Promise<GatewayExampleDiagram> {
   return readJson<GatewayExampleDiagram>(
-    await fetch(path),
+    await sendRequest(path),
   );
 }
 
@@ -161,7 +187,7 @@ export async function runGatewayScenario(
   if (request.mode === 'stream') {
     throw new Error('Streaming scenarios must be executed with EventSource.');
   }
-  const response = await fetch(request.url, request.init);
+  const response = await sendRequest(request.url, request.init);
   const payload = await readFlexiblePayload(response);
   if (!response.ok) {
     throw new Error(`Request failed: ${response.status} ${response.statusText || 'Gateway run failed'}`);
@@ -176,7 +202,7 @@ export async function runGatewayScenario(
 /** Validates pasted operator-library JSON/YAML without storing it. */
 export async function validateOperatorLibraryText(sourceText: string): Promise<OperatorLibraryValidationResult> {
   return readJsonMutation<OperatorLibraryValidationResult>(
-    await fetch('/admin/visual-operator-libraries/validate-text', {
+    await sendRequest('/admin/visual-operator-libraries/validate-text', {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: sourceText,
@@ -192,7 +218,7 @@ export async function importOperatorLibraryText(sourceText: string): Promise<Ope
     changeSummary: 'Imported from React author canvas',
   });
   return readJsonMutation<OperatorLibrary>(
-    await fetch(`/admin/visual-operator-libraries/import-text?${query.toString()}`, {
+    await sendRequest(`/admin/visual-operator-libraries/import-text?${query.toString()}`, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: sourceText,
@@ -203,7 +229,7 @@ export async function importOperatorLibraryText(sourceText: string): Promise<Ope
 /** Adapts pasted bloge.capabilityCatalog.v1 JSON/YAML into a visual operator-library draft. */
 export async function adaptCapabilityCatalogText(sourceText: string): Promise<CapabilityCatalogVisualAdapterResult> {
   return readJsonMutation<CapabilityCatalogVisualAdapterResult>(
-    await fetch('/admin/visual-operator-libraries/from-capability-catalog-text', {
+    await sendRequest('/admin/visual-operator-libraries/from-capability-catalog-text', {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: sourceText,
@@ -214,7 +240,7 @@ export async function adaptCapabilityCatalogText(sourceText: string): Promise<Ca
 /** Runs a mock simulation of the current draft. */
 export async function simulate(request: SimulationRequest): Promise<SimulationResponse> {
   return readJson<SimulationResponse>(
-    await fetch('/api/visual/graphs/simulate', {
+    await sendRequest('/api/visual/graphs/simulate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
@@ -225,7 +251,7 @@ export async function simulate(request: SimulationRequest): Promise<SimulationRe
 /** Validates a transient visual graph draft through the server-authoritative schema/readiness gate. */
 export async function validateDraft(draft: GraphDraft): Promise<VisualValidationResult> {
   return readJson<VisualValidationResult>(
-    await fetch('/api/visual/drafts/validate', {
+    await sendRequest('/api/visual/drafts/validate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(draft),
@@ -236,7 +262,7 @@ export async function validateDraft(draft: GraphDraft): Promise<VisualValidation
 /** Projects existing BLOGE DSL into an editable visual graph draft without persisting it. */
 export async function previewDslImport(request: DslImportPreviewRequest): Promise<DslVisualProjection> {
   return readJsonMutation<DslVisualProjection>(
-    await fetch('/api/visual/dsl-imports/preview', {
+    await sendRequest('/api/visual/dsl-imports/preview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
@@ -247,7 +273,7 @@ export async function previewDslImport(request: DslImportPreviewRequest): Promis
 /** Checks whether generated DSL is safe enough to overwrite its source file. */
 export async function checkDslRewriteGate(request: DslImportPreviewRequest): Promise<DslRewriteGateResult> {
   return readJsonMutation<DslRewriteGateResult>(
-    await fetch('/api/visual/dsl-imports/rewrite-gate', {
+    await sendRequest('/api/visual/dsl-imports/rewrite-gate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
@@ -258,7 +284,7 @@ export async function checkDslRewriteGate(request: DslImportPreviewRequest): Pro
 /** Assesses multiple BLOGE DSL sources against the same schema-neutral catalog view. */
 export async function batchReportDslImports(request: DslImportBatchReportRequest): Promise<DslImportBatchReport> {
   return readJsonMutation<DslImportBatchReport>(
-    await fetch('/api/visual/dsl-imports/batch-report', {
+    await sendRequest('/api/visual/dsl-imports/batch-report', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
@@ -276,7 +302,7 @@ export async function batchCommitDslImports(
     changeSummary: `Batch imported ${(request.sources ?? []).length} Legacy DSL sources`,
   });
   return readJsonMutation<DslImportBatchCommitResult>(
-    await fetch(`/api/visual/dsl-imports/batch-commit?${query.toString()}`, {
+    await sendRequest(`/api/visual/dsl-imports/batch-commit?${query.toString()}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
@@ -292,7 +318,7 @@ export async function commitDslImport(request: DslImportPreviewRequest): Promise
     changeSummary: `Imported ${request.sourceId || 'inline.dsl'} from Legacy DSL panel`,
   });
   return readJsonMutation<GraphDraftImportResult>(
-    await fetch(`/api/visual/dsl-imports/commit?${query.toString()}`, {
+    await sendRequest(`/api/visual/dsl-imports/commit?${query.toString()}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
@@ -305,7 +331,7 @@ export async function checkConnection(
   request: ConnectionCheckRequest,
 ): Promise<ConnectionCheckResponse> {
   return readJson<ConnectionCheckResponse>(
-    await fetch('/api/visual/connections/check', {
+    await sendRequest('/api/visual/connections/check', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
@@ -318,7 +344,7 @@ export async function fetchConnectionCandidates(
   request: ConnectionCandidatesRequest,
 ): Promise<ConnectionCandidatesResponse> {
   return readJson<ConnectionCandidatesResponse>(
-    await fetch('/api/visual/connections/candidates', {
+    await sendRequest('/api/visual/connections/candidates', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),

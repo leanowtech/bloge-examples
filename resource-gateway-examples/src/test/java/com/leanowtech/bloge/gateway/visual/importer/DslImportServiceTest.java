@@ -263,6 +263,74 @@ class DslImportServiceTest {
         assertThat(conditions).containsEntry("score", "score >= 760");
     }
 
+    @Test
+    void projectsMultiLayerStrategyTablesAfterDocLegendSeparator() {
+        DslImportService service = service(emptyCatalog());
+
+        DslVisualProjection projection = service.preview(new DslImportPreviewRequest(
+                "stg-like.bloge",
+                """
+                        /// Strategy tree converted from a policy table.
+                        graph supportStrategy {
+                          /// Field legend:
+                          ///   trigger <- source trigger event
+                          ///   kind    <- downstream policy kind
+                          // ────────────────────────────────────────────
+                          /// D01 root router
+                          decision_table d01Pick(
+                            trigger = ctx.trigger
+                          ) hit=first -> String {
+                            rule (trigger: trigger == "toD02") -> "GOTO_D02"
+                            otherwise -> "direct"
+                          }
+                          transform d01 {
+                            code: String = when {
+                              d01Pick.output.value == "GOTO_D02" -> d02.code
+                              otherwise -> d01Pick.output.value
+                            }
+                          }
+
+                          // ────────────────────────────────────────────
+                          /// D02 nested policy
+                          decision_table d02Pick(
+                            kind = ctx.kind
+                          ) hit=first -> String {
+                            rule (kind: kind == "vip") -> "manual"
+                            otherwise -> "robot"
+                          }
+                          transform d02 {
+                            code: String = d02Pick.output.value
+                          }
+
+                          transform strategyOutput {
+                            actionCode: String = d01.code
+                          }
+                        }
+                        """,
+                List.of(),
+                List.of(),
+                "preview",
+                Map.of()
+        ));
+
+        assertThat(projection.diagnostics()).noneMatch(VisualDiagnostic::error);
+        assertThat(projection.coverage().projectedNodeCount()).isEqualTo(5);
+        assertThat(projection.draft().nodes()).extracting(GraphDraft.DraftNode::id)
+                .containsExactly("d01Pick", "d01", "d02Pick", "d02", "strategyOutput");
+        assertThat(projection.draft().edges()).anySatisfy(edge -> {
+            assertThat(edge.source().nodeId()).isEqualTo("d01Pick");
+            assertThat(edge.target().nodeId()).isEqualTo("d01");
+        });
+        assertThat(projection.draft().edges()).anySatisfy(edge -> {
+            assertThat(edge.source().nodeId()).isEqualTo("d02");
+            assertThat(edge.target().nodeId()).isEqualTo("d01");
+        });
+        assertThat(projection.draft().edges()).anySatisfy(edge -> {
+            assertThat(edge.source().nodeId()).isEqualTo("d01");
+            assertThat(edge.target().nodeId()).isEqualTo("strategyOutput");
+        });
+    }
+
     private static DslImportService service(DefaultVisualOperatorCatalog catalog) {
         return new DslImportService(catalog, new OperatorLibraryValidator());
     }

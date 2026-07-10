@@ -13,13 +13,31 @@ import {
   importOperatorLibraryText,
   previewDslImport,
   runGatewayScenario,
+  resetBlogeApiTransport,
+  setBlogeApiTransport,
   validateDraft,
   validateOperatorLibraryText,
 } from './api';
 
 describe('operator library API client', () => {
   afterEach(() => {
+    resetBlogeApiTransport();
     vi.restoreAllMocks();
+  });
+
+  it('can route visual API calls through a custom transport', async () => {
+    const transport = vi.fn(async () => new Response(JSON.stringify({
+      operators: [{ operatorRef: 'local:riskScore' }],
+      builtInFunctions: [{ name: 'coalesce' }],
+    })));
+
+    setBlogeApiTransport(transport);
+
+    const catalog = await fetchOperatorCatalog();
+
+    expect(catalog.operators[0].operatorRef).toBe('local:riskScore');
+    expect(catalog.builtInFunctions?.[0].name).toBe('coalesce');
+    expect(transport).toHaveBeenCalledWith('/api/visual/operators', undefined);
   });
 
   it('validates pasted operator-library source as text', async () => {

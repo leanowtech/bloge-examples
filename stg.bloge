@@ -1,0 +1,737 @@
+/// 智能客服转人工策略 — 由 stg.json 策略树 → DMN → BLOGE DSL 等价转换
+/// 每个 DMN 决策 = 一张语义命名的 decision_table（hit=first）；输出为「最终动作码」或
+/// 延迟令牌 "GOTO_<子决策名>"，再由 <决策名>Result 这张 transform 解析到子决策，等价于 DMN DRD 自底向上求值。
+/// 事实经 ctx.* 注入（ASCII 键，见下方字段图例）；判定值/动作码保留中文原文。
+/// 已通过 20 万随机输入 + 全部 2064 条源树路径的行为等价校验（见 gen_bloge.py 底部）。
+graph transferToHumanStrategy {
+
+  /// 输入事实（ctx.* 注入）字段图例： ASCII 键  ←  源策略树中文事实  ｜  取值域
+  ///   triggerEvent             ← 触发事件 ｜ 司机接错人 | 外层识别的敏感词 | 实时tag-人工 | 提交工单失败 | 方案内系统自动帮助zrg | 点击【异步转人工Button】 | 点击【异步转人工Tag】 | 点击【继续咨询智能客服】 | 点击主动卡片 | 点击关闭订单弹窗 | 点击联系客服按钮 | 点击订单弹窗内的订单或按钮 | 知识点内人工button-人工 | 知识点司机不愿意来接我 | 知识点司机未及时结束计费 | 知识点未坐车需付车费 | 知识点绕路多收费 | 知识点被收取消费 | 知识点超出一口价 | 知识点预估金额与实际金额不一致 | 转人工意图
+  ///   isElderly                ← 是否为老年人 ｜ 是
+  ///   isWoolUser               ← 是否为羊毛党用户 ｜ 是
+  ///   firedWool1               ← 是否触发过羊毛1 ｜ 否 | 是
+  ///   firedWool2               ← 是否触发过羊毛2 ｜ 否 | 是
+  ///   firedWool3               ← 是否触发过羊毛3 ｜ 否 | 是
+  ///   firedWool4               ← 是否触发过羊毛4 ｜ 否 | 是
+  ///   isTraffic30              ← 判断是否3.0流量 ｜ 是
+  ///   isV8AndL3L4              ← V8且L3/L4 ｜ v8&L3/l4
+  ///   firedV8L3L4Response      ← 是否触发过V8&L3L4应答项 ｜ 触发过V8&L3L4应答项
+  ///   isL3L4                   ← 是否L3L4 ｜ L3L4
+  ///   isV7V8                   ← 是否V7V8 ｜ V7V8
+  ///   isVvip                   ← 是否VVIP ｜ VVIP
+  ///   stepBucket               ← 判断步长 ｜ 步长>=15
+  ///   hasProcessingProgress7d  ← 判断7天内是否有处理中处理进度 ｜ 订单7日内有处理中工单
+  ///   firedProgressRecall      ← 判断是否触发过处理进度召回 ｜ 触发过处理进度召回
+  ///   hasProcessingTicket7d    ← 用户7天内是否有处理中工单 ｜ 用户7天内有处理中工单
+  ///   entryOrderStatus         ← 判断入口+订单状态 ｜ 我的客服+无订单 | 我的客服+订单已关闭 | 我的客服+订单已完成 | 我的客服+订单进行中 | 详情页+订单已关闭 | 详情页+订单已完成 | 详情页+订单进行中
+  ///   firedRecommendQ1         ← 判断是否触发过推荐问1 ｜ 触发过
+  ///   firedRecommendQ8         ← 判断是否触发过推荐问8 ｜ 触发过
+  ///   firedRecommendQ2         ← 判断是否触发过推荐问2 ｜ 触发过
+  ///   firedRecommendQ3         ← 判断是否触发过推荐问3 ｜ 触发过
+  ///   firedRecommendQ4         ← 判断是否触发过推荐问4 ｜ 触发过
+  ///   firedRecommendQ5         ← 判断是否触发过推荐问5 ｜ 触发过
+  ///   firedRecommendQ6         ← 判断是否触发过推荐问6 ｜ 触发过
+  ///   firedRecommendQ7         ← 判断是否触发过推荐问7 ｜ 触发过
+  ///   isPremiumL3L4            ← 是否专豪L3/L4 ｜ L3/l4
+  ///   memberV8                 ← 是否会员V8 ｜ v8 | 会员V8
+  ///   isV7Natural              ← 是否V7自然等级 ｜ V7自然等级
+  ///   traffic30Opened          ← 判断是否3.0已开量 ｜ 3.0已开量 | 3.0未开量
+  ///   isElderlyConsult         ← 是否是老年人 ｜ 是
+  ///   stepGe3                  ← 大于等于3步 ｜ 是
+  ///   traffic30OpenedZrg       ← 是否3.0流量开量 ｜ 3.0已开量
+  ///   userIdentity             ← 判断用户身份 ｜ v7&v8 | 其他（v1-v6）
+  ///   orderExcludedBilling     ← 订单状态是否有剔除 ｜ 剔除订单状态开始计费
+  ///   qidInScope               ← 判断是否在圈选的qid范围内 ｜ 在圈选范围内
+  ///   firedSamePlanGt3         ← 是否触发同一方案＞3次 ｜ 触发同一方案＞3次
+  ///   stepGt5                  ← 步长是否＞5 ｜ 步长＞5
+  ///   asyncCardExpression      ← 给异步转人工卡片 ｜ 无表达-异步卡片 | 表达不充分-异步卡片 | 表达充分-异步卡片
+  ///   firedSamePlanGt2         ← 是否触发同一方案＞2次 ｜ 触发同一方案＞2次
+  ///   sessionGaveCard          ← 会话维度下是否给出过卡片 ｜ 没有给出异步卡片 | 给过异步转人工卡片
+  ///   sessionReceivedReceipt   ← 会话是否收到过回执卡 ｜ 收到回执卡 | 没有收到回执卡
+  ///   firedProgressIntercept   ← 是否触发处理进度拦截 ｜ 没有触发过处理进度拦截 | 触发过
+  ///   firedValidKnowledge      ← 是否触发有效知识点 ｜ 触发过有效知识点
+  ///   hasOrderOnEntry          ← 进线是否有订单 ｜ 进线无订单 | 进线有订单
+  ///   firedOrderPopup          ← 是否触发过订单弹窗 ｜ 触发过转人工前订单弹窗
+  ///   memberV7V8               ← 是否会员V7V8 ｜ v7v8
+  ///   centralApology           ← 是否中控缺失承认不足并道歉 ｜ 是中控缺失承认不足并道歉
+  ///   firedGuideOpen           ← 是否触发过引导开口 ｜ 触发过引导开口
+  ///   firedProactiveCard       ← 是否触发过主动卡 ｜ 触发过主动卡-人工
+  ///   centralClarifyCount      ← 判断中控连续澄清次数 ｜ trace维度连续澄清＞2次
+  ///   firedKnowledgeJudge      ← 判断是否触发过知识点 ｜ 触发过
+  ///   traceClarifyGt2          ← 判断是否trace连续澄清＞2 ｜ trace维度连续澄清＞2次
+  ///   firedKnowledge           ← 是否触发过知识点 ｜ 触发过知识点
+  ///   firedRealtimeTag         ← 是否触发过实时tag ｜ 触发过
+  ///   stepGe15                 ← 步长是否≥15 ｜ 大于等于15
+  ///   isV8                     ← V8 ｜ v8
+  ///   firedV8Response          ← 是否触发过V8应答项 ｜ 触发过V8应答项
+  ///   firedValidKnowledgeJudge ← 判断是否触发过有效知识点判断 ｜ 触发过有效知识点
+  ///   firedRecommendIntercept  ← 判断是否触发推荐问拦截 ｜ 触发过推荐问拦截
+  ///   firedValidKnowledge2     ← 是否触发过有效知识点 ｜ 是 | 触发过有效知识点
+  ///   firedRecommendDrain      ← 是否触发推荐问引流 ｜ 触发过推荐问引流
+  ///   firedCategoryRecommend   ← 是否触发过问题大类推荐 ｜ 是
+  ///   gaveRealtimeTag          ← 是否给过实时tag ｜ 给过实时tag
+  ///   isFullDispatchOrder      ← 判断是否全调度订单 ｜ 全调度订单
+
+  // ────────────────────────────────────────────────────────────
+  /// D01 ｜ 转人工总路由 ｜ 决策表 routeByTriggerEvent
+  /// 业务分流入口（按触发事件） ｜ 规则数=22 ｜ 可达动作类型：主动卡、处理进度召回、实时tag、实时按钮、异步转人工卡片、引导开口引流、推荐问召回、机器人、羊毛党分级应答、订单选择弹窗、转人工、问题大类推荐
+  decision_table routeByTriggerEvent(
+    triggerEvent = ctx.triggerEvent
+  ) hit=first -> String {
+    rule (triggerEvent: triggerEvent == "知识点司机未及时结束计费") -> "GOTO_knowledgePointFullDispatch"
+    rule (triggerEvent: triggerEvent == "知识点超出一口价") -> "GOTO_knowledgePointFullDispatch"
+    rule (triggerEvent: triggerEvent == "知识点司机不愿意来接我") -> "GOTO_knowledgePointFullDispatch"
+    rule (triggerEvent: triggerEvent == "知识点预估金额与实际金额不一致") -> "GOTO_knowledgePointFullDispatch"
+    rule (triggerEvent: triggerEvent == "知识点被收取消费") -> "GOTO_knowledgePointFullDispatch"
+    rule (triggerEvent: triggerEvent == "知识点内人工button-人工") -> "知识点内人工button-人工"
+    rule (triggerEvent: triggerEvent == "司机接错人") -> "GOTO_knowledgePointFullDispatch"
+    rule (triggerEvent: triggerEvent == "点击【异步转人工Button】") -> "GOTO_asyncTransferCardBySessionReceipt"
+    rule (triggerEvent: triggerEvent == "方案内系统自动帮助zrg") -> "GOTO_zrgAutoHelp30"
+    rule (triggerEvent: triggerEvent == "点击联系客服按钮") -> "联系人工客服按钮-人工"
+    rule (triggerEvent: triggerEvent == "外层识别的敏感词") -> "外层识别的敏感词-人工"
+    rule (triggerEvent: triggerEvent == "提交工单失败") -> "提交工单失败-人工"
+    rule (triggerEvent: triggerEvent == "点击【继续咨询智能客服】") -> "点击继续咨询智能客服-人工按钮"
+    rule (triggerEvent: triggerEvent == "点击主动卡片") -> "点击【人工客服】主动卡片-人工"
+    rule (triggerEvent: triggerEvent == "点击【异步转人工Tag】") -> "GOTO_asyncTransferCardByExpression"
+    rule (triggerEvent: triggerEvent == "实时tag-人工") -> "实时tag-人工"
+    rule (triggerEvent: triggerEvent == "知识点未坐车需付车费") -> "GOTO_knowledgePointFullDispatch"
+    rule (triggerEvent: triggerEvent == "点击关闭订单弹窗") -> "GOTO_recommendQuestionRecall"
+    rule (triggerEvent: triggerEvent == "点击订单弹窗内的订单或按钮") -> "GOTO_recommendQuestionRecall"
+    rule (triggerEvent: triggerEvent == "知识点绕路多收费") -> "GOTO_knowledgePointFullDispatch"
+    rule (triggerEvent: triggerEvent == "转人工意图") -> "GOTO_mainRouteByElderlyWoolAndTraffic"
+    otherwise -> "GOTO_consultRepeatTriggerButton"
+  }
+  transform routeByTriggerEventResult {
+    code: String = when {
+      routeByTriggerEvent.output.value == "GOTO_knowledgePointFullDispatch" -> knowledgePointFullDispatch.output.value
+      routeByTriggerEvent.output.value == "GOTO_asyncTransferCardBySessionReceipt" -> asyncTransferCardBySessionReceiptResult.code
+      routeByTriggerEvent.output.value == "GOTO_zrgAutoHelp30" -> zrgAutoHelp30Result.code
+      routeByTriggerEvent.output.value == "GOTO_asyncTransferCardByExpression" -> asyncTransferCardByExpression.output.value
+      routeByTriggerEvent.output.value == "GOTO_recommendQuestionRecall" -> recommendQuestionRecallResult.code
+      routeByTriggerEvent.output.value == "GOTO_mainRouteByElderlyWoolAndTraffic" -> mainRouteByElderlyWoolAndTrafficResult.code
+      routeByTriggerEvent.output.value == "GOTO_consultRepeatTriggerButton" -> consultRepeatTriggerButtonResult.code
+      otherwise -> routeByTriggerEvent.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D02 ｜ 是否为老年人 ｜ 决策表 mainRouteByElderlyWoolAndTraffic
+  /// 首判：是否为老年人 ｜ 规则数=18 ｜ 可达动作类型：主动卡、处理进度召回、实时按钮、引导开口引流、推荐问召回、羊毛党分级应答、订单选择弹窗、转人工、问题大类推荐
+  decision_table mainRouteByElderlyWoolAndTraffic(
+    isElderly = ctx.isElderly,
+    isWoolUser = ctx.isWoolUser,
+    firedWool1 = ctx.firedWool1,
+    firedWool2 = ctx.firedWool2,
+    firedWool3 = ctx.firedWool3,
+    firedWool4 = ctx.firedWool4,
+    isTraffic30 = ctx.isTraffic30,
+    isL3L4 = ctx.isL3L4,
+    isV7V8 = ctx.isV7V8,
+    isVvip = ctx.isVvip,
+    stepBucket = ctx.stepBucket,
+    hasProcessingProgress7d = ctx.hasProcessingProgress7d,
+    firedProgressRecall = ctx.firedProgressRecall,
+    hasProcessingTicket7d = ctx.hasProcessingTicket7d,
+    isV8AndL3L4 = ctx.isV8AndL3L4,
+    firedV8L3L4Response = ctx.firedV8L3L4Response
+  ) hit=first -> String {
+    rule (isElderly: isElderly == "是") -> "人工服务"
+    rule (isWoolUser: isWoolUser == "是", firedWool1: firedWool1 == "否") -> "羊毛1"
+    rule (isWoolUser: isWoolUser == "是", firedWool1: firedWool1 == "是", firedWool2: firedWool2 == "否") -> "羊毛2"
+    rule (isWoolUser: isWoolUser == "是", firedWool1: firedWool1 == "是", firedWool2: firedWool2 == "是", firedWool3: firedWool3 == "否") -> "羊毛3"
+    rule (isWoolUser: isWoolUser == "是", firedWool1: firedWool1 == "是", firedWool2: firedWool2 == "是", firedWool3: firedWool3 == "是", firedWool4: firedWool4 == "否") -> "羊毛4"
+    rule (isWoolUser: isWoolUser == "是", firedWool1: firedWool1 == "是", firedWool2: firedWool2 == "是", firedWool3: firedWool3 == "是", firedWool4: firedWool4 == "是") -> "羊毛5"
+    rule (isTraffic30: isTraffic30 == "是", isL3L4: isL3L4 == "L3L4") -> "GOTO_firedProactiveCardBranch"
+    rule (isTraffic30: isTraffic30 == "是", isV7V8: isV7V8 == "V7V8") -> "GOTO_firedProactiveCardBranch"
+    rule (isTraffic30: isTraffic30 == "是", isVvip: isVvip == "VVIP") -> "GOTO_firedProactiveCardBranch"
+    rule (isTraffic30: isTraffic30 == "是", stepBucket: stepBucket == "步长>=15") -> "zrg-v1v6步长实时按钮"
+    rule (isTraffic30: isTraffic30 == "是", hasProcessingProgress7d: hasProcessingProgress7d == "订单7日内有处理中工单", firedProgressRecall: firedProgressRecall == "触发过处理进度召回") -> "GOTO_validKnowledgeRecallGate"
+    rule (isTraffic30: isTraffic30 == "是", hasProcessingProgress7d: hasProcessingProgress7d == "订单7日内有处理中工单") -> "v1v6-处理进度召回"
+    rule (isTraffic30: isTraffic30 == "是", hasProcessingTicket7d: hasProcessingTicket7d == "用户7天内有处理中工单", firedProgressRecall: firedProgressRecall == "触发过处理进度召回") -> "GOTO_validKnowledgeRecallGate"
+    rule (isTraffic30: isTraffic30 == "是", hasProcessingTicket7d: hasProcessingTicket7d == "用户7天内有处理中工单") -> "v1v6无订单-处理进度召回"
+    rule (isTraffic30: isTraffic30 == "是") -> "GOTO_validKnowledgeRecallGate"
+    rule (isV8AndL3L4: isV8AndL3L4 == "v8&L3/l4", firedV8L3L4Response: firedV8L3L4Response == "触发过V8&L3L4应答项") -> "GOTO_isV8Branch"
+    rule (isV8AndL3L4: isV8AndL3L4 == "v8&L3/l4") -> "2.0-v8&L3L4-按钮"
+    otherwise -> "GOTO_isV8Branch"
+  }
+  transform mainRouteByElderlyWoolAndTrafficResult {
+    code: String = when {
+      mainRouteByElderlyWoolAndTraffic.output.value == "GOTO_firedProactiveCardBranch" -> firedProactiveCardBranchResult.code
+      mainRouteByElderlyWoolAndTraffic.output.value == "GOTO_validKnowledgeRecallGate" -> validKnowledgeRecallGateResult.code
+      mainRouteByElderlyWoolAndTraffic.output.value == "GOTO_isV8Branch" -> isV8BranchResult.code
+      otherwise -> mainRouteByElderlyWoolAndTraffic.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D03 ｜ 判断入口+订单状态 ｜ 决策表 recommendQuestionRecall
+  /// 首判：判断入口+订单状态 ｜ 规则数=16 ｜ 可达动作类型：实时按钮、引导开口引流、推荐问召回、问题大类推荐
+  decision_table recommendQuestionRecall(
+    entryOrderStatus = ctx.entryOrderStatus,
+    firedRecommendQ1 = ctx.firedRecommendQ1,
+    firedRecommendQ2 = ctx.firedRecommendQ2,
+    firedRecommendQ3 = ctx.firedRecommendQ3,
+    firedRecommendQ4 = ctx.firedRecommendQ4,
+    firedRecommendQ5 = ctx.firedRecommendQ5,
+    firedRecommendQ6 = ctx.firedRecommendQ6,
+    firedRecommendQ7 = ctx.firedRecommendQ7,
+    firedRecommendQ8 = ctx.firedRecommendQ8
+  ) hit=first -> String {
+    rule (entryOrderStatus: entryOrderStatus == "详情页+订单已完成", firedRecommendQ1: firedRecommendQ1 == "触发过") -> "GOTO_centralApologyBranch"
+    rule (entryOrderStatus: entryOrderStatus == "详情页+订单已完成") -> "详情页+订单已完成推荐问召回"
+    rule (entryOrderStatus: entryOrderStatus == "详情页+订单进行中", firedRecommendQ2: firedRecommendQ2 == "触发过") -> "GOTO_centralApologyBranch"
+    rule (entryOrderStatus: entryOrderStatus == "详情页+订单进行中") -> "详情页+订单进行中推荐问召回"
+    rule (entryOrderStatus: entryOrderStatus == "详情页+订单已关闭", firedRecommendQ3: firedRecommendQ3 == "触发过") -> "GOTO_centralApologyBranch"
+    rule (entryOrderStatus: entryOrderStatus == "详情页+订单已关闭") -> "详情页+订单已关闭推荐问召回"
+    rule (entryOrderStatus: entryOrderStatus == "我的客服+订单已完成", firedRecommendQ4: firedRecommendQ4 == "触发过") -> "GOTO_centralApologyBranch"
+    rule (entryOrderStatus: entryOrderStatus == "我的客服+订单已完成") -> "我的客服+订单已完成推荐问召回"
+    rule (entryOrderStatus: entryOrderStatus == "我的客服+订单进行中", firedRecommendQ5: firedRecommendQ5 == "触发过") -> "GOTO_centralApologyBranch"
+    rule (entryOrderStatus: entryOrderStatus == "我的客服+订单进行中") -> "我的客服+订单进行中推荐问召回"
+    rule (entryOrderStatus: entryOrderStatus == "我的客服+订单已关闭", firedRecommendQ6: firedRecommendQ6 == "触发过") -> "GOTO_centralApologyBranch"
+    rule (entryOrderStatus: entryOrderStatus == "我的客服+订单已关闭") -> "我的客服+订单已关闭推荐问召回"
+    rule (entryOrderStatus: entryOrderStatus == "我的客服+无订单", firedRecommendQ7: firedRecommendQ7 == "触发过") -> "GOTO_centralApologyBranch"
+    rule (entryOrderStatus: entryOrderStatus == "我的客服+无订单") -> "我的客服+无订单推荐问召回"
+    rule (firedRecommendQ8: firedRecommendQ8 == "触发过") -> "GOTO_centralApologyBranch"
+    otherwise -> "v1v6-else-推荐问召回"
+  }
+  transform recommendQuestionRecallResult {
+    code: String = when {
+      recommendQuestionRecall.output.value == "GOTO_centralApologyBranch" -> centralApologyBranchResult.code
+      otherwise -> recommendQuestionRecall.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D04 ｜ 是否VVIP ｜ 决策表 traffic30CardTierAndDrain
+  /// 首判：是否VVIP ｜ 规则数=10 ｜ 可达动作类型：主动卡、处理进度召回、引导开口引流、推荐问召回
+  decision_table traffic30CardTierAndDrain(
+    isVvip = ctx.isVvip,
+    isPremiumL3L4 = ctx.isPremiumL3L4,
+    memberV8 = ctx.memberV8,
+    isV7Natural = ctx.isV7Natural,
+    stepBucket = ctx.stepBucket,
+    hasProcessingProgress7d = ctx.hasProcessingProgress7d,
+    firedProgressRecall = ctx.firedProgressRecall,
+    hasProcessingTicket7d = ctx.hasProcessingTicket7d
+  ) hit=first -> String {
+    rule (isVvip: isVvip == "VVIP") -> "VVIP-主动卡"
+    rule (isPremiumL3L4: isPremiumL3L4 == "L3/l4") -> "L3L4-主动卡"
+    rule (memberV8: memberV8 == "v8") -> "v8-主动卡"
+    rule (isV7Natural: isV7Natural == "V7自然等级") -> "V7自然等级-主动卡"
+    rule (stepBucket: stepBucket == "步长>=15") -> "v7v8-步长≥15-主动卡"
+    rule (hasProcessingProgress7d: hasProcessingProgress7d == "订单7日内有处理中工单", firedProgressRecall: firedProgressRecall == "触发过处理进度召回") -> "GOTO_validKnowledgeTriggeredBranch"
+    rule (hasProcessingProgress7d: hasProcessingProgress7d == "订单7日内有处理中工单") -> "v7-处理进度引流"
+    rule (hasProcessingTicket7d: hasProcessingTicket7d == "用户7天内有处理中工单", firedProgressRecall: firedProgressRecall == "触发过处理进度召回") -> "GOTO_validKnowledgeTriggeredBranch"
+    rule (hasProcessingTicket7d: hasProcessingTicket7d == "用户7天内有处理中工单") -> "v7无订单-处理进度召回"
+    otherwise -> "GOTO_validKnowledgeTriggeredBranch"
+  }
+  transform traffic30CardTierAndDrainResult {
+    code: String = when {
+      traffic30CardTierAndDrain.output.value == "GOTO_validKnowledgeTriggeredBranch" -> validKnowledgeTriggeredBranchResult.code
+      otherwise -> traffic30CardTierAndDrain.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D05 ｜ 判断是否3.0已开量 ｜ 决策表 consultRepeatTriggerButton
+  /// 首判：判断是否3.0已开量 ｜ 规则数=6 ｜ 可达动作类型：实时tag、实时按钮、机器人、转人工
+  decision_table consultRepeatTriggerButton(
+    traffic30Opened = ctx.traffic30Opened,
+    isElderlyConsult = ctx.isElderlyConsult,
+    stepGe3 = ctx.stepGe3
+  ) hit=first -> String {
+    rule (traffic30Opened: traffic30Opened == "3.0未开量", isElderlyConsult: isElderlyConsult == "是", stepGe3: stepGe3 == "是") -> "人工服务"
+    rule (traffic30Opened: traffic30Opened == "3.0未开量", isElderlyConsult: isElderlyConsult == "是") -> "2.0-else-机器人"
+    rule (traffic30Opened: traffic30Opened == "3.0未开量") -> "2.0-else-机器人"
+    rule (traffic30Opened: traffic30Opened == "3.0已开量", isElderlyConsult: isElderlyConsult == "是", stepGe3: stepGe3 == "是") -> "老年人步长人工服务"
+    rule (traffic30Opened: traffic30Opened == "3.0已开量", isElderlyConsult: isElderlyConsult == "是") -> "GOTO_isVvipBranch"
+    otherwise -> "GOTO_isVvipBranch"
+  }
+  transform consultRepeatTriggerButtonResult {
+    code: String = when {
+      consultRepeatTriggerButton.output.value == "GOTO_isVvipBranch" -> isVvipBranchResult.code
+      otherwise -> consultRepeatTriggerButton.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D06 ｜ 判断步长 ｜ 决策表 traffic20DrainByStep
+  /// 首判：判断步长 ｜ 规则数=6 ｜ 可达动作类型：处理进度召回、实时按钮、引导开口引流、推荐问召回、转人工
+  decision_table traffic20DrainByStep(
+    stepBucket = ctx.stepBucket,
+    hasProcessingProgress7d = ctx.hasProcessingProgress7d,
+    firedProgressRecall = ctx.firedProgressRecall,
+    hasProcessingTicket7d = ctx.hasProcessingTicket7d
+  ) hit=first -> String {
+    rule (stepBucket: stepBucket == "步长>=15") -> "2.0-步长≥15-转人工"
+    rule (hasProcessingProgress7d: hasProcessingProgress7d == "订单7日内有处理中工单", firedProgressRecall: firedProgressRecall == "触发过处理进度召回") -> "GOTO_validKnowledgeJudgeGate"
+    rule (hasProcessingProgress7d: hasProcessingProgress7d == "订单7日内有处理中工单") -> "2.0-处理进度召回"
+    rule (hasProcessingTicket7d: hasProcessingTicket7d == "用户7天内有处理中工单", firedProgressRecall: firedProgressRecall == "触发过处理进度召回") -> "GOTO_validKnowledgeJudgeGate"
+    rule (hasProcessingTicket7d: hasProcessingTicket7d == "用户7天内有处理中工单") -> "2.0无订单-处理进度召回"
+    otherwise -> "GOTO_validKnowledgeJudgeGate"
+  }
+  transform traffic20DrainByStepResult {
+    code: String = when {
+      traffic20DrainByStep.output.value == "GOTO_validKnowledgeJudgeGate" -> validKnowledgeJudgeGateResult.code
+      otherwise -> traffic20DrainByStep.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D07 ｜ 是否3.0流量开量 ｜ 决策表 zrgAutoHelp30
+  /// 首判：是否3.0流量开量 ｜ 规则数=5 ｜ 可达动作类型：主动卡、处理进度召回、异步转人工卡片、转人工
+  decision_table zrgAutoHelp30(
+    traffic30OpenedZrg = ctx.traffic30OpenedZrg,
+    userIdentity = ctx.userIdentity,
+    orderExcludedBilling = ctx.orderExcludedBilling,
+    qidInScope = ctx.qidInScope
+  ) hit=first -> String {
+    rule (traffic30OpenedZrg: traffic30OpenedZrg == "3.0已开量", userIdentity: userIdentity == "v7&v8") -> "方案内-v7&v8-询问卡片"
+    rule (traffic30OpenedZrg: traffic30OpenedZrg == "3.0已开量", userIdentity: userIdentity == "其他（v1-v6）", orderExcludedBilling: orderExcludedBilling == "剔除订单状态开始计费") -> "订单状态开始计费-人工"
+    rule (traffic30OpenedZrg: traffic30OpenedZrg == "3.0已开量", userIdentity: userIdentity == "其他（v1-v6）", qidInScope: qidInScope == "在圈选范围内") -> "GOTO_asyncTransferCardBySessionReceipt"
+    rule (traffic30OpenedZrg: traffic30OpenedZrg == "3.0已开量", userIdentity: userIdentity == "其他（v1-v6）") -> "不在圈选范围内-人工"
+    otherwise -> "方案内zrg3.0未开量-人工"
+  }
+  transform zrgAutoHelp30Result {
+    code: String = when {
+      zrgAutoHelp30.output.value == "GOTO_asyncTransferCardBySessionReceipt" -> asyncTransferCardBySessionReceiptResult.code
+      otherwise -> zrgAutoHelp30.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D08 ｜ 是否V7自然等级 ｜ 决策表 isV7NaturalBranch
+  /// 首判：是否V7自然等级 ｜ 规则数=4 ｜ 可达动作类型：实时tag、实时按钮、机器人
+  decision_table isV7NaturalBranch(
+    isV7Natural = ctx.isV7Natural,
+    firedSamePlanGt3 = ctx.firedSamePlanGt3,
+    stepGt5 = ctx.stepGt5
+  ) hit=first -> String {
+    rule (isV7Natural: isV7Natural == "V7自然等级", firedSamePlanGt3: firedSamePlanGt3 == "触发同一方案＞3次") -> "GOTO_gaveRealtimeTagBranch2"
+    rule (isV7Natural: isV7Natural == "V7自然等级", stepGt5: stepGt5 == "步长＞5") -> "GOTO_gaveRealtimeTagBranch2"
+    rule (isV7Natural: isV7Natural == "V7自然等级") -> "GOTO_stepGe15Branch"
+    otherwise -> "GOTO_stepGe15Branch"
+  }
+  transform isV7NaturalBranchResult {
+    code: String = when {
+      isV7NaturalBranch.output.value == "GOTO_gaveRealtimeTagBranch2" -> gaveRealtimeTagBranch2Result.code
+      isV7NaturalBranch.output.value == "GOTO_stepGe15Branch" -> stepGe15BranchResult.code
+      otherwise -> isV7NaturalBranch.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D09 ｜ 给异步转人工卡片 ｜ 决策表 asyncTransferCardByExpression
+  /// 首判：给异步转人工卡片 ｜ 规则数=4 ｜ 可达动作类型：异步转人工卡片
+  decision_table asyncTransferCardByExpression(
+    asyncCardExpression = ctx.asyncCardExpression
+  ) hit=first -> String {
+    rule (asyncCardExpression: asyncCardExpression == "表达充分-异步卡片") -> "表达充分-异步卡片"
+    rule (asyncCardExpression: asyncCardExpression == "表达不充分-异步卡片") -> "表达不充分-异步卡片"
+    rule (asyncCardExpression: asyncCardExpression == "无表达-异步卡片") -> "无表达-异步卡片"
+    otherwise -> "表达不充分-异步卡片"
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D10 ｜ 是否会员V8 ｜ 决策表 memberV8Branch
+  /// 首判：是否会员V8 ｜ 规则数=4 ｜ 可达动作类型：实时tag、实时按钮、机器人
+  decision_table memberV8Branch(
+    memberV8 = ctx.memberV8,
+    firedSamePlanGt2 = ctx.firedSamePlanGt2,
+    stepGt5 = ctx.stepGt5
+  ) hit=first -> String {
+    rule (memberV8: memberV8 == "会员V8", firedSamePlanGt2: firedSamePlanGt2 == "触发同一方案＞2次") -> "GOTO_gaveRealtimeTagBranch"
+    rule (memberV8: memberV8 == "会员V8", stepGt5: stepGt5 == "步长＞5") -> "GOTO_gaveRealtimeTagBranch"
+    rule (memberV8: memberV8 == "会员V8") -> "GOTO_isV7NaturalBranch"
+    otherwise -> "GOTO_isV7NaturalBranch"
+  }
+  transform memberV8BranchResult {
+    code: String = when {
+      memberV8Branch.output.value == "GOTO_gaveRealtimeTagBranch" -> gaveRealtimeTagBranchResult.code
+      memberV8Branch.output.value == "GOTO_isV7NaturalBranch" -> isV7NaturalBranchResult.code
+      otherwise -> memberV8Branch.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D11 ｜ 会话维度下是否给出过卡片 ｜ 决策表 asyncTransferCardBySessionReceipt
+  /// 首判：会话维度下是否给出过卡片 ｜ 规则数=4 ｜ 可达动作类型：处理进度召回、异步转人工卡片、转人工
+  decision_table asyncTransferCardBySessionReceipt(
+    sessionGaveCard = ctx.sessionGaveCard,
+    sessionReceivedReceipt = ctx.sessionReceivedReceipt,
+    firedProgressIntercept = ctx.firedProgressIntercept
+  ) hit=first -> String {
+    rule (sessionGaveCard: sessionGaveCard == "给过异步转人工卡片", sessionReceivedReceipt: sessionReceivedReceipt == "收到回执卡", firedProgressIntercept: firedProgressIntercept == "没有触发过处理进度拦截") -> "没触发过异步卡处理进度引流"
+    rule (sessionGaveCard: sessionGaveCard == "给过异步转人工卡片", sessionReceivedReceipt: sessionReceivedReceipt == "收到回执卡", firedProgressIntercept: firedProgressIntercept == "触发过") -> "触发过处理进度拦截-人工"
+    rule (sessionGaveCard: sessionGaveCard == "给过异步转人工卡片", sessionReceivedReceipt: sessionReceivedReceipt == "没有收到回执卡") -> "未收到回执卡-人工"
+    otherwise -> "GOTO_asyncTransferCardByExpression"
+  }
+  transform asyncTransferCardBySessionReceiptResult {
+    code: String = when {
+      asyncTransferCardBySessionReceipt.output.value == "GOTO_asyncTransferCardByExpression" -> asyncTransferCardByExpression.output.value
+      otherwise -> asyncTransferCardBySessionReceipt.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D12 ｜ 是否触发有效知识点 ｜ 决策表 validKnowledgeRecallGate
+  /// 首判：是否触发有效知识点 ｜ 规则数=4 ｜ 可达动作类型：实时按钮、引导开口引流、推荐问召回、订单选择弹窗、问题大类推荐
+  decision_table validKnowledgeRecallGate(
+    firedValidKnowledge = ctx.firedValidKnowledge,
+    hasOrderOnEntry = ctx.hasOrderOnEntry,
+    firedOrderPopup = ctx.firedOrderPopup
+  ) hit=first -> String {
+    rule (firedValidKnowledge: firedValidKnowledge == "触发过有效知识点") -> "GOTO_recommendQuestionRecall"
+    rule (hasOrderOnEntry: hasOrderOnEntry == "进线有订单", firedOrderPopup: firedOrderPopup == "触发过转人工前订单弹窗") -> "GOTO_recommendQuestionRecall"
+    rule (hasOrderOnEntry: hasOrderOnEntry == "进线有订单") -> "自动弹出订单选择弹窗"
+    otherwise -> "GOTO_recommendQuestionRecall"
+  }
+  transform validKnowledgeRecallGateResult {
+    code: String = when {
+      validKnowledgeRecallGate.output.value == "GOTO_recommendQuestionRecall" -> recommendQuestionRecallResult.code
+      otherwise -> validKnowledgeRecallGate.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D13 ｜ 是否VVIP ｜ 决策表 isVvipBranch
+  /// 首判：是否VVIP ｜ 规则数=4 ｜ 可达动作类型：实时tag、实时按钮、机器人
+  decision_table isVvipBranch(
+    isVvip = ctx.isVvip,
+    isL3L4 = ctx.isL3L4,
+    memberV7V8 = ctx.memberV7V8
+  ) hit=first -> String {
+    rule (isVvip: isVvip == "VVIP") -> "GOTO_memberV8Branch"
+    rule (isL3L4: isL3L4 == "L3L4") -> "GOTO_memberV8Branch"
+    rule (memberV7V8: memberV7V8 == "v7v8") -> "GOTO_memberV8Branch"
+    otherwise -> "3.0-else-机器人"
+  }
+  transform isVvipBranchResult {
+    code: String = when {
+      isVvipBranch.output.value == "GOTO_memberV8Branch" -> memberV8BranchResult.code
+      otherwise -> isVvipBranch.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D14 ｜ 是否中控缺失承认不足并道歉 ｜ 决策表 centralApologyBranch
+  /// 首判：是否中控缺失承认不足并道歉 ｜ 规则数=4 ｜ 可达动作类型：实时按钮、引导开口引流、问题大类推荐
+  decision_table centralApologyBranch(
+    centralApology = ctx.centralApology,
+    firedGuideOpen = ctx.firedGuideOpen
+  ) hit=first -> String {
+    rule (centralApology: centralApology == "是中控缺失承认不足并道歉", firedGuideOpen: firedGuideOpen == "触发过引导开口") -> "GOTO_validKnowledgeTriggeredBranch2"
+    rule (centralApology: centralApology == "是中控缺失承认不足并道歉") -> "v1v6-缺失-引导开口"
+    rule (firedGuideOpen: firedGuideOpen == "触发过引导开口") -> "GOTO_validKnowledgeTriggeredBranch2"
+    otherwise -> "v1v6-引导开口"
+  }
+  transform centralApologyBranchResult {
+    code: String = when {
+      centralApologyBranch.output.value == "GOTO_validKnowledgeTriggeredBranch2" -> validKnowledgeTriggeredBranch2.output.value
+      otherwise -> centralApologyBranch.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D15 ｜ 是否中控缺失承认不足并道歉 ｜ 决策表 centralApologyBranch2
+  /// 首判：是否中控缺失承认不足并道歉 ｜ 规则数=4 ｜ 可达动作类型：主动卡、引导开口引流
+  decision_table centralApologyBranch2(
+    centralApology = ctx.centralApology,
+    firedGuideOpen = ctx.firedGuideOpen
+  ) hit=first -> String {
+    rule (centralApology: centralApology == "是中控缺失承认不足并道歉", firedGuideOpen: firedGuideOpen == "触发过引导开口") -> "v7v8-zrg兜底-主动卡"
+    rule (centralApology: centralApology == "是中控缺失承认不足并道歉") -> "v7-缺失-引导开口"
+    rule (firedGuideOpen: firedGuideOpen == "触发过引导开口") -> "v7v8-zrg兜底-主动卡"
+    otherwise -> "v7-引导开口引流"
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D16 ｜ 是否触发过主动卡 ｜ 决策表 firedProactiveCardBranch
+  /// 首判：是否触发过主动卡 ｜ 规则数=4 ｜ 可达动作类型：主动卡、处理进度召回、引导开口引流、推荐问召回、转人工
+  decision_table firedProactiveCardBranch(
+    firedProactiveCard = ctx.firedProactiveCard,
+    centralClarifyCount = ctx.centralClarifyCount,
+    firedKnowledgeJudge = ctx.firedKnowledgeJudge
+  ) hit=first -> String {
+    rule (firedProactiveCard: firedProactiveCard == "触发过主动卡-人工") -> "v7v8-触发过主动卡-人工"
+    rule (centralClarifyCount: centralClarifyCount == "trace维度连续澄清＞2次", firedKnowledgeJudge: firedKnowledgeJudge == "触发过") -> "GOTO_traffic30CardTierAndDrain"
+    rule (centralClarifyCount: centralClarifyCount == "trace维度连续澄清＞2次") -> "v7v8-澄清-主动卡"
+    otherwise -> "GOTO_traffic30CardTierAndDrain"
+  }
+  transform firedProactiveCardBranchResult {
+    code: String = when {
+      firedProactiveCardBranch.output.value == "GOTO_traffic30CardTierAndDrain" -> traffic30CardTierAndDrainResult.code
+      otherwise -> firedProactiveCardBranch.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D17 ｜ 判断是否trace连续澄清＞2 ｜ 决策表 traceClarifyGt2Branch
+  /// 首判：判断是否trace连续澄清＞2 ｜ 规则数=4 ｜ 可达动作类型：实时tag、机器人
+  decision_table traceClarifyGt2Branch(
+    traceClarifyGt2 = ctx.traceClarifyGt2,
+    firedKnowledge = ctx.firedKnowledge,
+    firedRealtimeTag = ctx.firedRealtimeTag
+  ) hit=first -> String {
+    rule (traceClarifyGt2: traceClarifyGt2 == "trace维度连续澄清＞2次", firedKnowledge: firedKnowledge == "触发过知识点") -> "v7v8-else-机器人"
+    rule (traceClarifyGt2: traceClarifyGt2 == "trace维度连续澄清＞2次", firedRealtimeTag: firedRealtimeTag == "触发过") -> "v7v8-else-机器人"
+    rule (traceClarifyGt2: traceClarifyGt2 == "trace维度连续澄清＞2次") -> "else-v7v8-实时tag"
+    otherwise -> "v7v8-else-机器人"
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D18 ｜ 步长是否≥15 ｜ 决策表 stepGe15Branch
+  /// 首判：步长是否≥15 ｜ 规则数=3 ｜ 可达动作类型：实时tag、机器人
+  decision_table stepGe15Branch(
+    stepGe15 = ctx.stepGe15,
+    firedRealtimeTag = ctx.firedRealtimeTag
+  ) hit=first -> String {
+    rule (stepGe15: stepGe15 == "大于等于15", firedRealtimeTag: firedRealtimeTag == "触发过") -> "GOTO_traceClarifyGt2Branch"
+    rule (stepGe15: stepGe15 == "大于等于15") -> "else-v7v8-实时tag"
+    otherwise -> "GOTO_traceClarifyGt2Branch"
+  }
+  transform stepGe15BranchResult {
+    code: String = when {
+      stepGe15Branch.output.value == "GOTO_traceClarifyGt2Branch" -> traceClarifyGt2Branch.output.value
+      otherwise -> stepGe15Branch.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D19 ｜ V8 ｜ 决策表 isV8Branch
+  /// 首判：V8 ｜ 规则数=3 ｜ 可达动作类型：处理进度召回、实时按钮、引导开口引流、推荐问召回、转人工
+  decision_table isV8Branch(
+    isV8 = ctx.isV8,
+    firedV8Response = ctx.firedV8Response
+  ) hit=first -> String {
+    rule (isV8: isV8 == "v8", firedV8Response: firedV8Response == "触发过V8应答项") -> "GOTO_traffic20DrainByStep"
+    rule (isV8: isV8 == "v8") -> "2.0-v8-人工按钮"
+    otherwise -> "GOTO_traffic20DrainByStep"
+  }
+  transform isV8BranchResult {
+    code: String = when {
+      isV8Branch.output.value == "GOTO_traffic20DrainByStep" -> traffic20DrainByStepResult.code
+      otherwise -> isV8Branch.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D20 ｜ 判断是否触发过有效知识点判断 ｜ 决策表 validKnowledgeJudgeGate
+  /// 首判：判断是否触发过有效知识点判断 ｜ 规则数=3 ｜ 可达动作类型：实时按钮、引导开口引流、推荐问召回
+  decision_table validKnowledgeJudgeGate(
+    firedValidKnowledgeJudge = ctx.firedValidKnowledgeJudge,
+    firedRecommendIntercept = ctx.firedRecommendIntercept
+  ) hit=first -> String {
+    rule (firedValidKnowledgeJudge: firedValidKnowledgeJudge == "触发过有效知识点") -> "GOTO_firedGuideOpenBranch"
+    rule (firedRecommendIntercept: firedRecommendIntercept == "触发过推荐问拦截") -> "GOTO_firedGuideOpenBranch"
+    otherwise -> "2.0-推荐问引流"
+  }
+  transform validKnowledgeJudgeGateResult {
+    code: String = when {
+      validKnowledgeJudgeGate.output.value == "GOTO_firedGuideOpenBranch" -> firedGuideOpenBranch.output.value
+      otherwise -> validKnowledgeJudgeGate.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D21 ｜ 是否触发过有效知识点 ｜ 决策表 validKnowledgeTriggeredBranch
+  /// 首判：是否触发过有效知识点 ｜ 规则数=3 ｜ 可达动作类型：主动卡、引导开口引流、推荐问召回
+  decision_table validKnowledgeTriggeredBranch(
+    firedValidKnowledge2 = ctx.firedValidKnowledge2,
+    firedRecommendDrain = ctx.firedRecommendDrain
+  ) hit=first -> String {
+    rule (firedValidKnowledge2: firedValidKnowledge2 == "触发过有效知识点") -> "GOTO_centralApologyBranch2"
+    rule (firedRecommendDrain: firedRecommendDrain == "触发过推荐问引流") -> "GOTO_centralApologyBranch2"
+    otherwise -> "v7-推荐问引流"
+  }
+  transform validKnowledgeTriggeredBranchResult {
+    code: String = when {
+      validKnowledgeTriggeredBranch.output.value == "GOTO_centralApologyBranch2" -> centralApologyBranch2.output.value
+      otherwise -> validKnowledgeTriggeredBranch.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D22 ｜ 是否触发过有效知识点 ｜ 决策表 validKnowledgeTriggeredBranch2
+  /// 首判：是否触发过有效知识点 ｜ 规则数=3 ｜ 可达动作类型：实时按钮、问题大类推荐
+  decision_table validKnowledgeTriggeredBranch2(
+    firedValidKnowledge2 = ctx.firedValidKnowledge2,
+    firedCategoryRecommend = ctx.firedCategoryRecommend
+  ) hit=first -> String {
+    rule (firedValidKnowledge2: firedValidKnowledge2 == "是") -> "v1v6-剔除订单-实时按钮"
+    rule (firedCategoryRecommend: firedCategoryRecommend == "是") -> "v1v6-剔除订单-实时按钮"
+    otherwise -> "问题大类推荐"
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D23 ｜ 是否给过实时tag ｜ 决策表 gaveRealtimeTagBranch
+  /// 首判：是否给过实时tag ｜ 规则数=2 ｜ 可达动作类型：实时tag、实时按钮、机器人
+  decision_table gaveRealtimeTagBranch(
+    gaveRealtimeTag = ctx.gaveRealtimeTag
+  ) hit=first -> String {
+    rule (gaveRealtimeTag: gaveRealtimeTag == "给过实时tag") -> "GOTO_isV7NaturalBranch"
+    otherwise -> "V8-重复触发方案-实时按钮"
+  }
+  transform gaveRealtimeTagBranchResult {
+    code: String = when {
+      gaveRealtimeTagBranch.output.value == "GOTO_isV7NaturalBranch" -> isV7NaturalBranchResult.code
+      otherwise -> gaveRealtimeTagBranch.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D24 ｜ 是否触发过引导开口 ｜ 决策表 firedGuideOpenBranch
+  /// 首判：是否触发过引导开口 ｜ 规则数=2 ｜ 可达动作类型：实时按钮、引导开口引流
+  decision_table firedGuideOpenBranch(
+    firedGuideOpen = ctx.firedGuideOpen
+  ) hit=first -> String {
+    rule (firedGuideOpen: firedGuideOpen == "触发过引导开口") -> "2.0zrg-else-按钮"
+    otherwise -> "2.0-引导开口引流"
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D25 ｜ 是否给过实时tag ｜ 决策表 gaveRealtimeTagBranch2
+  /// 首判：是否给过实时tag ｜ 规则数=2 ｜ 可达动作类型：实时tag、实时按钮、机器人
+  decision_table gaveRealtimeTagBranch2(
+    gaveRealtimeTag = ctx.gaveRealtimeTag
+  ) hit=first -> String {
+    rule (gaveRealtimeTag: gaveRealtimeTag == "给过实时tag") -> "GOTO_stepGe15Branch"
+    otherwise -> "V7-重复触发方案-实时按钮"
+  }
+  transform gaveRealtimeTagBranch2Result {
+    code: String = when {
+      gaveRealtimeTagBranch2.output.value == "GOTO_stepGe15Branch" -> stepGe15BranchResult.code
+      otherwise -> gaveRealtimeTagBranch2.output.value
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  /// D26 ｜ 判断是否全调度订单 ｜ 决策表 knowledgePointFullDispatch
+  /// 首判：判断是否全调度订单 ｜ 规则数=2 ｜ 可达动作类型：机器人、转人工
+  decision_table knowledgePointFullDispatch(
+    isFullDispatchOrder = ctx.isFullDispatchOrder
+  ) hit=first -> String {
+    rule (isFullDispatchOrder: isFullDispatchOrder == "全调度订单") -> "全调度订单-人工"
+    otherwise -> "else-非全调度订单-机器人"
+  }
+
+  // ════════════════════════════════════════════════════════════
+  /// 顶层结果：转人工总路由(D01) 解析出的最终动作码
+  transform strategyResult {
+    actionCode: String = routeByTriggerEventResult.code
+  }
+
+  /// 多动作输出映射①：动作码 -> 动作类型（DMN 动作解析表）
+  decision_table resolveActionType(code = strategyResult.actionCode) hit=first -> String {
+    rule (code: code == "2.0-else-机器人") -> "机器人"
+    rule (code: code == "2.0-v8&L3L4-按钮") -> "实时按钮"
+    rule (code: code == "2.0-v8-人工按钮") -> "转人工"
+    rule (code: code == "2.0-处理进度召回") -> "处理进度召回"
+    rule (code: code == "2.0-引导开口引流") -> "引导开口引流"
+    rule (code: code == "2.0-推荐问引流") -> "推荐问召回"
+    rule (code: code == "2.0-步长≥15-转人工") -> "转人工"
+    rule (code: code == "2.0zrg-else-按钮") -> "实时按钮"
+    rule (code: code == "2.0无订单-处理进度召回") -> "处理进度召回"
+    rule (code: code == "3.0-else-机器人") -> "机器人"
+    rule (code: code == "L3L4-主动卡") -> "主动卡"
+    rule (code: code == "V7-重复触发方案-实时按钮") -> "实时按钮"
+    rule (code: code == "V7自然等级-主动卡") -> "主动卡"
+    rule (code: code == "V8-重复触发方案-实时按钮") -> "实时按钮"
+    rule (code: code == "VVIP-主动卡") -> "主动卡"
+    rule (code: code == "else-v7v8-实时tag") -> "实时tag"
+    rule (code: code == "else-非全调度订单-机器人") -> "机器人"
+    rule (code: code == "v1v6-else-推荐问召回") -> "推荐问召回"
+    rule (code: code == "v1v6-剔除订单-实时按钮") -> "实时按钮"
+    rule (code: code == "v1v6-处理进度召回") -> "处理进度召回"
+    rule (code: code == "v1v6-引导开口") -> "引导开口引流"
+    rule (code: code == "v1v6-缺失-引导开口") -> "引导开口引流"
+    rule (code: code == "v1v6无订单-处理进度召回") -> "处理进度召回"
+    rule (code: code == "v7-处理进度引流") -> "处理进度召回"
+    rule (code: code == "v7-引导开口引流") -> "引导开口引流"
+    rule (code: code == "v7-推荐问引流") -> "推荐问召回"
+    rule (code: code == "v7-缺失-引导开口") -> "引导开口引流"
+    rule (code: code == "v7v8-else-机器人") -> "机器人"
+    rule (code: code == "v7v8-zrg兜底-主动卡") -> "主动卡"
+    rule (code: code == "v7v8-步长≥15-主动卡") -> "主动卡"
+    rule (code: code == "v7v8-澄清-主动卡") -> "主动卡"
+    rule (code: code == "v7v8-触发过主动卡-人工") -> "转人工"
+    rule (code: code == "v7无订单-处理进度召回") -> "处理进度召回"
+    rule (code: code == "v8-主动卡") -> "主动卡"
+    rule (code: code == "zrg-v1v6步长实时按钮") -> "实时按钮"
+    rule (code: code == "不在圈选范围内-人工") -> "转人工"
+    rule (code: code == "人工服务") -> "转人工"
+    rule (code: code == "全调度订单-人工") -> "转人工"
+    rule (code: code == "外层识别的敏感词-人工") -> "转人工"
+    rule (code: code == "实时tag-人工") -> "转人工"
+    rule (code: code == "我的客服+无订单推荐问召回") -> "推荐问召回"
+    rule (code: code == "我的客服+订单已关闭推荐问召回") -> "推荐问召回"
+    rule (code: code == "我的客服+订单已完成推荐问召回") -> "推荐问召回"
+    rule (code: code == "我的客服+订单进行中推荐问召回") -> "推荐问召回"
+    rule (code: code == "提交工单失败-人工") -> "转人工"
+    rule (code: code == "方案内-v7&v8-询问卡片") -> "主动卡"
+    rule (code: code == "方案内zrg3.0未开量-人工") -> "转人工"
+    rule (code: code == "无表达-异步卡片") -> "异步转人工卡片"
+    rule (code: code == "未收到回执卡-人工") -> "转人工"
+    rule (code: code == "没触发过异步卡处理进度引流") -> "处理进度召回"
+    rule (code: code == "点击【人工客服】主动卡片-人工") -> "转人工"
+    rule (code: code == "点击继续咨询智能客服-人工按钮") -> "转人工"
+    rule (code: code == "知识点内人工button-人工") -> "转人工"
+    rule (code: code == "羊毛1") -> "羊毛党分级应答"
+    rule (code: code == "羊毛2") -> "羊毛党分级应答"
+    rule (code: code == "羊毛3") -> "羊毛党分级应答"
+    rule (code: code == "羊毛4") -> "羊毛党分级应答"
+    rule (code: code == "羊毛5") -> "羊毛党分级应答"
+    rule (code: code == "老年人步长人工服务") -> "转人工"
+    rule (code: code == "联系人工客服按钮-人工") -> "转人工"
+    rule (code: code == "自动弹出订单选择弹窗") -> "订单选择弹窗"
+    rule (code: code == "表达不充分-异步卡片") -> "异步转人工卡片"
+    rule (code: code == "表达充分-异步卡片") -> "异步转人工卡片"
+    rule (code: code == "触发过处理进度拦截-人工") -> "转人工"
+    rule (code: code == "订单状态开始计费-人工") -> "转人工"
+    rule (code: code == "详情页+订单已关闭推荐问召回") -> "推荐问召回"
+    rule (code: code == "详情页+订单已完成推荐问召回") -> "推荐问召回"
+    rule (code: code == "详情页+订单进行中推荐问召回") -> "推荐问召回"
+    rule (code: code == "问题大类推荐") -> "问题大类推荐"
+    otherwise -> "其他"
+  }
+
+  /// 多动作输出映射②：动作码 -> 面向分层
+  decision_table resolveTargetTier(code = strategyResult.actionCode) hit=first -> String {
+    rule (code: code == "2.0-v8&L3L4-按钮") -> "v8&L3L4"
+    rule (code: code == "2.0-v8-人工按钮") -> "V8"
+    rule (code: code == "L3L4-主动卡") -> "L3L4"
+    rule (code: code == "V7-重复触发方案-实时按钮") -> "v7"
+    rule (code: code == "V7自然等级-主动卡") -> "V7自然等级"
+    rule (code: code == "V8-重复触发方案-实时按钮") -> "V8"
+    rule (code: code == "VVIP-主动卡") -> "VVIP"
+    rule (code: code == "else-v7v8-实时tag") -> "v7v8"
+    rule (code: code == "v1v6-else-推荐问召回") -> "v1v6"
+    rule (code: code == "v1v6-剔除订单-实时按钮") -> "v1v6"
+    rule (code: code == "v1v6-处理进度召回") -> "v1v6"
+    rule (code: code == "v1v6-引导开口") -> "v1v6"
+    rule (code: code == "v1v6-缺失-引导开口") -> "v1v6"
+    rule (code: code == "v1v6无订单-处理进度召回") -> "v1v6"
+    rule (code: code == "v7-处理进度引流") -> "v7"
+    rule (code: code == "v7-引导开口引流") -> "v7"
+    rule (code: code == "v7-推荐问引流") -> "v7"
+    rule (code: code == "v7-缺失-引导开口") -> "v7"
+    rule (code: code == "v7v8-else-机器人") -> "v7v8"
+    rule (code: code == "v7v8-zrg兜底-主动卡") -> "v7v8"
+    rule (code: code == "v7v8-步长≥15-主动卡") -> "v7v8"
+    rule (code: code == "v7v8-澄清-主动卡") -> "v7v8"
+    rule (code: code == "v7v8-触发过主动卡-人工") -> "v7v8"
+    rule (code: code == "v7无订单-处理进度召回") -> "v7"
+    rule (code: code == "v8-主动卡") -> "V8"
+    rule (code: code == "zrg-v1v6步长实时按钮") -> "v1v6"
+    rule (code: code == "方案内-v7&v8-询问卡片") -> "v7&v8"
+    rule (code: code == "老年人步长人工服务") -> "老年人"
+    otherwise -> ""
+  }
+
+  /// 最终输出：动作码 + 动作类型 + 面向分层
+  transform strategyOutput {
+    actionCode: String = strategyResult.actionCode
+    actionType: String = resolveActionType.output.value
+    targetTier: String = resolveTargetTier.output.value
+  }
+}

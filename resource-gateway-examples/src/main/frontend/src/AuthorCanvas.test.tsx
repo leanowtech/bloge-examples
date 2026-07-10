@@ -16,6 +16,10 @@ import type {
 
 const reactFlowMocks = vi.hoisted(() => ({
   fitView: vi.fn(),
+  getZoom: vi.fn(() => 1),
+  zoomIn: vi.fn(),
+  zoomOut: vi.fn(),
+  zoomTo: vi.fn(),
 }));
 
 vi.mock('reactflow', async () => {
@@ -24,7 +28,13 @@ vi.mock('reactflow', async () => {
   return {
     default: function ReactFlowMock({ children, nodes, nodeTypes, onInit, onNodeClick, onNodeDoubleClick }: any) {
       React.useEffect(() => {
-        onInit?.({ fitView: reactFlowMocks.fitView });
+        onInit?.({
+          fitView: reactFlowMocks.fitView,
+          getZoom: reactFlowMocks.getZoom,
+          zoomIn: reactFlowMocks.zoomIn,
+          zoomOut: reactFlowMocks.zoomOut,
+          zoomTo: reactFlowMocks.zoomTo,
+        });
       }, [onInit]);
       return React.createElement(
         'div',
@@ -75,6 +85,11 @@ describe('AuthorCanvas operator-library intake', () => {
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     reactFlowMocks.fitView.mockReset();
+    reactFlowMocks.getZoom.mockReset();
+    reactFlowMocks.getZoom.mockReturnValue(1);
+    reactFlowMocks.zoomIn.mockReset();
+    reactFlowMocks.zoomOut.mockReset();
+    reactFlowMocks.zoomTo.mockReset();
     imported = false;
     host = document.createElement('div');
     document.body.appendChild(host);
@@ -236,6 +251,41 @@ describe('AuthorCanvas operator-library intake', () => {
     expect(focusToggle.getAttribute('aria-pressed')).toBe('false');
   });
 
+  it('exposes zoom controls and an overview navigator for graph shape review', async () => {
+    imported = true;
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:eligibility"]').textContent).toContain('Eligibility'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:eligibility"]'));
+
+    await waitFor(() => expect(document.body.textContent).toContain('1 nodes'));
+    expect(query('[data-testid="canvas-navigator"]').textContent).toContain('Map');
+    expect(query('[data-testid="canvas-zoom-readout"]').textContent).toBe('100%');
+
+    await click(query<HTMLButtonElement>('[data-testid="author-fit-all"]'));
+    expect(reactFlowMocks.fitView).toHaveBeenCalledWith({ padding: 0.18, duration: 240 });
+
+    await click(query<HTMLButtonElement>('[data-testid="author-zoom-out"]'));
+    expect(reactFlowMocks.zoomOut).toHaveBeenCalledWith({ duration: 160 });
+
+    await click(query<HTMLButtonElement>('[data-testid="author-zoom-in"]'));
+    expect(reactFlowMocks.zoomIn).toHaveBeenCalledWith({ duration: 160 });
+
+    await click(query<HTMLButtonElement>('[data-testid="author-zoom-reset"]'));
+    expect(reactFlowMocks.zoomTo).toHaveBeenCalledWith(1, { duration: 180 });
+
+    const overviewToggle = query<HTMLButtonElement>('[data-testid="author-overview-toggle"]');
+    expect(overviewToggle.getAttribute('aria-pressed')).toBe('true');
+    await click(overviewToggle);
+    expect(overviewToggle.getAttribute('aria-pressed')).toBe('false');
+    expect(query('[data-testid="canvas-navigator"]').classList.contains('collapsed')).toBe(true);
+  });
+
   it('adapts a framework capability catalog into the standard visual library draft', async () => {
     await act(async () => {
       root = createRoot(host);
@@ -312,6 +362,8 @@ describe('AuthorCanvas operator-library intake', () => {
       .toContain('eligibility');
     expect(query('[data-testid="canvas-node:response"][data-operator-ref="bloge:transform"]').textContent)
       .toContain('response');
+    expect(query('[data-testid="node-wrapper:eligibility"]').getAttribute('data-position')).toBe('96,72');
+    expect(query('[data-testid="node-wrapper:response"]').getAttribute('data-position')).toBe('504,72');
 
     const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
     expect(exported).toMatchObject({
@@ -349,6 +401,8 @@ describe('AuthorCanvas operator-library intake', () => {
         response: { operatorRef: 'bloge:transform' },
       },
     });
+    expect(exported.nodes.find((node: { id: string }) => node.id === 'eligibility')?.position).toEqual({ x: 96, y: 72 });
+    expect(exported.nodes.find((node: { id: string }) => node.id === 'response')?.position).toEqual({ x: 504, y: 72 });
     expect(exported.edges[0]).toMatchObject({
       kind: 'data',
       source: { nodeId: 'eligibility', port: 'output', path: 'eligible' },
@@ -388,6 +442,47 @@ describe('AuthorCanvas operator-library intake', () => {
         },
       },
     });
+    expect(storedExport.nodes.find((node: { id: string }) => node.id === 'eligibility')?.position)
+      .toEqual({ x: 96, y: 72 });
+    expect(storedExport.nodes.find((node: { id: string }) => node.id === 'response')?.position)
+      .toEqual({ x: 504, y: 72 });
+  });
+
+  it('uses a larger overview and tighter fit padding for complex DSL projections', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({ operators: [] });
+      }
+      if (url === '/api/visual/dsl-imports/preview') {
+        expect(init).toMatchObject({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        return jsonResponse(largeDslProjection());
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/visual/operators'));
+    await click(query<HTMLButtonElement>('[data-testid="legacy-dsl-preview"]'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="legacy-dsl-notice"]').textContent)
+        .toContain('Rendered 30 nodes / 29 edges; round-trip SUPPORTED.'),
+    );
+
+    expect(query('[data-testid="canvas-navigator"]').textContent).toContain('Large Map');
+    expect(query('[data-testid="canvas-navigator"]').classList.contains('complex')).toBe(true);
+    expect(query('[data-testid="canvas-zoom-readout"]').textContent).toBe('100%');
+    await waitFor(() =>
+      expect(reactFlowMocks.fitView).toHaveBeenCalledWith({ padding: 0.06, duration: 240 }),
+    );
   });
 });
 
@@ -2010,6 +2105,72 @@ function dslProjection(): unknown {
       },
     },
     diagnostics: [],
+  };
+}
+
+function largeDslProjection(): unknown {
+  const projection = dslProjection() as {
+    draft: Record<string, unknown> & {
+      operatorSnapshots?: Record<string, OperatorDefinition>;
+      visualLayout?: Record<string, unknown>;
+    };
+    coverage: Record<string, unknown>;
+    roundTrip: Record<string, unknown>;
+  };
+  const nodes = Array.from({ length: 30 }, (_, index) => {
+    const id = `step${index + 1}`;
+    const isDecision = index % 2 === 0;
+    return {
+      id,
+      operatorRef: isDecision ? 'bloge:decisionTable' : 'bloge:transform',
+      label: id,
+      config: isDecision
+        ? { hitPolicy: 'first', inputs: {}, rules: [] }
+        : { assignments: [{ field: 'value', expression: `step${index}.output.value` }] },
+      position: { x: (index % 6) * 360, y: Math.floor(index / 6) * 220 },
+    };
+  });
+  const edges = nodes.slice(1).map((node, index) => ({
+    id: `edge_step${index + 1}_${node.id}`,
+    kind: 'data',
+    source: { nodeId: `step${index + 1}`, port: 'output', path: 'value' },
+    target: { nodeId: node.id, port: 'inputs', path: 'value' },
+  }));
+  const operatorSnapshots = Object.fromEntries(
+    nodes.map((node) => [
+      node.id,
+      node.operatorRef === 'bloge:decisionTable' ? decisionTableOperator() : transformOperator(),
+    ]),
+  );
+
+  return {
+    ...projection,
+    draft: {
+      ...projection.draft,
+      graphName: 'largePolicy',
+      nodes,
+      edges,
+      output: { nodeId: 'step30', path: '' },
+      operatorFingerprints: {},
+      operatorSnapshots: {
+        ...(projection.draft.operatorSnapshots ?? {}),
+        ...operatorSnapshots,
+      },
+      visualLayout: {
+        ...(projection.draft.visualLayout ?? {}),
+        import: { mode: 'preview', sourceId: 'migrated-eligibility.bloge', schemaNeutral: true },
+      },
+    },
+    coverage: {
+      ...projection.coverage,
+      memberCount: 30,
+      projectedNodeCount: 30,
+      edgeCount: 29,
+    },
+    roundTrip: {
+      ...projection.roundTrip,
+      generatedDsl: 'graph largePolicy { chain step1 -> step30 }',
+    },
   };
 }
 

@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.StringJoiner;
+import java.util.regex.Pattern;
 
 /**
  * Projects parsed BLOGE DSL into the generic visual graph draft model.
@@ -38,6 +39,8 @@ public class DslImportService {
 
     private static final String TRANSFORM_OPERATOR_REF = "bloge:transform";
     private static final String DECISION_TABLE_OPERATOR_REF = "bloge:decisionTable";
+    private static final Pattern VISUAL_SEPARATOR_LINE_COMMENT = Pattern.compile(
+            "(?m)^(\\s*)//\\s*([\\p{Pd}=━═─_]{3,}\\s*)$");
 
     private final VisualOperatorCatalog catalog;
     private final OperatorLibraryValidator libraryValidator;
@@ -59,7 +62,7 @@ public class DslImportService {
                 : request;
         ProjectionState state = new ProjectionState(normalized);
         EffectiveCatalog effectiveCatalog = effectiveCatalog(normalized, state.diagnostics);
-        AstNode root = parseAst(normalized.dsl(), state);
+        AstNode root = parseAst(normalizeVisualImportSource(normalized.dsl()), state);
         if (root == null) {
             state.diagnostics.add(new VisualDiagnostic("ERROR", "visual.dslImport.parseFailed",
                     "BLOGE DSL could not be parsed: " + state.parseFailureMessage, "/dsl", -1, -1,
@@ -173,6 +176,13 @@ public class DslImportService {
             }
             return null;
         }
+    }
+
+    private static String normalizeVisualImportSource(String source) {
+        if (source == null || source.isEmpty()) {
+            return "";
+        }
+        return VISUAL_SEPARATOR_LINE_COMMENT.matcher(source).replaceAll("$1/// $2");
     }
 
     private DslVisualProjection projectGraph(DslImportPreviewRequest normalized,

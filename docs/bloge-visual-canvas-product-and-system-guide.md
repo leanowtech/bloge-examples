@@ -137,6 +137,23 @@ npm run dev
 
 当前 Vite dev proxy 只代理 `/api` 到 Spring Boot。算子库导入使用 `/admin/visual-operator-libraries/*`，所以完整体验建议优先使用 Maven 打包后的 `/author/`。
 
+### 3.3 VSCode 插件轻量化方向
+
+如果用户只是想在业务仓库里看懂 `.bloge` 拓扑、导入本地算子 schema、配置 mock 数据并跑表格测试，每次都启动 Resource Gateway 服务端会显得偏重。后续推荐把 `/author/` 的核心能力下沉成 VSCode 插件入口：
+
+```text
+打开业务仓库
+  -> Visualize 当前 .bloge
+    -> 本地 topology-only 渲染
+      -> 扫描 workspace schema 后渐进增强
+        -> 本地 mock simulation / test suite
+          -> 可选切换 JVM 或远程服务端做权威校验
+```
+
+这条路线不会替代现有服务端。插件负责低门槛 authoring 和本地理解；Resource Gateway / Studio 服务端继续负责权威 validation、rewrite gate、governed commit、发布治理和真实运行。
+
+当前代码已经先补了一个插件化地基：前端 `api.ts` 支持 `BlogeApiTransport`，浏览器 demo 默认仍走 `fetch`，VSCode Webview 未来可以把同一批 API 请求通过 `postMessage` 交给 extension host 本地处理。详细方案见 [BLOGE VSCode 插件轻量化可视化编排方案](./bloge-vscode-extension-lightweight-authoring-plan.md)。
+
 ## 4. 核心概念
 
 | 概念 | 含义 |

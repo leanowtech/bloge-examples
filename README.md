@@ -169,6 +169,9 @@ bloge-examples/
   and `resource-gateway-examples/REFERENCE.md` for the full API/test reference
 - `docs/bloge-visual-canvas-product-and-system-guide.md` for the visual canvas
   product guide, demo scripts, and system usage notes
+- `docs/bloge-vscode-extension-lightweight-authoring-plan.md` for the lighter
+  VSCode extension direction that can visualize and mock-test BLOGE graphs
+  without starting the Resource Gateway service
 - `mono-examples/README.md` for the full example catalog
 - `docs/ai/README.md` for AI prompt and DSL benchmark usage
 - `docs/example-ux-visualization-evolution.md` for the example UX visualization

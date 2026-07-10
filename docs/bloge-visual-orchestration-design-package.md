@@ -16,6 +16,7 @@
 | [BLOGE 可视化编排实现状态审计](./bloge-visual-orchestration-implementation-status.md) | 当前代码事实：已落地能力、wire contract 命名、Phase 1 验收、剩余生产级缺口和下一步 | 所有人，尤其是继续实现前的工程师 |
 | [BLOGE 可视化编排工业化评估报告](./bloge-visual-orchestration-industrialization-assessment.md) | 多维度成熟度评分、当前工业级差距、本轮迭代复盘和下一轮优先级 | 架构负责人、技术负责人、继续迭代的工程师 |
 | [存量 BLOGE DSL 业务迁移到可视化编排设计方案](./bloge-legacy-dsl-visual-migration-design.md) | 迁移专线：消费任意合法 operator/function schema，导入手写 `.bloge` DSL，投影为 GraphDraft，并做 source map、诊断和 round-trip；业务代码导出 capability catalog 只是推荐来源之一 | 已接入 BLOGE 的业务团队、迁移平台团队、画布/Studio/LSP 实施团队 |
+| [BLOGE VSCode 插件轻量化可视化编排方案](./bloge-vscode-extension-lightweight-authoring-plan.md) | IDE 轻量入口：不启动服务端即可打开 `.bloge` 看 topology、扫描本地 schema、做本地 mock simulation，并可选切换 JVM/远程权威校验 | VSCode 插件实施团队、BLOGE Studio/LSP 团队、业务研发团队 |
 | [Legacy DSL Source Map UI 验证记录](./bloge-visual-canvas-legacy-dsl-source-map-verification.md) | 本轮浏览器验证证据：合法 inline visual library + `.bloge` 渲染、source map 行定位、导出 draft 保留源码映射和剩余差距 | 继续实现迁移专线的工程师、产品验收人员 |
 | [Author Canvas UX Focus 验证记录](./bloge-visual-canvas-ux-focus-verification.md) | 本轮 B 端 UX 验证证据：Canvas Focus 模式、默认辅助区压缩、真实浏览器画布高度门槛和剩余差距评估 | 产品负责人、UX 设计师、前端工程师、验收人员 |
 
@@ -55,6 +56,7 @@
 | 支持自由编排业务逻辑 | 已覆盖核心闭环，复杂能力分阶段 | 主方案第 11、13、16、20 章；Phase 1 蓝图第 9 章；实现状态审计第 5 章 |
 | 能吃下复杂业务编排场景 | 已覆盖架构方向，生产级能力仍分阶段补齐 | 主方案第 16、18、20 章；决策记录 ADR-008、ADR-009、ADR-010；实现状态审计第 5、6 章 |
 | 支持存量手写 DSL 业务升级到可视化交付 | 迁移专线设计已补齐，resource-gateway 后端 DSL preview/commit/rewrite-gate/batch-report/batch-commit、命令行/CI batch import CLI、`/author/` Legacy DSL 面板、topology-only 无 schema 可视化、source map 行定位、stored draft 保存、preview 内置 round-trip 状态和 source replacement preflight 已落地；真正覆盖原 DSL 的 source writer / VCS 集成仍未闭环 | 存量 DSL 迁移设计方案第 4-15 章；`scripts/bloge-dsl-batch-import.sh`；`POST /api/visual/dsl-imports/preview`、`POST /api/visual/dsl-imports/commit`、`POST /api/visual/dsl-imports/rewrite-gate`、`POST /api/visual/dsl-imports/batch-report`、`POST /api/visual/dsl-imports/batch-commit`；画布先从 DSL AST 推演 topology-only draft，schema-backed catalog 只是后续精确校验、补全、执行和 rewrite gate 的增强层，框架 `bloge.capabilityCatalog.v1` / `export-schema` 是推荐 schema acquisition 来源之一 |
+| 降低可视化编排与模拟验证的启动成本 | 新增 VSCode 插件轻量化方案，并在前端 API 层补 `BlogeApiTransport` 插拔点；后续可在 webview 内复用同一 Author Canvas，通过 extension host 本地满足 operator catalog、DSL preview 和 mock simulation 合同 | VSCode 插件轻量化方案第 4-13 章；`resource-gateway-examples/src/main/frontend/src/api.ts` |
 | 形成详尽设计方案 | 已覆盖，并新增实现状态审计与存量迁移专线防漂移 | 设计/状态文档合计覆盖架构、协议、决策、实现蓝图、当前代码事实和存量 DSL 迁移路径 |
 
 ## 4. 当前核心结论
@@ -90,6 +92,9 @@
    更深跨系统 rollout/canary/rollback 编排、指标消费闭环和在已补 `allOf` 结构校验、runtime value matching 与保守交集推理之后继续深化 JSON Schema 兼容性门禁，让
    handoff contract snapshot 能被外部 runtime team 变成可绑定、可激活、可对账 executor bridge、
    可回滚、可持续重新派生 executable readiness 的实现事实。
+
+8. **VSCode 插件应该成为低门槛入口，而不是第二套平台。**
+   插件默认不启动服务端，只做本地 topology、schema index、mock simulation 和文件协作；需要权威 compile、rewrite gate、governed commit、发布治理时，再显式切换到 JVM assisted 或远程服务端模式。
 
 ## 5. 当前待确认决策
 
@@ -130,8 +135,9 @@ Phase 1 不以 UI 好看为验收，而以真实闭环为验收：
 2. 前端回归验证。
 3. Java operator inventory 深化。
 4. 存量业务迁移专线：补 opaque diagnostics 修复向导、Studio batch import dashboard、coverage dashboard 和源码 writer / VCS 集成；schema-neutral preview/commit/rewrite-gate/batch-report/batch-commit、CLI/CI batch import 入口、source map 行定位、`bloge.capabilityCatalog.v1` 到 visual library adapter、preview 内置 round-trip 状态已经落地。
-5. OpenAPI/resource contract/AsyncAPI 导入深化。
-6. Run history 查询、重放和 SLO 统计深化。
-7. 协议文档命名与当前 wire contract 收敛。
+5. VSCode 插件轻量入口：基于 `BlogeApiTransport` 接 webview postMessage，先完成无服务端 topology preview、本地 schema index、本地 mock simulation 三个路由。
+6. OpenAPI/resource contract/AsyncAPI 导入深化。
+7. Run history 查询、重放和 SLO 统计深化。
+8. 协议文档命名与当前 wire contract 收敛。
 
 不要把新的可拖拽能力只写进前端；任何新能力都必须先有 `OperatorDefinition`、schema gate、GraphDraft lowering 和服务端 diagnostics。

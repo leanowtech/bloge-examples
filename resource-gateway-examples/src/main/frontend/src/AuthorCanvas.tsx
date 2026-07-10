@@ -175,6 +175,10 @@ type CanvasFlowEdge = Edge<CanvasEdgeData> & {
 const CANVAS_DATA_EDGE_TYPE = 'canvasDataEdge';
 const EDGE_LABEL_DIAGONAL_OFFSET = 48;
 const EDGE_LABEL_LANE_STEP = 30;
+const CANVAS_MIN_ZOOM = 0.04;
+const CANVAS_MAX_ZOOM = 1.8;
+const COMPLEX_GRAPH_NODE_THRESHOLD = 24;
+const COMPLEX_GRAPH_EDGE_THRESHOLD = 36;
 
 const EDGE_LABEL_OPTIONS = {
   type: CANVAS_DATA_EDGE_TYPE,
@@ -242,6 +246,64 @@ function CanvasDataEdge({
       )}
     </>
   );
+}
+
+function minimapNodeColor(node: Node<NodeData>): string {
+  switch (node.data?.summary?.visualKind) {
+    case 'decision-table':
+      return '#0f766e';
+    case 'transform':
+      return '#7c3aed';
+    case 'resource':
+    case 'http':
+      return '#2563eb';
+    case 'foreach':
+      return '#b45309';
+    case 'streaming':
+      return '#047857';
+    default:
+      return '#64748b';
+  }
+}
+
+function canvasNodeFromFlowNode(node: Node<NodeData>): CanvasNode {
+  return {
+    id: node.id,
+    operatorRef: node.data.operatorRef,
+    label: node.data.label,
+    inputs: node.data.inputs,
+    config: node.data.config,
+    position: node.position,
+  };
+}
+
+function canvasEdgeFromFlowEdge(edge: Edge<CanvasEdgeData>): CanvasEdge {
+  const pathEdge = edge as CanvasFlowEdge;
+  const edgeData = edge.data as CanvasEdgeData | undefined;
+  return {
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    kind: pathEdge.kind ?? edgeData?.kind,
+    sourcePort: portNameFromHandle(edge.sourceHandle, 'out'),
+    targetPort: portNameFromHandle(edge.targetHandle, 'in'),
+    sourcePath: pathEdge.sourcePath ?? edgeData?.sourcePath,
+    targetPath: pathEdge.targetPath ?? edgeData?.targetPath,
+    bindingKey: pathEdge.bindingKey ?? edgeData?.bindingKey,
+    condition: pathEdge.condition ?? edgeData?.condition,
+  };
+}
+
+function autoLayoutFlowNodes(
+  flowNodes: Node<NodeData>[],
+  flowEdges: Edge<CanvasEdgeData>[],
+): Node<NodeData>[] {
+  const layout = autoLayoutCanvas(flowNodes.map(canvasNodeFromFlowNode), flowEdges.map(canvasEdgeFromFlowEdge));
+  const positions = new Map(layout.map((node) => [node.id, node.position]));
+  return flowNodes.map((node) => ({
+    ...node,
+    position: positions.get(node.id) ?? node.position,
+  }));
 }
 
 const EDGE_TYPES: EdgeTypes = {
@@ -3873,6 +3935,8 @@ export default function AuthorCanvas() {
   const [connectionGuideBusy, setConnectionGuideBusy] = useState(false);
   const [pendingConnectionGuideNodeId, setPendingConnectionGuideNodeId] = useState('');
   const [canvasFocusMode, setCanvasFocusMode] = useState(false);
+  const [overviewVisible, setOverviewVisible] = useState(true);
+  const [viewportZoom, setViewportZoom] = useState(1);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const flowRef = useRef<HTMLDivElement>(null);
   const flowInstanceRef = useRef<ReactFlowInstance<NodeData, CanvasEdgeData> | null>(null);
@@ -3894,15 +3958,63 @@ export default function AuthorCanvas() {
       .catch((cause: unknown) => setError(String(cause)));
   }, [reloadOperators]);
 
+  const isComplexGraph = nodes.length >= COMPLEX_GRAPH_NODE_THRESHOLD
+    || edges.length >= COMPLEX_GRAPH_EDGE_THRESHOLD;
+
+  const refreshViewportZoom = useCallback(() => {
+    const nextZoom = flowInstanceRef.current?.getZoom?.();
+    if (typeof nextZoom === 'number' && Number.isFinite(nextZoom)) {
+      setViewportZoom(nextZoom);
+    }
+  }, []);
+
+  const fitCanvasToView = useCallback((graphSize?: { nodeCount: number; edgeCount: number }) => {
+    const complex = graphSize
+      ? graphSize.nodeCount >= COMPLEX_GRAPH_NODE_THRESHOLD
+        || graphSize.edgeCount >= COMPLEX_GRAPH_EDGE_THRESHOLD
+      : isComplexGraph;
+    flowInstanceRef.current?.fitView({ padding: complex ? 0.06 : 0.18, duration: 240 });
+    const updateZoom = () => refreshViewportZoom();
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(updateZoom);
+    } else {
+      window.setTimeout(updateZoom, 0);
+    }
+  }, [isComplexGraph, refreshViewportZoom]);
+
+  const zoomCanvasBy = useCallback((direction: 'in' | 'out') => {
+    if (direction === 'in') {
+      void flowInstanceRef.current?.zoomIn?.({ duration: 160 });
+    } else {
+      void flowInstanceRef.current?.zoomOut?.({ duration: 160 });
+    }
+    const updateZoom = () => refreshViewportZoom();
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(updateZoom);
+    } else {
+      window.setTimeout(updateZoom, 0);
+    }
+  }, [refreshViewportZoom]);
+
+  const resetCanvasZoom = useCallback(() => {
+    void flowInstanceRef.current?.zoomTo?.(1, { duration: 180 });
+    const updateZoom = () => refreshViewportZoom();
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(updateZoom);
+    } else {
+      window.setTimeout(updateZoom, 0);
+    }
+  }, [refreshViewportZoom]);
+
   useEffect(() => {
     if (!canvasFocusMode || !flowInstanceRef.current) {
       return undefined;
     }
     const handle = window.setTimeout(() => {
-      flowInstanceRef.current?.fitView({ padding: 0.18 });
+      fitCanvasToView();
     }, 80);
     return () => window.clearTimeout(handle);
-  }, [canvasFocusMode, edges.length, nodes.length]);
+  }, [canvasFocusMode, edges.length, fitCanvasToView, nodes.length]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -4284,35 +4396,11 @@ export default function AuthorCanvas() {
   }, [bindContextPathToNode, selectedNodeId]);
 
   const canvasNodes = useMemo<CanvasNode[]>(
-    () =>
-      nodes.map((node) => ({
-        id: node.id,
-        operatorRef: node.data.operatorRef,
-        label: node.data.label,
-        inputs: node.data.inputs,
-        config: node.data.config,
-        position: node.position,
-      })),
+    () => nodes.map(canvasNodeFromFlowNode),
     [nodes],
   );
   const canvasEdges = useMemo<CanvasEdge[]>(
-    () =>
-      edges.map((edge) => {
-        const pathEdge = edge as CanvasFlowEdge;
-        const edgeData = edge.data as CanvasEdgeData | undefined;
-        return {
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          kind: pathEdge.kind ?? edgeData?.kind,
-          sourcePort: portNameFromHandle(edge.sourceHandle, 'out'),
-          targetPort: portNameFromHandle(edge.targetHandle, 'in'),
-          sourcePath: pathEdge.sourcePath ?? edgeData?.sourcePath,
-          targetPath: pathEdge.targetPath ?? edgeData?.targetPath,
-          bindingKey: pathEdge.bindingKey ?? edgeData?.bindingKey,
-          condition: pathEdge.condition ?? edgeData?.condition,
-        };
-      }),
+    () => edges.map(canvasEdgeFromFlowEdge),
     [edges],
   );
   const edgeTargetsById = useMemo(
@@ -4329,6 +4417,8 @@ export default function AuthorCanvas() {
     () => summarizeCanvas(canvasNodes, canvasEdges, outputNodeId),
     [canvasEdges, canvasNodes, outputNodeId],
   );
+  const viewportZoomPercent = `${Math.round(viewportZoom * 100)}%`;
+  const overviewLabel = isComplexGraph ? 'Large Map' : 'Map';
   const checklist = useMemo(
     () => simulationChecklist(canvasSummary, result),
     [canvasSummary, result],
@@ -4909,7 +4999,7 @@ export default function AuthorCanvas() {
     contextVariableCounter.current = nextContextVariables.length;
     tableTestCounter.current = nextSimulationTableRows.length;
     operatorTestCounter.current = 0;
-    setNodes(nextNodes);
+    setNodes(autoLayoutFlowNodes(nextNodes, nextEdges));
     setEdges(nextEdges);
     setFixtureDrafts(nextFixtureDrafts);
     setFixtureInputDrafts(nextFixtureInputDrafts);
@@ -4953,15 +5043,13 @@ export default function AuthorCanvas() {
     setDslImportNotice(notice);
     setConnectionNotice(notice);
 
-    const fitImportedGraph = () => {
-      flowInstanceRef.current?.fitView({ padding: 0.18, duration: 240 });
-    };
+    const graphSize = { nodeCount: imported.nodes.length, edgeCount: imported.edges.length };
     if (typeof window.requestAnimationFrame === 'function') {
-      window.requestAnimationFrame(fitImportedGraph);
+      window.requestAnimationFrame(() => fitCanvasToView(graphSize));
     } else {
-      fitImportedGraph();
+      fitCanvasToView(graphSize);
     }
-  }, [clearRunResult, operatorByRef]);
+  }, [clearRunResult, fitCanvasToView, operatorByRef]);
 
   const previewLegacyDsl = useCallback(async () => {
     if (!dslSourceText.trim()) {
@@ -5824,23 +5912,13 @@ export default function AuthorCanvas() {
   }, [journey.action, runAuthoringAction]);
 
   const autoLayout = useCallback(() => {
-    const layout = autoLayoutCanvas(canvasNodes, canvasEdges);
-    const positions = new Map(layout.map((node) => [node.id, node.position]));
-    setNodes((current) =>
-      current.map((node) => ({
-        ...node,
-        position: positions.get(node.id) ?? node.position,
-      })),
-    );
-    const fitLayout = () => {
-      flowInstanceRef.current?.fitView({ padding: 0.18, duration: 240 });
-    };
+    setNodes((current) => autoLayoutFlowNodes(current, edges));
     if (typeof window.requestAnimationFrame === 'function') {
-      window.requestAnimationFrame(fitLayout);
+      window.requestAnimationFrame(() => fitCanvasToView());
     } else {
-      fitLayout();
+      fitCanvasToView();
     }
-  }, [canvasEdges, canvasNodes]);
+  }, [edges, fitCanvasToView]);
 
   const paletteView = useMemo(
     () => operatorPaletteView(operators, {
@@ -6492,6 +6570,57 @@ export default function AuthorCanvas() {
           >
             {canvasFocusMode ? 'Exit Focus' : 'Canvas Focus'}
           </button>
+          <div className="zoom-toolbar" aria-label="Canvas zoom controls">
+            <button
+              type="button"
+              className="secondary compact icon-button"
+              aria-label="Zoom out"
+              data-testid="author-zoom-out"
+              onClick={() => zoomCanvasBy('out')}
+              disabled={nodes.length === 0}
+            >
+              -
+            </button>
+            <button
+              type="button"
+              className="secondary compact zoom-level"
+              aria-label="Reset zoom"
+              data-testid="author-zoom-reset"
+              onClick={resetCanvasZoom}
+              disabled={nodes.length === 0}
+            >
+              {viewportZoomPercent}
+            </button>
+            <button
+              type="button"
+              className="secondary compact icon-button"
+              aria-label="Zoom in"
+              data-testid="author-zoom-in"
+              onClick={() => zoomCanvasBy('in')}
+              disabled={nodes.length === 0}
+            >
+              +
+            </button>
+            <button
+              type="button"
+              className="secondary compact"
+              data-testid="author-fit-all"
+              onClick={() => fitCanvasToView()}
+              disabled={nodes.length === 0}
+            >
+              Fit All
+            </button>
+            <button
+              type="button"
+              className="secondary compact"
+              data-testid="author-overview-toggle"
+              aria-pressed={overviewVisible}
+              onClick={() => setOverviewVisible((current) => !current)}
+              disabled={nodes.length === 0}
+            >
+              {overviewVisible ? 'Map On' : 'Map Off'}
+            </button>
+          </div>
           <button
             className="secondary"
             data-testid="author-draft-validate"
@@ -6613,6 +6742,44 @@ export default function AuthorCanvas() {
               )}
             </div>
           )}
+          {nodes.length > 0 && (
+            <div
+              className={[
+                'canvas-navigator',
+                overviewVisible ? 'open' : 'collapsed',
+                isComplexGraph ? 'complex' : '',
+              ].filter(Boolean).join(' ')}
+              data-testid="canvas-navigator"
+            >
+              <div className="canvas-navigator-head">
+                <strong>{overviewLabel}</strong>
+                <span data-testid="canvas-zoom-readout">{viewportZoomPercent}</span>
+              </div>
+              <div className="canvas-navigator-stats">
+                <span>{canvasSummary.nodeCount} nodes</span>
+                <span>{canvasSummary.edgeCount} edges</span>
+              </div>
+              <div className="canvas-navigator-actions">
+                <button
+                  type="button"
+                  className="secondary compact"
+                  data-testid="navigator-fit-all"
+                  onClick={() => fitCanvasToView()}
+                >
+                  Fit All
+                </button>
+                <button
+                  type="button"
+                  className="secondary compact"
+                  data-testid="navigator-map-toggle"
+                  aria-pressed={overviewVisible}
+                  onClick={() => setOverviewVisible((current) => !current)}
+                >
+                  {overviewVisible ? 'Hide' : 'Show'}
+                </button>
+              </div>
+            </div>
+          )}
           <ReactFlow
             nodes={flowNodes}
             edges={flowEdges}
@@ -6625,15 +6792,35 @@ export default function AuthorCanvas() {
             onConnectEnd={onConnectEnd}
             onInit={(instance) => {
               flowInstanceRef.current = instance;
+              refreshViewportZoom();
             }}
+            onMove={(_, viewport) => setViewportZoom(viewport.zoom)}
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
             onNodeDoubleClick={(_, node) => openNodeEditor(node)}
             onPaneClick={() => setSelectedNodeId('')}
             fitView
+            fitViewOptions={{ padding: 0.12, minZoom: CANVAS_MIN_ZOOM, maxZoom: CANVAS_MAX_ZOOM }}
+            minZoom={CANVAS_MIN_ZOOM}
+            maxZoom={CANVAS_MAX_ZOOM}
           >
             <Background />
             <Controls />
-            <MiniMap />
+            {overviewVisible && (
+              <MiniMap
+                className={`canvas-minimap ${isComplexGraph ? 'large' : 'compact'}`}
+                nodeColor={minimapNodeColor}
+                nodeStrokeColor={(node) => (node.selected ? '#1a56db' : '#ffffff')}
+                nodeBorderRadius={4}
+                nodeStrokeWidth={isComplexGraph ? 4 : 3}
+                maskColor="rgb(15 23 42 / 10%)"
+                maskStrokeColor="rgb(26 86 219 / 52%)"
+                maskStrokeWidth={2}
+                pannable
+                zoomable
+                zoomStep={0.7}
+                ariaLabel="Canvas overview map"
+              />
+            )}
           </ReactFlow>
         </div>
       </main>

@@ -1008,8 +1008,8 @@ body {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 7px 14px;
+  gap: 6px;
+  padding: 5px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
   overflow: visible;
@@ -1037,8 +1037,13 @@ button.secondary {
 
 button.primary.compact,
 button.secondary.compact {
-  padding: 5px 8px;
+  padding: 4px 8px;
   font-size: 12px;
+}
+
+button.icon-button {
+  width: 28px;
+  padding-inline: 0;
 }
 
 button.primary:disabled,
@@ -1062,6 +1067,21 @@ button.secondary:disabled {
 .toolbar-link.disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.zoom-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px;
+  border: 1px solid rgb(148 163 184 / 34%);
+  border-radius: 7px;
+  background: #f8fafc;
+}
+
+.zoom-toolbar .zoom-level {
+  min-width: 54px;
+  font-variant-numeric: tabular-nums;
 }
 
 .status {
@@ -1256,6 +1276,91 @@ button.secondary:disabled {
 
 .workspace.canvas-focus .flow {
   min-height: 0;
+}
+
+.canvas-navigator {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 8;
+  display: grid;
+  gap: 7px;
+  width: 216px;
+  padding: 10px;
+  border: 1px solid rgb(148 163 184 / 42%);
+  border-radius: 7px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 10px 24px rgb(28 35 48 / 12%);
+  pointer-events: auto;
+}
+
+.canvas-navigator.complex {
+  width: 246px;
+  border-color: rgb(26 86 219 / 34%);
+}
+
+.canvas-navigator.collapsed {
+  width: auto;
+}
+
+.canvas-navigator-head,
+.canvas-navigator-stats,
+.canvas-navigator-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+}
+
+.canvas-navigator-head strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #263144;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.canvas-navigator-head span {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-navigator-stats span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.canvas-navigator.collapsed .canvas-navigator-stats,
+.canvas-navigator.collapsed .canvas-navigator-actions button:first-child {
+  display: none;
+}
+
+.react-flow__minimap.canvas-minimap {
+  overflow: hidden;
+  border: 1px solid rgb(148 163 184 / 45%);
+  border-radius: 7px;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 12px 28px rgb(28 35 48 / 16%);
+}
+
+.react-flow__minimap.canvas-minimap.compact {
+  width: 174px;
+  height: 116px;
+}
+
+.react-flow__minimap.canvas-minimap.large {
+  width: min(320px, calc(100vw - 40px));
+  height: 202px;
+}
+
+.workspace.canvas-focus .react-flow__minimap.canvas-minimap.large {
+  width: min(360px, calc(100vw - 40px));
+  height: 224px;
 }
 
 .canvas-coach {
@@ -4383,6 +4488,19 @@ button.secondary:disabled {
 
   .flow {
     min-height: 420px;
+  }
+
+  .canvas-navigator {
+    top: 10px;
+    right: 10px;
+    width: min(220px, calc(100% - 20px));
+  }
+
+  .react-flow__minimap.canvas-minimap.compact,
+  .react-flow__minimap.canvas-minimap.large,
+  .workspace.canvas-focus .react-flow__minimap.canvas-minimap.large {
+    width: min(240px, calc(100vw - 28px));
+    height: 144px;
   }
 
   .connection-source,
