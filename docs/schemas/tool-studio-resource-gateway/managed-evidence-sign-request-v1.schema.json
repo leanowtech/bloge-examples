@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/managed-evidence-sign-request-v1.schema.json",
+  "title": "Resource Gateway Managed Evidence Sign Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "requestId", "keyId", "algorithm", "materialFingerprint"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.managedEvidenceSignRequest.v1" },
+    "requestId": { "type": "string", "format": "uuid" },
+    "keyId": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "algorithm": { "const": "Ed25519" },
+    "materialFingerprint": { "$ref": "#/$defs/fingerprint" }
+  },
+  "$defs": {
+    "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

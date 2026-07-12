@@ -5,10 +5,10 @@
 | 属性 | 内容 |
 |---|---|
 | 设计基线 | `docs/resource-gateway-aneke-tool-studio-integration-evolution-plan.md` |
-| 当前实现基线 | Round 13（动态企业身份信任、组织 claims、撤销传播与故障分流） |
+| 当前实现基线 | Round 15 检查点（Round 14 managed signing + GraphDraft dependency snapshot 一致性护栏） |
 | 评估日期 | 2026-07-13 |
 | 目标 | 加权实施差距 `<3%`，且不存在 P0 阻断项 |
-| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml -Pfrontend clean verify`：1567 tests，0 failures，0 errors，0 skipped，`BUILD SUCCESS`（05:20，含 34 个真实 Chrome 场景） |
+| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml -Pfrontend clean verify`：1586 tests，0 failures，0 errors，0 skipped，`BUILD SUCCESS`（05:16，含 34 个真实 Chrome 场景） |
 
 ## 1. 评分方法
 
@@ -316,6 +316,30 @@ issuer-attested delegation grant 纳入身份上下文与无凭证审计。
 Round 13 结论：差距从 `12.55%` 降至 `11.875%`。`IAM-01` 的代码病根已从“静态信任库且故障不可区分”收窄为
 “客户组织策略与部署认证尚未证明”。不能仅凭本地模拟 IdP 宣称企业 IAM 完成；下一轮最高权重独立病根转向
 `OPS-01` 的 evidence private-key custody，随后再处理 `RUN-01/RUN-02` 的私有实现不可见性。
+
+## 2.14 Round 14 重新审计
+
+Round 13 之后 evidence seal 仍默认由 H2 中的明文 PKCS#8 private key 生成，而且 capability 只有
+`evidenceSignature=true/false`，无法区分 demo key、企业 KMS、provider outage 或 custody 失真。Round 14 把这条边界
+提升为 managed-signing protocol：Resource Gateway 只持有原子 public-key generation，向 provider 发送 canonical
+fingerprint 和 expected keyId，并在持久化前本地反验 provider 返回签名。
+
+| 维度 | 权重 | 当前完成率 | 得分 | 本轮可证明增量 | 仍未证明 |
+|---|---:|---:|---:|---|---|
+| 协议、版本与身份边界 | 15 | 99.5% | 14.925 | capability 新增 `evidenceSignerDescriptor.v1`；key/sign request/response 三份 provider schema；key lookup 503/404 分流 | 自动 N/N-1 consumer matrix；客户真实 IdP/mTLS/KMS 认证；组织策略版本合同 |
+| GraphDraft 依赖快照 | 10 | 64% | 6.40 | 无语义变化 | suite/runtime binding refs 的一致性快照；完整 readiness profile；跨表 snapshot transaction |
+| Run evidence 可信链 | 20 | 99.5% | 19.90 | non-exportable managed signer；exactly-one-active；public history；remote signature local verification；disable/revoke；rotation race | retention/legal hold、外部 verifier matrix、可信时间戳；错误 effect 分类和非 HTTP 私有写覆盖；客户 KMS conformance |
+| Payload replay | 15 | 80% | 12.00 | replay evidence 可使用同一 managed signer，但 replay 语义无新增 | shadow/live 审批隔离、跨实例 exactly-once、选择性 retention、resource classification policy |
+| Timeout/partial failure 语义 | 10 | 100% | 10.00 | signing transport outage、malformed trust、bad signature、snapshot expiry 有不同状态；无本地私钥 fallback | disconnect/detach 与非协作 I/O |
+| Workbook、gate feedback 与 Deep Link | 10 | 76% | 7.60 | ANEKE 可由 capability 区分 local demo 与 managed custody，并读取 signer health/key generation | signer readiness 尚未进入 workbook/publish gate policy；双向 workbook refs；owner/migration gate |
+| Change event、cursor、webhook 与对账 | 10 | 88% | 8.80 | cursor/reconciliation signer 可复用 managed provider；签名失败不伪造本地 seal | signed webhook、DLQ/退避、retention/compaction、乱序 fault harness |
+| 工业运行控制 | 10 | 90% | 9.00 | HTTPS/no-redirect、128 KB 流式上限、duplicate/private material reject、single refresh、bounded public cache、真实双服务 rotation/revoke/outage、H2 private-key table absent | 客户 KMS/HSM identity/policy、provider key-use audit export、持久 public-key cache/retention、多地域 DR、metrics/SLO、外部 HA DB、quota/residency |
+| **合计** | **100** |  | **88.625** |  | **加权差距 11.375%** |
+
+Round 14 结论：差距从 `11.875%` 降至 `11.375%`。`OPS-01` 的代码病根已从“生产签名必然把 private key 放进
+Resource Gateway 数据库”收窄为“客户 provider 与部署控制尚未认证”。本轮真实 HTTP authority 证明协议生命周期，
+但不是任何云厂商或客户 HSM 的合规证明。按剩余加权差距，下一轮应优先处理 `GraphDraft` 跨资产一致性快照和完整
+dependency readiness profile，它单项仍贡献 `3.6%` 差距。
 
 ## 3. 已通过的证明
 
@@ -805,12 +829,59 @@ SVG/PNG visual inspection passed
 因此这轮不关闭整个 `IAM-01`。浏览器回归还报告 Chrome 150 与当前 Selenium CDP 149 的近邻版本兼容提示；用例均通过，
 但生产 CI 镜像仍应固定浏览器/驱动组合并消除此工具链漂移。
 
+### 3.16 Managed evidence signing custody 与故障证明
+
+Round 14 用确定性 provider、恶意 HTTP response 和真实 Spring Boot + HTTP signing authority 三层证明 custody：
+
+```text
+Managed signer state-machine tests: 11 passed
+HTTP provider boundary tests: 4 passed
+Real Spring managed-authority application test: 1 passed
+Tool Studio integration service regression: 14 passed
+Machine-schema drift test: 1 passed
+Integration + visual/runtime package regression: 147 passed
+
+fingerprint + expected keyId -> remote Ed25519 sign -> local public-key verification -> persisted seal
+private key fields at key ingress -> PRIVATE_KEY_MATERIAL_REJECTED
+duplicate JSON / oversized response / redirect -> non-retryable protocol failure
+transport outage before snapshot expiry -> DEGRADED for historical local verification only
+transport outage during sign -> no local fallback; signing fails
+malformed key snapshot / invalid returned signature -> immediate UNAVAILABLE
+snapshot expiry -> key resolution PROVIDER_UNAVAILABLE; public API maps to retryable 503, not 404
+key-1 ACTIVE -> key-1 VERIFY_ONLY + key-2 ACTIVE -> old/new evidence both verify
+key-1 DISABLED / REVOKED -> distinct KEY_DISABLED / KEY_REVOKED results
+rotation between discovery and sign -> one refresh/retry; repeated drift -> ROTATION_UNSTABLE
+24 concurrent due-refresh callers -> one provider key refresh
+24 concurrent unknown-key lookups -> one throttled provider refresh
+
+real local signing authority + real Spring Boot Resource Gateway
+managed signer bean selected; H2 visual_evidence_signing_keys table absent
+capability -> MANAGED_KMS_HSM + privateKeyExportable=false
+evidence key API -> public material only
+zero-restart rotate/revoke + sign 503 recovery -> passed
+
+Resource Gateway full regression:
+  mvn -f resource-gateway-examples/pom.xml -Pfrontend clean verify
+  1585 passed, 0 failures, 0 errors, 0 skipped; BUILD SUCCESS (05:19)
+  34 real Chrome DOM scenarios passed
+  TypeScript + Vite production build passed; npm audit 0 vulnerabilities
+
+Draw.io validation: 0 errors, 0 warnings, 0 crossings, 0 overlaps
+SVG/PNG visual inspection passed
+```
+
+结构证据：[Resource Gateway 托管 evidence 签名保管链](assets/resource-gateway-managed-evidence-signing-custody.svg)，
+图源为 [resource-gateway-managed-evidence-signing-custody.drawio](assets/drawio/resource-gateway-managed-evidence-signing-custody.drawio)。
+当前 capability counters 是进程级运行真相，provider audit 属于企业 signing authority 的权威记录；尚未实现 provider
+audit ingestion、持久 public-key cache、Micrometer/SLO 告警或客户 KMS/HSM conformance kit，因此不能关闭部署级
+`OPS-01`。
+
 ## 4. 当前 P0 阻断项
 
 | ID | 阻断项 | 病根 | 根治验收 |
 |---|---|---|---|
 | `IAM-01` | 客户组织身份策略与部署认证尚未端到端证明 | Round 13 已关闭动态 JWKS/revocation、传播 SLO、group/clearance/delegation claim、审计和 401/503 分流的代码病根；残余是客户真实 IdP/mTLS、多地域 authority、group 生命周期/orphan owner、resource classification policy、break-glass 和正式告警/runbook | 客户 IdP conformance kit + policy bundle/version + group/owner lifecycle + clearance-resource gate + emergency grant + multi-region outage/rollback + propagation SLO alert/report |
-| `OPS-01` | 本地签名 key 不满足企业 custody | private key 由本地 H2 demo provider 保存 | KMS/HSM-backed `VisualEvidenceSigner`、rotation/disable/revoke、审计和灾备演练 |
+| `OPS-01` | 客户 KMS/HSM custody 与灾备认证尚未完成 | Round 14 已关闭 private key 必须进入 H2、远端签名不反验、轮换状态不明确和 capability 不透明的代码病根；残余是客户 provider identity/policy、authoritative audit、历史 public-key retention、跨地域 KMS 和正式 SLO | 客户 KMS/HSM conformance kit + mTLS/workload policy + provider audit export + persistent public-key retention + region outage/restore/disable/revoke drill + latency/error SLO |
 | `RUN-01` | disconnect/detach 与任意 binding 的预算合规尚未封口 | Round 10 已完成 OperatorContext、scheduler admission、retry/timeout/suspend、Resource Gateway/common HTTP 和 remote worker 的 remaining-budget 传播，并防止 wall-clock 回拨放宽预算；但客户端断开语义未版本化，私有 binding 仍可忽略合同 | versioned `detachPolicy` + disconnect race/fault tests + runtime binding conformance suite + non-cooperative I/O quarantine |
 | `RUN-02` | 副作用协议尚未覆盖企业 operator/binding 存量 | Round 12 已关闭正常目录下 `WRITE_EXTERNAL`、Java `SideEffectType.WRITE`、descriptor HTTP mutation 和低层 unsafe `httpRequest` 绕过；残余病根是实现可错报 effect、数据库/消息/私有 SDK 写边界不可见、默认 provider adapter registry 为空 | 制品 effect/egress 扫描 + runtime egress/DB/message telemetry + owner attestation 对账 + provider conformance kit + outage/restart/重复请求演练 + compensate policy + 覆盖率门禁 |
 
@@ -836,5 +907,7 @@ backoff/DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，�
 | 11 | 外部副作用提交确认与持久化对账 | journal、receipt/proof、unknown DAG guard、v6 evidence、lease/fence reconcile、签名 refinement、原子 outbox、effective gate summary | 14.20% | BLOGE 4 个聚焦 tests；Resource Gateway 49 个聚焦、1543 个全量 tests（含真实 Chrome）；DB restart/双实例/fencing/rollback/tamper/legacy unknown；corporate Draw.io 0 errors/warnings/crossings/overlaps |
 | 12 | 外部写合同、binding/activation conformance 与防绕过 | operator/resource 正式合同、fingerprint/readiness、Java WRITE pre/post admission、descriptor/common HTTP fail closed、Author 状态可见；Vite/Vitest 漏洞归零；移动端 Palette 无横向溢出 | 12.55% | BLOGE core 6 个、common HTTP 13 个；Resource Gateway 330 个聚焦、1553 个全量 tests；React 128 个聚焦、136 个全量 tests；34 个真实 Chrome 场景；npm audit 0 vulnerabilities；corporate Draw.io 0 errors/warnings/crossings/overlaps |
 | 13 | 动态企业身份信任与组织 claims | JWKS/revocation 原子刷新、single-flight、传播 SLO、strict/bounded-stale、401/503、group/clearance/delegation grant、credential-free audit | 11.875% | 30 个身份聚焦 tests、90 个 integration package tests、真实 IAM HTTP + Spring Boot 轮换/撤销/outage/oversize 演练；1567 个全量 tests、34 个真实 Chrome 场景；corporate Draw.io 0 errors/warnings/crossings/overlaps |
+| 14 | KMS/HSM managed evidence signing custody | provider SPI、versioned key/sign schemas、non-exportable custody、原子公钥代际、本地反验、rotation/disable/revoke、503/404 分流 | 11.375% | 31 个聚焦 tests、147 个 integration/runtime package tests、4 份 machine schema、真实 signing HTTP + Spring Boot 轮换/撤销/outage；1585 个全量 tests、34 个真实 Chrome 场景、npm audit 0 vulnerabilities；corporate Draw.io 0 errors/warnings/crossings/overlaps |
+| 15 检查点 | GraphDraft dependency snapshot 一致性护栏 | profile v2 固化 library/binding/activation/suite refs 与 readiness；组包前后重读 dependency fingerprint 和 draft revision，漂移时返回稳定 409；逻辑时间保持重复导出 fingerprint 确定 | 11.375%（待完整场景审计后重评） | 32 个 signing/export 聚焦 tests、1586 个全量 tests、34 个真实 Chrome 场景、npm audit 0 vulnerabilities；已覆盖重复导出确定性和组包期依赖漂移冲突，尚需多库、多租户及 missing/stale/blocked readiness 专项矩阵 |
 
 后续每轮必须更新本表、代码证据、失败测试和剩余阻断项。只有全部 P0 阻断关闭、全量验证与真实浏览器验证通过，并且按同一权重计算的差距 `<3%`，才允许把目标标记完成。

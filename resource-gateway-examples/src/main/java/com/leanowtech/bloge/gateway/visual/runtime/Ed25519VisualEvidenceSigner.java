@@ -83,6 +83,14 @@ final class Ed25519VisualEvidenceSigner implements VisualEvidenceSigner {
         return true;
     }
 
+    VerificationKey activeKey() {
+        return activeKey;
+    }
+
+    int verificationKeyCount() {
+        return verificationKeys.size();
+    }
+
     private static byte[] bytes(String value) {
         return (value == null ? "" : value).getBytes(StandardCharsets.UTF_8);
     }

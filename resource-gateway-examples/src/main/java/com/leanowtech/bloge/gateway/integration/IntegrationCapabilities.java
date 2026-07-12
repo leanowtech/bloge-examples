@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.runtime.ManagedEvidenceSigningProvider;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -16,6 +18,7 @@ public record IntegrationCapabilities(
         Map<String, List<String>> supportedObjects,
         Map<String, Boolean> features,
         IntegrationIdentityResolver.Descriptor identityProvider,
+        VisualEvidenceSigner.Descriptor evidenceSigner,
         List<Endpoint> endpoints
 ) {
     public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.capabilities.v1";
@@ -30,7 +33,21 @@ public record IntegrationCapabilities(
         identityProvider = identityProvider == null
                 ? IntegrationIdentityResolver.unavailable().descriptor()
                 : identityProvider;
+        evidenceSigner = evidenceSigner == null
+                ? VisualEvidenceSigner.unavailable().descriptor()
+                : evidenceSigner;
         endpoints = endpoints == null ? List.of() : List.copyOf(endpoints);
+    }
+
+    public IntegrationCapabilities(String schemaVersion,
+                                   String protocol,
+                                   String protocolVersion,
+                                   Map<String, List<String>> supportedObjects,
+                                   Map<String, Boolean> features,
+                                   IntegrationIdentityResolver.Descriptor identityProvider,
+                                   List<Endpoint> endpoints) {
+        this(schemaVersion, protocol, protocolVersion, supportedObjects, features, identityProvider,
+                VisualEvidenceSigner.unavailable().descriptor(), endpoints);
     }
 
     public static IntegrationCapabilities current() {
@@ -49,10 +66,25 @@ public record IntegrationCapabilities(
     public static IntegrationCapabilities current(boolean evidenceSignature,
                                                   IntegrationIdentityResolver.Descriptor identityProvider,
                                                   boolean sideEffectReconcilerAdapters) {
+        VisualEvidenceSigner.Descriptor signer = new VisualEvidenceSigner.Descriptor("", "LEGACY", "",
+                evidenceSignature, evidenceSignature ? "HEALTHY" : "UNAVAILABLE", "", false, true,
+                0, null, null, 0, 0, null);
+        return current(signer, identityProvider, sideEffectReconcilerAdapters);
+    }
+
+    public static IntegrationCapabilities current(VisualEvidenceSigner.Descriptor evidenceSigner,
+                                                  IntegrationIdentityResolver.Descriptor identityProvider,
+                                                  boolean sideEffectReconcilerAdapters) {
+        VisualEvidenceSigner.Descriptor signer = evidenceSigner == null
+                ? VisualEvidenceSigner.unavailable().descriptor() : evidenceSigner;
         Map<String, List<String>> objects = new LinkedHashMap<>();
         objects.put("graphDraft", List.of(GraphDraft.SCHEMA_VERSION));
         objects.put("operatorLibrary", List.of("bloge.visualOperatorLibrary.v1"));
         objects.put("graphDraftIntegrationBundle", List.of(GraphDraftIntegrationBundle.SCHEMA_VERSION));
+        objects.put("graphDraftDependencyProfile", List.of(GraphDraftDependencyProfile.SCHEMA_VERSION_V1,
+                GraphDraftDependencyProfile.SCHEMA_VERSION));
+        objects.put("graphDraftDependencySnapshot", List.of(
+                GraphDraftDependencyProfile.SnapshotManifest.SCHEMA_VERSION));
         objects.put("runEvidence", List.of(RunEvidenceBundle.SCHEMA_VERSION_V1,
                 RunEvidenceBundle.SCHEMA_VERSION_V2, RunEvidenceBundle.SCHEMA_VERSION_V3,
                 RunEvidenceBundle.SCHEMA_VERSION_V4, RunEvidenceBundle.SCHEMA_VERSION_V5,
@@ -62,6 +94,12 @@ public record IntegrationCapabilities(
         objects.put("replayExecutionResult", List.of(ReplayExecutionResult.SCHEMA_VERSION));
         objects.put("evidenceVerificationKey", List.of(
                 com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner.VerificationKey.SCHEMA_VERSION));
+        objects.put("evidenceSignerDescriptor", List.of(VisualEvidenceSigner.Descriptor.SCHEMA_VERSION));
+        objects.put("managedEvidenceSigningKeys", List.of(ManagedEvidenceSigningProvider.KeySet.SCHEMA_VERSION));
+        objects.put("managedEvidenceSignRequest", List.of(
+                ManagedEvidenceSigningProvider.SignatureRequest.SCHEMA_VERSION));
+        objects.put("managedEvidenceSignResponse", List.of(
+                ManagedEvidenceSigningProvider.SignatureResult.SCHEMA_VERSION));
         objects.put("governanceGateResult", List.of(GovernanceGateResult.SCHEMA_VERSION));
         objects.put("integrationEvent", List.of(IntegrationChangeEvent.SCHEMA_VERSION));
         objects.put("eventCursor", List.of(IntegrationEventCursorCodec.SCHEMA_VERSION));
@@ -83,6 +121,8 @@ public record IntegrationCapabilities(
 
         Map<String, Boolean> features = new LinkedHashMap<>();
         features.put("draftExportDependencyProfile", true);
+        features.put("graphDraftConsistentDependencySnapshot", true);
+        features.put("graphDraftStructuredDependencyRefs", true);
         features.put("runEvidenceBundle", true);
         features.put("structuredExecutionFacts", true);
         features.put("graphDeadline", true);
@@ -119,7 +159,14 @@ public record IntegrationCapabilities(
         features.put("recordedAssertionReplay", true);
         features.put("replayExternalSideEffects", false);
         features.put("evidenceIntegrityManifest", true);
-        features.put("evidenceSignature", evidenceSignature);
+        features.put("evidenceSignature", signer.available());
+        features.put("managedEvidenceSigning", signer.managedKeyCustody());
+        features.put("nonExportableEvidenceSigningKey", signer.managedKeyCustody()
+                && !signer.privateKeyExportable());
+        features.put("evidenceSigningKeyRotation", signer.managedKeyCustody());
+        features.put("evidenceSigningKeyRevocation", signer.managedKeyCustody());
+        features.put("evidenceSigningFailClosed", signer.managedKeyCustody()
+                && Boolean.TRUE.equals(signer.properties().get("failClosedAfterSnapshotExpiry")));
         features.put("deepLinks", true);
         features.put("governanceGateFeedback", true);
         features.put("transactionalOutbox", true);
@@ -139,7 +186,7 @@ public record IntegrationCapabilities(
                 && identityProvider.properties().get("revocationPropagationSloSeconds") instanceof Number);
         features.put("webhook", false);
 
-        return new IntegrationCapabilities("", "", "", objects, features, identityProvider, List.of(
+        return new IntegrationCapabilities("", "", "", objects, features, identityProvider, signer, List.of(
                 new Endpoint("GET", "/api/integration/capabilities"),
                 new Endpoint("GET", "/api/integration/drafts/{draftId}/export"),
                 new Endpoint("GET", "/api/integration/runs/{runId}/evidence"),

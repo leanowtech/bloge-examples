@@ -27,4 +27,15 @@ final class UnavailableVisualEvidenceSigner implements VisualEvidenceSigner {
     public boolean available() {
         return false;
     }
+
+    @Override
+    public KeyResolution resolveKey(String keyId) {
+        return KeyResolution.providerUnavailable("Evidence signing authority is unavailable.");
+    }
+
+    @Override
+    public Descriptor descriptor() {
+        return new Descriptor("", "UNAVAILABLE", "", false, "UNAVAILABLE", "",
+                false, false, 0, null, null, 0, 0, null);
+    }
 }

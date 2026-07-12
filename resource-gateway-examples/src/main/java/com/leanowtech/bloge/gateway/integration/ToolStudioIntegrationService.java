@@ -1,7 +1,6 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
@@ -41,6 +40,7 @@ public class ToolStudioIntegrationService {
     private final ReplayAssertionEvaluator replayAssertionEvaluator;
     private final IntegrationIdentityResolver identityResolver;
     private final SideEffectReconcilerRegistry sideEffectReconcilers;
+    private final GraphDraftDependencySnapshotService dependencySnapshots;
 
     @Autowired
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -50,7 +50,8 @@ public class ToolStudioIntegrationService {
                                         GovernanceGateResultRepository gateResultRepository,
                                         ObjectMapper objectMapper,
                                         IntegrationIdentityResolver identityResolver,
-                                        SideEffectReconcilerRegistry sideEffectReconcilers) {
+                                        SideEffectReconcilerRegistry sideEffectReconcilers,
+                                        GraphDraftDependencySnapshotService dependencySnapshots) {
         this.draftRepository = draftRepository;
         this.validator = validator;
         this.catalog = catalog;
@@ -62,6 +63,20 @@ public class ToolStudioIntegrationService {
                 : identityResolver;
         this.sideEffectReconcilers = sideEffectReconcilers == null
                 ? new SideEffectReconcilerRegistry(List.of()) : sideEffectReconcilers;
+        this.dependencySnapshots = dependencySnapshots == null
+                ? new GraphDraftDependencySnapshotService(catalog) : dependencySnapshots;
+    }
+
+    public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
+                                        GraphDraftValidator validator,
+                                        VisualOperatorCatalog catalog,
+                                        VisualGraphRunRepository runRepository,
+                                        GovernanceGateResultRepository gateResultRepository,
+                                        ObjectMapper objectMapper,
+                                        IntegrationIdentityResolver identityResolver,
+                                        SideEffectReconcilerRegistry sideEffectReconcilers) {
+        this(draftRepository, validator, catalog, runRepository, gateResultRepository, objectMapper,
+                identityResolver, sideEffectReconcilers, null);
     }
 
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -72,7 +87,7 @@ public class ToolStudioIntegrationService {
                                         ObjectMapper objectMapper,
                                         IntegrationIdentityResolver identityResolver) {
         this(draftRepository, validator, catalog, runRepository, gateResultRepository, objectMapper,
-                identityResolver, new SideEffectReconcilerRegistry(List.of()));
+                identityResolver, new SideEffectReconcilerRegistry(List.of()), null);
     }
 
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -82,7 +97,7 @@ public class ToolStudioIntegrationService {
                                         GovernanceGateResultRepository gateResultRepository,
                                         ObjectMapper objectMapper) {
         this(draftRepository, validator, catalog, runRepository, gateResultRepository, objectMapper,
-                IntegrationIdentityResolver.unavailable(), new SideEffectReconcilerRegistry(List.of()));
+                IntegrationIdentityResolver.unavailable(), new SideEffectReconcilerRegistry(List.of()), null);
     }
 
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -102,9 +117,11 @@ public class ToolStudioIntegrationService {
     }
 
     public IntegrationEnvelope<IntegrationCapabilities> capabilities() {
+        VisualEvidenceSigner signer = runRepository == null
+                ? VisualEvidenceSigner.unavailable() : runRepository.evidenceSigner();
         return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
-                IntegrationCapabilities.current(runRepository != null && runRepository.evidenceSigner().available(),
-                        identityResolver.descriptor(), sideEffectReconcilers.available()));
+                IntegrationCapabilities.current(signer.descriptor(), identityResolver.descriptor(),
+                        sideEffectReconcilers.available()));
     }
 
     public IntegrationEnvelope<GraphDraftIntegrationBundle> exportDraft(String draftId,
@@ -113,14 +130,17 @@ public class ToolStudioIntegrationService {
         context.requireComplete();
         GraphDraft draft = findDraft(draftId, revision, context);
         context.requireDraftScope(draft);
-        GraphDraftDependencyReport dependencyReport = GraphDraftDependencyReport.from(draft, catalog);
+        GraphDraftDependencySnapshotService.Snapshot dependencySnapshot = dependencySnapshots.capture(draft);
+        GraphDraftDependencyReport dependencyReport = GraphDraftDependencyReport.from(
+                draft, dependencySnapshot.catalog());
         VisualValidationResult validation = validator.validate(draft);
         String draftFingerprint = draftFingerprint(draft);
         GraphDraftIntegrationBundle bundle = new GraphDraftIntegrationBundle(
                 "", context.tenantId(), context.organizationId(), context.projectId(), context.environmentId(),
-                draftFingerprint, draft, operatorSnapshots(draft),
-                GraphDraftDependencyProfile.from(draft, dependencyReport, catalog), validation
+                draftFingerprint, draft, dependencySnapshot.operators(),
+                GraphDraftDependencyProfile.from(draft, dependencyReport, dependencySnapshot), validation
         );
+        verifySnapshotStable(draft, revision, dependencySnapshot, context);
         return IntegrationEnvelope.of("GRAPH_DRAFT_INTEGRATION_BUNDLE",
                 GraphDraftIntegrationBundle.SCHEMA_VERSION, bundle);
     }
@@ -178,11 +198,21 @@ public class ToolStudioIntegrationService {
         VisualEvidenceSigner signer = runRepository == null
                 ? VisualEvidenceSigner.unavailable()
                 : runRepository.evidenceSigner();
-        VisualEvidenceSigner.VerificationKey key = signer.key(keyId).orElseThrow(() ->
-                new IntegrationProblemException(IntegrationProblem.notFound(
-                        "RG.INTEGRATION.EVIDENCE_KEY_NOT_FOUND",
-                        "Evidence verification key was not found.", "", Map.of("keyId", keyId == null ? "" : keyId)
-                )));
+        VisualEvidenceSigner.KeyResolution resolution = signer.resolveKey(keyId);
+        if (resolution.status() == VisualEvidenceSigner.KeyResolutionStatus.PROVIDER_UNAVAILABLE) {
+            throw new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
+                    "RG.INTEGRATION.EVIDENCE_KEY_PROVIDER_UNAVAILABLE",
+                    "Evidence verification key provider is unavailable.", "",
+                    Map.of("keyId", keyId == null ? "" : keyId, "reason", resolution.reason())
+            ));
+        }
+        if (resolution.status() != VisualEvidenceSigner.KeyResolutionStatus.AVAILABLE) {
+            throw new IntegrationProblemException(IntegrationProblem.notFound(
+                    "RG.INTEGRATION.EVIDENCE_KEY_NOT_FOUND",
+                    "Evidence verification key was not found.", "", Map.of("keyId", keyId == null ? "" : keyId)
+            ));
+        }
+        VisualEvidenceSigner.VerificationKey key = resolution.key();
         return IntegrationEnvelope.of("EVIDENCE_VERIFICATION_KEY",
                 VisualEvidenceSigner.VerificationKey.SCHEMA_VERSION, key);
     }
@@ -408,18 +438,31 @@ public class ToolStudioIntegrationService {
         return record;
     }
 
-    private List<OperatorDefinition> operatorSnapshots(GraphDraft draft) {
-        Map<String, OperatorDefinition> snapshots = new LinkedHashMap<>();
-        for (GraphDraft.DraftNode node : draft.nodes()) {
-            OperatorDefinition operator = catalog == null ? null : catalog.find(node.operatorRef()).orElse(null);
-            if (operator == null) {
-                operator = draft.operatorSnapshots().get(node.id());
-            }
-            if (operator != null) {
-                snapshots.putIfAbsent(operator.operatorRef() + "@" + operator.fingerprint(), operator);
-            }
+    private void verifySnapshotStable(GraphDraft draft,
+                                      long requestedRevision,
+                                      GraphDraftDependencySnapshotService.Snapshot before,
+                                      IntegrationRequestContext context) {
+        GraphDraftDependencySnapshotService.Snapshot after = dependencySnapshots.capture(draft);
+        GraphDraft persisted = (requestedRevision > 0
+                ? draftRepository.findRevision(draft.draftId(), draft.revision())
+                : draftRepository.find(draft.draftId())).orElse(null);
+        boolean draftStable = persisted != null
+                && persisted.revision() == draft.revision()
+                && draftFingerprint(persisted).equals(draftFingerprint(draft));
+        if (draftStable && before.fingerprint().equals(after.fingerprint())) {
+            return;
         }
-        return List.copyOf(snapshots.values());
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("draftId", draft.draftId());
+        details.put("observedRevision", draft.revision());
+        details.put("requestedRevision", requestedRevision);
+        details.put("beforeDependencyFingerprint", before.fingerprint());
+        details.put("afterDependencyFingerprint", after.fingerprint());
+        details.put("draftStable", draftStable);
+        throw new IntegrationProblemException(IntegrationProblem.conflict(
+                "RG.INTEGRATION.DRAFT_SNAPSHOT_CHANGED",
+                "Draft dependencies changed while the integration snapshot was being assembled; retry the export.",
+                context.correlationId(), details));
     }
 
     static String draftFingerprint(GraphDraft draft) {

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/evidence-signer-descriptor-v1.schema.json",
+  "title": "Tool Studio Resource Gateway Evidence Signer Descriptor v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "providerType", "providerName", "available", "state", "activeKeyId",
+    "managedKeyCustody", "privateKeyExportable", "verificationKeyCount", "lastSuccessfulRefreshAt",
+    "snapshotExpiresAt", "successfulSignatureCount", "failedSignatureCount", "properties"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "toolStudio.resourceGateway.evidenceSignerDescriptor.v1" },
+    "providerType": { "type": "string", "maxLength": 128 },
+    "providerName": { "type": "string", "maxLength": 128 },
+    "available": { "type": "boolean" },
+    "state": { "type": "string", "maxLength": 64 },
+    "activeKeyId": { "type": "string", "maxLength": 255 },
+    "managedKeyCustody": { "type": "boolean" },
+    "privateKeyExportable": { "type": "boolean" },
+    "verificationKeyCount": { "type": "integer", "minimum": 0, "maximum": 64 },
+    "lastSuccessfulRefreshAt": { "type": ["string", "null"], "format": "date-time" },
+    "snapshotExpiresAt": { "type": ["string", "null"], "format": "date-time" },
+    "successfulSignatureCount": { "type": "integer", "minimum": 0 },
+    "failedSignatureCount": { "type": "integer", "minimum": 0 },
+    "properties": { "type": "object" }
+  }
+}

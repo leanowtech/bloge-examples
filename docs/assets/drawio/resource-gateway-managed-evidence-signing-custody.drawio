@@ -1,0 +1,94 @@
+<mxfile host="Electron" agent="Codex">
+  <diagram id="managed-evidence-signing" name="Managed Evidence Signing Custody">
+    <mxGraphModel dx="1422" dy="762" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="0" page="0" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="Resource Gateway Managed Evidence Signing Custody" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1160" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="Non-exportable private keys, atomic public-key snapshots and locally verified remote signatures" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=12;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="1160" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="rg-lane" value="Resource Gateway evidence producers" style="swimlane;startSize=32;container=0;pointerEvents=0;rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;fontColor=#263238;fontFamily=Arial;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="110" width="280" height="440" as="geometry"/>
+        </mxCell>
+        <mxCell id="signer-lane" value="ManagedVisualEvidenceSigner trust boundary" style="swimlane;startSize=32;container=0;pointerEvents=0;rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontColor=#0d47a1;fontFamily=Arial;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="350" y="110" width="620" height="440" as="geometry"/>
+        </mxCell>
+        <mxCell id="kms-lane" value="Enterprise signing authority" style="swimlane;startSize=32;container=0;pointerEvents=0;rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontColor=#4a148c;fontFamily=Arial;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="110" width="400" height="440" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="producers" value="Run repository · event cursor&lt;br&gt;reconciliation evidence&lt;br&gt;&lt;b&gt;canonical sha256 fingerprint only&lt;/b&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;fontColor=#263238;fontFamily=Arial;fontSize=11;" vertex="1" parent="rg-lane">
+          <mxGeometry x="30" y="55" width="220" height="95" as="geometry"/>
+        </mxCell>
+        <mxCell id="persistence" value="Persisted evidence seal&lt;br&gt;keyId · algorithm · signedAt&lt;br&gt;signature · material fingerprint" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontColor=#1b5e20;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="rg-lane">
+          <mxGeometry x="30" y="245" width="220" height="105" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="guard" value="Protocol and request binding&lt;br&gt;schema + requestId + expected keyId&lt;br&gt;rotation mismatch: refresh once" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontColor=#0d47a1;fontFamily=Arial;fontSize=11;" vertex="1" parent="signer-lane">
+          <mxGeometry x="40" y="55" width="250" height="95" as="geometry"/>
+        </mxCell>
+        <mxCell id="local-verify" value="Local signature verification&lt;br&gt;&lt;b&gt;remote signature is never trusted blindly&lt;/b&gt;&lt;br&gt;Ed25519 public key + exact fingerprint" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontColor=#1b5e20;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="signer-lane">
+          <mxGeometry x="340" y="220" width="240" height="105" as="geometry"/>
+        </mxCell>
+        <mxCell id="snapshot" value="Atomic public-key snapshot · exactly one ACTIVE key · VERIFY_ONLY history · DISABLED / REVOKED&lt;br&gt;bounded by authority expiresAt; transport outage may degrade only until expiry; malformed trust material fails immediately" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontColor=#bf360c;fontFamily=Arial;fontSize=10;" vertex="1" parent="signer-lane">
+          <mxGeometry x="40" y="350" width="540" height="65" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="sidecar" value="Versioned managed-signing API&lt;br&gt;GET public key generations&lt;br&gt;POST fingerprint + expected keyId&lt;br&gt;HTTPS / private-network identity" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontColor=#4a148c;fontFamily=Arial;fontSize=11;" vertex="1" parent="kms-lane">
+          <mxGeometry x="40" y="55" width="320" height="105" as="geometry"/>
+        </mxCell>
+        <mxCell id="hsm" value="KMS / HSM key service&lt;br&gt;&lt;b&gt;private key never exportable&lt;/b&gt;&lt;br&gt;sign with provider key version&lt;br&gt;rotation · disable · revoke" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontColor=#4a148c;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="kms-lane">
+          <mxGeometry x="40" y="220" width="320" height="105" as="geometry"/>
+        </mxCell>
+        <mxCell id="provider-audit" value="Provider audit / access policy&lt;br&gt;key use, principal, requestId, outcome" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;fontColor=#263238;fontFamily=Arial;fontSize=10;dashed=1;" vertex="1" parent="kms-lane">
+          <mxGeometry x="40" y="355" width="320" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="invariants" value="Industrial invariants" style="swimlane;startSize=30;container=0;pointerEvents=0;rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;fontColor=#263238;fontFamily=Arial;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="590" width="1360" height="140" as="geometry"/>
+        </mxCell>
+        <mxCell id="inv-private" value="NO PRIVATE MATERIAL&lt;br&gt;Reject private fields at ingress&lt;br&gt;No H2 private-key table" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontColor=#b71c1c;fontFamily=Arial;fontSize=10;fontStyle=1;" vertex="1" parent="invariants">
+          <mxGeometry x="30" y="50" width="285" height="65" as="geometry"/>
+        </mxCell>
+        <mxCell id="inv-atomic" value="ATOMIC KEY GENERATIONS&lt;br&gt;One active key, retained history&lt;br&gt;No partial rotation snapshot" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontColor=#0d47a1;fontFamily=Arial;fontSize=10;fontStyle=1;" vertex="1" parent="invariants">
+          <mxGeometry x="345" y="50" width="285" height="65" as="geometry"/>
+        </mxCell>
+        <mxCell id="inv-failure" value="EXPLICIT FAILURE CLASSES&lt;br&gt;Transport: bounded DEGRADED&lt;br&gt;Malformed / bad signature: UNAVAILABLE" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontColor=#bf360c;fontFamily=Arial;fontSize=10;fontStyle=1;" vertex="1" parent="invariants">
+          <mxGeometry x="660" y="50" width="315" height="65" as="geometry"/>
+        </mxCell>
+        <mxCell id="inv-capability" value="MACHINE-READABLE CUSTODY&lt;br&gt;provider, health, active key, counters&lt;br&gt;privateKeyExportable=false" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontColor=#1b5e20;fontFamily=Arial;fontSize=10;fontStyle=1;" vertex="1" parent="invariants">
+          <mxGeometry x="1005" y="50" width="315" height="65" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e-producer-guard" value="seal(fingerprint)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;fontColor=#455a64;fontFamily=Arial;fontSize=9;endArrow=block;endFill=1;" edge="1" parent="1" source="producers" target="guard">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-guard-sidecar" value="versioned sign request" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#6a1b9a;fontColor=#4a148c;fontFamily=Arial;fontSize=9;endArrow=block;endFill=1;" edge="1" parent="1" source="guard" target="sidecar">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-sidecar-hsm" value="provider key version" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#6a1b9a;fontColor=#4a148c;fontFamily=Arial;fontSize=9;endArrow=block;endFill=1;" edge="1" parent="1" source="sidecar" target="hsm">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-hsm-verify" value="bound signature response" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2e7d32;fontColor=#1b5e20;fontFamily=Arial;fontSize=9;endArrow=block;endFill=1;" edge="1" parent="1" source="hsm" target="local-verify">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-verify-persist" value="verified seal" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2e7d32;fontColor=#1b5e20;fontFamily=Arial;fontSize=9;endArrow=block;endFill=1;" edge="1" parent="1" source="local-verify" target="persistence">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-sidecar-snapshot" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#e65100;fontColor=#bf360c;fontFamily=Arial;fontSize=9;endArrow=block;endFill=1;dashed=1;" edge="1" parent="1" source="sidecar" target="snapshot">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-snapshot-verify" value="verification key" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565c0;fontColor=#0d47a1;fontFamily=Arial;fontSize=9;endArrow=block;endFill=1;" edge="1" parent="1" source="snapshot" target="local-verify">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-hsm-audit" value="immutable use event" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;fontColor=#455a64;fontFamily=Arial;fontSize=9;endArrow=block;endFill=1;dashed=1;" edge="1" parent="1" source="hsm" target="provider-audit">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

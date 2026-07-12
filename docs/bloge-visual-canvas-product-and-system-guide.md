@@ -247,7 +247,105 @@ JWT payload 合同如下；`aud` 可以是字符串或数组，`purposes` 必须
 `revocationPropagationSloSeconds`。`STALE` 必须触发告警，`EXPIRED/UNAVAILABLE` 或没有 active key 时
 `available=false`。不要把 `RG_INTEGRATION_DEMO_TOKEN` 的默认值带到共享或生产环境。
 
-### 3.2 从 ANEKE 治理问题直达画布
+### 3.2 为运行证据启用 KMS/HSM 托管签名
+
+本地演示默认使用 `DatabaseVisualEvidenceSigner`：它把 Ed25519 key pair 写入 H2，便于重启后验证演示 evidence，
+但 `providerType=LOCAL_DATABASE`、`privateKeyExportable=true`、`productionReady=false` 会诚实暴露这不是生产 custody。
+企业部署应启用 managed signer，让 Resource Gateway 只缓存公钥和 key lifecycle metadata，私钥始终留在 KMS/HSM：
+
+![Resource Gateway 托管 evidence 签名保管链](assets/resource-gateway-managed-evidence-signing-custody.svg)
+
+图源文件：[`assets/drawio/resource-gateway-managed-evidence-signing-custody.drawio`](assets/drawio/resource-gateway-managed-evidence-signing-custody.drawio)
+
+最小生产配置如下。`base-uri` 指向企业内网 signing sidecar；生产必须使用 HTTPS，HTTP 只允许显式测试开关下的 loopback：
+
+```bash
+export RG_EVIDENCE_SIGNING_MANAGED_ENABLED=true
+export RG_EVIDENCE_SIGNING_MANAGED_BASE_URI='https://evidence-signing.internal.example.com/'
+export RG_EVIDENCE_SIGNING_MANAGED_PROVIDER_NAME='corp-hsm-prod-sg'
+export RG_EVIDENCE_SIGNING_MANAGED_REQUEST_TIMEOUT_SECONDS=3
+export RG_EVIDENCE_SIGNING_MANAGED_REFRESH_INTERVAL_SECONDS=30
+export RG_EVIDENCE_SIGNING_MANAGED_UNKNOWN_KEY_REFRESH_INTERVAL_SECONDS=5
+export RG_EVIDENCE_SIGNING_MANAGED_MAXIMUM_SNAPSHOT_LIFETIME_SECONDS=86400
+```
+
+sidecar 的 `GET /v1/evidence-signing/keys` 返回一个不可拆分的 key generation 快照。必须恰好有一把 `ACTIVE` key；
+历史 key 可处于 `VERIFY_ONLY`，`DISABLED` 和 `REVOKED` 会分别导致历史验签返回明确状态：
+
+```json
+{
+  "schemaVersion": "resourceGateway.managedEvidenceSigningKeys.v1",
+  "generatedAt": "2026-07-13T00:00:00Z",
+  "expiresAt": "2026-07-13T00:05:00Z",
+  "activeKeyId": "kms://evidence-signing/18",
+  "keys": [
+    {
+      "keyId": "kms://evidence-signing/17",
+      "algorithm": "Ed25519",
+      "encodedPublicKey": "<base64-X509-public-key>",
+      "createdAt": "2026-06-13T00:00:00Z",
+      "state": "VERIFY_ONLY",
+      "providerKeyVersion": "projects/.../cryptoKeyVersions/17"
+    },
+    {
+      "keyId": "kms://evidence-signing/18",
+      "algorithm": "Ed25519",
+      "encodedPublicKey": "<base64-X509-public-key>",
+      "createdAt": "2026-07-13T00:00:00Z",
+      "state": "ACTIVE",
+      "providerKeyVersion": "projects/.../cryptoKeyVersions/18"
+    }
+  ]
+}
+```
+
+Resource Gateway 调用 `POST /v1/evidence-signing/sign` 时只发送 canonical fingerprint、随机 requestId、算法和预期
+keyId，不发送 evidence payload，更不会请求或接收 private key：
+
+```json
+{
+  "schemaVersion": "resourceGateway.managedEvidenceSignRequest.v1",
+  "requestId": "f386bb24-c852-4adc-8e90-e7654d58fd4a",
+  "keyId": "kms://evidence-signing/18",
+  "algorithm": "Ed25519",
+  "materialFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}
+```
+
+响应使用 `resourceGateway.managedEvidenceSignResponse.v1`，必须回显这四个绑定字段并带 `signedAt/signature`。
+Gateway 会用当前快照公钥本地反验签名，只有反验成功才把 seal 写入 run、cursor 或 reconciliation record。
+sidecar 返回 `409` 表示 rotation race，Gateway 强制刷新并只重试一次；连续漂移会以 `ROTATION_UNSTABLE` 失败，
+不会偷偷改用旧 key。
+
+sidecar 和 ANEKE CI 可直接校验四份机器合同：
+[key snapshot](schemas/tool-studio-resource-gateway/managed-evidence-signing-keys-v1.schema.json)、
+[sign request](schemas/tool-studio-resource-gateway/managed-evidence-sign-request-v1.schema.json)、
+[sign response](schemas/tool-studio-resource-gateway/managed-evidence-sign-response-v1.schema.json) 和
+[capability descriptor](schemas/tool-studio-resource-gateway/evidence-signer-descriptor-v1.schema.json)。
+
+启动后检查：
+
+```bash
+curl -sS http://localhost:8080/api/integration/capabilities | jq '.payload |
+  {features: {managedEvidenceSigning: .features.managedEvidenceSigning,
+              nonExportableEvidenceSigningKey: .features.nonExportableEvidenceSigningKey,
+              evidenceSigningFailClosed: .features.evidenceSigningFailClosed},
+   signer: .evidenceSigner}'
+```
+
+生产结果应满足 `providerType=MANAGED_KMS_HSM`、`managedKeyCustody=true`、`privateKeyExportable=false`，并检查
+`state/activeKeyId/snapshotExpiresAt/refreshSuccessCount/refreshFailureCount/lastFailureCode`。网络 timeout、429 或 5xx
+只允许在 authority 自己声明的 `expiresAt` 前使用已缓存公钥做历史验签，状态为 `DEGRADED`；新签名仍必须实时调用
+provider，绝不本地降级。畸形 JSON、重复字段、private material、错误 key 集合或无法通过本地反验的签名立即进入
+`UNAVAILABLE`。快照过期后 evidence key lookup 返回可重试
+`503 RG.INTEGRATION.EVIDENCE_KEY_PROVIDER_UNAVAILABLE`，而真正不存在的 key 返回 404。
+
+通用 HTTP adapter 使用 JVM TLS context，部署方可通过 JVM trust store/client key store 建立 mTLS。直接调用云 KMS SDK、
+SPIFFE workload identity 或厂商 HSM session 的团队可注册自己的 `ManagedEvidenceSigningProvider` Bean；上层轮换、反验、
+capability 和 fail-closed 语义保持不变。生产验收还必须导出 provider 侧 key-use audit，并演练跨地域 authority 故障、
+key disable/revoke、备份恢复和历史公钥保留期。
+
+### 3.3 从 ANEKE 治理问题直达画布
 
 ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服务端保存的草稿，自动布局并定位到具体节点或算子。作者不需要先打开 Author 首页再手工搜索草稿。
 
@@ -281,7 +379,7 @@ ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服
 
 治理反馈由 ANEKE 通过 `POST /api/integration/gate-results` 写入，并绑定不可变的 `draftId + revision + draftFingerprint`。同一个 `gateResultId` 重复提交相同内容是幂等成功，内容不同则返回冲突；画布只通过只读接口 `GET /api/visual/governance-gates/drafts/{draftId}` 消费结果。
 
-### 3.3 用 recorded replay 重算正确性断言
+### 3.4 用 recorded replay 重算正确性断言
 
 `GET /api/integration/runs/{runId}/replay` 只读取已脱敏的 recorded payload；`POST` 同一路径才是 replay command。command 不会重新运行 DSL，也不会调用任何 operator 或外部资源，而是基于父运行保存的 context、node input/output、terminal output 和 evidence 状态重算断言，并生成新的 replay run/evidence。
 
@@ -334,7 +432,7 @@ ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服
 
 当前 replay command 只支持 `RECORDED_ASSERTIONS + DENY`。`shadow/live` 重放仍未开放，因为它们需要独立的审批、隔离环境、幂等能力证明和 unknown-commit 处理，不能复用这个安全接口悄悄开启。
 
-### 3.4 读取 timeout、fallback 与 partial failure 证据
+### 3.5 读取 timeout、fallback 与 partial failure 证据
 
 画布点击 **Run** 后，系统不再只保存一个最终 `SUCCESS/FAILED`。BLOGE 的 node lifecycle 与
 `ResilienceListener` 会在同一个 run capture 中记录 retry、timeout 和 fallback 事件；Resource Gateway
@@ -411,6 +509,10 @@ reconciliation record 闭合该缺口；系统不会修改或重新签署原 evi
 | `sideEffectReconciliation` / `sideEffectReconciliationEvidence` | `true` | 具备持久 claim/fencing、SPI、签名 refinement、summary 和 outbox 协议 |
 | `sideEffectReconcilerAdapters` | 默认 `false` | 当前示例不伪造任意 provider 的权威状态查询；注册业务 adapter 后动态变为 `true` |
 | `sideEffectCommitConfirmation` | `false` | 不是所有 operator/binding 都已声明 receipt 与 reconciler，不能做全局承诺 |
+| `managedEvidenceSigning` | 按部署动态 | `true` 表示私钥由 managed provider 托管，不能仅凭 `evidenceSignature=true` 推断 |
+| `nonExportableEvidenceSigningKey` | 按部署动态 | managed custody 且 provider 声明私钥不可导出；本地 H2 demo 必须为 `false` |
+| `evidenceSigningKeyRotation` / `evidenceSigningKeyRevocation` | 按部署动态 | key generation snapshot 支持 `ACTIVE/VERIFY_ONLY/DISABLED/REVOKED` 生命周期 |
+| `evidenceSigningFailClosed` | 按部署动态 | authority 快照过期或协议污染后禁止继续签名/验签，且 key lookup 区分 503 与 404 |
 
 旧 `runEvidenceBundle.v1/v2/v3/v4/v5` 仍在 capability 的兼容列表中；新 consumer 应优先协商 v6。旧 run 若没有
 每个节点的结构化 execution fact，会得到
@@ -630,7 +732,7 @@ Content-Type: application/json
 单个 Resource Gateway 进程内保留一小时终态，因此不能把它当作跨重启 workflow store；跨实例接管仍需
 BLOGE durable execution lease 与持久 fencing owner。
 
-### 3.5 让 ANEKE 持续同步且可对账
+### 3.6 让 ANEKE 持续同步且可对账
 
 Resource Gateway 现在不要求 ANEKE 依赖 webhook 才能持续治理。draft、operator library、run 和 operator contract test suite 的权威写入会在**同一个数据库事务**中追加 integration event；任一 Outbox 写入失败时，资产写入也会回滚，不会产生“资产已经存在、治理侧永远不知道”的静默裂缝。
 
@@ -677,7 +779,7 @@ curl -sS 'http://localhost:8080/api/integration/reconciliation' \
 
 这里不承诺网络级 exactly-once。系统采用“生产端 transactional outbox + ANEKE 幂等消费 + opaque cursor + reconciliation”的可恢复最终一致性模型。Webhook 仍未开放；后续即使增加 webhook，它也只负责低延迟提醒，不能替代 cursor 和对账快照。
 
-### 3.6 演示脚本启动方式
+### 3.7 演示脚本启动方式
 
 推荐演示时直接使用仓库根目录下的专用脚本。它默认执行 `resource-gateway-examples` 的 `-Pfrontend package`，把 React UI 打进 Spring Boot 静态资源，然后在 `8080` 启动服务。为缩短演示准备时间，脚本默认给 Maven 打包加 `-DskipTests`；需要把测试也跑进去时使用 `--run-tests`。
 
@@ -718,7 +820,7 @@ Legacy composer: http://localhost:8080/examples/gateway
 
 脚本使用 `target/example-pids/visual-canvas-demo.pid` 记录进程，使用 `target/example-logs/visual-canvas-demo.log` 记录日志；停止时会校验 PID/端口上的进程确实像 Resource Gateway demo，避免误停其它服务。
 
-### 3.7 手动启动方式
+### 3.8 手动启动方式
 
 如果只运行后端 API 或旧版静态资源：
 
@@ -752,7 +854,7 @@ npm run dev
 
 当前 Vite dev proxy 只代理 `/api` 到 Spring Boot。算子库导入使用 `/admin/visual-operator-libraries/*`，所以完整体验建议优先使用 Maven 打包后的 `/author/`。
 
-### 3.8 VSCode 插件轻量化方向
+### 3.9 VSCode 插件轻量化方向
 
 如果用户只是想在业务仓库里看懂 `.bloge` 拓扑、导入本地算子 schema、配置 mock 数据并跑表格测试，每次都启动 Resource Gateway 服务端会显得偏重。后续推荐把 `/author/` 的核心能力下沉成 VSCode 插件入口：
 
@@ -1699,7 +1801,7 @@ GET /api/gateway/examples/scenarios/{graphName}/diagram
 | `visual/simulation` | mock/real 混合模拟、fixture、trace、sample generator |
 | `visual/publication` | publication 冻结、导入导出、依赖报告 |
 | `visual/golden` | golden case 保存、运行、认证 |
-| `visual/runtime` | `VisualGraphRunRecord.v8`、精确 node invocation attempt、side-effect attempt/receipt/transition、结构化 node/run-control/recovery fact、pre-run 脱敏 lineage reservation、自动 evidence recovery、持久 evidence seal 和 trace/replay 数据 |
+| `visual/runtime` | `VisualGraphRunRecord.v8`、精确 node invocation attempt、side-effect attempt/receipt/transition、结构化 node/run-control/recovery fact、pre-run 脱敏 lineage reservation、自动 evidence recovery、managed KMS/HSM signer、公钥快照与持久 evidence seal、trace/replay 数据 |
 | `visual/resource` | OpenAPI/resource contract 投影到 visual resource/operator surface |
 | `integration` | Tool Studio versioned envelope、capability probe、draft dependency export、evidence/replay、side-effect reconciliation claim/SPI/签名 refinement、验签公钥、governance gate feedback、transactional outbox、签名 cursor 和 reconciliation snapshot |
 
@@ -1734,6 +1836,10 @@ resource gateway 自身继续保留：
     refinement，不能修改原 run evidence 或重放原写请求。
 16. reconciliation lookup ref 必须是 evidence-safe opaque reference；原始 idempotency key、credential、provider
     payload 和带 query/user-info 的 URL 不得进入 run/evidence/reconciliation record。
+17. 生产 evidence signer 只能向 provider 发送 canonical fingerprint 和请求绑定字段；private key/material 一旦出现在
+    provider response 必须立即拒绝，不能写数据库、日志或 capability。
+18. provider 返回的签名必须用原子公钥快照本地反验后才能持久化；transport 故障只能在 authority `expiresAt` 前降级，
+    畸形快照、错误签名、disabled/revoked key 和过期快照必须 fail closed。
 
 ## 8. 典型业务流程
 
@@ -1926,12 +2032,15 @@ mvn -f resource-gateway-examples/pom.xml -Pfrontend \
 当前不覆盖：
 
 - 多人实时协作。
-- 完整企业 IAM/RBAC 生命周期；当前已验证 static bearer 或短时 RS256/EdDSA JWT claims，并把请求 header 仅作为
-  一致性 hint，但动态 JWKS/KMS 拉取、group/clearance/delegation policy 和撤销传播 SLO 仍需企业 adapter。
+- 完整企业 IAM/RBAC 生命周期；当前已实现动态 JWKS/revocation、group/clearance/delegation claims、401/503 分流与
+  撤销传播 SLO 探针，但客户 IdP 认证、resource-classification policy、group/orphan-owner 生命周期和 break-glass
+  仍需部署级策略与演练。
 - 持久化远程 worker runtime。
 - 完整 AI tool/event/message/webhook 执行平面。
 - 把 visual core 物理拆成独立 Maven artifact。
-- KMS/HSM 托管的 evidence key；当前持久 Ed25519 provider 用于本地 H2 演示，企业部署必须替换 `VisualEvidenceSigner` SPI。
+- 客户特定 KMS/HSM 认证与灾备；当前已内置 non-exportable managed-signing 协议、HTTP sidecar adapter、轮换/禁用/撤销、
+  返回签名本地反验和 machine-readable custody。企业仍需接真实厂商 KMS/HSM、导出 provider key-use audit、固定历史
+  公钥保留策略，并完成多地域 outage/restore 演练；本地 H2 signer 只用于 demo。
 - webhook subscription、签名投递、重试与 DLQ；当前已具备 polling cursor 和 reconciliation，后续 webhook 只能作为低延迟提示层。
 - 外部数据库集群、Outbox retention job 和灾备恢复编排；当前 H2 实现用于证明事务、游标和对账协议，不等于企业 HA 存储。
 - `shadow/live` replay；当前已具备生成新 run lineage 的 `RECORDED_ASSERTIONS + DENY` 无副作用 replay command。

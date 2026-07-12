@@ -975,6 +975,48 @@ Evidence bundle 必须从“可下载 JSON”提升为可验真的证据清单�
 
 签名不是为了宣称绝对不可抵赖，而是为了让下游检测传输、存储和人工处理中的篡改。需要法律级时间证明时，再对接企业 timestamp authority；不要在第一阶段伪称具备司法级不可抵赖能力。
 
+#### 21.1.1 Managed evidence signing custody（Round 14 已实现协议与通用适配器）
+
+`VisualEvidenceSigner` 不能只回答一个 `available` 布尔值。工业部署需要机器读取 provider type、health、active key、
+公钥代际数、快照到期时间、签名成功/失败计数、私钥是否可导出和 custody 是否托管。Round 14 新增
+`toolStudio.resourceGateway.evidenceSignerDescriptor.v1`，并由 capability 同步暴露；ANEKE 不得再根据
+`evidenceSignature=true` 猜测生产 readiness。
+
+![Resource Gateway 托管 evidence 签名保管链](assets/resource-gateway-managed-evidence-signing-custody.svg)
+
+图源：[resource-gateway-managed-evidence-signing-custody.drawio](assets/drawio/resource-gateway-managed-evidence-signing-custody.drawio)。
+
+代码采用两个深层接口：
+
+1. `ManagedEvidenceSigningProvider` 只提供版本化 key generation snapshot 和指定 keyId 的 fingerprint signing；AWS KMS、
+   Azure Key Vault、GCP KMS、Vault Transit 或私有 HSM adapter 不需要知道 run/evidence 内部结构。
+2. `ManagedVisualEvidenceSigner` 负责原子快照、exactly-one-active 校验、轮换冲突单次刷新、公钥历史、状态解释、
+   provider response request binding 和返回签名本地反验。provider 不能用“签过了”替代密码学证明。
+
+内置 HTTP sidecar 合同固定为：
+
+| API | schema | 只允许的敏感边界 |
+|---|---|---|
+| `GET /v1/evidence-signing/keys` | `resourceGateway.managedEvidenceSigningKeys.v1` | X.509 Ed25519 public key、keyId/version、createdAt、`ACTIVE/VERIFY_ONLY/DISABLED/REVOKED` |
+| `POST /v1/evidence-signing/sign` | `resourceGateway.managedEvidenceSignRequest.v1` / `managedEvidenceSignResponse.v1` | requestId、expected keyId、algorithm、canonical sha256 fingerprint、signedAt、signature |
+
+机器合同分别为 [key snapshot](schemas/tool-studio-resource-gateway/managed-evidence-signing-keys-v1.schema.json)、
+[sign request](schemas/tool-studio-resource-gateway/managed-evidence-sign-request-v1.schema.json)、
+[sign response](schemas/tool-studio-resource-gateway/managed-evidence-sign-response-v1.schema.json) 和
+[signer descriptor](schemas/tool-studio-resource-gateway/evidence-signer-descriptor-v1.schema.json)。实现与 sidecar 的 CI
+必须校验这些 schema，不能只比较示例 JSON。
+
+private key、private JWK `d` 或任何 private material 字段在 key ingress 出现即硬拒绝。生产 URI 必须 HTTPS、redirect
+关闭、response 流式限制为 128 KB、重复 JSON 字段拒绝。网络/timeout/429/5xx 可在 authority `expiresAt` 前把状态降为
+`DEGRADED` 并继续本地验证历史 evidence，但新签名绝不降级到本地私钥；畸形 key snapshot、错误签名或协议绑定失败
+立即进入 `UNAVAILABLE`。快照过期后 key API 返回 retryable 503，未知 key 才返回 404。
+
+这关闭了“Resource Gateway 必须在 H2/进程内持有生产签名私钥”和“远程 provider 返回任意 bytes 也被当成签名”的
+代码病根，但不能冒充客户 KMS 已认证。Stage 2 的部署退出证据仍包括：真实 KMS/HSM identity/policy、provider 侧
+key-use audit 导出、历史公钥 retention、跨地域 authority failover、key restore/disable/revoke 演练，以及签名延迟/
+错误率 SLO。通用 adapter 允许通过 JVM TLS context 使用 mTLS；厂商 SDK 或 SPIFFE 集成可替换 provider Bean，不能
+改写上层 fail-closed 语义。
+
 ### 21.2 完整性和隔离
 
 证据生产流程必须满足：
@@ -1111,10 +1153,11 @@ resilience timeout、suspend timeout 和 retry backoff 都服从剩余预算。R
 common HTTP operator 取更短 timeout，后者继续发送 `X-Bloge-Deadline/X-Bloge-Remaining-Budget-Ms`；remote
 worker envelope 携带 deadline、remaining、reserve、capturedAt 并支持 clock-skew fail-closed 判断。
 
-当前仍未完成两项运行语义：客户端断开后的显式 `detachPolicy`，以及 operator commit receipt/reconciliation。
-任意自定义 operator 是否真正使用 budget 仍需 runtime-binding 合规准入；强杀不合作 Java 代码依然不在承诺内。
-多实例 correctness 已由 row lock 保证，但生产级 scheduler metrics、退避/DLQ、外部 HA DB fault injection、
-retention/residency 和 KMS custody 仍属于工业化差距。
+当前仍未完成的运行语义是客户端断开后的显式 `detachPolicy`，以及任意私有 binding 对 budget/effect 合同的可证明
+遵循；强杀不合作 Java 代码依然不在承诺内。commit receipt、UNKNOWN_COMMIT guard、provider reconciliation 和
+managed KMS/HSM signing protocol 已在后续轮次落地。多实例 correctness 已由 row lock 保证，但生产级 scheduler
+metrics、退避/DLQ、外部 HA DB fault injection、retention/residency，以及客户 KMS/HSM conformance、audit 与 DR
+仍属于工业化差距。
 
 ### 23.2 Retry 不是默认正确
 
@@ -1447,7 +1490,7 @@ operator 从 schema 导入到生产可用需要 `DISCOVERED -> DESCRIBED -> VERI
 | 证据 | run 成功但 node capture 缺失 | evidence 与执行耦合不完整 | completeness manifest + quarantine | 不完整证据不进入 gate |
 | 证据 | payload 被存储管理员修改 | 仅靠 ACL | content hash + signed manifest | 下游独立检测篡改 |
 | 证据 | sanitizer 升级后历史内容无法解释 | 不记录规则版本 | redaction profile/version/manifest | 可说明当时脱敏行为 |
-| 证据 | 签名密钥轮换后旧证据无法验证 | key history 丢失 | keyId/version + verification retention | 历史签名持续可验 |
+| 证据 | 签名密钥轮换后旧证据无法验证 | key history 丢失 | Round 14 已实现原子 public-key generation、`VERIFY_ONLY` history、keyId/version 和 disable/revoke 语义；部署仍需 retention policy | 历史签名持续可验，禁用/撤销有不同结论 |
 | 证据 | manifest 生成后补字段 | 原地修改不可变对象 | manifest revision + predecessor hash | 变更链完整 |
 | replay | recorded replay 误调用生产 API | replay 复用 live binding | mode-specific binding + egress deny | 默认零外部副作用 |
 | replay | live replay 重复扣款/写入 | 无 side-effect policy | dual approval + idempotency + allowlist | 高风险算子被阻断或去重 |
@@ -1503,7 +1546,7 @@ operator 从 schema 导入到生产可用需要 `DISCOVERED -> DESCRIBED -> VERI
 
 退出门槛：success/failure/timeout/partial/mock/fallback/unknown-commit 场景均可结构化解释；篡改可检出；run 成功但 evidence 不完整时 gate 不会误采纳。
 
-当前落地状态（Round 13）：标准 node/edge/graph facts、真实 retry/timeout/fallback events、关键输出聚合、
+当前落地状态（Round 14）：标准 node/edge/graph facts、真实 retry/timeout/fallback events、关键输出聚合、
 sanitized payload、持久签名、fact coverage 和 quarantine 已实现；run intent、绝对 deadline、fenced cancel、
 owner+operator 双条件终止确认、durable control、跨实例 cancel、owner lease/epoch、过期 quarantine、
 pre-run recovery reservation、evidence v6 automatic recovery，以及 deadline budget 对 OperatorContext、scheduler、
@@ -1512,9 +1555,11 @@ UNKNOWN_COMMIT DAG guard、provider reconciliation SPI、持久 claim/fencing �
 未支持的 `hardRunTermination/restartRunResumption/sideEffectCommitConfirmation`，并单独暴露当前是否注册业务
 reconciler adapter。Round 12 又补齐 `WRITE_EXTERNAL` schema、binding/activation conformance、Java WRITE pre/post
 admission、descriptor/common HTTP mutation guard 和 Author readiness。Stage 2 仍未退出：还需错误 effect 分类/私有
-egress 的动态识别、disconnect policy、客户 provider adapter 覆盖、KMS custody，以及外部 HA DB fault injection/SLO。
+egress 的动态识别、disconnect policy、客户业务 provider adapter 覆盖，以及外部 HA DB fault injection/SLO。
 Round 13 的动态 JWKS/撤销传播和身份权威 401/503 分流收紧了 evidence consumer 的入口信任，但不替代 evidence
-签名 private key 的 KMS/HSM custody。
+签名 private key 的 KMS/HSM custody。Round 14 已补上 vendor-neutral managed-signing SPI、HTTP sidecar、non-exportable
+custody、key generation rotation/disable/revoke、签名本地反验和 capability；Stage 2 仍需客户真实 KMS/HSM、provider
+audit、跨地域 DR 和签名 SLO 认证，不能把本地 mock authority 当作环境晋级证据。
 
 ### Stage 3 - Safe replay 与 workbook 对齐（2-4 周）
 

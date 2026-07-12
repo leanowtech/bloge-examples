@@ -57,6 +57,9 @@ import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualGraphRunReposit
 import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualRuntimeRolloutObservationRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.HttpManagedEvidenceSigningProvider;
+import com.leanowtech.bloge.gateway.visual.runtime.ManagedEvidenceSigningProvider;
+import com.leanowtech.bloge.gateway.visual.runtime.ManagedVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphPublicationOperator;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
@@ -75,6 +78,7 @@ import com.leanowtech.bloge.spring.annotation.BlogeOperator;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -474,9 +478,40 @@ public class GatewayConfiguration {
         return new DatabaseVisualOperatorContractTestSuiteRepository(jdbc, objectMapper, outbox);
     }
 
-    /** Persistent local signing authority; replace with a KMS-backed bean in enterprise deployments. */
+    /** Generic private-network adapter for a KMS/HSM signing sidecar. */
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnProperty(name = "gateway.integration.evidence-signing.managed.enabled", havingValue = "true")
+    public ManagedEvidenceSigningProvider managedEvidenceSigningProvider(
+            ObjectMapper objectMapper,
+            @Value("${gateway.integration.evidence-signing.managed.base-uri:}") String baseUri,
+            @Value("${gateway.integration.evidence-signing.managed.provider-name:enterprise-kms}") String providerName,
+            @Value("${gateway.integration.evidence-signing.managed.request-timeout-seconds:3}") long requestTimeoutSeconds,
+            @Value("${gateway.integration.evidence-signing.managed.allow-insecure-loopback:false}") boolean allowInsecureLoopback) {
+        return new HttpManagedEvidenceSigningProvider(objectMapper,
+                new HttpManagedEvidenceSigningProvider.Settings(URI.create(baseUri.trim()),
+                        Duration.ofSeconds(requestTimeoutSeconds), providerName, allowInsecureLoopback));
+    }
+
+    /** Managed signer keeps only public keys locally and verifies every provider signature before persistence. */
+    @Bean
+    @ConditionalOnMissingBean(VisualEvidenceSigner.class)
+    @ConditionalOnProperty(name = "gateway.integration.evidence-signing.managed.enabled", havingValue = "true")
+    public VisualEvidenceSigner managedVisualEvidenceSigner(
+            ManagedEvidenceSigningProvider provider,
+            @Value("${gateway.integration.evidence-signing.managed.refresh-interval-seconds:30}") long refreshIntervalSeconds,
+            @Value("${gateway.integration.evidence-signing.managed.unknown-key-refresh-interval-seconds:5}") long unknownKeyRefreshIntervalSeconds,
+            @Value("${gateway.integration.evidence-signing.managed.maximum-snapshot-lifetime-seconds:86400}") long maximumSnapshotLifetimeSeconds) {
+        return new ManagedVisualEvidenceSigner(provider, new ManagedVisualEvidenceSigner.Settings(
+                Duration.ofSeconds(refreshIntervalSeconds), Duration.ofSeconds(unknownKeyRefreshIntervalSeconds),
+                Duration.ofSeconds(maximumSnapshotLifetimeSeconds)));
+    }
+
+    /** Persistent local signing authority for demos; production should enable managed evidence signing. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(name = "gateway.integration.evidence-signing.managed.enabled", havingValue = "false",
+            matchIfMissing = true)
     public VisualEvidenceSigner visualEvidenceSigner(JdbcTemplate jdbc) {
         return new DatabaseVisualEvidenceSigner(jdbc);
     }

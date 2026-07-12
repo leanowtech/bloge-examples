@@ -88,6 +88,21 @@ public final class DatabaseVisualEvidenceSigner implements VisualEvidenceSigner 
         return true;
     }
 
+    @Override
+    public Descriptor descriptor() {
+        VerificationKey active = loadActiveDescriptor();
+        int keyCount = delegate instanceof Ed25519VisualEvidenceSigner signer
+                ? signer.verificationKeyCount() : active == null ? 0 : 1;
+        return new Descriptor("", "LOCAL_DATABASE", "LOCAL_H2_DEMO", true, "HEALTHY",
+                active == null ? "" : active.keyId(), false, true, keyCount,
+                active == null ? null : active.createdAt(), null, 0, 0,
+                Map.of("productionReady", false, "privateKeyStorage", "DATABASE_PLAINTEXT_PKCS8"));
+    }
+
+    private VerificationKey loadActiveDescriptor() {
+        return delegate instanceof Ed25519VisualEvidenceSigner signer ? signer.activeKey() : null;
+    }
+
     private static VisualEvidenceSigner delegate(StoredKey active, List<StoredKey> keys) {
         try {
             Map<String, Ed25519VisualEvidenceSigner.VerificationMaterial> verificationKeys = new LinkedHashMap<>();

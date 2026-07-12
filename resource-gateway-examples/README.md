@@ -24,6 +24,8 @@ integration something the business flow can see, reason about, test, and change.
 | Governed run controls | Absolute deadline, monotonic remaining-budget propagation, fenced cancel, durable owner lease/epoch, cross-instance commands, and automatic signed evidence recovery after owner failure |
 | Auditable external writes | Versioned write contracts, binding/activation conformance, execution-scoped journal, commit receipts, UNKNOWN_COMMIT DAG guard, and signed reconciliation evidence |
 | Dynamic workload identity | Atomic JWKS/revocation refresh, zero-restart key rotation, bounded propagation SLO, group/clearance/delegation claims, and explicit 401/503 semantics |
+| Managed evidence signing | Non-exportable KMS/HSM provider protocol, atomic public-key generations, locally verified signatures, rotation/revoke semantics, and machine-readable custody health |
+| Consistent draft export | Frozen operator/library/binding/activation/test-suite refs, deterministic dependency fingerprints, and retryable 409 conflict on assembly-time drift |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
 
 ## Start The Demo
@@ -128,6 +130,22 @@ tokens or group names. Authority outages return retryable 503; deterministically
 [dynamic trust lifecycle](../docs/assets/resource-gateway-dynamic-jwks-trust-lifecycle.svg) and
 [identity setup guide](../docs/bloge-visual-canvas-product-and-system-guide.md#31-调用-integration-api-前先建立受信身份).
 
+Production evidence signatures can use a private-network KMS/HSM sidecar instead of the demo H2 key store. Resource
+Gateway sends only the canonical evidence fingerprint and expected key version, rejects private material in provider
+responses, and verifies the returned Ed25519 signature locally before persistence. Key discovery retains `VERIFY_ONLY`
+history while distinguishing `DISABLED` and `REVOKED`; malformed trust material fails immediately, and transport outages
+can use cached public keys only until the authority-declared expiry. Enable it with
+`RG_EVIDENCE_SIGNING_MANAGED_ENABLED=true` and `RG_EVIDENCE_SIGNING_MANAGED_BASE_URI=https://...`. See the
+[custody lifecycle](../docs/assets/resource-gateway-managed-evidence-signing-custody.svg) and
+[managed signing setup](../docs/bloge-visual-canvas-product-and-system-guide.md#32-为运行证据启用-kmshsm-托管签名).
+
+Tool Studio draft export now reads one relevant-only dependency snapshot containing operator library revision,
+runtime binding and activation state, contract-suite revision, schema fingerprints, and a normalized readiness result.
+The service checks the draft and dependency fingerprint again after assembly. A concurrent relevant change returns
+`409 RG.INTEGRATION.DRAFT_SNAPSHOT_CHANGED` instead of publishing a half-old, half-new bundle; unchanged revisions remain
+byte-stable for idempotent consumers. Capability discovery exposes `graphDraftConsistentDependencySnapshot` and
+`graphDraftStructuredDependencyRefs`.
+
 ## Extend It
 
 To add an external API:
@@ -210,6 +228,10 @@ Java 25 preview flags are already configured.
   JWKS/revocation, group/clearance/delegation claims, purpose authorization and tenant isolation are implemented; customer
   IdP certification, resource-classification policy, group lifecycle/orphan ownership and emergency-access governance
   still require deployment-specific integration.
+- Managed evidence signing is implemented as a vendor-neutral KMS/HSM sidecar protocol and provider SPI. Production
+  deployments still need a customer-specific provider identity/policy, authoritative key-use audit export, historical
+  public-key retention, multi-region disaster recovery, and vendor conformance evidence; the default H2 signer remains
+  demo-only.
 - The visual core still lives inside `resource-gateway-examples`; it is shaped
   for future extraction, but is not yet a standalone artifact.
 

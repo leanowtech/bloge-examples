@@ -46,6 +46,18 @@ gateway:
   # Automatically seed or refresh the built-in demo descriptors on startup.
   seed-descriptors: true
   integration:
+    evidence-signing:
+      # Production path: Resource Gateway keeps public verification keys only; the sidecar owns KMS/HSM access.
+      managed:
+        enabled: ${RG_EVIDENCE_SIGNING_MANAGED_ENABLED:false}
+        base-uri: ${RG_EVIDENCE_SIGNING_MANAGED_BASE_URI:}
+        provider-name: ${RG_EVIDENCE_SIGNING_MANAGED_PROVIDER_NAME:enterprise-kms}
+        request-timeout-seconds: ${RG_EVIDENCE_SIGNING_MANAGED_REQUEST_TIMEOUT_SECONDS:3}
+        refresh-interval-seconds: ${RG_EVIDENCE_SIGNING_MANAGED_REFRESH_INTERVAL_SECONDS:30}
+        unknown-key-refresh-interval-seconds: ${RG_EVIDENCE_SIGNING_MANAGED_UNKNOWN_KEY_REFRESH_INTERVAL_SECONDS:5}
+        maximum-snapshot-lifetime-seconds: ${RG_EVIDENCE_SIGNING_MANAGED_MAXIMUM_SNAPSHOT_LIFETIME_SECONDS:86400}
+        # Test-only escape hatch; non-loopback HTTP is always rejected.
+        allow-insecure-loopback: ${RG_EVIDENCE_SIGNING_MANAGED_ALLOW_INSECURE_LOOPBACK:false}
     identity:
       # Production mode verifies short-lived RS256/EdDSA JWTs against configured public keys.
       # A custom IntegrationJwtTrustStore bean can source rotating keys and revocation from JWKS/KMS.

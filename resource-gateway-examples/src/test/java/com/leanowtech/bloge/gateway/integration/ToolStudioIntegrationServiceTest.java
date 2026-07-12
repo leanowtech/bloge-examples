@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualGraphRunReposit
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualReplayAssertionResult;
@@ -34,6 +35,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -123,6 +125,8 @@ class ToolStudioIntegrationServiceTest {
         assertThat(envelope.payloadKind()).isEqualTo("CAPABILITIES");
         assertThat(envelope.payload().features())
                 .containsEntry("draftExportDependencyProfile", true)
+                .containsEntry("graphDraftConsistentDependencySnapshot", true)
+                .containsEntry("graphDraftStructuredDependencyRefs", true)
                 .containsEntry("runEvidenceBundle", true)
                 .containsEntry("structuredExecutionFacts", true)
                 .containsEntry("graphDeadline", true)
@@ -188,6 +192,21 @@ class ToolStudioIntegrationServiceTest {
     }
 
     @Test
+    void distinguishesEvidenceKeyProviderOutageFromUnknownKey() {
+        VisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository(VisualEvidenceSigner.unavailable());
+        ToolStudioIntegrationService service = service(null, null, null, runs);
+
+        assertThatThrownBy(() -> service.evidenceKey("kms-key-1"))
+                .isInstanceOf(IntegrationProblemException.class)
+                .satisfies(failure -> {
+                    IntegrationProblem problem = ((IntegrationProblemException) failure).problem();
+                    assertThat(problem.status()).isEqualTo(503);
+                    assertThat(problem.retryable()).isTrue();
+                    assertThat(problem.code()).isEqualTo("RG.INTEGRATION.EVIDENCE_KEY_PROVIDER_UNAVAILABLE");
+                });
+    }
+
+    @Test
     void exportsTenantBoundSnapshotWithDeterministicDependencyMetadata() {
         OperatorDefinition operator = operator();
         GraphDraft draft = draft(operator);
@@ -217,7 +236,50 @@ class ToolStudioIntegrationServiceTest {
         });
         assertThat(first.payload().dependencyProfile().graphContract().inputSchemaFingerprint()).startsWith("sha256:");
         assertThat(first.payload().dependencyProfile().graphContract().outputSchemaFingerprint()).startsWith("sha256:");
+        assertThat(first.payload().dependencyProfile().schemaVersion())
+                .isEqualTo(GraphDraftDependencyProfile.SCHEMA_VERSION);
+        assertThat(first.payload().dependencyProfile().snapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.consistencyStatus()).isEqualTo("STABLE");
+            assertThat(snapshot.fingerprint()).startsWith("sha256:");
+            assertThat(snapshot.operatorCount()).isEqualTo(1);
+            assertThat(snapshot.capturedAt()).isEqualTo(Instant.EPOCH);
+        });
         assertThat(first.payloadFingerprint()).isEqualTo(second.payloadFingerprint());
+    }
+
+    @Test
+    void rejectsExportWhenRelevantDependenciesDriftDuringAssembly() {
+        OperatorDefinition operator = operator();
+        GraphDraft draft = draft(operator);
+        GraphDraftRepository repository = mock(GraphDraftRepository.class);
+        when(repository.findRevision("draft-1", 7)).thenReturn(Optional.of(draft));
+        GraphDraftValidator validator = mock(GraphDraftValidator.class);
+        when(validator.validate(draft)).thenReturn(new VisualValidationResult(true, List.of()));
+        VisualOperatorCatalog catalog = catalog(operator);
+        GraphDraftDependencySnapshotService delegate = new GraphDraftDependencySnapshotService(catalog);
+        AtomicInteger reads = new AtomicInteger();
+        GraphDraftDependencySnapshotService drifting = new GraphDraftDependencySnapshotService(catalog) {
+            @Override
+            public Snapshot capture(GraphDraft ignored) {
+                Snapshot snapshot = delegate.capture(ignored);
+                return reads.incrementAndGet() == 1 ? snapshot : new Snapshot(
+                        snapshot.fingerprint() + "-changed", snapshot.capturedAt(), snapshot.operators(),
+                        snapshot.catalog(), snapshot.assets());
+            }
+        };
+        ToolStudioIntegrationService service = new ToolStudioIntegrationService(
+                repository, validator, catalog, null, new InMemoryGovernanceGateResultRepository(),
+                new ObjectMapper().findAndRegisterModules(), IntegrationIdentityResolver.unavailable(),
+                new SideEffectReconcilerRegistry(List.of()), drifting);
+
+        assertThatThrownBy(() -> service.exportDraft("draft-1", 7, integrationContext("corr-drift")))
+                .isInstanceOf(IntegrationProblemException.class)
+                .satisfies(failure -> {
+                    IntegrationProblem problem = ((IntegrationProblemException) failure).problem();
+                    assertThat(problem.status()).isEqualTo(409);
+                    assertThat(problem.code()).isEqualTo("RG.INTEGRATION.DRAFT_SNAPSHOT_CHANGED");
+                    assertThat(problem.details()).containsEntry("draftStable", true);
+                });
     }
 
     @Test
