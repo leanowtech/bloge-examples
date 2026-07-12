@@ -11,6 +11,13 @@ public record IntegrationAccessAuditRecord(
         String identityId,
         String credentialId,
         String tokenId,
+        String organizationId,
+        String actorId,
+        String delegatedBy,
+        String delegationGrantId,
+        String clearance,
+        int groupCount,
+        String groupFingerprint,
         String tenantId,
         String environmentId,
         String operation,
@@ -22,13 +29,30 @@ public record IntegrationAccessAuditRecord(
                                         Instant occurredAt,
                                         String correlationId,
                                         String identityId,
+                                        String credentialId,
+                                        String tokenId,
                                         String tenantId,
                                         String environmentId,
                                         String operation,
                                         String purpose,
                                         String outcome,
                                         String reasonCode) {
-        this(sequence, occurredAt, correlationId, identityId, "", "", tenantId, environmentId,
+        this(sequence, occurredAt, correlationId, identityId, credentialId, tokenId, "", "", "", "",
+                "PUBLIC", 0, "", tenantId, environmentId, operation, purpose, outcome, reasonCode);
+    }
+
+    public IntegrationAccessAuditRecord(long sequence,
+                                        Instant occurredAt,
+                                        String correlationId,
+                                        String identityId,
+                                        String tenantId,
+                                        String environmentId,
+                                        String operation,
+                                        String purpose,
+                                        String outcome,
+                                        String reasonCode) {
+        this(sequence, occurredAt, correlationId, identityId, "", "", "", "", "", "", "PUBLIC", 0, "",
+                tenantId, environmentId,
                 operation, purpose, outcome, reasonCode);
     }
 
@@ -39,6 +63,13 @@ public record IntegrationAccessAuditRecord(
         identityId = normalize(identityId);
         credentialId = normalize(credentialId);
         tokenId = normalize(tokenId);
+        organizationId = normalize(organizationId);
+        actorId = normalize(actorId);
+        delegatedBy = normalize(delegatedBy);
+        delegationGrantId = normalize(delegationGrantId);
+        clearance = normalize(clearance).toUpperCase(Locale.ROOT);
+        groupCount = Math.max(0, groupCount);
+        groupFingerprint = normalize(groupFingerprint);
         tenantId = normalize(tenantId);
         environmentId = normalize(environmentId);
         operation = normalize(operation).toUpperCase(Locale.ROOT);
@@ -49,7 +80,8 @@ public record IntegrationAccessAuditRecord(
 
     public IntegrationAccessAuditRecord withSequence(long value) {
         return new IntegrationAccessAuditRecord(value, occurredAt, correlationId, identityId, credentialId,
-                tokenId, tenantId, environmentId, operation, purpose, outcome, reasonCode);
+                tokenId, organizationId, actorId, delegatedBy, delegationGrantId, clearance, groupCount,
+                groupFingerprint, tenantId, environmentId, operation, purpose, outcome, reasonCode);
     }
 
     private static String normalize(String value) {

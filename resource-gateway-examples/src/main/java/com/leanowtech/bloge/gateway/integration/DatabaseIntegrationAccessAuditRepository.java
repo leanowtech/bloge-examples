@@ -28,6 +28,13 @@ public final class DatabaseIntegrationAccessAuditRepository implements Integrati
                     identity_id VARCHAR(255) NOT NULL,
                     credential_id VARCHAR(160) NOT NULL DEFAULT '',
                     token_id VARCHAR(160) NOT NULL DEFAULT '',
+                    organization_id VARCHAR(255) NOT NULL DEFAULT '',
+                    actor_id VARCHAR(255) NOT NULL DEFAULT '',
+                    delegated_by VARCHAR(255) NOT NULL DEFAULT '',
+                    delegation_grant_id VARCHAR(160) NOT NULL DEFAULT '',
+                    clearance VARCHAR(32) NOT NULL DEFAULT 'PUBLIC',
+                    group_count INT NOT NULL DEFAULT 0,
+                    group_fingerprint VARCHAR(64) NOT NULL DEFAULT '',
                     tenant_id VARCHAR(255) NOT NULL,
                     environment_id VARCHAR(255) NOT NULL,
                     operation VARCHAR(96) NOT NULL,
@@ -38,6 +45,13 @@ public final class DatabaseIntegrationAccessAuditRepository implements Integrati
                 """);
         jdbc.execute("ALTER TABLE integration_access_audit ADD COLUMN IF NOT EXISTS credential_id VARCHAR(160) NOT NULL DEFAULT ''");
         jdbc.execute("ALTER TABLE integration_access_audit ADD COLUMN IF NOT EXISTS token_id VARCHAR(160) NOT NULL DEFAULT ''");
+        jdbc.execute("ALTER TABLE integration_access_audit ADD COLUMN IF NOT EXISTS organization_id VARCHAR(255) NOT NULL DEFAULT ''");
+        jdbc.execute("ALTER TABLE integration_access_audit ADD COLUMN IF NOT EXISTS actor_id VARCHAR(255) NOT NULL DEFAULT ''");
+        jdbc.execute("ALTER TABLE integration_access_audit ADD COLUMN IF NOT EXISTS delegated_by VARCHAR(255) NOT NULL DEFAULT ''");
+        jdbc.execute("ALTER TABLE integration_access_audit ADD COLUMN IF NOT EXISTS delegation_grant_id VARCHAR(160) NOT NULL DEFAULT ''");
+        jdbc.execute("ALTER TABLE integration_access_audit ADD COLUMN IF NOT EXISTS clearance VARCHAR(32) NOT NULL DEFAULT 'PUBLIC'");
+        jdbc.execute("ALTER TABLE integration_access_audit ADD COLUMN IF NOT EXISTS group_count INT NOT NULL DEFAULT 0");
+        jdbc.execute("ALTER TABLE integration_access_audit ADD COLUMN IF NOT EXISTS group_fingerprint VARCHAR(64) NOT NULL DEFAULT ''");
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS idx_integration_access_audit_scope_time
                 ON integration_access_audit (tenant_id, environment_id, occurred_at)
@@ -53,21 +67,29 @@ public final class DatabaseIntegrationAccessAuditRepository implements Integrati
         jdbc.update(connection -> {
             PreparedStatement statement = connection.prepareStatement("""
                     INSERT INTO integration_access_audit (
-                        occurred_at, correlation_id, identity_id, credential_id, token_id, tenant_id, environment_id,
-                        operation, purpose, outcome, reason_code
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        occurred_at, correlation_id, identity_id, credential_id, token_id, organization_id,
+                        actor_id, delegated_by, delegation_grant_id, clearance, group_count, group_fingerprint,
+                        tenant_id, environment_id, operation, purpose, outcome, reason_code
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, Statement.RETURN_GENERATED_KEYS);
             statement.setTimestamp(1, Timestamp.from(record.occurredAt()));
             statement.setString(2, record.correlationId());
             statement.setString(3, record.identityId());
             statement.setString(4, record.credentialId());
             statement.setString(5, record.tokenId());
-            statement.setString(6, record.tenantId());
-            statement.setString(7, record.environmentId());
-            statement.setString(8, record.operation());
-            statement.setString(9, record.purpose());
-            statement.setString(10, record.outcome());
-            statement.setString(11, record.reasonCode());
+            statement.setString(6, record.organizationId());
+            statement.setString(7, record.actorId());
+            statement.setString(8, record.delegatedBy());
+            statement.setString(9, record.delegationGrantId());
+            statement.setString(10, record.clearance());
+            statement.setInt(11, record.groupCount());
+            statement.setString(12, record.groupFingerprint());
+            statement.setString(13, record.tenantId());
+            statement.setString(14, record.environmentId());
+            statement.setString(15, record.operation());
+            statement.setString(16, record.purpose());
+            statement.setString(17, record.outcome());
+            statement.setString(18, record.reasonCode());
             return statement;
         }, keys);
         Number key = keys.getKey();
@@ -81,7 +103,8 @@ public final class DatabaseIntegrationAccessAuditRepository implements Integrati
     public List<IntegrationAccessAuditRecord> recent(int limit) {
         return jdbc.query("""
                         SELECT sequence, occurred_at, correlation_id, identity_id, credential_id, token_id,
-                               tenant_id, environment_id,
+                               organization_id, actor_id, delegated_by, delegation_grant_id, clearance,
+                               group_count, group_fingerprint, tenant_id, environment_id,
                                operation, purpose, outcome, reason_code
                         FROM integration_access_audit
                         ORDER BY sequence DESC
@@ -89,7 +112,10 @@ public final class DatabaseIntegrationAccessAuditRepository implements Integrati
                         """, (rs, rowNum) -> new IntegrationAccessAuditRecord(
                         rs.getLong("sequence"), rs.getTimestamp("occurred_at").toInstant(),
                         rs.getString("correlation_id"), rs.getString("identity_id"),
-                        rs.getString("credential_id"), rs.getString("token_id"), rs.getString("tenant_id"),
+                        rs.getString("credential_id"), rs.getString("token_id"),
+                        rs.getString("organization_id"), rs.getString("actor_id"), rs.getString("delegated_by"),
+                        rs.getString("delegation_grant_id"), rs.getString("clearance"), rs.getInt("group_count"),
+                        rs.getString("group_fingerprint"), rs.getString("tenant_id"),
                         rs.getString("environment_id"), rs.getString("operation"), rs.getString("purpose"),
                         rs.getString("outcome"), rs.getString("reason_code")),
                 Math.max(1, Math.min(1000, limit)));

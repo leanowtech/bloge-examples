@@ -2,10 +2,14 @@ package com.leanowtech.bloge.gateway.integration;
 
 import org.springframework.http.HttpHeaders;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeSet;
 import java.util.UUID;
 
 /** Authenticates integration requests before server-owned claims enter the service layer. */
@@ -35,8 +39,16 @@ public final class IntegrationRequestAuthenticator {
                     "RG.INTEGRATION.AUTHENTICATION_REQUIRED",
                     "A verified integration workload credential is required.", correlationId, Map.of()));
         }
-        IntegrationIdentityResolver.Resolution resolution = resolver.resolveVerified(credential).orElse(null);
-        if (resolution == null) {
+        IntegrationIdentityResolver.ResolutionAttempt attempt = resolver.resolveAttempt(credential);
+        if (attempt.outcome() == IntegrationIdentityResolver.ResolutionOutcome.PROVIDER_UNAVAILABLE) {
+            deny(correlationId, null, operation, purpose, "RG.INTEGRATION.IDENTITY_PROVIDER_UNAVAILABLE");
+            throw new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
+                    "RG.INTEGRATION.IDENTITY_PROVIDER_UNAVAILABLE",
+                    "The trusted integration identity authority is temporarily unavailable.",
+                    correlationId, Map.of()));
+        }
+        IntegrationIdentityResolver.Resolution resolution = attempt.resolution();
+        if (attempt.outcome() != IntegrationIdentityResolver.ResolutionOutcome.VERIFIED || resolution == null) {
             deny(correlationId, null, operation, purpose, "RG.INTEGRATION.AUTHENTICATION_FAILED");
             throw new IntegrationProblemException(IntegrationProblem.unauthorized(
                     "RG.INTEGRATION.AUTHENTICATION_FAILED",
@@ -72,9 +84,12 @@ public final class IntegrationRequestAuthenticator {
         }
         IntegrationRequestContext context = new IntegrationRequestContext(identity.tenantId(),
                 identity.organizationId(), identity.projectId(), identity.environmentId(), identity.region(),
-                identity.actorType(), identity.actorId(), identity.delegatedBy(), purpose, correlationId);
+                identity.actorType(), identity.actorId(), identity.delegatedBy(), purpose, correlationId,
+                identity.groups(), identity.clearance(), identity.delegationGrantId());
         appendAudit(new IntegrationAccessAuditRecord(0, Instant.now(), correlationId, identity.identityId(),
-                resolution.credentialId(), resolution.tokenId(), identity.tenantId(), identity.environmentId(),
+                resolution.credentialId(), resolution.tokenId(), identity.organizationId(), identity.actorId(),
+                identity.delegatedBy(), identity.delegationGrantId(), identity.clearance(), identity.groups().size(),
+                groupFingerprint(identity), identity.tenantId(), identity.environmentId(),
                 operation.name(), purpose, "ALLOWED", ""));
         return context;
     }
@@ -91,7 +106,11 @@ public final class IntegrationRequestAuthenticator {
         IntegrationWorkloadIdentity identity = resolution == null ? null : resolution.identity();
         appendAudit(new IntegrationAccessAuditRecord(0, Instant.now(), correlationId,
                 identity == null ? "" : identity.identityId(), resolution == null ? "" : resolution.credentialId(),
-                resolution == null ? "" : resolution.tokenId(), identity == null ? "" : identity.tenantId(),
+                resolution == null ? "" : resolution.tokenId(), identity == null ? "" : identity.organizationId(),
+                identity == null ? "" : identity.actorId(), identity == null ? "" : identity.delegatedBy(),
+                identity == null ? "" : identity.delegationGrantId(),
+                identity == null ? "" : identity.clearance(), identity == null ? 0 : identity.groups().size(),
+                identity == null ? "" : groupFingerprint(identity), identity == null ? "" : identity.tenantId(),
                 identity == null ? "" : identity.environmentId(), operation == null ? "" : operation.name(),
                 purpose, "DENIED", reasonCode));
     }
@@ -127,6 +146,8 @@ public final class IntegrationRequestAuthenticator {
         compareHint(mismatches, headers, "X-Actor-Type", identity.actorType());
         compareHint(mismatches, headers, "X-Actor-Id", identity.actorId());
         compareHint(mismatches, headers, "X-Delegated-By", identity.delegatedBy());
+        compareHint(mismatches, headers, "X-Clearance", identity.clearance());
+        compareHint(mismatches, headers, "X-Delegation-Grant-Id", identity.delegationGrantId());
         return mismatches;
     }
 
@@ -156,5 +177,18 @@ public final class IntegrationRequestAuthenticator {
 
     private static String limited(String value, int maximum) {
         return value == null || value.length() <= maximum ? (value == null ? "" : value) : value.substring(0, maximum);
+    }
+
+    private static String groupFingerprint(IntegrationWorkloadIdentity identity) {
+        if (identity == null || identity.groups().isEmpty()) {
+            return "";
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            String canonical = String.join("\n", new TreeSet<>(identity.groups()));
+            return HexFormat.of().formatHex(digest.digest(canonical.getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.GeneralSecurityException failure) {
+            throw new IllegalStateException("SHA-256 is unavailable", failure);
+        }
     }
 }

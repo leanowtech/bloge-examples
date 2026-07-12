@@ -56,6 +56,16 @@ gateway:
         trusted-keys-json: ${RG_INTEGRATION_JWT_TRUSTED_KEYS_JSON:}
         revoked-key-ids: ${RG_INTEGRATION_JWT_REVOKED_KEY_IDS:}
         revoked-token-ids: ${RG_INTEGRATION_JWT_REVOKED_TOKEN_IDS:}
+        # When jwks-uri is set, keys and the optional revocation feed refresh as one atomic snapshot.
+        jwks-uri: ${RG_INTEGRATION_JWT_JWKS_URI:}
+        revocations-uri: ${RG_INTEGRATION_JWT_REVOCATIONS_URI:}
+        refresh-interval-seconds: ${RG_INTEGRATION_JWT_REFRESH_INTERVAL_SECONDS:30}
+        unknown-key-refresh-interval-seconds: ${RG_INTEGRATION_JWT_UNKNOWN_KEY_REFRESH_INTERVAL_SECONDS:5}
+        request-timeout-seconds: ${RG_INTEGRATION_JWT_REQUEST_TIMEOUT_SECONDS:3}
+        outage-policy: ${RG_INTEGRATION_JWT_OUTAGE_POLICY:FAIL_CLOSED}
+        maximum-stale-seconds: ${RG_INTEGRATION_JWT_MAXIMUM_STALE_SECONDS:0}
+        # Test-only escape hatch; non-loopback HTTP is always rejected.
+        allow-insecure-loopback: ${RG_INTEGRATION_JWT_ALLOW_INSECURE_LOOPBACK:false}
         clock-skew-seconds: ${RG_INTEGRATION_JWT_CLOCK_SKEW_SECONDS:30}
         maximum-lifetime-seconds: ${RG_INTEGRATION_JWT_MAXIMUM_LIFETIME_SECONDS:900}
       # Explicit demo-only fallback. Disable it whenever signed JWT or a custom resolver is used.

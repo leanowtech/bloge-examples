@@ -70,6 +70,13 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 topology-f
 
 图源文件：[`assets/drawio/resource-gateway-integration-trusted-identity.drawio`](assets/drawio/resource-gateway-integration-trusted-identity.drawio)
 
+企业动态信任、轮换、撤销和故障语义如下图。它与上图不是重复关系：上图说明请求授权边界，本图说明信任材料如何在
+不重启 Resource Gateway 的情况下演进，以及为什么身份权威故障不能伪装成“用户 token 错了”。
+
+![Resource Gateway 动态 JWKS 信任生命周期](assets/resource-gateway-dynamic-jwks-trust-lifecycle.svg)
+
+图源文件：[`assets/drawio/resource-gateway-dynamic-jwks-trust-lifecycle.drawio`](assets/drawio/resource-gateway-dynamic-jwks-trust-lifecycle.drawio)
+
 本地演示默认启用一个**仅供 demo** 的 server-side identity registry：
 
 ```text
@@ -117,9 +124,52 @@ curl -sS 'http://localhost:8080/api/integration/reconciliation' \
 | gate result read | `GOVERNANCE_EVIDENCE_INGESTION`、`GOVERNANCE_GATE_FEEDBACK` |
 | events / reconciliation / library / suite | `CHANGE_SYNC` |
 
-每次允许或拒绝都会写入 `integration_access_audit`，记录 identity、tenant/environment、operation、purpose、outcome 和 reason code。signed JWT 还会记录验证它的 `kid` 和不可重放的 `jti`，但不保存 Bearer token 或签名内容。认证在资源查询之前完成；service 和 repository 随后仍按 tenant/environment 做二次 scope predicate，避免只靠入口层。
+每次允许或拒绝都会写入 `integration_access_audit`，记录 identity、tenant/environment、organization、actor、operation、
+purpose、outcome 和 reason code。signed JWT 还会记录验证它的 `kid`、不可重放的 `jti`、delegation grant id、clearance、
+group 数量和排序后 group 集合的 SHA-256 指纹；不会保存 Bearer token、签名内容或原始 group 名单。认证在资源查询之前
+完成；service 和 repository 随后仍按 tenant/environment 做二次 scope predicate，避免只靠入口层。
 
-企业部署必须关闭公开 demo credential。当前系统已经内置短时 signed JWT 模式，不需要另写 resolver 才能建立生产接入基线：
+企业部署必须关闭公开 demo credential。推荐直接接企业 JWKS 和版本化撤销 feed；不需要自定义 Spring Bean，也不需要
+重启 Resource Gateway 才能轮换 key：
+
+```bash
+export RG_INTEGRATION_DEMO_IDENTITY_ENABLED=false
+export RG_INTEGRATION_JWT_ENABLED=true
+export RG_INTEGRATION_JWT_ISSUER='https://iam.example.com/'
+export RG_INTEGRATION_JWT_AUDIENCE='resource-gateway'
+export RG_INTEGRATION_JWT_JWKS_URI='https://iam.example.com/.well-known/jwks.json'
+export RG_INTEGRATION_JWT_REVOCATIONS_URI='https://iam.example.com/resource-gateway-revocations.json'
+export RG_INTEGRATION_JWT_REFRESH_INTERVAL_SECONDS=30
+export RG_INTEGRATION_JWT_UNKNOWN_KEY_REFRESH_INTERVAL_SECONDS=5
+export RG_INTEGRATION_JWT_REQUEST_TIMEOUT_SECONDS=3
+export RG_INTEGRATION_JWT_OUTAGE_POLICY=FAIL_CLOSED
+export RG_INTEGRATION_JWT_MAXIMUM_STALE_SECONDS=0
+export RG_INTEGRATION_JWT_MAXIMUM_LIFETIME_SECONDS=900
+```
+
+JWKS 使用标准 `keys` 数组。当前接收 `RSA + RS256` 和 `OKP + Ed25519 + EdDSA`，只允许 `use=sig`、
+`key_ops=["verify"]` 和至少 2048 bit RSA；出现 private JWK 字段、重复 `kid`、弱 key、redirect、非 JSON 或超过
+256 KB 的响应都会使本次快照 fail closed。HTTP 只允许在显式测试开关下访问 loopback，生产 URI 必须是 HTTPS。
+
+撤销 feed 与 JWKS 作为一份原子快照发布，任一文档失败都不会发布另一份的新内容：
+
+```json
+{
+  "schemaVersion": "resourceGateway.integrationJwtRevocations.v1",
+  "generatedAt": "2026-07-13T00:00:00Z",
+  "expiresAt": "2026-07-13T00:05:00Z",
+  "revokedKeyIds": ["aneke-sync-2026-06"],
+  "revokedTokenIds": ["01J2TOKEN-REVOKED"]
+}
+```
+
+`FAIL_CLOSED` 是默认生产策略：刷新到期后若权威不可达，受保护接口返回可重试的
+`503 RG.INTEGRATION.IDENTITY_PROVIDER_UNAVAILABLE`。确有可用性需求时可选择 `BOUNDED_STALE` 并设置非零
+`MAXIMUM_STALE_SECONDS`，但它只对网络、timeout 和远端 5xx 生效；畸形、过大或超过权威 `expiresAt` 的文档永远立即
+进入 `EXPIRED`，不能用 stale 窗口掩盖。持续有认证请求时，key/jti 撤销的判定上界为
+`refresh interval + request timeout`；unknown `kid` 会触发经过节流的 single-flight 刷新以支持无停机轮换。
+
+静态 public-key JSON 仍可用于本地、隔离环境或迁移期基线，但它只在启动时装载：
 
 ```bash
 export RG_INTEGRATION_DEMO_IDENTITY_ENABLED=false
@@ -139,7 +189,10 @@ export RG_INTEGRATION_JWT_TRUSTED_KEYS_JSON='[
 ]'
 ```
 
-`publicKeyBase64` 是 X.509 SubjectPublicKeyInfo DER 的普通 Base64，只能放公钥；private key 必须留在企业 IAM/KMS。支持 `RS256` 和 `EdDSA`，RSA key 至少 2048 bit。要无停机轮换，在 JSON 数组中先同时放入旧、新两个不同 `kid` 的 public key，等待所有调用方切换后，再用 `RG_INTEGRATION_JWT_REVOKED_KEY_IDS=old-kid` 撤销旧 key。紧急撤销单枚 token 使用 `RG_INTEGRATION_JWT_REVOKED_TOKEN_IDS=jti-1,jti-2`。当前环境变量信任库在启动时装载；需要不重启传播 JWKS/KMS 轮换和撤销时，提供动态 `IntegrationJwtTrustStore` Bean。
+`publicKeyBase64` 是 X.509 SubjectPublicKeyInfo DER 的普通 Base64，只能放公钥；private key 必须留在企业 IAM/KMS。
+静态模式可用 `RG_INTEGRATION_JWT_REVOKED_KEY_IDS` 和 `RG_INTEGRATION_JWT_REVOKED_TOKEN_IDS`，但变更需要重启，
+因此不能用它证明企业撤销传播 SLO。自建 KMS、mTLS 或 service-mesh identity 仍可通过替换
+`IntegrationJwtTrustStore` / `IntegrationIdentityResolver` SPI 接入。
 
 ANEKE 发送的 JWT header 至少包含：
 
@@ -169,14 +222,30 @@ JWT payload 合同如下；`aud` 可以是字符串或数组，`purposes` 必须
   "region": "ap-southeast-1",
   "actor_type": "WORKLOAD",
   "actor_id": "aneke-sync",
-  "delegated_by": "",
+  "groups": ["knowledge-owners", "tool-authors"],
+  "clearance": "CONFIDENTIAL",
+  "delegated_by": "alice@example.com",
+  "delegation_grant_id": "grant-2026-0001",
+  "delegation_exp": 1783843440,
+  "delegation_purposes": ["CHANGE_SYNC", "GOVERNANCE_EVIDENCE_INGESTION"],
   "purposes": ["CHANGE_SYNC", "GOVERNANCE_EVIDENCE_INGESTION"]
 }
 ```
 
-服务端会拒绝 `alg=none`、算法/key 类型不一致、未知/停用/撤销 `kid`、撤销 `jti`、错误 issuer/audience、未来生效、过期、超过最大 TTL、重复 JSON 字段、非法 purpose 和自委托链。整个 Bearer credential 上限为 4096 字符，失败统一返回 401，不向调用方暴露具体验签分支。
+`groups` 最多 64 项，`clearance` 支持 `PUBLIC / INTERNAL / CONFIDENTIAL / RESTRICTED`。当
+`delegated_by` 非空时，grant id、grant expiry 和 grant purpose 集合都必填；token 的 purpose 必须是 grant purpose 的
+子集，grant 不能晚于 token 过期，也不能自委托。非委托 token 应省略四个 delegation 字段。
 
-启动后先检查公开 capability：生产环境应看到 `providerType=SIGNED_JWT`、`claimsSource=VERIFIED_TOKEN`、`demoMode=false`，并检查 `properties.activeKeyCount`、`keyRotationSupported`、`keyRevocationSupported`。若 provider 没有 active key，`available=false`，受保护接口 fail closed。不要把 `RG_INTEGRATION_DEMO_TOKEN` 的默认值带到共享或生产环境；OIDC/mTLS、组织 group/clearance 或更复杂 delegation policy 仍可通过替换 `IntegrationIdentityResolver` 接入。
+服务端会拒绝 `alg=none`、算法/key 类型不一致、未知/停用/撤销 `kid`、撤销 `jti`、错误 issuer/audience、未来生效、
+过期、超过最大 TTL、重复 JSON 字段、非法 purpose/group/clearance 和无效委托链。整个 Bearer credential 上限为
+4096 字符。凭证可确定为无效时返回 401 且不暴露具体验签分支；只有权威不可用、系统无法安全作出判断时才返回可重试 503。
+
+启动后先检查公开 capability。动态模式应看到 `providerType=SIGNED_JWT`、`claimsSource=DYNAMIC_JWKS`、
+`demoMode=false`、`features.dynamicCredentialTrust=true` 和 `features.credentialRevocationPropagationSlo=true`；同时检查
+`properties.refreshState`、`lastSuccessfulRefreshAt`、`refreshSuccessCount/failureCount`、`lastFailureCode`、
+`activeKeyCount`、`revokedKeyCount/revokedTokenCount`、`outageFailClosed` 和
+`revocationPropagationSloSeconds`。`STALE` 必须触发告警，`EXPIRED/UNAVAILABLE` 或没有 active key 时
+`available=false`。不要把 `RG_INTEGRATION_DEMO_TOKEN` 的默认值带到共享或生产环境。
 
 ### 3.2 从 ANEKE 治理问题直达画布
 

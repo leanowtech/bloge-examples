@@ -3,8 +3,10 @@ package com.leanowtech.bloge.gateway.integration;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Trusted request identity and purpose propagated into integration services.
@@ -19,8 +21,25 @@ public record IntegrationRequestContext(
         String actorId,
         String delegatedBy,
         String purpose,
-        String correlationId
+        String correlationId,
+        Set<String> groups,
+        String clearance,
+        String delegationGrantId
 ) {
+    public IntegrationRequestContext(String tenantId,
+                                     String organizationId,
+                                     String projectId,
+                                     String environmentId,
+                                     String region,
+                                     String actorType,
+                                     String actorId,
+                                     String delegatedBy,
+                                     String purpose,
+                                     String correlationId) {
+        this(tenantId, organizationId, projectId, environmentId, region, actorType, actorId, delegatedBy,
+                purpose, correlationId, Set.of(), "PUBLIC", "");
+    }
+
     public IntegrationRequestContext {
         tenantId = normalize(tenantId);
         organizationId = normalize(organizationId);
@@ -32,6 +51,17 @@ public record IntegrationRequestContext(
         delegatedBy = normalize(delegatedBy);
         purpose = normalize(purpose).toUpperCase(Locale.ROOT);
         correlationId = normalize(correlationId);
+        Set<String> normalizedGroups = new LinkedHashSet<>();
+        if (groups != null) {
+            groups.stream().map(IntegrationRequestContext::normalize).filter(value -> !value.isBlank())
+                    .forEach(normalizedGroups::add);
+        }
+        groups = Set.copyOf(normalizedGroups);
+        clearance = normalize(clearance).toUpperCase(Locale.ROOT);
+        if (clearance.isBlank()) {
+            clearance = "PUBLIC";
+        }
+        delegationGrantId = normalize(delegationGrantId);
     }
 
     public void requireComplete() {

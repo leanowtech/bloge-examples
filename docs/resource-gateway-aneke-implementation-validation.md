@@ -5,10 +5,10 @@
 | 属性 | 内容 |
 |---|---|
 | 设计基线 | `docs/resource-gateway-aneke-tool-studio-integration-evolution-plan.md` |
-| 当前实现基线 | Round 11（副作用 journal、commit receipt、持久化对账与签名治理补充证据） |
-| 评估日期 | 2026-07-12 |
+| 当前实现基线 | Round 13（动态企业身份信任、组织 claims、撤销传播与故障分流） |
+| 评估日期 | 2026-07-13 |
 | 目标 | 加权实施差距 `<3%`，且不存在 P0 阻断项 |
-| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1543 tests，0 failures，0 errors，2 skipped，`BUILD SUCCESS`（04:56，含真实 Chrome） |
+| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml -Pfrontend clean verify`：1567 tests，0 failures，0 errors，0 skipped，`BUILD SUCCESS`（05:20，含 34 个真实 Chrome 场景） |
 
 ## 1. 评分方法
 
@@ -293,6 +293,29 @@ invocation 和 HTTP send 四个边界逐层 fail closed；同时把同一状态�
 Round 12 结论：差距从 `14.20%` 降至 `12.55%`。通用 HTTP 和明确声明 WRITE 的 operator 已不能通过正常执行路径
 绕过 journal，因此 `RUN-02` 从“主干可绕过”收窄为“错误 effect 分类、私有非 HTTP 写边界、provider adapter 覆盖和
 企业故障演练”。全局 `sideEffectCommitConfirmation` 继续为 false 是正确结果，不应为了分数提前翻转。
+
+## 2.13 Round 13 重新审计
+
+Round 5 已能验证 signed JWT，但信任材料仍在启动时装载，而且 `Optional.empty()` 把坏 token、unknown `kid` 和 IdP
+故障混为一谈。Round 13 把身份信任提升为运行期状态机：JWKS 与 revocation feed 原子刷新，unknown `kid` single-flight，
+撤销传播 SLO 可探测，authority outage 与 credential invalidity 有稳定不同语义；同时把 group、clearance 和
+issuer-attested delegation grant 纳入身份上下文与无凭证审计。
+
+| 维度 | 权重 | 当前完成率 | 得分 | 本轮可证明增量 | 仍未证明 |
+|---|---:|---:|---:|---|---|
+| 协议、版本与身份边界 | 15 | 99.5% | 14.925 | 动态 JWKS/revocation 协议；`VERIFIED/INVALID/PROVIDER_UNAVAILABLE`；group/clearance/delegation claims；401/503 稳定分流 | 自动 N/N-1 consumer matrix；客户真实 IdP/mTLS 认证；组织策略版本合同 |
+| GraphDraft 依赖快照 | 10 | 64% | 6.40 | 无语义变化 | suite/runtime binding refs 的一致性快照；完整 readiness profile；跨表 snapshot transaction |
+| Run evidence 可信链 | 20 | 99% | 19.80 | evidence consumer 入口身份可动态轮换/撤销，authority outage 不再污染 invalid-credential 审计 | KMS/HSM、retention/legal hold、外部 verifier matrix；错误 effect 分类和非 HTTP 私有写覆盖 |
+| Payload replay | 15 | 80% | 12.00 | replay purpose identity 可携带组织 group/clearance 和正式 delegation grant | shadow/live 审批隔离、跨实例 exactly-once、选择性 retention、resource classification policy |
+| Timeout/partial failure 语义 | 10 | 100% | 10.00 | 身份权威 timeout/5xx 进入 retryable 503；畸形/过期文档 hard fail closed | disconnect/detach 与非协作 I/O |
+| Workbook、gate feedback 与 Deep Link | 10 | 76% | 7.60 | capability 可供 ANEKE 显示 identity trust state、revocation SLO 和 outage policy | group/clearance 对 workbook/resource classification 的策略执行；双向 workbook refs；owner/migration gate |
+| Change event、cursor、webhook 与对账 | 10 | 88% | 8.80 | 无语义变化 | signed webhook、DLQ/退避、retention/compaction、乱序 fault harness |
+| 工业运行控制 | 10 | 86% | 8.60 | HTTPS/no-redirect、ETag、256 KB 流式上限、原子快照、并发节流、strict/bounded-stale、authority expiry、真实双服务 outage/rotation/revocation 演练 | 客户 IdP/多地域 JWKS、refresh metrics/alert、group lifecycle/orphan owner、break-glass、外部 HA DB、quota/DR/residency |
+| **合计** | **100** |  | **88.125** |  | **加权差距 11.875%** |
+
+Round 13 结论：差距从 `12.55%` 降至 `11.875%`。`IAM-01` 的代码病根已从“静态信任库且故障不可区分”收窄为
+“客户组织策略与部署认证尚未证明”。不能仅凭本地模拟 IdP 宣称企业 IAM 完成；下一轮最高权重独立病根转向
+`OPS-01` 的 evidence private-key custody，随后再处理 `RUN-01/RUN-02` 的私有实现不可见性。
 
 ## 3. 已通过的证明
 
@@ -743,11 +766,50 @@ Draw.io validation:
 原因前保持禁用；导入后 palette、node 和 inspector 分别展示合同状态、运行准入状态和阻断病因。页面证据见
 [标注截图](assets/bloge-author-side-effect-protocol-annotated.svg)。
 
+### 3.15 动态身份信任、组织 claims 与故障证明
+
+Round 13 同时使用确定性状态机测试和两个真实 HTTP 服务证明身份信任，不把 JSON parser 单测冒充 IdP 生命周期：
+
+```text
+Dynamic trust + resolver/auth/audit focused: 30 passed
+Integration package regression: 90 passed
+
+unknown kid x24 concurrent requests -> one single-flight refresh; all accept rotated key
+JWKS + revocation update -> one atomic snapshot; partial invalid document never publishes
+token/key revocation -> visible within refresh interval + request timeout
+transport/5xx + FAIL_CLOSED -> 503 retryable, audit reason IDENTITY_PROVIDER_UNAVAILABLE
+transport/5xx + BOUNDED_STALE -> accepted only before configured stale deadline
+malformed / private / weak / oversized / authority-expired document -> hard EXPIRED, never stale
+RSA and Ed25519 public JWK -> verified; private material rejected
+
+real local IAM HTTP authority + real Spring Boot Resource Gateway
+tenant-a/org-a key-a -> 200; group/clearance/delegation grant audit persisted
+publish overlapping key-a/key-b -> tenant-b/org-b key-b succeeds without restart
+publish revoked jti -> 401 after configured propagation interval
+ETag unchanged JWKS -> 304 observed while revocation feed advances
+authority 503 -> Resource Gateway 503 retryable, not credential-invalid 401
+oversized JWKS -> REMOTE_DOCUMENT_INVALID + provider unavailable
+
+Resource Gateway full regression:
+  mvn -f resource-gateway-examples/pom.xml -Pfrontend clean verify
+  1567 passed, 0 failures, 0 errors, 0 skipped; BUILD SUCCESS (05:20)
+  34 real Chrome DOM scenarios passed
+
+Draw.io validation: 0 errors, 0 warnings, 0 crossings, 0 overlaps
+SVG/PNG visual inspection passed
+```
+
+结构证据：[Resource Gateway 动态 JWKS 信任生命周期](assets/resource-gateway-dynamic-jwks-trust-lifecycle.svg)，
+图源为 [resource-gateway-dynamic-jwks-trust-lifecycle.drawio](assets/drawio/resource-gateway-dynamic-jwks-trust-lifecycle.drawio)。
+当前 refresh counters/last failure 通过 capability 可读，但还没有正式 Micrometer 指标、SLO 告警和客户 IdP 认证报告，
+因此这轮不关闭整个 `IAM-01`。浏览器回归还报告 Chrome 150 与当前 Selenium CDP 149 的近邻版本兼容提示；用例均通过，
+但生产 CI 镜像仍应固定浏览器/驱动组合并消除此工具链漂移。
+
 ## 4. 当前 P0 阻断项
 
 | ID | 阻断项 | 病根 | 根治验收 |
 |---|---|---|---|
-| `IAM-01` | 企业身份生命周期尚未端到端证明 | signed JWT、轮换和撤销代码已具备，但配置 trust store 只在启动时装载，尚无客户 IAM 动态策略/撤销传播证据 | 动态 JWKS/KMS 或 mTLS adapter + 多 identity/group/clearance + delegation grant + propagation SLO + policy/audit 联调演练 |
+| `IAM-01` | 客户组织身份策略与部署认证尚未端到端证明 | Round 13 已关闭动态 JWKS/revocation、传播 SLO、group/clearance/delegation claim、审计和 401/503 分流的代码病根；残余是客户真实 IdP/mTLS、多地域 authority、group 生命周期/orphan owner、resource classification policy、break-glass 和正式告警/runbook | 客户 IdP conformance kit + policy bundle/version + group/owner lifecycle + clearance-resource gate + emergency grant + multi-region outage/rollback + propagation SLO alert/report |
 | `OPS-01` | 本地签名 key 不满足企业 custody | private key 由本地 H2 demo provider 保存 | KMS/HSM-backed `VisualEvidenceSigner`、rotation/disable/revoke、审计和灾备演练 |
 | `RUN-01` | disconnect/detach 与任意 binding 的预算合规尚未封口 | Round 10 已完成 OperatorContext、scheduler admission、retry/timeout/suspend、Resource Gateway/common HTTP 和 remote worker 的 remaining-budget 传播，并防止 wall-clock 回拨放宽预算；但客户端断开语义未版本化，私有 binding 仍可忽略合同 | versioned `detachPolicy` + disconnect race/fault tests + runtime binding conformance suite + non-cooperative I/O quarantine |
 | `RUN-02` | 副作用协议尚未覆盖企业 operator/binding 存量 | Round 12 已关闭正常目录下 `WRITE_EXTERNAL`、Java `SideEffectType.WRITE`、descriptor HTTP mutation 和低层 unsafe `httpRequest` 绕过；残余病根是实现可错报 effect、数据库/消息/私有 SDK 写边界不可见、默认 provider adapter registry 为空 | 制品 effect/egress 扫描 + runtime egress/DB/message telemetry + owner attestation 对账 + provider conformance kit + outage/restart/重复请求演练 + compensate policy + 覆盖率门禁 |
@@ -773,5 +835,6 @@ backoff/DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，�
 | 10 | deadline remaining-budget 跨层传播 | `ExecutionBudget`、finalization reserve、不可扩张/防时钟回拨、scheduler admission、retry/timeout/suspend cap、HTTP headers、remote-worker envelope、结构化 deadline-exhausted fact | 16.10% | BLOGE reactor 3590 tests；Resource Gateway 56 个聚焦/Spring tests、1527 个全量 tests（含真实 Chrome）；Draw.io 0 errors/warnings/crossings/overlaps、SVG 视觉检查通过 |
 | 11 | 外部副作用提交确认与持久化对账 | journal、receipt/proof、unknown DAG guard、v6 evidence、lease/fence reconcile、签名 refinement、原子 outbox、effective gate summary | 14.20% | BLOGE 4 个聚焦 tests；Resource Gateway 49 个聚焦、1543 个全量 tests（含真实 Chrome）；DB restart/双实例/fencing/rollback/tamper/legacy unknown；corporate Draw.io 0 errors/warnings/crossings/overlaps |
 | 12 | 外部写合同、binding/activation conformance 与防绕过 | operator/resource 正式合同、fingerprint/readiness、Java WRITE pre/post admission、descriptor/common HTTP fail closed、Author 状态可见；Vite/Vitest 漏洞归零；移动端 Palette 无横向溢出 | 12.55% | BLOGE core 6 个、common HTTP 13 个；Resource Gateway 330 个聚焦、1553 个全量 tests；React 128 个聚焦、136 个全量 tests；34 个真实 Chrome 场景；npm audit 0 vulnerabilities；corporate Draw.io 0 errors/warnings/crossings/overlaps |
+| 13 | 动态企业身份信任与组织 claims | JWKS/revocation 原子刷新、single-flight、传播 SLO、strict/bounded-stale、401/503、group/clearance/delegation grant、credential-free audit | 11.875% | 30 个身份聚焦 tests、90 个 integration package tests、真实 IAM HTTP + Spring Boot 轮换/撤销/outage/oversize 演练；1567 个全量 tests、34 个真实 Chrome 场景；corporate Draw.io 0 errors/warnings/crossings/overlaps |
 
 后续每轮必须更新本表、代码证据、失败测试和剩余阻断项。只有全部 P0 阻断关闭、全量验证与真实浏览器验证通过，并且按同一权重计算的差距 `<3%`，才允许把目标标记完成。

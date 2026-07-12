@@ -535,7 +535,7 @@ POST /api/integration/gate-results
 | P0 | GraphDraft export 依赖元数据 | 已有 dependency report 但不够稳定导入 | integration dependency profile |
 | P0 | Timeout/partial failure 语义 | Round 12 已补 `WRITE_EXTERNAL` contract、binding/activation conformance、descriptor-backed HTTP mutation、底层 unsafe `httpRequest` 防绕过和可视化 readiness；仍缺 detach policy、错误 effect 分类检测、非 HTTP 私有写边界和客户 provider adapter 覆盖 | `VisualNodeExecutionFact` + durable control + evidence v6 + `ExecutionBudget` + `SideEffectReconciliationRecord.v1` + `bloge.sideEffectProtocol.v1`；下一步 effect-classification/egress conformance 与 disconnect/detach |
 | P1 | Deep Link | 当前不是 integration API | 前端 route + resolver API |
-| P1 | Health/Capability Probe | 缺口明确 | `/api/integration/capabilities` |
+| P1 | Health/Capability Probe | 已有协议/端点/feature flags；Round 13 增加动态身份 refresh state、成功/失败计数、active/revoked 数量和撤销传播 SLO | `/api/integration/capabilities` + identity authority SLO/alert/runbook |
 | P1 | Contract Test Suite 对齐 workbook | 当前 case/assertion 语义偏基础 | suite vNext + workbook mapping |
 | P1 | UI 展示治理反馈 | 缺口明确 | gate result ingestion + author panel |
 | P1 | Operator runtime readiness 元数据 | 已有 runtimeReadiness，需治理化 | runtime readiness profile |
@@ -815,11 +815,33 @@ allow = role permits action
 
 身份上下文不能由 body 内普通字段自报；必须来自 mTLS workload identity、OIDC token claims 或受信 gateway 注入并签名的 header。服务端应比较 token scope 与 path/body 中的资源归属，防止 confused deputy。
 
-当前落地状态（Round 5）：Controller 在进入 integration service 前统一调用 `IntegrationRequestAuthenticator`；Bearer credential 由可替换的 `IntegrationIdentityResolver` 验证，tenant/organization/project/environment/actor/delegatedBy 来自服务端 identity，客户端同名 header 只作为一致性 hint，冲突返回 403。operation 与 requested purpose、identity allowed purpose 做双重 allowlist；service/repository 继续执行资源 scope predicate。允许与拒绝决定写入 append-only access audit。
+当前落地状态（Round 13）：Controller 在进入 integration service 前统一调用 `IntegrationRequestAuthenticator`；Bearer
+credential 由可替换的 `IntegrationIdentityResolver` 验证，tenant/organization/project/environment/actor/delegatedBy、
+group、clearance 和 delegation grant 来自服务端 identity，客户端同名 header 只作为一致性 hint，冲突返回 403。
+operation 与 requested purpose、identity allowed purpose 做双重 allowlist；service/repository 继续执行资源 scope
+predicate。允许与拒绝决定写入 append-only access audit。
 
-除明确标记 `demoMode=true` 的静态 registry 外，仓库已内置 `SignedJwtIntegrationIdentityResolver` 和 `IntegrationJwtTrustStore` SPI。生产模式严格验证 `RS256/EdDSA`、`kid`、issuer、audience、`iat/nbf/exp`、最大 token lifetime 和完整 scope/purpose claims；拒绝弱 RSA key、`alg=none`、算法替换、重复 JSON 字段和自委托。信任库允许多个 `kid` 重叠完成无停机轮换，并支持 key 与 `jti` 撤销；解析结果把非秘密 `kid/jti` 写入审计，原始 token 永不落库。capability 揭示 provider、claims source、active/trusted/revoked key 数量及轮换/撤销能力。
+除明确标记 `demoMode=true` 的静态 registry 外，仓库已内置 `SignedJwtIntegrationIdentityResolver`、静态
+`ConfiguredIntegrationJwtTrustStore` 和动态 `DynamicJwksIntegrationJwtTrustStore`。生产模式严格验证
+`RS256/EdDSA`、`kid`、issuer、audience、`iat/nbf/exp`、最大 token lifetime、scope/purpose、bounded groups、
+clearance 和 issuer-attested delegation grant；拒绝弱 RSA key、private JWK、`alg=none`、算法替换、重复 JSON 字段、
+purpose 越过 delegation grant 和自委托。
 
-这关闭了“仓库只有单静态 credential、没有可执行 signed workload adapter”的缺口，但没有伪称客户 IAM 已接通。当前配置型 trust store 在启动时加载；企业验收仍要求动态 JWKS/KMS 或 mTLS adapter、撤销传播时延 SLO、多 identity/group/clearance、正式 delegation grant、策略变更回滚和真实 IdP 联调演练。换言之，代码内信任机制已具备，组织身份生命周期仍需部署级证据。
+动态 trust store 通过 HTTPS + ETag 获取 JWKS 与版本化 revocation feed，用 single-flight 和 unknown-`kid` throttle
+抑制刷新风暴，并把 key、revoked keyId、revoked jti 作为一个不可分割快照发布。默认 `FAIL_CLOSED`；显式
+`BOUNDED_STALE` 只容忍有界 transport/5xx 故障，畸形、超过 256 KB 或超过 authority `expiresAt` 的文档立即
+`EXPIRED`。`ResolutionAttempt` 将 `VERIFIED / INVALID / PROVIDER_UNAVAILABLE` 分开，因而错误 token 返回 401，身份
+权威无法作出判断时返回可重试 503。capability 揭示 refresh state、last success/failure、active/revoked counts、
+outage policy 和 `refresh interval + request timeout` 撤销传播 SLO。
+
+![Resource Gateway 动态 JWKS 信任生命周期](assets/resource-gateway-dynamic-jwks-trust-lifecycle.svg)
+
+图源：[resource-gateway-dynamic-jwks-trust-lifecycle.drawio](assets/drawio/resource-gateway-dynamic-jwks-trust-lifecycle.drawio)。
+
+这关闭了“信任库只能启动时加载”“IdP outage 被误报为坏 token”“多组织 claims 和 delegation 没有审计链”的代码
+病根，但没有伪称客户 IAM 已完成认证。企业验收仍要求客户真实 IdP/mTLS 联调、group membership 生命周期与 orphan
+owner 处置、resource classification 对 clearance 的策略执行、break-glass/exception grant、策略回滚、跨地域 JWKS
+可用性和撤销传播 SLO 告警。代码协议已具备，客户组织治理仍需部署级证据。
 
 ### 19.3 权限矩阵
 
@@ -1404,8 +1426,13 @@ operator 从 schema 导入到生产可用需要 `DISCOVERED -> DESCRIBED -> VERI
 | 快照 | gate result 到达时 draft 已更新 | 异步反馈缺少 target fingerprint | target fingerprint + STALE UI | 旧结论不覆盖新草稿 |
 | 快照 | operator library 同名版本漂移 | 引用只用 mutable name | artifact/fingerprint binding | 历史 run 可复现依赖 |
 | 身份 | 不同租户使用相同 draftId | 裸 ID 被当全局 ID | tenant-scoped identity + repository predicate | 任何跨租户读取失败 |
-| 身份 | 用户通过 ANEKE 代操作，责任人丢失 | 只记录 workload | actor + delegatedBy + purpose | 审计能还原人和服务链 |
+| 身份 | 用户通过 ANEKE 代操作，责任人丢失 | 只记录 workload | actor + delegatedBy + issuer-attested delegation grant + purpose subset | 审计能还原人和服务链，过期/越权 grant 被拒绝 |
 | 身份 | 离职员工仍是唯一 owner | owner 建模为个人 | owner group + orphan detector | 资产可移交且不丢责任 |
+| 身份 | 新 `kid` 同时触发大量请求 | 每个 unknown key 独立刷新 | unknown-`kid` throttle + single-flight + overlapping key window | 一轮刷新完成无停机轮换，不形成 IAM 请求风暴 |
+| 身份 | JWKS 可达但撤销 feed 失败 | key/revocation 分别覆盖 | 原子快照，任一文档失败都不发布 | 不存在新 key 配旧撤销集的混合信任状态 |
+| 身份 | 身份权威网络故障 | invalid token 与 provider outage 混为一类 | ResolutionAttempt + FAIL_CLOSED / explicit bounded stale | 无法判断时返回可重试 503，不写成 401 攻击噪声 |
+| 身份 | 权威返回畸形、超大或过期文档 | stale policy 无故障分类 | 256 KB 流式上限 + schema/time validation + hard EXPIRED | 文档完整性错误永不进入 stale 宽限 |
+| 身份 | caller 自报更高 clearance | header 被当作权威 | signed claims + hint mismatch + audit fingerprint | clearance/group 不能通过 header 提权 |
 | 授权 | 平台管理员默认读取 payload | 运维和数据权限耦合 | duty separation + break-glass | 常规 admin 无 payload 权限 |
 | 授权 | deep link 泄漏对象是否存在 | 先查对象再鉴权 | authorize-before-disclose | 未授权统一 404/受控错误 |
 | 授权 | raw access grant 永久有效 | 例外无到期 | expiring grant + review | 到期自动拒绝并告警 |
@@ -1476,7 +1503,7 @@ operator 从 schema 导入到生产可用需要 `DISCOVERED -> DESCRIBED -> VERI
 
 退出门槛：success/failure/timeout/partial/mock/fallback/unknown-commit 场景均可结构化解释；篡改可检出；run 成功但 evidence 不完整时 gate 不会误采纳。
 
-当前落地状态（Round 12）：标准 node/edge/graph facts、真实 retry/timeout/fallback events、关键输出聚合、
+当前落地状态（Round 13）：标准 node/edge/graph facts、真实 retry/timeout/fallback events、关键输出聚合、
 sanitized payload、持久签名、fact coverage 和 quarantine 已实现；run intent、绝对 deadline、fenced cancel、
 owner+operator 双条件终止确认、durable control、跨实例 cancel、owner lease/epoch、过期 quarantine、
 pre-run recovery reservation、evidence v6 automatic recovery，以及 deadline budget 对 OperatorContext、scheduler、
@@ -1486,6 +1513,8 @@ UNKNOWN_COMMIT DAG guard、provider reconciliation SPI、持久 claim/fencing �
 reconciler adapter。Round 12 又补齐 `WRITE_EXTERNAL` schema、binding/activation conformance、Java WRITE pre/post
 admission、descriptor/common HTTP mutation guard 和 Author readiness。Stage 2 仍未退出：还需错误 effect 分类/私有
 egress 的动态识别、disconnect policy、客户 provider adapter 覆盖、KMS custody，以及外部 HA DB fault injection/SLO。
+Round 13 的动态 JWKS/撤销传播和身份权威 401/503 分流收紧了 evidence consumer 的入口信任，但不替代 evidence
+签名 private key 的 KMS/HSM custody。
 
 ### Stage 3 - Safe replay 与 workbook 对齐（2-4 周）
 

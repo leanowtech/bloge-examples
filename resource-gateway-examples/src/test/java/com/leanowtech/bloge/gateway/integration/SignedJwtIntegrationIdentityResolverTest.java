@@ -52,9 +52,14 @@ class SignedJwtIntegrationIdentityResolverTest {
                 .containsExactly("aneke-workload", "tenant-a", "knowledge-governance", "tool-studio", "prod",
                         "aneke-sync");
         assertThat(verified.identity().allowedPurposes()).containsExactlyInAnyOrder("CHANGE_SYNC", "PAYLOAD_REPLAY");
+        assertThat(verified.identity().groups()).containsExactlyInAnyOrder("knowledge-owners", "tool-authors");
+        assertThat(verified.identity().clearance()).isEqualTo("CONFIDENTIAL");
+        assertThat(verified.identity().hasClearanceAtLeast("INTERNAL")).isTrue();
         assertThat(resolver.descriptor().properties())
                 .containsEntry("trustedKeyCount", 1)
-                .containsEntry("tokenRevocationSupported", true);
+                .containsEntry("tokenRevocationSupported", true)
+                .containsEntry("organizationGroupClaimsSupported", true)
+                .containsEntry("issuerAttestedDelegationGrantSupported", true);
     }
 
     @Test
@@ -127,6 +132,64 @@ class SignedJwtIntegrationIdentityResolverTest {
     }
 
     @Test
+    void verifiesIssuerAttestedDelegationGrantScopeAndExpiry() {
+        SignedJwtIntegrationIdentityResolver resolver = resolver(store(List.of(key("trusted", "RS256", rsa)),
+                Set.of()));
+        Map<String, Object> delegated = claims("delegated-token");
+        delegated.put("delegated_by", "alice@example.com");
+        delegated.put("delegation_grant_id", "grant-2026-001");
+        delegated.put("delegation_exp", NOW.plusSeconds(240).getEpochSecond());
+        delegated.put("delegation_purposes", List.of("CHANGE_SYNC", "PAYLOAD_REPLAY", "GOVERNANCE_GATE_FEEDBACK"));
+
+        IntegrationWorkloadIdentity identity = resolver.resolve(
+                token("RS256", "trusted", rsa, delegated)).orElseThrow();
+
+        assertThat(identity.delegatedBy()).isEqualTo("alice@example.com");
+        assertThat(identity.delegationGrantId()).isEqualTo("grant-2026-001");
+        assertThat(identity.activeAt(NOW)).isTrue();
+
+        Map<String, Object> missingGrant = claims("missing-grant");
+        missingGrant.put("delegated_by", "alice@example.com");
+        assertThat(resolver.resolve(token("RS256", "trusted", rsa, missingGrant))).isEmpty();
+
+        Map<String, Object> narrowedGrant = new LinkedHashMap<>(delegated);
+        narrowedGrant.put("jti", "narrowed-grant");
+        narrowedGrant.put("delegation_purposes", List.of("CHANGE_SYNC"));
+        assertThat(resolver.resolve(token("RS256", "trusted", rsa, narrowedGrant))).isEmpty();
+
+        Map<String, Object> expiredGrant = new LinkedHashMap<>(delegated);
+        expiredGrant.put("jti", "expired-grant");
+        expiredGrant.put("delegation_exp", NOW.minusSeconds(31).getEpochSecond());
+        assertThat(resolver.resolve(token("RS256", "trusted", rsa, expiredGrant))).isEmpty();
+    }
+
+    @Test
+    void reportsIdentityAuthorityOutageSeparatelyFromInvalidCredentials() {
+        IntegrationJwtTrustStore unavailable = new IntegrationJwtTrustStore() {
+            @Override
+            public java.util.Optional<VerificationKey> find(String keyId) {
+                throw new IntegrationIdentityProviderUnavailableException("jwks unavailable");
+            }
+
+            @Override
+            public boolean isTokenRevoked(String tokenId) {
+                throw new IntegrationIdentityProviderUnavailableException("revocations unavailable");
+            }
+
+            @Override
+            public Snapshot snapshot() {
+                return new Snapshot(1, 1, 0, 0);
+            }
+        };
+        SignedJwtIntegrationIdentityResolver resolver = resolver(unavailable);
+
+        assertThat(resolver.resolveAttempt(token("RS256", "trusted", rsa, claims("outage"))).outcome())
+                .isEqualTo(IntegrationIdentityResolver.ResolutionOutcome.PROVIDER_UNAVAILABLE);
+        assertThat(resolver.resolveAttempt("not-a-jwt").outcome())
+                .isEqualTo(IntegrationIdentityResolver.ResolutionOutcome.INVALID);
+    }
+
+    @Test
     void configuredTrustStoreParsesPublicKeysAndExplicitRevocationWithoutPrivateMaterial() {
         String keyJson = "[{\"keyId\":\"rsa-a\",\"algorithm\":\"RS256\",\"publicKeyBase64\":\""
                 + Base64.getEncoder().encodeToString(rsa.getPublic().getEncoded()) + "\"},"
@@ -153,7 +216,7 @@ class SignedJwtIntegrationIdentityResolverTest {
         KeyPair weak = weakGenerator.generateKeyPair();
         assertThatThrownBy(() -> key("weak", "RS256", weak))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("at least 2048 bits");
+                .hasMessageContaining("2048-8192 bits");
 
         SignedJwtIntegrationIdentityResolver resolver = resolver(store(List.of(key("trusted", "RS256", rsa)),
                 Set.of()));
@@ -227,6 +290,8 @@ class SignedJwtIntegrationIdentityResolverTest {
         claims.put("region", "ap-southeast-1");
         claims.put("actor_type", "WORKLOAD");
         claims.put("actor_id", "aneke-sync");
+        claims.put("groups", List.of("knowledge-owners", "tool-authors"));
+        claims.put("clearance", "CONFIDENTIAL");
         claims.put("purposes", List.of("CHANGE_SYNC", "PAYLOAD_REPLAY"));
         return claims;
     }

@@ -133,6 +133,10 @@ public record IntegrationCapabilities(
                 && Boolean.TRUE.equals(identityProvider.properties().get("keyRotationSupported")));
         features.put("credentialRevocation", identityProvider != null
                 && Boolean.TRUE.equals(identityProvider.properties().get("keyRevocationSupported")));
+        features.put("dynamicCredentialTrust", identityProvider != null
+                && Boolean.TRUE.equals(identityProvider.properties().get("dynamicRefreshSupported")));
+        features.put("credentialRevocationPropagationSlo", identityProvider != null
+                && identityProvider.properties().get("revocationPropagationSloSeconds") instanceof Number);
         features.put("webhook", false);
 
         return new IntegrationCapabilities("", "", "", objects, features, identityProvider, List.of(

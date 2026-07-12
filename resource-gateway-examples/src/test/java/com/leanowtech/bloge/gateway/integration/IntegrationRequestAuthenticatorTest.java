@@ -19,7 +19,8 @@ class IntegrationRequestAuthenticatorTest {
         audit = new RecordingIntegrationAccessAuditRepository();
         IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity("aneke-sync-workload", "tenant-a",
                 "org-a", "project-a", "prod", "ap-southeast-1", "WORKLOAD", "aneke-sync", "",
-                Set.of("CHANGE_SYNC", "PAYLOAD_REPLAY", "GOVERNANCE_EVIDENCE_INGESTION"), Instant.MAX, true);
+                Set.of("CHANGE_SYNC", "PAYLOAD_REPLAY", "GOVERNANCE_EVIDENCE_INGESTION"), Instant.MAX, true,
+                Set.of("knowledge-owners", "tool-authors"), "CONFIDENTIAL", "", Instant.MAX);
         authenticator = new IntegrationRequestAuthenticator(
                 new StaticBearerIntegrationIdentityResolver("test-token", identity, false), audit);
     }
@@ -32,8 +33,10 @@ class IntegrationRequestAuthenticatorTest {
 
         assertThat(context).extracting(IntegrationRequestContext::tenantId,
                         IntegrationRequestContext::organizationId, IntegrationRequestContext::projectId,
-                        IntegrationRequestContext::environmentId, IntegrationRequestContext::actorId)
-                .containsExactly("tenant-a", "org-a", "project-a", "prod", "aneke-sync");
+                        IntegrationRequestContext::environmentId, IntegrationRequestContext::actorId,
+                        IntegrationRequestContext::clearance)
+                .containsExactly("tenant-a", "org-a", "project-a", "prod", "aneke-sync", "CONFIDENTIAL");
+        assertThat(context.groups()).containsExactlyInAnyOrder("knowledge-owners", "tool-authors");
         assertThat(audit.recent(1).getFirst()).extracting(IntegrationAccessAuditRecord::outcome,
                         IntegrationAccessAuditRecord::identityId, IntegrationAccessAuditRecord::credentialId,
                         IntegrationAccessAuditRecord::operation)
@@ -54,6 +57,19 @@ class IntegrationRequestAuthenticatorTest {
                 });
         assertThat(audit.recent(1).getFirst().reasonCode())
                 .isEqualTo("RG.INTEGRATION.IDENTITY_CLAIM_MISMATCH");
+    }
+
+    @Test
+    void rejectsSelfAssertedClearanceEscalation() {
+        HttpHeaders headers = authorized("CHANGE_SYNC");
+        headers.set("X-Clearance", "RESTRICTED");
+
+        assertThatThrownBy(() -> authenticator.authenticate(headers, IntegrationOperation.CHANGE_SYNC))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(403);
+                    assertThat(failure.problem().details())
+                            .containsEntry("X-Clearance", "does-not-match-verified-identity");
+                });
     }
 
     @Test
@@ -105,10 +121,45 @@ class IntegrationRequestAuthenticatorTest {
         assertThatThrownBy(() -> unavailable.authenticate(authorized("CHANGE_SYNC"),
                 IntegrationOperation.CHANGE_SYNC))
                 .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
-                    assertThat(failure.problem().status()).isEqualTo(401);
-                    assertThat(failure.problem().code()).isEqualTo("RG.INTEGRATION.AUTHENTICATION_FAILED");
+                    assertThat(failure.problem().status()).isEqualTo(503);
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.INTEGRATION.IDENTITY_PROVIDER_UNAVAILABLE");
                 });
         assertThat(unavailable.descriptor().available()).isFalse();
+    }
+
+    @Test
+    void returnsRetryableServiceUnavailableWhenIdentityAuthorityCannotDecide() {
+        IntegrationIdentityResolver unavailableAuthority = new IntegrationIdentityResolver() {
+            @Override
+            public java.util.Optional<IntegrationWorkloadIdentity> resolve(String credential) {
+                return java.util.Optional.empty();
+            }
+
+            @Override
+            public ResolutionAttempt resolveAttempt(String credential) {
+                return ResolutionAttempt.providerUnavailable();
+            }
+
+            @Override
+            public Descriptor descriptor() {
+                return new Descriptor("SIGNED_JWT", "DYNAMIC_JWKS", false, false, true);
+            }
+        };
+        IntegrationRequestAuthenticator failClosed = new IntegrationRequestAuthenticator(
+                unavailableAuthority, audit);
+
+        assertThatThrownBy(() -> failClosed.authenticate(authorized("CHANGE_SYNC"),
+                IntegrationOperation.CHANGE_SYNC))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(503);
+                    assertThat(failure.problem().retryable()).isTrue();
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.INTEGRATION.IDENTITY_PROVIDER_UNAVAILABLE");
+                });
+        assertThat(audit.recent(1).getFirst()).extracting(IntegrationAccessAuditRecord::outcome,
+                        IntegrationAccessAuditRecord::reasonCode)
+                .containsExactly("DENIED", "RG.INTEGRATION.IDENTITY_PROVIDER_UNAVAILABLE");
     }
 
     @Test

@@ -71,28 +71,60 @@ public final class SignedJwtIntegrationIdentityResolver implements IntegrationId
 
     @Override
     public Optional<Resolution> resolveVerified(String credential) {
+        ResolutionAttempt attempt = resolveAttempt(credential);
+        return attempt.outcome() == ResolutionOutcome.VERIFIED
+                ? Optional.of(attempt.resolution()) : Optional.empty();
+    }
+
+    @Override
+    public ResolutionAttempt resolveAttempt(String credential) {
         try {
-            return Optional.of(verify(credential));
+            return ResolutionAttempt.verified(verify(credential));
+        } catch (IntegrationIdentityProviderUnavailableException failure) {
+            return ResolutionAttempt.providerUnavailable();
         } catch (RuntimeException | java.security.GeneralSecurityException failure) {
-            return Optional.empty();
+            return ResolutionAttempt.invalid();
         }
     }
 
     @Override
     public Descriptor descriptor() {
         IntegrationJwtTrustStore.Snapshot snapshot = trustStore.snapshot();
-        return new Descriptor("SIGNED_JWT", "VERIFIED_TOKEN", snapshot.activeKeyCount() > 0, false, true,
-                Map.of(
-                        "acceptedAlgorithms", List.of("RS256", "EdDSA"),
-                        "trustedKeyCount", snapshot.trustedKeyCount(),
-                        "activeKeyCount", snapshot.activeKeyCount(),
-                        "revokedKeyCount", snapshot.revokedKeyCount(),
-                        "revokedTokenCount", snapshot.revokedTokenCount(),
-                        "keyRotationSupported", snapshot.trustedKeyCount() > 1,
-                        "keyRevocationSupported", true,
-                        "tokenRevocationSupported", true,
-                        "maximumTokenLifetimeSeconds", maximumLifetime.toSeconds(),
-                        "clockSkewSeconds", clockSkew.toSeconds()));
+        Map<String, Object> properties = new java.util.LinkedHashMap<>();
+        properties.put("acceptedAlgorithms", List.of("RS256", "EdDSA"));
+        properties.put("trustedKeyCount", snapshot.trustedKeyCount());
+        properties.put("activeKeyCount", snapshot.activeKeyCount());
+        properties.put("revokedKeyCount", snapshot.revokedKeyCount());
+        properties.put("revokedTokenCount", snapshot.revokedTokenCount());
+        properties.put("keyRotationSupported", snapshot.trustedKeyCount() > 1
+                || snapshot.sourceType().equals("DYNAMIC_JWKS"));
+        properties.put("keyRevocationSupported", snapshot.keyRevocationSupported());
+        properties.put("tokenRevocationSupported", snapshot.tokenRevocationSupported());
+        properties.put("organizationGroupClaimsSupported", true);
+        properties.put("clearanceClaimsSupported", true);
+        properties.put("issuerAttestedDelegationGrantSupported", true);
+        properties.put("maximumTokenLifetimeSeconds", maximumLifetime.toSeconds());
+        properties.put("clockSkewSeconds", clockSkew.toSeconds());
+        properties.put("trustSourceType", snapshot.sourceType());
+        properties.put("dynamicRefreshSupported", snapshot.sourceType().equals("DYNAMIC_JWKS"));
+        if (snapshot.sourceType().equals("DYNAMIC_JWKS")) {
+            properties.put("refreshState", snapshot.refreshState());
+            properties.put("refreshSuccessCount", snapshot.refreshSuccessCount());
+            properties.put("refreshFailureCount", snapshot.refreshFailureCount());
+            properties.put("lastFailureCode", snapshot.lastFailureCode());
+            properties.put("refreshIntervalSeconds", snapshot.refreshIntervalSeconds());
+            properties.put("revocationPropagationSloSeconds", snapshot.propagationSloSeconds());
+            properties.put("outageFailClosed", snapshot.failClosed());
+            properties.put("staleSnapshotAccepted", snapshot.staleSnapshotAccepted());
+            if (snapshot.lastSuccessfulRefreshAt() != null) {
+                properties.put("lastSuccessfulRefreshAt", snapshot.lastSuccessfulRefreshAt().toString());
+            }
+            if (snapshot.nextRefreshAt() != null) {
+                properties.put("nextRefreshAt", snapshot.nextRefreshAt().toString());
+            }
+        }
+        String claimsSource = snapshot.sourceType().equals("DYNAMIC_JWKS") ? "DYNAMIC_JWKS" : "VERIFIED_TOKEN";
+        return new Descriptor("SIGNED_JWT", claimsSource, snapshot.available(), false, true, properties);
     }
 
     private Resolution verify(String credential) throws java.security.GeneralSecurityException {
@@ -142,8 +174,26 @@ public final class SignedJwtIntegrationIdentityResolver implements IntegrationId
         String identityId = text(claims, "sub", MAX_CLAIM_LENGTH, true);
         String actorId = text(claims, "actor_id", MAX_CLAIM_LENGTH, true);
         String delegatedBy = text(claims, "delegated_by", MAX_CLAIM_LENGTH, false);
-        if (!delegatedBy.isBlank() && delegatedBy.equals(actorId)) {
+        if (!delegatedBy.isBlank() && (delegatedBy.equals(actorId) || delegatedBy.equals(identityId))) {
             throw new IllegalArgumentException("Integration JWT delegation chain is invalid");
+        }
+        Set<String> tokenPurposes = purposes(claims.path("purposes"));
+        Set<String> groups = groups(claims.path("groups"));
+        String clearance = text(claims, "clearance", 32, false);
+        String delegationGrantId = "";
+        Instant delegationExpiresAt = Instant.MAX;
+        if (!delegatedBy.isBlank()) {
+            delegationGrantId = text(claims, "delegation_grant_id", 160, true);
+            delegationExpiresAt = numericDate(claims, "delegation_exp");
+            Set<String> delegatedPurposes = purposes(claims.path("delegation_purposes"));
+            if (!delegationExpiresAt.isAfter(now.minus(clockSkew))
+                    || delegationExpiresAt.isAfter(expiresAt)
+                    || !delegatedPurposes.containsAll(tokenPurposes)) {
+                throw new IllegalArgumentException("Integration JWT delegation grant is invalid");
+            }
+        } else if (claims.has("delegation_grant_id") || claims.has("delegation_exp")
+                || claims.has("delegation_purposes")) {
+            throw new IllegalArgumentException("Integration JWT delegation grant has no delegating identity");
         }
         IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity(identityId,
                 text(claims, "tenant_id", MAX_CLAIM_LENGTH, true),
@@ -152,7 +202,7 @@ public final class SignedJwtIntegrationIdentityResolver implements IntegrationId
                 text(claims, "environment_id", MAX_CLAIM_LENGTH, true),
                 text(claims, "region", MAX_CLAIM_LENGTH, true),
                 text(claims, "actor_type", 64, true).toUpperCase(Locale.ROOT), actorId, delegatedBy,
-                purposes(claims.path("purposes")), expiresAt, true);
+                tokenPurposes, expiresAt, true, groups, clearance, delegationGrantId, delegationExpiresAt);
         return new Resolution(identity, keyId, tokenId);
     }
 
@@ -254,6 +304,27 @@ public final class SignedJwtIntegrationIdentityResolver implements IntegrationId
             }
             if (!result.add(purpose)) {
                 throw new IllegalArgumentException("Duplicate integration JWT purpose");
+            }
+        }
+        return Set.copyOf(result);
+    }
+
+    private static Set<String> groups(JsonNode value) {
+        if (value.isMissingNode()) {
+            return Set.of();
+        }
+        if (!value.isArray() || value.size() > 64) {
+            throw new IllegalArgumentException("Integration JWT groups must be a bounded array");
+        }
+        Set<String> result = new LinkedHashSet<>();
+        for (JsonNode item : value) {
+            if (!item.isTextual()) {
+                throw new IllegalArgumentException("Integration JWT group must be a string");
+            }
+            String group = item.textValue().trim();
+            if (group.isBlank() || group.length() > 128
+                    || group.chars().anyMatch(Character::isISOControl) || !result.add(group)) {
+                throw new IllegalArgumentException("Invalid or duplicate integration JWT group");
             }
         }
         return Set.copyOf(result);

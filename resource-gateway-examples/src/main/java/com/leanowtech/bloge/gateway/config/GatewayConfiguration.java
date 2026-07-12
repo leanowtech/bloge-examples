@@ -19,6 +19,7 @@ import com.leanowtech.bloge.gateway.integration.DatabaseIntegrationAccessAuditRe
 import com.leanowtech.bloge.gateway.integration.DatabaseIntegrationChangeEventOutbox;
 import com.leanowtech.bloge.gateway.integration.DatabaseSideEffectReconciliationRepository;
 import com.leanowtech.bloge.gateway.integration.ConfiguredIntegrationJwtTrustStore;
+import com.leanowtech.bloge.gateway.integration.DynamicJwksIntegrationJwtTrustStore;
 import com.leanowtech.bloge.gateway.integration.GovernanceGateResultRepository;
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository;
 import com.leanowtech.bloge.gateway.integration.IntegrationChangeEventOutbox;
@@ -82,6 +83,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.net.URI;
 import java.time.Instant;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -282,6 +284,14 @@ public class GatewayConfiguration {
             @Value("${gateway.integration.identity.jwt.trusted-keys-json:}") String trustedKeysJson,
             @Value("${gateway.integration.identity.jwt.revoked-key-ids:}") String revokedKeyIds,
             @Value("${gateway.integration.identity.jwt.revoked-token-ids:}") String revokedTokenIds,
+            @Value("${gateway.integration.identity.jwt.jwks-uri:}") String jwksUri,
+            @Value("${gateway.integration.identity.jwt.revocations-uri:}") String revocationsUri,
+            @Value("${gateway.integration.identity.jwt.refresh-interval-seconds:30}") long refreshIntervalSeconds,
+            @Value("${gateway.integration.identity.jwt.unknown-key-refresh-interval-seconds:5}") long unknownKeyRefreshIntervalSeconds,
+            @Value("${gateway.integration.identity.jwt.request-timeout-seconds:3}") long requestTimeoutSeconds,
+            @Value("${gateway.integration.identity.jwt.outage-policy:FAIL_CLOSED}") String outagePolicy,
+            @Value("${gateway.integration.identity.jwt.maximum-stale-seconds:0}") long maximumStaleSeconds,
+            @Value("${gateway.integration.identity.jwt.allow-insecure-loopback:false}") boolean allowInsecureLoopback,
             @Value("${gateway.integration.identity.jwt.clock-skew-seconds:30}") long jwtClockSkewSeconds,
             @Value("${gateway.integration.identity.jwt.maximum-lifetime-seconds:900}") long jwtMaximumLifetimeSeconds,
             @Value("${gateway.integration.identity.demo-enabled:true}") boolean demoEnabled,
@@ -297,8 +307,20 @@ public class GatewayConfiguration {
         if (jwtEnabled) {
             IntegrationJwtTrustStore trustStore = trustStoreProvider.getIfAvailable();
             if (trustStore == null) {
-                trustStore = ConfiguredIntegrationJwtTrustStore.fromJson(objectMapper, trustedKeysJson,
-                        commaSeparated(revokedKeyIds), commaSeparated(revokedTokenIds));
+                if (jwksUri != null && !jwksUri.isBlank()) {
+                    URI revocationAuthority = revocationsUri == null || revocationsUri.isBlank()
+                            ? null : URI.create(revocationsUri.trim());
+                    trustStore = new DynamicJwksIntegrationJwtTrustStore(objectMapper,
+                            new DynamicJwksIntegrationJwtTrustStore.Settings(URI.create(jwksUri.trim()),
+                                    revocationAuthority, Duration.ofSeconds(refreshIntervalSeconds),
+                                    Duration.ofSeconds(unknownKeyRefreshIntervalSeconds),
+                                    Duration.ofSeconds(requestTimeoutSeconds),
+                                    DynamicJwksIntegrationJwtTrustStore.OutagePolicy.parse(outagePolicy),
+                                    Duration.ofSeconds(maximumStaleSeconds), allowInsecureLoopback));
+                } else {
+                    trustStore = ConfiguredIntegrationJwtTrustStore.fromJson(objectMapper, trustedKeysJson,
+                            commaSeparated(revokedKeyIds), commaSeparated(revokedTokenIds));
+                }
             }
             return new SignedJwtIntegrationIdentityResolver(objectMapper, jwtIssuer, jwtAudience, trustStore,
                     Duration.ofSeconds(jwtClockSkewSeconds), Duration.ofSeconds(jwtMaximumLifetimeSeconds));

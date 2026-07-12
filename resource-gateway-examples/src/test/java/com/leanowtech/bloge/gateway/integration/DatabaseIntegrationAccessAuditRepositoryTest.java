@@ -34,11 +34,20 @@ class DatabaseIntegrationAccessAuditRepositoryTest {
                         org.assertj.core.groups.Tuple.tuple(1L, "key-2026-07", "token-1", "ALLOWED", ""));
         assertThat(restarted.recent(10)).allSatisfy(value ->
                 assertThat(value.toString()).doesNotContain("secret", "Bearer"));
+
+        IntegrationAccessAuditRecord latest = restarted.recent(10).getFirst();
+        assertThat(latest).extracting(IntegrationAccessAuditRecord::organizationId,
+                        IntegrationAccessAuditRecord::actorId, IntegrationAccessAuditRecord::delegatedBy,
+                        IntegrationAccessAuditRecord::delegationGrantId, IntegrationAccessAuditRecord::clearance,
+                        IntegrationAccessAuditRecord::groupCount, IntegrationAccessAuditRecord::groupFingerprint)
+                .containsExactly("org-a", "aneke-sync", "alice", "grant-1", "CONFIDENTIAL", 2,
+                        "group-fingerprint");
     }
 
     private static IntegrationAccessAuditRecord record(String tokenId, String outcome, String reason) {
         return new IntegrationAccessAuditRecord(0, Instant.parse("2026-07-12T00:00:00Z"), "corr-1",
-                "aneke", "key-2026-07", tokenId, "tenant-a", "prod", "CHANGE_SYNC", "CHANGE_SYNC",
-                outcome, reason);
+                "aneke", "key-2026-07", tokenId, "org-a", "aneke-sync", "alice", "grant-1",
+                "CONFIDENTIAL", 2, "group-fingerprint", "tenant-a", "prod", "CHANGE_SYNC",
+                "CHANGE_SYNC", outcome, reason);
     }
 }

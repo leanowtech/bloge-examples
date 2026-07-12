@@ -23,6 +23,7 @@ integration something the business flow can see, reason about, test, and change.
 | Schema-gated table tests | Run real resource graphs with mocked downstream APIs, input/output schema validation, and node-level assertions |
 | Governed run controls | Absolute deadline, monotonic remaining-budget propagation, fenced cancel, durable owner lease/epoch, cross-instance commands, and automatic signed evidence recovery after owner failure |
 | Auditable external writes | Versioned write contracts, binding/activation conformance, execution-scoped journal, commit receipts, UNKNOWN_COMMIT DAG guard, and signed reconciliation evidence |
+| Dynamic workload identity | Atomic JWKS/revocation refresh, zero-restart key rotation, bounded propagation SLO, group/clearance/delegation claims, and explicit 401/503 semantics |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
 
 ## Start The Demo
@@ -120,6 +121,13 @@ signed reconciliation record. See the [product guide](../docs/bloge-visual-canva
 [conformance chain](../docs/assets/resource-gateway-side-effect-conformance-chain.svg), and
 [reconciliation lifecycle](../docs/assets/resource-gateway-side-effect-reconciliation-lifecycle.svg).
 
+Enterprise integration credentials can be verified from a live JWKS and versioned revocation feed. Resource Gateway
+publishes key and revocation changes as one immutable snapshot, throttles unknown-`kid` refreshes, exposes refresh health
+and propagation SLO through `/api/integration/capabilities`, and records organization/delegation facts without storing raw
+tokens or group names. Authority outages return retryable 503; deterministically invalid credentials return 401. See the
+[dynamic trust lifecycle](../docs/assets/resource-gateway-dynamic-jwks-trust-lifecycle.svg) and
+[identity setup guide](../docs/bloge-visual-canvas-product-and-system-guide.md#31-调用-integration-api-前先建立受信身份).
+
 ## Extend It
 
 To add an external API:
@@ -198,8 +206,10 @@ Java 25 preview flags are already configured.
   are visible in catalog readiness but blocked from direct request-response runs.
 - Remote worker, AI tool, event source, message handler, and webhook operators
   can be modeled; this example does not ship their production runtime plane.
-- Multi-user collaboration and full enterprise IAM policy lifecycle are outside this example; signed workload JWT,
-  purpose authorization and tenant isolation are present, while dynamic JWKS/group/delegation governance remains an adapter concern.
+- Multi-user collaboration and the complete enterprise IAM policy lifecycle remain outside this example. Dynamic
+  JWKS/revocation, group/clearance/delegation claims, purpose authorization and tenant isolation are implemented; customer
+  IdP certification, resource-classification policy, group lifecycle/orphan ownership and emergency-access governance
+  still require deployment-specific integration.
 - The visual core still lives inside `resource-gateway-examples`; it is shaped
   for future extraction, but is not yet a standalone artifact.
 

@@ -15,6 +15,12 @@ public interface IntegrationIdentityResolver {
         return resolve(credential).map(identity -> new Resolution(identity, "", ""));
     }
 
+    default ResolutionAttempt resolveAttempt(String credential) {
+        return resolveVerified(credential)
+                .map(ResolutionAttempt::verified)
+                .orElseGet(ResolutionAttempt::invalid);
+    }
+
     Descriptor descriptor();
 
     static IntegrationIdentityResolver unavailable() {
@@ -22,6 +28,11 @@ public interface IntegrationIdentityResolver {
             @Override
             public Optional<IntegrationWorkloadIdentity> resolve(String credential) {
                 return Optional.empty();
+            }
+
+            @Override
+            public ResolutionAttempt resolveAttempt(String credential) {
+                return ResolutionAttempt.providerUnavailable();
             }
 
             @Override
@@ -72,6 +83,37 @@ public interface IntegrationIdentityResolver {
 
         private static String normalize(String value) {
             return value == null ? "" : value.trim();
+        }
+    }
+
+    enum ResolutionOutcome {
+        VERIFIED,
+        INVALID,
+        PROVIDER_UNAVAILABLE
+    }
+
+    /** Distinguishes an invalid credential from a temporarily unavailable identity authority. */
+    record ResolutionAttempt(ResolutionOutcome outcome, Resolution resolution) {
+        public ResolutionAttempt {
+            outcome = outcome == null ? ResolutionOutcome.INVALID : outcome;
+            if (outcome == ResolutionOutcome.VERIFIED && resolution == null) {
+                throw new IllegalArgumentException("A verified integration identity resolution is required");
+            }
+            if (outcome != ResolutionOutcome.VERIFIED) {
+                resolution = null;
+            }
+        }
+
+        public static ResolutionAttempt verified(Resolution resolution) {
+            return new ResolutionAttempt(ResolutionOutcome.VERIFIED, resolution);
+        }
+
+        public static ResolutionAttempt invalid() {
+            return new ResolutionAttempt(ResolutionOutcome.INVALID, null);
+        }
+
+        public static ResolutionAttempt providerUnavailable() {
+            return new ResolutionAttempt(ResolutionOutcome.PROVIDER_UNAVAILABLE, null);
         }
     }
 }
