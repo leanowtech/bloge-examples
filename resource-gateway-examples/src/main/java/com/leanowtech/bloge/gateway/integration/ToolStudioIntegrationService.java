@@ -11,6 +11,9 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualReplayAssertionResult;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualReplayMetadata;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualPayloadGovernanceException;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunPayloadRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunPayloadStatus;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
@@ -41,6 +44,7 @@ public class ToolStudioIntegrationService {
     private final IntegrationIdentityResolver identityResolver;
     private final SideEffectReconcilerRegistry sideEffectReconcilers;
     private final GraphDraftDependencySnapshotService dependencySnapshots;
+    private final CorrectnessWorkbookProjectionService workbookProjection;
 
     @Autowired
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -51,7 +55,8 @@ public class ToolStudioIntegrationService {
                                         ObjectMapper objectMapper,
                                         IntegrationIdentityResolver identityResolver,
                                         SideEffectReconcilerRegistry sideEffectReconcilers,
-                                        GraphDraftDependencySnapshotService dependencySnapshots) {
+                                        GraphDraftDependencySnapshotService dependencySnapshots,
+                                        CorrectnessWorkbookProjectionService workbookProjection) {
         this.draftRepository = draftRepository;
         this.validator = validator;
         this.catalog = catalog;
@@ -65,6 +70,20 @@ public class ToolStudioIntegrationService {
                 ? new SideEffectReconcilerRegistry(List.of()) : sideEffectReconcilers;
         this.dependencySnapshots = dependencySnapshots == null
                 ? new GraphDraftDependencySnapshotService(catalog) : dependencySnapshots;
+        this.workbookProjection = workbookProjection;
+    }
+
+    public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
+                                        GraphDraftValidator validator,
+                                        VisualOperatorCatalog catalog,
+                                        VisualGraphRunRepository runRepository,
+                                        GovernanceGateResultRepository gateResultRepository,
+                                        ObjectMapper objectMapper,
+                                        IntegrationIdentityResolver identityResolver,
+                                        SideEffectReconcilerRegistry sideEffectReconcilers,
+                                        GraphDraftDependencySnapshotService dependencySnapshots) {
+        this(draftRepository, validator, catalog, runRepository, gateResultRepository, objectMapper,
+                identityResolver, sideEffectReconcilers, dependencySnapshots, null);
     }
 
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -76,7 +95,7 @@ public class ToolStudioIntegrationService {
                                         IntegrationIdentityResolver identityResolver,
                                         SideEffectReconcilerRegistry sideEffectReconcilers) {
         this(draftRepository, validator, catalog, runRepository, gateResultRepository, objectMapper,
-                identityResolver, sideEffectReconcilers, null);
+                identityResolver, sideEffectReconcilers, null, null);
     }
 
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -87,7 +106,7 @@ public class ToolStudioIntegrationService {
                                         ObjectMapper objectMapper,
                                         IntegrationIdentityResolver identityResolver) {
         this(draftRepository, validator, catalog, runRepository, gateResultRepository, objectMapper,
-                identityResolver, new SideEffectReconcilerRegistry(List.of()), null);
+                identityResolver, new SideEffectReconcilerRegistry(List.of()), null, null);
     }
 
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -97,7 +116,7 @@ public class ToolStudioIntegrationService {
                                         GovernanceGateResultRepository gateResultRepository,
                                         ObjectMapper objectMapper) {
         this(draftRepository, validator, catalog, runRepository, gateResultRepository, objectMapper,
-                IntegrationIdentityResolver.unavailable(), new SideEffectReconcilerRegistry(List.of()), null);
+                IntegrationIdentityResolver.unavailable(), new SideEffectReconcilerRegistry(List.of()), null, null);
     }
 
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -119,9 +138,10 @@ public class ToolStudioIntegrationService {
     public IntegrationEnvelope<IntegrationCapabilities> capabilities() {
         VisualEvidenceSigner signer = runRepository == null
                 ? VisualEvidenceSigner.unavailable() : runRepository.evidenceSigner();
+        VisualRunPayloadRepository payloads = runRepository == null ? null : runRepository.payloadRepository();
         return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
                 IntegrationCapabilities.current(signer.descriptor(), identityResolver.descriptor(),
-                        sideEffectReconcilers.available()));
+                        sideEffectReconcilers.available(), payloads == null ? null : payloads.policyDescriptor()));
     }
 
     public IntegrationEnvelope<GraphDraftIntegrationBundle> exportDraft(String draftId,
@@ -145,18 +165,47 @@ public class ToolStudioIntegrationService {
                 GraphDraftIntegrationBundle.SCHEMA_VERSION, bundle);
     }
 
+    public IntegrationEnvelope<CorrectnessWorkbookBundle> correctnessWorkbook(
+            String draftId,
+            long revision,
+            IntegrationRequestContext context) {
+        context.requireComplete();
+        GraphDraft draft = findDraft(draftId, revision, context);
+        context.requireDraftScope(draft);
+        if (workbookProjection == null) {
+            throw new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
+                    "RG.INTEGRATION.WORKBOOK_PROJECTION_UNAVAILABLE",
+                    "Correctness workbook projection is unavailable.", context.correlationId(), Map.of()));
+        }
+        GraphDraftDependencySnapshotService.Snapshot snapshot = dependencySnapshots.capture(draft);
+        try {
+            CorrectnessWorkbookBundle bundle = workbookProjection.project(
+                    draft, draftFingerprint(draft), snapshot);
+            verifySnapshotStable(draft, revision, snapshot, context);
+            return IntegrationEnvelope.of("CORRECTNESS_WORKBOOK_BUNDLE",
+                    CorrectnessWorkbookBundle.SCHEMA_VERSION, bundle);
+        } catch (CorrectnessWorkbookProjectionService.ProjectionException failure) {
+            throw new IntegrationProblemException(IntegrationProblem.conflict(
+                    "RG.INTEGRATION.WORKBOOK_SOURCE_CHANGED",
+                    "A workbook source changed while the immutable bundle was being projected.",
+                    context.correlationId(), Map.of("reason", failure.code())));
+        }
+    }
+
     public IntegrationEnvelope<RunEvidenceBundle> runEvidence(String runId,
                                                               IntegrationRequestContext context) {
         VisualGraphRunRecord record = findRun(runId, context);
+        VisualRunPayloadStatus payloadStatus = payloadStatus(record);
         return IntegrationEnvelope.of("RUN_EVIDENCE_BUNDLE", RunEvidenceBundle.SCHEMA_VERSION,
-                RunEvidenceBundle.from(record, runRepository.evidenceSigner()));
+                RunEvidenceBundle.from(record, runRepository.evidenceSigner(), payloadStatus));
     }
 
     public IntegrationEnvelope<PayloadReplayBundle> replay(String runId,
                                                            IntegrationRequestContext context) {
         VisualGraphRunRecord record = findRun(runId, context);
+        GovernedPayload governed = governedPayload(record, context);
         return IntegrationEnvelope.of("PAYLOAD_REPLAY_BUNDLE", PayloadReplayBundle.SCHEMA_VERSION,
-                PayloadReplayBundle.from(record));
+                PayloadReplayBundle.from(governed.record(), governed.status()));
     }
 
     public synchronized IntegrationEnvelope<ReplayExecutionResult> executeReplay(
@@ -166,9 +215,11 @@ public class ToolStudioIntegrationService {
         context.requireComplete();
         requirePurpose(context, "PAYLOAD_REPLAY");
         VisualGraphRunRecord parent = findRun(parentRunId, context);
+        GovernedPayload governedParent = governedPayload(parent, context);
+        parent = governedParent.record();
         validateReplayRequest(request, parent, context);
         String requestFingerprint = request.fingerprint();
-        VisualGraphRunRecord existing = replayByRequest(request.requestId());
+        VisualGraphRunRecord existing = replayByRequest(request.requestId(), context);
         if (existing != null) {
             if (existing.replay().parentRunId().equals(parentRunId)
                     && existing.replay().requestFingerprint().equals(requestFingerprint)) {
@@ -190,8 +241,95 @@ public class ToolStudioIntegrationService {
         String replayRunId = deterministicReplayRunId(context.tenantId(), parentRunId, request.requestId());
         VisualGraphRunRecord replayRecord = parent.recordedReplay(replayMetadata)
                 .withIdentity(replayRunId, Instant.now());
-        VisualGraphRunRecord stored = runRepository.create(replayRecord);
-        return replayEnvelope(stored);
+        try {
+            return replayEnvelope(runRepository.create(replayRecord));
+        } catch (RuntimeException concurrentCreate) {
+            VisualGraphRunRecord winner = runRepository.find(replayRunId).orElse(null);
+            if (winner == null) throw concurrentCreate;
+            if (context.tenantId().equals(winner.tenantId())
+                    && context.environmentId().equals(winner.environment())
+                    && winner.replay().parentRunId().equals(parentRunId)
+                    && winner.replay().requestFingerprint().equals(requestFingerprint)) {
+                return replayEnvelope(winner);
+            }
+            throw new IntegrationProblemException(IntegrationProblem.conflict(
+                    "RG.INTEGRATION.REPLAY_REQUEST_ID_CONFLICT",
+                    "Replay request id already identifies different immutable content.",
+                    context.correlationId(), Map.of("requestId", request.requestId())));
+        }
+    }
+
+    public IntegrationEnvelope<PayloadRetentionView> payloadRetention(String runId,
+                                                                      IntegrationRequestContext context) {
+        VisualGraphRunRecord run = findRun(runId, context);
+        VisualRunPayloadRepository payloads = requirePayloadRepository(context);
+        VisualRunPayloadStatus status = payloads.status(run.runId()).orElseThrow(() -> payloadUnavailable(
+                context, "NOT_GOVERNED", run.payloadRetention().classification(), run.payloadRetention().expiresAt()));
+        return IntegrationEnvelope.of("PAYLOAD_RETENTION_VIEW", PayloadRetentionView.SCHEMA_VERSION,
+                new PayloadRetentionView("", status, payloads.events(run.runId())));
+    }
+
+    public IntegrationEnvelope<PayloadRetentionView> placePayloadHold(String runId,
+                                                                      PayloadLifecycleCommand command,
+                                                                      IntegrationRequestContext context) {
+        requirePurpose(context, "LEGAL_HOLD");
+        VisualGraphRunRecord run = findRun(runId, context);
+        PayloadLifecycleCommand safe = requirePayloadCommand(command, true, context);
+        try {
+            VisualRunPayloadRepository payloads = requirePayloadRepository(context);
+            VisualRunPayloadStatus status = payloads.placeHold(run.runId(), safe.requestId(), safe.holdId(),
+                    context.actorId(), safe.reason(), Instant.now());
+            return IntegrationEnvelope.of("PAYLOAD_RETENTION_VIEW", PayloadRetentionView.SCHEMA_VERSION,
+                    new PayloadRetentionView("", status, payloads.events(run.runId())));
+        } catch (VisualPayloadGovernanceException failure) {
+            throw mapPayloadFailure(failure, context);
+        }
+    }
+
+    public IntegrationEnvelope<PayloadRetentionView> releasePayloadHold(String runId,
+                                                                        String holdId,
+                                                                        PayloadLifecycleCommand command,
+                                                                        IntegrationRequestContext context) {
+        requirePurpose(context, "LEGAL_HOLD");
+        VisualGraphRunRecord run = findRun(runId, context);
+        PayloadLifecycleCommand safe = requirePayloadCommand(command, false, context);
+        try {
+            VisualRunPayloadRepository payloads = requirePayloadRepository(context);
+            VisualRunPayloadStatus status = payloads.releaseHold(run.runId(), safe.requestId(), holdId,
+                    context.actorId(), safe.reason(), Instant.now());
+            return IntegrationEnvelope.of("PAYLOAD_RETENTION_VIEW", PayloadRetentionView.SCHEMA_VERSION,
+                    new PayloadRetentionView("", status, payloads.events(run.runId())));
+        } catch (VisualPayloadGovernanceException failure) {
+            throw mapPayloadFailure(failure, context);
+        }
+    }
+
+    public IntegrationEnvelope<PayloadRetentionView> purgePayload(String runId,
+                                                                  PayloadLifecycleCommand command,
+                                                                  IntegrationRequestContext context) {
+        requirePurpose(context, "PAYLOAD_RETENTION_ADMIN");
+        VisualGraphRunRecord run = findRun(runId, context);
+        PayloadLifecycleCommand safe = requirePayloadCommand(command, false, context);
+        try {
+            VisualRunPayloadRepository payloads = requirePayloadRepository(context);
+            VisualRunPayloadStatus status = payloads.purge(run.runId(), safe.requestId(), context.actorId(),
+                    safe.reason(), Instant.now());
+            return IntegrationEnvelope.of("PAYLOAD_RETENTION_VIEW", PayloadRetentionView.SCHEMA_VERSION,
+                    new PayloadRetentionView("", status, payloads.events(run.runId())));
+        } catch (VisualPayloadGovernanceException failure) {
+            throw mapPayloadFailure(failure, context);
+        }
+    }
+
+    public IntegrationEnvelope<PayloadRetentionSweepResult> purgeExpiredPayloads(
+            IntegrationRequestContext context) {
+        context.requireComplete();
+        requirePurpose(context, "PAYLOAD_RETENTION_ADMIN");
+        Instant observedAt = Instant.now();
+        int purged = requirePayloadRepository(context).purgeExpired(observedAt, 500);
+        return IntegrationEnvelope.of("PAYLOAD_RETENTION_SWEEP_RESULT",
+                PayloadRetentionSweepResult.SCHEMA_VERSION,
+                new PayloadRetentionSweepResult("", observedAt, purged));
     }
 
     public IntegrationEnvelope<VisualEvidenceSigner.VerificationKey> evidenceKey(String keyId) {
@@ -236,7 +374,7 @@ public class ToolStudioIntegrationService {
         GovernanceGateResult existing = gateResultRepository.find(result.gateResultId()).orElse(null);
         if (existing != null) {
             if (existing.resultFingerprint().equals(result.resultFingerprint())) {
-                return IntegrationEnvelope.of("GOVERNANCE_GATE_RESULT", GovernanceGateResult.SCHEMA_VERSION,
+                return IntegrationEnvelope.of("GOVERNANCE_GATE_RESULT", existing.schemaVersion(),
                         existing);
             }
             throw new IntegrationProblemException(IntegrationProblem.conflict(
@@ -245,8 +383,23 @@ public class ToolStudioIntegrationService {
                     Map.of("gateResultId", result.gateResultId())
             ));
         }
-        GovernanceGateResult stored = gateResultRepository.create(result);
-        return IntegrationEnvelope.of("GOVERNANCE_GATE_RESULT", GovernanceGateResult.SCHEMA_VERSION, stored);
+        GraphDraftDependencySnapshotService.Snapshot gateSnapshot =
+                GovernanceGateResult.SCHEMA_VERSION.equals(result.schemaVersion())
+                        ? dependencySnapshots.capture(targetDraft) : null;
+        validateGateDecisionBasis(result, targetDraft, actualFingerprint, gateSnapshot, context);
+        if (gateSnapshot != null) {
+            verifySnapshotStable(targetDraft, targetDraft.revision(), gateSnapshot, context);
+        }
+        GovernanceGateResult stored;
+        try {
+            stored = gateResultRepository.create(result);
+        } catch (IllegalArgumentException conflict) {
+            throw new IntegrationProblemException(IntegrationProblem.conflict(
+                    "RG.INTEGRATION.GATE_RESULT_ID_CONFLICT",
+                    "Gate result id already identifies different immutable content.", context.correlationId(),
+                    Map.of("gateResultId", result.gateResultId())));
+        }
+        return IntegrationEnvelope.of("GOVERNANCE_GATE_RESULT", stored.schemaVersion(), stored);
     }
 
     public IntegrationEnvelope<GovernanceGateView> governanceGate(String draftId,
@@ -280,6 +433,10 @@ public class ToolStudioIntegrationService {
             } else if (latest.target().revision() != draft.revision()
                     || !latest.target().draftFingerprint().equals(currentFingerprint)) {
                 freshness = "STALE";
+            } else if (!latest.decisionBasis().dependencySnapshotFingerprint().isBlank()
+                    && !latest.decisionBasis().dependencySnapshotFingerprint()
+                    .equals(dependencySnapshots.capture(draft).fingerprint())) {
+                freshness = "STALE";
             } else {
                 freshness = "CURRENT";
             }
@@ -292,21 +449,128 @@ public class ToolStudioIntegrationService {
         if (result == null) {
             invalid.put("result", "required");
         } else {
-            if (!GovernanceGateResult.SCHEMA_VERSION.equals(result.schemaVersion())) {
-                invalid.put("schemaVersion", GovernanceGateResult.SCHEMA_VERSION);
+            if (!Set.of(GovernanceGateResult.SCHEMA_VERSION_V1, GovernanceGateResult.SCHEMA_VERSION)
+                    .contains(result.schemaVersion())) {
+                invalid.put("schemaVersion", GovernanceGateResult.SCHEMA_VERSION_V1 + "|"
+                        + GovernanceGateResult.SCHEMA_VERSION);
             }
             if (result.gateResultId().isBlank()) invalid.put("gateResultId", "required");
             if (!"GRAPH_DRAFT".equals(result.target().kind())) invalid.put("target.kind", "GRAPH_DRAFT");
             if (result.target().draftId().isBlank()) invalid.put("target.draftId", "required");
             if (result.target().revision() <= 0) invalid.put("target.revision", "positive");
             if (result.target().draftFingerprint().isBlank()) invalid.put("target.draftFingerprint", "required");
+            if (!Set.of("PASSED", "BLOCKED", "WARNING", "UNKNOWN").contains(result.status())) {
+                invalid.put("status", "PASSED|BLOCKED|WARNING|UNKNOWN");
+            }
+            if (GovernanceGateResult.SCHEMA_VERSION.equals(result.schemaVersion())) {
+                if (result.target().tenantId().isBlank()) invalid.put("target.tenantId", "required");
+                if (result.target().namespace().isBlank()) invalid.put("target.namespace", "required");
+                if (result.target().environment().isBlank()) invalid.put("target.environment", "required");
+            }
             if (!result.fingerprintVerified()) invalid.put("resultFingerprint", "does not match content");
+            if (GovernanceGateResult.SCHEMA_VERSION_V1.equals(result.schemaVersion())
+                    && "PASSED".equals(result.status())) {
+                invalid.put("decisionBasis", "gateResult.v2 is required for PASSED decisions");
+            }
         }
         if (!invalid.isEmpty()) {
             throw new IntegrationProblemException(IntegrationProblem.badRequest(
                     "RG.INTEGRATION.GATE_RESULT_INVALID", "Governance gate result is invalid.",
                     context.correlationId(), invalid));
         }
+    }
+
+    private void validateGateDecisionBasis(GovernanceGateResult result,
+                                           GraphDraft draft,
+                                           String draftFingerprint,
+                                           GraphDraftDependencySnapshotService.Snapshot snapshot,
+                                           IntegrationRequestContext context) {
+        if (GovernanceGateResult.SCHEMA_VERSION_V1.equals(result.schemaVersion())) return;
+        GovernanceGateResult.DecisionBasis basis = result.decisionBasis();
+        boolean passed = "PASSED".equals(result.status());
+        if (!draft.tenantId().equals(result.target().tenantId())
+                || !draft.namespace().equals(result.target().namespace())
+                || !draft.environment().equals(result.target().environment())) {
+            throw gateBasisConflict(context, "TARGET_SCOPE_MISMATCH");
+        }
+        if (!basis.dependencySnapshotFingerprint().isBlank()
+                && !basis.dependencySnapshotFingerprint().equals(snapshot.fingerprint())) {
+            throw gateBasisConflict(context, "DEPENDENCY_SNAPSHOT_STALE");
+        }
+        Set<String> currentSuites = currentSuiteKeys(snapshot);
+        Set<String> suppliedSuites = basis.contractSuites().stream()
+                .map(GovernanceGateResult.SuiteRef::key).collect(java.util.stream.Collectors.toSet());
+        if ((!suppliedSuites.isEmpty() && !currentSuites.containsAll(suppliedSuites))
+                || passed && basis.policy().requiredChecks().contains("CONTRACT_COVERAGE")
+                && !currentSuites.equals(suppliedSuites)) {
+            throw gateBasisConflict(context, "CONTRACT_SUITE_STALE");
+        }
+        CorrectnessWorkbookBundle workbook = null;
+        if (!basis.workbook().sourceBundleFingerprint().isBlank() || passed) {
+            if (workbookProjection == null) {
+                throw new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
+                        "RG.INTEGRATION.WORKBOOK_PROJECTION_UNAVAILABLE",
+                        "Correctness workbook projection is unavailable.", context.correlationId(), Map.of()));
+            }
+            try {
+                workbook = workbookProjection.project(draft, draftFingerprint, snapshot);
+            } catch (CorrectnessWorkbookProjectionService.ProjectionException staleProjection) {
+                throw gateBasisConflict(context, staleProjection.code());
+            }
+            if (!basis.workbook().sourceBundleFingerprint().isBlank()
+                    && !basis.workbook().sourceBundleFingerprint().equals(workbook.manifest().bundleFingerprint())) {
+                throw gateBasisConflict(context, "WORKBOOK_SOURCE_STALE");
+            }
+        }
+        for (GovernanceGateResult.EvidenceRef ref : basis.evidence()) {
+            VisualGraphRunRecord run = findRun(ref.runId(), context);
+            boolean sameDraft = draft.draftId().equals(run.draftId())
+                    && draft.revision() == run.draftRevision()
+                    && draftFingerprint.equals(run.draftFingerprint());
+            boolean verified = run.evidenceMaterialFingerprint().equals(ref.evidenceFingerprint())
+                    && runRepository.evidenceSigner()
+                    .verify(run.evidenceSeal(), run.evidenceMaterialFingerprint()).valid();
+            if (!sameDraft || !verified) throw gateBasisConflict(context, "EVIDENCE_REF_INVALID");
+        }
+        if (!passed) return;
+        Map<String, Object> incomplete = new LinkedHashMap<>();
+        if (!basis.workbook().complete()) incomplete.put("workbook", "complete ref required");
+        if (basis.dependencySnapshotFingerprint().isBlank()) {
+            incomplete.put("dependencySnapshotFingerprint", "required");
+        }
+        if (!basis.policy().complete()) incomplete.put("policy", "id, version and requiredChecks required");
+        List<String> failedChecks = basis.failedRequiredChecks();
+        if (!failedChecks.isEmpty()) incomplete.put("failedRequiredCheckCount", failedChecks.size());
+        if (basis.checks().stream().anyMatch(check -> Set.of("BLOCKED", "FAILED").contains(check.status()))) {
+            incomplete.put("checks", "blocking result present");
+        }
+        if (basis.policy().requiredChecks().contains("EVIDENCE") && basis.evidence().isEmpty()) {
+            incomplete.put("evidence", "at least one verified run required");
+        }
+        if (workbook == null || !workbook.fingerprintVerified()) {
+            incomplete.put("workbookSource", "unverified");
+        }
+        if (!incomplete.isEmpty()) {
+            throw new IntegrationProblemException(IntegrationProblem.conflict(
+                    "RG.INTEGRATION.GATE_BASIS_INCOMPLETE",
+                    "A PASSED gate result must carry a complete, verified decision basis.",
+                    context.correlationId(), incomplete));
+        }
+    }
+
+    private static Set<String> currentSuiteKeys(GraphDraftDependencySnapshotService.Snapshot snapshot) {
+        return snapshot.assets().values().stream()
+                .flatMap(asset -> asset.contractSuites().stream())
+                .map(ref -> ref.suiteId() + "@" + ref.revision() + "#" + ref.fingerprint())
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
+    private static IntegrationProblemException gateBasisConflict(IntegrationRequestContext context,
+                                                                  String reason) {
+        return new IntegrationProblemException(IntegrationProblem.conflict(
+                "RG.INTEGRATION.GATE_BASIS_STALE",
+                "Governance gate decision basis no longer matches Resource Gateway facts.",
+                context.correlationId(), Map.of("reason", reason)));
     }
 
     private static void validateReplayRequest(ReplayExecutionRequest request,
@@ -367,18 +631,21 @@ public class ToolStudioIntegrationService {
         }
     }
 
-    private VisualGraphRunRecord replayByRequest(String requestId) {
+    private VisualGraphRunRecord replayByRequest(String requestId, IntegrationRequestContext context) {
         if (runRepository == null || requestId == null || requestId.isBlank()) {
             return null;
         }
         return runRepository.all().stream()
                 .filter(record -> requestId.equals(record.replay().requestId()))
+                .filter(record -> context.tenantId().equals(record.tenantId())
+                        && context.environmentId().equals(record.environment()))
                 .findFirst()
                 .orElse(null);
     }
 
     private IntegrationEnvelope<ReplayExecutionResult> replayEnvelope(VisualGraphRunRecord replayRecord) {
-        RunEvidenceBundle evidence = RunEvidenceBundle.from(replayRecord, runRepository.evidenceSigner());
+        RunEvidenceBundle evidence = RunEvidenceBundle.from(replayRecord, runRepository.evidenceSigner(),
+                payloadStatus(replayRecord));
         VisualReplayMetadata replay = replayRecord.replay();
         ReplayExecutionResult result = new ReplayExecutionResult(
                 "", replayRecord.runId(), replay.parentRunId(), replay.requestId(), replay.requestFingerprint(),
@@ -436,6 +703,126 @@ public class ToolStudioIntegrationService {
             ));
         }
         return record;
+    }
+
+    private GovernedPayload governedPayload(VisualGraphRunRecord record, IntegrationRequestContext context) {
+        VisualRunPayloadRepository payloads = runRepository == null ? null : runRepository.payloadRepository();
+        if (payloads == null) {
+            if (record.payloadRetention().disposition().equals(
+                    com.leanowtech.bloge.gateway.visual.runtime.VisualPayloadRetentionDescriptor.LEGACY_INLINE)
+                    && context.hasClearanceAtLeast("RESTRICTED")) {
+                return new GovernedPayload(record, null);
+            }
+            throw payloadUnavailable(context, "NOT_GOVERNED", record.payloadRetention().classification(),
+                    record.payloadRetention().expiresAt());
+        }
+        try {
+            VisualRunPayloadRepository.Access access = payloads.access(record.runId(), Instant.now());
+            VisualRunPayloadStatus status = access.status();
+            if (status == null || !record.tenantId().equals(status.tenantId())
+                    || !record.environment().equals(status.environment())) {
+                throw new VisualPayloadGovernanceException(VisualPayloadGovernanceException.Reason.CORRUPT,
+                        "Payload scope does not match immutable run evidence");
+            }
+            requirePayloadAuthorization(status, context);
+            if (!access.readable()) {
+                throw payloadUnavailable(context, status.state(), status.descriptor().classification(),
+                        status.descriptor().expiresAt());
+            }
+            return new GovernedPayload(record.withPayload(access.payload()), status);
+        } catch (IntegrationProblemException failure) {
+            throw failure;
+        } catch (VisualPayloadGovernanceException failure) {
+            throw mapPayloadFailure(failure, context);
+        }
+    }
+
+    private VisualRunPayloadStatus payloadStatus(VisualGraphRunRecord record) {
+        VisualRunPayloadRepository payloads = runRepository == null ? null : runRepository.payloadRepository();
+        if (payloads == null) {
+            return null;
+        }
+        try {
+            return payloads.access(record.runId(), Instant.now()).status();
+        } catch (VisualPayloadGovernanceException failure) {
+            return payloads.status(record.runId()).orElse(null);
+        }
+    }
+
+    private static void requirePayloadAuthorization(VisualRunPayloadStatus status,
+                                                    IntegrationRequestContext context) {
+        if (!context.hasClearanceAtLeast(status.descriptor().requiredClearance())) {
+            throw new IntegrationProblemException(IntegrationProblem.forbidden(
+                    "RG.INTEGRATION.PAYLOAD_CLEARANCE_REQUIRED",
+                    "The verified workload identity does not have sufficient payload clearance.",
+                    context.correlationId(), Map.of(
+                    "classification", status.descriptor().classification(),
+                    "requiredClearance", status.descriptor().requiredClearance())));
+        }
+        Set<String> missingGroups = new HashSet<>(status.descriptor().requiredGroups());
+        missingGroups.removeAll(context.groups());
+        if (!missingGroups.isEmpty()) {
+            throw new IntegrationProblemException(IntegrationProblem.forbidden(
+                    "RG.INTEGRATION.PAYLOAD_GROUP_REQUIRED",
+                    "The verified workload identity is outside the payload policy group boundary.",
+                    context.correlationId(), Map.of("missingGroupCount", missingGroups.size())));
+        }
+    }
+
+    private VisualRunPayloadRepository requirePayloadRepository(IntegrationRequestContext context) {
+        VisualRunPayloadRepository payloads = runRepository == null ? null : runRepository.payloadRepository();
+        if (payloads == null) {
+            throw new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
+                    "RG.INTEGRATION.PAYLOAD_GOVERNANCE_UNAVAILABLE",
+                    "Governed payload storage is unavailable.", context.correlationId(), Map.of()));
+        }
+        return payloads;
+    }
+
+    private static PayloadLifecycleCommand requirePayloadCommand(PayloadLifecycleCommand command,
+                                                                 boolean requireHoldId,
+                                                                 IntegrationRequestContext context) {
+        PayloadLifecycleCommand safe = command == null
+                ? new PayloadLifecycleCommand("", "", "", "") : command;
+        Map<String, Object> invalid = new LinkedHashMap<>();
+        if (safe.requestId().isBlank()) invalid.put("requestId", "required");
+        if (requireHoldId && safe.holdId().isBlank()) invalid.put("holdId", "required");
+        if (safe.reason().isBlank()) invalid.put("reason", "required");
+        if (!invalid.isEmpty()) {
+            throw new IntegrationProblemException(IntegrationProblem.badRequest(
+                    "RG.INTEGRATION.PAYLOAD_LIFECYCLE_COMMAND_INVALID",
+                    "Payload lifecycle command is invalid.", context.correlationId(), invalid));
+        }
+        return safe;
+    }
+
+    private static IntegrationProblemException payloadUnavailable(IntegrationRequestContext context,
+                                                                  String state,
+                                                                  String classification,
+                                                                  Instant expiresAt) {
+        return new IntegrationProblemException(IntegrationProblem.gone(
+                "RG.INTEGRATION.PAYLOAD_NOT_AVAILABLE",
+                "Governed replay payload is no longer available.", context.correlationId(), Map.of(
+                "state", state == null ? "UNKNOWN" : state,
+                "classification", classification == null ? "UNKNOWN" : classification,
+                "expiresAt", expiresAt == null ? Instant.EPOCH : expiresAt)));
+    }
+
+    private static IntegrationProblemException mapPayloadFailure(VisualPayloadGovernanceException failure,
+                                                                 IntegrationRequestContext context) {
+        return switch (failure.reason()) {
+            case NOT_FOUND -> payloadUnavailable(context, "NOT_FOUND", "UNKNOWN", Instant.EPOCH);
+            case HOLD_CONFLICT, LEGAL_HOLD_ACTIVE, ALREADY_EXISTS -> new IntegrationProblemException(
+                    IntegrationProblem.conflict("RG.INTEGRATION.PAYLOAD_LIFECYCLE_CONFLICT",
+                            failure.getMessage(), context.correlationId(), Map.of("reason", failure.reason().name())));
+            case SIGNING_UNAVAILABLE, CORRUPT -> new IntegrationProblemException(
+                    IntegrationProblem.serviceUnavailable("RG.INTEGRATION.PAYLOAD_GOVERNANCE_UNAVAILABLE",
+                            "Governed payload lifecycle verification is unavailable.",
+                            context.correlationId(), Map.of("reason", failure.reason().name())));
+        };
+    }
+
+    private record GovernedPayload(VisualGraphRunRecord record, VisualRunPayloadStatus status) {
     }
 
     private void verifySnapshotStable(GraphDraft draft,

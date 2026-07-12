@@ -26,6 +26,8 @@ integration something the business flow can see, reason about, test, and change.
 | Dynamic workload identity | Atomic JWKS/revocation refresh, zero-restart key rotation, bounded propagation SLO, group/clearance/delegation claims, and explicit 401/503 semantics |
 | Managed evidence signing | Non-exportable KMS/HSM provider protocol, atomic public-key generations, locally verified signatures, rotation/revoke semantics, and machine-readable custody health |
 | Consistent draft export | Frozen operator/library/binding/activation/test-suite refs, deterministic dependency fingerprints, and retryable 409 conflict on assembly-time drift |
+| Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
+| Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
 
 ## Start The Demo
@@ -150,6 +152,23 @@ the current restricted schema, owner, binding, activation, or suite. See the
 [profile v2 schema](../docs/schemas/tool-studio-resource-gateway/graph-draft-dependency-profile-v2.schema.json), and
 [product usage guide](../docs/bloge-visual-canvas-product-and-system-guide.md#33-导出可系统化导入的-graphdraft-一致依赖快照).
 
+Replay payloads now have a lifecycle independent from immutable run evidence. New run records contain only shape facts,
+a versioned policy descriptor, payload reference, and digest; sanitized values live in an expirable vault. Reads require
+tenant/environment scope, purpose, classification clearance, and every policy-required group. `RESTRICTED` defaults to
+no retention, expired or purged payloads return 410, legal hold freezes deletion, and each hold/release/purge transition
+extends a signed hash chain. See the [lifecycle diagram](../docs/assets/resource-gateway-governed-payload-lifecycle.svg),
+[payload replay v2 schema](../docs/schemas/tool-studio-resource-gateway/payload-replay-bundle-v2.schema.json), and
+[usage guide](../docs/bloge-visual-canvas-product-and-system-guide.md#35-用-recorded-replay-重算正确性断言).
+
+ANEKE workbook integration now exports an immutable `CorrectnessWorkbookBundle.v1` from one exact draft/dependency
+snapshot. It carries exact operator-suite revisions, stable case/assertion IDs, sanitized table values, and verified run
+evidence references. ANEKE remains the workbook and publish-gate authority, but a `PASSED` result must use
+`GovernanceGateResult.v2` and include a verifiable decision basis for workbook source, dependency snapshot, suite/evidence
+refs, policy version, and every required check. Stale or incomplete bases fail closed; accepted gate results and their
+change events commit atomically. See the [evidence loop](../docs/assets/resource-gateway-workbook-gate-evidence-loop.svg),
+[workbook schema](../docs/schemas/tool-studio-resource-gateway/correctness-workbook-bundle-v1.schema.json), and
+[usage guide](../docs/bloge-visual-canvas-product-and-system-guide.md#351-把-contract-suite-和-run-evidence-交给-aneke-workbook).
+
 ## Extend It
 
 To add an external API:
@@ -230,8 +249,9 @@ Java 25 preview flags are already configured.
   can be modeled; this example does not ship their production runtime plane.
 - Multi-user collaboration and the complete enterprise IAM policy lifecycle remain outside this example. Dynamic
   JWKS/revocation, group/clearance/delegation claims, purpose authorization and tenant isolation are implemented; customer
-  IdP certification, resource-classification policy, group lifecycle/orphan ownership and emergency-access governance
-  still require deployment-specific integration.
+  IdP certification, customer policy-engine conformance, group lifecycle/orphan ownership and emergency-access governance
+  still require deployment-specific integration. The built-in payload policy is fail-closed and replaceable, not a
+  substitute for the customer's authoritative classification registry.
 - Managed evidence signing is implemented as a vendor-neutral KMS/HSM sidecar protocol and provider SPI. Production
   deployments still need a customer-specific provider identity/policy, authoritative key-use audit export, historical
   public-key retention, multi-region disaster recovery, and vendor conformance evidence; the default H2 signer remains

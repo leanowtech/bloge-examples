@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/payload-retention-sweep-result-v1.schema.json",
+  "title": "Tool Studio Resource Gateway Payload Retention Sweep Result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "observedAt", "purgedCount"],
+  "properties": {
+    "schemaVersion": { "const": "toolStudio.resourceGateway.payloadRetentionSweepResult.v1" },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "purgedCount": { "type": "integer", "minimum": 0 }
+  }
+}

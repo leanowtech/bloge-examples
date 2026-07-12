@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.integration;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualPayloadRedactionManifest;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunPayloadStatus;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -22,9 +23,11 @@ public record PayloadReplayBundle(
         Map<String, Object> context,
         Object output,
         List<NodeReplay> nodes,
-        VisualPayloadRedactionManifest redaction
+        VisualPayloadRedactionManifest redaction,
+        VisualRunPayloadStatus retention
 ) {
-    public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.payloadReplayBundle.v1";
+    public static final String SCHEMA_VERSION_V1 = "toolStudio.resourceGateway.payloadReplayBundle.v1";
+    public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.payloadReplayBundle.v2";
 
     public PayloadReplayBundle {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
@@ -38,6 +41,10 @@ public record PayloadReplayBundle(
     }
 
     public static PayloadReplayBundle from(VisualGraphRunRecord record) {
+        return from(record, null);
+    }
+
+    public static PayloadReplayBundle from(VisualGraphRunRecord record, VisualRunPayloadStatus retention) {
         Set<String> nodeIds = new LinkedHashSet<>(record.nodeSnapshots().keySet());
         nodeIds.addAll(record.resultsPayload().keySet());
         nodeIds.addAll(record.nodeAttempts().keySet());
@@ -46,7 +53,7 @@ public record PayloadReplayBundle(
                 .toList();
         return new PayloadReplayBundle("", record.runId(), record.runId(), "RECORDED",
                 PayloadPolicy.sanitized(), record.contextPayload(), record.outputPayload(), nodes,
-                record.redaction());
+                record.redaction(), retention);
     }
 
     private static NodeReplay replayNode(VisualGraphRunRecord record, String nodeId) {

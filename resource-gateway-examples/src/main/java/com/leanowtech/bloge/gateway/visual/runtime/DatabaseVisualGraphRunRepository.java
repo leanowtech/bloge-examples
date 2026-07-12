@@ -50,6 +50,7 @@ public class DatabaseVisualGraphRunRepository implements VisualGraphRunRepositor
     private final ObjectMapper objectMapper;
     private final VisualEvidenceSigner evidenceSigner;
     private final VisualChangeEventPublisher changePublisher;
+    private final VisualRunPayloadRepository payloadRepository;
 
     /**
      * @param jdbc JDBC template for H2 access
@@ -57,25 +58,34 @@ public class DatabaseVisualGraphRunRepository implements VisualGraphRunRepositor
      */
     public DatabaseVisualGraphRunRepository(JdbcTemplate jdbc, ObjectMapper objectMapper) {
         this(jdbc, objectMapper, new DatabaseVisualEvidenceSigner(jdbc),
-                VisualChangeEventPublisher.unavailable());
+                VisualChangeEventPublisher.unavailable(), null);
     }
 
     public DatabaseVisualGraphRunRepository(JdbcTemplate jdbc,
                                             ObjectMapper objectMapper,
                                             VisualEvidenceSigner evidenceSigner) {
-        this(jdbc, objectMapper, evidenceSigner, VisualChangeEventPublisher.unavailable());
+        this(jdbc, objectMapper, evidenceSigner, VisualChangeEventPublisher.unavailable(), null);
     }
 
     public DatabaseVisualGraphRunRepository(JdbcTemplate jdbc,
                                             ObjectMapper objectMapper,
                                             VisualEvidenceSigner evidenceSigner,
                                             VisualChangeEventPublisher changePublisher) {
+        this(jdbc, objectMapper, evidenceSigner, changePublisher, null);
+    }
+
+    public DatabaseVisualGraphRunRepository(JdbcTemplate jdbc,
+                                            ObjectMapper objectMapper,
+                                            VisualEvidenceSigner evidenceSigner,
+                                            VisualChangeEventPublisher changePublisher,
+                                            VisualRunPayloadRepository payloadRepository) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
         this.evidenceSigner = evidenceSigner == null ? VisualEvidenceSigner.unavailable() : evidenceSigner;
         this.changePublisher = changePublisher == null
                 ? VisualChangeEventPublisher.unavailable()
                 : changePublisher;
+        this.payloadRepository = payloadRepository;
     }
 
     /**
@@ -128,8 +138,12 @@ public class DatabaseVisualGraphRunRepository implements VisualGraphRunRepositor
     public VisualGraphRunRecord create(VisualGraphRunRecord record) {
         String runId = record.runId().isBlank() ? UUID.randomUUID().toString() : record.runId();
         VisualGraphRunRecord identified = record.withIdentity(runId, Instant.now());
-        VisualGraphRunRecord stored = identified.withEvidenceSeal(
-                evidenceSigner.seal(identified.evidenceMaterialFingerprint()));
+        VisualRunPayloadRepository.Capture capture = payloadRepository == null
+                ? null : payloadRepository.capture(identified);
+        VisualGraphRunRecord canonical = capture == null
+                ? identified : identified.detachPayload(capture.descriptor());
+        VisualGraphRunRecord stored = canonical.withEvidenceSeal(
+                evidenceSigner.seal(canonical.evidenceMaterialFingerprint()));
         persist(stored);
         changePublisher.publish(new VisualChangeFact(eventType(stored), stored.tenantId(), stored.namespace(),
                 stored.environment(),
@@ -141,12 +155,21 @@ public class DatabaseVisualGraphRunRepository implements VisualGraphRunRepositor
             log.info("Created visual graph run record: {} source={} graph={} success={}",
                     stored.runId(), stored.sourceKind(), stored.graphName(), stored.success());
         });
+        if (capture != null && capture.status().readable()) {
+            VisualRunPayloadRepository.Access access = payloadRepository.access(runId, stored.createdAt());
+            return access.readable() ? stored.withPayload(access.payload()) : stored;
+        }
         return stored;
     }
 
     @Override
     public VisualEvidenceSigner evidenceSigner() {
         return evidenceSigner;
+    }
+
+    @Override
+    public VisualRunPayloadRepository payloadRepository() {
+        return payloadRepository;
     }
 
     private void persist(VisualGraphRunRecord record) {

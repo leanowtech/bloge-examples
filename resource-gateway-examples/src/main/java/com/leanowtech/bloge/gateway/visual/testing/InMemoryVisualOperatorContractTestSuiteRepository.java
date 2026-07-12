@@ -13,6 +13,8 @@ public class InMemoryVisualOperatorContractTestSuiteRepository
         implements VisualOperatorContractTestSuiteRepository {
 
     private final Map<String, VisualOperatorContractTestSuite> suites = new ConcurrentHashMap<>();
+    private final Map<String, Long> revisions = new ConcurrentHashMap<>();
+    private final Map<String, Map<Long, VisualOperatorContractTestSuite>> history = new ConcurrentHashMap<>();
 
     /**
      * Creates an empty repository.
@@ -45,6 +47,16 @@ public class InMemoryVisualOperatorContractTestSuiteRepository
     }
 
     @Override
+    public Optional<VisualOperatorContractTestSuite> findRevision(String suiteId, long revision) {
+        return Optional.ofNullable(history.getOrDefault(suiteId, Map.of()).get(revision));
+    }
+
+    @Override
+    public long revision(String suiteId) {
+        return revisions.getOrDefault(suiteId, 0L);
+    }
+
+    @Override
     public VisualOperatorContractTestSuite save(VisualOperatorContractTestSuite suite) {
         VisualOperatorContractTestSuite safeSuite = suite == null
                 ? new VisualOperatorContractTestSuite("", "", "", List.of(),
@@ -53,7 +65,10 @@ public class InMemoryVisualOperatorContractTestSuiteRepository
         if (safeSuite.suiteId().isBlank()) {
             throw new IllegalArgumentException("suiteId is required.");
         }
+        long revision = revisions.merge(safeSuite.suiteId(), 1L, Long::sum);
         suites.put(safeSuite.suiteId(), safeSuite);
+        history.computeIfAbsent(safeSuite.suiteId(), ignored -> new ConcurrentHashMap<>())
+                .put(revision, safeSuite);
         return safeSuite;
     }
 }

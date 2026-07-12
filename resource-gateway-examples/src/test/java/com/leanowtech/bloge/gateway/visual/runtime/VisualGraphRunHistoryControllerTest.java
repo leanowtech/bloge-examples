@@ -26,10 +26,18 @@ class VisualGraphRunHistoryControllerTest {
         VisualGraphRunRecord stored = repository.create(record());
         VisualGraphRunHistoryController controller = new VisualGraphRunHistoryController(repository);
 
-        assertThat(controller.list(null, null, null, null, null, null)).containsExactly(stored);
-        assertThat(controller.get(stored.runId()))
-                .extracting(response -> response.getBody())
-                .isEqualTo(stored);
+        assertThat(controller.list(null, null, null, null, null, null)).singleElement().satisfies(record -> {
+            assertThat(record.runId()).isEqualTo(stored.runId());
+            assertThat(record.contextPayload()).isEmpty();
+            assertThat(record.outputPayload()).isNull();
+            assertThat(record.payloadRetention().payloadFingerprint()).startsWith("sha256:");
+        });
+        assertThat(controller.get(stored.runId()).getBody()).satisfies(record -> {
+            assertThat(record).isNotNull();
+            assertThat(record.runId()).isEqualTo(stored.runId());
+            assertThat(record.contextPayload()).isEmpty();
+            assertThat(record.outputPayload()).isNull();
+        });
     }
 
     @Test
@@ -44,12 +52,12 @@ class VisualGraphRunHistoryControllerTest {
         VisualGraphRunHistoryController controller = new VisualGraphRunHistoryController(repository);
 
         assertThat(controller.list("stored_draft", "draft-1", null, "visualPolicy", true, 1))
-                .containsExactly(matching);
+                .extracting(VisualGraphRunRecord::runId).containsExactly(matching.runId());
         assertThat(controller.list("PUBLICATION", null, "publication-1", null, true, null))
                 .extracting(VisualGraphRunRecord::publicationId)
                 .containsExactly("publication-1");
         assertThat(controller.list("PUBLICATION", null, null, "DESIGN", null, null, null))
-                .containsExactly(designRun);
+                .extracting(VisualGraphRunRecord::runId).containsExactly(designRun.runId());
     }
 
     @Test

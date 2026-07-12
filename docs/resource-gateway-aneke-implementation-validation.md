@@ -5,10 +5,10 @@
 | 属性 | 内容 |
 |---|---|
 | 设计基线 | `docs/resource-gateway-aneke-tool-studio-integration-evolution-plan.md` |
-| 当前实现基线 | Round 15（scope-safe GraphDraft consistent dependency snapshot） |
+| 当前实现基线 | Round 17 完整验证（workbook/gate evidence loop + cross-instance replay） |
 | 评估日期 | 2026-07-13 |
-| 目标 | 加权实施差距 `<3%`，且不存在 P0 阻断项 |
-| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml -Pfrontend clean verify`：1595 tests，0 failures，0 errors，0 skipped，`BUILD SUCCESS`（05:22，含 34 个真实 Chrome 场景）；frontend production build 通过，`npm audit` 0 vulnerabilities |
+| 目标 | 仓库内加权实施差距 `<3%`；客户环境部署门禁单独列账且不得被数值掩盖 |
+| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml -Pfrontend clean verify`：1620 tests，0 failures，0 errors，0 skipped，`BUILD SUCCESS`（05:21，含 34 个真实 Chrome 场景）；frontend production build 通过，`npm audit` 0 vulnerabilities |
 
 ## 1. 评分方法
 
@@ -370,6 +370,63 @@ Round 15 结论：GraphDraft 单项差距从 `3.6%` 收敛到 `0.6%`，总差距
 故障注入、SLA 权威来源、snapshot retention/GC。下一轮应在剩余大项中优先补 `Payload replay` 的选择性保留与
 classification policy，或补 workbook 对 readiness/suite revision 的真正门禁消费；两者都不能只增加 DTO。
 
+## 2.16 Round 16 重新审计
+
+Round 16 首先否决了“在已签名 run JSON 上增加 `expiresAt`”的伪方案。旧模型把 payload 值直接放在不可变
+`VisualGraphRunRecord` 中：不删除就违反 retention，改写删除又会破坏 evidence seal。正式实现将生命周期拆开：
+v9 run evidence 只保留无值 shape、版本化 policy descriptor、payload ref 与 digest；实际脱敏值进入独立 vault。
+run、payload、首个签名 lifecycle event 与 outbox 同事务提交，purge 只删除 blob 并追加签名 hash-chain receipt。
+
+读取链实行四层 fail-closed：run tenant/environment scope、operation purpose、classification clearance + all required
+groups、当前 lifecycle state。到期由 bounded scheduler 清理，读取路径也同步执行 expiry；因此 scheduler backlog
+不会形成绕过窗口。legal hold 冻结 purge，release 后若 deadline 已过立即清理。数据库 row lock + revision CAS
+保证两个实例的 hold/purge 竞态只有一个状态赢家；生命周期变化同时进入现有 cursor outbox。
+
+| 维度 | 权重 | 当前完成率 | 得分 | 本轮可证明增量 | 仍未证明 |
+|---|---:|---:|---:|---|---|
+| 协议、版本与身份边界 | 15 | 99.5% | 14.925 | payload replay v2、retention view/command/sweep、run evidence v7 machine schema；capability 动态暴露 policy descriptor 与端点 | 真实 ANEKE N/N-1 consumer matrix；显式 response negotiation；客户 policy bundle 认证 |
+| GraphDraft 依赖快照 | 10 | 94% | 9.40 | 无语义变化 | ANEKE consumer matrix、外部 HA DB、SLA 权威源、snapshot GC |
+| Run evidence 可信链 | 20 | 99.5% | 19.90 | payload digest/descriptor 进入 immutable seal；purge 后原 evidence 仍验签；lifecycle transition 独立签名并链式绑定 | 可信时间戳、外部 verifier matrix、客户 KMS conformance、evidence 自身 legal-hold/retention 总策略 |
+| Payload replay | 15 | 95% | 14.25 | detached vault、选择性 retention、RESTRICTED no-retain、classification ABAC、legal hold、到期 410、签名删除证明、真实 HTTP/H2 生命周期 | shadow/live 审批隔离；replay command 跨实例重复请求的统一幂等响应；residency/subject-request adapter |
+| Timeout/partial failure 语义 | 10 | 100% | 10.00 | payload 分离保留 availability marker，不把完整 evidence 误判为缺失 | disconnect/detach 与非协作 I/O |
+| Workbook、gate feedback 与 Deep Link | 10 | 76% | 7.60 | retention/classification 可进入 workbook evidence，但尚未自动消费 | 双向 workbook refs；readiness/SLA/migration/owner/retention gate policy |
+| Change event、cursor、webhook 与对账 | 10 | 90% | 9.00 | capture/hold/release/purge 与 lifecycle state 同事务进入 cursor outbox | signed webhook、DLQ/退避、outbox retention/compaction、payload reconciliation snapshot、乱序 fault harness |
+| 工业运行控制 | 10 | 92% | 9.20 | payload DB 分表、事务回滚、restart、tamper、双实例 hold/purge race、bounded scheduler、lazy expiry、真实 Spring/HTTP | 外部 HA DB、deletion backlog metrics/SLO、quota/bytes-days、residency、subject request、客户 policy conformance |
+| **合计** | **100** |  | **94.275** |  | **加权差距 5.725%** |
+
+Round 16 将 replay 单项差距从 `3.0%` 收敛到 `0.75%`，事件与工业运行控制再收敛 `0.4%`，总差距从
+`8.375%` 降至 `5.725%`。不能把本轮评分抬到 100：recorded replay 的安全生命周期已成立，但 shadow/live
+仍有意关闭，客户 policy/residency/subject-request 与外部 HA DB 删除 SLO 没有仓库内证据。下一轮最高收益病根是
+workbook/gate 的真实消费闭环，它单项仍贡献 `2.4%` 差距；随后是 webhook/DLQ 与部署级工业证据。
+
+## 2.17 Round 17 重新审计
+
+Round 17 关闭了“gate result 只绑定 draft，因此 PASSED 无法证明依据”的病根。新增
+`CorrectnessWorkbookBundle.v1` 从 exact draft/dependency snapshot 投影精确 suite revision、稳定 case/assertion ID、
+脱敏测试表和已验签 run evidence refs；`GovernanceGateResult.v2` 的 decision basis 固化 workbook/source bundle、
+snapshot、suite、evidence、policy 和 required checks。Resource Gateway 不接管 ANEKE 决策，但会拒绝无法映射到当前
+不可变事实的 PASSED。suite/readiness 漂移会让已存 gate 自动 stale，跨 scope evidence 保持 404 最小披露。
+
+gate result 写入现在与 `GOVERNANCE_GATE_RESULT_RECEIVED` 同事务；数据库唯一键为多实例幂等裁决点，相同内容重放
+返回同一事实，异内容冲突，outbox 失败整体回滚。recorded replay 同样收紧：确定性 replay runId 的唯一键输家会在事务
+回滚后回读 winner，核对 parent/request fingerprint 并返回同一响应；requestId 查询按 tenant/environment 隔离。
+
+| 维度 | 权重 | 当前完成率 | 得分 | 本轮可证明增量 | 仍未证明 |
+|---|---:|---:|---:|---|---|
+| 协议、版本与身份边界 | 15 | 99.8% | 14.970 | workbook v1、gate v2 machine schema；capability 同时声明 gate v1/v2、workbook flags/endpoint；v1 PASSED fail closed | 真实 ANEKE N/N-1 consumer matrix；显式 Accept/response negotiation |
+| GraphDraft 依赖快照 | 10 | 94% | 9.40 | workbook 和 gate basis 都复用一致 snapshot，并在组包/提交前两阶段复验 | ANEKE consumer matrix、外部 HA DB、SLA 权威源、snapshot GC |
+| Run evidence 可信链 | 20 | 99.5% | 19.90 | workbook evidence ref 逐项核对 run scope、draft snapshot、material fingerprint 与签名 | 可信时间戳、外部 verifier matrix、客户 KMS conformance |
+| Payload replay | 15 | 98% | 14.70 | 两个 DB repository/service 实例并发同 requestId 返回同一 replay；异内容 409；tenant 隔离；detached lifecycle request 持久幂等 | shadow/live 审批隔离；residency/subject-request adapter |
+| Timeout/partial failure 语义 | 10 | 100% | 10.00 | required gate checks 可直接消费 readiness/failure evidence，不重解释 engine 状态 | disconnect/detach 与非协作 I/O |
+| Workbook、gate feedback 与 Deep Link | 10 | 98% | 9.80 | deterministic/sanitized seed、exact suite/evidence refs、mappingStatus、policy required checks、basis freshness、Author stale、v1兼容 | 真实 ANEKE consumer conformance；图级 suite/golden case 统一投影 |
+| Change event、cursor、webhook 与对账 | 10 | 94% | 9.40 | gate result 与 scoped event 同事务；跨实例幂等不重复发 event；outbox failure rollback | signed webhook、DLQ/退避、outbox retention/compaction、乱序 fault harness |
+| 工业运行控制 | 10 | 92% | 9.20 | workbook source/suite drift、伪造/跨租户 evidence、DB restart/并发、gate outbox rollback 均有负向测试 | 外部 HA DB、quota/residency、客户 IAM/KMS/policy conformance、正式 metrics/SLO/DR |
+| **合计** | **100** |  | **97.370** |  | **加权差距 2.630%** |
+
+Round 17 将总差距从 `5.725%` 收敛到 `2.630%`，首次满足目标的数值阈值。该分数只表示仓库内实现与可执行
+证据差距，不表示客户生产环境已经通过认证：真实 ANEKE、IdP、KMS/HSM、HA DB、residency 和 DR 仍必须走部署
+conformance。shadow/live replay 继续通过 capability 明确关闭，因而不是一个隐藏的未受控副作用路径。
+
 ## 3. 已通过的证明
 
 ### 3.1 协议与隔离
@@ -383,11 +440,11 @@ classification policy，或补 workbook 对 readiness/suite revision 的真正�
 
 ### 3.2 Evidence 与 payload
 
-- `VisualGraphRunRecord.v7` 持久化 draft/operator fingerprint、sanitized context/output/node results、edge snapshot、精确 node attempts、结构化 node execution facts、run-control termination fact 和 recovery provenance。
+- `VisualGraphRunRecord.v9` 持久化 draft/operator fingerprint、无值 payload availability shape、edge snapshot、结构化 node execution facts、run-control/recovery fact 和 payload policy descriptor/digest；sanitized context/output/node I/O 在独立 vault 中。
 - sanitizer 对 secret/token/authorization/cookie/PII 类键及 Bearer/Basic/labeled credential 内容执行有界递归脱敏并记录 manifest。
 - evidence manifest 校验每个 invoked node 的 input、成功节点 output、node/edge status 和持久 seal；缺口或验签失败进入 `QUARANTINED`。
 - `DatabaseVisualEvidenceSigner` 持久化 Ed25519 key history；旧 run 在 repository 重建后仍可验证，consumer 可通过公开 verification key 离线验签。
-- GET replay 返回 `RECORDED + SANITIZED` payload；POST recorded replay 生成独立签名 run/evidence，明确 `externalInvocationCount=0` 和 `sideEffectPolicy=DENY`。
+- GET replay 在 scope/purpose/classification/lifecycle 四层校验后返回 `RECORDED + SANITIZED` payload；POST recorded replay 生成独立签名 run/evidence，明确 `externalInvocationCount=0` 和 `sideEffectPolicy=DENY`。
 
 ### 3.3 Governance 与 Deep Link
 
@@ -400,9 +457,9 @@ classification policy，或补 workbook 对 readiness/suite revision 的真正�
 ### 3.4 回归范围
 
 ```text
-mvn -f resource-gateway-examples/pom.xml clean verify
-Tests run: 1471, Failures: 0, Errors: 0, Skipped: 2
-BUILD SUCCESS
+mvn -f resource-gateway-examples/pom.xml -Pfrontend clean verify
+Tests run: 1620, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS (05:21)
 ```
 
 其中包括 34 个 Selenium 浏览器画布场景，以及 integration controller/service、run repository/history 的针对性测试。
@@ -907,11 +964,95 @@ SVG/PNG visual inspection passed
 audit ingestion、持久 public-key cache、Micrometer/SLO 告警或客户 KMS/HSM conformance kit，因此不能关闭部署级
 `OPS-01`。
 
-## 4. 当前 P0 阻断项
+### 3.17 Governed replay payload 生命周期与删除证明
 
-| ID | 阻断项 | 病根 | 根治验收 |
+本轮自动化不是只检查 DTO 字段，而是直接检查数据库、签名、HTTP 错误和并发状态：
+
+```text
+run create -> payload value only in visual_run_payload_blobs
+           -> visual_graph_run_records.run_json has no customerId/output value
+           -> v9 descriptor contains payloadRef + sha256 digest + policy id/version/classification
+
+PUBLIC/INTERNAL/CONFIDENTIAL/RESTRICTED -> configurable retention
+RESTRICTED + 0 days -> NOT_RETAINED, no blob
+insufficient clearance -> 403 RG.INTEGRATION.PAYLOAD_CLEARANCE_REQUIRED
+missing required group -> 403 RG.INTEGRATION.PAYLOAD_GROUP_REQUIRED (group names not echoed)
+expired / PURGED / NOT_RETAINED -> 410 RG.INTEGRATION.PAYLOAD_NOT_AVAILABLE
+
+CAPTURED -> HOLD_PLACED -> HOLD_RELEASED -> PURGED
+each event signed; each event binds previousEventFingerprint
+active hold -> manual/automatic purge conflict
+release after retention deadline -> immediate PURGED
+two DB repository instances race hold vs purge -> one revision winner, one consistent blob state
+payload JSON tamper -> CORRUPT; replay fails closed
+outbox failure -> run + payload state + blob roll back together
+purge -> blob deleted; immutable run evidence signature still VERIFIED
+
+real Spring Boot + H2 + HTTP
+GET replay -> CONFIDENTIAL payload returned to matching identity
+POST hold -> LEGAL_HOLD
+POST purge while held -> 409
+release + purge -> PURGED; blob count 0
+GET replay after purge -> 410
+GET evidence after purge -> retention.state=PURGED + signatureStatus=VERIFIED
+GET events -> PAYLOAD_CAPTURED/HOLD_PLACED/HOLD_RELEASED/PURGED visible through cursor
+```
+
+机器合同包括 `payload-replay-bundle-v2`、`payload-retention-view-v1`、`payload-lifecycle-command-v1`、
+`payload-retention-sweep-result-v1` 和 `run-evidence-bundle-v7`。结构证据：
+[Resource Gateway 受治理 payload 生命周期](assets/resource-gateway-governed-payload-lifecycle.svg)，图源为
+[resource-gateway-governed-payload-lifecycle.drawio](assets/drawio/resource-gateway-governed-payload-lifecycle.drawio)。
+
+### 3.18 Workbook seed、gate decision basis 与跨实例 replay
+
+Round 17 的证明直接覆盖 authority boundary、代际漂移、伪造引用和原子写入：
+
+```text
+exact draft + dependency snapshot + suite@revision
+  -> deterministic CorrectnessWorkbookBundle.v1
+  -> stable case/assertion ids
+  -> explicit case-kind tag or REGRESSION+DEFAULTED
+  -> test input/config/mock/expected sanitized before export
+  -> matching signed runs exposed as runId + evidence material fingerprint
+  -> bundle fingerprint repeatable
+
+PASSED GovernanceGateResult.v2
+  -> target tenant/namespace/environment + draft fingerprint verified
+  -> workbook source bundle fingerprint verified
+  -> dependency snapshot and exact suite refs verified
+  -> every run evidence ref scope/fingerprint/signature verified
+  -> policy.requiredChecks must all be PASSED
+  -> stale source/suite/evidence = 409
+  -> missing check = 409 INCOMPLETE
+  -> cross-tenant run = scope-safe 404
+  -> accepted result + GOVERNANCE_GATE_RESULT_RECEIVED commit atomically
+  -> suite revision changes -> Author freshness STALE
+
+two gate repositories on one DB
+  -> same gate id/content = one row + one event
+  -> same id/different content = conflict
+  -> outbox failure = gate row rollback
+
+two replay service/repository instances on one DB
+  -> same tenant/parent/request/content = same deterministic replay run
+  -> one replay row + one detached payload state
+  -> same request/different content = RG.INTEGRATION.REPLAY_REQUEST_ID_CONFLICT
+  -> same requestId in another tenant = independent replay, no cross-tenant collision
+```
+
+机器合同为 `correctness-workbook-bundle-v1` 与 `governance-gate-result-v2`；序列化字段集合与 capability
+objects/features/endpoints 均有精确测试。结构证据：
+[Resource Gateway 与 ANEKE workbook/gate 证据闭环](assets/resource-gateway-workbook-gate-evidence-loop.svg)，图源为
+[resource-gateway-workbook-gate-evidence-loop.drawio](assets/drawio/resource-gateway-workbook-gate-evidence-loop.drawio)。
+
+## 4. 部署验收门禁
+
+以下项目不再是仓库内协议主链缺失，但仍是客户生产晋级的强制门禁。没有客户环境证据时，不得把
+`2.630%` 的实现差距解释为“已通过生产认证”。
+
+| ID | 部署门禁 | 病根 | 根治验收 |
 |---|---|---|---|
-| `IAM-01` | 客户组织身份策略与部署认证尚未端到端证明 | Round 13 已关闭动态 JWKS/revocation、传播 SLO、group/clearance/delegation claim、审计和 401/503 分流的代码病根；残余是客户真实 IdP/mTLS、多地域 authority、group 生命周期/orphan owner、resource classification policy、break-glass 和正式告警/runbook | 客户 IdP conformance kit + policy bundle/version + group/owner lifecycle + clearance-resource gate + emergency grant + multi-region outage/rollback + propagation SLO alert/report |
+| `IAM-01` | 客户组织身份策略与部署认证尚未端到端证明 | Round 13 已关闭动态 JWKS/revocation 与组织 claims；Round 16 已让 payload classification 对 clearance/groups 执行 fail-closed 策略。残余是客户真实 IdP/mTLS、多地域 authority、权威 classification registry/policy bundle、group 生命周期/orphan owner、break-glass 和正式告警/runbook | 客户 IdP + classification-policy conformance kit + signed policy bundle/version + group/owner lifecycle + emergency grant + multi-region outage/rollback + propagation SLO alert/report |
 | `OPS-01` | 客户 KMS/HSM custody 与灾备认证尚未完成 | Round 14 已关闭 private key 必须进入 H2、远端签名不反验、轮换状态不明确和 capability 不透明的代码病根；残余是客户 provider identity/policy、authoritative audit、历史 public-key retention、跨地域 KMS 和正式 SLO | 客户 KMS/HSM conformance kit + mTLS/workload policy + provider audit export + persistent public-key retention + region outage/restore/disable/revoke drill + latency/error SLO |
 | `RUN-01` | disconnect/detach 与任意 binding 的预算合规尚未封口 | Round 10 已完成 OperatorContext、scheduler admission、retry/timeout/suspend、Resource Gateway/common HTTP 和 remote worker 的 remaining-budget 传播，并防止 wall-clock 回拨放宽预算；但客户端断开语义未版本化，私有 binding 仍可忽略合同 | versioned `detachPolicy` + disconnect race/fault tests + runtime binding conformance suite + non-cooperative I/O quarantine |
 | `RUN-02` | 副作用协议尚未覆盖企业 operator/binding 存量 | Round 12 已关闭正常目录下 `WRITE_EXTERNAL`、Java `SideEffectType.WRITE`、descriptor HTTP mutation 和低层 unsafe `httpRequest` 绕过；残余病根是实现可错报 effect、数据库/消息/私有 SDK 写边界不可见、默认 provider adapter registry 为空 | 制品 effect/egress 扫描 + runtime egress/DB/message telemetry + owner attestation 对账 + provider conformance kit + outage/restart/重复请求演练 + compensate policy + 覆盖率门禁 |
@@ -940,5 +1081,8 @@ backoff/DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，�
 | 13 | 动态企业身份信任与组织 claims | JWKS/revocation 原子刷新、single-flight、传播 SLO、strict/bounded-stale、401/503、group/clearance/delegation grant、credential-free audit | 11.875% | 30 个身份聚焦 tests、90 个 integration package tests、真实 IAM HTTP + Spring Boot 轮换/撤销/outage/oversize 演练；1567 个全量 tests、34 个真实 Chrome 场景；corporate Draw.io 0 errors/warnings/crossings/overlaps |
 | 14 | KMS/HSM managed evidence signing custody | provider SPI、versioned key/sign schemas、non-exportable custody、原子公钥代际、本地反验、rotation/disable/revoke、503/404 分流 | 11.375% | 31 个聚焦 tests、147 个 integration/runtime package tests、4 份 machine schema、真实 signing HTTP + Spring Boot 轮换/撤销/outage；1585 个全量 tests、34 个真实 Chrome 场景、npm audit 0 vulnerabilities；corporate Draw.io 0 errors/warnings/crossings/overlaps |
 | 15 | scope-safe GraphDraft consistent dependency snapshot | profile v2 + snapshot v1 固化 library/binding/activation/suite refs 与 readiness；相关资产两阶段重读防混代际；scope mismatch 最小披露；稳定 retryable 409；确定性相关资产指纹 | 8.375% | 23 个 snapshot/protocol/service 聚焦 tests、101 个 integration package tests（含真实 Spring/H2 依赖组装）、2 份 machine schema；1595 个全量 tests、34 个真实 Chrome 场景、npm audit 0 vulnerabilities；多库、多租户、missing/stale/blocked readiness、相关/无关并发漂移矩阵全部通过；corporate Draw.io 0 errors/warnings/crossings/overlaps |
+| 16 | governed detached replay payload lifecycle | payload 与签名 run record 分离；classification/retention、clearance/groups ABAC、expiry sweep、legal hold/release/purge、签名 hash-chain lifecycle event、事务 outbox、跨实例 CAS | 5.725% | 15 个 payload governance 聚焦 tests、真实 Spring/H2/HTTP 生命周期、5 份新增/升级 machine schema；最终合并全量验证由 Round 17 覆盖；corporate Draw.io 0 errors/warnings/crossings/overlaps |
+| 17 | correctness workbook/gate evidence loop + cross-instance replay | exact suite/evidence workbook seed、稳定 case/assertion ID、gate v2 decision basis、PASSED fail-closed、gate/outbox 原子提交、数据库唯一键幂等、跨实例 deterministic replay winner | 2.630% | 10 个 workbook/gate/replay 聚焦 tests、117 个 integration package tests、65 个 runtime package tests、1620 个全量 tests、34 个真实 Chrome 场景、npm audit 0 vulnerabilities；2 份 machine schema；corporate Draw.io 0 errors/warnings/crossings/overlaps |
 
-后续每轮必须更新本表、代码证据、失败测试和剩余阻断项。只有全部 P0 阻断关闭、全量验证与真实浏览器验证通过，并且按同一权重计算的差距 `<3%`，才允许把目标标记完成。
+仓库内实施目标现已满足 `<3%`，但这不等于客户生产认证。第 4 节的 IAM、KMS/HSM、disconnect/binding 与存量副作用
+覆盖仍是环境晋级门禁；必须取得客户 conformance、故障演练和 SLO 证据后，才能声明对应部署通过。

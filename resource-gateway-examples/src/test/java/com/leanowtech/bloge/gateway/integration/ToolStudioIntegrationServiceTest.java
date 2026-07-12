@@ -45,7 +45,7 @@ import static org.mockito.Mockito.when;
 class ToolStudioIntegrationServiceTest {
 
     @Test
-    void runEvidenceV6JsonSchemaMatchesSerializedProtocolFields() throws Exception {
+    void runEvidenceV7JsonSchemaMatchesSerializedProtocolFields() throws Exception {
         OperatorDefinition operator = operator();
         GraphDraft draft = runDraft(operator);
         VisualGraphRunResponse response = new VisualGraphRunResponse(
@@ -62,13 +62,14 @@ class ToolStudioIntegrationServiceTest {
                 draft, Map.of("customerId", "c-1"), response));
         ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
         JsonNode schema = mapper.readTree(Files.readString(Path.of("..", "docs", "schemas",
-                "tool-studio-resource-gateway", "run-evidence-bundle-v6.schema.json")));
+                "tool-studio-resource-gateway", "run-evidence-bundle-v7.schema.json")));
         JsonNode serialized = mapper.valueToTree(evidence);
 
         assertSchemaProperties(serialized, schema.path("properties"));
         assertSchemaProperties(serialized.path("execution"), schema.at("/$defs/execution/properties"));
         assertSchemaProperties(serialized.path("recovery"), schema.at("/$defs/recovery/properties"));
         assertSchemaProperties(serialized.at("/execution/runControl"), schema.at("/$defs/runControl/properties"));
+        assertSchemaProperties(serialized.path("retention"), schema.at("/$defs/retention/properties"));
         assertSchemaProperties(serialized.path("nodes").get(0), schema.at("/$defs/nodeEvidence/properties"));
         JsonNode sideEffect = serialized.path("nodes").get(1).path("sideEffectAttempts").get(0);
         assertSchemaProperties(sideEffect, schema.at("/$defs/sideEffectAttempt/properties"));
@@ -172,13 +173,19 @@ class ToolStudioIntegrationServiceTest {
         assertThat(envelope.payload().endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
                 .containsExactlyInAnyOrder(
-                        "GET /api/integration/capabilities",
-                        "GET /api/integration/drafts/{draftId}/export",
-                        "GET /api/integration/runs/{runId}/evidence",
+                "GET /api/integration/capabilities",
+                "GET /api/integration/drafts/{draftId}/export",
+                "GET /api/integration/drafts/{draftId}/correctness-workbook",
+                "GET /api/integration/runs/{runId}/evidence",
                         "GET /api/integration/runs/{runId}/side-effects/reconciliations",
                         "POST /api/integration/runs/{runId}/side-effects/{attemptId}/reconcile",
                         "GET /api/integration/runs/{runId}/replay",
                         "POST /api/integration/runs/{runId}/replay",
+                        "GET /api/integration/runs/{runId}/payload-retention",
+                        "POST /api/integration/runs/{runId}/payload-retention/holds",
+                        "POST /api/integration/runs/{runId}/payload-retention/holds/{holdId}/release",
+                        "POST /api/integration/runs/{runId}/payload-retention/purge",
+                        "POST /api/integration/payload-retention/purge-expired",
                         "GET /api/integration/evidence-keys/{keyId}",
                         "POST /api/integration/gate-results",
                         "GET /api/integration/drafts/{draftId}/gate-result",
@@ -358,7 +365,7 @@ class ToolStudioIntegrationServiceTest {
         assertThat(envelope.payload().manifest().signatureStatus()).isEqualTo("VERIFIED");
         assertThat(envelope.payload().manifest().signatureAlgorithm()).isEqualTo("Ed25519");
         assertThat(envelope.payload().manifest().signature()).isNotBlank();
-        assertThat(envelope.payload().retention().payloadPolicy()).isEqualTo("SANITIZED");
+        assertThat(envelope.payload().retention().payloadPolicy()).isEqualTo("DETACHED_SANITIZED");
 
         IntegrationEnvelope<com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner.VerificationKey> key =
                 service.evidenceKey(envelope.payload().manifest().keyId());

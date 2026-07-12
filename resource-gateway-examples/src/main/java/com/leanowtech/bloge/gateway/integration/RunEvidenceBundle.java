@@ -10,9 +10,9 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualSideEffectAttempt;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunControlView;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunRecoveryMetadata;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunPayloadStatus;
 
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -47,7 +47,8 @@ public record RunEvidenceBundle(
     public static final String SCHEMA_VERSION_V3 = "toolStudio.resourceGateway.runEvidenceBundle.v3";
     public static final String SCHEMA_VERSION_V4 = "toolStudio.resourceGateway.runEvidenceBundle.v4";
     public static final String SCHEMA_VERSION_V5 = "toolStudio.resourceGateway.runEvidenceBundle.v5";
-    public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.runEvidenceBundle.v6";
+    public static final String SCHEMA_VERSION_V6 = "toolStudio.resourceGateway.runEvidenceBundle.v6";
+    public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.runEvidenceBundle.v7";
 
     public RunEvidenceBundle {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
@@ -74,6 +75,12 @@ public record RunEvidenceBundle(
     }
 
     public static RunEvidenceBundle from(VisualGraphRunRecord record, VisualEvidenceSigner evidenceSigner) {
+        return from(record, evidenceSigner, null);
+    }
+
+    public static RunEvidenceBundle from(VisualGraphRunRecord record,
+                                         VisualEvidenceSigner evidenceSigner,
+                                         VisualRunPayloadStatus payloadStatus) {
         Source source = new Source(record.sourceKind(), record.draftId(), record.draftRevision(),
                 record.publicationId(), record.sourceArtifactKind(), record.graphName(), record.tenantId(),
                 record.namespace(), record.environment());
@@ -82,8 +89,7 @@ public record RunEvidenceBundle(
         List<NodeEvidence> nodes = nodeEvidence(record);
         List<EdgeEvidence> edges = edgeEvidence(record);
         Execution execution = graphExecution(record, nodes);
-        Retention retention = new Retention("SANITIZED", record.redaction().profile(),
-                record.createdAt().plus(30, ChronoUnit.DAYS));
+        Retention retention = Retention.from(record, payloadStatus);
         EvidenceManifest manifest = manifest(record, nodes, edges,
                 evidenceSigner == null ? VisualEvidenceSigner.unavailable() : evidenceSigner);
         Replay replay = new Replay(record.replay().parentRunId(), record.replay().requestId(),
@@ -564,8 +570,31 @@ public record RunEvidenceBundle(
         static Assertions notRun() { return new Assertions("NOT_RUN", List.of(), List.of()); }
     }
 
-    public record Retention(String payloadPolicy, String redactionProfile, Instant expiresAt) {
-        static Retention summaryOnly() { return new Retention("SUMMARY_ONLY", "", Instant.EPOCH); }
+    public record Retention(String payloadPolicy,
+                            String redactionProfile,
+                            Instant expiresAt,
+                            String classification,
+                            String policyId,
+                            String policyVersion,
+                            String state,
+                            boolean legalHold,
+                            String payloadFingerprint,
+                            String lifecycleEventFingerprint) {
+        static Retention from(VisualGraphRunRecord record, VisualRunPayloadStatus status) {
+            var descriptor = record.payloadRetention();
+            String currentState = status == null ? descriptor.disposition() : status.state();
+            String lifecycleFingerprint = status == null || status.latestEvent() == null
+                    ? "" : status.latestEvent().eventFingerprint();
+            return new Retention("DETACHED_SANITIZED", record.redaction().profile(), descriptor.expiresAt(),
+                    descriptor.classification(), descriptor.policyId(), descriptor.policyVersion(), currentState,
+                    status != null && VisualRunPayloadStatus.LEGAL_HOLD.equals(status.state()),
+                    descriptor.payloadFingerprint(), lifecycleFingerprint);
+        }
+
+        static Retention summaryOnly() {
+            return new Retention("SUMMARY_ONLY", "", Instant.EPOCH, "UNKNOWN", "", "", "NOT_RETAINED",
+                    false, "", "");
+        }
     }
 
     public record EvidenceManifest(int expectedNodeCount, int capturedNodeCount, int expectedEdgeCount,

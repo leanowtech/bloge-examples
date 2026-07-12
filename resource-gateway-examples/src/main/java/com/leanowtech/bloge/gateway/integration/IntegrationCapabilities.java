@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.integration;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.ManagedEvidenceSigningProvider;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualPayloadGovernancePolicy;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,6 +20,7 @@ public record IntegrationCapabilities(
         Map<String, Boolean> features,
         IntegrationIdentityResolver.Descriptor identityProvider,
         VisualEvidenceSigner.Descriptor evidenceSigner,
+        VisualPayloadGovernancePolicy.Descriptor payloadGovernance,
         List<Endpoint> endpoints
 ) {
     public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.capabilities.v1";
@@ -36,6 +38,8 @@ public record IntegrationCapabilities(
         evidenceSigner = evidenceSigner == null
                 ? VisualEvidenceSigner.unavailable().descriptor()
                 : evidenceSigner;
+        payloadGovernance = payloadGovernance == null
+                ? unavailablePayloadGovernance() : payloadGovernance;
         endpoints = endpoints == null ? List.of() : List.copyOf(endpoints);
     }
 
@@ -47,7 +51,7 @@ public record IntegrationCapabilities(
                                    IntegrationIdentityResolver.Descriptor identityProvider,
                                    List<Endpoint> endpoints) {
         this(schemaVersion, protocol, protocolVersion, supportedObjects, features, identityProvider,
-                VisualEvidenceSigner.unavailable().descriptor(), endpoints);
+                VisualEvidenceSigner.unavailable().descriptor(), unavailablePayloadGovernance(), endpoints);
     }
 
     public static IntegrationCapabilities current() {
@@ -75,6 +79,14 @@ public record IntegrationCapabilities(
     public static IntegrationCapabilities current(VisualEvidenceSigner.Descriptor evidenceSigner,
                                                   IntegrationIdentityResolver.Descriptor identityProvider,
                                                   boolean sideEffectReconcilerAdapters) {
+        return current(evidenceSigner, identityProvider, sideEffectReconcilerAdapters,
+                unavailablePayloadGovernance());
+    }
+
+    public static IntegrationCapabilities current(VisualEvidenceSigner.Descriptor evidenceSigner,
+                                                  IntegrationIdentityResolver.Descriptor identityProvider,
+                                                  boolean sideEffectReconcilerAdapters,
+                                                  VisualPayloadGovernancePolicy.Descriptor payloadGovernance) {
         VisualEvidenceSigner.Descriptor signer = evidenceSigner == null
                 ? VisualEvidenceSigner.unavailable().descriptor() : evidenceSigner;
         Map<String, List<String>> objects = new LinkedHashMap<>();
@@ -88,8 +100,16 @@ public record IntegrationCapabilities(
         objects.put("runEvidence", List.of(RunEvidenceBundle.SCHEMA_VERSION_V1,
                 RunEvidenceBundle.SCHEMA_VERSION_V2, RunEvidenceBundle.SCHEMA_VERSION_V3,
                 RunEvidenceBundle.SCHEMA_VERSION_V4, RunEvidenceBundle.SCHEMA_VERSION_V5,
-                RunEvidenceBundle.SCHEMA_VERSION));
-        objects.put("payloadReplay", List.of(PayloadReplayBundle.SCHEMA_VERSION));
+                RunEvidenceBundle.SCHEMA_VERSION_V6, RunEvidenceBundle.SCHEMA_VERSION));
+        objects.put("payloadReplay", List.of(PayloadReplayBundle.SCHEMA_VERSION_V1,
+                PayloadReplayBundle.SCHEMA_VERSION));
+        objects.put("payloadRetentionDescriptor", List.of(
+                com.leanowtech.bloge.gateway.visual.runtime.VisualPayloadRetentionDescriptor.SCHEMA_VERSION));
+        objects.put("payloadLifecycleEvent", List.of(
+                com.leanowtech.bloge.gateway.visual.runtime.VisualPayloadLifecycleEvent.SCHEMA_VERSION));
+        objects.put("payloadRetentionView", List.of(PayloadRetentionView.SCHEMA_VERSION));
+        objects.put("payloadLifecycleCommand", List.of(PayloadLifecycleCommand.SCHEMA_VERSION));
+        objects.put("payloadRetentionSweepResult", List.of(PayloadRetentionSweepResult.SCHEMA_VERSION));
         objects.put("replayExecutionRequest", List.of(ReplayExecutionRequest.SCHEMA_VERSION));
         objects.put("replayExecutionResult", List.of(ReplayExecutionResult.SCHEMA_VERSION));
         objects.put("evidenceVerificationKey", List.of(
@@ -100,7 +120,9 @@ public record IntegrationCapabilities(
                 ManagedEvidenceSigningProvider.SignatureRequest.SCHEMA_VERSION));
         objects.put("managedEvidenceSignResponse", List.of(
                 ManagedEvidenceSigningProvider.SignatureResult.SCHEMA_VERSION));
-        objects.put("governanceGateResult", List.of(GovernanceGateResult.SCHEMA_VERSION));
+        objects.put("governanceGateResult", List.of(
+                GovernanceGateResult.SCHEMA_VERSION_V1, GovernanceGateResult.SCHEMA_VERSION));
+        objects.put("correctnessWorkbookBundle", List.of(CorrectnessWorkbookBundle.SCHEMA_VERSION));
         objects.put("integrationEvent", List.of(IntegrationChangeEvent.SCHEMA_VERSION));
         objects.put("eventCursor", List.of(IntegrationEventCursorCodec.SCHEMA_VERSION));
         objects.put("changeFeed", List.of(IntegrationChangeFeed.SCHEMA_VERSION));
@@ -158,6 +180,12 @@ public record IntegrationCapabilities(
         features.put("payloadReplayNodeInputs", true);
         features.put("recordedAssertionReplay", true);
         features.put("replayExternalSideEffects", false);
+        features.put("detachedPayloadVault", payloadGovernance != null && payloadGovernance.selectiveRetention());
+        features.put("payloadClassificationPolicy", payloadGovernance != null && payloadGovernance.failClosed());
+        features.put("selectivePayloadRetention", payloadGovernance != null
+                && payloadGovernance.selectiveRetention());
+        features.put("payloadLegalHold", payloadGovernance != null && payloadGovernance.legalHold());
+        features.put("signedPayloadLifecycle", payloadGovernance != null && payloadGovernance.signedLifecycle());
         features.put("evidenceIntegrityManifest", true);
         features.put("evidenceSignature", signer.available());
         features.put("managedEvidenceSigning", signer.managedKeyCustody());
@@ -169,6 +197,8 @@ public record IntegrationCapabilities(
                 && Boolean.TRUE.equals(signer.properties().get("failClosedAfterSnapshotExpiry")));
         features.put("deepLinks", true);
         features.put("governanceGateFeedback", true);
+        features.put("correctnessWorkbookProjection", true);
+        features.put("workbookEvidenceReferences", true);
         features.put("transactionalOutbox", true);
         features.put("eventCursor", true);
         features.put("reconciliationSnapshot", true);
@@ -186,14 +216,21 @@ public record IntegrationCapabilities(
                 && identityProvider.properties().get("revocationPropagationSloSeconds") instanceof Number);
         features.put("webhook", false);
 
-        return new IntegrationCapabilities("", "", "", objects, features, identityProvider, signer, List.of(
+        return new IntegrationCapabilities("", "", "", objects, features, identityProvider, signer,
+                payloadGovernance, List.of(
                 new Endpoint("GET", "/api/integration/capabilities"),
                 new Endpoint("GET", "/api/integration/drafts/{draftId}/export"),
+                new Endpoint("GET", "/api/integration/drafts/{draftId}/correctness-workbook"),
                 new Endpoint("GET", "/api/integration/runs/{runId}/evidence"),
                 new Endpoint("GET", "/api/integration/runs/{runId}/side-effects/reconciliations"),
                 new Endpoint("POST", "/api/integration/runs/{runId}/side-effects/{attemptId}/reconcile"),
                 new Endpoint("GET", "/api/integration/runs/{runId}/replay"),
                 new Endpoint("POST", "/api/integration/runs/{runId}/replay"),
+                new Endpoint("GET", "/api/integration/runs/{runId}/payload-retention"),
+                new Endpoint("POST", "/api/integration/runs/{runId}/payload-retention/holds"),
+                new Endpoint("POST", "/api/integration/runs/{runId}/payload-retention/holds/{holdId}/release"),
+                new Endpoint("POST", "/api/integration/runs/{runId}/payload-retention/purge"),
+                new Endpoint("POST", "/api/integration/payload-retention/purge-expired"),
                 new Endpoint("GET", "/api/integration/evidence-keys/{keyId}"),
                 new Endpoint("POST", "/api/integration/gate-results"),
                 new Endpoint("GET", "/api/integration/drafts/{draftId}/gate-result"),
@@ -204,6 +241,11 @@ public record IntegrationCapabilities(
                 new Endpoint("GET", "/api/visual/run-controls/{requestId}"),
                 new Endpoint("POST", "/api/visual/run-controls/{requestId}/cancel")
         ));
+    }
+
+    private static VisualPayloadGovernancePolicy.Descriptor unavailablePayloadGovernance() {
+        return new VisualPayloadGovernancePolicy.Descriptor("", "", "", "RESTRICTED",
+                false, false, false, true);
     }
 
     private static Map<String, List<String>> immutableLists(Map<String, List<String>> values) {

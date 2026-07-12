@@ -43,4 +43,9 @@ public interface VisualGraphRunRepository {
     default VisualEvidenceSigner evidenceSigner() {
         return VisualEvidenceSigner.unavailable();
     }
+
+    /** Detached governed payload lifecycle owned alongside immutable run evidence. */
+    default VisualRunPayloadRepository payloadRepository() {
+        return null;
+    }
 }
