@@ -21,7 +21,7 @@ integration something the business flow can see, reason about, test, and change.
 | Schema-aware canvas | Drag, connect, validate, simulate, and publish under server-side schema checks |
 | Runtime-backed demos | Local upstreams, real gateway execution, mock simulation, SSE examples, and reusable publications |
 | Schema-gated table tests | Run real resource graphs with mocked downstream APIs, input/output schema validation, and node-level assertions |
-| Governed run controls | Absolute deadline, fenced cancel, durable owner lease/epoch, cross-instance commands, and automatic signed evidence recovery after owner failure |
+| Governed run controls | Absolute deadline, monotonic remaining-budget propagation, fenced cancel, durable owner lease/epoch, cross-instance commands, and automatic signed evidence recovery after owner failure |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
 
 ## Start The Demo
@@ -102,6 +102,12 @@ credit fallback, loan policy, and SSE search. The full endpoint catalog lives in
 | Provider | `HttpResourceOperator` resolves descriptors, maps parameters, calls upstreams, validates response protocol, and extracts payload |
 | Visual product surface | Catalog import/export, schema checks, draft validation, simulation, publication, golden cases, and run history |
 | Controls | Durable run-control state, owner lease/epoch fencing, pre-run evidence reservation, crash recovery sweeper/outbox, response cache, tenant rate limiting, circuit breaking, and tenant context |
+
+Managed runs reserve `100 ms` by default for terminal-state and evidence finalization. BLOGE propagates the resulting
+work budget through `OperatorContext`, scheduler admission, resilience timeout/retry, common HTTP calls, Resource Gateway
+resources, and remote-worker envelopes. Override the reserve with
+`resource-gateway.run-control.finalization-reserve-ms`; size it from measured evidence-finalization latency rather than
+treating it as an operator timeout.
 
 ## Extend It
 

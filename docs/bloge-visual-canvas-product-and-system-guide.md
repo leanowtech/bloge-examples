@@ -312,7 +312,12 @@ operator 的 effect/idempotency、业务补偿能力和门禁策略决定是否�
 | capability | 当前值 | 含义 |
 |---|---:|---|
 | `structuredExecutionFacts` | `true` | node/edge/graph 标准事实已实现 |
-| `graphDeadline` | `true` | 画布 run 支持绝对 deadline；剩余预算向下游协议传播仍待 BLOGE/runtime binding 扩展 |
+| `graphDeadline` | `true` | 画布 run 支持绝对 deadline，并为业务执行预留 evidence/terminal-state 收尾时间 |
+| `operatorContextDeadlineBudget` | `true` | 每个 BLOGE operator 可读取同一绝对 deadline 和只减不增的 remaining budget |
+| `deadlineAdmissionControl` | `true` | 剩余业务预算耗尽时，scheduler 在算子执行前 fail closed，并记录 `DEADLINE_EXHAUSTED` |
+| `retryBudgetEnforcement` | `true` | timeout 和 retry backoff 都会被剩余预算截短；预算不足时不会启动下一次 retry |
+| `httpRemainingBudget` | `true` | Resource Gateway 与 BLOGE common HTTP operator 使用较短的有效 timeout，并向下游传递 deadline/budget header |
+| `remoteWorkerDeadlineBudget` | `true` | remote worker envelope 携带 deadline、捕获时剩余预算、reserve 与 capturedAt，worker 可按时钟偏差 fail closed |
 | `userRunCancellation` | `true` | 支持带 fencing token 的协作式 cancel command |
 | `runTerminationConfirmation` | `true` | owner 已退出且 operator in-flight 归零后才确认终止 |
 | `hardRunTermination` | `false` | Java 进程不能安全强杀忽略中断的任意业务代码 |
@@ -349,6 +354,43 @@ Custom Composer 的 **Run** 区现在直接提供 `Deadline` 数值框。点击 
 ![Resource Gateway run control 生命周期](assets/resource-gateway-run-control-lifecycle.svg)
 
 图源：[resource-gateway-run-control-lifecycle.drawio](assets/drawio/resource-gateway-run-control-lifecycle.drawio)。
+
+#### Deadline 如何进入算子和下游调用
+
+页面上的 `Deadline` 是整次 run 的绝对边界，不是每个节点可独占的 timeout。Gateway 在启动 BLOGE 前创建共享
+`ExecutionBudget`，并从绝对 deadline 中扣除 `finalizationReserve`；默认 reserve 为 `100 ms`。所有 scoped
+`GraphContext`、嵌套图和 `OperatorContext` 共享同一预算上限，后续代码只能收紧，不能重新绑定一个更晚的
+deadline。即使操作系统时钟向后校正，已经观察到的 remaining budget 也不会增大。
+
+自定义 operator 可直接使用：
+
+```java
+Instant deadline = ctx.deadlineAt().orElse(null);
+Duration remaining = ctx.remainingBudget().orElse(null);
+Duration effectiveTimeout = ctx.capTimeout(configuredTimeout, "customer profile lookup");
+```
+
+调用链遵循以下规则：
+
+1. scheduler 在 node admission 前检查预算；为零时不调用 operator，node fact 为
+   `CANCELLED + DEADLINE_EXHAUSTED + ENGINE_ADMISSION`。
+2. resilience timeout、suspend timeout 和 retry backoff 都不得超过剩余预算；下一次退避已经放不下时立即停止重试。
+3. `HttpResourceOperator` 和 BLOGE `HttpRequestOperator` 取“配置 timeout 与剩余预算的较小值”。common HTTP
+   operator 还发送 `X-Bloge-Deadline` 与 `X-Bloge-Remaining-Budget-Ms`，让下游继续收紧自己的子调用。
+4. `RemoteWorkerEnvelope.Budget` 携带 `deadlineAt`、`remainingBudgetMillis`、`finalizationReserveMillis` 和
+   `capturedAt`。worker 必须结合允许的 clock skew 判断 envelope 是否已过期，不能用传输前的剩余值重新放宽预算。
+
+`remainingBudget` 是“还允许投入业务工作的时间”，已经扣除了 evidence 签名、终态持久化和 outbox 提交的
+reserve。生产环境应根据 p99 evidence finalization 延迟配置该值；reserve 过小会在 deadline 边缘丢失治理证据，
+过大则会过早拒绝业务节点：
+
+```properties
+resource-gateway.run-control.finalization-reserve-ms=100
+```
+
+当前协议仍不承诺强杀任意忽略中断的 Java 代码，也没有定义客户端断开后的 `detachPolicy`。自定义 operator 若绕过
+`ctx.capTimeout(...)` 发起不可取消的私有 I/O，外层 run-control 只能中断线程并在 grace 后诚实地进入
+`TERMINATION_UNCONFIRMED`；这类 binding 在生产准入时仍应被合规测试阻断。
 
 执行完成后，在 Output 中展开 `payload.runControl`：
 
@@ -403,6 +445,7 @@ Spring 产品服务使用 `dynamic_run_controls` 作为权威状态表，JVM 内
 提交时延和数据库容量测试决定：
 
 ```properties
+resource-gateway.run-control.finalization-reserve-ms=100
 resource-gateway.run-recovery.fixed-delay-ms=5000
 resource-gateway.run-recovery.initial-delay-ms=5000
 resource-gateway.run-recovery.evidence-commit-grace-ms=5000

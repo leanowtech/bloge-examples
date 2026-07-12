@@ -5,7 +5,7 @@
 | 属性 | 内容 |
 |---|---|
 | 设计基线 | `docs/resource-gateway-aneke-tool-studio-integration-evolution-plan.md` |
-| 当前实现基线 | Round 9（pre-run lineage reservation、自动 evidence recovery、recovery outbox） |
+| 当前实现基线 | Round 10（execution-budget 跨层传播、deadline admission、HTTP/remote budget） |
 | 评估日期 | 2026-07-12 |
 | 目标 | 加权实施差距 `<3%`，且不存在 P0 阻断项 |
 | 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1524 tests，0 failures，0 errors，2 skipped，`BUILD SUCCESS`（04:57） |
@@ -225,6 +225,29 @@ Round 9 结论：差距从 `19.825%` 降至 `17.25%`，`EVD-02` 关闭。这里�
 commit receipt 缺失，manifest 仍为 `QUARANTINED`。剩余 P0 是 IAM 动态生命周期、KMS custody、remaining-budget
 传播和副作用 commit/reconciliation；工业化还缺 scheduler telemetry、backoff/DLQ、retention/residency 和外部 HA DB 演练。
 
+## 2.10 Round 10 重新审计
+
+Round 9 的 graph deadline 仍停留在 control plane：operator 只能被线程中断，无法把“这次 run 还剩多少业务时间”
+继续传给 retry、HTTP 或 remote worker。Round 10 在 BLOGE core 建立共享 `ExecutionBudget`，把绝对 deadline、
+evidence finalization reserve 和只减不增的 remaining budget 变成执行期合同；Resource Gateway 在 owner 启动前完成
+绑定，并通过 capability 对集成方显式声明传播范围。
+
+| 维度 | 权重 | 当前完成率 | 得分 | 本轮可证明增量 | 仍未证明 |
+|---|---:|---:|---:|---|---|
+| 协议、版本与身份边界 | 15 | 98% | 14.70 | capability 新增 OperatorContext、admission、retry、HTTP、remote-worker 五个独立 feature flag | visual control endpoint 企业 IAM scope；自动 N/N-1 consumer matrix；动态 IAM/mTLS 联调 |
+| GraphDraft 依赖快照 | 10 | 60% | 6.00 | 无语义变化 | runtime binding/suite refs、跨表一致快照、完整 readiness profile |
+| Run evidence 可信链 | 20 | 94% | 18.80 | deadline admission 会形成结构化 `DEADLINE_EXHAUSTED` node fact，但 reserve 尚未成为独立 evidence 字段 | KMS/HSM、retention/legal hold、commit receipt、外部 verifier matrix |
+| Payload replay | 15 | 80% | 12.00 | 无语义变化 | shadow/live 审批隔离、跨实例 exactly-once、选择性 retention |
+| Timeout/partial failure 语义 | 10 | 99% | 9.90 | deadline→GraphContext→OperatorContext；admission fail closed；timeout/retry/suspend cap；HTTP header；remote worker budget；clock rollback 不放宽 | detach policy；任意自定义 binding 的协作合规；unknown commit reconciliation |
+| Workbook、gate feedback 与 Deep Link | 10 | 72% | 7.20 | `DEADLINE_EXHAUSTED + ENGINE_ADMISSION` 可直接成为 workbook/gate 原因 | 双向 workbook refs、coverage policy、owner/migration gate 完整闭环 |
+| Change event、cursor、webhook 与对账 | 10 | 85% | 8.50 | 无语义变化 | signed webhook、DLQ/退避、retention/compaction、乱序 fault harness |
+| 工业运行控制 | 10 | 68% | 6.80 | finalization reserve；预算不可扩张；wall-clock 回拨不增加预算；跨 scheduler/retry/HTTP/remote 边界测试 | 外部 HA DB 多进程实测、metrics/SLO、quota、DR/容量、residency、detach fault injection |
+| **合计** | **100** |  | **83.90** |  | **加权差距 16.10%** |
+
+Round 10 结论：差距从 `17.25%` 降至 `16.10%`。`RUN-01` 的核心“remaining budget 不出 control plane”病根已
+关闭，但该编号仍保留为较窄的 P0：客户端断开没有显式 detach 语义，且私有 runtime binding 可以忽略
+`OperatorContext` 后发起不可取消 I/O。`RUN-02`、`IAM-01`、`OPS-01` 没有因本轮工作获得虚假完成度。
+
 ## 3. 已通过的证明
 
 ### 3.1 协议与隔离
@@ -438,8 +461,9 @@ graceful shutdown completed
 
 边界说明：BLOGE 当前 timeout/fallback listener 旧签名没有 `OperatorContext`。Gateway 已用 invocation scope 和
 唯一 active candidate 关联，并在歧义时 fail closed；根治方案仍应在 BLOGE 演进中把 executionId/context 加入
-所有 resilience event。图级 absolute deadline、用户 cancel/fencing 和双条件终止确认已实现；但 budget
-propagation、disconnect policy、hard kill 和 operator commit receipt 仍未实现。Round 8 已把 control state、跨实例 cancel
+所有 resilience event。图级 absolute deadline、用户 cancel/fencing 和双条件终止确认已实现；Round 10 又补齐
+budget 对 scheduler、OperatorContext、HTTP、remote worker 和 retry/timeout 的传播，但 disconnect policy、hard kill
+和 operator commit receipt 仍未实现。Round 8 已把 control state、跨实例 cancel
 和 owner lease/epoch 持久化，但恢复策略是 abandonment + quarantine，不把它夸大为崩溃后自动续跑。
 
 ### 3.9 Run control 与真实页面证明
@@ -558,13 +582,50 @@ termination gap 保持 `QUARANTINED`。ANEKE 可以可靠地消费“发生过�
 其二，operator library 导入在首个异步校验前仍显示上一次成功状态，真实 Chrome 会把旧状态误判为本次完成；现在
 点击后同步显示 `Validating operator library...`，消除用户和自动化共同可见的竞态，原失败用例及全量浏览器回归均通过。
 
+### 3.12 Execution budget 的跨层证明
+
+本轮验证覆盖的不是一个孤立 `Duration` 字段，而是从 Resource Gateway intent 到 BLOGE runtime binding 的完整收窄链：
+
+```text
+RunIntent.deadlineAt
+  -> root GraphContext.ExecutionBudget(deadline, finalizationReserve)
+  -> scoped / nested GraphContext (shared ceiling; cannot widen)
+  -> scheduler admission + resilience timeout/retry/suspend
+  -> OperatorContext.deadlineAt / remainingBudget / capTimeout
+  -> HttpResourceOperator / common HttpRequestOperator / RemoteWorkerEnvelope
+
+BLOGE reactor:
+  core 1909 passed
+  crypto functions 18 passed
+  DSL 1555 passed, 1 skipped
+  common operators 108 passed
+  total 3590 passed, 0 failures, 0 errors, 1 skipped
+
+Resource Gateway focused + Spring wiring:
+  56 passed, 0 failures, 0 errors, 0 skipped
+
+Resource Gateway full verify (real Chrome included):
+  1527 passed, 0 failures, 0 errors, 2 skipped
+  BUILD SUCCESS (04:56)
+
+Corporate Draw.io:
+  0 errors, 0 warnings, 0 crossings, 0 overlaps
+  SVG visual inspection passed
+```
+
+故障断言包括：reserve 被业务预算扣除；时钟向后校正不能增加预算；预算耗尽时 operator invocation 为零；
+retry backoff 放不进剩余窗口时不再 retry；20 秒 HTTP 配置在 5 秒 deadline/1 秒 reserve 下收紧为 4 秒；common
+HTTP 真实 server 收到 deadline/budget headers；remote envelope 可序列化预算并按 worker clock/skew 判定过期。
+Resource Gateway 还证明 admission skip 被采集为 `CANCELLED + DEADLINE_EXHAUSTED + ENGINE_ADMISSION`，而不是
+退化为 `UNKNOWN`。
+
 ## 4. 当前 P0 阻断项
 
 | ID | 阻断项 | 病根 | 根治验收 |
 |---|---|---|---|
 | `IAM-01` | 企业身份生命周期尚未端到端证明 | signed JWT、轮换和撤销代码已具备，但配置 trust store 只在启动时装载，尚无客户 IAM 动态策略/撤销传播证据 | 动态 JWKS/KMS 或 mTLS adapter + 多 identity/group/clearance + delegation grant + propagation SLO + policy/audit 联调演练 |
 | `OPS-01` | 本地签名 key 不满足企业 custody | private key 由本地 H2 demo provider 保存 | KMS/HSM-backed `VisualEvidenceSigner`、rotation/disable/revoke、审计和灾备演练 |
-| `RUN-01` | deadline 剩余预算尚未传播到每个 runtime binding | Round 9 已关闭 control/evidence 的单进程与崩溃断链：durable repository、跨实例 cancel、owner lease/epoch、abandonment evidence recovery 和 race tests 已落地；但 HTTP/remote worker/自定义 operator 仍只看到线程 interrupt，拿不到可验证的 remaining budget | BLOGE `OperatorContext` deadline/budget contract + HTTP timeout lowering + child-call budget cap + disconnect policy + clock-skew/fault tests |
+| `RUN-01` | disconnect/detach 与任意 binding 的预算合规尚未封口 | Round 10 已完成 OperatorContext、scheduler admission、retry/timeout/suspend、Resource Gateway/common HTTP 和 remote worker 的 remaining-budget 传播，并防止 wall-clock 回拨放宽预算；但客户端断开语义未版本化，私有 binding 仍可忽略合同 | versioned `detachPolicy` + disconnect race/fault tests + runtime binding conformance suite + non-cooperative I/O quarantine |
 | `RUN-02` | 外部副作用 timeout 后只能标记 unknown commit | operator 没有 commit receipt/reconciliation hook，盲重试可能重复写 | effect/idempotency admission + transaction/idempotency receipt + reconcile/compensate hook + downstream-write suspension + gate policy |
 
 `EVD-02` 已在 Round 9 关闭；`EVT-01` 已在 Round 3 对当前资产模型关闭。webhook、recovery retry
@@ -585,5 +646,6 @@ backoff/DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，�
 | 7 | graph deadline、fenced cancel 与终止确认 | versioned intent/control、绝对 deadline、fence/revision、owner+operator 双条件确认、不合作算子 quarantine、UI deadline/stop、evidence v4 | 20.90% | 1494 全量 tests、24 个聚焦/114 个扩展回归 tests、真实浏览器 desktop/mobile、真实 jar v4 + AJV schema、Draw.io 0 errors/warnings |
 | 8 | durable run control 与 owner failure 语义 | DB 权威状态、跨实例 cancel、lease/epoch fencing、并发单赢家、cancel-before-start、过期 abandonment、raw fence 不落库 | 19.825% | 45 个聚焦 tests、1513 个全量 tests、跨 repository restart/双实例/race tests、真实浏览器回归、Draw.io 0 errors/warnings |
 | 9 | owner failure 后 evidence continuity | pre-run 脱敏 lineage reservation、normal/recovery 单赢家、三类 synthetic recovery、签名 evidence v5、事务 outbox、失败回滚重试、visual-owned recovery port | 17.25% | 11 个 recovery fault tests、41 个聚焦 tests、1 个目标真实 Chrome 流程、1524 个全量 tests、v5 schema、restart/concurrency/outbox rollback、Draw.io 0 errors/warnings |
+| 10 | deadline remaining-budget 跨层传播 | `ExecutionBudget`、finalization reserve、不可扩张/防时钟回拨、scheduler admission、retry/timeout/suspend cap、HTTP headers、remote-worker envelope、结构化 deadline-exhausted fact | 16.10% | BLOGE reactor 3590 tests；Resource Gateway 56 个聚焦/Spring tests、1527 个全量 tests（含真实 Chrome）；Draw.io 0 errors/warnings/crossings/overlaps、SVG 视觉检查通过 |
 
 后续每轮必须更新本表、代码证据、失败测试和剩余阻断项。只有全部 P0 阻断关闭、全量验证与真实浏览器验证通过，并且按同一权重计算的差距 `<3%`，才允许把目标标记完成。

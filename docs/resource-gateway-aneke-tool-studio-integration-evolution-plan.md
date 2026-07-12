@@ -533,7 +533,7 @@ POST /api/integration/gate-results
 | P0 | Run Trace 可导出为治理证据 | 当前 shape-only trace 不够 | 新增 evidence bundle，不直接改造成唯一 run response |
 | P0 | Payload 级 replay | 当前缺 payload capture | 新增 payload store/ref/sanitizer/replay endpoint |
 | P0 | GraphDraft export 依赖元数据 | 已有 dependency report 但不够稳定导入 | integration dependency profile |
-| P0 | Timeout/partial failure 语义 | Round 9 已补 engine event、绝对 deadline、fenced cancel、双条件终止确认、durable control、跨实例 cancel、owner lease/epoch、过期隔离及 owner 崩溃后的证据恢复；预算传播/commit receipt 仍缺 | `VisualNodeExecutionFact` + durable control + pre-run lineage reservation + evidence v5；下一步 remaining-budget 与 commit reconciliation |
+| P0 | Timeout/partial failure 语义 | Round 10 已补 engine event、绝对 deadline、fenced cancel、双条件终止确认、durable control、崩溃证据恢复，以及 OperatorContext/HTTP/remote worker 的 remaining-budget 传播；detach policy 与 commit receipt 仍缺 | `VisualNodeExecutionFact` + durable control + evidence v5 + `ExecutionBudget`；下一步 disconnect/detach 与 commit reconciliation |
 | P1 | Deep Link | 当前不是 integration API | 前端 route + resolver API |
 | P1 | Health/Capability Probe | 缺口明确 | `/api/integration/capabilities` |
 | P1 | Contract Test Suite 对齐 workbook | 当前 case/assertion 语义偏基础 | suite vNext + workbook mapping |
@@ -1059,7 +1059,7 @@ run deadline
 
 图源：[resource-gateway-run-control-lifecycle.drawio](assets/drawio/resource-gateway-run-control-lifecycle.drawio)。
 
-当前落地状态（Round 9）：`VisualRunIntent.v1` 和 gateway adapter 对应 intent 使用绝对 `deadlineAt`、
+当前落地状态（Round 10）：`VisualRunIntent.v1` 和 gateway adapter 对应 intent 使用绝对 `deadlineAt`、
 caller-generated `requestId/fencingToken` 和 cancellation grace。`DynamicRunControlManager` 拥有 scheduler
 thread、每个进入 operator interceptor 的虚拟线程集合和 monotonic revision；deadline 或用户 cancel 会同时
 设置 stop token、阻止后续 operator invocation，并中断 owner 与当前 in-flight operators。取消查询也必须携带
@@ -1069,7 +1069,7 @@ fence；错误 token 返回 403，过期 `expectedRevision` 返回 409，同一 
 `CANCELLED/TIMED_OUT`。grace 到期或 owner 已退出但仍有算子运行时，状态保持
 `TERMINATION_UNCONFIRMED + sideEffectsMayBeInFlight=true`。`dynamic_run_controls` 以数据库行锁持久化 fence
 digest、owner epoch、revision 与 lease；非 owner 实例可提交 cancel，owner 在续租轮询中观察命令。
-owner 在续租轮询中观察命令。租约过期不会被当成成功，而会原子进入
+租约过期不会被当成成功，而会原子进入
 `OWNER_LEASE_EXPIRED + TERMINATION_UNCONFIRMED + ABANDONED`，旧 owner/epoch 不能覆盖。capability 因此返回
 `durableRunControl/crossInstanceRunCancellation/runOwnerLease/runOwnerEpochFencing/expiredOwnerQuarantine=true`，
 同时返回 `hardRunTermination/restartRunResumption=false`，禁止消费者把持久控制误读为任意 Java 代码强杀或崩溃后续跑。
@@ -1082,9 +1082,17 @@ grace 仍缺 control 三种情况都会生成带 `VisualRunRecoveryMetadata` 的
 处于同一事务；失败全部回滚并可重试。恢复 evidence 保持签名可验但因 payload/termination 缺口进入
 `QUARANTINED`，不会伪装成正常成功证据。
 
-当前仍未完成三项：deadline 剩余预算传播到 node/HTTP binding、`detachPolicy`、以及 operator commit
-receipt/reconciliation。多实例 correctness 已由 row lock 保证，但生产级 scheduler metrics、退避/DLQ、外部 HA DB
-fault injection、retention/residency 和 KMS custody 仍属于工业化差距。
+Round 10 把 deadline 从 control-plane 字段推进为 engine work-budget contract。Gateway 在启动 owner 前把带
+finalization reserve 的 `ExecutionBudget` 绑定到 root `GraphContext`；scoped/nested context 共享同一只减不增的
+上限。`OperatorContext` 暴露 `deadlineAt/remainingBudget/capTimeout`，scheduler 在 admission 前 fail closed，
+resilience timeout、suspend timeout 和 retry backoff 都服从剩余预算。Resource Gateway HTTP binding 和 BLOGE
+common HTTP operator 取更短 timeout，后者继续发送 `X-Bloge-Deadline/X-Bloge-Remaining-Budget-Ms`；remote
+worker envelope 携带 deadline、remaining、reserve、capturedAt 并支持 clock-skew fail-closed 判断。
+
+当前仍未完成两项运行语义：客户端断开后的显式 `detachPolicy`，以及 operator commit receipt/reconciliation。
+任意自定义 operator 是否真正使用 budget 仍需 runtime-binding 合规准入；强杀不合作 Java 代码依然不在承诺内。
+多实例 correctness 已由 row lock 保证，但生产级 scheduler metrics、退避/DLQ、外部 HA DB fault injection、
+retention/residency 和 KMS custody 仍属于工业化差距。
 
 ### 23.2 Retry 不是默认正确
 
@@ -1418,12 +1426,13 @@ operator 从 schema 导入到生产可用需要 `DISCOVERED -> DESCRIBED -> VERI
 
 退出门槛：success/failure/timeout/partial/mock/fallback/unknown-commit 场景均可结构化解释；篡改可检出；run 成功但 evidence 不完整时 gate 不会误采纳。
 
-当前落地状态（Round 9）：标准 node/edge/graph facts、真实 retry/timeout/fallback events、关键输出聚合、
+当前落地状态（Round 10）：标准 node/edge/graph facts、真实 retry/timeout/fallback events、关键输出聚合、
 sanitized payload、持久签名、fact coverage 和 quarantine 已实现；run intent、绝对 deadline、fenced cancel、
 owner+operator 双条件终止确认、durable control、跨实例 cancel、owner lease/epoch、过期 quarantine、
-pre-run recovery reservation 和 evidence v5 automatic recovery 也已落地。capability 同时揭示未支持的
+pre-run recovery reservation、evidence v5 automatic recovery，以及 deadline budget 对 OperatorContext、scheduler、
+retry/timeout、HTTP 和 remote worker 的传播也已落地。capability 同时揭示未支持的
 `hardRunTermination/restartRunResumption/sideEffectCommitConfirmation`。Stage 2 仍未退出：还需 remaining-budget
-propagation、disconnect policy、operator commit receipt、side-effect-aware retry/reconciliation、KMS custody，
+binding 合规准入、disconnect policy、operator commit receipt、side-effect-aware retry/reconciliation、KMS custody，
 以及外部 HA DB fault injection/SLO。
 
 ### Stage 3 - Safe replay 与 workbook 对齐（2-4 周）
