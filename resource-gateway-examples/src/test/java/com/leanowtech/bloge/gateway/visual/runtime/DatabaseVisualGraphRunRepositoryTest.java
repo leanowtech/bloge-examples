@@ -75,6 +75,32 @@ class DatabaseVisualGraphRunRepositoryTest {
     }
 
     @Test
+    void replayLineageAndAssertionEvidenceSurviveRestart() {
+        VisualGraphRunRecord parent = repository.create(record("parent-run"));
+        VisualReplayMetadata replayMetadata = new VisualReplayMetadata(
+                "", parent.runId(), "replay-request-1", "sha256:request", "RECORDED_ASSERTIONS",
+                "REGRESSION", "DENY", 0, List.of(new VisualReplayAssertionResult(
+                "terminal", "OUTPUT", "", "PATH_EQUALS", "/decision", true,
+                "sha256:expected", "sha256:actual", "Assertion passed.")));
+        VisualGraphRunRecord replay = repository.create(
+                parent.recordedReplay(replayMetadata).withIdentity("replay-run", null));
+
+        DatabaseVisualGraphRunRepository reloaded = new DatabaseVisualGraphRunRepository(jdbc, objectMapper);
+        reloaded.init();
+        VisualGraphRunRecord restored = reloaded.find("replay-run").orElseThrow();
+
+        assertThat(restored).isEqualTo(replay);
+        assertThat(restored.schemaVersion()).isEqualTo(VisualGraphRunRecord.SCHEMA_VERSION);
+        assertThat(restored.replay().parentRunId()).isEqualTo("parent-run");
+        assertThat(restored.replay().requestId()).isEqualTo("replay-request-1");
+        assertThat(restored.replay().externalInvocationCount()).isZero();
+        assertThat(restored.replay().assertionResults()).singleElement()
+                .satisfies(assertion -> assertThat(assertion.passed()).isTrue());
+        assertThat(reloaded.evidenceSigner().verify(restored.evidenceSeal(), restored.evidenceMaterialFingerprint())
+                .valid()).isTrue();
+    }
+
+    @Test
     void legacyRunJsonWithoutNodeSnapshotsDefaultsToEmptySnapshots() throws Exception {
         String legacyJson = """
                 {
@@ -109,6 +135,7 @@ class DatabaseVisualGraphRunRepositoryTest {
         assertThat(record.nodeElapsedMs()).isEmpty();
         assertThat(record.nodeSnapshots()).isEmpty();
         assertThat(record.evidenceSeal().signed()).isFalse();
+        assertThat(record.replay().replay()).isFalse();
         assertThat(record.generatedDsl()).contains("graph visualPolicy");
     }
 

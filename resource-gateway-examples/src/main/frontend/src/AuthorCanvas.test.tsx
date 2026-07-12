@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from 'react';
+import { act, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -84,6 +84,7 @@ describe('AuthorCanvas operator-library intake', () => {
 
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    window.history.replaceState({}, '', '/author/');
     reactFlowMocks.fitView.mockReset();
     reactFlowMocks.getZoom.mockReset();
     reactFlowMocks.getZoom.mockReturnValue(1);
@@ -182,6 +183,117 @@ describe('AuthorCanvas operator-library intake', () => {
     host.remove();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('opens a run deep link, restores its draft, focuses a node, and displays governance feedback', async () => {
+    const projection = dslProjection() as { draft: Record<string, unknown> };
+    const draft = { ...projection.draft, draftId: 'draft-42', revision: 7 };
+    window.history.replaceState({}, '', '/author/?runId=run-99&nodeId=eligibility');
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({ operators: [eligibilityOperator(), transformOperator()] });
+      }
+      if (url === '/api/visual/runs/run-99') {
+        return jsonResponse({
+          runId: 'run-99',
+          draftId: 'draft-42',
+          draftRevision: 7,
+          sourceKind: 'STORED_DRAFT',
+          outputNode: 'response',
+          success: false,
+          elapsedMs: 81,
+          errors: ['Policy assertion failed.'],
+        });
+      }
+      if (url === '/api/visual/drafts/draft-42') {
+        return jsonResponse(draft);
+      }
+      if (url === '/api/visual/governance-gates/drafts/draft-42') {
+        return jsonResponse({
+          draftId: 'draft-42',
+          currentRevision: 7,
+          currentDraftFingerprint: 'draft-fp-7',
+          freshness: 'CURRENT',
+          result: {
+            gateResultId: 'gate-1',
+            status: 'BLOCKED',
+            target: { draftId: 'draft-42', revision: 7, draftFingerprint: 'draft-fp-7' },
+            issues: [{
+              issueId: 'missing-owner',
+              severity: 'BLOCKING',
+              code: 'OWNER_APPROVAL_REQUIRED',
+              message: 'Owner approval is missing.',
+              targetPath: '/nodes/response',
+              recommendedAction: 'Request approval from the graph owner.',
+            }],
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<StrictMode><AuthorCanvas /></StrictMode>);
+    });
+
+    await waitFor(() => {
+      expect(query('[data-testid="author-deep-link-notice"]').textContent).toContain('focused eligibility');
+      expect(query('[data-testid="canvas-node:eligibility"]').className).toContain('selected');
+    });
+    expect(query('[data-testid="run-context-strip"]').textContent).toContain('run-99');
+    expect(query('[data-testid="run-context-strip"]').textContent).toContain('FAILED');
+    expect(query('[data-testid="governance-gate-strip"]').textContent).toContain('BLOCKED');
+    expect(query('[data-testid="governance-gate-strip"]').textContent).toContain('CURRENT');
+
+    await click(query('[data-testid="governance-issue:missing-owner"]'));
+
+    await waitFor(() => {
+      expect(query('[data-testid="canvas-node:response"]').className).toContain('selected');
+      expect(query('[data-testid="author-deep-link-notice"]').textContent).toContain('missing-owner');
+    });
+  });
+
+  it('resolves an operator deep link and marks stale governance feedback explicitly', async () => {
+    const projection = dslProjection() as { draft: Record<string, unknown> };
+    const draft = { ...projection.draft, draftId: 'draft-stale', revision: 9 };
+    window.history.replaceState({}, '', '/author/?draftId=draft-stale&operatorRef=risk%3Aeligibility');
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({ operators: [eligibilityOperator(), transformOperator()] });
+      }
+      if (url === '/api/visual/drafts/draft-stale') {
+        return jsonResponse(draft);
+      }
+      if (url === '/api/visual/governance-gates/drafts/draft-stale') {
+        return jsonResponse({
+          draftId: 'draft-stale',
+          currentRevision: 9,
+          currentDraftFingerprint: 'draft-fp-9',
+          freshness: 'STALE',
+          result: {
+            gateResultId: 'gate-old',
+            status: 'PASSED',
+            target: { draftId: 'draft-stale', revision: 8, draftFingerprint: 'draft-fp-8' },
+            issues: [],
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() => {
+      expect(query('[data-testid="canvas-node:eligibility"]').className).toContain('selected');
+      expect(query('[data-testid="governance-gate-strip"]').textContent).toContain('STALE');
+    });
+    expect(query('[data-testid="governance-gate-strip"]').className).toContain('warning');
   });
 
   it('validates and imports pasted user operators, then exposes them to the palette and canvas', async () => {

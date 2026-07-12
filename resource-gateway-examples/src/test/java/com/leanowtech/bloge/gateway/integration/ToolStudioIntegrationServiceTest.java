@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualReplayAssertionResult;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
@@ -46,19 +47,23 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("draftExportDependencyProfile", true)
                 .containsEntry("runEvidenceBundle", true)
                 .containsEntry("payloadReplay", true)
+                .containsEntry("recordedAssertionReplay", true)
+                .containsEntry("replayExternalSideEffects", false)
+                .containsEntry("deepLinks", true)
                 .containsEntry("governanceGateFeedback", true)
                 .containsEntry("eventCursor", false)
                 .containsEntry("webhook", false);
         assertThat(envelope.payload().endpoints())
-                .extracting(IntegrationCapabilities.Endpoint::path)
+                .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
                 .containsExactlyInAnyOrder(
-                        "/api/integration/capabilities",
-                        "/api/integration/drafts/{draftId}/export",
-                        "/api/integration/runs/{runId}/evidence",
-                        "/api/integration/runs/{runId}/replay",
-                        "/api/integration/evidence-keys/{keyId}",
-                        "/api/integration/gate-results",
-                        "/api/integration/drafts/{draftId}/gate-result"
+                        "GET /api/integration/capabilities",
+                        "GET /api/integration/drafts/{draftId}/export",
+                        "GET /api/integration/runs/{runId}/evidence",
+                        "GET /api/integration/runs/{runId}/replay",
+                        "POST /api/integration/runs/{runId}/replay",
+                        "GET /api/integration/evidence-keys/{keyId}",
+                        "POST /api/integration/gate-results",
+                        "GET /api/integration/drafts/{draftId}/gate-result"
                 );
     }
 
@@ -289,6 +294,135 @@ class ToolStudioIntegrationServiceTest {
         assertThat(evidence.manifest().evidenceStatus()).isEqualTo("READY");
     }
 
+    @Test
+    void executesIdempotentRecordedReplayWithLineageAssertionsAndNoExternalCalls() {
+        OperatorDefinition operator = operator();
+        GraphDraft draft = runDraft(operator);
+        VisualGraphRunResponse response = new VisualGraphRunResponse(
+                true, true, true, draft.graphName(), "decision",
+                Map.of("decision", "APPROVE", "reason", "eligible"),
+                Map.of(
+                        "eligibility", Map.of("eligible", true, "score", 720),
+                        "decision", Map.of("decision", "APPROVE", "reason", "eligible")),
+                Map.of("eligibility", "SUCCESS", "decision", "SUCCESS"), 25,
+                Map.of("eligibility", 8L, "decision", 7L), List.of(), List.of(), null, null,
+                "graph customerKnowledgeTool {}", new VisualValidationResult(true, List.of()), "",
+                Map.of(
+                        "eligibility", List.of(attempt(
+                                Map.of("customerId", "c-1"), Map.of("eligible", true, "score", 720))),
+                        "decision", List.of(attempt(
+                                Map.of("eligible", true, "score", 720),
+                                Map.of("decision", "APPROVE", "reason", "eligible"))))
+        );
+        VisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
+        VisualGraphRunRecord parent = runs.create(VisualGraphRunRecord.storedDraft(
+                draft, Map.of("customerId", "c-1"), response));
+        ToolStudioIntegrationService service = service(null, null, null, runs);
+        ReplayExecutionRequest request = new ReplayExecutionRequest(
+                "", "replay-request-1", "RECORDED_ASSERTIONS", "REGRESSION", "DENY", List.of(
+                new ReplayExecutionRequest.Assertion(
+                        "terminal-decision", "OUTPUT", "", "PATH_EQUALS", "/decision", "APPROVE"),
+                new ReplayExecutionRequest.Assertion(
+                        "eligibility-node", "NODE", "eligibility", "PATH_EQUALS", "/eligible", true),
+                new ReplayExecutionRequest.Assertion(
+                        "output-schema", "OUTPUT", "", "MATCHES_SCHEMA", "", Map.of(
+                        "type", "object", "required", List.of("decision", "reason"),
+                        "properties", Map.of("decision", Map.of("type", "string")))),
+                new ReplayExecutionRequest.Assertion(
+                        "signed-parent", "RUN", "", "GOVERNANCE_EXPECTATION", "", "SIGNATURE_VERIFIED")
+        ));
+
+        ReplayExecutionResult first = service.executeReplay(parent.runId(), request, replayContext("corr-rpl-1"))
+                .payload();
+        ReplayExecutionResult second = service.executeReplay(parent.runId(), request, replayContext("corr-rpl-2"))
+                .payload();
+
+        assertThat(first.status()).isEqualTo("PASSED");
+        assertThat(first.replayRunId()).isNotEqualTo(parent.runId()).isEqualTo(second.replayRunId());
+        assertThat(first.parentRunId()).isEqualTo(parent.runId());
+        assertThat(first.externalInvocationCount()).isZero();
+        assertThat(first.sideEffectPolicy()).isEqualTo("DENY");
+        assertThat(first.evidenceStatus()).isEqualTo("READY");
+        assertThat(first.assertionResults()).hasSize(4).allMatch(VisualReplayAssertionResult::passed);
+
+        VisualGraphRunRecord replay = runs.find(first.replayRunId()).orElseThrow();
+        assertThat(replay.sourceKind()).isEqualTo(VisualGraphRunRecord.SOURCE_RECORDED_REPLAY);
+        assertThat(replay.replay().parentRunId()).isEqualTo(parent.runId());
+        assertThat(replay.replay().requestFingerprint()).isEqualTo(request.fingerprint());
+        assertThat(replay.replay().externalInvocationCount()).isZero();
+        assertThat(replay.statusMap()).containsOnlyKeys("eligibility", "decision")
+                .allSatisfy((nodeId, status) -> assertThat(status).isEqualTo("MOCKED"));
+        assertThat(replay.evidenceSeal().signature()).isNotBlank();
+
+        RunEvidenceBundle evidence = service.runEvidence(replay.runId(), integrationContext("corr-rpl-evidence"))
+                .payload();
+        assertThat(evidence.replay().parentRunId()).isEqualTo(parent.runId());
+        assertThat(evidence.replay().externalInvocationCount()).isZero();
+        assertThat(evidence.execution().mockUsed()).isTrue();
+        assertThat(evidence.edges()).allSatisfy(edge -> assertThat(edge.status()).isEqualTo("MOCKED"));
+        assertThat(evidence.assertions().status()).isEqualTo("PASSED");
+        assertThat(evidence.assertions().results()).hasSize(4);
+        assertThat(evidence.manifest().evidenceStatus()).isEqualTo("READY");
+    }
+
+    @Test
+    void persistsFailedReplayAssertionsAndRejectsIdempotencyOrSafetyPolicyViolations() {
+        OperatorDefinition operator = operator();
+        GraphDraft draft = draft(operator);
+        VisualGraphRunResponse response = new VisualGraphRunResponse(
+                true, true, true, draft.graphName(), "eligibility", Map.of("eligible", false),
+                Map.of("eligibility", Map.of("eligible", false)), Map.of("eligibility", "SUCCESS"), 4,
+                Map.of("eligibility", 4L), List.of(), List.of(), null, null, "graph customerKnowledgeTool {}",
+                new VisualValidationResult(true, List.of()), "",
+                Map.of("eligibility", List.of(attempt(Map.of("score", 300), Map.of("eligible", false)))));
+        VisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
+        VisualGraphRunRecord parent = runs.create(VisualGraphRunRecord.storedDraft(
+                draft, Map.of("customerId", "c-2"), response));
+        ToolStudioIntegrationService service = service(null, null, null, runs);
+        ReplayExecutionRequest failing = new ReplayExecutionRequest(
+                "", "replay-conflict", "", "NEGATIVE", "DENY", List.of(
+                new ReplayExecutionRequest.Assertion(
+                        "expected-approval", "OUTPUT", "", "PATH_EQUALS", "/eligible", true)));
+
+        ReplayExecutionResult result = service.executeReplay(
+                parent.runId(), failing, replayContext("corr-failed-replay")).payload();
+
+        assertThat(result.status()).isEqualTo("FAILED");
+        assertThat(result.assertionResults()).singleElement().satisfies(assertion -> {
+            assertThat(assertion.passed()).isFalse();
+            assertThat(assertion.expectedFingerprint()).startsWith("sha256:");
+            assertThat(assertion.actualFingerprint()).startsWith("sha256:");
+        });
+        assertThat(runs.find(result.replayRunId())).get().satisfies(replay -> {
+            assertThat(replay.success()).isFalse();
+            assertThat(replay.errors()).containsExactly("Assertion failed for mode PATH_EQUALS.");
+        });
+
+        ReplayExecutionRequest conflicting = new ReplayExecutionRequest(
+                "", "replay-conflict", "", "BOUNDARY", "DENY", List.of(
+                new ReplayExecutionRequest.Assertion(
+                        "different", "OUTPUT", "", "PATH_EXISTS", "/eligible", null)));
+        ReplayExecutionRequest unsafe = new ReplayExecutionRequest(
+                "", "unsafe-replay", "", "REGRESSION", "ALLOW", List.of(
+                new ReplayExecutionRequest.Assertion(
+                        "exists", "OUTPUT", "", "PATH_EXISTS", "/eligible", null)));
+
+        assertThatThrownBy(() -> service.executeReplay(
+                parent.runId(), conflicting, replayContext("corr-conflict")))
+                .isInstanceOf(IntegrationProblemException.class)
+                .satisfies(error -> assertThat(((IntegrationProblemException) error).problem().status()).isEqualTo(409));
+        assertThatThrownBy(() -> service.executeReplay(
+                parent.runId(), unsafe, replayContext("corr-unsafe")))
+                .isInstanceOf(IntegrationProblemException.class)
+                .satisfies(error -> assertThat(((IntegrationProblemException) error).problem().code())
+                        .isEqualTo("RG.INTEGRATION.REPLAY_REQUEST_INVALID"));
+        assertThatThrownBy(() -> service.executeReplay(
+                parent.runId(), failing, integrationContext("corr-purpose")))
+                .isInstanceOf(IntegrationProblemException.class)
+                .satisfies(error -> assertThat(((IntegrationProblemException) error).problem().code())
+                        .isEqualTo("RG.INTEGRATION.PURPOSE_NOT_ALLOWED"));
+    }
+
     private static VisualNodeExecutionAttempt attempt(Object input, Object output) {
         return new VisualNodeExecutionAttempt(0, input, output, "SUCCESS",
                 Instant.parse("2026-07-12T00:00:00Z"), 5, "", "");
@@ -305,6 +439,13 @@ class ToolStudioIntegrationServiceTest {
         return new IntegrationRequestContext(
                 "tenant-a", "knowledge-governance", "tool-studio", "prod", "ap-southeast-1",
                 "WORKLOAD", "aneke-sync", "", "GOVERNANCE_EVIDENCE_INGESTION", correlationId
+        );
+    }
+
+    private static IntegrationRequestContext replayContext(String correlationId) {
+        return new IntegrationRequestContext(
+                "tenant-a", "knowledge-governance", "tool-studio", "prod", "ap-southeast-1",
+                "WORKLOAD", "aneke-replay", "", "PAYLOAD_REPLAY", correlationId
         );
     }
 

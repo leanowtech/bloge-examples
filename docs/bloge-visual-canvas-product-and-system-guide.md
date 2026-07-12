@@ -62,7 +62,94 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 topology-f
 3. **示例区压缩/隐藏**：默认态示例卡更紧凑，Focus 模式完全隐藏示例区，把垂直空间还给 React Flow。
 4. **主画布高度目标**：桌面真实浏览器回归要求标准态 author flow 至少 620px 高，Focus 态至少 760px 且比标准态多 100px 以上。
 
-### 3.1 演示脚本启动方式
+### 3.1 从 ANEKE 治理问题直达画布
+
+ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服务端保存的草稿，自动布局并定位到具体节点或算子。作者不需要先打开 Author 首页再手工搜索草稿。
+
+![ANEKE 治理反馈与 Deep Link 标注](assets/bloge-governance-deep-link-authoring-annotated.svg)
+
+1. **Deep Link 定位确认**：页面显示实际打开的 `draftId@revision` 和聚焦节点；目标在当前修订中不存在时会明确警告，不会悄悄选中错误节点。
+2. **ANEKE 门禁反馈**：门禁带显示 `BLOCKED/PASSED` 结论和 `CURRENT/STALE/EXPIRED/MISSING` 新鲜度。`STALE` 或 `EXPIRED` 只作为历史反馈展示，不能冒充当前修订的发布结论。
+3. **问题目标节点自动聚焦**：点击门禁问题会读取其 `targetPath` 或 `deepLink`，选中对应节点；截图中 `approvalPolicy` 因 correctness workbook 覆盖不足被直接定位。
+4. **全图缩略图与视口**：Deep Link 载入后同样执行 Auto Layout 和 Fit All；复杂图仍可从 Map 判断整体形状和当前视口。
+
+支持的查询参数：
+
+| 参数 | 作用 | 解析规则 |
+| --- | --- | --- |
+| `draftId` | 打开存量草稿 | 读取 `GET /api/visual/drafts/{draftId}` |
+| `nodeId` | 聚焦具体节点 | 优先级最高；必须存在于该 draft revision |
+| `operatorRef` | 聚焦某类算子 | 选择当前图中第一个匹配 `operatorRef` 的节点 |
+| `runId` | 从一次运行回到作者上下文 | 先读取 `GET /api/visual/runs/{runId}`，再由运行记录恢复 `draftId`、revision 和 output node |
+| `gateIssueId` | 聚焦一条 ANEKE 门禁问题 | 从 gate result 中找到 issue，再由 `targetPath/deepLink` 解析节点 |
+
+典型链接：
+
+```text
+/author/?draftId=<draftId>&nodeId=approvalPolicy
+/author/?draftId=<draftId>&operatorRef=knowledge%3Aretrieve
+/author/?runId=<runId>
+/author/?draftId=<draftId>&gateIssueId=missing-workbook
+```
+
+使用 `runId` 打开时，画布还会显示运行结果、source kind、draft revision、耗时和第一条错误。若运行来自 transient draft 且没有可恢复的 `draftId`，页面会保留运行上下文并明确提示无法恢复存量草稿。
+
+治理反馈由 ANEKE 通过 `POST /api/integration/gate-results` 写入，并绑定不可变的 `draftId + revision + draftFingerprint`。同一个 `gateResultId` 重复提交相同内容是幂等成功，内容不同则返回冲突；画布只通过只读接口 `GET /api/visual/governance-gates/drafts/{draftId}` 消费结果。
+
+### 3.2 用 recorded replay 重算正确性断言
+
+`GET /api/integration/runs/{runId}/replay` 只读取已脱敏的 recorded payload；`POST` 同一路径才是 replay command。command 不会重新运行 DSL，也不会调用任何 operator 或外部资源，而是基于父运行保存的 context、node input/output、terminal output 和 evidence 状态重算断言，并生成新的 replay run/evidence。
+
+请求必须使用 `X-Purpose: PAYLOAD_REPLAY`，并显式声明副作用策略 `DENY`：
+
+```json
+{
+  "schemaVersion": "toolStudio.resourceGateway.replayExecutionRequest.v1",
+  "requestId": "workbook-case-2026-07-12-001",
+  "mode": "RECORDED_ASSERTIONS",
+  "caseType": "REGRESSION",
+  "externalSideEffectPolicy": "DENY",
+  "assertions": [
+    {
+      "assertionId": "terminal-decision",
+      "scope": "OUTPUT",
+      "mode": "PATH_EQUALS",
+      "path": "/decision",
+      "expectedValue": "APPROVE"
+    },
+    {
+      "assertionId": "eligibility-node",
+      "scope": "NODE",
+      "nodeId": "eligibility",
+      "mode": "PATH_EXISTS",
+      "path": "/eligible"
+    },
+    {
+      "assertionId": "evidence-ready",
+      "scope": "RUN",
+      "mode": "GOVERNANCE_EXPECTATION",
+      "expectedValue": "EVIDENCE_READY"
+    }
+  ]
+}
+```
+
+支持的 `caseType` 是 `GOLDEN`、`NEGATIVE`、`BOUNDARY`、`REGRESSION`。断言支持：
+
+| mode | scope | 含义 |
+| --- | --- | --- |
+| `EQUALS` | OUTPUT/NODE | 完整 JSON 结构相等 |
+| `PATH_EQUALS` | OUTPUT/NODE | JSON Pointer 路径值相等 |
+| `PATH_EXISTS` / `PATH_ABSENT` | OUTPUT/NODE | 路径存在性 |
+| `MATCHES_SCHEMA` | OUTPUT/NODE | 满足 JSON Schema 或 `SchemaEnvelope` |
+| `ERROR_CONTAINS` | RUN | 父运行错误包含指定 code/text |
+| `GOVERNANCE_EXPECTATION` | RUN | `EVIDENCE_READY`、`SIGNATURE_VERIFIED`、`NO_MOCKS` 或 `NO_ERRORS` |
+
+成功受理后系统生成确定性的 replay runId，并返回 `parentRunId`、request fingerprint、断言结果、`externalInvocationCount=0`、evidence 状态和 evidence endpoint。相同 `requestId + parentRunId + request content` 重试返回同一 replay run；同一 `requestId` 指向不同内容返回 `409`。期望值不会原样写入 assertion evidence，只保存 fingerprint，降低测试数据泄露风险。
+
+当前 replay command 只支持 `RECORDED_ASSERTIONS + DENY`。`shadow/live` 重放仍未开放，因为它们需要独立的审批、隔离环境、幂等能力证明和 unknown-commit 处理，不能复用这个安全接口悄悄开启。
+
+### 3.3 演示脚本启动方式
 
 推荐演示时直接使用仓库根目录下的专用脚本。它默认执行 `resource-gateway-examples` 的 `-Pfrontend package`，把 React UI 打进 Spring Boot 静态资源，然后在 `8080` 启动服务。为缩短演示准备时间，脚本默认给 Maven 打包加 `-DskipTests`；需要把测试也跑进去时使用 `--run-tests`。
 
@@ -103,7 +190,7 @@ Legacy composer: http://localhost:8080/examples/gateway
 
 脚本使用 `target/example-pids/visual-canvas-demo.pid` 记录进程，使用 `target/example-logs/visual-canvas-demo.log` 记录日志；停止时会校验 PID/端口上的进程确实像 Resource Gateway demo，避免误停其它服务。
 
-### 3.2 手动启动方式
+### 3.4 手动启动方式
 
 如果只运行后端 API 或旧版静态资源：
 
@@ -137,7 +224,7 @@ npm run dev
 
 当前 Vite dev proxy 只代理 `/api` 到 Spring Boot。算子库导入使用 `/admin/visual-operator-libraries/*`，所以完整体验建议优先使用 Maven 打包后的 `/author/`。
 
-### 3.3 VSCode 插件轻量化方向
+### 3.5 VSCode 插件轻量化方向
 
 如果用户只是想在业务仓库里看懂 `.bloge` 拓扑、导入本地算子 schema、配置 mock 数据并跑表格测试，每次都启动 Resource Gateway 服务端会显得偏重。后续推荐把 `/author/` 的核心能力下沉成 VSCode 插件入口：
 
@@ -996,6 +1083,7 @@ GET /api/gateway/examples/scenarios/{graphName}/diagram
 - Test Suite 浮层表格、fixture override 合并和逐行 transient simulate 调度。
 - 调用服务端候选连接、连线确认、validate、simulate。
 - 展示 readiness、diagnostics、trace、real/mocked badge。
+- 解析 draft/node/operator/run/gate issue Deep Link，并回显 ANEKE gate freshness 与阻断原因。
 - 导出本地 draft JSON。
 
 前端不负责：
@@ -1019,8 +1107,9 @@ GET /api/gateway/examples/scenarios/{graphName}/diagram
 | `visual/simulation` | mock/real 混合模拟、fixture、trace、sample generator |
 | `visual/publication` | publication 冻结、导入导出、依赖报告 |
 | `visual/golden` | golden case 保存、运行、认证 |
-| `visual/runtime` | run history 和 trace replay |
+| `visual/runtime` | run history、精确 node invocation attempt、payload 脱敏、持久 evidence seal 和 trace/replay 数据 |
 | `visual/resource` | OpenAPI/resource contract 投影到 visual resource/operator surface |
+| `integration` | Tool Studio versioned envelope、capability probe、draft dependency export、evidence/replay、验签公钥和 governance gate feedback |
 
 resource gateway 自身继续保留：
 
@@ -1040,6 +1129,8 @@ resource gateway 自身继续保留：
 5. 模拟 trace 必须明确标记 real/mocked，不能让 mock 输出看起来像真实生产结果。
 6. 用户导入的 operator runtime readiness 不能被直接信任，服务端会重新派生。
 7. 远程 `$ref`、不安全 schema、秘密字段、外部副作用和高风险 runtime capability 必须被 warning-gate 或 blocking-gate。
+8. evidence 缺节点输入/输出或签名不可验证时必须进入 `QUARANTINED`，不能被 publish gate 当作可采纳证据。
+9. governance gate result 必须绑定不可变 draft fingerprint；画布必须区分 `CURRENT`、`STALE`、`EXPIRED` 与 `MISSING`。
 
 ## 8. 典型业务流程
 
@@ -1109,7 +1200,17 @@ resource gateway 自身继续保留：
 | `POST` | `/api/visual/connections/candidates` | 枚举连接候选 |
 | `POST` | `/api/visual/connections/check` | 预检单条连接 |
 | `POST` | `/api/visual/drafts/validate` | 校验 transient draft |
+| `GET` | `/api/visual/drafts/{draftId}` | 读取存量 draft，供 Author Deep Link 恢复画布 |
 | `POST` | `/api/visual/graphs/simulate` | 模拟 transient draft |
+| `GET` | `/api/visual/runs/{runId}` | 读取运行记录并恢复 draft/run Deep Link 上下文 |
+| `GET` | `/api/visual/governance-gates/drafts/{draftId}` | Author 只读获取最新 ANEKE gate result 及快照新鲜度 |
+| `GET` | `/api/integration/capabilities` | 查询 Tool Studio 协议版本、对象版本、端点和 feature flags |
+| `GET` | `/api/integration/drafts/{draftId}/export` | 导出带依赖 fingerprint 的治理集成 bundle |
+| `GET` | `/api/integration/runs/{runId}/evidence` | 导出带节点/边事实、完整性状态和持久签名的 evidence bundle |
+| `GET` | `/api/integration/runs/{runId}/replay` | 读取经脱敏的 recorded replay payload；当前不触发外部副作用 |
+| `POST` | `/api/integration/runs/{runId}/replay` | 以 `DENY` 副作用策略重算 recorded payload 断言，生成带 parent lineage 的新 replay run/evidence |
+| `GET` | `/api/integration/evidence-keys/{keyId}` | 获取 evidence seal 验签公钥 |
+| `POST` | `/api/integration/gate-results` | ANEKE 回写绑定 draft fingerprint 的治理门禁结果 |
 | `GET` | `/api/gateway/examples/scenarios` | showcase 场景列表 |
 | `GET` | `/api/gateway/examples/scenarios/{graphName}/diagram` | showcase 场景图 |
 
@@ -1147,6 +1248,10 @@ resource gateway 自身继续保留：
 
 当前 Vite dev proxy 只覆盖 `/api`，而导入算子库走 `/admin`。完整体验使用 Maven 打包后的 `/author/`，或在本地调试时补充 `/admin` proxy。
 
+**ANEKE 链接打开后显示 target 不存在。**
+
+先确认链接里的 `draftId` 指向哪个 revision。节点重命名、删除或 operator replacement 后，旧 `nodeId`、`operatorRef` 或 gate issue `targetPath` 可能已经失效；画布会继续打开草稿，但以 warning 显示未命中的目标。若 gate freshness 是 `STALE/EXPIRED`，应在 ANEKE 对当前 draft fingerprint 重新执行门禁，而不是修改链接绕过检查。
+
 ## 11. 验证与回归命令
 
 前端核心回归：
@@ -1177,10 +1282,12 @@ mvn -f resource-gateway-examples/pom.xml -Pfrontend \
 当前不覆盖：
 
 - 多人实时协作。
-- 生产级 IAM/RBAC。
+- 生产级 IAM/RBAC；当前 integration headers 仍是示例身份上下文，不能视作受信 IAM claims。
 - 持久化远程 worker runtime。
 - 完整 AI tool/event/message/webhook 执行平面。
 - 把 visual core 物理拆成独立 Maven artifact。
+- KMS/HSM 托管的 evidence key；当前持久 Ed25519 provider 用于本地 H2 演示，企业部署必须替换 `VisualEvidenceSigner` SPI。
+- 生成新 run lineage 的无副作用 replay command；当前 replay 是脱敏 recorded payload 读取接口。
 
 后续可以继续推进：
 

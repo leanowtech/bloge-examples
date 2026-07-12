@@ -3,8 +3,10 @@ package com.leanowtech.bloge.gateway.integration;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.http.MediaType;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -53,6 +55,28 @@ class ToolStudioIntegrationControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RG.INTEGRATION.DRAFT_NOT_FOUND"))
                 .andExpect(jsonPath("$.correlationId").value("corr-404"));
+    }
+
+    @Test
+    void replayCommandRequiresExplicitPayloadReplayPurpose() throws Exception {
+        MockMvc mvc = mvc(new ToolStudioIntegrationService(null, null, null, null));
+
+        mvc.perform(post("/api/integration/runs/run-1/replay")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"requestId":"request-1","caseType":"REGRESSION","assertions":[
+                                  {"assertionId":"output","scope":"OUTPUT","mode":"PATH_EXISTS","path":"/id"}
+                                ]}
+                                """)
+                        .header("X-Tenant-Id", "tenant-a")
+                        .header("X-Organization-Id", "knowledge-governance")
+                        .header("X-Environment-Id", "prod")
+                        .header("X-Actor-Id", "aneke-replay")
+                        .header("X-Purpose", "GOVERNANCE_EVIDENCE_INGESTION")
+                        .header("X-Correlation-Id", "corr-purpose"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("RG.INTEGRATION.PURPOSE_NOT_ALLOWED"))
+                .andExpect(jsonPath("$.details.requiredPurpose").value("PAYLOAD_REPLAY"));
     }
 
     private static MockMvc mvc(ToolStudioIntegrationService service) {

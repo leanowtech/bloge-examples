@@ -18,6 +18,7 @@ import type {
   GatewayExampleScenario,
   GraphDraft,
   GraphDraftImportResult,
+  GovernanceGateView,
   OperatorLibrary,
   OperatorLibraryValidationResult,
   OperatorCatalogResponse,
@@ -25,6 +26,7 @@ import type {
   SimulationRequest,
   SimulationResponse,
   VisualValidationResult,
+  VisualGraphRunRecord,
 } from './types';
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -256,6 +258,27 @@ export async function validateDraft(draft: GraphDraft): Promise<VisualValidation
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(draft),
     }),
+  );
+}
+
+/** Loads one stored graph draft for authoring deep links. */
+export async function fetchGraphDraft(draftId: string): Promise<GraphDraft> {
+  return readJson<GraphDraft>(
+    await sendRequest(`/api/visual/drafts/${encodeURIComponent(draftId)}`),
+  );
+}
+
+/** Loads the latest governance decision and snapshot freshness for a stored draft. */
+export async function fetchGovernanceGateView(draftId: string): Promise<GovernanceGateView> {
+  return readJson<GovernanceGateView>(
+    await sendRequest(`/api/visual/governance-gates/drafts/${encodeURIComponent(draftId)}`),
+  );
+}
+
+/** Loads one run record so a run deep link can recover its draft and node context. */
+export async function fetchVisualGraphRun(runId: string): Promise<VisualGraphRunRecord> {
+  return readJson<VisualGraphRunRecord>(
+    await sendRequest(`/api/visual/runs/${encodeURIComponent(runId)}`),
   );
 }
 

@@ -53,6 +53,7 @@ import java.util.TreeSet;
  * @param edgeSnapshots executed draft edge metadata used to reconstruct edge trace
  * @param nodeAttempts sanitized exact operator invocation attempts keyed by node id
  * @param evidenceSeal persisted signature over this immutable run material
+ * @param replay immutable recorded-replay lineage, safety policy, and assertion outcomes
  */
 public record VisualGraphRunRecord(
         String schemaVersion,
@@ -89,12 +90,14 @@ public record VisualGraphRunRecord(
         VisualPayloadRedactionManifest redaction,
         List<EdgeSnapshot> edgeSnapshots,
         Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts,
-        VisualRunEvidenceSeal evidenceSeal
+        VisualRunEvidenceSeal evidenceSeal,
+        VisualReplayMetadata replay
 ) {
-    public static final String SCHEMA_VERSION = "bloge.visualGraphRunRecord.v3";
+    public static final String SCHEMA_VERSION = "bloge.visualGraphRunRecord.v4";
     public static final String SOURCE_TRANSIENT_DRAFT = "TRANSIENT_DRAFT";
     public static final String SOURCE_STORED_DRAFT = "STORED_DRAFT";
     public static final String SOURCE_PUBLICATION = "PUBLICATION";
+    public static final String SOURCE_RECORDED_REPLAY = "RECORDED_REPLAY";
 
     private static final int MAX_KEYS = 25;
     private static final int MAX_CHILDREN = 10;
@@ -135,6 +138,51 @@ public record VisualGraphRunRecord(
         edgeSnapshots = edgeSnapshots == null ? List.of() : List.copyOf(edgeSnapshots);
         nodeAttempts = immutableAttempts(nodeAttempts);
         evidenceSeal = evidenceSeal == null ? VisualRunEvidenceSeal.unsigned() : evidenceSeal;
+        replay = replay == null ? VisualReplayMetadata.none() : replay;
+    }
+
+    /** Backward-compatible constructor for the v3 shape before replay lineage was first-class. */
+    public VisualGraphRunRecord(String schemaVersion,
+                                String runId,
+                                String sourceKind,
+                                String draftId,
+                                long draftRevision,
+                                String publicationId,
+                                String sourceArtifactKind,
+                                String graphName,
+                                String tenantId,
+                                String namespace,
+                                String environment,
+                                String outputNode,
+                                Instant createdAt,
+                                boolean validated,
+                                boolean compiled,
+                                boolean success,
+                                long elapsedMs,
+                                Map<String, Long> nodeElapsedMs,
+                                Map<String, String> statusMap,
+                                List<VisualDiagnostic> diagnostics,
+                                List<String> errors,
+                                Map<String, Object> contextSummary,
+                                Map<String, Object> outputSummary,
+                                Map<String, Object> resultsSummary,
+                                Map<String, NodeSnapshot> nodeSnapshots,
+                                String generatedDsl,
+                                String draftFingerprint,
+                                String operatorDependencyFingerprint,
+                                Map<String, Object> contextPayload,
+                                Object outputPayload,
+                                Map<String, Object> resultsPayload,
+                                VisualPayloadRedactionManifest redaction,
+                                List<EdgeSnapshot> edgeSnapshots,
+                                Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts,
+                                VisualRunEvidenceSeal evidenceSeal) {
+        this(schemaVersion, runId, sourceKind, draftId, draftRevision, publicationId, sourceArtifactKind,
+                graphName, tenantId, namespace, environment, outputNode, createdAt, validated, compiled, success,
+                elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary, outputSummary,
+                resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint, operatorDependencyFingerprint,
+                contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots, nodeAttempts, evidenceSeal,
+                VisualReplayMetadata.none());
     }
 
     /** Backward-compatible constructor for callers using the v2 shape before node capture was added. */
@@ -463,7 +511,7 @@ public record VisualGraphRunRecord(
                 validated, compiled, success, elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary,
                 outputSummary, resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint,
                 operatorDependencyFingerprint, contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots,
-                nodeAttempts);
+                nodeAttempts, VisualRunEvidenceSeal.unsigned(), replay);
     }
 
     /** Returns a copy sealed after repository identity has been assigned. */
@@ -473,7 +521,7 @@ public record VisualGraphRunRecord(
                 validated, compiled, success, elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary,
                 outputSummary, resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint,
                 operatorDependencyFingerprint, contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots,
-                nodeAttempts, newEvidenceSeal);
+                nodeAttempts, newEvidenceSeal, replay);
     }
 
     /** Stable fingerprint over every persisted run field except the seal itself. */
@@ -513,7 +561,45 @@ public record VisualGraphRunRecord(
         material.put("redaction", redaction);
         material.put("edgeSnapshots", edgeSnapshots);
         material.put("nodeAttempts", nodeAttempts);
+        material.put("replay", replay);
         return VisualBundleFingerprint.fromMaterial(material);
+    }
+
+    /** Creates a zero-external-call replay run over this record's already sanitized payload snapshot. */
+    public VisualGraphRunRecord recordedReplay(VisualReplayMetadata replayMetadata) {
+        VisualReplayMetadata safeReplay = replayMetadata == null ? VisualReplayMetadata.none() : replayMetadata;
+        Set<String> nodeIds = new TreeSet<>();
+        nodeIds.addAll(nodeSnapshots.keySet());
+        nodeIds.addAll(resultsPayload.keySet());
+        nodeIds.addAll(nodeAttempts.keySet());
+        Map<String, String> replayStatuses = new LinkedHashMap<>();
+        Map<String, Long> replayElapsed = new LinkedHashMap<>();
+        Map<String, List<VisualNodeExecutionAttempt>> replayAttempts = new LinkedHashMap<>();
+        for (String nodeId : nodeIds) {
+            List<VisualNodeExecutionAttempt> attempts = nodeAttempts.getOrDefault(nodeId, List.of());
+            VisualNodeExecutionAttempt latest = attempts.isEmpty() ? null : attempts.get(attempts.size() - 1);
+            Object input = latest == null ? Map.of() : latest.input();
+            Object output = resultsPayload.containsKey(nodeId)
+                    ? resultsPayload.get(nodeId)
+                    : latest == null ? null : latest.output();
+            replayStatuses.put(nodeId, "MOCKED");
+            replayElapsed.put(nodeId, 0L);
+            replayAttempts.put(nodeId, List.of(new VisualNodeExecutionAttempt(
+                    0, input, output, "MOCKED", createdAt, 0, "", "RECORDED_PAYLOAD_REPLAY")));
+        }
+        boolean assertionsPassed = safeReplay.assertionsPassed();
+        List<String> replayErrors = safeReplay.assertionResults().stream()
+                .filter(result -> !result.passed())
+                .map(VisualReplayAssertionResult::message)
+                .filter(message -> !message.isBlank())
+                .toList();
+        return new VisualGraphRunRecord(
+                "", "", SOURCE_RECORDED_REPLAY, draftId, draftRevision, publicationId, sourceArtifactKind,
+                graphName, tenantId, namespace, environment, outputNode, null, true, false, assertionsPassed, 0,
+                replayElapsed, replayStatuses, List.of(), replayErrors, contextSummary, outputSummary, resultsSummary,
+                nodeSnapshots, generatedDsl, draftFingerprint, operatorDependencyFingerprint, contextPayload,
+                outputPayload, resultsPayload, redaction, edgeSnapshots, replayAttempts,
+                VisualRunEvidenceSeal.unsigned(), safeReplay);
     }
 
     private static VisualGraphRunRecord fromDraft(String sourceKind,

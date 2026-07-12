@@ -52,6 +52,14 @@ public class ToolStudioIntegrationController {
         return service.replay(runId, requestContext(headers));
     }
 
+    @PostMapping("/runs/{runId}/replay")
+    public IntegrationEnvelope<ReplayExecutionResult> executeReplay(
+            @PathVariable String runId,
+            @RequestBody ReplayExecutionRequest request,
+            @RequestHeader HttpHeaders headers) {
+        return service.executeReplay(runId, request, requestContext(headers));
+    }
+
     @GetMapping("/evidence-keys/{keyId}")
     public IntegrationEnvelope<VisualEvidenceSigner.VerificationKey> evidenceKey(@PathVariable String keyId) {
         return service.evidenceKey(keyId);

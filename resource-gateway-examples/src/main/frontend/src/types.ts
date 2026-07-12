@@ -173,6 +173,10 @@ export interface GraphDraft {
   draftId?: string;
   revision?: number;
   graphName: string;
+  tenantId?: string;
+  namespace?: string;
+  environment?: string;
+  status?: string;
   inputSchema?: SchemaEnvelope;
   outputSchema?: SchemaEnvelope;
   nodes: DraftNode[];
@@ -182,6 +186,61 @@ export interface GraphDraft {
   output: { nodeId: string; path?: string };
   operatorFingerprints?: Record<string, string>;
   operatorSnapshots?: Record<string, OperatorDefinition>;
+}
+
+/** One ANEKE governance finding bound to a draft snapshot. */
+export interface GovernanceGateIssue {
+  issueId: string;
+  severity: string;
+  code: string;
+  message: string;
+  targetPath?: string;
+  recommendedAction?: string;
+  deepLink?: string;
+}
+
+/** Immutable governance decision submitted by ANEKE Tool Studio. */
+export interface GovernanceGateResult {
+  schemaVersion?: string;
+  gateResultId: string;
+  target: {
+    kind?: string;
+    draftId: string;
+    revision: number;
+    draftFingerprint: string;
+  };
+  status: string;
+  issues: GovernanceGateIssue[];
+  producedAt?: string;
+  expiresAt?: string;
+  resultFingerprint?: string;
+}
+
+/** Authoring read model that compares a gate decision with the current draft revision. */
+export interface GovernanceGateView {
+  schemaVersion?: string;
+  draftId: string;
+  currentRevision: number;
+  currentDraftFingerprint: string;
+  freshness: 'CURRENT' | 'STALE' | 'EXPIRED' | 'MISSING' | string;
+  result?: GovernanceGateResult | null;
+}
+
+/** Minimal run-history shape used to resolve and display run deep links. */
+export interface VisualGraphRunRecord {
+  schemaVersion?: string;
+  runId: string;
+  sourceKind?: string;
+  draftId?: string;
+  draftRevision?: number;
+  publicationId?: string;
+  graphName?: string;
+  outputNode?: string;
+  createdAt?: string;
+  success?: boolean;
+  elapsedMs?: number;
+  statusMap?: Record<string, string>;
+  errors?: string[];
 }
 
 /** A per-node author-supplied simulation fixture. */

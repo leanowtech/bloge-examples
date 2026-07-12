@@ -24,6 +24,7 @@ public record RunEvidenceBundle(
         String evidenceId,
         String runId,
         Source source,
+        Replay replay,
         Fingerprints fingerprints,
         Execution execution,
         PayloadSummary context,
@@ -36,13 +37,15 @@ public record RunEvidenceBundle(
         Retention retention,
         EvidenceManifest manifest
 ) {
-    public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.runEvidenceBundle.v1";
+    public static final String SCHEMA_VERSION_V1 = "toolStudio.resourceGateway.runEvidenceBundle.v1";
+    public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.runEvidenceBundle.v2";
 
     public RunEvidenceBundle {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
         evidenceId = evidenceId == null ? "" : evidenceId;
         runId = runId == null ? "" : runId;
         source = source == null ? Source.empty() : source;
+        replay = replay == null ? Replay.none() : replay;
         fingerprints = fingerprints == null ? Fingerprints.empty() : fingerprints;
         execution = execution == null ? Execution.empty() : execution;
         context = context == null ? PayloadSummary.empty() : context;
@@ -74,11 +77,19 @@ public record RunEvidenceBundle(
                 record.createdAt().plus(30, ChronoUnit.DAYS));
         EvidenceManifest manifest = manifest(record, nodes, edges,
                 evidenceSigner == null ? VisualEvidenceSigner.unavailable() : evidenceSigner);
-        return new RunEvidenceBundle("", "evidence:" + record.runId(), record.runId(), source, fingerprints,
+        Replay replay = new Replay(record.replay().parentRunId(), record.replay().requestId(),
+                record.replay().mode(), record.replay().caseType(), record.replay().sideEffectPolicy(),
+                record.replay().externalInvocationCount());
+        Assertions assertions = record.replay().replay()
+                ? new Assertions(record.replay().assertionsPassed() ? "PASSED" : "FAILED",
+                        List.of("replay-request:" + record.replay().requestId()),
+                        record.replay().assertionResults().stream().map(result -> (Object) result).toList())
+                : Assertions.notRun();
+        return new RunEvidenceBundle("", "evidence:" + record.runId(), record.runId(), source, replay, fingerprints,
                 execution,
                 new PayloadSummary(record.contextSummary(), "payload:" + record.runId() + ":context"),
                 new PayloadSummary(record.outputSummary(), "payload:" + record.runId() + ":output"),
-                nodes, edges, Assertions.notRun(), record.diagnostics(), record.errors(), retention, manifest);
+                nodes, edges, assertions, record.diagnostics(), record.errors(), retention, manifest);
     }
 
     private static String dslFingerprint(VisualGraphRunRecord record) {
@@ -152,6 +163,9 @@ public record RunEvidenceBundle(
     private static VisualRunStatus edgeStatus(VisualRunStatus source, VisualRunStatus target) {
         if (source == VisualRunStatus.SUCCESS && target == VisualRunStatus.SUCCESS) {
             return VisualRunStatus.SUCCESS;
+        }
+        if (source == VisualRunStatus.MOCKED && target == VisualRunStatus.MOCKED) {
+            return VisualRunStatus.MOCKED;
         }
         if (target == VisualRunStatus.SKIPPED) {
             return VisualRunStatus.SKIPPED;
@@ -250,6 +264,19 @@ public record RunEvidenceBundle(
                          String sourceArtifactKind, String graphName, String tenantId, String namespace,
                          String environment) {
         static Source empty() { return new Source("", "", 0, "", "", "", "", "", ""); }
+    }
+
+    public record Replay(String parentRunId, String requestId, String mode, String caseType,
+                         String sideEffectPolicy, int externalInvocationCount) {
+        public Replay {
+            parentRunId = parentRunId == null ? "" : parentRunId;
+            requestId = requestId == null ? "" : requestId;
+            mode = mode == null || mode.isBlank() ? "NONE" : mode;
+            caseType = caseType == null ? "" : caseType;
+            sideEffectPolicy = sideEffectPolicy == null || sideEffectPolicy.isBlank() ? "DENY" : sideEffectPolicy;
+            externalInvocationCount = Math.max(0, externalInvocationCount);
+        }
+        static Replay none() { return new Replay("", "", "NONE", "", "DENY", 0); }
     }
 
     public record Fingerprints(String draftFingerprint, String generatedDslFingerprint,

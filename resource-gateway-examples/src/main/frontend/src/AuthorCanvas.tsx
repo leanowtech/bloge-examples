@@ -29,7 +29,10 @@ import {
   checkDslRewriteGate,
   commitDslImport,
   fetchConnectionCandidates,
+  fetchGovernanceGateView,
+  fetchGraphDraft,
   fetchOperatorCatalog,
+  fetchVisualGraphRun,
   importOperatorLibraryText,
   previewDslImport,
   simulate,
@@ -95,6 +98,8 @@ import type {
   DslSourceSpan,
   DslVisualProjection,
   GraphDraftImportResult,
+  GovernanceGateIssue,
+  GovernanceGateView,
   NodeFixture,
   OperatorDefinition,
   OperatorLibrary,
@@ -102,6 +107,7 @@ import type {
   SchemaEnvelope,
   SimulationResponse,
   VisualDiagnostic,
+  VisualGraphRunRecord,
   VisualValidationResult,
 } from './types';
 import type { ConnectionCandidate } from './types';
@@ -138,6 +144,35 @@ interface ConnectionStartParams {
   nodeId: string | null;
   handleId: string | null;
   handleType: string | null;
+}
+
+function governanceIssueNodeId(issue: GovernanceGateIssue): string {
+  const targetMatch = (issue.targetPath ?? '').match(/(?:^|\/)nodes\/([^/?#]+)/);
+  if (targetMatch) {
+    return decodeURIComponent(targetMatch[1]);
+  }
+  if (!issue.deepLink) {
+    return '';
+  }
+  try {
+    return new URL(issue.deepLink, window.location.origin).searchParams.get('nodeId') ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function governanceGateLevel(view: GovernanceGateView): 'ok' | 'warning' | 'error' {
+  if (view.freshness !== 'CURRENT') {
+    return 'warning';
+  }
+  const status = view.result?.status?.toUpperCase() ?? 'UNKNOWN';
+  if (status === 'PASSED' || status === 'APPROVED') {
+    return 'ok';
+  }
+  if (status === 'BLOCKED' || status === 'FAILED' || status === 'REJECTED') {
+    return 'error';
+  }
+  return 'warning';
 }
 
 interface SelectedConnectionGuide {
@@ -3927,6 +3962,10 @@ export default function AuthorCanvas() {
   const [graphVisualLayout, setGraphVisualLayout] = useState<Record<string, unknown>>({});
   const [graphOperatorFingerprints, setGraphOperatorFingerprints] = useState<Record<string, string>>({});
   const [graphOperatorSnapshots, setGraphOperatorSnapshots] = useState<Record<string, OperatorDefinition>>({});
+  const [governanceGateView, setGovernanceGateView] = useState<GovernanceGateView | null>(null);
+  const [governanceGateBusy, setGovernanceGateBusy] = useState(false);
+  const [deepLinkRun, setDeepLinkRun] = useState<VisualGraphRunRecord | null>(null);
+  const [deepLinkNotice, setDeepLinkNotice] = useState<ConnectionNotice | null>(null);
   const [connectionNotice, setConnectionNotice] = useState<ConnectionNotice | null>(null);
   const [candidatePreview, setCandidatePreview] = useState<ConnectionCandidateIndex | null>(null);
   const [selectedConnectionSourcePort, setSelectedConnectionSourcePort] = useState('');
@@ -3957,6 +3996,39 @@ export default function AuthorCanvas() {
     reloadOperators()
       .catch((cause: unknown) => setError(String(cause)));
   }, [reloadOperators]);
+
+  useEffect(() => {
+    if (!graphDraftId) {
+      setGovernanceGateView(null);
+      setGovernanceGateBusy(false);
+      return undefined;
+    }
+    let active = true;
+    setGovernanceGateBusy(true);
+    fetchGovernanceGateView(graphDraftId)
+      .then((view) => {
+        if (active) {
+          setGovernanceGateView(view);
+        }
+      })
+      .catch((cause: unknown) => {
+        if (active) {
+          setGovernanceGateView(null);
+          setDeepLinkNotice({
+            level: 'warning',
+            message: `Governance feedback unavailable: ${String(cause)}`,
+          });
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setGovernanceGateBusy(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [graphDraftId]);
 
   const isComplexGraph = nodes.length >= COMPLEX_GRAPH_NODE_THRESHOLD
     || edges.length >= COMPLEX_GRAPH_EDGE_THRESHOLD;
@@ -4758,6 +4830,19 @@ export default function AuthorCanvas() {
   );
   const flowEdges = useMemo(() => withEdgeLabelLanes(edges), [edges]);
 
+  const focusGovernanceIssue = useCallback((issue: GovernanceGateIssue) => {
+    const nodeId = governanceIssueNodeId(issue);
+    if (!nodeId || !nodes.some((node) => node.id === nodeId)) {
+      setDeepLinkNotice({
+        level: 'warning',
+        message: `Governance target ${issue.targetPath || issue.issueId} is not present in this draft revision.`,
+      });
+      return;
+    }
+    setSelectedNodeId(nodeId);
+    setDeepLinkNotice({ level: 'ok', message: `Focused governance issue ${issue.issueId} on ${nodeId}.` });
+  }, [nodes]);
+
   const startOperatorDrag = useCallback((event: DragEvent<HTMLButtonElement>, operator: OperatorDefinition) => {
     event.dataTransfer.effectAllowed = 'copy';
     event.dataTransfer.setData(OPERATOR_DRAG_MIME, operator.operatorRef);
@@ -4918,7 +5003,7 @@ export default function AuthorCanvas() {
     }
   }, [librarySourceText, reloadOperators]);
 
-  const applyDslProjection = useCallback((projection: DslVisualProjection) => {
+  const applyDslProjection = useCallback((projection: DslVisualProjection, contractSource?: string) => {
     const imported = fromGraphDraft(projection.draft);
     const nextNodes: Node<NodeData>[] = [];
     const nextOperatorTestSuites: Record<string, OperatorTestSuiteDraftRow[]> = {};
@@ -5012,7 +5097,7 @@ export default function AuthorCanvas() {
     setGraphDraftRevision(imported.revision ?? 0);
     setGraphInputSchema(nextInputSchema);
     setGraphOutputSchema(nextOutputSchema);
-    setGraphContractSource(`DSL ${projection.sourceId || imported.graphName}`);
+    setGraphContractSource(contractSource ?? `DSL ${projection.sourceId || imported.graphName}`);
     setGraphVisualLayout(visualLayoutWithImportSourceMap(
       visualLayoutWithGraphContract(
         imported.visualLayout ?? {},
@@ -5050,6 +5135,108 @@ export default function AuthorCanvas() {
       fitCanvasToView(graphSize);
     }
   }, [clearRunResult, fitCanvasToView, operatorByRef]);
+  const applyDslProjectionRef = useRef(applyDslProjection);
+
+  useEffect(() => {
+    applyDslProjectionRef.current = applyDslProjection;
+  }, [applyDslProjection]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedDraftId = params.get('draftId')?.trim() ?? '';
+    const requestedNodeId = params.get('nodeId')?.trim() ?? '';
+    const requestedOperatorRef = params.get('operatorRef')?.trim() ?? '';
+    const requestedRunId = params.get('runId')?.trim() ?? '';
+    const requestedGateIssueId = params.get('gateIssueId')?.trim() ?? '';
+    const loadKey = [
+      requestedDraftId,
+      requestedNodeId,
+      requestedOperatorRef,
+      requestedRunId,
+      requestedGateIssueId,
+    ].join('|');
+    if (!loadKey.replace(/\|/g, '')) {
+      return undefined;
+    }
+    let active = true;
+
+    const loadDeepLink = async () => {
+      setDeepLinkNotice({ level: 'pending', message: 'Opening linked authoring context...' });
+      setError('');
+
+      const run = requestedRunId ? await fetchVisualGraphRun(requestedRunId) : null;
+      if (!active) {
+        return;
+      }
+      setDeepLinkRun(run);
+      const resolvedDraftId = requestedDraftId || run?.draftId || '';
+      if (!resolvedDraftId) {
+        setDeepLinkNotice({
+          level: 'warning',
+          message: `Run ${requestedRunId} is not linked to a stored draft.`,
+        });
+        return;
+      }
+
+      const [draft, gateView] = await Promise.all([
+        fetchGraphDraft(resolvedDraftId),
+        requestedGateIssueId
+          ? fetchGovernanceGateView(resolvedDraftId)
+          : Promise.resolve<GovernanceGateView | null>(null),
+      ]);
+      if (!active) {
+        return;
+      }
+      if (gateView) {
+        setGovernanceGateView(gateView);
+      }
+      applyDslProjectionRef.current({
+        sourceId: `draft:${resolvedDraftId}`,
+        draft,
+        diagnostics: [],
+      }, `Stored draft ${resolvedDraftId}@${draft.revision ?? 0}`);
+
+      const gateIssue = requestedGateIssueId
+        ? gateView?.result?.issues.find((issue) => issue.issueId === requestedGateIssueId)
+        : undefined;
+      const issueNodeId = gateIssue ? governanceIssueNodeId(gateIssue) : '';
+      const operatorNodeId = requestedOperatorRef
+        ? draft.nodes.find((node) => node.operatorRef === requestedOperatorRef)?.id ?? ''
+        : '';
+      const runNodeId = run?.outputNode && draft.nodes.some((node) => node.id === run.outputNode)
+        ? run.outputNode
+        : '';
+      const targetNodeId = requestedNodeId || issueNodeId || operatorNodeId || runNodeId;
+
+      if (targetNodeId && draft.nodes.some((node) => node.id === targetNodeId)) {
+        setSelectedNodeId(targetNodeId);
+        setDeepLinkNotice({
+          level: 'ok',
+          message: `Opened ${resolvedDraftId}@${draft.revision ?? 0} and focused ${targetNodeId}.`,
+        });
+      } else if (requestedNodeId || requestedOperatorRef || requestedGateIssueId) {
+        const missingTarget = requestedNodeId || requestedOperatorRef || requestedGateIssueId;
+        setDeepLinkNotice({
+          level: 'warning',
+          message: `Opened ${resolvedDraftId}, but target ${missingTarget} is not present in this revision.`,
+        });
+      } else {
+        setDeepLinkNotice({
+          level: 'ok',
+          message: `Opened ${resolvedDraftId}@${draft.revision ?? 0}.`,
+        });
+      }
+    };
+
+    loadDeepLink().catch((cause: unknown) => {
+      if (active) {
+        setDeepLinkNotice({ level: 'error', message: `Deep link failed: ${String(cause)}` });
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const previewLegacyDsl = useCallback(async () => {
     if (!dslSourceText.trim()) {
@@ -6506,6 +6693,68 @@ export default function AuthorCanvas() {
             {journey.completedCount}/{journey.steps.length}
           </span>
         </div>
+        {deepLinkNotice && (
+          <div
+            className={`author-context-notice ${deepLinkNotice.level}`}
+            data-testid="author-deep-link-notice"
+            role={deepLinkNotice.level === 'error' ? 'alert' : 'status'}
+          >
+            {deepLinkNotice.message}
+          </div>
+        )}
+        {deepLinkRun && (
+          <section className={`run-context-strip ${deepLinkRun.success ? 'ok' : 'error'}`} data-testid="run-context-strip">
+            <div className="context-strip-heading">
+              <span>Run</span>
+              <strong>{deepLinkRun.runId}</strong>
+            </div>
+            <dl className="context-strip-facts">
+              <div><dt>Outcome</dt><dd>{deepLinkRun.success ? 'SUCCESS' : 'FAILED'}</dd></div>
+              <div><dt>Source</dt><dd>{deepLinkRun.sourceKind || 'UNKNOWN'}</dd></div>
+              <div><dt>Revision</dt><dd>{deepLinkRun.draftRevision ?? 0}</dd></div>
+              <div><dt>Elapsed</dt><dd>{deepLinkRun.elapsedMs ?? 0} ms</dd></div>
+            </dl>
+            {deepLinkRun.errors?.[0] && <p>{deepLinkRun.errors[0]}</p>}
+          </section>
+        )}
+        {(governanceGateBusy || governanceGateView) && (
+          <section
+            className={`governance-gate-strip ${governanceGateView ? governanceGateLevel(governanceGateView) : 'pending'}`}
+            data-testid="governance-gate-strip"
+            aria-label="Governance gate result"
+          >
+            <div className="context-strip-heading">
+              <span>ANEKE Gate</span>
+              <strong>{governanceGateBusy ? 'LOADING' : governanceGateView?.result?.status ?? 'NO RESULT'}</strong>
+              {governanceGateView && <em>{governanceGateView.freshness}</em>}
+            </div>
+            {governanceGateView?.result?.issues.length ? (
+              <ul className="governance-issue-list">
+                {governanceGateView.result.issues.map((issue) => {
+                  const issueNodeId = governanceIssueNodeId(issue);
+                  return (
+                    <li key={issue.issueId} data-severity={issue.severity.toLowerCase()}>
+                      <button
+                        type="button"
+                        data-testid={`governance-issue:${issue.issueId}`}
+                        onClick={() => focusGovernanceIssue(issue)}
+                        title={issue.targetPath || issue.deepLink || issue.issueId}
+                      >
+                        <span>{issue.severity}</span>
+                        <strong>{issue.code || issue.issueId}</strong>
+                        <p>{issue.message}</p>
+                        {issue.recommendedAction && <small>{issue.recommendedAction}</small>}
+                        {issueNodeId && <em>{issueNodeId}</em>}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              !governanceGateBusy && <p className="governance-empty">No governance decision for this draft revision.</p>
+            )}
+          </section>
+        )}
         <section className="canvas-examples" aria-label="Built-in canvas examples">
           <div className="canvas-examples-heading">
             <span>Examples</span>

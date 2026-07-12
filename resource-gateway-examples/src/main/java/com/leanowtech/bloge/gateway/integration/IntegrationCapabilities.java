@@ -38,8 +38,10 @@ public record IntegrationCapabilities(
         objects.put("graphDraft", List.of(GraphDraft.SCHEMA_VERSION));
         objects.put("operatorLibrary", List.of("bloge.visualOperatorLibrary.v1"));
         objects.put("graphDraftIntegrationBundle", List.of(GraphDraftIntegrationBundle.SCHEMA_VERSION));
-        objects.put("runEvidence", List.of(RunEvidenceBundle.SCHEMA_VERSION));
+        objects.put("runEvidence", List.of(RunEvidenceBundle.SCHEMA_VERSION_V1, RunEvidenceBundle.SCHEMA_VERSION));
         objects.put("payloadReplay", List.of(PayloadReplayBundle.SCHEMA_VERSION));
+        objects.put("replayExecutionRequest", List.of(ReplayExecutionRequest.SCHEMA_VERSION));
+        objects.put("replayExecutionResult", List.of(ReplayExecutionResult.SCHEMA_VERSION));
         objects.put("evidenceVerificationKey", List.of(
                 com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner.VerificationKey.SCHEMA_VERSION));
         objects.put("governanceGateResult", List.of(GovernanceGateResult.SCHEMA_VERSION));
@@ -49,9 +51,11 @@ public record IntegrationCapabilities(
         features.put("runEvidenceBundle", true);
         features.put("payloadReplay", true);
         features.put("payloadReplayNodeInputs", true);
+        features.put("recordedAssertionReplay", true);
+        features.put("replayExternalSideEffects", false);
         features.put("evidenceIntegrityManifest", true);
         features.put("evidenceSignature", evidenceSignature);
-        features.put("deepLinks", false);
+        features.put("deepLinks", true);
         features.put("governanceGateFeedback", true);
         features.put("eventCursor", false);
         features.put("webhook", false);
@@ -61,6 +65,7 @@ public record IntegrationCapabilities(
                 new Endpoint("GET", "/api/integration/drafts/{draftId}/export"),
                 new Endpoint("GET", "/api/integration/runs/{runId}/evidence"),
                 new Endpoint("GET", "/api/integration/runs/{runId}/replay"),
+                new Endpoint("POST", "/api/integration/runs/{runId}/replay"),
                 new Endpoint("GET", "/api/integration/evidence-keys/{keyId}"),
                 new Endpoint("POST", "/api/integration/gate-results"),
                 new Endpoint("GET", "/api/integration/drafts/{draftId}/gate-result")

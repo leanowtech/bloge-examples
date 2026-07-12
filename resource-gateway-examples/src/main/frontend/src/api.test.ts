@@ -9,7 +9,10 @@ import {
   commitDslImport,
   fetchGatewayDiagram,
   fetchGatewayScenarios,
+  fetchGovernanceGateView,
+  fetchGraphDraft,
   fetchOperatorCatalog,
+  fetchVisualGraphRun,
   importOperatorLibraryText,
   previewDslImport,
   runGatewayScenario,
@@ -121,6 +124,33 @@ describe('operator library API client', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/visual/operators');
     expect(catalog.operators).toHaveLength(1);
     expect(catalog.builtInFunctions?.[0].name).toBe('coalesce');
+  });
+
+  it('loads draft, governance, and run deep-link resources with encoded identifiers', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/visual/drafts/draft%2F42') {
+        return new Response(JSON.stringify({ graphName: 'linkedGraph', nodes: [], edges: [], output: { nodeId: '' } }));
+      }
+      if (url === '/api/visual/governance-gates/drafts/draft%2F42') {
+        return new Response(JSON.stringify({ draftId: 'draft/42', freshness: 'CURRENT', currentRevision: 3 }));
+      }
+      if (url === '/api/visual/runs/run%2F99') {
+        return new Response(JSON.stringify({ runId: 'run/99', draftId: 'draft/42', success: true }));
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const [draft, gate, run] = await Promise.all([
+      fetchGraphDraft('draft/42'),
+      fetchGovernanceGateView('draft/42'),
+      fetchVisualGraphRun('run/99'),
+    ]);
+
+    expect(draft.graphName).toBe('linkedGraph');
+    expect(gate.freshness).toBe('CURRENT');
+    expect(run.draftId).toBe('draft/42');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it('validates a transient visual graph draft', async () => {

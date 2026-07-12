@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.integration;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -9,6 +10,8 @@ import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualReplayAssertionResult;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualReplayMetadata;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
@@ -16,9 +19,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * Stable integration projection over existing visual authoring services.
@@ -31,18 +38,30 @@ public class ToolStudioIntegrationService {
     private final VisualOperatorCatalog catalog;
     private final VisualGraphRunRepository runRepository;
     private final GovernanceGateResultRepository gateResultRepository;
+    private final ReplayAssertionEvaluator replayAssertionEvaluator;
 
     @Autowired
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
                                         GraphDraftValidator validator,
                                         VisualOperatorCatalog catalog,
                                         VisualGraphRunRepository runRepository,
-                                        GovernanceGateResultRepository gateResultRepository) {
+                                        GovernanceGateResultRepository gateResultRepository,
+                                        ObjectMapper objectMapper) {
         this.draftRepository = draftRepository;
         this.validator = validator;
         this.catalog = catalog;
         this.runRepository = runRepository;
         this.gateResultRepository = gateResultRepository;
+        this.replayAssertionEvaluator = new ReplayAssertionEvaluator(objectMapper);
+    }
+
+    public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
+                                        GraphDraftValidator validator,
+                                        VisualOperatorCatalog catalog,
+                                        VisualGraphRunRepository runRepository,
+                                        GovernanceGateResultRepository gateResultRepository) {
+        this(draftRepository, validator, catalog, runRepository, gateResultRepository,
+                new ObjectMapper().findAndRegisterModules());
     }
 
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -87,6 +106,41 @@ public class ToolStudioIntegrationService {
         VisualGraphRunRecord record = findRun(runId, context);
         return IntegrationEnvelope.of("PAYLOAD_REPLAY_BUNDLE", PayloadReplayBundle.SCHEMA_VERSION,
                 PayloadReplayBundle.from(record));
+    }
+
+    public synchronized IntegrationEnvelope<ReplayExecutionResult> executeReplay(
+            String parentRunId,
+            ReplayExecutionRequest request,
+            IntegrationRequestContext context) {
+        context.requireComplete();
+        requirePurpose(context, "PAYLOAD_REPLAY");
+        VisualGraphRunRecord parent = findRun(parentRunId, context);
+        validateReplayRequest(request, parent, context);
+        String requestFingerprint = request.fingerprint();
+        VisualGraphRunRecord existing = replayByRequest(request.requestId());
+        if (existing != null) {
+            if (existing.replay().parentRunId().equals(parentRunId)
+                    && existing.replay().requestFingerprint().equals(requestFingerprint)) {
+                return replayEnvelope(existing);
+            }
+            throw new IntegrationProblemException(IntegrationProblem.conflict(
+                    "RG.INTEGRATION.REPLAY_REQUEST_ID_CONFLICT",
+                    "Replay request id already identifies different immutable content.",
+                    context.correlationId(), Map.of("requestId", request.requestId())
+            ));
+        }
+
+        RunEvidenceBundle parentEvidence = RunEvidenceBundle.from(parent, runRepository.evidenceSigner());
+        List<VisualReplayAssertionResult> assertionResults = replayAssertionEvaluator.evaluate(
+                request, parent, parentEvidence);
+        VisualReplayMetadata replayMetadata = new VisualReplayMetadata(
+                "", parentRunId, request.requestId(), requestFingerprint, request.mode(), request.caseType(),
+                request.externalSideEffectPolicy(), 0, assertionResults);
+        String replayRunId = deterministicReplayRunId(context.tenantId(), parentRunId, request.requestId());
+        VisualGraphRunRecord replayRecord = parent.recordedReplay(replayMetadata)
+                .withIdentity(replayRunId, Instant.now());
+        VisualGraphRunRecord stored = runRepository.create(replayRecord);
+        return replayEnvelope(stored);
     }
 
     public IntegrationEnvelope<VisualEvidenceSigner.VerificationKey> evidenceKey(String keyId) {
@@ -192,6 +246,90 @@ public class ToolStudioIntegrationService {
                     "RG.INTEGRATION.GATE_RESULT_INVALID", "Governance gate result is invalid.",
                     context.correlationId(), invalid));
         }
+    }
+
+    private static void validateReplayRequest(ReplayExecutionRequest request,
+                                              VisualGraphRunRecord parent,
+                                              IntegrationRequestContext context) {
+        Map<String, Object> invalid = new LinkedHashMap<>();
+        if (request == null) {
+            invalid.put("request", "required");
+        } else {
+            if (!ReplayExecutionRequest.SCHEMA_VERSION.equals(request.schemaVersion())) {
+                invalid.put("schemaVersion", ReplayExecutionRequest.SCHEMA_VERSION);
+            }
+            if (request.requestId().isBlank()) invalid.put("requestId", "required");
+            if (!"RECORDED_ASSERTIONS".equals(request.mode())) invalid.put("mode", "RECORDED_ASSERTIONS");
+            if (!Set.of("GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION").contains(request.caseType())) {
+                invalid.put("caseType", "GOLDEN|NEGATIVE|BOUNDARY|REGRESSION");
+            }
+            if (!"DENY".equals(request.externalSideEffectPolicy())) {
+                invalid.put("externalSideEffectPolicy", "DENY");
+            }
+            if (request.assertions().isEmpty()) invalid.put("assertions", "at least one assertion required");
+            if (request.assertions().size() > 100) invalid.put("assertions", "maximum 100 assertions");
+            Set<String> ids = new HashSet<>();
+            for (int i = 0; i < request.assertions().size(); i++) {
+                ReplayExecutionRequest.Assertion assertion = request.assertions().get(i);
+                String prefix = "assertions[" + i + "]";
+                if (assertion.assertionId().isBlank()) invalid.put(prefix + ".assertionId", "required");
+                if (!ids.add(assertion.assertionId())) invalid.put(prefix + ".assertionId", "duplicate");
+                if (!Set.of("OUTPUT", "NODE", "RUN").contains(assertion.scope())) {
+                    invalid.put(prefix + ".scope", "OUTPUT|NODE|RUN");
+                }
+                if ("NODE".equals(assertion.scope())) {
+                    if (assertion.nodeId().isBlank()) {
+                        invalid.put(prefix + ".nodeId", "required for NODE scope");
+                    } else if (!parent.nodeSnapshots().containsKey(assertion.nodeId())
+                            && !parent.resultsPayload().containsKey(assertion.nodeId())) {
+                        invalid.put(prefix + ".nodeId", "not captured in parent run");
+                    }
+                }
+                if (!Set.of("EQUALS", "PATH_EQUALS", "PATH_EXISTS", "PATH_ABSENT", "MATCHES_SCHEMA",
+                        "ERROR_CONTAINS", "GOVERNANCE_EXPECTATION").contains(assertion.mode())) {
+                    invalid.put(prefix + ".mode", "unsupported");
+                }
+                if (assertion.mode().startsWith("PATH_")
+                        && (assertion.path().isBlank() || !assertion.path().startsWith("/"))) {
+                    invalid.put(prefix + ".path", "JSON Pointer required");
+                }
+                if (Set.of("ERROR_CONTAINS", "GOVERNANCE_EXPECTATION").contains(assertion.mode())
+                        && !"RUN".equals(assertion.scope())) {
+                    invalid.put(prefix + ".scope", "RUN required for " + assertion.mode());
+                }
+            }
+        }
+        if (!invalid.isEmpty()) {
+            throw new IntegrationProblemException(IntegrationProblem.badRequest(
+                    "RG.INTEGRATION.REPLAY_REQUEST_INVALID", "Replay execution request is invalid.",
+                    context.correlationId(), invalid));
+        }
+    }
+
+    private VisualGraphRunRecord replayByRequest(String requestId) {
+        if (runRepository == null || requestId == null || requestId.isBlank()) {
+            return null;
+        }
+        return runRepository.all().stream()
+                .filter(record -> requestId.equals(record.replay().requestId()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private IntegrationEnvelope<ReplayExecutionResult> replayEnvelope(VisualGraphRunRecord replayRecord) {
+        RunEvidenceBundle evidence = RunEvidenceBundle.from(replayRecord, runRepository.evidenceSigner());
+        VisualReplayMetadata replay = replayRecord.replay();
+        ReplayExecutionResult result = new ReplayExecutionResult(
+                "", replayRecord.runId(), replay.parentRunId(), replay.requestId(), replay.requestFingerprint(),
+                replay.mode(), replay.caseType(), replay.assertionsPassed() ? "PASSED" : "FAILED",
+                replay.sideEffectPolicy(), replay.externalInvocationCount(), replay.assertionResults(),
+                evidence.manifest().evidenceStatus(), "/api/integration/runs/" + replayRecord.runId() + "/evidence");
+        return IntegrationEnvelope.of("REPLAY_EXECUTION_RESULT", ReplayExecutionResult.SCHEMA_VERSION, result);
+    }
+
+    private static String deterministicReplayRunId(String tenantId, String parentRunId, String requestId) {
+        String material = String.join("\u0000", tenantId, parentRunId, requestId);
+        return "replay-" + UUID.nameUUIDFromBytes(material.getBytes(StandardCharsets.UTF_8));
     }
 
     private static void requirePurpose(IntegrationRequestContext context, String requiredPurpose) {
