@@ -12,21 +12,38 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Process-local owner for controlled dynamic runs.
+ * Thread owner for controlled dynamic runs backed by a durable lifecycle repository.
  *
- * <p>Cancellation is deliberately cooperative: the owner thread is interrupted and every later
- * operator boundary rejects execution. A run only becomes CANCELLED/TIMED_OUT after that owner
- * thread actually exits; otherwise it remains TERMINATION_UNCONFIRMED.</p>
+ * <p>The repository is authoritative for state, fencing and leases. This class only retains JVM-local
+ * thread handles so the current owner can deliver cooperative interruption. Another instance can persist
+ * a cancel command; the owner observes it while renewing its lease and interrupts the local threads.</p>
  */
 final class DynamicRunControlManager implements OperatorInterceptor {
 
     static final String REQUEST_ID_CONTEXT_KEY = "_resourceGatewayRunRequestId";
     private static final Duration TERMINAL_RETENTION = Duration.ofHours(1);
+    private static final Duration OWNER_LEASE = Duration.ofSeconds(5);
 
     private final ConcurrentHashMap<String, ActiveRun> runs = new ConcurrentHashMap<>();
+    private final DynamicRunControlRepository repository;
+    private final String ownerId;
+
+    DynamicRunControlManager() {
+        this(new InMemoryDynamicRunControlRepository());
+    }
+
+    DynamicRunControlManager(DynamicRunControlRepository repository) {
+        this(repository, UUID.randomUUID().toString());
+    }
+
+    DynamicRunControlManager(DynamicRunControlRepository repository, String ownerId) {
+        this.repository = repository == null ? new InMemoryDynamicRunControlRepository() : repository;
+        this.ownerId = ownerId == null || ownerId.isBlank() ? UUID.randomUUID().toString() : ownerId;
+    }
 
     Registration begin(DynamicRunIntent intent) {
         DynamicRunIntent effective = intent == null ? DynamicRunIntent.unmanaged() : intent;
@@ -35,16 +52,25 @@ final class DynamicRunControlManager implements OperatorInterceptor {
         }
         String invalid = invalid(effective);
         if (!invalid.isBlank()) {
-            return Registration.rejected(new DynamicRunControlView("", effective.requestId(), "", "REJECTED",
-                    "INVALID_RUN_INTENT", 1, effective.deadlineAt(), null, null, Instant.now(), true, false), invalid);
+            DynamicRunControlView rejected = new DynamicRunControlView("", effective.requestId(), "", "REJECTED",
+                    "INVALID_RUN_INTENT", 1, effective.deadlineAt(), null, null, Instant.now(), true, false);
+            return Registration.rejected(rejected, invalid);
         }
         purgeExpired();
-        ActiveRun candidate = new ActiveRun(effective);
+        Instant now = Instant.now();
+        DynamicRunControlRepository.Claim claim = repository.claim(effective, ownerId, lease(now));
+        if (!claim.accepted()) {
+            DynamicRunControlView view = claim.state() == null
+                    ? DynamicRunControlView.unmanaged()
+                    : claim.state().view();
+            return Registration.rejected(view, claim.message());
+        }
+        ActiveRun candidate = new ActiveRun(effective, claim.state().owner());
         ActiveRun existing = runs.putIfAbsent(effective.requestId(), candidate);
         if (existing != null) {
-            return Registration.rejected(existing.view(), "Run request id is already registered.");
+            return Registration.rejected(existing.view(), "Run request id is already registered in this owner.");
         }
-        return new Registration(candidate, "");
+        return Registration.managed(candidate);
     }
 
     void attach(Registration registration, Thread owner, GraphContext context) {
@@ -75,7 +101,7 @@ final class DynamicRunControlManager implements OperatorInterceptor {
 
     DynamicRunControlView deadline(Registration registration) {
         return registration.managed()
-                ? registration.run().requestStop("TIMING_OUT", "GRAPH_DEADLINE_EXCEEDED", "")
+                ? registration.run().requestStop("TIMING_OUT", "GRAPH_DEADLINE_EXCEEDED")
                 : DynamicRunControlView.unmanaged();
     }
 
@@ -86,6 +112,9 @@ final class DynamicRunControlManager implements OperatorInterceptor {
     }
 
     DynamicRunControlView view(Registration registration) {
+        if (registration.rejected()) {
+            return registration.rejectionView();
+        }
         return registration.managed() ? registration.run().view() : DynamicRunControlView.unmanaged();
     }
 
@@ -96,16 +125,21 @@ final class DynamicRunControlManager implements OperatorInterceptor {
     }
 
     DynamicRunControlResult find(String requestId, String fencingToken) {
-        ActiveRun run = runs.get(requestId == null ? "" : requestId.trim());
-        if (run == null) {
+        String normalized = requestId == null ? "" : requestId.trim();
+        DynamicRunControlRepository.State state = repository.find(normalized, Instant.now()).orElse(null);
+        if (state == null) {
             return new DynamicRunControlResult(false, "RG.RUN_CONTROL.NOT_FOUND", "Controlled run was not found.",
                     DynamicRunControlView.unmanaged());
         }
-        if (!run.fenceMatches(fencingToken)) {
+        if (!digestMatches(state.fenceDigest(), fencingToken)) {
             return new DynamicRunControlResult(false, "RG.RUN_CONTROL.FENCE_MISMATCH",
                     "Control lookup fencing token does not match the run intent.", DynamicRunControlView.unmanaged());
         }
-        return new DynamicRunControlResult(true, "RG.RUN_CONTROL.FOUND", "", run.view());
+        ActiveRun local = runs.get(normalized);
+        if (local != null) {
+            local.synchronize(state);
+        }
+        return new DynamicRunControlResult(true, "RG.RUN_CONTROL.FOUND", "", state.view());
     }
 
     DynamicRunControlResult cancel(DynamicRunControlCommand command) {
@@ -113,12 +147,14 @@ final class DynamicRunControlManager implements OperatorInterceptor {
             return new DynamicRunControlResult(false, "RG.RUN_CONTROL.INVALID_COMMAND",
                     "requestId is required.", DynamicRunControlView.unmanaged());
         }
-        ActiveRun run = runs.get(command.requestId());
-        if (run == null) {
-            return new DynamicRunControlResult(false, "RG.RUN_CONTROL.NOT_FOUND",
-                    "Controlled run was not found.", DynamicRunControlView.unmanaged());
+        DynamicRunControlRepository.CommandResult result = repository.requestCallerCancel(command, Instant.now());
+        DynamicRunControlRepository.State state = result.state();
+        ActiveRun local = runs.get(command.requestId());
+        if (local != null && state != null) {
+            local.synchronize(state);
         }
-        return run.cancel(command);
+        return new DynamicRunControlResult(result.accepted(), result.code(), result.message(),
+                state == null ? DynamicRunControlView.unmanaged() : state.view());
     }
 
     @Override
@@ -139,8 +175,9 @@ final class DynamicRunControlManager implements OperatorInterceptor {
     }
 
     private void purgeExpired() {
-        Instant cutoff = Instant.now().minus(TERMINAL_RETENTION);
-        runs.entrySet().removeIf(entry -> entry.getValue().terminalBefore(cutoff));
+        repository.purgeTerminalBefore(Instant.now().minus(TERMINAL_RETENTION));
+        runs.entrySet().removeIf(entry -> entry.getValue().terminalBefore(
+                Instant.now().minus(TERMINAL_RETENTION)));
     }
 
     private static String invalid(DynamicRunIntent intent) {
@@ -159,13 +196,21 @@ final class DynamicRunControlManager implements OperatorInterceptor {
         return "";
     }
 
-    record Registration(ActiveRun run, String rejection) {
+    private static Instant lease(Instant now) {
+        return now.plus(OWNER_LEASE);
+    }
+
+    record Registration(ActiveRun run, DynamicRunControlView rejectionView, String rejection) {
         static Registration unmanaged() {
-            return new Registration(null, "");
+            return new Registration(null, DynamicRunControlView.unmanaged(), "");
+        }
+
+        static Registration managed(ActiveRun run) {
+            return new Registration(run, DynamicRunControlView.unmanaged(), "");
         }
 
         static Registration rejected(DynamicRunControlView view, String rejection) {
-            return new Registration(ActiveRun.rejected(view), rejection);
+            return new Registration(null, view, rejection == null ? "Run request was rejected." : rejection);
         }
 
         boolean managed() {
@@ -177,121 +222,72 @@ final class DynamicRunControlManager implements OperatorInterceptor {
         }
     }
 
-    private static final class ActiveRun {
+    private final class ActiveRun {
         private final DynamicRunIntent intent;
-        private Thread owner;
-        private String engineExecutionId = "";
-        private String status = "QUEUED";
-        private String reasonCode = "ACCEPTED";
-        private long revision = 1;
-        private Instant startedAt;
-        private Instant cancelRequestedAt;
-        private Instant terminalAt;
-        private boolean terminationConfirmed;
-        private boolean sideEffectsMayBeInFlight;
-        private String stopCause = "";
+        private final DynamicRunControlRepository.Owner ownerKey;
+        private Thread ownerThread;
         private int activeOperators;
         private boolean ownerExited;
         private boolean resultSucceeded;
         private boolean resultFailed;
+        private String stopCause = "";
         private final Set<Thread> operatorThreads = new HashSet<>();
 
-        private ActiveRun(DynamicRunIntent intent) {
+        private ActiveRun(DynamicRunIntent intent, DynamicRunControlRepository.Owner ownerKey) {
             this.intent = intent;
-        }
-
-        private static ActiveRun rejected(DynamicRunControlView view) {
-            ActiveRun run = new ActiveRun(new DynamicRunIntent("", view.requestId(), view.deadlineAt(), "", 2_000));
-            run.status = view.status();
-            run.reasonCode = view.reasonCode();
-            run.revision = view.revision();
-            run.terminalAt = view.terminalAt();
-            run.terminationConfirmed = true;
-            return run;
+            this.ownerKey = ownerKey;
         }
 
         private synchronized void attach(Thread owner) {
-            this.owner = owner;
-            if (stopRequested()) {
-                owner.interrupt();
-                return;
-            }
-            status = "RUNNING";
-            reasonCode = "EXECUTION_STARTED";
-            startedAt = Instant.now();
-            revision++;
+            this.ownerThread = owner;
+            DynamicRunControlRepository.State state = repository.start(intent.requestId(), ownerKey, Instant.now(),
+                    lease(Instant.now())).orElseThrow(() -> new IllegalStateException("Run control owner lease was lost"));
+            synchronize(state);
         }
 
         private synchronized void observeExecutionId(String executionId) {
-            if (engineExecutionId.isBlank() && executionId != null && !executionId.isBlank()) {
-                engineExecutionId = executionId;
-                revision++;
-            }
+            repository.observeExecutionId(intent.requestId(), ownerKey, executionId, lease(Instant.now()))
+                    .ifPresent(this::synchronize);
         }
 
-        private synchronized DynamicRunControlResult cancel(DynamicRunControlCommand command) {
-            if (!constantTimeEquals(intent.fencingToken(), command.fencingToken())) {
-                return new DynamicRunControlResult(false, "RG.RUN_CONTROL.FENCE_MISMATCH",
-                        "Control command fencing token does not match the run intent.", view());
-            }
-            if (command.expectedRevision() > 0 && command.expectedRevision() != revision) {
-                return new DynamicRunControlResult(false, "RG.RUN_CONTROL.REVISION_CONFLICT",
-                        "Control command expectedRevision is stale.", view());
-            }
-            if (terminal()) {
-                return new DynamicRunControlResult(false, "RG.RUN_CONTROL.ALREADY_TERMINAL",
-                        "Controlled run has already reached a terminal state.", view());
-            }
-            DynamicRunControlView changed = requestStop("CANCEL_REQUESTED", "USER_CANCEL_REQUESTED", command.reason());
-            return new DynamicRunControlResult(true, "RG.RUN_CONTROL.CANCEL_ACCEPTED", "", changed);
-        }
-
-        private synchronized DynamicRunControlView requestStop(String requestedStatus, String reason, String detail) {
-            if (terminal() || stopRequested()) {
+        private synchronized DynamicRunControlView requestStop(String status, String reason) {
+            DynamicRunControlRepository.State state = repository.requestOwnerStop(intent.requestId(), ownerKey,
+                    status, reason, Instant.now(), lease(Instant.now())).orElse(null);
+            if (state == null) {
                 return view();
             }
-            status = requestedStatus;
-            reasonCode = reason;
-            stopCause = "TIMING_OUT".equals(requestedStatus) ? "DEADLINE" : "USER";
-            cancelRequestedAt = Instant.now();
-            sideEffectsMayBeInFlight = true;
-            revision++;
-            if (owner != null) {
-                owner.interrupt();
-            }
-            operatorThreads.forEach(Thread::interrupt);
-            return view();
+            synchronize(state);
+            return state.view();
         }
 
         private synchronized DynamicRunControlView terminationUnconfirmed() {
-            if (!terminationConfirmed && stopRequested()) {
-                status = "TERMINATION_UNCONFIRMED";
-                reasonCode = "CANCELLATION_GRACE_EXCEEDED";
-                sideEffectsMayBeInFlight = true;
-                revision++;
+            DynamicRunControlRepository.State state = repository.markUnconfirmed(intent.requestId(), ownerKey,
+                    "CANCELLATION_GRACE_EXCEEDED", Instant.now()).orElse(null);
+            if (state != null) {
+                synchronize(state);
+                return state.view();
             }
             return view();
         }
 
         private synchronized void complete(GraphResult result, Throwable failure) {
             if (result != null && result.executionId() != null) {
-                engineExecutionId = result.executionId();
+                observeExecutionId(result.executionId());
             }
             ownerExited = true;
             resultSucceeded = failure == null && result != null && result.isSuccess();
             resultFailed = !resultSucceeded;
             if (activeOperators > 0) {
-                status = "TERMINATION_UNCONFIRMED";
-                reasonCode = "OWNER_EXITED_WITH_ACTIVE_OPERATORS";
-                sideEffectsMayBeInFlight = true;
-                revision++;
+                repository.markUnconfirmed(intent.requestId(), ownerKey,
+                        "OWNER_EXITED_WITH_ACTIVE_OPERATORS", Instant.now()).ifPresent(this::synchronize);
                 return;
             }
             finalizeTermination();
         }
 
         private synchronized boolean enterOperator() {
-            if (stopRequested()) {
+            DynamicRunControlView current = view();
+            if (InMemoryDynamicRunControlRepository.stopRequested(current)) {
                 return false;
             }
             activeOperators++;
@@ -304,62 +300,81 @@ final class DynamicRunControlManager implements OperatorInterceptor {
                 activeOperators--;
             }
             operatorThreads.remove(Thread.currentThread());
-            if (ownerExited && activeOperators == 0 && !terminationConfirmed) {
+            if (ownerExited && activeOperators == 0) {
                 finalizeTermination();
             }
         }
 
         private void finalizeTermination() {
-            boolean deadline = "DEADLINE".equals(stopCause);
-            boolean cancellation = "USER".equals(stopCause);
+            DynamicRunControlView current = repository.find(intent.requestId(), Instant.now())
+                    .map(DynamicRunControlRepository.State::view).orElse(DynamicRunControlView.unmanaged());
+            boolean deadline = "TIMING_OUT".equals(current.status()) || "GRAPH_DEADLINE_EXCEEDED".equals(current.reasonCode())
+                    || "DEADLINE".equals(stopCause);
+            boolean cancellation = "CANCEL_REQUESTED".equals(current.status())
+                    || "USER_CANCEL_REQUESTED".equals(current.reasonCode()) || "USER".equals(stopCause);
+            String status;
+            String reason;
             if (deadline) {
                 status = "TIMED_OUT";
-                reasonCode = "GRAPH_DEADLINE_TERMINATED";
+                reason = "GRAPH_DEADLINE_TERMINATED";
             } else if (cancellation) {
                 status = "CANCELLED";
-                reasonCode = "USER_CANCEL_TERMINATED";
+                reason = "USER_CANCEL_TERMINATED";
             } else if (resultSucceeded) {
                 status = "SUCCEEDED";
-                reasonCode = "EXECUTION_COMPLETED";
+                reason = "EXECUTION_COMPLETED";
             } else if (resultFailed) {
                 status = "FAILED";
-                reasonCode = "EXECUTION_FAILED";
+                reason = "EXECUTION_FAILED";
+            } else {
+                return;
             }
-            terminationConfirmed = true;
-            sideEffectsMayBeInFlight = false;
-            terminalAt = Instant.now();
-            revision++;
-        }
-
-        private synchronized boolean stopRequested() {
-            return "CANCEL_REQUESTED".equals(status)
-                    || "TIMING_OUT".equals(status)
-                    || "TERMINATION_UNCONFIRMED".equals(status);
-        }
-
-        private synchronized boolean terminal() {
-            return terminationConfirmed || "REJECTED".equals(status);
-        }
-
-        private synchronized boolean terminalBefore(Instant cutoff) {
-            return terminalAt != null && terminalAt.isBefore(cutoff);
-        }
-
-        private boolean fenceMatches(String fencingToken) {
-            return constantTimeEquals(intent.fencingToken(), fencingToken);
+            repository.finish(intent.requestId(), ownerKey, status, reason, Instant.now()).ifPresent(this::synchronize);
         }
 
         private synchronized DynamicRunControlView view() {
-            return new DynamicRunControlView("", intent.requestId(), engineExecutionId, status, reasonCode,
-                    revision, intent.deadlineAt(), startedAt, cancelRequestedAt, terminalAt,
-                    terminationConfirmed, sideEffectsMayBeInFlight);
+            DynamicRunControlRepository.State state = repository.find(intent.requestId(), Instant.now()).orElse(null);
+            if (state == null) {
+                return DynamicRunControlView.unmanaged();
+            }
+            synchronize(state);
+            if (!InMemoryDynamicRunControlRepository.terminal(state.view())) {
+                state = repository.renew(intent.requestId(), ownerKey, lease(Instant.now())).orElse(state);
+            }
+            return state.view();
         }
 
-        private static boolean constantTimeEquals(String expected, String actual) {
-            return MessageDigest.isEqual(
-                    (expected == null ? "" : expected).getBytes(StandardCharsets.UTF_8),
-                    (actual == null ? "" : actual).getBytes(StandardCharsets.UTF_8));
+        private synchronized void synchronize(DynamicRunControlRepository.State state) {
+            if (state == null) {
+                return;
+            }
+            String status = state.view().status();
+            if ("TIMING_OUT".equals(status)) {
+                stopCause = "DEADLINE";
+            } else if ("CANCEL_REQUESTED".equals(status)) {
+                stopCause = "USER";
+            }
+            if (InMemoryDynamicRunControlRepository.stopRequested(state.view())) {
+                if (ownerThread != null) {
+                    ownerThread.interrupt();
+                }
+                operatorThreads.forEach(Thread::interrupt);
+            }
         }
+
+        private synchronized boolean terminalBefore(Instant cutoff) {
+            return repository.find(intent.requestId(), Instant.now())
+                    .map(DynamicRunControlRepository.State::view)
+                    .map(DynamicRunControlView::terminalAt)
+                    .filter(value -> value.isBefore(cutoff))
+                    .isPresent();
+        }
+    }
+
+    private static boolean digestMatches(String expectedDigest, String token) {
+        return MessageDigest.isEqual(
+                (expectedDigest == null ? "" : expectedDigest).getBytes(StandardCharsets.UTF_8),
+                InMemoryDynamicRunControlRepository.digest(token).getBytes(StandardCharsets.UTF_8));
     }
 
     private static final class ControlledRunCancellationException extends RuntimeException {

@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.openqa.selenium.By;
 import org.openqa.selenium.Dimension;
+import org.openqa.selenium.ElementNotInteractableException;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.Keys;
 import org.openqa.selenium.NoSuchElementException;
@@ -3294,9 +3295,10 @@ class VisualAuthoringBrowserDomTest {
                         scrollIntoView(element);
                         element.click();
                     }
-                    driver.switchTo().activeElement().sendKeys(String.valueOf(character));
+                    element.sendKeys(String.valueOf(character));
                     return true;
-                } catch (NoSuchElementException | StaleElementReferenceException ex) {
+                } catch (NoSuchElementException | StaleElementReferenceException
+                         | ElementNotInteractableException ex) {
                     return false;
                 }
             });

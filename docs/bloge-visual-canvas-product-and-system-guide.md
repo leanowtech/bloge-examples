@@ -315,7 +315,11 @@ operator 的 effect/idempotency、业务补偿能力和门禁策略决定是否�
 | `userRunCancellation` | `true` | 支持带 fencing token 的协作式 cancel command |
 | `runTerminationConfirmation` | `true` | owner 已退出且 operator in-flight 归零后才确认终止 |
 | `hardRunTermination` | `false` | Java 进程不能安全强杀忽略中断的任意业务代码 |
-| `durableRunControl` | `false` | active control registry 仍是单进程；重启接管尚未实现 |
+| `durableRunControl` | `true` | control state、fence digest、owner epoch、revision 和 lease 持久化；跨实例 lookup/cancel 可用 |
+| `crossInstanceRunCancellation` | `true` | 非 owner 实例可用共享数据库提交 fenced cancel，owner 在续租循环中观察并中断本地线程 |
+| `runOwnerLease` / `runOwnerEpochFencing` | `true` | owner 只能在有效 lease 和匹配 epoch 下推进状态，旧 owner 不能覆盖恢复结论 |
+| `expiredOwnerQuarantine` | `true` | owner 租约过期后持久化为 `OWNER_LEASE_EXPIRED + TERMINATION_UNCONFIRMED` |
+| `restartRunResumption` | `false` | 进程崩溃后不会盲目重跑未知副作用；当前恢复策略是 abandonment + quarantine，而不是自动续跑 |
 | `runControlEvidence` | `true` | control fact 已进入 run record、签名和 evidence v4 |
 | `sideEffectCommitConfirmation` | `false` | 尚无 operator commit receipt/unknown-commit 消解协议 |
 
@@ -356,6 +360,26 @@ Custom Composer 的 **Run** 区现在直接提供 `Deadline` 数值框。点击 
 operator interceptor 的虚拟线程；只有 owner 退出且 in-flight 计数为零，才会清除
 `sideEffectsMayBeInFlight`。若业务算子吞掉 `InterruptedException`，页面会及时返回
 `TERMINATION_UNCONFIRMED`，而不是伪造 `CANCELLED`。
+
+#### 多实例与重启时如何解释
+
+Spring 产品服务使用 `dynamic_run_controls` 作为权威状态表，JVM 内存只保存当前 owner 的线程句柄。表中保存
+`requestId`、fence 的 SHA-256 digest、owner id/epoch、monotonic revision、绝对 deadline、lease、状态和终止事实；
+不会保存原始 fencing token。所有变更在数据库行锁内完成，因此两个实例同时取消时只有一个命令成为状态迁移赢家。
+
+典型过程如下：
+
+1. 实例 A 接收 RunIntent，以唯一 `requestId` 创建 durable claim，并获得 owner epoch。
+2. A 每次轮询 deadline/cancel 时续租；本地线程句柄不写数据库。
+3. 实例 B 可以处理同一 requestId 的 GET/cancel。B 只提交 fenced 状态迁移，不尝试操作 A 的线程。
+4. A 观察到 `CANCEL_REQUESTED` 后中断 owner 和 operator，最终提交 `CANCELLED` 或
+   `TERMINATION_UNCONFIRMED`。
+5. A 若崩溃，lease 到期后的首次读取会原子地写入 `OWNER_LEASE_EXPIRED`、
+   `recoveryDisposition=ABANDONED` 和 `sideEffectsMayBeInFlight=true`；旧 owner/epoch 后续不能覆盖它。
+
+这里刻意不做自动重跑。进程死亡时，系统无法仅凭线程消失判断远端写是否提交；盲目从头执行可能造成重复扣款、
+重复发布或重复通知。业务要恢复执行，必须先通过未来的 commit receipt/reconciliation 协议消解 unknown commit，
+或由上层创建新的 requestId 走明确审批后的补偿/重试流程。
 
 自动化客户端也可以调用：
 

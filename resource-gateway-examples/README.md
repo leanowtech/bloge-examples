@@ -21,6 +21,7 @@ integration something the business flow can see, reason about, test, and change.
 | Schema-aware canvas | Drag, connect, validate, simulate, and publish under server-side schema checks |
 | Runtime-backed demos | Local upstreams, real gateway execution, mock simulation, SSE examples, and reusable publications |
 | Schema-gated table tests | Run real resource graphs with mocked downstream APIs, input/output schema validation, and node-level assertions |
+| Governed run controls | Absolute deadline, fenced cancel, durable owner lease/epoch, cross-instance commands, signed run evidence |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
 
 ## Start The Demo
@@ -100,7 +101,7 @@ credit fallback, loan policy, and SSE search. The full endpoint catalog lives in
 | Orchestration | BLOGE DSL graphs schedule dependencies, fan-out, joins, transforms, decisions, and streams |
 | Provider | `HttpResourceOperator` resolves descriptors, maps parameters, calls upstreams, validates response protocol, and extracts payload |
 | Visual product surface | Catalog import/export, schema checks, draft validation, simulation, publication, golden cases, and run history |
-| Controls | Response cache, tenant rate limiting, circuit breaking, and tenant context |
+| Controls | Durable run-control state, owner lease/epoch fencing, response cache, tenant rate limiting, circuit breaking, and tenant context |
 
 ## Extend It
 

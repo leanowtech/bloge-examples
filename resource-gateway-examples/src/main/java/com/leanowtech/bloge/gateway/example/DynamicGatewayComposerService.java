@@ -57,10 +57,17 @@ public class DynamicGatewayComposerService {
      * @param registry executable BLOGE operator registry
      * @param objectMapper mapper used to coerce visual DSL inputs into Java operator input types
      */
-    @Autowired
     public DynamicGatewayComposerService(OperatorRegistry registry, ObjectMapper objectMapper) {
+        this(registry, objectMapper, new InMemoryDynamicRunControlRepository());
+    }
+
+    /** Creates the Spring service with a durable controlled-run repository. */
+    @Autowired
+    public DynamicGatewayComposerService(OperatorRegistry registry,
+                                         ObjectMapper objectMapper,
+                                         DynamicRunControlRepository runControlRepository) {
         this.executionCapture = new NodeExecutionCaptureInterceptor();
-        this.runControls = new DynamicRunControlManager();
+        this.runControls = new DynamicRunControlManager(runControlRepository);
         this.graphEngine = GraphEngine.builder()
                 .registry(InputCoercingOperatorRegistry.wrap(registry, objectMapper))
                 .interceptors(List.of(runControls, executionCapture))
@@ -274,9 +281,6 @@ public class DynamicGatewayComposerService {
     private ExecutionOutcome awaitControlled(CompletableFuture<GraphResult> completion,
                                              DynamicRunControlManager.Registration registration) {
         while (true) {
-            if (completion.isDone()) {
-                return completedOutcome(completion);
-            }
             DynamicRunControlView view = runControls.view(registration);
             Instant now = Instant.now();
             if (view.deadlineAt() != null && !now.isBefore(view.deadlineAt())
@@ -284,20 +288,50 @@ public class DynamicGatewayComposerService {
                 view = runControls.deadline(registration);
             }
             if (stopRequested(view)) {
-                long elapsed = view.cancelRequestedAt() == null ? 0
-                        : Math.max(0, Duration.between(view.cancelRequestedAt(), now).toMillis());
+                Instant confirmationStartedAt = view.cancelRequestedAt() == null
+                        ? view.terminalAt()
+                        : view.cancelRequestedAt();
+                long elapsed = confirmationStartedAt == null ? 0
+                        : Math.max(0, Duration.between(confirmationStartedAt, now).toMillis());
                 if (elapsed >= runControls.cancellationGraceMs(registration)) {
-                    runControls.terminationUnconfirmed(registration);
+                    if (!"TERMINATION_UNCONFIRMED".equals(view.status())) {
+                        runControls.terminationUnconfirmed(registration);
+                    }
                     return new ExecutionOutcome(null, null, true);
                 }
             }
+            boolean awaitingOperatorDrain = completion.isDone()
+                    && "TERMINATION_UNCONFIRMED".equals(view.status())
+                    && !view.terminationConfirmed();
+            if (completion.isDone() && !awaitingOperatorDrain) {
+                return completedOutcome(completion);
+            }
             long waitMs = waitMillis(view, now, runControls.cancellationGraceMs(registration));
+            if (awaitingOperatorDrain) {
+                try {
+                    Thread.sleep(waitMs);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return new ExecutionOutcome(null, interrupted, false);
+                }
+                continue;
+            }
             try {
                 GraphResult result = completion.get(waitMs, TimeUnit.MILLISECONDS);
+                DynamicRunControlView afterCompletion = runControls.view(registration);
+                if ("TERMINATION_UNCONFIRMED".equals(afterCompletion.status())
+                        && !afterCompletion.terminationConfirmed()) {
+                    continue;
+                }
                 return new ExecutionOutcome(result, null, false);
             } catch (TimeoutException ignored) {
                 // Re-evaluate deadline, cancellation state, and grace on the next iteration.
             } catch (ExecutionException failure) {
+                DynamicRunControlView afterCompletion = runControls.view(registration);
+                if ("TERMINATION_UNCONFIRMED".equals(afterCompletion.status())
+                        && !afterCompletion.terminationConfirmed()) {
+                    continue;
+                }
                 return new ExecutionOutcome(null, failure.getCause(), false);
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();

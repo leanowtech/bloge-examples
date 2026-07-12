@@ -533,7 +533,7 @@ POST /api/integration/gate-results
 | P0 | Run Trace 可导出为治理证据 | 当前 shape-only trace 不够 | 新增 evidence bundle，不直接改造成唯一 run response |
 | P0 | Payload 级 replay | 当前缺 payload capture | 新增 payload store/ref/sanitizer/replay endpoint |
 | P0 | GraphDraft export 依赖元数据 | 已有 dependency report 但不够稳定导入 | integration dependency profile |
-| P0 | Timeout/partial failure 语义 | Round 7 已补 engine event、绝对 deadline、fenced cancel、双条件终止确认和 evidence quarantine；预算传播/durable control/commit receipt 仍缺 | `VisualNodeExecutionFact` + `VisualRunControl` + evidence v4；下一步 durable lease 与 commit reconciliation |
+| P0 | Timeout/partial failure 语义 | Round 8 已补 engine event、绝对 deadline、fenced cancel、双条件终止确认、durable control、跨实例 cancel、owner lease/epoch 和过期隔离；预算传播/commit receipt 仍缺 | `VisualNodeExecutionFact` + `VisualRunControl` + durable control repository + evidence v4；下一步 remaining-budget 与 commit reconciliation |
 | P1 | Deep Link | 当前不是 integration API | 前端 route + resolver API |
 | P1 | Health/Capability Probe | 缺口明确 | `/api/integration/capabilities` |
 | P1 | Contract Test Suite 对齐 workbook | 当前 case/assertion 语义偏基础 | suite vNext + workbook mapping |
@@ -1059,7 +1059,7 @@ run deadline
 
 图源：[resource-gateway-run-control-lifecycle.drawio](assets/drawio/resource-gateway-run-control-lifecycle.drawio)。
 
-当前落地状态（Round 7）：`VisualRunIntent.v1` 和 gateway adapter 对应 intent 使用绝对 `deadlineAt`、
+当前落地状态（Round 8）：`VisualRunIntent.v1` 和 gateway adapter 对应 intent 使用绝对 `deadlineAt`、
 caller-generated `requestId/fencingToken` 和 cancellation grace。`DynamicRunControlManager` 拥有 scheduler
 thread、每个进入 operator interceptor 的虚拟线程集合和 monotonic revision；deadline 或用户 cancel 会同时
 设置 stop token、阻止后续 operator invocation，并中断 owner 与当前 in-flight operators。取消查询也必须携带
@@ -1071,7 +1071,11 @@ fence；错误 token 返回 403，过期 `expectedRevision` 返回 409，同一 
 `runEvidenceBundle.v4` 自动将 evidence 隔离。当前仍未完成三项：deadline 剩余预算传播到 node/HTTP binding、
 `detachPolicy`、以及跨实例/重启的 durable lease 与 fencing owner。因此 capability 同时声明
 `graphDeadline/userRunCancellation/runTerminationConfirmation=true`，但
-`hardRunTermination/durableRunControl=false`，禁止消费者误读。
+`dynamic_run_controls` 以数据库行锁持久化 fence digest、owner epoch、revision 与 lease；非 owner 实例可提交 cancel，
+owner 在续租轮询中观察命令。租约过期不会被当成成功，而会原子进入
+`OWNER_LEASE_EXPIRED + TERMINATION_UNCONFIRMED + ABANDONED`，旧 owner/epoch 不能覆盖。capability 因此返回
+`durableRunControl/crossInstanceRunCancellation/runOwnerLease/runOwnerEpochFencing/expiredOwnerQuarantine=true`，
+同时返回 `hardRunTermination/restartRunResumption=false`，禁止消费者把持久控制误读为任意 Java 代码强杀或崩溃后续跑。
 
 ### 23.2 Retry 不是默认正确
 
@@ -1404,11 +1408,12 @@ operator 从 schema 导入到生产可用需要 `DISCOVERED -> DESCRIBED -> VERI
 
 退出门槛：success/failure/timeout/partial/mock/fallback/unknown-commit 场景均可结构化解释；篡改可检出；run 成功但 evidence 不完整时 gate 不会误采纳。
 
-当前落地状态（Round 7）：标准 node/edge/graph facts、真实 retry/timeout/fallback events、关键输出聚合、
+当前落地状态（Round 8）：标准 node/edge/graph facts、真实 retry/timeout/fallback events、关键输出聚合、
 sanitized payload、持久签名、fact coverage 和 quarantine 已实现；run intent、绝对 deadline、fenced cancel、
 owner+operator 双条件终止确认和 evidence v4 control fact 也已落地。capability 同时声明已支持的
 `graphDeadline/userRunCancellation/runTerminationConfirmation` 与尚未支持的
-`hardRunTermination/durableRunControl/sideEffectCommitConfirmation`。Stage 2 仍未退出：还需 remaining-budget
+持久 control state、跨实例 cancel、owner lease/epoch 与过期 quarantine。capability 同时揭示未支持的
+`hardRunTermination/restartRunResumption/sideEffectCommitConfirmation`。Stage 2 仍未退出：还需 remaining-budget
 propagation、disconnect policy、durable lease/fencing owner、operator commit receipt、side-effect-aware
 retry/reconciliation，以及多实例 fault injection/SLO。
 

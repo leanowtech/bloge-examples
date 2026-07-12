@@ -75,7 +75,12 @@ public record IntegrationCapabilities(
         features.put("userRunCancellation", true);
         features.put("runTerminationConfirmation", true);
         features.put("hardRunTermination", false);
-        features.put("durableRunControl", false);
+        features.put("durableRunControl", true);
+        features.put("crossInstanceRunCancellation", true);
+        features.put("runOwnerLease", true);
+        features.put("runOwnerEpochFencing", true);
+        features.put("restartRunResumption", false);
+        features.put("expiredOwnerQuarantine", true);
         features.put("runControlEvidence", true);
         features.put("sideEffectCommitConfirmation", false);
         features.put("payloadReplay", true);

@@ -5,10 +5,10 @@
 | 属性 | 内容 |
 |---|---|
 | 设计基线 | `docs/resource-gateway-aneke-tool-studio-integration-evolution-plan.md` |
-| 当前实现基线 | Round 7（绝对 deadline、fenced cancel、双条件终止确认、evidence v4） |
+| 当前实现基线 | Round 8（持久 run control、跨实例 cancel、owner lease/epoch、过期隔离） |
 | 评估日期 | 2026-07-12 |
 | 目标 | 加权实施差距 `<3%`，且不存在 P0 阻断项 |
-| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1494 tests，0 failures，0 errors，2 skipped |
+| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1513 tests，0 failures，0 errors，2 skipped，`BUILD SUCCESS`（05:45） |
 
 ## 1. 评分方法
 
@@ -176,6 +176,30 @@ Round 7 结论：差距从 `23.85%` 降至 `20.90%`。单进程 authoring runtim
 语义，`RUN-01` 不再是“完全没有控制协议”；但它仍是 P0，因为 active control state 不能跨重启接管、deadline
 预算尚未传到 runtime binding，而且 visual control endpoint 尚未进入受信 workload identity 作用域。更关键的
 `RUN-02` 也未关闭：即使线程终止被确认，已发出的远端写仍可能是 `UNKNOWN_COMMIT`。
+
+## 2.8 Round 8 重新审计
+
+本轮把控制状态从 JVM map 提升为数据库权威状态机。`dynamic_run_controls` 以唯一 requestId 建 claim，原始
+fencing token 只以 SHA-256 digest 保存；owner id/epoch、revision 和 lease 约束所有 owner mutation。另一实例可以
+提交 cancel，当前 owner 在固定轮询/续租点观察后中断本地线程。owner 消失不会让状态静默丢失：lease 过期后，
+首次读取在行锁内写入 `OWNER_LEASE_EXPIRED + TERMINATION_UNCONFIRMED + ABANDONED`，并阻止旧 owner 覆盖。
+
+| 维度 | 权重 | 当前完成率 | 得分 | 本轮可证明增量 | 仍未证明 |
+|---|---:|---:|---:|---|---|
+| 协议、版本与身份边界 | 15 | 96.5% | 14.475 | capability 拆分 durable control、跨实例 cancel、lease/epoch、expired quarantine 与 restart resumption；原始 fence 不落库 | visual control endpoint 企业 IAM scope；自动 N/N-1 consumer matrix；动态 IAM/mTLS 联调 |
+| GraphDraft 依赖快照 | 10 | 60% | 6.00 | 无语义变化 | runtime binding/suite refs、跨表一致快照、完整 readiness profile |
+| Run evidence 可信链 | 20 | 90% | 18.00 | owner lease 过期形成稳定、可查询的 fail-closed control fact，不再因重启丢失 | abandoned run 自动形成 signed evidence/outbox；KMS/HSM；retention/legal hold；commit receipt |
+| Payload replay | 15 | 80% | 12.00 | 无语义变化 | shadow/live 审批隔离、跨实例 exactly-once、选择性 retention |
+| Timeout/partial failure 语义 | 10 | 95% | 9.50 | durable claim；跨实例 fenced cancel；并发单赢家；owner lease/epoch；租约过期 abandonment；cancel-before-start 不被晚 start 覆盖 | remaining-budget 向 node/HTTP 传播；disconnect policy；unknown commit reconciliation |
+| Workbook、gate feedback 与 Deep Link | 10 | 70% | 7.00 | `OWNER_LEASE_EXPIRED` 可成为明确 gate 阻断原因 | 双向 workbook refs、coverage policy、owner/migration gate 完整闭环 |
+| Change event、cursor、webhook 与对账 | 10 | 80% | 8.00 | 无语义变化 | abandoned control 事件/outbox、signed webhook、DLQ/重试、retention/compaction、乱序 fault harness |
+| 工业运行控制 | 10 | 52% | 5.20 | DB row lock；跨 repository restart；双实例 cancel；并发 command race；old owner/epoch fencing；raw fence absence；Spring wiring | 外部 HA DB 多进程实测、lease metrics/SLO、quota、DR/容量、clock-skew policy、自动 recovery sweeper |
+| **合计** | **100** |  | **80.175** |  | **加权差距 19.825%** |
+
+Round 8 结论：差距从 `20.90%` 降至 `19.825%`。`RUN-01` 中“active control state 只能留在单进程”的病根
+已经关闭，但不能据此声称运行可无损续跑。线程栈和外部事务不能持久化，当前正确恢复是 quarantine，而不是接管执行。
+剩余 P0 收敛为两条：deadline remaining-budget 还未贯穿 BLOGE/runtime binding；外部写仍缺 commit receipt 与
+reconciliation。与此同时，abandoned control 还没有自动生成 run evidence/outbox，属于下一轮必须补齐的证据链缺口。
 
 ## 3. 已通过的证明
 
@@ -391,8 +415,8 @@ graceful shutdown completed
 边界说明：BLOGE 当前 timeout/fallback listener 旧签名没有 `OperatorContext`。Gateway 已用 invocation scope 和
 唯一 active candidate 关联，并在歧义时 fail closed；根治方案仍应在 BLOGE 演进中把 executionId/context 加入
 所有 resilience event。图级 absolute deadline、用户 cancel/fencing 和双条件终止确认已实现；但 budget
-propagation、disconnect policy、durable control takeover、hard kill 和 operator commit receipt 仍未实现，capability
-分别诚实返回 true/false，不把单进程协作取消夸大为 durable workflow control。
+propagation、disconnect policy、hard kill 和 operator commit receipt 仍未实现。Round 8 已把 control state、跨实例 cancel
+和 owner lease/epoch 持久化，但恢复策略是 abandonment + quarantine，不把它夸大为崩溃后自动续跑。
 
 ### 3.9 Run control 与真实页面证明
 
@@ -428,14 +452,56 @@ SVG visual inspection passed; editable corporate source retained
 首次请求按设计得到 404，调整 authoring scope 到受信 identity 的 `tenant-a/prod` 后才可读取，这同时证明运行证据
 没有越过租户/环境边界。
 
+### 3.10 Durable control 故障证明
+
+Round 8 用共享 H2 数据源创建两个独立 repository/service 实例，验证数据库而非 JVM map 才是状态权威源。
+测试覆盖 repository 重建、跨实例 cancel、并发 cancel race、cancel-before-start、owner/epoch 越权、lease expiry、
+abandonment retention 和 fence secret hygiene。
+
+```text
+45 focused tests passed
+  9 database run-control state-machine tests
+  18 dynamic composer executions, including 10 repeated cross-instance cancellations
+  13 integration capability/evidence tests
+  5 Spring application wiring tests
+
+repository restart -> RUNNING state + owner epoch + revision retained
+instance B cancel -> instance A observes durable command -> local threads interrupted -> CANCELLED
+two concurrent cancel commands -> exactly one accepted transition
+cancel-before-start -> late owner start cannot overwrite CANCEL_REQUESTED
+lease expired -> OWNER_LEASE_EXPIRED + TERMINATION_UNCONFIRMED + ABANDONED
+old owner/epoch -> cannot mutate abandonment or another owner's row
+raw fencing token -> absent from dynamic_run_controls
+purge -> never deletes unconfirmed abandonment evidence
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+Tests run: 1513, Failures: 0, Errors: 0, Skipped: 2
+BUILD SUCCESS (05:45)
+
+Draw.io validation: 0 errors, 0 warnings, 0 crossings/overlaps
+SVG visual inspection passed; durable authority and JVM-local handles are visually separated
+```
+
+全量回归先后暴露两个只有在调度压力下容易命中的窗口：owner 已退出而 operator `finally` 尚未 drain 时，
+`completion.isDone()` 和 `completion.get()` 两条返回路径都可能提前返回 transient
+`TERMINATION_UNCONFIRMED`。修复后，两条路径都会在 cancellation grace 内重新读取 durable control；只有 operator
+仍未退出时才在 grace 后返回隔离结论。该竞态被保留为 10 次重复的跨实例测试，而不是通过放宽预期隐藏。
+全量回归还暴露了浏览器测试在 React 重渲染后持有不可交互旧元素的问题；测试 helper 现在重新定位活动元素并
+重试 stale/not-interactable 状态，目标大图 connectability 用例与最终全量均通过。
+
+这里的 `durableRunControl=true` 精确表示：状态、命令和 owner failure 结论可跨 repository/实例生存，并可通过共享
+数据库协调；它不表示 Java continuation 可迁移，也不表示崩溃后的业务执行可自动 resume。对应 capability 将
+`restartRunResumption=false` 单独暴露。
+
 ## 4. 当前 P0 阻断项
 
 | ID | 阻断项 | 病根 | 根治验收 |
 |---|---|---|---|
 | `IAM-01` | 企业身份生命周期尚未端到端证明 | signed JWT、轮换和撤销代码已具备，但配置 trust store 只在启动时装载，尚无客户 IAM 动态策略/撤销传播证据 | 动态 JWKS/KMS 或 mTLS adapter + 多 identity/group/clearance + delegation grant + propagation SLO + policy/audit 联调演练 |
 | `OPS-01` | 本地签名 key 不满足企业 custody | private key 由本地 H2 demo provider 保存 | KMS/HSM-backed `VisualEvidenceSigner`、rotation/disable/revoke、审计和灾备演练 |
-| `RUN-01` | run control 尚不能跨实例接管和传播预算 | Round 7 已有 versioned intent、absolute deadline、cooperative cancel、fence/revision 与 owner+operator 终止确认；但 active state 仍在单进程，重启后没有 durable lease/fencing owner，deadline 未向下游 binding 传播 | 持久 RunControl repository + owner lease/epoch + restart takeover/abandonment + remaining-budget propagation + disconnect policy + 多实例 race/fault tests |
+| `RUN-01` | deadline 剩余预算尚未传播到每个 runtime binding | Round 8 已关闭单进程 control 病根：durable repository、跨实例 cancel、owner lease/epoch、restart abandonment 和 race tests 已落地；但 HTTP/remote worker/自定义 operator 仍只看到线程 interrupt，拿不到可验证的 remaining budget | BLOGE `OperatorContext` deadline/budget contract + HTTP timeout lowering + child-call budget cap + disconnect policy + clock-skew/fault tests |
 | `RUN-02` | 外部副作用 timeout 后只能标记 unknown commit | operator 没有 commit receipt/reconciliation hook，盲重试可能重复写 | effect/idempotency admission + transaction/idempotency receipt + reconcile/compensate hook + downstream-write suspension + gate policy |
+| `EVD-02` | owner 崩溃后的 control fact 尚未自动形成 run evidence | 运行线程死亡时常规 response/run-record 事务不会执行；durable control 可查询但没有独立 sweeper 将 abandonment 写入 signed evidence/outbox | recovery sweeper + requestId-to-run lineage reservation + synthetic abandoned run record + signed evidence + transactional outbox + restart fault test |
 
 `EVT-01` 已在 Round 3 对当前资产模型关闭。webhook、DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，但不再构成“事件丢失后无法对账”的 P0 病根。
 
@@ -451,5 +517,6 @@ SVG visual inspection passed; editable corporate source retained
 | 5 | signed workload JWT + rotation/revocation | RS256/EdDSA、严格 claims/time/algorithm 校验、多 kid 轮换、key/jti 撤销、kid/jti audit、signed provider capability | 29.20% | 1480 Java tests、22 个集成聚焦/18 个最终安全聚焦 tests、真实 jar HTTP 200/401、identity Draw.io 0 errors/warnings |
 | 6 | engine-observed failure semantics | retry/timeout/fallback 真事件、skip/cancel 因果、关键输出 PARTIAL、edge propagation、unknown commit、fact coverage quarantine | 23.85% | 1486 全量 tests、17 个聚焦/52 个运行边界 tests、真实 jar v3 + AJV schema、Draw.io 0 errors/warnings |
 | 7 | graph deadline、fenced cancel 与终止确认 | versioned intent/control、绝对 deadline、fence/revision、owner+operator 双条件确认、不合作算子 quarantine、UI deadline/stop、evidence v4 | 20.90% | 1494 全量 tests、24 个聚焦/114 个扩展回归 tests、真实浏览器 desktop/mobile、真实 jar v4 + AJV schema、Draw.io 0 errors/warnings |
+| 8 | durable run control 与 owner failure 语义 | DB 权威状态、跨实例 cancel、lease/epoch fencing、并发单赢家、cancel-before-start、过期 abandonment、raw fence 不落库 | 19.825% | 45 个聚焦 tests、1513 个全量 tests、跨 repository restart/双实例/race tests、真实浏览器回归、Draw.io 0 errors/warnings |
 
 后续每轮必须更新本表、代码证据、失败测试和剩余阻断项。只有全部 P0 阻断关闭、全量验证与真实浏览器验证通过，并且按同一权重计算的差距 `<3%`，才允许把目标标记完成。

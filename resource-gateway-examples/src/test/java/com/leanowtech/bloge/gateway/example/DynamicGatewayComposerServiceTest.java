@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.example;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.test.MockOperator;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.core.context.GraphContext;
@@ -7,6 +8,11 @@ import com.leanowtech.bloge.core.context.TenantContext;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.spi.event.NodeEvent.NodeStartEvent;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.RepeatedTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
+import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -219,6 +225,47 @@ class DynamicGatewayComposerServiceTest {
         assertThat(cancelled.success()).isFalse();
         assertThat(cancelled.runControl().status()).isEqualTo("CANCELLED");
         assertThat(cancelled.runControl().terminationConfirmed()).isTrue();
+    }
+
+    @RepeatedTest(10)
+    void observesCancellationPersistedByAnotherServiceInstance() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("slow", (com.leanowtech.bloge.core.operator.Operator<Object, Object>) (input, ctx) -> {
+            started.countDown();
+            Thread.sleep(10_000);
+            return input;
+        });
+        var dataSource = new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)
+                .generateUniqueName(true).build();
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        DataSourceTransactionManager transactionManager = new DataSourceTransactionManager(dataSource);
+        DatabaseDynamicRunControlRepository repository =
+                new DatabaseDynamicRunControlRepository(jdbc, transactionManager);
+        repository.init();
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        DynamicGatewayComposerService owner = new DynamicGatewayComposerService(registry, objectMapper, repository);
+        DynamicGatewayComposerService remote = new DynamicGatewayComposerService(registry, objectMapper,
+                new DatabaseDynamicRunControlRepository(jdbc, transactionManager));
+        DynamicGraphRunRequest request = new DynamicGraphRunRequest(simpleNodeDsl(), Map.of("value", "request"),
+                "work", new DynamicRunIntent("", "cross-instance-run", null, "shared-fence", 1_000));
+
+        CompletableFuture<DynamicGraphRunResponse> response = CompletableFuture.supplyAsync(() -> owner.run(request));
+        assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
+        DynamicRunControlResult current = remote.runControl("cross-instance-run", "shared-fence");
+
+        assertThat(current.accepted()).isTrue();
+        assertThat(remote.cancel(new DynamicRunControlCommand("cross-instance-run", "shared-fence",
+                current.control().revision(), "remote operator"))).satisfies(result -> {
+                    assertThat(result.accepted()).isTrue();
+                    assertThat(result.control().status()).isEqualTo("CANCEL_REQUESTED");
+                });
+
+        DynamicGraphRunResponse cancelled = response.get(3, TimeUnit.SECONDS);
+        assertThat(cancelled.runControl().status()).isEqualTo("CANCELLED");
+        assertThat(cancelled.runControl().terminationConfirmed()).isTrue();
+        assertThat(remote.runControl("cross-instance-run", "shared-fence").control().status())
+                .isEqualTo("CANCELLED");
     }
 
     @Test

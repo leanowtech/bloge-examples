@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <mxfile host="drawio" version="26.0.0">
   <diagram name="Run Control Lifecycle">
-    <mxGraphModel dx="1510" dy="620" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="700" math="0" shadow="0">
+    <mxGraphModel dx="1510" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="850" math="0" shadow="0">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
-        <mxCell id="2" value="Resource Gateway controlled-run protocol" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+        <mxCell id="2" value="Resource Gateway durable controlled-run protocol" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
           <mxGeometry x="40" y="30" width="650" height="40" as="geometry"/>
         </mxCell>
         <mxCell id="3" value="Caller intent" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=13;fontStyle=1;fontColor=#455a64;" vertex="1" parent="1">
@@ -28,7 +28,7 @@
           <mxGeometry x="40" y="300" width="170" height="90" as="geometry"/>
         </mxCell>
 
-        <mxCell id="12" value="Admission + ActiveRun&#xa;unique requestId&#xa;monotonic revision" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontColor=#263238;fontFamily=Arial;fontSize=11;" vertex="1" parent="1">
+        <mxCell id="12" value="Admission + durable claim&#xa;unique requestId&#xa;owner epoch + revision" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontColor=#263238;fontFamily=Arial;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="270" y="140" width="180" height="90" as="geometry"/>
         </mxCell>
         <mxCell id="13" value="Fence validation&#xa;constant-time token check&#xa;stale revision rejected" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontColor=#263238;fontFamily=Arial;fontSize=11;" vertex="1" parent="1">
@@ -74,11 +74,23 @@
         <mxCell id="40" value="signed" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="18" target="20"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="41" value="gap retained" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#c62828;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="19" target="21"><mxGeometry relative="1" as="geometry"/></mxCell>
 
-        <mxCell id="50" value="Protocol / runtime fact" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=10;" vertex="1" parent="1"><mxGeometry x="40" y="470" width="170" height="35" as="geometry"/></mxCell>
-        <mxCell id="51" value="Security / fencing" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=10;" vertex="1" parent="1"><mxGeometry x="230" y="470" width="160" height="35" as="geometry"/></mxCell>
-        <mxCell id="52" value="Pending / decision" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57c00;fontFamily=Arial;fontSize=10;" vertex="1" parent="1"><mxGeometry x="410" y="470" width="160" height="35" as="geometry"/></mxCell>
-        <mxCell id="53" value="Confirmed" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=10;" vertex="1" parent="1"><mxGeometry x="590" y="470" width="130" height="35" as="geometry"/></mxCell>
-        <mxCell id="54" value="Unconfirmed / quarantined" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontFamily=Arial;fontSize=10;" vertex="1" parent="1"><mxGeometry x="740" y="470" width="190" height="35" as="geometry"/></mxCell>
+        <mxCell id="59" value="Durable control authority" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=13;fontStyle=1;fontColor=#455a64;" vertex="1" parent="1"><mxGeometry x="270" y="430" width="260" height="30" as="geometry"/></mxCell>
+        <mxCell id="60" value="Owner instance A&#xa;local thread handles only&#xa;5 s lease heartbeat" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontColor=#263238;fontFamily=Arial;fontSize=11;" vertex="1" parent="1"><mxGeometry x="270" y="480" width="190" height="90" as="geometry"/></mxCell>
+        <mxCell id="61" value="dynamic_run_controls&#xa;row lock + CAS semantics&#xa;fence digest / epoch / revision" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#fff3e0;strokeColor=#e65100;fontColor=#263238;fontFamily=Arial;fontSize=11;" vertex="1" parent="1"><mxGeometry x="560" y="470" width="220" height="110" as="geometry"/></mxCell>
+        <mxCell id="62" value="Control instance B&#xa;GET / cancel API&#xa;no owner thread required" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontColor=#263238;fontFamily=Arial;fontSize=11;" vertex="1" parent="1"><mxGeometry x="880" y="480" width="190" height="90" as="geometry"/></mxCell>
+        <mxCell id="63" value="Lease expiry recovery&#xa;old owner fenced&#xa;no blind re-execution" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57c00;fontColor=#263238;fontFamily=Arial;fontSize=11;" vertex="1" parent="1"><mxGeometry x="1160" y="480" width="190" height="90" as="geometry"/></mxCell>
+        <mxCell id="64" value="ABANDONED&#xa;OWNER_LEASE_EXPIRED&#xa;quarantine + side-effect risk" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontColor=#263238;fontFamily=Arial;fontSize=11;" vertex="1" parent="1"><mxGeometry x="1410" y="480" width="170" height="90" as="geometry"/></mxCell>
+        <mxCell id="65" value="heartbeat / owner mutation" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#1565c0;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.4;entryX=0;entryY=0.35;" edge="1" parent="1" source="60" target="61"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="66" value="observe durable cancel" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#1565c0;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0;exitY=0.75;entryX=1;entryY=0.75;" edge="1" parent="1" source="61" target="60"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="510" y="600"/><mxPoint x="510" y="555"/></Array></mxGeometry></mxCell>
+        <mxCell id="67" value="fenced cancel" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="62" target="61"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="68" value="lease check" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#f57c00;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="61" target="63"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="820" y="615"/><mxPoint x="1120" y="615"/></Array></mxGeometry></mxCell>
+        <mxCell id="69" value="expired" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#c62828;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="63" target="64"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="50" value="Protocol / runtime fact" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=10;" vertex="1" parent="1"><mxGeometry x="40" y="690" width="170" height="35" as="geometry"/></mxCell>
+        <mxCell id="51" value="Security / fencing" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=10;" vertex="1" parent="1"><mxGeometry x="230" y="690" width="160" height="35" as="geometry"/></mxCell>
+        <mxCell id="52" value="Pending / decision" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57c00;fontFamily=Arial;fontSize=10;" vertex="1" parent="1"><mxGeometry x="410" y="690" width="160" height="35" as="geometry"/></mxCell>
+        <mxCell id="53" value="Confirmed" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=10;" vertex="1" parent="1"><mxGeometry x="590" y="690" width="130" height="35" as="geometry"/></mxCell>
+        <mxCell id="54" value="Unconfirmed / quarantined" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontFamily=Arial;fontSize=10;" vertex="1" parent="1"><mxGeometry x="740" y="690" width="190" height="35" as="geometry"/></mxCell>
       </root>
     </mxGraphModel>
   </diagram>

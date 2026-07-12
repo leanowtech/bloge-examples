@@ -59,6 +59,8 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeRolloutObservationRepository;
+import com.leanowtech.bloge.gateway.example.DatabaseDynamicRunControlRepository;
+import com.leanowtech.bloge.gateway.example.DynamicRunControlRepository;
 import com.leanowtech.bloge.gateway.visual.testing.DatabaseVisualOperatorContractTestSuiteRepository;
 import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestSuiteRepository;
 import com.leanowtech.bloge.operators.http.HttpRequestInput;
@@ -71,6 +73,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
@@ -119,6 +122,15 @@ public class GatewayConfiguration {
                 new NamedType(HttpRequestInput.ApiKeyAuth.class, "apiKey")
         );
         return mapper;
+    }
+
+    /** Durable authority for run cancellation, owner leases and restart recovery. */
+    @Bean
+    @ConditionalOnMissingBean
+    public DynamicRunControlRepository dynamicRunControlRepository(
+            JdbcTemplate jdbc,
+            PlatformTransactionManager transactionManager) {
+        return new DatabaseDynamicRunControlRepository(jdbc, transactionManager);
     }
 
     // ── Operator support ────────────────────────────────────────────────
