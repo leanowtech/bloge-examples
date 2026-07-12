@@ -44,6 +44,9 @@ class ResourceRegistryVisualAdapterTest {
         assertThat(visual.parameterMapping().bodyExpression()).isEqualTo("ctx.params.body");
         assertThat(visual.responseProtocol()).isEqualTo(new VisualResourceResponseProtocol.BodyCode(
                 "code", java.util.Set.of("OK"), "message"));
+        assertThat(visual.externalWriteContract()).isNotNull();
+        assertThat(visual.externalWriteContract().conformant()).isTrue();
+        assertThat(visual.externalWriteContract().reconcilerRef()).isEqualTo("orders.status");
     }
 
     @Test
@@ -99,7 +102,11 @@ class ResourceRegistryVisualAdapterTest {
                         "ctx.params.body"
                 ),
                 responseProtocol,
-                "data"
+                "data",
+                new ResourceDescriptor.ExternalWriteContract(
+                        ResourceDescriptor.ExternalWriteContract.SCHEMA_VERSION,
+                        "idempotencyKey", "Idempotency-Key", "lookupRef", "orders.status",
+                        "X-Commit-Receipt", "X-Transaction-Id", "orders", "", "", false)
         );
     }
 

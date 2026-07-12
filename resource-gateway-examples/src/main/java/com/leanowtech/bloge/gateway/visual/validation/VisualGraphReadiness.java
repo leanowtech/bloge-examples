@@ -296,6 +296,8 @@ public record VisualGraphReadiness(
                         "Bind a streaming runtime or replace the node before EXECUTABLE promotion.";
                 case "durable-runtime" ->
                         "Bind a durable runtime or replace the node before EXECUTABLE promotion.";
+                case "side-effect-conformance" ->
+                        "Adopt bloge.sideEffectProtocol.v1, prove journal/receipt/reconciliation behavior, and refresh the operator fingerprint before EXECUTABLE promotion.";
                 default -> "Bind the missing runtime adapter or replace the node before EXECUTABLE promotion.";
             };
         }

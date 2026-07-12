@@ -426,7 +426,36 @@ class OperatorLibraryValidatorTest {
                     assertThat(diagnostic.code()).isEqualTo("visual.operator.governance.nonIdempotent");
                     assertThat(diagnostic.message()).contains("non-idempotent").contains("retry");
                     assertThat(diagnostic.target()).isEqualTo("/operators/0/capabilities/idempotency");
+                })
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.sideEffectProtocol.required");
+                    assertThat(diagnostic.message()).contains("DESIGN").contains("EXECUTABLE");
                 });
+    }
+
+    @Test
+    void rejectsIncompleteJournaledSideEffectProtocolAndAcceptsCompleteContract() {
+        OperatorDefinition.SideEffectProtocol incomplete = new OperatorDefinition.SideEffectProtocol(
+                OperatorDefinition.SideEffectProtocol.SCHEMA_VERSION, "JOURNALED", true, true,
+                "", "input.idempotencyKey", "input.lookupRef", "response.receipt");
+        OperatorDefinition.SideEffectProtocol complete = OperatorDefinition.SideEffectProtocol.journaled(
+                "orders.status", "input.idempotencyKey", "input.lookupRef", "response.receipt");
+
+        VisualValidationResult rejected = validator.validate(libraryWith(operatorWithCapabilities(
+                new OperatorDefinition.Capabilities(
+                        "WRITE_EXTERNAL", "IDEMPOTENT", false, false, false, incomplete))));
+        VisualValidationResult accepted = validator.validate(libraryWith(operatorWithCapabilities(
+                new OperatorDefinition.Capabilities(
+                        "WRITE_EXTERNAL", "IDEMPOTENT", false, false, false, complete))));
+
+        assertThat(rejected.valid()).isFalse();
+        assertThat(rejected.diagnostics()).extracting(VisualDiagnostic::code)
+                .contains("visual.operator.sideEffectProtocol.incomplete");
+        assertThat(accepted.valid()).isTrue();
+        assertThat(accepted.diagnostics()).extracting(VisualDiagnostic::code)
+                .doesNotContain("visual.operator.sideEffectProtocol.required",
+                        "visual.operator.sideEffectProtocol.incomplete");
     }
 
     @Test

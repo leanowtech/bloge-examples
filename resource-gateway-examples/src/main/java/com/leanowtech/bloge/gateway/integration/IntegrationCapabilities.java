@@ -76,6 +76,10 @@ public record IntegrationCapabilities(
         objects.put("sideEffectReconciliationRequest", List.of(SideEffectReconciliationRequest.SCHEMA_VERSION));
         objects.put("sideEffectReconciliationRecord", List.of(SideEffectReconciliationRecord.SCHEMA_VERSION));
         objects.put("sideEffectReconciliationSummary", List.of(SideEffectReconciliationSummary.SCHEMA_VERSION));
+        objects.put("sideEffectProtocol", List.of(
+                com.leanowtech.bloge.core.operator.SideEffectProtocol.SCHEMA_VERSION));
+        objects.put("externalWriteContract", List.of(
+                com.leanowtech.bloge.gateway.resource.ResourceDescriptor.ExternalWriteContract.SCHEMA_VERSION));
 
         Map<String, Boolean> features = new LinkedHashMap<>();
         features.put("draftExportDependencyProfile", true);
@@ -104,6 +108,10 @@ public record IntegrationCapabilities(
         features.put("sideEffectCommitReceipts", true);
         features.put("sideEffectReconciliation", true);
         features.put("sideEffectReconciliationEvidence", true);
+        features.put("sideEffectConformanceContract", true);
+        features.put("sideEffectWriteAdmission", true);
+        features.put("sideEffectBindingConformance", true);
+        features.put("httpWriteSideEffectProtocol", true);
         features.put("sideEffectReconcilerAdapters", sideEffectReconcilerAdapters);
         features.put("sideEffectCommitConfirmation", false);
         features.put("payloadReplay", true);

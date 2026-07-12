@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Stateless validation result for a runtime adapter activation assertion.
@@ -234,6 +235,7 @@ public record VisualRuntimeAdapterActivationValidation(
             addBindingDiagnostics(request, binding, diagnostics);
             addImplementationDiagnostics(request, binding.implementation(), diagnostics);
             addCatalogDiagnostics(binding, currentOperator, diagnostics);
+            addSideEffectConformanceDiagnostics(request, binding, currentOperator, diagnostics);
         }
         addRuntimeAssertionDiagnostics(request, diagnostics);
         String state = diagnostics.stream().anyMatch(VisualDiagnostic::error) ? "rejected" : "ready-to-activate";
@@ -429,6 +431,43 @@ public record VisualRuntimeAdapterActivationValidation(
             diagnostics.add(VisualDiagnostic.error(
                     "visual.runtimeAdapterActivation.evidenceMissing",
                     "Runtime adapter activation requires at least one evidence item.",
+                    "/evidence"));
+        }
+    }
+
+    private static void addSideEffectConformanceDiagnostics(
+            Request request,
+            VisualRuntimeBindingImplementationBinding binding,
+            OperatorDefinition currentOperator,
+            List<VisualDiagnostic> diagnostics) {
+        if (currentOperator == null || !currentOperator.capabilities().externalWrite()) {
+            return;
+        }
+        if (!currentOperator.capabilities().sideEffectProtocol().managedWrite()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeAdapterActivation.sideEffectProtocolUnmanaged",
+                    "External-write adapter activation requires a current managed side-effect protocol contract.",
+                    "/operatorRef"));
+            return;
+        }
+        Set<String> implementationCapabilities = binding.implementation().capabilities().stream()
+                .map(value -> value.trim().toUpperCase(Locale.ROOT).replace('-', '_'))
+                .collect(java.util.stream.Collectors.toSet());
+        Set<String> requiredCapabilities = Set.of(
+                "SIDE_EFFECT_JOURNAL_V1", "COMMIT_RECEIPT_V1", "RECONCILIATION_LOOKUP_V1");
+        if (!implementationCapabilities.containsAll(requiredCapabilities)) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeAdapterActivation.sideEffectCapabilitiesMissing",
+                    "The bound external-write implementation no longer proves all side-effect protocol capabilities.",
+                    "/bindingId"));
+        }
+        Set<String> activationEvidence = request.evidence().stream()
+                .map(VisualRuntimeAdapterActivation.Evidence::kind)
+                .collect(java.util.stream.Collectors.toSet());
+        if (!activationEvidence.contains("reconciler-health")) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeAdapterActivation.reconcilerHealthEvidenceMissing",
+                    "External-write adapter activation requires current reconciler-health evidence.",
                     "/evidence"));
         }
     }

@@ -19,6 +19,7 @@ import java.util.Map;
  * @param parameterMapping expressions mapping operator input to request parts
  * @param responseProtocol response success/payload interpretation strategy
  * @param payloadPath optional dot-path for extracting the response payload
+ * @param externalWriteContract managed side-effect protocol mapping for HTTP mutations
  */
 public record VisualResourceDescriptor(
         String resourceId,
@@ -29,8 +30,23 @@ public record VisualResourceDescriptor(
         Duration defaultTimeout,
         VisualResourceParameterMapping parameterMapping,
         VisualResourceResponseProtocol responseProtocol,
-        String payloadPath
+        String payloadPath,
+        ExternalWriteContract externalWriteContract
 ) {
+    /** Backward-compatible constructor for visual descriptors without managed-write metadata. */
+    public VisualResourceDescriptor(String resourceId,
+                                    String urlTemplate,
+                                    String method,
+                                    Map<String, String> defaultHeaders,
+                                    VisualResourceAuth authStrategy,
+                                    Duration defaultTimeout,
+                                    VisualResourceParameterMapping parameterMapping,
+                                    VisualResourceResponseProtocol responseProtocol,
+                                    String payloadPath) {
+        this(resourceId, urlTemplate, method, defaultHeaders, authStrategy, defaultTimeout,
+                parameterMapping, responseProtocol, payloadPath, null);
+    }
+
     public VisualResourceDescriptor {
         if (resourceId == null || resourceId.isBlank()) {
             throw new IllegalArgumentException("resourceId must not be blank");
@@ -47,5 +63,55 @@ public record VisualResourceDescriptor(
         parameterMapping = parameterMapping == null ? VisualResourceParameterMapping.empty() : parameterMapping;
         responseProtocol = responseProtocol == null ? new VisualResourceResponseProtocol.HttpStatus()
                 : responseProtocol;
+    }
+
+    /** Visual-owned mirror of the runtime descriptor's managed-write contract. */
+    public record ExternalWriteContract(
+            String schemaVersion,
+            String idempotencyKeyParam,
+            String idempotencyHeader,
+            String reconciliationLookupParam,
+            String reconcilerRef,
+            String receiptIdHeader,
+            String transactionRefHeader,
+            String provider,
+            String proofReferenceHeader,
+            String proofFingerprintHeader,
+            boolean failureResponseNotCommitted
+    ) {
+        public ExternalWriteContract {
+            schemaVersion = normalized(schemaVersion);
+            idempotencyKeyParam = normalized(idempotencyKeyParam);
+            idempotencyHeader = normalized(idempotencyHeader);
+            reconciliationLookupParam = normalized(reconciliationLookupParam);
+            reconcilerRef = normalized(reconcilerRef);
+            receiptIdHeader = normalized(receiptIdHeader);
+            transactionRefHeader = normalized(transactionRefHeader);
+            provider = normalized(provider);
+            proofReferenceHeader = normalized(proofReferenceHeader);
+            proofFingerprintHeader = normalized(proofFingerprintHeader);
+        }
+
+        public boolean conformant() {
+            return ResourceDescriptorContract.SCHEMA_VERSION.equals(schemaVersion)
+                    && !idempotencyKeyParam.isBlank()
+                    && !idempotencyHeader.isBlank()
+                    && !reconciliationLookupParam.isBlank()
+                    && !reconcilerRef.isBlank()
+                    && !receiptIdHeader.isBlank()
+                    && !provider.isBlank();
+        }
+
+        private static String normalized(String value) {
+            return value == null ? "" : value.trim();
+        }
+    }
+
+    /** Keeps the runtime schema literal out of the visual adapter dependency boundary. */
+    public static final class ResourceDescriptorContract {
+        public static final String SCHEMA_VERSION = "resourceGateway.externalWriteContract.v1";
+
+        private ResourceDescriptorContract() {
+        }
     }
 }

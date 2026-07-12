@@ -6,6 +6,7 @@ import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.operator.OperatorMeta;
 import com.leanowtech.bloge.core.operator.OperatorResult;
 import com.leanowtech.bloge.core.operator.SideEffectType;
+import com.leanowtech.bloge.core.operator.SideEffectProtocol;
 import com.leanowtech.bloge.core.operator.SuspendableOperator;
 import com.leanowtech.bloge.core.schema.OpaqueSchema;
 import com.leanowtech.bloge.core.schema.SchemaAware;
@@ -120,6 +121,27 @@ class JavaOperatorInventoryProjectorTest {
         assertThat(new JavaOperatorInventoryProjector(registry).project()).isEmpty();
     }
 
+    @Test
+    void projectsManagedWriteProtocolAndBlocksUnmanagedWriteOperator() {
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.register("managedWrite", new ManagedWriteOperator());
+        registry.register("unmanagedWrite", new UnmanagedWriteOperator());
+
+        Map<String, OperatorDefinition> projected = new JavaOperatorInventoryProjector(registry).project().stream()
+                .collect(java.util.stream.Collectors.toMap(OperatorDefinition::operatorRef, value -> value));
+
+        assertThat(projected.get("managedWrite").capabilities().sideEffectProtocol().managedWrite()).isTrue();
+        assertThat(projected.get("managedWrite").runtimeReadiness().state()).isEqualTo("GOVERNANCE_REVIEW");
+        assertThat(projected.get("unmanagedWrite").capabilities().sideEffectProtocol().managedWrite()).isFalse();
+        assertThat(projected.get("unmanagedWrite").runtimeReadiness().state()).isEqualTo("RUNTIME_BLOCKED");
+        assertThat(projected.get("unmanagedWrite").runtimeReadiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(OperatorCatalogFacets.capabilityValues(projected.get("managedWrite")))
+                .contains("side-effect-managed", "runtime-executable");
+        assertThat(OperatorCatalogFacets.capabilityValues(projected.get("unmanagedWrite")))
+                .contains("side-effect-unmanaged")
+                .doesNotContain("runtime-executable");
+    }
+
     private record QuoteRequest(String sku, int quantity) {
     }
 
@@ -191,6 +213,25 @@ class JavaOperatorInventoryProjectorTest {
         @Override
         public SideEffectType sideEffectType() {
             return SideEffectType.WRITE;
+        }
+    }
+
+    private static class UnmanagedWriteOperator implements Operator<Object, Object> {
+        @Override
+        public Object execute(Object input, OperatorContext ctx) {
+            return input;
+        }
+
+        @Override
+        public SideEffectType sideEffectType() {
+            return SideEffectType.WRITE;
+        }
+    }
+
+    private static final class ManagedWriteOperator extends UnmanagedWriteOperator {
+        @Override
+        public SideEffectProtocol sideEffectProtocol() {
+            return SideEffectProtocol.journaled("orders.status");
         }
     }
 }

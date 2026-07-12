@@ -14,6 +14,8 @@ import com.leanowtech.bloge.core.model.StreamEdge;
 import com.leanowtech.bloge.core.operator.DecisionTableInput;
 import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.operator.SideEffectJournal;
+import com.leanowtech.bloge.core.operator.SideEffectProtocol;
+import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.core.spi.ExecutionListener;
 import com.leanowtech.bloge.core.spi.OperatorInterceptor;
 import com.leanowtech.bloge.core.spi.OperatorInvocation;
@@ -64,15 +66,20 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
 
     @Override
     public Object intercept(OperatorInvocation invocation) throws Exception {
+        requireManagedWriteProtocol(invocation);
         String captureId = captureId(invocation.operatorContext());
         CaptureState state = captures.get(captureId);
         if (captureId.isBlank() || state == null) {
-            return invocation.proceed();
+            Object output = invocation.proceed();
+            requireJournalAdoption(invocation);
+            rejectUnresolvedSideEffects(invocation);
+            return output;
         }
         Instant startedAt = Instant.now();
         invocationScope.set(new InvocationScope(captureId, invocation.nodeId()));
         try {
             Object output = invocation.proceed();
+            requireJournalAdoption(invocation);
             rejectUnresolvedSideEffects(invocation);
             state.recordAttempt(invocation, startedAt, output, "SUCCESS", "", "");
             return output;
@@ -83,6 +90,42 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
         } finally {
             invocationScope.remove();
         }
+    }
+
+    private static void requireManagedWriteProtocol(OperatorInvocation invocation) {
+        if (invocation.operator().sideEffectType() != SideEffectType.WRITE) {
+            return;
+        }
+        SideEffectProtocol protocol = invocation.operator().sideEffectProtocol();
+        if (protocol == null || !protocol.managedWrite()) {
+            throw new SideEffectProtocolViolationException(
+                    "External-write operator is not admitted because it does not declare bloge.sideEffectProtocol.v1");
+        }
+    }
+
+    private static void requireJournalAdoption(OperatorInvocation invocation) {
+        if (invocation.operator().sideEffectType() != SideEffectType.WRITE) {
+            return;
+        }
+        SideEffectProtocol protocol = invocation.operator().sideEffectProtocol();
+        List<SideEffectJournal.Snapshot> attempts = currentInvocationAttempts(invocation);
+        if (attempts.isEmpty()) {
+            throw new SideEffectProtocolViolationException(
+                    "External-write operator returned without recording a side-effect journal attempt");
+        }
+        if (protocol.reconciliationRequired()
+                && attempts.stream().anyMatch(attempt -> !attempt.request().reconcilable())) {
+            throw new SideEffectProtocolViolationException(
+                    "External-write operator recorded an attempt without a reconciler and safe lookup reference");
+        }
+    }
+
+    private static List<SideEffectJournal.Snapshot> currentInvocationAttempts(OperatorInvocation invocation) {
+        return invocation.operatorContext().sideEffects().snapshots().stream()
+                .filter(snapshot -> invocation.nodeId().equals(snapshot.request().execution().nodeId()))
+                .filter(snapshot -> invocation.operatorContext().retryAttempt()
+                        == snapshot.request().execution().retryAttempt())
+                .toList();
     }
 
     private static void rejectUnresolvedSideEffects(OperatorInvocation invocation) {
@@ -201,6 +244,12 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
     private static final class UnresolvedSideEffectCommitException extends NonRetryableException {
         private UnresolvedSideEffectCommitException(String attemptId) {
             super("External side-effect attempt has no definitive commit outcome: " + attemptId);
+        }
+    }
+
+    private static final class SideEffectProtocolViolationException extends NonRetryableException {
+        private SideEffectProtocolViolationException(String message) {
+            super(message);
         }
     }
 

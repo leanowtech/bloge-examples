@@ -6,6 +6,7 @@ import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.operator.OperatorResult;
 import com.leanowtech.bloge.core.operator.SideEffectType;
+import com.leanowtech.bloge.core.operator.SideEffectProtocol;
 import com.leanowtech.bloge.core.operator.StreamingOperator;
 import com.leanowtech.bloge.core.operator.SuspendableOperator;
 import com.leanowtech.bloge.core.spi.OperatorMetadata;
@@ -162,6 +163,11 @@ final class InputCoercingOperatorRegistry implements OperatorRegistry {
         public SideEffectType sideEffectType() {
             return delegate.sideEffectType();
         }
+
+        @Override
+        public SideEffectProtocol sideEffectProtocol() {
+            return delegate.sideEffectProtocol();
+        }
     }
 
     private record CoercingSuspendableOperator(SuspendableOperator<Object, Object> delegate,
@@ -181,6 +187,11 @@ final class InputCoercingOperatorRegistry implements OperatorRegistry {
         public SideEffectType sideEffectType() {
             return delegate.sideEffectType();
         }
+
+        @Override
+        public SideEffectProtocol sideEffectProtocol() {
+            return delegate.sideEffectProtocol();
+        }
     }
 
     private record CoercingStreamingOperator(StreamingOperator<Object, Object> delegate,
@@ -199,6 +210,11 @@ final class InputCoercingOperatorRegistry implements OperatorRegistry {
         @Override
         public SideEffectType sideEffectType() {
             return delegate.sideEffectType();
+        }
+
+        @Override
+        public SideEffectProtocol sideEffectProtocol() {
+            return delegate.sideEffectProtocol();
         }
     }
 }

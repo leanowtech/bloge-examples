@@ -2447,8 +2447,7 @@ class VisualGraphDraftControllerTest {
     @Test
     void publishRequiresWarningAcknowledgementBeforeProductionPromotion() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
-                eligibilityLibraryWithCapabilities(new OperatorDefinition.Capabilities(
-                        "WRITE_EXTERNAL", "NON_IDEMPOTENT", false, false, false)));
+                eligibilityLibraryWithCapabilities(managedWriteCapabilities()));
         InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
         VisualGraphDraftController controller = controllerWithCatalog(catalog, drafts, publications);
@@ -2485,8 +2484,7 @@ class VisualGraphDraftControllerTest {
     @Test
     void publishStoresWarningDraftWhenWarningsAcknowledged() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
-                eligibilityLibraryWithCapabilities(new OperatorDefinition.Capabilities(
-                        "WRITE_EXTERNAL", "NON_IDEMPOTENT", false, false, false)));
+                eligibilityLibraryWithCapabilities(managedWriteCapabilities()));
         InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
         VisualGraphDraftController controller = controllerWithCatalog(catalog, drafts, publications);
@@ -2524,8 +2522,7 @@ class VisualGraphDraftControllerTest {
     @Test
     void publishRequiresGovernanceEvidenceWhenWarningsAreAcknowledged() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
-                eligibilityLibraryWithCapabilities(new OperatorDefinition.Capabilities(
-                        "WRITE_EXTERNAL", "NON_IDEMPOTENT", false, false, false)));
+                eligibilityLibraryWithCapabilities(managedWriteCapabilities()));
         InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
         VisualGraphDraftController controller = controllerWithCatalog(catalog, drafts, publications);
@@ -2910,6 +2907,13 @@ class VisualGraphDraftControllerTest {
                 "ACTIVE",
                 List.of(operator)
         );
+    }
+
+    private static OperatorDefinition.Capabilities managedWriteCapabilities() {
+        return new OperatorDefinition.Capabilities(
+                "WRITE_EXTERNAL", "NON_IDEMPOTENT", false, false, false,
+                OperatorDefinition.SideEffectProtocol.journaled(
+                        "risk.status", "input.idempotencyKey", "input.lookupRef", "response.receipt"));
     }
 
     private static DefaultVisualOperatorCatalog emptyCatalog() {

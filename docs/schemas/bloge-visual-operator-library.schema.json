@@ -402,8 +402,69 @@
         "requiresSecrets": {
           "type": "boolean",
           "default": false
+        },
+        "sideEffectProtocol": {
+          "$ref": "#/$defs/sideEffectProtocol"
         }
       }
+    },
+    "sideEffectProtocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "mode",
+        "commitReceiptRequired",
+        "reconciliationRequired",
+        "reconcilerRef",
+        "idempotencyKeySource",
+        "reconciliationLookupSource",
+        "commitReceiptSource"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.sideEffectProtocol.v1"
+        },
+        "mode": {
+          "enum": ["NOT_APPLICABLE", "UNDECLARED", "JOURNALED"]
+        },
+        "commitReceiptRequired": {
+          "type": "boolean"
+        },
+        "reconciliationRequired": {
+          "type": "boolean"
+        },
+        "reconcilerRef": {
+          "type": "string"
+        },
+        "idempotencyKeySource": {
+          "type": "string"
+        },
+        "reconciliationLookupSource": {
+          "type": "string"
+        },
+        "commitReceiptSource": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"mode": {"const": "JOURNALED"}},
+            "required": ["mode"]
+          },
+          "then": {
+            "properties": {
+              "commitReceiptRequired": {"const": true},
+              "reconciliationRequired": {"const": true},
+              "reconcilerRef": {"minLength": 1},
+              "idempotencyKeySource": {"minLength": 1},
+              "reconciliationLookupSource": {"minLength": 1},
+              "commitReceiptSource": {"minLength": 1}
+            }
+          }
+        }
+      ]
     },
     "scopeList": {
       "type": "array",

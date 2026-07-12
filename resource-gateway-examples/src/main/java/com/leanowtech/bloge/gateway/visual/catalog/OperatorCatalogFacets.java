@@ -119,6 +119,14 @@ public record OperatorCatalogFacets(
         } else {
             values.add("pure");
         }
+        if (operator.capabilities().externalWrite()) {
+            values.add(operator.capabilities().sideEffectProtocol().managedWrite()
+                    ? "side-effect-managed"
+                    : "side-effect-unmanaged");
+            if (!operator.capabilities().sideEffectProtocol().managedWrite()) {
+                values.remove("runtime-executable");
+            }
+        }
         String idempotency = operator.capabilities().idempotency();
         if ("NON_IDEMPOTENT".equals(idempotency)) {
             values.add("non-idempotent");

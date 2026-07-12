@@ -238,27 +238,115 @@ public record OperatorDefinition(
      * @param streaming whether output can stream
      * @param durable whether execution requires a durable/suspendable runtime
      * @param requiresSecrets whether execution may require secrets
+     * @param sideEffectProtocol external-write execution protocol
      */
     public record Capabilities(
             String effect,
             String idempotency,
             boolean streaming,
             boolean durable,
-            boolean requiresSecrets
+            boolean requiresSecrets,
+            SideEffectProtocol sideEffectProtocol
     ) {
         public Capabilities {
             effect = normalizeLabel(effect, "PURE");
             idempotency = normalizeLabel(idempotency, "UNKNOWN");
+            sideEffectProtocol = sideEffectProtocol == null
+                    ? SideEffectProtocol.defaultFor(effect)
+                    : sideEffectProtocol;
+        }
+
+        /** Backward-compatible constructor for v1 definitions without protocol metadata. */
+        public Capabilities(String effect,
+                            String idempotency,
+                            boolean streaming,
+                            boolean durable,
+                            boolean requiresSecrets) {
+            this(effect, idempotency, streaming, durable, requiresSecrets, null);
         }
 
         public static Capabilities pure() {
             return new Capabilities("PURE", "DETERMINISTIC", false, false, false);
         }
 
+        public boolean externalWrite() {
+            return "WRITE_EXTERNAL".equals(effect);
+        }
+
         private static String normalizeLabel(String value, String fallback) {
             return value == null || value.isBlank()
                     ? fallback
                     : value.trim().toUpperCase(Locale.ROOT);
+        }
+    }
+
+    /**
+     * Formal authoring/runtime contract for external-write evidence.
+     *
+     * @param schemaVersion protocol schema version
+     * @param mode NOT_APPLICABLE, UNDECLARED, or JOURNALED
+     * @param commitReceiptRequired whether success requires a provider receipt
+     * @param reconciliationRequired whether uncertain outcomes require status reconciliation
+     * @param reconcilerRef provider-owned status reconciler reference
+     * @param idempotencyKeySource operator input/config source for the raw key
+     * @param reconciliationLookupSource evidence-safe lookup reference source
+     * @param commitReceiptSource provider response source used to build the receipt
+     */
+    public record SideEffectProtocol(
+            String schemaVersion,
+            String mode,
+            boolean commitReceiptRequired,
+            boolean reconciliationRequired,
+            String reconcilerRef,
+            String idempotencyKeySource,
+            String reconciliationLookupSource,
+            String commitReceiptSource
+    ) {
+        public static final String SCHEMA_VERSION = "bloge.sideEffectProtocol.v1";
+
+        public SideEffectProtocol {
+            schemaVersion = schemaVersion == null || schemaVersion.isBlank()
+                    ? SCHEMA_VERSION : schemaVersion.trim();
+            mode = normalizeMode(mode, "UNDECLARED");
+            reconcilerRef = normalized(reconcilerRef);
+            idempotencyKeySource = normalized(idempotencyKeySource);
+            reconciliationLookupSource = normalized(reconciliationLookupSource);
+            commitReceiptSource = normalized(commitReceiptSource);
+        }
+
+        public static SideEffectProtocol defaultFor(String effect) {
+            return new SideEffectProtocol(SCHEMA_VERSION,
+                    "WRITE_EXTERNAL".equals(normalizeMode(effect, "PURE")) ? "UNDECLARED" : "NOT_APPLICABLE",
+                    false, false, "", "", "", "");
+        }
+
+        public static SideEffectProtocol journaled(String reconcilerRef,
+                                                   String idempotencyKeySource,
+                                                   String reconciliationLookupSource,
+                                                   String commitReceiptSource) {
+            return new SideEffectProtocol(SCHEMA_VERSION, "JOURNALED", true, true, reconcilerRef,
+                    idempotencyKeySource, reconciliationLookupSource, commitReceiptSource);
+        }
+
+        public boolean managedWrite() {
+            return SCHEMA_VERSION.equals(schemaVersion)
+                    && "JOURNALED".equals(mode)
+                    && commitReceiptRequired
+                    && reconciliationRequired
+                    && !reconcilerRef.isBlank()
+                    && !idempotencyKeySource.isBlank()
+                    && !reconciliationLookupSource.isBlank()
+                    && !commitReceiptSource.isBlank();
+        }
+
+        private static String normalized(String value) {
+            return value == null ? "" : value.trim();
+        }
+
+        private static String normalizeMode(String value, String fallback) {
+            return value == null || value.isBlank()
+                    ? fallback
+                    : value.trim().toUpperCase(Locale.ROOT).replace('-', '_');
         }
     }
 
@@ -440,6 +528,19 @@ public record OperatorDefinition(
                         List.of("DESIGN"),
                         "Design-only operator",
                         "Authorable as a schema contract; executable lowering is not bound yet.",
+                        details
+                );
+            }
+            if (capabilities.externalWrite() && !capabilities.sideEffectProtocol().managedWrite()) {
+                details.add(new ReadinessDetail("Execution", "Managed side-effect journal is not declared"));
+                details.add(new ReadinessDetail("Publish", "DESIGN artifact only until protocol conformance is proven"));
+                return new RuntimeReadiness(
+                        "RUNTIME_BLOCKED",
+                        "error",
+                        false,
+                        List.of("DESIGN"),
+                        "External write protocol required",
+                        "External-write operators must declare journal, commit receipt, idempotency, and reconciliation lookup contracts before execution.",
                         details
                 );
             }
@@ -687,6 +788,21 @@ public record OperatorDefinition(
             body.put("streaming", capabilities.streaming());
             body.put("durable", capabilities.durable());
             body.put("requiresSecrets", capabilities.requiresSecrets());
+            if (capabilities.sideEffectProtocol().managedWrite()) {
+                body.put("sideEffectProtocol", capabilities.sideEffectProtocol());
+            }
+            return canonicalize(body);
+        }
+        if (value instanceof SideEffectProtocol protocol) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("schemaVersion", protocol.schemaVersion());
+            body.put("mode", protocol.mode());
+            body.put("commitReceiptRequired", protocol.commitReceiptRequired());
+            body.put("reconciliationRequired", protocol.reconciliationRequired());
+            body.put("reconcilerRef", protocol.reconcilerRef());
+            body.put("idempotencyKeySource", protocol.idempotencyKeySource());
+            body.put("reconciliationLookupSource", protocol.reconciliationLookupSource());
+            body.put("commitReceiptSource", protocol.commitReceiptSource());
             return canonicalize(body);
         }
         if (value instanceof Policy policy) {

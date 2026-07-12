@@ -337,11 +337,20 @@ schema:
 
 ```yaml
 capabilities:
-  effect: READ_EXTERNAL
+  effect: WRITE_EXTERNAL
   idempotency: IDEMPOTENT
   streaming: false
   durable: false
   requiresSecrets: true
+  sideEffectProtocol:
+    schemaVersion: bloge.sideEffectProtocol.v1
+    mode: JOURNALED
+    commitReceiptRequired: true
+    reconciliationRequired: true
+    reconcilerRef: orders.status
+    idempotencyKeySource: input.idempotencyKey
+    reconciliationLookupSource: input.reconciliationLookupRef
+    commitReceiptSource: response.headers.X-Commit-Receipt
 ```
 
 | 字段 | 允许值 | 影响 |
@@ -351,8 +360,34 @@ capabilities:
 | `streaming` | boolean | 当前 request-response runtime 会给出 warning/readiness 阻断 |
 | `durable` | boolean | 当前 request-response runtime 会给出 warning/readiness 阻断 |
 | `requiresSecrets` | boolean | 触发 secretRef 和访问控制审阅 warning |
+| `sideEffectProtocol` | object | `WRITE_EXTERNAL` 的执行准入合同；缺失时只能进入 DESIGN 编排，不能 run 或发布 EXECUTABLE |
 
 这些字段不是 UI 装饰，它们会进入 import readiness、action readiness、runtime binding handoff 和 publication gate。
+
+### 9.1 外部写协议
+
+`WRITE_EXTERNAL` 算子必须使用 `bloge.sideEffectProtocol.v1`。`JOURNALED` 只有在以下字段全部成立时才被视为
+managed write：
+
+| 字段 | 约束 | 含义 |
+| --- | --- | --- |
+| `mode` | `JOURNALED` | operator 必须在外部写之前登记 `PREPARED` |
+| `commitReceiptRequired` | `true` | 成功退出必须附 provider commit receipt |
+| `reconciliationRequired` | `true` | `UNKNOWN_COMMIT` 必须能走只读 status lookup |
+| `reconcilerRef` | 非空 | Resource Gateway 中注册的 provider-owned reconciler |
+| `idempotencyKeySource` | 非空 | 原始幂等键来源；只允许 hash 进入 evidence |
+| `reconciliationLookupSource` | 非空 | 请求前生成、无 credential 的不透明查询引用来源 |
+| `commitReceiptSource` | 非空 | provider 响应中生成 receipt 的来源 |
+
+兼容迁移不会把旧 `WRITE_EXTERNAL` schema 伪装成安全算子：省略该字段时服务端派生 `mode=UNDECLARED`，
+catalog/画布显示 `Write protocol required`，readiness 为 `RUNTIME_BLOCKED`，可保存、导出和发布 DESIGN，但 compile、
+run、EXECUTABLE publication 均被阻断。声明 `JOURNALED` 却缺任一字段是 blocking schema diagnostic，不能通过
+operator-library import。
+
+Runtime implementation 还必须提交 `SIDE_EFFECT_JOURNAL_V1`、`COMMIT_RECEIPT_V1`、
+`RECONCILIATION_LOOKUP_V1` 三项 capability，以及 `side-effect-conformance`、`unknown-commit-fault` 测试证据；
+adapter activation 还需当前 `reconciler-health` evidence。schema 声明、binding 证据与真实执行 journal 三层任何一层
+不一致都 fail closed。
 
 ## 10. Policy
 

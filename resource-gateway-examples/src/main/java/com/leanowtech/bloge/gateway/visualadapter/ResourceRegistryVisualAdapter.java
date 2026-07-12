@@ -66,7 +66,8 @@ public class ResourceRegistryVisualAdapter implements VisualResourceRegistry {
                 descriptor.defaultTimeout(),
                 mappingToVisual(descriptor.parameterMapping()),
                 protocolToVisual(descriptor.responseProtocol()),
-                descriptor.payloadPath()
+                descriptor.payloadPath(),
+                writeContractToVisual(descriptor.externalWriteContract())
         );
     }
 
@@ -89,8 +90,33 @@ public class ResourceRegistryVisualAdapter implements VisualResourceRegistry {
                 descriptor.defaultTimeout(),
                 mappingToGateway(descriptor.parameterMapping()),
                 protocolToGateway(descriptor.responseProtocol()),
-                descriptor.payloadPath()
+                descriptor.payloadPath(),
+                writeContractToGateway(descriptor.externalWriteContract())
         );
+    }
+
+    private static VisualResourceDescriptor.ExternalWriteContract writeContractToVisual(
+            ResourceDescriptor.ExternalWriteContract source) {
+        if (source == null) {
+            return null;
+        }
+        return new VisualResourceDescriptor.ExternalWriteContract(
+                source.schemaVersion(), source.idempotencyKeyParam(), source.idempotencyHeader(),
+                source.reconciliationLookupParam(), source.reconcilerRef(), source.receiptIdHeader(),
+                source.transactionRefHeader(), source.provider(), source.proofReferenceHeader(),
+                source.proofFingerprintHeader(), source.failureResponseNotCommitted());
+    }
+
+    private static ResourceDescriptor.ExternalWriteContract writeContractToGateway(
+            VisualResourceDescriptor.ExternalWriteContract source) {
+        if (source == null) {
+            return null;
+        }
+        return new ResourceDescriptor.ExternalWriteContract(
+                source.schemaVersion(), source.idempotencyKeyParam(), source.idempotencyHeader(),
+                source.reconciliationLookupParam(), source.reconcilerRef(), source.receiptIdHeader(),
+                source.transactionRefHeader(), source.provider(), source.proofReferenceHeader(),
+                source.proofFingerprintHeader(), source.failureResponseNotCommitted());
     }
 
     private static VisualResourceParameterMapping mappingToVisual(ParameterMapping source) {

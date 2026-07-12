@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 import com.leanowtech.bloge.core.operator.Idempotency;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.SideEffectType;
+import com.leanowtech.bloge.core.operator.SideEffectProtocol;
 import com.leanowtech.bloge.core.operator.StreamingOperator;
 import com.leanowtech.bloge.core.operator.SuspendableOperator;
 import com.leanowtech.bloge.core.schema.CollectionSchema;
@@ -50,6 +51,7 @@ public class JavaOperatorInventoryProjector {
 
     private static final Set<String> RESERVED_OPERATOR_REFS = Set.of(
             "httpResource",
+            "httpRequest",
             "bloge:decisionTable",
             "bloge:transform",
             VisualGraphPublicationOperator.NAME
@@ -158,8 +160,30 @@ public class JavaOperatorInventoryProjector {
                 idempotency(idempotency(operator)),
                 streaming,
                 durable,
-                false
+                false,
+                visualSideEffectProtocol(sideEffectProtocol(operator))
         );
+    }
+
+    private static SideEffectProtocol sideEffectProtocol(Object operator) {
+        if (operator instanceof Operator<?, ?> typed) {
+            return typed.sideEffectProtocol();
+        }
+        if (operator instanceof StreamingOperator<?, ?> streaming) {
+            return streaming.sideEffectProtocol();
+        }
+        if (operator instanceof SuspendableOperator<?, ?> suspendable) {
+            return suspendable.sideEffectProtocol();
+        }
+        return SideEffectProtocol.unmanaged();
+    }
+
+    private static OperatorDefinition.SideEffectProtocol visualSideEffectProtocol(SideEffectProtocol protocol) {
+        if (protocol == null || !protocol.managedWrite()) {
+            return null;
+        }
+        return OperatorDefinition.SideEffectProtocol.journaled(
+                protocol.reconcilerRef(), "operator-runtime", "operator-runtime", "operator-runtime");
     }
 
     private static SideEffectType sideEffect(Object operator) {

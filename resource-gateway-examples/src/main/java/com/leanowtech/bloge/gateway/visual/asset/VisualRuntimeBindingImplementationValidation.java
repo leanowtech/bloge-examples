@@ -768,6 +768,9 @@ public record VisualRuntimeBindingImplementationValidation(
             if (submitted.requiresSecrets() != current.requiresSecrets()) {
                 governance.add("capabilities.requiresSecrets");
             }
+            if (!Objects.equals(submitted.sideEffectProtocol(), current.sideEffectProtocol())) {
+                governance.add("capabilities.sideEffectProtocol");
+            }
             if (submitted.streaming() != current.streaming()) {
                 runtime.add("capabilities.streaming");
             }
@@ -839,6 +842,51 @@ public record VisualRuntimeBindingImplementationValidation(
                     "visual.runtimeBindingImplementation.policyEvidenceMissing",
                     "Runtime binding implementation affects policy, secrets, or side effects but has no policy evidence.",
                     "/implementation/policyEvidence"));
+        }
+        addSideEffectConformanceDiagnostics(implementation, contract, diagnostics);
+    }
+
+    private static void addSideEffectConformanceDiagnostics(
+            ImplementationMetadata implementation,
+            VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract,
+            List<VisualDiagnostic> diagnostics) {
+        OperatorDefinition.Capabilities capabilities = contract == null ? null : contract.capabilities();
+        if (capabilities == null || !capabilities.externalWrite()) {
+            return;
+        }
+        if (!capabilities.sideEffectProtocol().managedWrite()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeBindingImplementation.sideEffectProtocolUnmanaged",
+                    "External-write operator contracts cannot be bound until bloge.sideEffectProtocol.v1 is complete.",
+                    "/operatorContract/capabilities/sideEffectProtocol"));
+            return;
+        }
+        Set<String> requiredCapabilities = Set.of(
+                "SIDE_EFFECT_JOURNAL_V1", "COMMIT_RECEIPT_V1", "RECONCILIATION_LOOKUP_V1");
+        Set<String> actualCapabilities = implementation.capabilities().stream()
+                .map(value -> value.trim().toUpperCase(Locale.ROOT).replace('-', '_'))
+                .collect(java.util.stream.Collectors.toSet());
+        Set<String> missingCapabilities = new java.util.TreeSet<>(requiredCapabilities);
+        missingCapabilities.removeAll(actualCapabilities);
+        if (!missingCapabilities.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeBindingImplementation.sideEffectCapabilitiesMissing",
+                    "External-write runtime binding is missing required side-effect protocol capabilities.",
+                    "/implementation/capabilities",
+                    Map.of("missing", missingCapabilities, "required", requiredCapabilities)));
+        }
+        Set<String> evidenceKinds = implementation.testEvidence().stream()
+                .map(Evidence::kind)
+                .collect(java.util.stream.Collectors.toSet());
+        Set<String> requiredEvidence = Set.of("side-effect-conformance", "unknown-commit-fault");
+        Set<String> missingEvidence = new java.util.TreeSet<>(requiredEvidence);
+        missingEvidence.removeAll(evidenceKinds);
+        if (!missingEvidence.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeBindingImplementation.sideEffectTestEvidenceMissing",
+                    "External-write runtime binding requires conformance and unknown-commit fault evidence.",
+                    "/implementation/testEvidence",
+                    Map.of("missingKinds", missingEvidence, "requiredKinds", requiredEvidence)));
         }
     }
 

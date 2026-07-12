@@ -60,6 +60,20 @@ public final class VisualRuntimeBindingRequirementPlanner {
         if (!"runtime-blocked".equals(normalizedState)) {
             return List.of();
         }
+        if (operator.capabilities().externalWrite()
+                && !operator.capabilities().sideEffectProtocol().managedWrite()) {
+            requirements.add(requirement(
+                    operator,
+                    normalizedState,
+                    level,
+                    sourceKind,
+                    loweringMode,
+                    "side-effect-conformance",
+                    operator.operatorRef(),
+                    "Managed side-effect protocol required",
+                    "The external-write operator must adopt the journal, commit receipt, idempotency, and reconciliation lookup contract."
+            ));
+        }
         if ("remote-worker".equals(sourceKind) || "remote-worker".equals(loweringMode)) {
             requirements.add(requirement(
                     operator,
@@ -203,6 +217,7 @@ public final class VisualRuntimeBindingRequirementPlanner {
             case "event-source-runtime" -> new Handoff("event-runtime", "event-subscription", target);
             case "message-runtime" -> new Handoff("messaging-runtime", "message-consumer", target);
             case "webhook-ingress-runtime" -> new Handoff("ingress-runtime", "webhook-ingress", target);
+            case "side-effect-conformance" -> new Handoff("governance-runtime", "side-effect-protocol", target);
             case "streaming-runtime" -> new Handoff("streaming-runtime", "streaming-execution", target);
             case "durable-runtime" -> new Handoff("durable-runtime", "durable-execution", target);
             default -> new Handoff("runtime-platform", "runtime-adapter", target);

@@ -4271,7 +4271,17 @@ class VisualAuthoringAppJsTest {
                     idempotency: 'NON_IDEMPOTENT',
                     streaming: false,
                     durable: false,
-                    requiresSecrets: true
+                    requiresSecrets: true,
+                    sideEffectProtocol: {
+                      schemaVersion: 'bloge.sideEffectProtocol.v1',
+                      mode: 'JOURNALED',
+                      commitReceiptRequired: true,
+                      reconciliationRequired: true,
+                      reconcilerRef: 'risk.status',
+                      idempotencyKeySource: 'input.idempotencyKey',
+                      reconciliationLookupSource: 'input.lookupRef',
+                      commitReceiptSource: 'response.receipt'
+                    }
                   },
                   inputPorts: [],
                   outputPorts: [],
@@ -4664,7 +4674,17 @@ operators:
                     capabilities: {
                       effect: 'WRITE_EXTERNAL',
                       idempotency: 'NON_IDEMPOTENT',
-                      requiresSecrets: true
+                      requiresSecrets: true,
+                      sideEffectProtocol: {
+                        schemaVersion: 'bloge.sideEffectProtocol.v1',
+                        mode: 'JOURNALED',
+                        commitReceiptRequired: true,
+                        reconciliationRequired: true,
+                        reconcilerRef: 'risk.status',
+                        idempotencyKeySource: 'input.idempotencyKey',
+                        reconciliationLookupSource: 'input.lookupRef',
+                        commitReceiptSource: 'response.receipt'
+                      }
                     },
                     lowering: { mode: 'native' }
                   }]

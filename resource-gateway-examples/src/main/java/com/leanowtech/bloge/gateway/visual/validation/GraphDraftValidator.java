@@ -386,6 +386,14 @@ public class GraphDraftValidator {
                                                            String nodePath,
                                                            List<VisualDiagnostic> diagnostics) {
         OperatorDefinition.Capabilities capabilities = operator.capabilities();
+        if (capabilities.externalWrite() && !capabilities.sideEffectProtocol().managedWrite()) {
+            diagnostics.add(VisualDiagnostic.warning("visual.operator.governance.sideEffectProtocolRequired",
+                    "Operator '%s' on node '%s' declares an external write without a managed journal, commit receipt, and reconciliation contract; it remains DESIGN-only."
+                            .formatted(operator.operatorRef(), node.id()),
+                    nodePath + "/operatorRef",
+                    Map.of("requiredSchemaVersion", OperatorDefinition.SideEffectProtocol.SCHEMA_VERSION,
+                            "protocolMode", capabilities.sideEffectProtocol().mode())));
+        }
         if (capabilities.requiresSecrets()) {
             diagnostics.add(VisualDiagnostic.warning("visual.operator.governance.requiresSecrets",
                     "Operator '%s' on node '%s' requires secret-backed execution; verify secretRef binding and access review before production promotion."

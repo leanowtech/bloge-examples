@@ -7,6 +7,10 @@ import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.context.TenantContext;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.operator.SideEffectJournal;
+import com.leanowtech.bloge.core.operator.Operator;
+import com.leanowtech.bloge.core.operator.OperatorContext;
+import com.leanowtech.bloge.core.operator.SideEffectProtocol;
+import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.core.spi.event.NodeEvent.NodeStartEvent;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.RepeatedTest;
@@ -285,6 +289,71 @@ class DynamicGatewayComposerServiceTest {
                         .containsExactly("PREPARED", "COMMITTED");
             });
         });
+    }
+
+    @Test
+    void rejectsUnmanagedWriteOperatorBeforeBusinessLogicRuns() {
+        AtomicInteger invocations = new AtomicInteger();
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("unmanagedWrite", new Operator<Object, Object>() {
+            @Override
+            public Object execute(Object input, OperatorContext ctx) {
+                invocations.incrementAndGet();
+                return input;
+            }
+
+            @Override
+            public SideEffectType sideEffectType() {
+                return SideEffectType.WRITE;
+            }
+        });
+        DynamicGatewayComposerService controlled = new DynamicGatewayComposerService(registry);
+
+        DynamicGraphRunResponse response = controlled.run(new DynamicGraphRunRequest("""
+                graph unmanagedWriteGraph {
+                  node write : unmanagedWrite { input { value = ctx.value } }
+                }
+                """, Map.of("value", "request"), "write"));
+
+        assertThat(response.success()).isFalse();
+        assertThat(invocations).hasValue(0);
+        assertThat(response.errors()).anySatisfy(error -> assertThat(error)
+                .contains("does not declare bloge.sideEffectProtocol.v1"));
+    }
+
+    @Test
+    void rejectsManagedWriteOperatorThatReturnsWithoutJournalAttempt() {
+        AtomicInteger invocations = new AtomicInteger();
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("lyingWrite", new Operator<Object, Object>() {
+            @Override
+            public Object execute(Object input, OperatorContext ctx) {
+                invocations.incrementAndGet();
+                return input;
+            }
+
+            @Override
+            public SideEffectType sideEffectType() {
+                return SideEffectType.WRITE;
+            }
+
+            @Override
+            public SideEffectProtocol sideEffectProtocol() {
+                return SideEffectProtocol.journaled("payments.status");
+            }
+        });
+        DynamicGatewayComposerService controlled = new DynamicGatewayComposerService(registry);
+
+        DynamicGraphRunResponse response = controlled.run(new DynamicGraphRunRequest("""
+                graph lyingWriteGraph {
+                  node write : lyingWrite { input { value = ctx.value } }
+                }
+                """, Map.of("value", "request"), "write"));
+
+        assertThat(response.success()).isFalse();
+        assertThat(invocations).hasValue(1);
+        assertThat(response.errors()).anySatisfy(error -> assertThat(error)
+                .contains("without recording a side-effect journal attempt"));
     }
 
     @Test

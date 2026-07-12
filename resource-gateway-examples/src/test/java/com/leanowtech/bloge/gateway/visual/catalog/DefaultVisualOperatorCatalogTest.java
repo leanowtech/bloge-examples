@@ -212,7 +212,7 @@ class DefaultVisualOperatorCatalogTest {
         OperatorDefinition streaming = eligibilityOperatorWithCapabilities(new OperatorDefinition.Capabilities(
                 "PURE", "DETERMINISTIC", true, false, false));
         OperatorDefinition durable = eligibilityOperatorWithCapabilities(new OperatorDefinition.Capabilities(
-                "WRITE_EXTERNAL", "NON_IDEMPOTENT", false, true, false));
+                "WRITE_EXTERNAL", "NON_IDEMPOTENT", false, true, false, managedWriteProtocol()));
         OperatorDefinition forged = new OperatorDefinition(
                 designOnly.schemaVersion(),
                 designOnly.operatorRef(),
@@ -1327,11 +1327,16 @@ class DefaultVisualOperatorCatalogTest {
                 base.ports(),
                 base.configSchema(),
                 new OperatorDefinition.Capabilities("WRITE_EXTERNAL", "NON_IDEMPOTENT",
-                        false, false, true),
+                        false, false, true, managedWriteProtocol()),
                 base.policy(),
                 base.lowering(),
                 base.diagnostics()
         );
+    }
+
+    private static OperatorDefinition.SideEffectProtocol managedWriteProtocol() {
+        return OperatorDefinition.SideEffectProtocol.journaled(
+                "risk.status", "input.idempotencyKey", "input.lookupRef", "response.receipt");
     }
 
     private static OperatorDefinition eligibilityOperatorWithCapabilities(OperatorDefinition.Capabilities capabilities) {

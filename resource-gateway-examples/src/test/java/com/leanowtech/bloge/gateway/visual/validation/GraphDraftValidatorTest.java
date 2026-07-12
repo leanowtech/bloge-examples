@@ -1929,8 +1929,15 @@ class GraphDraftValidatorTest {
         assertThat(result.readiness().executable()).isFalse();
         assertThat(result.readiness().artifactKinds()).containsExactly("DESIGN");
         assertThat(result.readiness().runtimeBindingRequirements())
-                .singleElement()
-                .satisfies(requirement -> {
+                .extracting(VisualGraphReadiness.RuntimeBindingRequirement::bindingKind)
+                .containsExactly("side-effect-conformance", "durable-runtime");
+        assertThat(result.readiness().runtimeBindingRequirements())
+                .anySatisfy(requirement -> {
+                    assertThat(requirement.bindingKind()).isEqualTo("side-effect-conformance");
+                    assertThat(requirement.handoffLane()).isEqualTo("governance-runtime");
+                    assertThat(requirement.handoffKind()).isEqualTo("side-effect-protocol");
+                })
+                .anySatisfy(requirement -> {
                     assertThat(requirement.bindingKind()).isEqualTo("durable-runtime");
                     assertThat(requirement.handoffLane()).isEqualTo("durable-runtime");
                     assertThat(requirement.handoffKind()).isEqualTo("durable-execution");

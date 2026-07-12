@@ -79,10 +79,23 @@ public class ResourceVirtualOperatorProjector {
                 ),
                 resourceConfigSchema(),
                 new OperatorDefinition.Capabilities(effectFor(descriptor.method()), idempotencyFor(descriptor.method()),
-                        false, false, descriptor.authStrategy() != null),
+                        false, false, descriptor.authStrategy() != null,
+                        sideEffectProtocol(descriptor)),
                 new OperatorDefinition.Lowering("resource-descriptor", "httpResource", loweringParameters),
                 diagnostics
         );
+    }
+
+    private static OperatorDefinition.SideEffectProtocol sideEffectProtocol(VisualResourceDescriptor descriptor) {
+        VisualResourceDescriptor.ExternalWriteContract contract = descriptor.externalWriteContract();
+        if (contract == null || !contract.conformant()) {
+            return null;
+        }
+        return OperatorDefinition.SideEffectProtocol.journaled(
+                contract.reconcilerRef(),
+                "params." + contract.idempotencyKeyParam(),
+                "params." + contract.reconciliationLookupParam(),
+                "response.headers." + contract.receiptIdHeader());
     }
 
     private static SchemaEnvelope resourceConfigSchema() {

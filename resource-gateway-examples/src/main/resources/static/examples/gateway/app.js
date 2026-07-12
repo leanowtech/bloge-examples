@@ -4984,6 +4984,24 @@ function operatorPaletteCapabilityFacetValues(spec) {
     facets.push('external-effect');
     facets.push(effect.toLowerCase().replaceAll('_', '-'));
   }
+  if (effect === 'WRITE_EXTERNAL') {
+    const protocol = capabilities.sideEffectProtocol || {};
+    const managed = String(protocol.schemaVersion || '') === 'bloge.sideEffectProtocol.v1'
+      && String(protocol.mode || '').toUpperCase() === 'JOURNALED'
+      && protocol.commitReceiptRequired === true
+      && protocol.reconciliationRequired === true
+      && String(protocol.reconcilerRef || '').trim()
+      && String(protocol.idempotencyKeySource || '').trim()
+      && String(protocol.reconciliationLookupSource || '').trim()
+      && String(protocol.commitReceiptSource || '').trim();
+    facets.push(managed ? 'side-effect-managed' : 'side-effect-unmanaged');
+    if (!managed) {
+      const executableIndex = facets.indexOf('runtime-executable');
+      if (executableIndex >= 0) {
+        facets.splice(executableIndex, 1);
+      }
+    }
+  }
   const idempotency = String(capabilities.idempotency || '').trim().toUpperCase();
   if (idempotency === 'NON_IDEMPOTENT') {
     facets.push('non-idempotent');
@@ -5001,6 +5019,9 @@ function operatorPaletteReadinessState(spec) {
   const facets = operatorPaletteCapabilityFacetValues(spec);
   if (facets.includes('design-only')) {
     return 'design-only';
+  }
+  if (facets.includes('side-effect-unmanaged')) {
+    return 'runtime-blocked';
   }
   if (facets.includes('streaming') || facets.includes('durable')) {
     return 'runtime-blocked';
@@ -5048,6 +5069,8 @@ function operatorPaletteFacetLabel(value) {
     'requires-secret': 'Requires secret',
     'external-effect': 'External effect',
     'non-idempotent': 'Non-idempotent',
+    'side-effect-managed': 'Managed write',
+    'side-effect-unmanaged': 'Write protocol required',
     idempotent: 'Idempotent',
     native: 'Native',
     transform: 'Transform',
@@ -19222,6 +19245,16 @@ function operatorRuntimeReadiness(spec) {
       details
     };
   }
+  if (capabilityFacets.includes('side-effect-unmanaged')) {
+    details.push({ label: 'Execution', value: 'Managed side-effect journal is not declared' });
+    details.push({ label: 'Publish', value: 'DESIGN artifact only until protocol conformance is proven' });
+    return {
+      level: 'error',
+      title: 'External write protocol required',
+      summary: 'Declare journal, commit receipt, idempotency, and reconciliation lookup contracts before execution.',
+      details
+    };
+  }
   const governance = [];
   if (capabilityFacets.includes('requires-secret')) {
     governance.push('secret binding');
@@ -19231,6 +19264,9 @@ function operatorRuntimeReadiness(spec) {
   }
   if (capabilityFacets.includes('external-effect')) {
     governance.push('external effect');
+  }
+  if (capabilityFacets.includes('side-effect-managed')) {
+    governance.push('managed side-effect protocol');
   }
   if (governance.length) {
     details.push({ label: 'Governance', value: governance.join(' · ') });

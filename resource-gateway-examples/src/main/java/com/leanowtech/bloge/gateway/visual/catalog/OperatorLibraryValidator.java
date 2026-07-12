@@ -491,6 +491,24 @@ public class OperatorLibraryValidator {
                             .formatted(operator.operatorRef()),
                     path + "/durable"));
         }
+        OperatorDefinition.SideEffectProtocol protocol = capabilities.sideEffectProtocol();
+        if (!Set.of("NOT_APPLICABLE", "UNDECLARED", "JOURNALED").contains(protocol.mode())) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.sideEffectProtocol.modeUnsupported",
+                    "Operator '%s' declares unsupported side-effect protocol mode '%s'."
+                            .formatted(operator.operatorRef(), protocol.mode()),
+                    path + "/sideEffectProtocol/mode"));
+        } else if (capabilities.externalWrite() && "JOURNALED".equals(protocol.mode())
+                && !protocol.managedWrite()) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.sideEffectProtocol.incomplete",
+                    "Operator '%s' declares JOURNALED mode but is missing receipt, reconciliation, reconciler, or source mappings."
+                            .formatted(operator.operatorRef()),
+                    path + "/sideEffectProtocol"));
+        } else if (capabilities.externalWrite() && !protocol.managedWrite()) {
+            diagnostics.add(VisualDiagnostic.warning("visual.operator.sideEffectProtocol.required",
+                    "Operator '%s' declares WRITE_EXTERNAL without bloge.sideEffectProtocol.v1; it can be imported for DESIGN authoring but cannot run or publish as EXECUTABLE."
+                            .formatted(operator.operatorRef()),
+                    path + "/sideEffectProtocol"));
+        }
         if (capabilities.requiresSecrets()) {
             diagnostics.add(VisualDiagnostic.warning("visual.operator.governance.requiresSecrets",
                     "Operator '%s' requires secret-backed execution; review secretRef binding and access controls before importing this operator library."

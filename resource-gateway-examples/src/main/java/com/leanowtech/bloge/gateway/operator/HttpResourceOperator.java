@@ -3,7 +3,9 @@ package com.leanowtech.bloge.gateway.operator;
 import com.leanowtech.bloge.core.operator.Idempotency;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.OperatorContext;
+import com.leanowtech.bloge.core.operator.SideEffectJournal;
 import com.leanowtech.bloge.core.operator.SideEffectType;
+import com.leanowtech.bloge.core.exception.NonRetryableException;
 import com.leanowtech.bloge.core.schema.SchemaAware;
 import com.leanowtech.bloge.core.schema.SchemaDescriptor;
 import com.leanowtech.bloge.core.schema.SchemaIntrospector;
@@ -21,6 +23,7 @@ import com.leanowtech.bloge.spring.annotation.BlogeOperator;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -144,6 +147,22 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
             putHeader(headers, "Content-Type", encodedBody.contentType());
         }
 
+        ResourceDescriptor.ExternalWriteContract writeContract = descriptor.externalWrite()
+                ? requireWriteContract(descriptor)
+                : null;
+        String idempotencyKey = "";
+        String reconciliationLookupRef = "";
+        if (writeContract != null) {
+            idempotencyKey = requiredProtocolParam(input, writeContract.idempotencyKeyParam(), "idempotency key");
+            reconciliationLookupRef = requiredProtocolParam(input,
+                    writeContract.reconciliationLookupParam(), "reconciliation lookup reference");
+            if (!evidenceSafeReference(reconciliationLookupRef)) {
+                throw new ExternalWriteProtocolException(
+                        "External write reconciliation lookup reference is not evidence-safe");
+            }
+            putHeader(headers, writeContract.idempotencyHeader(), idempotencyKey);
+        }
+
         // 5. Pick timeout
         Duration requestedTimeout = input.timeoutOverride() != null
                 ? input.timeoutOverride()
@@ -164,33 +183,37 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
             timeout,
             true
         );
-        HttpResponseOutput httpResponse = httpRequestOperator.execute(httpInput, ctx);
-
-        // 8. Validate response
-        var validationResult = validator.validate(httpResponse, descriptor.responseProtocol());
-
-        // 9. If validation fails, throw
-        if (!validationResult.success()) {
-            throw new ResourceCallException(
-                input.resourceId(),
-                httpResponse.statusCode(),
-                validationResult.errorMessage(),
-                httpResponse.body()
-            );
+        if (writeContract == null) {
+            return executeAndValidate(input, descriptor, httpInput, ctx).output();
         }
-
-        // 10. Extract payload
-        Object payload = extractPayload(httpResponse, descriptor);
-
-        // 11. Return result
-        return new HttpResourceOutput(
-            input.resourceId(),
-            httpResponse.statusCode(),
-            payload,
-            httpResponse.body(),
-            httpResponse.duration(),
-            true
-        );
+        try (SideEffectJournal.Attempt attempt = ctx.beginSideEffect(
+                "resource:" + descriptor.resourceId(), idempotencyKey, writeContract.reconcilerRef(),
+                reconciliationLookupRef)) {
+            ExecutedResource executed;
+            try {
+                executed = executeAndValidate(input, descriptor, httpInput, ctx);
+            } catch (ResourceCallException exception) {
+                if (writeContract.failureResponseNotCommitted()) {
+                    attempt.notCommitted("PROVIDER_REJECTED_REQUEST");
+                }
+                throw exception;
+            }
+            String receiptId = responseHeaderValue(executed.response(), writeContract.receiptIdHeader());
+            if (receiptId.isBlank()) {
+                throw new ExternalWriteProtocolException(
+                        "External write provider returned success without the required commit receipt header");
+            }
+            attempt.committed(new SideEffectJournal.Receipt(
+                    receiptId,
+                    writeContract.provider(),
+                    responseHeaderValue(executed.response(), writeContract.transactionRefHeader()),
+                    Instant.now(),
+                    new SideEffectJournal.Proof(
+                            responseHeaderValue(executed.response(), writeContract.proofReferenceHeader()),
+                            responseHeaderValue(executed.response(), writeContract.proofFingerprintHeader()))),
+                    "PROVIDER_COMMIT_RECEIPT");
+            return executed.output();
+        }
     }
 
     @Override
@@ -201,6 +224,71 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
     @Override
     public SideEffectType sideEffectType() {
         return SideEffectType.EXTERNAL_CALL;
+    }
+
+    private ExecutedResource executeAndValidate(HttpResourceInput input,
+                                                ResourceDescriptor descriptor,
+                                                HttpRequestInput httpInput,
+                                                OperatorContext ctx) throws Exception {
+        HttpResponseOutput httpResponse = httpRequestOperator.execute(httpInput, ctx);
+        var validationResult = validator.validate(httpResponse, descriptor.responseProtocol());
+        if (!validationResult.success()) {
+            throw new ResourceCallException(
+                    input.resourceId(), httpResponse.statusCode(), validationResult.errorMessage(),
+                    httpResponse.body());
+        }
+        Object payload = extractPayload(httpResponse, descriptor);
+        return new ExecutedResource(new HttpResourceOutput(
+                input.resourceId(), httpResponse.statusCode(), payload, httpResponse.body(),
+                httpResponse.duration(), true), httpResponse);
+    }
+
+    private static ResourceDescriptor.ExternalWriteContract requireWriteContract(ResourceDescriptor descriptor) {
+        ResourceDescriptor.ExternalWriteContract contract = descriptor.externalWriteContract();
+        if (contract == null || !contract.conformant()) {
+            throw new ExternalWriteProtocolException(
+                    "External HTTP write is blocked until its descriptor declares a conformant externalWriteContract");
+        }
+        return contract;
+    }
+
+    private static String requiredProtocolParam(HttpResourceInput input, String parameter, String label) {
+        Object value = input.params().get(parameter);
+        String normalized = value == null ? "" : String.valueOf(value).trim();
+        if (normalized.isBlank()) {
+            throw new ExternalWriteProtocolException("External HTTP write requires a " + label);
+        }
+        return normalized;
+    }
+
+    private static boolean evidenceSafeReference(String value) {
+        return value != null
+                && value.length() <= 1024
+                && !value.contains("?")
+                && !value.contains("#")
+                && !value.contains("@")
+                && value.matches("[A-Za-z][A-Za-z0-9+.-]{1,31}:(//)?[A-Za-z0-9._:/-]+");
+    }
+
+    private static String responseHeaderValue(HttpResponseOutput response, String headerName) {
+        if (response == null || headerName == null || headerName.isBlank()) {
+            return "";
+        }
+        return response.headers().entrySet().stream()
+                .filter(entry -> headerName.equalsIgnoreCase(entry.getKey()))
+                .flatMap(entry -> entry.getValue().stream())
+                .filter(value -> value != null && !value.isBlank())
+                .findFirst()
+                .orElse("");
+    }
+
+    private record ExecutedResource(HttpResourceOutput output, HttpResponseOutput response) {
+    }
+
+    private static final class ExternalWriteProtocolException extends NonRetryableException {
+        private ExternalWriteProtocolException(String message) {
+            super(message);
+        }
     }
 
     private static HttpResourceInput normalizeInput(Object rawInput) {

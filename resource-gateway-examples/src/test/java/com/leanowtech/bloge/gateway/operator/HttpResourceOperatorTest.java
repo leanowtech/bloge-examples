@@ -4,6 +4,8 @@ import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.context.TenantContext;
 import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.operator.ExecutionBudget;
+import com.leanowtech.bloge.core.operator.SideEffectJournal;
+import com.leanowtech.bloge.core.exception.NonRetryableException;
 import com.leanowtech.bloge.core.spi.TimeSource;
 import com.leanowtech.bloge.gateway.exception.ResourceCallException;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
@@ -232,16 +234,20 @@ class HttpResourceOperatorTest {
                         Map.of(),
                         "ctx.params.body"
                 ),
-                new ResponseProtocol.HttpStatus(), null
+                new ResponseProtocol.HttpStatus(), null, managedWriteContract()
         ));
-        httpStub.setResponse(new HttpResponseOutput(200, Map.of(), "{}", Duration.ofMillis(10)));
+        httpStub.setResponse(new HttpResponseOutput(200,
+                Map.of("X-Commit-Receipt", List.of("receipt-form")), "{}", Duration.ofMillis(10)));
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("priority", "high");
         body.put("note", "rush order");
         body.put("tag", List.of("vip", "gift"));
 
-        operator.execute(new HttpResourceInput("form.submit", Map.of("body", body)), operatorContext());
+        operator.execute(new HttpResourceInput("form.submit", Map.of(
+                "body", body,
+                "idempotencyKey", "form-42",
+                "reconciliationLookupRef", "vault://commands/form-42")), operatorContext());
 
         assertThat(httpStub.lastBody()).isEqualTo("priority=high&note=rush+order&tag=vip&tag=gift");
     }
@@ -263,16 +269,20 @@ class HttpResourceOperatorTest {
                         Map.of(),
                         "ctx.params.body"
                 ),
-                new ResponseProtocol.HttpStatus(), null
+                new ResponseProtocol.HttpStatus(), null, managedWriteContract()
         ));
-        httpStub.setResponse(new HttpResponseOutput(200, Map.of(), "{}", Duration.ofMillis(10)));
+        httpStub.setResponse(new HttpResponseOutput(200,
+                Map.of("X-Commit-Receipt", List.of("receipt-multipart")), "{}", Duration.ofMillis(10)));
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("priority", "high");
         body.put("note", "rush order");
         body.put("tag", List.of("vip", "gift"));
 
-        operator.execute(new HttpResourceInput("form.multipart", Map.of("body", body)), operatorContext());
+        operator.execute(new HttpResourceInput("form.multipart", Map.of(
+                "body", body,
+                "idempotencyKey", "multipart-42",
+                "reconciliationLookupRef", "vault://commands/multipart-42")), operatorContext());
 
         assertThat(httpStub.lastHeaders().get("Content-Type"))
                 .startsWith("multipart/form-data; boundary=");
@@ -500,6 +510,75 @@ class HttpResourceOperatorTest {
 
     // ── Helpers ─────────────────────────────────────────────────────────
 
+    @Test
+    void blocksUnmanagedHttpMutationBeforeSendingRequest() {
+        registry.put(new ResourceDescriptor(
+                "orders.create", "https://api.example.com/orders", "POST",
+                Map.of(), null, Duration.ofSeconds(5), null, new ResponseProtocol.HttpStatus(), null));
+
+        assertThatThrownBy(() -> operator.execute(new HttpResourceInput(
+                "orders.create", Map.of("idempotencyKey", "order-42")), operatorContext()))
+                .isInstanceOf(NonRetryableException.class)
+                .hasMessageContaining("externalWriteContract");
+        assertThat(httpStub.wasInvoked()).isFalse();
+    }
+
+    @Test
+    void journalsManagedHttpMutationAndCapturesProviderReceipt() throws Exception {
+        registry.put(managedWriteDescriptor());
+        httpStub.setResponse(new HttpResponseOutput(201, Map.of(
+                "X-Commit-Receipt", List.of("receipt-42"),
+                "X-Transaction-Id", List.of("txn-42"),
+                "X-Proof-Ref", List.of("kms://receipts/42"),
+                "X-Proof-Fingerprint", List.of("sha256:" + "a".repeat(64))),
+                "{\"id\":\"order-42\"}", Duration.ofMillis(10)));
+        OperatorContext context = operatorContext();
+
+        operator.execute(new HttpResourceInput("orders.create", Map.of(
+                "idempotencyKey", "raw-order-secret",
+                "reconciliationLookupRef", "vault://commands/order-42")), context);
+
+        assertThat(httpStub.lastHeaders()).containsEntry("Idempotency-Key", "raw-order-secret");
+        assertThat(context.sideEffects().snapshots()).singleElement().satisfies(snapshot -> {
+            assertThat(snapshot.outcome()).isEqualTo(SideEffectJournal.Outcome.COMMITTED);
+            assertThat(snapshot.request().idempotencyKeyFingerprint()).startsWith("sha256:")
+                    .doesNotContain("raw-order-secret");
+            assertThat(snapshot.request().reconciliationLookupRef()).isEqualTo("vault://commands/order-42");
+            assertThat(snapshot.receipt().receiptId()).isEqualTo("receipt-42");
+            assertThat(snapshot.receipt().transactionRef()).isEqualTo("txn-42");
+        });
+    }
+
+    @Test
+    void successfulMutationWithoutReceiptRemainsUnknownCommit() {
+        registry.put(managedWriteDescriptor());
+        httpStub.setResponse(new HttpResponseOutput(201, Map.of(), "{}", Duration.ofMillis(10)));
+        OperatorContext context = operatorContext();
+
+        assertThatThrownBy(() -> operator.execute(new HttpResourceInput("orders.create", Map.of(
+                "idempotencyKey", "raw-order-secret",
+                "reconciliationLookupRef", "vault://commands/order-42")), context))
+                .isInstanceOf(NonRetryableException.class)
+                .hasMessageContaining("commit receipt");
+        assertThat(context.sideEffects().snapshots()).singleElement().satisfies(snapshot ->
+                assertThat(snapshot.outcome()).isEqualTo(SideEffectJournal.Outcome.UNKNOWN_COMMIT));
+    }
+
+    private static ResourceDescriptor managedWriteDescriptor() {
+        return new ResourceDescriptor(
+                "orders.create", "https://api.example.com/orders", "POST",
+                Map.of(), null, Duration.ofSeconds(5), null, new ResponseProtocol.HttpStatus(), null,
+                managedWriteContract());
+    }
+
+    private static ResourceDescriptor.ExternalWriteContract managedWriteContract() {
+        return new ResourceDescriptor.ExternalWriteContract(
+                ResourceDescriptor.ExternalWriteContract.SCHEMA_VERSION,
+                "idempotencyKey", "Idempotency-Key", "reconciliationLookupRef", "orders.status",
+                "X-Commit-Receipt", "X-Transaction-Id", "orders", "X-Proof-Ref",
+                "X-Proof-Fingerprint", false);
+    }
+
     private static ResourceDescriptor simpleDescriptor(String resourceId) {
         return new ResourceDescriptor(
                 resourceId, "https://api.example.com/test", "GET",
@@ -528,6 +607,7 @@ class HttpResourceOperatorTest {
         Object lastBody() { return lastInput.body(); }
         Duration lastTimeout() { return lastInput.timeout(); }
         HttpRequestInput.HttpAuth lastAuth() { return lastInput.auth(); }
+        boolean wasInvoked() { return lastInput != null; }
     }
 
     private static class StubResourceRegistry implements ResourceRegistry {
