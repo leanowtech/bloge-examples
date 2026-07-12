@@ -20,22 +20,25 @@ class DatabaseIntegrationAccessAuditRepositoryTest {
         DatabaseIntegrationAccessAuditRepository repository = new DatabaseIntegrationAccessAuditRepository(jdbc);
         repository.init();
 
-        repository.append(record("ALLOWED", ""));
-        repository.append(record("DENIED", "RG.INTEGRATION.PURPOSE_FORBIDDEN"));
+        repository.append(record("token-1", "ALLOWED", ""));
+        repository.append(record("token-2", "DENIED", "RG.INTEGRATION.PURPOSE_FORBIDDEN"));
 
         DatabaseIntegrationAccessAuditRepository restarted = new DatabaseIntegrationAccessAuditRepository(jdbc);
         restarted.init();
         assertThat(restarted.recent(10)).extracting(IntegrationAccessAuditRecord::sequence,
+                        IntegrationAccessAuditRecord::credentialId, IntegrationAccessAuditRecord::tokenId,
                         IntegrationAccessAuditRecord::outcome, IntegrationAccessAuditRecord::reasonCode)
                 .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple(2L, "DENIED", "RG.INTEGRATION.PURPOSE_FORBIDDEN"),
-                        org.assertj.core.groups.Tuple.tuple(1L, "ALLOWED", ""));
+                        org.assertj.core.groups.Tuple.tuple(2L, "key-2026-07", "token-2", "DENIED",
+                                "RG.INTEGRATION.PURPOSE_FORBIDDEN"),
+                        org.assertj.core.groups.Tuple.tuple(1L, "key-2026-07", "token-1", "ALLOWED", ""));
         assertThat(restarted.recent(10)).allSatisfy(value ->
                 assertThat(value.toString()).doesNotContain("secret", "Bearer"));
     }
 
-    private static IntegrationAccessAuditRecord record(String outcome, String reason) {
+    private static IntegrationAccessAuditRecord record(String tokenId, String outcome, String reason) {
         return new IntegrationAccessAuditRecord(0, Instant.parse("2026-07-12T00:00:00Z"), "corr-1",
-                "aneke", "tenant-a", "prod", "CHANGE_SYNC", "CHANGE_SYNC", outcome, reason);
+                "aneke", "key-2026-07", tokenId, "tenant-a", "prod", "CHANGE_SYNC", "CHANGE_SYNC",
+                outcome, reason);
     }
 }

@@ -26,6 +26,8 @@ public final class DatabaseIntegrationAccessAuditRepository implements Integrati
                     occurred_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     correlation_id VARCHAR(160) NOT NULL,
                     identity_id VARCHAR(255) NOT NULL,
+                    credential_id VARCHAR(160) NOT NULL DEFAULT '',
+                    token_id VARCHAR(160) NOT NULL DEFAULT '',
                     tenant_id VARCHAR(255) NOT NULL,
                     environment_id VARCHAR(255) NOT NULL,
                     operation VARCHAR(96) NOT NULL,
@@ -34,6 +36,8 @@ public final class DatabaseIntegrationAccessAuditRepository implements Integrati
                     reason_code VARCHAR(160) NOT NULL
                 )
                 """);
+        jdbc.execute("ALTER TABLE integration_access_audit ADD COLUMN IF NOT EXISTS credential_id VARCHAR(160) NOT NULL DEFAULT ''");
+        jdbc.execute("ALTER TABLE integration_access_audit ADD COLUMN IF NOT EXISTS token_id VARCHAR(160) NOT NULL DEFAULT ''");
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS idx_integration_access_audit_scope_time
                 ON integration_access_audit (tenant_id, environment_id, occurred_at)
@@ -49,19 +53,21 @@ public final class DatabaseIntegrationAccessAuditRepository implements Integrati
         jdbc.update(connection -> {
             PreparedStatement statement = connection.prepareStatement("""
                     INSERT INTO integration_access_audit (
-                        occurred_at, correlation_id, identity_id, tenant_id, environment_id,
+                        occurred_at, correlation_id, identity_id, credential_id, token_id, tenant_id, environment_id,
                         operation, purpose, outcome, reason_code
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, Statement.RETURN_GENERATED_KEYS);
             statement.setTimestamp(1, Timestamp.from(record.occurredAt()));
             statement.setString(2, record.correlationId());
             statement.setString(3, record.identityId());
-            statement.setString(4, record.tenantId());
-            statement.setString(5, record.environmentId());
-            statement.setString(6, record.operation());
-            statement.setString(7, record.purpose());
-            statement.setString(8, record.outcome());
-            statement.setString(9, record.reasonCode());
+            statement.setString(4, record.credentialId());
+            statement.setString(5, record.tokenId());
+            statement.setString(6, record.tenantId());
+            statement.setString(7, record.environmentId());
+            statement.setString(8, record.operation());
+            statement.setString(9, record.purpose());
+            statement.setString(10, record.outcome());
+            statement.setString(11, record.reasonCode());
             return statement;
         }, keys);
         Number key = keys.getKey();
@@ -74,14 +80,16 @@ public final class DatabaseIntegrationAccessAuditRepository implements Integrati
     @Override
     public List<IntegrationAccessAuditRecord> recent(int limit) {
         return jdbc.query("""
-                        SELECT sequence, occurred_at, correlation_id, identity_id, tenant_id, environment_id,
+                        SELECT sequence, occurred_at, correlation_id, identity_id, credential_id, token_id,
+                               tenant_id, environment_id,
                                operation, purpose, outcome, reason_code
                         FROM integration_access_audit
                         ORDER BY sequence DESC
                         LIMIT ?
                         """, (rs, rowNum) -> new IntegrationAccessAuditRecord(
                         rs.getLong("sequence"), rs.getTimestamp("occurred_at").toInstant(),
-                        rs.getString("correlation_id"), rs.getString("identity_id"), rs.getString("tenant_id"),
+                        rs.getString("correlation_id"), rs.getString("identity_id"),
+                        rs.getString("credential_id"), rs.getString("token_id"), rs.getString("tenant_id"),
                         rs.getString("environment_id"), rs.getString("operation"), rs.getString("purpose"),
                         rs.getString("outcome"), rs.getString("reason_code")),
                 Math.max(1, Math.min(1000, limit)));

@@ -35,8 +35,9 @@ class IntegrationRequestAuthenticatorTest {
                         IntegrationRequestContext::environmentId, IntegrationRequestContext::actorId)
                 .containsExactly("tenant-a", "org-a", "project-a", "prod", "aneke-sync");
         assertThat(audit.recent(1).getFirst()).extracting(IntegrationAccessAuditRecord::outcome,
-                        IntegrationAccessAuditRecord::identityId, IntegrationAccessAuditRecord::operation)
-                .containsExactly("ALLOWED", "aneke-sync-workload", "CHANGE_SYNC");
+                        IntegrationAccessAuditRecord::identityId, IntegrationAccessAuditRecord::credentialId,
+                        IntegrationAccessAuditRecord::operation)
+                .containsExactly("ALLOWED", "aneke-sync-workload", "static-bearer", "CHANGE_SYNC");
     }
 
     @Test
@@ -137,6 +138,18 @@ class IntegrationRequestAuthenticatorTest {
                     assertThat(failure.problem().code())
                             .isEqualTo("RG.INTEGRATION.SECURITY_AUDIT_UNAVAILABLE");
                 });
+    }
+
+    @Test
+    void boundsPurposeBeforeWritingSecurityAudit() {
+        HttpHeaders headers = authorized("X".repeat(129));
+
+        assertThatThrownBy(() -> authenticator.authenticate(headers, IntegrationOperation.CHANGE_SYNC))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(400);
+                    assertThat(failure.problem().code()).isEqualTo("RG.INTEGRATION.PURPOSE_INVALID");
+                });
+        assertThat(audit.recent(1).getFirst().purpose()).hasSize(128);
     }
 
     private static HttpHeaders authorized(String purpose) {

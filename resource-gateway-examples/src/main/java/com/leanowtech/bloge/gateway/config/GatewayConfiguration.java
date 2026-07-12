@@ -17,13 +17,16 @@ import com.leanowtech.bloge.gateway.interceptor.QuotaConfigProvider;
 import com.leanowtech.bloge.gateway.integration.DatabaseGovernanceGateResultRepository;
 import com.leanowtech.bloge.gateway.integration.DatabaseIntegrationAccessAuditRepository;
 import com.leanowtech.bloge.gateway.integration.DatabaseIntegrationChangeEventOutbox;
+import com.leanowtech.bloge.gateway.integration.ConfiguredIntegrationJwtTrustStore;
 import com.leanowtech.bloge.gateway.integration.GovernanceGateResultRepository;
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository;
 import com.leanowtech.bloge.gateway.integration.IntegrationChangeEventOutbox;
 import com.leanowtech.bloge.gateway.integration.IntegrationIdentityResolver;
+import com.leanowtech.bloge.gateway.integration.IntegrationJwtTrustStore;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationWorkloadIdentity;
 import com.leanowtech.bloge.gateway.integration.StaticBearerIntegrationIdentityResolver;
+import com.leanowtech.bloge.gateway.integration.SignedJwtIntegrationIdentityResolver;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.operator.PayloadExtractor;
 import com.leanowtech.bloge.gateway.operator.ResponseValidator;
@@ -72,6 +75,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.IdentityHashMap;
@@ -246,12 +250,22 @@ public class GatewayConfiguration {
     }
 
     /**
-     * Demo workload identity. Enterprise deployments replace this bean with an OIDC, mTLS or trusted-gateway
-     * resolver; disabling demo mode without a replacement makes protected integration endpoints fail closed.
+     * Signed JWT workload identity when configured, otherwise the explicit demo identity. Enterprise deployments
+     * may replace either the resolver or JWT trust store with an OIDC/JWKS, KMS, mTLS or trusted-gateway adapter.
      */
     @Bean
     @ConditionalOnMissingBean
     public IntegrationIdentityResolver integrationIdentityResolver(
+            ObjectMapper objectMapper,
+            ObjectProvider<IntegrationJwtTrustStore> trustStoreProvider,
+            @Value("${gateway.integration.identity.jwt.enabled:false}") boolean jwtEnabled,
+            @Value("${gateway.integration.identity.jwt.issuer:}") String jwtIssuer,
+            @Value("${gateway.integration.identity.jwt.audience:}") String jwtAudience,
+            @Value("${gateway.integration.identity.jwt.trusted-keys-json:}") String trustedKeysJson,
+            @Value("${gateway.integration.identity.jwt.revoked-key-ids:}") String revokedKeyIds,
+            @Value("${gateway.integration.identity.jwt.revoked-token-ids:}") String revokedTokenIds,
+            @Value("${gateway.integration.identity.jwt.clock-skew-seconds:30}") long jwtClockSkewSeconds,
+            @Value("${gateway.integration.identity.jwt.maximum-lifetime-seconds:900}") long jwtMaximumLifetimeSeconds,
             @Value("${gateway.integration.identity.demo-enabled:true}") boolean demoEnabled,
             @Value("${gateway.integration.identity.demo-token:bloge-aneke-demo-token}") String token,
             @Value("${gateway.integration.identity.identity-id:demo-aneke-workload}") String identityId,
@@ -262,6 +276,15 @@ public class GatewayConfiguration {
             @Value("${gateway.integration.identity.region:local}") String region,
             @Value("${gateway.integration.identity.actor-id:aneke-sync}") String actorId,
             @Value("${gateway.integration.identity.allowed-purposes:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC}") String allowedPurposes) {
+        if (jwtEnabled) {
+            IntegrationJwtTrustStore trustStore = trustStoreProvider.getIfAvailable();
+            if (trustStore == null) {
+                trustStore = ConfiguredIntegrationJwtTrustStore.fromJson(objectMapper, trustedKeysJson,
+                        commaSeparated(revokedKeyIds), commaSeparated(revokedTokenIds));
+            }
+            return new SignedJwtIntegrationIdentityResolver(objectMapper, jwtIssuer, jwtAudience, trustStore,
+                    Duration.ofSeconds(jwtClockSkewSeconds), Duration.ofSeconds(jwtMaximumLifetimeSeconds));
+        }
         if (!demoEnabled) {
             return IntegrationIdentityResolver.unavailable();
         }
@@ -531,6 +554,13 @@ public class GatewayConfiguration {
             return "";
         }
         return "";
+    }
+
+    private static Set<String> commaSeparated(String value) {
+        Set<String> values = new LinkedHashSet<>();
+        Arrays.stream(value == null ? new String[0] : value.split(","))
+                .map(String::trim).filter(item -> !item.isBlank()).forEach(values::add);
+        return Set.copyOf(values);
     }
 
     @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")

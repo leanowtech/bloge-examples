@@ -4,6 +4,7 @@ import org.springframework.http.HttpHeaders;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -25,7 +26,8 @@ public final class IntegrationRequestAuthenticator {
         if (correlationId.isBlank()) {
             correlationId = UUID.randomUUID().toString();
         }
-        String purpose = header(headers, "X-Purpose").toUpperCase();
+        String suppliedPurpose = header(headers, "X-Purpose");
+        String purpose = limited(suppliedPurpose, 128).toUpperCase(Locale.ROOT);
         String credential = bearer(headers);
         if (credential.isBlank()) {
             deny(correlationId, null, operation, purpose, "RG.INTEGRATION.AUTHENTICATION_REQUIRED");
@@ -33,21 +35,28 @@ public final class IntegrationRequestAuthenticator {
                     "RG.INTEGRATION.AUTHENTICATION_REQUIRED",
                     "A verified integration workload credential is required.", correlationId, Map.of()));
         }
-        IntegrationWorkloadIdentity identity = resolver.resolve(credential).orElse(null);
-        if (identity == null) {
+        IntegrationIdentityResolver.Resolution resolution = resolver.resolveVerified(credential).orElse(null);
+        if (resolution == null) {
             deny(correlationId, null, operation, purpose, "RG.INTEGRATION.AUTHENTICATION_FAILED");
             throw new IntegrationProblemException(IntegrationProblem.unauthorized(
                     "RG.INTEGRATION.AUTHENTICATION_FAILED",
                     "The integration workload credential is invalid or inactive.", correlationId, Map.of()));
         }
+        IntegrationWorkloadIdentity identity = resolution.identity();
+        if (suppliedPurpose.length() > 128) {
+            deny(correlationId, resolution, operation, purpose, "RG.INTEGRATION.PURPOSE_INVALID");
+            throw new IntegrationProblemException(IntegrationProblem.badRequest(
+                    "RG.INTEGRATION.PURPOSE_INVALID", "The integration purpose exceeds 128 characters.",
+                    correlationId, Map.of()));
+        }
         if (purpose.isBlank()) {
-            deny(correlationId, identity, operation, purpose, "RG.INTEGRATION.PURPOSE_REQUIRED");
+            deny(correlationId, resolution, operation, purpose, "RG.INTEGRATION.PURPOSE_REQUIRED");
             throw new IntegrationProblemException(IntegrationProblem.badRequest(
                     "RG.INTEGRATION.PURPOSE_REQUIRED", "An explicit integration purpose is required.",
                     correlationId, Map.of()));
         }
         if (operation == null || !operation.accepts(purpose) || !identity.allowsPurpose(purpose)) {
-            deny(correlationId, identity, operation, purpose, "RG.INTEGRATION.PURPOSE_FORBIDDEN");
+            deny(correlationId, resolution, operation, purpose, "RG.INTEGRATION.PURPOSE_FORBIDDEN");
             throw new IntegrationProblemException(IntegrationProblem.forbidden(
                     "RG.INTEGRATION.PURPOSE_FORBIDDEN",
                     "The verified workload identity is not permitted to use this purpose for the operation.",
@@ -55,7 +64,7 @@ public final class IntegrationRequestAuthenticator {
         }
         Map<String, Object> mismatches = claimHintMismatches(headers, identity);
         if (!mismatches.isEmpty()) {
-            deny(correlationId, identity, operation, purpose, "RG.INTEGRATION.IDENTITY_CLAIM_MISMATCH");
+            deny(correlationId, resolution, operation, purpose, "RG.INTEGRATION.IDENTITY_CLAIM_MISMATCH");
             throw new IntegrationProblemException(IntegrationProblem.forbidden(
                     "RG.INTEGRATION.IDENTITY_CLAIM_MISMATCH",
                     "Self-asserted identity headers conflict with the verified workload identity.",
@@ -65,7 +74,8 @@ public final class IntegrationRequestAuthenticator {
                 identity.organizationId(), identity.projectId(), identity.environmentId(), identity.region(),
                 identity.actorType(), identity.actorId(), identity.delegatedBy(), purpose, correlationId);
         appendAudit(new IntegrationAccessAuditRecord(0, Instant.now(), correlationId, identity.identityId(),
-                identity.tenantId(), identity.environmentId(), operation.name(), purpose, "ALLOWED", ""));
+                resolution.credentialId(), resolution.tokenId(), identity.tenantId(), identity.environmentId(),
+                operation.name(), purpose, "ALLOWED", ""));
         return context;
     }
 
@@ -74,12 +84,14 @@ public final class IntegrationRequestAuthenticator {
     }
 
     private void deny(String correlationId,
-                      IntegrationWorkloadIdentity identity,
+                      IntegrationIdentityResolver.Resolution resolution,
                       IntegrationOperation operation,
                       String purpose,
                       String reasonCode) {
+        IntegrationWorkloadIdentity identity = resolution == null ? null : resolution.identity();
         appendAudit(new IntegrationAccessAuditRecord(0, Instant.now(), correlationId,
-                identity == null ? "" : identity.identityId(), identity == null ? "" : identity.tenantId(),
+                identity == null ? "" : identity.identityId(), resolution == null ? "" : resolution.credentialId(),
+                resolution == null ? "" : resolution.tokenId(), identity == null ? "" : identity.tenantId(),
                 identity == null ? "" : identity.environmentId(), operation == null ? "" : operation.name(),
                 purpose, "DENIED", reasonCode));
     }

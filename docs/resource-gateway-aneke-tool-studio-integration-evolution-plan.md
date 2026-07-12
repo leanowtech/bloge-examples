@@ -815,7 +815,11 @@ allow = role permits action
 
 身份上下文不能由 body 内普通字段自报；必须来自 mTLS workload identity、OIDC token claims 或受信 gateway 注入并签名的 header。服务端应比较 token scope 与 path/body 中的资源归属，防止 confused deputy。
 
-当前落地状态（Round 4）：Controller 在进入 integration service 前统一调用 `IntegrationRequestAuthenticator`；Bearer credential 由可替换的 `IntegrationIdentityResolver` 验证，tenant/organization/project/environment/actor/delegatedBy 来自服务端 identity，客户端同名 header 只作为一致性 hint，冲突返回 403。operation 与 requested purpose、identity allowed purpose 做双重 allowlist；service/repository 继续执行资源 scope predicate。允许与拒绝决定写入不含 credential 的 append-only access audit。仓库默认 provider 是明确标记 `demoMode=true` 的单 workload server registry，只用于本地演示；企业上线仍必须替换为 OIDC、mTLS 或受信 gateway resolver，并通过 capability 证明 `available=true`、`demoMode=false`。因此“header 可自报”病根已经移除，但多 identity、group/clearance、key rotation/revocation propagation 和真实 IAM 联调仍属于工业化验收范围。
+当前落地状态（Round 5）：Controller 在进入 integration service 前统一调用 `IntegrationRequestAuthenticator`；Bearer credential 由可替换的 `IntegrationIdentityResolver` 验证，tenant/organization/project/environment/actor/delegatedBy 来自服务端 identity，客户端同名 header 只作为一致性 hint，冲突返回 403。operation 与 requested purpose、identity allowed purpose 做双重 allowlist；service/repository 继续执行资源 scope predicate。允许与拒绝决定写入 append-only access audit。
+
+除明确标记 `demoMode=true` 的静态 registry 外，仓库已内置 `SignedJwtIntegrationIdentityResolver` 和 `IntegrationJwtTrustStore` SPI。生产模式严格验证 `RS256/EdDSA`、`kid`、issuer、audience、`iat/nbf/exp`、最大 token lifetime 和完整 scope/purpose claims；拒绝弱 RSA key、`alg=none`、算法替换、重复 JSON 字段和自委托。信任库允许多个 `kid` 重叠完成无停机轮换，并支持 key 与 `jti` 撤销；解析结果把非秘密 `kid/jti` 写入审计，原始 token 永不落库。capability 揭示 provider、claims source、active/trusted/revoked key 数量及轮换/撤销能力。
+
+这关闭了“仓库只有单静态 credential、没有可执行 signed workload adapter”的缺口，但没有伪称客户 IAM 已接通。当前配置型 trust store 在启动时加载；企业验收仍要求动态 JWKS/KMS 或 mTLS adapter、撤销传播时延 SLO、多 identity/group/clearance、正式 delegation grant、策略变更回滚和真实 IdP 联调演练。换言之，代码内信任机制已具备，组织身份生命周期仍需部署级证据。
 
 ### 19.3 权限矩阵
 

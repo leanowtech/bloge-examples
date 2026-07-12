@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.integration;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.Locale;
 
 /** Server-owned claims associated with a verified integration credential. */
 public record IntegrationWorkloadIdentity(
@@ -26,13 +27,14 @@ public record IntegrationWorkloadIdentity(
         projectId = normalize(projectId);
         environmentId = normalize(environmentId);
         region = normalize(region);
-        actorType = normalize(actorType).toUpperCase();
+        actorType = normalize(actorType).toUpperCase(Locale.ROOT);
         actorId = normalize(actorId);
         delegatedBy = normalize(delegatedBy);
         Set<String> purposes = new LinkedHashSet<>();
         if (allowedPurposes != null) {
             allowedPurposes.stream().map(IntegrationWorkloadIdentity::normalize)
-                    .map(String::toUpperCase).filter(value -> !value.isBlank()).forEach(purposes::add);
+                    .map(value -> value.toUpperCase(Locale.ROOT)).filter(value -> !value.isBlank())
+                    .forEach(purposes::add);
         }
         allowedPurposes = Set.copyOf(purposes);
         expiresAt = expiresAt == null ? Instant.MAX : expiresAt;
@@ -44,7 +46,7 @@ public record IntegrationWorkloadIdentity(
     }
 
     public boolean allowsPurpose(String purpose) {
-        return allowedPurposes.contains(normalize(purpose).toUpperCase());
+        return allowedPurposes.contains(normalize(purpose).toUpperCase(Locale.ROOT));
     }
 
     private static String normalize(String value) {

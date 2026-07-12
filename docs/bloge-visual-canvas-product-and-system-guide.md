@@ -115,15 +115,66 @@ curl -sS 'http://localhost:8080/api/integration/reconciliation' \
 | gate result read | `GOVERNANCE_EVIDENCE_INGESTION`、`GOVERNANCE_GATE_FEEDBACK` |
 | events / reconciliation / library / suite | `CHANGE_SYNC` |
 
-每次允许或拒绝都会写入 `integration_access_audit`，记录 identity、tenant/environment、operation、purpose、outcome 和 reason code，不保存 Bearer token。认证在资源查询之前完成；service 和 repository 随后仍按 tenant/environment 做二次 scope predicate，避免只靠入口层。
+每次允许或拒绝都会写入 `integration_access_audit`，记录 identity、tenant/environment、operation、purpose、outcome 和 reason code。signed JWT 还会记录验证它的 `kid` 和不可重放的 `jti`，但不保存 Bearer token 或签名内容。认证在资源查询之前完成；service 和 repository 随后仍按 tenant/environment 做二次 scope predicate，避免只靠入口层。
 
-企业部署必须关闭公开 demo credential，并提供自己的 `IntegrationIdentityResolver` Bean：
+企业部署必须关闭公开 demo credential。当前系统已经内置短时 signed JWT 模式，不需要另写 resolver 才能建立生产接入基线：
 
 ```bash
 export RG_INTEGRATION_DEMO_IDENTITY_ENABLED=false
+export RG_INTEGRATION_JWT_ENABLED=true
+export RG_INTEGRATION_JWT_ISSUER='https://iam.example.com/'
+export RG_INTEGRATION_JWT_AUDIENCE='resource-gateway'
+export RG_INTEGRATION_JWT_MAXIMUM_LIFETIME_SECONDS=900
+export RG_INTEGRATION_JWT_TRUSTED_KEYS_JSON='[
+  {
+    "keyId": "aneke-sync-2026-07",
+    "algorithm": "RS256",
+    "publicKeyBase64": "<base64-of-X509-DER-public-key>",
+    "notBefore": "2026-07-12T00:00:00Z",
+    "expiresAt": "2026-10-12T00:00:00Z",
+    "enabled": true
+  }
+]'
 ```
 
-推荐 resolver 对接 OIDC workload token、mTLS identity 或受信 gateway 签名 claims。关闭 demo 后若没有替代 resolver，所有受保护接口会 fail closed；capability 的 `identityProvider.available=false` 可用于部署探针。不要把 `RG_INTEGRATION_DEMO_TOKEN` 的默认值带到共享或生产环境；本地需要换值时可通过同名环境变量覆盖。
+`publicKeyBase64` 是 X.509 SubjectPublicKeyInfo DER 的普通 Base64，只能放公钥；private key 必须留在企业 IAM/KMS。支持 `RS256` 和 `EdDSA`，RSA key 至少 2048 bit。要无停机轮换，在 JSON 数组中先同时放入旧、新两个不同 `kid` 的 public key，等待所有调用方切换后，再用 `RG_INTEGRATION_JWT_REVOKED_KEY_IDS=old-kid` 撤销旧 key。紧急撤销单枚 token 使用 `RG_INTEGRATION_JWT_REVOKED_TOKEN_IDS=jti-1,jti-2`。当前环境变量信任库在启动时装载；需要不重启传播 JWKS/KMS 轮换和撤销时，提供动态 `IntegrationJwtTrustStore` Bean。
+
+ANEKE 发送的 JWT header 至少包含：
+
+```json
+{
+  "alg": "RS256",
+  "kid": "aneke-sync-2026-07",
+  "typ": "JWT"
+}
+```
+
+JWT payload 合同如下；`aud` 可以是字符串或数组，`purposes` 必须是非空数组：
+
+```json
+{
+  "iss": "https://iam.example.com/",
+  "aud": ["resource-gateway"],
+  "sub": "aneke-sync-workload",
+  "jti": "01J2TOKEN7YQ4M1",
+  "iat": 1783843200,
+  "nbf": 1783843200,
+  "exp": 1783843500,
+  "tenant_id": "tenant-a",
+  "organization_id": "knowledge-governance",
+  "project_id": "tool-studio",
+  "environment_id": "prod",
+  "region": "ap-southeast-1",
+  "actor_type": "WORKLOAD",
+  "actor_id": "aneke-sync",
+  "delegated_by": "",
+  "purposes": ["CHANGE_SYNC", "GOVERNANCE_EVIDENCE_INGESTION"]
+}
+```
+
+服务端会拒绝 `alg=none`、算法/key 类型不一致、未知/停用/撤销 `kid`、撤销 `jti`、错误 issuer/audience、未来生效、过期、超过最大 TTL、重复 JSON 字段、非法 purpose 和自委托链。整个 Bearer credential 上限为 4096 字符，失败统一返回 401，不向调用方暴露具体验签分支。
+
+启动后先检查公开 capability：生产环境应看到 `providerType=SIGNED_JWT`、`claimsSource=VERIFIED_TOKEN`、`demoMode=false`，并检查 `properties.activeKeyCount`、`keyRotationSupported`、`keyRevocationSupported`。若 provider 没有 active key，`available=false`，受保护接口 fail closed。不要把 `RG_INTEGRATION_DEMO_TOKEN` 的默认值带到共享或生产环境；OIDC/mTLS、组织 group/clearance 或更复杂 delegation policy 仍可通过替换 `IntegrationIdentityResolver` 接入。
 
 ### 3.2 从 ANEKE 治理问题直达画布
 

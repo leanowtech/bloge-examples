@@ -5,6 +5,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.util.Optional;
+import java.util.Map;
 
 /** Constant-time bearer credential resolver backed by a server-side identity record. */
 public final class StaticBearerIntegrationIdentityResolver implements IntegrationIdentityResolver {
@@ -46,9 +47,17 @@ public final class StaticBearerIntegrationIdentityResolver implements Integratio
     }
 
     @Override
+    public Optional<Resolution> resolveVerified(String credential) {
+        return resolve(credential).map(value -> new Resolution(value, "static-bearer", ""));
+    }
+
+    @Override
     public Descriptor descriptor() {
         return new Descriptor("STATIC_BEARER_REGISTRY", "SERVER_REGISTRY", true, demoMode,
-                !identity.delegatedBy().isBlank());
+                !identity.delegatedBy().isBlank(), Map.of(
+                "keyRotationSupported", false,
+                "keyRevocationSupported", false,
+                "tokenRevocationSupported", false));
     }
 
     private static byte[] digest(String value) {

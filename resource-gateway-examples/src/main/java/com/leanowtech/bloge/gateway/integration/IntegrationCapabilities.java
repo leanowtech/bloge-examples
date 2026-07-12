@@ -77,6 +77,12 @@ public record IntegrationCapabilities(
         features.put("reconciliationSnapshot", true);
         features.put("trustedWorkloadIdentity", identityProvider != null && identityProvider.available());
         features.put("demoIdentityMode", identityProvider != null && identityProvider.demoMode());
+        features.put("signedWorkloadJwt", identityProvider != null
+                && "SIGNED_JWT".equals(identityProvider.providerType()));
+        features.put("credentialRotation", identityProvider != null
+                && Boolean.TRUE.equals(identityProvider.properties().get("keyRotationSupported")));
+        features.put("credentialRevocation", identityProvider != null
+                && Boolean.TRUE.equals(identityProvider.properties().get("keyRevocationSupported")));
         features.put("webhook", false);
 
         return new IntegrationCapabilities("", "", "", objects, features, identityProvider, List.of(

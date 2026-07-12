@@ -8,14 +8,14 @@
         <mxCell id="title" value="Resource Gateway Integration 受信身份与纵深授权" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=24;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="1000" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="subtitle" value="Bearer credential 只用于定位服务端 claims · 客户端身份 header 不是权威源 · operation、purpose 与资源 scope 分层校验" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=12;fontColor=#455a64;" vertex="1" parent="1">
+        <mxCell id="subtitle" value="短时 signed JWT 建立服务端 claims · 多 kid 轮换与 key/jti 撤销 · operation、purpose 与资源 scope 分层校验" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=12;fontColor=#455a64;" vertex="1" parent="1">
           <mxGeometry x="40" y="60" width="1250" height="30" as="geometry" />
         </mxCell>
 
         <mxCell id="callerLane" value="1  ANEKE Tool Studio 请求侧" style="swimlane;startSize=36;horizontal=1;rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;fontFamily=Arial;fontSize=13;fontStyle=1;swimlaneFillColor=#ffffff;" vertex="1" parent="1">
           <mxGeometry x="40" y="110" width="280" height="500" as="geometry" />
         </mxCell>
-        <mxCell id="request" value="Integration Request&#xa;Authorization: Bearer &lt;credential&gt;&#xa;X-Purpose + correlationId" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="callerLane">
+        <mxCell id="request" value="Integration Request&#xa;Authorization: Bearer signed-JWT&#xa;X-Purpose + correlationId" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="callerLane">
           <mxGeometry x="30" y="60" width="220" height="90" as="geometry" />
         </mxCell>
         <mxCell id="hints" value="迁移期 Claim Hints&#xa;X-Tenant / Organization / Project&#xa;Environment / Actor" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57c00;fontFamily=Arial;fontSize=11;" vertex="1" parent="callerLane">
@@ -28,19 +28,19 @@
         <mxCell id="trustLane" value="2  Resource Gateway 身份信任边界" style="swimlane;startSize=36;horizontal=1;rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=13;fontStyle=1;swimlaneFillColor=#ffffff;" vertex="1" parent="1">
           <mxGeometry x="370" y="110" width="560" height="500" as="geometry" />
         </mxCell>
-        <mxCell id="authenticator" value="IntegrationRequestAuthenticator&#xa;解析 credential，拒绝超长/缺失/无效凭证" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="trustLane">
+        <mxCell id="authenticator" value="IntegrationRequestAuthenticator&#xa;解析 Bearer，限制长度，统一 401/403&#xa;认证决定必须先写安全审计" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="trustLane">
           <mxGeometry x="150" y="55" width="260" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="resolver" value="IntegrationIdentityResolver SPI&#xa;常量时间 credential 校验&#xa;只返回服务端 claims" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;" vertex="1" parent="trustLane">
+        <mxCell id="resolver" value="SignedJwt Identity Resolver&#xa;RS256 / EdDSA 严格验签&#xa;iss + aud + iat/nbf/exp + 最大 TTL" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;" vertex="1" parent="trustLane">
           <mxGeometry x="40" y="190" width="210" height="90" as="geometry" />
         </mxCell>
         <mxCell id="policy" value="Operation × Purpose Policy&#xa;身份 allowlist + endpoint allowlist&#xa;claim hint 冲突即拒绝" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="trustLane">
           <mxGeometry x="310" y="190" width="210" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="identitySource" value="受信 Identity Source&#xa;当前 Demo: server registry&#xa;企业替换: OIDC / mTLS / signed gateway" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;" vertex="1" parent="trustLane">
+        <mxCell id="identitySource" value="JWT Trust Store SPI&#xa;多 public key / kid 轮换窗口&#xa;key + jti 撤销 / 生效与失效时间&#xa;可替换 JWKS / KMS；静态 Bearer 仅 demo" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;" vertex="1" parent="trustLane">
           <mxGeometry x="40" y="340" width="210" height="110" as="geometry" />
         </mxCell>
-        <mxCell id="auditStore" value="Integration Access Audit&#xa;ALLOWED / DENIED + reason&#xa;identity / scope / operation / purpose&#xa;永不保存 credential" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;" vertex="1" parent="trustLane">
+        <mxCell id="auditStore" value="Integration Access Audit&#xa;ALLOWED / DENIED + reason&#xa;identity / scope / operation / purpose&#xa;kid + jti；永不保存原始 JWT" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;" vertex="1" parent="trustLane">
           <mxGeometry x="310" y="340" width="210" height="110" as="geometry" />
         </mxCell>
 
@@ -60,7 +60,7 @@
         <mxCell id="principles" value="纵深原则" style="swimlane;startSize=32;horizontal=1;rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;fontFamily=Arial;fontSize=12;fontStyle=1;swimlaneFillColor=#ffffff;" vertex="1" parent="1">
           <mxGeometry x="40" y="650" width="1300" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="p1" value="认证失败先于资源查询" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=11;" vertex="1" parent="principles">
+        <mxCell id="p1" value="弱 key / alg 替换 / JSON 歧义一律拒绝" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=11;" vertex="1" parent="principles">
           <mxGeometry x="30" y="45" width="260" height="35" as="geometry" />
         </mxCell>
         <mxCell id="p2" value="请求 purpose 必须双重 allowlist" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontFamily=Arial;fontSize=11;" vertex="1" parent="principles">
@@ -69,7 +69,7 @@
         <mxCell id="p3" value="Service 与 Repository 再做 scope 校验" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;" vertex="1" parent="principles">
           <mxGeometry x="650" y="45" width="280" height="35" as="geometry" />
         </mxCell>
-        <mxCell id="p4" value="审计记录不含 secret/token" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;" vertex="1" parent="principles">
+        <mxCell id="p4" value="审计可关联 kid/jti，但不含 secret/token" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;" vertex="1" parent="principles">
           <mxGeometry x="980" y="45" width="260" height="35" as="geometry" />
         </mxCell>
 
@@ -87,7 +87,7 @@
         <mxCell id="e3" value="verify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="authenticator" target="resolver">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e4" value="lookup / validate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="resolver" target="identitySource">
+        <mxCell id="e4" value="kid lookup + revocation" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="resolver" target="identitySource">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e5" value="trusted claims" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="authenticator" target="policy">
@@ -106,7 +106,7 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e8" value="allow / deny fact" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="policy" target="auditStore">
+        <mxCell id="e8" value="decision + kid/jti" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="policy" target="auditStore">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e9" value="server-owned context" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#1565c0;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="trustedContext" target="service">

@@ -47,8 +47,18 @@ gateway:
   seed-descriptors: true
   integration:
     identity:
-      # Demo-only server-side workload registry. Set demo-enabled=false and provide an
-      # IntegrationIdentityResolver bean backed by enterprise OIDC, mTLS or a trusted gateway.
+      # Production mode verifies short-lived RS256/EdDSA JWTs against configured public keys.
+      # A custom IntegrationJwtTrustStore bean can source rotating keys and revocation from JWKS/KMS.
+      jwt:
+        enabled: ${RG_INTEGRATION_JWT_ENABLED:false}
+        issuer: ${RG_INTEGRATION_JWT_ISSUER:}
+        audience: ${RG_INTEGRATION_JWT_AUDIENCE:}
+        trusted-keys-json: ${RG_INTEGRATION_JWT_TRUSTED_KEYS_JSON:}
+        revoked-key-ids: ${RG_INTEGRATION_JWT_REVOKED_KEY_IDS:}
+        revoked-token-ids: ${RG_INTEGRATION_JWT_REVOKED_TOKEN_IDS:}
+        clock-skew-seconds: ${RG_INTEGRATION_JWT_CLOCK_SKEW_SECONDS:30}
+        maximum-lifetime-seconds: ${RG_INTEGRATION_JWT_MAXIMUM_LIFETIME_SECONDS:900}
+      # Explicit demo-only fallback. Disable it whenever signed JWT or a custom resolver is used.
       demo-enabled: ${RG_INTEGRATION_DEMO_IDENTITY_ENABLED:true}
       demo-token: ${RG_INTEGRATION_DEMO_TOKEN:bloge-aneke-demo-token}
       identity-id: ${RG_INTEGRATION_IDENTITY_ID:demo-aneke-workload}

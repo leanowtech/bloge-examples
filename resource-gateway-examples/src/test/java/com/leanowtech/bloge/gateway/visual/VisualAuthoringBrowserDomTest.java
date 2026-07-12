@@ -1515,7 +1515,7 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
                 "input[data-config-field='payload.score']"
         )));
-        setControlValue(driver.findElement(By.cssSelector("input[data-config-field='payload.score']")), "720");
+        setControlValue(wait, By.cssSelector("input[data-config-field='payload.score']"), "720");
         waitForValue(wait, By.cssSelector("input[data-config-field='payload.score']"), "720");
 
         selectByValue(wait, By.id("graph-output-node"), "riskConfigUnionPolicy");

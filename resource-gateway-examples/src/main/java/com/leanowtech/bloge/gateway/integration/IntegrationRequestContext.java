@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Locale;
 
 /**
  * Trusted request identity and purpose propagated into integration services.
@@ -26,10 +27,10 @@ public record IntegrationRequestContext(
         projectId = normalize(projectId);
         environmentId = normalize(environmentId);
         region = normalize(region);
-        actorType = normalize(actorType).toUpperCase();
+        actorType = normalize(actorType).toUpperCase(Locale.ROOT);
         actorId = normalize(actorId);
         delegatedBy = normalize(delegatedBy);
-        purpose = normalize(purpose).toUpperCase();
+        purpose = normalize(purpose).toUpperCase(Locale.ROOT);
         correlationId = normalize(correlationId);
     }
 

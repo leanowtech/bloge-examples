@@ -5,10 +5,10 @@
 | 属性 | 内容 |
 |---|---|
 | 设计基线 | `docs/resource-gateway-aneke-tool-studio-integration-evolution-plan.md` |
-| 当前实现基线 | Round 4（受信 workload identity、purpose policy、access audit） |
+| 当前实现基线 | Round 5（signed workload JWT、轮换/撤销、credential audit correlation） |
 | 评估日期 | 2026-07-12 |
 | 目标 | 加权实施差距 `<3%`，且不存在 P0 阻断项 |
-| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1471 tests，0 failures，0 errors，2 skipped |
+| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1480 tests，0 failures，0 errors，2 skipped |
 
 ## 1. 评分方法
 
@@ -110,6 +110,24 @@ Round 3 结论：在当前支持的资产模型内，`EVT-01` 的“事件不可
 | **合计** | **100** |  | **69.50** |  | **加权差距 30.50%** |
 
 Round 4 结论：客户端无法再通过伪造 `X-Tenant-Id` 建立 Integration 身份，`SEC-01` 的 header 自报病根已关闭；差距从 `32.95%` 降至 `30.50%`。但仓库默认 resolver 是明确标记 `demoMode=true` 的单 workload server registry，不能代替客户 IAM。真实 OIDC/mTLS、凭证轮换/撤销、组织委托和策略分发仍作为 `IAM-01` P0 保留。
+
+## 2.5 Round 5 重新审计
+
+本轮补上可执行的生产签名身份路径，而不再只留一个“企业自行实现 resolver”的接口。`SignedJwtIntegrationIdentityResolver` 使用 JDK crypto 严格验证短时 `RS256/EdDSA` JWT；`IntegrationJwtTrustStore` 管理多 `kid`、key 生命周期与 key/`jti` 撤销；审计记录增加不可用于重放的 `credentialId(kid)` 与 `tokenId(jti)`。静态 Bearer 继续存在，但 capability 明确标记 demo mode。
+
+| 维度 | 权重 | 当前完成率 | 得分 | 本轮可证明增量 | 仍未证明 |
+|---|---:|---:|---:|---|---|
+| 协议、版本与身份边界 | 15 | 94% | 14.10 | signed JWT provider；RS256/EdDSA；issuer/audience/time/purpose/scope 校验；多 key 轮换；key/jti 撤销；kid/jti audit correlation；weak-key/alg confusion/duplicate JSON negative tests；capability 诚实揭示 provider 状态 | 动态 JWKS/KMS 或 mTLS 实联调、撤销传播 SLO、多 identity/group/clearance、正式 delegation grant、自动 N/N-1 matrix |
+| GraphDraft 依赖快照 | 10 | 60% | 6.00 | 无语义变化 | runtime binding refs、suite refs 写入 bundle、完整 readiness profile |
+| Run evidence 可信链 | 20 | 78% | 15.60 | evidence 访问可由短时 signed workload identity 授权，审计可定位验证 key/token id | 引擎内部 retry/fallback/cancel、KMS/HSM evidence key、retention lifecycle |
+| Payload replay | 15 | 80% | 12.00 | replay 的 `PAYLOAD_REPLAY` purpose 可由签名 claims 最小授权 | shadow/live 审批与隔离、unknown commit、跨实例 exactly-once |
+| Timeout/partial failure 语义 | 10 | 45% | 4.50 | 无语义变化 | deadline/cancel/unknown commit、retry budget、fallback/skip 因果 |
+| Workbook、gate feedback 与 Deep Link | 10 | 70% | 7.00 | gate feedback 写权限可绑定 signed workload 的独立 purpose | workbook ref 双向映射、coverage policy、owner/migration gate 完整闭环 |
+| Change event、cursor、webhook 与对账 | 10 | 80% | 8.00 | change sync token 的 audience/scope/purpose/TTL 可验证，泄漏或撤销后可按 jti 阻断 | signed webhook、DLQ、投递重试、retention/compaction、乱序 fault harness |
+| 工业运行控制 | 10 | 36% | 3.60 | key 生命周期配置、轮换窗口、key/token revoke、kid/jti 持久审计、严格 crypto attack tests、图与操作文档同步 | 动态撤销传播、SIEM/retention/legal hold、SLO/metrics、quota、HA DB、DR、容量和真实 IdP 演练 |
+| **合计** | **100** |  | **70.80** |  | **加权差距 29.20%** |
+
+Round 5 结论：差距从 `30.50%` 降至 `29.20%`。代码已经具备不依赖静态 secret 的 signed workload 身份基线，且轮换、撤销和审计链有正反向测试；但 `IAM-01` 不能仅凭本地生成 key 的测试关闭，必须取得客户 IAM/JWKS/KMS 或 mTLS 的动态传播和组织策略联调证据。下一轮应转向当前更低成熟度且直接影响 evidence 解释正确性的 timeout/partial failure 事实链。
 
 ## 3. 已通过的证明
 
@@ -229,11 +247,52 @@ verified credential + CHANGE_SYNC on run evidence -> 403 PURPOSE_FORBIDDEN
 invalid credential -> 401 AUTHENTICATION_FAILED + Bearer challenge
 ```
 
+### 3.7 Signed workload JWT、轮换与撤销
+
+- `SignedJwtIntegrationIdentityResolver` 只接受 `RS256` 和 `EdDSA`；RSA key 少于 2048 bit、`alg=none`、header algorithm 与 key 类型不一致、未知 `kid`、签名篡改和重复 JSON 字段均被拒绝。
+- `iss`、`aud`、`sub`、`jti`、`iat`、`exp` 与完整 tenant/org/project/environment/region/actor/purpose claims 是强制合同；`nbf` 可选，默认等于 `iat`。默认 clock skew 30 秒、最大 lifetime 900 秒，Bearer 总长度上限 4096。
+- `ConfiguredIntegrationJwtTrustStore` 可以同时装载最多 32 把 public key。旧、新 `kid` 重叠时两类 token 均可验证；key 可按 enabled/notBefore/expiresAt/revoked 控制，token 可按 `jti` 撤销。
+- `IntegrationJwtTrustStore` 是动态 SPI，resolver 每次请求都查询 key 和 token revoke 状态；配置型实现只在启动时载入，企业可替换为 JWKS/KMS adapter，而无需改 controller/service。
+- allow/deny audit 保存 `kid/jti`，数据库在已有 Round 4 表上用 `ADD COLUMN IF NOT EXISTS` 平滑升级；原始 JWT、签名和 public/private key 内容不写审计。
+- capability 新增 `signedWorkloadJwt`、`credentialRotation`、`credentialRevocation`，provider properties 返回 accepted algorithms、trusted/active/revoked key count、revoked token count、TTL 与 skew，不暴露 key 内容。
+
+本轮聚焦证明：
+
+```text
+22 Java tests passed
+RS256 + EdDSA happy paths, two-key overlap rotation,
+tampered signature, alg confusion/none, wrong issuer/audience/kid,
+expired/future/overlong token, weak RSA, duplicate JSON,
+key/jti revocation, invalid delegation/scope/purpose,
+credential-free audit migration/restart and demo compatibility
+```
+
+全量验证：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+Tests run: 1480, Failures: 0, Errors: 0, Skipped: 2
+BUILD SUCCESS (04:47)
+```
+
+验证过程没有隐藏失败。第一次全量运行暴露 `VisualAuthoringBrowserDomTest` 在 React union branch 重渲染后继续使用旧 `WebElement`，产生 stale reference；调用点改为已有的 `WebDriverWait + By` 重定位 helper 后，目标浏览器用例连续 3 次通过。第二次全量运行暴露新签名测试只修改 Base64URL 尾字符，可能只改变未使用 bit、解码后签名字节不变；测试改为解码后翻转真实签名字节。第三次全量运行 1479 项全部通过。最终安全审计又补充 mixed audience/header/time-window 负向测试，并发现、修复 audience 首个匹配后提前返回的问题；最终第四次全量 1480 项全部通过。这些修复没有放宽产品断言。
+
+真实 jar HTTP 证明（端口 `18083`，OpenSSL 临时 RSA-2048 key，验证后 key 已删除且服务已优雅停止）：
+
+```text
+GET capabilities -> 200, provider=SIGNED_JWT, claimsSource=VERIFIED_TOKEN,
+                    demoMode=false, activeKeyCount=1, revokedTokenCount=1
+valid RS256 JWT + CHANGE_SYNC -> 200, reconciliation scope tenant-a/prod
+same trusted key + wrong audience -> 401 AUTHENTICATION_FAILED
+trusted key + revoked jti -> 401 AUTHENTICATION_FAILED
+trusted claims + byte-level tampered signature -> 401 AUTHENTICATION_FAILED
+```
+
 ## 4. 当前 P0 阻断项
 
 | ID | 阻断项 | 病根 | 根治验收 |
 |---|---|---|---|
-| `IAM-01` | 企业身份生命周期尚未证明 | header 自报已根治，但当前默认 provider 仍是单 workload demo registry | OIDC/mTLS 或 signed-gateway adapter + 多 identity/scope + delegation + rotation/revocation + policy/audit 联调演练 |
+| `IAM-01` | 企业身份生命周期尚未端到端证明 | signed JWT、轮换和撤销代码已具备，但配置 trust store 只在启动时装载，尚无客户 IAM 动态策略/撤销传播证据 | 动态 JWKS/KMS 或 mTLS adapter + 多 identity/group/clearance + delegation grant + propagation SLO + policy/audit 联调演练 |
 | `OPS-01` | 本地签名 key 不满足企业 custody | private key 由本地 H2 demo provider 保存 | KMS/HSM-backed `VisualEvidenceSigner`、rotation/disable/revoke、审计和灾备演练 |
 
 `EVT-01` 已在 Round 3 对当前资产模型关闭。webhook、DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，但不再构成“事件丢失后无法对账”的 P0 病根。
@@ -247,5 +306,6 @@ invalid credential -> 401 AUTHENTICATION_FAILED + Bearer challenge
 | 2 | recorded replay command | 新 replay run/evidence、parent lineage、四类 case、path/schema/error/governance 断言、零外部调用、幂等 | 43.20% | 1443 Java tests、132 frontend tests、H2 restart、signed replay evidence、desktop/mobile browser |
 | 3 | transactional outbox + cursor + reconciliation | 资产/事件原子提交、稳定分页、作用域签名 cursor、过期重建、不可变 revision ref、持续反熵 | 32.95% | 1461 Java tests、132 frontend tests、真实 jar HTTP 多租户闭环、Draw.io 0 errors/warnings |
 | 4 | trusted workload identity + purpose policy | 服务端 claims、operation/purpose 双 allowlist、hint conflict、401/403、credential-free audit、provider capability | 30.50% | 1471 Java tests、29 个聚焦 tests、真实 jar HTTP 401/200/403、identity Draw.io 0 errors/warnings |
+| 5 | signed workload JWT + rotation/revocation | RS256/EdDSA、严格 claims/time/algorithm 校验、多 kid 轮换、key/jti 撤销、kid/jti audit、signed provider capability | 29.20% | 1480 Java tests、22 个集成聚焦/18 个最终安全聚焦 tests、真实 jar HTTP 200/401、identity Draw.io 0 errors/warnings |
 
 后续每轮必须更新本表、代码证据、失败测试和剩余阻断项。只有全部 P0 阻断关闭、全量验证与真实浏览器验证通过，并且按同一权重计算的差距 `<3%`，才允许把目标标记完成。

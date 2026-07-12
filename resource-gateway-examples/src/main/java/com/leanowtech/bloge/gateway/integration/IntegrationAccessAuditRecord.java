@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import java.time.Instant;
+import java.util.Locale;
 
 /** Credential-free security audit fact emitted by integration authentication. */
 public record IntegrationAccessAuditRecord(
@@ -8,6 +9,8 @@ public record IntegrationAccessAuditRecord(
         Instant occurredAt,
         String correlationId,
         String identityId,
+        String credentialId,
+        String tokenId,
         String tenantId,
         String environmentId,
         String operation,
@@ -15,22 +18,38 @@ public record IntegrationAccessAuditRecord(
         String outcome,
         String reasonCode
 ) {
+    public IntegrationAccessAuditRecord(long sequence,
+                                        Instant occurredAt,
+                                        String correlationId,
+                                        String identityId,
+                                        String tenantId,
+                                        String environmentId,
+                                        String operation,
+                                        String purpose,
+                                        String outcome,
+                                        String reasonCode) {
+        this(sequence, occurredAt, correlationId, identityId, "", "", tenantId, environmentId,
+                operation, purpose, outcome, reasonCode);
+    }
+
     public IntegrationAccessAuditRecord {
         sequence = Math.max(0, sequence);
         occurredAt = occurredAt == null ? Instant.now() : occurredAt;
         correlationId = normalize(correlationId);
         identityId = normalize(identityId);
+        credentialId = normalize(credentialId);
+        tokenId = normalize(tokenId);
         tenantId = normalize(tenantId);
         environmentId = normalize(environmentId);
-        operation = normalize(operation).toUpperCase();
-        purpose = normalize(purpose).toUpperCase();
-        outcome = normalize(outcome).toUpperCase();
+        operation = normalize(operation).toUpperCase(Locale.ROOT);
+        purpose = normalize(purpose).toUpperCase(Locale.ROOT);
+        outcome = normalize(outcome).toUpperCase(Locale.ROOT);
         reasonCode = normalize(reasonCode);
     }
 
     public IntegrationAccessAuditRecord withSequence(long value) {
-        return new IntegrationAccessAuditRecord(value, occurredAt, correlationId, identityId, tenantId,
-                environmentId, operation, purpose, outcome, reasonCode);
+        return new IntegrationAccessAuditRecord(value, occurredAt, correlationId, identityId, credentialId,
+                tokenId, tenantId, environmentId, operation, purpose, outcome, reasonCode);
     }
 
     private static String normalize(String value) {

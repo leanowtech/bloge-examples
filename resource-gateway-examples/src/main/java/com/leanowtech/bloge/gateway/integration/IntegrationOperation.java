@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import java.util.Set;
+import java.util.Locale;
 
 /** Central operation-to-purpose policy for the Tool Studio integration surface. */
 public enum IntegrationOperation {
@@ -19,7 +20,7 @@ public enum IntegrationOperation {
     }
 
     public boolean accepts(String purpose) {
-        return acceptedPurposes.contains(purpose == null ? "" : purpose.trim().toUpperCase());
+        return acceptedPurposes.contains(purpose == null ? "" : purpose.trim().toUpperCase(Locale.ROOT));
     }
 
     public Set<String> acceptedPurposes() {
