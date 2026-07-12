@@ -820,6 +820,41 @@ describe('summarizeOperator', () => {
     });
   });
 
+  it('distinguishes managed and unmanaged external-write protocols', () => {
+    const unmanaged = summarizeOperator({
+      operatorRef: 'orders:create',
+      capabilities: { effect: 'WRITE_EXTERNAL' },
+    });
+    expect(unmanaged).toMatchObject({
+      externalWrite: true,
+      managedWrite: false,
+      sideEffectBadgeLabel: 'write protocol required',
+    });
+
+    const managed = summarizeOperator({
+      operatorRef: 'orders:createManaged',
+      capabilities: {
+        effect: 'WRITE_EXTERNAL',
+        sideEffectProtocol: {
+          schemaVersion: 'bloge.sideEffectProtocol.v1',
+          mode: 'JOURNALED',
+          commitReceiptRequired: true,
+          reconciliationRequired: true,
+          reconcilerRef: 'orders.status',
+          idempotencyKeySource: 'input.params.idempotencyKey',
+          reconciliationLookupSource: 'input.params.lookupRef',
+          commitReceiptSource: 'response.headers.x-receipt-id',
+        },
+      },
+    });
+    expect(managed).toMatchObject({
+      externalWrite: true,
+      managedWrite: true,
+      sideEffectBadgeLabel: 'managed write',
+    });
+    expect(managed.sideEffectNotice).toContain('orders.status');
+  });
+
   it('classifies special operator families with contract hints', () => {
     expect(summarizeOperator({
       operatorRef: 'bloge:decisionTable',

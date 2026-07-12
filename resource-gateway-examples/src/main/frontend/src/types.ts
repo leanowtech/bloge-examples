@@ -16,13 +16,35 @@ export interface OperatorPort {
   description?: string;
 }
 
+/** Formal execution contract for an operator that writes to an external system. */
+export interface SideEffectProtocol {
+  schemaVersion?: string;
+  mode?: string;
+  commitReceiptRequired?: boolean;
+  reconciliationRequired?: boolean;
+  reconcilerRef?: string;
+  idempotencyKeySource?: string;
+  reconciliationLookupSource?: string;
+  commitReceiptSource?: string;
+}
+
+/** Runtime and governance capabilities projected into the visual operator catalog. */
+export interface OperatorCapabilities {
+  effect?: string;
+  idempotency?: string;
+  streaming?: boolean;
+  durable?: boolean;
+  requiresSecrets?: boolean;
+  sideEffectProtocol?: SideEffectProtocol;
+}
+
 /** A visual operator definition (bloge.visualOperator.v1). */
 export interface OperatorDefinition {
   operatorRef: string;
   display?: { name?: string; description?: string; tags?: string[] };
   source?: { kind?: string; libraryId?: string };
   ports?: { inputs: OperatorPort[]; outputs: OperatorPort[] };
-  capabilities?: { streaming?: boolean };
+  capabilities?: OperatorCapabilities;
   lowering?: { mode?: string };
   runtimeReadiness?: {
     state?: string;

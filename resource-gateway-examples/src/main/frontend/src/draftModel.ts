@@ -106,6 +106,10 @@ export interface OperatorSummary {
   readinessBadgeLabel: string;
   readinessNodeNotice: string;
   readinessNotice: string;
+  externalWrite: boolean;
+  managedWrite: boolean;
+  sideEffectBadgeLabel: string;
+  sideEffectNotice: string;
 }
 
 export type OperatorPaletteFacet = 'all' | 'runtime' | 'design';
@@ -899,6 +903,7 @@ export function summarizeOperator(operator: OperatorDefinition): OperatorSummary
   const firstOutputType = schemaRootLabel(outputs[0]?.schema, 'output');
   const visualContract = operatorVisualContract(visualKind, firstInputType, firstOutputType);
   const readiness = operatorReadiness(operator);
+  const sideEffect = operatorSideEffect(operator);
   return {
     operatorRef: operator.operatorRef,
     name: operator.display?.name || operator.operatorRef,
@@ -922,7 +927,46 @@ export function summarizeOperator(operator: OperatorDefinition): OperatorSummary
     readinessBadgeLabel: readiness.badgeLabel,
     readinessNodeNotice: readiness.nodeNotice,
     readinessNotice: readiness.notice,
+    externalWrite: sideEffect.externalWrite,
+    managedWrite: sideEffect.managedWrite,
+    sideEffectBadgeLabel: sideEffect.badgeLabel,
+    sideEffectNotice: sideEffect.notice,
   };
+}
+
+function operatorSideEffect(operator: OperatorDefinition): {
+  externalWrite: boolean;
+  managedWrite: boolean;
+  badgeLabel: string;
+  notice: string;
+} {
+  const capabilities = operator.capabilities;
+  const externalWrite = capabilities?.effect?.trim().toUpperCase() === 'WRITE_EXTERNAL';
+  if (!externalWrite) {
+    return { externalWrite: false, managedWrite: false, badgeLabel: '', notice: '' };
+  }
+  const protocol = capabilities?.sideEffectProtocol;
+  const managedWrite = protocol?.schemaVersion === 'bloge.sideEffectProtocol.v1'
+    && protocol.mode?.trim().toUpperCase() === 'JOURNALED'
+    && protocol.commitReceiptRequired === true
+    && protocol.reconciliationRequired === true
+    && Boolean(protocol.reconcilerRef?.trim())
+    && Boolean(protocol.idempotencyKeySource?.trim())
+    && Boolean(protocol.reconciliationLookupSource?.trim())
+    && Boolean(protocol.commitReceiptSource?.trim());
+  return managedWrite
+    ? {
+      externalWrite: true,
+      managedWrite: true,
+      badgeLabel: 'managed write',
+      notice: `Journaled external write; reconciler ${protocol?.reconcilerRef}.`,
+    }
+    : {
+      externalWrite: true,
+      managedWrite: false,
+      badgeLabel: 'write protocol required',
+      notice: 'External write is DESIGN-only until journal, receipt and reconciliation sources are declared.',
+    };
 }
 
 function operatorReadiness(operator: OperatorDefinition): {
@@ -999,7 +1043,7 @@ function operatorVisualKind(operator: OperatorDefinition): OperatorSummary['visu
   const tags = (operator.display?.tags ?? []).map((tag) => tag.toLowerCase());
   const sourceKind = operator.source?.kind?.toLowerCase() ?? '';
   const loweringMode = operator.lowering?.mode?.toLowerCase() ?? '';
-  const capabilities = operator as OperatorDefinition & { capabilities?: { streaming?: boolean } };
+  const capabilities = operator.capabilities;
 
   if (ref.includes('decisiontable') || ref.includes('decision_table') || name.includes('decision table')) {
     return 'decision-table';
@@ -1022,7 +1066,7 @@ function operatorVisualKind(operator: OperatorDefinition): OperatorSummary['visu
   if (ref === 'httprequest' || tags.includes('http') || tags.includes('api') || tags.includes('rest')) {
     return 'http';
   }
-  if (capabilities.capabilities?.streaming || sourceKind.includes('streaming')) {
+  if (capabilities?.streaming || sourceKind.includes('streaming')) {
     return 'streaming';
   }
   if (loweringMode === 'design') {

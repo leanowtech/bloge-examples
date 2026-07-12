@@ -81,10 +81,8 @@ class VisualAuthoringBrowserWorkflowTest {
                 assertThat(operator).containsEntry("operatorRef", "resource:loan-applicant-service.getProfile"));
         assertThat(operators).anySatisfy(operator ->
                 assertThat(operator).containsEntry("operatorRef", "risk:eligibility"));
-        assertThat(operators).anySatisfy(operator -> {
-            assertThat(operator).containsEntry("operatorRef", "httpRequest");
-            assertThat((Map<String, Object>) operator.get("source")).containsEntry("kind", "java-operator");
-        });
+        assertThat(operators)
+                .noneSatisfy(operator -> assertThat(operator).containsEntry("operatorRef", "httpRequest"));
         assertThat(importedLibrary.libraryId()).isEqualTo("risk-policy");
 
         GraphDraft preflightDraft = resourceEligibilityDraft(false);

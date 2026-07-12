@@ -533,7 +533,7 @@ POST /api/integration/gate-results
 | P0 | Run Trace 可导出为治理证据 | 当前 shape-only trace 不够 | 新增 evidence bundle，不直接改造成唯一 run response |
 | P0 | Payload 级 replay | 当前缺 payload capture | 新增 payload store/ref/sanitizer/replay endpoint |
 | P0 | GraphDraft export 依赖元数据 | 已有 dependency report 但不够稳定导入 | integration dependency profile |
-| P0 | Timeout/partial failure 语义 | Round 11 已补 execution-scoped journal、receipt/transition evidence v6、UNKNOWN_COMMIT non-retryable DAG guard、持久 claim/fencing、provider reconciliation SPI、签名 refinement 与事务 outbox；仍缺 detach policy、任意 binding 合规和客户 provider adapter 覆盖 | `VisualNodeExecutionFact` + durable control + evidence v6 + `ExecutionBudget` + `SideEffectReconciliationRecord.v1`；下一步 binding conformance 与 disconnect/detach |
+| P0 | Timeout/partial failure 语义 | Round 12 已补 `WRITE_EXTERNAL` contract、binding/activation conformance、descriptor-backed HTTP mutation、底层 unsafe `httpRequest` 防绕过和可视化 readiness；仍缺 detach policy、错误 effect 分类检测、非 HTTP 私有写边界和客户 provider adapter 覆盖 | `VisualNodeExecutionFact` + durable control + evidence v6 + `ExecutionBudget` + `SideEffectReconciliationRecord.v1` + `bloge.sideEffectProtocol.v1`；下一步 effect-classification/egress conformance 与 disconnect/detach |
 | P1 | Deep Link | 当前不是 integration API | 前端 route + resolver API |
 | P1 | Health/Capability Probe | 缺口明确 | `/api/integration/capabilities` |
 | P1 | Contract Test Suite 对齐 workbook | 当前 case/assertion 语义偏基础 | suite vNext + workbook mapping |
@@ -1173,6 +1173,29 @@ run record v8 和 evidence v6 保存脱敏 request、attempt fingerprint、recei
 伪造通用 provider 查询的 adapter，因此 `sideEffectReconcilerAdapters=false`，且在所有 operator/binding 完成
 conformance 前继续保持全局 `sideEffectCommitConfirmation=false`。
 
+Round 12 进一步关闭了“协议存在但业务实现绕开”的主干路径：
+
+1. `bloge.sideEffectProtocol.v1` 成为 operator capability 与 operator fingerprint 的正式组成；
+   `WRITE_EXTERNAL` 未声明完整 JOURNALED 合同时只能保持 `RUNTIME_BLOCKED + DESIGN`。
+2. implementation binding 必须提交 journal、receipt、reconciliation lookup 三项 capability，以及
+   `side-effect-conformance`、`unknown-commit-fault` 证据；activation 必须有当前 `reconciler-health`。
+3. BLOGE 执行拦截器在业务代码前拒绝 unmanaged `SideEffectType.WRITE`，并在业务代码返回后验证至少登记一个
+   当前 node/retry attempt，防止“合同写得漂亮、实现根本没记 journal”。
+4. `HttpResourceOperator` 对 POST/PUT/PATCH/DELETE 要求 `externalWriteContract.v1`、幂等键、预生成安全 lookup ref
+   和 provider receipt；缺任何一项都 fail closed。底层 `HttpRequestOperator` 对没有 PREPARED attempt 的 unsafe method
+   在网络前拒绝，并从 visual Java inventory 隐藏，堵住手写 DSL 绕开 resource operator 的捷径。
+5. Author 主入口把状态直接显示为 `managed write` / `write protocol required` 和 `write ok` / `write blocked`，
+   Inspector 展示 protocol 原因；治理问题第一次在作者操作面和运行面使用同一事实源。
+
+该闭环仍不等于所有业务写已受控。一个私有 operator 如果把 effect 错报为 `MIXED` 或 `READ_ONLY`，再通过数据库驱动、
+消息 SDK 或私有 HTTP client 写外部系统，当前类型门禁无法自动识别；默认 provider reconciler registry 也仍为空。
+下一阶段必须把制品扫描、运行时 egress/DB/message telemetry、owner attestation 和 provider conformance kit 合成覆盖率门禁，
+而不是继续增加一组“请自觉声明”的字段。
+
+![Resource Gateway 外部写一致性准入链](assets/resource-gateway-side-effect-conformance-chain.svg)
+
+图源：[resource-gateway-side-effect-conformance-chain.drawio](assets/drawio/resource-gateway-side-effect-conformance-chain.drawio)。
+
 ![Resource Gateway 外部副作用确认与对账闭环](assets/resource-gateway-side-effect-reconciliation-lifecycle.svg)
 
 图源：[resource-gateway-side-effect-reconciliation-lifecycle.drawio](assets/drawio/resource-gateway-side-effect-reconciliation-lifecycle.drawio)。
@@ -1453,15 +1476,16 @@ operator 从 schema 导入到生产可用需要 `DISCOVERED -> DESCRIBED -> VERI
 
 退出门槛：success/failure/timeout/partial/mock/fallback/unknown-commit 场景均可结构化解释；篡改可检出；run 成功但 evidence 不完整时 gate 不会误采纳。
 
-当前落地状态（Round 11）：标准 node/edge/graph facts、真实 retry/timeout/fallback events、关键输出聚合、
+当前落地状态（Round 12）：标准 node/edge/graph facts、真实 retry/timeout/fallback events、关键输出聚合、
 sanitized payload、持久签名、fact coverage 和 quarantine 已实现；run intent、绝对 deadline、fenced cancel、
 owner+operator 双条件终止确认、durable control、跨实例 cancel、owner lease/epoch、过期 quarantine、
 pre-run recovery reservation、evidence v6 automatic recovery，以及 deadline budget 对 OperatorContext、scheduler、
 retry/timeout、HTTP 和 remote worker 的传播也已落地。Round 11 又补齐 execution journal、receipt evidence、
 UNKNOWN_COMMIT DAG guard、provider reconciliation SPI、持久 claim/fencing 和签名 refinement。capability 同时揭示
 未支持的 `hardRunTermination/restartRunResumption/sideEffectCommitConfirmation`，并单独暴露当前是否注册业务
-reconciler adapter。Stage 2 仍未退出：还需 remaining-budget/side-effect binding 合规准入、disconnect policy、
-客户 provider adapter 覆盖、KMS custody，以及外部 HA DB fault injection/SLO。
+reconciler adapter。Round 12 又补齐 `WRITE_EXTERNAL` schema、binding/activation conformance、Java WRITE pre/post
+admission、descriptor/common HTTP mutation guard 和 Author readiness。Stage 2 仍未退出：还需错误 effect 分类/私有
+egress 的动态识别、disconnect policy、客户 provider adapter 覆盖、KMS custody，以及外部 HA DB fault injection/SLO。
 
 ### Stage 3 - Safe replay 与 workbook 对齐（2-4 周）
 

@@ -213,12 +213,20 @@ export async function validateOperatorLibraryText(sourceText: string): Promise<O
 }
 
 /** Imports pasted operator-library JSON/YAML, then the caller should refresh the catalog. */
-export async function importOperatorLibraryText(sourceText: string): Promise<OperatorLibrary> {
+export async function importOperatorLibraryText(
+  sourceText: string,
+  ackWarnings = false,
+  reason = '',
+): Promise<OperatorLibrary> {
   const query = new URLSearchParams({
     actor: 'author-canvas',
     changeSource: 'react-author',
     changeSummary: 'Imported from React author canvas',
   });
+  if (ackWarnings) {
+    query.set('ackWarnings', 'true');
+    query.set('reason', reason.trim());
+  }
   return readJsonMutation<OperatorLibrary>(
     await sendRequest(`/admin/visual-operator-libraries/import-text?${query.toString()}`, {
       method: 'POST',

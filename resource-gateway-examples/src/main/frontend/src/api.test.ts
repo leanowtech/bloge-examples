@@ -80,6 +80,19 @@ describe('operator library API client', () => {
     });
   });
 
+  it('sends explicit warning acknowledgement and audit reason', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      libraryId: 'side-effect-demo',
+      operators: [],
+    }), { status: 201 }));
+
+    await importOperatorLibraryText('{}', true, 'Reviewed unmanaged write warning');
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('ackWarnings=true');
+    expect(String(url)).toContain('reason=Reviewed+unmanaged+write+warning');
+  });
+
   it('adapts pasted capability catalog source as a visual library draft', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       library: { libraryId: 'risk-capabilities', operators: [] },

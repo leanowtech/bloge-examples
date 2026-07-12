@@ -1377,6 +1377,7 @@ body.connecting-edge * {
 
 .operator-card {
   display: grid;
+  min-width: 0;
   gap: 7px;
   align-content: space-between;
   min-height: 86px;
@@ -1404,6 +1405,7 @@ body.connecting-edge * {
 
 .operator-card-actions button {
   min-width: 0;
+  overflow-wrap: anywhere;
   cursor: pointer;
   touch-action: manipulation;
 }
@@ -1480,6 +1482,7 @@ body.dragging-operator * {
 }
 
 .operator-card-tags em {
+  box-sizing: border-box;
   max-width: 100%;
   padding: 2px 5px;
   border: 1px solid rgba(82, 103, 127, 0.18);
@@ -4282,6 +4285,10 @@ body.dragging-operator * {
 
   .workspace {
     grid-template-columns: 1fr;
+  }
+
+  .operator-palette {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .diagram-panel {

@@ -272,6 +272,28 @@ Round 11 结论：差距从 `16.10%` 降至 `14.20%`。`RUN-02` 的引擎与协�
 保持 `sideEffectCommitConfirmation=false`，并把 adapter 可用性单独暴露。下一步应以 binding conformance、重点
 provider adapter 和故障演练关闭“协议存在但业务绕开协议”的组织性缺口。
 
+## 2.12 Round 12 重新审计
+
+Round 11 的 journal 是一条可用协议，但只要 operator/library/runtime binding/底层 HTTP 任一层可以绕开，它就仍是
+“推荐实践”，不是工程不变量。Round 12 将副作用一致性前移到 authoring contract，并在 binding、activation、operator
+invocation 和 HTTP send 四个边界逐层 fail closed；同时把同一状态投影到 `/author/`，让作者在拖入节点前就能看见。
+
+| 维度 | 权重 | 当前完成率 | 得分 | 本轮可证明增量 | 仍未证明 |
+|---|---:|---:|---:|---|---|
+| 协议、版本与身份边界 | 15 | 99% | 14.85 | `bloge.sideEffectProtocol.v1`、`resourceGateway.externalWriteContract.v1`、capability object/feature flags；合同进入 operator fingerprint | 自动 N/N-1 consumer matrix；动态 IAM/mTLS 联调；旧 consumer 契约流水线 |
+| GraphDraft 依赖快照 | 10 | 64% | 6.40 | managed protocol 变化会改变 operator fingerprint；draft readiness 可导出 side-effect conformance requirement | suite/runtime binding refs 的一致性快照；完整 readiness profile；跨表 snapshot transaction |
+| Run evidence 可信链 | 20 | 99% | 19.80 | 明确 WRITE 在调用前验合同、返回后验 journal adoption；descriptor/common HTTP mutation 不能绕开 PREPARED/receipt/UNKNOWN 事实 | KMS/HSM、retention/legal hold、外部 verifier matrix；错误 effect 分类和非 HTTP 私有写覆盖 |
+| Payload replay | 15 | 80% | 12.00 | 无语义变化；既有 recorded replay 仍为 DENY side-effect | shadow/live 审批隔离、跨实例 exactly-once、选择性 retention |
+| Timeout/partial failure 语义 | 10 | 100% | 10.00 | 缺 receipt 成为 UNKNOWN；unmanaged HTTP 在网络前失败；managed-but-no-journal 在返回后失败 | 错误分类为 MIXED/READ_ONLY 的私有写；disconnect/detach 与非协作 I/O |
+| Workbook、gate feedback 与 Deep Link | 10 | 75% | 7.50 | binding 需要 conformance/fault evidence，activation 需要 reconciler health；Author 显示 managed/required/blocked 原因 | 双向 workbook refs、coverage policy、owner/migration gate 完整闭环 |
+| Change event、cursor、webhook 与对账 | 10 | 88% | 8.80 | 无语义变化 | signed webhook、DLQ/退避、retention/compaction、乱序 fault harness |
+| 工业运行控制 | 10 | 81% | 8.10 | 通用 HTTP mutation、手写 DSL 低层 HTTP、Java WRITE pre/post guard；binding/activation capability/evidence gate | provider adapter 灾难演练、effect/egress 自动发现、外部 HA DB、metrics/SLO、quota、DR/容量、residency |
+| **合计** | **100** |  | **87.45** |  | **加权差距 12.55%** |
+
+Round 12 结论：差距从 `14.20%` 降至 `12.55%`。通用 HTTP 和明确声明 WRITE 的 operator 已不能通过正常执行路径
+绕过 journal，因此 `RUN-02` 从“主干可绕过”收窄为“错误 effect 分类、私有非 HTTP 写边界、provider adapter 覆盖和
+企业故障演练”。全局 `sideEffectCommitConfirmation` 继续为 false 是正确结果，不应为了分数提前翻转。
+
 ## 3. 已通过的证明
 
 ### 3.1 协议与隔离
@@ -676,6 +698,51 @@ attemptFingerprint` 的签名 refinement record；只有所有可寻址 uncertai
 `READY`。`PARTIAL_COMMIT` 或旧版无法寻址的 unknown 会保留 synthetic outstanding marker，防止“没有结构化 attempt”
 被误解释为“不需要对账”。
 
+### 3.14 外部写一致性准入与防绕过证明
+
+Round 12 的验证不是只测 schema parser，而是证明每一层的失败发生在正确边界：
+
+```text
+BLOGE core protocol focused tests: 6 passed
+BLOGE common HTTP focused tests: 13 passed
+  unmanaged POST -> rejected before client.send; test server received 0 requests
+
+Resource Gateway focused regression: 330 passed
+  unmanaged Java WRITE -> rejected before business invocation (invocations = 0)
+  managed-but-no-journal WRITE -> rejected after return (invocations = 1)
+  unmanaged descriptor POST -> rejected before HTTP server
+  managed descriptor POST -> idempotency header + committed provider receipt
+  success without receipt -> UNKNOWN_COMMIT
+  binding missing capability/fault evidence -> rejected
+  activation missing reconciler-health -> rejected
+  resource descriptor contract round-trip and visual projection -> preserved
+
+React authoring focused regression: 128 passed
+  palette: managed write / write protocol required
+  node: write ok / write blocked
+  inspector: Side-effect protocol cause
+  warning acknowledgement: explicit checkbox + non-empty audit reason before DESIGN import
+
+Frontend full regression: 136 passed
+  TypeScript + Vite 6.4.3 production build passed on Maven-managed Node 22.11
+  npm audit: 0 vulnerabilities (from 3 moderate + 1 high + 1 critical before upgrade)
+
+Resource Gateway full regression:
+  mvn -f resource-gateway-examples/pom.xml -Pfrontend clean verify
+  1553 passed, 0 failures, 0 errors, 0 skipped; BUILD SUCCESS (05:33)
+  34 real Chrome DOM scenarios passed
+  390px AsyncAPI palette: two-column responsive cards, no horizontal overflow
+
+Draw.io validation:
+  0 errors, 0 warnings, 0 crossings, 0 overlaps
+```
+
+结构证据：[Resource Gateway 外部写一致性准入链](assets/resource-gateway-side-effect-conformance-chain.svg)，
+图源为 [resource-gateway-side-effect-conformance-chain.drawio](assets/drawio/resource-gateway-side-effect-conformance-chain.drawio)。
+真实浏览器还验证了 `/author/` 的 warning acknowledgement 流程：存在 warning 时 Import 在勾选确认并填写非空审计
+原因前保持禁用；导入后 palette、node 和 inspector 分别展示合同状态、运行准入状态和阻断病因。页面证据见
+[标注截图](assets/bloge-author-side-effect-protocol-annotated.svg)。
+
 ## 4. 当前 P0 阻断项
 
 | ID | 阻断项 | 病根 | 根治验收 |
@@ -683,7 +750,7 @@ attemptFingerprint` 的签名 refinement record；只有所有可寻址 uncertai
 | `IAM-01` | 企业身份生命周期尚未端到端证明 | signed JWT、轮换和撤销代码已具备，但配置 trust store 只在启动时装载，尚无客户 IAM 动态策略/撤销传播证据 | 动态 JWKS/KMS 或 mTLS adapter + 多 identity/group/clearance + delegation grant + propagation SLO + policy/audit 联调演练 |
 | `OPS-01` | 本地签名 key 不满足企业 custody | private key 由本地 H2 demo provider 保存 | KMS/HSM-backed `VisualEvidenceSigner`、rotation/disable/revoke、审计和灾备演练 |
 | `RUN-01` | disconnect/detach 与任意 binding 的预算合规尚未封口 | Round 10 已完成 OperatorContext、scheduler admission、retry/timeout/suspend、Resource Gateway/common HTTP 和 remote worker 的 remaining-budget 传播，并防止 wall-clock 回拨放宽预算；但客户端断开语义未版本化，私有 binding 仍可忽略合同 | versioned `detachPolicy` + disconnect race/fault tests + runtime binding conformance suite + non-cooperative I/O quarantine |
-| `RUN-02` | 副作用协议尚未覆盖企业 operator/binding 存量 | Round 11 已具备 journal、receipt、DAG guard、持久化 reconcile 与 gate summary，但默认 adapter registry 为空，通用 HTTP 和客户私有 operator 可绕开协议 | 高风险 binding 全量盘点 + journal 强制/静态检查 + provider adapter conformance kit + outage/restart/重复请求演练 + compensate policy + 覆盖率门禁 |
+| `RUN-02` | 副作用协议尚未覆盖企业 operator/binding 存量 | Round 12 已关闭正常目录下 `WRITE_EXTERNAL`、Java `SideEffectType.WRITE`、descriptor HTTP mutation 和低层 unsafe `httpRequest` 绕过；残余病根是实现可错报 effect、数据库/消息/私有 SDK 写边界不可见、默认 provider adapter registry 为空 | 制品 effect/egress 扫描 + runtime egress/DB/message telemetry + owner attestation 对账 + provider conformance kit + outage/restart/重复请求演练 + compensate policy + 覆盖率门禁 |
 
 `EVD-02` 已在 Round 9 关闭；`EVT-01` 已在 Round 3 对当前资产模型关闭。webhook、recovery retry
 backoff/DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，但不再构成“崩溃事实无法进入治理链”或
@@ -705,5 +772,6 @@ backoff/DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，�
 | 9 | owner failure 后 evidence continuity | pre-run 脱敏 lineage reservation、normal/recovery 单赢家、三类 synthetic recovery、签名 evidence v5、事务 outbox、失败回滚重试、visual-owned recovery port | 17.25% | 11 个 recovery fault tests、41 个聚焦 tests、1 个目标真实 Chrome 流程、1524 个全量 tests、v5 schema、restart/concurrency/outbox rollback、Draw.io 0 errors/warnings |
 | 10 | deadline remaining-budget 跨层传播 | `ExecutionBudget`、finalization reserve、不可扩张/防时钟回拨、scheduler admission、retry/timeout/suspend cap、HTTP headers、remote-worker envelope、结构化 deadline-exhausted fact | 16.10% | BLOGE reactor 3590 tests；Resource Gateway 56 个聚焦/Spring tests、1527 个全量 tests（含真实 Chrome）；Draw.io 0 errors/warnings/crossings/overlaps、SVG 视觉检查通过 |
 | 11 | 外部副作用提交确认与持久化对账 | journal、receipt/proof、unknown DAG guard、v6 evidence、lease/fence reconcile、签名 refinement、原子 outbox、effective gate summary | 14.20% | BLOGE 4 个聚焦 tests；Resource Gateway 49 个聚焦、1543 个全量 tests（含真实 Chrome）；DB restart/双实例/fencing/rollback/tamper/legacy unknown；corporate Draw.io 0 errors/warnings/crossings/overlaps |
+| 12 | 外部写合同、binding/activation conformance 与防绕过 | operator/resource 正式合同、fingerprint/readiness、Java WRITE pre/post admission、descriptor/common HTTP fail closed、Author 状态可见；Vite/Vitest 漏洞归零；移动端 Palette 无横向溢出 | 12.55% | BLOGE core 6 个、common HTTP 13 个；Resource Gateway 330 个聚焦、1553 个全量 tests；React 128 个聚焦、136 个全量 tests；34 个真实 Chrome 场景；npm audit 0 vulnerabilities；corporate Draw.io 0 errors/warnings/crossings/overlaps |
 
 后续每轮必须更新本表、代码证据、失败测试和剩余阻断项。只有全部 P0 阻断关闭、全量验证与真实浏览器验证通过，并且按同一权重计算的差距 `<3%`，才允许把目标标记完成。

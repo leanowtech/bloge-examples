@@ -270,6 +270,42 @@ body {
   color: var(--danger);
 }
 
+.library-warning-ack {
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid #e2b766;
+  border-radius: 6px;
+  background: #fff8e8;
+}
+
+.library-warning-ack label {
+  display: grid;
+  gap: 4px;
+  color: #6f4800;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.library-warning-ack label:first-child {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+}
+
+.library-warning-ack input[type='checkbox'] {
+  margin: 0;
+}
+
+.library-warning-ack input[type='text'] {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 7px;
+  border: 1px solid #c99b48;
+  border-radius: 5px;
+  background: #fff;
+  color: var(--ink);
+}
+
 .library-diagnostics {
   display: grid;
   gap: 4px;
@@ -749,6 +785,33 @@ body {
 .badge.readiness.success {
   background: #e8f5e9;
   color: #1b5e20;
+}
+
+.operator-badges {
+  display: grid;
+  flex: none;
+  gap: 4px;
+  justify-items: end;
+  max-width: 112px;
+}
+
+.badge.side-effect {
+  max-width: 112px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge.side-effect.managed,
+.operator-side-effect-pill.managed {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
+.badge.side-effect.unmanaged,
+.operator-side-effect-pill.unmanaged {
+  background: #fdecea;
+  color: var(--danger);
 }
 
 .badge.fixture {
@@ -1752,6 +1815,19 @@ button.secondary:disabled {
 .operator-kind-pill.streaming {
   background: #e8f6f3;
   color: #1f7a68;
+}
+
+.operator-side-effect-pill {
+  flex: none;
+  max-width: 82px;
+  overflow: hidden;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .operator-node-ref {

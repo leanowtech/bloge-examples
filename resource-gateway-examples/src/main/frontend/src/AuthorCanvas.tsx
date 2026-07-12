@@ -1177,6 +1177,14 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
         <span>{data.label}</span>
         <span className="operator-node-pills">
           <span className={`operator-kind-pill ${data.summary.visualKind}`}>{data.summary.visualLabel}</span>
+          {data.summary.externalWrite && (
+            <span
+              className={`operator-side-effect-pill ${data.summary.managedWrite ? 'managed' : 'unmanaged'}`}
+              title={data.summary.sideEffectNotice}
+            >
+              {data.summary.managedWrite ? 'write ok' : 'write blocked'}
+            </span>
+          )}
           {data.isOutput && <span className="output-pill">output</span>}
           {status !== 'unknown' && <span className={`run-pill ${status}`}>{status}</span>}
         </span>
@@ -2227,12 +2235,16 @@ function operatorFocusRows(
   const readiness = summary.readinessNotice
     ? [{ key: 'readiness', label: 'Readiness', value: summary.readinessNotice }]
     : [];
+  const sideEffect = summary.externalWrite
+    ? [{ key: 'side-effect', label: 'Side-effect protocol', value: summary.sideEffectNotice }]
+    : [];
   if (summary.visualKind === 'decision-table') {
     return [
       { key: 'conditions', label: 'Condition inputs', value: inputSignature },
       { key: 'decision', label: 'Decision output', value: outputSignature },
       { key: 'rules', label: 'Rule matrix', value: 'typed conditions -> matched row' },
       { key: 'lowering', label: 'Lowering', value: operator?.lowering?.mode || 'dsl' },
+      ...sideEffect,
       ...readiness,
     ];
   }
@@ -2242,6 +2254,7 @@ function operatorFocusRows(
       { key: 'item', label: 'Item context', value: itemContextLabel(inputs) },
       { key: 'result', label: 'Result list', value: outputSignature },
       { key: 'cardinality', label: 'Cardinality', value: 'per item -> aggregated list' },
+      ...sideEffect,
       ...readiness,
     ];
   }
@@ -2250,6 +2263,7 @@ function operatorFocusRows(
       { key: 'params', label: 'Request params', value: inputSignature },
       { key: 'payload', label: 'Response payload', value: outputSignature },
       { key: 'boundary', label: 'Boundary', value: operator?.source?.kind || summary.sourceKind },
+      ...sideEffect,
       ...readiness,
     ];
   }
@@ -2258,6 +2272,7 @@ function operatorFocusRows(
       { key: 'request', label: 'HTTP request', value: inputSignature },
       { key: 'response', label: 'HTTP response', value: outputSignature },
       { key: 'boundary', label: 'Boundary', value: operator?.source?.kind || summary.sourceKind },
+      ...sideEffect,
       ...readiness,
     ];
   }
@@ -2266,6 +2281,7 @@ function operatorFocusRows(
       { key: 'source', label: 'Source fields', value: inputSignature },
       { key: 'mapped', label: 'Mapped output', value: outputSignature },
       { key: 'lowering', label: 'Lowering', value: operator?.lowering?.mode || 'transform' },
+      ...sideEffect,
       ...readiness,
     ];
   }
@@ -2274,6 +2290,7 @@ function operatorFocusRows(
       { key: 'request', label: 'Request', value: inputSignature },
       { key: 'stream', label: 'Event stream', value: outputSignature },
       { key: 'boundary', label: 'Boundary', value: operator?.source?.kind || summary.sourceKind },
+      ...sideEffect,
       ...readiness,
     ];
   }
@@ -2282,12 +2299,14 @@ function operatorFocusRows(
       { key: 'inputs', label: 'Schema input', value: inputSignature },
       { key: 'outputs', label: 'Schema output', value: outputSignature },
       { key: 'lowering', label: 'Lowering', value: operator?.lowering?.mode || 'design' },
+      ...sideEffect,
       ...readiness,
     ];
   }
   return [
     { key: 'inputs', label: 'Input contract', value: inputSignature },
     { key: 'outputs', label: 'Output contract', value: outputSignature },
+    ...sideEffect,
     ...readiness,
   ];
 }
@@ -2446,6 +2465,7 @@ function operatorPropertyRows(
     { label: 'Source', value: operator?.source?.kind || node.data.summary.sourceKind || 'unknown' },
     { label: 'Lowering', value: operator?.lowering?.mode || 'not declared' },
     { label: 'Readiness', value: node.data.summary.readinessNotice || node.data.summary.readinessState },
+    { label: 'Side-effect protocol', value: node.data.summary.sideEffectNotice || 'not applicable' },
     { label: 'Tags', value: operator?.display?.tags?.join(', ') || 'none' },
   ];
 }
@@ -3925,6 +3945,8 @@ export default function AuthorCanvas() {
   const [librarySourceText, setLibrarySourceText] = useState('');
   const [libraryNotice, setLibraryNotice] = useState<ConnectionNotice | null>(null);
   const [libraryDiagnostics, setLibraryDiagnostics] = useState<VisualDiagnostic[]>([]);
+  const [libraryWarningsAcknowledged, setLibraryWarningsAcknowledged] = useState(false);
+  const [libraryWarningReason, setLibraryWarningReason] = useState('');
   const [dslSourceId, setDslSourceId] = useState(LEGACY_DSL_EXAMPLES[0].sourceId);
   const [dslSourceText, setDslSourceText] = useState(LEGACY_DSL_EXAMPLES[0].sourceText);
   const [dslImportBusy, setDslImportBusy] = useState(false);
@@ -4965,6 +4987,8 @@ export default function AuthorCanvas() {
       const validation = await validateOperatorLibraryText(librarySourceText);
       const level = operatorLibraryValidationLevel(validation);
       setLibraryDiagnostics(validation.diagnostics ?? []);
+      setLibraryWarningsAcknowledged(false);
+      setLibraryWarningReason('');
       setLibraryNotice({
         level: level === 'ok' ? 'ok' : level,
         message: operatorLibraryValidationMessage(validation),
@@ -4985,11 +5009,17 @@ export default function AuthorCanvas() {
     }
     setLibraryBusy(true);
     try {
-      const storedLibrary = await importOperatorLibraryText(librarySourceText);
+      const storedLibrary = await importOperatorLibraryText(
+        librarySourceText,
+        libraryWarningsAcknowledged,
+        libraryWarningReason,
+      );
       await reloadOperators();
       setLibrarySourceText(JSON.stringify(storedLibrary, null, 2));
       setDslRewriteGateResult(null);
       setLibraryDiagnostics([]);
+      setLibraryWarningsAcknowledged(false);
+      setLibraryWarningReason('');
       setLibraryNotice({ level: 'ok', message: operatorLibraryImportMessage(storedLibrary) });
       setSearch('');
       setPaletteFacet('all');
@@ -5001,7 +5031,7 @@ export default function AuthorCanvas() {
     } finally {
       setLibraryBusy(false);
     }
-  }, [librarySourceText, reloadOperators]);
+  }, [librarySourceText, libraryWarningReason, libraryWarningsAcknowledged, reloadOperators]);
 
   const applyDslProjection = useCallback((projection: DslVisualProjection, contractSource?: string) => {
     const imported = fromGraphDraft(projection.draft);
@@ -6098,6 +6128,10 @@ export default function AuthorCanvas() {
     runAuthoringAction(journey.action);
   }, [journey.action, runAuthoringAction]);
 
+  const libraryHasWarnings = libraryDiagnostics.some(
+    (diagnostic) => diagnostic.level?.trim().toUpperCase() === 'WARNING',
+  );
+
   const autoLayout = useCallback(() => {
     setNodes((current) => autoLayoutFlowNodes(current, edges));
     if (typeof window.requestAnimationFrame === 'function') {
@@ -6298,6 +6332,8 @@ export default function AuthorCanvas() {
               setLibrarySourceText(event.target.value);
               setLibraryNotice(null);
               setLibraryDiagnostics([]);
+              setLibraryWarningsAcknowledged(false);
+              setLibraryWarningReason('');
               setDslRewriteGateResult(null);
             }}
           />
@@ -6319,6 +6355,8 @@ export default function AuthorCanvas() {
                         : `Loaded ${example.label} example. Validate before importing.`,
                     });
                     setLibraryDiagnostics([]);
+                    setLibraryWarningsAcknowledged(false);
+                    setLibraryWarningReason('');
                     setDslRewriteGateResult(null);
                   }}
                 >
@@ -6352,11 +6390,35 @@ export default function AuthorCanvas() {
               className="primary compact"
               data-testid="operator-library-import"
               onClick={importLibrarySource}
-              disabled={libraryBusy}
+              disabled={libraryBusy || (libraryHasWarnings
+                && (!libraryWarningsAcknowledged || !libraryWarningReason.trim()))}
             >
               Import
             </button>
           </div>
+          {libraryHasWarnings && (
+            <div className="library-warning-ack" data-testid="operator-library-warning-ack">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={libraryWarningsAcknowledged}
+                  onChange={(event) => setLibraryWarningsAcknowledged(event.target.checked)}
+                  data-testid="operator-library-ack-warnings"
+                />
+                <span>I reviewed the warning diagnostics</span>
+              </label>
+              <label>
+                <span>Audit reason</span>
+                <input
+                  type="text"
+                  value={libraryWarningReason}
+                  onChange={(event) => setLibraryWarningReason(event.target.value)}
+                  placeholder="Why this DESIGN-only import is acceptable"
+                  data-testid="operator-library-warning-reason"
+                />
+              </label>
+            </div>
+          )}
           {libraryNotice && (
             <p className={`library-notice ${libraryNotice.level}`} data-testid="operator-library-notice">
               {libraryNotice.message}
@@ -6643,11 +6705,21 @@ export default function AuthorCanvas() {
                           {summary.outputCount} outputs
                         </span>
                       </span>
-                      {summary.readinessBadgeLabel && (
-                        <span className={`badge readiness ${summary.readinessLevel}`}>
-                          {summary.readinessBadgeLabel}
-                        </span>
-                      )}
+                      <span className="operator-badges">
+                        {summary.sideEffectBadgeLabel && (
+                          <span
+                            className={`badge side-effect ${summary.managedWrite ? 'managed' : 'unmanaged'}`}
+                            title={summary.sideEffectNotice}
+                          >
+                            {summary.sideEffectBadgeLabel}
+                          </span>
+                        )}
+                        {summary.readinessBadgeLabel && (
+                          <span className={`badge readiness ${summary.readinessLevel}`}>
+                            {summary.readinessBadgeLabel}
+                          </span>
+                        )}
+                      </span>
                     </button>
                   </li>
                 ))}

@@ -335,6 +335,57 @@ describe('AuthorCanvas operator-library intake', () => {
     expect(document.body.textContent).toContain('Output n1');
   });
 
+  it('requires explicit warning acknowledgement and an audit reason before DESIGN import', async () => {
+    let importedWithAcknowledgement = false;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({ operators: [] });
+      }
+      if (url === '/admin/visual-operator-libraries/validate-text') {
+        return jsonResponse({
+          valid: true,
+          diagnostics: [{
+            level: 'WARNING',
+            code: 'visual.operator.sideEffectProtocol.required',
+            message: 'External write can only be imported for DESIGN authoring.',
+          }],
+          profile: { libraryId: 'side-effect-demo', operatorCount: 1 },
+          importReadiness: { state: 'warning-ack-required', level: 'warning', message: 'Review warnings.' },
+        });
+      }
+      if (url.startsWith('/admin/visual-operator-libraries/import-text?')) {
+        expect(url).toContain('ackWarnings=true');
+        expect(url).toContain('reason=Reviewed+DESIGN-only+external+write');
+        importedWithAcknowledgement = true;
+        return jsonResponse({ libraryId: 'side-effect-demo', operators: [] }, { status: 201 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/visual/operators'));
+    await setControlValue(query<HTMLTextAreaElement>('[data-testid="operator-library-source"]'), sampleLibraryYaml);
+    await click(query<HTMLButtonElement>('[data-testid="operator-library-validate"]'));
+    await waitFor(() =>
+      expect(query('[data-testid="operator-library-warning-ack"]').textContent).toContain('Audit reason'),
+    );
+
+    const importButton = query<HTMLButtonElement>('[data-testid="operator-library-import"]');
+    expect(importButton.disabled).toBe(true);
+    await click(query<HTMLInputElement>('[data-testid="operator-library-ack-warnings"]'));
+    await setControlValue(
+      query<HTMLInputElement>('[data-testid="operator-library-warning-reason"]'),
+      'Reviewed DESIGN-only external write',
+    );
+    expect(importButton.disabled).toBe(false);
+    await click(importButton);
+    await waitFor(() => expect(importedWithAcknowledgement).toBe(true));
+  });
+
   it('offers a canvas focus mode for wide topology review', async () => {
     await act(async () => {
       root = createRoot(host);
@@ -1489,6 +1540,32 @@ describe('AuthorCanvas connection guide', () => {
     });
   });
 
+  it('shows managed and blocked external-write protocols in the main authoring surface', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/visual/operators') {
+        return jsonResponse({ operators: [externalWriteOperator('orders:managed', true), externalWriteOperator('orders:blocked', false)] });
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:orders:managed"]').textContent).toContain('managed write'),
+    );
+    expect(query('[data-testid="operator-button:orders:blocked"]').textContent)
+      .toContain('write protocol required');
+
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:orders:blocked"]'));
+    expect(query('[data-testid="canvas-node:n1"]').textContent).toContain('write blocked');
+    await click(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    expect(query('[data-testid="operator-focus:generic"]').textContent).toContain('Side-effect protocol');
+    expect(query('[data-testid="operator-focus:generic"]').textContent).toContain('DESIGN-only');
+  });
+
   it('uses incoming edge bindings as decision-table condition columns', async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -2616,6 +2693,43 @@ function streamingOperator(): OperatorDefinition {
           schema: schema({ type: 'object', additionalProperties: true }),
         },
       ],
+    },
+  };
+}
+
+function externalWriteOperator(operatorRef: string, managed: boolean): OperatorDefinition {
+  return {
+    operatorRef,
+    display: { name: managed ? 'Managed order write' : 'Blocked order write' },
+    source: { kind: 'user-library', libraryId: 'orders' },
+    capabilities: {
+      effect: 'WRITE_EXTERNAL',
+      sideEffectProtocol: managed ? {
+        schemaVersion: 'bloge.sideEffectProtocol.v1',
+        mode: 'JOURNALED',
+        commitReceiptRequired: true,
+        reconciliationRequired: true,
+        reconcilerRef: 'orders.status',
+        idempotencyKeySource: 'input.params.idempotencyKey',
+        reconciliationLookupSource: 'input.params.lookupRef',
+        commitReceiptSource: 'response.headers.x-receipt-id',
+      } : undefined,
+    },
+    lowering: { mode: 'native' },
+    runtimeReadiness: managed ? {
+      state: 'RUNTIME_EXECUTABLE',
+      level: 'success',
+      executable: true,
+    } : {
+      state: 'RUNTIME_BLOCKED',
+      level: 'error',
+      executable: false,
+      title: 'Write protocol required',
+      summary: 'External write is DESIGN-only until the side-effect protocol is complete.',
+    },
+    ports: {
+      inputs: [{ name: 'input', required: true, schema: schema({ type: 'object' }) }],
+      outputs: [{ name: 'output', schema: schema({ type: 'object' }) }],
     },
   };
 }

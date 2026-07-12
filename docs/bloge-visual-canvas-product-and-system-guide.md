@@ -706,6 +706,7 @@ npm run dev
 | --- | --- |
 | Operator Library | 用户或系统提供的算子库，合同版本为 `bloge.visualOperatorLibrary.v1`；字段定义见 [BLOGE 可视化算子库 Schema 定义](./bloge-visual-operator-library-schema.md) |
 | Operator | 单个可编排算子，至少有 `operatorRef`，通常包含展示信息、输入/输出端口、schema、lowering |
+| Side-effect Protocol | 外部写算子的执行合同；声明 journal、幂等键、对账 lookup、commit receipt 和 reconciler。缺失时仍可设计，但不能真实运行或发布为 EXECUTABLE |
 | Built-in Function | 算子库或系统默认目录提供的 BLOGE 表达式函数，用于 transform/branch 等表达式输入框的函数名补全和签名提示 |
 | Port Schema | 输入/输出端口的 JSON Schema envelope，画布用它判断可连接性 |
 | GraphDraft | 画布中的业务流程草稿，合同版本为 `bloge.visualGraphDraft.v1` |
@@ -802,12 +803,75 @@ operators:
 
 `lowering.mode: design` 表示它是设计期算子：可以拖拽、连接、保存、导出、模拟，但不能作为真实 request-response 运行时直接执行。未来接入 Java/native/remote worker/AI tool 等执行绑定后，readiness 会变化。
 
+### 5.1.1 外部写算子必须声明什么
+
+读取类算子不需要额外配置。会向订单、支付、工单、消息或其他外部系统写入的算子必须声明
+`capabilities.effect: WRITE_EXTERNAL`，并用 `bloge.sideEffectProtocol.v1` 说明成功凭什么确认、超时后凭什么查询。
+下面是可进入 runtime binding 流程的最小完整示例：
+
+```yaml
+capabilities:
+  effect: WRITE_EXTERNAL
+  idempotency: IDEMPOTENT
+  sideEffectProtocol:
+    schemaVersion: bloge.sideEffectProtocol.v1
+    mode: JOURNALED
+    commitReceiptRequired: true
+    reconciliationRequired: true
+    reconcilerRef: orders.status
+    idempotencyKeySource: input.params.idempotencyKey
+    reconciliationLookupSource: input.params.reconciliationLookupRef
+    commitReceiptSource: response.headers.x-receipt-id
+```
+
+导入后的页面反馈不是一句泛化的 warning：
+
+1. 左侧 palette 的绿色 **managed write** 表示合同字段完整；红色 **write protocol required** 表示只能作为 DESIGN 资产使用。
+2. 将算子拖到画布后，节点标题区会显示 **write ok** 或 **write blocked**，不用打开 JSON 才能判断。
+3. 单击节点，在右侧 Inspector 的 **Side-effect protocol** 行查看原因和 `reconcilerRef`；双击节点仍进入普通节点详情与 Operator Test Suite。
+4. `write protocol required` 不妨碍拓扑设计、schema 连线和 mock simulation，但真实 Run、runtime binding 和 EXECUTABLE publication 会 fail closed。
+
+![Author 外部写协议状态标注](assets/bloge-author-side-effect-protocol-annotated.svg)
+
+1. **Palette 合同状态**：同一个 library 内可同时存在 managed 与 DESIGN-only 外部写；红绿标签来自服务端 operator contract。
+2. **节点运行状态**：节点本身继续显示 `write ok` / `write blocked`，Auto Layout、缩放或过滤 palette 后不会丢失。
+3. **Inspector 协议原因**：选中节点即可看到为何只能 DESIGN，不需要回到原始 library JSON 猜测。
+
+runtime binding 不是“勾选已支持”即可。提交 implementation binding 时必须同时提供
+`SIDE_EFFECT_JOURNAL_V1`、`COMMIT_RECEIPT_V1`、`RECONCILIATION_LOOKUP_V1` 三项 capability，以及
+`side-effect-conformance`、`unknown-commit-fault` 两类测试证据；adapter activation 还必须提供当前
+`reconciler-health` 证据。对应服务端入口位于
+`/api/visual/assets/runtime-binding-requirements/implementation-bindings` 和
+`/api/visual/assets/runtime-binding-requirements/adapter-activations`。这些是平台/运行时团队的治理步骤，不要求普通画布作者手工伪造。
+
+descriptor-backed HTTP mutation 使用同一协议，但合同定义在 `ResourceDescriptor.externalWriteContract`：至少声明
+输入参数中的幂等键名、实际 idempotency header、预生成且可安全落证据的 lookup ref 参数、provider、receipt header
+和 provider-owned reconciler。运行时 context/input 的 `params` 必须携带这两个值：
+
+```json
+{
+  "resourceId": "orders.create",
+  "params": {
+    "idempotencyKey": "order-create-20260712-001",
+    "reconciliationLookupRef": "orders://transactions/tx-20260712-001"
+  }
+}
+```
+
+不要把带 query、credential 或 token 的 URL 当作 lookup ref。Resource Gateway 会在网络请求前拒绝不安全引用；
+POST/PUT/PATCH/DELETE descriptor 没有完整 `externalWriteContract` 时也不会发送请求。底层 `httpRequest` 已从可视化
+palette 隐藏，手写 DSL 若直接调用不安全 HTTP method 且没有当前节点的 `PREPARED` attempt，同样会在网络前被阻断。
+
+![Resource Gateway 外部写一致性准入链](assets/resource-gateway-side-effect-conformance-chain.svg)
+
+图源：[resource-gateway-side-effect-conformance-chain.drawio](assets/drawio/resource-gateway-side-effect-conformance-chain.drawio)。
+
 ### 5.2 第二步：导入或采用算子
 
 在 `/author/` 左侧的 operator library intake 中粘贴 JSON/YAML：
 
 1. 点击 Validate Library，先让服务端解析和校验合同。
-2. 校验通过后点击 Import Library。
+2. 校验无 warning 时直接点击 Import Library；存在 warning 时，先逐条阅读 diagnostics，勾选 **I reviewed the warning diagnostics**，填写 **Audit reason**，Import 才会启用并以 `ackWarnings=true` 留下治理证据。
 3. 画布会刷新 `/api/visual/operators`，新算子进入 palette。
 4. palette 可以按 library 分组，也可以通过 source、tag、runtime/design facet 过滤。
 5. 使用 Cmd/Ctrl-K 可以快速聚焦搜索框并按关键字过滤。
@@ -1756,6 +1820,13 @@ timeout 还是 provider failure。provider 恢复后使用**同一个 requestId 
 和追加的签名 reconciliation records 形成有效治理视图。ANEKE 应保存两者的 fingerprint/签名链，而不是只保存
 summary 字符串。
 
+**palette 显示 write protocol required，为什么还能拖到画布？**
+
+这是刻意区分“可设计”和“可执行”。schema、拓扑和 mock fixture 仍然有设计价值，因此算子不会从目录消失；但节点会
+保持 `RUNTIME_BLOCKED`，Validate/Run/EXECUTABLE promotion 会指出 `side-effect-conformance` requirement。补齐
+`bloge.sideEffectProtocol.v1` 后必须重新导入/替换算子库，让 operator fingerprint 更新，再由平台团队提交 binding、
+fault evidence 和 reconciler-health activation，不能只在旧 draft 上消掉红色标签。
+
 ## 11. 验证与回归命令
 
 前端核心回归：
@@ -1797,6 +1868,9 @@ mvn -f resource-gateway-examples/pom.xml -Pfrontend \
 - `shadow/live` replay；当前已具备生成新 run lineage 的 `RECORDED_ASSERTIONS + DENY` 无副作用 replay command。
 - 通用 provider reconciler adapter；当前已具备 SPI、持久 claim/fencing、签名 record 与 summary，但每个业务系统
   必须实现自己的只读 status lookup。没有 adapter 的 operator 不能被宣称为自动 commit-confirmable。
+- 任意自定义算子的 effect 自动鉴别；当前对明确声明为 `WRITE_EXTERNAL` / `SideEffectType.WRITE` 的算子和通用 HTTP
+  mutation 强制协议，但一个错误声明为 `MIXED`/`READ_ONLY`、内部再绕到私有 SDK 写入的实现仍需要制品扫描、运行时
+  egress policy 和 provider conformance kit 共同发现。
 
 后续可以继续推进：
 

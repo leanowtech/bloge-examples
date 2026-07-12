@@ -22,7 +22,7 @@ integration something the business flow can see, reason about, test, and change.
 | Runtime-backed demos | Local upstreams, real gateway execution, mock simulation, SSE examples, and reusable publications |
 | Schema-gated table tests | Run real resource graphs with mocked downstream APIs, input/output schema validation, and node-level assertions |
 | Governed run controls | Absolute deadline, monotonic remaining-budget propagation, fenced cancel, durable owner lease/epoch, cross-instance commands, and automatic signed evidence recovery after owner failure |
-| Auditable external writes | Execution-scoped side-effect journal, commit receipts, UNKNOWN_COMMIT DAG guard, signed provider reconciliation records, and transactional governance events |
+| Auditable external writes | Versioned write contracts, binding/activation conformance, execution-scoped journal, commit receipts, UNKNOWN_COMMIT DAG guard, and signed reconciliation evidence |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
 
 ## Start The Demo
@@ -110,11 +110,15 @@ resources, and remote-worker envelopes. Override the reserve with
 `resource-gateway.run-control.finalization-reserve-ms`; size it from measured evidence-finalization latency rather than
 treating it as an operator timeout.
 
-External-write operators should call `OperatorContext.beginSideEffect(...)` before crossing the provider boundary.
-An unresolved attempt is non-retryable and blocks downstream propagation. Provider-specific status adapters implement
-`SideEffectReconciler`; Resource Gateway keeps the original run evidence immutable and appends a separately signed
-reconciliation record. See the [product guide](../docs/bloge-visual-canvas-product-and-system-guide.md)
-and the [lifecycle diagram](../docs/assets/resource-gateway-side-effect-reconciliation-lifecycle.svg).
+External-write operators declare `bloge.sideEffectProtocol.v1` and call `OperatorContext.beginSideEffect(...)` before
+crossing the provider boundary. Missing contracts are DESIGN-only; a managed WRITE that returns without a journal attempt
+is rejected. Descriptor-backed POST/PUT/PATCH/DELETE calls additionally require
+`resourceGateway.externalWriteContract.v1`, an idempotency key, an evidence-safe lookup reference, and a provider receipt.
+The Author palette shows `managed write` or `write protocol required` before a node is used. Provider-specific status
+adapters implement `SideEffectReconciler`; Resource Gateway keeps original evidence immutable and appends a separately
+signed reconciliation record. See the [product guide](../docs/bloge-visual-canvas-product-and-system-guide.md),
+[conformance chain](../docs/assets/resource-gateway-side-effect-conformance-chain.svg), and
+[reconciliation lifecycle](../docs/assets/resource-gateway-side-effect-reconciliation-lifecycle.svg).
 
 ## Extend It
 

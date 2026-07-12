@@ -3332,7 +3332,35 @@ class VisualAuthoringBrowserDomTest {
                 "return Math.max(0, arguments[0].scrollWidth - arguments[0].clientWidth);",
                 element
         );
-        assertThat(overflow.doubleValue()).isLessThanOrEqualTo(2.0);
+        String diagnostics = String.valueOf(((JavascriptExecutor) driver).executeScript("""
+                const root = arguments[0];
+                const rootRect = root.getBoundingClientRect();
+                return [...root.querySelectorAll('*')]
+                  .map((candidate) => {
+                    const rect = candidate.getBoundingClientRect();
+                    const style = getComputedStyle(candidate);
+                    return {
+                      tag: candidate.tagName.toLowerCase(),
+                      id: candidate.id || '',
+                      className: typeof candidate.className === 'string' ? candidate.className : '',
+                      rightOverflow: Math.max(0, Math.round((rect.right - rootRect.right) * 10) / 10),
+                      ownOverflow: Math.max(0, candidate.scrollWidth - candidate.clientWidth),
+                      width: Math.round(rect.width * 10) / 10,
+                      minWidth: style.minWidth,
+                      whiteSpace: style.whiteSpace,
+                      boxSizing: style.boxSizing
+                    };
+                  })
+                  .filter((candidate) => candidate.rightOverflow > 2 || candidate.ownOverflow > 2)
+                  .sort((left, right) => Math.max(right.rightOverflow, right.ownOverflow)
+                    - Math.max(left.rightOverflow, left.ownOverflow))
+                  .slice(0, 10)
+                  .map((candidate) => JSON.stringify(candidate))
+                  .join(String.fromCharCode(10));
+                """, element));
+        assertThat(overflow.doubleValue())
+                .as("Horizontal overflow for %s:%n%s", locator, diagnostics)
+                .isLessThanOrEqualTo(2.0);
     }
 
     private double elementClientHeight(WebElement element) {
