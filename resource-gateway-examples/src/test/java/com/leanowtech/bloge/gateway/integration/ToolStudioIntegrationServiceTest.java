@@ -51,7 +51,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("replayExternalSideEffects", false)
                 .containsEntry("deepLinks", true)
                 .containsEntry("governanceGateFeedback", true)
-                .containsEntry("eventCursor", false)
+                .containsEntry("transactionalOutbox", true)
+                .containsEntry("eventCursor", true)
+                .containsEntry("reconciliationSnapshot", true)
                 .containsEntry("webhook", false);
         assertThat(envelope.payload().endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
@@ -63,7 +65,11 @@ class ToolStudioIntegrationServiceTest {
                         "POST /api/integration/runs/{runId}/replay",
                         "GET /api/integration/evidence-keys/{keyId}",
                         "POST /api/integration/gate-results",
-                        "GET /api/integration/drafts/{draftId}/gate-result"
+                        "GET /api/integration/drafts/{draftId}/gate-result",
+                        "GET /api/integration/events",
+                        "GET /api/integration/reconciliation",
+                        "GET /api/integration/operator-libraries/{libraryId}",
+                        "GET /api/integration/operator-test-suites/{suiteId}"
                 );
     }
 

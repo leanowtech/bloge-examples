@@ -20,6 +20,20 @@ public interface VisualOperatorContractTestSuiteRepository {
     Optional<VisualOperatorContractTestSuite> find(String suiteId);
 
     /**
+     * Returns one immutable stored revision when the repository supports history.
+     */
+    default Optional<VisualOperatorContractTestSuite> findRevision(String suiteId, long revision) {
+        return Optional.empty();
+    }
+
+    /**
+     * Returns the current aggregate revision, or zero when history is unsupported.
+     */
+    default long revision(String suiteId) {
+        return 0;
+    }
+
+    /**
      * @param suite suite to save
      * @return stored suite
      */

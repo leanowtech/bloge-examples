@@ -4,12 +4,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.integration.FailingIntegrationChangeEventOutbox;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.util.List;
@@ -26,10 +29,11 @@ class DatabaseVisualGraphRunRepositoryTest {
     private DatabaseVisualGraphRunRepository repository;
     private JdbcTemplate jdbc;
     private ObjectMapper objectMapper;
+    private DataSource dataSource;
 
     @BeforeEach
     void setUp() {
-        DataSource dataSource = new EmbeddedDatabaseBuilder()
+        dataSource = new EmbeddedDatabaseBuilder()
                 .setType(EmbeddedDatabaseType.H2)
                 .generateUniqueName(true)
                 .build();
@@ -59,6 +63,23 @@ class DatabaseVisualGraphRunRepositoryTest {
                     assertThat(verification.valid()).isFalse();
                     assertThat(verification.status()).isEqualTo("INVALID");
                 });
+    }
+
+    @Test
+    void assetAndChangeEventRollBackTogetherWhenOutboxAppendFails() {
+        VisualEvidenceSigner signer = new DatabaseVisualEvidenceSigner(jdbc);
+        DatabaseVisualGraphRunRepository failing = new DatabaseVisualGraphRunRepository(jdbc, objectMapper,
+                signer, new FailingIntegrationChangeEventOutbox());
+        failing.init();
+        TransactionTemplate transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+
+        assertThatThrownBy(() -> transaction.executeWithoutResult(
+                ignored -> failing.create(record("run-atomic"))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("simulated outbox failure");
+
+        assertThat(failing.find("run-atomic")).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM visual_graph_run_records", Long.class)).isZero();
     }
 
     @Test

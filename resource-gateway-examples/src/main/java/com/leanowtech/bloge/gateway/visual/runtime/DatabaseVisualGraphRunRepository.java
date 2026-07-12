@@ -2,11 +2,15 @@ package com.leanowtech.bloge.gateway.visual.runtime;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.visual.change.VisualChangeEventPublisher;
+import com.leanowtech.bloge.gateway.visual.change.VisualChangeFact;
+import com.leanowtech.bloge.gateway.visual.persistence.TransactionCommitActions;
 
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Collection;
@@ -45,21 +49,33 @@ public class DatabaseVisualGraphRunRepository implements VisualGraphRunRepositor
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
     private final VisualEvidenceSigner evidenceSigner;
+    private final VisualChangeEventPublisher changePublisher;
 
     /**
      * @param jdbc JDBC template for H2 access
      * @param objectMapper Jackson mapper for run serialization
      */
     public DatabaseVisualGraphRunRepository(JdbcTemplate jdbc, ObjectMapper objectMapper) {
-        this(jdbc, objectMapper, new DatabaseVisualEvidenceSigner(jdbc));
+        this(jdbc, objectMapper, new DatabaseVisualEvidenceSigner(jdbc),
+                VisualChangeEventPublisher.unavailable());
     }
 
     public DatabaseVisualGraphRunRepository(JdbcTemplate jdbc,
                                             ObjectMapper objectMapper,
                                             VisualEvidenceSigner evidenceSigner) {
+        this(jdbc, objectMapper, evidenceSigner, VisualChangeEventPublisher.unavailable());
+    }
+
+    public DatabaseVisualGraphRunRepository(JdbcTemplate jdbc,
+                                            ObjectMapper objectMapper,
+                                            VisualEvidenceSigner evidenceSigner,
+                                            VisualChangeEventPublisher changePublisher) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
         this.evidenceSigner = evidenceSigner == null ? VisualEvidenceSigner.unavailable() : evidenceSigner;
+        this.changePublisher = changePublisher == null
+                ? VisualChangeEventPublisher.unavailable()
+                : changePublisher;
     }
 
     /**
@@ -98,18 +114,23 @@ public class DatabaseVisualGraphRunRepository implements VisualGraphRunRepositor
     }
 
     @Override
+    @Transactional
     public VisualGraphRunRecord create(VisualGraphRunRecord record) {
         String runId = record.runId().isBlank() ? UUID.randomUUID().toString() : record.runId();
         VisualGraphRunRecord identified = record.withIdentity(runId, Instant.now());
         VisualGraphRunRecord stored = identified.withEvidenceSeal(
                 evidenceSigner.seal(identified.evidenceMaterialFingerprint()));
         persist(stored);
-        VisualGraphRunRecord previous = cache.putIfAbsent(runId, stored);
-        if (previous != null) {
-            throw new IllegalArgumentException("Visual graph run already exists: " + runId);
-        }
-        log.info("Created visual graph run record: {} source={} graph={} success={}",
-                stored.runId(), stored.sourceKind(), stored.graphName(), stored.success());
+        changePublisher.publish(new VisualChangeFact("RUN_COMPLETED", stored.tenantId(), stored.namespace(),
+                stored.environment(),
+                new VisualChangeFact.Aggregate("RUN", stored.runId(), 1,
+                        stored.evidenceMaterialFingerprint()),
+                "/api/integration/runs/" + stored.runId() + "/evidence", stored.sourceKind()));
+        TransactionCommitActions.afterCommitOrNow(() -> {
+            cache.put(runId, stored);
+            log.info("Created visual graph run record: {} source={} graph={} success={}",
+                    stored.runId(), stored.sourceKind(), stored.graphName(), stored.success());
+        });
         return stored;
     }
 

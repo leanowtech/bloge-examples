@@ -15,7 +15,9 @@ import com.leanowtech.bloge.gateway.carrier.TenantMdcCarrier;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.interceptor.QuotaConfigProvider;
 import com.leanowtech.bloge.gateway.integration.DatabaseGovernanceGateResultRepository;
+import com.leanowtech.bloge.gateway.integration.DatabaseIntegrationChangeEventOutbox;
 import com.leanowtech.bloge.gateway.integration.GovernanceGateResultRepository;
+import com.leanowtech.bloge.gateway.integration.IntegrationChangeEventOutbox;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.operator.PayloadExtractor;
 import com.leanowtech.bloge.gateway.operator.ResponseValidator;
@@ -48,6 +50,8 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeRolloutObservationRepository;
+import com.leanowtech.bloge.gateway.visual.testing.DatabaseVisualOperatorContractTestSuiteRepository;
+import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestSuiteRepository;
 import com.leanowtech.bloge.operators.http.HttpRequestInput;
 import com.leanowtech.bloge.operators.http.HttpRequestOperator;
 import com.leanowtech.bloge.spring.annotation.BlogeOperator;
@@ -225,6 +229,14 @@ public class GatewayConfiguration {
 
     // ── Persistence ─────────────────────────────────────────────────────
 
+    /** Transactional source of integration change events. */
+    @Bean
+    @ConditionalOnMissingBean
+    public IntegrationChangeEventOutbox integrationChangeEventOutbox(JdbcTemplate jdbc,
+                                                                      ObjectMapper objectMapper) {
+        return new DatabaseIntegrationChangeEventOutbox(jdbc, objectMapper);
+    }
+
     /**
      * Database-backed resource registry with in-memory caching and H2 persistence.
      *
@@ -251,8 +263,9 @@ public class GatewayConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public OperatorLibraryRegistry operatorLibraryRegistry(JdbcTemplate jdbc,
-                                                           ObjectMapper objectMapper) {
-        return new DatabaseOperatorLibraryRegistry(jdbc, objectMapper);
+                                                           ObjectMapper objectMapper,
+                                                           IntegrationChangeEventOutbox outbox) {
+        return new DatabaseOperatorLibraryRegistry(jdbc, objectMapper, outbox);
     }
 
     /**
@@ -279,8 +292,9 @@ public class GatewayConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public GraphDraftRepository graphDraftRepository(JdbcTemplate jdbc,
-                                                     ObjectMapper objectMapper) {
-        return new DatabaseGraphDraftRepository(jdbc, objectMapper);
+                                                     ObjectMapper objectMapper,
+                                                     IntegrationChangeEventOutbox outbox) {
+        return new DatabaseGraphDraftRepository(jdbc, objectMapper, outbox);
     }
 
     /**
@@ -308,8 +322,19 @@ public class GatewayConfiguration {
     @ConditionalOnMissingBean
     public VisualGraphRunRepository visualGraphRunRepository(JdbcTemplate jdbc,
                                                              ObjectMapper objectMapper,
-                                                             VisualEvidenceSigner evidenceSigner) {
-        return new DatabaseVisualGraphRunRepository(jdbc, objectMapper, evidenceSigner);
+                                                             VisualEvidenceSigner evidenceSigner,
+                                                             IntegrationChangeEventOutbox outbox) {
+        return new DatabaseVisualGraphRunRepository(jdbc, objectMapper, evidenceSigner, outbox);
+    }
+
+    /** Persistent operator contract suites participate in the same integration event stream. */
+    @Bean
+    @ConditionalOnMissingBean
+    public VisualOperatorContractTestSuiteRepository visualOperatorContractTestSuiteRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            IntegrationChangeEventOutbox outbox) {
+        return new DatabaseVisualOperatorContractTestSuiteRepository(jdbc, objectMapper, outbox);
     }
 
     /** Persistent local signing authority; replace with a KMS-backed bean in enterprise deployments. */

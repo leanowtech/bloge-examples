@@ -149,7 +149,52 @@ ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服
 
 当前 replay command 只支持 `RECORDED_ASSERTIONS + DENY`。`shadow/live` 重放仍未开放，因为它们需要独立的审批、隔离环境、幂等能力证明和 unknown-commit 处理，不能复用这个安全接口悄悄开启。
 
-### 3.3 演示脚本启动方式
+### 3.3 让 ANEKE 持续同步且可对账
+
+Resource Gateway 现在不要求 ANEKE 依赖 webhook 才能持续治理。draft、operator library、run 和 operator contract test suite 的权威写入会在**同一个数据库事务**中追加 integration event；任一 Outbox 写入失败时，资产写入也会回滚，不会产生“资产已经存在、治理侧永远不知道”的静默裂缝。
+
+![Resource Gateway 与 ANEKE 持续同步闭环](assets/resource-gateway-aneke-continuous-sync.svg)
+
+图源文件：[`assets/drawio/resource-gateway-aneke-continuous-sync.drawio`](assets/drawio/resource-gateway-aneke-continuous-sync.drawio)
+
+ANEKE 侧按以下顺序接入：
+
+1. 使用 `X-Purpose: CHANGE_SYNC` 调用 `GET /api/integration/reconciliation`，取得当前租户和环境的权威资产快照、各类数量、rolling fingerprint 和 `checkpointCursor`。
+2. 用快照重建或校正 ANEKE projection。`GRAPH_DRAFT`、`GRAPH_CONTRACT`、`RUN` 和 gate result 按 tenant/environment 隔离；当前 operator library 和 contract suite 是共享资产，会以 global scope 出现在每个租户的同步视图中。
+3. 保存快照里的 `checkpointCursor`，随后调用 `GET /api/integration/events?cursor=...&limit=100`。
+4. 按 `eventId` 去重，并按 `aggregate.kind + aggregate.id + aggregate.sequence` 防止旧 revision 覆盖新 revision。事件只携带 fingerprint 和稳定 `payloadRef`；draft、library、suite 可按事件 revision 读取不可变快照，run 按 runId 读取 evidence。
+5. 将本页 projection 更新和 `nextCursor` 放在 ANEKE 自己的同一事务中提交。`hasMore=true` 时继续拉取；`false` 时保存 `checkpointCursor` 并进入下一轮 polling。
+6. Polling 中断、请求超时或通知丢失时，从最后已提交 cursor 继续。重复读取同一个 cursor 会得到同一个固定 high-water 窗口，不会把处理中途的新事件混进本页。
+7. cursor 被篡改、跨租户/环境复用时返回 `400 RG.INTEGRATION.CURSOR_INVALID`；cursor 超过当前 7 天有效期返回 `410 RG.INTEGRATION.CURSOR_EXPIRED`，此时重新调用 reconciliation，不要猜测数据库 offset。
+
+首次拉取示例：
+
+```bash
+curl -sS 'http://localhost:8080/api/integration/events?limit=100' \
+  -H 'X-Tenant-Id: tenant-a' \
+  -H 'X-Organization-Id: knowledge-governance' \
+  -H 'X-Project-Id: tool-studio' \
+  -H 'X-Environment-Id: prod' \
+  -H 'X-Actor-Id: aneke-sync' \
+  -H 'X-Purpose: CHANGE_SYNC' \
+  -H 'X-Correlation-Id: sync-0001'
+```
+
+反熵快照示例：
+
+```bash
+curl -sS 'http://localhost:8080/api/integration/reconciliation' \
+  -H 'X-Tenant-Id: tenant-a' \
+  -H 'X-Organization-Id: knowledge-governance' \
+  -H 'X-Project-Id: tool-studio' \
+  -H 'X-Environment-Id: prod' \
+  -H 'X-Actor-Id: aneke-sync' \
+  -H 'X-Purpose: CHANGE_SYNC'
+```
+
+这里不承诺网络级 exactly-once。系统采用“生产端 transactional outbox + ANEKE 幂等消费 + opaque cursor + reconciliation”的可恢复最终一致性模型。Webhook 仍未开放；后续即使增加 webhook，它也只负责低延迟提醒，不能替代 cursor 和对账快照。
+
+### 3.4 演示脚本启动方式
 
 推荐演示时直接使用仓库根目录下的专用脚本。它默认执行 `resource-gateway-examples` 的 `-Pfrontend package`，把 React UI 打进 Spring Boot 静态资源，然后在 `8080` 启动服务。为缩短演示准备时间，脚本默认给 Maven 打包加 `-DskipTests`；需要把测试也跑进去时使用 `--run-tests`。
 
@@ -190,7 +235,7 @@ Legacy composer: http://localhost:8080/examples/gateway
 
 脚本使用 `target/example-pids/visual-canvas-demo.pid` 记录进程，使用 `target/example-logs/visual-canvas-demo.log` 记录日志；停止时会校验 PID/端口上的进程确实像 Resource Gateway demo，避免误停其它服务。
 
-### 3.4 手动启动方式
+### 3.5 手动启动方式
 
 如果只运行后端 API 或旧版静态资源：
 
@@ -224,7 +269,7 @@ npm run dev
 
 当前 Vite dev proxy 只代理 `/api` 到 Spring Boot。算子库导入使用 `/admin/visual-operator-libraries/*`，所以完整体验建议优先使用 Maven 打包后的 `/author/`。
 
-### 3.5 VSCode 插件轻量化方向
+### 3.6 VSCode 插件轻量化方向
 
 如果用户只是想在业务仓库里看懂 `.bloge` 拓扑、导入本地算子 schema、配置 mock 数据并跑表格测试，每次都启动 Resource Gateway 服务端会显得偏重。后续推荐把 `/author/` 的核心能力下沉成 VSCode 插件入口：
 
@@ -1109,7 +1154,7 @@ GET /api/gateway/examples/scenarios/{graphName}/diagram
 | `visual/golden` | golden case 保存、运行、认证 |
 | `visual/runtime` | run history、精确 node invocation attempt、payload 脱敏、持久 evidence seal 和 trace/replay 数据 |
 | `visual/resource` | OpenAPI/resource contract 投影到 visual resource/operator surface |
-| `integration` | Tool Studio versioned envelope、capability probe、draft dependency export、evidence/replay、验签公钥和 governance gate feedback |
+| `integration` | Tool Studio versioned envelope、capability probe、draft dependency export、evidence/replay、验签公钥、governance gate feedback、transactional outbox、签名 cursor 和 reconciliation snapshot |
 
 resource gateway 自身继续保留：
 
@@ -1131,6 +1176,9 @@ resource gateway 自身继续保留：
 7. 远程 `$ref`、不安全 schema、秘密字段、外部副作用和高风险 runtime capability 必须被 warning-gate 或 blocking-gate。
 8. evidence 缺节点输入/输出或签名不可验证时必须进入 `QUARANTINED`，不能被 publish gate 当作可采纳证据。
 9. governance gate result 必须绑定不可变 draft fingerprint；画布必须区分 `CURRENT`、`STALE`、`EXPIRED` 与 `MISSING`。
+10. draft/operator/run/contract suite 的权威写入与 change event 必须同事务提交；Outbox 失败时资产也必须回滚。
+11. event cursor 必须绑定 tenant/environment、签名并过期；客户端不能把数据库 offset 当协议。
+12. Polling 或未来 webhook 都不是权威源；消费端漂移最终必须由 reconciliation snapshot 发现并收敛。
 
 ## 8. 典型业务流程
 
@@ -1211,6 +1259,10 @@ resource gateway 自身继续保留：
 | `POST` | `/api/integration/runs/{runId}/replay` | 以 `DENY` 副作用策略重算 recorded payload 断言，生成带 parent lineage 的新 replay run/evidence |
 | `GET` | `/api/integration/evidence-keys/{keyId}` | 获取 evidence seal 验签公钥 |
 | `POST` | `/api/integration/gate-results` | ANEKE 回写绑定 draft fingerprint 的治理门禁结果 |
+| `GET` | `/api/integration/events` | 按签名 opaque cursor 拉取固定 high-water 事件窗口；仅允许 `CHANGE_SYNC` purpose |
+| `GET` | `/api/integration/reconciliation` | 在一致数据库快照上返回租户/环境权威资产清单、计数、rolling fingerprint 和 checkpoint cursor |
+| `GET` | `/api/integration/operator-libraries/{libraryId}` | 按可选 revision 获取事件引用的 operator library 不可变快照 |
+| `GET` | `/api/integration/operator-test-suites/{suiteId}` | 按可选 revision 获取事件引用的 contract test suite 不可变快照 |
 | `GET` | `/api/gateway/examples/scenarios` | showcase 场景列表 |
 | `GET` | `/api/gateway/examples/scenarios/{graphName}/diagram` | showcase 场景图 |
 
@@ -1252,6 +1304,14 @@ resource gateway 自身继续保留：
 
 先确认链接里的 `draftId` 指向哪个 revision。节点重命名、删除或 operator replacement 后，旧 `nodeId`、`operatorRef` 或 gate issue `targetPath` 可能已经失效；画布会继续打开草稿，但以 warning 显示未命中的目标。若 gate freshness 是 `STALE/EXPIRED`，应在 ANEKE 对当前 draft fingerprint 重新执行门禁，而不是修改链接绕过检查。
 
+**ANEKE event cursor 返回 400 或 410。**
+
+`400 RG.INTEGRATION.CURSOR_INVALID` 表示 token 被修改、格式损坏，或被拿到另一个 tenant/environment 使用；不要重试或尝试解析内部位置。`410 RG.INTEGRATION.CURSOR_EXPIRED` 表示离线时间超过 cursor 有效期，调用 `/api/integration/reconciliation` 重建 projection，并从返回的 `checkpointCursor` 恢复增量同步。
+
+**事件处理成功，但 ANEKE 重启后又收到同一事件。**
+
+这是消费端没有把 projection 更新和 cursor checkpoint 放在同一事务提交造成的。Resource Gateway 保证同一 cursor 的窗口稳定，但不替 ANEKE 管理消费事务。ANEKE 必须同时保存 `eventId` 去重记录、aggregate sequence 和 `nextCursor`；重复事件应成为幂等 no-op。
+
 ## 11. 验证与回归命令
 
 前端核心回归：
@@ -1287,7 +1347,9 @@ mvn -f resource-gateway-examples/pom.xml -Pfrontend \
 - 完整 AI tool/event/message/webhook 执行平面。
 - 把 visual core 物理拆成独立 Maven artifact。
 - KMS/HSM 托管的 evidence key；当前持久 Ed25519 provider 用于本地 H2 演示，企业部署必须替换 `VisualEvidenceSigner` SPI。
-- 生成新 run lineage 的无副作用 replay command；当前 replay 是脱敏 recorded payload 读取接口。
+- webhook subscription、签名投递、重试与 DLQ；当前已具备 polling cursor 和 reconciliation，后续 webhook 只能作为低延迟提示层。
+- 外部数据库集群、Outbox retention job 和灾备恢复编排；当前 H2 实现用于证明事务、游标和对账协议，不等于企业 HA 存储。
+- `shadow/live` replay；当前已具备生成新 run lineage 的 `RECORDED_ASSERTIONS + DENY` 无副作用 replay command。
 
 后续可以继续推进：
 

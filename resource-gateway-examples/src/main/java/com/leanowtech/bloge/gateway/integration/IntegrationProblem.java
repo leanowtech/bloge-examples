@@ -50,4 +50,12 @@ public record IntegrationProblem(
         return new IntegrationProblem("", "urn:bloge:problem:integration-conflict", title,
                 409, code, false, correlationId, details);
     }
+
+    public static IntegrationProblem gone(String code,
+                                          String title,
+                                          String correlationId,
+                                          Map<String, Object> details) {
+        return new IntegrationProblem("", "urn:bloge:problem:integration-resource-gone", title,
+                410, code, false, correlationId, details);
+    }
 }

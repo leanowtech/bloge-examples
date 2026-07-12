@@ -2,11 +2,16 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.visual.change.VisualChangeEventPublisher;
+import com.leanowtech.bloge.gateway.visual.change.VisualChangeFact;
+import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
+import com.leanowtech.bloge.gateway.visual.persistence.TransactionCommitActions;
 
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
 import java.util.Comparator;
@@ -67,14 +72,24 @@ public class DatabaseOperatorLibraryRegistry implements OperatorLibraryRegistry 
     private final ConcurrentHashMap<String, OperatorLibrary> cache = new ConcurrentHashMap<>();
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final VisualChangeEventPublisher changePublisher;
 
     /**
      * @param jdbc JDBC template
      * @param objectMapper JSON mapper
      */
     public DatabaseOperatorLibraryRegistry(JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        this(jdbc, objectMapper, VisualChangeEventPublisher.unavailable());
+    }
+
+    public DatabaseOperatorLibraryRegistry(JdbcTemplate jdbc,
+                                           ObjectMapper objectMapper,
+                                           VisualChangeEventPublisher changePublisher) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
+        this.changePublisher = changePublisher == null
+                ? VisualChangeEventPublisher.unavailable()
+                : changePublisher;
     }
 
     /**
@@ -132,41 +147,59 @@ public class DatabaseOperatorLibraryRegistry implements OperatorLibraryRegistry 
     }
 
     @Override
+    @Transactional
     public synchronized OperatorLibrary upsert(OperatorLibrary library,
                                                OperatorLibraryRevision.RevisionMetadata metadata) {
         ensureNoDuplicateOperatorRefs(library);
-        String action = cache.containsKey(library.libraryId())
-                ? OperatorLibraryRevision.ACTION_REPLACE
-                : OperatorLibraryRevision.ACTION_CREATE;
-        persist(library, OperatorLibraryRevision.record(library, nextRevision(library.libraryId()), action,
-                metadata));
-        cache.put(library.libraryId(), library);
-        log.info("Upserted visual operator library: {}", library.libraryId());
+        long nextRevision = nextRevision(library.libraryId());
+        String action = nextRevision == 1
+                ? OperatorLibraryRevision.ACTION_CREATE
+                : OperatorLibraryRevision.ACTION_REPLACE;
+        OperatorLibraryRevision revision = OperatorLibraryRevision.record(library, nextRevision, action, metadata);
+        persist(library, revision);
+        appendEvent(revision);
+        TransactionCommitActions.afterCommitOrNow(() -> {
+            cache.put(library.libraryId(), library);
+            log.info("Upserted visual operator library: {}", library.libraryId());
+        });
         return library;
     }
 
     @Override
+    @Transactional
     public synchronized OperatorLibrary restore(OperatorLibraryRevision revision,
                                                 OperatorLibraryRevision.RevisionMetadata metadata) {
         OperatorLibrary library = requireRestorableLibrary(revision);
         ensureNoDuplicateOperatorRefs(library);
-        persist(library, OperatorLibraryRevision.restore(library, nextRevision(library.libraryId()),
-                revision.revision(), metadata));
-        cache.put(library.libraryId(), library);
-        log.info("Restored visual operator library: {} from revision {}", library.libraryId(), revision.revision());
+        OperatorLibraryRevision restored = OperatorLibraryRevision.restore(library,
+                nextRevision(library.libraryId()), revision.revision(), metadata);
+        persist(library, restored);
+        appendEvent(restored);
+        TransactionCommitActions.afterCommitOrNow(() -> {
+            cache.put(library.libraryId(), library);
+            log.info("Restored visual operator library: {} from revision {}", library.libraryId(),
+                    revision.revision());
+        });
         return library;
     }
 
     @Override
+    @Transactional
     public synchronized void delete(String libraryId, OperatorLibraryRevision.RevisionMetadata metadata) {
         OperatorLibrary library = cache.get(libraryId);
         if (library != null) {
-            persistRevision(OperatorLibraryRevision.record(library, nextRevision(libraryId),
-                    OperatorLibraryRevision.ACTION_DELETE, metadata));
+            OperatorLibraryRevision revision = OperatorLibraryRevision.record(library, nextRevision(libraryId),
+                    OperatorLibraryRevision.ACTION_DELETE, metadata);
+            persistRevision(revision);
+            jdbc.update(DELETE, libraryId);
+            appendEvent(revision);
+        } else {
+            jdbc.update(DELETE, libraryId);
         }
-        jdbc.update(DELETE, libraryId);
-        cache.remove(libraryId);
-        log.info("Deleted visual operator library: {}", libraryId);
+        TransactionCommitActions.afterCommitOrNow(() -> {
+            cache.remove(libraryId);
+            log.info("Deleted visual operator library: {}", libraryId);
+        });
     }
 
     private void persist(OperatorLibrary library, OperatorLibraryRevision revision) {
@@ -186,6 +219,23 @@ public class DatabaseOperatorLibraryRegistry implements OperatorLibraryRegistry 
             throw new IllegalStateException("Failed to serialize visual operator library revision: "
                     + revision.libraryId() + "@" + revision.revision(), e);
         }
+    }
+
+    private void appendEvent(OperatorLibraryRevision revision) {
+        String eventType = switch (revision.action()) {
+            case OperatorLibraryRevision.ACTION_CREATE -> "OPERATOR_LIBRARY_CREATED";
+            case OperatorLibraryRevision.ACTION_DELETE -> "OPERATOR_LIBRARY_DELETED";
+            case OperatorLibraryRevision.ACTION_RESTORE -> "OPERATOR_LIBRARY_RESTORED";
+            default -> "OPERATOR_LIBRARY_UPDATED";
+        };
+        String fingerprint = VisualBundleFingerprint.fromMaterial(Map.of("operatorLibrary", revision.library()));
+        changePublisher.publish(new VisualChangeFact(eventType, VisualChangeFact.GLOBAL_SCOPE, "shared",
+                VisualChangeFact.GLOBAL_SCOPE,
+                new VisualChangeFact.Aggregate("OPERATOR_LIBRARY", revision.libraryId(),
+                        revision.revision(), fingerprint),
+                "/api/integration/operator-libraries/" + revision.libraryId() + "?revision="
+                        + revision.revision(),
+                revision.revisionMetadata().changeSource()));
     }
 
     private long nextRevision(String libraryId) {

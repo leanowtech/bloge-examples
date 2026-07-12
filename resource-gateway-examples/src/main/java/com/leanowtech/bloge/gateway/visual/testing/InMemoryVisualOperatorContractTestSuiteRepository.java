@@ -1,7 +1,5 @@
 package com.leanowtech.bloge.gateway.visual.testing;
 
-import org.springframework.stereotype.Component;
-
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -11,7 +9,6 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * In-memory repository for demo and local CI operator contract-test suites.
  */
-@Component
 public class InMemoryVisualOperatorContractTestSuiteRepository
         implements VisualOperatorContractTestSuiteRepository {
 

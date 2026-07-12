@@ -2,12 +2,17 @@ package com.leanowtech.bloge.gateway.visual.draft;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.visual.change.VisualChangeEventPublisher;
+import com.leanowtech.bloge.gateway.visual.change.VisualChangeFact;
+import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
+import com.leanowtech.bloge.gateway.visual.persistence.TransactionCommitActions;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSecretGuard;
 
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -75,14 +80,24 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
     private final ConcurrentHashMap<String, GraphDraft> cache = new ConcurrentHashMap<>();
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final VisualChangeEventPublisher changePublisher;
 
     /**
      * @param jdbc JDBC template
      * @param objectMapper JSON mapper
      */
     public DatabaseGraphDraftRepository(JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        this(jdbc, objectMapper, VisualChangeEventPublisher.unavailable());
+    }
+
+    public DatabaseGraphDraftRepository(JdbcTemplate jdbc,
+                                        ObjectMapper objectMapper,
+                                        VisualChangeEventPublisher changePublisher) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
+        this.changePublisher = changePublisher == null
+                ? VisualChangeEventPublisher.unavailable()
+                : changePublisher;
     }
 
     /**
@@ -157,6 +172,7 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
     }
 
     @Override
+    @Transactional
     public GraphDraft save(GraphDraft draft) {
         VisualSecretGuard.requireNoDraftSecrets(draft);
         String draftId = draft.draftId().isBlank() ? UUID.randomUUID().toString() : draft.draftId();
@@ -168,12 +184,16 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
                 .withRevisionMetadata(draft.revisionMetadata().storedFrom(
                         previous == null ? null : previous.revisionMetadata(), "Saved draft."));
         persist(stored);
-        cache.put(draftId, stored);
-        log.info("Saved visual graph draft: {}@{}", draftId, nextRevision);
+        appendEvent(previous == null ? "GRAPH_DRAFT_CREATED" : "GRAPH_DRAFT_UPDATED", stored);
+        TransactionCommitActions.afterCommitOrNow(() -> {
+            cache.put(draftId, stored);
+            log.info("Saved visual graph draft: {}@{}", draftId, nextRevision);
+        });
         return stored;
     }
 
     @Override
+    @Transactional
     public Optional<GraphDraft> saveIfRevision(String draftId, long expectedRevision, GraphDraft draft) {
         VisualSecretGuard.requireNoDraftSecrets(draft);
         GraphDraft current = cache.get(draftId);
@@ -192,23 +212,33 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
             return Optional.empty();
         }
         jdbc.update(UPSERT_REVISION, stored.draftId(), stored.revision(), json);
-        cache.put(draftId, stored);
-        log.info("Patched visual graph draft: {}@{}", draftId, stored.revision());
+        appendEvent("GRAPH_DRAFT_UPDATED", stored);
+        TransactionCommitActions.afterCommitOrNow(() -> {
+            cache.put(draftId, stored);
+            log.info("Patched visual graph draft: {}@{}", draftId, stored.revision());
+        });
         return Optional.of(stored);
     }
 
     @Override
+    @Transactional
     public synchronized void delete(String draftId, GraphDraft.RevisionMetadata metadata) {
-        GraphDraft current = cache.get(draftId);
+        GraphDraft current = Optional.ofNullable(cache.get(draftId)).orElseGet(
+                () -> latestRevision(draftId).orElse(null));
         if (current != null) {
             GraphDraft deleted = current.withIdentity(draftId, current.revision() + 1)
                     .withRevisionMetadata((metadata == null ? GraphDraft.RevisionMetadata.empty() : metadata)
                             .storedFrom(current.revisionMetadata(), "Deleted draft."));
             persistRevision(deleted);
+            jdbc.update(DELETE, draftId);
+            appendEvent("GRAPH_DRAFT_DELETED", deleted);
+        } else {
+            jdbc.update(DELETE, draftId);
         }
-        jdbc.update(DELETE, draftId);
-        cache.remove(draftId);
-        log.info("Deleted visual graph draft: {}", draftId);
+        TransactionCommitActions.afterCommitOrNow(() -> {
+            cache.remove(draftId);
+            log.info("Deleted visual graph draft: {}", draftId);
+        });
     }
 
     private void persist(GraphDraft draft) {
@@ -227,6 +257,17 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize visual graph draft revision: " + draft.draftId(), e);
         }
+    }
+
+    private void appendEvent(String eventType, GraphDraft draft) {
+        String fingerprint = VisualBundleFingerprint.fromMaterial(Map.of(
+                "draft", draft.withNodeFixtures(Map.of())));
+        changePublisher.publish(new VisualChangeFact(eventType, draft.tenantId(), draft.namespace(),
+                draft.environment(),
+                new VisualChangeFact.Aggregate("GRAPH_DRAFT", draft.draftId(), draft.revision(),
+                        fingerprint),
+                "/api/integration/drafts/" + draft.draftId() + "/export?revision=" + draft.revision(),
+                draft.revisionMetadata().changeSource()));
     }
 
     private Optional<GraphDraft> latestRevision(String draftId) {

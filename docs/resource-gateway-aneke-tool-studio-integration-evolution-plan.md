@@ -1371,6 +1371,8 @@ operator 从 schema 导入到生产可用需要 `DISCOVERED -> DESCRIBED -> VERI
 
 退出门槛：随机丢弃/重复/乱序 10% event 后，双方可在约定时间内自动收敛；完成一次恢复演练；webhook 故障不影响权威数据。
 
+当前落地状态（Round 3）：已实现 draft/operator/run/operator-suite 与 outbox 同事务、全局单调序列、bounded high-water pull feed、持久签名且作用域绑定的 opaque cursor、cursor 过期 410，以及 DB-authoritative reconciliation snapshot。由此已经关闭“push 丢失后无法对账”的 P0 病根，但尚未满足本阶段退出门槛：signed webhook、DLQ/重试、outbox retention、投递 SLO 与随机丢弃/重复/乱序故障注入仍待实现。能力探针必须继续对 `webhook=false`，不得把可靠 pull feed 宣称为完整事件投递平台。
+
 ### Stage 5 - 规模化和产品化（按触发器）
 
 交付：控制面/运行面/证据面物理拆分、regional deployment、SDK、authoring surface package、FinOps、advanced policy integration。

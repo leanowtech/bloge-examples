@@ -45,6 +45,12 @@ public record IntegrationCapabilities(
         objects.put("evidenceVerificationKey", List.of(
                 com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner.VerificationKey.SCHEMA_VERSION));
         objects.put("governanceGateResult", List.of(GovernanceGateResult.SCHEMA_VERSION));
+        objects.put("integrationEvent", List.of(IntegrationChangeEvent.SCHEMA_VERSION));
+        objects.put("eventCursor", List.of(IntegrationEventCursorCodec.SCHEMA_VERSION));
+        objects.put("changeFeed", List.of(IntegrationChangeFeed.SCHEMA_VERSION));
+        objects.put("reconciliationSnapshot", List.of(IntegrationReconciliationSnapshot.SCHEMA_VERSION));
+        objects.put("contractTestSuite", List.of(
+                com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestSuite.SCHEMA_VERSION));
 
         Map<String, Boolean> features = new LinkedHashMap<>();
         features.put("draftExportDependencyProfile", true);
@@ -57,7 +63,9 @@ public record IntegrationCapabilities(
         features.put("evidenceSignature", evidenceSignature);
         features.put("deepLinks", true);
         features.put("governanceGateFeedback", true);
-        features.put("eventCursor", false);
+        features.put("transactionalOutbox", true);
+        features.put("eventCursor", true);
+        features.put("reconciliationSnapshot", true);
         features.put("webhook", false);
 
         return new IntegrationCapabilities("", "", "", objects, features, List.of(
@@ -68,7 +76,11 @@ public record IntegrationCapabilities(
                 new Endpoint("POST", "/api/integration/runs/{runId}/replay"),
                 new Endpoint("GET", "/api/integration/evidence-keys/{keyId}"),
                 new Endpoint("POST", "/api/integration/gate-results"),
-                new Endpoint("GET", "/api/integration/drafts/{draftId}/gate-result")
+                new Endpoint("GET", "/api/integration/drafts/{draftId}/gate-result"),
+                new Endpoint("GET", "/api/integration/events"),
+                new Endpoint("GET", "/api/integration/reconciliation"),
+                new Endpoint("GET", "/api/integration/operator-libraries/{libraryId}"),
+                new Endpoint("GET", "/api/integration/operator-test-suites/{suiteId}")
         ));
     }
 

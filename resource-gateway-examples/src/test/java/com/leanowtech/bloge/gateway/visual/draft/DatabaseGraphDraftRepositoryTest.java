@@ -2,12 +2,15 @@ package com.leanowtech.bloge.gateway.visual.draft;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.leanowtech.bloge.gateway.integration.FailingIntegrationChangeEventOutbox;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.util.List;
@@ -24,10 +27,11 @@ class DatabaseGraphDraftRepositoryTest {
     private DatabaseGraphDraftRepository repository;
     private JdbcTemplate jdbc;
     private ObjectMapper objectMapper;
+    private DataSource dataSource;
 
     @BeforeEach
     void setUp() {
-        DataSource dataSource = new EmbeddedDatabaseBuilder()
+        dataSource = new EmbeddedDatabaseBuilder()
                 .setType(EmbeddedDatabaseType.H2)
                 .generateUniqueName(true)
                 .build();
@@ -227,6 +231,37 @@ class DatabaseGraphDraftRepositoryTest {
         )));
 
         assertThat(repository.find(stored.draftId())).contains(stored);
+    }
+
+    @Test
+    void assetAndChangeEventRollBackTogetherWhenOutboxAppendFails() {
+        DatabaseGraphDraftRepository failing = new DatabaseGraphDraftRepository(jdbc, objectMapper,
+                new FailingIntegrationChangeEventOutbox());
+        failing.init();
+        TransactionTemplate transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+
+        assertThatThrownBy(() -> transaction.executeWithoutResult(
+                ignored -> failing.save(simpleDraft("draft-atomic", 0))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("simulated outbox failure");
+
+        assertThat(failing.find("draft-atomic")).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM visual_graph_drafts", Long.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM visual_graph_draft_revisions", Long.class)).isZero();
+    }
+
+    @Test
+    void cacheMutationWaitsForDatabaseCommit() {
+        TransactionTemplate transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+
+        transaction.executeWithoutResult(status -> {
+            repository.save(simpleDraft("draft-rolled-back", 0));
+            assertThat(repository.find("draft-rolled-back")).isEmpty();
+            status.setRollbackOnly();
+        });
+
+        assertThat(repository.find("draft-rolled-back")).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM visual_graph_drafts", Long.class)).isZero();
     }
 
     @Test

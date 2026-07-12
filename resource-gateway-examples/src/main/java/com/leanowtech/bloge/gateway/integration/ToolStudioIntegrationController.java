@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import org.springframework.http.HttpHeaders;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,9 +23,17 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 public class ToolStudioIntegrationController {
 
     private final ToolStudioIntegrationService service;
+    private final IntegrationChangeFeedService changeFeedService;
 
     public ToolStudioIntegrationController(ToolStudioIntegrationService service) {
+        this(service, null);
+    }
+
+    @Autowired
+    public ToolStudioIntegrationController(ToolStudioIntegrationService service,
+                                           IntegrationChangeFeedService changeFeedService) {
         this.service = service;
+        this.changeFeedService = changeFeedService;
     }
 
     @GetMapping("/capabilities")
@@ -76,6 +85,43 @@ public class ToolStudioIntegrationController {
     public IntegrationEnvelope<GovernanceGateView> governanceGate(@PathVariable String draftId,
                                                                   @RequestHeader HttpHeaders headers) {
         return service.governanceGate(draftId, requestContext(headers));
+    }
+
+    @GetMapping("/events")
+    public IntegrationEnvelope<IntegrationChangeFeed> events(
+            @RequestParam(defaultValue = "") String cursor,
+            @RequestParam(defaultValue = "100") int limit,
+            @RequestHeader HttpHeaders headers) {
+        return requireChangeFeed().events(cursor, limit, requestContext(headers));
+    }
+
+    @GetMapping("/reconciliation")
+    public IntegrationEnvelope<IntegrationReconciliationSnapshot> reconciliation(
+            @RequestHeader HttpHeaders headers) {
+        return requireChangeFeed().reconciliation(requestContext(headers));
+    }
+
+    @GetMapping("/operator-libraries/{libraryId}")
+    public IntegrationEnvelope<com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary> operatorLibrary(
+            @PathVariable String libraryId,
+            @RequestParam(defaultValue = "0") long revision,
+            @RequestHeader HttpHeaders headers) {
+        return requireChangeFeed().operatorLibrary(libraryId, revision, requestContext(headers));
+    }
+
+    @GetMapping("/operator-test-suites/{suiteId}")
+    public IntegrationEnvelope<com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestSuite> testSuite(
+            @PathVariable String suiteId,
+            @RequestParam(defaultValue = "0") long revision,
+            @RequestHeader HttpHeaders headers) {
+        return requireChangeFeed().testSuite(suiteId, revision, requestContext(headers));
+    }
+
+    private IntegrationChangeFeedService requireChangeFeed() {
+        if (changeFeedService == null) {
+            throw new IllegalStateException("Integration change feed service is unavailable");
+        }
+        return changeFeedService;
     }
 
     private static IntegrationRequestContext requestContext(HttpHeaders headers) {
