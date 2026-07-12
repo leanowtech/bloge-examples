@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.runtime;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 
 import java.lang.reflect.Array;
@@ -43,6 +44,13 @@ import java.util.TreeSet;
  * @param resultsSummary shape-only summary of node results
  * @param nodeSnapshots shape-only draft node metadata keyed by node id
  * @param generatedDsl generated or frozen DSL used for execution
+ * @param draftFingerprint immutable fingerprint of the executed draft material
+ * @param operatorDependencyFingerprint fingerprint of the operator snapshot set used by the run
+ * @param contextPayload sanitized submitted context retained for governed replay
+ * @param outputPayload sanitized selected output retained for governed replay
+ * @param resultsPayload sanitized node results retained for governed replay
+ * @param redaction sanitizer audit metadata
+ * @param edgeSnapshots executed draft edge metadata used to reconstruct edge trace
  */
 public record VisualGraphRunRecord(
         String schemaVersion,
@@ -70,9 +78,16 @@ public record VisualGraphRunRecord(
         Map<String, Object> outputSummary,
         Map<String, Object> resultsSummary,
         Map<String, NodeSnapshot> nodeSnapshots,
-        String generatedDsl
+        String generatedDsl,
+        String draftFingerprint,
+        String operatorDependencyFingerprint,
+        Map<String, Object> contextPayload,
+        Object outputPayload,
+        Map<String, Object> resultsPayload,
+        VisualPayloadRedactionManifest redaction,
+        List<EdgeSnapshot> edgeSnapshots
 ) {
-    public static final String SCHEMA_VERSION = "bloge.visualGraphRunRecord.v1";
+    public static final String SCHEMA_VERSION = "bloge.visualGraphRunRecord.v2";
     public static final String SOURCE_TRANSIENT_DRAFT = "TRANSIENT_DRAFT";
     public static final String SOURCE_STORED_DRAFT = "STORED_DRAFT";
     public static final String SOURCE_PUBLICATION = "PUBLICATION";
@@ -108,6 +123,48 @@ public record VisualGraphRunRecord(
         resultsSummary = resultsSummary == null ? Map.of() : new LinkedHashMap<>(resultsSummary);
         nodeSnapshots = nodeSnapshots == null ? Map.of() : new LinkedHashMap<>(nodeSnapshots);
         generatedDsl = generatedDsl == null ? "" : generatedDsl;
+        draftFingerprint = draftFingerprint == null ? "" : draftFingerprint;
+        operatorDependencyFingerprint = operatorDependencyFingerprint == null ? "" : operatorDependencyFingerprint;
+        contextPayload = contextPayload == null ? Map.of() : new LinkedHashMap<>(contextPayload);
+        resultsPayload = resultsPayload == null ? Map.of() : new LinkedHashMap<>(resultsPayload);
+        redaction = redaction == null ? VisualPayloadRedactionManifest.empty() : redaction;
+        edgeSnapshots = edgeSnapshots == null ? List.of() : List.copyOf(edgeSnapshots);
+    }
+
+    /**
+     * Backward-compatible constructor for callers using the v1 run-record shape.
+     */
+    public VisualGraphRunRecord(String schemaVersion,
+                                String runId,
+                                String sourceKind,
+                                String draftId,
+                                long draftRevision,
+                                String publicationId,
+                                String sourceArtifactKind,
+                                String graphName,
+                                String tenantId,
+                                String namespace,
+                                String environment,
+                                String outputNode,
+                                Instant createdAt,
+                                boolean validated,
+                                boolean compiled,
+                                boolean success,
+                                long elapsedMs,
+                                Map<String, Long> nodeElapsedMs,
+                                Map<String, String> statusMap,
+                                List<VisualDiagnostic> diagnostics,
+                                List<String> errors,
+                                Map<String, Object> contextSummary,
+                                Map<String, Object> outputSummary,
+                                Map<String, Object> resultsSummary,
+                                Map<String, NodeSnapshot> nodeSnapshots,
+                                String generatedDsl) {
+        this(schemaVersion, runId, sourceKind, draftId, draftRevision, publicationId, sourceArtifactKind, graphName,
+                tenantId, namespace, environment, outputNode, createdAt, validated, compiled, success, elapsedMs,
+                nodeElapsedMs, statusMap, diagnostics, errors, contextSummary, outputSummary, resultsSummary,
+                nodeSnapshots, generatedDsl, "", "", Map.of(), null, Map.of(),
+                VisualPayloadRedactionManifest.empty(), List.of());
     }
 
     /**
@@ -313,7 +370,8 @@ public record VisualGraphRunRecord(
         return new VisualGraphRunRecord(schemaVersion, newRunId, sourceKind, draftId, draftRevision,
                 publicationId, sourceArtifactKind, graphName, tenantId, namespace, environment, outputNode, newCreatedAt,
                 validated, compiled, success, elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary,
-                outputSummary, resultsSummary, nodeSnapshots, generatedDsl);
+                outputSummary, resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint,
+                operatorDependencyFingerprint, contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots);
     }
 
     private static VisualGraphRunRecord fromDraft(String sourceKind,
@@ -334,6 +392,8 @@ public record VisualGraphRunRecord(
                 ? new VisualGraphRunResponse(false, false, false, "", "", null, Map.of(), Map.of(), 0,
                         List.of(), List.of("Visual graph run response is missing."), null, null, "")
                 : response;
+        VisualPayloadSanitizer.Capture payloadCapture = VisualPayloadSanitizer.capture(
+                context, safeResponse.output(), safeResponse.results());
         return new VisualGraphRunRecord(
                 "",
                 "",
@@ -360,8 +420,28 @@ public record VisualGraphRunRecord(
                 summarizeRoot(safeResponse.output()),
                 summarizeMap(safeResponse.results()),
                 nodeSnapshots(draft),
-                safeResponse.generatedDsl()
+                safeResponse.generatedDsl(),
+                draftFingerprint(draft),
+                operatorDependencyFingerprint(draft),
+                payloadCapture.context(),
+                payloadCapture.output(),
+                payloadCapture.results(),
+                payloadCapture.redaction(),
+                edgeSnapshots(draft)
         );
+    }
+
+    private static String draftFingerprint(GraphDraft draft) {
+        return draft == null ? "" : VisualBundleFingerprint.fromMaterial(Map.of(
+                "draft", draft.withNodeFixtures(Map.of())
+        ));
+    }
+
+    private static String operatorDependencyFingerprint(GraphDraft draft) {
+        return draft == null ? "" : VisualBundleFingerprint.fromMaterial(Map.of(
+                "operatorFingerprints", draft.operatorFingerprints(),
+                "operatorSnapshots", draft.operatorSnapshots()
+        ));
     }
 
     private static Map<String, NodeSnapshot> nodeSnapshots(GraphDraft draft) {
@@ -374,6 +454,16 @@ public record VisualGraphRunRecord(
             snapshots.put(node.id(), new NodeSnapshot(node.id(), i, node.operatorRef(), node.label()));
         }
         return snapshots;
+    }
+
+    private static List<EdgeSnapshot> edgeSnapshots(GraphDraft draft) {
+        if (draft == null || draft.edges().isEmpty()) {
+            return List.of();
+        }
+        return draft.edges().stream()
+                .map(edge -> new EdgeSnapshot(edge.id(), edge.kind(), edge.source().nodeId(), edge.target().nodeId(),
+                        edge.source().port(), edge.target().port(), edge.condition()))
+                .toList();
     }
 
     private static Map<String, Object> summarizeMap(Map<String, Object> values) {
@@ -503,6 +593,29 @@ public record VisualGraphRunRecord(
             nodeIndex = Math.max(-1, nodeIndex);
             operatorRef = operatorRef == null ? "" : operatorRef;
             label = label == null ? "" : label;
+        }
+    }
+
+    /**
+     * Immutable draft edge metadata captured with the run.
+     */
+    public record EdgeSnapshot(
+            String edgeId,
+            String kind,
+            String sourceNodeId,
+            String targetNodeId,
+            String sourcePort,
+            String targetPort,
+            String condition
+    ) {
+        public EdgeSnapshot {
+            edgeId = edgeId == null ? "" : edgeId;
+            kind = kind == null ? "" : kind;
+            sourceNodeId = sourceNodeId == null ? "" : sourceNodeId;
+            targetNodeId = targetNodeId == null ? "" : targetNodeId;
+            sourcePort = sourcePort == null ? "" : sourcePort;
+            targetPort = targetPort == null ? "" : targetPort;
+            condition = condition == null ? "" : condition;
         }
     }
 }
