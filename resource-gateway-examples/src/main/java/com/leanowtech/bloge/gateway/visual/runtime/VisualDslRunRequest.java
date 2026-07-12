@@ -13,11 +13,13 @@ import java.util.Map;
  * @param dsl generated BLOGE DSL source
  * @param context initial graph context values
  * @param outputNode optional output node override
+ * @param runIntent optional deadline and fenced cancellation intent
  */
 public record VisualDslRunRequest(
         String dsl,
         Map<String, Object> context,
-        String outputNode
+        String outputNode,
+        VisualRunIntent runIntent
 ) {
     /**
      * Creates a normalized DSL run request.
@@ -26,5 +28,11 @@ public record VisualDslRunRequest(
         dsl = dsl == null ? "" : dsl;
         context = context == null ? Map.of() : new LinkedHashMap<>(context);
         outputNode = outputNode == null ? "" : outputNode;
+        runIntent = runIntent == null ? VisualRunIntent.unmanaged() : runIntent;
+    }
+
+    /** Backward-compatible unmanaged request. */
+    public VisualDslRunRequest(String dsl, Map<String, Object> context, String outputNode) {
+        this(dsl, context, outputNode, VisualRunIntent.unmanaged());
     }
 }

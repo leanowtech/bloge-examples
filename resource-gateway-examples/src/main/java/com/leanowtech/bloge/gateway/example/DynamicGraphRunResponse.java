@@ -23,6 +23,7 @@ import java.util.Map;
  * @param errors execution error messages
  * @param layout generated visual layout for the submitted graph
  * @param decisionTable extracted decision-table display metadata, when present
+ * @param runControl controlled-run lifecycle and termination proof
  */
 public record DynamicGraphRunResponse(
         boolean compiled,
@@ -39,7 +40,8 @@ public record DynamicGraphRunResponse(
         List<Diagnostic> diagnostics,
         List<String> errors,
         ExampleVisualLayout layout,
-        GatewayDecisionTable decisionTable
+        GatewayDecisionTable decisionTable,
+        DynamicRunControlView runControl
 ) {
     /**
      * Creates a response payload.
@@ -54,6 +56,28 @@ public record DynamicGraphRunResponse(
         nodeExecutionFacts = nodeExecutionFacts == null ? Map.of() : new LinkedHashMap<>(nodeExecutionFacts);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         errors = errors == null ? List.of() : List.copyOf(errors);
+        runControl = runControl == null ? DynamicRunControlView.unmanaged() : runControl;
+    }
+
+    /** Backward-compatible constructor for unmanaged executions. */
+    public DynamicGraphRunResponse(boolean compiled,
+                                   boolean success,
+                                   String graphName,
+                                   String outputNode,
+                                   Object output,
+                                   Map<String, Object> results,
+                                   Map<String, String> statusMap,
+                                   long elapsedMs,
+                                   Map<String, Long> nodeElapsedMs,
+                                   Map<String, List<NodeAttempt>> nodeAttempts,
+                                   Map<String, NodeExecutionFact> nodeExecutionFacts,
+                                   List<Diagnostic> diagnostics,
+                                   List<String> errors,
+                                   ExampleVisualLayout layout,
+                                   GatewayDecisionTable decisionTable) {
+        this(compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs, nodeElapsedMs,
+                nodeAttempts, nodeExecutionFacts, diagnostics, errors, layout, decisionTable,
+                DynamicRunControlView.unmanaged());
     }
 
     /**
@@ -72,7 +96,7 @@ public record DynamicGraphRunResponse(
                                    ExampleVisualLayout layout,
                                    GatewayDecisionTable decisionTable) {
         this(compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs, Map.of(),
-                Map.of(), Map.of(), diagnostics, errors, layout, decisionTable);
+                Map.of(), Map.of(), diagnostics, errors, layout, decisionTable, DynamicRunControlView.unmanaged());
     }
 
     /** Backward-compatible constructor for callers using the pre-semantics execution shape. */
@@ -91,7 +115,8 @@ public record DynamicGraphRunResponse(
                                    ExampleVisualLayout layout,
                                    GatewayDecisionTable decisionTable) {
         this(compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs, nodeElapsedMs,
-                nodeAttempts, Map.of(), diagnostics, errors, layout, decisionTable);
+                nodeAttempts, Map.of(), diagnostics, errors, layout, decisionTable,
+                DynamicRunControlView.unmanaged());
     }
 
     private static Map<String, List<NodeAttempt>> immutableAttempts(Map<String, List<NodeAttempt>> source) {

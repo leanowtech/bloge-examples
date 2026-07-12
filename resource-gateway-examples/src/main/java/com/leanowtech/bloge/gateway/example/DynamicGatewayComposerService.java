@@ -24,11 +24,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Compiles and executes browser-submitted gateway DSL without registering it as
@@ -44,6 +49,7 @@ public class DynamicGatewayComposerService {
     private final GraphEngine graphEngine;
     private final GraphLoader graphLoader;
     private final NodeExecutionCaptureInterceptor executionCapture;
+    private final DynamicRunControlManager runControls;
 
     /**
      * Creates the dynamic composer service with the runtime operator registry.
@@ -54,9 +60,10 @@ public class DynamicGatewayComposerService {
     @Autowired
     public DynamicGatewayComposerService(OperatorRegistry registry, ObjectMapper objectMapper) {
         this.executionCapture = new NodeExecutionCaptureInterceptor();
+        this.runControls = new DynamicRunControlManager();
         this.graphEngine = GraphEngine.builder()
                 .registry(InputCoercingOperatorRegistry.wrap(registry, objectMapper))
-                .interceptors(List.of(executionCapture))
+                .interceptors(List.of(runControls, executionCapture))
                 .listeners(List.of(executionCapture))
                 .build();
         this.graphLoader = new GraphLoader(registry);
@@ -123,15 +130,25 @@ public class DynamicGatewayComposerService {
         Graph graph = compilation.graph();
         String outputNode = selectOutputNode(graph, request.outputNode());
         ExampleVisualLayout layout = layoutFor(graph);
+        DynamicRunControlManager.Registration registration = runControls.begin(request.runIntent());
+        if (registration.rejected()) {
+            return new DynamicGraphRunResponse(
+                    true, false, graph.name(), outputNode, null, Map.of(), Map.of(), 0,
+                    Map.of(), Map.of(), Map.of(), diagnostics, List.of(registration.rejection()), layout,
+                    decisionTable, runControls.view(registration));
+        }
 
         String captureId = UUID.randomUUID().toString();
         executionCapture.begin(captureId, graph);
-        GraphResult result;
-        NodeExecutionCaptureInterceptor.CapturedExecution captured;
-        try {
-            result = graphEngine.execute(graph, contextFrom(request.context(), captureId));
-        } catch (RuntimeException ex) {
-            captured = executionCapture.complete(captureId, null);
+        GraphContext context = contextFrom(request.context(), captureId);
+        ExecutionOutcome outcome = execute(graph, context, registration);
+        GraphResult result = outcome.result();
+        NodeExecutionCaptureInterceptor.CapturedExecution captured = executionCapture.complete(captureId, result);
+        DynamicRunControlView control = runControls.view(registration);
+        if (result == null) {
+            String error = outcome.terminationUnconfirmed()
+                    ? "Controlled run termination was not confirmed before the cancellation grace expired."
+                    : message(outcome.failure());
             return new DynamicGraphRunResponse(
                     true,
                     false,
@@ -145,17 +162,25 @@ public class DynamicGatewayComposerService {
                     captured.attempts(),
                     captured.facts(),
                     diagnostics,
-                    List.of(message(ex)),
+                    List.of(error),
                     layout,
-                    decisionTable
+                    decisionTable,
+                    control
             );
         }
-        captured = executionCapture.complete(captureId, result);
 
         Object output = result.findOutput(outputNode, Object.class).orElse(null);
+        boolean controlledSuccess = result.isSuccess() && "SUCCEEDED".equals(control.status())
+                || result.isSuccess() && "UNMANAGED".equals(control.status());
+        List<String> runErrors = new ArrayList<>(errors(result));
+        if ("CANCELLED".equals(control.status())) {
+            runErrors.add("Run was cancelled by a fenced user command.");
+        } else if ("TIMED_OUT".equals(control.status())) {
+            runErrors.add("Graph deadline elapsed and cooperative termination was confirmed.");
+        }
         return new DynamicGraphRunResponse(
                 true,
-                result.isSuccess(),
+                controlledSuccess,
                 graph.name(),
                 outputNode,
                 output,
@@ -166,10 +191,21 @@ public class DynamicGatewayComposerService {
                 captured.attempts(),
                 captured.facts(),
                 diagnostics,
-                errors(result),
+                runErrors,
                 layout,
-                decisionTable
+                decisionTable,
+                control
         );
+    }
+
+    /** Returns the lifecycle view for a caller-addressed controlled run. */
+    public DynamicRunControlResult runControl(String requestId, String fencingToken) {
+        return runControls.find(requestId, fencingToken);
+    }
+
+    /** Requests cooperative cancellation using the immutable run fencing token. */
+    public DynamicRunControlResult cancel(DynamicRunControlCommand command) {
+        return runControls.cancel(command);
     }
 
     /**
@@ -198,6 +234,105 @@ public class DynamicGatewayComposerService {
         DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
         registry.registerRaw("httpResource", httpResourceOperator);
         return registry;
+    }
+
+    private ExecutionOutcome execute(Graph graph,
+                                     GraphContext context,
+                                     DynamicRunControlManager.Registration registration) {
+        if (!registration.managed()) {
+            try {
+                return new ExecutionOutcome(graphEngine.execute(graph, context), null, false);
+            } catch (RuntimeException failure) {
+                return new ExecutionOutcome(null, failure, false);
+            }
+        }
+
+        CompletableFuture<GraphResult> completion = new CompletableFuture<>();
+        Thread owner = Thread.ofVirtual().unstarted(() -> {
+            GraphResult result = null;
+            Throwable failure = null;
+            try {
+                result = graphEngine.execute(graph, context);
+                runControls.observeExecutionId(registration, context);
+            } catch (Throwable throwable) {
+                failure = throwable;
+            } finally {
+                runControls.observeExecutionId(registration, context);
+                runControls.complete(registration, result, failure);
+            }
+            if (failure == null) {
+                completion.complete(result);
+            } else {
+                completion.completeExceptionally(failure);
+            }
+        });
+        runControls.attach(registration, owner, context);
+        owner.start();
+        return awaitControlled(completion, registration);
+    }
+
+    private ExecutionOutcome awaitControlled(CompletableFuture<GraphResult> completion,
+                                             DynamicRunControlManager.Registration registration) {
+        while (true) {
+            if (completion.isDone()) {
+                return completedOutcome(completion);
+            }
+            DynamicRunControlView view = runControls.view(registration);
+            Instant now = Instant.now();
+            if (view.deadlineAt() != null && !now.isBefore(view.deadlineAt())
+                    && "RUNNING".equals(view.status())) {
+                view = runControls.deadline(registration);
+            }
+            if (stopRequested(view)) {
+                long elapsed = view.cancelRequestedAt() == null ? 0
+                        : Math.max(0, Duration.between(view.cancelRequestedAt(), now).toMillis());
+                if (elapsed >= runControls.cancellationGraceMs(registration)) {
+                    runControls.terminationUnconfirmed(registration);
+                    return new ExecutionOutcome(null, null, true);
+                }
+            }
+            long waitMs = waitMillis(view, now, runControls.cancellationGraceMs(registration));
+            try {
+                GraphResult result = completion.get(waitMs, TimeUnit.MILLISECONDS);
+                return new ExecutionOutcome(result, null, false);
+            } catch (TimeoutException ignored) {
+                // Re-evaluate deadline, cancellation state, and grace on the next iteration.
+            } catch (ExecutionException failure) {
+                return new ExecutionOutcome(null, failure.getCause(), false);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return new ExecutionOutcome(null, interrupted, false);
+            }
+        }
+    }
+
+    private static ExecutionOutcome completedOutcome(CompletableFuture<GraphResult> completion) {
+        try {
+            return new ExecutionOutcome(completion.getNow(null), null, false);
+        } catch (java.util.concurrent.CompletionException failure) {
+            return new ExecutionOutcome(null, failure.getCause(), false);
+        }
+    }
+
+    private static boolean stopRequested(DynamicRunControlView view) {
+        return "CANCEL_REQUESTED".equals(view.status())
+                || "TIMING_OUT".equals(view.status())
+                || "TERMINATION_UNCONFIRMED".equals(view.status());
+    }
+
+    private static long waitMillis(DynamicRunControlView view, Instant now, long graceMs) {
+        long wait = 50;
+        if (view.deadlineAt() != null && now.isBefore(view.deadlineAt())) {
+            wait = Math.min(wait, Math.max(1, Duration.between(now, view.deadlineAt()).toMillis()));
+        }
+        if (stopRequested(view) && view.cancelRequestedAt() != null) {
+            long elapsed = Math.max(0, Duration.between(view.cancelRequestedAt(), now).toMillis());
+            wait = Math.min(wait, Math.max(1, graceMs - elapsed));
+        }
+        return Math.max(1, wait);
+    }
+
+    private record ExecutionOutcome(GraphResult result, Throwable failure, boolean terminationUnconfirmed) {
     }
 
     private static GraphContext contextFrom(Map<String, Object> values, String captureId) {

@@ -18,6 +18,18 @@ public interface VisualDslRunner {
      */
     VisualDslRunResponse run(VisualDslRunRequest request);
 
+    /** Returns the latest process-local lifecycle view for a controlled run. */
+    default VisualRunControlResult runControl(String requestId, String fencingToken) {
+        return new VisualRunControlResult(false, "RG.RUN_CONTROL.UNSUPPORTED",
+                "This DSL runner does not support controlled runs.", VisualRunControlView.unmanaged());
+    }
+
+    /** Requests cooperative cancellation of a controlled run. */
+    default VisualRunControlResult cancel(VisualRunControlCommand command) {
+        return new VisualRunControlResult(false, "RG.RUN_CONTROL.UNSUPPORTED",
+                "This DSL runner does not support controlled runs.", VisualRunControlView.unmanaged());
+    }
+
     /**
      * Compiles DSL without executing it.
      *

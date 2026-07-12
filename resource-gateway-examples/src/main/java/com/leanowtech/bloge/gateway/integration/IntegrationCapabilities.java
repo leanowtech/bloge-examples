@@ -48,7 +48,8 @@ public record IntegrationCapabilities(
         objects.put("operatorLibrary", List.of("bloge.visualOperatorLibrary.v1"));
         objects.put("graphDraftIntegrationBundle", List.of(GraphDraftIntegrationBundle.SCHEMA_VERSION));
         objects.put("runEvidence", List.of(RunEvidenceBundle.SCHEMA_VERSION_V1,
-                RunEvidenceBundle.SCHEMA_VERSION_V2, RunEvidenceBundle.SCHEMA_VERSION));
+                RunEvidenceBundle.SCHEMA_VERSION_V2, RunEvidenceBundle.SCHEMA_VERSION_V3,
+                RunEvidenceBundle.SCHEMA_VERSION));
         objects.put("payloadReplay", List.of(PayloadReplayBundle.SCHEMA_VERSION));
         objects.put("replayExecutionRequest", List.of(ReplayExecutionRequest.SCHEMA_VERSION));
         objects.put("replayExecutionResult", List.of(ReplayExecutionResult.SCHEMA_VERSION));
@@ -61,13 +62,21 @@ public record IntegrationCapabilities(
         objects.put("reconciliationSnapshot", List.of(IntegrationReconciliationSnapshot.SCHEMA_VERSION));
         objects.put("contractTestSuite", List.of(
                 com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestSuite.SCHEMA_VERSION));
+        objects.put("visualRunIntent", List.of(
+                com.leanowtech.bloge.gateway.visual.runtime.VisualRunIntent.SCHEMA_VERSION));
+        objects.put("visualRunControl", List.of(
+                com.leanowtech.bloge.gateway.visual.runtime.VisualRunControlView.SCHEMA_VERSION));
 
         Map<String, Boolean> features = new LinkedHashMap<>();
         features.put("draftExportDependencyProfile", true);
         features.put("runEvidenceBundle", true);
         features.put("structuredExecutionFacts", true);
-        features.put("graphDeadline", false);
-        features.put("userRunCancellation", false);
+        features.put("graphDeadline", true);
+        features.put("userRunCancellation", true);
+        features.put("runTerminationConfirmation", true);
+        features.put("hardRunTermination", false);
+        features.put("durableRunControl", false);
+        features.put("runControlEvidence", true);
         features.put("sideEffectCommitConfirmation", false);
         features.put("payloadReplay", true);
         features.put("payloadReplayNodeInputs", true);
@@ -102,7 +111,9 @@ public record IntegrationCapabilities(
                 new Endpoint("GET", "/api/integration/events"),
                 new Endpoint("GET", "/api/integration/reconciliation"),
                 new Endpoint("GET", "/api/integration/operator-libraries/{libraryId}"),
-                new Endpoint("GET", "/api/integration/operator-test-suites/{suiteId}")
+                new Endpoint("GET", "/api/integration/operator-test-suites/{suiteId}"),
+                new Endpoint("GET", "/api/visual/run-controls/{requestId}"),
+                new Endpoint("POST", "/api/visual/run-controls/{requestId}/cancel")
         ));
     }
 

@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunControlView;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -40,7 +41,8 @@ public record RunEvidenceBundle(
 ) {
     public static final String SCHEMA_VERSION_V1 = "toolStudio.resourceGateway.runEvidenceBundle.v1";
     public static final String SCHEMA_VERSION_V2 = "toolStudio.resourceGateway.runEvidenceBundle.v2";
-    public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.runEvidenceBundle.v3";
+    public static final String SCHEMA_VERSION_V3 = "toolStudio.resourceGateway.runEvidenceBundle.v3";
+    public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.runEvidenceBundle.v4";
 
     public RunEvidenceBundle {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
@@ -243,16 +245,27 @@ public record RunEvidenceBundle(
         boolean degraded = nodes.stream().anyMatch(node -> Set.of("FAILED", "TIMEOUT", "CANCELLED", "PARTIAL")
                 .contains(node.status()));
         String status = graphStatus(record, nodes, outputReached, degraded);
-        String reason = record.success() ? "NONE"
+        RunControl control = RunControl.from(record.runControl());
+        String reason = controlledReason(control, record.success() ? "NONE"
                 : outputReached && degraded ? "CRITICAL_OUTPUT_REACHED_WITH_DEGRADATION"
                 : output == null ? "OUTPUT_NODE_NOT_CAPTURED"
-                : "CRITICAL_OUTPUT_NOT_REACHED";
+                : "CRITICAL_OUTPUT_NOT_REACHED");
         return new Execution(status, reason, record.createdAt(), record.elapsedMs(), record.outputNode(),
-                nodes.stream().anyMatch(NodeEvidence::mocked), outputReached, degraded);
+                nodes.stream().anyMatch(NodeEvidence::mocked), outputReached, degraded, control);
     }
 
     private static String graphStatus(VisualGraphRunRecord record, List<NodeEvidence> nodes,
                                       boolean outputReached, boolean degraded) {
+        String controlStatus = record.runControl().status();
+        if ("TIMED_OUT".equals(controlStatus) || "TIMING_OUT".equals(controlStatus)) {
+            return VisualRunStatus.TIMEOUT.name();
+        }
+        if ("CANCELLED".equals(controlStatus) || "CANCEL_REQUESTED".equals(controlStatus)) {
+            return VisualRunStatus.CANCELLED.name();
+        }
+        if ("TERMINATION_UNCONFIRMED".equals(controlStatus)) {
+            return VisualRunStatus.PARTIAL.name();
+        }
         if (record.success()) {
             return VisualRunStatus.SUCCESS.name();
         }
@@ -266,6 +279,13 @@ public record RunEvidenceBundle(
             }
         }
         return VisualRunStatus.FAILED.name();
+    }
+
+    private static String controlledReason(RunControl control, String fallback) {
+        if (control == null || !control.managed() || "SUCCEEDED".equals(control.status())) {
+            return fallback;
+        }
+        return control.reasonCode();
     }
 
     private static EvidenceManifest manifest(VisualGraphRunRecord record,
@@ -293,11 +313,14 @@ public record RunEvidenceBundle(
                 .filter(RunEvidenceBundle::requiresCapturedOutput)
                 .filter(NodeEvidence::outputAvailable)
                 .count();
+        boolean controlComplete = record.runControl().requestId().isBlank()
+                || record.runControl().terminationConfirmed() && !record.runControl().sideEffectsMayBeInFlight();
         boolean complete = expectedNodes == capturedNodes
                 && expectedEdges == capturedEdges
                 && expectedNodeInputs == capturedNodeInputs
                 && expectedNodeOutputs == capturedNodeOutputs
-                && expectedNodeFacts == capturedNodeFacts;
+                && expectedNodeFacts == capturedNodeFacts
+                && controlComplete;
         String hash = record.evidenceMaterialFingerprint();
         VisualRunEvidenceSeal seal = record.evidenceSeal();
         VisualEvidenceSigner.Verification verification = evidenceSigner.verify(seal, hash);
@@ -313,6 +336,9 @@ public record RunEvidenceBundle(
         }
         if (expectedNodeFacts != capturedNodeFacts) {
             gaps.add("Structured execution semantics were not captured for every node.");
+        }
+        if (!controlComplete) {
+            gaps.add("Controlled run termination is not confirmed; external side effects may still be in flight.");
         }
         if (!verification.valid()) {
             gaps.add("Evidence integrity is not verified: " + verification.reason());
@@ -361,9 +387,43 @@ public record RunEvidenceBundle(
     }
 
     public record Execution(String status, String reasonCode, Instant startedAt, long elapsedMs, String outputNode,
-                            boolean mockUsed, boolean criticalOutputReached, boolean degraded) {
+                            boolean mockUsed, boolean criticalOutputReached, boolean degraded,
+                            RunControl runControl) {
+        public Execution {
+            runControl = runControl == null ? RunControl.unmanaged() : runControl;
+        }
         static Execution empty() {
-            return new Execution("UNKNOWN", "STATUS_NOT_CAPTURED", Instant.EPOCH, 0, "", false, false, false);
+            return new Execution("UNKNOWN", "STATUS_NOT_CAPTURED", Instant.EPOCH, 0, "", false, false, false,
+                    RunControl.unmanaged());
+        }
+    }
+
+    public record RunControl(String requestId, String engineExecutionId, String status, String reasonCode,
+                             long revision, Instant deadlineAt, Instant cancelRequestedAt, Instant terminalAt,
+                             boolean terminationConfirmed, boolean sideEffectsMayBeInFlight) {
+        public RunControl {
+            requestId = requestId == null ? "" : requestId;
+            engineExecutionId = engineExecutionId == null ? "" : engineExecutionId;
+            status = status == null || status.isBlank() ? "UNMANAGED" : status;
+            reasonCode = reasonCode == null || reasonCode.isBlank() ? "NONE" : reasonCode;
+            revision = Math.max(0, revision);
+        }
+
+        static RunControl from(VisualRunControlView source) {
+            if (source == null || source.requestId().isBlank()) {
+                return unmanaged();
+            }
+            return new RunControl(source.requestId(), source.engineExecutionId(), source.status(),
+                    source.reasonCode(), source.revision(), source.deadlineAt(), source.cancelRequestedAt(),
+                    source.terminalAt(), source.terminationConfirmed(), source.sideEffectsMayBeInFlight());
+        }
+
+        static RunControl unmanaged() {
+            return new RunControl("", "", "UNMANAGED", "NONE", 0, null, null, null, true, false);
+        }
+
+        boolean managed() {
+            return !requestId.isBlank();
         }
     }
 

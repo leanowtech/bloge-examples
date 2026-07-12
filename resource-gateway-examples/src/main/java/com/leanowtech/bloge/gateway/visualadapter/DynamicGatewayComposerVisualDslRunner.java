@@ -5,6 +5,10 @@ import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.example.DynamicGatewayComposerService;
 import com.leanowtech.bloge.gateway.example.DynamicGraphRunRequest;
 import com.leanowtech.bloge.gateway.example.DynamicGraphRunResponse;
+import com.leanowtech.bloge.gateway.example.DynamicRunControlCommand;
+import com.leanowtech.bloge.gateway.example.DynamicRunControlResult;
+import com.leanowtech.bloge.gateway.example.DynamicRunControlView;
+import com.leanowtech.bloge.gateway.example.DynamicRunIntent;
 import com.leanowtech.bloge.gateway.example.ExampleVisualLayout;
 import com.leanowtech.bloge.gateway.example.GatewayDecisionTable;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualDecisionTable;
@@ -14,6 +18,9 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunnerFactory;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunLayout;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunControlCommand;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunControlResult;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunControlView;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -69,7 +76,9 @@ public class DynamicGatewayComposerVisualDslRunner implements VisualDslRunner, V
         DynamicGraphRunResponse response = delegate.run(new DynamicGraphRunRequest(
                 request.dsl(),
                 request.context(),
-                request.outputNode()
+                request.outputNode(),
+                new DynamicRunIntent("", request.runIntent().requestId(), request.runIntent().deadlineAt(),
+                        request.runIntent().fencingToken(), request.runIntent().cancellationGraceMs())
         ));
         return fromDynamic(response);
     }
@@ -79,6 +88,17 @@ public class DynamicGatewayComposerVisualDslRunner implements VisualDslRunner, V
         return delegate.compileDiagnostics(dsl).stream()
                 .map(DynamicGatewayComposerVisualDslRunner::diagnostic)
                 .toList();
+    }
+
+    @Override
+    public VisualRunControlResult runControl(String requestId, String fencingToken) {
+        return controlResult(delegate.runControl(requestId, fencingToken));
+    }
+
+    @Override
+    public VisualRunControlResult cancel(VisualRunControlCommand command) {
+        return controlResult(delegate.cancel(new DynamicRunControlCommand(
+                command.requestId(), command.fencingToken(), command.expectedRevision(), command.reason())));
     }
 
     @Override
@@ -117,8 +137,23 @@ public class DynamicGatewayComposerVisualDslRunner implements VisualDslRunner, V
                         .toList(),
                 source.errors(),
                 layout(source.layout()),
-                decisionTable(source.decisionTable())
+                decisionTable(source.decisionTable()),
+                control(source.runControl())
         );
+    }
+
+    private static VisualRunControlResult controlResult(DynamicRunControlResult source) {
+        return new VisualRunControlResult(source.accepted(), source.code(), source.message(), control(source.control()));
+    }
+
+    private static VisualRunControlView control(DynamicRunControlView source) {
+        if (source == null) {
+            return VisualRunControlView.unmanaged();
+        }
+        return new VisualRunControlView("", source.requestId(), source.engineExecutionId(), source.status(),
+                source.reasonCode(), source.revision(), source.deadlineAt(), source.startedAt(),
+                source.cancelRequestedAt(), source.terminalAt(), source.terminationConfirmed(),
+                source.sideEffectsMayBeInFlight());
     }
 
     private static VisualNodeExecutionAttempt attempt(DynamicGraphRunResponse.NodeAttempt source) {

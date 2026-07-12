@@ -56,6 +56,7 @@ import java.util.TreeSet;
  * @param evidenceSeal persisted signature over this immutable run material
  * @param replay immutable recorded-replay lineage, safety policy, and assertion outcomes
  * @param nodeExecutionFacts structured engine-observed and topology-derived node semantics
+ * @param runControl graph-level deadline, cancellation, and termination-confirmation fact
  */
 public record VisualGraphRunRecord(
         String schemaVersion,
@@ -94,9 +95,10 @@ public record VisualGraphRunRecord(
         Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts,
         VisualRunEvidenceSeal evidenceSeal,
         VisualReplayMetadata replay,
-        Map<String, VisualNodeExecutionFact> nodeExecutionFacts
+        Map<String, VisualNodeExecutionFact> nodeExecutionFacts,
+        VisualRunControlView runControl
 ) {
-    public static final String SCHEMA_VERSION = "bloge.visualGraphRunRecord.v5";
+    public static final String SCHEMA_VERSION = "bloge.visualGraphRunRecord.v6";
     public static final String SOURCE_TRANSIENT_DRAFT = "TRANSIENT_DRAFT";
     public static final String SOURCE_STORED_DRAFT = "STORED_DRAFT";
     public static final String SOURCE_PUBLICATION = "PUBLICATION";
@@ -143,6 +145,32 @@ public record VisualGraphRunRecord(
         evidenceSeal = evidenceSeal == null ? VisualRunEvidenceSeal.unsigned() : evidenceSeal;
         replay = replay == null ? VisualReplayMetadata.none() : replay;
         nodeExecutionFacts = nodeExecutionFacts == null ? Map.of() : new LinkedHashMap<>(nodeExecutionFacts);
+        runControl = runControl == null ? VisualRunControlView.unmanaged() : runControl;
+    }
+
+    /** Backward-compatible constructor for the v5 shape before graph-level run control was persisted. */
+    public VisualGraphRunRecord(String schemaVersion, String runId, String sourceKind, String draftId,
+                                long draftRevision, String publicationId, String sourceArtifactKind,
+                                String graphName, String tenantId, String namespace, String environment,
+                                String outputNode, Instant createdAt, boolean validated, boolean compiled,
+                                boolean success, long elapsedMs, Map<String, Long> nodeElapsedMs,
+                                Map<String, String> statusMap, List<VisualDiagnostic> diagnostics,
+                                List<String> errors, Map<String, Object> contextSummary,
+                                Map<String, Object> outputSummary, Map<String, Object> resultsSummary,
+                                Map<String, NodeSnapshot> nodeSnapshots, String generatedDsl,
+                                String draftFingerprint, String operatorDependencyFingerprint,
+                                Map<String, Object> contextPayload, Object outputPayload,
+                                Map<String, Object> resultsPayload, VisualPayloadRedactionManifest redaction,
+                                List<EdgeSnapshot> edgeSnapshots,
+                                Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts,
+                                VisualRunEvidenceSeal evidenceSeal, VisualReplayMetadata replay,
+                                Map<String, VisualNodeExecutionFact> nodeExecutionFacts) {
+        this(schemaVersion, runId, sourceKind, draftId, draftRevision, publicationId, sourceArtifactKind,
+                graphName, tenantId, namespace, environment, outputNode, createdAt, validated, compiled, success,
+                elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary, outputSummary,
+                resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint, operatorDependencyFingerprint,
+                contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots, nodeAttempts, evidenceSeal,
+                replay, nodeExecutionFacts, VisualRunControlView.unmanaged());
     }
 
     /** Backward-compatible constructor for the v4 shape before structured execution facts were persisted. */
@@ -539,7 +567,7 @@ public record VisualGraphRunRecord(
                 validated, compiled, success, elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary,
                 outputSummary, resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint,
                 operatorDependencyFingerprint, contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots,
-                nodeAttempts, VisualRunEvidenceSeal.unsigned(), replay, nodeExecutionFacts);
+                nodeAttempts, VisualRunEvidenceSeal.unsigned(), replay, nodeExecutionFacts, runControl);
     }
 
     /** Returns a copy sealed after repository identity has been assigned. */
@@ -549,7 +577,7 @@ public record VisualGraphRunRecord(
                 validated, compiled, success, elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary,
                 outputSummary, resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint,
                 operatorDependencyFingerprint, contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots,
-                nodeAttempts, newEvidenceSeal, replay, nodeExecutionFacts);
+                nodeAttempts, newEvidenceSeal, replay, nodeExecutionFacts, runControl);
     }
 
     /** Stable fingerprint over every persisted run field except the seal itself. */
@@ -591,6 +619,7 @@ public record VisualGraphRunRecord(
         material.put("nodeAttempts", nodeAttempts);
         material.put("replay", replay);
         material.put("nodeExecutionFacts", nodeExecutionFacts);
+        material.put("runControl", runControl);
         return VisualBundleFingerprint.fromMaterial(material);
     }
 
@@ -636,7 +665,7 @@ public record VisualGraphRunRecord(
                 replayElapsed, replayStatuses, List.of(), replayErrors, contextSummary, outputSummary, resultsSummary,
                 nodeSnapshots, generatedDsl, draftFingerprint, operatorDependencyFingerprint, contextPayload,
                 outputPayload, resultsPayload, redaction, edgeSnapshots, replayAttempts,
-                VisualRunEvidenceSeal.unsigned(), safeReplay, replayFacts);
+                VisualRunEvidenceSeal.unsigned(), safeReplay, replayFacts, VisualRunControlView.unmanaged());
     }
 
     private static VisualGraphRunRecord fromDraft(String sourceKind,
@@ -696,7 +725,8 @@ public record VisualGraphRunRecord(
                 payloadCapture.nodeAttempts(),
                 VisualRunEvidenceSeal.unsigned(),
                 VisualReplayMetadata.none(),
-                safeResponse.nodeExecutionFacts()
+                safeResponse.nodeExecutionFacts(),
+                safeResponse.runControl()
         );
     }
 

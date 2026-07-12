@@ -822,7 +822,8 @@ public class VisualGraphDraftController {
      */
     @PostMapping("/run")
     public VisualGraphRunResponse runTransient(@RequestBody VisualGraphRunRequest request) {
-        VisualGraphRunResponse response = runner.run(request.draft(), request.context(), request.outputNode());
+        VisualGraphRunResponse response = runDraft(request.draft(), request.context(), request.outputNode(),
+                request.runIntent());
         return recordRun(VisualGraphRunRecord.transientDraft(request.draft(), request.context(), response),
                 response);
     }
@@ -842,7 +843,8 @@ public class VisualGraphDraftController {
                     if (request.expectedRevision() > 0 && request.expectedRevision() != draft.revision()) {
                         return runConflictResponse(draftId, request.expectedRevision(), draft);
                     }
-                    VisualGraphRunResponse response = runner.run(draft, request.context(), request.outputNode());
+                    VisualGraphRunResponse response = runDraft(draft, request.context(), request.outputNode(),
+                            request.runIntent());
                     return ResponseEntity.ok(recordRun(VisualGraphRunRecord.storedDraft(draft, request.context(),
                             response), response));
                 })
@@ -852,6 +854,15 @@ public class VisualGraphDraftController {
     private VisualGraphRunResponse recordRun(VisualGraphRunRecord record, VisualGraphRunResponse response) {
         VisualGraphRunRecord stored = runRepository.create(record);
         return response.withRunId(stored.runId());
+    }
+
+    private VisualGraphRunResponse runDraft(GraphDraft draft,
+                                            Map<String, Object> context,
+                                            String outputNode,
+                                            com.leanowtech.bloge.gateway.visual.runtime.VisualRunIntent runIntent) {
+        return runIntent != null && runIntent.requested()
+                ? runner.run(draft, context, outputNode, runIntent)
+                : runner.run(draft, context, outputNode);
     }
 
     /**

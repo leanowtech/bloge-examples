@@ -188,6 +188,31 @@ class VisualAuthoringAppJsTest {
     }
 
     @Test
+    void composerProvidesDeadlineAndFencedCancellationControls() throws Exception {
+        String html = indexHtmlSource();
+        String source = appJsSource();
+        String styles = stylesCssSource();
+
+        assertThat(html)
+                .contains("id=\"run-deadline-ms\"")
+                .contains("id=\"cancel-run\"")
+                .contains("aria-label=\"Cancel active run\"");
+        assertThat(source)
+                .contains("function newRunControlIntent()")
+                .contains("schemaVersion: 'bloge.visualRunIntent.v1'")
+                .contains("deadlineAt: new Date(Date.now() + deadlineMs).toISOString()")
+                .contains("function cancelActiveRun()")
+                .contains("/api/visual/run-controls/${encodeURIComponent(active.requestId)}/cancel")
+                .contains("fencingToken: active.fencingToken")
+                .contains("runIntent: { ...runIntent, schemaVersion: 'resourceGateway.dynamicRunIntent.v1' }")
+                .contains("$('cancel-run').addEventListener('click', cancelActiveRun)");
+        assertThat(styles)
+                .contains(".run-control-bar")
+                .contains(".run-command-row")
+                .contains(".run-cancel-button[hidden]");
+    }
+
+    @Test
     void selectedInspectorCanRefreshSingleOperatorDefinition() throws Exception {
         String source = appJsSource();
 

@@ -4158,6 +4158,47 @@ body.dragging-operator * {
   justify-content: flex-end;
 }
 
+.run-control-bar {
+  display: grid;
+  gap: 8px;
+}
+
+.run-deadline-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px 22px;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.run-deadline-field input {
+  width: 100%;
+  min-width: 0;
+}
+
+.run-command-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 8px;
+}
+
+.run-command-row .primary {
+  min-width: 0;
+}
+
+.run-cancel-button {
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
+  font-size: 14px;
+}
+
+.run-cancel-button[hidden] {
+  display: none;
+}
+
 .primary,
 .secondary {
   min-height: 38px;

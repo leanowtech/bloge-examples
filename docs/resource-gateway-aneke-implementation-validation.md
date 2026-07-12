@@ -5,10 +5,10 @@
 | 属性 | 内容 |
 |---|---|
 | 设计基线 | `docs/resource-gateway-aneke-tool-studio-integration-evolution-plan.md` |
-| 当前实现基线 | Round 6（engine-observed execution facts、失败因果链、evidence v3） |
+| 当前实现基线 | Round 7（绝对 deadline、fenced cancel、双条件终止确认、evidence v4） |
 | 评估日期 | 2026-07-12 |
 | 目标 | 加权实施差距 `<3%`，且不存在 P0 阻断项 |
-| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1486 tests，0 failures，0 errors，2 skipped |
+| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1494 tests，0 failures，0 errors，2 skipped |
 
 ## 1. 评分方法
 
@@ -153,6 +153,30 @@ timeout、fallback、retry exhaustion、skip、cancel、edge propagation 和 gra
 仍不能退出：Resource Gateway 还没有 run-level deadline/cancel/fencing，也不能确认超时外部写的 commit 结果；
 这两项必须以运行协议和 operator receipt 解决，不能继续靠 DTO 字段补洞。
 
+## 2.7 Round 7 重新审计
+
+本轮先关闭“HTTP 返回或 future 异常就等于运行已停止”的危险假设。Resource Gateway 现在拥有 versioned
+`VisualRunIntent`、绝对 deadline、fenced cancel command、monotonic revision 和显式 control endpoint；运行时同时
+跟踪 scheduler owner 与 operator in-flight threads。忽略中断的业务算子不会被误报为取消成功，而会形成
+`TERMINATION_UNCONFIRMED` 和可被 ANEKE 消费的 quarantine gap。
+
+| 维度 | 权重 | 当前完成率 | 得分 | 本轮可证明增量 | 仍未证明 |
+|---|---:|---:|---:|---|---|
+| 协议、版本与身份边界 | 15 | 96% | 14.40 | `VisualRunIntent.v1`、`VisualRunControl.v1`、evidence v4；capability 显式拆分 deadline/cancel/confirmation/hard kill/durable control；fence lookup/cancel | visual control endpoint 尚未接企业 IAM scope；自动 N/N-1 consumer matrix；动态 IAM/mTLS 联调 |
+| GraphDraft 依赖快照 | 10 | 60% | 6.00 | 无语义变化 | runtime binding/suite refs、跨表一致快照、完整 readiness profile |
+| Run evidence 可信链 | 20 | 90% | 18.00 | `VisualGraphRunRecord.v6` 将 control fact 纳入 fingerprint/seal；evidence v4 导出 request/execution/status/revision/deadline/termination/side-effect risk；未确认终止 fail closed | KMS/HSM、retention/legal hold、commit receipt、外部 verifier matrix |
+| Payload replay | 15 | 80% | 12.00 | replay run 明确使用 unmanaged control fact，不冒充真实 cancel/deadline | shadow/live 审批隔离、跨实例 exactly-once、选择性 retention |
+| Timeout/partial failure 语义 | 10 | 92% | 9.20 | 图级绝对 deadline；用户 cancel；fence/revision；owner+operator 双条件终止确认；grace 未确认；真实 UI 控制入口 | 剩余预算向节点/HTTP 下游传播、disconnect policy、durable lease/fencing owner、commit reconciliation |
+| Workbook、gate feedback 与 Deep Link | 10 | 70% | 7.00 | evidence v4 的 control reason 与 quarantine gap 可直接作为 workbook/gate 条件 | 双向 workbook refs、coverage policy、owner/migration gate 完整闭环 |
+| Change event、cursor、webhook 与对账 | 10 | 80% | 8.00 | 终态 run 仍沿既有事务 outbox 发布 | signed webhook、DLQ/重试、retention/compaction、乱序 fault harness |
+| 工业运行控制 | 10 | 45% | 4.50 | deadline/cancel 并发测试；错误 fence/过期 revision；不合作算子 fault test；HTTP 映射；画布 deadline/stop UX；corporate lifecycle 图 | durable control repository、leader lease、restart takeover、SLO/metrics、quota、HA/DR/容量演练 |
+| **合计** | **100** |  | **79.10** |  | **加权差距 20.90%** |
+
+Round 7 结论：差距从 `23.85%` 降至 `20.90%`。单进程 authoring runtime 已具备诚实的 deadline/cancel
+语义，`RUN-01` 不再是“完全没有控制协议”；但它仍是 P0，因为 active control state 不能跨重启接管、deadline
+预算尚未传到 runtime binding，而且 visual control endpoint 尚未进入受信 workload identity 作用域。更关键的
+`RUN-02` 也未关闭：即使线程终止被确认，已发出的远端写仍可能是 `UNKNOWN_COMMIT`。
+
 ## 3. 已通过的证明
 
 ### 3.1 协议与隔离
@@ -164,7 +188,7 @@ timeout、fallback、retry exhaustion、skip、cancel、edge propagation 和 gra
 
 ### 3.2 Evidence 与 payload
 
-- `VisualGraphRunRecord.v5` 持久化 draft/operator fingerprint、sanitized context/output/node results、edge snapshot、精确 node attempts 和结构化 node execution facts。
+- `VisualGraphRunRecord.v6` 持久化 draft/operator fingerprint、sanitized context/output/node results、edge snapshot、精确 node attempts、结构化 node execution facts 和 run-control termination fact。
 - sanitizer 对 secret/token/authorization/cookie/PII 类键及 Bearer/Basic/labeled credential 内容执行有界递归脱敏并记录 manifest。
 - evidence manifest 校验每个 invoked node 的 input、成功节点 output、node/edge status 和持久 seal；缺口或验签失败进入 `QUARANTINED`。
 - `DatabaseVisualEvidenceSigner` 持久化 Ed25519 key history；旧 run 在 repository 重建后仍可验证，consumer 可通过公开 verification key 离线验签。
@@ -366,7 +390,43 @@ graceful shutdown completed
 
 边界说明：BLOGE 当前 timeout/fallback listener 旧签名没有 `OperatorContext`。Gateway 已用 invocation scope 和
 唯一 active candidate 关联，并在歧义时 fail closed；根治方案仍应在 BLOGE 演进中把 executionId/context 加入
-所有 resilience event。图级 deadline、用户 cancel/fencing、operator commit receipt 仍未实现，capability 均为 false。
+所有 resilience event。图级 absolute deadline、用户 cancel/fencing 和双条件终止确认已实现；但 budget
+propagation、disconnect policy、durable control takeover、hard kill 和 operator commit receipt 仍未实现，capability
+分别诚实返回 true/false，不把单进程协作取消夸大为 durable workflow control。
+
+### 3.9 Run control 与真实页面证明
+
+本轮新增证明不是只验证 DTO。聚焦测试覆盖 deadline、用户取消、错误 fence、过期 revision、不合作算子和 HTTP
+映射；扩大回归覆盖 dynamic runner、visual service/controller、repository/evidence 和静态页面合同；最后以真实 jar、
+真实浏览器和正式 JSON Schema 三条路径交叉验证。
+
+```text
+24 focused Java tests passed
+114 expanded run-control/integration/static-UI regression tests passed
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+Tests run: 1494, Failures: 0, Errors: 0, Skipped: 2
+BUILD SUCCESS (04:51)
+
+real jar :18085 + real browser
+Custom Composer managed run -> SUCCEEDED
+terminationConfirmed=true; sideEffectsMayBeInFlight=false
+run record -> VisualGraphRunRecord.v6
+evidence -> toolStudio.resourceGateway.runEvidenceBundle.v4
+AJV draft-2020-12 validation of real evidence payload -> valid
+capability -> graphDeadline/userRunCancellation/runTerminationConfirmation=true
+              hardRunTermination/durableRunControl/sideEffectCommitConfirmation=false
+desktop 1280x720 + mobile 390x844 visual inspection passed
+mobile scrollWidth=clientWidth=390; browser console errors=0
+
+Draw.io validation: 0 errors, 0 warnings, 0 crossings/overlaps
+SVG visual inspection passed; editable corporate source retained
+```
+
+真实 evidence 的 `execution.runControl` 包含 request/engine execution id、revision、绝对 deadline、终态时间和双条件
+终止结论。真实 integration 请求必须使用受信 Bearer 与 `GOVERNANCE_EVIDENCE_INGESTION` purpose；作用域不匹配的
+首次请求按设计得到 404，调整 authoring scope 到受信 identity 的 `tenant-a/prod` 后才可读取，这同时证明运行证据
+没有越过租户/环境边界。
 
 ## 4. 当前 P0 阻断项
 
@@ -374,7 +434,7 @@ graceful shutdown completed
 |---|---|---|---|
 | `IAM-01` | 企业身份生命周期尚未端到端证明 | signed JWT、轮换和撤销代码已具备，但配置 trust store 只在启动时装载，尚无客户 IAM 动态策略/撤销传播证据 | 动态 JWKS/KMS 或 mTLS adapter + 多 identity/group/clearance + delegation grant + propagation SLO + policy/audit 联调演练 |
 | `OPS-01` | 本地签名 key 不满足企业 custody | private key 由本地 H2 demo provider 保存 | KMS/HSM-backed `VisualEvidenceSigner`、rotation/disable/revoke、审计和灾备演练 |
-| `RUN-01` | run-level deadline/cancel 尚无工程协议 | 当前只有 node timeout 和依赖取消；没有 run intent、绝对 deadline、预算传播、用户 cancel command、lease/fencing 和终止确认 | versioned RunIntent/RunControl API + deadline budget + cooperative cancel + fencing token + disconnect policy + race/fault tests |
+| `RUN-01` | run control 尚不能跨实例接管和传播预算 | Round 7 已有 versioned intent、absolute deadline、cooperative cancel、fence/revision 与 owner+operator 终止确认；但 active state 仍在单进程，重启后没有 durable lease/fencing owner，deadline 未向下游 binding 传播 | 持久 RunControl repository + owner lease/epoch + restart takeover/abandonment + remaining-budget propagation + disconnect policy + 多实例 race/fault tests |
 | `RUN-02` | 外部副作用 timeout 后只能标记 unknown commit | operator 没有 commit receipt/reconciliation hook，盲重试可能重复写 | effect/idempotency admission + transaction/idempotency receipt + reconcile/compensate hook + downstream-write suspension + gate policy |
 
 `EVT-01` 已在 Round 3 对当前资产模型关闭。webhook、DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，但不再构成“事件丢失后无法对账”的 P0 病根。
@@ -390,5 +450,6 @@ graceful shutdown completed
 | 4 | trusted workload identity + purpose policy | 服务端 claims、operation/purpose 双 allowlist、hint conflict、401/403、credential-free audit、provider capability | 30.50% | 1471 Java tests、29 个聚焦 tests、真实 jar HTTP 401/200/403、identity Draw.io 0 errors/warnings |
 | 5 | signed workload JWT + rotation/revocation | RS256/EdDSA、严格 claims/time/algorithm 校验、多 kid 轮换、key/jti 撤销、kid/jti audit、signed provider capability | 29.20% | 1480 Java tests、22 个集成聚焦/18 个最终安全聚焦 tests、真实 jar HTTP 200/401、identity Draw.io 0 errors/warnings |
 | 6 | engine-observed failure semantics | retry/timeout/fallback 真事件、skip/cancel 因果、关键输出 PARTIAL、edge propagation、unknown commit、fact coverage quarantine | 23.85% | 1486 全量 tests、17 个聚焦/52 个运行边界 tests、真实 jar v3 + AJV schema、Draw.io 0 errors/warnings |
+| 7 | graph deadline、fenced cancel 与终止确认 | versioned intent/control、绝对 deadline、fence/revision、owner+operator 双条件确认、不合作算子 quarantine、UI deadline/stop、evidence v4 | 20.90% | 1494 全量 tests、24 个聚焦/114 个扩展回归 tests、真实浏览器 desktop/mobile、真实 jar v4 + AJV schema、Draw.io 0 errors/warnings |
 
 后续每轮必须更新本表、代码证据、失败测试和剩余阻断项。只有全部 P0 阻断关闭、全量验证与真实浏览器验证通过，并且按同一权重计算的差距 `<3%`，才允许把目标标记完成。

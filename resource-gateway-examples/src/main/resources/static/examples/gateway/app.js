@@ -415,6 +415,7 @@ const state = {
   layout: null,
   selectedNodeId: null,
   eventSource: null,
+  activeRunControl: null,
   lastPayload: null,
   builder: createDefaultBuilder(),
   drafts: [],
@@ -30516,6 +30517,52 @@ async function runScenario() {
   renderDiagram();
 }
 
+function newRunControlIntent() {
+  const uuid = () => globalThis.crypto?.randomUUID?.()
+    || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const requestedMs = Number($('run-deadline-ms')?.value || 30000);
+  const deadlineMs = Math.max(100, Math.min(300000, Number.isFinite(requestedMs) ? requestedMs : 30000));
+  return {
+    schemaVersion: 'bloge.visualRunIntent.v1',
+    requestId: uuid(),
+    deadlineAt: new Date(Date.now() + deadlineMs).toISOString(),
+    fencingToken: uuid(),
+    cancellationGraceMs: 2000
+  };
+}
+
+function setActiveRunControl(intent) {
+  state.activeRunControl = intent || null;
+  const runButton = $('run-scenario');
+  const cancelButton = $('cancel-run');
+  if (runButton) runButton.disabled = Boolean(intent);
+  if (cancelButton) cancelButton.hidden = !intent;
+}
+
+async function cancelActiveRun() {
+  const active = state.activeRunControl;
+  if (!active) return;
+  const cancelButton = $('cancel-run');
+  if (cancelButton) cancelButton.disabled = true;
+  try {
+    const response = await fetch(`/api/visual/run-controls/${encodeURIComponent(active.requestId)}/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fencingToken: active.fencingToken,
+        expectedRevision: 0,
+        reason: 'AUTHOR_CANCELLED_FROM_CANVAS'
+      })
+    });
+    const payload = await response.json();
+    $('output').textContent = pretty({ status: response.status, runControl: payload });
+  } catch (error) {
+    $('output').textContent = pretty({ status: 'cancel_failed', error: error.message });
+  } finally {
+    if (cancelButton) cancelButton.disabled = false;
+  }
+}
+
 async function runCustomGraph() {
   const dslBox = $('composer-dsl');
   if (dslBox) {
@@ -30552,22 +30599,32 @@ async function runCustomGraph() {
   $('output').textContent = pretty({ status: 'running', graph: 'customLoanPolicy' });
   clearActiveRunTrace();
   const outputNode = composerOutputNode();
-  const response = await fetch(useVisualDraft ? '/api/visual/drafts/run' : '/api/gateway/examples/compose/run', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(useVisualDraft
-      ? {
-          draft: builderToVisualDraft(state.builder),
-          context,
-          outputNode
-        }
-      : {
-          dsl: state.customDsl,
-          context,
-          outputNode
-        })
-  });
-  const payload = await response.json();
+  const runIntent = newRunControlIntent();
+  setActiveRunControl(runIntent);
+  let response;
+  let payload;
+  try {
+    response = await fetch(useVisualDraft ? '/api/visual/drafts/run' : '/api/gateway/examples/compose/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(useVisualDraft
+        ? {
+            draft: builderToVisualDraft(state.builder),
+            context,
+            outputNode,
+            runIntent
+          }
+        : {
+            dsl: state.customDsl,
+            context,
+            outputNode,
+            runIntent: { ...runIntent, schemaVersion: 'resourceGateway.dynamicRunIntent.v1' }
+          })
+    });
+    payload = await response.json();
+  } finally {
+    setActiveRunControl(null);
+  }
   if (useVisualDraft) {
     const diagnostics = normalizeDiagnostics(payload.diagnostics);
     const ok = Boolean(payload.validated && payload.compiled && payload.success);
@@ -30733,6 +30790,7 @@ function builderHistoryShortcutTargetIsEditable(target) {
 }
 
 $('run-scenario').addEventListener('click', runScenario);
+$('cancel-run').addEventListener('click', cancelActiveRun);
 $('load-resources').addEventListener('click', loadResources);
 installComposerDragHandlers();
 installBuilderHistoryShortcuts();

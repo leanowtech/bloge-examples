@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualReplayAssertionResult;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunControlView;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
@@ -41,7 +42,7 @@ import static org.mockito.Mockito.when;
 class ToolStudioIntegrationServiceTest {
 
     @Test
-    void runEvidenceV3JsonSchemaMatchesSerializedProtocolFields() throws Exception {
+    void runEvidenceV4JsonSchemaMatchesSerializedProtocolFields() throws Exception {
         OperatorDefinition operator = operator();
         GraphDraft draft = runDraft(operator);
         VisualGraphRunResponse response = new VisualGraphRunResponse(
@@ -58,17 +59,47 @@ class ToolStudioIntegrationServiceTest {
                 draft, Map.of("customerId", "c-1"), response));
         ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
         JsonNode schema = mapper.readTree(Files.readString(Path.of("..", "docs", "schemas",
-                "tool-studio-resource-gateway", "run-evidence-bundle-v3.schema.json")));
+                "tool-studio-resource-gateway", "run-evidence-bundle-v4.schema.json")));
         JsonNode serialized = mapper.valueToTree(evidence);
 
         assertSchemaProperties(serialized, schema.path("properties"));
         assertSchemaProperties(serialized.path("execution"), schema.at("/$defs/execution/properties"));
+        assertSchemaProperties(serialized.at("/execution/runControl"), schema.at("/$defs/runControl/properties"));
         assertSchemaProperties(serialized.path("nodes").get(0), schema.at("/$defs/nodeEvidence/properties"));
         assertSchemaProperties(serialized.path("edges").get(0), schema.at("/$defs/edgeEvidence/properties"));
         assertSchemaProperties(serialized.path("manifest"), schema.at("/$defs/manifest/properties"));
         assertThat(schema.at("/$defs/status/enum")).extracting(JsonNode::asText)
                 .containsExactlyInAnyOrder(java.util.Arrays.stream(VisualRunStatus.values())
                         .map(Enum::name).toArray(String[]::new));
+    }
+
+    @Test
+    void unconfirmedControlledRunIsQuarantinedAndExposesSideEffectRisk() {
+        OperatorDefinition operator = operator();
+        GraphDraft draft = runDraft(operator);
+        VisualRunControlView control = new VisualRunControlView("", "request-unconfirmed", "execution-1",
+                "TERMINATION_UNCONFIRMED", "OWNER_EXITED_WITH_ACTIVE_OPERATORS", 5,
+                Instant.now().plusSeconds(1), Instant.now(), Instant.now(), null, false, true);
+        VisualGraphRunResponse response = new VisualGraphRunResponse(
+                true, true, false, draft.graphName(), "decision", null, Map.of(),
+                Map.of("eligibility", "FAILED", "decision", "CANCELLED"), 20,
+                Map.of("eligibility", 20L), List.of(), List.of("termination unconfirmed"), null, null,
+                "graph customerKnowledgeTool {}", new VisualValidationResult(true, List.of()), "",
+                Map.of("eligibility", List.of(attempt(Map.of("customerId", "c-1"), null))),
+                Map.of("eligibility", executionFact("FAILED"), "decision", executionFact("CANCELLED")), control);
+
+        RunEvidenceBundle evidence = RunEvidenceBundle.from(VisualGraphRunRecord.storedDraft(
+                draft, Map.of("customerId", "c-1"), response));
+
+        assertThat(evidence.execution().status()).isEqualTo("PARTIAL");
+        assertThat(evidence.execution().reasonCode()).isEqualTo("OWNER_EXITED_WITH_ACTIVE_OPERATORS");
+        assertThat(evidence.execution().runControl()).satisfies(runControl -> {
+            assertThat(runControl.terminationConfirmed()).isFalse();
+            assertThat(runControl.sideEffectsMayBeInFlight()).isTrue();
+        });
+        assertThat(evidence.manifest().evidenceStatus()).isEqualTo("QUARANTINED");
+        assertThat(evidence.manifest().gaps())
+                .contains("Controlled run termination is not confirmed; external side effects may still be in flight.");
     }
 
     @Test
@@ -84,8 +115,12 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("draftExportDependencyProfile", true)
                 .containsEntry("runEvidenceBundle", true)
                 .containsEntry("structuredExecutionFacts", true)
-                .containsEntry("graphDeadline", false)
-                .containsEntry("userRunCancellation", false)
+                .containsEntry("graphDeadline", true)
+                .containsEntry("userRunCancellation", true)
+                .containsEntry("runTerminationConfirmation", true)
+                .containsEntry("hardRunTermination", false)
+                .containsEntry("durableRunControl", false)
+                .containsEntry("runControlEvidence", true)
                 .containsEntry("sideEffectCommitConfirmation", false)
                 .containsEntry("payloadReplay", true)
                 .containsEntry("recordedAssertionReplay", true)
@@ -112,7 +147,9 @@ class ToolStudioIntegrationServiceTest {
                         "GET /api/integration/events",
                         "GET /api/integration/reconciliation",
                         "GET /api/integration/operator-libraries/{libraryId}",
-                        "GET /api/integration/operator-test-suites/{suiteId}"
+                        "GET /api/integration/operator-test-suites/{suiteId}",
+                        "GET /api/visual/run-controls/{requestId}",
+                        "POST /api/visual/run-controls/{requestId}/cancel"
                 );
     }
 
@@ -596,6 +633,17 @@ class ToolStudioIntegrationServiceTest {
                 new VisualNodeExecutionFact.Timeout(false, 0, false),
                 new VisualNodeExecutionFact.Fallback(false, false, "NONE", ""),
                 "NOT_APPLICABLE", List.of());
+    }
+
+    private static VisualNodeExecutionFact executionFact(String status) {
+        return new VisualNodeExecutionFact(
+                status, "CANCELLED".equals(status) ? "UPSTREAM_FAILURE" : "OPERATOR_ERROR",
+                "CANCELLED".equals(status) ? "TOPOLOGY_DERIVATION" : "ENGINE_STATUS", List.of(),
+                new VisualNodeExecutionFact.Retry("CANCELLED".equals(status) ? 0 : 1,
+                        "CANCELLED".equals(status) ? 0 : 1, false, ""),
+                new VisualNodeExecutionFact.Timeout(false, 0, false),
+                new VisualNodeExecutionFact.Fallback(false, false, "NONE", ""),
+                "CANCELLED".equals(status) ? "NOT_INVOKED" : "UNKNOWN_COMMIT", List.of());
     }
 
     private static VisualNodeExecutionFact timeoutFact() {

@@ -29,6 +29,7 @@ import java.util.Map;
  * @param runId persisted run history id when the run was recorded
  * @param nodeAttempts exact operator invocation attempts keyed by node id
  * @param nodeExecutionFacts structured engine-observed execution semantics keyed by node id
+ * @param runControl controlled-run lifecycle and termination proof
  */
 public record VisualGraphRunResponse(
         boolean validated,
@@ -49,7 +50,8 @@ public record VisualGraphRunResponse(
         VisualValidationResult validation,
         String runId,
         Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts,
-        Map<String, VisualNodeExecutionFact> nodeExecutionFacts
+        Map<String, VisualNodeExecutionFact> nodeExecutionFacts,
+        VisualRunControlView runControl
 ) {
     /**
      * Creates a response.
@@ -67,6 +69,32 @@ public record VisualGraphRunResponse(
         runId = runId == null ? "" : runId;
         nodeAttempts = immutableAttempts(nodeAttempts);
         nodeExecutionFacts = nodeExecutionFacts == null ? Map.of() : new LinkedHashMap<>(nodeExecutionFacts);
+        runControl = runControl == null ? VisualRunControlView.unmanaged() : runControl;
+    }
+
+    /** Backward-compatible constructor for unmanaged executions. */
+    public VisualGraphRunResponse(boolean validated,
+                                  boolean compiled,
+                                  boolean success,
+                                  String graphName,
+                                  String outputNode,
+                                  Object output,
+                                  Map<String, Object> results,
+                                  Map<String, String> statusMap,
+                                  long elapsedMs,
+                                  Map<String, Long> nodeElapsedMs,
+                                  List<VisualDiagnostic> diagnostics,
+                                  List<String> errors,
+                                  VisualRunLayout layout,
+                                  VisualDecisionTable decisionTable,
+                                  String generatedDsl,
+                                  VisualValidationResult validation,
+                                  String runId,
+                                  Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts,
+                                  Map<String, VisualNodeExecutionFact> nodeExecutionFacts) {
+        this(validated, compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs,
+                nodeElapsedMs, diagnostics, errors, layout, decisionTable, generatedDsl, validation, runId,
+                nodeAttempts, nodeExecutionFacts, VisualRunControlView.unmanaged());
     }
 
     /** Backward-compatible constructor for callers using the pre-semantics response shape. */
@@ -90,7 +118,7 @@ public record VisualGraphRunResponse(
                                   Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts) {
         this(validated, compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs,
                 nodeElapsedMs, diagnostics, errors, layout, decisionTable, generatedDsl, validation, runId,
-                nodeAttempts, Map.of());
+                nodeAttempts, Map.of(), VisualRunControlView.unmanaged());
     }
 
     /** Backward-compatible constructor for callers using the pre-capture response shape. */
@@ -191,7 +219,7 @@ public record VisualGraphRunResponse(
     public VisualGraphRunResponse withRunId(String newRunId) {
         return new VisualGraphRunResponse(validated, compiled, success, graphName, outputNode, output,
                 results, statusMap, elapsedMs, nodeElapsedMs, diagnostics, errors, layout, decisionTable,
-                generatedDsl, validation, newRunId, nodeAttempts, nodeExecutionFacts);
+                generatedDsl, validation, newRunId, nodeAttempts, nodeExecutionFacts, runControl);
     }
 
     private static Map<String, List<VisualNodeExecutionAttempt>> immutableAttempts(

@@ -9,8 +9,12 @@ import com.leanowtech.bloge.core.spi.event.NodeEvent.NodeStartEvent;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.time.Duration;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -155,6 +159,108 @@ class DynamicGatewayComposerServiceTest {
     }
 
     @Test
+    void enforcesGraphDeadlineAndConfirmsCooperativeTermination() {
+        CountDownLatch started = new CountDownLatch(1);
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("slow", (com.leanowtech.bloge.core.operator.Operator<Object, Object>) (input, ctx) -> {
+            started.countDown();
+            Thread.sleep(10_000);
+            return input;
+        });
+        DynamicGatewayComposerService controlled = new DynamicGatewayComposerService(registry);
+
+        DynamicGraphRunResponse response = controlled.run(new DynamicGraphRunRequest(simpleNodeDsl(),
+                Map.of("value", "request"), "work",
+                new DynamicRunIntent("", "deadline-run", Instant.now().plusMillis(100), "fence-deadline", 1_000)));
+
+        assertThat(started.getCount()).isZero();
+        assertThat(response.success()).isFalse();
+        assertThat(response.runControl().status()).isEqualTo("TIMED_OUT");
+        assertThat(response.runControl().reasonCode()).isEqualTo("GRAPH_DEADLINE_TERMINATED");
+        assertThat(response.runControl().terminationConfirmed()).isTrue();
+        assertThat(response.runControl().sideEffectsMayBeInFlight()).isFalse();
+        assertThat(response.runControl().engineExecutionId()).isNotBlank();
+    }
+
+    @Test
+    void acceptsFencedUserCancellationAndRejectsWrongFenceAndStaleRevision() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("slow", (com.leanowtech.bloge.core.operator.Operator<Object, Object>) (input, ctx) -> {
+            started.countDown();
+            Thread.sleep(10_000);
+            return input;
+        });
+        DynamicGatewayComposerService controlled = new DynamicGatewayComposerService(registry);
+        DynamicGraphRunRequest request = new DynamicGraphRunRequest(simpleNodeDsl(), Map.of("value", "request"),
+                "work", new DynamicRunIntent("", "cancel-run", null, "fence-cancel", 1_000));
+
+        CompletableFuture<DynamicGraphRunResponse> response = CompletableFuture.supplyAsync(() -> controlled.run(request));
+        assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(controlled.runControl("cancel-run", "wrong-fence")).satisfies(result -> {
+            assertThat(result.accepted()).isFalse();
+            assertThat(result.code()).isEqualTo("RG.RUN_CONTROL.FENCE_MISMATCH");
+        });
+        DynamicRunControlResult current = controlled.runControl("cancel-run", "fence-cancel");
+        assertThat(current.accepted()).isTrue();
+        assertThat(controlled.cancel(new DynamicRunControlCommand("cancel-run", "fence-cancel",
+                current.control().revision() + 1, "stale command"))).satisfies(result -> {
+            assertThat(result.accepted()).isFalse();
+            assertThat(result.code()).isEqualTo("RG.RUN_CONTROL.REVISION_CONFLICT");
+        });
+        assertThat(controlled.cancel(new DynamicRunControlCommand("cancel-run", "fence-cancel",
+                current.control().revision(), "author cancelled"))).satisfies(result -> {
+            assertThat(result.accepted()).isTrue();
+            assertThat(result.control().status()).isEqualTo("CANCEL_REQUESTED");
+        });
+
+        DynamicGraphRunResponse cancelled = response.get(3, TimeUnit.SECONDS);
+        assertThat(cancelled.success()).isFalse();
+        assertThat(cancelled.runControl().status()).isEqualTo("CANCELLED");
+        assertThat(cancelled.runControl().terminationConfirmed()).isTrue();
+    }
+
+    @Test
+    void reportsUnconfirmedTerminationWhileAnOperatorIgnoresInterrupts() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("slow", (com.leanowtech.bloge.core.operator.Operator<Object, Object>) (input, ctx) -> {
+            started.countDown();
+            while (release.getCount() > 0) {
+                try {
+                    Thread.sleep(20);
+                } catch (InterruptedException ignored) {
+                    // Deliberately violates cooperative cancellation to prove fail-closed reporting.
+                }
+            }
+            return input;
+        });
+        DynamicGatewayComposerService controlled = new DynamicGatewayComposerService(registry);
+        DynamicGraphRunRequest request = new DynamicGraphRunRequest(simpleNodeDsl(), Map.of("value", "request"),
+                "work", new DynamicRunIntent("", "unconfirmed-run", null, "fence-unconfirmed", 50));
+
+        CompletableFuture<DynamicGraphRunResponse> response = CompletableFuture.supplyAsync(() -> controlled.run(request));
+        assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
+        assertThat(controlled.cancel(new DynamicRunControlCommand("unconfirmed-run", "fence-unconfirmed", 0,
+                "stop uncooperative operator")).accepted()).isTrue();
+
+        DynamicGraphRunResponse unconfirmed = response.get(2, TimeUnit.SECONDS);
+        assertThat(unconfirmed.runControl().status()).isEqualTo("TERMINATION_UNCONFIRMED");
+        assertThat(unconfirmed.runControl().terminationConfirmed()).isFalse();
+        assertThat(unconfirmed.runControl().sideEffectsMayBeInFlight()).isTrue();
+
+        release.countDown();
+        awaitControlStatus(controlled, "unconfirmed-run", "fence-unconfirmed", "CANCELLED");
+        assertThat(controlled.runControl("unconfirmed-run", "fence-unconfirmed").control())
+                .satisfies(control -> {
+                    assertThat(control.terminationConfirmed()).isTrue();
+                    assertThat(control.sideEffectsMayBeInFlight()).isFalse();
+                });
+    }
+
+    @Test
     void quarantinesAmbiguousResilienceCorrelationInsteadOfCrossLinkingConcurrentRuns() {
         Graph graph = Graph.builder("sameGraph")
                 .node("guarded", MockOperator.returning(Map.of("ok", true)))
@@ -196,5 +302,29 @@ class DynamicGatewayComposerServiceTest {
         assertThat(response.success()).isFalse();
         assertThat(response.diagnostics()).isNotEmpty();
         assertThat(response.errors()).isNotEmpty();
+    }
+
+    private static String simpleNodeDsl() {
+        return """
+                graph controlledGraph {
+                  node work : slow {
+                    input { value = ctx.value }
+                  }
+                }
+                """;
+    }
+
+    private static void awaitControlStatus(DynamicGatewayComposerService service,
+                                           String requestId,
+                                           String fence,
+                                           String expected) throws InterruptedException {
+        Instant deadline = Instant.now().plusSeconds(2);
+        while (Instant.now().isBefore(deadline)) {
+            if (expected.equals(service.runControl(requestId, fence).control().status())) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        assertThat(service.runControl(requestId, fence).control().status()).isEqualTo(expected);
     }
 }

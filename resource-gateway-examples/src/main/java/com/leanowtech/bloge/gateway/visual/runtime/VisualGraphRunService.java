@@ -88,6 +88,14 @@ public class VisualGraphRunService {
     public VisualGraphRunResponse run(GraphDraft draft,
                                       Map<String, Object> context,
                                       String outputNode) {
+        return run(draft, context, outputNode, VisualRunIntent.unmanaged());
+    }
+
+    /** Runs a visual graph draft with an optional graph deadline and fenced cancellation address. */
+    public VisualGraphRunResponse run(GraphDraft draft,
+                                      Map<String, Object> context,
+                                      String outputNode,
+                                      VisualRunIntent runIntent) {
         List<VisualDiagnostic> fingerprintDiagnostics = requireOperatorFingerprintSnapshot(draft);
         if (!fingerprintDiagnostics.isEmpty()) {
             return blocked(draft, false, fingerprintDiagnostics,
@@ -134,7 +142,8 @@ public class VisualGraphRunService {
         VisualDslRunResponse dynamic = dslRunner.run(new VisualDslRunRequest(
                 generated.dsl(),
                 effectiveContext,
-                selectedOutputNode
+                selectedOutputNode,
+                runIntent
         ));
         diagnostics.addAll(dynamic.diagnostics().stream()
                 .map(VisualGraphRunService::fromCompilerDiagnostic)
@@ -162,7 +171,8 @@ public class VisualGraphRunService {
                 validation,
                 "",
                 dynamic.nodeAttempts(),
-                dynamic.nodeExecutionFacts()
+                dynamic.nodeExecutionFacts(),
+                dynamic.runControl()
         );
     }
 
@@ -177,6 +187,14 @@ public class VisualGraphRunService {
     public VisualGraphRunResponse run(VisualGraphPublication publication,
                                       Map<String, Object> context,
                                       String outputNode) {
+        return run(publication, context, outputNode, VisualRunIntent.unmanaged());
+    }
+
+    /** Runs an immutable publication with an optional controlled-run intent. */
+    public VisualGraphRunResponse run(VisualGraphPublication publication,
+                                      Map<String, Object> context,
+                                      String outputNode,
+                                      VisualRunIntent runIntent) {
         if (publication == null) {
             return blocked(null, false, List.of(VisualDiagnostic.error("visual.publication.missing",
                     "Visual graph publication is required.", "/publication")),
@@ -226,7 +244,8 @@ public class VisualGraphRunService {
         VisualDslRunResponse dynamic = dslRunner.run(new VisualDslRunRequest(
                 publication.dsl(),
                 effectiveContext,
-                selectedOutputNode
+                selectedOutputNode,
+                runIntent
         ));
         diagnostics.addAll(dynamic.diagnostics().stream()
                 .map(VisualGraphRunService::fromCompilerDiagnostic)
@@ -254,8 +273,19 @@ public class VisualGraphRunService {
                 validation,
                 "",
                 dynamic.nodeAttempts(),
-                dynamic.nodeExecutionFacts()
+                dynamic.nodeExecutionFacts(),
+                dynamic.runControl()
         );
+    }
+
+    /** Returns the latest lifecycle view for a controlled run. */
+    public VisualRunControlResult runControl(String requestId, String fencingToken) {
+        return dslRunner.runControl(requestId, fencingToken);
+    }
+
+    /** Requests cooperative cancellation through the hosting DSL adapter. */
+    public VisualRunControlResult cancel(VisualRunControlCommand command) {
+        return dslRunner.cancel(command);
     }
 
     private static VisualValidationResult repairValidation(GraphDraft draft, List<VisualDiagnostic> diagnostics) {

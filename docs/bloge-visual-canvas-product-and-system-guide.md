@@ -267,8 +267,8 @@ ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服
 
 画布点击 **Run** 后，系统不再只保存一个最终 `SUCCESS/FAILED`。BLOGE 的 node lifecycle 与
 `ResilienceListener` 会在同一个 run capture 中记录 retry、timeout 和 fallback 事件；Resource Gateway
-再结合不可变拓扑解释 skip/cancel 的因果关系，最后写入 `VisualGraphRunRecord.v5` 并导出
-`runEvidenceBundle.v3`。
+再结合不可变拓扑解释 skip/cancel 的因果关系，最后写入 `VisualGraphRunRecord.v6` 并导出
+`runEvidenceBundle.v4`。
 
 ![Resource Gateway 运行失败事实链](assets/resource-gateway-run-failure-semantics.svg)
 
@@ -311,15 +311,71 @@ operator 的 effect/idempotency、业务补偿能力和门禁策略决定是否�
 | capability | 当前值 | 含义 |
 |---|---:|---|
 | `structuredExecutionFacts` | `true` | node/edge/graph 标准事实已实现 |
-| `graphDeadline` | `false` | 尚无图级 deadline command 与预算传播 |
-| `userRunCancellation` | `false` | 尚无用户 cancel API、fencing 与终止确认 |
+| `graphDeadline` | `true` | 画布 run 支持绝对 deadline；剩余预算向下游协议传播仍待 BLOGE/runtime binding 扩展 |
+| `userRunCancellation` | `true` | 支持带 fencing token 的协作式 cancel command |
+| `runTerminationConfirmation` | `true` | owner 已退出且 operator in-flight 归零后才确认终止 |
+| `hardRunTermination` | `false` | Java 进程不能安全强杀忽略中断的任意业务代码 |
+| `durableRunControl` | `false` | active control registry 仍是单进程；重启接管尚未实现 |
+| `runControlEvidence` | `true` | control fact 已进入 run record、签名和 evidence v4 |
 | `sideEffectCommitConfirmation` | `false` | 尚无 operator commit receipt/unknown-commit 消解协议 |
 
-旧 `runEvidenceBundle.v1/v2` 仍在 capability 的兼容列表中；新 consumer 应优先协商 v3。旧 run 若没有
+旧 `runEvidenceBundle.v1/v2/v3` 仍在 capability 的兼容列表中；新 consumer 应优先协商 v4。旧 run 若没有
 每个节点的结构化 execution fact，会得到
 `Structured execution semantics were not captured for every node.` gap 并被隔离，而不是由服务端静默猜测。
-ANEKE 可直接使用 [run-evidence-bundle-v3.schema.json](schemas/tool-studio-resource-gateway/run-evidence-bundle-v3.schema.json)
+ANEKE 可直接使用 [run-evidence-bundle-v4.schema.json](schemas/tool-studio-resource-gateway/run-evidence-bundle-v4.schema.json)
 做 producer/consumer contract 校验，不需要解析 Resource Gateway 内部 Java DTO。
+
+#### 在画布设置 deadline 和取消运行
+
+Custom Composer 的 **Run** 区现在直接提供 `Deadline` 数值框。点击 **Run** 时，页面自动生成
+`requestId + fencingToken`，把相对毫秒数转换为绝对 `deadlineAt`；运行期间 Run 按钮会锁定，右侧出现停止按钮。
+用户点击停止即可发出 fenced cancellation，不需要手写控制 JSON。
+
+![Custom Composer 的 Deadline 与 Run 控件](assets/resource-gateway-run-control-ui.jpg)
+
+上图聚焦右侧运行区：`Deadline` 接受 `100-300000 ms`，蓝色按钮启动受控运行；运行进入 active 状态后，
+同一行会出现方形停止按钮。窄屏布局会自动把命令区收束为单列，输入框、按钮和规则表不会产生横向滚动：
+
+![移动端 Deadline 与 Run 控件](assets/resource-gateway-run-control-ui-mobile.jpg)
+
+![Resource Gateway run control 生命周期](assets/resource-gateway-run-control-lifecycle.svg)
+
+图源：[resource-gateway-run-control-lifecycle.drawio](assets/drawio/resource-gateway-run-control-lifecycle.drawio)。
+
+执行完成后，在 Output 中展开 `payload.runControl`：
+
+| status | 如何理解 | evidence 处理 |
+|---|---|---|
+| `SUCCEEDED` / `FAILED` | 调度线程和所有算子线程均已退出 | 继续按 node/edge facts 判断 |
+| `CANCELLED` | 用户取消，协作终止已经确认 | 可消费，但仍检查外部写的 `sideEffectOutcome` |
+| `TIMED_OUT` | 绝对 graph deadline 已到且协作终止已确认 | 可消费为 timeout 事实 |
+| `CANCEL_REQUESTED` / `TIMING_OUT` | 停止信号已受理，仍在等待线程退出 | 非终态，不应发布 |
+| `TERMINATION_UNCONFIRMED` | grace 已过或 owner 退出时仍有 operator in-flight | `manifest=QUARANTINED`，门禁必须阻断 |
+
+`terminationConfirmed` 不是“HTTP 请求已经返回”的同义词。系统同时跟踪 scheduler owner 和实际进入
+operator interceptor 的虚拟线程；只有 owner 退出且 in-flight 计数为零，才会清除
+`sideEffectsMayBeInFlight`。若业务算子吞掉 `InterruptedException`，页面会及时返回
+`TERMINATION_UNCONFIRMED`，而不是伪造 `CANCELLED`。
+
+自动化客户端也可以调用：
+
+```http
+GET /api/visual/run-controls/{requestId}
+X-Run-Fencing-Token: <fencingToken>
+
+POST /api/visual/run-controls/{requestId}/cancel
+Content-Type: application/json
+
+{
+  "fencingToken": "<fencingToken>",
+  "expectedRevision": 0,
+  "reason": "AUTHOR_CANCELLED_FROM_CANVAS"
+}
+```
+
+`expectedRevision>0` 启用乐观并发检查；过期 revision 返回 `409`，错误 fence 返回 `403`。当前控制表只在
+单个 Resource Gateway 进程内保留一小时终态，因此不能把它当作跨重启 workflow store；跨实例接管仍需
+BLOGE durable execution lease 与持久 fencing owner。
 
 ### 3.5 让 ANEKE 持续同步且可对账
 
@@ -1326,7 +1382,7 @@ GET /api/gateway/examples/scenarios/{graphName}/diagram
 | `visual/simulation` | mock/real 混合模拟、fixture、trace、sample generator |
 | `visual/publication` | publication 冻结、导入导出、依赖报告 |
 | `visual/golden` | golden case 保存、运行、认证 |
-| `visual/runtime` | `VisualGraphRunRecord.v5`、精确 node invocation attempt、结构化 execution fact、payload 脱敏、持久 evidence seal 和 trace/replay 数据 |
+| `visual/runtime` | `VisualGraphRunRecord.v6`、精确 node invocation attempt、结构化 node/run-control fact、payload 脱敏、持久 evidence seal 和 trace/replay 数据 |
 | `visual/resource` | OpenAPI/resource contract 投影到 visual resource/operator surface |
 | `integration` | Tool Studio versioned envelope、capability probe、draft dependency export、evidence/replay、验签公钥、governance gate feedback、transactional outbox、签名 cursor 和 reconciliation snapshot |
 

@@ -25,6 +25,7 @@ import java.util.Map;
  * @param errors execution error messages
  * @param layout generated visual layout, when the adapter can provide one
  * @param decisionTable extracted decision-table display metadata, when available
+ * @param runControl controlled-run lifecycle and termination proof
  */
 public record VisualDslRunResponse(
         boolean compiled,
@@ -41,7 +42,8 @@ public record VisualDslRunResponse(
         List<Diagnostic> diagnostics,
         List<String> errors,
         VisualRunLayout layout,
-        VisualDecisionTable decisionTable
+        VisualDecisionTable decisionTable,
+        VisualRunControlView runControl
 ) {
     /**
      * Creates a normalized adapter response.
@@ -56,6 +58,28 @@ public record VisualDslRunResponse(
         nodeExecutionFacts = nodeExecutionFacts == null ? Map.of() : new LinkedHashMap<>(nodeExecutionFacts);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         errors = errors == null ? List.of() : List.copyOf(errors);
+        runControl = runControl == null ? VisualRunControlView.unmanaged() : runControl;
+    }
+
+    /** Backward-compatible constructor for unmanaged executions. */
+    public VisualDslRunResponse(boolean compiled,
+                                boolean success,
+                                String graphName,
+                                String outputNode,
+                                Object output,
+                                Map<String, Object> results,
+                                Map<String, String> statusMap,
+                                long elapsedMs,
+                                Map<String, Long> nodeElapsedMs,
+                                Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts,
+                                Map<String, VisualNodeExecutionFact> nodeExecutionFacts,
+                                List<Diagnostic> diagnostics,
+                                List<String> errors,
+                                VisualRunLayout layout,
+                                VisualDecisionTable decisionTable) {
+        this(compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs, nodeElapsedMs,
+                nodeAttempts, nodeExecutionFacts, diagnostics, errors, layout, decisionTable,
+                VisualRunControlView.unmanaged());
     }
 
     /** Backward-compatible constructor for adapters that do not yet expose invocation attempts. */
@@ -73,7 +97,7 @@ public record VisualDslRunResponse(
                                 VisualRunLayout layout,
                                 VisualDecisionTable decisionTable) {
         this(compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs, nodeElapsedMs,
-                Map.of(), Map.of(), diagnostics, errors, layout, decisionTable);
+                Map.of(), Map.of(), diagnostics, errors, layout, decisionTable, VisualRunControlView.unmanaged());
     }
 
     /** Backward-compatible constructor for adapters that expose attempts but not execution semantics. */
@@ -92,7 +116,8 @@ public record VisualDslRunResponse(
                                 VisualRunLayout layout,
                                 VisualDecisionTable decisionTable) {
         this(compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs, nodeElapsedMs,
-                nodeAttempts, Map.of(), diagnostics, errors, layout, decisionTable);
+                nodeAttempts, Map.of(), diagnostics, errors, layout, decisionTable,
+                VisualRunControlView.unmanaged());
     }
 
     private static Map<String, List<VisualNodeExecutionAttempt>> immutableAttempts(

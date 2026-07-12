@@ -104,12 +104,12 @@ legacy_url() {
     echo "http://localhost:$(configured_port)/examples/gateway"
 }
 
-readiness_url() {
+readiness_urls() {
     if truthy "${BUILD_FRONTEND}"; then
         author_url
-    else
-        echo "http://localhost:$(configured_port)/api/visual/operators"
     fi
+    legacy_url
+    echo "http://localhost:$(configured_port)/api/visual/operators"
 }
 
 jar_path() {
@@ -222,9 +222,6 @@ build_app() {
 }
 
 wait_for_ready() {
-    local url
-    url="$(readiness_url)"
-
     if ! command -v curl >/dev/null 2>&1; then
         echo "Started. curl is unavailable, so readiness was not checked."
         return 0
@@ -233,14 +230,17 @@ wait_for_ready() {
     local deadline
     deadline=$((SECONDS + STARTUP_TIMEOUT))
     while [ "${SECONDS}" -lt "${deadline}" ]; do
+        local url
         if ! running_pid >/dev/null 2>&1; then
             echo "Demo service exited before becoming ready. See $(log_file)." >&2
             return 1
         fi
-        if curl -fsS "${url}" >/dev/null 2>&1; then
-            echo "Demo service ready: ${url}"
-            return 0
-        fi
+        while IFS= read -r url; do
+            if curl -fsS "${url}" >/dev/null 2>&1; then
+                echo "Demo service ready: ${url}"
+                return 0
+            fi
+        done < <(readiness_urls)
         sleep 2
     done
 

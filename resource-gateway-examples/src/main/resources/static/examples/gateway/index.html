@@ -68,7 +68,18 @@
         <section class="tool-section">
           <div id="input-title" class="panel-title">Sample Input</div>
           <form id="input-form" class="input-form"></form>
-          <button id="run-scenario" class="primary" type="button">Run</button>
+          <div class="run-control-bar">
+            <label class="run-deadline-field" title="Absolute graph deadline is derived when Run starts">
+              <span>Deadline</span>
+              <input id="run-deadline-ms" type="number" min="100" max="300000" step="100" value="30000">
+              <small>ms</small>
+            </label>
+            <div class="run-command-row">
+              <button id="run-scenario" class="primary" type="button">Run</button>
+              <button id="cancel-run" class="secondary danger run-cancel-button" type="button"
+                      title="Cancel active run" aria-label="Cancel active run" hidden>&#9632;</button>
+            </div>
+          </div>
         </section>
 
         <section id="decision-summary-section" class="tool-section decision-summary-section" hidden>
