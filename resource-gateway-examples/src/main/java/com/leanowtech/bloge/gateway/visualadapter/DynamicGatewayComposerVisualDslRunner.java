@@ -175,10 +175,39 @@ public class DynamicGatewayComposerVisualDslRunner implements VisualDslRunner, V
                         source.fallback().configured(), source.fallback().used(), source.fallback().strategy(),
                         source.fallback().originalErrorType()),
                 source.sideEffectOutcome(),
+                source.sideEffectAttempts().stream().map(DynamicGatewayComposerVisualDslRunner::sideEffectAttempt)
+                        .toList(),
                 source.events().stream().map(event ->
                         new com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact.Event(
                                 event.sequence(), event.type(), event.observedAt(), event.attempt(),
                                 event.errorType())).toList());
+    }
+
+    private static com.leanowtech.bloge.gateway.visual.runtime.VisualSideEffectAttempt sideEffectAttempt(
+            DynamicGraphRunResponse.SideEffectAttempt source) {
+        DynamicGraphRunResponse.SideEffectRequest request = source.request();
+        return new com.leanowtech.bloge.gateway.visual.runtime.VisualSideEffectAttempt(
+                source.attemptId(),
+                new com.leanowtech.bloge.gateway.visual.runtime.VisualSideEffectAttempt.Request(
+                        request.operationRef(), request.idempotencyKeyFingerprint(), request.reconcilerRef(),
+                        request.startedAt(), request.retryAttempt()),
+                source.outcome(), sideEffectReceipt(source.receipt()),
+                source.transitions().stream().map(transition ->
+                        new com.leanowtech.bloge.gateway.visual.runtime.VisualSideEffectAttempt.Transition(
+                                transition.sequence(), transition.outcome(), transition.observedAt(),
+                                transition.reasonCode(), sideEffectReceipt(transition.receipt())))
+                        .toList());
+    }
+
+    private static com.leanowtech.bloge.gateway.visual.runtime.VisualSideEffectAttempt.Receipt sideEffectReceipt(
+            DynamicGraphRunResponse.SideEffectReceipt source) {
+        if (source == null) {
+            return null;
+        }
+        return new com.leanowtech.bloge.gateway.visual.runtime.VisualSideEffectAttempt.Receipt(
+                source.receiptId(), source.provider(), source.transactionRef(), source.committedAt(),
+                new com.leanowtech.bloge.gateway.visual.runtime.VisualSideEffectAttempt.Proof(
+                        source.proof().reference(), source.proof().fingerprint()));
     }
 
     private static VisualDslRunResponse.Diagnostic diagnostic(DynamicGraphRunResponse.Diagnostic source) {

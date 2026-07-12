@@ -18,6 +18,7 @@ public record VisualNodeExecutionFact(
         Timeout timeout,
         Fallback fallback,
         String sideEffectOutcome,
+        List<VisualSideEffectAttempt> sideEffectAttempts,
         List<Event> events
 ) {
     public VisualNodeExecutionFact {
@@ -29,12 +30,21 @@ public record VisualNodeExecutionFact(
         timeout = timeout == null ? Timeout.unknown() : timeout;
         fallback = fallback == null ? Fallback.unknown() : fallback;
         sideEffectOutcome = normalize(sideEffectOutcome, "NOT_CAPTURED");
+        sideEffectAttempts = sideEffectAttempts == null ? List.of() : List.copyOf(sideEffectAttempts);
         events = events == null ? List.of() : List.copyOf(events);
+    }
+
+    /** Backward-compatible constructor for facts captured before structured side-effect attempts. */
+    public VisualNodeExecutionFact(String status, String reasonCode, String observationSource,
+                                   List<String> causedByNodeIds, Retry retry, Timeout timeout,
+                                   Fallback fallback, String sideEffectOutcome, List<Event> events) {
+        this(status, reasonCode, observationSource, causedByNodeIds, retry, timeout, fallback,
+                sideEffectOutcome, List.of(), events);
     }
 
     public static VisualNodeExecutionFact unknown() {
         return new VisualNodeExecutionFact("UNKNOWN", "STATUS_NOT_CAPTURED", "NOT_CAPTURED", List.of(),
-                Retry.unknown(), Timeout.unknown(), Fallback.unknown(), "NOT_CAPTURED", List.of());
+                Retry.unknown(), Timeout.unknown(), Fallback.unknown(), "NOT_CAPTURED", List.of(), List.of());
     }
 
     public record Retry(int configuredMaxAttempts, int observedAttempts, boolean exhausted,

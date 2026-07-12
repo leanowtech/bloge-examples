@@ -161,7 +161,7 @@ public class DynamicGatewayComposerService {
         GraphContext context = contextFrom(request.context(), captureId);
         ExecutionOutcome outcome = execute(graph, context, registration);
         GraphResult result = outcome.result();
-        NodeExecutionCaptureInterceptor.CapturedExecution captured = executionCapture.complete(captureId, result);
+        NodeExecutionCaptureInterceptor.CapturedExecution captured = executionCapture.complete(captureId, result, context);
         DynamicRunControlView control = runControls.view(registration);
         if (result == null) {
             String error = outcome.terminationUnconfirmed()

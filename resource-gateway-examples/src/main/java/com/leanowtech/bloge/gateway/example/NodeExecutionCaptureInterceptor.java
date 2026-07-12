@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.example;
 
+import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.engine.GraphResult;
 import com.leanowtech.bloge.core.model.ConditionalEdge;
 import com.leanowtech.bloge.core.model.DirectEdge;
@@ -11,6 +12,7 @@ import com.leanowtech.bloge.core.model.ResilienceConfig;
 import com.leanowtech.bloge.core.model.StreamEdge;
 import com.leanowtech.bloge.core.operator.DecisionTableInput;
 import com.leanowtech.bloge.core.operator.OperatorContext;
+import com.leanowtech.bloge.core.operator.SideEffectJournal;
 import com.leanowtech.bloge.core.spi.ExecutionListener;
 import com.leanowtech.bloge.core.spi.OperatorInterceptor;
 import com.leanowtech.bloge.core.spi.OperatorInvocation;
@@ -44,12 +46,19 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
         captures.put(captureId, new CaptureState(graph));
     }
 
-    CapturedExecution complete(String captureId, GraphResult result) {
+    CapturedExecution complete(String captureId, GraphResult result, GraphContext context) {
         CaptureState state = captures.remove(captureId);
         if (state == null) {
             return CapturedExecution.empty();
         }
+        if (context != null) {
+            state.recordSideEffects(context.sideEffectJournal().snapshots());
+        }
         return new CapturedExecution(state.orderedAttempts(), state.executionFacts(result));
+    }
+
+    CapturedExecution complete(String captureId, GraphResult result) {
+        return complete(captureId, result, null);
     }
 
     @Override
@@ -250,6 +259,14 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
             fact.event("FALLBACK", Math.max(0, fact.observedAttempts - 1), error);
         }
 
+        private void recordSideEffects(List<SideEffectJournal.Snapshot> snapshots) {
+            for (SideEffectJournal.Snapshot snapshot : snapshots) {
+                String nodeId = snapshot.request().execution().nodeId();
+                fact(nodeId, graph == null ? null : graph.nodes().get(nodeId))
+                        .sideEffectAttempts.add(sideEffectAttempt(snapshot));
+            }
+        }
+
         private MutableNodeFact fact(String nodeId, NodeSpec spec) {
             return facts.compute(nodeId, (ignored, current) -> {
                 if (current == null) {
@@ -356,6 +373,7 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
         private String skipReason = "";
         private int eventSequence;
         private final List<DynamicGraphRunResponse.Event> events = new ArrayList<>();
+        private final List<DynamicGraphRunResponse.SideEffectAttempt> sideEffectAttempts = new ArrayList<>();
 
         private MutableNodeFact(NodeSpec spec) {
             applyPolicy(spec);
@@ -439,13 +457,58 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
                 source = "ENGINE_STATUS_WITH_EVENT_GAP";
             }
             boolean exhausted = configuredMaxAttempts > 1 && attempts >= configuredMaxAttempts;
+            String sideEffectOutcome = aggregateSideEffectOutcome(sideEffectAttempts);
             return new DynamicGraphRunResponse.NodeExecutionFact(status, reason, source, causedBy,
                     new DynamicGraphRunResponse.Retry(configuredMaxAttempts, attempts, exhausted, lastErrorType),
                     new DynamicGraphRunResponse.Timeout(timeoutConfigured, configuredTimeoutMs, timeoutObserved),
                     new DynamicGraphRunResponse.Fallback(fallbackConfigured, fallbackUsed, fallbackStrategy,
                             fallbackOriginalErrorType),
-                    "NOT_CAPTURED", List.copyOf(events));
+                    sideEffectOutcome, List.copyOf(sideEffectAttempts), List.copyOf(events));
         }
+    }
+
+    private static String aggregateSideEffectOutcome(
+            List<DynamicGraphRunResponse.SideEffectAttempt> attempts) {
+        if (attempts.isEmpty()) {
+            return "NOT_CAPTURED";
+        }
+        Set<String> outcomes = attempts.stream()
+                .map(DynamicGraphRunResponse.SideEffectAttempt::outcome)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        if (outcomes.stream().anyMatch(Set.of("PREPARED", "UNKNOWN_COMMIT")::contains)) {
+            return "UNKNOWN_COMMIT";
+        }
+        if (outcomes.size() == 1) {
+            return outcomes.iterator().next();
+        }
+        return "PARTIAL_COMMIT";
+    }
+
+    private static DynamicGraphRunResponse.SideEffectAttempt sideEffectAttempt(
+            SideEffectJournal.Snapshot snapshot) {
+        SideEffectJournal.RequestSummary request = snapshot.request();
+        return new DynamicGraphRunResponse.SideEffectAttempt(
+                snapshot.attemptId(),
+                new DynamicGraphRunResponse.SideEffectRequest(
+                        request.operationRef(), request.idempotencyKeyFingerprint(), request.reconcilerRef(),
+                        request.startedAt(), request.execution().retryAttempt()),
+                snapshot.outcome().name(), sideEffectReceipt(snapshot.receipt()),
+                snapshot.transitions().stream().map(transition ->
+                        new DynamicGraphRunResponse.SideEffectTransition(
+                                transition.sequence(), transition.outcome().name(), transition.observedAt(),
+                                transition.reasonCode(), sideEffectReceipt(transition.receipt())))
+                        .toList());
+    }
+
+    private static DynamicGraphRunResponse.SideEffectReceipt sideEffectReceipt(
+            SideEffectJournal.Receipt receipt) {
+        if (receipt == null) {
+            return null;
+        }
+        return new DynamicGraphRunResponse.SideEffectReceipt(
+                receipt.receiptId(), receipt.provider(), receipt.transactionRef(), receipt.committedAt(),
+                new DynamicGraphRunResponse.SideEffectProof(
+                        receipt.proof().reference(), receipt.proof().fingerprint()));
     }
 
     private static String type(Throwable error) {

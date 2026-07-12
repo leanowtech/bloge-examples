@@ -144,14 +144,77 @@ public record DynamicGraphRunResponse(
     /** Structured node-level policy and failure semantics observed by the BLOGE runtime. */
     public record NodeExecutionFact(String status, String reasonCode, String observationSource,
                                     List<String> causedByNodeIds, Retry retry, Timeout timeout,
-                                    Fallback fallback, String sideEffectOutcome, List<Event> events) {
+                                    Fallback fallback, String sideEffectOutcome,
+                                    List<SideEffectAttempt> sideEffectAttempts, List<Event> events) {
         public NodeExecutionFact {
             status = normalized(status, "UNKNOWN");
             reasonCode = normalized(reasonCode, "STATUS_NOT_CAPTURED");
             observationSource = normalized(observationSource, "NOT_CAPTURED");
             causedByNodeIds = causedByNodeIds == null ? List.of() : List.copyOf(causedByNodeIds);
             sideEffectOutcome = normalized(sideEffectOutcome, "NOT_CAPTURED");
+            sideEffectAttempts = sideEffectAttempts == null ? List.of() : List.copyOf(sideEffectAttempts);
             events = events == null ? List.of() : List.copyOf(events);
+        }
+
+        /** Backward-compatible constructor for facts captured before side-effect attempts were structured. */
+        public NodeExecutionFact(String status, String reasonCode, String observationSource,
+                                 List<String> causedByNodeIds, Retry retry, Timeout timeout,
+                                 Fallback fallback, String sideEffectOutcome, List<Event> events) {
+            this(status, reasonCode, observationSource, causedByNodeIds, retry, timeout, fallback,
+                    sideEffectOutcome, List.of(), events);
+        }
+    }
+
+    /** Sanitized external-effect attempt captured by the BLOGE execution journal. */
+    public record SideEffectAttempt(String attemptId, SideEffectRequest request, String outcome,
+                                    SideEffectReceipt receipt, List<SideEffectTransition> transitions) {
+        public SideEffectAttempt {
+            attemptId = attemptId == null ? "" : attemptId;
+            outcome = normalized(outcome, "UNKNOWN_COMMIT");
+            transitions = transitions == null ? List.of() : List.copyOf(transitions);
+        }
+    }
+
+    public record SideEffectRequest(String operationRef, String idempotencyKeyFingerprint, String reconcilerRef,
+                                    Instant startedAt, int retryAttempt) {
+        public SideEffectRequest {
+            operationRef = operationRef == null ? "" : operationRef;
+            idempotencyKeyFingerprint = idempotencyKeyFingerprint == null ? "" : idempotencyKeyFingerprint;
+            reconcilerRef = reconcilerRef == null ? "" : reconcilerRef;
+            startedAt = startedAt == null ? Instant.EPOCH : startedAt;
+            retryAttempt = Math.max(0, retryAttempt);
+        }
+
+        public boolean reconcilable() {
+            return !idempotencyKeyFingerprint.isBlank() && !reconcilerRef.isBlank();
+        }
+    }
+
+    public record SideEffectReceipt(String receiptId, String provider, String transactionRef,
+                                    Instant committedAt, SideEffectProof proof) {
+        public SideEffectReceipt {
+            receiptId = receiptId == null ? "" : receiptId;
+            provider = provider == null ? "" : provider;
+            transactionRef = transactionRef == null ? "" : transactionRef;
+            committedAt = committedAt == null ? Instant.EPOCH : committedAt;
+            proof = proof == null ? new SideEffectProof("", "") : proof;
+        }
+    }
+
+    public record SideEffectProof(String reference, String fingerprint) {
+        public SideEffectProof {
+            reference = reference == null ? "" : reference;
+            fingerprint = fingerprint == null ? "" : fingerprint;
+        }
+    }
+
+    public record SideEffectTransition(int sequence, String outcome, Instant observedAt,
+                                       String reasonCode, SideEffectReceipt receipt) {
+        public SideEffectTransition {
+            sequence = Math.max(1, sequence);
+            outcome = normalized(outcome, "UNKNOWN_COMMIT");
+            observedAt = observedAt == null ? Instant.EPOCH : observedAt;
+            reasonCode = reasonCode == null ? "" : reasonCode;
         }
     }
 

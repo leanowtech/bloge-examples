@@ -90,6 +90,9 @@ public record IntegrationCapabilities(
         features.put("runEvidenceRecoveryReservation", true);
         features.put("abandonedRunEvidenceRecovery", true);
         features.put("recoveryTransactionalOutbox", true);
+        features.put("sideEffectJournal", true);
+        features.put("sideEffectCommitReceipts", true);
+        features.put("sideEffectReconciliation", false);
         features.put("sideEffectCommitConfirmation", false);
         features.put("payloadReplay", true);
         features.put("payloadReplayNodeInputs", true);

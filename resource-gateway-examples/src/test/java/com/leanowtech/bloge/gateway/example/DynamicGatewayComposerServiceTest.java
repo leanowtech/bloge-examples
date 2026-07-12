@@ -6,6 +6,7 @@ import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.context.TenantContext;
 import com.leanowtech.bloge.core.model.Graph;
+import com.leanowtech.bloge.core.operator.SideEffectJournal;
 import com.leanowtech.bloge.core.spi.event.NodeEvent.NodeStartEvent;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.RepeatedTest;
@@ -244,6 +245,73 @@ class DynamicGatewayComposerServiceTest {
             assertThat(fact.observationSource()).isEqualTo("ENGINE_ADMISSION");
             assertThat(fact.events()).extracting(DynamicGraphRunResponse.Event::type)
                     .containsExactly("DEADLINE_EXHAUSTED");
+        });
+    }
+
+    @Test
+    void capturesCommittedSideEffectReceiptWithoutExposingRawIdempotencyKey() {
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("charge",
+                (com.leanowtech.bloge.core.operator.Operator<Object, Object>) (input, ctx) -> {
+                    try (SideEffectJournal.Attempt attempt = ctx.beginSideEffect(
+                            "payments.charge", "customer-42-charge-secret", "payments.status")) {
+                        attempt.committed(new SideEffectJournal.Receipt(
+                                "receipt-42", "payments", "txn-42", Instant.now(),
+                                new SideEffectJournal.Proof("kms://receipts/42", "sha256:proof")),
+                                "PROVIDER_CONFIRMED");
+                        return input;
+                    }
+                });
+        DynamicGatewayComposerService controlled = new DynamicGatewayComposerService(registry);
+
+        DynamicGraphRunResponse response = controlled.run(new DynamicGraphRunRequest("""
+                graph chargeGraph {
+                  node charge : charge { input { value = ctx.value } }
+                }
+                """, Map.of("value", "request"), "charge"));
+
+        assertThat(response.success()).isTrue();
+        assertThat(response.nodeExecutionFacts().get("charge")).satisfies(fact -> {
+            assertThat(fact.sideEffectOutcome()).isEqualTo("COMMITTED");
+            assertThat(fact.sideEffectAttempts()).singleElement().satisfies(attempt -> {
+                assertThat(attempt.outcome()).isEqualTo("COMMITTED");
+                assertThat(attempt.request().operationRef()).isEqualTo("payments.charge");
+                assertThat(attempt.request().reconcilable()).isTrue();
+                assertThat(attempt.request().idempotencyKeyFingerprint()).startsWith("sha256:")
+                        .doesNotContain("customer-42-charge-secret");
+                assertThat(attempt.receipt().receiptId()).isEqualTo("receipt-42");
+                assertThat(attempt.transitions()).extracting(DynamicGraphRunResponse.SideEffectTransition::outcome)
+                        .containsExactly("PREPARED", "COMMITTED");
+            });
+        });
+    }
+
+    @Test
+    void unresolvedSideEffectAttemptFailsClosedAsUnknownCommit() {
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("charge",
+                (com.leanowtech.bloge.core.operator.Operator<Object, Object>) (input, ctx) -> {
+                    try (SideEffectJournal.Attempt ignored = ctx.beginSideEffect(
+                            "payments.charge", "idem-timeout", "payments.status")) {
+                        throw new IllegalStateException("connection lost after request write");
+                    }
+                });
+        DynamicGatewayComposerService controlled = new DynamicGatewayComposerService(registry);
+
+        DynamicGraphRunResponse response = controlled.run(new DynamicGraphRunRequest("""
+                graph uncertainChargeGraph {
+                  node charge : charge { input { value = ctx.value } }
+                }
+                """, Map.of("value", "request"), "charge"));
+
+        assertThat(response.success()).isFalse();
+        assertThat(response.nodeExecutionFacts().get("charge")).satisfies(fact -> {
+            assertThat(fact.sideEffectOutcome()).isEqualTo("UNKNOWN_COMMIT");
+            assertThat(fact.sideEffectAttempts()).singleElement().satisfies(attempt -> {
+                assertThat(attempt.outcome()).isEqualTo("UNKNOWN_COMMIT");
+                assertThat(attempt.transitions()).extracting(DynamicGraphRunResponse.SideEffectTransition::reasonCode)
+                        .containsExactly("ATTEMPT_PREPARED", "ATTEMPT_CLOSED_WITHOUT_RECEIPT");
+            });
         });
     }
 

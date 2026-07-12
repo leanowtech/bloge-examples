@@ -102,7 +102,8 @@ public record VisualGraphRunRecord(
         VisualRunRecoveryMetadata recovery
 ) {
     public static final String SCHEMA_VERSION_V6 = "bloge.visualGraphRunRecord.v6";
-    public static final String SCHEMA_VERSION = "bloge.visualGraphRunRecord.v7";
+    public static final String SCHEMA_VERSION_V7 = "bloge.visualGraphRunRecord.v7";
+    public static final String SCHEMA_VERSION = "bloge.visualGraphRunRecord.v8";
     public static final String SOURCE_TRANSIENT_DRAFT = "TRANSIENT_DRAFT";
     public static final String SOURCE_STORED_DRAFT = "STORED_DRAFT";
     public static final String SOURCE_PUBLICATION = "PUBLICATION";
