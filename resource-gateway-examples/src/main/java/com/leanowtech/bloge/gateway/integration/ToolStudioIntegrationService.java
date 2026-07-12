@@ -40,6 +40,7 @@ public class ToolStudioIntegrationService {
     private final GovernanceGateResultRepository gateResultRepository;
     private final ReplayAssertionEvaluator replayAssertionEvaluator;
     private final IntegrationIdentityResolver identityResolver;
+    private final SideEffectReconcilerRegistry sideEffectReconcilers;
 
     @Autowired
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -48,7 +49,8 @@ public class ToolStudioIntegrationService {
                                         VisualGraphRunRepository runRepository,
                                         GovernanceGateResultRepository gateResultRepository,
                                         ObjectMapper objectMapper,
-                                        IntegrationIdentityResolver identityResolver) {
+                                        IntegrationIdentityResolver identityResolver,
+                                        SideEffectReconcilerRegistry sideEffectReconcilers) {
         this.draftRepository = draftRepository;
         this.validator = validator;
         this.catalog = catalog;
@@ -58,6 +60,19 @@ public class ToolStudioIntegrationService {
         this.identityResolver = identityResolver == null
                 ? IntegrationIdentityResolver.unavailable()
                 : identityResolver;
+        this.sideEffectReconcilers = sideEffectReconcilers == null
+                ? new SideEffectReconcilerRegistry(List.of()) : sideEffectReconcilers;
+    }
+
+    public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
+                                        GraphDraftValidator validator,
+                                        VisualOperatorCatalog catalog,
+                                        VisualGraphRunRepository runRepository,
+                                        GovernanceGateResultRepository gateResultRepository,
+                                        ObjectMapper objectMapper,
+                                        IntegrationIdentityResolver identityResolver) {
+        this(draftRepository, validator, catalog, runRepository, gateResultRepository, objectMapper,
+                identityResolver, new SideEffectReconcilerRegistry(List.of()));
     }
 
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -67,7 +82,7 @@ public class ToolStudioIntegrationService {
                                         GovernanceGateResultRepository gateResultRepository,
                                         ObjectMapper objectMapper) {
         this(draftRepository, validator, catalog, runRepository, gateResultRepository, objectMapper,
-                IntegrationIdentityResolver.unavailable());
+                IntegrationIdentityResolver.unavailable(), new SideEffectReconcilerRegistry(List.of()));
     }
 
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -89,7 +104,7 @@ public class ToolStudioIntegrationService {
     public IntegrationEnvelope<IntegrationCapabilities> capabilities() {
         return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
                 IntegrationCapabilities.current(runRepository != null && runRepository.evidenceSigner().available(),
-                        identityResolver.descriptor()));
+                        identityResolver.descriptor(), sideEffectReconcilers.available()));
     }
 
     public IntegrationEnvelope<GraphDraftIntegrationBundle> exportDraft(String draftId,

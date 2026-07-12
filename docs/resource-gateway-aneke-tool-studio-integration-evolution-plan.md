@@ -533,7 +533,7 @@ POST /api/integration/gate-results
 | P0 | Run Trace 可导出为治理证据 | 当前 shape-only trace 不够 | 新增 evidence bundle，不直接改造成唯一 run response |
 | P0 | Payload 级 replay | 当前缺 payload capture | 新增 payload store/ref/sanitizer/replay endpoint |
 | P0 | GraphDraft export 依赖元数据 | 已有 dependency report 但不够稳定导入 | integration dependency profile |
-| P0 | Timeout/partial failure 语义 | Round 10 已补 engine event、绝对 deadline、fenced cancel、双条件终止确认、durable control、崩溃证据恢复，以及 OperatorContext/HTTP/remote worker 的 remaining-budget 传播；detach policy 与 commit receipt 仍缺 | `VisualNodeExecutionFact` + durable control + evidence v5 + `ExecutionBudget`；下一步 disconnect/detach 与 commit reconciliation |
+| P0 | Timeout/partial failure 语义 | Round 11 已补 execution-scoped journal、receipt/transition evidence v6、UNKNOWN_COMMIT non-retryable DAG guard、持久 claim/fencing、provider reconciliation SPI、签名 refinement 与事务 outbox；仍缺 detach policy、任意 binding 合规和客户 provider adapter 覆盖 | `VisualNodeExecutionFact` + durable control + evidence v6 + `ExecutionBudget` + `SideEffectReconciliationRecord.v1`；下一步 binding conformance 与 disconnect/detach |
 | P1 | Deep Link | 当前不是 integration API | 前端 route + resolver API |
 | P1 | Health/Capability Probe | 缺口明确 | `/api/integration/capabilities` |
 | P1 | Contract Test Suite 对齐 workbook | 当前 case/assertion 语义偏基础 | suite vNext + workbook mapping |
@@ -851,7 +851,7 @@ allow = role permits action
 | 维度 | 示例 | 变化原因 | 协商方式 |
 |---|---|---|---|
 | transport protocol | `ToolStudioResourceGatewayProtocol/1.2` | envelope、错误和协商机制变化 | capability probe + Accept header |
-| payload schema | `runEvidenceBundle.v5` | 领域字段和约束变化 | `payloadKind + payloadSchemaVersion`；capability 同时声明 v1/v2/v3/v4/v5；机器合同见 `docs/schemas/tool-studio-resource-gateway/run-evidence-bundle-v5.schema.json` |
+| payload schema | `runEvidenceBundle.v6` | 领域字段和约束变化 | `payloadKind + payloadSchemaVersion`；capability 同时声明 v1/v2/v3/v4/v5/v6；机器合同见 `docs/schemas/tool-studio-resource-gateway/run-evidence-bundle-v6.schema.json` |
 | producer implementation | `resource-gateway/2.8.1` | bug fix、性能和内部实现变化 | 信息字段，不作为兼容判断唯一依据 |
 | semantic profile | `ANEKE_CORRECTNESS_2026_1` | assertion、状态或治理解释变化 | capability profile + explicit opt-in |
 
@@ -1059,7 +1059,7 @@ run deadline
 
 图源：[resource-gateway-run-control-lifecycle.drawio](assets/drawio/resource-gateway-run-control-lifecycle.drawio)。
 
-当前落地状态（Round 10）：`VisualRunIntent.v1` 和 gateway adapter 对应 intent 使用绝对 `deadlineAt`、
+当前落地状态（Round 11）：`VisualRunIntent.v1` 和 gateway adapter 对应 intent 使用绝对 `deadlineAt`、
 caller-generated `requestId/fencingToken` 和 cancellation grace。`DynamicRunControlManager` 拥有 scheduler
 thread、每个进入 operator interceptor 的虚拟线程集合和 monotonic revision；deadline 或用户 cancel 会同时
 设置 stop token、阻止后续 operator invocation，并中断 owner 与当前 in-flight operators。取消查询也必须携带
@@ -1077,8 +1077,8 @@ digest、owner epoch、revision 与 lease；非 owner 实例可提交 cancel，o
 Round 9 继续关闭 control 与 evidence 之间的崩溃窗口。managed run 在执行前先提交脱敏、带 fingerprint 的
 `VisualRunRecoveryReservation`，确定性绑定 requestId→runId、draft、scope 和 context；正常完成与 recovery
 sweeper 在同一 reservation 行上竞争。owner abandonment、terminal control 已提交但 evidence 未提交、以及超过
-grace 仍缺 control 三种情况都会生成带 `VisualRunRecoveryMetadata` 的 `VisualGraphRunRecord.v7`，再导出
-`runEvidenceBundle.v5`。run record、reservation 状态和 `RUN_ABANDONED/RUN_EVIDENCE_RECOVERED` outbox event
+grace 仍缺 control 三种情况都会生成带 `VisualRunRecoveryMetadata` 的 `VisualGraphRunRecord.v8`，再导出
+`runEvidenceBundle.v6`。run record、reservation 状态和 `RUN_ABANDONED/RUN_EVIDENCE_RECOVERED` outbox event
 处于同一事务；失败全部回滚并可重试。恢复 evidence 保持签名可验但因 payload/termination 缺口进入
 `QUARANTINED`，不会伪装成正常成功证据。
 
@@ -1133,9 +1133,9 @@ Retry decision 由错误类别、side-effect、幂等支持和剩余 deadline �
 
 图级聚合已经以 `outputNode` 为关键输出：关键输出超时是 `TIMEOUT`；关键输出到达且存在独立降级才是
 `PARTIAL + CRITICAL_OUTPUT_REACHED_WITH_DEGRADATION`。edge evidence 表达“值是否传播”，目标节点随后超时
-不会倒灌成 edge timeout。当前 `VisualGraphRunRecord.v7` 把 node、run-control 和 recovery facts 纳入不可变
-fingerprint 和签名，`runEvidenceBundle.v5` 增加 node/edge/graph reason、fact coverage、终止确认、
-unknown-commit 和 recovery provenance 字段。
+不会倒灌成 edge timeout。当前 `VisualGraphRunRecord.v8` 把 node、run-control、recovery 和 side-effect attempt
+facts 纳入不可变 fingerprint 和签名，`runEvidenceBundle.v6` 增加 node/edge/graph reason、fact coverage、
+终止确认、attempt fingerprint、receipt/transition、unknown-commit 和 recovery provenance 字段。
 
 ### 23.4 熔断、舱壁和背压
 
@@ -1145,10 +1145,37 @@ unknown-commit 和 recovery provenance 字段。
 
 非幂等写在 timeout 后可能处于 `UNKNOWN_COMMIT`。系统不能把它归为普通 `FAILED`；应暂停依赖该结果的后续写操作，暴露 reconciliation hook，由 operator adapter 查询远端 transaction/idempotency record。没有 reconciliation 能力的算子必须声明这一风险，ANEKE 可据此提高发布门槛。
 
-Round 6 已停止把外部副作用结果默认为“未提交”：run snapshot 保存 operator effect/idempotency，evidence 在
-缺少 runtime commit receipt 时输出 `sideEffectOutcome=UNKNOWN_COMMIT`。但当前仍只是诚实暴露风险，尚未实现
-远端 transaction receipt、幂等记录查询、暂停后续写、补偿确认或 reconciliation hook，因此 capability 必须
-保持 `sideEffectCommitConfirmation=false`。
+Round 11 已把“诚实暴露风险”推进为可执行协议：BLOGE `SideEffectJournal` 要求 operator 在跨越写边界前记录
+`PREPARED`，原始 idempotency key 只形成 SHA-256 fingerprint；跨进程查询另用 evidence-safe
+`reconciliationLookupRef`。operator 明确观察到 provider acknowledgement 时写入 `COMMITTED + receipt`，明确拒绝
+时写入 `NOT_COMMITTED`，未观察到终态的 handle close 只能成为 `UNKNOWN_COMMIT`。
+
+Resource Gateway 在 operator 返回后检查当前节点 journal。存在 `PREPARED/UNKNOWN_COMMIT` 时抛出
+`NonRetryableException`，因此 DSL retry、fallback 和依赖节点都不会执行；这从执行面根治了盲重试与下游写扩散。
+run record v8 和 evidence v6 保存脱敏 request、attempt fingerprint、receipt 和 append-only transitions；manifest
+因 unknown/partial commit 进入 quarantine。
+
+事后对账不改原 evidence，而是通过独立控制面追加事实：
+
+1. command 必须绑定 expected base-evidence fingerprint 与 attempt fingerprint，并使用专用
+   `SIDE_EFFECT_RECONCILIATION` purpose。
+2. 共享数据库为 `runId + attemptId` 建立 30 秒 claim/lease/fencing；多实例只允许一个 provider 查询赢家，
+   过期 owner 不能 finalize。
+3. `SideEffectReconciler` 只接收脱敏 idempotency fingerprint 和 opaque lookup ref，只允许查询 provider status，
+   不允许重放原写操作；默认调用上限 20 秒。
+4. `COMMITTED` 必须携带 evidence-safe receipt；结果绑定 base/attempt/actor 后单独 Ed25519 签名。
+5. reconciliation record、resolved head 与 `SIDE_EFFECT_RECONCILED` outbox event 同事务提交；失败全部回滚。
+6. summary 组合不可变 base evidence 和全部验签 refinement，输出 outstanding attempt、remaining gaps 和有效
+   governance status。原 evidence 仍保留运行当时的 quarantine 事实。
+
+协议对象为 `sideEffectReconciliationRequest.v1`、`sideEffectReconciliationRecord.v1` 与
+`sideEffectReconciliationSummary.v1`。capability 对协议基础设施声明 `sideEffectReconciliation=true`；默认没有
+伪造通用 provider 查询的 adapter，因此 `sideEffectReconcilerAdapters=false`，且在所有 operator/binding 完成
+conformance 前继续保持全局 `sideEffectCommitConfirmation=false`。
+
+![Resource Gateway 外部副作用确认与对账闭环](assets/resource-gateway-side-effect-reconciliation-lifecycle.svg)
+
+图源：[resource-gateway-side-effect-reconciliation-lifecycle.drawio](assets/drawio/resource-gateway-side-effect-reconciliation-lifecycle.drawio)。
 
 ### 23.6 运行状态机
 
@@ -1426,14 +1453,15 @@ operator 从 schema 导入到生产可用需要 `DISCOVERED -> DESCRIBED -> VERI
 
 退出门槛：success/failure/timeout/partial/mock/fallback/unknown-commit 场景均可结构化解释；篡改可检出；run 成功但 evidence 不完整时 gate 不会误采纳。
 
-当前落地状态（Round 10）：标准 node/edge/graph facts、真实 retry/timeout/fallback events、关键输出聚合、
+当前落地状态（Round 11）：标准 node/edge/graph facts、真实 retry/timeout/fallback events、关键输出聚合、
 sanitized payload、持久签名、fact coverage 和 quarantine 已实现；run intent、绝对 deadline、fenced cancel、
 owner+operator 双条件终止确认、durable control、跨实例 cancel、owner lease/epoch、过期 quarantine、
-pre-run recovery reservation、evidence v5 automatic recovery，以及 deadline budget 对 OperatorContext、scheduler、
-retry/timeout、HTTP 和 remote worker 的传播也已落地。capability 同时揭示未支持的
-`hardRunTermination/restartRunResumption/sideEffectCommitConfirmation`。Stage 2 仍未退出：还需 remaining-budget
-binding 合规准入、disconnect policy、operator commit receipt、side-effect-aware retry/reconciliation、KMS custody，
-以及外部 HA DB fault injection/SLO。
+pre-run recovery reservation、evidence v6 automatic recovery，以及 deadline budget 对 OperatorContext、scheduler、
+retry/timeout、HTTP 和 remote worker 的传播也已落地。Round 11 又补齐 execution journal、receipt evidence、
+UNKNOWN_COMMIT DAG guard、provider reconciliation SPI、持久 claim/fencing 和签名 refinement。capability 同时揭示
+未支持的 `hardRunTermination/restartRunResumption/sideEffectCommitConfirmation`，并单独暴露当前是否注册业务
+reconciler adapter。Stage 2 仍未退出：还需 remaining-budget/side-effect binding 合规准入、disconnect policy、
+客户 provider adapter 覆盖、KMS custody，以及外部 HA DB fault injection/SLO。
 
 ### Stage 3 - Safe replay 与 workbook 对齐（2-4 周）
 

@@ -43,13 +43,20 @@ public record IntegrationCapabilities(
 
     public static IntegrationCapabilities current(boolean evidenceSignature,
                                                   IntegrationIdentityResolver.Descriptor identityProvider) {
+        return current(evidenceSignature, identityProvider, false);
+    }
+
+    public static IntegrationCapabilities current(boolean evidenceSignature,
+                                                  IntegrationIdentityResolver.Descriptor identityProvider,
+                                                  boolean sideEffectReconcilerAdapters) {
         Map<String, List<String>> objects = new LinkedHashMap<>();
         objects.put("graphDraft", List.of(GraphDraft.SCHEMA_VERSION));
         objects.put("operatorLibrary", List.of("bloge.visualOperatorLibrary.v1"));
         objects.put("graphDraftIntegrationBundle", List.of(GraphDraftIntegrationBundle.SCHEMA_VERSION));
         objects.put("runEvidence", List.of(RunEvidenceBundle.SCHEMA_VERSION_V1,
                 RunEvidenceBundle.SCHEMA_VERSION_V2, RunEvidenceBundle.SCHEMA_VERSION_V3,
-                RunEvidenceBundle.SCHEMA_VERSION_V4, RunEvidenceBundle.SCHEMA_VERSION));
+                RunEvidenceBundle.SCHEMA_VERSION_V4, RunEvidenceBundle.SCHEMA_VERSION_V5,
+                RunEvidenceBundle.SCHEMA_VERSION));
         objects.put("payloadReplay", List.of(PayloadReplayBundle.SCHEMA_VERSION));
         objects.put("replayExecutionRequest", List.of(ReplayExecutionRequest.SCHEMA_VERSION));
         objects.put("replayExecutionResult", List.of(ReplayExecutionResult.SCHEMA_VERSION));
@@ -66,6 +73,9 @@ public record IntegrationCapabilities(
                 com.leanowtech.bloge.gateway.visual.runtime.VisualRunIntent.SCHEMA_VERSION));
         objects.put("visualRunControl", List.of(
                 com.leanowtech.bloge.gateway.visual.runtime.VisualRunControlView.SCHEMA_VERSION));
+        objects.put("sideEffectReconciliationRequest", List.of(SideEffectReconciliationRequest.SCHEMA_VERSION));
+        objects.put("sideEffectReconciliationRecord", List.of(SideEffectReconciliationRecord.SCHEMA_VERSION));
+        objects.put("sideEffectReconciliationSummary", List.of(SideEffectReconciliationSummary.SCHEMA_VERSION));
 
         Map<String, Boolean> features = new LinkedHashMap<>();
         features.put("draftExportDependencyProfile", true);
@@ -92,7 +102,9 @@ public record IntegrationCapabilities(
         features.put("recoveryTransactionalOutbox", true);
         features.put("sideEffectJournal", true);
         features.put("sideEffectCommitReceipts", true);
-        features.put("sideEffectReconciliation", false);
+        features.put("sideEffectReconciliation", true);
+        features.put("sideEffectReconciliationEvidence", true);
+        features.put("sideEffectReconcilerAdapters", sideEffectReconcilerAdapters);
         features.put("sideEffectCommitConfirmation", false);
         features.put("payloadReplay", true);
         features.put("payloadReplayNodeInputs", true);
@@ -119,6 +131,8 @@ public record IntegrationCapabilities(
                 new Endpoint("GET", "/api/integration/capabilities"),
                 new Endpoint("GET", "/api/integration/drafts/{draftId}/export"),
                 new Endpoint("GET", "/api/integration/runs/{runId}/evidence"),
+                new Endpoint("GET", "/api/integration/runs/{runId}/side-effects/reconciliations"),
+                new Endpoint("POST", "/api/integration/runs/{runId}/side-effects/{attemptId}/reconcile"),
                 new Endpoint("GET", "/api/integration/runs/{runId}/replay"),
                 new Endpoint("POST", "/api/integration/runs/{runId}/replay"),
                 new Endpoint("GET", "/api/integration/evidence-keys/{keyId}"),

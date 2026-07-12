@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.example;
 
 import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.engine.GraphResult;
+import com.leanowtech.bloge.core.exception.NonRetryableException;
 import com.leanowtech.bloge.core.model.ConditionalEdge;
 import com.leanowtech.bloge.core.model.DirectEdge;
 import com.leanowtech.bloge.core.model.Edge;
@@ -72,6 +73,7 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
         invocationScope.set(new InvocationScope(captureId, invocation.nodeId()));
         try {
             Object output = invocation.proceed();
+            rejectUnresolvedSideEffects(invocation);
             state.recordAttempt(invocation, startedAt, output, "SUCCESS", "", "");
             return output;
         } catch (Exception exception) {
@@ -80,6 +82,18 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
             throw exception;
         } finally {
             invocationScope.remove();
+        }
+    }
+
+    private static void rejectUnresolvedSideEffects(OperatorInvocation invocation) {
+        SideEffectJournal.Snapshot unresolved = invocation.operatorContext().sideEffects().snapshots().stream()
+                .filter(snapshot -> invocation.nodeId().equals(snapshot.request().execution().nodeId()))
+                .filter(snapshot -> Set.of(SideEffectJournal.Outcome.PREPARED,
+                        SideEffectJournal.Outcome.UNKNOWN_COMMIT).contains(snapshot.outcome()))
+                .findFirst()
+                .orElse(null);
+        if (unresolved != null) {
+            throw new UnresolvedSideEffectCommitException(unresolved.attemptId());
         }
     }
 
@@ -182,6 +196,12 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
     }
 
     private record InvocationScope(String captureId, String nodeId) {
+    }
+
+    private static final class UnresolvedSideEffectCommitException extends NonRetryableException {
+        private UnresolvedSideEffectCommitException(String attemptId) {
+            super("External side-effect attempt has no definitive commit outcome: " + attemptId);
+        }
     }
 
     private static final class CaptureState {
@@ -491,6 +511,7 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
                 snapshot.attemptId(),
                 new DynamicGraphRunResponse.SideEffectRequest(
                         request.operationRef(), request.idempotencyKeyFingerprint(), request.reconcilerRef(),
+                        safeReference(request.reconciliationLookupRef(), 1024),
                         request.startedAt(), request.execution().retryAttempt()),
                 snapshot.outcome().name(), sideEffectReceipt(snapshot.receipt()),
                 snapshot.transitions().stream().map(transition ->
@@ -506,9 +527,38 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
             return null;
         }
         return new DynamicGraphRunResponse.SideEffectReceipt(
-                receipt.receiptId(), receipt.provider(), receipt.transactionRef(), receipt.committedAt(),
+                safeRequiredOpaque(receipt.receiptId(), 256, "REDACTED_RECEIPT"),
+                safeRequiredOpaque(receipt.provider(), 256, "REDACTED_PROVIDER"),
+                safeOpaque(receipt.transactionRef(), 512), receipt.committedAt(),
                 new DynamicGraphRunResponse.SideEffectProof(
-                        receipt.proof().reference(), receipt.proof().fingerprint()));
+                        safeReference(receipt.proof().reference(), 1024),
+                        safeFingerprint(receipt.proof().fingerprint())));
+    }
+
+    private static String safeReference(String value, int maxLength) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.length() > maxLength || normalized.contains("?") || normalized.contains("#")
+                || normalized.contains("@")
+                || !normalized.matches("[A-Za-z][A-Za-z0-9+.-]{1,31}:(//)?[A-Za-z0-9._:/-]+")) {
+            return "";
+        }
+        return normalized;
+    }
+
+    private static String safeOpaque(String value, int maxLength) {
+        String normalized = value == null ? "" : value.trim();
+        return normalized.length() <= maxLength && normalized.matches("[A-Za-z0-9._:/-]*")
+                ? normalized : "";
+    }
+
+    private static String safeRequiredOpaque(String value, int maxLength, String fallback) {
+        String safe = safeOpaque(value, maxLength);
+        return safe.isBlank() ? fallback : safe;
+    }
+
+    private static String safeFingerprint(String value) {
+        String normalized = value == null ? "" : value.trim();
+        return normalized.matches("sha256:[0-9a-f]{64}") ? normalized : "";
     }
 
     private static String type(Throwable error) {

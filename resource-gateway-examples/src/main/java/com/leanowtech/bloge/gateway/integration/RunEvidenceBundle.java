@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualSideEffectAttempt;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunControlView;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunRecoveryMetadata;
@@ -45,7 +46,8 @@ public record RunEvidenceBundle(
     public static final String SCHEMA_VERSION_V2 = "toolStudio.resourceGateway.runEvidenceBundle.v2";
     public static final String SCHEMA_VERSION_V3 = "toolStudio.resourceGateway.runEvidenceBundle.v3";
     public static final String SCHEMA_VERSION_V4 = "toolStudio.resourceGateway.runEvidenceBundle.v4";
-    public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.runEvidenceBundle.v5";
+    public static final String SCHEMA_VERSION_V5 = "toolStudio.resourceGateway.runEvidenceBundle.v5";
+    public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.runEvidenceBundle.v6";
 
     public RunEvidenceBundle {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
@@ -134,6 +136,7 @@ public record RunEvidenceBundle(
                     retry(fact, attempts, latestAttempt),
                     fallback(fact),
                     sideEffectOutcome(snapshot, fact, status),
+                    sideEffectAttempts(fact),
                     "payload:" + record.runId() + ":node." + nodeId + ".input",
                     outputAvailable ? "payload:" + record.runId() + ":node." + nodeId + ".output" : "",
                     inputAvailable,
@@ -175,6 +178,41 @@ public record RunEvidenceBundle(
             return "NOT_APPLICABLE";
         }
         return "UNKNOWN_COMMIT";
+    }
+
+    private static List<SideEffectAttempt> sideEffectAttempts(VisualNodeExecutionFact fact) {
+        if (fact == null) {
+            return List.of();
+        }
+        return fact.sideEffectAttempts().stream().map(RunEvidenceBundle::sideEffectAttempt).toList();
+    }
+
+    private static SideEffectAttempt sideEffectAttempt(VisualSideEffectAttempt attempt) {
+        VisualSideEffectAttempt.Request request = attempt.request();
+        SideEffectRequest evidenceRequest = new SideEffectRequest(
+                request.operationRef(), request.idempotencyKeyFingerprint(), request.reconcilerRef(),
+                request.reconciliationLookupRef(), request.startedAt(), request.retryAttempt());
+        SideEffectReceipt evidenceReceipt = sideEffectReceipt(attempt.receipt());
+        List<SideEffectTransition> transitions = attempt.transitions().stream().map(transition ->
+                new SideEffectTransition(
+                        transition.sequence(), transition.outcome(), transition.observedAt(),
+                        transition.reasonCode(), sideEffectReceipt(transition.receipt()))).toList();
+        String attemptFingerprint = VisualBundleFingerprint.fromMaterial(Map.of(
+                "attemptId", attempt.attemptId(),
+                "request", evidenceRequest,
+                "outcome", attempt.outcome(),
+                "receipt", evidenceReceipt == null ? "" : evidenceReceipt,
+                "transitions", transitions));
+        return new SideEffectAttempt(attempt.attemptId(), attemptFingerprint, evidenceRequest,
+                attempt.outcome(), evidenceReceipt, transitions);
+    }
+
+    private static SideEffectReceipt sideEffectReceipt(VisualSideEffectAttempt.Receipt receipt) {
+        if (receipt == null) {
+            return null;
+        }
+        return new SideEffectReceipt(receipt.receiptId(), receipt.provider(), receipt.transactionRef(),
+                receipt.committedAt(), new SideEffectProof(receipt.proof().reference(), receipt.proof().fingerprint()));
     }
 
     private static VisualRunStatus nodeStatus(String runtimeStatus, VisualNodeExecutionFact fact) {
@@ -322,13 +360,16 @@ public record RunEvidenceBundle(
         boolean controlComplete = record.runControl().requestId().isBlank()
                 || record.runControl().terminationConfirmed() && !record.runControl().sideEffectsMayBeInFlight();
         boolean recoveryComplete = !record.recovery().recovered();
+        boolean sideEffectsComplete = nodes.stream().noneMatch(node -> Set.of(
+                "PREPARED", "UNKNOWN_COMMIT", "PARTIAL_COMMIT").contains(node.sideEffectOutcome()));
         boolean complete = expectedNodes == capturedNodes
                 && expectedEdges == capturedEdges
                 && expectedNodeInputs == capturedNodeInputs
                 && expectedNodeOutputs == capturedNodeOutputs
                 && expectedNodeFacts == capturedNodeFacts
                 && controlComplete
-                && recoveryComplete;
+                && recoveryComplete
+                && sideEffectsComplete;
         String hash = record.evidenceMaterialFingerprint();
         VisualRunEvidenceSeal seal = record.evidenceSeal();
         VisualEvidenceSigner.Verification verification = evidenceSigner.verify(seal, hash);
@@ -350,6 +391,9 @@ public record RunEvidenceBundle(
         }
         if (!recoveryComplete) {
             gaps.add("Run evidence was synthesized from durable recovery facts after the normal evidence transaction did not complete.");
+        }
+        if (!sideEffectsComplete) {
+            gaps.add("One or more external side-effect attempts do not have a definitive commit outcome.");
         }
         if (!verification.valid()) {
             gaps.add("Evidence integrity is not verified: " + verification.reason());
@@ -474,8 +518,36 @@ public record RunEvidenceBundle(
     public record NodeEvidence(String nodeId, String operatorRef, String status, String reasonCode,
                                String observationSource, List<String> causedByNodeIds, long elapsedMs,
                                boolean mocked, Retry retry, Fallback fallback, String sideEffectOutcome,
+                               List<SideEffectAttempt> sideEffectAttempts,
                                String inputPayloadRef,
                                String outputPayloadRef, boolean inputAvailable, boolean outputAvailable) {
+        public NodeEvidence {
+            sideEffectAttempts = sideEffectAttempts == null ? List.of() : List.copyOf(sideEffectAttempts);
+        }
+    }
+
+    public record SideEffectAttempt(String attemptId, String attemptFingerprint,
+                                    SideEffectRequest request, String outcome,
+                                    SideEffectReceipt receipt, List<SideEffectTransition> transitions) {
+        public SideEffectAttempt {
+            transitions = transitions == null ? List.of() : List.copyOf(transitions);
+        }
+    }
+
+    public record SideEffectRequest(String operationRef, String idempotencyKeyFingerprint,
+                                    String reconcilerRef, String reconciliationLookupRef,
+                                    Instant startedAt, int retryAttempt) {
+    }
+
+    public record SideEffectReceipt(String receiptId, String provider, String transactionRef,
+                                    Instant committedAt, SideEffectProof proof) {
+    }
+
+    public record SideEffectProof(String reference, String fingerprint) {
+    }
+
+    public record SideEffectTransition(int sequence, String outcome, Instant observedAt,
+                                       String reasonCode, SideEffectReceipt receipt) {
     }
 
     public record EdgeEvidence(String edgeId, String sourceNodeId, String targetNodeId, String status,

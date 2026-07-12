@@ -25,23 +25,32 @@ public class ToolStudioIntegrationController {
     private final ToolStudioIntegrationService service;
     private final IntegrationChangeFeedService changeFeedService;
     private final IntegrationRequestAuthenticator authenticator;
+    private final SideEffectReconciliationService reconciliationService;
 
     ToolStudioIntegrationController(ToolStudioIntegrationService service) {
-        this(service, null, null);
+        this(service, null, null, null);
     }
 
     ToolStudioIntegrationController(ToolStudioIntegrationService service,
                                     IntegrationChangeFeedService changeFeedService) {
-        this(service, changeFeedService, null);
+        this(service, changeFeedService, null, null);
+    }
+
+    ToolStudioIntegrationController(ToolStudioIntegrationService service,
+                                    IntegrationChangeFeedService changeFeedService,
+                                    IntegrationRequestAuthenticator authenticator) {
+        this(service, changeFeedService, authenticator, null);
     }
 
     @Autowired
     public ToolStudioIntegrationController(ToolStudioIntegrationService service,
                                            IntegrationChangeFeedService changeFeedService,
-                                           IntegrationRequestAuthenticator authenticator) {
+                                           IntegrationRequestAuthenticator authenticator,
+                                           SideEffectReconciliationService reconciliationService) {
         this.service = service;
         this.changeFeedService = changeFeedService;
         this.authenticator = authenticator;
+        this.reconciliationService = reconciliationService;
     }
 
     @GetMapping("/capabilities")
@@ -61,6 +70,24 @@ public class ToolStudioIntegrationController {
     public IntegrationEnvelope<RunEvidenceBundle> runEvidence(@PathVariable String runId,
                                                               @RequestHeader HttpHeaders headers) {
         return service.runEvidence(runId, requestContext(headers, IntegrationOperation.RUN_EVIDENCE_READ));
+    }
+
+    @GetMapping("/runs/{runId}/side-effects/reconciliations")
+    public IntegrationEnvelope<SideEffectReconciliationSummary> sideEffectReconciliations(
+            @PathVariable String runId,
+            @RequestHeader HttpHeaders headers) {
+        return requireReconciliationService().summary(runId,
+                requestContext(headers, IntegrationOperation.SIDE_EFFECT_RECONCILIATION_READ));
+    }
+
+    @PostMapping("/runs/{runId}/side-effects/{attemptId}/reconcile")
+    public IntegrationEnvelope<SideEffectReconciliationRecord> reconcileSideEffect(
+            @PathVariable String runId,
+            @PathVariable String attemptId,
+            @RequestBody SideEffectReconciliationRequest request,
+            @RequestHeader HttpHeaders headers) {
+        return requireReconciliationService().reconcile(runId, attemptId, request,
+                requestContext(headers, IntegrationOperation.SIDE_EFFECT_RECONCILIATION_EXECUTE));
     }
 
     @GetMapping("/runs/{runId}/replay")
@@ -134,6 +161,13 @@ public class ToolStudioIntegrationController {
             throw new IllegalStateException("Integration change feed service is unavailable");
         }
         return changeFeedService;
+    }
+
+    private SideEffectReconciliationService requireReconciliationService() {
+        if (reconciliationService == null) {
+            throw new IllegalStateException("Side-effect reconciliation service is unavailable");
+        }
+        return reconciliationService;
     }
 
     private IntegrationRequestContext requestContext(HttpHeaders headers, IntegrationOperation operation) {

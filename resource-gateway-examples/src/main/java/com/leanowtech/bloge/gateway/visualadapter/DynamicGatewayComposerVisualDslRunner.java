@@ -190,7 +190,7 @@ public class DynamicGatewayComposerVisualDslRunner implements VisualDslRunner, V
                 source.attemptId(),
                 new com.leanowtech.bloge.gateway.visual.runtime.VisualSideEffectAttempt.Request(
                         request.operationRef(), request.idempotencyKeyFingerprint(), request.reconcilerRef(),
-                        request.startedAt(), request.retryAttempt()),
+                        request.reconciliationLookupRef(), request.startedAt(), request.retryAttempt()),
                 source.outcome(), sideEffectReceipt(source.receipt()),
                 source.transitions().stream().map(transition ->
                         new com.leanowtech.bloge.gateway.visual.runtime.VisualSideEffectAttempt.Transition(

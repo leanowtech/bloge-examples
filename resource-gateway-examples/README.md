@@ -22,6 +22,7 @@ integration something the business flow can see, reason about, test, and change.
 | Runtime-backed demos | Local upstreams, real gateway execution, mock simulation, SSE examples, and reusable publications |
 | Schema-gated table tests | Run real resource graphs with mocked downstream APIs, input/output schema validation, and node-level assertions |
 | Governed run controls | Absolute deadline, monotonic remaining-budget propagation, fenced cancel, durable owner lease/epoch, cross-instance commands, and automatic signed evidence recovery after owner failure |
+| Auditable external writes | Execution-scoped side-effect journal, commit receipts, UNKNOWN_COMMIT DAG guard, signed provider reconciliation records, and transactional governance events |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
 
 ## Start The Demo
@@ -101,13 +102,19 @@ credit fallback, loan policy, and SSE search. The full endpoint catalog lives in
 | Orchestration | BLOGE DSL graphs schedule dependencies, fan-out, joins, transforms, decisions, and streams |
 | Provider | `HttpResourceOperator` resolves descriptors, maps parameters, calls upstreams, validates response protocol, and extracts payload |
 | Visual product surface | Catalog import/export, schema checks, draft validation, simulation, publication, golden cases, and run history |
-| Controls | Durable run-control state, owner lease/epoch fencing, pre-run evidence reservation, crash recovery sweeper/outbox, response cache, tenant rate limiting, circuit breaking, and tenant context |
+| Controls | Durable run-control state, owner lease/epoch fencing, pre-run evidence reservation, side-effect claim/reconciliation, crash recovery sweeper/outbox, response cache, tenant rate limiting, circuit breaking, and tenant context |
 
 Managed runs reserve `100 ms` by default for terminal-state and evidence finalization. BLOGE propagates the resulting
 work budget through `OperatorContext`, scheduler admission, resilience timeout/retry, common HTTP calls, Resource Gateway
 resources, and remote-worker envelopes. Override the reserve with
 `resource-gateway.run-control.finalization-reserve-ms`; size it from measured evidence-finalization latency rather than
 treating it as an operator timeout.
+
+External-write operators should call `OperatorContext.beginSideEffect(...)` before crossing the provider boundary.
+An unresolved attempt is non-retryable and blocks downstream propagation. Provider-specific status adapters implement
+`SideEffectReconciler`; Resource Gateway keeps the original run evidence immutable and appends a separately signed
+reconciliation record. See the [product guide](../docs/bloge-visual-canvas-product-and-system-guide.md)
+and the [lifecycle diagram](../docs/assets/resource-gateway-side-effect-reconciliation-lifecycle.svg).
 
 ## Extend It
 
@@ -187,7 +194,8 @@ Java 25 preview flags are already configured.
   are visible in catalog readiness but blocked from direct request-response runs.
 - Remote worker, AI tool, event source, message handler, and webhook operators
   can be modeled; this example does not ship their production runtime plane.
-- Multi-user collaboration and production IAM are outside this example.
+- Multi-user collaboration and full enterprise IAM policy lifecycle are outside this example; signed workload JWT,
+  purpose authorization and tenant isolation are present, while dynamic JWKS/group/delegation governance remains an adapter concern.
 - The visual core still lives inside `resource-gateway-examples`; it is shaped
   for future extraction, but is not yet a standalone artifact.
 

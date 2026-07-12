@@ -15,17 +15,18 @@ public record VisualSideEffectAttempt(String attemptId, Request request, String 
     }
 
     public record Request(String operationRef, String idempotencyKeyFingerprint, String reconcilerRef,
-                          Instant startedAt, int retryAttempt) {
+                          String reconciliationLookupRef, Instant startedAt, int retryAttempt) {
         public Request {
             operationRef = normalize(operationRef);
             idempotencyKeyFingerprint = normalize(idempotencyKeyFingerprint);
             reconcilerRef = normalize(reconcilerRef);
+            reconciliationLookupRef = normalize(reconciliationLookupRef);
             startedAt = startedAt == null ? Instant.EPOCH : startedAt;
             retryAttempt = Math.max(0, retryAttempt);
         }
 
         public boolean reconcilable() {
-            return !idempotencyKeyFingerprint.isBlank() && !reconcilerRef.isBlank();
+            return !reconcilerRef.isBlank() && !reconciliationLookupRef.isBlank();
         }
     }
 

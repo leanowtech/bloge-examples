@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/side-effect-reconciliation-record-v1.schema.json",
+  "title": "Tool Studio Resource Gateway Side Effect Reconciliation Record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "reconciliationId", "requestId", "requestFingerprint", "baseEvidence", "target",
+    "resolution", "actor", "chain", "recordFingerprint", "evidenceSeal"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "toolStudio.resourceGateway.sideEffectReconciliationRecord.v1" },
+    "reconciliationId": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "requestId": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "requestFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "baseEvidence": { "$ref": "#/$defs/baseEvidence" },
+    "target": { "$ref": "#/$defs/target" },
+    "resolution": { "$ref": "#/$defs/resolution" },
+    "actor": { "$ref": "#/$defs/actor" },
+    "chain": { "$ref": "#/$defs/chain" },
+    "recordFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "evidenceSeal": { "$ref": "#/$defs/evidenceSeal" }
+  },
+  "$defs": {
+    "baseEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "evidenceId", "evidenceFingerprint", "tenantId", "namespace", "environmentId"],
+      "properties": {
+        "runId": { "$ref": "#/$defs/id" },
+        "evidenceId": { "$ref": "#/$defs/id" },
+        "evidenceFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "tenantId": { "$ref": "#/$defs/id" },
+        "namespace": { "type": "string", "maxLength": 255 },
+        "environmentId": { "$ref": "#/$defs/id" }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeId", "attemptId", "attemptFingerprint", "operationRef", "idempotencyKeyFingerprint",
+        "reconcilerRef", "reconciliationLookupRef"
+      ],
+      "properties": {
+        "nodeId": { "$ref": "#/$defs/id" },
+        "attemptId": { "$ref": "#/$defs/id" },
+        "attemptFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "operationRef": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "idempotencyKeyFingerprint": { "type": "string", "pattern": "^(|sha256:[A-Za-z0-9_-]{43})$" },
+        "reconcilerRef": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "reconciliationLookupRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[A-Za-z][A-Za-z0-9+.-]{1,31}:(//)?[A-Za-z0-9._:/-]+$"
+        }
+      }
+    },
+    "resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "receipt", "reasonCode", "observedAt"],
+      "properties": {
+        "outcome": { "type": "string", "enum": ["COMMITTED", "NOT_COMMITTED"] },
+        "receipt": { "oneOf": [{ "$ref": "#/$defs/receipt" }, { "type": "null" }] },
+        "reasonCode": { "$ref": "#/$defs/code" },
+        "observedAt": { "type": "string", "format": "date-time" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "outcome": { "const": "COMMITTED" } } },
+          "then": { "properties": { "receipt": { "$ref": "#/$defs/receipt" } } }
+        }
+      ]
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receiptId", "provider", "transactionRef", "committedAt", "proof"],
+      "properties": {
+        "receiptId": { "$ref": "#/$defs/id" },
+        "provider": { "$ref": "#/$defs/id" },
+        "transactionRef": { "type": "string", "maxLength": 512 },
+        "committedAt": { "type": "string", "format": "date-time" },
+        "proof": { "$ref": "#/$defs/proof" }
+      }
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference", "fingerprint"],
+      "properties": {
+        "reference": { "type": "string", "maxLength": 1024 },
+        "fingerprint": { "type": "string", "pattern": "^(|sha256:[0-9a-f]{64})$" }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actorType", "actorId", "delegatedBy", "correlationId"],
+      "properties": {
+        "actorType": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "actorId": { "$ref": "#/$defs/id" },
+        "delegatedBy": { "type": "string", "maxLength": 255 },
+        "correlationId": { "$ref": "#/$defs/id" }
+      }
+    },
+    "chain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "previousFingerprint"],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 1 },
+        "previousFingerprint": { "type": "string", "pattern": "^(|sha256:[0-9a-f]{64})$" }
+      }
+    },
+    "evidenceSeal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "materialFingerprint", "algorithm", "keyId", "signedAt", "signature"],
+      "properties": {
+        "schemaVersion": { "const": "bloge.visualRunEvidenceSeal.v1" },
+        "materialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "algorithm": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "keyId": { "$ref": "#/$defs/id" },
+        "signedAt": { "type": "string", "format": "date-time" },
+        "signature": { "type": "string", "minLength": 1, "maxLength": 8192 }
+      }
+    },
+    "id": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$", "maxLength": 128 }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/side-effect-reconciliation-request-v1.schema.json",
+  "title": "Tool Studio Resource Gateway Side Effect Reconciliation Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "requestId", "expectedEvidenceFingerprint", "expectedAttemptFingerprint"],
+  "properties": {
+    "schemaVersion": { "const": "toolStudio.resourceGateway.sideEffectReconciliationRequest.v1" },
+    "requestId": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "expectedEvidenceFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "expectedAttemptFingerprint": { "$ref": "#/$defs/fingerprint" }
+  },
+  "$defs": {
+    "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

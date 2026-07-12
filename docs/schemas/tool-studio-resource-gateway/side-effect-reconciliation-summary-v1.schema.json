@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/side-effect-reconciliation-summary-v1.schema.json",
+  "title": "Tool Studio Resource Gateway Side Effect Reconciliation Summary v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "runId", "evidenceId", "baseEvidenceFingerprint", "status", "governanceStatus",
+    "outstandingAttemptIds", "remainingEvidenceGaps", "reconciliations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "toolStudio.resourceGateway.sideEffectReconciliationSummary.v1" },
+    "runId": { "$ref": "#/$defs/id" },
+    "evidenceId": { "$ref": "#/$defs/id" },
+    "baseEvidenceFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "status": { "type": "string", "enum": ["NOT_REQUIRED", "OUTSTANDING", "RESOLVED"] },
+    "governanceStatus": { "type": "string", "enum": ["READY", "QUARANTINED"] },
+    "outstandingAttemptIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/id" }
+    },
+    "remainingEvidenceGaps": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 1024 }
+    },
+    "reconciliations": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "https://bloge.dev/schemas/tool-studio-resource-gateway/side-effect-reconciliation-record-v1.schema.json"
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

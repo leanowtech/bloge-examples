@@ -17,6 +17,7 @@ import com.leanowtech.bloge.gateway.interceptor.QuotaConfigProvider;
 import com.leanowtech.bloge.gateway.integration.DatabaseGovernanceGateResultRepository;
 import com.leanowtech.bloge.gateway.integration.DatabaseIntegrationAccessAuditRepository;
 import com.leanowtech.bloge.gateway.integration.DatabaseIntegrationChangeEventOutbox;
+import com.leanowtech.bloge.gateway.integration.DatabaseSideEffectReconciliationRepository;
 import com.leanowtech.bloge.gateway.integration.ConfiguredIntegrationJwtTrustStore;
 import com.leanowtech.bloge.gateway.integration.GovernanceGateResultRepository;
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository;
@@ -27,6 +28,9 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationWorkloadIdentity;
 import com.leanowtech.bloge.gateway.integration.StaticBearerIntegrationIdentityResolver;
 import com.leanowtech.bloge.gateway.integration.SignedJwtIntegrationIdentityResolver;
+import com.leanowtech.bloge.gateway.integration.SideEffectReconciler;
+import com.leanowtech.bloge.gateway.integration.SideEffectReconcilerRegistry;
+import com.leanowtech.bloge.gateway.integration.SideEffectReconciliationRepository;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.operator.PayloadExtractor;
 import com.leanowtech.bloge.gateway.operator.ResponseValidator;
@@ -289,7 +293,7 @@ public class GatewayConfiguration {
             @Value("${gateway.integration.identity.environment-id:prod}") String environmentId,
             @Value("${gateway.integration.identity.region:local}") String region,
             @Value("${gateway.integration.identity.actor-id:aneke-sync}") String actorId,
-            @Value("${gateway.integration.identity.allowed-purposes:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC}") String allowedPurposes) {
+            @Value("${gateway.integration.identity.allowed-purposes:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION}") String allowedPurposes) {
         if (jwtEnabled) {
             IntegrationJwtTrustStore trustStore = trustStoreProvider.getIfAvailable();
             if (trustStore == null) {
@@ -416,6 +420,26 @@ public class GatewayConfiguration {
                                                              VisualEvidenceSigner evidenceSigner,
                                                              IntegrationChangeEventOutbox outbox) {
         return new DatabaseVisualGraphRunRepository(jdbc, objectMapper, evidenceSigner, outbox);
+    }
+
+    /** Durable claim/fencing and signed refinement store for UNKNOWN_COMMIT attempts. */
+    @Bean
+    @ConditionalOnMissingBean
+    public SideEffectReconciliationRepository sideEffectReconciliationRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            IntegrationChangeEventOutbox outbox,
+            PlatformTransactionManager transactionManager) {
+        return new DatabaseSideEffectReconciliationRepository(
+                jdbc, objectMapper, outbox, transactionManager);
+    }
+
+    /** Provider-owned adapters are discovered once and exposed through an immutable registry. */
+    @Bean
+    @ConditionalOnMissingBean
+    public SideEffectReconcilerRegistry sideEffectReconcilerRegistry(
+            ObjectProvider<SideEffectReconciler> reconcilers) {
+        return new SideEffectReconcilerRegistry(reconcilers.orderedStream().toList());
     }
 
     /** Persistent operator contract suites participate in the same integration event stream. */

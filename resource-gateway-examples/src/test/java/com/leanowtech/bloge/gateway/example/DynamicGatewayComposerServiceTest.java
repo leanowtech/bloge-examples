@@ -254,7 +254,8 @@ class DynamicGatewayComposerServiceTest {
         registry.registerRaw("charge",
                 (com.leanowtech.bloge.core.operator.Operator<Object, Object>) (input, ctx) -> {
                     try (SideEffectJournal.Attempt attempt = ctx.beginSideEffect(
-                            "payments.charge", "customer-42-charge-secret", "payments.status")) {
+                            "payments.charge", "customer-42-charge-secret", "payments.status",
+                            "vault://commands/charge-42")) {
                         attempt.committed(new SideEffectJournal.Receipt(
                                 "receipt-42", "payments", "txn-42", Instant.now(),
                                 new SideEffectJournal.Proof("kms://receipts/42", "sha256:proof")),
@@ -292,7 +293,8 @@ class DynamicGatewayComposerServiceTest {
         registry.registerRaw("charge",
                 (com.leanowtech.bloge.core.operator.Operator<Object, Object>) (input, ctx) -> {
                     try (SideEffectJournal.Attempt ignored = ctx.beginSideEffect(
-                            "payments.charge", "idem-timeout", "payments.status")) {
+                            "payments.charge", "idem-timeout", "payments.status",
+                            "vault://commands/charge-timeout")) {
                         throw new IllegalStateException("connection lost after request write");
                     }
                 });
@@ -312,6 +314,81 @@ class DynamicGatewayComposerServiceTest {
                 assertThat(attempt.transitions()).extracting(DynamicGraphRunResponse.SideEffectTransition::reasonCode)
                         .containsExactly("ATTEMPT_PREPARED", "ATTEMPT_CLOSED_WITHOUT_RECEIPT");
             });
+        });
+    }
+
+    @Test
+    void dropsCredentialBearingReconciliationReferenceAtEvidenceBoundary() {
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("charge",
+                (com.leanowtech.bloge.core.operator.Operator<Object, Object>) (input, ctx) -> {
+                    try (SideEffectJournal.Attempt ignored = ctx.beginSideEffect(
+                            "payments.charge", "raw-idempotency-secret", "payments.status",
+                            "https://user:secret@payments.example/status?token=raw-provider-secret")) {
+                        throw new IllegalStateException("connection lost");
+                    }
+                });
+        DynamicGatewayComposerService controlled = new DynamicGatewayComposerService(registry);
+
+        DynamicGraphRunResponse response = controlled.run(new DynamicGraphRunRequest("""
+                graph uncertainChargeGraph {
+                  node charge : charge { input { value = ctx.value } }
+                }
+                """, Map.of("value", "request"), "charge"));
+
+        assertThat(response.nodeExecutionFacts().get("charge").sideEffectAttempts())
+                .singleElement().satisfies(attempt -> {
+                    assertThat(attempt.request().reconciliationLookupRef()).isBlank();
+                    assertThat(attempt.request().reconcilable()).isFalse();
+                });
+        assertThat(response.toString())
+                .doesNotContain("raw-provider-secret")
+                .doesNotContain("raw-idempotency-secret");
+    }
+
+    @Test
+    void unresolvedCommitBlocksDependentOperatorBeforeItsBusinessLogicRuns() {
+        AtomicInteger chargeInvocations = new AtomicInteger();
+        AtomicInteger downstreamInvocations = new AtomicInteger();
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("charge",
+                (com.leanowtech.bloge.core.operator.Operator<Object, Object>) (input, ctx) -> {
+                    chargeInvocations.incrementAndGet();
+                    try (SideEffectJournal.Attempt attempt = ctx.beginSideEffect(
+                            "payments.charge", "idem-42", "payments.status",
+                            "vault://commands/charge-42")) {
+                        attempt.unknown("RESPONSE_LOST");
+                        return Map.of("approved", true);
+                    }
+                });
+        registry.registerRaw("fulfill",
+                (com.leanowtech.bloge.core.operator.Operator<Object, Object>) (input, ctx) -> {
+                    downstreamInvocations.incrementAndGet();
+                    return input;
+                });
+        DynamicGatewayComposerService controlled = new DynamicGatewayComposerService(registry);
+
+        DynamicGraphRunResponse response = controlled.run(new DynamicGraphRunRequest("""
+                graph guardedWriteGraph {
+                  node charge : charge {
+                    input { value = ctx.value }
+                    retry = { attempts: 3, backoff: 1ms }
+                    fallback = { approved: false }
+                  }
+                  node fulfill : fulfill { input { value = charge.output } }
+                }
+                """, Map.of("value", "request"), "fulfill"));
+
+        assertThat(response.success()).isFalse();
+        assertThat(chargeInvocations).hasValue(1);
+        assertThat(downstreamInvocations).hasValue(0);
+        assertThat(response.nodeExecutionFacts().get("charge")).satisfies(fact -> {
+            assertThat(fact.status()).isEqualTo("FAILED");
+            assertThat(fact.sideEffectOutcome()).isEqualTo("UNKNOWN_COMMIT");
+        });
+        assertThat(response.nodeExecutionFacts().get("fulfill")).satisfies(fact -> {
+            assertThat(fact.status()).isEqualTo("CANCELLED");
+            assertThat(fact.causedByNodeIds()).contains("charge");
         });
     }
 

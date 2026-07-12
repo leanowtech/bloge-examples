@@ -109,6 +109,8 @@ curl -sS 'http://localhost:8080/api/integration/reconciliation' \
 | --- | --- |
 | draft export | `GOVERNANCE_EVIDENCE_INGESTION`、`CHANGE_SYNC` |
 | run evidence | `GOVERNANCE_EVIDENCE_INGESTION` |
+| side-effect reconciliation summary | `GOVERNANCE_EVIDENCE_INGESTION`、`SIDE_EFFECT_RECONCILIATION` |
+| execute side-effect reconciliation | `SIDE_EFFECT_RECONCILIATION` |
 | recorded payload read | `GOVERNANCE_EVIDENCE_INGESTION`、`PAYLOAD_REPLAY` |
 | recorded assertion replay | `PAYLOAD_REPLAY` |
 | gate result write | `GOVERNANCE_GATE_FEEDBACK` |
@@ -267,8 +269,8 @@ ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服
 
 画布点击 **Run** 后，系统不再只保存一个最终 `SUCCESS/FAILED`。BLOGE 的 node lifecycle 与
 `ResilienceListener` 会在同一个 run capture 中记录 retry、timeout 和 fallback 事件；Resource Gateway
-再结合不可变拓扑解释 skip/cancel 的因果关系，最后写入 `VisualGraphRunRecord.v7` 并导出
-`runEvidenceBundle.v5`。v7/v5 在既有 control fact 之外增加 recovery provenance，使正常完成记录和系统恢复记录
+再结合不可变拓扑解释 skip/cancel 的因果关系，最后写入 `VisualGraphRunRecord.v8` 并导出
+`runEvidenceBundle.v6`。v8/v6 在既有 control fact 之外增加 recovery provenance，使正常完成记录和系统恢复记录
 可以被机器明确区分。
 
 ![Resource Gateway 运行失败事实链](assets/resource-gateway-run-failure-semantics.svg)
@@ -302,10 +304,16 @@ ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服
 A→B 的边仍为 `SUCCESS + propagated=true + VALUE_PROPAGATED`，B 才是 `TIMEOUT`。若 A 超时导致 B
 未执行，边为 `CANCELLED + propagated=false + UPSTREAM_FAILURE_PROPAGATED`，且没有虚构的 edge payload ref。
 
-`sideEffectOutcome=UNKNOWN_COMMIT` 不是失败，而是诚实的不确定性：当前 BLOGE operator 合同没有提供外部
-事务 commit receipt 时，Resource Gateway 不能从“抛异常/超时”反推出远端是否已经提交。ANEKE 应结合
-operator 的 effect/idempotency、业务补偿能力和门禁策略决定是否接受；不要把 `UNKNOWN_COMMIT` 当作
-`NOT_COMMITTED`。
+`sideEffectOutcome=UNKNOWN_COMMIT` 不是普通失败，而是诚实的不确定性。新版 BLOGE operator 可以在跨越
+外部写边界前调用 `ctx.beginSideEffect(...)`：journal 先保存 `PREPARED`，再由 adapter 明确写入
+`COMMITTED + receipt`、`NOT_COMMITTED` 或 `UNKNOWN_COMMIT`。run record v8 和 evidence v6 会导出每个
+attempt 的 fingerprint、脱敏 idempotency fingerprint、reconciler/lookup ref、receipt 和完整 transitions；不会
+保存原始 idempotency key。
+
+若节点返回时仍有 `PREPARED/UNKNOWN_COMMIT`，Resource Gateway 的 DAG guard 会抛出 non-retryable failure：
+配置的 retry 和 fallback 都不会启动，依赖该结果的下游节点也不会执行。这样可以避免“扣款结果未知，但履约节点
+继续发货”或“UNKNOWN 被普通 retry 再扣一次”。base evidence 会保持 `QUARANTINED`，直到独立的签名
+reconciliation record 闭合该缺口；系统不会修改或重新签署原 evidence。
 
 能力探针会明确返回：
 
@@ -326,17 +334,93 @@ operator 的 effect/idempotency、业务补偿能力和门禁策略决定是否�
 | `runOwnerLease` / `runOwnerEpochFencing` | `true` | owner 只能在有效 lease 和匹配 epoch 下推进状态，旧 owner 不能覆盖恢复结论 |
 | `expiredOwnerQuarantine` | `true` | owner 租约过期后持久化为 `OWNER_LEASE_EXPIRED + TERMINATION_UNCONFIRMED` |
 | `restartRunResumption` | `false` | 进程崩溃后不会盲目重跑未知副作用；当前恢复策略是 abandonment + quarantine，而不是自动续跑 |
-| `runControlEvidence` | `true` | control fact 已进入 run record、签名和 evidence v5 |
+| `runControlEvidence` | `true` | control fact 已进入 run record、签名和 evidence v6 |
 | `runEvidenceRecoveryReservation` | `true` | managed run 执行前先持久化脱敏 lineage reservation，绑定确定性 runId、draft/scope/input fingerprint |
 | `abandonedRunEvidenceRecovery` | `true` | owner abandonment、terminal evidence gap 和过期 missing-control reservation 会自动形成签名但 fail-closed 的 run evidence |
 | `recoveryTransactionalOutbox` | `true` | 恢复 run record、reservation 终态与 `RUN_ABANDONED/RUN_EVIDENCE_RECOVERED` 事件同事务提交 |
-| `sideEffectCommitConfirmation` | `false` | 尚无 operator commit receipt/unknown-commit 消解协议 |
+| `sideEffectJournal` / `sideEffectCommitReceipts` | `true` | operator 可在执行期记录 side-effect attempt、显式 receipt 和 UNKNOWN_COMMIT |
+| `sideEffectReconciliation` / `sideEffectReconciliationEvidence` | `true` | 具备持久 claim/fencing、SPI、签名 refinement、summary 和 outbox 协议 |
+| `sideEffectReconcilerAdapters` | 默认 `false` | 当前示例不伪造任意 provider 的权威状态查询；注册业务 adapter 后动态变为 `true` |
+| `sideEffectCommitConfirmation` | `false` | 不是所有 operator/binding 都已声明 receipt 与 reconciler，不能做全局承诺 |
 
-旧 `runEvidenceBundle.v1/v2/v3/v4` 仍在 capability 的兼容列表中；新 consumer 应优先协商 v5。旧 run 若没有
+旧 `runEvidenceBundle.v1/v2/v3/v4/v5` 仍在 capability 的兼容列表中；新 consumer 应优先协商 v6。旧 run 若没有
 每个节点的结构化 execution fact，会得到
 `Structured execution semantics were not captured for every node.` gap 并被隔离，而不是由服务端静默猜测。
-ANEKE 可直接使用 [run-evidence-bundle-v5.schema.json](schemas/tool-studio-resource-gateway/run-evidence-bundle-v5.schema.json)
+ANEKE 可直接使用 [run-evidence-bundle-v6.schema.json](schemas/tool-studio-resource-gateway/run-evidence-bundle-v6.schema.json)
 做 producer/consumer contract 校验，不需要解析 Resource Gateway 内部 Java DTO。
+
+#### 从 UNKNOWN_COMMIT 对账到治理 READY
+
+![Resource Gateway 外部副作用确认与对账闭环](assets/resource-gateway-side-effect-reconciliation-lifecycle.svg)
+
+图源：[resource-gateway-side-effect-reconciliation-lifecycle.drawio](assets/drawio/resource-gateway-side-effect-reconciliation-lifecycle.drawio)。
+
+这条链路刻意把三种事实分开：原 run evidence 永远不可变；provider adapter 只查询、不重放写操作；对账结论以
+独立签名 record 追加。ANEKE 或运维工作流按以下顺序操作：
+
+1. 调用 `GET /api/integration/runs/{runId}/evidence`，找到
+   `nodes[].sideEffectAttempts[]` 中的 `UNKNOWN_COMMIT`。保存顶层 `manifest.manifestHash` 和 attempt 的
+   `attemptFingerprint`，先验证 base evidence 签名。
+2. 确认 attempt 同时带有 `reconcilerRef` 与 `reconciliationLookupRef`。lookup ref 只能是无 query、fragment、
+   user-info 的 evidence-safe opaque URI，例如 `vault://commands/charge-42`；缺少它时系统返回
+   `RG.INTEGRATION.SIDE_EFFECT_NOT_RECONCILABLE`，不会拿哈希猜远端请求。
+3. 使用专用 `X-Purpose: SIDE_EFFECT_RECONCILIATION` 提交 reconcile command。服务端比较两个 expected
+   fingerprint，避免操作过期或错 run 的证据。
+4. 服务端在共享数据库中创建 30 秒 claim，使用 owner token 和 lease fencing 保证多实例只有一个 provider
+   查询赢家；adapter 调用上限 20 秒。超时或失败返回可重试的 `503`，不会重放原写操作。
+5. provider 返回 `COMMITTED` 时必须携带 receipt；返回 `NOT_COMMITTED` 可以没有 receipt。结果、actor、base
+   evidence、attempt fingerprint 和 lookup ref 进入 Ed25519 签名的 reconciliation record。
+6. record、resolved head 和 `SIDE_EFFECT_RECONCILED` outbox event 在同一事务提交。任一步失败全部回滚。
+7. 调用 `GET /api/integration/runs/{runId}/side-effects/reconciliations`。`status=RESOLVED` 表示所有可见 unknown
+   attempt 已有签名 refinement；只有 `remainingEvidenceGaps=[]` 且所有签名验证通过时，补充治理视图才会成为
+   `governanceStatus=READY`。原 base evidence 仍保持原来的 `QUARANTINED`，这不是矛盾。
+
+请求示例：
+
+```bash
+curl -sS -X POST \
+  'http://localhost:8080/api/integration/runs/<runId>/side-effects/<attemptId>/reconcile' \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: SIDE_EFFECT_RECONCILIATION' \
+  -H 'X-Correlation-Id: reconcile-0001' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "schemaVersion": "toolStudio.resourceGateway.sideEffectReconciliationRequest.v1",
+    "requestId": "reconcile-charge-0001",
+    "expectedEvidenceFingerprint": "sha256:<64-hex>",
+    "expectedAttemptFingerprint": "sha256:<64-hex>"
+  }'
+```
+
+同一个 `requestId + request content` 重试会返回同一 record；同一 requestId 指向不同 target、同一 attempt 被不同
+request 再次解决、或 expected fingerprint 过期都会返回 `409`。claim 正在被其他实例持有时返回
+`RG.INTEGRATION.SIDE_EFFECT_RECONCILIATION_IN_PROGRESS`，响应 detail 给出 `retryAfter`。
+
+Resource Gateway 不内置一个“永远返回已提交”的假 adapter。业务团队必须注册 provider-owned Bean：
+
+```java
+@Component
+final class PaymentsStatusReconciler implements SideEffectReconciler {
+    @Override
+    public String reconcilerRef() {
+        return "payments.status";
+    }
+
+    @Override
+    public Resolution reconcile(Query query) throws Exception {
+        // 只用 query.attempt().reconciliationLookupRef() 查询 provider command/status API。
+        // 不得重新发送 charge/write 请求；COMMITTED 必须返回 evidence-safe receipt。
+        return lookupAuthoritativeResult(query);
+    }
+}
+```
+
+注册至少一个 Bean 后，capability 的 `sideEffectReconcilerAdapters` 变为 `true`。三份独立 schema 可用于 consumer
+contract 和离线校验：
+
+- [side-effect-reconciliation-request-v1.schema.json](schemas/tool-studio-resource-gateway/side-effect-reconciliation-request-v1.schema.json)
+- [side-effect-reconciliation-record-v1.schema.json](schemas/tool-studio-resource-gateway/side-effect-reconciliation-record-v1.schema.json)
+- [side-effect-reconciliation-summary-v1.schema.json](schemas/tool-studio-resource-gateway/side-effect-reconciliation-summary-v1.schema.json)
 
 #### 在画布设置 deadline 和取消运行
 
@@ -425,9 +509,9 @@ Spring 产品服务使用 `dynamic_run_controls` 作为权威状态表，JVM 内
 6. A 若崩溃，lease 到期后的首次读取会原子地写入 `OWNER_LEASE_EXPIRED`、
    `recoveryDisposition=ABANDONED` 和 `sideEffectsMayBeInFlight=true`；旧 owner/epoch 后续不能覆盖它。
 7. bounded sweeper 发现 abandonment 后锁定 reservation。正常完成路径与 recovery 路径只能有一个赢家；赢家
-   创建 `VisualGraphRunRecord.v7`、签名 evidence v5、提交 reservation 终态并原子追加 integration outbox。
+   创建 `VisualGraphRunRecord.v8`、签名 evidence v6、提交 reservation 终态并原子追加 integration outbox。
 
-在 evidence v5 中先看顶层 `recovery`：
+在 evidence v6 中先看顶层 `recovery`：
 
 | `recovery.mode` | 含义 | 治理处理 |
 |---|---|---|
@@ -453,8 +537,9 @@ resource-gateway.run-recovery.missing-control-grace-ms=30000
 ```
 
 这里刻意不做自动重跑。进程死亡时，系统无法仅凭线程消失判断远端写是否提交；盲目从头执行可能造成重复扣款、
-重复发布或重复通知。业务要恢复执行，必须先通过未来的 commit receipt/reconciliation 协议消解 unknown commit，
-或由上层创建新的 requestId 走明确审批后的补偿/重试流程。
+重复发布或重复通知。业务要恢复执行，必须先通过当前的 commit receipt/reconciliation 协议消解 unknown commit；
+若 operator 没有 evidence-safe lookup ref 或业务 provider 尚未注册 reconciler，则由上层走人工调查、明确审批后的
+补偿或新 requestId 流程，不能退化为自动重跑。
 
 自动化客户端也可以调用：
 
@@ -1481,9 +1566,9 @@ GET /api/gateway/examples/scenarios/{graphName}/diagram
 | `visual/simulation` | mock/real 混合模拟、fixture、trace、sample generator |
 | `visual/publication` | publication 冻结、导入导出、依赖报告 |
 | `visual/golden` | golden case 保存、运行、认证 |
-| `visual/runtime` | `VisualGraphRunRecord.v7`、精确 node invocation attempt、结构化 node/run-control/recovery fact、pre-run 脱敏 lineage reservation、自动 evidence recovery、持久 evidence seal 和 trace/replay 数据 |
+| `visual/runtime` | `VisualGraphRunRecord.v8`、精确 node invocation attempt、side-effect attempt/receipt/transition、结构化 node/run-control/recovery fact、pre-run 脱敏 lineage reservation、自动 evidence recovery、持久 evidence seal 和 trace/replay 数据 |
 | `visual/resource` | OpenAPI/resource contract 投影到 visual resource/operator surface |
-| `integration` | Tool Studio versioned envelope、capability probe、draft dependency export、evidence/replay、验签公钥、governance gate feedback、transactional outbox、签名 cursor 和 reconciliation snapshot |
+| `integration` | Tool Studio versioned envelope、capability probe、draft dependency export、evidence/replay、side-effect reconciliation claim/SPI/签名 refinement、验签公钥、governance gate feedback、transactional outbox、签名 cursor 和 reconciliation snapshot |
 
 resource gateway 自身继续保留：
 
@@ -1510,6 +1595,12 @@ resource gateway 自身继续保留：
 12. Polling 或未来 webhook 都不是权威源；消费端漂移最终必须由 reconciliation snapshot 发现并收敛。
 13. managed run 的 normal completion 与 recovery sweeper 必须锁定同一 reservation；run record、reservation
     终态和 integration event 必须原子提交，失败时三者一起回滚。
+14. operator 必须在外部写之前记录 `PREPARED`；没有明确 receipt 的退出只能成为 `UNKNOWN_COMMIT`，不能成为
+    `NOT_COMMITTED`。
+15. `PREPARED/UNKNOWN_COMMIT` 是 non-retryable、non-fallback failure，并阻断依赖节点；对账只追加签名
+    refinement，不能修改原 run evidence 或重放原写请求。
+16. reconciliation lookup ref 必须是 evidence-safe opaque reference；原始 idempotency key、credential、provider
+    payload 和带 query/user-info 的 URL 不得进入 run/evidence/reconciliation record。
 
 ## 8. 典型业务流程
 
@@ -1588,6 +1679,8 @@ resource gateway 自身继续保留：
 | `GET` | `/api/integration/capabilities` | 查询 Tool Studio 协议版本、对象版本、端点和 feature flags |
 | `GET` | `/api/integration/drafts/{draftId}/export` | 导出带依赖 fingerprint 的治理集成 bundle |
 | `GET` | `/api/integration/runs/{runId}/evidence` | 导出带节点/边事实、完整性状态和持久签名的 evidence bundle |
+| `GET` | `/api/integration/runs/{runId}/side-effects/reconciliations` | 合并不可变 base evidence 与已验证 refinement，返回 outstanding attempts 和有效治理状态 |
+| `POST` | `/api/integration/runs/{runId}/side-effects/{attemptId}/reconcile` | 以 expected fingerprints、专用 purpose 和 durable claim 调用 provider-owned reconciler，追加签名结果 |
 | `GET` | `/api/integration/runs/{runId}/replay` | 读取经脱敏的 recorded replay payload；当前不触发外部副作用 |
 | `POST` | `/api/integration/runs/{runId}/replay` | 以 `DENY` 副作用策略重算 recorded payload 断言，生成带 parent lineage 的新 replay run/evidence |
 | `GET` | `/api/integration/evidence-keys/{keyId}` | 获取 evidence seal 验签公钥 |
@@ -1649,6 +1742,20 @@ resource gateway 自身继续保留：
 
 这是消费端没有把 projection 更新和 cursor checkpoint 放在同一事务提交造成的。Resource Gateway 保证同一 cursor 的窗口稳定，但不替 ANEKE 管理消费事务。ANEKE 必须同时保存 `eventId` 去重记录、aggregate sequence 和 `nextCursor`；重复事件应成为幂等 no-op。
 
+**evidence 显示 UNKNOWN_COMMIT，但 reconcile 返回 503。**
+
+先看 capability 的 `sideEffectReconcilerAdapters`。`false` 表示当前部署没有注册 attempt 所需的 provider-owned
+`SideEffectReconciler`；Resource Gateway 不会用 HTTP 状态码或线程异常猜提交结果。若 capability 为 `true`，再检查
+attempt 的 `reconcilerRef` 是否有对应 Bean、`reconciliationLookupRef` 是否非空，以及 503 code 是 adapter unavailable、
+timeout 还是 provider failure。provider 恢复后使用**同一个 requestId 和相同请求体**重试；claim 未过期时按
+`retryAfter` 等待，不要生成新 request 热循环。
+
+**reconciliation summary 是 READY，但原 evidence 仍是 QUARANTINED。**
+
+这是设计不变量。原 evidence 的签名覆盖运行当时的 UNKNOWN_COMMIT，不能事后改写；summary 通过验证 base evidence
+和追加的签名 reconciliation records 形成有效治理视图。ANEKE 应保存两者的 fingerprint/签名链，而不是只保存
+summary 字符串。
+
 ## 11. 验证与回归命令
 
 前端核心回归：
@@ -1679,7 +1786,8 @@ mvn -f resource-gateway-examples/pom.xml -Pfrontend \
 当前不覆盖：
 
 - 多人实时协作。
-- 生产级 IAM/RBAC；当前 integration headers 仍是示例身份上下文，不能视作受信 IAM claims。
+- 完整企业 IAM/RBAC 生命周期；当前已验证 static bearer 或短时 RS256/EdDSA JWT claims，并把请求 header 仅作为
+  一致性 hint，但动态 JWKS/KMS 拉取、group/clearance/delegation policy 和撤销传播 SLO 仍需企业 adapter。
 - 持久化远程 worker runtime。
 - 完整 AI tool/event/message/webhook 执行平面。
 - 把 visual core 物理拆成独立 Maven artifact。
@@ -1687,6 +1795,8 @@ mvn -f resource-gateway-examples/pom.xml -Pfrontend \
 - webhook subscription、签名投递、重试与 DLQ；当前已具备 polling cursor 和 reconciliation，后续 webhook 只能作为低延迟提示层。
 - 外部数据库集群、Outbox retention job 和灾备恢复编排；当前 H2 实现用于证明事务、游标和对账协议，不等于企业 HA 存储。
 - `shadow/live` replay；当前已具备生成新 run lineage 的 `RECORDED_ASSERTIONS + DENY` 无副作用 replay command。
+- 通用 provider reconciler adapter；当前已具备 SPI、持久 claim/fencing、签名 record 与 summary，但每个业务系统
+  必须实现自己的只读 status lookup。没有 adapter 的 operator 不能被宣称为自动 commit-confirmable。
 
 后续可以继续推进：
 

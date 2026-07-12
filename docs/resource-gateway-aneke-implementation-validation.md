@@ -5,10 +5,10 @@
 | 属性 | 内容 |
 |---|---|
 | 设计基线 | `docs/resource-gateway-aneke-tool-studio-integration-evolution-plan.md` |
-| 当前实现基线 | Round 10（execution-budget 跨层传播、deadline admission、HTTP/remote budget） |
+| 当前实现基线 | Round 11（副作用 journal、commit receipt、持久化对账与签名治理补充证据） |
 | 评估日期 | 2026-07-12 |
 | 目标 | 加权实施差距 `<3%`，且不存在 P0 阻断项 |
-| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1524 tests，0 failures，0 errors，2 skipped，`BUILD SUCCESS`（04:57） |
+| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1543 tests，0 failures，0 errors，2 skipped，`BUILD SUCCESS`（04:56，含真实 Chrome） |
 
 ## 1. 评分方法
 
@@ -247,6 +247,30 @@ evidence finalization reserve 和只减不增的 remaining budget 变成执行�
 Round 10 结论：差距从 `17.25%` 降至 `16.10%`。`RUN-01` 的核心“remaining budget 不出 control plane”病根已
 关闭，但该编号仍保留为较窄的 P0：客户端断开没有显式 detach 语义，且私有 runtime binding 可以忽略
 `OperatorContext` 后发起不可取消 I/O。`RUN-02`、`IAM-01`、`OPS-01` 没有因本轮工作获得虚假完成度。
+
+## 2.11 Round 11 重新审计
+
+Round 10 能判定执行超时，却不能回答外部系统究竟是否已经提交。Round 11 把副作用从一段普通 operator 代码提升为
+执行期协议：外部写入前登记 `PREPARED`，结束时只能显式收敛到 `COMMITTED`、`NOT_COMMITTED` 或
+`UNKNOWN_COMMIT`；不确定提交会阻止 retry、fallback 和下游传播。重启后的状态确认由带 lease/fence 的持久化对账命令
+完成，结果作为独立签名补充证据追加，绝不改写原始 run evidence。
+
+| 维度 | 权重 | 当前完成率 | 得分 | 本轮可证明增量 | 仍未证明 |
+|---|---:|---:|---:|---|---|
+| 协议、版本与身份边界 | 15 | 98% | 14.70 | run evidence v6；request/record/summary 三份严格 schema；独立 read/execute purpose；capability 揭示 adapter 与全局确认状态 | 自动 N/N-1 consumer matrix；动态 IAM/mTLS 联调；旧 consumer 契约流水线 |
+| GraphDraft 依赖快照 | 10 | 60% | 6.00 | 无语义变化 | runtime binding/suite refs、跨表一致快照、完整 readiness profile |
+| Run evidence 可信链 | 20 | 98% | 19.60 | attempt journal、脱敏 lookup ref、commit receipt/proof、不可变 attempt fingerprint；对账记录独立签名并绑定 base evidence | KMS/HSM、retention/legal hold、外部 verifier matrix；全算子覆盖率 |
+| Payload replay | 15 | 80% | 12.00 | unknown commit 不再进入 recorded replay 的可采纳路径 | shadow/live 审批隔离、跨实例 exactly-once、选择性 retention |
+| Timeout/partial failure 语义 | 10 | 100% | 10.00 | PREPARED/UNKNOWN/PARTIAL；未知提交不重试、不 fallback、不传播；legacy 无 attempt 的 unknown 仍隔离 | 所有私有 binding 的协议采纳仍需 conformance 证明 |
+| Workbook、gate feedback 与 Deep Link | 10 | 73% | 7.30 | verified reconciliation summary 可供 gate 区分原始 quarantine 与补充证据后的 READY | 双向 workbook refs、coverage policy、owner/migration gate 完整闭环 |
+| Change event、cursor、webhook 与对账 | 10 | 88% | 8.80 | 对账结果、resolved head 与 `SIDE_EFFECT_RECONCILED` outbox 同事务；request 幂等、claim lease/fence、跨实例冲突语义 | signed webhook、DLQ/退避、retention/compaction、乱序 fault harness |
+| 工业运行控制 | 10 | 74% | 7.40 | DB 重启、双实例 claim、lease takeover、旧 owner fencing、outbox 回滚、持久化篡改检测、provider timeout/error fail closed | 外部 HA DB 实测、provider adapter 灾难演练、metrics/SLO、quota、DR/容量、residency |
+| **合计** | **100** |  | **85.80** |  | **加权差距 14.20%** |
+
+Round 11 结论：差距从 `16.10%` 降至 `14.20%`。`RUN-02` 的引擎与协议病根已关闭，但不能据此宣称所有业务写
+都可对账：默认 adapter registry 为空，通用 HTTP 与客户私有 operator 尚未被强制纳入 journal。capability 因而诚实地
+保持 `sideEffectCommitConfirmation=false`，并把 adapter 可用性单独暴露。下一步应以 binding conformance、重点
+provider adapter 和故障演练关闭“协议存在但业务绕开协议”的组织性缺口。
 
 ## 3. 已通过的证明
 
@@ -619,6 +643,39 @@ HTTP 真实 server 收到 deadline/budget headers；remote envelope 可序列化
 Resource Gateway 还证明 admission skip 被采集为 `CANCELLED + DEADLINE_EXHAUSTED + ENGINE_ADMISSION`，而不是
 退化为 `UNKNOWN`。
 
+### 3.13 外部副作用提交与对账证明
+
+Round 11 同时验证执行路径与治理路径。执行路径证明 operator 必须先登记 attempt，原始 idempotency key 不进入
+snapshot，credential-bearing lookup ref 会被丢弃；`UNKNOWN_COMMIT` 即使配置三次 retry 和 fallback，也只执行一次
+外部写，并阻止下游节点。治理路径证明 provider 只按不透明 lookup ref 查询状态，不能重放原始写请求。
+
+```text
+BLOGE SideEffectJournal focused tests: 4 passed
+Resource Gateway focused tests: 49 passed
+  dynamic execution and DAG guard: 24
+  evidence/capability/schema contracts: 13
+  reconciliation service: 5
+  persistent repository: 5
+  controller purpose policy: 2
+
+Resource Gateway full verify (real Chrome included):
+  1543 passed, 0 failures, 0 errors, 2 skipped
+  BUILD SUCCESS (04:56)
+
+same requestId -> same signed record; provider invoked once
+different requestId for resolved attempt -> conflict, no provider call
+two repository instances -> one active lease; stale owner fenced
+repository restart -> signed record and resolved head retained
+outbox append failure -> record/head/event roll back atomically
+tampered persisted record -> rejected before governance consumption
+legacy node-level UNKNOWN_COMMIT without attempt -> remains OUTSTANDING/QUARANTINED
+```
+
+对账成功不会修改 base evidence 的 `QUARANTINED` 状态，而是生成绑定 `runId + evidenceId + manifestHash +
+attemptFingerprint` 的签名 refinement record；只有所有可寻址 uncertainty 都被可信记录覆盖，effective summary 才能为
+`READY`。`PARTIAL_COMMIT` 或旧版无法寻址的 unknown 会保留 synthetic outstanding marker，防止“没有结构化 attempt”
+被误解释为“不需要对账”。
+
 ## 4. 当前 P0 阻断项
 
 | ID | 阻断项 | 病根 | 根治验收 |
@@ -626,7 +683,7 @@ Resource Gateway 还证明 admission skip 被采集为 `CANCELLED + DEADLINE_EXH
 | `IAM-01` | 企业身份生命周期尚未端到端证明 | signed JWT、轮换和撤销代码已具备，但配置 trust store 只在启动时装载，尚无客户 IAM 动态策略/撤销传播证据 | 动态 JWKS/KMS 或 mTLS adapter + 多 identity/group/clearance + delegation grant + propagation SLO + policy/audit 联调演练 |
 | `OPS-01` | 本地签名 key 不满足企业 custody | private key 由本地 H2 demo provider 保存 | KMS/HSM-backed `VisualEvidenceSigner`、rotation/disable/revoke、审计和灾备演练 |
 | `RUN-01` | disconnect/detach 与任意 binding 的预算合规尚未封口 | Round 10 已完成 OperatorContext、scheduler admission、retry/timeout/suspend、Resource Gateway/common HTTP 和 remote worker 的 remaining-budget 传播，并防止 wall-clock 回拨放宽预算；但客户端断开语义未版本化，私有 binding 仍可忽略合同 | versioned `detachPolicy` + disconnect race/fault tests + runtime binding conformance suite + non-cooperative I/O quarantine |
-| `RUN-02` | 外部副作用 timeout 后只能标记 unknown commit | operator 没有 commit receipt/reconciliation hook，盲重试可能重复写 | effect/idempotency admission + transaction/idempotency receipt + reconcile/compensate hook + downstream-write suspension + gate policy |
+| `RUN-02` | 副作用协议尚未覆盖企业 operator/binding 存量 | Round 11 已具备 journal、receipt、DAG guard、持久化 reconcile 与 gate summary，但默认 adapter registry 为空，通用 HTTP 和客户私有 operator 可绕开协议 | 高风险 binding 全量盘点 + journal 强制/静态检查 + provider adapter conformance kit + outage/restart/重复请求演练 + compensate policy + 覆盖率门禁 |
 
 `EVD-02` 已在 Round 9 关闭；`EVT-01` 已在 Round 3 对当前资产模型关闭。webhook、recovery retry
 backoff/DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，但不再构成“崩溃事实无法进入治理链”或
@@ -647,5 +704,6 @@ backoff/DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，�
 | 8 | durable run control 与 owner failure 语义 | DB 权威状态、跨实例 cancel、lease/epoch fencing、并发单赢家、cancel-before-start、过期 abandonment、raw fence 不落库 | 19.825% | 45 个聚焦 tests、1513 个全量 tests、跨 repository restart/双实例/race tests、真实浏览器回归、Draw.io 0 errors/warnings |
 | 9 | owner failure 后 evidence continuity | pre-run 脱敏 lineage reservation、normal/recovery 单赢家、三类 synthetic recovery、签名 evidence v5、事务 outbox、失败回滚重试、visual-owned recovery port | 17.25% | 11 个 recovery fault tests、41 个聚焦 tests、1 个目标真实 Chrome 流程、1524 个全量 tests、v5 schema、restart/concurrency/outbox rollback、Draw.io 0 errors/warnings |
 | 10 | deadline remaining-budget 跨层传播 | `ExecutionBudget`、finalization reserve、不可扩张/防时钟回拨、scheduler admission、retry/timeout/suspend cap、HTTP headers、remote-worker envelope、结构化 deadline-exhausted fact | 16.10% | BLOGE reactor 3590 tests；Resource Gateway 56 个聚焦/Spring tests、1527 个全量 tests（含真实 Chrome）；Draw.io 0 errors/warnings/crossings/overlaps、SVG 视觉检查通过 |
+| 11 | 外部副作用提交确认与持久化对账 | journal、receipt/proof、unknown DAG guard、v6 evidence、lease/fence reconcile、签名 refinement、原子 outbox、effective gate summary | 14.20% | BLOGE 4 个聚焦 tests；Resource Gateway 49 个聚焦、1543 个全量 tests（含真实 Chrome）；DB restart/双实例/fencing/rollback/tamper/legacy unknown；corporate Draw.io 0 errors/warnings/crossings/overlaps |
 
 后续每轮必须更新本表、代码证据、失败测试和剩余阻断项。只有全部 P0 阻断关闭、全量验证与真实浏览器验证通过，并且按同一权重计算的差距 `<3%`，才允许把目标标记完成。

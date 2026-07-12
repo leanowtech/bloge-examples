@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualReplayAssertionResult;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunControlView;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualSideEffectAttempt;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
@@ -42,7 +43,7 @@ import static org.mockito.Mockito.when;
 class ToolStudioIntegrationServiceTest {
 
     @Test
-    void runEvidenceV5JsonSchemaMatchesSerializedProtocolFields() throws Exception {
+    void runEvidenceV6JsonSchemaMatchesSerializedProtocolFields() throws Exception {
         OperatorDefinition operator = operator();
         GraphDraft draft = runDraft(operator);
         VisualGraphRunResponse response = new VisualGraphRunResponse(
@@ -54,12 +55,12 @@ class ToolStudioIntegrationServiceTest {
                 Map.of(
                         "eligibility", List.of(attempt(Map.of("customerId", "c-1"), Map.of("eligible", true))),
                         "decision", List.of(attempt(Map.of("eligible", true), Map.of("decision", "APPROVE")))),
-                successFacts("eligibility", "decision"));
+                Map.of("eligibility", successFact(), "decision", committedSideEffectFact()));
         RunEvidenceBundle evidence = RunEvidenceBundle.from(VisualGraphRunRecord.storedDraft(
                 draft, Map.of("customerId", "c-1"), response));
         ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
         JsonNode schema = mapper.readTree(Files.readString(Path.of("..", "docs", "schemas",
-                "tool-studio-resource-gateway", "run-evidence-bundle-v5.schema.json")));
+                "tool-studio-resource-gateway", "run-evidence-bundle-v6.schema.json")));
         JsonNode serialized = mapper.valueToTree(evidence);
 
         assertSchemaProperties(serialized, schema.path("properties"));
@@ -67,6 +68,14 @@ class ToolStudioIntegrationServiceTest {
         assertSchemaProperties(serialized.path("recovery"), schema.at("/$defs/recovery/properties"));
         assertSchemaProperties(serialized.at("/execution/runControl"), schema.at("/$defs/runControl/properties"));
         assertSchemaProperties(serialized.path("nodes").get(0), schema.at("/$defs/nodeEvidence/properties"));
+        JsonNode sideEffect = serialized.path("nodes").get(1).path("sideEffectAttempts").get(0);
+        assertSchemaProperties(sideEffect, schema.at("/$defs/sideEffectAttempt/properties"));
+        assertSchemaProperties(sideEffect.path("request"), schema.at("/$defs/sideEffectRequest/properties"));
+        assertSchemaProperties(sideEffect.path("receipt"), schema.at("/$defs/sideEffectReceipt/properties"));
+        assertSchemaProperties(sideEffect.path("receipt").path("proof"),
+                schema.at("/$defs/sideEffectProof/properties"));
+        assertSchemaProperties(sideEffect.path("transitions").get(0),
+                schema.at("/$defs/sideEffectTransition/properties"));
         assertSchemaProperties(serialized.path("edges").get(0), schema.at("/$defs/edgeEvidence/properties"));
         assertSchemaProperties(serialized.path("manifest"), schema.at("/$defs/manifest/properties"));
         assertThat(schema.at("/$defs/status/enum")).extracting(JsonNode::asText)
@@ -137,7 +146,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("recoveryTransactionalOutbox", true)
                 .containsEntry("sideEffectJournal", true)
                 .containsEntry("sideEffectCommitReceipts", true)
-                .containsEntry("sideEffectReconciliation", false)
+                .containsEntry("sideEffectReconciliation", true)
+                .containsEntry("sideEffectReconciliationEvidence", true)
+                .containsEntry("sideEffectReconcilerAdapters", false)
                 .containsEntry("sideEffectCommitConfirmation", false)
                 .containsEntry("payloadReplay", true)
                 .containsEntry("recordedAssertionReplay", true)
@@ -156,6 +167,8 @@ class ToolStudioIntegrationServiceTest {
                         "GET /api/integration/capabilities",
                         "GET /api/integration/drafts/{draftId}/export",
                         "GET /api/integration/runs/{runId}/evidence",
+                        "GET /api/integration/runs/{runId}/side-effects/reconciliations",
+                        "POST /api/integration/runs/{runId}/side-effects/{attemptId}/reconcile",
                         "GET /api/integration/runs/{runId}/replay",
                         "POST /api/integration/runs/{runId}/replay",
                         "GET /api/integration/evidence-keys/{keyId}",
@@ -404,7 +417,9 @@ class ToolStudioIntegrationServiceTest {
         assertThat(evidence.edges()).singleElement().satisfies(edge ->
                 assertThat(edge.status()).isEqualTo("SUCCESS"));
         assertThat(evidence.execution().criticalOutputReached()).isFalse();
-        assertThat(evidence.manifest().evidenceStatus()).isEqualTo("READY");
+        assertThat(evidence.manifest().evidenceStatus()).isEqualTo("QUARANTINED");
+        assertThat(evidence.manifest().gaps())
+                .contains("One or more external side-effect attempts do not have a definitive commit outcome.");
     }
 
     @Test
@@ -489,7 +504,9 @@ class ToolStudioIntegrationServiceTest {
             assertThat(edge.propagated()).isFalse();
             assertThat(edge.payloadRef()).isBlank();
         });
-        assertThat(evidence.manifest().evidenceStatus()).isEqualTo("READY");
+        assertThat(evidence.manifest().evidenceStatus()).isEqualTo("QUARANTINED");
+        assertThat(evidence.manifest().gaps())
+                .contains("One or more external side-effect attempts do not have a definitive commit outcome.");
     }
 
     @Test
@@ -650,6 +667,29 @@ class ToolStudioIntegrationServiceTest {
                 new VisualNodeExecutionFact.Timeout(false, 0, false),
                 new VisualNodeExecutionFact.Fallback(false, false, "NONE", ""),
                 "NOT_APPLICABLE", List.of());
+    }
+
+    private static VisualNodeExecutionFact committedSideEffectFact() {
+        VisualSideEffectAttempt.Receipt receipt = new VisualSideEffectAttempt.Receipt(
+                "receipt-42", "payments", "txn-42", Instant.parse("2026-07-12T00:00:02Z"),
+                new VisualSideEffectAttempt.Proof("kms://receipts/42", "sha256:" + "a".repeat(64)));
+        VisualSideEffectAttempt attempt = new VisualSideEffectAttempt(
+                "attempt-42",
+                new VisualSideEffectAttempt.Request("payments.charge", "sha256:" + "A".repeat(43),
+                        "payments.status", "vault://commands/charge-42",
+                        Instant.parse("2026-07-12T00:00:00Z"), 0),
+                "COMMITTED", receipt,
+                List.of(
+                        new VisualSideEffectAttempt.Transition(1, "PREPARED",
+                                Instant.parse("2026-07-12T00:00:00Z"), "ATTEMPT_PREPARED", null),
+                        new VisualSideEffectAttempt.Transition(2, "COMMITTED",
+                                Instant.parse("2026-07-12T00:00:02Z"), "PROVIDER_CONFIRMED", receipt)));
+        return new VisualNodeExecutionFact(
+                "SUCCESS", "NONE", "ENGINE_STATUS", List.of(),
+                new VisualNodeExecutionFact.Retry(1, 1, false, ""),
+                new VisualNodeExecutionFact.Timeout(false, 0, false),
+                new VisualNodeExecutionFact.Fallback(false, false, "NONE", ""),
+                "COMMITTED", List.of(attempt), List.of());
     }
 
     private static VisualNodeExecutionFact executionFact(String status) {

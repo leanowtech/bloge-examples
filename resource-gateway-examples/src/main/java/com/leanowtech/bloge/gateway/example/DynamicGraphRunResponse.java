@@ -176,17 +176,18 @@ public record DynamicGraphRunResponse(
     }
 
     public record SideEffectRequest(String operationRef, String idempotencyKeyFingerprint, String reconcilerRef,
-                                    Instant startedAt, int retryAttempt) {
+                                    String reconciliationLookupRef, Instant startedAt, int retryAttempt) {
         public SideEffectRequest {
             operationRef = operationRef == null ? "" : operationRef;
             idempotencyKeyFingerprint = idempotencyKeyFingerprint == null ? "" : idempotencyKeyFingerprint;
             reconcilerRef = reconcilerRef == null ? "" : reconcilerRef;
+            reconciliationLookupRef = reconciliationLookupRef == null ? "" : reconciliationLookupRef;
             startedAt = startedAt == null ? Instant.EPOCH : startedAt;
             retryAttempt = Math.max(0, retryAttempt);
         }
 
         public boolean reconcilable() {
-            return !idempotencyKeyFingerprint.isBlank() && !reconcilerRef.isBlank();
+            return !reconcilerRef.isBlank() && !reconciliationLookupRef.isBlank();
         }
     }
 
