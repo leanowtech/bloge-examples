@@ -110,7 +110,17 @@ public class DatabaseVisualGraphRunRepository implements VisualGraphRunRepositor
 
     @Override
     public Optional<VisualGraphRunRecord> find(String runId) {
-        return Optional.ofNullable(cache.get(runId));
+        VisualGraphRunRecord cached = cache.get(runId);
+        if (cached != null) {
+            return Optional.of(cached);
+        }
+        return jdbc.query("SELECT run_json FROM visual_graph_run_records WHERE run_id = ?",
+                        (rs, rowNum) -> read(runId, rs.getString("run_json")), runId)
+                .stream().findFirst()
+                .map(record -> {
+                    cache.put(record.runId(), record);
+                    return record;
+                });
     }
 
     @Override
@@ -121,7 +131,7 @@ public class DatabaseVisualGraphRunRepository implements VisualGraphRunRepositor
         VisualGraphRunRecord stored = identified.withEvidenceSeal(
                 evidenceSigner.seal(identified.evidenceMaterialFingerprint()));
         persist(stored);
-        changePublisher.publish(new VisualChangeFact("RUN_COMPLETED", stored.tenantId(), stored.namespace(),
+        changePublisher.publish(new VisualChangeFact(eventType(stored), stored.tenantId(), stored.namespace(),
                 stored.environment(),
                 new VisualChangeFact.Aggregate("RUN", stored.runId(), 1,
                         stored.evidenceMaterialFingerprint()),
@@ -152,5 +162,22 @@ public class DatabaseVisualGraphRunRepository implements VisualGraphRunRepositor
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize visual graph run record: " + record.runId(), e);
         }
+    }
+
+    private VisualGraphRunRecord read(String runId, String json) {
+        try {
+            return objectMapper.readValue(json, VisualGraphRunRecord.class);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Failed to deserialize visual graph run record: " + runId, exception);
+        }
+    }
+
+    private static String eventType(VisualGraphRunRecord record) {
+        if (!record.recovery().recovered()) {
+            return "RUN_COMPLETED";
+        }
+        return VisualRunRecoveryMetadata.MODE_OWNER_ABANDONED.equals(record.recovery().mode())
+                ? "RUN_ABANDONED"
+                : "RUN_EVIDENCE_RECOVERED";
     }
 }

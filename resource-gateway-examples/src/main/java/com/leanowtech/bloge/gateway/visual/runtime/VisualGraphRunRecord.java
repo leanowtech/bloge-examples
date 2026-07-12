@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 
 import java.lang.reflect.Array;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -57,6 +58,7 @@ import java.util.TreeSet;
  * @param replay immutable recorded-replay lineage, safety policy, and assertion outcomes
  * @param nodeExecutionFacts structured engine-observed and topology-derived node semantics
  * @param runControl graph-level deadline, cancellation, and termination-confirmation fact
+ * @param recovery durable reservation and automatic recovery provenance
  */
 public record VisualGraphRunRecord(
         String schemaVersion,
@@ -96,9 +98,11 @@ public record VisualGraphRunRecord(
         VisualRunEvidenceSeal evidenceSeal,
         VisualReplayMetadata replay,
         Map<String, VisualNodeExecutionFact> nodeExecutionFacts,
-        VisualRunControlView runControl
+        VisualRunControlView runControl,
+        VisualRunRecoveryMetadata recovery
 ) {
-    public static final String SCHEMA_VERSION = "bloge.visualGraphRunRecord.v6";
+    public static final String SCHEMA_VERSION_V6 = "bloge.visualGraphRunRecord.v6";
+    public static final String SCHEMA_VERSION = "bloge.visualGraphRunRecord.v7";
     public static final String SOURCE_TRANSIENT_DRAFT = "TRANSIENT_DRAFT";
     public static final String SOURCE_STORED_DRAFT = "STORED_DRAFT";
     public static final String SOURCE_PUBLICATION = "PUBLICATION";
@@ -146,6 +150,33 @@ public record VisualGraphRunRecord(
         replay = replay == null ? VisualReplayMetadata.none() : replay;
         nodeExecutionFacts = nodeExecutionFacts == null ? Map.of() : new LinkedHashMap<>(nodeExecutionFacts);
         runControl = runControl == null ? VisualRunControlView.unmanaged() : runControl;
+        recovery = recovery == null ? VisualRunRecoveryMetadata.none() : recovery;
+    }
+
+    /** Backward-compatible constructor for the v6 shape before recovery provenance was persisted. */
+    public VisualGraphRunRecord(String schemaVersion, String runId, String sourceKind, String draftId,
+                                long draftRevision, String publicationId, String sourceArtifactKind,
+                                String graphName, String tenantId, String namespace, String environment,
+                                String outputNode, Instant createdAt, boolean validated, boolean compiled,
+                                boolean success, long elapsedMs, Map<String, Long> nodeElapsedMs,
+                                Map<String, String> statusMap, List<VisualDiagnostic> diagnostics,
+                                List<String> errors, Map<String, Object> contextSummary,
+                                Map<String, Object> outputSummary, Map<String, Object> resultsSummary,
+                                Map<String, NodeSnapshot> nodeSnapshots, String generatedDsl,
+                                String draftFingerprint, String operatorDependencyFingerprint,
+                                Map<String, Object> contextPayload, Object outputPayload,
+                                Map<String, Object> resultsPayload, VisualPayloadRedactionManifest redaction,
+                                List<EdgeSnapshot> edgeSnapshots,
+                                Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts,
+                                VisualRunEvidenceSeal evidenceSeal, VisualReplayMetadata replay,
+                                Map<String, VisualNodeExecutionFact> nodeExecutionFacts,
+                                VisualRunControlView runControl) {
+        this(schemaVersion, runId, sourceKind, draftId, draftRevision, publicationId, sourceArtifactKind,
+                graphName, tenantId, namespace, environment, outputNode, createdAt, validated, compiled, success,
+                elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary, outputSummary,
+                resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint, operatorDependencyFingerprint,
+                contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots, nodeAttempts, evidenceSeal,
+                replay, nodeExecutionFacts, runControl, VisualRunRecoveryMetadata.none());
     }
 
     /** Backward-compatible constructor for the v5 shape before graph-level run control was persisted. */
@@ -170,7 +201,7 @@ public record VisualGraphRunRecord(
                 elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary, outputSummary,
                 resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint, operatorDependencyFingerprint,
                 contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots, nodeAttempts, evidenceSeal,
-                replay, nodeExecutionFacts, VisualRunControlView.unmanaged());
+                replay, nodeExecutionFacts, VisualRunControlView.unmanaged(), VisualRunRecoveryMetadata.none());
     }
 
     /** Backward-compatible constructor for the v4 shape before structured execution facts were persisted. */
@@ -558,6 +589,55 @@ public record VisualGraphRunRecord(
                 publication == null ? "" : publication.artifactKind(), context, response);
     }
 
+    /** Creates a fail-closed record when durable control outlives the request thread that owned execution. */
+    public static VisualGraphRunRecord recovered(VisualRunRecoveryReservation reservation,
+                                                 VisualRunControlView control,
+                                                 VisualRunRecoveryMetadata recovery) {
+        VisualRunRecoveryReservation safe = reservation;
+        if (safe == null) {
+            throw new IllegalArgumentException("A visual run recovery reservation is required");
+        }
+        VisualRunControlView safeControl = control == null ? VisualRunControlView.unmanaged() : control;
+        GraphDraft draft = safe.draft();
+        Map<String, String> statuses = new LinkedHashMap<>();
+        Map<String, VisualNodeExecutionFact> facts = new LinkedHashMap<>();
+        if (draft != null) {
+            for (GraphDraft.DraftNode node : draft.nodes()) {
+                statuses.put(node.id(), "PARTIAL");
+                OperatorDefinition definition = draft.operatorSnapshots().get(node.id());
+                String effect = definition == null ? "UNKNOWN" : definition.capabilities().effect();
+                String sideEffect = Set.of("PURE", "READ").contains(effect)
+                        ? "NOT_APPLICABLE"
+                        : "UNKNOWN_COMMIT";
+                facts.put(node.id(), new VisualNodeExecutionFact(
+                        "PARTIAL", safeControl.reasonCode(), "DURABLE_CONTROL_RECOVERY", List.of(),
+                        new VisualNodeExecutionFact.Retry(0, 0, false, ""),
+                        new VisualNodeExecutionFact.Timeout(safeControl.deadlineAt() != null, 0,
+                                "TIMED_OUT".equals(safeControl.status())),
+                        new VisualNodeExecutionFact.Fallback(false, false, "NONE", ""),
+                        sideEffect, List.of()));
+            }
+        }
+        Instant terminalAt = safeControl.terminalAt() == null ? Instant.now() : safeControl.terminalAt();
+        long elapsed = Math.max(0, Duration.between(safe.reservedAt(), terminalAt).toMillis());
+        boolean succeeded = "SUCCEEDED".equals(safeControl.status()) && safeControl.terminationConfirmed();
+        String reason = recovery == null ? "RUN_EVIDENCE_RECOVERED" : recovery.triggerReason();
+        return new VisualGraphRunRecord(
+                "", safe.runId(), safe.sourceKind(), draft == null ? "" : draft.draftId(),
+                draft == null ? 0 : draft.revision(), safe.publicationId(), safe.sourceArtifactKind(),
+                draft == null ? "" : draft.graphName(), draft == null ? "" : draft.tenantId(),
+                draft == null ? "" : draft.namespace(), draft == null ? "" : draft.environment(),
+                safe.outputNode(), terminalAt, draft != null, !safeControl.engineExecutionId().isBlank(), succeeded,
+                elapsed, Map.of(), statuses, List.of(),
+                List.of("RG.RUN_EVIDENCE.RECOVERED: " + reason
+                        + "; exact node payloads are unavailable and evidence is quarantined."),
+                summarizeMap(safe.contextPayload()), Map.of(), Map.of(), nodeSnapshots(draft), "",
+                draftFingerprint(draft), operatorDependencyFingerprint(draft), safe.contextPayload(), null, Map.of(),
+                safe.redaction(), edgeSnapshots(draft), Map.of(), VisualRunEvidenceSeal.unsigned(),
+                VisualReplayMetadata.none(), facts, safeControl,
+                recovery == null ? VisualRunRecoveryMetadata.none() : recovery);
+    }
+
     /**
      * Returns a copy with repository identity values.
      */
@@ -567,7 +647,7 @@ public record VisualGraphRunRecord(
                 validated, compiled, success, elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary,
                 outputSummary, resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint,
                 operatorDependencyFingerprint, contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots,
-                nodeAttempts, VisualRunEvidenceSeal.unsigned(), replay, nodeExecutionFacts, runControl);
+                nodeAttempts, VisualRunEvidenceSeal.unsigned(), replay, nodeExecutionFacts, runControl, recovery);
     }
 
     /** Returns a copy sealed after repository identity has been assigned. */
@@ -577,7 +657,7 @@ public record VisualGraphRunRecord(
                 validated, compiled, success, elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary,
                 outputSummary, resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint,
                 operatorDependencyFingerprint, contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots,
-                nodeAttempts, newEvidenceSeal, replay, nodeExecutionFacts, runControl);
+                nodeAttempts, newEvidenceSeal, replay, nodeExecutionFacts, runControl, recovery);
     }
 
     /** Stable fingerprint over every persisted run field except the seal itself. */
@@ -620,6 +700,7 @@ public record VisualGraphRunRecord(
         material.put("replay", replay);
         material.put("nodeExecutionFacts", nodeExecutionFacts);
         material.put("runControl", runControl);
+        material.put("recovery", recovery);
         return VisualBundleFingerprint.fromMaterial(material);
     }
 
@@ -665,7 +746,8 @@ public record VisualGraphRunRecord(
                 replayElapsed, replayStatuses, List.of(), replayErrors, contextSummary, outputSummary, resultsSummary,
                 nodeSnapshots, generatedDsl, draftFingerprint, operatorDependencyFingerprint, contextPayload,
                 outputPayload, resultsPayload, redaction, edgeSnapshots, replayAttempts,
-                VisualRunEvidenceSeal.unsigned(), safeReplay, replayFacts, VisualRunControlView.unmanaged());
+                VisualRunEvidenceSeal.unsigned(), safeReplay, replayFacts, VisualRunControlView.unmanaged(),
+                VisualRunRecoveryMetadata.none());
     }
 
     private static VisualGraphRunRecord fromDraft(String sourceKind,
@@ -726,7 +808,8 @@ public record VisualGraphRunRecord(
                 VisualRunEvidenceSeal.unsigned(),
                 VisualReplayMetadata.none(),
                 safeResponse.nodeExecutionFacts(),
-                safeResponse.runControl()
+                safeResponse.runControl(),
+                VisualRunRecoveryMetadata.none()
         );
     }
 

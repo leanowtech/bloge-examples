@@ -267,8 +267,9 @@ ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服
 
 画布点击 **Run** 后，系统不再只保存一个最终 `SUCCESS/FAILED`。BLOGE 的 node lifecycle 与
 `ResilienceListener` 会在同一个 run capture 中记录 retry、timeout 和 fallback 事件；Resource Gateway
-再结合不可变拓扑解释 skip/cancel 的因果关系，最后写入 `VisualGraphRunRecord.v6` 并导出
-`runEvidenceBundle.v4`。
+再结合不可变拓扑解释 skip/cancel 的因果关系，最后写入 `VisualGraphRunRecord.v7` 并导出
+`runEvidenceBundle.v5`。v7/v5 在既有 control fact 之外增加 recovery provenance，使正常完成记录和系统恢复记录
+可以被机器明确区分。
 
 ![Resource Gateway 运行失败事实链](assets/resource-gateway-run-failure-semantics.svg)
 
@@ -320,13 +321,16 @@ operator 的 effect/idempotency、业务补偿能力和门禁策略决定是否�
 | `runOwnerLease` / `runOwnerEpochFencing` | `true` | owner 只能在有效 lease 和匹配 epoch 下推进状态，旧 owner 不能覆盖恢复结论 |
 | `expiredOwnerQuarantine` | `true` | owner 租约过期后持久化为 `OWNER_LEASE_EXPIRED + TERMINATION_UNCONFIRMED` |
 | `restartRunResumption` | `false` | 进程崩溃后不会盲目重跑未知副作用；当前恢复策略是 abandonment + quarantine，而不是自动续跑 |
-| `runControlEvidence` | `true` | control fact 已进入 run record、签名和 evidence v4 |
+| `runControlEvidence` | `true` | control fact 已进入 run record、签名和 evidence v5 |
+| `runEvidenceRecoveryReservation` | `true` | managed run 执行前先持久化脱敏 lineage reservation，绑定确定性 runId、draft/scope/input fingerprint |
+| `abandonedRunEvidenceRecovery` | `true` | owner abandonment、terminal evidence gap 和过期 missing-control reservation 会自动形成签名但 fail-closed 的 run evidence |
+| `recoveryTransactionalOutbox` | `true` | 恢复 run record、reservation 终态与 `RUN_ABANDONED/RUN_EVIDENCE_RECOVERED` 事件同事务提交 |
 | `sideEffectCommitConfirmation` | `false` | 尚无 operator commit receipt/unknown-commit 消解协议 |
 
-旧 `runEvidenceBundle.v1/v2/v3` 仍在 capability 的兼容列表中；新 consumer 应优先协商 v4。旧 run 若没有
+旧 `runEvidenceBundle.v1/v2/v3/v4` 仍在 capability 的兼容列表中；新 consumer 应优先协商 v5。旧 run 若没有
 每个节点的结构化 execution fact，会得到
 `Structured execution semantics were not captured for every node.` gap 并被隔离，而不是由服务端静默猜测。
-ANEKE 可直接使用 [run-evidence-bundle-v4.schema.json](schemas/tool-studio-resource-gateway/run-evidence-bundle-v4.schema.json)
+ANEKE 可直接使用 [run-evidence-bundle-v5.schema.json](schemas/tool-studio-resource-gateway/run-evidence-bundle-v5.schema.json)
 做 producer/consumer contract 校验，不需要解析 Resource Gateway 内部 Java DTO。
 
 #### 在画布设置 deadline 和取消运行
@@ -369,13 +373,41 @@ Spring 产品服务使用 `dynamic_run_controls` 作为权威状态表，JVM 内
 
 典型过程如下：
 
-1. 实例 A 接收 RunIntent，以唯一 `requestId` 创建 durable claim，并获得 owner epoch。
-2. A 每次轮询 deadline/cancel 时续租；本地线程句柄不写数据库。
-3. 实例 B 可以处理同一 requestId 的 GET/cancel。B 只提交 fenced 状态迁移，不尝试操作 A 的线程。
-4. A 观察到 `CANCEL_REQUESTED` 后中断 owner 和 operator，最终提交 `CANCELLED` 或
+1. 画布 API 在进入 BLOGE 前先写 `visual_run_recovery_reservations`：保存去除 fixture 后的 draft、租户/环境、
+   已脱敏输入、material fingerprint 和由 requestId 确定的 runId；不保存原始 fencing token。
+2. 实例 A 以唯一 `requestId` 创建 durable claim，并获得 owner epoch。
+3. A 每次轮询 deadline/cancel 时续租；本地线程句柄不写数据库。
+4. 实例 B 可以处理同一 requestId 的 GET/cancel。B 只提交 fenced 状态迁移，不尝试操作 A 的线程。
+5. A 观察到 `CANCEL_REQUESTED` 后中断 owner 和 operator，最终提交 `CANCELLED` 或
    `TERMINATION_UNCONFIRMED`。
-5. A 若崩溃，lease 到期后的首次读取会原子地写入 `OWNER_LEASE_EXPIRED`、
+6. A 若崩溃，lease 到期后的首次读取会原子地写入 `OWNER_LEASE_EXPIRED`、
    `recoveryDisposition=ABANDONED` 和 `sideEffectsMayBeInFlight=true`；旧 owner/epoch 后续不能覆盖它。
+7. bounded sweeper 发现 abandonment 后锁定 reservation。正常完成路径与 recovery 路径只能有一个赢家；赢家
+   创建 `VisualGraphRunRecord.v7`、签名 evidence v5、提交 reservation 终态并原子追加 integration outbox。
+
+在 evidence v5 中先看顶层 `recovery`：
+
+| `recovery.mode` | 含义 | 治理处理 |
+|---|---|---|
+| `NONE` | 请求线程完成了正常 run-record 提交 | 按 manifest、node/edge facts 和 assertion 继续判断 |
+| `OWNER_ABANDONED` | owner lease 过期，执行终止和外部副作用无法确认 | `QUARANTINED`；消费 `RUN_ABANDONED`，发布门禁必须阻断 |
+| `TERMINAL_EVIDENCE_GAP` | control 已终态，但进程在 evidence 事务前死亡 | 保留图级终态，精确 payload/facts 缺口仍隔离；消费 `RUN_EVIDENCE_RECOVERED` |
+| `CONTROL_MISSING` | reservation 已提交，但 grace 后仍没有 control row | 视为 admission/进程异常，自动收敛 pending 状态并隔离 |
+
+`reservationFingerprint`、`controlRevision`、`attempt` 和 `recoveredAt` 都进入 evidence 签名材料。恢复 evidence
+可以被审计和对账，但不会因为“签名有效”就变成 `READY`：缺失精确 node payload、终止未确认或
+`UNKNOWN_COMMIT` 仍会出现在 `manifest.gaps`。
+
+恢复扫描默认每 5 秒运行一次；terminal control 额外等待 5 秒，让正常 evidence 事务优先完成；reservation 在
+30 秒后仍没有 control 才进入 `CONTROL_MISSING`。演示环境可通过以下配置调整，但生产值应由 SLO、最大正常
+提交时延和数据库容量测试决定：
+
+```properties
+resource-gateway.run-recovery.fixed-delay-ms=5000
+resource-gateway.run-recovery.initial-delay-ms=5000
+resource-gateway.run-recovery.evidence-commit-grace-ms=5000
+resource-gateway.run-recovery.missing-control-grace-ms=30000
+```
 
 这里刻意不做自动重跑。进程死亡时，系统无法仅凭线程消失判断远端写是否提交；盲目从头执行可能造成重复扣款、
 重复发布或重复通知。业务要恢复执行，必须先通过未来的 commit receipt/reconciliation 协议消解 unknown commit，
@@ -1406,7 +1438,7 @@ GET /api/gateway/examples/scenarios/{graphName}/diagram
 | `visual/simulation` | mock/real 混合模拟、fixture、trace、sample generator |
 | `visual/publication` | publication 冻结、导入导出、依赖报告 |
 | `visual/golden` | golden case 保存、运行、认证 |
-| `visual/runtime` | `VisualGraphRunRecord.v6`、精确 node invocation attempt、结构化 node/run-control fact、payload 脱敏、持久 evidence seal 和 trace/replay 数据 |
+| `visual/runtime` | `VisualGraphRunRecord.v7`、精确 node invocation attempt、结构化 node/run-control/recovery fact、pre-run 脱敏 lineage reservation、自动 evidence recovery、持久 evidence seal 和 trace/replay 数据 |
 | `visual/resource` | OpenAPI/resource contract 投影到 visual resource/operator surface |
 | `integration` | Tool Studio versioned envelope、capability probe、draft dependency export、evidence/replay、验签公钥、governance gate feedback、transactional outbox、签名 cursor 和 reconciliation snapshot |
 
@@ -1433,6 +1465,8 @@ resource gateway 自身继续保留：
 10. draft/operator/run/contract suite 的权威写入与 change event 必须同事务提交；Outbox 失败时资产也必须回滚。
 11. event cursor 必须绑定 tenant/environment、签名并过期；客户端不能把数据库 offset 当协议。
 12. Polling 或未来 webhook 都不是权威源；消费端漂移最终必须由 reconciliation snapshot 发现并收敛。
+13. managed run 的 normal completion 与 recovery sweeper 必须锁定同一 reservation；run record、reservation
+    终态和 integration event 必须原子提交，失败时三者一起回滚。
 
 ## 8. 典型业务流程
 

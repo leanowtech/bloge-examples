@@ -8596,6 +8596,7 @@ function libraryImportConfirmationKey(sourceText, diagnostics = []) {
 
 async function importOperatorLibrary() {
   const sourceText = state.libraryImportText || '';
+  setLibraryMessage('Validating operator library...', 'info');
   const validation = await validateOperatorLibraryTextPayload(sourceText);
   const confirmationKey = libraryImportConfirmationKey(sourceText, validation.diagnostics);
   if (!validation.response.ok || validation.payload?.valid === false) {

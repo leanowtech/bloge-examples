@@ -72,6 +72,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -99,6 +100,7 @@ import java.util.Set;
  * should be centrally configured rather than scattered across component annotations.
  */
 @Configuration(proxyBeanMethods = false)
+@EnableScheduling
 public class GatewayConfiguration {
 
     // ── Serialization ───────────────────────────────────────────────────

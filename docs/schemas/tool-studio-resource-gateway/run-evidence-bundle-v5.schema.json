@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/run-evidence-bundle-v5.schema.json",
+  "title": "Tool Studio Resource Gateway Run Evidence Bundle v5",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "evidenceId", "runId", "source", "replay", "recovery", "fingerprints", "execution",
+    "context", "output", "nodes", "edges", "assertions", "diagnostics", "errors", "retention", "manifest"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "toolStudio.resourceGateway.runEvidenceBundle.v5" },
+    "evidenceId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "source": { "$ref": "#/$defs/source" },
+    "replay": { "$ref": "#/$defs/replay" },
+    "recovery": { "$ref": "#/$defs/recovery" },
+    "fingerprints": { "$ref": "#/$defs/fingerprints" },
+    "execution": { "$ref": "#/$defs/execution" },
+    "context": { "$ref": "#/$defs/payloadSummary" },
+    "output": { "$ref": "#/$defs/payloadSummary" },
+    "nodes": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/nodeEvidence" }
+    },
+    "edges": {
+      "type": "array",
+      "maxItems": 50000,
+      "items": { "$ref": "#/$defs/edgeEvidence" }
+    },
+    "assertions": { "$ref": "#/$defs/assertions" },
+    "diagnostics": { "type": "array", "maxItems": 10000, "items": { "type": "object" } },
+    "errors": { "type": "array", "maxItems": 10000, "items": { "type": "string", "maxLength": 4096 } },
+    "retention": { "$ref": "#/$defs/retention" },
+    "manifest": { "$ref": "#/$defs/manifest" }
+  },
+  "$defs": {
+    "status": {
+      "type": "string",
+      "enum": ["SUCCESS", "FAILED", "TIMEOUT", "SKIPPED", "PARTIAL", "MOCKED", "CANCELLED", "FALLBACK", "UNKNOWN"]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceKind", "draftId", "draftRevision", "publicationId", "sourceArtifactKind", "graphName", "tenantId", "namespace", "environment"],
+      "properties": {
+        "sourceKind": { "type": "string", "maxLength": 64 },
+        "draftId": { "type": "string", "maxLength": 256 },
+        "draftRevision": { "type": "integer", "minimum": 0 },
+        "publicationId": { "type": "string", "maxLength": 256 },
+        "sourceArtifactKind": { "type": "string", "maxLength": 64 },
+        "graphName": { "type": "string", "maxLength": 256 },
+        "tenantId": { "type": "string", "maxLength": 256 },
+        "namespace": { "type": "string", "maxLength": 256 },
+        "environment": { "type": "string", "maxLength": 128 }
+      }
+    },
+    "replay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parentRunId", "requestId", "mode", "caseType", "sideEffectPolicy", "externalInvocationCount"],
+      "properties": {
+        "parentRunId": { "type": "string", "maxLength": 256 },
+        "requestId": { "type": "string", "maxLength": 256 },
+        "mode": { "type": "string", "maxLength": 64 },
+        "caseType": { "type": "string", "maxLength": 64 },
+        "sideEffectPolicy": { "type": "string", "maxLength": 64 },
+        "externalInvocationCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "recovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode", "reservationId", "reservationFingerprint", "recoveredAt", "controlRevision", "attempt",
+        "triggerReason"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["NONE", "OWNER_ABANDONED", "TERMINAL_EVIDENCE_GAP", "CONTROL_MISSING"]
+        },
+        "reservationId": { "type": "string", "maxLength": 256 },
+        "reservationFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "recoveredAt": { "type": "string", "format": "date-time" },
+        "controlRevision": { "type": "integer", "minimum": 0 },
+        "attempt": { "type": "integer", "minimum": 0 },
+        "triggerReason": { "$ref": "#/$defs/code" }
+      }
+    },
+    "fingerprints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["draftFingerprint", "generatedDslFingerprint", "operatorDependencyFingerprint"],
+      "properties": {
+        "draftFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "generatedDslFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "operatorDependencyFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "fingerprint": { "type": "string", "pattern": "^(|sha256:[0-9a-f]{64})$" },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reasonCode", "startedAt", "elapsedMs", "outputNode", "mockUsed", "criticalOutputReached", "degraded", "runControl"],
+      "properties": {
+        "status": { "$ref": "#/$defs/status" },
+        "reasonCode": { "$ref": "#/$defs/code" },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "elapsedMs": { "type": "integer", "minimum": 0 },
+        "outputNode": { "type": "string", "maxLength": 256 },
+        "mockUsed": { "type": "boolean" },
+        "criticalOutputReached": { "type": "boolean" },
+        "degraded": { "type": "boolean" },
+        "runControl": { "$ref": "#/$defs/runControl" }
+      }
+    },
+    "runControl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId", "engineExecutionId", "status", "reasonCode", "revision", "deadlineAt",
+        "cancelRequestedAt", "terminalAt", "terminationConfirmed", "sideEffectsMayBeInFlight"
+      ],
+      "properties": {
+        "requestId": { "type": "string", "maxLength": 128 },
+        "engineExecutionId": { "type": "string", "maxLength": 256 },
+        "status": {
+          "type": "string",
+          "enum": [
+            "UNMANAGED", "QUEUED", "RUNNING", "CANCEL_REQUESTED", "TIMING_OUT",
+            "TERMINATION_UNCONFIRMED", "SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT", "REJECTED"
+          ]
+        },
+        "reasonCode": { "$ref": "#/$defs/code" },
+        "revision": { "type": "integer", "minimum": 0 },
+        "deadlineAt": { "type": ["string", "null"], "format": "date-time" },
+        "cancelRequestedAt": { "type": ["string", "null"], "format": "date-time" },
+        "terminalAt": { "type": ["string", "null"], "format": "date-time" },
+        "terminationConfirmed": { "type": "boolean" },
+        "sideEffectsMayBeInFlight": { "type": "boolean" }
+      }
+    },
+    "payloadSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "payloadRef"],
+      "properties": {
+        "summary": { "type": "object" },
+        "payloadRef": { "type": "string", "maxLength": 512 }
+      }
+    },
+    "nodeEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeId", "operatorRef", "status", "reasonCode", "observationSource", "causedByNodeIds",
+        "elapsedMs", "mocked", "retry", "fallback", "sideEffectOutcome", "inputPayloadRef",
+        "outputPayloadRef", "inputAvailable", "outputAvailable"
+      ],
+      "properties": {
+        "nodeId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "operatorRef": { "type": "string", "maxLength": 512 },
+        "status": { "$ref": "#/$defs/status" },
+        "reasonCode": { "$ref": "#/$defs/code" },
+        "observationSource": {
+          "type": "string",
+          "enum": ["ENGINE_STATUS", "ENGINE_RESILIENCE_EVENT", "ENGINE_LIFECYCLE_EVENT", "TOPOLOGY_DERIVATION", "RECORDED_REPLAY", "DURABLE_CONTROL_RECOVERY", "LEGACY_DERIVATION", "ENGINE_STATUS_WITH_EVENT_GAP", "NOT_CAPTURED"]
+        },
+        "causedByNodeIds": { "type": "array", "uniqueItems": true, "items": { "type": "string", "maxLength": 256 } },
+        "elapsedMs": { "type": "integer", "minimum": 0 },
+        "mocked": { "type": "boolean" },
+        "retry": { "$ref": "#/$defs/retry" },
+        "fallback": { "$ref": "#/$defs/fallback" },
+        "sideEffectOutcome": {
+          "type": "string",
+          "enum": ["NOT_APPLICABLE", "NOT_INVOKED", "COMMITTED", "NOT_COMMITTED", "UNKNOWN_COMMIT", "NOT_CAPTURED"]
+        },
+        "inputPayloadRef": { "type": "string", "maxLength": 512 },
+        "outputPayloadRef": { "type": "string", "maxLength": 512 },
+        "inputAvailable": { "type": "boolean" },
+        "outputAvailable": { "type": "boolean" }
+      }
+    },
+    "retry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempts", "maxAttempts", "exhausted", "lastErrorCode"],
+      "properties": {
+        "attempts": { "type": "integer", "minimum": 0 },
+        "maxAttempts": { "type": "integer", "minimum": 0 },
+        "exhausted": { "type": "boolean" },
+        "lastErrorCode": { "type": "string", "maxLength": 512 }
+      }
+    },
+    "fallback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["configured", "used", "strategy", "originalErrorType"],
+      "properties": {
+        "configured": { "type": "boolean" },
+        "used": { "type": "boolean" },
+        "strategy": { "type": "string", "enum": ["NONE", "FIXED_VALUE", "EXCEPTION_FUNCTION", "CONFIGURED", "NOT_CAPTURED"] },
+        "originalErrorType": { "type": "string", "maxLength": 512 }
+      }
+    },
+    "edgeEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["edgeId", "sourceNodeId", "targetNodeId", "status", "reasonCode", "observationSource", "propagated", "payloadRef"],
+      "properties": {
+        "edgeId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "sourceNodeId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "targetNodeId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "status": { "$ref": "#/$defs/status" },
+        "reasonCode": { "$ref": "#/$defs/code" },
+        "observationSource": { "const": "TOPOLOGY_DERIVATION" },
+        "propagated": { "type": "boolean" },
+        "payloadRef": { "type": "string", "maxLength": 512 }
+      }
+    },
+    "assertions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "suiteRefs", "results"],
+      "properties": {
+        "status": { "type": "string", "enum": ["NOT_RUN", "PASSED", "FAILED"] },
+        "suiteRefs": { "type": "array", "items": { "type": "string", "maxLength": 512 } },
+        "results": { "type": "array", "items": true }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["payloadPolicy", "redactionProfile", "expiresAt"],
+      "properties": {
+        "payloadPolicy": { "type": "string", "maxLength": 64 },
+        "redactionProfile": { "type": "string", "maxLength": 256 },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedNodeCount", "capturedNodeCount", "expectedEdgeCount", "capturedEdgeCount",
+        "expectedNodeInputCount", "capturedNodeInputCount", "expectedNodeOutputCount", "capturedNodeOutputCount",
+        "evidenceStatus", "complete", "gaps", "manifestHash", "signatureStatus", "keyId",
+        "signatureAlgorithm", "signedAt", "signature", "expectedNodeFactCount", "capturedNodeFactCount"
+      ],
+      "properties": {
+        "expectedNodeCount": { "$ref": "#/$defs/count" },
+        "capturedNodeCount": { "$ref": "#/$defs/count" },
+        "expectedEdgeCount": { "$ref": "#/$defs/count" },
+        "capturedEdgeCount": { "$ref": "#/$defs/count" },
+        "expectedNodeInputCount": { "$ref": "#/$defs/count" },
+        "capturedNodeInputCount": { "$ref": "#/$defs/count" },
+        "expectedNodeOutputCount": { "$ref": "#/$defs/count" },
+        "capturedNodeOutputCount": { "$ref": "#/$defs/count" },
+        "evidenceStatus": { "type": "string", "enum": ["READY", "QUARANTINED"] },
+        "complete": { "type": "boolean" },
+        "gaps": { "type": "array", "items": { "type": "string", "maxLength": 1024 } },
+        "manifestHash": { "$ref": "#/$defs/fingerprint" },
+        "signatureStatus": { "type": "string", "maxLength": 64 },
+        "keyId": { "type": "string", "maxLength": 256 },
+        "signatureAlgorithm": { "type": "string", "maxLength": 64 },
+        "signedAt": { "type": "string", "format": "date-time" },
+        "signature": { "type": "string", "maxLength": 8192 },
+        "expectedNodeFactCount": { "$ref": "#/$defs/count" },
+        "capturedNodeFactCount": { "$ref": "#/$defs/count" }
+      }
+    },
+    "count": { "type": "integer", "minimum": 0 },
+    "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$", "maxLength": 128 }
+  }
+}

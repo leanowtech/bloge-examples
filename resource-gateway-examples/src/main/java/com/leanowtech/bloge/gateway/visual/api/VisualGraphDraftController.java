@@ -27,10 +27,12 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceRecoveryService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualStoredDraftRunRequest;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -66,19 +68,22 @@ public class VisualGraphDraftController {
     private final VisualGraphPublicationRepository publicationRepository;
     private final GraphDraftPatchService patchService;
     private final VisualGraphRunRepository runRepository;
+    private final VisualRunEvidenceRecoveryService runRecovery;
 
     /**
      * @param repository draft repository
      * @param validator draft validator
      * @param runner draft runner
      */
+    @Autowired
     public VisualGraphDraftController(GraphDraftRepository repository,
                                       GraphDraftValidator validator,
                                       VisualGraphRunService runner,
                                       VisualOperatorCatalog catalog,
                                       VisualGraphPublicationRepository publicationRepository,
                                       GraphDraftPatchService patchService,
-                                      VisualGraphRunRepository runRepository) {
+                                      VisualGraphRunRepository runRepository,
+                                      VisualRunEvidenceRecoveryService runRecovery) {
         this.repository = repository;
         this.validator = validator;
         this.runner = runner;
@@ -86,6 +91,19 @@ public class VisualGraphDraftController {
         this.publicationRepository = publicationRepository;
         this.patchService = patchService;
         this.runRepository = runRepository;
+        this.runRecovery = runRecovery;
+    }
+
+    /** Backward-compatible constructor for direct tests without durable recovery wiring. */
+    public VisualGraphDraftController(GraphDraftRepository repository,
+                                      GraphDraftValidator validator,
+                                      VisualGraphRunService runner,
+                                      VisualOperatorCatalog catalog,
+                                      VisualGraphPublicationRepository publicationRepository,
+                                      GraphDraftPatchService patchService,
+                                      VisualGraphRunRepository runRepository) {
+        this(repository, validator, runner, catalog, publicationRepository, patchService, runRepository,
+                VisualRunEvidenceRecoveryService.passThrough(runRepository));
     }
 
     /**
@@ -822,10 +840,12 @@ public class VisualGraphDraftController {
      */
     @PostMapping("/run")
     public VisualGraphRunResponse runTransient(@RequestBody VisualGraphRunRequest request) {
+        runRecovery.reserve(VisualGraphRunRecord.SOURCE_TRANSIENT_DRAFT, request.draft(), "", "",
+                request.context(), request.outputNode(), request.runIntent());
         VisualGraphRunResponse response = runDraft(request.draft(), request.context(), request.outputNode(),
                 request.runIntent());
         return recordRun(VisualGraphRunRecord.transientDraft(request.draft(), request.context(), response),
-                response);
+                response, request.runIntent().requestId());
     }
 
     /**
@@ -843,16 +863,20 @@ public class VisualGraphDraftController {
                     if (request.expectedRevision() > 0 && request.expectedRevision() != draft.revision()) {
                         return runConflictResponse(draftId, request.expectedRevision(), draft);
                     }
+                    runRecovery.reserve(VisualGraphRunRecord.SOURCE_STORED_DRAFT, draft, "", "",
+                            request.context(), request.outputNode(), request.runIntent());
                     VisualGraphRunResponse response = runDraft(draft, request.context(), request.outputNode(),
                             request.runIntent());
                     return ResponseEntity.ok(recordRun(VisualGraphRunRecord.storedDraft(draft, request.context(),
-                            response), response));
+                            response), response, request.runIntent().requestId()));
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    private VisualGraphRunResponse recordRun(VisualGraphRunRecord record, VisualGraphRunResponse response) {
-        VisualGraphRunRecord stored = runRepository.create(record);
+    private VisualGraphRunResponse recordRun(VisualGraphRunRecord record,
+                                             VisualGraphRunResponse response,
+                                             String requestId) {
+        VisualGraphRunRecord stored = runRecovery.complete(record, requestId);
         return response.withRunId(stored.runId());
     }
 

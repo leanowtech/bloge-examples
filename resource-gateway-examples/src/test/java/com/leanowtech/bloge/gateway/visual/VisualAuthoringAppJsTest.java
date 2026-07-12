@@ -927,6 +927,7 @@ class VisualAuthoringAppJsTest {
                 .contains("Publish-time dependencies were snapshotted with this immutable artifact.")
                 .contains("function publicationDependencyOperatorRows(report)")
                 .contains("fingerprint drifted")
+                .contains("setLibraryMessage('Validating operator library...', 'info')")
                 .contains("catalog missing")
                 .contains("scope mismatch")
                 .contains("scopeMismatchOperatorCount")

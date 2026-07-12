@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceRecoveryService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualStoredDraftRunRequest;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +45,7 @@ public class VisualGraphPublicationController {
     private final VisualOperatorCatalog catalog;
     private final VisualGraphGoldenCaseRepository goldenCases;
     private final VisualGraphGoldenCertificationRepository goldenCertifications;
+    private final VisualRunEvidenceRecoveryService runRecovery;
 
     /**
      * @param repository publication repository
@@ -59,13 +61,26 @@ public class VisualGraphPublicationController {
                                             VisualGraphRunRepository runRepository,
                                             VisualOperatorCatalog catalog,
                                             VisualGraphGoldenCaseRepository goldenCases,
-                                            VisualGraphGoldenCertificationRepository goldenCertifications) {
+                                            VisualGraphGoldenCertificationRepository goldenCertifications,
+                                            VisualRunEvidenceRecoveryService runRecovery) {
         this.repository = repository;
         this.runner = runner;
         this.runRepository = runRepository;
         this.catalog = catalog;
         this.goldenCases = goldenCases;
         this.goldenCertifications = goldenCertifications;
+        this.runRecovery = runRecovery;
+    }
+
+    /** Backward-compatible constructor for direct tests without durable recovery wiring. */
+    public VisualGraphPublicationController(VisualGraphPublicationRepository repository,
+                                            VisualGraphRunService runner,
+                                            VisualGraphRunRepository runRepository,
+                                            VisualOperatorCatalog catalog,
+                                            VisualGraphGoldenCaseRepository goldenCases,
+                                            VisualGraphGoldenCertificationRepository goldenCertifications) {
+        this(repository, runner, runRepository, catalog, goldenCases, goldenCertifications,
+                VisualRunEvidenceRecoveryService.passThrough(runRepository));
     }
 
     /**
@@ -328,9 +343,14 @@ public class VisualGraphPublicationController {
                                                       @RequestBody VisualStoredDraftRunRequest request) {
         return repository.find(publicationId)
                 .map(publication -> {
-                    VisualGraphRunResponse response = runner.run(publication, request.context(), request.outputNode());
-                    VisualGraphRunRecord record = runRepository.create(VisualGraphRunRecord.publication(
-                            publication, request.context(), response));
+                    runRecovery.reserve(VisualGraphRunRecord.SOURCE_PUBLICATION, publication.draft(),
+                            publication.publicationId(), publication.artifactKind(), request.context(),
+                            request.outputNode(), request.runIntent());
+                    VisualGraphRunResponse response = request.runIntent().requested()
+                            ? runner.run(publication, request.context(), request.outputNode(), request.runIntent())
+                            : runner.run(publication, request.context(), request.outputNode());
+                    VisualGraphRunRecord record = runRecovery.complete(VisualGraphRunRecord.publication(
+                            publication, request.context(), response), request.runIntent().requestId());
                     return ResponseEntity.ok(response.withRunId(record.runId()));
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());

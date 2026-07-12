@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunControlView;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunRecoveryMetadata;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -27,6 +28,7 @@ public record RunEvidenceBundle(
         String runId,
         Source source,
         Replay replay,
+        Recovery recovery,
         Fingerprints fingerprints,
         Execution execution,
         PayloadSummary context,
@@ -42,7 +44,8 @@ public record RunEvidenceBundle(
     public static final String SCHEMA_VERSION_V1 = "toolStudio.resourceGateway.runEvidenceBundle.v1";
     public static final String SCHEMA_VERSION_V2 = "toolStudio.resourceGateway.runEvidenceBundle.v2";
     public static final String SCHEMA_VERSION_V3 = "toolStudio.resourceGateway.runEvidenceBundle.v3";
-    public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.runEvidenceBundle.v4";
+    public static final String SCHEMA_VERSION_V4 = "toolStudio.resourceGateway.runEvidenceBundle.v4";
+    public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.runEvidenceBundle.v5";
 
     public RunEvidenceBundle {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
@@ -50,6 +53,7 @@ public record RunEvidenceBundle(
         runId = runId == null ? "" : runId;
         source = source == null ? Source.empty() : source;
         replay = replay == null ? Replay.none() : replay;
+        recovery = recovery == null ? Recovery.none() : recovery;
         fingerprints = fingerprints == null ? Fingerprints.empty() : fingerprints;
         execution = execution == null ? Execution.empty() : execution;
         context = context == null ? PayloadSummary.empty() : context;
@@ -88,7 +92,9 @@ public record RunEvidenceBundle(
                         List.of("replay-request:" + record.replay().requestId()),
                         record.replay().assertionResults().stream().map(result -> (Object) result).toList())
                 : Assertions.notRun();
-        return new RunEvidenceBundle("", "evidence:" + record.runId(), record.runId(), source, replay, fingerprints,
+        Recovery recovery = Recovery.from(record.recovery());
+        return new RunEvidenceBundle("", "evidence:" + record.runId(), record.runId(), source, replay, recovery,
+                fingerprints,
                 execution,
                 new PayloadSummary(record.contextSummary(), "payload:" + record.runId() + ":context"),
                 new PayloadSummary(record.outputSummary(), "payload:" + record.runId() + ":output"),
@@ -315,12 +321,14 @@ public record RunEvidenceBundle(
                 .count();
         boolean controlComplete = record.runControl().requestId().isBlank()
                 || record.runControl().terminationConfirmed() && !record.runControl().sideEffectsMayBeInFlight();
+        boolean recoveryComplete = !record.recovery().recovered();
         boolean complete = expectedNodes == capturedNodes
                 && expectedEdges == capturedEdges
                 && expectedNodeInputs == capturedNodeInputs
                 && expectedNodeOutputs == capturedNodeOutputs
                 && expectedNodeFacts == capturedNodeFacts
-                && controlComplete;
+                && controlComplete
+                && recoveryComplete;
         String hash = record.evidenceMaterialFingerprint();
         VisualRunEvidenceSeal seal = record.evidenceSeal();
         VisualEvidenceSigner.Verification verification = evidenceSigner.verify(seal, hash);
@@ -339,6 +347,9 @@ public record RunEvidenceBundle(
         }
         if (!controlComplete) {
             gaps.add("Controlled run termination is not confirmed; external side effects may still be in flight.");
+        }
+        if (!recoveryComplete) {
+            gaps.add("Run evidence was synthesized from durable recovery facts after the normal evidence transaction did not complete.");
         }
         if (!verification.valid()) {
             gaps.add("Evidence integrity is not verified: " + verification.reason());
@@ -379,6 +390,31 @@ public record RunEvidenceBundle(
             externalInvocationCount = Math.max(0, externalInvocationCount);
         }
         static Replay none() { return new Replay("", "", "NONE", "", "DENY", 0); }
+    }
+
+    public record Recovery(String mode, String reservationId, String reservationFingerprint,
+                           Instant recoveredAt, long controlRevision, int attempt, String triggerReason) {
+        public Recovery {
+            mode = mode == null || mode.isBlank() ? VisualRunRecoveryMetadata.MODE_NONE : mode;
+            reservationId = reservationId == null ? "" : reservationId;
+            reservationFingerprint = reservationFingerprint == null ? "" : reservationFingerprint;
+            recoveredAt = recoveredAt == null ? Instant.EPOCH : recoveredAt;
+            controlRevision = Math.max(0, controlRevision);
+            attempt = Math.max(0, attempt);
+            triggerReason = triggerReason == null || triggerReason.isBlank() ? "NONE" : triggerReason;
+        }
+
+        static Recovery from(VisualRunRecoveryMetadata source) {
+            if (source == null || !source.recovered()) {
+                return none();
+            }
+            return new Recovery(source.mode(), source.reservationId(), source.reservationFingerprint(),
+                    source.recoveredAt(), source.controlRevision(), source.attempt(), source.triggerReason());
+        }
+
+        static Recovery none() {
+            return new Recovery(VisualRunRecoveryMetadata.MODE_NONE, "", "", Instant.EPOCH, 0, 0, "NONE");
+        }
     }
 
     public record Fingerprints(String draftFingerprint, String generatedDslFingerprint,

@@ -533,7 +533,7 @@ POST /api/integration/gate-results
 | P0 | Run Trace 可导出为治理证据 | 当前 shape-only trace 不够 | 新增 evidence bundle，不直接改造成唯一 run response |
 | P0 | Payload 级 replay | 当前缺 payload capture | 新增 payload store/ref/sanitizer/replay endpoint |
 | P0 | GraphDraft export 依赖元数据 | 已有 dependency report 但不够稳定导入 | integration dependency profile |
-| P0 | Timeout/partial failure 语义 | Round 8 已补 engine event、绝对 deadline、fenced cancel、双条件终止确认、durable control、跨实例 cancel、owner lease/epoch 和过期隔离；预算传播/commit receipt 仍缺 | `VisualNodeExecutionFact` + `VisualRunControl` + durable control repository + evidence v4；下一步 remaining-budget 与 commit reconciliation |
+| P0 | Timeout/partial failure 语义 | Round 9 已补 engine event、绝对 deadline、fenced cancel、双条件终止确认、durable control、跨实例 cancel、owner lease/epoch、过期隔离及 owner 崩溃后的证据恢复；预算传播/commit receipt 仍缺 | `VisualNodeExecutionFact` + durable control + pre-run lineage reservation + evidence v5；下一步 remaining-budget 与 commit reconciliation |
 | P1 | Deep Link | 当前不是 integration API | 前端 route + resolver API |
 | P1 | Health/Capability Probe | 缺口明确 | `/api/integration/capabilities` |
 | P1 | Contract Test Suite 对齐 workbook | 当前 case/assertion 语义偏基础 | suite vNext + workbook mapping |
@@ -851,7 +851,7 @@ allow = role permits action
 | 维度 | 示例 | 变化原因 | 协商方式 |
 |---|---|---|---|
 | transport protocol | `ToolStudioResourceGatewayProtocol/1.2` | envelope、错误和协商机制变化 | capability probe + Accept header |
-| payload schema | `runEvidenceBundle.v4` | 领域字段和约束变化 | `payloadKind + payloadSchemaVersion`；capability 同时声明 v1/v2/v3/v4；机器合同见 `docs/schemas/tool-studio-resource-gateway/run-evidence-bundle-v4.schema.json` |
+| payload schema | `runEvidenceBundle.v5` | 领域字段和约束变化 | `payloadKind + payloadSchemaVersion`；capability 同时声明 v1/v2/v3/v4/v5；机器合同见 `docs/schemas/tool-studio-resource-gateway/run-evidence-bundle-v5.schema.json` |
 | producer implementation | `resource-gateway/2.8.1` | bug fix、性能和内部实现变化 | 信息字段，不作为兼容判断唯一依据 |
 | semantic profile | `ANEKE_CORRECTNESS_2026_1` | assertion、状态或治理解释变化 | capability profile + explicit opt-in |
 
@@ -1059,7 +1059,7 @@ run deadline
 
 图源：[resource-gateway-run-control-lifecycle.drawio](assets/drawio/resource-gateway-run-control-lifecycle.drawio)。
 
-当前落地状态（Round 8）：`VisualRunIntent.v1` 和 gateway adapter 对应 intent 使用绝对 `deadlineAt`、
+当前落地状态（Round 9）：`VisualRunIntent.v1` 和 gateway adapter 对应 intent 使用绝对 `deadlineAt`、
 caller-generated `requestId/fencingToken` 和 cancellation grace。`DynamicRunControlManager` 拥有 scheduler
 thread、每个进入 operator interceptor 的虚拟线程集合和 monotonic revision；deadline 或用户 cancel 会同时
 设置 stop token、阻止后续 operator invocation，并中断 owner 与当前 in-flight operators。取消查询也必须携带
@@ -1067,15 +1067,24 @@ fence；错误 token 返回 403，过期 `expectedRevision` 返回 409，同一 
 
 终止确认采用双条件，不把 `Future` 异常完成当作物理停止：只有 `ownerExited && activeOperators == 0` 才进入
 `CANCELLED/TIMED_OUT`。grace 到期或 owner 已退出但仍有算子运行时，状态保持
-`TERMINATION_UNCONFIRMED + sideEffectsMayBeInFlight=true`；`VisualGraphRunRecord.v6` 将此 fact 纳入签名，
-`runEvidenceBundle.v4` 自动将 evidence 隔离。当前仍未完成三项：deadline 剩余预算传播到 node/HTTP binding、
-`detachPolicy`、以及跨实例/重启的 durable lease 与 fencing owner。因此 capability 同时声明
-`graphDeadline/userRunCancellation/runTerminationConfirmation=true`，但
-`dynamic_run_controls` 以数据库行锁持久化 fence digest、owner epoch、revision 与 lease；非 owner 实例可提交 cancel，
+`TERMINATION_UNCONFIRMED + sideEffectsMayBeInFlight=true`。`dynamic_run_controls` 以数据库行锁持久化 fence
+digest、owner epoch、revision 与 lease；非 owner 实例可提交 cancel，owner 在续租轮询中观察命令。
 owner 在续租轮询中观察命令。租约过期不会被当成成功，而会原子进入
 `OWNER_LEASE_EXPIRED + TERMINATION_UNCONFIRMED + ABANDONED`，旧 owner/epoch 不能覆盖。capability 因此返回
 `durableRunControl/crossInstanceRunCancellation/runOwnerLease/runOwnerEpochFencing/expiredOwnerQuarantine=true`，
 同时返回 `hardRunTermination/restartRunResumption=false`，禁止消费者把持久控制误读为任意 Java 代码强杀或崩溃后续跑。
+
+Round 9 继续关闭 control 与 evidence 之间的崩溃窗口。managed run 在执行前先提交脱敏、带 fingerprint 的
+`VisualRunRecoveryReservation`，确定性绑定 requestId→runId、draft、scope 和 context；正常完成与 recovery
+sweeper 在同一 reservation 行上竞争。owner abandonment、terminal control 已提交但 evidence 未提交、以及超过
+grace 仍缺 control 三种情况都会生成带 `VisualRunRecoveryMetadata` 的 `VisualGraphRunRecord.v7`，再导出
+`runEvidenceBundle.v5`。run record、reservation 状态和 `RUN_ABANDONED/RUN_EVIDENCE_RECOVERED` outbox event
+处于同一事务；失败全部回滚并可重试。恢复 evidence 保持签名可验但因 payload/termination 缺口进入
+`QUARANTINED`，不会伪装成正常成功证据。
+
+当前仍未完成三项：deadline 剩余预算传播到 node/HTTP binding、`detachPolicy`、以及 operator commit
+receipt/reconciliation。多实例 correctness 已由 row lock 保证，但生产级 scheduler metrics、退避/DLQ、外部 HA DB
+fault injection、retention/residency 和 KMS custody 仍属于工业化差距。
 
 ### 23.2 Retry 不是默认正确
 
@@ -1116,8 +1125,9 @@ Retry decision 由错误类别、side-effect、幂等支持和剩余 deadline �
 
 图级聚合已经以 `outputNode` 为关键输出：关键输出超时是 `TIMEOUT`；关键输出到达且存在独立降级才是
 `PARTIAL + CRITICAL_OUTPUT_REACHED_WITH_DEGRADATION`。edge evidence 表达“值是否传播”，目标节点随后超时
-不会倒灌成 edge timeout。`VisualGraphRunRecord.v6` 把 node facts 和 run-control fact 纳入不可变 fingerprint
-和签名，`runEvidenceBundle.v4` 增加 node/edge/graph reason、fact coverage、终止确认和 unknown-commit 字段。
+不会倒灌成 edge timeout。当前 `VisualGraphRunRecord.v7` 把 node、run-control 和 recovery facts 纳入不可变
+fingerprint 和签名，`runEvidenceBundle.v5` 增加 node/edge/graph reason、fact coverage、终止确认、
+unknown-commit 和 recovery provenance 字段。
 
 ### 23.4 熔断、舱壁和背压
 
@@ -1408,14 +1418,13 @@ operator 从 schema 导入到生产可用需要 `DISCOVERED -> DESCRIBED -> VERI
 
 退出门槛：success/failure/timeout/partial/mock/fallback/unknown-commit 场景均可结构化解释；篡改可检出；run 成功但 evidence 不完整时 gate 不会误采纳。
 
-当前落地状态（Round 8）：标准 node/edge/graph facts、真实 retry/timeout/fallback events、关键输出聚合、
+当前落地状态（Round 9）：标准 node/edge/graph facts、真实 retry/timeout/fallback events、关键输出聚合、
 sanitized payload、持久签名、fact coverage 和 quarantine 已实现；run intent、绝对 deadline、fenced cancel、
-owner+operator 双条件终止确认和 evidence v4 control fact 也已落地。capability 同时声明已支持的
-`graphDeadline/userRunCancellation/runTerminationConfirmation` 与尚未支持的
-持久 control state、跨实例 cancel、owner lease/epoch 与过期 quarantine。capability 同时揭示未支持的
+owner+operator 双条件终止确认、durable control、跨实例 cancel、owner lease/epoch、过期 quarantine、
+pre-run recovery reservation 和 evidence v5 automatic recovery 也已落地。capability 同时揭示未支持的
 `hardRunTermination/restartRunResumption/sideEffectCommitConfirmation`。Stage 2 仍未退出：还需 remaining-budget
-propagation、disconnect policy、durable lease/fencing owner、operator commit receipt、side-effect-aware
-retry/reconciliation，以及多实例 fault injection/SLO。
+propagation、disconnect policy、operator commit receipt、side-effect-aware retry/reconciliation、KMS custody，
+以及外部 HA DB fault injection/SLO。
 
 ### Stage 3 - Safe replay 与 workbook 对齐（2-4 周）
 

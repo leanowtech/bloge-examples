@@ -49,7 +49,7 @@ public record IntegrationCapabilities(
         objects.put("graphDraftIntegrationBundle", List.of(GraphDraftIntegrationBundle.SCHEMA_VERSION));
         objects.put("runEvidence", List.of(RunEvidenceBundle.SCHEMA_VERSION_V1,
                 RunEvidenceBundle.SCHEMA_VERSION_V2, RunEvidenceBundle.SCHEMA_VERSION_V3,
-                RunEvidenceBundle.SCHEMA_VERSION));
+                RunEvidenceBundle.SCHEMA_VERSION_V4, RunEvidenceBundle.SCHEMA_VERSION));
         objects.put("payloadReplay", List.of(PayloadReplayBundle.SCHEMA_VERSION));
         objects.put("replayExecutionRequest", List.of(ReplayExecutionRequest.SCHEMA_VERSION));
         objects.put("replayExecutionResult", List.of(ReplayExecutionResult.SCHEMA_VERSION));
@@ -82,6 +82,9 @@ public record IntegrationCapabilities(
         features.put("restartRunResumption", false);
         features.put("expiredOwnerQuarantine", true);
         features.put("runControlEvidence", true);
+        features.put("runEvidenceRecoveryReservation", true);
+        features.put("abandonedRunEvidenceRecovery", true);
+        features.put("recoveryTransactionalOutbox", true);
         features.put("sideEffectCommitConfirmation", false);
         features.put("payloadReplay", true);
         features.put("payloadReplayNodeInputs", true);

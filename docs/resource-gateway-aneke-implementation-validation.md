@@ -5,10 +5,10 @@
 | 属性 | 内容 |
 |---|---|
 | 设计基线 | `docs/resource-gateway-aneke-tool-studio-integration-evolution-plan.md` |
-| 当前实现基线 | Round 8（持久 run control、跨实例 cancel、owner lease/epoch、过期隔离） |
+| 当前实现基线 | Round 9（pre-run lineage reservation、自动 evidence recovery、recovery outbox） |
 | 评估日期 | 2026-07-12 |
 | 目标 | 加权实施差距 `<3%`，且不存在 P0 阻断项 |
-| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1513 tests，0 failures，0 errors，2 skipped，`BUILD SUCCESS`（05:45） |
+| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1524 tests，0 failures，0 errors，2 skipped，`BUILD SUCCESS`（04:57） |
 
 ## 1. 评分方法
 
@@ -201,6 +201,30 @@ Round 8 结论：差距从 `20.90%` 降至 `19.825%`。`RUN-01` 中“active con
 剩余 P0 收敛为两条：deadline remaining-budget 还未贯穿 BLOGE/runtime binding；外部写仍缺 commit receipt 与
 reconciliation。与此同时，abandoned control 还没有自动生成 run evidence/outbox，属于下一轮必须补齐的证据链缺口。
 
+## 2.9 Round 9 重新审计
+
+Round 8 只证明“owner failure fact 不丢”，没有证明“治理证据一定出现”。Round 9 在执行前提交脱敏
+`VisualRunRecoveryReservation`，确定性绑定 requestId→runId、draft/scope/context fingerprint；正常完成和自动
+sweeper 对同一 reservation 加行锁。owner abandonment、terminal control 后 evidence 提交中断、control row 未创建
+三种断点都会形成带 recovery provenance 的签名记录，并与 reservation 终态和 integration outbox 同事务提交。
+
+| 维度 | 权重 | 当前完成率 | 得分 | 本轮可证明增量 | 仍未证明 |
+|---|---:|---:|---:|---|---|
+| 协议、版本与身份边界 | 15 | 97% | 14.55 | `VisualGraphRunRecord.v7`、`runEvidenceBundle.v5` 和正式 JSON Schema；capability 保留 v1-v4 并声明 reservation/recovery/outbox | visual control endpoint 企业 IAM scope；自动 N/N-1 consumer matrix；动态 IAM/mTLS 联调 |
+| GraphDraft 依赖快照 | 10 | 60% | 6.00 | recovery reservation 固化 stripped draft 与 scope，但未改变 export 依赖完整度 | runtime binding/suite refs、跨表一致快照、完整 readiness profile |
+| Run evidence 可信链 | 20 | 94% | 18.80 | owner/process failure 自动形成签名、可验、fail-closed evidence；reservation fingerprint/control revision/attempt 纳入 seal；正常与恢复 exactly-once | KMS/HSM、retention/legal hold、commit receipt、外部 verifier matrix |
+| Payload replay | 15 | 80% | 12.00 | 恢复 evidence 明确缺失 payload，不允许伪装成 replay-ready | shadow/live 审批隔离、跨实例 exactly-once、选择性 retention |
+| Timeout/partial failure 语义 | 10 | 95% | 9.50 | abandonment/terminal gap/control missing 均有明确 recovery reason 和 quarantine | remaining-budget 向 node/HTTP 传播；disconnect policy；unknown commit reconciliation |
+| Workbook、gate feedback 与 Deep Link | 10 | 72% | 7.20 | `RUN_ABANDONED` 与 recovery mode 可直接成为 workbook/gate 阻断条件 | 双向 workbook refs、coverage policy、owner/migration gate 完整闭环 |
+| Change event、cursor、webhook 与对账 | 10 | 85% | 8.50 | `RUN_ABANDONED/RUN_EVIDENCE_RECOVERED` 与 run record 同事务进入既有 cursor/reconciliation 流 | signed webhook、DLQ/退避、retention/compaction、乱序 fault harness |
+| 工业运行控制 | 10 | 62% | 6.20 | bounded scheduled sweep、normal/recovery 行锁单赢家、并发 reservation、跨服务重启、outbox 失败全回滚后重试、Spring wiring | 外部 HA DB 多进程实测、recovery metrics/SLO、退避/DLQ、quota、DR/容量、clock-skew、residency |
+| **合计** | **100** |  | **82.75** |  | **加权差距 17.25%** |
+
+Round 9 结论：差距从 `19.825%` 降至 `17.25%`，`EVD-02` 关闭。这里关闭的是“崩溃事实无法进入治理链”，
+不是“崩溃执行可以续跑”或“外部写结果已知”。自动恢复记录保持签名可验证，但只要精确 payload、终止确认或
+commit receipt 缺失，manifest 仍为 `QUARANTINED`。剩余 P0 是 IAM 动态生命周期、KMS custody、remaining-budget
+传播和副作用 commit/reconciliation；工业化还缺 scheduler telemetry、backoff/DLQ、retention/residency 和外部 HA DB 演练。
+
 ## 3. 已通过的证明
 
 ### 3.1 协议与隔离
@@ -212,7 +236,7 @@ reconciliation。与此同时，abandoned control 还没有自动生成 run evid
 
 ### 3.2 Evidence 与 payload
 
-- `VisualGraphRunRecord.v6` 持久化 draft/operator fingerprint、sanitized context/output/node results、edge snapshot、精确 node attempts、结构化 node execution facts 和 run-control termination fact。
+- `VisualGraphRunRecord.v7` 持久化 draft/operator fingerprint、sanitized context/output/node results、edge snapshot、精确 node attempts、结构化 node execution facts、run-control termination fact 和 recovery provenance。
 - sanitizer 对 secret/token/authorization/cookie/PII 类键及 Bearer/Basic/labeled credential 内容执行有界递归脱敏并记录 manifest。
 - evidence manifest 校验每个 invoked node 的 input、成功节点 output、node/edge status 和持久 seal；缺口或验签失败进入 `QUARANTINED`。
 - `DatabaseVisualEvidenceSigner` 持久化 Ed25519 key history；旧 run 在 repository 重建后仍可验证，consumer 可通过公开 verification key 离线验签。
@@ -493,17 +517,59 @@ SVG visual inspection passed; durable authority and JVM-local handles are visual
 数据库协调；它不表示 Java continuation 可迁移，也不表示崩溃后的业务执行可自动 resume。对应 capability 将
 `restartRunResumption=false` 单独暴露。
 
+### 3.11 Evidence recovery 原子性与故障证明
+
+Round 9 的证明对象是 request thread 死亡后的证据连续性，而不是 DTO shape。reservation 在执行前保存去 fixture
+的 draft、tenant/environment、脱敏 context、确定性 runId 和 material fingerprint；sweeper 只对 durable control
+已经 abandonment、terminal evidence gap 或超过 grace 仍缺 control 的 reservation 动作。
+
+```text
+11 focused recovery fault tests passed
+41 recovery/boundary/authoring focused tests passed
+1 targeted real-Chrome revision-conflict flow passed
+1524 full tests passed; 0 failures, 0 errors, 2 skipped
+
+owner lease expiry -> OWNER_ABANDONED recovery -> signed QUARANTINED evidence
+terminal control + no evidence after grace -> TERMINAL_EVIDENCE_GAP
+reservation + no control after grace -> CONTROL_MISSING
+normal completion vs recovery -> reservation row lock -> exactly one run record
+two concurrent sweepers -> exactly one record + one outbox event
+two concurrent equivalent reservations -> same deterministic runId + one row
+same requestId + different material -> rejected
+validation blocked before control claim -> reservation consumed, no later synthetic duplicate
+service/repository restart -> pending reservation recovered once
+outbox append failure -> run record + reservation transition roll back; later retry succeeds
+context secret -> redacted before reservation persistence
+
+run record -> VisualGraphRunRecord.v7
+evidence -> toolStudio.resourceGateway.runEvidenceBundle.v5
+recovery event -> RUN_ABANDONED / RUN_EVIDENCE_RECOVERED
+JSON Schema v5 -> valid JSON document + serialized-field contract test
+Draw.io -> 0 errors, 0 warnings, 0 crossings, 0 overlaps
+```
+
+签名只证明恢复记录自创建后未被篡改，不证明丢失的 node payload 或远端 commit outcome。恢复 factory 对 draft
+节点统一输出 `DURABLE_CONTROL_RECOVERY` 来源和保守的 `PARTIAL/UNKNOWN_COMMIT`，manifest 因 capture 或
+termination gap 保持 `QUARANTINED`。ANEKE 可以可靠地消费“发生过不可确认运行”这一事实，但不能把它用于通过发布门禁。
+
+第一次 Round 9 全量回归暴露了两类不能以“偶发”处理的问题。其一，recovery service 直接导入 gateway
+`DynamicRunControlRepository/View`，违反 D18 visual package 边界；修复后 visual 只依赖
+`VisualRunControlRecoveryPort`，候选查询和模型转换由 `DynamicRunControlRecoveryAdapter` 承担，边界测试通过。
+其二，operator library 导入在首个异步校验前仍显示上一次成功状态，真实 Chrome 会把旧状态误判为本次完成；现在
+点击后同步显示 `Validating operator library...`，消除用户和自动化共同可见的竞态，原失败用例及全量浏览器回归均通过。
+
 ## 4. 当前 P0 阻断项
 
 | ID | 阻断项 | 病根 | 根治验收 |
 |---|---|---|---|
 | `IAM-01` | 企业身份生命周期尚未端到端证明 | signed JWT、轮换和撤销代码已具备，但配置 trust store 只在启动时装载，尚无客户 IAM 动态策略/撤销传播证据 | 动态 JWKS/KMS 或 mTLS adapter + 多 identity/group/clearance + delegation grant + propagation SLO + policy/audit 联调演练 |
 | `OPS-01` | 本地签名 key 不满足企业 custody | private key 由本地 H2 demo provider 保存 | KMS/HSM-backed `VisualEvidenceSigner`、rotation/disable/revoke、审计和灾备演练 |
-| `RUN-01` | deadline 剩余预算尚未传播到每个 runtime binding | Round 8 已关闭单进程 control 病根：durable repository、跨实例 cancel、owner lease/epoch、restart abandonment 和 race tests 已落地；但 HTTP/remote worker/自定义 operator 仍只看到线程 interrupt，拿不到可验证的 remaining budget | BLOGE `OperatorContext` deadline/budget contract + HTTP timeout lowering + child-call budget cap + disconnect policy + clock-skew/fault tests |
+| `RUN-01` | deadline 剩余预算尚未传播到每个 runtime binding | Round 9 已关闭 control/evidence 的单进程与崩溃断链：durable repository、跨实例 cancel、owner lease/epoch、abandonment evidence recovery 和 race tests 已落地；但 HTTP/remote worker/自定义 operator 仍只看到线程 interrupt，拿不到可验证的 remaining budget | BLOGE `OperatorContext` deadline/budget contract + HTTP timeout lowering + child-call budget cap + disconnect policy + clock-skew/fault tests |
 | `RUN-02` | 外部副作用 timeout 后只能标记 unknown commit | operator 没有 commit receipt/reconciliation hook，盲重试可能重复写 | effect/idempotency admission + transaction/idempotency receipt + reconcile/compensate hook + downstream-write suspension + gate policy |
-| `EVD-02` | owner 崩溃后的 control fact 尚未自动形成 run evidence | 运行线程死亡时常规 response/run-record 事务不会执行；durable control 可查询但没有独立 sweeper 将 abandonment 写入 signed evidence/outbox | recovery sweeper + requestId-to-run lineage reservation + synthetic abandoned run record + signed evidence + transactional outbox + restart fault test |
 
-`EVT-01` 已在 Round 3 对当前资产模型关闭。webhook、DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，但不再构成“事件丢失后无法对账”的 P0 病根。
+`EVD-02` 已在 Round 9 关闭；`EVT-01` 已在 Round 3 对当前资产模型关闭。webhook、recovery retry
+backoff/DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，但不再构成“崩溃事实无法进入治理链”或
+“事件丢失后无法对账”的 P0 病根。
 
 ## 5. 迭代记录
 
@@ -518,5 +584,6 @@ SVG visual inspection passed; durable authority and JVM-local handles are visual
 | 6 | engine-observed failure semantics | retry/timeout/fallback 真事件、skip/cancel 因果、关键输出 PARTIAL、edge propagation、unknown commit、fact coverage quarantine | 23.85% | 1486 全量 tests、17 个聚焦/52 个运行边界 tests、真实 jar v3 + AJV schema、Draw.io 0 errors/warnings |
 | 7 | graph deadline、fenced cancel 与终止确认 | versioned intent/control、绝对 deadline、fence/revision、owner+operator 双条件确认、不合作算子 quarantine、UI deadline/stop、evidence v4 | 20.90% | 1494 全量 tests、24 个聚焦/114 个扩展回归 tests、真实浏览器 desktop/mobile、真实 jar v4 + AJV schema、Draw.io 0 errors/warnings |
 | 8 | durable run control 与 owner failure 语义 | DB 权威状态、跨实例 cancel、lease/epoch fencing、并发单赢家、cancel-before-start、过期 abandonment、raw fence 不落库 | 19.825% | 45 个聚焦 tests、1513 个全量 tests、跨 repository restart/双实例/race tests、真实浏览器回归、Draw.io 0 errors/warnings |
+| 9 | owner failure 后 evidence continuity | pre-run 脱敏 lineage reservation、normal/recovery 单赢家、三类 synthetic recovery、签名 evidence v5、事务 outbox、失败回滚重试、visual-owned recovery port | 17.25% | 11 个 recovery fault tests、41 个聚焦 tests、1 个目标真实 Chrome 流程、1524 个全量 tests、v5 schema、restart/concurrency/outbox rollback、Draw.io 0 errors/warnings |
 
 后续每轮必须更新本表、代码证据、失败测试和剩余阻断项。只有全部 P0 阻断关闭、全量验证与真实浏览器验证通过，并且按同一权重计算的差距 `<3%`，才允许把目标标记完成。

@@ -42,7 +42,7 @@ import static org.mockito.Mockito.when;
 class ToolStudioIntegrationServiceTest {
 
     @Test
-    void runEvidenceV4JsonSchemaMatchesSerializedProtocolFields() throws Exception {
+    void runEvidenceV5JsonSchemaMatchesSerializedProtocolFields() throws Exception {
         OperatorDefinition operator = operator();
         GraphDraft draft = runDraft(operator);
         VisualGraphRunResponse response = new VisualGraphRunResponse(
@@ -59,11 +59,12 @@ class ToolStudioIntegrationServiceTest {
                 draft, Map.of("customerId", "c-1"), response));
         ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
         JsonNode schema = mapper.readTree(Files.readString(Path.of("..", "docs", "schemas",
-                "tool-studio-resource-gateway", "run-evidence-bundle-v4.schema.json")));
+                "tool-studio-resource-gateway", "run-evidence-bundle-v5.schema.json")));
         JsonNode serialized = mapper.valueToTree(evidence);
 
         assertSchemaProperties(serialized, schema.path("properties"));
         assertSchemaProperties(serialized.path("execution"), schema.at("/$defs/execution/properties"));
+        assertSchemaProperties(serialized.path("recovery"), schema.at("/$defs/recovery/properties"));
         assertSchemaProperties(serialized.at("/execution/runControl"), schema.at("/$defs/runControl/properties"));
         assertSchemaProperties(serialized.path("nodes").get(0), schema.at("/$defs/nodeEvidence/properties"));
         assertSchemaProperties(serialized.path("edges").get(0), schema.at("/$defs/edgeEvidence/properties"));
@@ -126,6 +127,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("restartRunResumption", false)
                 .containsEntry("expiredOwnerQuarantine", true)
                 .containsEntry("runControlEvidence", true)
+                .containsEntry("runEvidenceRecoveryReservation", true)
+                .containsEntry("abandonedRunEvidenceRecovery", true)
+                .containsEntry("recoveryTransactionalOutbox", true)
                 .containsEntry("sideEffectCommitConfirmation", false)
                 .containsEntry("payloadReplay", true)
                 .containsEntry("recordedAssertionReplay", true)
