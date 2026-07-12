@@ -54,7 +54,9 @@ import com.leanowtech.bloge.gateway.visual.resource.DatabaseResourceDesignContra
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegistry;
 import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualGraphRunRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualRunPayloadRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.runtime.ConfiguredVisualPayloadGovernancePolicy;
 import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualRuntimeRolloutObservationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.HttpManagedEvidenceSigningProvider;
@@ -63,6 +65,8 @@ import com.leanowtech.bloge.gateway.visual.runtime.ManagedVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphPublicationOperator;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualPayloadGovernancePolicy;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunPayloadRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationRepository;
@@ -95,6 +99,7 @@ import java.util.Arrays;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -307,7 +312,9 @@ public class GatewayConfiguration {
             @Value("${gateway.integration.identity.environment-id:prod}") String environmentId,
             @Value("${gateway.integration.identity.region:local}") String region,
             @Value("${gateway.integration.identity.actor-id:aneke-sync}") String actorId,
-            @Value("${gateway.integration.identity.allowed-purposes:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION}") String allowedPurposes) {
+            @Value("${gateway.integration.identity.groups:}") String groups,
+            @Value("${gateway.integration.identity.clearance:PUBLIC}") String clearance,
+            @Value("${gateway.integration.identity.allowed-purposes:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION}") String allowedPurposes) {
         if (jwtEnabled) {
             IntegrationJwtTrustStore trustStore = trustStoreProvider.getIfAvailable();
             if (trustStore == null) {
@@ -337,7 +344,7 @@ public class GatewayConfiguration {
                 .forEach(purposes::add);
         IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity(identityId, tenantId,
                 organizationId, projectId, environmentId, region, "WORKLOAD", actorId, "", purposes,
-                Instant.MAX, true);
+                Instant.MAX, true, commaSeparated(groups), clearance, "", Instant.MAX);
         return new StaticBearerIntegrationIdentityResolver(token, identity, true);
     }
 
@@ -441,11 +448,43 @@ public class GatewayConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
+    public VisualPayloadGovernancePolicy visualPayloadGovernancePolicy(
+            @Value("${gateway.integration.payload-governance.policy-id:resource-gateway-default}") String policyId,
+            @Value("${gateway.integration.payload-governance.policy-version:1}") String policyVersion,
+            @Value("${gateway.integration.payload-governance.default-classification:RESTRICTED}") String classification,
+            @Value("${gateway.integration.payload-governance.required-groups:}") String requiredGroups,
+            @Value("${gateway.integration.payload-governance.retention-days.public:30}") long publicDays,
+            @Value("${gateway.integration.payload-governance.retention-days.internal:14}") long internalDays,
+            @Value("${gateway.integration.payload-governance.retention-days.confidential:7}") long confidentialDays,
+            @Value("${gateway.integration.payload-governance.retention-days.restricted:0}") long restrictedDays) {
+        return new ConfiguredVisualPayloadGovernancePolicy(policyId, policyVersion, classification,
+                commaSeparated(requiredGroups), Map.of(
+                "PUBLIC", Duration.ofDays(publicDays),
+                "INTERNAL", Duration.ofDays(internalDays),
+                "CONFIDENTIAL", Duration.ofDays(confidentialDays),
+                "RESTRICTED", Duration.ofDays(restrictedDays)));
+    }
+
+    /** Separate payload vault; run evidence contains only its immutable digest and policy descriptor. */
+    @Bean
+    @ConditionalOnMissingBean
+    public VisualRunPayloadRepository visualRunPayloadRepository(JdbcTemplate jdbc,
+                                                                  ObjectMapper objectMapper,
+                                                                  VisualPayloadGovernancePolicy policy,
+                                                                  VisualEvidenceSigner evidenceSigner,
+                                                                  IntegrationChangeEventOutbox outbox) {
+        return new DatabaseVisualRunPayloadRepository(jdbc, objectMapper, policy, evidenceSigner, outbox);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public VisualGraphRunRepository visualGraphRunRepository(JdbcTemplate jdbc,
                                                              ObjectMapper objectMapper,
                                                              VisualEvidenceSigner evidenceSigner,
-                                                             IntegrationChangeEventOutbox outbox) {
-        return new DatabaseVisualGraphRunRepository(jdbc, objectMapper, evidenceSigner, outbox);
+                                                             IntegrationChangeEventOutbox outbox,
+                                                             VisualRunPayloadRepository payloadRepository) {
+        return new DatabaseVisualGraphRunRepository(jdbc, objectMapper, evidenceSigner, outbox,
+                payloadRepository);
     }
 
     /** Durable claim/fencing and signed refinement store for UNKNOWN_COMMIT attempts. */
@@ -520,8 +559,9 @@ public class GatewayConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public GovernanceGateResultRepository governanceGateResultRepository(JdbcTemplate jdbc,
-                                                                         ObjectMapper objectMapper) {
-        return new DatabaseGovernanceGateResultRepository(jdbc, objectMapper);
+                                                                         ObjectMapper objectMapper,
+                                                                         IntegrationChangeEventOutbox outbox) {
+        return new DatabaseGovernanceGateResultRepository(jdbc, objectMapper, outbox);
     }
 
     /**

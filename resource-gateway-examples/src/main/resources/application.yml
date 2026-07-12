@@ -58,6 +58,20 @@ gateway:
         maximum-snapshot-lifetime-seconds: ${RG_EVIDENCE_SIGNING_MANAGED_MAXIMUM_SNAPSHOT_LIFETIME_SECONDS:86400}
         # Test-only escape hatch; non-loopback HTTP is always rejected.
         allow-insecure-loopback: ${RG_EVIDENCE_SIGNING_MANAGED_ALLOW_INSECURE_LOOPBACK:false}
+    payload-governance:
+      # Payloads are detached from immutable run evidence. A classification policy decides whether
+      # sanitized values enter the expirable vault; RESTRICTED defaults to no retention.
+      policy-id: ${RG_PAYLOAD_POLICY_ID:resource-gateway-demo}
+      policy-version: ${RG_PAYLOAD_POLICY_VERSION:1}
+      default-classification: ${RG_PAYLOAD_DEFAULT_CLASSIFICATION:CONFIDENTIAL}
+      required-groups: ${RG_PAYLOAD_REQUIRED_GROUPS:}
+      sweep-interval-ms: ${RG_PAYLOAD_SWEEP_INTERVAL_MS:60000}
+      sweep-batch-size: ${RG_PAYLOAD_SWEEP_BATCH_SIZE:200}
+      retention-days:
+        public: ${RG_PAYLOAD_RETENTION_PUBLIC_DAYS:30}
+        internal: ${RG_PAYLOAD_RETENTION_INTERNAL_DAYS:14}
+        confidential: ${RG_PAYLOAD_RETENTION_CONFIDENTIAL_DAYS:7}
+        restricted: ${RG_PAYLOAD_RETENTION_RESTRICTED_DAYS:0}
     identity:
       # Production mode verifies short-lived RS256/EdDSA JWTs against configured public keys.
       # A custom IntegrationJwtTrustStore bean can source rotating keys and revocation from JWKS/KMS.
@@ -90,7 +104,9 @@ gateway:
       environment-id: ${RG_INTEGRATION_ENVIRONMENT_ID:prod}
       region: ${RG_INTEGRATION_REGION:local}
       actor-id: ${RG_INTEGRATION_ACTOR_ID:aneke-sync}
-      allowed-purposes: ${RG_INTEGRATION_ALLOWED_PURPOSES:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION}
+      groups: ${RG_INTEGRATION_GROUPS:payload-governance}
+      clearance: ${RG_INTEGRATION_CLEARANCE:CONFIDENTIAL}
+      allowed-purposes: ${RG_INTEGRATION_ALLOWED_PURPOSES:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION}
 
 # ── Logging ───────────────────────────────────────────────────────────────
 logging:

@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/correctness-workbook-bundle-v1.schema.json",
+  "title": "Tool Studio Resource Gateway Correctness Workbook Bundle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "target", "dependencySnapshotFingerprint", "suites", "evidence", "redaction", "manifest"],
+  "properties": {
+    "schemaVersion": { "const": "toolStudio.resourceGateway.correctnessWorkbookBundle.v1" },
+    "target": { "$ref": "#/$defs/target" },
+    "dependencySnapshotFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "suites": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/suite" } },
+    "evidence": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/evidence" } },
+    "redaction": { "$ref": "#/$defs/redaction" },
+    "manifest": { "$ref": "#/$defs/manifest" }
+  },
+  "$defs": {
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "draftId", "revision", "draftFingerprint"],
+      "properties": {
+        "kind": { "const": "GRAPH_DRAFT" },
+        "draftId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "draftFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "suite": {
+      "type": "object", "additionalProperties": false,
+      "required": ["suiteId", "revision", "suiteFingerprint", "operatorRef", "nodeIds", "cases"],
+      "properties": {
+        "suiteId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "suiteFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "operatorRef": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "nodeIds": { "type": "array", "uniqueItems": true, "maxItems": 10000, "items": { "type": "string", "maxLength": 256 } },
+        "cases": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/case" } }
+      }
+    },
+    "case": {
+      "type": "object", "additionalProperties": false,
+      "required": ["caseId", "caseKind", "mappingStatus", "name", "description", "inputs", "config", "mockedOutputs", "assertions"],
+      "properties": {
+        "caseId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "caseKind": { "type": "string", "enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"] },
+        "mappingStatus": { "type": "string", "enum": ["EXPLICIT", "DEFAULTED"] },
+        "name": { "type": "string", "maxLength": 512 },
+        "description": { "type": "string", "maxLength": 4096 },
+        "inputs": { "type": "object" },
+        "config": { "type": "object" },
+        "mockedOutputs": { "type": "object" },
+        "assertions": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/assertion" } }
+      }
+    },
+    "assertion": {
+      "type": "object", "additionalProperties": false,
+      "required": ["assertionId", "assertionKind", "scope", "port", "path", "operator", "expected"],
+      "properties": {
+        "assertionId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "assertionKind": { "type": "string", "enum": ["PATH", "SCHEMA", "ERROR", "GOVERNANCE_EXPECTATION"] },
+        "scope": { "type": "string", "enum": ["OPERATOR_OUTPUT", "GRAPH_OUTPUT", "NODE", "RUN"] },
+        "port": { "type": "string", "maxLength": 256 },
+        "path": { "type": "string", "maxLength": 2048 },
+        "operator": { "type": "string", "enum": ["EQUALS", "MATCHES_SCHEMA", "EXISTS", "ABSENT", "CONTAINS", "SATISFIES"] },
+        "expected": true
+      }
+    },
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["runId", "evidenceSchemaVersion", "evidenceFingerprint", "signatureStatus", "caseType", "createdAt", "endpoint"],
+      "properties": {
+        "runId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "evidenceSchemaVersion": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "evidenceFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "signatureStatus": { "type": "string", "enum": ["VERIFIED", "UNVERIFIED"] },
+        "caseType": { "type": "string", "enum": ["UNASSIGNED", "GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "endpoint": { "type": "string", "minLength": 1, "maxLength": 1024 }
+      }
+    },
+    "redaction": {
+      "type": "object", "additionalProperties": false,
+      "required": ["profile", "redactedCount", "truncated", "redactedPaths"],
+      "properties": {
+        "profile": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "redactedCount": { "type": "integer", "minimum": 0 },
+        "truncated": { "type": "boolean" },
+        "redactedPaths": { "type": "array", "maxItems": 100000, "items": { "type": "string", "maxLength": 2048 } }
+      }
+    },
+    "manifest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "bundleFingerprint", "suiteCount", "caseCount", "assertionCount", "evidenceCount", "complete"],
+      "properties": {
+        "schemaVersion": { "const": "toolStudio.resourceGateway.correctnessWorkbookManifest.v1" },
+        "bundleFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "suiteCount": { "type": "integer", "minimum": 0 },
+        "caseCount": { "type": "integer", "minimum": 0 },
+        "assertionCount": { "type": "integer", "minimum": 0 },
+        "evidenceCount": { "type": "integer", "minimum": 0 },
+        "complete": { "type": "boolean" }
+      }
+    },
+    "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

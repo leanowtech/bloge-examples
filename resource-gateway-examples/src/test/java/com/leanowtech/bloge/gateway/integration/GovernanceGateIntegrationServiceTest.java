@@ -49,7 +49,8 @@ class GovernanceGateIntegrationServiceTest {
 
         GovernanceGateResult conflicting = gateResult("gate-1", stored, "PASSED", null);
         GovernanceGateResult wrongSnapshot = new GovernanceGateResult("", "gate-2",
-                new GovernanceGateResult.Target("GRAPH_DRAFT", stored.draftId(), stored.revision(), "sha256:wrong"),
+                new GovernanceGateResult.Target("GRAPH_DRAFT", stored.draftId(), stored.revision(), "sha256:wrong",
+                        stored.tenantId(), stored.namespace(), stored.environment()),
                 "BLOCKED", List.of(), Instant.now(), null, "");
 
         assertThatThrownBy(() -> service.submitGateResult(conflicting, gateContext("corr-2")))
@@ -80,7 +81,8 @@ class GovernanceGateIntegrationServiceTest {
     private static GovernanceGateResult gateResult(String id, GraphDraft draft, String status, Instant expiresAt) {
         return new GovernanceGateResult("", id,
                 new GovernanceGateResult.Target("GRAPH_DRAFT", draft.draftId(), draft.revision(),
-                        ToolStudioIntegrationService.draftFingerprint(draft)),
+                        ToolStudioIntegrationService.draftFingerprint(draft), draft.tenantId(), draft.namespace(),
+                        draft.environment()),
                 status,
                 List.of(new GovernanceGateResult.Issue("issue-1", "BLOCKING", "CONTRACT_MISSING",
                         "Graph contract is missing.", "/nodes/eligibility", "Add a contract suite.", "")),

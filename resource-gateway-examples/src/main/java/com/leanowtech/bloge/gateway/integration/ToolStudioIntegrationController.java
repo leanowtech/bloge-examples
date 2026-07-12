@@ -105,6 +105,49 @@ public class ToolStudioIntegrationController {
                 requestContext(headers, IntegrationOperation.RECORDED_REPLAY));
     }
 
+    @GetMapping("/runs/{runId}/payload-retention")
+    public IntegrationEnvelope<PayloadRetentionView> payloadRetention(
+            @PathVariable String runId,
+            @RequestHeader HttpHeaders headers) {
+        return service.payloadRetention(runId,
+                requestContext(headers, IntegrationOperation.PAYLOAD_RETENTION_READ));
+    }
+
+    @PostMapping("/runs/{runId}/payload-retention/holds")
+    public IntegrationEnvelope<PayloadRetentionView> placePayloadHold(
+            @PathVariable String runId,
+            @RequestBody PayloadLifecycleCommand command,
+            @RequestHeader HttpHeaders headers) {
+        return service.placePayloadHold(runId, command,
+                requestContext(headers, IntegrationOperation.PAYLOAD_LEGAL_HOLD));
+    }
+
+    @PostMapping("/runs/{runId}/payload-retention/holds/{holdId}/release")
+    public IntegrationEnvelope<PayloadRetentionView> releasePayloadHold(
+            @PathVariable String runId,
+            @PathVariable String holdId,
+            @RequestBody PayloadLifecycleCommand command,
+            @RequestHeader HttpHeaders headers) {
+        return service.releasePayloadHold(runId, holdId, command,
+                requestContext(headers, IntegrationOperation.PAYLOAD_LEGAL_HOLD));
+    }
+
+    @PostMapping("/runs/{runId}/payload-retention/purge")
+    public IntegrationEnvelope<PayloadRetentionView> purgePayload(
+            @PathVariable String runId,
+            @RequestBody PayloadLifecycleCommand command,
+            @RequestHeader HttpHeaders headers) {
+        return service.purgePayload(runId, command,
+                requestContext(headers, IntegrationOperation.PAYLOAD_RETENTION_ADMIN));
+    }
+
+    @PostMapping("/payload-retention/purge-expired")
+    public IntegrationEnvelope<PayloadRetentionSweepResult> purgeExpiredPayloads(
+            @RequestHeader HttpHeaders headers) {
+        return service.purgeExpiredPayloads(
+                requestContext(headers, IntegrationOperation.PAYLOAD_RETENTION_ADMIN));
+    }
+
     @GetMapping("/evidence-keys/{keyId}")
     public IntegrationEnvelope<VisualEvidenceSigner.VerificationKey> evidenceKey(@PathVariable String keyId) {
         return service.evidenceKey(keyId);
@@ -115,6 +158,15 @@ public class ToolStudioIntegrationController {
             @RequestBody GovernanceGateResult result,
             @RequestHeader HttpHeaders headers) {
         return service.submitGateResult(result, requestContext(headers, IntegrationOperation.GATE_RESULT_WRITE));
+    }
+
+    @GetMapping("/drafts/{draftId}/correctness-workbook")
+    public IntegrationEnvelope<CorrectnessWorkbookBundle> correctnessWorkbook(
+            @PathVariable String draftId,
+            @RequestParam(defaultValue = "0") long revision,
+            @RequestHeader HttpHeaders headers) {
+        return service.correctnessWorkbook(draftId, revision,
+                requestContext(headers, IntegrationOperation.WORKBOOK_EXPORT));
     }
 
     @GetMapping("/drafts/{draftId}/gate-result")

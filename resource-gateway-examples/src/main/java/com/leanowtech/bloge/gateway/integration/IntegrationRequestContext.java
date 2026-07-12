@@ -95,6 +95,20 @@ public record IntegrationRequestContext(
         }
     }
 
+    public boolean hasClearanceAtLeast(String requiredClearance) {
+        return clearanceRank(clearance) >= clearanceRank(requiredClearance);
+    }
+
+    private static int clearanceRank(String value) {
+        return switch (normalize(value).toUpperCase(Locale.ROOT)) {
+            case "PUBLIC" -> 0;
+            case "INTERNAL" -> 1;
+            case "CONFIDENTIAL" -> 2;
+            case "RESTRICTED" -> 3;
+            default -> -1;
+        };
+    }
+
     private static void require(Map<String, Object> missing, String field, String value) {
         if (value.isBlank()) {
             missing.put(field, "required");

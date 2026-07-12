@@ -474,6 +474,82 @@ ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服
 
 `GET /api/integration/runs/{runId}/replay` 只读取已脱敏的 recorded payload；`POST` 同一路径才是 replay command。command 不会重新运行 DSL，也不会调用任何 operator 或外部资源，而是基于父运行保存的 context、node input/output、terminal output 和 evidence 状态重算断言，并生成新的 replay run/evidence。
 
+从 v9 开始，payload 不再嵌在不可变 `run_json` 中。系统把长期 evidence 与短期 replay payload 拆成两个生命周期：
+
+![Resource Gateway 受治理 payload 生命周期](assets/resource-gateway-governed-payload-lifecycle.svg)
+
+图源：[resource-gateway-governed-payload-lifecycle.drawio](assets/drawio/resource-gateway-governed-payload-lifecycle.drawio)。
+
+1. run 提交时先应用 `VisualPayloadGovernancePolicy`。`PUBLIC/INTERNAL/CONFIDENTIAL/RESTRICTED` 决定所需
+   clearance，`requiredGroups` 是必须全部满足的附加边界。
+2. 允许保留时，脱敏后的 context/output/node I/O 进入独立 payload vault；run evidence v9 只保存
+   `payloadRef + payloadFingerprint + policyId/version + classification + expiresAt` 和无值 availability marker。
+3. run、payload、首个 `CAPTURED/NOT_RETAINED` 签名事件与 outbox 在同一数据库事务中提交。任一步失败全部回滚。
+4. replay 读取先校验 tenant/environment/purpose，再校验 clearance 和 required groups，最后校验 lifecycle state。
+   clearance 不足返回 `403`；`PURGED/NOT_RETAINED/expired` 返回 `410 RG.INTEGRATION.PAYLOAD_NOT_AVAILABLE`。
+5. 到期由后台 bounded sweep 清理，读取路径也会同步执行 expiry，因而不会出现“清理任务积压时旧接口仍能读”的窗口。
+6. legal hold 把状态切到 `LEGAL_HOLD` 并冻结 purge；解除时若 retention deadline 已过，系统立即删除 payload。
+7. purge 只删除 vault blob，并追加带 previous-event fingerprint 的签名 `PURGED` 事件。历史 run evidence 的签名仍可验证。
+
+默认 demo 配置为 `CONFIDENTIAL + 7 days`；生产代码的缺省值是 `RESTRICTED + 0 days`，即未显式配置时不保留：
+
+```yaml
+gateway:
+  integration:
+    payload-governance:
+      policy-id: customer-correctness-payload
+      policy-version: 2026-07
+      default-classification: CONFIDENTIAL
+      required-groups: correctness-reviewers
+      retention-days:
+        public: 30
+        internal: 14
+        confidential: 7
+        restricted: 0
+      sweep-interval-ms: 60000
+      sweep-batch-size: 200
+```
+
+企业可用自定义 `VisualPayloadGovernancePolicy` bean 对接自己的分类引擎；Resource Gateway 通用画布不接管
+ANEKE 的治理资产，只执行已注入的版本化 policy decision。`redaction`、`classification`、`retention` 必须分别理解：
+
+| 控制 | 回答的问题 | 当前行为 |
+|---|---|---|
+| Redaction | 值里哪些字段必须替换/截断？ | 始终在落 vault 前执行，raw payload 不进入 integration API |
+| Classification | 哪类 identity 可以读取？ | trusted clearance 必须不低于 classification，且包含全部 required groups |
+| Retention | 脱敏值是否存在、保留多久？ | 按 classification 选择性保留；RESTRICTED 默认不留；到期 fail closed |
+| Legal hold | 到期删除是否暂时冻结？ | 专用 `LEGAL_HOLD` purpose；hold/release/purge 都进入签名 hash chain |
+
+查看和管理生命周期：
+
+```bash
+# 查看状态和完整签名事件链
+curl -H "Authorization: Bearer $TOKEN" \
+  -H "X-Purpose: GOVERNANCE_EVIDENCE_INGESTION" \
+  http://localhost:8080/api/integration/runs/$RUN_ID/payload-retention
+
+# 创建 legal hold
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "X-Purpose: LEGAL_HOLD" \
+  -H "Content-Type: application/json" \
+  -d '{"requestId":"hold-request-1","holdId":"case-42","reason":"litigation"}' \
+  http://localhost:8080/api/integration/runs/$RUN_ID/payload-retention/holds
+
+# 解除 hold；若已经过期会在同一调用中转为 PURGED
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "X-Purpose: LEGAL_HOLD" \
+  -H "Content-Type: application/json" \
+  -d '{"requestId":"release-request-1","reason":"case closed"}' \
+  http://localhost:8080/api/integration/runs/$RUN_ID/payload-retention/holds/case-42/release
+```
+
+`requestId` 是 lifecycle command 的持久幂等键，不是日志 correlation id。同一 run 上用相同 requestId 和完全相同的
+hold/release/purge 内容重试，不增加 revision，也不重复发 change event；同键改写 `holdId`、actor 或 reason 返回 `409`。
+该绑定写入签名 lifecycle event，服务重启或切换实例后仍然有效。
+
+机器合同：[payload replay v2](schemas/tool-studio-resource-gateway/payload-replay-bundle-v2.schema.json)、
+[payload retention view v1](schemas/tool-studio-resource-gateway/payload-retention-view-v1.schema.json)、
+[payload lifecycle command v1](schemas/tool-studio-resource-gateway/payload-lifecycle-command-v1.schema.json) 和
+[run evidence v7](schemas/tool-studio-resource-gateway/run-evidence-bundle-v7.schema.json)。
+
 请求必须使用 `X-Purpose: PAYLOAD_REPLAY`，并显式声明副作用策略 `DENY`：
 
 ```json
@@ -519,16 +595,112 @@ ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服
 | `ERROR_CONTAINS` | RUN | 父运行错误包含指定 code/text |
 | `GOVERNANCE_EXPECTATION` | RUN | `EVIDENCE_READY`、`SIGNATURE_VERIFIED`、`NO_MOCKS` 或 `NO_ERRORS` |
 
-成功受理后系统生成确定性的 replay runId，并返回 `parentRunId`、request fingerprint、断言结果、`externalInvocationCount=0`、evidence 状态和 evidence endpoint。相同 `requestId + parentRunId + request content` 重试返回同一 replay run；同一 `requestId` 指向不同内容返回 `409`。期望值不会原样写入 assertion evidence，只保存 fingerprint，降低测试数据泄露风险。
+成功受理后系统生成确定性的 replay runId，并返回 `parentRunId`、request fingerprint、断言结果、`externalInvocationCount=0`、evidence 状态和 evidence endpoint。相同 `requestId + parentRunId + request content` 重试返回同一 replay run；数据库唯一键裁决两个实例的并发创建，输家回读并核对 parent/request fingerprint 后返回同一结果。同一 tenant/environment 内同一个 `requestId` 指向不同内容返回 `409`；不同 tenant 不共享幂等命名空间。期望值不会原样写入 assertion evidence，只保存 fingerprint，降低测试数据泄露风险。
 
 当前 replay command 只支持 `RECORDED_ASSERTIONS + DENY`。`shadow/live` 重放仍未开放，因为它们需要独立的审批、隔离环境、幂等能力证明和 unknown-commit 处理，不能复用这个安全接口悄悄开启。
+
+### 3.5.1 把 contract suite 和 run evidence 交给 ANEKE workbook
+
+Resource Gateway 不创建 ANEKE registry，也不决定 publish gate 是否通过。它新增的是一份可确定性重建的
+`CorrectnessWorkbookBundle.v1`：把当前 GraphDraft dependency snapshot、精确 operator suite revision、脱敏的
+case/assertion 表格和同一 draft snapshot 的签名 run evidence refs 组合起来。ANEKE 导入这份 seed 后，仍由自己的
+workbook、组织 policy 和审批体系产生治理结论。
+
+![Resource Gateway 与 ANEKE workbook/gate 证据闭环](assets/resource-gateway-workbook-gate-evidence-loop.svg)
+
+图源：[resource-gateway-workbook-gate-evidence-loop.drawio](assets/drawio/resource-gateway-workbook-gate-evidence-loop.drawio)。
+
+**第一步：导出 workbook seed。** 使用 exact revision，避免用户编辑 draft 后把新旧测试混在一起：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  -H "X-Purpose: WORKBOOK_SYNC" \
+  "http://localhost:8080/api/integration/drafts/$DRAFT_ID/correctness-workbook?revision=$REVISION"
+```
+
+ANEKE 至少保存以下关联：
+
+| 字段 | 用途 |
+| --- | --- |
+| `target.draftId/revision/draftFingerprint` | 锁定被治理的 GraphDraft 快照 |
+| `dependencySnapshotFingerprint` | 锁定 operator/library/binding/activation/suite readiness 代际 |
+| `suites[].suiteId/revision/suiteFingerprint` | 无歧义回读测试资产；不能只保存 suiteId |
+| `cases[].caseId/caseKind/mappingStatus` | 建立稳定 workbook 行；`DEFAULTED` 表示旧 suite 未显式声明 case kind |
+| `evidence[].runId/evidenceFingerprint/signatureStatus` | 把 workbook 结论追溯到签名运行事实 |
+| `manifest.bundleFingerprint` | 证明 ANEKE workbook 是从哪一份 seed 导入 |
+
+suite tag 可用 `case-kind:golden`、`case-kind:negative`、`case-kind:boundary` 或
+`case-kind:regression` 显式设置当前 suite 的 case kind；没有标签时系统保守映射为 `REGRESSION + DEFAULTED`，不会冒充
+无损转换。测试输入、config、mocked output 和 expected value 在离开 Resource Gateway 前经过与 run payload 相同的
+有界 sanitizer，`redaction` 会列出命中路径。
+
+**第二步：ANEKE 运行自己的 workbook 和 publish-gate policy。** 它生成不可变
+`GovernanceGateResult.v2`，`decisionBasis` 必须带回 workbook ref、source bundle fingerprint、dependency snapshot、
+suite refs、evidence refs、policy id/version、required checks 和每项结果。例如：
+
+```json
+{
+  "schemaVersion": "toolStudio.resourceGateway.gateResult.v2",
+  "gateResultId": "gate-knowledge-tool-2026-07-13-01",
+  "target": {
+    "kind": "GRAPH_DRAFT",
+    "draftId": "draft-knowledge-tool",
+    "revision": 7,
+    "draftFingerprint": "sha256:...",
+    "tenantId": "tenant-a",
+    "namespace": "knowledge",
+    "environment": "prod"
+  },
+  "status": "PASSED",
+  "issues": [],
+  "producedAt": "2026-07-13T00:00:00Z",
+  "expiresAt": "2026-07-20T00:00:00Z",
+  "decisionBasis": {
+    "workbook": {
+      "workbookId": "wb-knowledge-tool",
+      "revision": 12,
+      "workbookFingerprint": "sha256:...",
+      "sourceBundleFingerprint": "sha256:..."
+    },
+    "dependencySnapshotFingerprint": "sha256:...",
+    "contractSuites": [{"suiteId":"suite-risk","revision":3,"fingerprint":"sha256:..."}],
+    "evidence": [{"runId":"run-...","evidenceFingerprint":"sha256:..."}],
+    "policy": {
+      "policyId": "enterprise-publish-gate",
+      "version": "2026-07",
+      "requiredChecks": ["WORKBOOK","CONTRACT_COVERAGE","EVIDENCE","RUNTIME_READINESS","OWNER_APPROVAL","BREAKING_MIGRATION"]
+    },
+    "checks": [
+      {"kind":"WORKBOOK","status":"PASSED","reason":"verified","refs":["wb-knowledge-tool@12"]},
+      {"kind":"CONTRACT_COVERAGE","status":"PASSED","reason":"coverage met","refs":["suite-risk@3"]},
+      {"kind":"EVIDENCE","status":"PASSED","reason":"signed run verified","refs":["run-..."]},
+      {"kind":"RUNTIME_READINESS","status":"PASSED","reason":"binding ready","refs":[]},
+      {"kind":"OWNER_APPROVAL","status":"PASSED","reason":"approved","refs":[]},
+      {"kind":"BREAKING_MIGRATION","status":"PASSED","reason":"no breaking change","refs":[]}
+    ]
+  },
+  "resultFingerprint": "sha256:..."
+}
+```
+
+提交到 `POST /api/integration/gate-results` 时使用 `X-Purpose: GOVERNANCE_GATE_FEEDBACK`。Resource Gateway 不重跑
+ANEKE policy，但会 fail closed 地验证 basis：target scope、draft/snapshot/suite fingerprint、source bundle fingerprint、
+run evidence 签名以及所有 `policy.requiredChecks`。通过结论缺依据返回
+`409 RG.INTEGRATION.GATE_BASIS_INCOMPLETE`；依据已漂移返回 `409 RG.INTEGRATION.GATE_BASIS_STALE`；跨租户 run ref
+按 scope-safe `404` 处理。合法结果和 `GOVERNANCE_GATE_RESULT_RECEIVED` event 同事务提交；suite 或 dependency
+变更后 Author 侧 freshness 自动变为 `STALE`。
+
+v1 gate result 继续可用于 `BLOCKED/WARNING` 兼容反馈，但 v1 `PASSED` 会被拒绝，因为它无法证明 decision basis。
+机器合同：[correctness workbook bundle v1](schemas/tool-studio-resource-gateway/correctness-workbook-bundle-v1.schema.json) 和
+[governance gate result v2](schemas/tool-studio-resource-gateway/governance-gate-result-v2.schema.json)。
 
 ### 3.6 读取 timeout、fallback 与 partial failure 证据
 
 画布点击 **Run** 后，系统不再只保存一个最终 `SUCCESS/FAILED`。BLOGE 的 node lifecycle 与
 `ResilienceListener` 会在同一个 run capture 中记录 retry、timeout 和 fallback 事件；Resource Gateway
-再结合不可变拓扑解释 skip/cancel 的因果关系，最后写入 `VisualGraphRunRecord.v8` 并导出
-`runEvidenceBundle.v6`。v8/v6 在既有 control fact 之外增加 recovery provenance，使正常完成记录和系统恢复记录
+再结合不可变拓扑解释 skip/cancel 的因果关系，最后写入 `VisualGraphRunRecord.v9` 并导出
+`runEvidenceBundle.v7`。v9/v7 在既有 control/recovery fact 之外增加 detached payload descriptor 与当前 lifecycle
+状态，使正常完成记录、系统恢复记录和 payload 删除记录
 可以被机器明确区分。
 
 ![Resource Gateway 运行失败事实链](assets/resource-gateway-run-failure-semantics.svg)
@@ -592,7 +764,7 @@ reconciliation record 闭合该缺口；系统不会修改或重新签署原 evi
 | `runOwnerLease` / `runOwnerEpochFencing` | `true` | owner 只能在有效 lease 和匹配 epoch 下推进状态，旧 owner 不能覆盖恢复结论 |
 | `expiredOwnerQuarantine` | `true` | owner 租约过期后持久化为 `OWNER_LEASE_EXPIRED + TERMINATION_UNCONFIRMED` |
 | `restartRunResumption` | `false` | 进程崩溃后不会盲目重跑未知副作用；当前恢复策略是 abandonment + quarantine，而不是自动续跑 |
-| `runControlEvidence` | `true` | control fact 已进入 run record、签名和 evidence v6 |
+| `runControlEvidence` | `true` | control fact 已进入 run record、签名和 evidence v7 |
 | `runEvidenceRecoveryReservation` | `true` | managed run 执行前先持久化脱敏 lineage reservation，绑定确定性 runId、draft/scope/input fingerprint |
 | `abandonedRunEvidenceRecovery` | `true` | owner abandonment、terminal evidence gap 和过期 missing-control reservation 会自动形成签名但 fail-closed 的 run evidence |
 | `recoveryTransactionalOutbox` | `true` | 恢复 run record、reservation 终态与 `RUN_ABANDONED/RUN_EVIDENCE_RECOVERED` 事件同事务提交 |
@@ -600,15 +772,18 @@ reconciliation record 闭合该缺口；系统不会修改或重新签署原 evi
 | `sideEffectReconciliation` / `sideEffectReconciliationEvidence` | `true` | 具备持久 claim/fencing、SPI、签名 refinement、summary 和 outbox 协议 |
 | `sideEffectReconcilerAdapters` | 默认 `false` | 当前示例不伪造任意 provider 的权威状态查询；注册业务 adapter 后动态变为 `true` |
 | `sideEffectCommitConfirmation` | `false` | 不是所有 operator/binding 都已声明 receipt 与 reconciler，不能做全局承诺 |
+| `detachedPayloadVault` / `selectivePayloadRetention` | `true` | payload 与不可变 evidence 分离，并按分类决定是否保留 |
+| `payloadClassificationPolicy` | `true` | policy id/version、clearance、groups 和 retention decision 已进入证据 |
+| `payloadLegalHold` / `signedPayloadLifecycle` | `true` | hold/release/purge 使用行锁与 revision fencing，并形成签名 hash chain |
 | `managedEvidenceSigning` | 按部署动态 | `true` 表示私钥由 managed provider 托管，不能仅凭 `evidenceSignature=true` 推断 |
 | `nonExportableEvidenceSigningKey` | 按部署动态 | managed custody 且 provider 声明私钥不可导出；本地 H2 demo 必须为 `false` |
 | `evidenceSigningKeyRotation` / `evidenceSigningKeyRevocation` | 按部署动态 | key generation snapshot 支持 `ACTIVE/VERIFY_ONLY/DISABLED/REVOKED` 生命周期 |
 | `evidenceSigningFailClosed` | 按部署动态 | authority 快照过期或协议污染后禁止继续签名/验签，且 key lookup 区分 503 与 404 |
 
-旧 `runEvidenceBundle.v1/v2/v3/v4/v5` 仍在 capability 的兼容列表中；新 consumer 应优先协商 v6。旧 run 若没有
+旧 `runEvidenceBundle.v1/v2/v3/v4/v5/v6` 仍在 capability 的兼容列表中；新 consumer 应优先协商 v7。旧 run 若没有
 每个节点的结构化 execution fact，会得到
 `Structured execution semantics were not captured for every node.` gap 并被隔离，而不是由服务端静默猜测。
-ANEKE 可直接使用 [run-evidence-bundle-v6.schema.json](schemas/tool-studio-resource-gateway/run-evidence-bundle-v6.schema.json)
+ANEKE 可直接使用 [run-evidence-bundle-v7.schema.json](schemas/tool-studio-resource-gateway/run-evidence-bundle-v7.schema.json)
 做 producer/consumer contract 校验，不需要解析 Resource Gateway 内部 Java DTO。
 
 #### 从 UNKNOWN_COMMIT 对账到治理 READY

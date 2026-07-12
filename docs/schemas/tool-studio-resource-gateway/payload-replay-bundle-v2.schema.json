@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/payload-replay-bundle-v2.schema.json",
+  "title": "Tool Studio Resource Gateway Payload Replay Bundle v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runId", "parentRunId", "replayMode", "payloadPolicy", "context", "output", "nodes", "redaction", "retention"],
+  "properties": {
+    "schemaVersion": { "const": "toolStudio.resourceGateway.payloadReplayBundle.v2" },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "parentRunId": { "type": "string", "maxLength": 256 },
+    "replayMode": { "const": "RECORDED" },
+    "payloadPolicy": { "$ref": "#/$defs/payloadPolicy" },
+    "context": { "type": "object" },
+    "output": true,
+    "nodes": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/nodeReplay" } },
+    "redaction": { "$ref": "#/$defs/redaction" },
+    "retention": { "$ref": "#/$defs/status" }
+  },
+  "$defs": {
+    "payloadPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "redactionProfile", "rawAvailable", "externalSideEffectsAllowed"],
+      "properties": {
+        "mode": { "const": "SANITIZED" },
+        "redactionProfile": { "type": "string", "maxLength": 256 },
+        "rawAvailable": { "const": false },
+        "externalSideEffectsAllowed": { "const": false }
+      }
+    },
+    "nodeReplay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeId", "input", "output", "inputAvailable", "outputAvailable", "assertionResults"],
+      "properties": {
+        "nodeId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "input": true,
+        "output": true,
+        "inputAvailable": { "type": "boolean" },
+        "outputAvailable": { "type": "boolean" },
+        "assertionResults": { "type": "array", "maxItems": 1000, "items": true }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "redactedCount", "truncated", "redactedPaths"],
+      "properties": {
+        "profile": { "type": "string", "maxLength": 256 },
+        "redactedCount": { "type": "integer", "minimum": 0 },
+        "truncated": { "type": "boolean" },
+        "redactedPaths": { "type": "array", "maxItems": 10000, "items": { "type": "string", "maxLength": 1024 } }
+      }
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "runId", "tenantId", "namespace", "environment", "state", "revision", "activeHoldId", "updatedAt", "descriptor", "latestEvent"],
+      "properties": {
+        "schemaVersion": { "const": "bloge.visualRunPayloadStatus.v1" },
+        "runId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "tenantId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "namespace": { "type": "string", "maxLength": 256 },
+        "environment": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "state": { "type": "string", "enum": ["AVAILABLE", "LEGAL_HOLD", "PURGED", "NOT_RETAINED"] },
+        "revision": { "type": "integer", "minimum": 1 },
+        "activeHoldId": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "descriptor": { "$ref": "#/$defs/descriptor" },
+        "latestEvent": { "$ref": "#/$defs/event" }
+      }
+    },
+    "descriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "policyId", "policyVersion", "classification", "requiredClearance", "requiredGroups", "disposition", "payloadRef", "payloadFingerprint", "retainedAt", "expiresAt"],
+      "properties": {
+        "schemaVersion": { "const": "bloge.visualPayloadRetentionDescriptor.v1" },
+        "policyId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "classification": { "type": "string", "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"] },
+        "requiredClearance": { "type": "string", "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"] },
+        "requiredGroups": { "type": "array", "uniqueItems": true, "maxItems": 64, "items": { "type": "string", "maxLength": 128 } },
+        "disposition": { "type": "string", "enum": ["RETAINED", "NOT_RETAINED", "LEGACY_INLINE"] },
+        "payloadRef": { "type": "string", "maxLength": 512 },
+        "payloadFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "retainedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "eventId", "requestId", "runId", "revision", "type", "occurredAt", "actorId", "reason", "holdId", "payloadFingerprint", "previousEventFingerprint", "evidenceSeal"],
+      "properties": {
+        "schemaVersion": { "const": "bloge.visualPayloadLifecycleEvent.v1" },
+        "eventId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "runId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "type": { "type": "string", "enum": ["CAPTURED", "HOLD_PLACED", "HOLD_RELEASED", "PURGED", "NOT_RETAINED"] },
+        "occurredAt": { "type": "string", "format": "date-time" },
+        "actorId": { "type": "string", "maxLength": 256 },
+        "reason": { "type": "string", "maxLength": 1024 },
+        "holdId": { "type": "string", "maxLength": 128 },
+        "payloadFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "previousEventFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "evidenceSeal": { "$ref": "#/$defs/seal" }
+      }
+    },
+    "seal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "materialFingerprint", "algorithm", "keyId", "signedAt", "signature"],
+      "properties": {
+        "schemaVersion": { "const": "bloge.visualRunEvidenceSeal.v1" },
+        "materialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "algorithm": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "keyId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "signedAt": { "type": "string", "format": "date-time" },
+        "signature": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      }
+    },
+    "fingerprint": { "type": "string", "pattern": "^(|sha256:[0-9a-f]{64})$" }
+  }
+}

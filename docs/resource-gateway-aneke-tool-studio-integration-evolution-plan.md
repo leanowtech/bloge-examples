@@ -127,23 +127,48 @@ GET /api/integration/capabilities
       "bloge.gatewayGraphContractTestSuite.v1",
       "bloge.visualOperatorContractTestSuiteRequest.v1"
     ],
-    "runEvidence": ["toolStudio.resourceGateway.runEvidenceBundle.v1"],
-    "payloadReplay": ["toolStudio.resourceGateway.payloadReplayBundle.v1"]
+    "runEvidence": [
+      "toolStudio.resourceGateway.runEvidenceBundle.v1",
+      "toolStudio.resourceGateway.runEvidenceBundle.v7"
+    ],
+    "payloadReplay": [
+      "toolStudio.resourceGateway.payloadReplayBundle.v1",
+      "toolStudio.resourceGateway.payloadReplayBundle.v2"
+    ],
+    "payloadRetentionView": ["toolStudio.resourceGateway.payloadRetentionView.v1"]
   },
   "features": {
     "draftExportDependencyProfile": true,
     "runEvidenceBundle": true,
-    "payloadReplay": false,
+    "payloadReplay": true,
+    "detachedPayloadVault": true,
+    "payloadClassificationPolicy": true,
+    "selectivePayloadRetention": true,
+    "payloadLegalHold": true,
+    "signedPayloadLifecycle": true,
+    "replayExternalSideEffects": false,
     "deepLinks": true,
     "governanceGateFeedback": false,
-    "eventCursor": false,
+    "eventCursor": true,
     "webhook": false
   },
   "endpoints": [
     { "method": "GET", "path": "/api/integration/capabilities" },
     { "method": "GET", "path": "/api/integration/drafts/{draftId}/export" },
-    { "method": "GET", "path": "/api/integration/runs/{runId}/evidence" }
-  ]
+    { "method": "GET", "path": "/api/integration/runs/{runId}/evidence" },
+    { "method": "GET", "path": "/api/integration/runs/{runId}/replay" },
+    { "method": "GET", "path": "/api/integration/runs/{runId}/payload-retention" },
+    { "method": "POST", "path": "/api/integration/runs/{runId}/payload-retention/holds" }
+  ],
+  "payloadGovernance": {
+    "policyId": "customer-payload-policy",
+    "policyVersion": "2026-07",
+    "defaultClassification": "CONFIDENTIAL",
+    "selectiveRetention": true,
+    "legalHold": true,
+    "signedLifecycle": true,
+    "failClosed": true
+  }
 }
 ```
 
@@ -329,8 +354,15 @@ GET /api/integration/runs/{runId}/evidence
   },
   "diagnostics": [],
   "retention": {
-    "payloadPolicy": "SANITIZED",
-    "expiresAt": "2026-08-12T00:00:00Z"
+    "payloadPolicy": "DETACHED_SANITIZED",
+    "expiresAt": "2026-07-20T00:00:00Z",
+    "classification": "CONFIDENTIAL",
+    "policyId": "customer-payload-policy",
+    "policyVersion": "2026-07",
+    "state": "AVAILABLE",
+    "legalHold": false,
+    "payloadFingerprint": "sha256:...",
+    "lifecycleEventFingerprint": "sha256:..."
   }
 }
 ```
@@ -340,14 +372,14 @@ GET /api/integration/runs/{runId}/evidence
 Endpoint:
 
 ```text
-GET /api/integration/runs/{runId}/replay?payload=SANITIZED&includeNodePayloads=true&includeEdgePayloads=true
+GET /api/integration/runs/{runId}/replay
 ```
 
 目标 schema：
 
 ```json
 {
-  "schemaVersion": "toolStudio.resourceGateway.payloadReplayBundle.v1",
+  "schemaVersion": "toolStudio.resourceGateway.payloadReplayBundle.v2",
   "runId": "run-...",
   "payloadPolicy": {
     "mode": "SANITIZED",
@@ -361,33 +393,48 @@ GET /api/integration/runs/{runId}/replay?payload=SANITIZED&includeNodePayloads=t
       "nodeId": "fetchPolicy",
       "input": {},
       "output": {},
-      "request": {
-        "method": "GET",
-        "urlTemplate": "/policies/{id}",
-        "headers": {},
-        "body": null
-      },
-      "response": {
-        "status": 200,
-        "headers": {},
-        "body": {}
-      },
+      "inputAvailable": true,
+      "outputAvailable": true,
       "assertionResults": []
     }
-  ]
+  ],
+  "retention": {
+    "state": "AVAILABLE",
+    "revision": 1,
+    "descriptor": {
+      "policyId": "customer-payload-policy",
+      "policyVersion": "2026-07",
+      "classification": "CONFIDENTIAL",
+      "requiredClearance": "CONFIDENTIAL",
+      "requiredGroups": ["correctness-reviewers"],
+      "disposition": "RETAINED",
+      "payloadFingerprint": "sha256:...",
+      "expiresAt": "2026-07-20T00:00:00Z"
+    },
+    "latestEvent": {
+      "type": "CAPTURED",
+      "evidenceSeal": { "keyId": "...", "signature": "..." }
+    }
+  }
 }
 ```
 
+Round 16 没有在原 run JSON 上补一个装饰性的 `expiresAt`。`VisualGraphRunRecord.v9` 只保存 shape facts、
+policy descriptor、payload reference 和 digest；脱敏值进入独立 vault。`CAPTURED/NOT_RETAINED/HOLD_PLACED/
+HOLD_RELEASED/PURGED` 是 append-only 签名事件链。payload blob 删除后，run evidence 与删除证明仍可验。
+
+![Resource Gateway 受治理 payload 生命周期](assets/resource-gateway-governed-payload-lifecycle.svg)
+
+图源：[resource-gateway-governed-payload-lifecycle.drawio](assets/drawio/resource-gateway-governed-payload-lifecycle.drawio)。
+
 关键约束：
 
-1. P0 可先支持 visual run 内部 node input/output 和 selected output replay。
-2. HTTP request/response replay 需要 `HttpResourceOperator` 或 runtime adapter 明确记录 sanitized exchange，不能从现有 shape summary 反推。
-3. raw payload 不能默认返回。至少需要 `PayloadCapturePolicy`：
-   - `NONE`
-   - `SUMMARY_ONLY`
-   - `SANITIZED`
-   - `FULL_ENCRYPTED`
-4. 每次 replay response 必须带 redaction metadata，供 ANEKE 证明 evidence 可审计而不是泄漏敏感数据。
+1. raw payload 不进入 integration API；sanitizer 在 vault 写入前执行。
+2. classification 决定 clearance，required groups 必须全部满足；策略不足返回 403，且错误不回显组名。
+3. `RESTRICTED` 默认 retention 为 0，状态为 `NOT_RETAINED`；到期或已 purge 返回稳定 410。
+4. run evidence、payload、首个 lifecycle event 和 outbox 同事务提交；purge 用 row lock + revision CAS 防跨实例分裂。
+5. legal hold 由专用 purpose 控制，冻结自动/人工 purge；解除后已过期 payload 立即清理。
+6. 当前 replay command 仍只支持 `RECORDED_ASSERTIONS + DENY`；shadow/live 不通过扩大旧接口偷偷开放。
 
 ## 6. 标准状态语义
 
@@ -427,61 +474,99 @@ GET /api/integration/runs/{runId}/replay?payload=SANITIZED&includeNodePayloads=t
 
 ## 7. Contract Test Suite 与 ANEKE workbook 对齐
 
-当前 contract/golden test 能跑，但 workbook 需要更强语义：
+Round 17 关闭的病根不是“再加几个 case 字段”，而是此前 gate result 没有记录它消费了哪些输入版本：一个
+`PASSED` 只绑定 draft，无法证明对应哪一版 workbook、dependency snapshot、suite revision、run evidence 或 gate
+policy。正式链路把 suite 定义、运行证据和治理结论拆成三个权威对象：
+
+![Resource Gateway 与 ANEKE workbook/gate 证据闭环](assets/resource-gateway-workbook-gate-evidence-loop.svg)
+
+图源：[resource-gateway-workbook-gate-evidence-loop.drawio](assets/drawio/resource-gateway-workbook-gate-evidence-loop.drawio)。
+
+1. Resource Gateway 从 exact GraphDraft revision 和一致 dependency snapshot 生成
+   `CorrectnessWorkbookBundle.v1`。它读取精确 suite revision，生成稳定 case/assertion ID，输出脱敏测试材料和已验签
+   run evidence refs，并对整个 bundle 计算 fingerprint。
+2. ANEKE 导入 seed 后创建自己的 workbook，执行组织级 publish-gate policy。registry、workbook 和最终决策仍以
+   ANEKE 为权威源。
+3. ANEKE 返回 `GovernanceGateResult.v2`。`decisionBasis` 固化 workbook/source bundle、snapshot、suite、evidence、
+   policy 和 required checks。
+4. Resource Gateway 不重算治理政策，只验证这些 refs 能否回到当前不可变事实。`PASSED` 缺依据返回
+   `RG.INTEGRATION.GATE_BASIS_INCOMPLETE`，代际漂移返回 `RG.INTEGRATION.GATE_BASIS_STALE`，跨 scope evidence 返回
+   最小披露 404。
+5. 合法 gate result 与 `GOVERNANCE_GATE_RESULT_RECEIVED` 进入同一事务；并发实例由数据库唯一键裁决，相同内容
+   幂等，异内容冲突。Author view 除 draft revision 外还比较 dependency snapshot，suite/readiness 漂移会自动 stale。
+
+workbook seed 的核心形状：
 
 ```json
 {
-  "schemaVersion": "toolStudio.resourceGateway.contractTestSuite.v1",
-  "suiteId": "suite-customer-knowledge-tool",
+  "schemaVersion": "toolStudio.resourceGateway.correctnessWorkbookBundle.v1",
   "target": {
     "kind": "GRAPH_DRAFT",
     "draftId": "draft-...",
-    "revision": 7
+    "revision": 7,
+    "draftFingerprint": "sha256:..."
   },
-  "cases": [
+  "dependencySnapshotFingerprint": "sha256:...",
+  "suites": [
     {
-      "caseId": "case-valid-policy",
-      "caseKind": "golden",
-      "context": {},
-      "expectedOutput": {},
-      "assertions": [
+      "suiteId": "suite-customer-knowledge-tool",
+      "revision": 3,
+      "suiteFingerprint": "sha256:...",
+      "operatorRef": "knowledge:policy",
+      "nodeIds": ["policy"],
+      "cases": [{
+        "caseId": "case-2e8f...",
+        "caseKind": "GOLDEN",
+        "mappingStatus": "EXPLICIT",
+        "name": "eligible customer",
+        "description": "golden approval path",
+        "inputs": {},
+        "config": {},
+        "mockedOutputs": {},
+        "assertions": [
         {
-          "assertionKind": "path",
-          "path": "$.decision",
-          "operator": "equals",
+          "assertionId": "assertion-a71c...",
+          "assertionKind": "PATH",
+          "scope": "OPERATOR_OUTPUT",
+          "port": "result",
+          "path": "/decision",
+          "operator": "EQUALS",
           "expected": "APPROVE"
-        },
-        {
-          "assertionKind": "schema",
-          "path": "$",
-          "schemaRef": "graph.output"
-        },
-        {
-          "assertionKind": "governanceExpectation",
-          "expectation": "noMockedNodes"
-        }
-      ]
+        }]
+      }]
     }
-  ]
+  ],
+  "evidence": [{
+    "runId": "run-...",
+    "evidenceSchemaVersion": "toolStudio.resourceGateway.runEvidence.v7",
+    "evidenceFingerprint": "sha256:...",
+    "signatureStatus": "VERIFIED",
+    "caseType": "GOLDEN",
+    "createdAt": "2026-07-13T00:00:00Z",
+    "endpoint": "/api/integration/runs/run-.../evidence"
+  }],
+  "redaction": {
+    "profile": "default-pii@1",
+    "redactedCount": 0,
+    "truncated": false,
+    "redactedPaths": []
+  },
+  "manifest": {
+    "schemaVersion": "toolStudio.resourceGateway.correctnessWorkbookManifest.v1",
+    "bundleFingerprint": "sha256:...",
+    "suiteCount": 1,
+    "caseCount": 1,
+    "assertionCount": 1,
+    "evidenceCount": 1,
+    "complete": true
+  }
 }
 ```
 
-Case kinds：
-
-- `golden`
-- `negative`
-- `boundary`
-- `regression`
-
-Assertion kinds：
-
-- `path`
-- `schema`
-- `error`
-- `governanceExpectation`
-- `latency`
-- `nodeStatus`
-- `edgeStatus`
+当前 operator suite 能无损映射 `PATH/SCHEMA` 断言；recorded replay evidence 已承载 `ERROR` 与
+`GOVERNANCE_EXPECTATION`。suite tag `case-kind:golden|negative|boundary|regression` 明确 case kind；没有显式标签时
+协议返回 `REGRESSION + DEFAULTED`，消费者必须保留 mappingStatus，不能把默认映射标成原作者意图。完整机器合同见
+`correctness-workbook-bundle-v1.schema.json` 与 `governance-gate-result-v2.schema.json`。
 
 ## 8. Deep Link 设计
 
@@ -562,8 +647,8 @@ POST /api/integration/gate-results
 | Draft integration bundle | `GET /api/integration/drafts/{draftId}/export` | `GraphDraftExportBundle`、`GraphDraftDependencyReport` | bundle 明确携带 operator library id、fingerprint、schema fingerprint、runtime binding refs、contract suite refs |
 | Run evidence bundle | `GET /api/integration/runs/{runId}/evidence` | `VisualGraphRunRecord` | evidence 包含 runId、draft/source fingerprint、node/edge trace、mock/error/timing/status、完整性 manifest 和 signature |
 | Standard status | `VisualRunStatus` enum 或 protocol status mapper | `VisualDslRunResponse.statusMap` | 所有 node/edge evidence 使用标准状态 |
-| Payload capture policy | `PayloadCapturePolicy`、classification、sanitizer SPI、encrypted payload ref | run service / HTTP operator instrumentation / KMS | 可返回 sanitized replay bundle，默认不泄漏 raw payload；不完整证据被 quarantine |
-| Payload replay | `GET /api/integration/runs/{runId}/replay` | payload capture + side-effect policy | 按 runId 返回脱敏 context/output/node input/output；recorded replay 默认零外部副作用 |
+| Payload capture policy | Round 16 `VisualPayloadGovernancePolicy`、detached vault、classification/clearance/groups、签名 lifecycle | run repository / identity / evidence signer | run evidence 不含 payload 值；策略决定保留；RESTRICTED 默认不留；跨实例 hold/purge 单赢家 |
+| Payload replay | `GET/POST /api/integration/runs/{runId}/replay` + retention API | detached payload + side-effect policy | 按 runId 返回脱敏 context/output/node input/output；到期 410；recorded replay 默认零外部副作用 |
 
 ### P1 - 体验闭环和 workbook 对齐
 
@@ -572,10 +657,10 @@ POST /api/integration/gate-results
 | 工作项 | 交付物 | 验收 |
 |---|---|---|
 | Deep link | draft/node/operator/run/gate issue URL | ANEKE 点击可直接定位到画布上下文 |
-| Contract suite vNext | caseKind/assertionKind/governance expectation | workbook 可无损导入 |
-| Gate result ingestion | `POST /api/integration/gate-results` + Author UI panel | 作者能看到缺 contract/workbook/approval/breaking migration 原因 |
+| Correctness workbook projection | Round 17 `CorrectnessWorkbookBundle.v1` + exact suite/evidence refs | ANEKE 可确定性导入且知道默认映射与脱敏事实 |
+| Gate result ingestion | `GovernanceGateResult.v2` decision basis + Author UI panel | PASSED 必须可回指 workbook/snapshot/suite/evidence/policy；漂移自动 stale |
 | Operator runtime readiness profile | owner、risk、secret policy、idempotency、SLA、runtime binding、artifact provenance/SBOM | ANEKE 能判断工具可发布/可执行性 |
-| Evidence to workbook mapping | evidence assertion results -> workbook rows | run evidence 能成为 correctness workbook 证据 |
+| Evidence to workbook mapping | verified runId/evidence fingerprint -> workbook rows | run evidence 能成为 correctness workbook 证据且防跨 scope/伪造引用 |
 
 ### P2 - 持续同步和工程模块化
 
@@ -595,12 +680,12 @@ POST /api/integration/gate-results
 |---|---|---|---|
 | P0 | 稳定跨系统协议版本 | 必须做，且不能只复用内部 DTO | protocol envelope + capability probe + JSON schema |
 | P0 | Run Trace 可导出为治理证据 | 当前 shape-only trace 不够 | 新增 evidence bundle，不直接改造成唯一 run response |
-| P0 | Payload 级 replay | 当前缺 payload capture | 新增 payload store/ref/sanitizer/replay endpoint |
+| P0 | Payload 级 replay | Round 16 已实现 detached vault、classification ABAC、选择性 retention、legal hold、签名删除链和真实 HTTP/H2 生命周期；Round 17 以确定性 runId + DB 唯一键 + winner 回读完成跨实例幂等，且 requestId 按 tenant/environment 隔离；残余是 shadow/live 隔离审批和 residency/subject-request adapter | `VisualPayloadGovernancePolicy` + v9 run descriptor + payload replay v2 + retention API |
 | P0 | GraphDraft export 依赖元数据 | Round 15 已实现 profile v2、相关资产双读、结构化 revision/fingerprint/readiness 和 scope-safe disclosure；残余是 ANEKE N/N-1 consumer matrix、HA DB fault harness、SLA 权威源 | `GraphDraftDependencySnapshotService` + profile/snapshot machine schema + retryable 409 |
 | P0 | Timeout/partial failure 语义 | Round 12 已补 `WRITE_EXTERNAL` contract、binding/activation conformance、descriptor-backed HTTP mutation、底层 unsafe `httpRequest` 防绕过和可视化 readiness；仍缺 detach policy、错误 effect 分类检测、非 HTTP 私有写边界和客户 provider adapter 覆盖 | `VisualNodeExecutionFact` + durable control + evidence v6 + `ExecutionBudget` + `SideEffectReconciliationRecord.v1` + `bloge.sideEffectProtocol.v1`；下一步 effect-classification/egress conformance 与 disconnect/detach |
 | P1 | Deep Link | 当前不是 integration API | 前端 route + resolver API |
 | P1 | Health/Capability Probe | 已有协议/端点/feature flags；Round 13 增加动态身份 refresh state、成功/失败计数、active/revoked 数量和撤销传播 SLO | `/api/integration/capabilities` + identity authority SLO/alert/runbook |
-| P1 | Contract Test Suite 对齐 workbook | case kind 与 path/schema/error/governance assertion 已有，仍缺 ANEKE workbook 双向引用与门禁消费 | suite revision refs + workbook mapping |
+| P1 | Contract Test Suite 对齐 workbook | Round 17 已实现 deterministic/sanitized workbook seed、stable case/assertion ID、exact suite/evidence refs、gate v2 decision basis、required-check fail closed 和事务 event；残余是客户 ANEKE consumer conformance 与图级 suite/golden case 的统一投影 | correctness workbook v1 + governance gate result v2 |
 | P1 | UI 展示治理反馈 | gate result ingestion、freshness 和 Author panel 已实现 | 下一步把 dependency readiness/suite revision 变成可点击 gate issue |
 | P1 | Operator runtime readiness 元数据 | Round 15 已导出 library/binding/activation/suite readiness，SLA 仍无权威来源 | runtime readiness profile + SLA registry/observation |
 | P2 | Change Event/Webhook | transactional outbox、signed cursor 和 reconciliation 已实现；webhook 仍后置 | polling cursor 为正确性主链，signed webhook 仅作低延迟提示 |
@@ -937,7 +1022,7 @@ owner 处置、resource classification 对 clearance 的策略执行、break-gla
 | 维度 | 示例 | 变化原因 | 协商方式 |
 |---|---|---|---|
 | transport protocol | `ToolStudioResourceGatewayProtocol/1.2` | envelope、错误和协商机制变化 | capability probe + Accept header |
-| payload schema | `runEvidenceBundle.v6` | 领域字段和约束变化 | `payloadKind + payloadSchemaVersion`；capability 同时声明 v1/v2/v3/v4/v5/v6；机器合同见 `docs/schemas/tool-studio-resource-gateway/run-evidence-bundle-v6.schema.json` |
+| payload schema | `runEvidenceBundle.v7` / `payloadReplayBundle.v2` | 领域字段和约束变化 | capability 同时声明旧代际与 v7/v2；机器合同见 `run-evidence-bundle-v7.schema.json`、`payload-replay-bundle-v2.schema.json` 与 `payload-retention-view-v1.schema.json` |
 | producer implementation | `resource-gateway/2.8.1` | bug fix、性能和内部实现变化 | 信息字段，不作为兼容判断唯一依据 |
 | semantic profile | `ANEKE_CORRECTNESS_2026_1` | assertion、状态或治理解释变化 | capability profile + explicit opt-in |
 
@@ -1620,8 +1705,8 @@ contract runner，也没有外部 HA DB 的跨实例 snapshot fault injection �
 
 退出门槛：success/failure/timeout/partial/mock/fallback/unknown-commit 场景均可结构化解释；篡改可检出；run 成功但 evidence 不完整时 gate 不会误采纳。
 
-当前落地状态（Round 14）：标准 node/edge/graph facts、真实 retry/timeout/fallback events、关键输出聚合、
-sanitized payload、持久签名、fact coverage 和 quarantine 已实现；run intent、绝对 deadline、fenced cancel、
+当前落地状态（Round 16）：标准 node/edge/graph facts、真实 retry/timeout/fallback events、关键输出聚合、
+detached sanitized payload vault、持久签名、fact coverage 和 quarantine 已实现；run intent、绝对 deadline、fenced cancel、
 owner+operator 双条件终止确认、durable control、跨实例 cancel、owner lease/epoch、过期 quarantine、
 pre-run recovery reservation、evidence v6 automatic recovery，以及 deadline budget 对 OperatorContext、scheduler、
 retry/timeout、HTTP 和 remote worker 的传播也已落地。Round 11 又补齐 execution journal、receipt evidence、
@@ -1634,12 +1719,24 @@ Round 13 的动态 JWKS/撤销传播和身份权威 401/503 分流收紧了 evid
 签名 private key 的 KMS/HSM custody。Round 14 已补上 vendor-neutral managed-signing SPI、HTTP sidecar、non-exportable
 custody、key generation rotation/disable/revoke、签名本地反验和 capability；Stage 2 仍需客户真实 KMS/HSM、provider
 audit、跨地域 DR 和签名 SLO 认证，不能把本地 mock authority 当作环境晋级证据。
+Round 16 进一步把 payload 从不可变 run JSON 中剥离：v9 evidence 只签 descriptor/digest，vault 按版本化 policy
+选择性保留，clearance + required groups 控制读取，后台 sweep 与同步 read-path 都执行到期删除；legal hold、release、purge
+形成签名 hash chain，并用数据库 row lock/revision CAS 处理跨实例竞态。Stage 2 的 retention 代码病根已关闭，但外部
+HA DB、删除 backlog SLO、residency/subject-request 执行器与客户 policy engine conformance 仍需部署认证。
 
 ### Stage 3 - Safe replay 与 workbook 对齐（2-4 周）
 
 交付：recorded/shadow replay、side-effect policy、suite vNext、assertion mapping、replay lineage、deep link、gate result freshness。
 
 退出门槛：默认 replay 无外部副作用；所有示例 suite 可运行；旧 gate result 自动 stale；ANEKE workbook 可追溯到 evidenceId/runId/snapshot fingerprint。
+
+当前落地状态（Round 17）：recorded replay、parent lineage、四类 case、path/schema/error/governance assertion、
+`DENY + externalInvocationCount=0`、detached payload v2 已实现；两个数据库实例并发处理相同 replay request 时由
+确定性 runId/唯一键裁决并返回同一结果，请求键按 tenant/environment 隔离。`CorrectnessWorkbookBundle.v1` 已把 exact
+suite revision、脱敏 case/assertion 和 signed evidence refs 投影给 ANEKE；`GovernanceGateResult.v2` 的 decision basis
+会对 workbook source、snapshot、suite、evidence 和 required checks fail closed 校验，写入与 change event 同事务。
+Stage 3 仓库内主链已退出；部署侧仍需真实 ANEKE consumer conformance，shadow/live replay 仍明确关闭，不能把
+recorded replay 的通过等价为生产副作用路径已验证。
 
 ### Stage 4 - 持续同步和运维闭环（2-4 周）
 

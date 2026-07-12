@@ -1,0 +1,101 @@
+package com.leanowtech.bloge.gateway.integration;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualPayloadRedactionManifest;
+
+import org.junit.jupiter.api.Test;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class CorrectnessWorkbookProtocolSchemaTest {
+    private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+
+    @Test
+    void serializedWorkbookAndGateFieldsExactlyMatchMachineSchemas() throws Exception {
+        CorrectnessWorkbookBundle workbook = workbook();
+        GovernanceGateResult gate = gate(workbook);
+        JsonNode workbookSchema = schema("correctness-workbook-bundle-v1.schema.json");
+        JsonNode gateSchema = schema("governance-gate-result-v2.schema.json");
+
+        assertFields(mapper.valueToTree(workbook), workbookSchema.path("properties"));
+        assertFields(mapper.valueToTree(workbook.target()), workbookSchema.at("/$defs/target/properties"));
+        assertFields(mapper.valueToTree(workbook.manifest()), workbookSchema.at("/$defs/manifest/properties"));
+        assertThat(workbook.fingerprintVerified()).isTrue();
+
+        assertFields(mapper.valueToTree(gate), gateSchema.path("properties"));
+        assertFields(mapper.valueToTree(gate.target()), gateSchema.at("/$defs/target/properties"));
+        assertFields(mapper.valueToTree(gate.decisionBasis()), gateSchema.at("/$defs/basis/properties"));
+        assertFields(mapper.valueToTree(gate.decisionBasis().workbook()),
+                gateSchema.at("/$defs/workbook/properties"));
+        assertThat(gate.fingerprintVerified()).isTrue();
+    }
+
+    @Test
+    void capabilitiesAdvertiseWorkbookAndGateV2WithoutDroppingV1() {
+        IntegrationCapabilities capabilities = IntegrationCapabilities.current(
+                new InMemoryVisualEvidenceSigner().descriptor(),
+                IntegrationIdentityResolver.unavailable().descriptor(),
+                false, null);
+
+        assertThat(capabilities.supportedObjects().get("correctnessWorkbookBundle"))
+                .containsExactly(CorrectnessWorkbookBundle.SCHEMA_VERSION);
+        assertThat(capabilities.supportedObjects().get("governanceGateResult"))
+                .containsExactly(GovernanceGateResult.SCHEMA_VERSION_V1, GovernanceGateResult.SCHEMA_VERSION);
+        assertThat(capabilities.features()).containsEntry("correctnessWorkbookProjection", true)
+                .containsEntry("workbookEvidenceReferences", true);
+        assertThat(capabilities.endpoints()).contains(
+                new IntegrationCapabilities.Endpoint("GET",
+                        "/api/integration/drafts/{draftId}/correctness-workbook"));
+    }
+
+    private CorrectnessWorkbookBundle workbook() {
+        String fingerprint = sha("draft");
+        return new CorrectnessWorkbookBundle("",
+                new CorrectnessWorkbookBundle.Target("GRAPH_DRAFT", "draft-1", 3, fingerprint),
+                sha("snapshot"), List.of(), List.of(), VisualPayloadRedactionManifest.empty(), null);
+    }
+
+    private GovernanceGateResult gate(CorrectnessWorkbookBundle workbook) {
+        GovernanceGateResult.DecisionBasis basis = new GovernanceGateResult.DecisionBasis(
+                new GovernanceGateResult.WorkbookRef("workbook-1", 2, sha("workbook"),
+                        workbook.manifest().bundleFingerprint()), workbook.dependencySnapshotFingerprint(),
+                List.of(), List.of(),
+                new GovernanceGateResult.PolicyRef("gate-policy", "2", List.of("WORKBOOK")),
+                List.of(new GovernanceGateResult.Check("WORKBOOK", "PASSED", "verified", List.of())));
+        return new GovernanceGateResult("", "gate-1",
+                new GovernanceGateResult.Target("GRAPH_DRAFT", "draft-1", 3, sha("draft"),
+                        "tenant-a", "knowledge", "prod"), "PASSED", List.of(),
+                Instant.parse("2026-07-13T00:00:00Z"), null, "", basis);
+    }
+
+    private JsonNode schema(String name) throws Exception {
+        Path path = Path.of("..", "docs", "schemas", "tool-studio-resource-gateway", name);
+        if (!Files.exists(path)) {
+            path = Path.of("docs", "schemas", "tool-studio-resource-gateway", name);
+        }
+        return mapper.readTree(path.toFile());
+    }
+
+    private static void assertFields(JsonNode value, JsonNode schemaProperties) {
+        Set<String> actual = new HashSet<>();
+        value.fieldNames().forEachRemaining(actual::add);
+        Set<String> expected = new HashSet<>();
+        schemaProperties.fieldNames().forEachRemaining(expected::add);
+        assertThat(actual).isEqualTo(expected);
+    }
+
+    private static String sha(String value) {
+        return VisualBundleFingerprint.fromMaterial(Map.of("value", value));
+    }
+}
