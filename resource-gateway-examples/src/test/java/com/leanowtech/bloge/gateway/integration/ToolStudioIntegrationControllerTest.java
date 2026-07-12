@@ -5,9 +5,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.http.MediaType;
 
+import java.time.Instant;
+import java.util.Set;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class ToolStudioIntegrationControllerTest {
@@ -26,19 +30,20 @@ class ToolStudioIntegrationControllerTest {
     }
 
     @Test
-    void returnsStableProblemWhenRequiredIdentityContextIsMissing() throws Exception {
+    void rejectsSelfAssertedIdentityHeadersWithoutVerifiedCredential() throws Exception {
         MockMvc mvc = mvc(new ToolStudioIntegrationService(null, null, null, null));
 
-        mvc.perform(get("/api/integration/drafts/draft-1/export"))
-                .andExpect(status().isBadRequest())
+        mvc.perform(get("/api/integration/drafts/draft-1/export")
+                        .header("X-Tenant-Id", "tenant-a")
+                        .header("X-Organization-Id", "knowledge-governance")
+                        .header("X-Environment-Id", "prod")
+                        .header("X-Actor-Id", "aneke-sync")
+                        .header("X-Purpose", "GOVERNANCE_EVIDENCE_INGESTION"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("WWW-Authenticate", "Bearer realm=\"resource-gateway-integration\""))
                 .andExpect(jsonPath("$.schemaVersion").value(IntegrationProblem.SCHEMA_VERSION))
-                .andExpect(jsonPath("$.code").value("RG.INTEGRATION.CONTEXT_REQUIRED"))
-                .andExpect(jsonPath("$.retryable").value(false))
-                .andExpect(jsonPath("$.details.tenantId").value("required"))
-                .andExpect(jsonPath("$.details.organizationId").value("required"))
-                .andExpect(jsonPath("$.details.environmentId").value("required"))
-                .andExpect(jsonPath("$.details.actorId").value("required"))
-                .andExpect(jsonPath("$.details.purpose").value("required"));
+                .andExpect(jsonPath("$.code").value("RG.INTEGRATION.AUTHENTICATION_REQUIRED"))
+                .andExpect(jsonPath("$.retryable").value(false));
     }
 
     @Test
@@ -51,6 +56,7 @@ class ToolStudioIntegrationControllerTest {
                         .header("X-Environment-Id", "prod")
                         .header("X-Actor-Id", "aneke-sync")
                         .header("X-Purpose", "GOVERNANCE_EVIDENCE_INGESTION")
+                        .header("Authorization", "Bearer test-token")
                         .header("X-Correlation-Id", "corr-404"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RG.INTEGRATION.DRAFT_NOT_FOUND"))
@@ -73,14 +79,21 @@ class ToolStudioIntegrationControllerTest {
                         .header("X-Environment-Id", "prod")
                         .header("X-Actor-Id", "aneke-replay")
                         .header("X-Purpose", "GOVERNANCE_EVIDENCE_INGESTION")
+                        .header("Authorization", "Bearer test-token")
                         .header("X-Correlation-Id", "corr-purpose"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("RG.INTEGRATION.PURPOSE_NOT_ALLOWED"))
-                .andExpect(jsonPath("$.details.requiredPurpose").value("PAYLOAD_REPLAY"));
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("RG.INTEGRATION.PURPOSE_FORBIDDEN"))
+                .andExpect(jsonPath("$.details.operation").value("RECORDED_REPLAY"));
     }
 
     private static MockMvc mvc(ToolStudioIntegrationService service) {
-        return MockMvcBuilders.standaloneSetup(new ToolStudioIntegrationController(service))
+        IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity("test-aneke", "tenant-a",
+                "knowledge-governance", "tool-studio", "prod", "", "WORKLOAD", "aneke-sync", "",
+                Set.of("GOVERNANCE_EVIDENCE_INGESTION", "PAYLOAD_REPLAY", "CHANGE_SYNC"), Instant.MAX, true);
+        IntegrationRequestAuthenticator authenticator = new IntegrationRequestAuthenticator(
+                new StaticBearerIntegrationIdentityResolver("test-token", identity, false),
+                new RecordingIntegrationAccessAuditRepository());
+        return MockMvcBuilders.standaloneSetup(new ToolStudioIntegrationController(service, null, authenticator))
                 .setControllerAdvice(new IntegrationProblemHandler())
                 .build();
     }

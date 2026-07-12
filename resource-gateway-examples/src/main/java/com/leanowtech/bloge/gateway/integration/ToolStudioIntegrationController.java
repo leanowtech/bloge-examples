@@ -24,16 +24,24 @@ public class ToolStudioIntegrationController {
 
     private final ToolStudioIntegrationService service;
     private final IntegrationChangeFeedService changeFeedService;
+    private final IntegrationRequestAuthenticator authenticator;
 
-    public ToolStudioIntegrationController(ToolStudioIntegrationService service) {
-        this(service, null);
+    ToolStudioIntegrationController(ToolStudioIntegrationService service) {
+        this(service, null, null);
+    }
+
+    ToolStudioIntegrationController(ToolStudioIntegrationService service,
+                                    IntegrationChangeFeedService changeFeedService) {
+        this(service, changeFeedService, null);
     }
 
     @Autowired
     public ToolStudioIntegrationController(ToolStudioIntegrationService service,
-                                           IntegrationChangeFeedService changeFeedService) {
+                                           IntegrationChangeFeedService changeFeedService,
+                                           IntegrationRequestAuthenticator authenticator) {
         this.service = service;
         this.changeFeedService = changeFeedService;
+        this.authenticator = authenticator;
     }
 
     @GetMapping("/capabilities")
@@ -46,19 +54,19 @@ public class ToolStudioIntegrationController {
             @PathVariable String draftId,
             @RequestParam(defaultValue = "0") long revision,
             @RequestHeader HttpHeaders headers) {
-        return service.exportDraft(draftId, revision, requestContext(headers));
+        return service.exportDraft(draftId, revision, requestContext(headers, IntegrationOperation.DRAFT_EXPORT));
     }
 
     @GetMapping("/runs/{runId}/evidence")
     public IntegrationEnvelope<RunEvidenceBundle> runEvidence(@PathVariable String runId,
                                                               @RequestHeader HttpHeaders headers) {
-        return service.runEvidence(runId, requestContext(headers));
+        return service.runEvidence(runId, requestContext(headers, IntegrationOperation.RUN_EVIDENCE_READ));
     }
 
     @GetMapping("/runs/{runId}/replay")
     public IntegrationEnvelope<PayloadReplayBundle> replay(@PathVariable String runId,
                                                            @RequestHeader HttpHeaders headers) {
-        return service.replay(runId, requestContext(headers));
+        return service.replay(runId, requestContext(headers, IntegrationOperation.RECORDED_PAYLOAD_READ));
     }
 
     @PostMapping("/runs/{runId}/replay")
@@ -66,7 +74,8 @@ public class ToolStudioIntegrationController {
             @PathVariable String runId,
             @RequestBody ReplayExecutionRequest request,
             @RequestHeader HttpHeaders headers) {
-        return service.executeReplay(runId, request, requestContext(headers));
+        return service.executeReplay(runId, request,
+                requestContext(headers, IntegrationOperation.RECORDED_REPLAY));
     }
 
     @GetMapping("/evidence-keys/{keyId}")
@@ -78,13 +87,13 @@ public class ToolStudioIntegrationController {
     public IntegrationEnvelope<GovernanceGateResult> submitGateResult(
             @RequestBody GovernanceGateResult result,
             @RequestHeader HttpHeaders headers) {
-        return service.submitGateResult(result, requestContext(headers));
+        return service.submitGateResult(result, requestContext(headers, IntegrationOperation.GATE_RESULT_WRITE));
     }
 
     @GetMapping("/drafts/{draftId}/gate-result")
     public IntegrationEnvelope<GovernanceGateView> governanceGate(@PathVariable String draftId,
                                                                   @RequestHeader HttpHeaders headers) {
-        return service.governanceGate(draftId, requestContext(headers));
+        return service.governanceGate(draftId, requestContext(headers, IntegrationOperation.GATE_RESULT_READ));
     }
 
     @GetMapping("/events")
@@ -92,13 +101,14 @@ public class ToolStudioIntegrationController {
             @RequestParam(defaultValue = "") String cursor,
             @RequestParam(defaultValue = "100") int limit,
             @RequestHeader HttpHeaders headers) {
-        return requireChangeFeed().events(cursor, limit, requestContext(headers));
+        return requireChangeFeed().events(cursor, limit,
+                requestContext(headers, IntegrationOperation.CHANGE_SYNC));
     }
 
     @GetMapping("/reconciliation")
     public IntegrationEnvelope<IntegrationReconciliationSnapshot> reconciliation(
             @RequestHeader HttpHeaders headers) {
-        return requireChangeFeed().reconciliation(requestContext(headers));
+        return requireChangeFeed().reconciliation(requestContext(headers, IntegrationOperation.CHANGE_SYNC));
     }
 
     @GetMapping("/operator-libraries/{libraryId}")
@@ -106,7 +116,8 @@ public class ToolStudioIntegrationController {
             @PathVariable String libraryId,
             @RequestParam(defaultValue = "0") long revision,
             @RequestHeader HttpHeaders headers) {
-        return requireChangeFeed().operatorLibrary(libraryId, revision, requestContext(headers));
+        return requireChangeFeed().operatorLibrary(libraryId, revision,
+                requestContext(headers, IntegrationOperation.CHANGE_SYNC));
     }
 
     @GetMapping("/operator-test-suites/{suiteId}")
@@ -114,7 +125,8 @@ public class ToolStudioIntegrationController {
             @PathVariable String suiteId,
             @RequestParam(defaultValue = "0") long revision,
             @RequestHeader HttpHeaders headers) {
-        return requireChangeFeed().testSuite(suiteId, revision, requestContext(headers));
+        return requireChangeFeed().testSuite(suiteId, revision,
+                requestContext(headers, IntegrationOperation.CHANGE_SYNC));
     }
 
     private IntegrationChangeFeedService requireChangeFeed() {
@@ -124,7 +136,14 @@ public class ToolStudioIntegrationController {
         return changeFeedService;
     }
 
-    private static IntegrationRequestContext requestContext(HttpHeaders headers) {
+    private IntegrationRequestContext requestContext(HttpHeaders headers, IntegrationOperation operation) {
+        if (authenticator != null) {
+            return authenticator.authenticate(headers, operation);
+        }
+        return legacyRequestContext(headers);
+    }
+
+    private static IntegrationRequestContext legacyRequestContext(HttpHeaders headers) {
         String correlationId = header(headers, "X-Correlation-Id");
         if (correlationId.isBlank()) {
             correlationId = UUID.randomUUID().toString();

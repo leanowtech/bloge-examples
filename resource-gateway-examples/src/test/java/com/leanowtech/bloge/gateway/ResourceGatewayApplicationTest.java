@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway;
 import com.leanowtech.bloge.core.engine.GraphEngine;
 import com.leanowtech.bloge.gateway.gateway.GatewayProperties;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
+import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 
@@ -41,6 +43,9 @@ class ResourceGatewayApplicationTest {
 
     @Autowired
     private TestRestTemplate restTemplate;
+
+    @Autowired
+    private IntegrationAccessAuditRepository integrationAccessAudit;
 
     @LocalServerPort
     private int port;
@@ -142,6 +147,59 @@ class ResourceGatewayApplicationTest {
                 .containsEntry("resourceId", "user-service.getProfile");
         assertThat((Map<String, Object>) ((Map<String, Object>) execute.getBody().get("data")).get("payload"))
                 .containsEntry("name", "Alice");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void integrationSurfaceUsesVerifiedServerIdentityAndAuditsDenials() {
+        Map<String, Object> capabilities = restTemplate.getForObject("/api/integration/capabilities", Map.class);
+        Map<String, Object> capabilityPayload = (Map<String, Object>) capabilities.get("payload");
+        assertThat((Map<String, Object>) capabilityPayload.get("features"))
+                .containsEntry("trustedWorkloadIdentity", true)
+                .containsEntry("demoIdentityMode", true);
+        assertThat((Map<String, Object>) capabilityPayload.get("identityProvider"))
+                .containsEntry("providerType", "STATIC_BEARER_REGISTRY")
+                .containsEntry("claimsSource", "SERVER_REGISTRY");
+
+        HttpHeaders spoofed = integrationHeaders();
+        var missingCredential = restTemplate.exchange("/api/integration/reconciliation", HttpMethod.GET,
+                new HttpEntity<>(spoofed), Map.class);
+        assertThat(missingCredential.getStatusCode().value()).isEqualTo(401);
+        assertThat(missingCredential.getBody()).containsEntry(
+                "code", "RG.INTEGRATION.AUTHENTICATION_REQUIRED");
+
+        HttpHeaders authorized = integrationHeaders();
+        authorized.setBearerAuth("bloge-aneke-demo-token");
+        var allowed = restTemplate.exchange("/api/integration/reconciliation", HttpMethod.GET,
+                new HttpEntity<>(authorized), Map.class);
+        assertThat(allowed.getStatusCode().value()).isEqualTo(200);
+        assertThat((Map<String, Object>) allowed.getBody().get("payload"))
+                .containsEntry("tenantId", "tenant-a")
+                .containsEntry("environmentId", "prod");
+
+        authorized.set("X-Tenant-Id", "tenant-b");
+        var mismatched = restTemplate.exchange("/api/integration/reconciliation", HttpMethod.GET,
+                new HttpEntity<>(authorized), Map.class);
+        assertThat(mismatched.getStatusCode().value()).isEqualTo(403);
+        assertThat(mismatched.getBody()).containsEntry(
+                "code", "RG.INTEGRATION.IDENTITY_CLAIM_MISMATCH");
+
+        assertThat(integrationAccessAudit.recent(20))
+                .extracting(value -> value.outcome() + ":" + value.reasonCode())
+                .contains("DENIED:RG.INTEGRATION.AUTHENTICATION_REQUIRED",
+                        "ALLOWED:", "DENIED:RG.INTEGRATION.IDENTITY_CLAIM_MISMATCH");
+    }
+
+    private static HttpHeaders integrationHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Tenant-Id", "tenant-a");
+        headers.set("X-Organization-Id", "knowledge-governance");
+        headers.set("X-Project-Id", "tool-studio");
+        headers.set("X-Environment-Id", "prod");
+        headers.set("X-Actor-Id", "aneke-sync");
+        headers.set("X-Purpose", "CHANGE_SYNC");
+        headers.set("X-Correlation-Id", "startup-auth-proof");
+        return headers;
     }
 
     private static <T> T graphEngineField(GraphEngine graphEngine, String fieldName, Class<T> fieldType) {

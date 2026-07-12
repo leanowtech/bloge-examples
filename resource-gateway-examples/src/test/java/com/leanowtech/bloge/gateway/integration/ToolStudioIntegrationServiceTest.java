@@ -54,6 +54,8 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("transactionalOutbox", true)
                 .containsEntry("eventCursor", true)
                 .containsEntry("reconciliationSnapshot", true)
+                .containsEntry("trustedWorkloadIdentity", false)
+                .containsEntry("demoIdentityMode", false)
                 .containsEntry("webhook", false);
         assertThat(envelope.payload().endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())

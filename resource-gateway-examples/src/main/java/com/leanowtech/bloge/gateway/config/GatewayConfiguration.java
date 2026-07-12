@@ -15,9 +15,15 @@ import com.leanowtech.bloge.gateway.carrier.TenantMdcCarrier;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.interceptor.QuotaConfigProvider;
 import com.leanowtech.bloge.gateway.integration.DatabaseGovernanceGateResultRepository;
+import com.leanowtech.bloge.gateway.integration.DatabaseIntegrationAccessAuditRepository;
 import com.leanowtech.bloge.gateway.integration.DatabaseIntegrationChangeEventOutbox;
 import com.leanowtech.bloge.gateway.integration.GovernanceGateResultRepository;
+import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository;
 import com.leanowtech.bloge.gateway.integration.IntegrationChangeEventOutbox;
+import com.leanowtech.bloge.gateway.integration.IntegrationIdentityResolver;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
+import com.leanowtech.bloge.gateway.integration.IntegrationWorkloadIdentity;
+import com.leanowtech.bloge.gateway.integration.StaticBearerIntegrationIdentityResolver;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.operator.PayloadExtractor;
 import com.leanowtech.bloge.gateway.operator.ResponseValidator;
@@ -57,6 +63,7 @@ import com.leanowtech.bloge.operators.http.HttpRequestOperator;
 import com.leanowtech.bloge.spring.annotation.BlogeOperator;
 
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -64,7 +71,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -228,6 +237,51 @@ public class GatewayConfiguration {
     }
 
     // ── Persistence ─────────────────────────────────────────────────────
+
+    /** Credential-free append-only security audit for integration authentication decisions. */
+    @Bean
+    @ConditionalOnMissingBean
+    public IntegrationAccessAuditRepository integrationAccessAuditRepository(JdbcTemplate jdbc) {
+        return new DatabaseIntegrationAccessAuditRepository(jdbc);
+    }
+
+    /**
+     * Demo workload identity. Enterprise deployments replace this bean with an OIDC, mTLS or trusted-gateway
+     * resolver; disabling demo mode without a replacement makes protected integration endpoints fail closed.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public IntegrationIdentityResolver integrationIdentityResolver(
+            @Value("${gateway.integration.identity.demo-enabled:true}") boolean demoEnabled,
+            @Value("${gateway.integration.identity.demo-token:bloge-aneke-demo-token}") String token,
+            @Value("${gateway.integration.identity.identity-id:demo-aneke-workload}") String identityId,
+            @Value("${gateway.integration.identity.tenant-id:tenant-a}") String tenantId,
+            @Value("${gateway.integration.identity.organization-id:knowledge-governance}") String organizationId,
+            @Value("${gateway.integration.identity.project-id:tool-studio}") String projectId,
+            @Value("${gateway.integration.identity.environment-id:prod}") String environmentId,
+            @Value("${gateway.integration.identity.region:local}") String region,
+            @Value("${gateway.integration.identity.actor-id:aneke-sync}") String actorId,
+            @Value("${gateway.integration.identity.allowed-purposes:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC}") String allowedPurposes) {
+        if (!demoEnabled) {
+            return IntegrationIdentityResolver.unavailable();
+        }
+        Set<String> purposes = new LinkedHashSet<>();
+        Arrays.stream(allowedPurposes.split(",")).map(String::trim).filter(value -> !value.isBlank())
+                .forEach(purposes::add);
+        IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity(identityId, tenantId,
+                organizationId, projectId, environmentId, region, "WORKLOAD", actorId, "", purposes,
+                Instant.MAX, true);
+        return new StaticBearerIntegrationIdentityResolver(token, identity, true);
+    }
+
+    /** Central authentication and purpose-policy gate for all protected integration endpoints. */
+    @Bean
+    @ConditionalOnMissingBean
+    public IntegrationRequestAuthenticator integrationRequestAuthenticator(
+            IntegrationIdentityResolver resolver,
+            IntegrationAccessAuditRepository auditRepository) {
+        return new IntegrationRequestAuthenticator(resolver, auditRepository);
+    }
 
     /** Transactional source of integration change events. */
     @Bean

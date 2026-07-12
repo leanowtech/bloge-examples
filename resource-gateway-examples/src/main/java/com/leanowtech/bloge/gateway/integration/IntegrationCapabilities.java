@@ -15,6 +15,7 @@ public record IntegrationCapabilities(
         String protocolVersion,
         Map<String, List<String>> supportedObjects,
         Map<String, Boolean> features,
+        IntegrationIdentityResolver.Descriptor identityProvider,
         List<Endpoint> endpoints
 ) {
     public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.capabilities.v1";
@@ -26,6 +27,9 @@ public record IntegrationCapabilities(
                 ? ToolStudioResourceGatewayProtocol.VERSION : protocolVersion;
         supportedObjects = supportedObjects == null ? Map.of() : immutableLists(supportedObjects);
         features = features == null ? Map.of() : new LinkedHashMap<>(features);
+        identityProvider = identityProvider == null
+                ? IntegrationIdentityResolver.unavailable().descriptor()
+                : identityProvider;
         endpoints = endpoints == null ? List.of() : List.copyOf(endpoints);
     }
 
@@ -34,6 +38,11 @@ public record IntegrationCapabilities(
     }
 
     public static IntegrationCapabilities current(boolean evidenceSignature) {
+        return current(evidenceSignature, IntegrationIdentityResolver.unavailable().descriptor());
+    }
+
+    public static IntegrationCapabilities current(boolean evidenceSignature,
+                                                  IntegrationIdentityResolver.Descriptor identityProvider) {
         Map<String, List<String>> objects = new LinkedHashMap<>();
         objects.put("graphDraft", List.of(GraphDraft.SCHEMA_VERSION));
         objects.put("operatorLibrary", List.of("bloge.visualOperatorLibrary.v1"));
@@ -66,9 +75,11 @@ public record IntegrationCapabilities(
         features.put("transactionalOutbox", true);
         features.put("eventCursor", true);
         features.put("reconciliationSnapshot", true);
+        features.put("trustedWorkloadIdentity", identityProvider != null && identityProvider.available());
+        features.put("demoIdentityMode", identityProvider != null && identityProvider.demoMode());
         features.put("webhook", false);
 
-        return new IntegrationCapabilities("", "", "", objects, features, List.of(
+        return new IntegrationCapabilities("", "", "", objects, features, identityProvider, List.of(
                 new Endpoint("GET", "/api/integration/capabilities"),
                 new Endpoint("GET", "/api/integration/drafts/{draftId}/export"),
                 new Endpoint("GET", "/api/integration/runs/{runId}/evidence"),

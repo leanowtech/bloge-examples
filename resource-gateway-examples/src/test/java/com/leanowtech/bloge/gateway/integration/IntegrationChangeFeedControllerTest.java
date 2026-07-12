@@ -8,6 +8,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -68,7 +69,14 @@ class IntegrationChangeFeedControllerTest {
 
     private static MockMvc mvc(ToolStudioIntegrationService integration,
                                IntegrationChangeFeedService changes) {
-        return MockMvcBuilders.standaloneSetup(new ToolStudioIntegrationController(integration, changes))
+        IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity("test-aneke", "tenant-a",
+                "org-a", "project-a", "prod", "", "WORKLOAD", "aneke-sync", "", Set.of("CHANGE_SYNC"),
+                Instant.MAX, true);
+        IntegrationRequestAuthenticator authenticator = new IntegrationRequestAuthenticator(
+                new StaticBearerIntegrationIdentityResolver("test-token", identity, false),
+                new RecordingIntegrationAccessAuditRepository());
+        return MockMvcBuilders.standaloneSetup(
+                        new ToolStudioIntegrationController(integration, changes, authenticator))
                 .setControllerAdvice(new IntegrationProblemHandler())
                 .build();
     }
@@ -82,6 +90,7 @@ class IntegrationChangeFeedControllerTest {
         headers.add("X-Actor-Id", "aneke-sync");
         headers.add("X-Purpose", "CHANGE_SYNC");
         headers.add("X-Correlation-Id", "corr-controller");
+        headers.setBearerAuth("test-token");
         return headers;
     }
 }

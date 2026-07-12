@@ -45,6 +45,20 @@ gateway:
   base-url: http://localhost:${server.port}/demo-upstream
   # Automatically seed or refresh the built-in demo descriptors on startup.
   seed-descriptors: true
+  integration:
+    identity:
+      # Demo-only server-side workload registry. Set demo-enabled=false and provide an
+      # IntegrationIdentityResolver bean backed by enterprise OIDC, mTLS or a trusted gateway.
+      demo-enabled: ${RG_INTEGRATION_DEMO_IDENTITY_ENABLED:true}
+      demo-token: ${RG_INTEGRATION_DEMO_TOKEN:bloge-aneke-demo-token}
+      identity-id: ${RG_INTEGRATION_IDENTITY_ID:demo-aneke-workload}
+      tenant-id: ${RG_INTEGRATION_TENANT_ID:tenant-a}
+      organization-id: ${RG_INTEGRATION_ORGANIZATION_ID:knowledge-governance}
+      project-id: ${RG_INTEGRATION_PROJECT_ID:tool-studio}
+      environment-id: ${RG_INTEGRATION_ENVIRONMENT_ID:prod}
+      region: ${RG_INTEGRATION_REGION:local}
+      actor-id: ${RG_INTEGRATION_ACTOR_ID:aneke-sync}
+      allowed-purposes: ${RG_INTEGRATION_ALLOWED_PURPOSES:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC}
 
 # ── Logging ───────────────────────────────────────────────────────────────
 logging:

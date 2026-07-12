@@ -35,6 +35,22 @@ public record IntegrationProblem(
                 400, code, false, correlationId, details);
     }
 
+    public static IntegrationProblem unauthorized(String code,
+                                                   String title,
+                                                   String correlationId,
+                                                   Map<String, Object> details) {
+        return new IntegrationProblem("", "urn:bloge:problem:integration-authentication", title,
+                401, code, false, correlationId, details);
+    }
+
+    public static IntegrationProblem forbidden(String code,
+                                                String title,
+                                                String correlationId,
+                                                Map<String, Object> details) {
+        return new IntegrationProblem("", "urn:bloge:problem:integration-authorization", title,
+                403, code, false, correlationId, details);
+    }
+
     public static IntegrationProblem notFound(String code,
                                               String title,
                                               String correlationId,
@@ -57,5 +73,13 @@ public record IntegrationProblem(
                                           Map<String, Object> details) {
         return new IntegrationProblem("", "urn:bloge:problem:integration-resource-gone", title,
                 410, code, false, correlationId, details);
+    }
+
+    public static IntegrationProblem serviceUnavailable(String code,
+                                                         String title,
+                                                         String correlationId,
+                                                         Map<String, Object> details) {
+        return new IntegrationProblem("", "urn:bloge:problem:integration-service-unavailable", title,
+                503, code, true, correlationId, details);
     }
 }

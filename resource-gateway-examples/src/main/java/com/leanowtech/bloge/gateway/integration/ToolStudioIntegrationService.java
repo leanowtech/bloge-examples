@@ -39,6 +39,7 @@ public class ToolStudioIntegrationService {
     private final VisualGraphRunRepository runRepository;
     private final GovernanceGateResultRepository gateResultRepository;
     private final ReplayAssertionEvaluator replayAssertionEvaluator;
+    private final IntegrationIdentityResolver identityResolver;
 
     @Autowired
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -46,13 +47,27 @@ public class ToolStudioIntegrationService {
                                         VisualOperatorCatalog catalog,
                                         VisualGraphRunRepository runRepository,
                                         GovernanceGateResultRepository gateResultRepository,
-                                        ObjectMapper objectMapper) {
+                                        ObjectMapper objectMapper,
+                                        IntegrationIdentityResolver identityResolver) {
         this.draftRepository = draftRepository;
         this.validator = validator;
         this.catalog = catalog;
         this.runRepository = runRepository;
         this.gateResultRepository = gateResultRepository;
         this.replayAssertionEvaluator = new ReplayAssertionEvaluator(objectMapper);
+        this.identityResolver = identityResolver == null
+                ? IntegrationIdentityResolver.unavailable()
+                : identityResolver;
+    }
+
+    public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
+                                        GraphDraftValidator validator,
+                                        VisualOperatorCatalog catalog,
+                                        VisualGraphRunRepository runRepository,
+                                        GovernanceGateResultRepository gateResultRepository,
+                                        ObjectMapper objectMapper) {
+        this(draftRepository, validator, catalog, runRepository, gateResultRepository, objectMapper,
+                IntegrationIdentityResolver.unavailable());
     }
 
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -73,7 +88,8 @@ public class ToolStudioIntegrationService {
 
     public IntegrationEnvelope<IntegrationCapabilities> capabilities() {
         return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
-                IntegrationCapabilities.current(runRepository != null && runRepository.evidenceSigner().available()));
+                IntegrationCapabilities.current(runRepository != null && runRepository.evidenceSigner().available(),
+                        identityResolver.descriptor()));
     }
 
     public IntegrationEnvelope<GraphDraftIntegrationBundle> exportDraft(String draftId,

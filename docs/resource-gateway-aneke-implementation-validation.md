@@ -5,10 +5,10 @@
 | 属性 | 内容 |
 |---|---|
 | 设计基线 | `docs/resource-gateway-aneke-tool-studio-integration-evolution-plan.md` |
-| 当前实现基线 | Round 3（transactional outbox、opaque cursor、reconciliation） |
+| 当前实现基线 | Round 4（受信 workload identity、purpose policy、access audit） |
 | 评估日期 | 2026-07-12 |
 | 目标 | 加权实施差距 `<3%`，且不存在 P0 阻断项 |
-| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1461 tests，0 failures，0 errors，2 skipped |
+| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1471 tests，0 failures，0 errors，2 skipped |
 
 ## 1. 评分方法
 
@@ -93,6 +93,24 @@ Round 2 结论：`RPL-01` 的 recorded replay 根治验收已满足，差距降�
 
 Round 3 结论：在当前支持的资产模型内，`EVT-01` 的“事件不可静默丢失且可对账”根治验收已满足，差距从 `43.20%` 降至 `32.95%`。但这只是可靠 pull feed，不等于 webhook 产品化完成；`SEC-01` 与 `OPS-01` 仍是 P0，且企业部署仍缺少外部数据库、指标、保留和灾备证明。
 
+## 2.4 Round 4 重新审计
+
+本轮把身份信任根从客户端 header 移到服务端 credential resolver。Controller 在任何资源查询前验证 Bearer credential；resolver 只产出服务端 claims；operation、requested purpose 与 identity purpose allowlist 三者必须同时成立；旧身份 header 只作为一致性 hint，冲突立即拒绝。service/repository 的 tenant/environment predicate 保留为第二道防线，所有认证决定进入不含 credential 的 append-only audit。
+
+| 维度 | 权重 | 当前完成率 | 得分 | 本轮可证明增量 | 仍未证明 |
+|---|---:|---:|---:|---|---|
+| 协议、版本与身份边界 | 15 | 88% | 13.20 | Bearer trust boundary；可替换 resolver SPI；server-owned tenant/org/project/environment/actor；operation × purpose 双 allowlist；hint mismatch 403；401 Bearer challenge；capability 揭示 provider/demo mode；scope negative tests | 企业 OIDC/mTLS adapter 实联调、多 identity/group/clearance、delegation grant、rotation/revocation propagation、自动 N/N-1 matrix |
+| GraphDraft 依赖快照 | 10 | 60% | 6.00 | 无语义变化 | runtime binding refs、suite refs 写入 bundle、完整 readiness profile |
+| Run evidence 可信链 | 20 | 78% | 15.60 | evidence 读取现在先通过受信 identity 和 operation policy | 引擎内部 retry/fallback/cancel、KMS/HSM、retention lifecycle |
+| Payload replay | 15 | 80% | 12.00 | replay command 只能由允许 `PAYLOAD_REPLAY` 的受信 identity 发起，错误 purpose 在资源查询前拒绝 | shadow/live 审批与隔离、unknown commit、跨实例 exactly-once |
+| Timeout/partial failure 语义 | 10 | 45% | 4.50 | 无语义变化 | deadline/cancel/unknown commit、retry budget、fallback/skip 因果 |
+| Workbook、gate feedback 与 Deep Link | 10 | 70% | 7.00 | gate result write/read 分别绑定独立 operation-purpose policy | workbook ref 双向映射、coverage policy、owner/migration gate 完整闭环 |
+| Change event、cursor、webhook 与对账 | 10 | 80% | 8.00 | change feed/reconciliation/library/suite 统一只能使用 `CHANGE_SYNC` purpose，cursor scope 来自受信 claims | signed webhook、DLQ、投递重试、retention/compaction、乱序 fault harness |
+| 工业运行控制 | 10 | 32% | 3.20 | credential-free access audit 持久化/重启；allow/deny reason；demo/production provider capability；关闭 provider 后 fail closed | 企业 IAM/KMS、审计导出与 retention、SLO/metrics、quota、HA DB、DR 和容量演练 |
+| **合计** | **100** |  | **69.50** |  | **加权差距 30.50%** |
+
+Round 4 结论：客户端无法再通过伪造 `X-Tenant-Id` 建立 Integration 身份，`SEC-01` 的 header 自报病根已关闭；差距从 `32.95%` 降至 `30.50%`。但仓库默认 resolver 是明确标记 `demoMode=true` 的单 workload server registry，不能代替客户 IAM。真实 OIDC/mTLS、凭证轮换/撤销、组织委托和策略分发仍作为 `IAM-01` P0 保留。
+
 ## 3. 已通过的证明
 
 ### 3.1 协议与隔离
@@ -122,7 +140,7 @@ Round 3 结论：在当前支持的资产模型内，`EVT-01` 的“事件不可
 
 ```text
 mvn -f resource-gateway-examples/pom.xml clean verify
-Tests run: 1461, Failures: 0, Errors: 0, Skipped: 2
+Tests run: 1471, Failures: 0, Errors: 0, Skipped: 2
 BUILD SUCCESS
 ```
 
@@ -178,11 +196,44 @@ tenant-b reconciliation contains tenant-a draft = false
 
 边界说明：当前 cursor 内容经过签名并禁止客户端解释，但不是加密 token。Base64 解码后可看到 scope 和全局序列位置，因此仍存在跨租户活动量元数据侧信道；进入严格多租户部署前应改为加密 token 或服务端随机 cursor handle。
 
+### 3.6 受信身份与访问审计
+
+- Spring HTTP 入口使用 `IntegrationRequestAuthenticator`；缺失/无效 credential 返回 401 和标准 Bearer challenge，不能靠补齐 `X-Tenant-Id` 等 header 绕过。
+- `StaticBearerIntegrationIdentityResolver` 对 credential 做 SHA-256 后的常量时间比较，过期、停用或不匹配均不返回 identity；原始 token 不写数据库、不写 problem、不写 audit。
+- tenant、organization、project、environment、region、actor 和 delegatedBy 全部来自 resolver；客户端同名 header 可省略，存在且冲突时返回 403，但 problem 不回显受信值。
+- identity purpose allowlist 与 endpoint operation allowlist 都必须通过；`CHANGE_SYNC` 不能发起 replay，evidence ingestion 不能写 gate result。
+- `DatabaseIntegrationAccessAuditRepository` 追加 ALLOWED/DENIED 决定及 reason code，repository 重建后仍可读取；当前仍缺审计导出、保留、legal hold 和 SIEM 投递。
+- capability 显式返回 provider type、claims source、available 和 demo mode；关闭 demo 且没有替代 resolver 时受保护接口 fail closed。
+- 图源和 SVG 均通过 Draw.io 结构检查：`0 errors / 0 warnings / 0 crossings / 0 overlaps`，并完成 PNG 视觉检查。
+
+本轮聚焦证明：
+
+```text
+29 focused Java tests passed
+real Spring HTTP 401 / 200 / 403,
+server-owned claims, purpose escalation denial, claim-hint mismatch,
+expired/disabled/unavailable identity, credential-free audit restart,
+audit-store failure -> retryable 503 fail closed,
+controller/service capability contract
+```
+
+真实 jar HTTP 证明（端口 `18082`，验证后已停止）：
+
+```text
+GET capabilities -> provider=STATIC_BEARER_REGISTRY, claimsSource=SERVER_REGISTRY,
+                    trustedWorkloadIdentity=true, demoIdentityMode=true
+self-asserted identity headers without credential -> 401 + WWW-Authenticate: Bearer
+verified demo credential + CHANGE_SYNC -> 200, context tenant-a/prod
+verified credential + conflicting X-Tenant-Id=tenant-b -> 403 IDENTITY_CLAIM_MISMATCH
+verified credential + CHANGE_SYNC on run evidence -> 403 PURPOSE_FORBIDDEN
+invalid credential -> 401 AUTHENTICATION_FAILED + Bearer challenge
+```
+
 ## 4. 当前 P0 阻断项
 
 | ID | 阻断项 | 病根 | 根治验收 |
 |---|---|---|---|
-| `SEC-01` | header 身份可自报 | 示例尚无企业 IAM adapter 和 service-layer authorization policy | 受信 identity adapter + ABAC/purpose policy + repository predicate + audit negative tests |
+| `IAM-01` | 企业身份生命周期尚未证明 | header 自报已根治，但当前默认 provider 仍是单 workload demo registry | OIDC/mTLS 或 signed-gateway adapter + 多 identity/scope + delegation + rotation/revocation + policy/audit 联调演练 |
 | `OPS-01` | 本地签名 key 不满足企业 custody | private key 由本地 H2 demo provider 保存 | KMS/HSM-backed `VisualEvidenceSigner`、rotation/disable/revoke、审计和灾备演练 |
 
 `EVT-01` 已在 Round 3 对当前资产模型关闭。webhook、DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，但不再构成“事件丢失后无法对账”的 P0 病根。
@@ -195,5 +246,6 @@ tenant-b reconciliation contains tenant-a draft = false
 | 1 | 可信 evidence + gate/Deep Link 闭环 | evidence 可隔离/签名/离线验，作者可从 ANEKE 问题直达节点 | 53.25% | commit `1fd6b889` + frontend working tree、1439 Java tests、51 frontend tests、desktop/mobile browser |
 | 2 | recorded replay command | 新 replay run/evidence、parent lineage、四类 case、path/schema/error/governance 断言、零外部调用、幂等 | 43.20% | 1443 Java tests、132 frontend tests、H2 restart、signed replay evidence、desktop/mobile browser |
 | 3 | transactional outbox + cursor + reconciliation | 资产/事件原子提交、稳定分页、作用域签名 cursor、过期重建、不可变 revision ref、持续反熵 | 32.95% | 1461 Java tests、132 frontend tests、真实 jar HTTP 多租户闭环、Draw.io 0 errors/warnings |
+| 4 | trusted workload identity + purpose policy | 服务端 claims、operation/purpose 双 allowlist、hint conflict、401/403、credential-free audit、provider capability | 30.50% | 1471 Java tests、29 个聚焦 tests、真实 jar HTTP 401/200/403、identity Draw.io 0 errors/warnings |
 
 后续每轮必须更新本表、代码证据、失败测试和剩余阻断项。只有全部 P0 阻断关闭、全量验证与真实浏览器验证通过，并且按同一权重计算的差距 `<3%`，才允许把目标标记完成。

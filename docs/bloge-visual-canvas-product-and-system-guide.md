@@ -62,7 +62,70 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 topology-f
 3. **示例区压缩/隐藏**：默认态示例卡更紧凑，Focus 模式完全隐藏示例区，把垂直空间还给 React Flow。
 4. **主画布高度目标**：桌面真实浏览器回归要求标准态 author flow 至少 620px 高，Focus 态至少 760px 且比标准态多 100px 以上。
 
-### 3.1 从 ANEKE 治理问题直达画布
+### 3.1 调用 Integration API 前先建立受信身份
+
+`/api/integration/capabilities` 和 evidence 验签公钥是公开探针；其余 `/api/integration/*` 接口必须先验证 workload credential。`X-Tenant-Id`、`X-Organization-Id`、`X-Environment-Id` 和 `X-Actor-Id` 不再构成身份，只是迁移期一致性 hint：缺失不影响服务端 claims，填入值与受信 claims 冲突则返回 `403 RG.INTEGRATION.IDENTITY_CLAIM_MISMATCH`。
+
+![Resource Gateway Integration 受信身份与纵深授权](assets/resource-gateway-integration-trusted-identity.svg)
+
+图源文件：[`assets/drawio/resource-gateway-integration-trusted-identity.drawio`](assets/drawio/resource-gateway-integration-trusted-identity.drawio)
+
+本地演示默认启用一个**仅供 demo** 的 server-side identity registry：
+
+```text
+Bearer token: bloge-aneke-demo-token
+tenant:       tenant-a
+organization: knowledge-governance
+project:      tool-studio
+environment:  prod
+actor:        aneke-sync
+```
+
+因此最小同步请求是：
+
+```bash
+curl -sS 'http://localhost:8080/api/integration/reconciliation' \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: CHANGE_SYNC'
+```
+
+建议保留 matching hints，便于在代理迁移或配置漂移时 fail fast：
+
+```bash
+curl -sS 'http://localhost:8080/api/integration/reconciliation' \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Tenant-Id: tenant-a' \
+  -H 'X-Organization-Id: knowledge-governance' \
+  -H 'X-Project-Id: tool-studio' \
+  -H 'X-Environment-Id: prod' \
+  -H 'X-Actor-Id: aneke-sync' \
+  -H 'X-Purpose: CHANGE_SYNC' \
+  -H 'X-Correlation-Id: sync-0001'
+```
+
+服务端会执行两层 purpose allowlist：credential identity 必须允许该 purpose，目标 endpoint 也必须接受该 purpose。
+
+| operation | 允许的 purpose |
+| --- | --- |
+| draft export | `GOVERNANCE_EVIDENCE_INGESTION`、`CHANGE_SYNC` |
+| run evidence | `GOVERNANCE_EVIDENCE_INGESTION` |
+| recorded payload read | `GOVERNANCE_EVIDENCE_INGESTION`、`PAYLOAD_REPLAY` |
+| recorded assertion replay | `PAYLOAD_REPLAY` |
+| gate result write | `GOVERNANCE_GATE_FEEDBACK` |
+| gate result read | `GOVERNANCE_EVIDENCE_INGESTION`、`GOVERNANCE_GATE_FEEDBACK` |
+| events / reconciliation / library / suite | `CHANGE_SYNC` |
+
+每次允许或拒绝都会写入 `integration_access_audit`，记录 identity、tenant/environment、operation、purpose、outcome 和 reason code，不保存 Bearer token。认证在资源查询之前完成；service 和 repository 随后仍按 tenant/environment 做二次 scope predicate，避免只靠入口层。
+
+企业部署必须关闭公开 demo credential，并提供自己的 `IntegrationIdentityResolver` Bean：
+
+```bash
+export RG_INTEGRATION_DEMO_IDENTITY_ENABLED=false
+```
+
+推荐 resolver 对接 OIDC workload token、mTLS identity 或受信 gateway 签名 claims。关闭 demo 后若没有替代 resolver，所有受保护接口会 fail closed；capability 的 `identityProvider.available=false` 可用于部署探针。不要把 `RG_INTEGRATION_DEMO_TOKEN` 的默认值带到共享或生产环境；本地需要换值时可通过同名环境变量覆盖。
+
+### 3.2 从 ANEKE 治理问题直达画布
 
 ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服务端保存的草稿，自动布局并定位到具体节点或算子。作者不需要先打开 Author 首页再手工搜索草稿。
 
@@ -96,7 +159,7 @@ ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服
 
 治理反馈由 ANEKE 通过 `POST /api/integration/gate-results` 写入，并绑定不可变的 `draftId + revision + draftFingerprint`。同一个 `gateResultId` 重复提交相同内容是幂等成功，内容不同则返回冲突；画布只通过只读接口 `GET /api/visual/governance-gates/drafts/{draftId}` 消费结果。
 
-### 3.2 用 recorded replay 重算正确性断言
+### 3.3 用 recorded replay 重算正确性断言
 
 `GET /api/integration/runs/{runId}/replay` 只读取已脱敏的 recorded payload；`POST` 同一路径才是 replay command。command 不会重新运行 DSL，也不会调用任何 operator 或外部资源，而是基于父运行保存的 context、node input/output、terminal output 和 evidence 状态重算断言，并生成新的 replay run/evidence。
 
@@ -149,7 +212,7 @@ ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服
 
 当前 replay command 只支持 `RECORDED_ASSERTIONS + DENY`。`shadow/live` 重放仍未开放，因为它们需要独立的审批、隔离环境、幂等能力证明和 unknown-commit 处理，不能复用这个安全接口悄悄开启。
 
-### 3.3 让 ANEKE 持续同步且可对账
+### 3.4 让 ANEKE 持续同步且可对账
 
 Resource Gateway 现在不要求 ANEKE 依赖 webhook 才能持续治理。draft、operator library、run 和 operator contract test suite 的权威写入会在**同一个数据库事务**中追加 integration event；任一 Outbox 写入失败时，资产写入也会回滚，不会产生“资产已经存在、治理侧永远不知道”的静默裂缝。
 
@@ -171,6 +234,7 @@ ANEKE 侧按以下顺序接入：
 
 ```bash
 curl -sS 'http://localhost:8080/api/integration/events?limit=100' \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
   -H 'X-Tenant-Id: tenant-a' \
   -H 'X-Organization-Id: knowledge-governance' \
   -H 'X-Project-Id: tool-studio' \
@@ -184,6 +248,7 @@ curl -sS 'http://localhost:8080/api/integration/events?limit=100' \
 
 ```bash
 curl -sS 'http://localhost:8080/api/integration/reconciliation' \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
   -H 'X-Tenant-Id: tenant-a' \
   -H 'X-Organization-Id: knowledge-governance' \
   -H 'X-Project-Id: tool-studio' \
@@ -194,7 +259,7 @@ curl -sS 'http://localhost:8080/api/integration/reconciliation' \
 
 这里不承诺网络级 exactly-once。系统采用“生产端 transactional outbox + ANEKE 幂等消费 + opaque cursor + reconciliation”的可恢复最终一致性模型。Webhook 仍未开放；后续即使增加 webhook，它也只负责低延迟提醒，不能替代 cursor 和对账快照。
 
-### 3.4 演示脚本启动方式
+### 3.5 演示脚本启动方式
 
 推荐演示时直接使用仓库根目录下的专用脚本。它默认执行 `resource-gateway-examples` 的 `-Pfrontend package`，把 React UI 打进 Spring Boot 静态资源，然后在 `8080` 启动服务。为缩短演示准备时间，脚本默认给 Maven 打包加 `-DskipTests`；需要把测试也跑进去时使用 `--run-tests`。
 
@@ -235,7 +300,7 @@ Legacy composer: http://localhost:8080/examples/gateway
 
 脚本使用 `target/example-pids/visual-canvas-demo.pid` 记录进程，使用 `target/example-logs/visual-canvas-demo.log` 记录日志；停止时会校验 PID/端口上的进程确实像 Resource Gateway demo，避免误停其它服务。
 
-### 3.5 手动启动方式
+### 3.6 手动启动方式
 
 如果只运行后端 API 或旧版静态资源：
 
@@ -269,7 +334,7 @@ npm run dev
 
 当前 Vite dev proxy 只代理 `/api` 到 Spring Boot。算子库导入使用 `/admin/visual-operator-libraries/*`，所以完整体验建议优先使用 Maven 打包后的 `/author/`。
 
-### 3.6 VSCode 插件轻量化方向
+### 3.7 VSCode 插件轻量化方向
 
 如果用户只是想在业务仓库里看懂 `.bloge` 拓扑、导入本地算子 schema、配置 mock 数据并跑表格测试，每次都启动 Resource Gateway 服务端会显得偏重。后续推荐把 `/author/` 的核心能力下沉成 VSCode 插件入口：
 
@@ -1229,6 +1294,8 @@ resource gateway 自身继续保留：
 
 ## 9. 主要 API 速查
 
+除 `GET /api/integration/capabilities` 和 evidence verification key 外，integration API 均要求 `Authorization: Bearer ...` 和与 operation 匹配的 `X-Purpose`。租户、组织、环境和 actor 以 resolver 返回的服务端 claims 为准。
+
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | `GET` | `/api/visual/operators` | 加载 operator catalog |
@@ -1307,6 +1374,10 @@ resource gateway 自身继续保留：
 **ANEKE event cursor 返回 400 或 410。**
 
 `400 RG.INTEGRATION.CURSOR_INVALID` 表示 token 被修改、格式损坏，或被拿到另一个 tenant/environment 使用；不要重试或尝试解析内部位置。`410 RG.INTEGRATION.CURSOR_EXPIRED` 表示离线时间超过 cursor 有效期，调用 `/api/integration/reconciliation` 重建 projection，并从返回的 `checkpointCursor` 恢复增量同步。
+
+**Integration API 返回 401 或 403。**
+
+`401 AUTHENTICATION_REQUIRED/AUTHENTICATION_FAILED` 表示没有 Bearer credential，或 credential 不在受信 resolver 中、已停用/过期。`403 PURPOSE_FORBIDDEN` 表示 identity 或 endpoint 不允许该 `X-Purpose`；`403 IDENTITY_CLAIM_MISMATCH` 表示请求仍携带了与服务端 claims 冲突的旧身份 header。先查看 `/api/integration/capabilities` 的 `identityProvider`，再检查本地 `RG_INTEGRATION_DEMO_TOKEN` 或企业 OIDC/mTLS adapter 配置，不要通过修改 `X-Tenant-Id` 绕过。
 
 **事件处理成功，但 ANEKE 重启后又收到同一事件。**
 
