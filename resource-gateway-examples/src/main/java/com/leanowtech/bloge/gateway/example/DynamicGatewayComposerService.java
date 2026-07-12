@@ -21,6 +21,7 @@ import com.leanowtech.bloge.dsl.compiler.GraphLoader;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -61,13 +62,23 @@ public class DynamicGatewayComposerService {
         this(registry, objectMapper, new InMemoryDynamicRunControlRepository());
     }
 
-    /** Creates the Spring service with a durable controlled-run repository. */
-    @Autowired
+    /** Creates the service with the default evidence-finalization reserve. */
     public DynamicGatewayComposerService(OperatorRegistry registry,
                                          ObjectMapper objectMapper,
                                          DynamicRunControlRepository runControlRepository) {
+        this(registry, objectMapper, runControlRepository, 100);
+    }
+
+    /** Creates the Spring service with durable control and a configurable finalization reserve. */
+    @Autowired
+    public DynamicGatewayComposerService(OperatorRegistry registry,
+                                         ObjectMapper objectMapper,
+                                         DynamicRunControlRepository runControlRepository,
+                                         @Value("${resource-gateway.run-control.finalization-reserve-ms:100}")
+                                         long finalizationReserveMs) {
         this.executionCapture = new NodeExecutionCaptureInterceptor();
-        this.runControls = new DynamicRunControlManager(runControlRepository);
+        this.runControls = new DynamicRunControlManager(runControlRepository,
+                Duration.ofMillis(finalizationReserveMs));
         this.graphEngine = GraphEngine.builder()
                 .registry(InputCoercingOperatorRegistry.wrap(registry, objectMapper))
                 .interceptors(List.of(runControls, executionCapture))

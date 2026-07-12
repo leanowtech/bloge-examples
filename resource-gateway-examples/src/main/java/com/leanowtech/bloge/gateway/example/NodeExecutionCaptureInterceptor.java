@@ -17,6 +17,7 @@ import com.leanowtech.bloge.core.spi.OperatorInvocation;
 import com.leanowtech.bloge.core.spi.event.NodeEvent.NodeCompleteEvent;
 import com.leanowtech.bloge.core.spi.event.NodeEvent.NodeFailedEvent;
 import com.leanowtech.bloge.core.spi.event.NodeEvent.NodeStartEvent;
+import com.leanowtech.bloge.core.spi.event.NodeEvent.NodeSkippedEvent;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -89,6 +90,12 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
     }
 
     @Override
+    public void onNodeSkipped(NodeSkippedEvent event) {
+        stateForNode(event.graphName(), event.nodeId())
+                .ifPresent(state -> state.skipped(event.nodeId(), event.reason()));
+    }
+
+    @Override
     public void onNodeRetry(String graphName, String nodeId, int attempt, Exception lastError, OperatorContext ctx) {
         state(ctx).ifPresent(state -> state.retry(nodeId, attempt, lastError));
     }
@@ -119,6 +126,19 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
         }
         List<CaptureState> candidates = captures.values().stream()
                 .filter(state -> state.matchesActive(graphName, nodeId))
+                .toList();
+        if (candidates.size() == 1) {
+            return java.util.Optional.of(candidates.getFirst());
+        }
+        if (candidates.size() > 1) {
+            candidates.forEach(state -> state.markCorrelationAmbiguous(nodeId));
+        }
+        return java.util.Optional.empty();
+    }
+
+    private java.util.Optional<CaptureState> stateForNode(String graphName, String nodeId) {
+        List<CaptureState> candidates = captures.values().stream()
+                .filter(state -> state.matchesNode(graphName, nodeId))
                 .toList();
         if (candidates.size() == 1) {
             return java.util.Optional.of(candidates.getFirst());
@@ -196,6 +216,14 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
             fact.lastErrorType = type(error);
         }
 
+        private void skipped(String nodeId, String reason) {
+            MutableNodeFact fact = fact(nodeId, null);
+            fact.skipReason = reason == null ? "" : reason;
+            if (fact.skipReason.contains("deadline budget exhausted")) {
+                fact.event("DEADLINE_EXHAUSTED", 0, null);
+            }
+        }
+
         private void retry(String nodeId, int attempt, Exception error) {
             MutableNodeFact fact = fact(nodeId, null);
             fact.observedAttempts = Math.max(fact.observedAttempts, Math.max(1, attempt));
@@ -238,6 +266,11 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
             }
             MutableNodeFact fact = facts.get(nodeId);
             return fact != null && fact.active();
+        }
+
+        private boolean matchesNode(String graphName, String nodeId) {
+            return graph != null && graphName != null && graph.name().equals(graphName)
+                    && graph.nodes().containsKey(nodeId);
         }
 
         private void markCorrelationAmbiguous(String nodeId) {
@@ -320,6 +353,7 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
         private boolean failed;
         private boolean terminal;
         private boolean correlationAmbiguous;
+        private String skipReason = "";
         private int eventSequence;
         private final List<DynamicGraphRunResponse.Event> events = new ArrayList<>();
 
@@ -375,8 +409,9 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
                 }
                 case "CANCELLED" -> {
                     status = "CANCELLED";
-                    reason = "UPSTREAM_FAILED";
-                    source = "TOPOLOGY_DERIVATION";
+                    boolean deadlineExhausted = skipReason.contains("deadline budget exhausted");
+                    reason = deadlineExhausted ? "DEADLINE_EXHAUSTED" : "UPSTREAM_FAILED";
+                    source = deadlineExhausted ? "ENGINE_ADMISSION" : "TOPOLOGY_DERIVATION";
                 }
                 case "SUSPENDED" -> {
                     status = "PARTIAL";

@@ -145,7 +145,11 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
         }
 
         // 5. Pick timeout
-        Duration timeout = input.timeoutOverride() != null ? input.timeoutOverride() : descriptor.defaultTimeout();
+        Duration requestedTimeout = input.timeoutOverride() != null
+                ? input.timeoutOverride()
+                : descriptor.defaultTimeout();
+        Duration timeout = ctx.capTimeout(requestedTimeout,
+                "resource call '" + input.resourceId() + "'");
 
         // 6. Pick auth: per-call override takes precedence over descriptor default
         var auth = input.authOverride() != null ? input.authOverride() : descriptor.authStrategy();

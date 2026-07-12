@@ -72,6 +72,11 @@ public record IntegrationCapabilities(
         features.put("runEvidenceBundle", true);
         features.put("structuredExecutionFacts", true);
         features.put("graphDeadline", true);
+        features.put("operatorContextDeadlineBudget", true);
+        features.put("deadlineAdmissionControl", true);
+        features.put("retryBudgetEnforcement", true);
+        features.put("httpRemainingBudget", true);
+        features.put("remoteWorkerDeadlineBudget", true);
         features.put("userRunCancellation", true);
         features.put("runTerminationConfirmation", true);
         features.put("hardRunTermination", false);

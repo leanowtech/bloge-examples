@@ -19,6 +19,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.time.Duration;
 import java.time.Instant;
 
@@ -177,7 +178,7 @@ class DynamicGatewayComposerServiceTest {
 
         DynamicGraphRunResponse response = controlled.run(new DynamicGraphRunRequest(simpleNodeDsl(),
                 Map.of("value", "request"), "work",
-                new DynamicRunIntent("", "deadline-run", Instant.now().plusMillis(100), "fence-deadline", 1_000)));
+                new DynamicRunIntent("", "deadline-run", Instant.now().plusMillis(300), "fence-deadline", 1_000)));
 
         assertThat(started.getCount()).isZero();
         assertThat(response.success()).isFalse();
@@ -186,6 +187,64 @@ class DynamicGatewayComposerServiceTest {
         assertThat(response.runControl().terminationConfirmed()).isTrue();
         assertThat(response.runControl().sideEffectsMayBeInFlight()).isFalse();
         assertThat(response.runControl().engineExecutionId()).isNotBlank();
+    }
+
+    @Test
+    void propagatesDeadlineAndFinalizationReserveIntoOperatorContext() {
+        AtomicReference<Duration> observedBudget = new AtomicReference<>();
+        AtomicReference<Instant> observedDeadline = new AtomicReference<>();
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("budgetProbe",
+                (com.leanowtech.bloge.core.operator.Operator<Object, Object>) (input, ctx) -> {
+                    observedBudget.set(ctx.remainingBudget().orElseThrow());
+                    observedDeadline.set(ctx.deadlineAt().orElseThrow());
+                    return input;
+                });
+        DynamicGatewayComposerService controlled = new DynamicGatewayComposerService(
+                registry, new ObjectMapper(), new InMemoryDynamicRunControlRepository(), 100);
+        Instant deadline = Instant.now().plusSeconds(2);
+
+        DynamicGraphRunResponse response = controlled.run(new DynamicGraphRunRequest("""
+                graph budgetGraph {
+                  node work : budgetProbe { input { value = ctx.value } }
+                }
+                """, Map.of("value", "request"), "work",
+                new DynamicRunIntent("", "budget-run", deadline, "fence-budget", 1_000)));
+
+        assertThat(response.success()).isTrue();
+        assertThat(observedDeadline.get()).isEqualTo(deadline);
+        assertThat(observedBudget.get()).isPositive().isLessThanOrEqualTo(Duration.ofMillis(1_900));
+    }
+
+    @Test
+    void exhaustedDeadlineIsCapturedAsEngineAdmissionFactWithoutInvokingOperator() {
+        AtomicInteger invocations = new AtomicInteger();
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("budgetProbe",
+                (com.leanowtech.bloge.core.operator.Operator<Object, Object>) (input, ctx) -> {
+                    invocations.incrementAndGet();
+                    return input;
+                });
+        DynamicGatewayComposerService controlled = new DynamicGatewayComposerService(
+                registry, new ObjectMapper(), new InMemoryDynamicRunControlRepository(), 2_000);
+
+        DynamicGraphRunResponse response = controlled.run(new DynamicGraphRunRequest("""
+                graph expiredBudgetGraph {
+                  node work : budgetProbe { input { value = ctx.value } }
+                }
+                """, Map.of("value", "request"), "work",
+                new DynamicRunIntent("", "expired-budget-run", Instant.now().plusSeconds(1),
+                        "fence-expired-budget", 1_000)));
+
+        assertThat(response.success()).isFalse();
+        assertThat(invocations).hasValue(0);
+        assertThat(response.nodeExecutionFacts().get("work")).satisfies(fact -> {
+            assertThat(fact.status()).isEqualTo("CANCELLED");
+            assertThat(fact.reasonCode()).isEqualTo("DEADLINE_EXHAUSTED");
+            assertThat(fact.observationSource()).isEqualTo("ENGINE_ADMISSION");
+            assertThat(fact.events()).extracting(DynamicGraphRunResponse.Event::type)
+                    .containsExactly("DEADLINE_EXHAUSTED");
+        });
     }
 
     @Test

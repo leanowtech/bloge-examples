@@ -3,6 +3,8 @@ package com.leanowtech.bloge.gateway.operator;
 import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.context.TenantContext;
 import com.leanowtech.bloge.core.operator.OperatorContext;
+import com.leanowtech.bloge.core.operator.ExecutionBudget;
+import com.leanowtech.bloge.core.spi.TimeSource;
 import com.leanowtech.bloge.gateway.exception.ResourceCallException;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.resource.ParameterMapping;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -318,6 +321,26 @@ class HttpResourceOperatorTest {
         assertThat(httpStub.lastTimeout()).isEqualTo(Duration.ofSeconds(2));
     }
 
+    @Test
+    @DisplayName("graph remaining budget caps descriptor and per-call timeout")
+    void remainingGraphBudgetCapsResourceTimeout() throws Exception {
+        registry.put(new ResourceDescriptor(
+                "timeout.svc", "https://api.example.com/test", "GET",
+                Map.of(), null, Duration.ofSeconds(30),
+                null, new ResponseProtocol.HttpStatus(), null
+        ));
+        httpStub.setResponse(new HttpResponseOutput(200, Map.of(), "{}", Duration.ofMillis(10)));
+        Instant now = Instant.parse("2026-01-01T00:00:00Z");
+        var graphContext = new GraphContext(new TenantContext("tenant-A", "ns-1"));
+        graphContext.bindExecutionBudget(ExecutionBudget.until(now.plusSeconds(5), Duration.ofSeconds(1)));
+        var context = new OperatorContext("testNode", "testGraph", graphContext, 0, "exec-budget",
+                new FixedTimeSource(now));
+
+        operator.execute(new HttpResourceInput("timeout.svc", Map.of(), Map.of(), Duration.ofSeconds(20)), context);
+
+        assertThat(httpStub.lastTimeout()).isEqualTo(Duration.ofSeconds(4));
+    }
+
     // ── Auth override precedence ────────────────────────────────────────
 
     @Test
@@ -524,5 +547,11 @@ class HttpResourceOperatorTest {
 
         @Override
         public Collection<ResourceDescriptor> all() { return map.values(); }
+    }
+
+    private record FixedTimeSource(Instant now) implements TimeSource {
+        @Override
+        public void sleep(Duration duration) {
+        }
     }
 }

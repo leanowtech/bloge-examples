@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.example;
 import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.engine.GraphResult;
 import com.leanowtech.bloge.core.model.ReservedKeys;
+import com.leanowtech.bloge.core.operator.ExecutionBudget;
 import com.leanowtech.bloge.core.spi.OperatorInterceptor;
 import com.leanowtech.bloge.core.spi.OperatorInvocation;
 
@@ -27,22 +28,38 @@ final class DynamicRunControlManager implements OperatorInterceptor {
     static final String REQUEST_ID_CONTEXT_KEY = "_resourceGatewayRunRequestId";
     private static final Duration TERMINAL_RETENTION = Duration.ofHours(1);
     private static final Duration OWNER_LEASE = Duration.ofSeconds(5);
+    private static final Duration DEFAULT_FINALIZATION_RESERVE = Duration.ofMillis(100);
 
     private final ConcurrentHashMap<String, ActiveRun> runs = new ConcurrentHashMap<>();
     private final DynamicRunControlRepository repository;
     private final String ownerId;
+    private final Duration finalizationReserve;
 
     DynamicRunControlManager() {
-        this(new InMemoryDynamicRunControlRepository());
+        this(new InMemoryDynamicRunControlRepository(), DEFAULT_FINALIZATION_RESERVE);
     }
 
     DynamicRunControlManager(DynamicRunControlRepository repository) {
-        this(repository, UUID.randomUUID().toString());
+        this(repository, DEFAULT_FINALIZATION_RESERVE);
+    }
+
+    DynamicRunControlManager(DynamicRunControlRepository repository, Duration finalizationReserve) {
+        this(repository, UUID.randomUUID().toString(), finalizationReserve);
     }
 
     DynamicRunControlManager(DynamicRunControlRepository repository, String ownerId) {
+        this(repository, ownerId, DEFAULT_FINALIZATION_RESERVE);
+    }
+
+    DynamicRunControlManager(DynamicRunControlRepository repository,
+                             String ownerId,
+                             Duration finalizationReserve) {
         this.repository = repository == null ? new InMemoryDynamicRunControlRepository() : repository;
         this.ownerId = ownerId == null || ownerId.isBlank() ? UUID.randomUUID().toString() : ownerId;
+        this.finalizationReserve = finalizationReserve == null ? DEFAULT_FINALIZATION_RESERVE : finalizationReserve;
+        if (this.finalizationReserve.isNegative()) {
+            throw new IllegalArgumentException("finalizationReserve must not be negative");
+        }
     }
 
     Registration begin(DynamicRunIntent intent) {
@@ -80,6 +97,10 @@ final class DynamicRunControlManager implements OperatorInterceptor {
         registration.run().attach(owner);
         if (context != null) {
             context.put(REQUEST_ID_CONTEXT_KEY, registration.run().intent.requestId());
+            if (registration.run().intent.deadlineAt() != null) {
+                context.bindExecutionBudget(ExecutionBudget.until(
+                        registration.run().intent.deadlineAt(), finalizationReserve));
+            }
         }
     }
 
