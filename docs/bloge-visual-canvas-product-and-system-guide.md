@@ -263,7 +263,65 @@ ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服
 
 当前 replay command 只支持 `RECORDED_ASSERTIONS + DENY`。`shadow/live` 重放仍未开放，因为它们需要独立的审批、隔离环境、幂等能力证明和 unknown-commit 处理，不能复用这个安全接口悄悄开启。
 
-### 3.4 让 ANEKE 持续同步且可对账
+### 3.4 读取 timeout、fallback 与 partial failure 证据
+
+画布点击 **Run** 后，系统不再只保存一个最终 `SUCCESS/FAILED`。BLOGE 的 node lifecycle 与
+`ResilienceListener` 会在同一个 run capture 中记录 retry、timeout 和 fallback 事件；Resource Gateway
+再结合不可变拓扑解释 skip/cancel 的因果关系，最后写入 `VisualGraphRunRecord.v5` 并导出
+`runEvidenceBundle.v3`。
+
+![Resource Gateway 运行失败事实链](assets/resource-gateway-run-failure-semantics.svg)
+
+图源：[resource-gateway-run-failure-semantics.drawio](assets/drawio/resource-gateway-run-failure-semantics.drawio)。
+
+作者和 ANEKE 都按以下步骤查看：
+
+1. 在画布运行图，记下响应中的 `runId`；也可通过 `/author/?runId=<runId>` 回到对应运行上下文。
+2. 用具备 `GOVERNANCE_EVIDENCE_INGESTION` purpose 的 workload token 调用
+   `GET /api/integration/runs/{runId}/evidence`。
+3. 先检查 `manifest.evidenceStatus` 和 `signatureStatus`。只有 `READY + VERIFIED` 才表示当前 bundle
+   结构完整且签名可信；`QUARANTINED` 必须先处理 `manifest.gaps`，不能进入发布门禁的通过证据集。
+4. 再检查 `execution.criticalOutputReached`。失败 run 中，只有关键输出已经产生且同时存在其他失败时，
+   图级状态才是 `PARTIAL`；关键输出自身超时则是 `TIMEOUT`，不会因为某个上游成功而误判为 `PARTIAL`。
+5. 对每个节点读取 `reasonCode`、`observationSource`、`retry`、`timeout`、`fallback`、
+   `causedByNodeIds` 和 `sideEffectOutcome`；对每条边读取 `propagated`，不要只看颜色或最终状态。
+
+典型节点语义如下：
+
+| 场景 | `status` | `reasonCode` | 事实来源 |
+|---|---|---|---|
+| 正常完成 | `SUCCESS` | `NONE` | `ENGINE_STATUS` |
+| 重试耗尽后 fallback 返回 | `FALLBACK` | `FALLBACK_SUCCEEDED` | `ENGINE_RESILIENCE_EVENT`；retry 仍标记 `exhausted=true` |
+| 节点实际超时 | `TIMEOUT` | `NODE_TIMEOUT` | BLOGE timeout event，不解析错误文本 |
+| 条件分支未命中 | `SKIPPED` | `BRANCH_NOT_TAKEN` | `TOPOLOGY_DERIVATION` |
+| 上游失败导致未执行 | `CANCELLED` | `UPSTREAM_FAILED` | `TOPOLOGY_DERIVATION`，`causedByNodeIds` 指向上游 |
+| 同名图并发导致旧 listener 无法唯一关联 | 保留引擎最终状态 | `RESILIENCE_EVENT_CORRELATION_AMBIGUOUS` | `ENGINE_STATUS_WITH_EVENT_GAP`，evidence 隔离 |
+
+边的 `status` 表示**传播事实**，不是目标节点的执行结果。例如 A 成功把值传给 B，随后 B 超时：
+A→B 的边仍为 `SUCCESS + propagated=true + VALUE_PROPAGATED`，B 才是 `TIMEOUT`。若 A 超时导致 B
+未执行，边为 `CANCELLED + propagated=false + UPSTREAM_FAILURE_PROPAGATED`，且没有虚构的 edge payload ref。
+
+`sideEffectOutcome=UNKNOWN_COMMIT` 不是失败，而是诚实的不确定性：当前 BLOGE operator 合同没有提供外部
+事务 commit receipt 时，Resource Gateway 不能从“抛异常/超时”反推出远端是否已经提交。ANEKE 应结合
+operator 的 effect/idempotency、业务补偿能力和门禁策略决定是否接受；不要把 `UNKNOWN_COMMIT` 当作
+`NOT_COMMITTED`。
+
+能力探针会明确返回：
+
+| capability | 当前值 | 含义 |
+|---|---:|---|
+| `structuredExecutionFacts` | `true` | node/edge/graph 标准事实已实现 |
+| `graphDeadline` | `false` | 尚无图级 deadline command 与预算传播 |
+| `userRunCancellation` | `false` | 尚无用户 cancel API、fencing 与终止确认 |
+| `sideEffectCommitConfirmation` | `false` | 尚无 operator commit receipt/unknown-commit 消解协议 |
+
+旧 `runEvidenceBundle.v1/v2` 仍在 capability 的兼容列表中；新 consumer 应优先协商 v3。旧 run 若没有
+每个节点的结构化 execution fact，会得到
+`Structured execution semantics were not captured for every node.` gap 并被隔离，而不是由服务端静默猜测。
+ANEKE 可直接使用 [run-evidence-bundle-v3.schema.json](schemas/tool-studio-resource-gateway/run-evidence-bundle-v3.schema.json)
+做 producer/consumer contract 校验，不需要解析 Resource Gateway 内部 Java DTO。
+
+### 3.5 让 ANEKE 持续同步且可对账
 
 Resource Gateway 现在不要求 ANEKE 依赖 webhook 才能持续治理。draft、operator library、run 和 operator contract test suite 的权威写入会在**同一个数据库事务**中追加 integration event；任一 Outbox 写入失败时，资产写入也会回滚，不会产生“资产已经存在、治理侧永远不知道”的静默裂缝。
 
@@ -310,7 +368,7 @@ curl -sS 'http://localhost:8080/api/integration/reconciliation' \
 
 这里不承诺网络级 exactly-once。系统采用“生产端 transactional outbox + ANEKE 幂等消费 + opaque cursor + reconciliation”的可恢复最终一致性模型。Webhook 仍未开放；后续即使增加 webhook，它也只负责低延迟提醒，不能替代 cursor 和对账快照。
 
-### 3.5 演示脚本启动方式
+### 3.6 演示脚本启动方式
 
 推荐演示时直接使用仓库根目录下的专用脚本。它默认执行 `resource-gateway-examples` 的 `-Pfrontend package`，把 React UI 打进 Spring Boot 静态资源，然后在 `8080` 启动服务。为缩短演示准备时间，脚本默认给 Maven 打包加 `-DskipTests`；需要把测试也跑进去时使用 `--run-tests`。
 
@@ -351,7 +409,7 @@ Legacy composer: http://localhost:8080/examples/gateway
 
 脚本使用 `target/example-pids/visual-canvas-demo.pid` 记录进程，使用 `target/example-logs/visual-canvas-demo.log` 记录日志；停止时会校验 PID/端口上的进程确实像 Resource Gateway demo，避免误停其它服务。
 
-### 3.6 手动启动方式
+### 3.7 手动启动方式
 
 如果只运行后端 API 或旧版静态资源：
 
@@ -385,7 +443,7 @@ npm run dev
 
 当前 Vite dev proxy 只代理 `/api` 到 Spring Boot。算子库导入使用 `/admin/visual-operator-libraries/*`，所以完整体验建议优先使用 Maven 打包后的 `/author/`。
 
-### 3.7 VSCode 插件轻量化方向
+### 3.8 VSCode 插件轻量化方向
 
 如果用户只是想在业务仓库里看懂 `.bloge` 拓扑、导入本地算子 schema、配置 mock 数据并跑表格测试，每次都启动 Resource Gateway 服务端会显得偏重。后续推荐把 `/author/` 的核心能力下沉成 VSCode 插件入口：
 
@@ -1268,7 +1326,7 @@ GET /api/gateway/examples/scenarios/{graphName}/diagram
 | `visual/simulation` | mock/real 混合模拟、fixture、trace、sample generator |
 | `visual/publication` | publication 冻结、导入导出、依赖报告 |
 | `visual/golden` | golden case 保存、运行、认证 |
-| `visual/runtime` | run history、精确 node invocation attempt、payload 脱敏、持久 evidence seal 和 trace/replay 数据 |
+| `visual/runtime` | `VisualGraphRunRecord.v5`、精确 node invocation attempt、结构化 execution fact、payload 脱敏、持久 evidence seal 和 trace/replay 数据 |
 | `visual/resource` | OpenAPI/resource contract 投影到 visual resource/operator surface |
 | `integration` | Tool Studio versioned envelope、capability probe、draft dependency export、evidence/replay、验签公钥、governance gate feedback、transactional outbox、签名 cursor 和 reconciliation snapshot |
 

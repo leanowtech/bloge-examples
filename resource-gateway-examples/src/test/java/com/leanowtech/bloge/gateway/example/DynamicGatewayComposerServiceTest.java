@@ -1,9 +1,16 @@
 package com.leanowtech.bloge.gateway.example;
 
 import com.leanowtech.bloge.test.MockOperator;
+import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
+import com.leanowtech.bloge.core.context.GraphContext;
+import com.leanowtech.bloge.core.context.TenantContext;
+import com.leanowtech.bloge.core.model.Graph;
+import com.leanowtech.bloge.core.spi.event.NodeEvent.NodeStartEvent;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -72,6 +79,108 @@ class DynamicGatewayComposerServiceTest {
             assertThat(attempt.input()).isEqualTo(Map.of("score", 670, "amount", 180_000));
             assertThat(attempt.output()).isEqualTo(policy);
             assertThat(attempt.startedAt()).isNotNull();
+        });
+        assertThat(response.nodeExecutionFacts()).containsKeys("loanPolicy", "response");
+        assertThat(response.nodeExecutionFacts().get("loanPolicy")).satisfies(fact -> {
+            assertThat(fact.status()).isEqualTo("SUCCESS");
+            assertThat(fact.reasonCode()).isEqualTo("NONE");
+            assertThat(fact.observationSource()).isEqualTo("ENGINE_STATUS");
+            assertThat(fact.retry().configuredMaxAttempts()).isEqualTo(1);
+        });
+    }
+
+    @Test
+    void capturesRetryAndFallbackFromEngineEvents() {
+        AtomicInteger calls = new AtomicInteger();
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("unstable", MockOperator.of(input -> {
+            calls.incrementAndGet();
+            throw new IllegalStateException("provider unavailable");
+        }));
+        DynamicGatewayComposerService resilientService = new DynamicGatewayComposerService(registry);
+
+        DynamicGraphRunResponse response = resilientService.run(new DynamicGraphRunRequest("""
+                graph resilientGraph {
+                  node guarded : unstable {
+                    input { value = ctx.value }
+                    retry = { attempts: 2, backoff: 1ms }
+                    fallback = { value: "degraded" }
+                  }
+                }
+                """, Map.of("value", "request"), "guarded"));
+
+        assertThat(response.success()).isTrue();
+        assertThat(calls).hasValue(3);
+        assertThat(response.nodeExecutionFacts().get("guarded")).satisfies(fact -> {
+            assertThat(fact.status()).isEqualTo("FALLBACK");
+            assertThat(fact.reasonCode()).isEqualTo("FALLBACK_SUCCEEDED");
+            assertThat(fact.retry().configuredMaxAttempts()).isEqualTo(3);
+            assertThat(fact.retry().observedAttempts()).isEqualTo(3);
+            assertThat(fact.retry().exhausted()).isTrue();
+            assertThat(fact.fallback().configured()).isTrue();
+            assertThat(fact.fallback().used()).isTrue();
+            assertThat(fact.fallback().strategy()).isEqualTo("FIXED_VALUE");
+            assertThat(fact.events()).extracting(DynamicGraphRunResponse.Event::type)
+                    .containsExactly("RETRY_SCHEDULED", "RETRY_SCHEDULED", "RETRY_EXHAUSTED", "FALLBACK");
+        });
+    }
+
+    @Test
+    void capturesTimeoutAsAnEngineEventWithoutParsingErrorText() {
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("slow", (com.leanowtech.bloge.core.operator.Operator<Object, Object>) (input, ctx) -> {
+            Thread.sleep(50);
+            return Map.of("value", "late");
+        });
+        DynamicGatewayComposerService timeoutService = new DynamicGatewayComposerService(registry);
+
+        DynamicGraphRunResponse response = timeoutService.run(new DynamicGraphRunRequest("""
+                graph timeoutGraph {
+                  node guarded : slow {
+                    input { value = ctx.value }
+                    timeout = 5ms
+                  }
+                }
+                """, Map.of("value", "request"), "guarded"));
+
+        assertThat(response.success()).isFalse();
+        assertThat(response.nodeExecutionFacts().get("guarded")).satisfies(fact -> {
+            assertThat(fact.status()).isEqualTo("TIMEOUT");
+            assertThat(fact.reasonCode()).isEqualTo("NODE_TIMEOUT");
+            assertThat(fact.timeout().configured()).isTrue();
+            assertThat(fact.timeout().configuredTimeoutMs()).isEqualTo(5);
+            assertThat(fact.timeout().observed()).isTrue();
+            assertThat(fact.events()).extracting(DynamicGraphRunResponse.Event::type).containsExactly("TIMEOUT");
+        });
+    }
+
+    @Test
+    void quarantinesAmbiguousResilienceCorrelationInsteadOfCrossLinkingConcurrentRuns() {
+        Graph graph = Graph.builder("sameGraph")
+                .node("guarded", MockOperator.returning(Map.of("ok", true)))
+                    .timeout(Duration.ofMillis(10))
+                    .fallback(() -> Map.of("ok", false))
+                .build();
+        NodeExecutionCaptureInterceptor capture = new NodeExecutionCaptureInterceptor();
+        capture.begin("capture-a", graph);
+        capture.begin("capture-b", graph);
+        GraphContext first = new GraphContext(new TenantContext("tenant-a", "test"));
+        first.put(NodeExecutionCaptureInterceptor.CAPTURE_ID_CONTEXT_KEY, "capture-a");
+        GraphContext second = new GraphContext(new TenantContext("tenant-a", "test"));
+        second.put(NodeExecutionCaptureInterceptor.CAPTURE_ID_CONTEXT_KEY, "capture-b");
+        capture.onNodeStart(new NodeStartEvent("sameGraph", "guarded", graph.nodes().get("guarded"), null, first));
+        capture.onNodeStart(new NodeStartEvent("sameGraph", "guarded", graph.nodes().get("guarded"), null, second));
+
+        capture.onNodeFallback("sameGraph", "guarded", new IllegalStateException("ambiguous"));
+
+        assertThat(capture.complete("capture-a", null).facts().get("guarded")).satisfies(fact -> {
+            assertThat(fact.reasonCode()).isEqualTo("RESILIENCE_EVENT_CORRELATION_AMBIGUOUS");
+            assertThat(fact.observationSource()).isEqualTo("ENGINE_STATUS_WITH_EVENT_GAP");
+            assertThat(fact.fallback().used()).isFalse();
+        });
+        assertThat(capture.complete("capture-b", null).facts().get("guarded")).satisfies(fact -> {
+            assertThat(fact.reasonCode()).isEqualTo("RESILIENCE_EVENT_CORRELATION_AMBIGUOUS");
+            assertThat(fact.observationSource()).isEqualTo("ENGINE_STATUS_WITH_EVENT_GAP");
         });
     }
 

@@ -161,7 +161,8 @@ public class VisualGraphRunService {
                 generated.dsl(),
                 validation,
                 "",
-                dynamic.nodeAttempts()
+                dynamic.nodeAttempts(),
+                dynamic.nodeExecutionFacts()
         );
     }
 
@@ -252,7 +253,8 @@ public class VisualGraphRunService {
                 publication.dsl(),
                 validation,
                 "",
-                dynamic.nodeAttempts()
+                dynamic.nodeAttempts(),
+                dynamic.nodeExecutionFacts()
         );
     }
 

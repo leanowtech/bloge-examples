@@ -5,10 +5,10 @@
 | 属性 | 内容 |
 |---|---|
 | 设计基线 | `docs/resource-gateway-aneke-tool-studio-integration-evolution-plan.md` |
-| 当前实现基线 | Round 5（signed workload JWT、轮换/撤销、credential audit correlation） |
+| 当前实现基线 | Round 6（engine-observed execution facts、失败因果链、evidence v3） |
 | 评估日期 | 2026-07-12 |
 | 目标 | 加权实施差距 `<3%`，且不存在 P0 阻断项 |
-| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1480 tests，0 failures，0 errors，2 skipped |
+| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1486 tests，0 failures，0 errors，2 skipped |
 
 ## 1. 评分方法
 
@@ -129,6 +129,30 @@ Round 4 结论：客户端无法再通过伪造 `X-Tenant-Id` 建立 Integration
 
 Round 5 结论：差距从 `30.50%` 降至 `29.20%`。代码已经具备不依赖静态 secret 的 signed workload 身份基线，且轮换、撤销和审计链有正反向测试；但 `IAM-01` 不能仅凭本地生成 key 的测试关闭，必须取得客户 IAM/JWKS/KMS 或 mTLS 的动态传播和组织策略联调证据。下一轮应转向当前更低成熟度且直接影响 evidence 解释正确性的 timeout/partial failure 事实链。
 
+## 2.6 Round 6 重新审计
+
+本轮根治的是“治理证据根据错误文本和相邻节点状态猜执行语义”。Gateway 现在直接消费 BLOGE
+`ExecutionListener/ResilienceListener`，把策略上限、真实 retry/timeout/fallback 事件、拓扑推导的 skip/cancel
+因果、关键输出聚合和副作用不确定性写入签名 run material。任何无法唯一关联的 resilience event 会形成
+可见 evidence gap，而不是串到另一个并发 run。
+
+| 维度 | 权重 | 当前完成率 | 得分 | 本轮可证明增量 | 仍未证明 |
+|---|---:|---:|---:|---|---|
+| 协议、版本与身份边界 | 15 | 95% | 14.25 | `runEvidenceBundle.v3` additive 协议；v1/v2/v3 同时声明；新 capability 对 deadline/cancel/commit confirmation 诚实返回 false | 动态 IAM/mTLS 联调、自动 N/N-1 consumer matrix、正式 delegation/clearance |
+| GraphDraft 依赖快照 | 10 | 60% | 6.00 | run node snapshot 增加 operator effect/idempotency，供 unknown-commit 解释 | runtime binding/suite refs 完整写入导出、跨表快照一致性、完整 readiness profile |
+| Run evidence 可信链 | 20 | 86% | 17.20 | `VisualGraphRunRecord.v5` 持久化并签名 execution facts；manifest 增加 fact coverage；edge propagation 不再冒充 target status；旧记录缺 facts 自动 quarantine | KMS/HSM、retention/legal hold、payload classification、commit receipt 和外部 verifier consumer contract |
+| Payload replay | 15 | 80% | 12.00 | replay facts 明确 `MOCKED/NOT_INVOKED`，不混入真实 resilience event | shadow/live 审批与隔离、跨实例 exactly-once、选择性 retention |
+| Timeout/partial failure 语义 | 10 | 78% | 7.80 | engine-observed retry scheduled/exhausted、timeout、fallback；configured/observed attempts；skip/cancel cause；关键输出驱动 PARTIAL；unknown commit；并发关联歧义 fail closed | 图级 deadline、剩余预算传播、用户 cancel/fencing、commit reconciliation、side-effect-aware retry budget |
+| Workbook、gate feedback 与 Deep Link | 10 | 70% | 7.00 | v3 原因码、来源、因果和 unknown commit 可直接进入 workbook/gate 规则 | 双向 workbook refs、coverage policy、owner/migration gate 完整闭环 |
+| Change event、cursor、webhook 与对账 | 10 | 80% | 8.00 | 无语义变化 | signed webhook、DLQ/重试、retention/compaction、乱序 fault harness |
+| 工业运行控制 | 10 | 39% | 3.90 | 17 个聚焦语义/contract tests、52 个运行/integration/repository/controller 回归、并发歧义 negative test、corporate Draw.io 0 warning | SLO/metrics、quota、HA DB、DR、deadline/cancel fault injection、容量与真实 IdP/KMS 演练 |
+| **合计** | **100** |  | **76.15** |  | **加权差距 23.85%** |
+
+Round 6 结论：差距从 `29.20%` 降至 `23.85%`。`statusMap + error text` 的证据解释病根已经关闭，
+timeout、fallback、retry exhaustion、skip、cancel、edge propagation 和 graph partial 均有结构化测试。但 Stage 2
+仍不能退出：Resource Gateway 还没有 run-level deadline/cancel/fencing，也不能确认超时外部写的 commit 结果；
+这两项必须以运行协议和 operator receipt 解决，不能继续靠 DTO 字段补洞。
+
 ## 3. 已通过的证明
 
 ### 3.1 协议与隔离
@@ -140,11 +164,11 @@ Round 5 结论：差距从 `30.50%` 降至 `29.20%`。代码已经具备不依�
 
 ### 3.2 Evidence 与 payload
 
-- `VisualGraphRunRecord.v3` 持久化 draft/operator fingerprint、sanitized context/output/node results、edge snapshot 和精确 node attempts。
+- `VisualGraphRunRecord.v5` 持久化 draft/operator fingerprint、sanitized context/output/node results、edge snapshot、精确 node attempts 和结构化 node execution facts。
 - sanitizer 对 secret/token/authorization/cookie/PII 类键及 Bearer/Basic/labeled credential 内容执行有界递归脱敏并记录 manifest。
 - evidence manifest 校验每个 invoked node 的 input、成功节点 output、node/edge status 和持久 seal；缺口或验签失败进入 `QUARANTINED`。
 - `DatabaseVisualEvidenceSigner` 持久化 Ed25519 key history；旧 run 在 repository 重建后仍可验证，consumer 可通过公开 verification key 离线验签。
-- replay 仍只返回 `RECORDED + SANITIZED`，明确 `rawAvailable=false`、`externalSideEffectsAllowed=false`；本轮只补真实 node input，没有把它误报成 replay execution。
+- GET replay 返回 `RECORDED + SANITIZED` payload；POST recorded replay 生成独立签名 run/evidence，明确 `externalInvocationCount=0` 和 `sideEffectPolicy=DENY`。
 
 ### 3.3 Governance 与 Deep Link
 
@@ -288,12 +312,70 @@ trusted key + revoked jti -> 401 AUTHENTICATION_FAILED
 trusted claims + byte-level tampered signature -> 401 AUTHENTICATION_FAILED
 ```
 
+### 3.8 运行失败事实链
+
+- `NodeExecutionCaptureInterceptor` 同时实现 `OperatorInterceptor + ExecutionListener`，用 capture id 绑定同一 run
+  的 exact input/output attempt 与引擎 resilience event。
+- retry callback 的终态失败不再被算成额外执行：`configuredMaxAttempts=3`、实际调用 3 次时，
+  `observedAttempts=3`，事件为两次 `RETRY_SCHEDULED`、一次 `RETRY_EXHAUSTED`。
+- fallback 成功节点同时保留 `status=FALLBACK`、`reasonCode=FALLBACK_SUCCEEDED` 和
+  `retry.exhausted=true`，不再用成功结果掩盖前置失败。
+- timeout 由 `onNodeTimeout` 事件确认，不检查 exception class/message 子串；配置预算和 observed flag 分开保存。
+- `SKIPPED/CANCELLED` 明确标注 `TOPOLOGY_DERIVATION`；取消节点无需伪造 input，edge 在未传播时不生成 payload ref。
+- 图级 `PARTIAL` 只在关键输出已到达且存在独立降级时产生；关键输出超时为 `TIMEOUT`。
+- 同名图并发且无 execution context 的 resilience callback 出现多个候选时，两个 run 都标记
+  `ENGINE_STATUS_WITH_EVENT_GAP`，manifest 的 fact coverage 不通过。
+- operator effect/idempotency 被固化到 run node snapshot；缺少 commit receipt 的外部副作用输出
+  `UNKNOWN_COMMIT`，不会被误写为 `NOT_COMMITTED`。
+
+本轮聚焦证明：
+
+```text
+17 Java tests passed
+engine retry/fallback/timeout events, terminal retry counting,
+critical-output partial aggregation, cancellation cause chain,
+edge propagation, concurrent correlation ambiguity, signed fact coverage,
+serialized DTO vs JSON Schema drift
+
+52 Java tests passed
+dynamic runner, visual run service, integration service/controller,
+run repository restart, history controller and v5 JSON persistence
+
+Draw.io validation: 0 errors, 0 warnings, 0 crossings/overlaps
+PNG visual inspection passed; SVG references editable embedded source
+```
+
+全量与真实进程验证：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+Tests run: 1486, Failures: 0, Errors: 0, Skipped: 2
+BUILD SUCCESS (05:21)
+
+real jar :18084
+capability -> runEvidence v1/v2/v3; structuredExecutionFacts=true;
+              graphDeadline=false; userRunCancellation=false;
+              sideEffectCommitConfirmation=false
+import decision-table DSL -> scoped transient run SUCCESS
+run response -> nodeExecutionFacts.decision = ENGINE_STATUS / SUCCESS / NONE
+evidence -> v3, criticalOutputReached=true, facts=1/1,
+            READY + complete=true + signature VERIFIED
+AJV draft-2020-12 validation of the real evidence payload -> valid
+graceful shutdown completed
+```
+
+边界说明：BLOGE 当前 timeout/fallback listener 旧签名没有 `OperatorContext`。Gateway 已用 invocation scope 和
+唯一 active candidate 关联，并在歧义时 fail closed；根治方案仍应在 BLOGE 演进中把 executionId/context 加入
+所有 resilience event。图级 deadline、用户 cancel/fencing、operator commit receipt 仍未实现，capability 均为 false。
+
 ## 4. 当前 P0 阻断项
 
 | ID | 阻断项 | 病根 | 根治验收 |
 |---|---|---|---|
 | `IAM-01` | 企业身份生命周期尚未端到端证明 | signed JWT、轮换和撤销代码已具备，但配置 trust store 只在启动时装载，尚无客户 IAM 动态策略/撤销传播证据 | 动态 JWKS/KMS 或 mTLS adapter + 多 identity/group/clearance + delegation grant + propagation SLO + policy/audit 联调演练 |
 | `OPS-01` | 本地签名 key 不满足企业 custody | private key 由本地 H2 demo provider 保存 | KMS/HSM-backed `VisualEvidenceSigner`、rotation/disable/revoke、审计和灾备演练 |
+| `RUN-01` | run-level deadline/cancel 尚无工程协议 | 当前只有 node timeout 和依赖取消；没有 run intent、绝对 deadline、预算传播、用户 cancel command、lease/fencing 和终止确认 | versioned RunIntent/RunControl API + deadline budget + cooperative cancel + fencing token + disconnect policy + race/fault tests |
+| `RUN-02` | 外部副作用 timeout 后只能标记 unknown commit | operator 没有 commit receipt/reconciliation hook，盲重试可能重复写 | effect/idempotency admission + transaction/idempotency receipt + reconcile/compensate hook + downstream-write suspension + gate policy |
 
 `EVT-01` 已在 Round 3 对当前资产模型关闭。webhook、DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，但不再构成“事件丢失后无法对账”的 P0 病根。
 
@@ -307,5 +389,6 @@ trusted claims + byte-level tampered signature -> 401 AUTHENTICATION_FAILED
 | 3 | transactional outbox + cursor + reconciliation | 资产/事件原子提交、稳定分页、作用域签名 cursor、过期重建、不可变 revision ref、持续反熵 | 32.95% | 1461 Java tests、132 frontend tests、真实 jar HTTP 多租户闭环、Draw.io 0 errors/warnings |
 | 4 | trusted workload identity + purpose policy | 服务端 claims、operation/purpose 双 allowlist、hint conflict、401/403、credential-free audit、provider capability | 30.50% | 1471 Java tests、29 个聚焦 tests、真实 jar HTTP 401/200/403、identity Draw.io 0 errors/warnings |
 | 5 | signed workload JWT + rotation/revocation | RS256/EdDSA、严格 claims/time/algorithm 校验、多 kid 轮换、key/jti 撤销、kid/jti audit、signed provider capability | 29.20% | 1480 Java tests、22 个集成聚焦/18 个最终安全聚焦 tests、真实 jar HTTP 200/401、identity Draw.io 0 errors/warnings |
+| 6 | engine-observed failure semantics | retry/timeout/fallback 真事件、skip/cancel 因果、关键输出 PARTIAL、edge propagation、unknown commit、fact coverage quarantine | 23.85% | 1486 全量 tests、17 个聚焦/52 个运行边界 tests、真实 jar v3 + AJV schema、Draw.io 0 errors/warnings |
 
 后续每轮必须更新本表、代码证据、失败测试和剩余阻断项。只有全部 P0 阻断关闭、全量验证与真实浏览器验证通过，并且按同一权重计算的差距 `<3%`，才允许把目标标记完成。

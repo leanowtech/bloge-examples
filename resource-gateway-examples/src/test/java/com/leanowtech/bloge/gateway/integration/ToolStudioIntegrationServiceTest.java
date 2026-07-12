@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
@@ -11,6 +13,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualReplayAssertionResult;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
@@ -22,7 +25,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.Signature;
 import java.security.spec.X509EncodedKeySpec;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Base64;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -33,6 +39,37 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class ToolStudioIntegrationServiceTest {
+
+    @Test
+    void runEvidenceV3JsonSchemaMatchesSerializedProtocolFields() throws Exception {
+        OperatorDefinition operator = operator();
+        GraphDraft draft = runDraft(operator);
+        VisualGraphRunResponse response = new VisualGraphRunResponse(
+                true, true, true, draft.graphName(), "decision", Map.of("decision", "APPROVE"),
+                Map.of("eligibility", Map.of("eligible", true), "decision", Map.of("decision", "APPROVE")),
+                Map.of("eligibility", "COMPLETED", "decision", "COMPLETED"), 10,
+                Map.of("eligibility", 4L, "decision", 3L), List.of(), List.of(), null, null,
+                "graph customerKnowledgeTool {}", new VisualValidationResult(true, List.of()), "",
+                Map.of(
+                        "eligibility", List.of(attempt(Map.of("customerId", "c-1"), Map.of("eligible", true))),
+                        "decision", List.of(attempt(Map.of("eligible", true), Map.of("decision", "APPROVE")))),
+                successFacts("eligibility", "decision"));
+        RunEvidenceBundle evidence = RunEvidenceBundle.from(VisualGraphRunRecord.storedDraft(
+                draft, Map.of("customerId", "c-1"), response));
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        JsonNode schema = mapper.readTree(Files.readString(Path.of("..", "docs", "schemas",
+                "tool-studio-resource-gateway", "run-evidence-bundle-v3.schema.json")));
+        JsonNode serialized = mapper.valueToTree(evidence);
+
+        assertSchemaProperties(serialized, schema.path("properties"));
+        assertSchemaProperties(serialized.path("execution"), schema.at("/$defs/execution/properties"));
+        assertSchemaProperties(serialized.path("nodes").get(0), schema.at("/$defs/nodeEvidence/properties"));
+        assertSchemaProperties(serialized.path("edges").get(0), schema.at("/$defs/edgeEvidence/properties"));
+        assertSchemaProperties(serialized.path("manifest"), schema.at("/$defs/manifest/properties"));
+        assertThat(schema.at("/$defs/status/enum")).extracting(JsonNode::asText)
+                .containsExactlyInAnyOrder(java.util.Arrays.stream(VisualRunStatus.values())
+                        .map(Enum::name).toArray(String[]::new));
+    }
 
     @Test
     void capabilitiesAdvertiseOnlyImplementedIntegrationFeatures() {
@@ -46,6 +83,10 @@ class ToolStudioIntegrationServiceTest {
         assertThat(envelope.payload().features())
                 .containsEntry("draftExportDependencyProfile", true)
                 .containsEntry("runEvidenceBundle", true)
+                .containsEntry("structuredExecutionFacts", true)
+                .containsEntry("graphDeadline", false)
+                .containsEntry("userRunCancellation", false)
+                .containsEntry("sideEffectCommitConfirmation", false)
                 .containsEntry("payloadReplay", true)
                 .containsEntry("recordedAssertionReplay", true)
                 .containsEntry("replayExternalSideEffects", false)
@@ -151,7 +192,8 @@ class ToolStudioIntegrationServiceTest {
                         "eligibility", List.of(attempt(Map.of("customerId", "c-1"), Map.of("eligible", true))),
                         "decision", List.of(attempt(Map.of("eligible", true),
                                 Map.of("decision", "APPROVE", "token", "raw-token")))
-                )
+                ),
+                successFacts("eligibility", "decision")
         );
         VisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
         VisualGraphRunRecord stored = runs.create(VisualGraphRunRecord.storedDraft(
@@ -280,6 +322,10 @@ class ToolStudioIntegrationServiceTest {
                 Map.of(
                         "eligibility", List.of(attempt(Map.of("customerId", "c-1"), Map.of("eligible", true))),
                         "decision", List.of(timeout)
+                ),
+                Map.of(
+                        "eligibility", successFact(),
+                        "decision", timeoutFact()
                 )
         );
         VisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
@@ -290,15 +336,105 @@ class ToolStudioIntegrationServiceTest {
                 .runEvidence(stored.runId(), integrationContext("corr-timeout"))
                 .payload();
 
-        assertThat(evidence.execution().status()).isEqualTo("PARTIAL");
+        assertThat(evidence.execution().status()).isEqualTo("TIMEOUT");
+        assertThat(evidence.execution().reasonCode()).isEqualTo("CRITICAL_OUTPUT_NOT_REACHED");
         assertThat(evidence.nodes()).filteredOn(node -> node.nodeId().equals("decision"))
                 .singleElement().satisfies(node -> {
                     assertThat(node.status()).isEqualTo("TIMEOUT");
+                    assertThat(node.reasonCode()).isEqualTo("NODE_TIMEOUT");
+                    assertThat(node.observationSource()).isEqualTo("ENGINE_RESILIENCE_EVENT");
                     assertThat(node.retry().attempts()).isEqualTo(1);
+                    assertThat(node.retry().maxAttempts()).isEqualTo(2);
                     assertThat(node.retry().lastErrorCode()).contains("OperatorTimeoutException");
                 });
         assertThat(evidence.edges()).singleElement().satisfies(edge ->
-                assertThat(edge.status()).isEqualTo("TIMEOUT"));
+                assertThat(edge.status()).isEqualTo("SUCCESS"));
+        assertThat(evidence.execution().criticalOutputReached()).isFalse();
+        assertThat(evidence.manifest().evidenceStatus()).isEqualTo("READY");
+    }
+
+    @Test
+    void marksGraphPartialOnlyWhenCriticalOutputWasReachedWithIndependentDegradation() {
+        OperatorDefinition operator = operator();
+        GraphDraft base = runDraft(operator);
+        GraphDraft draft = new GraphDraft(
+                base.schemaVersion(), base.draftId(), base.revision(), base.graphName(), base.tenantId(),
+                base.namespace(), base.environment(), base.status(), base.inputSchema(), base.outputSchema(),
+                base.nodes(), base.edges(), base.visualLayout(), base.nodeFixtures(),
+                new GraphDraft.OutputSelection("eligibility", ""), base.operatorFingerprints(),
+                base.operatorSnapshots(), base.revisionMetadata());
+        VisualNodeExecutionAttempt failure = new VisualNodeExecutionAttempt(
+                0, Map.of("eligible", true), null, "FAILED", Instant.parse("2026-07-12T00:00:00Z"), 8,
+                "java.lang.IllegalStateException", "secondary provider failed");
+        VisualGraphRunResponse response = new VisualGraphRunResponse(
+                true, true, false, draft.graphName(), "eligibility", Map.of("eligible", true),
+                Map.of("eligibility", Map.of("eligible", true)),
+                Map.of("eligibility", "COMPLETED", "decision", "FAILED"), 20,
+                Map.of("eligibility", 5L, "decision", 8L), List.of(), List.of("decision failed"),
+                null, null, "graph customerKnowledgeTool {}", new VisualValidationResult(true, List.of()), "",
+                Map.of(
+                        "eligibility", List.of(attempt(Map.of("customerId", "c-1"), Map.of("eligible", true))),
+                        "decision", List.of(failure)),
+                Map.of("eligibility", successFact(), "decision", failedFact()));
+        VisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
+        VisualGraphRunRecord stored = runs.create(VisualGraphRunRecord.storedDraft(
+                draft, Map.of("customerId", "c-1"), response));
+
+        RunEvidenceBundle evidence = service(null, null, null, runs)
+                .runEvidence(stored.runId(), integrationContext("corr-partial")).payload();
+
+        assertThat(evidence.execution().status()).isEqualTo("PARTIAL");
+        assertThat(evidence.execution().reasonCode()).isEqualTo("CRITICAL_OUTPUT_REACHED_WITH_DEGRADATION");
+        assertThat(evidence.execution().criticalOutputReached()).isTrue();
+        assertThat(evidence.execution().degraded()).isTrue();
+        assertThat(evidence.edges()).singleElement().satisfies(edge -> {
+            assertThat(edge.status()).isEqualTo("SUCCESS");
+            assertThat(edge.propagated()).isTrue();
+            assertThat(edge.reasonCode()).isEqualTo("VALUE_PROPAGATED");
+        });
+    }
+
+    @Test
+    void exportsCancellationCauseWithoutInventingAnEdgePayload() {
+        OperatorDefinition operator = operator();
+        GraphDraft draft = runDraft(operator);
+        VisualGraphRunResponse response = new VisualGraphRunResponse(
+                true, true, false, draft.graphName(), "decision", null, Map.of(),
+                Map.of("eligibility", "FAILED", "decision", "CANCELLED"), 100,
+                Map.of("eligibility", 100L), List.of(), List.of("eligibility timed out"), null, null,
+                "graph customerKnowledgeTool {}", new VisualValidationResult(true, List.of()), "",
+                Map.of("eligibility", List.of(new VisualNodeExecutionAttempt(
+                        0, Map.of("customerId", "c-1"), null, "FAILED",
+                        Instant.parse("2026-07-12T00:00:00Z"), 100,
+                        "com.leanowtech.bloge.core.exception.OperatorTimeoutException", "timed out"))),
+                Map.of(
+                        "eligibility", timeoutFact(),
+                        "decision", new VisualNodeExecutionFact(
+                                "CANCELLED", "UPSTREAM_FAILED", "TOPOLOGY_DERIVATION", List.of("eligibility"),
+                                new VisualNodeExecutionFact.Retry(1, 0, false, ""),
+                                new VisualNodeExecutionFact.Timeout(false, 0, false),
+                                new VisualNodeExecutionFact.Fallback(false, false, "NONE", ""),
+                                "NOT_INVOKED", List.of())));
+        VisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
+        VisualGraphRunRecord stored = runs.create(VisualGraphRunRecord.storedDraft(
+                draft, Map.of("customerId", "c-1"), response));
+
+        RunEvidenceBundle evidence = service(null, null, null, runs)
+                .runEvidence(stored.runId(), integrationContext("corr-cancel")).payload();
+
+        assertThat(evidence.nodes()).filteredOn(node -> node.nodeId().equals("decision"))
+                .singleElement().satisfies(node -> {
+                    assertThat(node.status()).isEqualTo("CANCELLED");
+                    assertThat(node.reasonCode()).isEqualTo("UPSTREAM_FAILED");
+                    assertThat(node.causedByNodeIds()).containsExactly("eligibility");
+                    assertThat(node.inputAvailable()).isFalse();
+                });
+        assertThat(evidence.edges()).singleElement().satisfies(edge -> {
+            assertThat(edge.status()).isEqualTo("CANCELLED");
+            assertThat(edge.reasonCode()).isEqualTo("UPSTREAM_FAILURE_PROPAGATED");
+            assertThat(edge.propagated()).isFalse();
+            assertThat(edge.payloadRef()).isBlank();
+        });
         assertThat(evidence.manifest().evidenceStatus()).isEqualTo("READY");
     }
 
@@ -321,7 +457,7 @@ class ToolStudioIntegrationServiceTest {
                         "decision", List.of(attempt(
                                 Map.of("eligible", true, "score", 720),
                                 Map.of("decision", "APPROVE", "reason", "eligible"))))
-        );
+                , successFacts("eligibility", "decision"));
         VisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
         VisualGraphRunRecord parent = runs.create(VisualGraphRunRecord.storedDraft(
                 draft, Map.of("customerId", "c-1"), response));
@@ -382,7 +518,8 @@ class ToolStudioIntegrationServiceTest {
                 Map.of("eligibility", Map.of("eligible", false)), Map.of("eligibility", "SUCCESS"), 4,
                 Map.of("eligibility", 4L), List.of(), List.of(), null, null, "graph customerKnowledgeTool {}",
                 new VisualValidationResult(true, List.of()), "",
-                Map.of("eligibility", List.of(attempt(Map.of("score", 300), Map.of("eligible", false)))));
+                Map.of("eligibility", List.of(attempt(Map.of("score", 300), Map.of("eligible", false)))),
+                successFacts("eligibility"));
         VisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
         VisualGraphRunRecord parent = runs.create(VisualGraphRunRecord.storedDraft(
                 draft, Map.of("customerId", "c-2"), response));
@@ -434,6 +571,52 @@ class ToolStudioIntegrationServiceTest {
     private static VisualNodeExecutionAttempt attempt(Object input, Object output) {
         return new VisualNodeExecutionAttempt(0, input, output, "SUCCESS",
                 Instant.parse("2026-07-12T00:00:00Z"), 5, "", "");
+    }
+
+    private static void assertSchemaProperties(JsonNode value, JsonNode properties) {
+        LinkedHashSet<String> actual = new LinkedHashSet<>();
+        value.fieldNames().forEachRemaining(actual::add);
+        LinkedHashSet<String> expected = new LinkedHashSet<>();
+        properties.fieldNames().forEachRemaining(expected::add);
+        assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+    }
+
+    private static Map<String, VisualNodeExecutionFact> successFacts(String... nodeIds) {
+        java.util.LinkedHashMap<String, VisualNodeExecutionFact> facts = new java.util.LinkedHashMap<>();
+        for (String nodeId : nodeIds) {
+            facts.put(nodeId, successFact());
+        }
+        return facts;
+    }
+
+    private static VisualNodeExecutionFact successFact() {
+        return new VisualNodeExecutionFact(
+                "SUCCESS", "NONE", "ENGINE_STATUS", List.of(),
+                new VisualNodeExecutionFact.Retry(1, 1, false, ""),
+                new VisualNodeExecutionFact.Timeout(false, 0, false),
+                new VisualNodeExecutionFact.Fallback(false, false, "NONE", ""),
+                "NOT_APPLICABLE", List.of());
+    }
+
+    private static VisualNodeExecutionFact timeoutFact() {
+        return new VisualNodeExecutionFact(
+                "TIMEOUT", "NODE_TIMEOUT", "ENGINE_RESILIENCE_EVENT", List.of(),
+                new VisualNodeExecutionFact.Retry(2, 1, false,
+                        "com.leanowtech.bloge.core.exception.OperatorTimeoutException"),
+                new VisualNodeExecutionFact.Timeout(true, 100, true),
+                new VisualNodeExecutionFact.Fallback(false, false, "NONE", ""),
+                "UNKNOWN_COMMIT", List.of(new VisualNodeExecutionFact.Event(
+                        1, "TIMEOUT", Instant.parse("2026-07-12T00:00:00Z"), 0,
+                        "com.leanowtech.bloge.core.exception.OperatorTimeoutException")));
+    }
+
+    private static VisualNodeExecutionFact failedFact() {
+        return new VisualNodeExecutionFact(
+                "FAILED", "OPERATOR_ERROR", "ENGINE_STATUS", List.of(),
+                new VisualNodeExecutionFact.Retry(1, 1, false, "java.lang.IllegalStateException"),
+                new VisualNodeExecutionFact.Timeout(false, 0, false),
+                new VisualNodeExecutionFact.Fallback(false, false, "NONE", ""),
+                "NOT_APPLICABLE", List.of());
     }
 
     private static ToolStudioIntegrationService service(GraphDraftRepository repository,

@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
 
 import java.time.Instant;
@@ -38,7 +39,8 @@ public record RunEvidenceBundle(
         EvidenceManifest manifest
 ) {
     public static final String SCHEMA_VERSION_V1 = "toolStudio.resourceGateway.runEvidenceBundle.v1";
-    public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.runEvidenceBundle.v2";
+    public static final String SCHEMA_VERSION_V2 = "toolStudio.resourceGateway.runEvidenceBundle.v2";
+    public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.runEvidenceBundle.v3";
 
     public RunEvidenceBundle {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
@@ -71,8 +73,7 @@ public record RunEvidenceBundle(
                 record.operatorDependencyFingerprint());
         List<NodeEvidence> nodes = nodeEvidence(record);
         List<EdgeEvidence> edges = edgeEvidence(record);
-        Execution execution = new Execution(graphStatus(record, nodes), record.createdAt(), record.elapsedMs(),
-                record.outputNode(), nodes.stream().anyMatch(NodeEvidence::mocked));
+        Execution execution = graphExecution(record, nodes);
         Retention retention = new Retention("SANITIZED", record.redaction().profile(),
                 record.createdAt().plus(30, ChronoUnit.DAYS));
         EvidenceManifest manifest = manifest(record, nodes, edges,
@@ -101,12 +102,14 @@ public record RunEvidenceBundle(
         nodeIds.addAll(record.statusMap().keySet());
         nodeIds.addAll(record.resultsPayload().keySet());
         nodeIds.addAll(record.nodeAttempts().keySet());
+        nodeIds.addAll(record.nodeExecutionFacts().keySet());
         List<NodeEvidence> nodes = new ArrayList<>();
         for (String nodeId : nodeIds) {
             VisualGraphRunRecord.NodeSnapshot snapshot = record.nodeSnapshots().get(nodeId);
+            VisualNodeExecutionFact fact = record.nodeExecutionFacts().get(nodeId);
             List<VisualNodeExecutionAttempt> attempts = record.nodeAttempts().getOrDefault(nodeId, List.of());
             VisualNodeExecutionAttempt latestAttempt = attempts.isEmpty() ? null : attempts.get(attempts.size() - 1);
-            VisualRunStatus status = nodeStatus(record.statusMap().get(nodeId), latestAttempt);
+            VisualRunStatus status = nodeStatus(record.statusMap().get(nodeId), fact);
             boolean inputAvailable = latestAttempt != null;
             boolean outputAvailable = record.resultsPayload().containsKey(nodeId)
                     || latestAttempt != null && latestAttempt.output() != null;
@@ -114,11 +117,15 @@ public record RunEvidenceBundle(
                     nodeId,
                     snapshot == null ? "" : snapshot.operatorRef(),
                     status.name(),
-                    reason(status, latestAttempt),
+                    fact == null ? status == VisualRunStatus.UNKNOWN ? "STATUS_NOT_CAPTURED" : "LEGACY_STATUS_ONLY"
+                            : fact.reasonCode(),
+                    fact == null ? "LEGACY_DERIVATION" : fact.observationSource(),
+                    fact == null ? List.of() : fact.causedByNodeIds(),
                     record.nodeElapsedMs().getOrDefault(nodeId, 0L),
                     status == VisualRunStatus.MOCKED,
-                    new Retry(attempts.size(), attempts.size(), latestAttempt == null ? "" : latestAttempt.errorType()),
-                    new Fallback(status == VisualRunStatus.FALLBACK, "", ""),
+                    retry(fact, attempts, latestAttempt),
+                    fallback(fact),
+                    sideEffectOutcome(snapshot, fact, status),
                     "payload:" + record.runId() + ":node." + nodeId + ".input",
                     outputAvailable ? "payload:" + record.runId() + ":node." + nodeId + ".output" : "",
                     inputAvailable,
@@ -128,53 +135,77 @@ public record RunEvidenceBundle(
         return nodes;
     }
 
-    private static String reason(VisualRunStatus status, VisualNodeExecutionAttempt latestAttempt) {
-        if (latestAttempt != null && !latestAttempt.errorMessage().isBlank()) {
-            return latestAttempt.errorMessage();
+    private static Retry retry(VisualNodeExecutionFact fact, List<VisualNodeExecutionAttempt> attempts,
+                               VisualNodeExecutionAttempt latestAttempt) {
+        if (fact == null) {
+            return new Retry(attempts.isEmpty() ? 0 : 1, 0, false,
+                    latestAttempt == null ? "" : latestAttempt.errorType());
         }
-        return status == VisualRunStatus.UNKNOWN ? "STATUS_NOT_CAPTURED" : "";
+        return new Retry(fact.retry().observedAttempts(), fact.retry().configuredMaxAttempts(),
+                fact.retry().exhausted(), fact.retry().lastErrorType());
     }
 
-    private static VisualRunStatus nodeStatus(String runtimeStatus, VisualNodeExecutionAttempt latestAttempt) {
-        VisualRunStatus status = VisualRunStatus.fromRuntime(runtimeStatus);
-        if (status == VisualRunStatus.FAILED && latestAttempt != null
-                && latestAttempt.errorType().toLowerCase(java.util.Locale.ROOT).contains("timeout")) {
-            return VisualRunStatus.TIMEOUT;
+    private static Fallback fallback(VisualNodeExecutionFact fact) {
+        if (fact == null) {
+            return new Fallback(false, false, "NOT_CAPTURED", "");
         }
-        return status;
+        return new Fallback(fact.fallback().configured(), fact.fallback().used(), fact.fallback().strategy(),
+                fact.fallback().originalErrorType());
+    }
+
+    private static String sideEffectOutcome(VisualGraphRunRecord.NodeSnapshot snapshot,
+                                            VisualNodeExecutionFact fact,
+                                            VisualRunStatus status) {
+        if (status == VisualRunStatus.MOCKED) {
+            return "NOT_INVOKED";
+        }
+        if (fact != null && !"NOT_CAPTURED".equals(fact.sideEffectOutcome())) {
+            return fact.sideEffectOutcome();
+        }
+        String effect = snapshot == null ? "UNKNOWN" : snapshot.effect();
+        if (Set.of("PURE", "READ").contains(effect)) {
+            return "NOT_APPLICABLE";
+        }
+        return "UNKNOWN_COMMIT";
+    }
+
+    private static VisualRunStatus nodeStatus(String runtimeStatus, VisualNodeExecutionFact fact) {
+        return fact == null ? VisualRunStatus.fromRuntime(runtimeStatus) : VisualRunStatus.fromRuntime(fact.status());
     }
 
     private static List<EdgeEvidence> edgeEvidence(VisualGraphRunRecord record) {
         Map<String, VisualRunStatus> statuses = new LinkedHashMap<>();
         record.statusMap().forEach((nodeId, status) -> {
-            List<VisualNodeExecutionAttempt> attempts = record.nodeAttempts().getOrDefault(nodeId, List.of());
-            VisualNodeExecutionAttempt latest = attempts.isEmpty() ? null : attempts.get(attempts.size() - 1);
-            statuses.put(nodeId, nodeStatus(status, latest));
+            statuses.put(nodeId, nodeStatus(status, record.nodeExecutionFacts().get(nodeId)));
         });
         return record.edgeSnapshots().stream()
-                .map(edge -> new EdgeEvidence(
-                        edge.edgeId(), edge.sourceNodeId(), edge.targetNodeId(),
-                        edgeStatus(statuses.get(edge.sourceNodeId()), statuses.get(edge.targetNodeId())).name(),
-                        "payload:" + record.runId() + ":edge." + edge.edgeId()
-                ))
+                .map(edge -> {
+                    VisualRunStatus source = statuses.get(edge.sourceNodeId());
+                    VisualRunStatus target = statuses.get(edge.targetNodeId());
+                    boolean propagated = edgePropagated(source, target);
+                    return new EdgeEvidence(
+                            edge.edgeId(), edge.sourceNodeId(), edge.targetNodeId(),
+                            edgeStatus(source, target).name(), edgeReason(source, target),
+                            "TOPOLOGY_DERIVATION", propagated,
+                            propagated ? "payload:" + record.runId() + ":edge." + edge.edgeId() : "");
+                })
                 .toList();
     }
 
     private static VisualRunStatus edgeStatus(VisualRunStatus source, VisualRunStatus target) {
-        if (source == VisualRunStatus.SUCCESS && target == VisualRunStatus.SUCCESS) {
-            return VisualRunStatus.SUCCESS;
-        }
         if (source == VisualRunStatus.MOCKED && target == VisualRunStatus.MOCKED) {
             return VisualRunStatus.MOCKED;
         }
         if (target == VisualRunStatus.SKIPPED) {
             return VisualRunStatus.SKIPPED;
         }
-        if (source == VisualRunStatus.TIMEOUT || target == VisualRunStatus.TIMEOUT) {
-            return VisualRunStatus.TIMEOUT;
+        if (source != null
+                && Set.of(VisualRunStatus.FAILED, VisualRunStatus.TIMEOUT, VisualRunStatus.CANCELLED).contains(source)) {
+            return VisualRunStatus.CANCELLED;
         }
-        if (source == VisualRunStatus.FAILED || target == VisualRunStatus.FAILED) {
-            return VisualRunStatus.FAILED;
+        if (Set.of(VisualRunStatus.SUCCESS, VisualRunStatus.FALLBACK, VisualRunStatus.MOCKED).contains(source)
+                && target != null && target != VisualRunStatus.UNKNOWN && target != VisualRunStatus.CANCELLED) {
+            return VisualRunStatus.SUCCESS;
         }
         if (source == VisualRunStatus.UNKNOWN || target == VisualRunStatus.UNKNOWN
                 || source == null || target == null) {
@@ -183,15 +214,49 @@ public record RunEvidenceBundle(
         return VisualRunStatus.PARTIAL;
     }
 
-    private static String graphStatus(VisualGraphRunRecord record, List<NodeEvidence> nodes) {
+    private static String edgeReason(VisualRunStatus source, VisualRunStatus target) {
+        if (target == VisualRunStatus.SKIPPED) {
+            return "BRANCH_NOT_TAKEN";
+        }
+        if (source != null
+                && Set.of(VisualRunStatus.FAILED, VisualRunStatus.TIMEOUT, VisualRunStatus.CANCELLED).contains(source)) {
+            return "UPSTREAM_FAILURE_PROPAGATED";
+        }
+        if (edgePropagated(source, target)) {
+            return source == VisualRunStatus.MOCKED ? "RECORDED_PAYLOAD_REPLAY" : "VALUE_PROPAGATED";
+        }
+        return "PROPAGATION_NOT_CAPTURED";
+    }
+
+    private static boolean edgePropagated(VisualRunStatus source, VisualRunStatus target) {
+        return source != null
+                && Set.of(VisualRunStatus.SUCCESS, VisualRunStatus.FALLBACK, VisualRunStatus.MOCKED).contains(source)
+                && target != null && !Set.of(VisualRunStatus.SKIPPED, VisualRunStatus.CANCELLED,
+                VisualRunStatus.UNKNOWN).contains(target);
+    }
+
+    private static Execution graphExecution(VisualGraphRunRecord record, List<NodeEvidence> nodes) {
+        NodeEvidence output = nodes.stream().filter(node -> node.nodeId().equals(record.outputNode())).findFirst()
+                .orElse(null);
+        boolean outputReached = output != null && output.outputAvailable()
+                && Set.of("SUCCESS", "FALLBACK", "MOCKED").contains(output.status());
+        boolean degraded = nodes.stream().anyMatch(node -> Set.of("FAILED", "TIMEOUT", "CANCELLED", "PARTIAL")
+                .contains(node.status()));
+        String status = graphStatus(record, nodes, outputReached, degraded);
+        String reason = record.success() ? "NONE"
+                : outputReached && degraded ? "CRITICAL_OUTPUT_REACHED_WITH_DEGRADATION"
+                : output == null ? "OUTPUT_NODE_NOT_CAPTURED"
+                : "CRITICAL_OUTPUT_NOT_REACHED";
+        return new Execution(status, reason, record.createdAt(), record.elapsedMs(), record.outputNode(),
+                nodes.stream().anyMatch(NodeEvidence::mocked), outputReached, degraded);
+    }
+
+    private static String graphStatus(VisualGraphRunRecord record, List<NodeEvidence> nodes,
+                                      boolean outputReached, boolean degraded) {
         if (record.success()) {
             return VisualRunStatus.SUCCESS.name();
         }
-        boolean succeeded = nodes.stream().anyMatch(node -> VisualRunStatus.SUCCESS.name().equals(node.status()));
-        boolean unsuccessful = nodes.stream().anyMatch(node -> List.of(
-                VisualRunStatus.FAILED.name(), VisualRunStatus.TIMEOUT.name(), VisualRunStatus.CANCELLED.name(),
-                VisualRunStatus.PARTIAL.name()).contains(node.status()));
-        if (succeeded && unsuccessful) {
+        if (outputReached && degraded) {
             return VisualRunStatus.PARTIAL.name();
         }
         for (VisualRunStatus candidate : List.of(VisualRunStatus.TIMEOUT, VisualRunStatus.CANCELLED,
@@ -213,6 +278,11 @@ public record RunEvidenceBundle(
         int expectedEdges = record.edgeSnapshots().size();
         int capturedEdges = (int) edges.stream().filter(edge -> !VisualRunStatus.UNKNOWN.name().equals(edge.status()))
                 .count();
+        int expectedNodeFacts = expectedNodes;
+        int capturedNodeFacts = (int) record.nodeExecutionFacts().values().stream()
+                .filter(fact -> !Set.of("NOT_CAPTURED", "ENGINE_STATUS_WITH_EVENT_GAP")
+                        .contains(fact.observationSource()))
+                .count();
         int expectedNodeInputs = (int) nodes.stream().filter(RunEvidenceBundle::requiresCapturedInput).count();
         int capturedNodeInputs = (int) nodes.stream()
                 .filter(RunEvidenceBundle::requiresCapturedInput)
@@ -226,7 +296,8 @@ public record RunEvidenceBundle(
         boolean complete = expectedNodes == capturedNodes
                 && expectedEdges == capturedEdges
                 && expectedNodeInputs == capturedNodeInputs
-                && expectedNodeOutputs == capturedNodeOutputs;
+                && expectedNodeOutputs == capturedNodeOutputs
+                && expectedNodeFacts == capturedNodeFacts;
         String hash = record.evidenceMaterialFingerprint();
         VisualRunEvidenceSeal seal = record.evidenceSeal();
         VisualEvidenceSigner.Verification verification = evidenceSigner.verify(seal, hash);
@@ -240,6 +311,9 @@ public record RunEvidenceBundle(
         if (expectedNodeOutputs != capturedNodeOutputs) {
             gaps.add("Exact output was not captured for every successful node.");
         }
+        if (expectedNodeFacts != capturedNodeFacts) {
+            gaps.add("Structured execution semantics were not captured for every node.");
+        }
         if (!verification.valid()) {
             gaps.add("Evidence integrity is not verified: " + verification.reason());
         }
@@ -247,11 +321,13 @@ public record RunEvidenceBundle(
         return new EvidenceManifest(expectedNodes, capturedNodes, expectedEdges, capturedEdges,
                 expectedNodeInputs, capturedNodeInputs, expectedNodeOutputs, capturedNodeOutputs,
                 evidenceStatus, complete, gaps, hash,
-                verification.status(), seal.keyId(), seal.algorithm(), seal.signedAt(), seal.signature());
+                verification.status(), seal.keyId(), seal.algorithm(), seal.signedAt(), seal.signature(),
+                expectedNodeFacts, capturedNodeFacts);
     }
 
     private static boolean requiresCapturedInput(NodeEvidence node) {
         return !VisualRunStatus.SKIPPED.name().equals(node.status())
+                && !VisualRunStatus.CANCELLED.name().equals(node.status())
                 && !VisualRunStatus.UNKNOWN.name().equals(node.status());
     }
 
@@ -284,8 +360,11 @@ public record RunEvidenceBundle(
         static Fingerprints empty() { return new Fingerprints("", "", ""); }
     }
 
-    public record Execution(String status, Instant startedAt, long elapsedMs, String outputNode, boolean mockUsed) {
-        static Execution empty() { return new Execution("UNKNOWN", Instant.EPOCH, 0, "", false); }
+    public record Execution(String status, String reasonCode, Instant startedAt, long elapsedMs, String outputNode,
+                            boolean mockUsed, boolean criticalOutputReached, boolean degraded) {
+        static Execution empty() {
+            return new Execution("UNKNOWN", "STATUS_NOT_CAPTURED", Instant.EPOCH, 0, "", false, false, false);
+        }
     }
 
     public record PayloadSummary(Map<String, Object> summary, String payloadRef) {
@@ -296,19 +375,21 @@ public record RunEvidenceBundle(
         static PayloadSummary empty() { return new PayloadSummary(Map.of(), ""); }
     }
 
-    public record NodeEvidence(String nodeId, String operatorRef, String status, String reason, long elapsedMs,
-                               boolean mocked, Retry retry, Fallback fallback, String inputPayloadRef,
+    public record NodeEvidence(String nodeId, String operatorRef, String status, String reasonCode,
+                               String observationSource, List<String> causedByNodeIds, long elapsedMs,
+                               boolean mocked, Retry retry, Fallback fallback, String sideEffectOutcome,
+                               String inputPayloadRef,
                                String outputPayloadRef, boolean inputAvailable, boolean outputAvailable) {
     }
 
     public record EdgeEvidence(String edgeId, String sourceNodeId, String targetNodeId, String status,
-                               String payloadRef) {
+                               String reasonCode, String observationSource, boolean propagated, String payloadRef) {
     }
 
-    public record Retry(int attempts, int maxAttempts, String lastErrorCode) {
+    public record Retry(int attempts, int maxAttempts, boolean exhausted, String lastErrorCode) {
     }
 
-    public record Fallback(boolean used, String strategy, String sourceNodeId) {
+    public record Fallback(boolean configured, boolean used, String strategy, String originalErrorType) {
     }
 
     public record Assertions(String status, List<String> suiteRefs, List<Object> results) {
@@ -324,17 +405,20 @@ public record RunEvidenceBundle(
                                    int capturedNodeInputCount, int expectedNodeOutputCount,
                                    int capturedNodeOutputCount, String evidenceStatus, boolean complete,
                                    List<String> gaps, String manifestHash, String signatureStatus, String keyId,
-                                   String signatureAlgorithm, Instant signedAt, String signature) {
+                                   String signatureAlgorithm, Instant signedAt, String signature,
+                                   int expectedNodeFactCount, int capturedNodeFactCount) {
         public EvidenceManifest {
             evidenceStatus = evidenceStatus == null || evidenceStatus.isBlank() ? "QUARANTINED" : evidenceStatus;
             gaps = gaps == null ? List.of() : List.copyOf(gaps);
             signatureAlgorithm = signatureAlgorithm == null ? "" : signatureAlgorithm;
             signedAt = signedAt == null ? Instant.EPOCH : signedAt;
             signature = signature == null ? "" : signature;
+            expectedNodeFactCount = Math.max(0, expectedNodeFactCount);
+            capturedNodeFactCount = Math.max(0, capturedNodeFactCount);
         }
         static EvidenceManifest empty() {
             return new EvidenceManifest(0, 0, 0, 0, 0, 0, 0, 0, "QUARANTINED", false,
-                    List.of(), "", "UNSIGNED", "", "", Instant.EPOCH, "");
+                    List.of(), "", "UNSIGNED", "", "", Instant.EPOCH, "", 0, 0);
         }
     }
 }

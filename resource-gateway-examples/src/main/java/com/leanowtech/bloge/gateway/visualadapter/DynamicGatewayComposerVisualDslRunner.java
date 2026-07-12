@@ -106,6 +106,12 @@ public class DynamicGatewayComposerVisualDslRunner implements VisualDslRunner, V
                         (left, right) -> left,
                         java.util.LinkedHashMap::new
                 )),
+                source.nodeExecutionFacts().entrySet().stream().collect(java.util.stream.Collectors.toMap(
+                        java.util.Map.Entry::getKey,
+                        entry -> fact(entry.getValue()),
+                        (left, right) -> left,
+                        java.util.LinkedHashMap::new
+                )),
                 source.diagnostics().stream()
                         .map(DynamicGatewayComposerVisualDslRunner::diagnostic)
                         .toList(),
@@ -118,6 +124,26 @@ public class DynamicGatewayComposerVisualDslRunner implements VisualDslRunner, V
     private static VisualNodeExecutionAttempt attempt(DynamicGraphRunResponse.NodeAttempt source) {
         return new VisualNodeExecutionAttempt(source.attempt(), source.input(), source.output(), source.status(),
                 source.startedAt(), source.elapsedMs(), source.errorType(), source.errorMessage());
+    }
+
+    private static com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact fact(
+            DynamicGraphRunResponse.NodeExecutionFact source) {
+        return new com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact(
+                source.status(), source.reasonCode(), source.observationSource(), source.causedByNodeIds(),
+                new com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact.Retry(
+                        source.retry().configuredMaxAttempts(), source.retry().observedAttempts(),
+                        source.retry().exhausted(), source.retry().lastErrorType()),
+                new com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact.Timeout(
+                        source.timeout().configured(), source.timeout().configuredTimeoutMs(),
+                        source.timeout().observed()),
+                new com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact.Fallback(
+                        source.fallback().configured(), source.fallback().used(), source.fallback().strategy(),
+                        source.fallback().originalErrorType()),
+                source.sideEffectOutcome(),
+                source.events().stream().map(event ->
+                        new com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact.Event(
+                                event.sequence(), event.type(), event.observedAt(), event.attempt(),
+                                event.errorType())).toList());
     }
 
     private static VisualDslRunResponse.Diagnostic diagnostic(DynamicGraphRunResponse.Diagnostic source) {

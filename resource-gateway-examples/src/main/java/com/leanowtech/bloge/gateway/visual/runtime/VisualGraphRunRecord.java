@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.runtime;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
@@ -54,6 +55,7 @@ import java.util.TreeSet;
  * @param nodeAttempts sanitized exact operator invocation attempts keyed by node id
  * @param evidenceSeal persisted signature over this immutable run material
  * @param replay immutable recorded-replay lineage, safety policy, and assertion outcomes
+ * @param nodeExecutionFacts structured engine-observed and topology-derived node semantics
  */
 public record VisualGraphRunRecord(
         String schemaVersion,
@@ -91,9 +93,10 @@ public record VisualGraphRunRecord(
         List<EdgeSnapshot> edgeSnapshots,
         Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts,
         VisualRunEvidenceSeal evidenceSeal,
-        VisualReplayMetadata replay
+        VisualReplayMetadata replay,
+        Map<String, VisualNodeExecutionFact> nodeExecutionFacts
 ) {
-    public static final String SCHEMA_VERSION = "bloge.visualGraphRunRecord.v4";
+    public static final String SCHEMA_VERSION = "bloge.visualGraphRunRecord.v5";
     public static final String SOURCE_TRANSIENT_DRAFT = "TRANSIENT_DRAFT";
     public static final String SOURCE_STORED_DRAFT = "STORED_DRAFT";
     public static final String SOURCE_PUBLICATION = "PUBLICATION";
@@ -139,6 +142,31 @@ public record VisualGraphRunRecord(
         nodeAttempts = immutableAttempts(nodeAttempts);
         evidenceSeal = evidenceSeal == null ? VisualRunEvidenceSeal.unsigned() : evidenceSeal;
         replay = replay == null ? VisualReplayMetadata.none() : replay;
+        nodeExecutionFacts = nodeExecutionFacts == null ? Map.of() : new LinkedHashMap<>(nodeExecutionFacts);
+    }
+
+    /** Backward-compatible constructor for the v4 shape before structured execution facts were persisted. */
+    public VisualGraphRunRecord(String schemaVersion, String runId, String sourceKind, String draftId,
+                                long draftRevision, String publicationId, String sourceArtifactKind,
+                                String graphName, String tenantId, String namespace, String environment,
+                                String outputNode, Instant createdAt, boolean validated, boolean compiled,
+                                boolean success, long elapsedMs, Map<String, Long> nodeElapsedMs,
+                                Map<String, String> statusMap, List<VisualDiagnostic> diagnostics,
+                                List<String> errors, Map<String, Object> contextSummary,
+                                Map<String, Object> outputSummary, Map<String, Object> resultsSummary,
+                                Map<String, NodeSnapshot> nodeSnapshots, String generatedDsl,
+                                String draftFingerprint, String operatorDependencyFingerprint,
+                                Map<String, Object> contextPayload, Object outputPayload,
+                                Map<String, Object> resultsPayload, VisualPayloadRedactionManifest redaction,
+                                List<EdgeSnapshot> edgeSnapshots,
+                                Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts,
+                                VisualRunEvidenceSeal evidenceSeal, VisualReplayMetadata replay) {
+        this(schemaVersion, runId, sourceKind, draftId, draftRevision, publicationId, sourceArtifactKind,
+                graphName, tenantId, namespace, environment, outputNode, createdAt, validated, compiled, success,
+                elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary, outputSummary,
+                resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint, operatorDependencyFingerprint,
+                contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots, nodeAttempts, evidenceSeal,
+                replay, Map.of());
     }
 
     /** Backward-compatible constructor for the v3 shape before replay lineage was first-class. */
@@ -511,7 +539,7 @@ public record VisualGraphRunRecord(
                 validated, compiled, success, elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary,
                 outputSummary, resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint,
                 operatorDependencyFingerprint, contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots,
-                nodeAttempts, VisualRunEvidenceSeal.unsigned(), replay);
+                nodeAttempts, VisualRunEvidenceSeal.unsigned(), replay, nodeExecutionFacts);
     }
 
     /** Returns a copy sealed after repository identity has been assigned. */
@@ -521,7 +549,7 @@ public record VisualGraphRunRecord(
                 validated, compiled, success, elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary,
                 outputSummary, resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint,
                 operatorDependencyFingerprint, contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots,
-                nodeAttempts, newEvidenceSeal, replay);
+                nodeAttempts, newEvidenceSeal, replay, nodeExecutionFacts);
     }
 
     /** Stable fingerprint over every persisted run field except the seal itself. */
@@ -562,6 +590,7 @@ public record VisualGraphRunRecord(
         material.put("edgeSnapshots", edgeSnapshots);
         material.put("nodeAttempts", nodeAttempts);
         material.put("replay", replay);
+        material.put("nodeExecutionFacts", nodeExecutionFacts);
         return VisualBundleFingerprint.fromMaterial(material);
     }
 
@@ -572,9 +601,11 @@ public record VisualGraphRunRecord(
         nodeIds.addAll(nodeSnapshots.keySet());
         nodeIds.addAll(resultsPayload.keySet());
         nodeIds.addAll(nodeAttempts.keySet());
+        nodeIds.addAll(nodeExecutionFacts.keySet());
         Map<String, String> replayStatuses = new LinkedHashMap<>();
         Map<String, Long> replayElapsed = new LinkedHashMap<>();
         Map<String, List<VisualNodeExecutionAttempt>> replayAttempts = new LinkedHashMap<>();
+        Map<String, VisualNodeExecutionFact> replayFacts = new LinkedHashMap<>();
         for (String nodeId : nodeIds) {
             List<VisualNodeExecutionAttempt> attempts = nodeAttempts.getOrDefault(nodeId, List.of());
             VisualNodeExecutionAttempt latest = attempts.isEmpty() ? null : attempts.get(attempts.size() - 1);
@@ -586,6 +617,12 @@ public record VisualGraphRunRecord(
             replayElapsed.put(nodeId, 0L);
             replayAttempts.put(nodeId, List.of(new VisualNodeExecutionAttempt(
                     0, input, output, "MOCKED", createdAt, 0, "", "RECORDED_PAYLOAD_REPLAY")));
+            replayFacts.put(nodeId, new VisualNodeExecutionFact(
+                    "MOCKED", "RECORDED_PAYLOAD_REPLAY", "RECORDED_REPLAY", List.of(),
+                    new VisualNodeExecutionFact.Retry(1, 1, false, ""),
+                    new VisualNodeExecutionFact.Timeout(false, 0, false),
+                    new VisualNodeExecutionFact.Fallback(false, false, "NONE", ""),
+                    "NOT_INVOKED", List.of()));
         }
         boolean assertionsPassed = safeReplay.assertionsPassed();
         List<String> replayErrors = safeReplay.assertionResults().stream()
@@ -599,7 +636,7 @@ public record VisualGraphRunRecord(
                 replayElapsed, replayStatuses, List.of(), replayErrors, contextSummary, outputSummary, resultsSummary,
                 nodeSnapshots, generatedDsl, draftFingerprint, operatorDependencyFingerprint, contextPayload,
                 outputPayload, resultsPayload, redaction, edgeSnapshots, replayAttempts,
-                VisualRunEvidenceSeal.unsigned(), safeReplay);
+                VisualRunEvidenceSeal.unsigned(), safeReplay, replayFacts);
     }
 
     private static VisualGraphRunRecord fromDraft(String sourceKind,
@@ -656,7 +693,10 @@ public record VisualGraphRunRecord(
                 payloadCapture.results(),
                 payloadCapture.redaction(),
                 edgeSnapshots(draft),
-                payloadCapture.nodeAttempts()
+                payloadCapture.nodeAttempts(),
+                VisualRunEvidenceSeal.unsigned(),
+                VisualReplayMetadata.none(),
+                safeResponse.nodeExecutionFacts()
         );
     }
 
@@ -690,7 +730,10 @@ public record VisualGraphRunRecord(
         Map<String, NodeSnapshot> snapshots = new LinkedHashMap<>();
         for (int i = 0; i < draft.nodes().size(); i++) {
             GraphDraft.DraftNode node = draft.nodes().get(i);
-            snapshots.put(node.id(), new NodeSnapshot(node.id(), i, node.operatorRef(), node.label()));
+            OperatorDefinition definition = draft.operatorSnapshots().get(node.id());
+            snapshots.put(node.id(), new NodeSnapshot(node.id(), i, node.operatorRef(), node.label(),
+                    definition == null ? "UNKNOWN" : definition.capabilities().effect(),
+                    definition == null ? "UNKNOWN" : definition.capabilities().idempotency()));
         }
         return snapshots;
     }
@@ -823,7 +866,8 @@ public record VisualGraphRunRecord(
      * @param operatorRef operator reference used by the node
      * @param label display label
      */
-    public record NodeSnapshot(String nodeId, int nodeIndex, String operatorRef, String label) {
+    public record NodeSnapshot(String nodeId, int nodeIndex, String operatorRef, String label,
+                               String effect, String idempotency) {
         /**
          * Creates a node snapshot.
          */
@@ -832,6 +876,13 @@ public record VisualGraphRunRecord(
             nodeIndex = Math.max(-1, nodeIndex);
             operatorRef = operatorRef == null ? "" : operatorRef;
             label = label == null ? "" : label;
+            effect = effect == null || effect.isBlank() ? "UNKNOWN" : effect.toUpperCase(java.util.Locale.ROOT);
+            idempotency = idempotency == null || idempotency.isBlank()
+                    ? "UNKNOWN" : idempotency.toUpperCase(java.util.Locale.ROOT);
+        }
+
+        public NodeSnapshot(String nodeId, int nodeIndex, String operatorRef, String label) {
+            this(nodeId, nodeIndex, operatorRef, label, "UNKNOWN", "UNKNOWN");
         }
     }
 

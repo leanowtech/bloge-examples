@@ -20,6 +20,7 @@ import java.util.Map;
  * @param elapsedMs whole-run elapsed time in milliseconds
  * @param nodeElapsedMs per-node elapsed times in milliseconds
  * @param nodeAttempts exact operator invocation attempts keyed by node id
+ * @param nodeExecutionFacts structured engine-observed execution semantics keyed by node id
  * @param diagnostics compiler diagnostics projected into a visual-owned shape
  * @param errors execution error messages
  * @param layout generated visual layout, when the adapter can provide one
@@ -36,6 +37,7 @@ public record VisualDslRunResponse(
         long elapsedMs,
         Map<String, Long> nodeElapsedMs,
         Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts,
+        Map<String, VisualNodeExecutionFact> nodeExecutionFacts,
         List<Diagnostic> diagnostics,
         List<String> errors,
         VisualRunLayout layout,
@@ -51,6 +53,7 @@ public record VisualDslRunResponse(
         statusMap = statusMap == null ? Map.of() : new LinkedHashMap<>(statusMap);
         nodeElapsedMs = nodeElapsedMs == null ? Map.of() : new LinkedHashMap<>(nodeElapsedMs);
         nodeAttempts = immutableAttempts(nodeAttempts);
+        nodeExecutionFacts = nodeExecutionFacts == null ? Map.of() : new LinkedHashMap<>(nodeExecutionFacts);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         errors = errors == null ? List.of() : List.copyOf(errors);
     }
@@ -70,7 +73,26 @@ public record VisualDslRunResponse(
                                 VisualRunLayout layout,
                                 VisualDecisionTable decisionTable) {
         this(compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs, nodeElapsedMs,
-                Map.of(), diagnostics, errors, layout, decisionTable);
+                Map.of(), Map.of(), diagnostics, errors, layout, decisionTable);
+    }
+
+    /** Backward-compatible constructor for adapters that expose attempts but not execution semantics. */
+    public VisualDslRunResponse(boolean compiled,
+                                boolean success,
+                                String graphName,
+                                String outputNode,
+                                Object output,
+                                Map<String, Object> results,
+                                Map<String, String> statusMap,
+                                long elapsedMs,
+                                Map<String, Long> nodeElapsedMs,
+                                Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts,
+                                List<Diagnostic> diagnostics,
+                                List<String> errors,
+                                VisualRunLayout layout,
+                                VisualDecisionTable decisionTable) {
+        this(compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs, nodeElapsedMs,
+                nodeAttempts, Map.of(), diagnostics, errors, layout, decisionTable);
     }
 
     private static Map<String, List<VisualNodeExecutionAttempt>> immutableAttempts(

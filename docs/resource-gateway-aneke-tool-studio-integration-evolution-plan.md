@@ -533,7 +533,7 @@ POST /api/integration/gate-results
 | P0 | Run Trace 可导出为治理证据 | 当前 shape-only trace 不够 | 新增 evidence bundle，不直接改造成唯一 run response |
 | P0 | Payload 级 replay | 当前缺 payload capture | 新增 payload store/ref/sanitizer/replay endpoint |
 | P0 | GraphDraft export 依赖元数据 | 已有 dependency report 但不够稳定导入 | integration dependency profile |
-| P0 | Timeout/partial failure 语义 | 当前 statusMap 不足 | 标准状态 enum + retry/fallback metadata |
+| P0 | Timeout/partial failure 语义 | Round 6 已补 engine event、原因码、关键输出聚合和因果链；deadline/user cancel/commit receipt 仍缺 | `VisualNodeExecutionFact` + evidence v3；下一步 run deadline/cancel/fencing |
 | P1 | Deep Link | 当前不是 integration API | 前端 route + resolver API |
 | P1 | Health/Capability Probe | 缺口明确 | `/api/integration/capabilities` |
 | P1 | Contract Test Suite 对齐 workbook | 当前 case/assertion 语义偏基础 | suite vNext + workbook mapping |
@@ -851,7 +851,7 @@ allow = role permits action
 | 维度 | 示例 | 变化原因 | 协商方式 |
 |---|---|---|---|
 | transport protocol | `ToolStudioResourceGatewayProtocol/1.2` | envelope、错误和协商机制变化 | capability probe + Accept header |
-| payload schema | `runEvidenceBundle.v2` | 领域字段和约束变化 | `payloadKind + payloadSchemaVersion` |
+| payload schema | `runEvidenceBundle.v3` | 领域字段和约束变化 | `payloadKind + payloadSchemaVersion`；capability 同时声明 v1/v2/v3；机器合同见 `docs/schemas/tool-studio-resource-gateway/run-evidence-bundle-v3.schema.json` |
 | producer implementation | `resource-gateway/2.8.1` | bug fix、性能和内部实现变化 | 信息字段，不作为兼容判断唯一依据 |
 | semantic profile | `ANEKE_CORRECTNESS_2026_1` | assertion、状态或治理解释变化 | capability profile + explicit opt-in |
 
@@ -1037,6 +1037,10 @@ tenant profile 必须声明允许 region、evidence storage region、ANEKE inges
 
 ## 23. 运行可靠性：从“节点报错”到可恢复执行
 
+![运行失败事实的观测、推导与证据化](assets/resource-gateway-run-failure-semantics.svg)
+
+图源：[resource-gateway-run-failure-semantics.drawio](assets/drawio/resource-gateway-run-failure-semantics.drawio)。
+
 ### 23.1 Deadline 分层传播
 
 Timeout 不能只是每个 operator 的独立数字。一次 run 应有绝对 deadline，graph scheduler 为节点分配剩余预算：
@@ -1081,6 +1085,18 @@ Retry decision 由错误类别、side-effect、幂等支持和剩余 deadline �
 }
 ```
 
+当前落地状态（Round 6）：`NodeExecutionCaptureInterceptor` 同时接入 BLOGE `ExecutionListener` 和
+`OperatorInterceptor`。retry callback 被拆成 `RETRY_SCHEDULED/RETRY_EXHAUSTED`，timeout/fallback 只由
+引擎事件确认；每个节点保存 configured max attempts、observed attempts、timeout budget、fallback strategy、
+低基数事件和 `observationSource`。`SKIPPED/CANCELLED` 由不可变拓扑推导并携带 `causedByNodeIds`，不伪装成
+引擎直接事件。旧 listener 在同名图并发时缺 execution context：唯一候选可安全关联，多候选统一标记
+`RESILIENCE_EVENT_CORRELATION_AMBIGUOUS + ENGINE_STATUS_WITH_EVENT_GAP` 并 quarantine，禁止跨 run 猜测。
+
+图级聚合已经以 `outputNode` 为关键输出：关键输出超时是 `TIMEOUT`；关键输出到达且存在独立降级才是
+`PARTIAL + CRITICAL_OUTPUT_REACHED_WITH_DEGRADATION`。edge evidence 表达“值是否传播”，目标节点随后超时
+不会倒灌成 edge timeout。`VisualGraphRunRecord.v5` 把 facts 纳入不可变 fingerprint 和签名，
+`runEvidenceBundle.v3` 增加 node/edge/graph reason、fact coverage 和 unknown-commit 字段。
+
 ### 23.4 熔断、舱壁和背压
 
 按 `tenantId + runtimeBindingRef + destination` 建立舱壁，防止某客户或某下游拖垮全局。队列达到高水位时：先拒绝低优先级批量 replay，再降级 evidence payload capture，最后才拒绝交互式 simulate；任何降级都必须写入 run/evidence，不允许“为了可用性”悄悄减少证据。
@@ -1088,6 +1104,11 @@ Retry decision 由错误类别、side-effect、幂等支持和剩余 deadline �
 ### 23.5 幂等与未知结果
 
 非幂等写在 timeout 后可能处于 `UNKNOWN_COMMIT`。系统不能把它归为普通 `FAILED`；应暂停依赖该结果的后续写操作，暴露 reconciliation hook，由 operator adapter 查询远端 transaction/idempotency record。没有 reconciliation 能力的算子必须声明这一风险，ANEKE 可据此提高发布门槛。
+
+Round 6 已停止把外部副作用结果默认为“未提交”：run snapshot 保存 operator effect/idempotency，evidence 在
+缺少 runtime commit receipt 时输出 `sideEffectOutcome=UNKNOWN_COMMIT`。但当前仍只是诚实暴露风险，尚未实现
+远端 transaction receipt、幂等记录查询、暂停后续写、补偿确认或 reconciliation hook，因此 capability 必须
+保持 `sideEffectCommitConfirmation=false`。
 
 ### 23.6 运行状态机
 
@@ -1364,6 +1385,12 @@ operator 从 schema 导入到生产可用需要 `DISCOVERED -> DESCRIBED -> VERI
 交付：标准状态/原因、deadline/cancel/retry、evidence manifest、capture completeness、sanitized payload store、签名、quarantine、evidence SLO。
 
 退出门槛：success/failure/timeout/partial/mock/fallback/unknown-commit 场景均可结构化解释；篡改可检出；run 成功但 evidence 不完整时 gate 不会误采纳。
+
+当前落地状态（Round 6）：标准 node/edge/graph facts、真实 retry/timeout/fallback events、关键输出聚合、
+sanitized payload、持久签名、fact coverage 和 quarantine 已实现；`graphDeadline=false`、
+`userRunCancellation=false`、`sideEffectCommitConfirmation=false` 被 capability 明确揭示。Stage 2 因此尚未退出：
+仍需 run intent/idempotency、绝对 deadline 与剩余预算传播、用户 cancel/fencing、operator commit receipt、
+side-effect-aware retry/reconciliation，以及对应 fault injection/SLO。
 
 ### Stage 3 - Safe replay 与 workbook 对齐（2-4 周）
 

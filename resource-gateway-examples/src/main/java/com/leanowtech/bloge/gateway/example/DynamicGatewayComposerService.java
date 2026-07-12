@@ -57,6 +57,7 @@ public class DynamicGatewayComposerService {
         this.graphEngine = GraphEngine.builder()
                 .registry(InputCoercingOperatorRegistry.wrap(registry, objectMapper))
                 .interceptors(List.of(executionCapture))
+                .listeners(List.of(executionCapture))
                 .build();
         this.graphLoader = new GraphLoader(registry);
     }
@@ -124,13 +125,13 @@ public class DynamicGatewayComposerService {
         ExampleVisualLayout layout = layoutFor(graph);
 
         String captureId = UUID.randomUUID().toString();
-        executionCapture.begin(captureId);
+        executionCapture.begin(captureId, graph);
         GraphResult result;
-        Map<String, List<DynamicGraphRunResponse.NodeAttempt>> nodeAttempts;
+        NodeExecutionCaptureInterceptor.CapturedExecution captured;
         try {
             result = graphEngine.execute(graph, contextFrom(request.context(), captureId));
         } catch (RuntimeException ex) {
-            nodeAttempts = executionCapture.complete(captureId);
+            captured = executionCapture.complete(captureId, null);
             return new DynamicGraphRunResponse(
                     true,
                     false,
@@ -141,14 +142,15 @@ public class DynamicGatewayComposerService {
                     Map.of(),
                     0,
                     Map.of(),
-                    nodeAttempts,
+                    captured.attempts(),
+                    captured.facts(),
                     diagnostics,
                     List.of(message(ex)),
                     layout,
                     decisionTable
             );
         }
-        nodeAttempts = executionCapture.complete(captureId);
+        captured = executionCapture.complete(captureId, result);
 
         Object output = result.findOutput(outputNode, Object.class).orElse(null);
         return new DynamicGraphRunResponse(
@@ -161,7 +163,8 @@ public class DynamicGatewayComposerService {
                 statuses(result),
                 result.elapsed().toMillis(),
                 nodeElapsedMs(result.nodeTimings()),
-                nodeAttempts,
+                captured.attempts(),
+                captured.facts(),
                 diagnostics,
                 errors(result),
                 layout,

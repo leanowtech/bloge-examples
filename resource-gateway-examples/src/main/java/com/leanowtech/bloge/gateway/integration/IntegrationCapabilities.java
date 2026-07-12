@@ -47,7 +47,8 @@ public record IntegrationCapabilities(
         objects.put("graphDraft", List.of(GraphDraft.SCHEMA_VERSION));
         objects.put("operatorLibrary", List.of("bloge.visualOperatorLibrary.v1"));
         objects.put("graphDraftIntegrationBundle", List.of(GraphDraftIntegrationBundle.SCHEMA_VERSION));
-        objects.put("runEvidence", List.of(RunEvidenceBundle.SCHEMA_VERSION_V1, RunEvidenceBundle.SCHEMA_VERSION));
+        objects.put("runEvidence", List.of(RunEvidenceBundle.SCHEMA_VERSION_V1,
+                RunEvidenceBundle.SCHEMA_VERSION_V2, RunEvidenceBundle.SCHEMA_VERSION));
         objects.put("payloadReplay", List.of(PayloadReplayBundle.SCHEMA_VERSION));
         objects.put("replayExecutionRequest", List.of(ReplayExecutionRequest.SCHEMA_VERSION));
         objects.put("replayExecutionResult", List.of(ReplayExecutionResult.SCHEMA_VERSION));
@@ -64,6 +65,10 @@ public record IntegrationCapabilities(
         Map<String, Boolean> features = new LinkedHashMap<>();
         features.put("draftExportDependencyProfile", true);
         features.put("runEvidenceBundle", true);
+        features.put("structuredExecutionFacts", true);
+        features.put("graphDeadline", false);
+        features.put("userRunCancellation", false);
+        features.put("sideEffectCommitConfirmation", false);
         features.put("payloadReplay", true);
         features.put("payloadReplayNodeInputs", true);
         features.put("recordedAssertionReplay", true);
