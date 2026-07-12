@@ -5,10 +5,10 @@
 | 属性 | 内容 |
 |---|---|
 | 设计基线 | `docs/resource-gateway-aneke-tool-studio-integration-evolution-plan.md` |
-| 当前实现基线 | Round 15 检查点（Round 14 managed signing + GraphDraft dependency snapshot 一致性护栏） |
+| 当前实现基线 | Round 15（scope-safe GraphDraft consistent dependency snapshot） |
 | 评估日期 | 2026-07-13 |
 | 目标 | 加权实施差距 `<3%`，且不存在 P0 阻断项 |
-| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml -Pfrontend clean verify`：1586 tests，0 failures，0 errors，0 skipped，`BUILD SUCCESS`（05:16，含 34 个真实 Chrome 场景） |
+| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml -Pfrontend clean verify`：1595 tests，0 failures，0 errors，0 skipped，`BUILD SUCCESS`（05:22，含 34 个真实 Chrome 场景）；frontend production build 通过，`npm audit` 0 vulnerabilities |
 
 ## 1. 评分方法
 
@@ -341,12 +341,43 @@ Resource Gateway 数据库”收窄为“客户 provider 与部署控制尚未�
 但不是任何云厂商或客户 HSM 的合规证明。按剩余加权差距，下一轮应优先处理 `GraphDraft` 跨资产一致性快照和完整
 dependency readiness profile，它单项仍贡献 `3.6%` 差距。
 
+## 2.15 Round 15 重新审计
+
+Round 15 没有把“按顺序查五张表”包装成快照，而是引入 relevant-only optimistic two-phase observation。第一次读取只冻结
+draft 实际引用的 operator/library/binding/activation/suite，生成 canonical dependency fingerprint；组包后重读同一 draft
+和同一相关资产集合。revision/fingerprint 任一漂移都丢弃整个候选包并返回可重试
+`409 RG.INTEGRATION.DRAFT_SNAPSHOT_CHANGED`。无关资产变化和 repository iteration order 不影响 fingerprint。
+
+审计同时发现并修复了更严重的最小披露问题：旧检查点通过全局 `catalog.find` 取得当前 operator 后会把完整 snapshot
+放进 bundle，即使该 operator 对当前 tenant/namespace/environment 已 scope mismatch。正式实现拆分 current/scoped/export
+三个视图：current 只以 digest 参与内部漂移检测；export 只允许 scoped 当前定义或该 draft 自有历史 snapshot；scope
+mismatch/catalog missing 都不读取或导出当前 library、binding、activation、suite 详情。
+
+| 维度 | 权重 | 当前完成率 | 得分 | 本轮可证明增量 | 仍未证明 |
+|---|---:|---:|---:|---|---|
+| 协议、版本与身份边界 | 15 | 99.5% | 14.925 | capability 声明 profile v1/v2 与 snapshot v1；新增两份 machine schema；409 retryable 语义与代码一致 | 自动 N/N-1 consumer matrix；显式响应版本协商；客户真实身份/策略认证 |
+| GraphDraft 依赖快照 | 10 | 94% | 9.40 | library revision/version/owner/status/fingerprint、binding/activation revision/env/health、suite revision/case/fingerprint、readiness 状态；相关资产双读防漂移；scope-safe disclosure；确定性导出 | ANEKE 真实 consumer matrix；外部 HA DB 多实例 fault harness；SLA 权威来源；长期 snapshot retention/GC |
+| Run evidence 可信链 | 20 | 99.5% | 19.90 | 无语义变化 | retention/legal hold、外部 verifier matrix、可信时间戳、客户 KMS conformance |
+| Payload replay | 15 | 80% | 12.00 | 无语义变化 | shadow/live 审批隔离、跨实例 exactly-once、选择性 retention、resource classification policy |
+| Timeout/partial failure 语义 | 10 | 100% | 10.00 | snapshot drift 由 typed retryable conflict 表达，不返回 complete-looking partial bundle | disconnect/detach 与非协作 I/O |
+| Workbook、gate feedback 与 Deep Link | 10 | 76% | 7.60 | ANEKE 可消费 owner/readiness/suite revision，但 gate/workbook 尚未自动使用 | 双向 workbook refs；readiness/SLA/migration/owner gate policy |
+| Change event、cursor、webhook 与对账 | 10 | 88% | 8.80 | dependency fingerprint 可作为同步去重和 impact-analysis 输入 | signed webhook、DLQ/退避、retention/compaction、乱序 fault harness |
+| 工业运行控制 | 10 | 90% | 9.00 | relevant-only 读取、无关变更不误冲突、scope mismatch 最小披露、并发 suite revision 漂移 fault test | 外部 HA DB、客户 IAM/KMS、quota/residency、正式 metrics/SLO/DR |
+| **合计** | **100** |  | **91.625** |  | **加权差距 8.375%** |
+
+Round 15 结论：GraphDraft 单项差距从 `3.6%` 收敛到 `0.6%`，总差距经完整回归重评后从 `11.375%` 降至 `8.375%`。这里的
+`94%` 不是“代码看起来齐了”，而是保留了四项未被当前仓库证明的企业证据：真实 ANEKE 兼容矩阵、多实例 HA DB
+故障注入、SLA 权威来源、snapshot retention/GC。下一轮应在剩余大项中优先补 `Payload replay` 的选择性保留与
+classification policy，或补 workbook 对 readiness/suite revision 的真正门禁消费；两者都不能只增加 DTO。
+
 ## 3. 已通过的证明
 
 ### 3.1 协议与隔离
 
 - `/api/integration/capabilities` 返回稳定 envelope 和真实 feature flags。
-- draft export 显式携带 `operatorRef -> operatorLibraryId`、operator/schema fingerprint。
+- draft export 显式携带 `operatorRef -> operatorLibraryId`、operator/schema fingerprint、library revision、
+  binding/activation revision 与状态、suite revision/case count 和 readiness；组包期漂移返回 retryable 409。
+- scope mismatch 时只保留 draft 自有 operator snapshot，不导出当前受限 schema、library owner、binding、activation 或 suite。
 - run evidence/replay 在 tenant 或 environment 不匹配时统一返回 404，避免授权范围探测。
 - 缺失身份上下文返回稳定 `IntegrationProblem`，包含 code、status、retryable 和 correlationId。
 
@@ -908,6 +939,6 @@ backoff/DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，�
 | 12 | 外部写合同、binding/activation conformance 与防绕过 | operator/resource 正式合同、fingerprint/readiness、Java WRITE pre/post admission、descriptor/common HTTP fail closed、Author 状态可见；Vite/Vitest 漏洞归零；移动端 Palette 无横向溢出 | 12.55% | BLOGE core 6 个、common HTTP 13 个；Resource Gateway 330 个聚焦、1553 个全量 tests；React 128 个聚焦、136 个全量 tests；34 个真实 Chrome 场景；npm audit 0 vulnerabilities；corporate Draw.io 0 errors/warnings/crossings/overlaps |
 | 13 | 动态企业身份信任与组织 claims | JWKS/revocation 原子刷新、single-flight、传播 SLO、strict/bounded-stale、401/503、group/clearance/delegation grant、credential-free audit | 11.875% | 30 个身份聚焦 tests、90 个 integration package tests、真实 IAM HTTP + Spring Boot 轮换/撤销/outage/oversize 演练；1567 个全量 tests、34 个真实 Chrome 场景；corporate Draw.io 0 errors/warnings/crossings/overlaps |
 | 14 | KMS/HSM managed evidence signing custody | provider SPI、versioned key/sign schemas、non-exportable custody、原子公钥代际、本地反验、rotation/disable/revoke、503/404 分流 | 11.375% | 31 个聚焦 tests、147 个 integration/runtime package tests、4 份 machine schema、真实 signing HTTP + Spring Boot 轮换/撤销/outage；1585 个全量 tests、34 个真实 Chrome 场景、npm audit 0 vulnerabilities；corporate Draw.io 0 errors/warnings/crossings/overlaps |
-| 15 检查点 | GraphDraft dependency snapshot 一致性护栏 | profile v2 固化 library/binding/activation/suite refs 与 readiness；组包前后重读 dependency fingerprint 和 draft revision，漂移时返回稳定 409；逻辑时间保持重复导出 fingerprint 确定 | 11.375%（待完整场景审计后重评） | 32 个 signing/export 聚焦 tests、1586 个全量 tests、34 个真实 Chrome 场景、npm audit 0 vulnerabilities；已覆盖重复导出确定性和组包期依赖漂移冲突，尚需多库、多租户及 missing/stale/blocked readiness 专项矩阵 |
+| 15 | scope-safe GraphDraft consistent dependency snapshot | profile v2 + snapshot v1 固化 library/binding/activation/suite refs 与 readiness；相关资产两阶段重读防混代际；scope mismatch 最小披露；稳定 retryable 409；确定性相关资产指纹 | 8.375% | 23 个 snapshot/protocol/service 聚焦 tests、101 个 integration package tests（含真实 Spring/H2 依赖组装）、2 份 machine schema；1595 个全量 tests、34 个真实 Chrome 场景、npm audit 0 vulnerabilities；多库、多租户、missing/stale/blocked readiness、相关/无关并发漂移矩阵全部通过；corporate Draw.io 0 errors/warnings/crossings/overlaps |
 
 后续每轮必须更新本表、代码证据、失败测试和剩余阻断项。只有全部 P0 阻断关闭、全量验证与真实浏览器验证通过，并且按同一权重计算的差距 `<3%`，才允许把目标标记完成。

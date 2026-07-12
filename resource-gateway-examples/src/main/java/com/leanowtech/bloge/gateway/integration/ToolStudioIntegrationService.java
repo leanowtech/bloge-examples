@@ -459,7 +459,7 @@ public class ToolStudioIntegrationService {
         details.put("beforeDependencyFingerprint", before.fingerprint());
         details.put("afterDependencyFingerprint", after.fingerprint());
         details.put("draftStable", draftStable);
-        throw new IntegrationProblemException(IntegrationProblem.conflict(
+        throw new IntegrationProblemException(IntegrationProblem.retryableConflict(
                 "RG.INTEGRATION.DRAFT_SNAPSHOT_CHANGED",
                 "Draft dependencies changed while the integration snapshot was being assembled; retry the export.",
                 context.correlationId(), details));

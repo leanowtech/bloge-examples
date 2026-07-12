@@ -76,7 +76,8 @@ public record GraphDraftDependencyProfile(
                                                          VisualOperatorCatalog catalog,
                                                          OperatorAssetSnapshot assets) {
         OperatorDefinition operator = catalog == null ? null : catalog.find(node.operatorRef()).orElse(null);
-        if (operator == null) {
+        boolean scopeMismatch = "scope-mismatch".equals(node.fingerprintState());
+        if (operator == null || scopeMismatch) {
             operator = draft.operatorSnapshots().get(node.nodeId());
         }
         String schemaFingerprint = operator == null
@@ -85,7 +86,7 @@ public record GraphDraftDependencyProfile(
                         "ports", operator.ports(),
                         "configSchema", operator.configSchema()
                 ));
-        String fingerprint = !node.currentFingerprint().isBlank()
+        String fingerprint = !scopeMismatch && !node.currentFingerprint().isBlank()
                 ? node.currentFingerprint() : node.savedFingerprint();
         OperatorAssetSnapshot resolved = assets == null ? OperatorAssetSnapshot.empty() : assets;
         RuntimeReadiness readiness = resolved.readiness();
@@ -100,7 +101,8 @@ public record GraphDraftDependencyProfile(
         List<String> contractSuiteRefs = resolved.contractSuites().stream()
                 .map(suite -> suite.suiteId() + "@" + suite.revision()).toList();
         return new OperatorDependency(
-                node.nodeId(), node.operatorRef(), node.operatorLibraryId(), fingerprint, schemaFingerprint,
+                node.nodeId(), node.operatorRef(), scopeMismatch
+                        ? savedLibraryId(operator) : node.operatorLibraryId(), fingerprint, schemaFingerprint,
                 runtimeBindingRefs, contractSuiteRefs, readiness, resolved.operatorLibrary(),
                 resolved.runtimeBindings(), resolved.contractSuites());
     }
@@ -177,7 +179,7 @@ public record GraphDraftDependencyProfile(
             int suiteCount = snapshot.assets().values().stream()
                     .mapToInt(asset -> asset.contractSuites().size()).sum();
             return new SnapshotManifest("", snapshot.fingerprint(), snapshot.capturedAt(), "STABLE",
-                    snapshot.operators().size(), libraryCount, bindingCount, suiteCount);
+                    snapshot.assets().size(), libraryCount, bindingCount, suiteCount);
         }
 
         static SnapshotManifest unavailable() {
@@ -293,5 +295,9 @@ public record GraphDraftDependencyProfile(
 
     private static String normalize(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private static String savedLibraryId(OperatorDefinition operator) {
+        return operator == null || operator.source() == null ? "" : normalize(operator.source().libraryId());
     }
 }

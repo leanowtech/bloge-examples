@@ -144,7 +144,11 @@ runtime binding and activation state, contract-suite revision, schema fingerprin
 The service checks the draft and dependency fingerprint again after assembly. A concurrent relevant change returns
 `409 RG.INTEGRATION.DRAFT_SNAPSHOT_CHANGED` instead of publishing a half-old, half-new bundle; unchanged revisions remain
 byte-stable for idempotent consumers. Capability discovery exposes `graphDraftConsistentDependencySnapshot` and
-`graphDraftStructuredDependencyRefs`.
+`graphDraftStructuredDependencyRefs`. Scope-mismatched operators export only the draft-owned historical snapshot, never
+the current restricted schema, owner, binding, activation, or suite. See the
+[snapshot protocol](../docs/assets/resource-gateway-graph-draft-consistent-dependency-snapshot.svg),
+[profile v2 schema](../docs/schemas/tool-studio-resource-gateway/graph-draft-dependency-profile-v2.schema.json), and
+[product usage guide](../docs/bloge-visual-canvas-product-and-system-guide.md#33-导出可系统化导入的-graphdraft-一致依赖快照).
 
 ## Extend It
 

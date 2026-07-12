@@ -67,6 +67,14 @@ public record IntegrationProblem(
                 409, code, false, correlationId, details);
     }
 
+    public static IntegrationProblem retryableConflict(String code,
+                                                       String title,
+                                                       String correlationId,
+                                                       Map<String, Object> details) {
+        return new IntegrationProblem("", "urn:bloge:problem:integration-conflict", title,
+                409, code, true, correlationId, details);
+    }
+
     public static IntegrationProblem gone(String code,
                                           String title,
                                           String correlationId,

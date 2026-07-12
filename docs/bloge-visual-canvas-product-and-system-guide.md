@@ -345,7 +345,98 @@ SPIFFE workload identity 或厂商 HSM session 的团队可注册自己的 `Mana
 capability 和 fail-closed 语义保持不变。生产验收还必须导出 provider 侧 key-use audit，并演练跨地域 authority 故障、
 key disable/revoke、备份恢复和历史公钥保留期。
 
-### 3.3 从 ANEKE 治理问题直达画布
+### 3.3 导出可系统化导入的 GraphDraft 一致依赖快照
+
+ANEKE 不应在导入后再猜 `operatorRef` 属于哪个 library，也不能把组包期间刚好读到的 draft、binding 和 suite
+拼成一个“字段齐全但代际混杂”的对象。`GET /api/integration/drafts/{draftId}/export` 现在先冻结当前 draft 实际引用的
+operator、library、runtime binding、activation 和 contract suite，再在组包后重新读取 draft 与 dependency fingerprint；
+任一相关资产变化都会丢弃整个候选包并返回 409。
+
+![GraphDraft 一致依赖快照与导出门禁](assets/resource-gateway-graph-draft-consistent-dependency-snapshot.svg)
+
+图源文件：[`assets/drawio/resource-gateway-graph-draft-consistent-dependency-snapshot.drawio`](assets/drawio/resource-gateway-graph-draft-consistent-dependency-snapshot.drawio)
+
+固定 revision 导出的推荐调用如下。`revision=0` 表示读取最新 revision；治理同步和发布门禁应优先传明确 revision，
+避免“最新”在重试期间自然前移：
+
+```bash
+curl -sS 'http://localhost:8080/api/integration/drafts/<draftId>/export?revision=7' \
+  -H 'Authorization: Bearer <workload-jwt>' \
+  -H 'X-Tenant-Id: tenant-a' \
+  -H 'X-Organization-Id: knowledge-governance' \
+  -H 'X-Project-Id: tool-studio' \
+  -H 'X-Environment-Id: prod' \
+  -H 'X-Region: ap-southeast-1' \
+  -H 'X-Actor-Type: WORKLOAD' \
+  -H 'X-Actor-Id: aneke-sync' \
+  -H 'X-Purpose: GOVERNANCE_EVIDENCE_INGESTION' \
+  -H 'X-Correlation-Id: sync-draft-7' | jq '.payload | {
+    draftFingerprint,
+    snapshot: .dependencyProfile.snapshot,
+    operators: [.dependencyProfile.operatorDependencies[] | {
+      nodeId, operatorRef, operatorLibrary, runtimeBindings, contractSuites, readiness
+    }]
+  }'
+```
+
+`dependencyProfile.schemaVersion` 当前为 `toolStudio.resourceGateway.graphDraftDependencyProfile.v2`。v2 保留 v1 的
+`runtimeBindingRefs` 和 `contractSuiteRefs` 字符串数组，供旧 adapter 渐进迁移，同时增加以下结构化字段：
+
+| 字段 | ANEKE 应如何消费 |
+| --- | --- |
+| `snapshot.fingerprint` | 整份相关依赖观察的稳定 SHA-256；用于幂等导入、缓存键和 drift 对比 |
+| `snapshot.capturedAt` | draft revision 的逻辑更新时间，不是每次 HTTP 请求的墙钟时间；同一 revision 重复导出保持稳定 |
+| `snapshot.operatorCount` | draft 引用的 distinct `operatorRef` 数，包括 catalog missing 和 scope mismatch 项 |
+| `operatorLibrary` | 明确的 library id、revision、version、owner、status 和 fingerprint；`present=false` 不得自行补猜 |
+| `runtimeBindings[]` | binding revision/fingerprint，以及匹配的 activation revision、environment、health 和 `ready` |
+| `contractSuites[]` | suite id、不可变 revision、case count 和 fingerprint；workbook 应引用 revision，不只引用可变 suite id |
+| `readiness` | Resource Gateway 的事实性可执行准备状态；ANEKE 可以叠加治理结论，但不能改写这份运行事实 |
+
+readiness 的标准状态及作者/治理动作如下：
+
+| 状态 | 根因 | 正确动作 |
+| --- | --- | --- |
+| `RUNTIME_EXECUTABLE` | 当前算子可由本地 runtime 执行，library 与 suite 均满足 | 继续执行 workbook 和 publish gate |
+| `EXTERNAL_RUNTIME_BOUND` | 精确 fingerprint 的 bound binding 存在，且 activation revision/environment/health 匹配 | 校验外部 runtime owner、SLA 和环境发布策略 |
+| `LIBRARY_MISSING` | draft/snapshot 声明 library，但 registry 当前不存在 | 阻断并恢复指定 library revision，不能按同名库猜测 |
+| `LIBRARY_NOT_ACTIVE` | library 为 deprecated/disabled 等非 active 状态 | 阻断新发布，进入迁移或显式例外审批 |
+| `CONTRACT_SUITE_MISSING` | imported operator 没有 contract suite | 阻断 correctness gate，先建立可版本化测试资产 |
+| `RUNTIME_BINDING_MISSING` | design/external operator 没有可用 binding | 保留 DESIGN 交付，不能宣称 runtime ready |
+| `ACTIVATION_MISSING_OR_STALE` | binding 已 bound，但 activation 缺失、revision/fingerprint/environment/health 不匹配 | 由 runtime owner 重新激活并提交证据 |
+| `CATALOG_MISSING` | draft 保存过算子 snapshot，但当前 catalog 已无该 operatorRef | 只用于历史解释；恢复或迁移后再发布 |
+| `SCOPE_MISMATCH` | 当前算子存在，但不允许该 draft 的 tenant/namespace/environment | 不返回当前算子、binding、activation、suite 或 owner；修正授权/迁移，不得绕过 scope |
+
+scope mismatch 是最小披露边界，不是普通 readiness warning。导出包最多携带该 draft 自己保存的历史 operator snapshot
+和 saved fingerprint；当前受限 schema、library owner、运行 binding、activation 与 suite 不会进入 payload。catalog missing
+同样不会把仍残留在其它仓储中的运行资产拼回去。
+
+组包期间发生相关变更时，响应为：
+
+```json
+{
+  "status": 409,
+  "code": "RG.INTEGRATION.DRAFT_SNAPSHOT_CHANGED",
+  "retryable": true,
+  "details": {
+    "draftId": "draft-...",
+    "observedRevision": 7,
+    "requestedRevision": 7,
+    "beforeDependencyFingerprint": "sha256:...",
+    "afterDependencyFingerprint": "sha256:...",
+    "draftStable": true
+  }
+}
+```
+
+consumer 必须丢弃本次候选 payload，在自己的 retry budget 内重新导出；不得忽略 409，也不得只保留其中看起来没变的
+节点。无关 operator 的 suite/binding 变化不会改变 fingerprint，仓储返回顺序也不会制造假 drift。
+
+机器合同为 [dependency profile v2](schemas/tool-studio-resource-gateway/graph-draft-dependency-profile-v2.schema.json)
+和 [dependency snapshot v1](schemas/tool-studio-resource-gateway/graph-draft-dependency-snapshot-v1.schema.json)。启动后先从
+`/api/integration/capabilities` 检查 `features.graphDraftConsistentDependencySnapshot=true`、
+`features.graphDraftStructuredDependencyRefs=true`，并协商 `supportedObjects.graphDraftDependencyProfile` 中的 v1/v2。
+
+### 3.4 从 ANEKE 治理问题直达画布
 
 ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服务端保存的草稿，自动布局并定位到具体节点或算子。作者不需要先打开 Author 首页再手工搜索草稿。
 
@@ -379,7 +470,7 @@ ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服
 
 治理反馈由 ANEKE 通过 `POST /api/integration/gate-results` 写入，并绑定不可变的 `draftId + revision + draftFingerprint`。同一个 `gateResultId` 重复提交相同内容是幂等成功，内容不同则返回冲突；画布只通过只读接口 `GET /api/visual/governance-gates/drafts/{draftId}` 消费结果。
 
-### 3.4 用 recorded replay 重算正确性断言
+### 3.5 用 recorded replay 重算正确性断言
 
 `GET /api/integration/runs/{runId}/replay` 只读取已脱敏的 recorded payload；`POST` 同一路径才是 replay command。command 不会重新运行 DSL，也不会调用任何 operator 或外部资源，而是基于父运行保存的 context、node input/output、terminal output 和 evidence 状态重算断言，并生成新的 replay run/evidence。
 
@@ -432,7 +523,7 @@ ANEKE Tool Studio 可以把治理问题链接回 `/author/`，画布会读取服
 
 当前 replay command 只支持 `RECORDED_ASSERTIONS + DENY`。`shadow/live` 重放仍未开放，因为它们需要独立的审批、隔离环境、幂等能力证明和 unknown-commit 处理，不能复用这个安全接口悄悄开启。
 
-### 3.5 读取 timeout、fallback 与 partial failure 证据
+### 3.6 读取 timeout、fallback 与 partial failure 证据
 
 画布点击 **Run** 后，系统不再只保存一个最终 `SUCCESS/FAILED`。BLOGE 的 node lifecycle 与
 `ResilienceListener` 会在同一个 run capture 中记录 retry、timeout 和 fallback 事件；Resource Gateway
@@ -732,7 +823,7 @@ Content-Type: application/json
 单个 Resource Gateway 进程内保留一小时终态，因此不能把它当作跨重启 workflow store；跨实例接管仍需
 BLOGE durable execution lease 与持久 fencing owner。
 
-### 3.6 让 ANEKE 持续同步且可对账
+### 3.7 让 ANEKE 持续同步且可对账
 
 Resource Gateway 现在不要求 ANEKE 依赖 webhook 才能持续治理。draft、operator library、run 和 operator contract test suite 的权威写入会在**同一个数据库事务**中追加 integration event；任一 Outbox 写入失败时，资产写入也会回滚，不会产生“资产已经存在、治理侧永远不知道”的静默裂缝。
 
@@ -779,7 +870,7 @@ curl -sS 'http://localhost:8080/api/integration/reconciliation' \
 
 这里不承诺网络级 exactly-once。系统采用“生产端 transactional outbox + ANEKE 幂等消费 + opaque cursor + reconciliation”的可恢复最终一致性模型。Webhook 仍未开放；后续即使增加 webhook，它也只负责低延迟提醒，不能替代 cursor 和对账快照。
 
-### 3.7 演示脚本启动方式
+### 3.8 演示脚本启动方式
 
 推荐演示时直接使用仓库根目录下的专用脚本。它默认执行 `resource-gateway-examples` 的 `-Pfrontend package`，把 React UI 打进 Spring Boot 静态资源，然后在 `8080` 启动服务。为缩短演示准备时间，脚本默认给 Maven 打包加 `-DskipTests`；需要把测试也跑进去时使用 `--run-tests`。
 
@@ -820,7 +911,7 @@ Legacy composer: http://localhost:8080/examples/gateway
 
 脚本使用 `target/example-pids/visual-canvas-demo.pid` 记录进程，使用 `target/example-logs/visual-canvas-demo.log` 记录日志；停止时会校验 PID/端口上的进程确实像 Resource Gateway demo，避免误停其它服务。
 
-### 3.8 手动启动方式
+### 3.9 手动启动方式
 
 如果只运行后端 API 或旧版静态资源：
 
@@ -854,7 +945,7 @@ npm run dev
 
 当前 Vite dev proxy 只代理 `/api` 到 Spring Boot。算子库导入使用 `/admin/visual-operator-libraries/*`，所以完整体验建议优先使用 Maven 打包后的 `/author/`。
 
-### 3.9 VSCode 插件轻量化方向
+### 3.10 VSCode 插件轻量化方向
 
 如果用户只是想在业务仓库里看懂 `.bloge` 拓扑、导入本地算子 schema、配置 mock 数据并跑表格测试，每次都启动 Resource Gateway 服务端会显得偏重。后续推荐把 `/author/` 的核心能力下沉成 VSCode 插件入口：
 

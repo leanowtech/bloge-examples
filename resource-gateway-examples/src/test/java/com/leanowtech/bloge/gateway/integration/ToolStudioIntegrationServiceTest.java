@@ -278,6 +278,7 @@ class ToolStudioIntegrationServiceTest {
                     IntegrationProblem problem = ((IntegrationProblemException) failure).problem();
                     assertThat(problem.status()).isEqualTo(409);
                     assertThat(problem.code()).isEqualTo("RG.INTEGRATION.DRAFT_SNAPSHOT_CHANGED");
+                    assertThat(problem.retryable()).isTrue();
                     assertThat(problem.details()).containsEntry("draftStable", true);
                 });
     }

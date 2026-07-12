@@ -1,0 +1,121 @@
+<mxfile host="Electron" agent="Codex">
+  <diagram id="graph-draft-consistent-snapshot" name="GraphDraft Consistent Dependency Snapshot">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="0" page="0" pageScale="1" pageWidth="1700" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="GraphDraft Consistent Dependency Snapshot" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1320" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="Relevant-only asset freeze, scope-safe disclosure and optimistic two-phase drift detection" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=12;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="1320" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="authority-lane" value="Authoritative control-plane state" style="swimlane;startSize=32;container=0;pointerEvents=0;rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;fontColor=#263238;fontFamily=Arial;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="110" width="360" height="500" as="geometry"/>
+        </mxCell>
+        <mxCell id="snapshot-lane" value="GraphDraftDependencySnapshotService" style="swimlane;startSize=32;container=0;pointerEvents=0;rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontColor=#0d47a1;fontFamily=Arial;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="430" y="110" width="570" height="500" as="geometry"/>
+        </mxCell>
+        <mxCell id="gate-lane" value="Export consistency gate" style="swimlane;startSize=32;container=0;pointerEvents=0;rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontColor=#bf360c;fontFamily=Arial;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="110" width="300" height="500" as="geometry"/>
+        </mxCell>
+        <mxCell id="consumer-lane" value="ANEKE Tool Studio" style="swimlane;startSize=32;container=0;pointerEvents=0;rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontColor=#4a148c;fontFamily=Arial;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="110" width="260" height="500" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="draft-store" value="GraphDraft revision&lt;br&gt;draftId · revision · graph contract&lt;br&gt;tenant · namespace · environment&lt;br&gt;saved operator snapshots" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;fontColor=#263238;fontFamily=Arial;fontSize=11;" vertex="1" parent="authority-lane">
+          <mxGeometry x="30" y="55" width="300" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="catalog-store" value="Visual operator catalog&lt;br&gt;scoped list + current lookup&lt;br&gt;operator and schema fingerprints" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;fontColor=#263238;fontFamily=Arial;fontSize=11;" vertex="1" parent="authority-lane">
+          <mxGeometry x="30" y="180" width="300" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="asset-stores" value="Dependency repositories&lt;br&gt;operator library revisions&lt;br&gt;runtime binding + activation&lt;br&gt;operator contract suite revisions" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontColor=#1b5e20;fontFamily=Arial;fontSize=11;" vertex="1" parent="authority-lane">
+          <mxGeometry x="30" y="300" width="300" height="95" as="geometry"/>
+        </mxCell>
+        <mxCell id="concurrent-change" value="Concurrent authoritative change&lt;br&gt;revision, activation, suite or draft mutation" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontColor=#b71c1c;fontFamily=Arial;fontSize=10;dashed=1;" vertex="1" parent="authority-lane">
+          <mxGeometry x="30" y="425" width="300" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="scope-resolver" value="1 · Scope-safe operator resolution&lt;br&gt;&lt;b&gt;scoped current definition&lt;/b&gt; or draft-owned saved snapshot&lt;br&gt;scope mismatch becomes a restricted marker&lt;br&gt;no current unauthorized schema or asset metadata" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontColor=#0d47a1;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="snapshot-lane">
+          <mxGeometry x="35" y="55" width="500" height="105" as="geometry"/>
+        </mxCell>
+        <mxCell id="asset-freezer" value="2 · Relevant-only dependency freeze&lt;br&gt;library id/version/revision/fingerprint/owner/status&lt;br&gt;binding + activation revision/environment/health&lt;br&gt;suite revision/case count/fingerprint + readiness state" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontColor=#1b5e20;fontFamily=Arial;fontSize=11;" vertex="1" parent="snapshot-lane">
+          <mxGeometry x="35" y="195" width="500" height="105" as="geometry"/>
+        </mxCell>
+        <mxCell id="fingerprint" value="3 · Canonical dependency fingerprint&lt;br&gt;draft revision + current operator digests + scoped refs + frozen assets&lt;br&gt;sorted maps/lists; unrelated assets excluded" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57c00;fontColor=#e65100;fontFamily=Arial;fontSize=11;" vertex="1" parent="snapshot-lane">
+          <mxGeometry x="35" y="335" width="500" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="candidate" value="Candidate integration bundle&lt;br&gt;dependencyProfile.v2 + snapshot.v1&lt;br&gt;stable payload fingerprint for unchanged revision" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontColor=#4a148c;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="snapshot-lane">
+          <mxGeometry x="35" y="440" width="500" height="65" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="reread" value="4 · Re-read after assembly&lt;br&gt;exact/latest draft revision&lt;br&gt;dependency snapshot fingerprint" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontColor=#bf360c;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="gate-lane">
+          <mxGeometry x="30" y="85" width="240" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="compare" value="Before == after?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57c00;fontColor=#e65100;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="gate-lane">
+          <mxGeometry x="65" y="220" width="170" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="conflict" value="409 Conflict&lt;br&gt;&lt;b&gt;RG.INTEGRATION.DRAFT_SNAPSHOT_CHANGED&lt;/b&gt;&lt;br&gt;retry with a new observation" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontColor=#b71c1c;fontFamily=Arial;fontSize=10;fontStyle=1;" vertex="1" parent="gate-lane">
+          <mxGeometry x="30" y="375" width="240" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="import-bundle" value="Import stable snapshot&lt;br&gt;registry projection&lt;br&gt;impact analysis&lt;br&gt;publish gate / workbook" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontColor=#4a148c;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="consumer-lane">
+          <mxGeometry x="25" y="210" width="210" height="105" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="invariants" value="Protocol invariants" style="swimlane;startSize=30;container=0;pointerEvents=0;rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;fontColor=#263238;fontFamily=Arial;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="650" width="1580" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="inv-scope" value="MINIMUM DISCLOSURE&lt;br&gt;Scope mismatch never exports current&lt;br&gt;operator/runtime asset details" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontColor=#b71c1c;fontFamily=Arial;fontSize=10;fontStyle=1;" vertex="1" parent="invariants">
+          <mxGeometry x="25" y="50" width="350" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="inv-consistency" value="NO MIXED GENERATIONS&lt;br&gt;Draft, library, binding, activation and suite&lt;br&gt;must describe one accepted observation" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontColor=#0d47a1;fontFamily=Arial;fontSize=10;fontStyle=1;" vertex="1" parent="invariants">
+          <mxGeometry x="400" y="50" width="360" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="inv-determinism" value="DETERMINISTIC EXPORT&lt;br&gt;Unchanged revision produces the same payload fingerprint&lt;br&gt;Repository order and unrelated assets do not matter" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontColor=#1b5e20;fontFamily=Arial;fontSize=10;fontStyle=1;" vertex="1" parent="invariants">
+          <mxGeometry x="785" y="50" width="370" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="inv-failure" value="EXPLICIT RETRY SEMANTICS&lt;br&gt;Drift is a typed 409, never a complete-looking partial bundle&lt;br&gt;Consumer retries instead of guessing" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontColor=#bf360c;fontFamily=Arial;fontSize=10;fontStyle=1;" vertex="1" parent="invariants">
+          <mxGeometry x="1180" y="50" width="375" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e-draft-scope" value="draft scope + saved snapshot" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;fontColor=#455a64;fontFamily=Arial;fontSize=9;labelBackgroundColor=#ffffff;endArrow=classic;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.3;" edge="1" parent="1" source="draft-store" target="scope-resolver">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-catalog-scope" value="scoped list + internal current digest" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565c0;fontColor=#0d47a1;fontFamily=Arial;fontSize=9;labelBackgroundColor=#ffffff;endArrow=classic;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.75;" edge="1" parent="1" source="catalog-store" target="scope-resolver">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-assets-freeze" value="relevant refs only" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2e7d32;fontColor=#1b5e20;fontFamily=Arial;fontSize=9;labelBackgroundColor=#ffffff;endArrow=classic;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.6;" edge="1" parent="1" source="asset-stores" target="asset-freezer">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-scope-freeze" value="authorized operator set" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565c0;fontColor=#0d47a1;fontFamily=Arial;fontSize=9;labelBackgroundColor=#ffffff;endArrow=classic;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="scope-resolver" target="asset-freezer">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-freeze-fingerprint" value="canonical material" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2e7d32;fontColor=#1b5e20;fontFamily=Arial;fontSize=9;labelBackgroundColor=#ffffff;endArrow=classic;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="asset-freezer" target="fingerprint">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-fingerprint-candidate" value="frozen profile" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#f57c00;fontColor=#e65100;fontFamily=Arial;fontSize=9;labelBackgroundColor=#ffffff;endArrow=classic;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="fingerprint" target="candidate">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-candidate-reread" value="candidate + before fingerprint" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#e65100;fontColor=#bf360c;fontFamily=Arial;fontSize=9;labelBackgroundColor=#ffffff;endArrow=classic;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="candidate" target="reread">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1015" y="585"/><mxPoint x="1015" y="238"/></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-change-reread" value="authoritative re-read" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#c62828;fontColor=#b71c1c;fontFamily=Arial;fontSize=9;labelBackgroundColor=#ffffff;endArrow=classic;endFill=1;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.8;" edge="1" parent="1" source="concurrent-change" target="reread">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="410" y="630"/><mxPoint x="1025" y="630"/><mxPoint x="1025" y="265"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e-reread-compare" value="before / after" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#e65100;fontColor=#bf360c;fontFamily=Arial;fontSize=9;labelBackgroundColor=#ffffff;endArrow=classic;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="reread" target="compare">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-compare-import" value="equal · stable export" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2e7d32;fontColor=#1b5e20;fontFamily=Arial;fontSize=9;labelBackgroundColor=#ffffff;endArrow=classic;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="compare" target="import-bundle">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-compare-conflict" value="different" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#c62828;fontColor=#b71c1c;fontFamily=Arial;fontSize=9;labelBackgroundColor=#ffffff;endArrow=classic;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="compare" target="conflict">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

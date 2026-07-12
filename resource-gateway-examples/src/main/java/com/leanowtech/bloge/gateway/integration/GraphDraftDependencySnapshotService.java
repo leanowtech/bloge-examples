@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRevision;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationRepository;
@@ -63,11 +64,26 @@ public class GraphDraftDependencySnapshotService {
         draft.nodes().forEach(node -> operatorRefs.add(node.operatorRef()));
 
         List<OperatorDefinition> scopedOperators = scopedOperators(draft, operatorRefs);
-        Map<String, OperatorDefinition> globalOperators = globalOperators(draft, operatorRefs);
-        Map<String, String> libraryIdsByRef = libraryIdsByOperatorRef();
+        Map<String, OperatorDefinition> scopedByRef = byOperatorRef(scopedOperators);
+        Map<String, OperatorDefinition> currentOperators = currentOperators(operatorRefs);
+        Map<String, OperatorDefinition> exportOperators = exportOperators(
+                draft, operatorRefs, scopedByRef);
+        Map<String, OperatorDefinition> reportOperators = reportOperators(
+                draft, operatorRefs, currentOperators, scopedByRef);
+        Map<String, String> libraryIdsByRef = libraryIdsByOperatorRef(operatorRefs);
         Map<String, GraphDraftDependencyProfile.OperatorAssetSnapshot> assets = new LinkedHashMap<>();
         for (String operatorRef : operatorRefs.stream().sorted().toList()) {
-            OperatorDefinition operator = globalOperators.get(operatorRef);
+            OperatorDefinition operator = exportOperators.get(operatorRef);
+            boolean currentPresent = currentOperators.containsKey(operatorRef);
+            boolean scopeAllowed = scopedByRef.containsKey(operatorRef);
+            if (currentPresent && !scopeAllowed) {
+                assets.put(operatorRef, restrictedAssets("SCOPE_MISMATCH"));
+                continue;
+            }
+            if (!currentPresent) {
+                assets.put(operatorRef, restrictedAssets("CATALOG_MISSING"));
+                continue;
+            }
             String libraryId = operator == null ? libraryIdsByRef.getOrDefault(operatorRef, "")
                     : firstNonBlank(operator.source().libraryId(), libraryIdsByRef.get(operatorRef));
             GraphDraftDependencyProfile.OperatorLibraryRef library = libraryRef(libraryId);
@@ -76,10 +92,10 @@ public class GraphDraftDependencySnapshotService {
             List<GraphDraftDependencyProfile.ContractSuiteRef> contractSuites = contractSuiteRefs(operatorRef);
             assets.put(operatorRef, new GraphDraftDependencyProfile.OperatorAssetSnapshot(
                     library, runtimeBindings, contractSuites,
-                    readiness(draft, operatorRef, operator, library, runtimeBindings, contractSuites)));
+                    readiness(operator, library, runtimeBindings, contractSuites)));
         }
 
-        List<OperatorDefinition> frozenOperators = globalOperators.values().stream()
+        List<OperatorDefinition> frozenOperators = exportOperators.values().stream()
                 .sorted(Comparator.comparing(OperatorDefinition::operatorRef))
                 .toList();
         List<OperatorDefinition> frozenScoped = scopedOperators.stream()
@@ -90,11 +106,17 @@ public class GraphDraftDependencySnapshotService {
         material.put("draftRevision", draft.revision());
         material.put("draftFingerprint", VisualBundleFingerprint.fromMaterial(Map.of("draft", draft)));
         material.put("operators", frozenOperators);
+        material.put("currentOperatorFingerprints", currentOperators.values().stream()
+                .sorted(Comparator.comparing(OperatorDefinition::operatorRef))
+                .map(operator -> Map.of("operatorRef", operator.operatorRef(), "fingerprint", operator.fingerprint()))
+                .toList());
         material.put("scopedOperatorRefs", frozenScoped.stream().map(OperatorDefinition::operatorRef).toList());
         material.put("assets", assets);
         String fingerprint = VisualBundleFingerprint.fromMaterial(material);
-        return new Snapshot(fingerprint, logicalCapturedAt(draft), frozenOperators, frozenCatalog(frozenOperators, frozenScoped,
-                libraryIdsByRef), Map.copyOf(assets));
+        return new Snapshot(fingerprint, logicalCapturedAt(draft), frozenOperators,
+                frozenCatalog(reportOperators.values().stream()
+                        .sorted(Comparator.comparing(OperatorDefinition::operatorRef)).toList(),
+                        frozenScoped, libraryIdsByRef), Map.copyOf(assets));
     }
 
     private List<OperatorDefinition> scopedOperators(GraphDraft draft, Set<String> operatorRefs) {
@@ -108,16 +130,32 @@ public class GraphDraftDependencySnapshotService {
                 .toList();
     }
 
-    private Map<String, OperatorDefinition> globalOperators(GraphDraft draft, Set<String> operatorRefs) {
+    private Map<String, OperatorDefinition> currentOperators(Set<String> operatorRefs) {
         Map<String, OperatorDefinition> values = new LinkedHashMap<>();
         for (String operatorRef : operatorRefs) {
             OperatorDefinition operator = catalog == null ? null : catalog.find(operatorRef).orElse(null);
+            if (operator != null) {
+                values.put(operatorRef, operator);
+            }
+        }
+        return Map.copyOf(values);
+    }
+
+    private static Map<String, OperatorDefinition> byOperatorRef(List<OperatorDefinition> operators) {
+        Map<String, OperatorDefinition> values = new LinkedHashMap<>();
+        operators.forEach(operator -> values.put(operator.operatorRef(), operator));
+        return Map.copyOf(values);
+    }
+
+    private static Map<String, OperatorDefinition> exportOperators(
+            GraphDraft draft,
+            Set<String> operatorRefs,
+            Map<String, OperatorDefinition> scoped) {
+        Map<String, OperatorDefinition> values = new LinkedHashMap<>();
+        for (String operatorRef : operatorRefs.stream().sorted().toList()) {
+            OperatorDefinition operator = scoped.get(operatorRef);
             if (operator == null) {
-                operator = draft.nodes().stream()
-                        .filter(node -> node.operatorRef().equals(operatorRef))
-                        .map(node -> draft.operatorSnapshots().get(node.id()))
-                        .filter(snapshot -> snapshot != null && operatorRef.equals(snapshot.operatorRef()))
-                        .findFirst().orElse(null);
+                operator = savedSnapshot(draft, operatorRef);
             }
             if (operator != null) {
                 values.put(operatorRef, operator);
@@ -126,8 +164,35 @@ public class GraphDraftDependencySnapshotService {
         return Map.copyOf(values);
     }
 
-    private Map<String, String> libraryIdsByOperatorRef() {
-        return catalog == null ? Map.of() : catalog.operatorLibraryIdsByOperatorRef(true);
+    private static Map<String, OperatorDefinition> reportOperators(
+            GraphDraft draft,
+            Set<String> operatorRefs,
+            Map<String, OperatorDefinition> current,
+            Map<String, OperatorDefinition> scoped) {
+        Map<String, OperatorDefinition> values = new LinkedHashMap<>();
+        for (String operatorRef : operatorRefs.stream().sorted().toList()) {
+            OperatorDefinition operator = scoped.get(operatorRef);
+            if (operator == null && current.containsKey(operatorRef)) {
+                operator = Optional.ofNullable(savedSnapshot(draft, operatorRef))
+                        .orElseGet(() -> restrictedMarker(operatorRef));
+            }
+            if (operator != null) {
+                values.put(operatorRef, operator);
+            }
+        }
+        return Map.copyOf(values);
+    }
+
+    private Map<String, String> libraryIdsByOperatorRef(Set<String> operatorRefs) {
+        if (catalog == null) {
+            return Map.of();
+        }
+        Map<String, String> relevant = new LinkedHashMap<>();
+        catalog.operatorLibraryIdsByOperatorRef(true).entrySet().stream()
+                .filter(entry -> operatorRefs.contains(entry.getKey()))
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> relevant.put(entry.getKey(), entry.getValue()));
+        return Map.copyOf(relevant);
     }
 
     private GraphDraftDependencyProfile.OperatorLibraryRef libraryRef(String libraryId) {
@@ -202,8 +267,6 @@ public class GraphDraftDependencySnapshotService {
     }
 
     private static GraphDraftDependencyProfile.RuntimeReadiness readiness(
-            GraphDraft draft,
-            String operatorRef,
             OperatorDefinition operator,
             GraphDraftDependencyProfile.OperatorLibraryRef library,
             List<GraphDraftDependencyProfile.RuntimeBindingRef> bindings,
@@ -263,6 +326,29 @@ public class GraphDraftDependencySnapshotService {
 
     private static String firstNonBlank(String first, String second) {
         return first != null && !first.isBlank() ? first : second == null ? "" : second;
+    }
+
+    private static OperatorDefinition savedSnapshot(GraphDraft draft, String operatorRef) {
+        return draft.nodes().stream()
+                .filter(node -> node.operatorRef().equals(operatorRef))
+                .map(node -> draft.operatorSnapshots().get(node.id()))
+                .filter(snapshot -> snapshot != null && operatorRef.equals(snapshot.operatorRef()))
+                .findFirst().orElse(null);
+    }
+
+    private static OperatorDefinition restrictedMarker(String operatorRef) {
+        return new OperatorDefinition("", operatorRef, "restricted",
+                new OperatorDefinition.Display(operatorRef, "", List.of()),
+                new OperatorDefinition.Source("scope-restricted", "", "", "", false, ""),
+                new OperatorDefinition.Ports(List.of(), List.of()), SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("design", "", Map.of()), List.of());
+    }
+
+    private static GraphDraftDependencyProfile.OperatorAssetSnapshot restrictedAssets(String state) {
+        return new GraphDraftDependencyProfile.OperatorAssetSnapshot(null, List.of(), List.of(),
+                new GraphDraftDependencyProfile.RuntimeReadiness(false, false, false,
+                        "UNKNOWN", "", "", state));
     }
 
     private static Instant logicalCapturedAt(GraphDraft draft) {

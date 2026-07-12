@@ -152,10 +152,10 @@ GET /api/integration/capabilities
 Endpoint:
 
 ```text
-GET /api/integration/drafts/{draftId}/export?revision=&includeOperatorSnapshots=true
+GET /api/integration/drafts/{draftId}/export?revision=
 ```
 
-目标 schema：
+Round 15 当前 schema：
 
 ```json
 {
@@ -163,7 +163,17 @@ GET /api/integration/drafts/{draftId}/export?revision=&includeOperatorSnapshots=
   "draft": {},
   "draftFingerprint": "sha256:...",
   "dependencyProfile": {
-    "schemaVersion": "toolStudio.resourceGateway.graphDraftDependencyProfile.v1",
+    "schemaVersion": "toolStudio.resourceGateway.graphDraftDependencyProfile.v2",
+    "snapshot": {
+      "schemaVersion": "toolStudio.resourceGateway.graphDraftDependencySnapshot.v1",
+      "fingerprint": "sha256:...",
+      "capturedAt": "2026-07-13T00:00:00Z",
+      "consistencyStatus": "STABLE",
+      "operatorCount": 1,
+      "operatorLibraryCount": 1,
+      "runtimeBindingCount": 1,
+      "contractSuiteCount": 1
+    },
     "operatorDependencies": [
       {
         "nodeId": "eligibility",
@@ -171,28 +181,82 @@ GET /api/integration/drafts/{draftId}/export?revision=&includeOperatorSnapshots=
         "operatorLibraryId": "risk-policy",
         "operatorFingerprint": "sha256:...",
         "schemaFingerprint": "sha256:...",
-        "runtimeBindingRefs": ["binding:risk-eligibility-prod"],
-        "contractSuiteRefs": ["suite:risk-eligibility-golden"],
+        "runtimeBindingRefs": ["binding:risk-eligibility-prod@4"],
+        "contractSuiteRefs": ["suite:risk-eligibility-golden@6"],
+        "operatorLibrary": {
+          "libraryId": "risk-policy",
+          "revision": 3,
+          "version": "2.1.0",
+          "owner": "risk-platform",
+          "status": "ACTIVE",
+          "fingerprint": "sha256:...",
+          "present": true
+        },
+        "runtimeBindings": [
+          {
+            "bindingId": "binding:risk-eligibility-prod",
+            "revision": 4,
+            "state": "bound",
+            "operatorFingerprint": "sha256:...",
+            "fingerprint": "sha256:...",
+            "activationId": "activation:risk-eligibility-prod",
+            "activationRevision": 5,
+            "activationState": "active",
+            "activationEnvironment": "prod",
+            "activationHealth": "healthy",
+            "activationFingerprint": "sha256:...",
+            "ready": true
+          }
+        ],
+        "contractSuites": [
+          {
+            "suiteId": "suite:risk-eligibility-golden",
+            "revision": 6,
+            "schemaVersion": "bloge.visualOperatorContractTestSuite.v1",
+            "caseCount": 12,
+            "fingerprint": "sha256:..."
+          }
+        ],
         "readiness": {
           "designReady": true,
           "runtimeReady": true,
           "executable": true,
-          "risk": "medium",
+          "risk": "READ",
           "owner": "risk-platform",
-          "sla": "P95<300ms"
+          "sla": "P95<300ms",
+          "state": "EXTERNAL_RUNTIME_BOUND"
         }
       }
     ],
     "graphContract": {
       "inputSchemaFingerprint": "sha256:...",
       "outputSchemaFingerprint": "sha256:..."
-    }
-  },
-  "sourceDependencyReport": {}
+    },
+    "sourceDependencyReport": {}
+  }
 }
 ```
 
-这不是替换 `GraphDraftExportBundle`，而是在其上增加 Tool Studio 需要的 deterministic import profile。
+这不是替换 `GraphDraftExportBundle`，而是在其上增加 Tool Studio 需要的 deterministic import profile。v2 保留 v1 的
+字符串 refs，同时增加结构化 revision/fingerprint/readiness，允许旧 adapter 迁移而不要求大爆炸升级。
+
+![GraphDraft 一致依赖快照](assets/resource-gateway-graph-draft-consistent-dependency-snapshot.svg)
+
+图源：[resource-gateway-graph-draft-consistent-dependency-snapshot.drawio](assets/drawio/resource-gateway-graph-draft-consistent-dependency-snapshot.drawio)。
+
+实现不能靠一次顺序读取冒充数据库快照。当前采用 relevant-only optimistic two-phase observation：
+
+1. 按 draft 的 tenant/namespace/environment 读取 scoped operator；当前不可见算子只允许使用 draft 自有历史 snapshot，
+   不导出全局当前 schema、owner、binding、activation 或 suite。
+2. 只读取 draft 实际引用 operatorRef 的 library revision、binding、active activation 和 suite revision，并计算 canonical
+   dependency fingerprint；无关资产和 repository iteration order 不参与。
+3. 用冻结 catalog 生成 report/profile/validation candidate；组包后再次读取同一 draft revision 和同一组相关依赖。
+4. draft revision/fingerprint 或 dependency fingerprint 任一变化，整个 candidate 作废并返回可重试
+   `409 RG.INTEGRATION.DRAFT_SNAPSHOT_CHANGED`；相同 revision 的重复导出保持 payload fingerprint 确定。
+
+机器合同为
+[graphDraftDependencyProfile.v2](schemas/tool-studio-resource-gateway/graph-draft-dependency-profile-v2.schema.json) 和
+[graphDraftDependencySnapshot.v1](schemas/tool-studio-resource-gateway/graph-draft-dependency-snapshot-v1.schema.json)。
 
 ### 5.4 Run evidence bundle
 
@@ -532,14 +596,14 @@ POST /api/integration/gate-results
 | P0 | 稳定跨系统协议版本 | 必须做，且不能只复用内部 DTO | protocol envelope + capability probe + JSON schema |
 | P0 | Run Trace 可导出为治理证据 | 当前 shape-only trace 不够 | 新增 evidence bundle，不直接改造成唯一 run response |
 | P0 | Payload 级 replay | 当前缺 payload capture | 新增 payload store/ref/sanitizer/replay endpoint |
-| P0 | GraphDraft export 依赖元数据 | 已有 dependency report 但不够稳定导入 | integration dependency profile |
+| P0 | GraphDraft export 依赖元数据 | Round 15 已实现 profile v2、相关资产双读、结构化 revision/fingerprint/readiness 和 scope-safe disclosure；残余是 ANEKE N/N-1 consumer matrix、HA DB fault harness、SLA 权威源 | `GraphDraftDependencySnapshotService` + profile/snapshot machine schema + retryable 409 |
 | P0 | Timeout/partial failure 语义 | Round 12 已补 `WRITE_EXTERNAL` contract、binding/activation conformance、descriptor-backed HTTP mutation、底层 unsafe `httpRequest` 防绕过和可视化 readiness；仍缺 detach policy、错误 effect 分类检测、非 HTTP 私有写边界和客户 provider adapter 覆盖 | `VisualNodeExecutionFact` + durable control + evidence v6 + `ExecutionBudget` + `SideEffectReconciliationRecord.v1` + `bloge.sideEffectProtocol.v1`；下一步 effect-classification/egress conformance 与 disconnect/detach |
 | P1 | Deep Link | 当前不是 integration API | 前端 route + resolver API |
 | P1 | Health/Capability Probe | 已有协议/端点/feature flags；Round 13 增加动态身份 refresh state、成功/失败计数、active/revoked 数量和撤销传播 SLO | `/api/integration/capabilities` + identity authority SLO/alert/runbook |
-| P1 | Contract Test Suite 对齐 workbook | 当前 case/assertion 语义偏基础 | suite vNext + workbook mapping |
-| P1 | UI 展示治理反馈 | 缺口明确 | gate result ingestion + author panel |
-| P1 | Operator runtime readiness 元数据 | 已有 runtimeReadiness，需治理化 | runtime readiness profile |
-| P2 | Change Event/Webhook | 当前手动拉取 | event cursor 先行，webhook 后置 |
+| P1 | Contract Test Suite 对齐 workbook | case kind 与 path/schema/error/governance assertion 已有，仍缺 ANEKE workbook 双向引用与门禁消费 | suite revision refs + workbook mapping |
+| P1 | UI 展示治理反馈 | gate result ingestion、freshness 和 Author panel 已实现 | 下一步把 dependency readiness/suite revision 变成可点击 gate issue |
+| P1 | Operator runtime readiness 元数据 | Round 15 已导出 library/binding/activation/suite readiness，SLA 仍无权威来源 | runtime readiness profile + SLA registry/observation |
+| P2 | Change Event/Webhook | transactional outbox、signed cursor 和 reconciliation 已实现；webhook 仍后置 | polling cursor 为正确性主链，signed webhook 仅作低延迟提示 |
 | P2 | 可复用工程模块化 | 当前仍偏 sidecar/demo app | protocol client + authoring surface + evidence service |
 
 ## 12. 实施顺序和里程碑
@@ -907,16 +971,19 @@ If-Match: "draft-sha256:..."
 ```json
 {
   "schemaVersion": "toolStudio.resourceGateway.problem.v1",
-  "type": "urn:bloge:problem:snapshot-changed",
-  "title": "Draft changed during export",
+  "type": "urn:bloge:problem:integration-conflict",
+  "title": "Draft dependencies changed while the integration snapshot was being assembled; retry the export.",
   "status": 409,
-  "code": "RG.INTEGRATION.SNAPSHOT_CHANGED",
+  "code": "RG.INTEGRATION.DRAFT_SNAPSHOT_CHANGED",
   "retryable": true,
   "correlationId": "corr-...",
-  "tenantId": "tenant-acme",
   "details": {
-    "expectedRevision": 7,
-    "observedRevision": 8
+    "draftId": "draft-...",
+    "observedRevision": 7,
+    "requestedRevision": 7,
+    "beforeDependencyFingerprint": "sha256:...",
+    "afterDependencyFingerprint": "sha256:...",
+    "draftStable": true
   }
 }
 ```
@@ -1539,6 +1606,13 @@ operator 从 schema 导入到生产可用需要 `DISCOVERED -> DESCRIBED -> VERI
 交付：capability、draft integration bundle、fingerprint、标准 problem、authN/authZ、audit、idempotent GET/export、consumer contract tests。
 
 退出门槛：多库/多租户/并发编辑测试通过；ANEKE 不再解析内部 Map；N/N-1 compatibility 测试通过；跨租户 negative test 100% 通过。
+
+当前落地状态（Round 15）：Resource Gateway 已输出 `GraphDraftDependencyProfile.v2` 和
+`GraphDraftDependencySnapshot.v1`，冻结 operator library、runtime binding、adapter activation、contract suite 的
+revision/fingerprint/readiness，并用组包前后 dependency/draft 双读消除 mixed generation。多库、scope mismatch、
+catalog/library/suite/binding/activation missing/stale、相关/无关并发变更和 repository order 均有专项测试；scope mismatch
+不会泄露当前受限 operator/runtime asset。Stage 1 仍未正式退出，因为仓库内没有真实 ANEKE N/N-1 consumer-driven
+contract runner，也没有外部 HA DB 的跨实例 snapshot fault injection 和版本协商部署证据。
 
 ### Stage 2 - Run facts 与可信 evidence（3-5 周）
 

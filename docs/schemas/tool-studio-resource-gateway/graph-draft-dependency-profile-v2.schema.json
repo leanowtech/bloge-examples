@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/graph-draft-dependency-profile-v2.schema.json",
+  "title": "Tool Studio Resource Gateway GraphDraft Dependency Profile v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "operatorDependencies", "graphContract", "snapshot", "sourceDependencyReport"],
+  "properties": {
+    "schemaVersion": { "const": "toolStudio.resourceGateway.graphDraftDependencyProfile.v2" },
+    "operatorDependencies": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/operatorDependency" }
+    },
+    "graphContract": { "$ref": "#/$defs/graphContract" },
+    "snapshot": { "$ref": "#/$defs/snapshot" },
+    "sourceDependencyReport": { "type": "object" }
+  },
+  "$defs": {
+    "sha256OrEmpty": { "type": "string", "pattern": "^(|sha256:[0-9a-f]{64})$" },
+    "operatorDependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeId", "operatorRef", "operatorLibraryId", "operatorFingerprint", "schemaFingerprint",
+        "runtimeBindingRefs", "contractSuiteRefs", "readiness", "operatorLibrary", "runtimeBindings",
+        "contractSuites"
+      ],
+      "properties": {
+        "nodeId": { "type": "string", "maxLength": 255 },
+        "operatorRef": { "type": "string", "maxLength": 255 },
+        "operatorLibraryId": { "type": "string", "maxLength": 255 },
+        "operatorFingerprint": { "$ref": "#/$defs/sha256OrEmpty" },
+        "schemaFingerprint": { "$ref": "#/$defs/sha256OrEmpty" },
+        "runtimeBindingRefs": { "type": "array", "items": { "type": "string", "maxLength": 320 } },
+        "contractSuiteRefs": { "type": "array", "items": { "type": "string", "maxLength": 320 } },
+        "readiness": { "$ref": "#/$defs/readiness" },
+        "operatorLibrary": { "$ref": "#/$defs/operatorLibrary" },
+        "runtimeBindings": { "type": "array", "items": { "$ref": "#/$defs/runtimeBinding" } },
+        "contractSuites": { "type": "array", "items": { "$ref": "#/$defs/contractSuite" } }
+      }
+    },
+    "graphContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputSchemaFingerprint", "outputSchemaFingerprint"],
+      "properties": {
+        "inputSchemaFingerprint": { "$ref": "#/$defs/sha256OrEmpty" },
+        "outputSchemaFingerprint": { "$ref": "#/$defs/sha256OrEmpty" }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "fingerprint", "capturedAt", "consistencyStatus", "operatorCount",
+        "operatorLibraryCount", "runtimeBindingCount", "contractSuiteCount"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "toolStudio.resourceGateway.graphDraftDependencySnapshot.v1" },
+        "fingerprint": { "$ref": "#/$defs/sha256OrEmpty" },
+        "capturedAt": { "type": "string", "format": "date-time" },
+        "consistencyStatus": { "enum": ["STABLE", "UNAVAILABLE"] },
+        "operatorCount": { "type": "integer", "minimum": 0 },
+        "operatorLibraryCount": { "type": "integer", "minimum": 0 },
+        "runtimeBindingCount": { "type": "integer", "minimum": 0 },
+        "contractSuiteCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "operatorLibrary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["libraryId", "revision", "version", "owner", "status", "fingerprint", "present"],
+      "properties": {
+        "libraryId": { "type": "string", "maxLength": 255 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "version": { "type": "string", "maxLength": 128 },
+        "owner": { "type": "string", "maxLength": 255 },
+        "status": { "type": "string", "maxLength": 64 },
+        "fingerprint": { "$ref": "#/$defs/sha256OrEmpty" },
+        "present": { "type": "boolean" }
+      }
+    },
+    "runtimeBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bindingId", "revision", "state", "operatorFingerprint", "fingerprint", "activationId",
+        "activationRevision", "activationState", "activationEnvironment", "activationHealth",
+        "activationFingerprint", "ready"
+      ],
+      "properties": {
+        "bindingId": { "type": "string", "maxLength": 255 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "state": { "type": "string", "maxLength": 64 },
+        "operatorFingerprint": { "$ref": "#/$defs/sha256OrEmpty" },
+        "fingerprint": { "$ref": "#/$defs/sha256OrEmpty" },
+        "activationId": { "type": "string", "maxLength": 255 },
+        "activationRevision": { "type": "integer", "minimum": 0 },
+        "activationState": { "type": "string", "maxLength": 64 },
+        "activationEnvironment": { "type": "string", "maxLength": 128 },
+        "activationHealth": { "type": "string", "maxLength": 64 },
+        "activationFingerprint": { "$ref": "#/$defs/sha256OrEmpty" },
+        "ready": { "type": "boolean" }
+      }
+    },
+    "contractSuite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["suiteId", "revision", "schemaVersion", "caseCount", "fingerprint"],
+      "properties": {
+        "suiteId": { "type": "string", "maxLength": 255 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "schemaVersion": { "type": "string", "maxLength": 255 },
+        "caseCount": { "type": "integer", "minimum": 0 },
+        "fingerprint": { "$ref": "#/$defs/sha256OrEmpty" }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["designReady", "runtimeReady", "executable", "risk", "owner", "sla", "state"],
+      "properties": {
+        "designReady": { "type": "boolean" },
+        "runtimeReady": { "type": "boolean" },
+        "executable": { "type": "boolean" },
+        "risk": { "type": "string", "maxLength": 64 },
+        "owner": { "type": "string", "maxLength": 255 },
+        "sla": { "type": "string", "maxLength": 255 },
+        "state": {
+          "enum": [
+            "RUNTIME_EXECUTABLE", "EXTERNAL_RUNTIME_BOUND", "LIBRARY_MISSING", "LIBRARY_NOT_ACTIVE",
+            "CONTRACT_SUITE_MISSING", "RUNTIME_BINDING_MISSING", "ACTIVATION_MISSING_OR_STALE",
+            "CATALOG_MISSING", "SCOPE_MISMATCH", "unknown"
+          ]
+        }
+      }
+    }
+  }
+}

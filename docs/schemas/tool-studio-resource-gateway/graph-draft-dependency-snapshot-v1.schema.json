@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/graph-draft-dependency-snapshot-v1.schema.json",
+  "title": "Tool Studio Resource Gateway GraphDraft Dependency Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "fingerprint", "capturedAt", "consistencyStatus", "operatorCount",
+    "operatorLibraryCount", "runtimeBindingCount", "contractSuiteCount"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "toolStudio.resourceGateway.graphDraftDependencySnapshot.v1" },
+    "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "capturedAt": { "type": "string", "format": "date-time" },
+    "consistencyStatus": { "enum": ["STABLE", "UNAVAILABLE"] },
+    "operatorCount": { "type": "integer", "minimum": 0 },
+    "operatorLibraryCount": { "type": "integer", "minimum": 0 },
+    "runtimeBindingCount": { "type": "integer", "minimum": 0 },
+    "contractSuiteCount": { "type": "integer", "minimum": 0 }
+  }
+}
