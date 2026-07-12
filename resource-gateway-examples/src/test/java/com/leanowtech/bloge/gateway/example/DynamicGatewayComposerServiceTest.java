@@ -66,6 +66,13 @@ class DynamicGatewayComposerServiceTest {
         assertThat(policy)
                 .containsEntry("decision", "manual_review")
                 .containsEntry("ruleId", "R3");
+        assertThat(response.nodeAttempts()).containsKeys("loanPolicy", "response");
+        assertThat(response.nodeAttempts().get("loanPolicy")).singleElement().satisfies(attempt -> {
+            assertThat(attempt.status()).isEqualTo("SUCCESS");
+            assertThat(attempt.input()).isEqualTo(Map.of("score", 670, "amount", 180_000));
+            assertThat(attempt.output()).isEqualTo(policy);
+            assertThat(attempt.startedAt()).isNotNull();
+        });
     }
 
     @Test

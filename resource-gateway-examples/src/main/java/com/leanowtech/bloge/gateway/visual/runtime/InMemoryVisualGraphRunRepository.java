@@ -14,6 +14,15 @@ import java.util.concurrent.ConcurrentHashMap;
 public class InMemoryVisualGraphRunRepository implements VisualGraphRunRepository {
 
     private final Map<String, VisualGraphRunRecord> records = new ConcurrentHashMap<>();
+    private final VisualEvidenceSigner evidenceSigner;
+
+    public InMemoryVisualGraphRunRepository() {
+        this(new InMemoryVisualEvidenceSigner());
+    }
+
+    public InMemoryVisualGraphRunRepository(VisualEvidenceSigner evidenceSigner) {
+        this.evidenceSigner = evidenceSigner == null ? VisualEvidenceSigner.unavailable() : evidenceSigner;
+    }
 
     @Override
     public Collection<VisualGraphRunRecord> all() {
@@ -31,11 +40,18 @@ public class InMemoryVisualGraphRunRepository implements VisualGraphRunRepositor
     @Override
     public VisualGraphRunRecord create(VisualGraphRunRecord record) {
         String runId = record.runId().isBlank() ? UUID.randomUUID().toString() : record.runId();
-        VisualGraphRunRecord stored = record.withIdentity(runId, Instant.now());
+        VisualGraphRunRecord identified = record.withIdentity(runId, Instant.now());
+        VisualGraphRunRecord stored = identified.withEvidenceSeal(
+                evidenceSigner.seal(identified.evidenceMaterialFingerprint()));
         VisualGraphRunRecord previous = records.putIfAbsent(runId, stored);
         if (previous != null) {
             throw new IllegalArgumentException("Visual graph run already exists: " + runId);
         }
         return stored;
+    }
+
+    @Override
+    public VisualEvidenceSigner evidenceSigner() {
+        return evidenceSigner;
     }
 }

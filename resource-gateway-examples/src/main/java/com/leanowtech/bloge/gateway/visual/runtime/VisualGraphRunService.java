@@ -159,7 +159,9 @@ public class VisualGraphRunService {
                 dynamic.layout(),
                 dynamic.decisionTable(),
                 generated.dsl(),
-                validation
+                validation,
+                "",
+                dynamic.nodeAttempts()
         );
     }
 
@@ -248,7 +250,9 @@ public class VisualGraphRunService {
                 dynamic.layout(),
                 dynamic.decisionTable(),
                 publication.dsl(),
-                validation
+                validation,
+                "",
+                dynamic.nodeAttempts()
         );
     }
 

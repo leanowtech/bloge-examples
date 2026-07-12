@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunnerFactory;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunLayout;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -99,6 +100,12 @@ public class DynamicGatewayComposerVisualDslRunner implements VisualDslRunner, V
                 source.statusMap(),
                 source.elapsedMs(),
                 source.nodeElapsedMs(),
+                source.nodeAttempts().entrySet().stream().collect(java.util.stream.Collectors.toMap(
+                        java.util.Map.Entry::getKey,
+                        entry -> entry.getValue().stream().map(DynamicGatewayComposerVisualDslRunner::attempt).toList(),
+                        (left, right) -> left,
+                        java.util.LinkedHashMap::new
+                )),
                 source.diagnostics().stream()
                         .map(DynamicGatewayComposerVisualDslRunner::diagnostic)
                         .toList(),
@@ -106,6 +113,11 @@ public class DynamicGatewayComposerVisualDslRunner implements VisualDslRunner, V
                 layout(source.layout()),
                 decisionTable(source.decisionTable())
         );
+    }
+
+    private static VisualNodeExecutionAttempt attempt(DynamicGraphRunResponse.NodeAttempt source) {
+        return new VisualNodeExecutionAttempt(source.attempt(), source.input(), source.output(), source.status(),
+                source.startedAt(), source.elapsedMs(), source.errorType(), source.errorMessage());
     }
 
     private static VisualDslRunResponse.Diagnostic diagnostic(DynamicGraphRunResponse.Diagnostic source) {

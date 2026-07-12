@@ -27,6 +27,7 @@ import java.util.Map;
  * @param generatedDsl generated BLOGE DSL
  * @param validation draft or frozen publication validation/readiness used before execution
  * @param runId persisted run history id when the run was recorded
+ * @param nodeAttempts exact operator invocation attempts keyed by node id
  */
 public record VisualGraphRunResponse(
         boolean validated,
@@ -45,7 +46,8 @@ public record VisualGraphRunResponse(
         VisualDecisionTable decisionTable,
         String generatedDsl,
         VisualValidationResult validation,
-        String runId
+        String runId,
+        Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts
 ) {
     /**
      * Creates a response.
@@ -61,6 +63,30 @@ public record VisualGraphRunResponse(
         generatedDsl = generatedDsl == null ? "" : generatedDsl;
         validation = validation == null ? new VisualValidationResult(false, diagnostics) : validation;
         runId = runId == null ? "" : runId;
+        nodeAttempts = immutableAttempts(nodeAttempts);
+    }
+
+    /** Backward-compatible constructor for callers using the pre-capture response shape. */
+    public VisualGraphRunResponse(boolean validated,
+                                  boolean compiled,
+                                  boolean success,
+                                  String graphName,
+                                  String outputNode,
+                                  Object output,
+                                  Map<String, Object> results,
+                                  Map<String, String> statusMap,
+                                  long elapsedMs,
+                                  Map<String, Long> nodeElapsedMs,
+                                  List<VisualDiagnostic> diagnostics,
+                                  List<String> errors,
+                                  VisualRunLayout layout,
+                                  VisualDecisionTable decisionTable,
+                                  String generatedDsl,
+                                  VisualValidationResult validation,
+                                  String runId) {
+        this(validated, compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs,
+                nodeElapsedMs, diagnostics, errors, layout, decisionTable, generatedDsl, validation, runId,
+                Map.of());
     }
 
     /**
@@ -82,7 +108,7 @@ public record VisualGraphRunResponse(
                                   String generatedDsl) {
         this(validated, compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs,
                 Map.of(), diagnostics, errors, layout, decisionTable, generatedDsl,
-                new VisualValidationResult(false, diagnostics), "");
+                new VisualValidationResult(false, diagnostics), "", Map.of());
     }
 
     /**
@@ -105,7 +131,7 @@ public record VisualGraphRunResponse(
                                   String generatedDsl) {
         this(validated, compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs,
                 nodeElapsedMs, diagnostics, errors, layout, decisionTable, generatedDsl,
-                new VisualValidationResult(false, diagnostics), "");
+                new VisualValidationResult(false, diagnostics), "", Map.of());
     }
 
     /**
@@ -128,7 +154,7 @@ public record VisualGraphRunResponse(
                                   String generatedDsl,
                                   VisualValidationResult validation) {
         this(validated, compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs,
-                nodeElapsedMs, diagnostics, errors, layout, decisionTable, generatedDsl, validation, "");
+                nodeElapsedMs, diagnostics, errors, layout, decisionTable, generatedDsl, validation, "", Map.of());
     }
 
     /**
@@ -138,6 +164,16 @@ public record VisualGraphRunResponse(
     public VisualGraphRunResponse withRunId(String newRunId) {
         return new VisualGraphRunResponse(validated, compiled, success, graphName, outputNode, output,
                 results, statusMap, elapsedMs, nodeElapsedMs, diagnostics, errors, layout, decisionTable,
-                generatedDsl, validation, newRunId);
+                generatedDsl, validation, newRunId, nodeAttempts);
+    }
+
+    private static Map<String, List<VisualNodeExecutionAttempt>> immutableAttempts(
+            Map<String, List<VisualNodeExecutionAttempt>> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, List<VisualNodeExecutionAttempt>> copy = new LinkedHashMap<>();
+        source.forEach((nodeId, attempts) -> copy.put(nodeId, attempts == null ? List.of() : List.copyOf(attempts)));
+        return copy;
     }
 }

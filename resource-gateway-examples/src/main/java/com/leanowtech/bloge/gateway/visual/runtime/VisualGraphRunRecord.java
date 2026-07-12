@@ -51,6 +51,8 @@ import java.util.TreeSet;
  * @param resultsPayload sanitized node results retained for governed replay
  * @param redaction sanitizer audit metadata
  * @param edgeSnapshots executed draft edge metadata used to reconstruct edge trace
+ * @param nodeAttempts sanitized exact operator invocation attempts keyed by node id
+ * @param evidenceSeal persisted signature over this immutable run material
  */
 public record VisualGraphRunRecord(
         String schemaVersion,
@@ -85,9 +87,11 @@ public record VisualGraphRunRecord(
         Object outputPayload,
         Map<String, Object> resultsPayload,
         VisualPayloadRedactionManifest redaction,
-        List<EdgeSnapshot> edgeSnapshots
+        List<EdgeSnapshot> edgeSnapshots,
+        Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts,
+        VisualRunEvidenceSeal evidenceSeal
 ) {
-    public static final String SCHEMA_VERSION = "bloge.visualGraphRunRecord.v2";
+    public static final String SCHEMA_VERSION = "bloge.visualGraphRunRecord.v3";
     public static final String SOURCE_TRANSIENT_DRAFT = "TRANSIENT_DRAFT";
     public static final String SOURCE_STORED_DRAFT = "STORED_DRAFT";
     public static final String SOURCE_PUBLICATION = "PUBLICATION";
@@ -129,6 +133,93 @@ public record VisualGraphRunRecord(
         resultsPayload = resultsPayload == null ? Map.of() : new LinkedHashMap<>(resultsPayload);
         redaction = redaction == null ? VisualPayloadRedactionManifest.empty() : redaction;
         edgeSnapshots = edgeSnapshots == null ? List.of() : List.copyOf(edgeSnapshots);
+        nodeAttempts = immutableAttempts(nodeAttempts);
+        evidenceSeal = evidenceSeal == null ? VisualRunEvidenceSeal.unsigned() : evidenceSeal;
+    }
+
+    /** Backward-compatible constructor for callers using the v2 shape before node capture was added. */
+    public VisualGraphRunRecord(String schemaVersion,
+                                String runId,
+                                String sourceKind,
+                                String draftId,
+                                long draftRevision,
+                                String publicationId,
+                                String sourceArtifactKind,
+                                String graphName,
+                                String tenantId,
+                                String namespace,
+                                String environment,
+                                String outputNode,
+                                Instant createdAt,
+                                boolean validated,
+                                boolean compiled,
+                                boolean success,
+                                long elapsedMs,
+                                Map<String, Long> nodeElapsedMs,
+                                Map<String, String> statusMap,
+                                List<VisualDiagnostic> diagnostics,
+                                List<String> errors,
+                                Map<String, Object> contextSummary,
+                                Map<String, Object> outputSummary,
+                                Map<String, Object> resultsSummary,
+                                Map<String, NodeSnapshot> nodeSnapshots,
+                                String generatedDsl,
+                                String draftFingerprint,
+                                String operatorDependencyFingerprint,
+                                Map<String, Object> contextPayload,
+                                Object outputPayload,
+                                Map<String, Object> resultsPayload,
+                                VisualPayloadRedactionManifest redaction,
+                                List<EdgeSnapshot> edgeSnapshots) {
+        this(schemaVersion, runId, sourceKind, draftId, draftRevision, publicationId, sourceArtifactKind,
+                graphName, tenantId, namespace, environment, outputNode, createdAt, validated, compiled, success,
+                elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary, outputSummary,
+                resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint, operatorDependencyFingerprint,
+                contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots, Map.of(),
+                VisualRunEvidenceSeal.unsigned());
+    }
+
+    /** Backward-compatible constructor for callers that provide node capture but no persisted seal yet. */
+    public VisualGraphRunRecord(String schemaVersion,
+                                String runId,
+                                String sourceKind,
+                                String draftId,
+                                long draftRevision,
+                                String publicationId,
+                                String sourceArtifactKind,
+                                String graphName,
+                                String tenantId,
+                                String namespace,
+                                String environment,
+                                String outputNode,
+                                Instant createdAt,
+                                boolean validated,
+                                boolean compiled,
+                                boolean success,
+                                long elapsedMs,
+                                Map<String, Long> nodeElapsedMs,
+                                Map<String, String> statusMap,
+                                List<VisualDiagnostic> diagnostics,
+                                List<String> errors,
+                                Map<String, Object> contextSummary,
+                                Map<String, Object> outputSummary,
+                                Map<String, Object> resultsSummary,
+                                Map<String, NodeSnapshot> nodeSnapshots,
+                                String generatedDsl,
+                                String draftFingerprint,
+                                String operatorDependencyFingerprint,
+                                Map<String, Object> contextPayload,
+                                Object outputPayload,
+                                Map<String, Object> resultsPayload,
+                                VisualPayloadRedactionManifest redaction,
+                                List<EdgeSnapshot> edgeSnapshots,
+                                Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts) {
+        this(schemaVersion, runId, sourceKind, draftId, draftRevision, publicationId, sourceArtifactKind,
+                graphName, tenantId, namespace, environment, outputNode, createdAt, validated, compiled, success,
+                elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary, outputSummary,
+                resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint, operatorDependencyFingerprint,
+                contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots, nodeAttempts,
+                VisualRunEvidenceSeal.unsigned());
     }
 
     /**
@@ -164,7 +255,7 @@ public record VisualGraphRunRecord(
                 tenantId, namespace, environment, outputNode, createdAt, validated, compiled, success, elapsedMs,
                 nodeElapsedMs, statusMap, diagnostics, errors, contextSummary, outputSummary, resultsSummary,
                 nodeSnapshots, generatedDsl, "", "", Map.of(), null, Map.of(),
-                VisualPayloadRedactionManifest.empty(), List.of());
+                VisualPayloadRedactionManifest.empty(), List.of(), Map.of(), VisualRunEvidenceSeal.unsigned());
     }
 
     /**
@@ -371,7 +462,58 @@ public record VisualGraphRunRecord(
                 publicationId, sourceArtifactKind, graphName, tenantId, namespace, environment, outputNode, newCreatedAt,
                 validated, compiled, success, elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary,
                 outputSummary, resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint,
-                operatorDependencyFingerprint, contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots);
+                operatorDependencyFingerprint, contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots,
+                nodeAttempts);
+    }
+
+    /** Returns a copy sealed after repository identity has been assigned. */
+    public VisualGraphRunRecord withEvidenceSeal(VisualRunEvidenceSeal newEvidenceSeal) {
+        return new VisualGraphRunRecord(schemaVersion, runId, sourceKind, draftId, draftRevision,
+                publicationId, sourceArtifactKind, graphName, tenantId, namespace, environment, outputNode, createdAt,
+                validated, compiled, success, elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary,
+                outputSummary, resultsSummary, nodeSnapshots, generatedDsl, draftFingerprint,
+                operatorDependencyFingerprint, contextPayload, outputPayload, resultsPayload, redaction, edgeSnapshots,
+                nodeAttempts, newEvidenceSeal);
+    }
+
+    /** Stable fingerprint over every persisted run field except the seal itself. */
+    public String evidenceMaterialFingerprint() {
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("schemaVersion", schemaVersion);
+        material.put("runId", runId);
+        material.put("sourceKind", sourceKind);
+        material.put("draftId", draftId);
+        material.put("draftRevision", draftRevision);
+        material.put("publicationId", publicationId);
+        material.put("sourceArtifactKind", sourceArtifactKind);
+        material.put("graphName", graphName);
+        material.put("tenantId", tenantId);
+        material.put("namespace", namespace);
+        material.put("environment", environment);
+        material.put("outputNode", outputNode);
+        material.put("createdAt", createdAt);
+        material.put("validated", validated);
+        material.put("compiled", compiled);
+        material.put("success", success);
+        material.put("elapsedMs", elapsedMs);
+        material.put("nodeElapsedMs", nodeElapsedMs);
+        material.put("statusMap", statusMap);
+        material.put("diagnostics", diagnostics);
+        material.put("errors", errors);
+        material.put("contextSummary", contextSummary);
+        material.put("outputSummary", outputSummary);
+        material.put("resultsSummary", resultsSummary);
+        material.put("nodeSnapshots", nodeSnapshots);
+        material.put("generatedDsl", generatedDsl);
+        material.put("draftFingerprint", draftFingerprint);
+        material.put("operatorDependencyFingerprint", operatorDependencyFingerprint);
+        material.put("contextPayload", contextPayload);
+        material.put("outputPayload", outputPayload == null ? "" : outputPayload);
+        material.put("resultsPayload", resultsPayload);
+        material.put("redaction", redaction);
+        material.put("edgeSnapshots", edgeSnapshots);
+        material.put("nodeAttempts", nodeAttempts);
+        return VisualBundleFingerprint.fromMaterial(material);
     }
 
     private static VisualGraphRunRecord fromDraft(String sourceKind,
@@ -393,7 +535,7 @@ public record VisualGraphRunRecord(
                         List.of(), List.of("Visual graph run response is missing."), null, null, "")
                 : response;
         VisualPayloadSanitizer.Capture payloadCapture = VisualPayloadSanitizer.capture(
-                context, safeResponse.output(), safeResponse.results());
+                context, safeResponse.output(), safeResponse.results(), safeResponse.nodeAttempts());
         return new VisualGraphRunRecord(
                 "",
                 "",
@@ -427,8 +569,19 @@ public record VisualGraphRunRecord(
                 payloadCapture.output(),
                 payloadCapture.results(),
                 payloadCapture.redaction(),
-                edgeSnapshots(draft)
+                edgeSnapshots(draft),
+                payloadCapture.nodeAttempts()
         );
+    }
+
+    private static Map<String, List<VisualNodeExecutionAttempt>> immutableAttempts(
+            Map<String, List<VisualNodeExecutionAttempt>> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, List<VisualNodeExecutionAttempt>> copy = new LinkedHashMap<>();
+        source.forEach((nodeId, attempts) -> copy.put(nodeId, attempts == null ? List.of() : List.copyOf(attempts)));
+        return copy;
     }
 
     private static String draftFingerprint(GraphDraft draft) {

@@ -2,7 +2,10 @@ package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -54,6 +57,10 @@ public record RunEvidenceBundle(
     }
 
     public static RunEvidenceBundle from(VisualGraphRunRecord record) {
+        return from(record, VisualEvidenceSigner.unavailable());
+    }
+
+    public static RunEvidenceBundle from(VisualGraphRunRecord record, VisualEvidenceSigner evidenceSigner) {
         Source source = new Source(record.sourceKind(), record.draftId(), record.draftRevision(),
                 record.publicationId(), record.sourceArtifactKind(), record.graphName(), record.tenantId(),
                 record.namespace(), record.environment());
@@ -65,7 +72,8 @@ public record RunEvidenceBundle(
                 record.outputNode(), nodes.stream().anyMatch(NodeEvidence::mocked));
         Retention retention = new Retention("SANITIZED", record.redaction().profile(),
                 record.createdAt().plus(30, ChronoUnit.DAYS));
-        EvidenceManifest manifest = manifest(record, source, fingerprints, execution, nodes, edges);
+        EvidenceManifest manifest = manifest(record, nodes, edges,
+                evidenceSigner == null ? VisualEvidenceSigner.unavailable() : evidenceSigner);
         return new RunEvidenceBundle("", "evidence:" + record.runId(), record.runId(), source, fingerprints,
                 execution,
                 new PayloadSummary(record.contextSummary(), "payload:" + record.runId() + ":context"),
@@ -81,32 +89,57 @@ public record RunEvidenceBundle(
         Set<String> nodeIds = new LinkedHashSet<>(record.nodeSnapshots().keySet());
         nodeIds.addAll(record.statusMap().keySet());
         nodeIds.addAll(record.resultsPayload().keySet());
+        nodeIds.addAll(record.nodeAttempts().keySet());
         List<NodeEvidence> nodes = new ArrayList<>();
         for (String nodeId : nodeIds) {
             VisualGraphRunRecord.NodeSnapshot snapshot = record.nodeSnapshots().get(nodeId);
-            VisualRunStatus status = VisualRunStatus.fromRuntime(record.statusMap().get(nodeId));
-            boolean outputAvailable = record.resultsPayload().containsKey(nodeId);
+            List<VisualNodeExecutionAttempt> attempts = record.nodeAttempts().getOrDefault(nodeId, List.of());
+            VisualNodeExecutionAttempt latestAttempt = attempts.isEmpty() ? null : attempts.get(attempts.size() - 1);
+            VisualRunStatus status = nodeStatus(record.statusMap().get(nodeId), latestAttempt);
+            boolean inputAvailable = latestAttempt != null;
+            boolean outputAvailable = record.resultsPayload().containsKey(nodeId)
+                    || latestAttempt != null && latestAttempt.output() != null;
             nodes.add(new NodeEvidence(
                     nodeId,
                     snapshot == null ? "" : snapshot.operatorRef(),
                     status.name(),
-                    status == VisualRunStatus.UNKNOWN ? "STATUS_NOT_CAPTURED" : "",
+                    reason(status, latestAttempt),
                     record.nodeElapsedMs().getOrDefault(nodeId, 0L),
                     status == VisualRunStatus.MOCKED,
-                    new Retry(0, 0, ""),
+                    new Retry(attempts.size(), attempts.size(), latestAttempt == null ? "" : latestAttempt.errorType()),
                     new Fallback(status == VisualRunStatus.FALLBACK, "", ""),
                     "payload:" + record.runId() + ":node." + nodeId + ".input",
                     outputAvailable ? "payload:" + record.runId() + ":node." + nodeId + ".output" : "",
-                    false,
+                    inputAvailable,
                     outputAvailable
             ));
         }
         return nodes;
     }
 
+    private static String reason(VisualRunStatus status, VisualNodeExecutionAttempt latestAttempt) {
+        if (latestAttempt != null && !latestAttempt.errorMessage().isBlank()) {
+            return latestAttempt.errorMessage();
+        }
+        return status == VisualRunStatus.UNKNOWN ? "STATUS_NOT_CAPTURED" : "";
+    }
+
+    private static VisualRunStatus nodeStatus(String runtimeStatus, VisualNodeExecutionAttempt latestAttempt) {
+        VisualRunStatus status = VisualRunStatus.fromRuntime(runtimeStatus);
+        if (status == VisualRunStatus.FAILED && latestAttempt != null
+                && latestAttempt.errorType().toLowerCase(java.util.Locale.ROOT).contains("timeout")) {
+            return VisualRunStatus.TIMEOUT;
+        }
+        return status;
+    }
+
     private static List<EdgeEvidence> edgeEvidence(VisualGraphRunRecord record) {
         Map<String, VisualRunStatus> statuses = new LinkedHashMap<>();
-        record.statusMap().forEach((nodeId, status) -> statuses.put(nodeId, VisualRunStatus.fromRuntime(status)));
+        record.statusMap().forEach((nodeId, status) -> {
+            List<VisualNodeExecutionAttempt> attempts = record.nodeAttempts().getOrDefault(nodeId, List.of());
+            VisualNodeExecutionAttempt latest = attempts.isEmpty() ? null : attempts.get(attempts.size() - 1);
+            statuses.put(nodeId, nodeStatus(status, latest));
+        });
         return record.edgeSnapshots().stream()
                 .map(edge -> new EdgeEvidence(
                         edge.edgeId(), edge.sourceNodeId(), edge.targetNodeId(),
@@ -140,6 +173,13 @@ public record RunEvidenceBundle(
         if (record.success()) {
             return VisualRunStatus.SUCCESS.name();
         }
+        boolean succeeded = nodes.stream().anyMatch(node -> VisualRunStatus.SUCCESS.name().equals(node.status()));
+        boolean unsuccessful = nodes.stream().anyMatch(node -> List.of(
+                VisualRunStatus.FAILED.name(), VisualRunStatus.TIMEOUT.name(), VisualRunStatus.CANCELLED.name(),
+                VisualRunStatus.PARTIAL.name()).contains(node.status()));
+        if (succeeded && unsuccessful) {
+            return VisualRunStatus.PARTIAL.name();
+        }
         for (VisualRunStatus candidate : List.of(VisualRunStatus.TIMEOUT, VisualRunStatus.CANCELLED,
                 VisualRunStatus.PARTIAL, VisualRunStatus.FAILED)) {
             if (nodes.stream().anyMatch(node -> candidate.name().equals(node.status()))) {
@@ -150,29 +190,60 @@ public record RunEvidenceBundle(
     }
 
     private static EvidenceManifest manifest(VisualGraphRunRecord record,
-                                             Source source,
-                                             Fingerprints fingerprints,
-                                             Execution execution,
                                              List<NodeEvidence> nodes,
-                                             List<EdgeEvidence> edges) {
+                                             List<EdgeEvidence> edges,
+                                             VisualEvidenceSigner evidenceSigner) {
         int expectedNodes = record.nodeSnapshots().size();
         int capturedNodes = (int) nodes.stream().filter(node -> !VisualRunStatus.UNKNOWN.name().equals(node.status()))
                 .count();
         int expectedEdges = record.edgeSnapshots().size();
         int capturedEdges = (int) edges.stream().filter(edge -> !VisualRunStatus.UNKNOWN.name().equals(edge.status()))
                 .count();
-        boolean complete = expectedNodes == capturedNodes && expectedEdges == capturedEdges;
-        String hash = VisualBundleFingerprint.fromMaterial(Map.of(
-                "source", source,
-                "fingerprints", fingerprints,
-                "execution", execution,
-                "nodes", nodes,
-                "edges", edges,
-                "redaction", record.redaction()
-        ));
-        return new EvidenceManifest(expectedNodes, capturedNodes, expectedEdges, capturedEdges, complete,
-                complete ? List.of() : List.of("Expected node or edge status was not captured."), hash,
-                "UNSIGNED", "");
+        int expectedNodeInputs = (int) nodes.stream().filter(RunEvidenceBundle::requiresCapturedInput).count();
+        int capturedNodeInputs = (int) nodes.stream()
+                .filter(RunEvidenceBundle::requiresCapturedInput)
+                .filter(NodeEvidence::inputAvailable)
+                .count();
+        int expectedNodeOutputs = (int) nodes.stream().filter(RunEvidenceBundle::requiresCapturedOutput).count();
+        int capturedNodeOutputs = (int) nodes.stream()
+                .filter(RunEvidenceBundle::requiresCapturedOutput)
+                .filter(NodeEvidence::outputAvailable)
+                .count();
+        boolean complete = expectedNodes == capturedNodes
+                && expectedEdges == capturedEdges
+                && expectedNodeInputs == capturedNodeInputs
+                && expectedNodeOutputs == capturedNodeOutputs;
+        String hash = record.evidenceMaterialFingerprint();
+        VisualRunEvidenceSeal seal = record.evidenceSeal();
+        VisualEvidenceSigner.Verification verification = evidenceSigner.verify(seal, hash);
+        List<String> gaps = new ArrayList<>();
+        if (expectedNodes != capturedNodes || expectedEdges != capturedEdges) {
+            gaps.add("Expected node or edge status was not captured.");
+        }
+        if (expectedNodeInputs != capturedNodeInputs) {
+            gaps.add("Exact input was not captured for every invoked node.");
+        }
+        if (expectedNodeOutputs != capturedNodeOutputs) {
+            gaps.add("Exact output was not captured for every successful node.");
+        }
+        if (!verification.valid()) {
+            gaps.add("Evidence integrity is not verified: " + verification.reason());
+        }
+        String evidenceStatus = complete && verification.valid() ? "READY" : "QUARANTINED";
+        return new EvidenceManifest(expectedNodes, capturedNodes, expectedEdges, capturedEdges,
+                expectedNodeInputs, capturedNodeInputs, expectedNodeOutputs, capturedNodeOutputs,
+                evidenceStatus, complete, gaps, hash,
+                verification.status(), seal.keyId(), seal.algorithm(), seal.signedAt(), seal.signature());
+    }
+
+    private static boolean requiresCapturedInput(NodeEvidence node) {
+        return !VisualRunStatus.SKIPPED.name().equals(node.status())
+                && !VisualRunStatus.UNKNOWN.name().equals(node.status());
+    }
+
+    private static boolean requiresCapturedOutput(NodeEvidence node) {
+        return List.of(VisualRunStatus.SUCCESS.name(), VisualRunStatus.MOCKED.name(),
+                VisualRunStatus.FALLBACK.name()).contains(node.status());
     }
 
     public record Source(String sourceKind, String draftId, long draftRevision, String publicationId,
@@ -222,13 +293,21 @@ public record RunEvidenceBundle(
     }
 
     public record EvidenceManifest(int expectedNodeCount, int capturedNodeCount, int expectedEdgeCount,
-                                   int capturedEdgeCount, boolean complete, List<String> gaps, String manifestHash,
-                                   String signatureStatus, String keyId) {
+                                   int capturedEdgeCount, int expectedNodeInputCount,
+                                   int capturedNodeInputCount, int expectedNodeOutputCount,
+                                   int capturedNodeOutputCount, String evidenceStatus, boolean complete,
+                                   List<String> gaps, String manifestHash, String signatureStatus, String keyId,
+                                   String signatureAlgorithm, Instant signedAt, String signature) {
         public EvidenceManifest {
+            evidenceStatus = evidenceStatus == null || evidenceStatus.isBlank() ? "QUARANTINED" : evidenceStatus;
             gaps = gaps == null ? List.of() : List.copyOf(gaps);
+            signatureAlgorithm = signatureAlgorithm == null ? "" : signatureAlgorithm;
+            signedAt = signedAt == null ? Instant.EPOCH : signedAt;
+            signature = signature == null ? "" : signature;
         }
         static EvidenceManifest empty() {
-            return new EvidenceManifest(0, 0, 0, 0, false, List.of(), "", "UNSIGNED", "");
+            return new EvidenceManifest(0, 0, 0, 0, 0, 0, 0, 0, "QUARANTINED", false,
+                    List.of(), "", "UNSIGNED", "", "", Instant.EPOCH, "");
         }
     }
 }

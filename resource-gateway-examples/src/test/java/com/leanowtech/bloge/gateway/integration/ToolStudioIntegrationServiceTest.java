@@ -10,11 +10,18 @@ import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualGraphRunReposit
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
+import java.security.Signature;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -39,7 +46,7 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("draftExportDependencyProfile", true)
                 .containsEntry("runEvidenceBundle", true)
                 .containsEntry("payloadReplay", true)
-                .containsEntry("governanceGateFeedback", false)
+                .containsEntry("governanceGateFeedback", true)
                 .containsEntry("eventCursor", false)
                 .containsEntry("webhook", false);
         assertThat(envelope.payload().endpoints())
@@ -48,7 +55,10 @@ class ToolStudioIntegrationServiceTest {
                         "/api/integration/capabilities",
                         "/api/integration/drafts/{draftId}/export",
                         "/api/integration/runs/{runId}/evidence",
-                        "/api/integration/runs/{runId}/replay"
+                        "/api/integration/runs/{runId}/replay",
+                        "/api/integration/evidence-keys/{keyId}",
+                        "/api/integration/gate-results",
+                        "/api/integration/drafts/{draftId}/gate-result"
                 );
     }
 
@@ -109,7 +119,7 @@ class ToolStudioIntegrationServiceTest {
     }
 
     @Test
-    void exportsEvidenceWithStandardizedNodeAndEdgeFacts() {
+    void exportsEvidenceWithStandardizedNodeAndEdgeFacts() throws Exception {
         OperatorDefinition operator = operator();
         GraphDraft draft = runDraft(operator);
         VisualGraphRunResponse response = new VisualGraphRunResponse(
@@ -122,7 +132,13 @@ class ToolStudioIntegrationServiceTest {
                 Map.of("eligibility", "SUCCESS", "decision", "SUCCESS"),
                 42,
                 Map.of("eligibility", 12L, "decision", 8L),
-                List.of(), List.of(), null, null, "graph customerKnowledgeTool {}"
+                List.of(), List.of(), null, null, "graph customerKnowledgeTool {}",
+                new VisualValidationResult(true, List.of()), "",
+                Map.of(
+                        "eligibility", List.of(attempt(Map.of("customerId", "c-1"), Map.of("eligible", true))),
+                        "decision", List.of(attempt(Map.of("eligible", true),
+                                Map.of("decision", "APPROVE", "token", "raw-token")))
+                )
         );
         VisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
         VisualGraphRunRecord stored = runs.create(VisualGraphRunRecord.storedDraft(
@@ -147,8 +163,23 @@ class ToolStudioIntegrationServiceTest {
             assertThat(edge.status()).isEqualTo("SUCCESS");
         });
         assertThat(envelope.payload().manifest().complete()).isTrue();
+        assertThat(envelope.payload().manifest().evidenceStatus()).isEqualTo("READY");
+        assertThat(envelope.payload().manifest().capturedNodeInputCount()).isEqualTo(2);
         assertThat(envelope.payload().manifest().manifestHash()).startsWith("sha256:");
+        assertThat(envelope.payload().manifest().signatureStatus()).isEqualTo("VERIFIED");
+        assertThat(envelope.payload().manifest().signatureAlgorithm()).isEqualTo("Ed25519");
+        assertThat(envelope.payload().manifest().signature()).isNotBlank();
         assertThat(envelope.payload().retention().payloadPolicy()).isEqualTo("SANITIZED");
+
+        IntegrationEnvelope<com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner.VerificationKey> key =
+                service.evidenceKey(envelope.payload().manifest().keyId());
+        assertThat(key.payload().keyId()).isEqualTo(envelope.payload().manifest().keyId());
+        assertThat(key.payload().encodedPublicKey()).isNotBlank();
+        Signature verifier = Signature.getInstance("Ed25519");
+        verifier.initVerify(KeyFactory.getInstance("Ed25519").generatePublic(new X509EncodedKeySpec(
+                Base64.getDecoder().decode(key.payload().encodedPublicKey()))));
+        verifier.update(envelope.payload().manifest().manifestHash().getBytes(StandardCharsets.UTF_8));
+        assertThat(verifier.verify(Base64.getDecoder().decode(envelope.payload().manifest().signature()))).isTrue();
     }
 
     @Test
@@ -159,8 +190,12 @@ class ToolStudioIntegrationServiceTest {
                 true, true, true, draft.graphName(), "decision",
                 Map.of("decision", "APPROVE", "token", "raw-token"),
                 Map.of("decision", Map.of("decision", "APPROVE", "token", "raw-token")),
-                Map.of("decision", "SUCCESS"), 25,
-                List.of(), List.of(), null, null, "graph customerKnowledgeTool {}"
+                Map.of("decision", "SUCCESS"), 25, Map.of("decision", 10L),
+                List.of(), List.of(), null, null, "graph customerKnowledgeTool {}",
+                new VisualValidationResult(true, List.of()), "",
+                Map.of("decision", List.of(attempt(
+                        Map.of("customerId", "c-1", "authorization", "Bearer raw-secret"),
+                        Map.of("decision", "APPROVE", "token", "raw-token"))))
         );
         VisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
         VisualGraphRunRecord stored = runs.create(VisualGraphRunRecord.storedDraft(
@@ -184,9 +219,79 @@ class ToolStudioIntegrationServiceTest {
         assertThat(envelope.payload().nodes()).anySatisfy(node -> {
             assertThat(node.nodeId()).isEqualTo("decision");
             assertThat(node.outputAvailable()).isTrue();
-            assertThat(node.inputAvailable()).isFalse();
+            assertThat(node.inputAvailable()).isTrue();
+            assertThat(node.input()).isInstanceOfSatisfying(Map.class, input ->
+                    assertThat(input).containsEntry("authorization", "[REDACTED]"));
         });
         assertThat(envelope.payload().redaction().redactedCount()).isGreaterThanOrEqualTo(3);
+    }
+
+    @Test
+    void quarantinesSignedEvidenceWhenInvokedNodeInputsAreMissing() {
+        OperatorDefinition operator = operator();
+        GraphDraft draft = runDraft(operator);
+        VisualGraphRunResponse response = new VisualGraphRunResponse(
+                true, true, true, draft.graphName(), "decision", Map.of("decision", "APPROVE"),
+                Map.of("eligibility", Map.of("eligible", true), "decision", Map.of("decision", "APPROVE")),
+                Map.of("eligibility", "SUCCESS", "decision", "SUCCESS"), 25,
+                List.of(), List.of(), null, null, "graph customerKnowledgeTool {}"
+        );
+        VisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
+        VisualGraphRunRecord stored = runs.create(VisualGraphRunRecord.storedDraft(draft,
+                Map.of("customerId", "c-1"), response));
+        ToolStudioIntegrationService service = service(null, null, null, runs);
+
+        RunEvidenceBundle evidence = service.runEvidence(stored.runId(), integrationContext("corr-quarantine"))
+                .payload();
+
+        assertThat(evidence.manifest().signatureStatus()).isEqualTo("VERIFIED");
+        assertThat(evidence.manifest().complete()).isFalse();
+        assertThat(evidence.manifest().evidenceStatus()).isEqualTo("QUARANTINED");
+        assertThat(evidence.manifest().gaps())
+                .contains("Exact input was not captured for every invoked node.");
+    }
+
+    @Test
+    void distinguishesTimeoutAndPartialFailureFromGenericFailure() {
+        OperatorDefinition operator = operator();
+        GraphDraft draft = runDraft(operator);
+        VisualNodeExecutionAttempt timeout = new VisualNodeExecutionAttempt(
+                1, Map.of("eligible", true), null, "FAILED", Instant.parse("2026-07-12T00:00:00Z"), 100,
+                "com.leanowtech.bloge.core.exception.OperatorTimeoutException", "timed out after PT0.1S");
+        VisualGraphRunResponse response = new VisualGraphRunResponse(
+                true, true, false, draft.graphName(), "decision", null,
+                Map.of("eligibility", Map.of("eligible", true)),
+                Map.of("eligibility", "COMPLETED", "decision", "FAILED"), 120,
+                Map.of("eligibility", 5L, "decision", 100L), List.of(), List.of("decision timed out"),
+                null, null, "graph customerKnowledgeTool {}", new VisualValidationResult(true, List.of()), "",
+                Map.of(
+                        "eligibility", List.of(attempt(Map.of("customerId", "c-1"), Map.of("eligible", true))),
+                        "decision", List.of(timeout)
+                )
+        );
+        VisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
+        VisualGraphRunRecord stored = runs.create(VisualGraphRunRecord.storedDraft(draft,
+                Map.of("customerId", "c-1"), response));
+
+        RunEvidenceBundle evidence = service(null, null, null, runs)
+                .runEvidence(stored.runId(), integrationContext("corr-timeout"))
+                .payload();
+
+        assertThat(evidence.execution().status()).isEqualTo("PARTIAL");
+        assertThat(evidence.nodes()).filteredOn(node -> node.nodeId().equals("decision"))
+                .singleElement().satisfies(node -> {
+                    assertThat(node.status()).isEqualTo("TIMEOUT");
+                    assertThat(node.retry().attempts()).isEqualTo(1);
+                    assertThat(node.retry().lastErrorCode()).contains("OperatorTimeoutException");
+                });
+        assertThat(evidence.edges()).singleElement().satisfies(edge ->
+                assertThat(edge.status()).isEqualTo("TIMEOUT"));
+        assertThat(evidence.manifest().evidenceStatus()).isEqualTo("READY");
+    }
+
+    private static VisualNodeExecutionAttempt attempt(Object input, Object output) {
+        return new VisualNodeExecutionAttempt(0, input, output, "SUCCESS",
+                Instant.parse("2026-07-12T00:00:00Z"), 5, "", "");
     }
 
     private static ToolStudioIntegrationService service(GraphDraftRepository repository,

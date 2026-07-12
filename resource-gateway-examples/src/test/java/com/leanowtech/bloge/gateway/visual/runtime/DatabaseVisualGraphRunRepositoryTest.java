@@ -48,6 +48,17 @@ class DatabaseVisualGraphRunRepositoryTest {
         assertThat(stored.nodeElapsedMs()).containsEntry("response", 7L);
         assertThat(repository.find(stored.runId())).contains(stored);
         assertThat(stored.contextSummary().toString()).doesNotContain("secret-token");
+        assertThat(stored.evidenceSeal().signed()).isTrue();
+        assertThat(repository.evidenceSigner().verify(stored.evidenceSeal(), stored.evidenceMaterialFingerprint()))
+                .satisfies(verification -> {
+                    assertThat(verification.valid()).isTrue();
+                    assertThat(verification.status()).isEqualTo("VERIFIED");
+                });
+        assertThat(repository.evidenceSigner().verify(stored.evidenceSeal(), "sha256:tampered"))
+                .satisfies(verification -> {
+                    assertThat(verification.valid()).isFalse();
+                    assertThat(verification.status()).isEqualTo("INVALID");
+                });
     }
 
     @Test
@@ -59,6 +70,8 @@ class DatabaseVisualGraphRunRepositoryTest {
 
         assertThat(reloaded.find("run-1")).contains(stored);
         assertThat(reloaded.all()).containsExactly(stored);
+        assertThat(reloaded.evidenceSigner().verify(stored.evidenceSeal(), stored.evidenceMaterialFingerprint())
+                .valid()).isTrue();
     }
 
     @Test
@@ -95,6 +108,7 @@ class DatabaseVisualGraphRunRepositoryTest {
 
         assertThat(record.nodeElapsedMs()).isEmpty();
         assertThat(record.nodeSnapshots()).isEmpty();
+        assertThat(record.evidenceSeal().signed()).isFalse();
         assertThat(record.generatedDsl()).contains("graph visualPolicy");
     }
 

@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualPayloadRedactionManifest;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -39,13 +40,23 @@ public record PayloadReplayBundle(
     public static PayloadReplayBundle from(VisualGraphRunRecord record) {
         Set<String> nodeIds = new LinkedHashSet<>(record.nodeSnapshots().keySet());
         nodeIds.addAll(record.resultsPayload().keySet());
+        nodeIds.addAll(record.nodeAttempts().keySet());
         List<NodeReplay> nodes = nodeIds.stream()
-                .map(nodeId -> new NodeReplay(nodeId, Map.of(), record.resultsPayload().get(nodeId), false,
-                        record.resultsPayload().containsKey(nodeId), List.of()))
+                .map(nodeId -> replayNode(record, nodeId))
                 .toList();
         return new PayloadReplayBundle("", record.runId(), record.runId(), "RECORDED",
                 PayloadPolicy.sanitized(), record.contextPayload(), record.outputPayload(), nodes,
                 record.redaction());
+    }
+
+    private static NodeReplay replayNode(VisualGraphRunRecord record, String nodeId) {
+        List<VisualNodeExecutionAttempt> attempts = record.nodeAttempts().getOrDefault(nodeId, List.of());
+        VisualNodeExecutionAttempt latest = attempts.isEmpty() ? null : attempts.get(attempts.size() - 1);
+        Object output = record.resultsPayload().containsKey(nodeId)
+                ? record.resultsPayload().get(nodeId)
+                : latest == null ? null : latest.output();
+        return new NodeReplay(nodeId, latest == null ? Map.of() : latest.input(), output,
+                latest != null, output != null, List.of());
     }
 
     public record PayloadPolicy(String mode, String redactionProfile, boolean rawAvailable,

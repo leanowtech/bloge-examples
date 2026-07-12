@@ -14,6 +14,8 @@ import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.carrier.TenantMdcCarrier;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.interceptor.QuotaConfigProvider;
+import com.leanowtech.bloge.gateway.integration.DatabaseGovernanceGateResultRepository;
+import com.leanowtech.bloge.gateway.integration.GovernanceGateResultRepository;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.operator.PayloadExtractor;
 import com.leanowtech.bloge.gateway.operator.ResponseValidator;
@@ -36,11 +38,13 @@ import com.leanowtech.bloge.gateway.visual.resource.DatabaseResourceDesignContra
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegistry;
 import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualGraphRunRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualRuntimeRolloutObservationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphPublicationOperator;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeRolloutObservationRepository;
@@ -303,8 +307,24 @@ public class GatewayConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public VisualGraphRunRepository visualGraphRunRepository(JdbcTemplate jdbc,
-                                                             ObjectMapper objectMapper) {
-        return new DatabaseVisualGraphRunRepository(jdbc, objectMapper);
+                                                             ObjectMapper objectMapper,
+                                                             VisualEvidenceSigner evidenceSigner) {
+        return new DatabaseVisualGraphRunRepository(jdbc, objectMapper, evidenceSigner);
+    }
+
+    /** Persistent local signing authority; replace with a KMS-backed bean in enterprise deployments. */
+    @Bean
+    @ConditionalOnMissingBean
+    public VisualEvidenceSigner visualEvidenceSigner(JdbcTemplate jdbc) {
+        return new DatabaseVisualEvidenceSigner(jdbc);
+    }
+
+    /** Immutable ANEKE governance feedback store. */
+    @Bean
+    @ConditionalOnMissingBean
+    public GovernanceGateResultRepository governanceGateResultRepository(JdbcTemplate jdbc,
+                                                                         ObjectMapper objectMapper) {
+        return new DatabaseGovernanceGateResultRepository(jdbc, objectMapper);
     }
 
     /**

@@ -44,14 +44,22 @@ public class DatabaseVisualGraphRunRepository implements VisualGraphRunRepositor
     private final ConcurrentHashMap<String, VisualGraphRunRecord> cache = new ConcurrentHashMap<>();
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final VisualEvidenceSigner evidenceSigner;
 
     /**
      * @param jdbc JDBC template for H2 access
      * @param objectMapper Jackson mapper for run serialization
      */
     public DatabaseVisualGraphRunRepository(JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        this(jdbc, objectMapper, new DatabaseVisualEvidenceSigner(jdbc));
+    }
+
+    public DatabaseVisualGraphRunRepository(JdbcTemplate jdbc,
+                                            ObjectMapper objectMapper,
+                                            VisualEvidenceSigner evidenceSigner) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
+        this.evidenceSigner = evidenceSigner == null ? VisualEvidenceSigner.unavailable() : evidenceSigner;
     }
 
     /**
@@ -92,7 +100,9 @@ public class DatabaseVisualGraphRunRepository implements VisualGraphRunRepositor
     @Override
     public VisualGraphRunRecord create(VisualGraphRunRecord record) {
         String runId = record.runId().isBlank() ? UUID.randomUUID().toString() : record.runId();
-        VisualGraphRunRecord stored = record.withIdentity(runId, Instant.now());
+        VisualGraphRunRecord identified = record.withIdentity(runId, Instant.now());
+        VisualGraphRunRecord stored = identified.withEvidenceSeal(
+                evidenceSigner.seal(identified.evidenceMaterialFingerprint()));
         persist(stored);
         VisualGraphRunRecord previous = cache.putIfAbsent(runId, stored);
         if (previous != null) {
@@ -101,6 +111,11 @@ public class DatabaseVisualGraphRunRepository implements VisualGraphRunRepositor
         log.info("Created visual graph run record: {} source={} graph={} success={}",
                 stored.runId(), stored.sourceKind(), stored.graphName(), stored.success());
         return stored;
+    }
+
+    @Override
+    public VisualEvidenceSigner evidenceSigner() {
+        return evidenceSigner;
     }
 
     private void persist(VisualGraphRunRecord record) {

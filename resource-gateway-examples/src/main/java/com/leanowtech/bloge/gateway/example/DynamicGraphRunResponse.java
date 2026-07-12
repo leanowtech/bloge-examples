@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.example;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +17,7 @@ import java.util.Map;
  * @param statusMap node execution status keyed by node id
  * @param elapsedMs execution time in milliseconds
  * @param nodeElapsedMs per-node execution time in milliseconds
+ * @param nodeAttempts exact operator invocation attempts keyed by node id
  * @param diagnostics compiler diagnostics
  * @param errors execution error messages
  * @param layout generated visual layout for the submitted graph
@@ -31,6 +33,7 @@ public record DynamicGraphRunResponse(
         Map<String, String> statusMap,
         long elapsedMs,
         Map<String, Long> nodeElapsedMs,
+        Map<String, List<NodeAttempt>> nodeAttempts,
         List<Diagnostic> diagnostics,
         List<String> errors,
         ExampleVisualLayout layout,
@@ -45,6 +48,7 @@ public record DynamicGraphRunResponse(
         results = results == null ? Map.of() : new LinkedHashMap<>(results);
         statusMap = statusMap == null ? Map.of() : new LinkedHashMap<>(statusMap);
         nodeElapsedMs = nodeElapsedMs == null ? Map.of() : new LinkedHashMap<>(nodeElapsedMs);
+        nodeAttempts = immutableAttempts(nodeAttempts);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         errors = errors == null ? List.of() : List.copyOf(errors);
     }
@@ -65,7 +69,29 @@ public record DynamicGraphRunResponse(
                                    ExampleVisualLayout layout,
                                    GatewayDecisionTable decisionTable) {
         this(compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs, Map.of(),
-                diagnostics, errors, layout, decisionTable);
+                Map.of(), diagnostics, errors, layout, decisionTable);
+    }
+
+    private static Map<String, List<NodeAttempt>> immutableAttempts(Map<String, List<NodeAttempt>> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, List<NodeAttempt>> copy = new LinkedHashMap<>();
+        source.forEach((nodeId, attempts) -> copy.put(nodeId, attempts == null ? List.of() : List.copyOf(attempts)));
+        return copy;
+    }
+
+    /** Exact input/output facts captured around one operator invocation. */
+    public record NodeAttempt(int attempt, Object input, Object output, String status, Instant startedAt,
+                              long elapsedMs, String errorType, String errorMessage) {
+        public NodeAttempt {
+            attempt = Math.max(0, attempt);
+            status = status == null || status.isBlank() ? "UNKNOWN" : status;
+            startedAt = startedAt == null ? Instant.EPOCH : startedAt;
+            elapsedMs = Math.max(0, elapsedMs);
+            errorType = errorType == null ? "" : errorType;
+            errorMessage = errorMessage == null ? "" : errorMessage;
+        }
     }
 
     /**

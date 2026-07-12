@@ -38,4 +38,9 @@ public interface VisualGraphRunRepository {
      * @return stored run record with assigned id
      */
     VisualGraphRunRecord create(VisualGraphRunRecord record);
+
+    /** Signing authority used for records created by this repository. */
+    default VisualEvidenceSigner evidenceSigner() {
+        return VisualEvidenceSigner.unavailable();
+    }
 }

@@ -19,6 +19,7 @@ import java.util.Map;
  * @param statusMap node execution status keyed by node id
  * @param elapsedMs whole-run elapsed time in milliseconds
  * @param nodeElapsedMs per-node elapsed times in milliseconds
+ * @param nodeAttempts exact operator invocation attempts keyed by node id
  * @param diagnostics compiler diagnostics projected into a visual-owned shape
  * @param errors execution error messages
  * @param layout generated visual layout, when the adapter can provide one
@@ -34,6 +35,7 @@ public record VisualDslRunResponse(
         Map<String, String> statusMap,
         long elapsedMs,
         Map<String, Long> nodeElapsedMs,
+        Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts,
         List<Diagnostic> diagnostics,
         List<String> errors,
         VisualRunLayout layout,
@@ -48,8 +50,37 @@ public record VisualDslRunResponse(
         results = results == null ? Map.of() : new LinkedHashMap<>(results);
         statusMap = statusMap == null ? Map.of() : new LinkedHashMap<>(statusMap);
         nodeElapsedMs = nodeElapsedMs == null ? Map.of() : new LinkedHashMap<>(nodeElapsedMs);
+        nodeAttempts = immutableAttempts(nodeAttempts);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         errors = errors == null ? List.of() : List.copyOf(errors);
+    }
+
+    /** Backward-compatible constructor for adapters that do not yet expose invocation attempts. */
+    public VisualDslRunResponse(boolean compiled,
+                                boolean success,
+                                String graphName,
+                                String outputNode,
+                                Object output,
+                                Map<String, Object> results,
+                                Map<String, String> statusMap,
+                                long elapsedMs,
+                                Map<String, Long> nodeElapsedMs,
+                                List<Diagnostic> diagnostics,
+                                List<String> errors,
+                                VisualRunLayout layout,
+                                VisualDecisionTable decisionTable) {
+        this(compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs, nodeElapsedMs,
+                Map.of(), diagnostics, errors, layout, decisionTable);
+    }
+
+    private static Map<String, List<VisualNodeExecutionAttempt>> immutableAttempts(
+            Map<String, List<VisualNodeExecutionAttempt>> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, List<VisualNodeExecutionAttempt>> copy = new LinkedHashMap<>();
+        source.forEach((nodeId, attempts) -> copy.put(nodeId, attempts == null ? List.of() : List.copyOf(attempts)));
+        return copy;
     }
 
     /**

@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Compiles and executes browser-submitted gateway DSL without registering it as
@@ -42,6 +43,7 @@ public class DynamicGatewayComposerService {
 
     private final GraphEngine graphEngine;
     private final GraphLoader graphLoader;
+    private final NodeExecutionCaptureInterceptor executionCapture;
 
     /**
      * Creates the dynamic composer service with the runtime operator registry.
@@ -51,8 +53,10 @@ public class DynamicGatewayComposerService {
      */
     @Autowired
     public DynamicGatewayComposerService(OperatorRegistry registry, ObjectMapper objectMapper) {
+        this.executionCapture = new NodeExecutionCaptureInterceptor();
         this.graphEngine = GraphEngine.builder()
                 .registry(InputCoercingOperatorRegistry.wrap(registry, objectMapper))
+                .interceptors(List.of(executionCapture))
                 .build();
         this.graphLoader = new GraphLoader(registry);
     }
@@ -106,6 +110,8 @@ public class DynamicGatewayComposerService {
                     Map.of(),
                     Map.of(),
                     0,
+                    Map.of(),
+                    Map.of(),
                     diagnostics,
                     List.of("Compilation failed."),
                     null,
@@ -117,10 +123,14 @@ public class DynamicGatewayComposerService {
         String outputNode = selectOutputNode(graph, request.outputNode());
         ExampleVisualLayout layout = layoutFor(graph);
 
+        String captureId = UUID.randomUUID().toString();
+        executionCapture.begin(captureId);
         GraphResult result;
+        Map<String, List<DynamicGraphRunResponse.NodeAttempt>> nodeAttempts;
         try {
-            result = graphEngine.execute(graph, contextFrom(request.context()));
+            result = graphEngine.execute(graph, contextFrom(request.context(), captureId));
         } catch (RuntimeException ex) {
+            nodeAttempts = executionCapture.complete(captureId);
             return new DynamicGraphRunResponse(
                     true,
                     false,
@@ -130,12 +140,15 @@ public class DynamicGatewayComposerService {
                     Map.of(),
                     Map.of(),
                     0,
+                    Map.of(),
+                    nodeAttempts,
                     diagnostics,
                     List.of(message(ex)),
                     layout,
                     decisionTable
             );
         }
+        nodeAttempts = executionCapture.complete(captureId);
 
         Object output = result.findOutput(outputNode, Object.class).orElse(null);
         return new DynamicGraphRunResponse(
@@ -148,6 +161,7 @@ public class DynamicGatewayComposerService {
                 statuses(result),
                 result.elapsed().toMillis(),
                 nodeElapsedMs(result.nodeTimings()),
+                nodeAttempts,
                 diagnostics,
                 errors(result),
                 layout,
@@ -183,11 +197,12 @@ public class DynamicGatewayComposerService {
         return registry;
     }
 
-    private static GraphContext contextFrom(Map<String, Object> values) {
+    private static GraphContext contextFrom(Map<String, Object> values, String captureId) {
         String tenantId = stringValue(values.getOrDefault("tenantId", "demo-tenant"));
         String namespace = stringValue(values.getOrDefault("namespace", "local"));
         GraphContext context = new GraphContext(new TenantContext(tenantId, namespace));
         values.forEach(context::put);
+        context.put(NodeExecutionCaptureInterceptor.CAPTURE_ID_CONTEXT_KEY, captureId);
         return context;
     }
 
@@ -263,6 +278,8 @@ public class DynamicGatewayComposerService {
                 Map.of(),
                 Map.of(),
                 0,
+                Map.of(),
+                Map.of(),
                 List.of(new DynamicGraphRunResponse.Diagnostic("ERROR", message, "", "", -1, -1)),
                 List.of(message),
                 null,

@@ -3,12 +3,16 @@ package com.leanowtech.bloge.gateway.integration;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
+
+import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 
 /**
  * Stable Resource Gateway integration API consumed by ANEKE Tool Studio.
@@ -46,6 +50,24 @@ public class ToolStudioIntegrationController {
     public IntegrationEnvelope<PayloadReplayBundle> replay(@PathVariable String runId,
                                                            @RequestHeader HttpHeaders headers) {
         return service.replay(runId, requestContext(headers));
+    }
+
+    @GetMapping("/evidence-keys/{keyId}")
+    public IntegrationEnvelope<VisualEvidenceSigner.VerificationKey> evidenceKey(@PathVariable String keyId) {
+        return service.evidenceKey(keyId);
+    }
+
+    @PostMapping("/gate-results")
+    public IntegrationEnvelope<GovernanceGateResult> submitGateResult(
+            @RequestBody GovernanceGateResult result,
+            @RequestHeader HttpHeaders headers) {
+        return service.submitGateResult(result, requestContext(headers));
+    }
+
+    @GetMapping("/drafts/{draftId}/gate-result")
+    public IntegrationEnvelope<GovernanceGateView> governanceGate(@PathVariable String draftId,
+                                                                  @RequestHeader HttpHeaders headers) {
+        return service.governanceGate(draftId, requestContext(headers));
     }
 
     private static IntegrationRequestContext requestContext(HttpHeaders headers) {
