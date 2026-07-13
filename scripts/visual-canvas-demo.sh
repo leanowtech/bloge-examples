@@ -104,12 +104,8 @@ legacy_url() {
     echo "http://localhost:$(configured_port)/examples/gateway"
 }
 
-readiness_urls() {
-    if truthy "${BUILD_FRONTEND}"; then
-        author_url
-    fi
-    legacy_url
-    echo "http://localhost:$(configured_port)/api/visual/operators"
+capabilities_url() {
+    echo "http://localhost:$(configured_port)/api/integration/capabilities"
 }
 
 jar_path() {
@@ -186,9 +182,14 @@ assert_port_available() {
 print_urls() {
     cat <<EOF
 Demo URLs:
-  Author canvas:  $(author_url)
-  Showcase:       $(showcase_url)
+  Author canvas:   $(author_url)
+  Showcase:        $(showcase_url)
   Legacy composer: $(legacy_url)
+  Capability probe: $(capabilities_url)
+
+Integration API templates:
+  Workbook seed:   GET  /api/integration/drafts/{draftId}/correctness-workbook?revision={revision}
+  Gate feedback:   POST /api/integration/gate-results
 EOF
 }
 
@@ -228,19 +229,18 @@ wait_for_ready() {
     fi
 
     local deadline
+    local url
     deadline=$((SECONDS + STARTUP_TIMEOUT))
+    url="$(capabilities_url)"
     while [ "${SECONDS}" -lt "${deadline}" ]; do
-        local url
         if ! running_pid >/dev/null 2>&1; then
             echo "Demo service exited before becoming ready. See $(log_file)." >&2
             return 1
         fi
-        while IFS= read -r url; do
-            if curl -fsS "${url}" >/dev/null 2>&1; then
-                echo "Demo service ready: ${url}"
-                return 0
-            fi
-        done < <(readiness_urls)
+        if curl -fsS "${url}" >/dev/null 2>&1; then
+            echo "Demo service ready; integration capability probe passed: ${url}"
+            return 0
+        fi
         sleep 2
     done
 
@@ -342,6 +342,13 @@ status_service() {
         echo "Visual canvas demo: running (pid ${pid})"
         echo "Log: $(log_file)"
         print_urls
+        if command -v curl >/dev/null 2>&1; then
+            if curl -fsS "$(capabilities_url)" >/dev/null 2>&1; then
+                echo "Capability probe: healthy"
+            else
+                echo "Capability probe: unavailable"
+            fi
+        fi
     else
         echo "Visual canvas demo: stopped"
     fi

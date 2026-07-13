@@ -79,6 +79,7 @@ default, starts the service on port `8080`, and prints the demo URLs:
 ```bash
 ./scripts/start-visual-canvas-demo.sh
 ./scripts/visual-canvas-demo.sh status
+./scripts/visual-canvas-demo.sh restart
 ./scripts/stop-visual-canvas-demo.sh
 ```
 
@@ -89,6 +90,11 @@ Common demo options:
 ./scripts/start-visual-canvas-demo.sh --port 18080
 ./scripts/start-visual-canvas-demo.sh --no-build
 ```
+
+Startup waits for `GET /api/integration/capabilities`, then prints the canvas,
+showcase, capability probe, correctness-workbook, and gate-feedback entry points.
+Runtime logs and PID files remain under `target/example-logs/` and
+`target/example-pids/`.
 
 ### Graph Engine Server
 
