@@ -1059,12 +1059,25 @@ curl -sS 'http://localhost:8080/api/integration/reconciliation' \
 Author canvas:   http://localhost:8080/author/
 Showcase:        http://localhost:8080/showcase/
 Legacy composer: http://localhost:8080/examples/gateway
+Capability probe: http://localhost:8080/api/integration/capabilities
+
+Integration API templates:
+  Workbook seed: GET  /api/integration/drafts/{draftId}/correctness-workbook?revision={revision}
+  Gate feedback: POST /api/integration/gate-results
+```
+
+脚本不会把“端口已监听”当成启动成功。它会等待公开的 capability endpoint 返回 2xx，确认协议、路由和 Spring
+依赖都已完成装配后才报告 ready。可独立复查：
+
+```bash
+curl -fsS http://localhost:8080/api/integration/capabilities
 ```
 
 查看状态和日志位置：
 
 ```bash
 ./scripts/visual-canvas-demo.sh status
+./scripts/visual-canvas-demo.sh restart
 ```
 
 停止演示服务：
@@ -1084,7 +1097,15 @@ Legacy composer: http://localhost:8080/examples/gateway
 | `--run-tests` | 打包时不跳过 Maven 测试 |
 | `-- --gateway.base-url=http://localhost:9091` | `--` 后面的参数透传给 Spring Boot 应用 |
 
-脚本使用 `target/example-pids/visual-canvas-demo.pid` 记录进程，使用 `target/example-logs/visual-canvas-demo.log` 记录日志；停止时会校验 PID/端口上的进程确实像 Resource Gateway demo，避免误停其它服务。
+脚本使用 `target/example-pids/visual-canvas-demo.pid` 记录进程，使用 `target/example-logs/visual-canvas-demo.log` 记录日志；
+`status` 会同时报告 capability probe 是否健康。停止时会校验 PID/端口上的进程确实像 Resource Gateway demo，避免
+误停其它服务。演示新的 payload 保留策略时，可直接透传 Spring 参数，例如：
+
+```bash
+./scripts/start-visual-canvas-demo.sh --port 18080 -- \
+  --gateway.integration.payload-governance.default-classification=CONFIDENTIAL \
+  --gateway.integration.payload-governance.retention-days.confidential=7
+```
 
 ### 3.9 手动启动方式
 

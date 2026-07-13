@@ -46,6 +46,7 @@ demo on `http://localhost:8080`.
 | `http://localhost:8080/author/` | Build a schema-constrained graph on the visual canvas |
 | `http://localhost:8080/showcase/` | Explore guided product scenarios and sample outputs |
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
+| `http://localhost:8080/api/integration/capabilities` | Verify protocol versions, endpoints, feature flags, identity provider, payload policy, and signer readiness |
 | `http://localhost:8080/api/gateway/graphs/contracts` | Inspect resource graph input/output contracts |
 | `POST http://localhost:8080/api/gateway/graphs/contracts/tests/draft` | Generate editable graph mock/table suites from graph and resource schemas |
 | `POST http://localhost:8080/api/gateway/graphs/contracts/tests/run` | Run schema-gated mock/table contract suites |
@@ -65,7 +66,13 @@ Useful variants:
 ./scripts/start-visual-canvas-demo.sh --port 18080
 ./scripts/start-visual-canvas-demo.sh --no-build
 ./scripts/start-visual-canvas-demo.sh --run-tests
+./scripts/visual-canvas-demo.sh status
+./scripts/visual-canvas-demo.sh restart
 ```
+
+The start command becomes ready only after the integration capability probe
+succeeds. Process output is written to `target/example-logs/visual-canvas-demo.log`;
+the PID and selected port are kept under `target/example-pids/`.
 
 Batch-migrate existing `.bloge` files after the service is running:
 
