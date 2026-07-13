@@ -729,3 +729,41 @@ bloge.visualOperatorLibrary.v1
 ```
 
 新接入和新示例应以本文和机器 schema 为准。旧草案仍可作为架构思路阅读，但不要作为 wire contract 使用。
+
+## 19. 企业级完整示例
+
+仓库提供一份可直接预检和导入的
+[Enterprise Knowledge Governance Operator Library](./examples/enterprise-knowledge-governance-operator-library.yaml)。
+它不是最小教学片段，而是用于评审完整合同边界的综合样例：
+
+- 6 个 `builtInFunctions`，覆盖 overload、optional、variadic、参数/返回 JSON Schema 和表达式示例；
+- 9 个 operator，覆盖 `transform`、`branch`、`design`、`native`、`remote-worker`、`ai-tool`、
+  `event-source`、`message-handler`、`webhook` lowering；
+- 多输入/多输出、`$defs/$ref`、`oneOf`、`patternProperties`、`dependentRequired`、`contains`、格式与范围约束；
+- tenant/namespace/environment policy、secret/readiness 信号，以及 `WRITE_EXTERNAL + JOURNALED` 副作用协议。
+
+先做无写入预检：
+
+```bash
+curl -fsS -X POST \
+  -H 'Content-Type: text/plain' \
+  --data-binary @docs/examples/enterprise-knowledge-governance-operator-library.yaml \
+  http://localhost:8080/admin/visual-operator-libraries/validate-text
+```
+
+确认 `valid=true` 并审阅 warning/readiness 后再导入：
+
+```bash
+curl -fsS -X POST \
+  -H 'Content-Type: text/plain' \
+  --data-binary @docs/examples/enterprise-knowledge-governance-operator-library.yaml \
+  'http://localhost:8080/admin/visual-operator-libraries/import-text?ackWarnings=true&actor=docs-example&changeSource=documentation&changeSummary=import-complete-example&reason=runtime-bindings-reviewed'
+```
+
+这个综合示例必须满足 `valid=true` 和 `errorCount=0`，但 readiness state 由目标环境的 runtime inventory 与治理策略
+派生，通常是 `runtime-binding-required` 或 `governance-review-required`。AI、event、message、webhook、durable 及未注册
+native operator 会产生可审计 warning；`ackWarnings=true` 只表示导入者已经审阅这些 warning，不会把对应算子伪装成
+`RUNTIME_EXECUTABLE`。
+
+其中 `fingerprint`、`runtimeReadiness`、`diagnostics`、`source.libraryId` 和 runtime-binding ids 均有意省略；它们
+属于服务端派生事实，不应由“最完整示例”伪造成用户可信输入。

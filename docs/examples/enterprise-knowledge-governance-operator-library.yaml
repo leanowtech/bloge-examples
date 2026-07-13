@@ -1,0 +1,1437 @@
+# Complete authoring example for bloge.visualOperatorLibrary.v1.
+# Server-derived fields (fingerprint, runtimeReadiness, diagnostics, source.libraryId,
+# and runtime-binding ids) are intentionally absent.
+schemaVersion: bloge.visualOperatorLibrary.v1
+libraryId: enterprise-knowledge-governance
+displayName: Enterprise Knowledge Governance
+version: 3.2.0
+owner: knowledge-platform
+status: ACTIVE
+
+# Functions are expression capabilities, not palette nodes. Their callable name is
+# the full `name` value; `namespace` is ownership/governance metadata.
+builtInFunctions:
+  - name: knowledge.normalizeText
+    namespace: knowledge-platform
+    displayName: Normalize text
+    description: Normalize Unicode, whitespace, casing, and locale-sensitive punctuation.
+    category: text
+    signatures:
+      - label: knowledge.normalizeText(value, locale?, preserveLines?)
+        description: Normalize one string while preserving its semantic content.
+        parameters:
+          - name: value
+            type: string
+            schema:
+              format: json-schema
+              version: "2020-12"
+              schema:
+                type: string
+                maxLength: 2000000
+            optional: false
+            variadic: false
+            description: Source text.
+          - name: locale
+            type: string
+            schema:
+              format: json-schema
+              version: "2020-12"
+              schema:
+                type: string
+                pattern: "^[a-z]{2}(?:-[A-Z]{2})?$"
+            optional: true
+            variadic: false
+            description: BCP-47 language tag.
+          - name: preserveLines
+            type: boolean
+            optional: true
+            variadic: false
+            description: Preserve line boundaries when true.
+        returns:
+          type: string
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: string
+              maxLength: 2000000
+          description: Normalized text.
+    examples:
+      - knowledge.normalizeText(document.title, "en-US", false)
+      - knowledge.normalizeText(document.body)
+
+  - name: knowledge.firstNonBlank
+    namespace: knowledge-platform
+    displayName: First non-blank
+    description: Return the first non-null and non-blank string from a candidate list.
+    category: null-handling
+    signatures:
+      - label: knowledge.firstNonBlank(fallback, values...)
+        parameters:
+          - name: fallback
+            type: string
+            optional: false
+            variadic: false
+            description: Value returned when every candidate is blank.
+          - name: values
+            type: string
+            optional: false
+            variadic: true
+            description: Ordered candidate values.
+        returns:
+          type: string
+          description: First usable value or fallback.
+    examples:
+      - knowledge.firstNonBlank("untitled", document.title, document.fileName)
+
+  - name: knowledge.extractClaims
+    namespace: knowledge-platform
+    displayName: Extract claims
+    description: Extract typed claims from a document according to a claim profile.
+    category: knowledge
+    signatures:
+      - label: knowledge.extractClaims(document, profile, minConfidence?)
+        parameters:
+          - name: document
+            type: object
+            schema:
+              format: json-schema
+              version: "2020-12"
+              schema:
+                type: object
+                properties:
+                  text:
+                    type: string
+                  language:
+                    type: string
+                  metadata:
+                    type: object
+                    additionalProperties: true
+                required: [text]
+                additionalProperties: false
+            optional: false
+            variadic: false
+            description: Normalized document.
+          - name: profile
+            type: string
+            schema:
+              format: json-schema
+              version: "2020-12"
+              schema:
+                type: string
+                enum: [policy, procedure, faq, product, legal]
+            optional: false
+            variadic: false
+            description: Extraction profile.
+          - name: minConfidence
+            type: number
+            schema:
+              format: json-schema
+              version: "2020-12"
+              schema:
+                type: number
+                minimum: 0
+                maximum: 1
+            optional: true
+            variadic: false
+            description: Minimum confidence accepted for a claim.
+        returns:
+          type: array
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: array
+              maxItems: 10000
+              items:
+                type: object
+                properties:
+                  claimId:
+                    type: string
+                  subject:
+                    type: string
+                  predicate:
+                    type: string
+                  object:
+                    oneOf:
+                      - type: string
+                      - type: number
+                      - type: boolean
+                      - type: object
+                      - type: array
+                        items:
+                          type: string
+                      - type: "null"
+                  confidence:
+                    type: number
+                    minimum: 0
+                    maximum: 1
+                required: [claimId, subject, predicate, object, confidence]
+                additionalProperties: false
+          description: Extracted claim collection.
+    examples:
+      - knowledge.extractClaims(document, "policy", 0.82)
+
+  - name: knowledge.confidenceBand
+    namespace: knowledge-platform
+    displayName: Confidence band
+    description: Map a confidence score into a governed review band.
+    category: policy
+    signatures:
+      - label: knowledge.confidenceBand(score)
+        description: Use enterprise default thresholds.
+        parameters:
+          - name: score
+            type: number
+            schema:
+              format: json-schema
+              version: "2020-12"
+              schema:
+                type: number
+                minimum: 0
+                maximum: 1
+            optional: false
+            variadic: false
+            description: Confidence score.
+        returns:
+          type: string
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: string
+              enum: [HIGH, MEDIUM, LOW, REJECT]
+          description: Review band.
+      - label: knowledge.confidenceBand(score, high, medium, low)
+        description: Use caller-supplied descending thresholds.
+        parameters:
+          - name: score
+            type: number
+            optional: false
+            variadic: false
+            description: Confidence score.
+          - name: high
+            type: number
+            optional: false
+            variadic: false
+            description: High-confidence lower bound.
+          - name: medium
+            type: number
+            optional: false
+            variadic: false
+            description: Medium-confidence lower bound.
+          - name: low
+            type: number
+            optional: false
+            variadic: false
+            description: Low-confidence lower bound.
+        returns:
+          type: string
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: string
+              enum: [HIGH, MEDIUM, LOW, REJECT]
+          description: Review band.
+    examples:
+      - knowledge.confidenceBand(claim.confidence)
+      - knowledge.confidenceBand(score, 0.95, 0.80, 0.60)
+
+  - name: knowledge.buildCitation
+    namespace: knowledge-platform
+    displayName: Build citation
+    description: Build a normalized citation object for answer grounding and evidence export.
+    category: evidence
+    signatures:
+      - label: knowledge.buildCitation(assetId, fragmentId, quote, score, page?)
+        parameters:
+          - name: assetId
+            type: string
+            optional: false
+            variadic: false
+            description: Governed asset id.
+          - name: fragmentId
+            type: string
+            optional: false
+            variadic: false
+            description: Source fragment id.
+          - name: quote
+            type: string
+            optional: false
+            variadic: false
+            description: Bounded supporting quotation.
+          - name: score
+            type: number
+            optional: false
+            variadic: false
+            description: Retrieval or entailment score.
+          - name: page
+            type: integer
+            optional: true
+            variadic: false
+            description: One-based source page number.
+        returns:
+          type: object
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                assetId:
+                  type: string
+                fragmentId:
+                  type: string
+                quote:
+                  type: string
+                  maxLength: 2000
+                score:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                page:
+                  type: integer
+                  minimum: 1
+              required: [assetId, fragmentId, quote, score]
+              additionalProperties: false
+          description: Normalized citation.
+    examples:
+      - knowledge.buildCitation(hit.assetId, hit.fragmentId, hit.quote, hit.score, hit.page)
+
+  - name: knowledge.maskPii
+    namespace: knowledge-platform
+    displayName: Mask PII
+    description: Apply a named masking profile to arbitrary JSON while preserving structure.
+    category: governance
+    signatures:
+      - label: knowledge.maskPii(value, profile, replacement?)
+        parameters:
+          - name: value
+            type: json
+            optional: false
+            variadic: false
+            description: JSON value to sanitize.
+          - name: profile
+            type: string
+            schema:
+              format: json-schema
+              version: "2020-12"
+              schema:
+                type: string
+                enum: [basic, customer, employee, legal, strict]
+            optional: false
+            variadic: false
+            description: Registered masking profile.
+          - name: replacement
+            type: string
+            optional: true
+            variadic: false
+            description: Replacement token, defaulting to REDACTED.
+        returns:
+          type: json
+          description: Sanitized JSON with the same high-level shape.
+    examples:
+      - knowledge.maskPii(inputs.customer, "customer", "[REDACTED]")
+
+operators:
+  # Locally lowerable transform that demonstrates function calls in assignments.
+  - schemaVersion: bloge.visualOperator.v1
+    operatorRef: knowledge:normalizeDocument
+    operatorVersion: 2.1.0
+    display:
+      name: Normalize document
+      description: Normalize source content into the canonical knowledge-document shape.
+      tags: [knowledge, ingestion, transform, pii]
+    source:
+      kind: user-library
+    ports:
+      inputs:
+        - name: document
+          required: true
+          description: Raw source document and ingestion metadata.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                sourceId:
+                  type: string
+                  minLength: 1
+                  maxLength: 256
+                fileName:
+                  type: string
+                  maxLength: 1024
+                title:
+                  type: [string, "null"]
+                  maxLength: 2000
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000000
+                language:
+                  type: [string, "null"]
+                  pattern: "^[a-z]{2}(?:-[A-Z]{2})?$"
+                tags:
+                  type: array
+                  uniqueItems: true
+                  maxItems: 100
+                  items:
+                    type: string
+                    maxLength: 128
+                ingestedAt:
+                  type: string
+                  format: date-time
+              required: [sourceId, fileName, body, ingestedAt]
+              additionalProperties: false
+      outputs:
+        - name: output
+          required: true
+          description: Canonical normalized document.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                documentId:
+                  type: string
+                normalizedTitle:
+                  type: string
+                normalizedText:
+                  type: string
+                language:
+                  type: string
+                tags:
+                  type: array
+                  uniqueItems: true
+                  items:
+                    type: string
+                sourceId:
+                  type: string
+                ingestedAt:
+                  type: string
+                  format: date-time
+              required: [documentId, normalizedTitle, normalizedText, language, tags, sourceId, ingestedAt]
+              additionalProperties: false
+    configSchema:
+      format: json-schema
+      version: "2020-12"
+      schema:
+        type: object
+        properties:
+          defaultLocale:
+            type: string
+            default: en-US
+          piiProfile:
+            type: string
+            enum: [basic, customer, employee, legal, strict]
+            default: strict
+          preserveLines:
+            type: boolean
+            default: true
+        required: [defaultLocale, piiProfile, preserveLines]
+        additionalProperties: false
+    capabilities:
+      effect: PURE
+      idempotency: DETERMINISTIC
+      streaming: false
+      durable: false
+      requiresSecrets: false
+    policy:
+      tenants: [acme, globex]
+      namespaces: [knowledge, compliance]
+      environments: [dev, staging, prod]
+    lowering:
+      mode: transform
+      parameters:
+        assignments:
+          documentId: "{{document.sourceId}}"
+          normalizedTitle: "knowledge.normalizeText(knowledge.firstNonBlank('untitled', {{document.title}}, {{document.fileName}}), 'en-US', false)"
+          normalizedText: "knowledge.normalizeText({{document.body}}, 'en-US', true)"
+          language: "knowledge.firstNonBlank('und', {{document.language}})"
+          tags: "{{document.tags}}"
+          sourceId: "{{document.sourceId}}"
+          ingestedAt: "{{document.ingestedAt}}"
+
+  # A branch has inputs but deliberately has no output ports.
+  - schemaVersion: bloge.visualOperator.v1
+    operatorRef: knowledge:restrictedContentRoute
+    operatorVersion: 1.3.0
+    display:
+      name: Restricted content route
+      description: Route restricted material into the approval and enclave path.
+      tags: [knowledge, governance, branch, restricted]
+    source:
+      kind: user-library
+    ports:
+      inputs:
+        - name: classification
+          required: true
+          description: Current information-classification decision.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                level:
+                  type: string
+                  enum: [PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED]
+                exportControlled:
+                  type: boolean
+                containsPii:
+                  type: boolean
+              required: [level, exportControlled, containsPii]
+              additionalProperties: false
+      outputs: []
+    configSchema:
+      format: json-schema
+      version: "2020-12"
+      schema:
+        type: object
+        properties:
+          restrictedLevels:
+            type: array
+            uniqueItems: true
+            items:
+              type: string
+              enum: [CONFIDENTIAL, RESTRICTED]
+        required: [restrictedLevels]
+        additionalProperties: false
+    capabilities:
+      effect: PURE
+      idempotency: DETERMINISTIC
+      streaming: false
+      durable: false
+      requiresSecrets: false
+    policy:
+      tenants: [acme, globex]
+      namespaces: [knowledge, compliance]
+      environments: [dev, staging, prod]
+    lowering:
+      mode: branch
+      parameters:
+        expression: "{{classification.level}} == 'RESTRICTED' || {{classification.exportControlled}} == true"
+
+  # A schema-heavy design operator for contract-first authoring before runtime binding.
+  - schemaVersion: bloge.visualOperator.v1
+    operatorRef: knowledge:policyEvaluation
+    operatorVersion: 4.0.0
+    display:
+      name: Knowledge policy evaluation
+      description: Evaluate classification, residency, ownership, retention, and publication obligations.
+      tags: [knowledge, policy, governance, schema-heavy, design]
+    source:
+      kind: user-library
+    ports:
+      inputs:
+        - name: asset
+          required: true
+          description: Asset and provenance facts.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              $defs:
+                owner:
+                  type: object
+                  properties:
+                    ownerId:
+                      type: string
+                    ownerType:
+                      type: string
+                      enum: [PERSON, GROUP, SYSTEM]
+                    delegatedBy:
+                      type: [string, "null"]
+                  required: [ownerId, ownerType]
+                  additionalProperties: false
+                retention:
+                  type: object
+                  properties:
+                    policyId:
+                      type: string
+                    retainUntil:
+                      type: [string, "null"]
+                      format: date-time
+                    legalHoldIds:
+                      type: array
+                      uniqueItems: true
+                      items:
+                        type: string
+                  required: [policyId, legalHoldIds]
+                  additionalProperties: false
+              type: object
+              properties:
+                assetId:
+                  type: string
+                  minLength: 1
+                assetType:
+                  type: string
+                  enum: [DOCUMENT, DATASET, MODEL, PROMPT, PROCEDURE, POLICY]
+                owner:
+                  $ref: "#/$defs/owner"
+                retention:
+                  $ref: "#/$defs/retention"
+                classification:
+                  oneOf:
+                    - type: object
+                      properties:
+                        level:
+                          const: PUBLIC
+                        publicationAllowed:
+                          const: true
+                      required: [level, publicationAllowed]
+                      additionalProperties: false
+                    - type: object
+                      properties:
+                        level:
+                          type: string
+                          enum: [INTERNAL, CONFIDENTIAL, RESTRICTED]
+                        publicationAllowed:
+                          type: boolean
+                        handlingControls:
+                          type: array
+                          minItems: 1
+                          uniqueItems: true
+                          items:
+                            type: string
+                      required: [level, publicationAllowed, handlingControls]
+                      additionalProperties: false
+                residency:
+                  type: object
+                  patternProperties:
+                    "^[A-Z]{2}$":
+                      type: object
+                      properties:
+                        storageAllowed:
+                          type: boolean
+                        processingAllowed:
+                          type: boolean
+                      required: [storageAllowed, processingAllowed]
+                      additionalProperties: false
+                  additionalProperties: false
+              required: [assetId, assetType, owner, retention, classification, residency]
+              dependentRequired:
+                classification: [owner, retention]
+              additionalProperties: false
+        - name: actor
+          required: true
+          description: Trusted actor and organizational claims.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                actorId:
+                  type: string
+                organizationId:
+                  type: string
+                groups:
+                  type: array
+                  uniqueItems: true
+                  items:
+                    type: string
+                clearance:
+                  type: string
+                  enum: [PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED]
+                purpose:
+                  type: string
+                  enum: [AUTHORING, REVIEW, PUBLISH, EVIDENCE, REPLAY]
+              required: [actorId, organizationId, groups, clearance, purpose]
+              additionalProperties: false
+      outputs:
+        - name: decision
+          required: true
+          description: Overall policy decision.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [ALLOW, DENY, REQUIRE_APPROVAL, REQUIRE_REDACTION]
+                policyVersion:
+                  type: string
+                reasons:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                      severity:
+                        type: string
+                        enum: [INFO, WARNING, BLOCKING]
+                      message:
+                        type: string
+                      targetPath:
+                        type: string
+                    required: [code, severity, message, targetPath]
+                    additionalProperties: false
+                obligations:
+                  type: array
+                  uniqueItems: true
+                  items:
+                    type: string
+                    enum: [OWNER_APPROVAL, LEGAL_APPROVAL, REDACT_PII, TEE_ONLY, REGION_PINNED, AUDIT_EXPORT]
+              required: [status, policyVersion, reasons, obligations]
+              additionalProperties: false
+        - name: audit
+          required: true
+          description: Evidence-safe policy evaluation summary.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                evaluationId:
+                  type: string
+                  format: uuid
+                evaluatedAt:
+                  type: string
+                  format: date-time
+                inputFingerprint:
+                  type: string
+                  pattern: "^sha256:[0-9a-f]{64}$"
+                matchedRuleIds:
+                  type: array
+                  uniqueItems: true
+                  items:
+                    type: string
+              required: [evaluationId, evaluatedAt, inputFingerprint, matchedRuleIds]
+              additionalProperties: false
+    configSchema:
+      format: json-schema
+      version: "2020-12"
+      schema:
+        type: object
+        properties:
+          policyBundleRef:
+            type: string
+            minLength: 1
+          failClosed:
+            const: true
+          maxReasonCount:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        required: [policyBundleRef, failClosed, maxReasonCount]
+        additionalProperties: false
+    capabilities:
+      effect: PURE
+      idempotency: DETERMINISTIC
+      streaming: false
+      durable: false
+      requiresSecrets: false
+    policy:
+      tenants: [acme, globex]
+      namespaces: [knowledge, compliance]
+      environments: [dev, staging, prod]
+    lowering:
+      mode: design
+      parameters:
+        bindingTarget: knowledge-policy-engine
+        expectedProtocol: knowledge.policyEvaluation.v1
+
+  # A native binding with a fully managed external-write protocol.
+  - schemaVersion: bloge.visualOperator.v1
+    operatorRef: knowledge:publishAsset
+    operatorVersion: 3.0.0
+    display:
+      name: Publish knowledge asset
+      description: Publish an approved asset and return a provider commit receipt.
+      tags: [knowledge, publication, write, journaled]
+    source:
+      kind: user-library
+    ports:
+      inputs:
+        - name: request
+          required: true
+          description: Approved publication command.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                assetId:
+                  type: string
+                revision:
+                  type: integer
+                  minimum: 1
+                targetChannel:
+                  type: string
+                  enum: [INTERNAL_SEARCH, EMPLOYEE_ASSISTANT, CUSTOMER_HELP, PARTNER_PORTAL]
+                idempotencyKey:
+                  type: string
+                  minLength: 16
+                  maxLength: 256
+                reconciliationLookupRef:
+                  type: string
+                  minLength: 1
+                approvalEvidenceIds:
+                  type: array
+                  minItems: 1
+                  uniqueItems: true
+                  items:
+                    type: string
+              required: [assetId, revision, targetChannel, idempotencyKey, reconciliationLookupRef, approvalEvidenceIds]
+              additionalProperties: false
+      outputs:
+        - name: result
+          required: true
+          description: Publication result and evidence-safe receipt reference.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                publicationId:
+                  type: string
+                state:
+                  type: string
+                  enum: [COMMITTED, ALREADY_COMMITTED, REJECTED]
+                commitReceipt:
+                  type: string
+                publishedAt:
+                  type: string
+                  format: date-time
+              required: [publicationId, state, commitReceipt, publishedAt]
+              additionalProperties: false
+    configSchema:
+      format: json-schema
+      version: "2020-12"
+      schema:
+        type: object
+        properties:
+          providerProfile:
+            type: string
+            enum: [primary, secondary]
+          secretRef:
+            type: string
+            minLength: 1
+          requestTimeoutMs:
+            type: integer
+            minimum: 100
+            maximum: 30000
+        required: [providerProfile, secretRef, requestTimeoutMs]
+        additionalProperties: false
+    capabilities:
+      effect: WRITE_EXTERNAL
+      idempotency: IDEMPOTENT
+      streaming: false
+      durable: false
+      requiresSecrets: true
+      sideEffectProtocol:
+        schemaVersion: bloge.sideEffectProtocol.v1
+        mode: JOURNALED
+        commitReceiptRequired: true
+        reconciliationRequired: true
+        reconcilerRef: knowledge.publication.status
+        idempotencyKeySource: input.idempotencyKey
+        reconciliationLookupSource: input.reconciliationLookupRef
+        commitReceiptSource: response.headers.X-Commit-Receipt
+    policy:
+      tenants: [acme]
+      namespaces: [knowledge]
+      environments: [staging, prod]
+    lowering:
+      mode: native
+      operatorRef: knowledgeAssetPublisher
+      parameters:
+        contractVersion: knowledge.publishAsset.v3
+
+  - schemaVersion: bloge.visualOperator.v1
+    operatorRef: knowledge:entityGraphResolution
+    operatorVersion: 2.4.1
+    display:
+      name: Resolve entity graph
+      description: Resolve claims into canonical entities and relationships on a remote worker.
+      tags: [knowledge, entity, graph, remote-worker]
+    source:
+      kind: remote-worker
+    ports:
+      inputs:
+        - name: claims
+          required: true
+          description: Extracted typed claims.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 10000
+              items:
+                type: object
+                properties:
+                  claimId:
+                    type: string
+                  subject:
+                    type: string
+                  predicate:
+                    type: string
+                  object:
+                    oneOf:
+                      - type: string
+                      - type: number
+                      - type: boolean
+                      - type: object
+                      - type: array
+                        items:
+                          type: string
+                      - type: "null"
+                  confidence:
+                    type: number
+                    minimum: 0
+                    maximum: 1
+                required: [claimId, subject, predicate, object, confidence]
+                additionalProperties: false
+        - name: context
+          required: false
+          description: Existing canonical entity hints.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                tenantId:
+                  type: string
+                namespace:
+                  type: string
+                entityHints:
+                  type: object
+                  additionalProperties:
+                    type: string
+              required: [tenantId, namespace]
+              additionalProperties: false
+      outputs:
+        - name: graph
+          required: true
+          description: Canonical graph delta.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                nodes:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      entityId:
+                        type: string
+                      entityType:
+                        type: string
+                      labels:
+                        type: object
+                        additionalProperties:
+                          type: string
+                    required: [entityId, entityType, labels]
+                    additionalProperties: false
+                edges:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      sourceId:
+                        type: string
+                      relation:
+                        type: string
+                      targetId:
+                        type: string
+                      confidence:
+                        type: number
+                        minimum: 0
+                        maximum: 1
+                    required: [sourceId, relation, targetId, confidence]
+                    additionalProperties: false
+                unresolvedClaimIds:
+                  type: array
+                  uniqueItems: true
+                  items:
+                    type: string
+              required: [nodes, edges, unresolvedClaimIds]
+              additionalProperties: false
+    configSchema:
+      format: json-schema
+      version: "2020-12"
+      schema:
+        type: object
+        properties:
+          resolverProfile:
+            type: string
+            enum: [conservative, balanced, recall-first]
+          batchSize:
+            type: integer
+            minimum: 1
+            maximum: 1000
+        required: [resolverProfile, batchSize]
+        additionalProperties: false
+    capabilities:
+      effect: READ_EXTERNAL
+      idempotency: IDEMPOTENT
+      streaming: false
+      durable: true
+      requiresSecrets: true
+    policy:
+      tenants: [acme, globex]
+      namespaces: [knowledge]
+      environments: [dev, staging, prod]
+    lowering:
+      mode: remote-worker
+      parameters:
+        workerTopic: workers.knowledge.entity-resolution.v2
+        resultTopic: workers.knowledge.entity-resolution.results.v2
+        maxExecutionSeconds: 300
+
+  - schemaVersion: bloge.visualOperator.v1
+    operatorRef: knowledge:groundedAnswer
+    operatorVersion: 5.1.0
+    display:
+      name: Generate grounded answer
+      description: Generate an answer constrained to retrieved evidence and citation policy.
+      tags: [knowledge, ai, rag, citations, tool]
+    source:
+      kind: ai-tool
+    ports:
+      inputs:
+        - name: query
+          required: true
+          description: User question and response constraints.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                question:
+                  type: string
+                  minLength: 1
+                  maxLength: 20000
+                locale:
+                  type: string
+                audience:
+                  type: string
+                  enum: [EMPLOYEE, CUSTOMER, PARTNER, AUDITOR]
+                maxAnswerTokens:
+                  type: integer
+                  minimum: 32
+                  maximum: 8192
+              required: [question, locale, audience, maxAnswerTokens]
+              additionalProperties: false
+        - name: evidence
+          required: true
+          description: Retrieval hits permitted for grounding.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 100
+              contains:
+                type: object
+                properties:
+                  authoritative:
+                    const: true
+                required: [authoritative]
+              minContains: 1
+              items:
+                type: object
+                properties:
+                  assetId:
+                    type: string
+                  fragmentId:
+                    type: string
+                  text:
+                    type: string
+                  score:
+                    type: number
+                    minimum: 0
+                    maximum: 1
+                  authoritative:
+                    type: boolean
+                  classification:
+                    type: string
+                    enum: [PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED]
+                required: [assetId, fragmentId, text, score, authoritative, classification]
+                additionalProperties: false
+      outputs:
+        - name: answer
+          required: true
+          description: Grounded answer and citations.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+                citations:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    properties:
+                      assetId:
+                        type: string
+                      fragmentId:
+                        type: string
+                      quote:
+                        type: string
+                        maxLength: 2000
+                      score:
+                        type: number
+                        minimum: 0
+                        maximum: 1
+                    required: [assetId, fragmentId, quote, score]
+                    additionalProperties: false
+                confidence:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                policyStatus:
+                  type: string
+                  enum: [COMPLIANT, NEEDS_REVIEW, BLOCKED]
+              required: [text, citations, confidence, policyStatus]
+              additionalProperties: false
+    configSchema:
+      format: json-schema
+      version: "2020-12"
+      schema:
+        type: object
+        properties:
+          modelProfile:
+            type: string
+          promptTemplateRef:
+            type: string
+          minimumCitationScore:
+            type: number
+            minimum: 0
+            maximum: 1
+          secretRef:
+            type: string
+        required: [modelProfile, promptTemplateRef, minimumCitationScore, secretRef]
+        additionalProperties: false
+    capabilities:
+      effect: EXTERNAL
+      idempotency: UNKNOWN
+      streaming: true
+      durable: false
+      requiresSecrets: true
+    policy:
+      tenants: [acme]
+      namespaces: [knowledge]
+      environments: [dev, staging, prod]
+    lowering:
+      mode: ai-tool
+      parameters:
+        toolRef: enterprise-ai.grounded-answer.v5
+        responseMode: citation-required
+
+  - schemaVersion: bloge.visualOperator.v1
+    operatorRef: knowledge:documentIngestedEvent
+    operatorVersion: 1.0.0
+    display:
+      name: Document ingested event
+      description: Receive the canonical event that begins knowledge ingestion.
+      tags: [knowledge, event, ingestion, source]
+    source:
+      kind: event-source
+    ports:
+      inputs: []
+      outputs:
+        - name: event
+          required: true
+          description: Versioned ingestion event.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                eventId:
+                  type: string
+                  format: uuid
+                eventType:
+                  const: knowledge.document.ingested.v1
+                occurredAt:
+                  type: string
+                  format: date-time
+                tenantId:
+                  type: string
+                sourceId:
+                  type: string
+                payloadRef:
+                  type: string
+                  format: uri
+                traceparent:
+                  type: [string, "null"]
+              required: [eventId, eventType, occurredAt, tenantId, sourceId, payloadRef]
+              additionalProperties: false
+    configSchema:
+      format: json-schema
+      version: "2020-12"
+      schema:
+        type: object
+        properties:
+          subscriptionRef:
+            type: string
+          consumerGroup:
+            type: string
+          startPosition:
+            type: string
+            enum: [LATEST, EARLIEST, CHECKPOINT]
+        required: [subscriptionRef, consumerGroup, startPosition]
+        additionalProperties: false
+    capabilities:
+      effect: READ_EXTERNAL
+      idempotency: IDEMPOTENT
+      streaming: true
+      durable: true
+      requiresSecrets: true
+    policy:
+      tenants: [acme, globex]
+      namespaces: [knowledge]
+      environments: [dev, staging, prod]
+    lowering:
+      mode: event-source
+      parameters:
+        eventType: knowledge.document.ingested.v1
+        subscriptionRef: knowledge-ingestion
+
+  - schemaVersion: bloge.visualOperator.v1
+    operatorRef: knowledge:indexProjectionHandler
+    operatorVersion: 2.0.0
+    display:
+      name: Index projection handler
+      description: Consume governed index-projection commands and report acceptance.
+      tags: [knowledge, message, index, handler]
+    source:
+      kind: message-handler
+    ports:
+      inputs:
+        - name: command
+          required: true
+          description: Index projection command.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                commandId:
+                  type: string
+                  format: uuid
+                assetId:
+                  type: string
+                revision:
+                  type: integer
+                  minimum: 1
+                operation:
+                  type: string
+                  enum: [UPSERT, DELETE, REINDEX]
+                targetIndexes:
+                  type: array
+                  minItems: 1
+                  uniqueItems: true
+                  items:
+                    type: string
+              required: [commandId, assetId, revision, operation, targetIndexes]
+              additionalProperties: false
+      outputs:
+        - name: acknowledgement
+          required: true
+          description: Handler acknowledgement.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                commandId:
+                  type: string
+                  format: uuid
+                accepted:
+                  type: boolean
+                checkpoint:
+                  type: string
+                rejectedReason:
+                  type: [string, "null"]
+              required: [commandId, accepted, checkpoint]
+              additionalProperties: false
+    configSchema:
+      format: json-schema
+      version: "2020-12"
+      schema:
+        type: object
+        properties:
+          deadLetterChannel:
+            type: string
+          maxDeliveryAttempts:
+            type: integer
+            minimum: 1
+            maximum: 20
+        required: [deadLetterChannel, maxDeliveryAttempts]
+        additionalProperties: false
+    capabilities:
+      effect: WRITE_EXTERNAL
+      idempotency: IDEMPOTENT
+      streaming: false
+      durable: true
+      requiresSecrets: true
+      sideEffectProtocol:
+        schemaVersion: bloge.sideEffectProtocol.v1
+        mode: JOURNALED
+        commitReceiptRequired: true
+        reconciliationRequired: true
+        reconcilerRef: knowledge.index.command-status
+        idempotencyKeySource: input.commandId
+        reconciliationLookupSource: input.commandId
+        commitReceiptSource: response.checkpoint
+    policy:
+      tenants: [acme, globex]
+      namespaces: [knowledge]
+      environments: [staging, prod]
+    lowering:
+      mode: message-handler
+      parameters:
+        channel: knowledge.index.commands.v2
+        deadLetterChannel: knowledge.index.commands.dlq.v2
+
+  - schemaVersion: bloge.visualOperator.v1
+    operatorRef: knowledge:reviewDecisionWebhook
+    operatorVersion: 1.2.0
+    display:
+      name: Review decision webhook
+      description: Receive a signed human-review decision from the governance workflow.
+      tags: [knowledge, webhook, review, approval]
+    source:
+      kind: webhook
+      method: POST
+      urlTemplate: /hooks/knowledge/reviews/{reviewId}/decisions
+      virtual: false
+    ports:
+      inputs:
+        - name: request
+          required: true
+          description: Signed review decision request.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                headers:
+                  type: object
+                  properties:
+                    signature:
+                      type: string
+                    timestamp:
+                      type: string
+                      format: date-time
+                  required: [signature, timestamp]
+                  additionalProperties: false
+                path:
+                  type: object
+                  properties:
+                    reviewId:
+                      type: string
+                  required: [reviewId]
+                  additionalProperties: false
+                body:
+                  type: object
+                  properties:
+                    decision:
+                      type: string
+                      enum: [APPROVED, REJECTED, CHANGES_REQUESTED]
+                    reviewerId:
+                      type: string
+                    reason:
+                      type: string
+                      maxLength: 10000
+                    evidenceIds:
+                      type: array
+                      uniqueItems: true
+                      items:
+                        type: string
+                  required: [decision, reviewerId, reason, evidenceIds]
+                  additionalProperties: false
+              required: [headers, path, body]
+              additionalProperties: false
+      outputs:
+        - name: response
+          required: true
+          description: Idempotent webhook acknowledgement.
+          schema:
+            format: json-schema
+            version: "2020-12"
+            schema:
+              type: object
+              properties:
+                accepted:
+                  type: boolean
+                reviewId:
+                  type: string
+                decisionVersion:
+                  type: integer
+                  minimum: 1
+              required: [accepted, reviewId, decisionVersion]
+              additionalProperties: false
+    configSchema:
+      format: json-schema
+      version: "2020-12"
+      schema:
+        type: object
+        properties:
+          signatureKeyRef:
+            type: string
+          allowedClockSkewSeconds:
+            type: integer
+            minimum: 0
+            maximum: 300
+          replayWindowSeconds:
+            type: integer
+            minimum: 30
+            maximum: 3600
+        required: [signatureKeyRef, allowedClockSkewSeconds, replayWindowSeconds]
+        additionalProperties: false
+    capabilities:
+      effect: WRITE_EXTERNAL
+      idempotency: IDEMPOTENT
+      streaming: false
+      durable: false
+      requiresSecrets: true
+      sideEffectProtocol:
+        schemaVersion: bloge.sideEffectProtocol.v1
+        mode: JOURNALED
+        commitReceiptRequired: true
+        reconciliationRequired: true
+        reconcilerRef: knowledge.review.decision-status
+        idempotencyKeySource: input.path.reviewId
+        reconciliationLookupSource: input.path.reviewId
+        commitReceiptSource: response.decisionVersion
+    policy:
+      tenants: [acme]
+      namespaces: [knowledge, compliance]
+      environments: [staging, prod]
+    lowering:
+      mode: webhook
+      parameters:
+        method: POST
+        path: /hooks/knowledge/reviews/{reviewId}/decisions
+        authentication: signed-request

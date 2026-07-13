@@ -22,6 +22,8 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -235,6 +237,41 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.profile.facets.runtimeReadinessStates['design-only']").value(1));
 
         assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void enterpriseDocumentationExampleRemainsValidAndImportableWithFunctions() throws Exception {
+        String yaml = Files.readString(Path.of("..", "docs", "examples",
+                "enterprise-knowledge-governance-operator-library.yaml"));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate-text")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content(yaml))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.profile.libraryId").value("enterprise-knowledge-governance"))
+                .andExpect(jsonPath("$.profile.operatorCount").value(9))
+                .andExpect(jsonPath("$.profile.facets.loweringModes.length()").value(9))
+                .andExpect(jsonPath("$.importReadiness.valid").value(true))
+                .andExpect(jsonPath("$.importReadiness.errorCount").value(0))
+                .andExpect(jsonPath("$.importReadiness.requiresAckWarnings").value(true))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirementCount").isNumber());
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/import-text")
+                        .param("ackWarnings", "true")
+                        .param("actor", "docs-example")
+                        .param("changeSource", "documentation")
+                        .param("changeSummary", "validate complete example")
+                        .param("reason", "runtime bindings reviewed")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content(yaml))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.libraryId").value("enterprise-knowledge-governance"))
+                .andExpect(jsonPath("$.operators.length()").value(9))
+                .andExpect(jsonPath("$.builtInFunctions.length()").value(6))
+                .andExpect(jsonPath("$.builtInFunctions[0].name").value("knowledge.normalizeText"));
+
+        assertThat(registry.find("enterprise-knowledge-governance")).isPresent();
     }
 
     @Test
