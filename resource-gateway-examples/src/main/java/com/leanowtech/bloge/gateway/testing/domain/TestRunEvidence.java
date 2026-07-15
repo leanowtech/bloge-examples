@@ -49,16 +49,16 @@ public record TestRunEvidence(
 
     /** Normalized test-run lifecycle and terminal states. */
     public enum Status {
-        PLANNING,
-        CONTROL_PLAN_REJECTED,
-        RUNNING,
         PASSED,
         ASSERTION_FAILED,
         EXECUTION_FAILED,
+        CONTROL_PLAN_REJECTED,
         FIXTURE_UNMATCHED,
         FIXTURE_UNUSED,
+        CONTROL_PLAN_UNAVAILABLE,
+        EVIDENCE_INCOMPLETE,
         CANCELLED,
-        EVIDENCE_FAILED
+        TIMED_OUT
     }
 
     /** Evidence trust class consumed by correctness workbooks and release gates. */
@@ -71,7 +71,7 @@ public record TestRunEvidence(
     public TestRunEvidence {
         schemaVersion = defaulted(schemaVersion, SCHEMA_VERSION);
         runId = trimmed(runId);
-        status = status == null ? Status.PLANNING : status;
+        status = status == null ? Status.EVIDENCE_INCOMPLETE : status;
         evidenceClass = evidenceClass == null ? EvidenceClass.EXPLORATORY : evidenceClass;
         executionPurpose = trimmed(executionPurpose);
         targetFingerprint = trimmed(targetFingerprint);

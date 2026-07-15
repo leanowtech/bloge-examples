@@ -90,6 +90,16 @@ public record IntegrationCapabilities(
                                                   IntegrationIdentityResolver.Descriptor identityProvider,
                                                   boolean sideEffectReconcilerAdapters,
                                                   VisualPayloadGovernancePolicy.Descriptor payloadGovernance) {
+        return current(evidenceSigner, identityProvider, sideEffectReconcilerAdapters,
+                payloadGovernance, false);
+    }
+
+    /** Builds the current capability probe with profile-owned test execution availability. */
+    public static IntegrationCapabilities current(VisualEvidenceSigner.Descriptor evidenceSigner,
+                                                  IntegrationIdentityResolver.Descriptor identityProvider,
+                                                  boolean sideEffectReconcilerAdapters,
+                                                  VisualPayloadGovernancePolicy.Descriptor payloadGovernance,
+                                                  boolean testExecutionEndpointEnabled) {
         VisualEvidenceSigner.Descriptor signer = evidenceSigner == null
                 ? VisualEvidenceSigner.unavailable().descriptor() : evidenceSigner;
         Map<String, List<String>> objects = new LinkedHashMap<>();
@@ -143,6 +153,28 @@ public record IntegrationCapabilities(
                 com.leanowtech.bloge.core.operator.SideEffectProtocol.SCHEMA_VERSION));
         objects.put("externalWriteContract", List.of(
                 com.leanowtech.bloge.gateway.resource.ResourceDescriptor.ExternalWriteContract.SCHEMA_VERSION));
+        if (testExecutionEndpointEnabled) {
+            objects.put("testExecutionRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest.SCHEMA_VERSION));
+            objects.put("testExecutionResponse", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse.SCHEMA_VERSION));
+            objects.put("testExecutionBatchRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestExecutionBatchRequest.SCHEMA_VERSION));
+            objects.put("testExecutionBatchResponse", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestExecutionBatchResponse.SCHEMA_VERSION));
+            objects.put("fixtureBundleRegistrationRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.FixtureBundleRegistrationRequest.SCHEMA_VERSION));
+            objects.put("storedFixtureBundle", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundle.SCHEMA_VERSION));
+            objects.put("fixtureBundle", List.of(
+                    com.leanowtech.bloge.gateway.testing.domain.FixtureBundle.SCHEMA_VERSION));
+            objects.put("effectiveExecutionPlan", List.of(
+                    com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan.SCHEMA_VERSION));
+            objects.put("testRunEvidence", List.of(
+                    com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence.SCHEMA_VERSION));
+            objects.put("testGraphTargetDescriptor", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestGraphTargetDescriptor.SCHEMA_VERSION));
+        }
 
         Map<String, Boolean> features = new LinkedHashMap<>();
         features.put("draftExportDependencyProfile", true);
@@ -219,8 +251,7 @@ public record IntegrationCapabilities(
                 && identityProvider.properties().get("revocationPropagationSloSeconds") instanceof Number);
         features.put("webhook", false);
 
-        return new IntegrationCapabilities("", "", "", objects, features, identityProvider, signer,
-                payloadGovernance, Testability.schemaContractOnly(), List.of(
+        List<Endpoint> endpoints = new java.util.ArrayList<>(List.of(
                 new Endpoint("GET", "/api/integration/capabilities"),
                 new Endpoint("GET", "/api/integration/drafts/{draftId}/export"),
                 new Endpoint("GET", "/api/integration/drafts/{draftId}/correctness-workbook"),
@@ -244,6 +275,17 @@ public record IntegrationCapabilities(
                 new Endpoint("GET", "/api/visual/run-controls/{requestId}"),
                 new Endpoint("POST", "/api/visual/run-controls/{requestId}/cancel")
         ));
+        if (testExecutionEndpointEnabled) {
+            endpoints.add(new Endpoint("POST", "/api/testing/executions"));
+            endpoints.add(new Endpoint("GET", "/api/testing/targets/graphs/{graphName}"));
+            endpoints.add(new Endpoint("POST", "/api/testing/executions/batch"));
+            endpoints.add(new Endpoint("GET", "/api/testing/executions/{runId}"));
+            endpoints.add(new Endpoint("PUT", "/api/testing/fixture-bundles/{fixtureBundleId}"));
+            endpoints.add(new Endpoint("GET", "/api/testing/fixture-bundles/{fixtureBundleId}"));
+        }
+        return new IntegrationCapabilities("", "", "", objects, features, identityProvider, signer,
+                payloadGovernance, testExecutionEndpointEnabled
+                        ? Testability.executionControlPlane() : Testability.schemaContractOnly(), endpoints);
     }
 
     private static VisualPayloadGovernancePolicy.Descriptor unavailablePayloadGovernance() {
@@ -289,6 +331,11 @@ public record IntegrationCapabilities(
         /** @return Stage 0 capability before the execution endpoint is activated */
         public static Testability schemaContractOnly() {
             return new Testability("bloge.testing.v1", List.of("test", "staging"), true, false);
+        }
+
+        /** @return Stage 2 capability with the caller-driven execution endpoint assembled */
+        public static Testability executionControlPlane() {
+            return new Testability("bloge.testing.v1", List.of("test", "staging"), true, true);
         }
     }
 }

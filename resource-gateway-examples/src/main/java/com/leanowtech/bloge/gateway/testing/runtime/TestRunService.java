@@ -175,11 +175,11 @@ public class TestRunService {
         if (consumptions.stream().anyMatch(item -> "UNUSED".equals(item.status()))) {
             return TestRunEvidence.Status.FIXTURE_UNUSED;
         }
-        if (!assertions.stream().allMatch(TestRunEvidence.AssertionResult::passed)) {
-            return TestRunEvidence.Status.ASSERTION_FAILED;
-        }
         if (result == null || !result.isSuccess() || !diagnostics.isEmpty()) {
             return TestRunEvidence.Status.EXECUTION_FAILED;
+        }
+        if (!assertions.stream().allMatch(TestRunEvidence.AssertionResult::passed)) {
+            return TestRunEvidence.Status.ASSERTION_FAILED;
         }
         return TestRunEvidence.Status.PASSED;
     }
@@ -189,16 +189,18 @@ public class TestRunService {
         if (request.fixtureSource() != TestExecutionRequest.FixtureSource.STORED) {
             return TestRunEvidence.EvidenceClass.EXPLORATORY;
         }
+        if (!request.certificationEligible()) {
+            return TestRunEvidence.EvidenceClass.EXPLORATORY;
+        }
         if (compiled.rules().stream().anyMatch(rule -> rule.schemaCheck().mode()
                 == FixtureRule.SchemaCheckMode.WAIVED)) {
             return TestRunEvidence.EvidenceClass.EXPLORATORY;
         }
-        boolean outputLevelResource = compiled.rules().stream().anyMatch(rule ->
-                (!rule.selector().resourceRef().isBlank()
-                        || "httpResource".equals(rule.selector().operatorRef()))
-                        && rule.behavior().kind() == FixtureRule.BehaviorKind.RETURN
-                        && (rule.behavior().statusCode() == null
-                        || rule.behavior().value() != null));
+        boolean outputLevelResource = compiled.effectivePlan().resolvedSites().stream().anyMatch(site ->
+                site.invocationSiteId().endsWith("#RESOURCE")
+                        && site.resolution() == EffectiveExecutionPlan.Resolution.TEST_DOUBLE
+                        && site.behavior() == FixtureRule.BehaviorKind.RETURN
+                        && "OUTPUT_LEVEL".equals(site.fidelity()));
         return outputLevelResource ? TestRunEvidence.EvidenceClass.EXPLORATORY
                 : TestRunEvidence.EvidenceClass.CERTIFIABLE;
     }

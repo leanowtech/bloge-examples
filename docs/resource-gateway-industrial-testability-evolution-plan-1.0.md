@@ -8,15 +8,17 @@
 | --- | --- | --- |
 | Stage 0 | 完成 | operator suite API/UI 显式 `SCHEMA_CONTRACT`；`testing/domain` 五个版本化 record；capability testability 描述；[ADR-001](adr/ADR-001-resource-gateway-test-runtime-isolation.md)、[ADR-002](adr/ADR-002-operator-composability-and-opaque-runtime.md) 与 [BLOGE framework requirement](bloge-framework-execution-control-requirement.md) |
 | Stage 1' | 完成 | `testing/planning/runtime/evidence` 内核；独立 test engine；五行为；F2/F3 resource fixture；micro-graph runner；旧 graph suite adapter；37 个聚焦测试与 1653 个项目测试全绿 |
-| Stage 2' | 未开始 | 等待统一 API、test-run store、test-kit 与 dogfooding |
+| Stage 2' | 进行中 | 已落地 target discovery、`/api/testing/executions`/batch/query、immutable fixture registry、独立 test-run store、10 态 evidence、profile/identity/生产协议隔离与 32 个新增聚焦测试；test-kit、全示例 dogfooding、旧 suite F2/F3 迁移仍待完成 |
 
 Stage 0 验证基线：Resource Gateway `clean verify` 共 1624 tests、0 failures、33 个既有条件跳过；AuthorCanvas 聚焦回归 36 tests、0 failures。后续阶段必须继续维持该基线并增加对应反面用例。
 
 Stage 1 实现证据与复现命令见
 [Execution Data Control Plane Stage 1 verification](resource-gateway-execution-data-control-plane-stage1-verification.md)。
 Stage 1 全量验收：Resource Gateway `clean verify` 共 1653 tests、0 failures、0 errors、34 个条件跳过，JAR 打包成功。
-这里的“完成”只指内核与第一个 adapter；`/api/testing/executions`、持久化 test-run store、test-kit、公共
-operator run adapter 和 production profile 隔离测试仍属于 Stage 2，不得提前写入产品可用清单。
+Stage 2 当前增量验收：Resource Gateway `clean verify` 共 1685 tests、0 failures、0 errors、34 个条件跳过，JAR 打包成功。
+这里的“完成”只指内核与第一个 adapter。Stage 2 已开放首个公共 graph control plane 和持久化 store，但 test-kit、公共
+operator run adapter、全示例 dogfooding和旧 suite F2/F3 迁移仍不得提前写入产品可用清单。当前 API 与运行方式见
+[Testing Control Plane API](resource-gateway-testing-control-plane-api.md)。
 
 ---
 
@@ -230,6 +232,10 @@ flowchart LR
 | 23 | SPY 模式和脱敏 side-effect intent 放入 evidence metadata | v1 `NodeTrace` wire schema 不破坏性扩字段，同时让消费方能区分 SPY/REAL；BLOGE journal 已只存幂等键指纹和 opaque ref | 仅用 REAL fidelity（模式不可审计）；记录原始请求/密钥（泄密） |
 | 24 | bounded regex 采用可审计受限子集 | JDK regex 是回溯程序，单纯限长不能防 ReDoS；preflight 排除 group/alternation/look-around/backreference，运行时再限制输入长度 | 任意 Java regex（控制面 DoS）；异步 timeout（超时线程仍可能无法中断） |
 | 25 | artifact fingerprint 纳入 recoverable DSL 源和关键边语义 | 条件分支 predicate 无法可靠序列化；源 payload digest 冻结真实定义，inline 图至少冻结 branch order/field/inclusive/schema 和 direct completion | 序列化 lambda（不稳定）；只按 graph name/node id（证据可错绑） |
+| 26 | 先提供 target discovery，再允许 fixture 注册 | fixture 必须绑定服务端当前复合 fingerprint；若无发现 API，调用方无法合法构造第一份 fixture | 允许空 targetFingerprint（证据错绑）；先失败一次从错误文本抄 fingerprint（糟糕且不可协议化） |
+| 27 | Stage 2 对 resource dependency 采用全 registry 保守快照 | `resourceId` 可由 BLOGE 表达式运行期计算，静态依赖提取不完备；宁可额外 stale，不可漏绑后认证 | 只看 fixture selector（可能漏掉未命中外部边）；运行时读取 mutable registry（plan 与实际不一致） |
+| 28 | 独立 datasource 用 wrapper bean 持有，不发布第二个 `DataSource` | 保持生产 Boot/JdbcTemplate 单候选装配，同时获得独立连接池和数据库 | 同表 channel 字段（未来查询漏过滤）；直接发布第二 datasource（破坏现有自动装配） |
+| 29 | production run 控制字段在 servlet filter 前置拒绝并先写安全审计 | 不能押注 Jackson unknown-field 配置或每个未来 DTO 都记得加校验；覆盖多套 run API | 各 DTO 增 `testMode`（把后门写进协议）；仅日志告警后继续执行（业务风险仍发生） |
 
 ### 十、风险与未验证假设（诚实清单）
 
@@ -240,6 +246,8 @@ flowchart LR
 5. 引擎需求（ExecutionOptions 等）落地节奏不受本仓控制——v1 全程不依赖它，仅受益于未来下沉。
 6. 存量示例 suite 迁移 rawBody 形态需要真实上游响应样例（从既有 WireMock 用例与 demo-upstream 提取）——工作量示例级，但需逐条核对语义等价性（派生出的 success/payload 与原自报值一致），防止迁移本身引入行为漂移。
 7. F2 派生依赖 descriptor 的 `ResponseProtocol`/payloadPath 配置正确——若 descriptor 本身配置错误，派生会「忠实地」复现该错误。这是特性而非缺陷（graph 测试本就应暴露 descriptor 配置错误），但需在使用文档中说明以免误判为 fixture 问题。
+8. Stage 2 当前 dependency policy 会因任一已注册 descriptor 变化而令所有 graph fixture stale，安全但影响面偏大；只有在 BLOGE 暴露可证明完整的静态/运行期 resource dependency manifest 后才能收窄。
+9. `EVIDENCE_INCOMPLETE` 当前随同步响应返回但不能查询（持久化本身失败）；后续需独立告警/恢复队列，不能把失败记录写回同一个失效 store 来制造假恢复。
 
 ### 十一、明确排除（v1 不做）
 

@@ -14,7 +14,8 @@ public record TestExecutionRequest(
         String authorizedPurpose,
         String targetFingerprint,
         FixtureSource fixtureSource,
-        Map<String, Object> metadata
+        Map<String, Object> metadata,
+        boolean certificationEligible
 ) {
     /** Provenance used for evidence trust classification. */
     public enum FixtureSource {
@@ -29,5 +30,13 @@ public record TestExecutionRequest(
         targetFingerprint = targetFingerprint == null ? "" : targetFingerprint.trim();
         fixtureSource = fixtureSource == null ? FixtureSource.INLINE : fixtureSource;
         metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
+    }
+
+    /** Backward-compatible internal constructor for already-frozen adapters. */
+    public TestExecutionRequest(Graph graph, GraphContext context, FixtureBundle fixtureBundle,
+                                String authorizedPurpose, String targetFingerprint,
+                                FixtureSource fixtureSource, Map<String, Object> metadata) {
+        this(graph, context, fixtureBundle, authorizedPurpose, targetFingerprint,
+                fixtureSource, metadata, true);
     }
 }

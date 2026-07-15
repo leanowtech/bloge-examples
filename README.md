@@ -74,7 +74,9 @@ Boot jar.
 
 For the newer BLOGE visual canvas product demo, use the dedicated Resource
 Gateway script. It builds the React `/author/` and `/showcase/` bundle by
-default, starts the service on port `8080`, and prints the demo URLs:
+default, starts the service on port `8080` with the `test` profile, and prints
+the demo URLs. This exposes the isolated `/api/testing/**` control plane without
+enabling it in production:
 
 ```bash
 ./scripts/start-visual-canvas-demo.sh
@@ -89,6 +91,8 @@ Common demo options:
 ./scripts/start-visual-canvas-demo.sh --open
 ./scripts/start-visual-canvas-demo.sh --port 18080
 ./scripts/start-visual-canvas-demo.sh --no-build
+./scripts/start-visual-canvas-demo.sh --profile staging
+./scripts/start-visual-canvas-demo.sh --profile production
 ```
 
 Startup waits for `GET /api/integration/capabilities`, then prints the canvas,

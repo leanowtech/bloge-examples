@@ -81,7 +81,7 @@ public class GatewayGraphService {
      */
     public GraphResult execute(String graphName, GraphContext ctx) {
         Graph graph = requireGraph(graphName);
-        validateInputContext(graphName, ctx);
+        validateInput(graphName, ctx);
         log.debug("Executing graph '{}' with context keys: {}", graphName, ctx.asMap().keySet());
         GraphResult result = graphEngine.execute(graph, ctx);
         if (result.isSuccess()) {
@@ -209,7 +209,16 @@ public class GatewayGraphService {
         }
     }
 
-    private void validateInputContext(String graphName, GraphContext ctx) {
+    /**
+     * Validates a context against the graph's formal input contract without executing the graph.
+     * Test runtimes use this preflight so an isolated execution has the same public input boundary
+     * as the production graph endpoint.
+     *
+     * @param graphName registered graph name
+     * @param ctx candidate graph context
+     * @throws IllegalArgumentException when the context violates the graph input schema
+     */
+    public void validateInput(String graphName, GraphContext ctx) {
         GatewayGraphContract contract = graphContracts.require(graphName);
         List<VisualDiagnostic> diagnostics = VisualSchemaValidator.validateValue(
                 contract.inputSchema(),

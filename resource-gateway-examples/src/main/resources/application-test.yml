@@ -1,0 +1,12 @@
+gateway:
+  integration:
+    identity:
+      environment-id: ${RG_INTEGRATION_ENVIRONMENT_ID:test}
+      allowed-purposes: ${RG_INTEGRATION_ALLOWED_PURPOSES:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION,TEST_EXECUTION,TEST_FIXTURE_READ,TEST_FIXTURE_WRITE}
+  testing:
+    store:
+      jdbc-url: ${RG_TEST_STORE_JDBC_URL:jdbc:h2:file:./data/resource-gateway-test-runtime;AUTO_SERVER=TRUE}
+      username: ${RG_TEST_STORE_USERNAME:sa}
+      password: ${RG_TEST_STORE_PASSWORD:}
+      maximum-pool-size: ${RG_TEST_STORE_MAXIMUM_POOL_SIZE:4}
+      retention-days: ${RG_TEST_STORE_RETENTION_DAYS:30}

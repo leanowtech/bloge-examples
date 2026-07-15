@@ -17,6 +17,7 @@ SKIP_BUILD="${BLOGE_VISUAL_CANVAS_SKIP_BUILD:-0}"
 RUN_TESTS="${BLOGE_VISUAL_CANVAS_RUN_TESTS:-0}"
 OPEN_BROWSER="${BLOGE_VISUAL_CANVAS_OPEN:-0}"
 JAVA_BIN="${JAVA_BIN:-java}"
+SPRING_PROFILE="${BLOGE_VISUAL_CANVAS_PROFILE:-test}"
 
 if [ -z "${MVN:-}" ]; then
     if [ -x "/opt/apache-maven-3.9.16/bin/mvn" ]; then
@@ -37,6 +38,7 @@ Usage:
 
 Options:
   --port PORT       Start or look for the demo service on PORT (default: 8080).
+  --profile NAME    Spring profile for the demo (default: test).
   --no-build        Reuse the existing resource-gateway jar.
   --api-only        Build without the React frontend profile.
   --run-tests       Run Maven tests during the package step.
@@ -50,6 +52,7 @@ Environment:
   BLOGE_VISUAL_CANVAS_BUILD_FRONTEND   default: 1
   BLOGE_VISUAL_CANVAS_RUN_TESTS        default: 0
   BLOGE_VISUAL_CANVAS_OPEN             default: 0
+  BLOGE_VISUAL_CANVAS_PROFILE          default: test
   JAVA_BIN                             default: java
   MVN                                  default: /opt/apache-maven-3.9.16/bin/mvn when present, otherwise mvn
 
@@ -186,10 +189,13 @@ Demo URLs:
   Showcase:        $(showcase_url)
   Legacy composer: $(legacy_url)
   Capability probe: $(capabilities_url)
+  Active profile:   ${SPRING_PROFILE}
 
 Integration API templates:
   Workbook seed:   GET  /api/integration/drafts/{draftId}/correctness-workbook?revision={revision}
   Gate feedback:   POST /api/integration/gate-results
+  Test execution:  POST /api/testing/executions  (Bearer token + X-Purpose: TEST_EXECUTION)
+  Fixture registry: PUT /api/testing/fixture-bundles/{id} (X-Purpose: TEST_FIXTURE_WRITE)
 EOF
 }
 
@@ -282,7 +288,7 @@ start_service() {
     local log
     local -a args
     log="$(log_file)"
-    args=("--server.port=$(configured_port)")
+    args=("--server.port=$(configured_port)" "--spring.profiles.active=${SPRING_PROFILE}")
     if [ "${#APP_ARGS[@]}" -gt 0 ]; then
         args+=("${APP_ARGS[@]}")
     fi
@@ -364,6 +370,14 @@ parse_options() {
                 fi
                 PORT="$2"
                 PORT_EXPLICIT=1
+                shift 2
+                ;;
+            --profile)
+                if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                    echo "--profile requires a value." >&2
+                    return 1
+                fi
+                SPRING_PROFILE="$2"
                 shift 2
                 ;;
             --no-build)

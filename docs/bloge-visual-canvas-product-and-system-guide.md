@@ -1047,7 +1047,7 @@ curl -sS 'http://localhost:8080/api/integration/reconciliation' \
 
 ### 3.8 演示脚本启动方式
 
-推荐演示时直接使用仓库根目录下的专用脚本。它默认执行 `resource-gateway-examples` 的 `-Pfrontend package`，把 React UI 打进 Spring Boot 静态资源，然后在 `8080` 启动服务。为缩短演示准备时间，脚本默认给 Maven 打包加 `-DskipTests`；需要把测试也跑进去时使用 `--run-tests`。
+推荐演示时直接使用仓库根目录下的专用脚本。它默认执行 `resource-gateway-examples` 的 `-Pfrontend package`，把 React UI 打进 Spring Boot 静态资源，然后以 `test` profile 在 `8080` 启动服务，因此隔离的 `/api/testing/**` 也可用于演示；`production` profile 中这些 bean 和路由不存在。为缩短演示准备时间，脚本默认给 Maven 打包加 `-DskipTests`；需要把测试也跑进去时使用 `--run-tests`。
 
 ```bash
 ./scripts/start-visual-canvas-demo.sh
@@ -1059,11 +1059,13 @@ curl -sS 'http://localhost:8080/api/integration/reconciliation' \
 Author canvas:   http://localhost:8080/author/
 Showcase:        http://localhost:8080/showcase/
 Legacy composer: http://localhost:8080/examples/gateway
-Capability probe: http://localhost:8080/api/integration/capabilities
+  Capability probe: http://localhost:8080/api/integration/capabilities
+  Active profile:   test
 
 Integration API templates:
   Workbook seed: GET  /api/integration/drafts/{draftId}/correctness-workbook?revision={revision}
   Gate feedback: POST /api/integration/gate-results
+  Test execution: POST /api/testing/executions  (Bearer token + X-Purpose: TEST_EXECUTION)
 ```
 
 脚本不会把“端口已监听”当成启动成功。它会等待公开的 capability endpoint 返回 2xx，确认协议、路由和 Spring
@@ -1092,10 +1094,14 @@ curl -fsS http://localhost:8080/api/integration/capabilities
 | --- | --- |
 | `--open` | 启动后自动打开 `/author/` |
 | `--port 18080` | 改用指定端口 |
+| `--profile test\|staging\|production` | 选择 Spring profile；默认 `test`，`production` 不装配 testing API |
 | `--no-build` | 跳过打包，复用已有 jar |
 | `--api-only` | 不启用 `-Pfrontend`，只打包后端 API |
 | `--run-tests` | 打包时不跳过 Maven 测试 |
 | `-- --gateway.base-url=http://localhost:9091` | `--` 后面的参数透传给 Spring Boot 应用 |
+
+测试控制面的 target fingerprint 获取、fixture 注册、执行、批量、证据查询、脱敏和生产隔离操作见
+[Resource Gateway Testing Control Plane API](resource-gateway-testing-control-plane-api.md)。
 
 脚本使用 `target/example-pids/visual-canvas-demo.pid` 记录进程，使用 `target/example-logs/visual-canvas-demo.log` 记录日志；
 `status` 会同时报告 capability probe 是否健康。停止时会校验 PID/端口上的进程确实像 Resource Gateway demo，避免

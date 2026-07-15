@@ -35,6 +35,9 @@ public class SafetyPreflight {
         if (bundle.fixtureBundleId().isBlank()) {
             diagnostics.add("fixtureBundleId is required.");
         }
+        if (bundle.revision() <= 0) {
+            diagnostics.add("fixture bundle revision must be positive.");
+        }
         if (targetFingerprint == null || targetFingerprint.isBlank()) {
             diagnostics.add("A frozen target fingerprint is required.");
         }

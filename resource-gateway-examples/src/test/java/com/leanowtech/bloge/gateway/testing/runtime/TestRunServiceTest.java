@@ -137,6 +137,39 @@ class TestRunServiceTest {
     }
 
     @Test
+    void nodeSelectedOutputLevelResourceFixtureAlsoCannotBecomeCertifiable() {
+        Graph graph = withOperatorRef(single(new CountingExternalOperator(new AtomicInteger())),
+                "httpResource");
+        FixtureRule fixture = rule("resource-by-node", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.returning(Map.of("id", "C-1")));
+        TestExecutionRequest request = new TestExecutionRequest(graph,
+                new GraphContext(Map.of("input", Map.of(
+                        "resourceId", "customer.get", "params", Map.of()))), bundle(fixture),
+                "GRAPH_CONTRACT_TEST", TARGET, TestExecutionRequest.FixtureSource.STORED, Map.of());
+
+        TestExecutionResult result = service.execute(request);
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.evidence().evidenceClass())
+                .isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
+    }
+
+    @Test
+    void storedFixtureCannotCertifyATargetWithoutRecoverableArtifactEvidence() {
+        Graph graph = single(new PureOperator());
+        TestExecutionRequest request = new TestExecutionRequest(graph,
+                new GraphContext(Map.of("input", "hello")), bundle(),
+                "GRAPH_CONTRACT_TEST", TARGET, TestExecutionRequest.FixtureSource.STORED,
+                Map.of("targetCertificationGap", "definition-source-missing"), false);
+
+        TestExecutionResult result = service.execute(request);
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.evidence().evidenceClass())
+                .isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
+    }
+
+    @Test
     void independentEngineConfigurationHasNoProductionCrossCuttingComponents() {
         IndependentTestEngineFactory.Configuration configuration = service.engineConfiguration();
 
@@ -190,6 +223,26 @@ class TestRunServiceTest {
                         "OUTPUT_PATH", "subject", "/score", "EQUALS", 0.4, 0.0001)), Map.of());
         TestExecutionResult failing = service.execute(request(single(score), failingBundle));
         assertThat(failing.evidence().status()).isEqualTo(TestRunEvidence.Status.ASSERTION_FAILED);
+    }
+
+    @Test
+    void graphFailureTakesPrecedenceOverAssertionsThatCannotBeEvaluated() {
+        Operator<Object, Object> failure = new PureOperator() {
+            @Override
+            public Object execute(Object input, OperatorContext ctx) {
+                throw new IllegalStateException("graph failed");
+            }
+        };
+        FixtureBundle.Assertion assertion = new FixtureBundle.Assertion(
+                "OUTPUT_PATH", "subject", "/decision", "EQUALS", "APPROVE", null);
+        FixtureBundle fixture = new FixtureBundle(FixtureBundle.SCHEMA_VERSION, "failed", 1,
+                TARGET, "INTERNAL", null, null, List.of(), List.of(assertion), Map.of());
+
+        TestExecutionResult result = service.execute(request(single(failure), fixture));
+
+        assertThat(result.evidence().status()).isEqualTo(TestRunEvidence.Status.EXECUTION_FAILED);
+        assertThat(result.evidence().assertionResults()).singleElement()
+                .satisfies(value -> assertThat(value.passed()).isFalse());
     }
 
     @Test

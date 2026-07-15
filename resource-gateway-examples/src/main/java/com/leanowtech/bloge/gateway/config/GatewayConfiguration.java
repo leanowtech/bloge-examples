@@ -36,6 +36,7 @@ import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.operator.PayloadExtractor;
 import com.leanowtech.bloge.gateway.operator.ResponseValidator;
 import com.leanowtech.bloge.gateway.operator.UrlTemplateRenderer;
+import com.leanowtech.bloge.gateway.testing.security.ExecutionControlBoundaryGuardFilter;
 import com.leanowtech.bloge.gateway.resource.DatabaseResourceRegistry;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
 import com.leanowtech.bloge.gateway.visual.asset.DatabaseVisualRuntimeBindingImplementationRepository;
@@ -355,6 +356,18 @@ public class GatewayConfiguration {
             IntegrationIdentityResolver resolver,
             IntegrationAccessAuditRepository auditRepository) {
         return new IntegrationRequestAuthenticator(resolver, auditRepository);
+    }
+
+    /**
+     * HTTP-boundary guard that makes production run protocols structurally incapable of accepting
+     * fixture or execution-control fields, independent of Jackson unknown-property configuration.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ExecutionControlBoundaryGuardFilter executionControlBoundaryGuardFilter(
+            ObjectMapper objectMapper,
+            IntegrationAccessAuditRepository auditRepository) {
+        return new ExecutionControlBoundaryGuardFilter(objectMapper, auditRepository);
     }
 
     /** Transactional source of integration change events. */

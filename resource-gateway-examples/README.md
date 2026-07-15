@@ -21,6 +21,7 @@ integration something the business flow can see, reason about, test, and change.
 | Schema-aware canvas | Drag, connect, validate, simulate, and publish under server-side schema checks |
 | Runtime-backed demos | Local upstreams, real gateway execution, mock simulation, SSE examples, and reusable publications |
 | Schema-gated table tests | Run real resource graphs with mocked downstream APIs; validate operator fixture contracts without pretending mocked outputs executed the real implementation |
+| Isolated testing control plane | Test/staging-only target discovery, immutable fixture registry, caller-driven DAG execution, sanitized evidence retention, batch runs, and production control-field guard |
 | Governed run controls | Absolute deadline, monotonic remaining-budget propagation, fenced cancel, durable owner lease/epoch, cross-instance commands, and automatic signed evidence recovery after owner failure |
 | Auditable external writes | Versioned write contracts, binding/activation conformance, execution-scoped journal, commit receipts, UNKNOWN_COMMIT DAG guard, and signed reconciliation evidence |
 | Dynamic workload identity | Atomic JWKS/revocation refresh, zero-restart key rotation, bounded propagation SLO, group/clearance/delegation claims, and explicit 401/503 semantics |
@@ -39,7 +40,9 @@ From the repository root:
 ```
 
 This packages the Spring Boot gateway with the React frontend and starts the
-demo on `http://localhost:8080`.
+demo on `http://localhost:8080`. The dedicated demo script activates the `test`
+profile by default so `/api/testing/**` is available; use `--profile production`
+to demonstrate that the testing beans and endpoints are structurally absent.
 
 | Open | Best first move |
 | --- | --- |
@@ -48,6 +51,8 @@ demo on `http://localhost:8080`.
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
 | `http://localhost:8080/api/integration/capabilities` | Verify protocol versions, endpoints, feature flags, identity provider, payload policy, and signer readiness |
 | `http://localhost:8080/api/gateway/graphs/contracts` | Inspect resource graph input/output contracts |
+| `GET http://localhost:8080/api/testing/targets/graphs/{graphName}` | Freeze the graph/resource target fingerprint before authoring fixtures (test/staging only) |
+| `POST http://localhost:8080/api/testing/executions` | Run an isolated inline or governed fixture plan and retain sanitized evidence (test/staging only) |
 | `POST http://localhost:8080/api/gateway/graphs/contracts/tests/draft` | Generate editable graph mock/table suites from graph and resource schemas |
 | `POST http://localhost:8080/api/gateway/graphs/contracts/tests/run` | Run schema-gated mock/table contract suites |
 | `POST http://localhost:8080/api/gateway/graphs/contracts/tests/suites/run-all` | Run every stored contract suite with coverage policy checks |
@@ -66,6 +71,8 @@ Useful variants:
 ./scripts/start-visual-canvas-demo.sh --port 18080
 ./scripts/start-visual-canvas-demo.sh --no-build
 ./scripts/start-visual-canvas-demo.sh --run-tests
+./scripts/start-visual-canvas-demo.sh --profile staging
+./scripts/start-visual-canvas-demo.sh --profile production
 ./scripts/visual-canvas-demo.sh status
 ./scripts/visual-canvas-demo.sh restart
 ```
@@ -73,6 +80,13 @@ Useful variants:
 The start command becomes ready only after the integration capability probe
 succeeds. Process output is written to `target/example-logs/visual-canvas-demo.log`;
 the PID and selected port are kept under `target/example-pids/`.
+
+The testing API requires `Authorization: Bearer bloge-aneke-demo-token` and a
+least-privilege `X-Purpose` (`TEST_EXECUTION`, `TEST_FIXTURE_READ`, or
+`TEST_FIXTURE_WRITE`) in the local test profile. See
+[Testing Control Plane API](../docs/resource-gateway-testing-control-plane-api.md)
+for the complete target-discovery, fixture-registration, execution, evidence,
+and production-isolation workflow.
 
 Batch-migrate existing `.bloge` files after the service is running:
 

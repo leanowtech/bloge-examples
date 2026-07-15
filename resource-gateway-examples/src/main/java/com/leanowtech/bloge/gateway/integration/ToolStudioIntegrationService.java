@@ -45,6 +45,7 @@ public class ToolStudioIntegrationService {
     private final SideEffectReconcilerRegistry sideEffectReconcilers;
     private final GraphDraftDependencySnapshotService dependencySnapshots;
     private final CorrectnessWorkbookProjectionService workbookProjection;
+    private boolean testExecutionEndpointEnabled;
 
     @Autowired
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -71,6 +72,12 @@ public class ToolStudioIntegrationService {
         this.dependencySnapshots = dependencySnapshots == null
                 ? new GraphDraftDependencySnapshotService(catalog) : dependencySnapshots;
         this.workbookProjection = workbookProjection;
+    }
+
+    /** Receives the profile-owned marker only when the isolated test control plane is assembled. */
+    @Autowired(required = false)
+    void configureTestability(TestabilityAvailability availability) {
+        this.testExecutionEndpointEnabled = availability != null && availability.executionEndpointEnabled();
     }
 
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -141,7 +148,8 @@ public class ToolStudioIntegrationService {
         VisualRunPayloadRepository payloads = runRepository == null ? null : runRepository.payloadRepository();
         return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
                 IntegrationCapabilities.current(signer.descriptor(), identityResolver.descriptor(),
-                        sideEffectReconcilers.available(), payloads == null ? null : payloads.policyDescriptor()));
+                        sideEffectReconcilers.available(), payloads == null ? null : payloads.policyDescriptor(),
+                        testExecutionEndpointEnabled));
     }
 
     public IntegrationEnvelope<GraphDraftIntegrationBundle> exportDraft(String draftId,
