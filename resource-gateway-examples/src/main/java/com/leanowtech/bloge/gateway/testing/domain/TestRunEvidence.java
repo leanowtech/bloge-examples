@@ -90,7 +90,7 @@ public record TestRunEvidence(
      *
      * @param nodeId node id
      * @param operatorRef resolved operator
-     * @param status REAL, SUCCESS, FAILED, or MOCKED execution status
+     * @param status SUCCESS, FAILED, TIMEOUT, SKIPPED, or MOCKED execution status
      * @param fidelity OUTPUT_LEVEL, PROTOCOL_DERIVED, TRANSPORT_LEVEL, or REPLAYED
      * @param input sanitized node input
      * @param output sanitized node output

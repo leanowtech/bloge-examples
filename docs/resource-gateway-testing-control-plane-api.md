@@ -215,6 +215,85 @@ Content-Type: application/json
 The `(tenant, environment, fixtureBundleId, revision)` key is immutable. Repeating byte-equivalent
 content is idempotent; different content returns `RG.TEST.FIXTURE_REVISION_CONFLICT`.
 
+### 4.2.1 Control logical time, delay, and timeout
+
+`DELAY` and `TIMEOUT` are active only when the fixture bundle declares a `logicalClock` origin.
+Each run receives its own monotonic clock. A logical sleep advances that clock atomically and returns
+without wall-clock waiting; the clock and its state are never shared between test runs.
+
+```json
+{
+  "logicalClock": "2026-07-15T09:00:00Z",
+  "rules": [
+    {
+      "schemaVersion": "bloge.fixtureRule.v1",
+      "ruleId": "bureau-timeout",
+      "selector": {
+        "graphPath": "/root",
+        "nodeId": "fetchCreditScore",
+        "operatorRef": "",
+        "resourceRef": "",
+        "functionRef": "",
+        "capabilities": [],
+        "tags": [],
+        "invocationKind": "PRIMARY",
+        "attempts": [],
+        "occurrences": [],
+        "correlationKey": "",
+        "match": {
+          "canonicalInput": null,
+          "pathEquals": {},
+          "pathsExist": [],
+          "pathsAbsent": [],
+          "schema": {},
+          "correlationKey": "",
+          "boundedRegex": {}
+        }
+      },
+      "behavior": {
+        "kind": "TIMEOUT",
+        "boundary": "NODE",
+        "value": null,
+        "rawBody": "",
+        "statusCode": null,
+        "headers": {},
+        "errorCode": "CREDIT_BUREAU_TIMEOUT",
+        "errorType": "TIMEOUT",
+        "errorMessage": "credit bureau did not answer",
+        "after": "PT3S",
+        "sequence": [],
+        "replayRef": ""
+      },
+      "consumption": {
+        "required": true,
+        "minUses": 2,
+        "maxUses": 2,
+        "onExhausted": "FAIL",
+        "onUnmatched": "FAIL"
+      },
+      "schemaCheck": {"mode": "STRICT", "waiverReason": ""}
+    }
+  ]
+}
+```
+
+Time-control rules obey these fail-closed constraints:
+
+- `after` is required, positive, and no greater than 365 days;
+- only `boundary=NODE` is supported;
+- `TIMEOUT` cannot also carry a return or protocol payload;
+- `DELAY` advances time and then returns its schema-gated `value`;
+- `TIMEOUT` advances time and throws BLOGE's `OperatorTimeoutException`, so the graph's real retry
+  and fallback policies remain in charge;
+- a timeout without recovery produces top-level `TIMED_OUT`, node status `TIMEOUT`, and the declared
+  stable `errorCode`;
+- evidence metadata records `logicalTime.mode`, `origin`, `current`, and `elapsedMs`; audit
+  `startedAt/completedAt` remain real timestamps.
+
+This mode verifies time-dependent business behavior and the graph's reaction to timeout. It does
+not prove wall-clock watchdog accuracy, interruption of blocked operator code, or deterministic
+completion order between concurrent branches. Those remain engine/sandbox conformance concerns.
+
 ### 4.3 Execute with a stored fixture
 
 ```http
@@ -320,7 +399,7 @@ The public evidence status is exactly one of:
 | `CONTROL_PLAN_UNAVAILABLE` | reserved for durable resume without the original immutable plan |
 | `EVIDENCE_INCOMPLETE` | execution ended but sanitized evidence could not be durably committed |
 | `CANCELLED` | controlled cancellation |
-| `TIMED_OUT` | test-run deadline expired |
+| `TIMED_OUT` | an injected or run-level timeout was not recovered |
 
 `MOCKED` is a node observation, not a top-level terminal status.
 
@@ -352,13 +431,14 @@ Implemented now:
   payload-free JUnit XML, and packaged canonical JSON Schema.
 - complete seven-graph/13-case built-in dogfooding catalog, F3 legacy-suite migration, bounded retry
   consumption, and a Spring proof that root resource calls do not escape fixtures.
+- run-scoped advancing logical clock plus bounded `DELAY` and `TIMEOUT`; timeout injection uses the
+  real BLOGE retry/fallback chain and emits normalized logical-time evidence.
 
 Still intentionally outside this increment:
 
-- `TIMEOUT`, `DELAY`, `REPLAY`, retry-attempt, correlation-lineage, nested/subgraph, foreach, and
-  compensation controls;
+- `REPLAY`, retry-attempt, correlation-lineage, nested/subgraph, foreach, and compensation controls;
 - signed certification, semantic coverage, ANEKE projection, and mutation testing;
-- logical clock/random/UUID/function execution services;
+- deterministic random/UUID/function execution services and deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;
 - non-empty foreach/loop/subgraph certification until nested invocation sites are addressable.
 

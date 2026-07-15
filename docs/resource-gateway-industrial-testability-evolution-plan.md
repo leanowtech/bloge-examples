@@ -19,15 +19,16 @@
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
-| Stage 2 public control plane | In progress | target discovery、execution/batch/query、fixture registry、独立 test-run store、脱敏、10 态、profile/identity/production protocol guard、独立 HTTP/JUnit test-kit，以及七图/13-case F3 dogfooding 已落地；公共 operator run UI/API、nested invocation 与物理 network isolation 待完成 |
-| Stage 3-5 | Not started | signed evidence、semantic coverage、deterministic services、replay、独立部署与规模化治理 |
+| Stage 2 public control plane | In progress | target discovery、execution/batch/query、fixture registry、独立 test-run store、脱敏、10 态、profile/identity/production protocol guard、独立 HTTP/JUnit test-kit、七图/13-case F3 dogfooding，以及 run-scoped logical clock + DELAY/TIMEOUT 已落地；公共 operator run UI/API、nested invocation 与物理 network isolation 待完成 |
+| Stage 3-5 | Not started | signed evidence、semantic coverage、剩余 deterministic random/UUID/function services、replay、独立部署与规模化治理 |
 
 实现细节、行为兼容决策和可复现测试见
 [v1 实施蓝图](resource-gateway-industrial-testability-evolution-plan-1.0.md) 与
 [Stage 1 verification](resource-gateway-execution-data-control-plane-stage1-verification.md) 与
 [Testing Control Plane API](resource-gateway-testing-control-plane-api.md) 与
 [Stage 2 test-kit verification](resource-gateway-execution-data-control-plane-stage2-test-kit-verification.md) 与
-[Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md)。北极星中的目标态能力未出现在上述
+[Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md) 与
+[Stage 2 logical-time verification](resource-gateway-execution-data-control-plane-stage2-logical-time-verification.md)。北极星中的目标态能力未出现在上述
 Done 行时，均不得从文档推断为产品已开放。
 
 ## 1. 结论先行
@@ -979,13 +980,13 @@ JUnit 5 assertions、JUnit XML 与 CI exit code 已在 Stage 2 首个增量落�
 
 **实现状态**：进行中。Stage 1 已完成 selector preflight、不可变 effective plan、主节点 replacement、consumption policy 与既有
 gateway graph suite adapter；Stage 2 已补 graph target discovery、公共执行/批量/查询、immutable fixture registry、独立持久化、证据脱敏、
-profile/identity guard、production run control-field guard、独立 test-kit，并完成七图/13-case built-in dogfooding：23 个根资源节点使用 F3，retry 以 bounded consumption 计数，Spring wiring 在不可达 endpoint 下证明没有根资源逃逸。时间类行为、复杂 invocation 寻址、公共 operator adapter 和物理 test-runtime/network isolation 仍是本阶段硬验收，不能因 dogfooding 全绿就宣称 Stage 2 完成。
+profile/identity guard、production run control-field guard、独立 test-kit，并完成七图/13-case built-in dogfooding：23 个根资源节点使用 F3，retry 以 bounded consumption 计数，Spring wiring 在不可达 endpoint 下证明没有根资源逃逸。run-scoped logical clock、DELAY/TIMEOUT 也已落地；REPLAY、复杂 invocation 寻址、公共 operator adapter 和物理 test-runtime/network isolation 仍是本阶段硬验收，不能因当前测试全绿就宣称 Stage 2 完成。
 
 交付：
 
 - BLOGE `ExecutionOptions` 和统一 `OperatorResolverChain`；
 - selector preflight 与不可变 effective plan；
-- `TIMEOUT/DELAY/REPLAY`、attempt/correlation selector、consumption policy；
+- `TIMEOUT/DELAY/REPLAY`、attempt/correlation selector、consumption policy（其中 DELAY/TIMEOUT 与 consumption 已完成）；
 - nested/subgraph/foreach/compensation 统一寻址；
 - graph component 和 graph contract runner；
 - 现有 visual simulation、gateway graph suite 迁移到统一 runtime。

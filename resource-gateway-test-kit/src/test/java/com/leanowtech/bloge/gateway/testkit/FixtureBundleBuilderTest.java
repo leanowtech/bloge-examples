@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -124,6 +125,40 @@ class FixtureBundleBuilderTest {
                 .hasMessageContaining("errorMessage");
 
         assertThat(builder.buildBundle().path("rules")).hasSize(1);
+    }
+
+    @Test
+    void buildsBoundedDelayAndTimeoutControls() {
+        JsonNode bundle = FixtureBundleBuilder.graph("graph", FINGERPRINT)
+                .id("time-controls")
+                .logicalClock(Instant.parse("2026-07-15T09:00:00Z"))
+                .rule("delayed-score")
+                    .node("score")
+                    .delay(Duration.ofSeconds(5), Map.of("score", 780))
+                    .add()
+                .rule("provider-timeout")
+                    .node("provider")
+                    .timeout(Duration.ofSeconds(3), "PROVIDER_TIMEOUT", "provider unavailable")
+                    .requiredUses(2, 2)
+                    .add()
+                .buildBundle();
+
+        assertThat(bundle.path("rules").get(0).path("behavior").path("kind").asText())
+                .isEqualTo("DELAY");
+        assertThat(bundle.path("rules").get(0).path("behavior").path("after").asText())
+                .isEqualTo("PT5S");
+        assertThat(bundle.path("rules").get(1).path("behavior").path("kind").asText())
+                .isEqualTo("TIMEOUT");
+        assertThat(bundle.path("rules").get(1).path("behavior").path("errorCode").asText())
+                .isEqualTo("PROVIDER_TIMEOUT");
+        assertThat(bundle.path("rules").get(1).path("consumption").path("maxUses").asInt())
+                .isEqualTo(2);
+
+        assertThatThrownBy(() -> FixtureBundleBuilder.graph("graph", FINGERPRINT).id("bad")
+                .rule("too-long").node("provider")
+                .timeout(Duration.ofDays(366)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("365 days");
     }
 
     private static JsonNode schema() throws Exception {

@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.time.Duration;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -133,6 +135,44 @@ class ExecutionControlCompilerTest {
         assertThat(compiled.frozenOperators().get("subject")).isNotSameAs(replacement);
     }
 
+    @Test
+    void logicalTimeControlsRequireAndAcceptAnExplicitRunClock() {
+        FixtureRule delay = rule("delay", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.delayed(Duration.ofSeconds(5), "later"));
+
+        assertThatThrownBy(() -> compiler.compile(graph(new ReadOnlyOperator()), bundle(delay),
+                "GRAPH_CONTRACT_TEST", TARGET))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, ex ->
+                        assertThat(ex.diagnostics()).anyMatch(item -> item.contains("logicalClock")));
+
+        CompiledExecutionControl compiled = compiler.compile(graph(new ReadOnlyOperator()),
+                logicalBundle(delay), "GRAPH_CONTRACT_TEST", TARGET);
+        assertThat(compiled.effectivePlan().resolvedSites()).singleElement().satisfies(site -> {
+            assertThat(site.behavior()).isEqualTo(FixtureRule.BehaviorKind.DELAY);
+            assertThat(site.resolution()).isEqualTo(EffectiveExecutionPlan.Resolution.TEST_DOUBLE);
+        });
+    }
+
+    @Test
+    void invalidTimePayloadsAndReservedRandomSeedRemainFailClosed() {
+        FixtureRule misplacedAfter = rule("bad-after", FixtureRule.Selector.node("subject"),
+                new FixtureRule.Behavior(FixtureRule.BehaviorKind.RETURN,
+                        FixtureRule.DoubleBoundary.NODE, "value", "", null, Map.of(), "", "", "",
+                        Duration.ofSeconds(1), List.of(), ""));
+        assertThatThrownBy(() -> compiler.compile(graph(new ReadOnlyOperator()),
+                logicalBundle(misplacedAfter), "GRAPH_CONTRACT_TEST", TARGET))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, ex ->
+                        assertThat(ex.diagnostics()).anyMatch(item -> item.contains("only valid")));
+
+        FixtureBundle seeded = new FixtureBundle(FixtureBundle.SCHEMA_VERSION, "fixture", 1,
+                TARGET, "INTERNAL", Instant.parse("2026-07-15T00:00:00Z"), 42L,
+                List.of(), List.of(), Map.of());
+        assertThatThrownBy(() -> compiler.compile(graph(new ReadOnlyOperator()), seeded,
+                "GRAPH_CONTRACT_TEST", TARGET))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, ex ->
+                        assertThat(ex.diagnostics()).anyMatch(item -> item.contains("randomSeed")));
+    }
+
     private static Graph graph(Operator<Object, Object> operator) {
         return new GraphBuilder("subject-graph").node("subject", operator).build();
     }
@@ -150,6 +190,12 @@ class ExecutionControlCompilerTest {
     private static FixtureBundle bundle(FixtureRule... rules) {
         return new FixtureBundle(FixtureBundle.SCHEMA_VERSION, "fixture", 1, TARGET,
                 "INTERNAL", null, null, List.of(rules), List.of(), Map.of());
+    }
+
+    private static FixtureBundle logicalBundle(FixtureRule... rules) {
+        return new FixtureBundle(FixtureBundle.SCHEMA_VERSION, "logical-fixture", 1, TARGET,
+                "INTERNAL", Instant.parse("2026-07-15T00:00:00Z"), null,
+                List.of(rules), List.of(), Map.of());
     }
 
     private static FixtureRule rule(String id, FixtureRule.Selector selector,

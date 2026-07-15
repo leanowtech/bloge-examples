@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.planning;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -11,11 +12,12 @@ import java.util.Set;
 /**
  * Validates v1 protocol activation boundaries before selectors are resolved or code is executed.
  *
- * <p>Schema fields for time, retry occurrence, stream, and replay are intentionally present for
- * wire stability. Accepting them before deterministic engine support exists would be worse than a
- * version error, so this preflight rejects every reserved field explicitly.</p>
+ * <p>Logical DELAY/TIMEOUT controls are accepted only with an explicit run clock. Retry occurrence,
+ * stream, sequence, replay, and deterministic random fields remain fail-closed reservations.</p>
  */
 public class SafetyPreflight {
+
+    private static final Duration MAX_LOGICAL_ADVANCE = Duration.ofDays(365);
 
     /**
      * Validates the bundle and throws one bounded aggregate rejection when it is not executable.
@@ -50,13 +52,14 @@ public class SafetyPreflight {
         } else if (authorizedPurpose.toUpperCase(java.util.Locale.ROOT).contains("PRODUCTION")) {
             diagnostics.add("Production execution purpose cannot carry a test control plan.");
         }
-        if (bundle.logicalClock() != null || bundle.randomSeed() != null) {
-            diagnostics.add("logicalClock and randomSeed are reserved until deterministic engine services exist.");
+        if (bundle.randomSeed() != null) {
+            diagnostics.add("randomSeed is reserved until a deterministic random service exists.");
         }
 
         Set<String> ruleIds = new HashSet<>();
         for (int i = 0; i < bundle.rules().size(); i++) {
-            validateRule(bundle.rules().get(i), i, ruleIds, diagnostics);
+            validateRule(bundle.rules().get(i), i, ruleIds, diagnostics,
+                    bundle.logicalClock() != null);
         }
         if (!diagnostics.isEmpty()) {
             throw new ControlPlanRejectedException("CONTROL_PLAN_REJECTED", bounded(diagnostics));
@@ -64,7 +67,7 @@ public class SafetyPreflight {
     }
 
     private static void validateRule(FixtureRule rule, int index, Set<String> ruleIds,
-                                     List<String> diagnostics) {
+                                     List<String> diagnostics, boolean logicalClockConfigured) {
         String prefix = "rules[" + index + "]";
         if (rule == null) {
             diagnostics.add(prefix + " must not be null.");
@@ -85,12 +88,42 @@ public class SafetyPreflight {
             diagnostics.add(prefix + " uses functionRef, which requires engine FunctionCallSite support.");
         }
         FixtureRule.Behavior behavior = rule.behavior();
-        if (Set.of(FixtureRule.BehaviorKind.DELAY, FixtureRule.BehaviorKind.TIMEOUT,
-                FixtureRule.BehaviorKind.STREAM, FixtureRule.BehaviorKind.REPLAY).contains(behavior.kind())) {
+        if (Set.of(FixtureRule.BehaviorKind.STREAM, FixtureRule.BehaviorKind.REPLAY)
+                .contains(behavior.kind())) {
             diagnostics.add(prefix + " uses reserved behavior " + behavior.kind() + ".");
         }
-        if (behavior.after() != null || !behavior.sequence().isEmpty() || !behavior.replayRef().isBlank()) {
-            diagnostics.add(prefix + " populates reserved time, sequence, or replay fields.");
+        if (!behavior.sequence().isEmpty() || !behavior.replayRef().isBlank()) {
+            diagnostics.add(prefix + " populates reserved sequence or replay fields.");
+        }
+        boolean timeBehavior = behavior.kind() == FixtureRule.BehaviorKind.DELAY
+                || behavior.kind() == FixtureRule.BehaviorKind.TIMEOUT;
+        if (timeBehavior && !logicalClockConfigured) {
+            diagnostics.add(prefix + " uses " + behavior.kind() + " without fixtureBundle.logicalClock.");
+        }
+        if (timeBehavior && (behavior.after() == null || behavior.after().isZero()
+                || behavior.after().isNegative())) {
+            diagnostics.add(prefix + ".behavior.after must be a positive duration for "
+                    + behavior.kind() + ".");
+        }
+        if (behavior.after() != null && behavior.after().compareTo(MAX_LOGICAL_ADVANCE) > 0) {
+            diagnostics.add(prefix + ".behavior.after exceeds the 365-day logical-time bound.");
+        }
+        if (!timeBehavior && behavior.after() != null) {
+            diagnostics.add(prefix + ".behavior.after is only valid for DELAY or TIMEOUT.");
+        }
+        if (timeBehavior && behavior.boundary() != FixtureRule.DoubleBoundary.NODE) {
+            diagnostics.add(prefix + " time controls are supported only at the NODE boundary.");
+        }
+        if (behavior.kind() == FixtureRule.BehaviorKind.TIMEOUT
+                && (behavior.value() != null || !behavior.rawBody().isBlank()
+                || behavior.statusCode() != null || !behavior.headers().isEmpty())) {
+            diagnostics.add(prefix + " TIMEOUT cannot carry a return or protocol response payload.");
+        }
+        if (behavior.kind() == FixtureRule.BehaviorKind.DELAY
+                && (!behavior.rawBody().isBlank() || behavior.statusCode() != null
+                || !behavior.headers().isEmpty() || !behavior.errorCode().isBlank()
+                || !behavior.errorType().isBlank() || !behavior.errorMessage().isBlank())) {
+            diagnostics.add(prefix + " DELAY can carry only after and a fixed return value.");
         }
         if (behavior.boundary() == FixtureRule.DoubleBoundary.TRANSPORT
                 && !"httpResource".equals(rule.selector().operatorRef())

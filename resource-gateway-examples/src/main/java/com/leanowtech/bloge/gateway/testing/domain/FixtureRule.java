@@ -26,7 +26,7 @@ public record FixtureRule(
     /** Current fixture-rule protocol version. */
     public static final String SCHEMA_VERSION = "bloge.fixtureRule.v1";
 
-    /** All behavior names are frozen in v1; only REAL, RETURN, THROW, DENY, and SPY are active. */
+    /** All behavior names are frozen in v1; STREAM and REPLAY remain reserved. */
     public enum BehaviorKind {
         REAL,
         RETURN,
@@ -199,7 +199,8 @@ public record FixtureRule(
     }
 
     /**
-     * Declarative double behavior. Time, stream, and replay fields are protocol reservations in v1.
+     * Declarative double behavior. Time controls require a bundle logical clock; stream, sequence,
+     * and replay fields remain protocol reservations in v1.
      *
      * @param kind requested behavior
      * @param boundary node or transport replacement boundary
@@ -210,7 +211,7 @@ public record FixtureRule(
      * @param errorCode stable platform error code
      * @param errorType normalized error class
      * @param errorMessage bounded diagnostic message
-     * @param after logical delay or timeout duration, reserved in v1
+     * @param after required logical delay or timeout duration for DELAY/TIMEOUT
      * @param sequence scripted behavior sequence, reserved in v1
      * @param replayRef governed replay payload reference, reserved in v1
      */
@@ -265,6 +266,23 @@ public record FixtureRule(
         public static Behavior throwing(String errorCode, String errorType, String errorMessage) {
             return new Behavior(BehaviorKind.THROW, DoubleBoundary.NODE, null, "", null,
                     Map.of(), errorCode, errorType, errorMessage, null, List.of(), "");
+        }
+
+        /** @return a node-boundary logical delay followed by a schema-gated fixed return */
+        public static Behavior delayed(Duration after, Object value) {
+            return new Behavior(BehaviorKind.DELAY, DoubleBoundary.NODE, value, "", null,
+                    Map.of(), "", "", "", after, List.of(), "");
+        }
+
+        /** @return a node-boundary timeout using the standard test timeout error code */
+        public static Behavior timeout(Duration after) {
+            return timeout(after, "TEST_TIMEOUT", "Injected deterministic timeout.");
+        }
+
+        /** @return a node-boundary timeout with an application-stable evidence error code */
+        public static Behavior timeout(Duration after, String errorCode, String errorMessage) {
+            return new Behavior(BehaviorKind.TIMEOUT, DoubleBoundary.NODE, null, "", null,
+                    Map.of(), errorCode, "TIMEOUT", errorMessage, after, List.of(), "");
         }
 
         /** @return a fail-closed behavior that proves a site was not invoked */

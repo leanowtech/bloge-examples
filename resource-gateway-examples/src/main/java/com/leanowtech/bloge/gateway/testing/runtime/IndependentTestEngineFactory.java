@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.testing.runtime;
 
 import com.leanowtech.bloge.core.engine.GraphEngine;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
+import com.leanowtech.bloge.core.spi.TimeSource;
 
 import java.util.List;
 
@@ -23,14 +24,27 @@ public class IndependentTestEngineFactory {
 
     /** @return a new run-scoped engine with only the supplied evidence recorder listener */
     public GraphEngine create(InvocationRecorder recorder) {
-        return GraphEngine.builder()
+        return create(recorder, null);
+    }
+
+    /**
+     * Creates a new run-scoped engine with an optional deterministic time source.
+     * @param recorder run-scoped evidence listener
+     * @param timeSource logical time source, or {@code null} for system time
+     * @return isolated engine
+     */
+    public GraphEngine create(InvocationRecorder recorder, TimeSource timeSource) {
+        GraphEngine.Builder builder = GraphEngine.builder()
                 .registry(registry)
                 .interceptors(List.of())
                 .listeners(List.of(recorder))
                 .extensionListeners(List.of())
                 .contextCarriers(List.of())
-                .requestResponseDefaults()
-                .build();
+                .requestResponseDefaults();
+        if (timeSource != null) {
+            builder.timeSource(timeSource);
+        }
+        return builder.build();
     }
 
     /** @return immutable construction facts suitable for architecture tests and capability probes */

@@ -8,15 +8,15 @@
 | --- | --- | --- |
 | Stage 0 | 完成 | operator suite API/UI 显式 `SCHEMA_CONTRACT`；`testing/domain` 五个版本化 record；capability testability 描述；[ADR-001](adr/ADR-001-resource-gateway-test-runtime-isolation.md)、[ADR-002](adr/ADR-002-operator-composability-and-opaque-runtime.md) 与 [BLOGE framework requirement](bloge-framework-execution-control-requirement.md) |
 | Stage 1' | 完成 | `testing/planning/runtime/evidence` 内核；独立 test engine；五行为；F2/F3 resource fixture；micro-graph runner；旧 graph suite adapter；37 个聚焦测试与 1653 个项目测试全绿 |
-| Stage 2' | 进行中 | 已落地 target discovery、`/api/testing/executions`/batch/query、immutable fixture registry、独立 test-run store、10 态 evidence、profile/identity/生产协议隔离、独立 test-kit，以及七图/13-case F3 dogfooding；公共 operator adapter、nested invocation 寻址与物理 network/runtime 隔离仍待完成 |
+| Stage 2' | 进行中 | 已落地 target discovery、`/api/testing/executions`/batch/query、immutable fixture registry、独立 test-run store、10 态 evidence、profile/identity/生产协议隔离、独立 test-kit、七图/13-case F3 dogfooding，以及 run-scoped logical clock + DELAY/TIMEOUT；公共 operator adapter、nested invocation 寻址与物理 network/runtime 隔离仍待完成 |
 
 Stage 0 验证基线：Resource Gateway `clean verify` 共 1624 tests、0 failures、33 个既有条件跳过；AuthorCanvas 聚焦回归 36 tests、0 failures。后续阶段必须继续维持该基线并增加对应反面用例。
 
 Stage 1 实现证据与复现命令见
 [Execution Data Control Plane Stage 1 verification](resource-gateway-execution-data-control-plane-stage1-verification.md)。
 Stage 1 全量验收：Resource Gateway `clean verify` 共 1653 tests、0 failures、0 errors、34 个条件跳过，JAR 打包成功。
-Stage 2 当前增量验收：Resource Gateway `clean verify` 共 1691 tests、0 failures、0 errors、33 个条件跳过，真实浏览器回归与 JAR 打包成功。
-独立 test-kit 当前 `clean verify` 共 10 tests、0 failures、0 errors，JAR 与权威 testing-control-plane v1 schema 一同打包成功。
+Stage 2 当前增量验收：Resource Gateway `clean verify` 共 1699 tests、0 failures、0 errors、34 个条件跳过，真实浏览器回归与 JAR 打包成功。
+独立 test-kit 当前 `clean verify` 共 11 tests、0 failures、0 errors，JAR 与权威 testing-control-plane v1 schema 一同打包成功。
 这里的“完成”只指内核与已列出的 adapter。Stage 2 已开放首个公共 graph control plane、持久化 store、test-kit，并完成全部内置图的 stored-suite F3 迁移与 dogfooding；但公共
 operator run adapter、foreach/loop/subgraph 精确寻址和物理隔离仍不得提前写入产品可用清单。当前 API 与运行方式见
 [Testing Control Plane API](resource-gateway-testing-control-plane-api.md)。
@@ -24,6 +24,8 @@ operator run adapter、foreach/loop/subgraph 精确寻址和物理隔离仍不�
 [Stage 2 test-kit verification](resource-gateway-execution-data-control-plane-stage2-test-kit-verification.md)。
 内置图矩阵、不可达 endpoint 逃逸证明与认证边界见
 [Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md)。
+逻辑时间、时间故障注入及其非声明见
+[Stage 2 logical-time verification](resource-gateway-execution-data-control-plane-stage2-logical-time-verification.md)。
 
 ---
 
@@ -76,7 +78,7 @@ flowchart LR
     subgraph kernel [统一执行数据控制内核（常驻所有环境）]
         K1["ExecutionControlCompiler<br/>selector 解析 → EffectiveExecutionPlan<br/>零命中/歧义即拒"]
         K2["TestRunService<br/>独立 test engine 实例<br/>executeWithOperators 节点替换"]
-        K3["TestDoubleFactory<br/>REAL/RETURN/THROW/DENY/SPY<br/>boundary: NODE | TRANSPORT"]
+        K3["TestDoubleFactory<br/>REAL/RETURN/THROW/DELAY/TIMEOUT/DENY/SPY<br/>boundary: NODE | TRANSPORT"]
         K4["Consumption + Assertion 评估"]
     end
     subgraph evidence [证据层]
@@ -93,7 +95,7 @@ flowchart LR
 |---|---|---|---|
 | Selector（InvocationSite 子集） | graphPath+nodeId（主身份）、operatorRef/resourceRef（批量维）、invocationKind（默认 PRIMARY）、correlationKey、match | attempt、occurrence | — |
 | Match | canonical JSON equals、JSON Pointer equals/exists/absent、schema match、correlationKey equals、受限正则 | — | 表达式语言（永久排除，见决策表） |
-| 行为 | REAL / RETURN / THROW / DENY / SPY；resource 类 RETURN 支持 rawBody+statusCode 形态（F2 协议派生：success/payload 由真实 `ResponseProtocol`/payloadPath 派生，禁止自报） | kind 枚举含 DELAY/TIMEOUT/STREAM/REPLAY | 时间类行为与 REPLAY（依赖逻辑时钟/vault，Stage 4+） |
+| 行为 | REAL / RETURN / THROW / DELAY / TIMEOUT / DENY / SPY；DELAY/TIMEOUT 必须绑定 run-scoped logicalClock；resource 类 RETURN 支持 rawBody+statusCode 形态（F2 协议派生：success/payload 由真实 `ResponseProtocol`/payloadPath 派生，禁止自报） | STREAM/REPLAY | sequence、REPLAY 与流式时间行为（依赖 vault/stream runtime） |
 | Double 边界 | boundary=NODE（默认，节点边界）；boundary=TRANSPORT（效应边界）——v1 对 httpResource 可用（`StubHttpRequestOperator` 产品化），L1 对 httpResource **强制** TRANSPORT | 非 resource 算子的 TRANSPORT（依赖 Composability port 声明） | 通用 port 级 double 推广（随 Composability Contract 覆盖率，Stage 3+） |
 | 保真度 | fixture 形态事实入 trace（OUTPUT_LEVEL / PROTOCOL_DERIVED / TRANSPORT_LEVEL）；**认证级证据要求 resource 类 mocked site ≥ F2** | REPLAYED 标记 | F4 record-replay、F5 sandbox 双验与反熵漂移（Stage 4/5） |
 | 默认行为 | 外部副作用算子 deny-by-default（未覆盖→FIXTURE_UNMATCHED）；纯计算算子真实执行 | allowReal allowlist 字段 | — |
@@ -218,7 +220,7 @@ flowchart LR
 | 4 | 隔离=入口硬隔离+内核常驻；终态独立部署（ADR 冻结） | 内核本就以 SimulationOperator 在生产；不冻结终态则中间设计只能降险不能根治 | testMode 参数（生产后门）；IAM 软隔离起步（押在未闭环 IAM-01 上） |
 | 5 | InvocationSite schema 全量、实现子集（delta：文档全量实现→子集激活） | 无破坏性返工；attempt/occurrence 语义仅在时间类故障后有消费者 | 双维 selector（foreach/嵌套寻址缺位，后续破坏性迁移）；全量实现（无消费者代码） |
 | 6 | match canonical-only（我方撤回表达式方案） | match 必须能在 plan 预检被静态解释与审计；表达式破坏确定性并扩大安全面 | 表达式 matcher；逃生口方案（会架空认证体系，先紧后松易、反之难） |
-| 7 | v1 行为集 REAL/RETURN/THROW/DENY/SPY（delta：故障注入拆时间无关/相关两半） | THROW/DENY/SPY 不依赖 RUN-01/逻辑时钟，同一注入点分支逻辑，解锁 error-branch 覆盖 | RETURN only（组合语义缺口空置）；9 种全量（DELAY/TIMEOUT 在流沙上盖楼） |
+| 7 | 首增量行为集 REAL/RETURN/THROW/DENY/SPY，随后仅在 run-scoped `TimeSource` 接通后激活 DELAY/TIMEOUT | 先冻结 wire enum，再以独立引擎逻辑时钟、正时长上限和反面测试关闭基础风险；拒绝一次性激活 STREAM/REPLAY | RETURN only（组合语义缺口空置）；9 种同时激活（时间、流、回放底座不成熟） |
 | 8 | deny-by-default + consumption policy + 歧义即拒 | 杀死 mock 测试三大假阳性（未命中走真实、未消费仍绿、命中歧义） | passthrough 默认（静默危险，违背完全可控目标） |
 | 9 | 独立 test-run store，gate 只消费 suite 聚合 | fail-safe：生产消费方物理上不可能误读 MOCKED run；批量体量不冲击生产库 | 同库+channel 字段（完整性押在每个未来查询都过滤正确） |
 | 10 | inline 即时指纹化 + 认证级需 stored ref（delta：文档只有 bundleRef） | CI 无状态保留；证据可复现（sha256+归档）；认证路径不妥协 | 强制先注册（无状态性丢失）；inline 免指纹（违背冻结不变量） |
@@ -246,6 +248,7 @@ flowchart LR
 | 32 | fixture consumption 暴露 `minUses/maxUses` | retry/fallback 测试必须精确证明尝试次数，同一 rule 可重复消费且超/欠用均失败 | 每次 attempt 建同 selector rule（planner 歧义）；不计 attempt（错误路径覆盖不可证） |
 | 33 | nested node kind 先令 target certification-ineligible | foreach/loop 内嵌图尚未继承 run-scoped resolver；根图替换不能证明内层无逃逸 | 空集合 case 直接认证（假阴性）；不允许任何 foreach 测试（丢失外层 contract 价值） |
 | 34 | dogfooding 以不可达 descriptor endpoint 做逃逸证明 | 仅看 fixture 数量无法证明真实 binding 未被调用；连接必失败地址让逃逸成为确定失败 | 只断言 MOCKED 标签（实现 bug 可自证）；依赖外部 mock server（仍可能误路由） |
+| 35 | DELAY/TIMEOUT 使用每 run advancing logical clock，审计时间保持真实 | BLOGE retry/loop 已统一经 `TimeSource`；零墙钟可把 30 天 delay 压缩到毫秒级，且 timeout 仍走原生异常分类和 retry/fallback | 改全局系统时钟（跨 run 污染）；真实 sleep（慢且 flaky）；把逻辑时间写入 GraphContext（污染业务协议） |
 
 ### 十、风险与未验证假设（诚实清单）
 
@@ -258,9 +261,10 @@ flowchart LR
 7. F2 派生依赖 descriptor 的 `ResponseProtocol`/payloadPath 配置正确——若 descriptor 本身配置错误，派生会「忠实地」复现该错误。这是特性而非缺陷（graph 测试本就应暴露 descriptor 配置错误），但需在使用文档中说明以免误判为 fixture 问题。
 8. Stage 2 当前 dependency policy 会因任一已注册 descriptor 变化而令所有 graph fixture stale，安全但影响面偏大；只有在 BLOGE 暴露可证明完整的静态/运行期 resource dependency manifest 后才能收窄。
 9. `EVIDENCE_INCOMPLETE` 当前随同步响应返回但不能查询（持久化本身失败）；后续需独立告警/恢复队列，不能把失败记录写回同一个失效 store 来制造假恢复。
+10. **已验证但有限定**：逻辑 sleep 是原子、单调、零墙钟推进；并发分支的读取顺序仍由 BLOGE 调度决定。TIMEOUT 验证业务恢复语义，不验证真实 watchdog 精度、阻塞线程中断或 wall-clock deadline，这些必须由 BLOGE/sandbox conformance 另证。
 
 ### 十一、明确排除（v1 不做）
 
-时间类行为（DELAY/TIMEOUT/STREAM）、REPLAY/record-replay（保真度 F4，须与 payload replay 共底座+脱敏前置；v1 的 SPY 为其录制管道预留采集前段）、sandbox conformance 双验与反熵漂移检测（保真度 F5）、逻辑时钟/随机种子、built-in function 控制、durable resume plan 恢复、签名 evidence 与语义 coverage 度量、独立 test-runtime 部署、mutation/property testing、CLI。均已在北极星文档 Stage 3-5 有宿主。
+流式时间行为（STREAM）、REPLAY/record-replay（保真度 F4，须与 payload replay 共底座+脱敏前置；v1 的 SPY 为其录制管道预留采集前段）、sandbox conformance 双验与反熵漂移检测（保真度 F5）、随机种子/UUID、built-in function 控制、durable resume plan 恢复、签名 evidence 与语义 coverage 度量、确定性并发 scheduler、独立 test-runtime 部署、mutation/property testing、CLI。均已在北极星文档 Stage 3-5 有宿主。
 
 ---

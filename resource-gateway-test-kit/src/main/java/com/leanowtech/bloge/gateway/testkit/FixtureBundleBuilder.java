@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -99,7 +100,7 @@ public final class FixtureBundleBuilder {
     }
 
     /**
-     * Sets the deterministic logical-clock origin reserved by protocol v1.
+     * Sets the run-scoped logical-clock origin required by DELAY and TIMEOUT controls.
      * @param value logical-clock origin, or null
      * @return this builder
      */
@@ -526,6 +527,47 @@ public final class FixtureBundleBuilder {
         }
 
         /**
+         * Advances logical time without wall waiting and then returns a fixed value.
+         * @param after positive logical delay
+         * @param value replacement output
+         * @return this rule builder
+         */
+        public RuleBuilder delay(Duration after, Object value) {
+            initializeBehavior("DELAY", "NODE");
+            behavior.set("value", JSON.valueToTree(value));
+            behavior.put("after", positiveDuration(after, "delay"));
+            behaviorConfigured = true;
+            return this;
+        }
+
+        /**
+         * Injects a deterministic standard timeout after advancing logical time.
+         * @param after positive logical timeout duration
+         * @return this rule builder
+         */
+        public RuleBuilder timeout(Duration after) {
+            return timeout(after, "TEST_TIMEOUT", "Injected deterministic timeout.");
+        }
+
+        /**
+         * Injects a deterministic timeout with an application-stable evidence error code.
+         * @param after positive logical timeout duration
+         * @param errorCode stable error code
+         * @param errorMessage bounded diagnostic
+         * @return this rule builder
+         */
+        public RuleBuilder timeout(Duration after, String errorCode, String errorMessage) {
+            initializeBehavior("TIMEOUT", "NODE");
+            behavior.put("after", positiveDuration(after, "timeout"));
+            behavior.put("errorCode", required(errorCode, "errorCode", 160));
+            behavior.put("errorType", "TIMEOUT");
+            behavior.put("errorMessage", optional(errorMessage, "errorMessage",
+                    MAX_ERROR_MESSAGE_CHARACTERS));
+            behaviorConfigured = true;
+            return this;
+        }
+
+        /**
          * Fails immediately if the selected site is invoked.
          * @param errorCode stable denial code
          * @param errorMessage bounded denial diagnostic
@@ -633,6 +675,15 @@ public final class FixtureBundleBuilder {
             behavior.putNull("after");
             behavior.putArray("sequence");
             behavior.put("replayRef", "");
+        }
+
+        private static String positiveDuration(Duration value, String field) {
+            if (value == null || value.isZero() || value.isNegative()
+                    || value.compareTo(Duration.ofDays(365)) > 0) {
+                throw new IllegalArgumentException(field
+                        + " duration must be positive and no greater than 365 days");
+            }
+            return value.toString();
         }
     }
 }

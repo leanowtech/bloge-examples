@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.core.exception.OperatorTimeoutException;
 import com.leanowtech.bloge.core.model.NodeSpec;
 import com.leanowtech.bloge.core.operator.Idempotency;
 import com.leanowtech.bloge.core.operator.Operator;
@@ -20,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/** Creates schema-gated REAL, RETURN, THROW, DENY, and SPY operator controls. */
+/** Creates schema-gated real, fixed, failure, logical-time, denial, and observation controls. */
 public class TestDoubleFactory {
 
     private final ObjectMapper objectMapper;
@@ -123,6 +124,16 @@ public class TestDoubleFactory {
                     yield real.execute(input, context);
                 }
                 case RETURN -> returnValue(rule, input, context);
+                case DELAY -> {
+                    context.timeSource().sleep(behavior.after());
+                    yield returnValue(rule, input, context);
+                }
+                case TIMEOUT -> {
+                    recorder.markFidelity(node.id(), "OUTPUT_LEVEL");
+                    context.timeSource().sleep(behavior.after());
+                    throw new OperatorTimeoutException(node.id(), behavior.after(),
+                            controlledFailure(behavior, "TEST_TIMEOUT"));
+                }
                 case THROW -> {
                     recorder.markFidelity(node.id(), "OUTPUT_LEVEL");
                     throw controlledFailure(behavior, "TEST_THROW");
@@ -131,7 +142,7 @@ public class TestDoubleFactory {
                     recorder.markFidelity(node.id(), "OUTPUT_LEVEL");
                     throw controlledFailure(behavior, "TEST_CONTROL_DENIED");
                 }
-                case DELAY, TIMEOUT, STREAM, REPLAY -> throw new TestControlException(
+                case STREAM, REPLAY -> throw new TestControlException(
                         "CONTROL_PLAN_RESERVED_BEHAVIOR", "CONTROL_PLAN",
                         "Behavior " + behavior.kind() + " is reserved in v1.");
             };

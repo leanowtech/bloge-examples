@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.runtime;
 
 import com.leanowtech.bloge.core.engine.GraphResult;
+import com.leanowtech.bloge.core.exception.OperatorTimeoutException;
 import com.leanowtech.bloge.core.model.ConditionalEdge;
 import com.leanowtech.bloge.core.model.DirectEdge;
 import com.leanowtech.bloge.core.model.Edge;
@@ -81,7 +82,7 @@ public class InvocationRecorder implements ExecutionListener {
         StartFact start = starts.getOrDefault(event.nodeId(),
                 new StartFact(event.nodeSpec().operatorRef(), null));
         traces.put(event.nodeId(), new TestRunEvidence.NodeTrace(
-                event.nodeId(), start.operatorRef(), "FAILED",
+                event.nodeId(), start.operatorRef(), containsTimeout(event.error()) ? "TIMEOUT" : "FAILED",
                 fidelityByNode.getOrDefault(event.nodeId(), "REAL"),
                 start.input(), null, errorCode(event.error()), 0));
     }
@@ -179,6 +180,17 @@ public class InvocationRecorder implements ExecutionListener {
             current = current.getCause();
         }
         return error == null ? "EXECUTION_FAILED" : error.getClass().getSimpleName();
+    }
+
+    private static boolean containsTimeout(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof OperatorTimeoutException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private record StartFact(String operatorRef, Object input) {

@@ -12,7 +12,7 @@ import java.util.Map;
  * @param revision immutable registry revision
  * @param targetFingerprint required target artifact fingerprint
  * @param classification payload-governance classification
- * @param logicalClock logical clock start, reserved until engine execution services are available
+ * @param logicalClock optional run-scoped logical clock used by deterministic time controls
  * @param randomSeed deterministic random seed, reserved until engine execution services are available
  * @param rules invocation control rules
  * @param assertions post-run assertions

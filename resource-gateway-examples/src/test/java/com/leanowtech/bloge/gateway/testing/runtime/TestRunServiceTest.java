@@ -14,7 +14,10 @@ import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -132,6 +135,27 @@ class TestRunServiceTest {
 
         assertThat(result.passed()).isTrue();
         assertThat(result.evidence().evidenceClass()).isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
+        assertThat(result.evidence().nodeTrace()).singleElement()
+                .satisfies(trace -> assertThat(trace.fidelity()).isEqualTo("OUTPUT_LEVEL"));
+    }
+
+    @Test
+    void storedDelayedResourceValueRemainsOutputLevelAndExploratory() {
+        Graph graph = withOperatorRef(single(new CountingExternalOperator(new AtomicInteger())),
+                "httpResource");
+        FixtureRule fixture = rule("delayed-resource", FixtureRule.Selector.resource("customer.get"),
+                FixtureRule.Behavior.delayed(Duration.ofSeconds(2), Map.of("id", "C-1")));
+        FixtureBundle bundle = logicalBundle(Instant.parse("2026-07-15T09:00:00Z"), fixture);
+        TestExecutionRequest request = new TestExecutionRequest(graph,
+                new GraphContext(Map.of("input", Map.of(
+                        "resourceId", "customer.get", "params", Map.of()))), bundle,
+                "GRAPH_CONTRACT_TEST", TARGET, TestExecutionRequest.FixtureSource.STORED, Map.of());
+
+        TestExecutionResult result = service.execute(request);
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.evidence().evidenceClass())
+                .isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
         assertThat(result.evidence().nodeTrace()).singleElement()
                 .satisfies(trace -> assertThat(trace.fidelity()).isEqualTo("OUTPUT_LEVEL"));
     }
@@ -327,6 +351,75 @@ class TestRunServiceTest {
         assertThat(result.graphResult().getOutput("subject", String.class)).isEqualTo("matched");
     }
 
+    @Test
+    @Timeout(2)
+    void delayAdvancesRunLogicalTimeWithoutWaitingOnTheWallClock() {
+        Instant origin = Instant.parse("2026-07-15T09:00:00Z");
+        FixtureRule fixture = rule("delayed", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.delayed(Duration.ofDays(30), "after-delay"));
+
+        TestExecutionResult result = service.execute(request(single(new PureOperator()),
+                logicalBundle(origin, fixture)));
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.graphResult().getOutput("subject", String.class)).isEqualTo("after-delay");
+        assertThat(result.evidence().metadata().get("logicalTime"))
+                .isEqualTo(Map.of(
+                        "mode", "ADVANCING_ZERO_WALL_CLOCK",
+                        "origin", "2026-07-15T09:00:00Z",
+                        "current", "2026-08-14T09:00:00Z",
+                        "elapsedMs", Duration.ofDays(30).toMillis()));
+        assertThat(result.evidence().metadata().get("nodeControlModes"))
+                .isEqualTo(Map.of("subject", "DELAY"));
+    }
+
+    @Test
+    void timeoutProducesNormalizedTerminalEvidenceAndCustomErrorCode() {
+        FixtureRule fixture = rule("timeout", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.timeout(Duration.ofSeconds(4),
+                        "CREDIT_BUREAU_TIMEOUT", "bureau did not answer"));
+
+        TestExecutionResult result = service.execute(request(single(new PureOperator()),
+                logicalBundle(Instant.parse("2026-07-15T09:00:00Z"), fixture)));
+
+        assertThat(result.evidence().status()).isEqualTo(TestRunEvidence.Status.TIMED_OUT);
+        assertThat(result.evidence().nodeTrace()).singleElement().satisfies(trace -> {
+            assertThat(trace.status()).isEqualTo("TIMEOUT");
+            assertThat(trace.errorCode()).isEqualTo("CREDIT_BUREAU_TIMEOUT");
+            assertThat(trace.fidelity()).isEqualTo("OUTPUT_LEVEL");
+        });
+        assertThat(result.evidence().metadata().get("logicalTime").toString())
+                .contains("elapsedMs=4000");
+    }
+
+    @Test
+    void timeoutFixtureExercisesRealRetryBackoffAndFallbackChainDeterministically() {
+        GraphBuilder builder = new GraphBuilder("timeout-retry-fallback");
+        Graph graph = builder.node("subject", new PureOperator())
+                .input((results, context) -> context.get("input"))
+                .retry(1, Duration.ofSeconds(2))
+                .fallback(() -> "safe-fallback")
+                .build();
+        FixtureRule fixture = new FixtureRule(FixtureRule.SCHEMA_VERSION, "timeout-twice",
+                FixtureRule.Selector.node("subject"), FixtureRule.Behavior.timeout(Duration.ofSeconds(3)),
+                new FixtureRule.Consumption(true, 2, 2, FixtureRule.ExhaustedAction.FAIL,
+                        FixtureRule.UnmatchedAction.FAIL), FixtureRule.SchemaCheck.strict());
+
+        TestExecutionResult result = service.execute(request(graph,
+                logicalBundle(Instant.parse("2026-07-15T09:00:00Z"), fixture)));
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.graphResult().getOutput("subject", String.class)).isEqualTo("safe-fallback");
+        assertThat(result.evidence().fixtureConsumptions()).singleElement()
+                .satisfies(consumption -> assertThat(consumption.uses()).isEqualTo(2));
+        assertThat(result.evidence().nodeTrace()).singleElement().satisfies(trace -> {
+            assertThat(trace.status()).isEqualTo("MOCKED");
+            assertThat(trace.output()).isEqualTo("safe-fallback");
+        });
+        assertThat(result.evidence().metadata().get("logicalTime").toString())
+                .contains("elapsedMs=8000");
+    }
+
     private static Graph single(Operator<Object, Object> operator) {
         GraphBuilder builder = new GraphBuilder("single");
         return builder.node("subject", operator)
@@ -350,6 +443,11 @@ class TestRunServiceTest {
     private static FixtureBundle bundle(FixtureRule... rules) {
         return new FixtureBundle(FixtureBundle.SCHEMA_VERSION, "fixture", 1, TARGET,
                 "INTERNAL", null, null, List.of(rules), List.of(), Map.of());
+    }
+
+    private static FixtureBundle logicalBundle(Instant origin, FixtureRule... rules) {
+        return new FixtureBundle(FixtureBundle.SCHEMA_VERSION, "logical-fixture", 1, TARGET,
+                "INTERNAL", origin, null, List.of(rules), List.of(), Map.of());
     }
 
     private static FixtureRule rule(String id, FixtureRule.Selector selector,

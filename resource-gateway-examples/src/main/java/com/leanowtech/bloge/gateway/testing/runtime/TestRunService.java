@@ -86,7 +86,9 @@ public class TestRunService {
         Map<String, Object> overrides = overrides(request.graph(), compiled, recorder);
         GraphResult graphResult = null;
         List<String> diagnostics = new ArrayList<>();
-        GraphEngine engine = engineFactory.create(recorder);
+        AdvancingLogicalTimeSource logicalTime = request.fixtureBundle().logicalClock() == null
+                ? null : new AdvancingLogicalTimeSource(request.fixtureBundle().logicalClock());
+        GraphEngine engine = engineFactory.create(recorder, logicalTime);
         try {
             graphResult = engine.executeWithOperators(request.graph(), request.context(), overrides);
         } catch (RuntimeException ex) {
@@ -122,7 +124,7 @@ public class TestRunService {
                 consumptions,
                 assertions,
                 diagnostics,
-                evidenceMetadata(request, recorder));
+                evidenceMetadata(request, recorder, logicalTime));
         return new TestExecutionResult(compiled.effectivePlan(), graphResult, evidence);
     }
 
@@ -160,7 +162,7 @@ public class TestRunService {
                 TestRunEvidence.EvidenceClass.EXPLORATORY,
                 request.authorizedPurpose(), request.targetFingerprint(), fixtureFingerprint, "",
                 startedAt, Instant.now(), List.of(), List.of(), List.of(), List.of(),
-                ex.diagnostics(), evidenceMetadata(request, null));
+                ex.diagnostics(), evidenceMetadata(request, null, null));
     }
 
     private static TestRunEvidence.Status terminalStatus(
@@ -171,6 +173,9 @@ public class TestRunService {
             List<String> diagnostics) {
         if (nodes.stream().anyMatch(node -> "FIXTURE_UNMATCHED".equals(node.errorCode()))) {
             return TestRunEvidence.Status.FIXTURE_UNMATCHED;
+        }
+        if (nodes.stream().anyMatch(node -> "TIMEOUT".equals(node.status()))) {
+            return TestRunEvidence.Status.TIMED_OUT;
         }
         if (consumptions.stream().anyMatch(item -> "UNUSED".equals(item.status()))) {
             return TestRunEvidence.Status.FIXTURE_UNUSED;
@@ -199,20 +204,29 @@ public class TestRunService {
         boolean outputLevelResource = compiled.effectivePlan().resolvedSites().stream().anyMatch(site ->
                 site.invocationSiteId().endsWith("#RESOURCE")
                         && site.resolution() == EffectiveExecutionPlan.Resolution.TEST_DOUBLE
-                        && site.behavior() == FixtureRule.BehaviorKind.RETURN
+                        && (site.behavior() == FixtureRule.BehaviorKind.RETURN
+                        || site.behavior() == FixtureRule.BehaviorKind.DELAY)
                         && "OUTPUT_LEVEL".equals(site.fidelity()));
         return outputLevelResource ? TestRunEvidence.EvidenceClass.EXPLORATORY
                 : TestRunEvidence.EvidenceClass.CERTIFIABLE;
     }
 
     private Map<String, Object> evidenceMetadata(TestExecutionRequest request,
-                                                 InvocationRecorder recorder) {
+                                                 InvocationRecorder recorder,
+                                                 AdvancingLogicalTimeSource logicalTime) {
         Map<String, Object> metadata = new LinkedHashMap<>(request.metadata());
         metadata.put("fixtureSource", request.fixtureSource().name());
         metadata.put("engineIsolation", engineFactory.configuration());
         if (recorder != null) {
             metadata.put("nodeControlModes", recorder.controlModes());
             metadata.put("sideEffectIntents", request.context().sideEffectJournal().snapshots());
+        }
+        if (logicalTime != null) {
+            metadata.put("logicalTime", Map.of(
+                    "mode", "ADVANCING_ZERO_WALL_CLOCK",
+                    "origin", logicalTime.origin().toString(),
+                    "current", logicalTime.now().toString(),
+                    "elapsedMs", logicalTime.elapsed().toMillis()));
         }
         return Map.copyOf(metadata);
     }
