@@ -79,7 +79,7 @@ public class TestRunService {
         CompiledExecutionControl compiled;
         try {
             compiled = compiler.compile(request.graph(), request.fixtureBundle(),
-                    request.authorizedPurpose(), request.targetFingerprint());
+                    request.authorizedPurpose(), request.targetFingerprint(), request.replayPayloads());
         } catch (ControlPlanRejectedException ex) {
             TestRunEvidence evidence = rejectedEvidence(runId, request, startedAt, ex);
             return new TestExecutionResult(null, null, evidence);
@@ -160,7 +160,7 @@ public class TestRunService {
             return doubleFactory.observe(entry.node(), binding, entry.frozenOperator(), recorder);
         }
         return doubleFactory.create(entry.node(), binding, control.rules(),
-                entry.frozenOperator(), control.implicitDeny(), recorder);
+                entry.frozenOperator(), control.implicitDeny(), recorder, compiled.replayPayloads());
     }
 
     private TestRunEvidence rejectedEvidence(String runId, TestExecutionRequest request,
@@ -211,6 +211,9 @@ public class TestRunService {
         if (!request.certificationEligible()) {
             return TestRunEvidence.EvidenceClass.EXPLORATORY;
         }
+        if (!request.replayPayloads().certificationEligible()) {
+            return TestRunEvidence.EvidenceClass.EXPLORATORY;
+        }
         if (compiled.rules().stream().anyMatch(rule -> rule.schemaCheck().mode()
                 == FixtureRule.SchemaCheckMode.WAIVED)) {
             return TestRunEvidence.EvidenceClass.EXPLORATORY;
@@ -231,6 +234,10 @@ public class TestRunService {
         Map<String, Object> metadata = new LinkedHashMap<>(request.metadata());
         metadata.put("fixtureSource", request.fixtureSource().name());
         metadata.put("engineIsolation", engineFactory.configuration());
+        if (!request.replayPayloads().byReference().isEmpty()) {
+            metadata.put("replayDependencies", request.replayPayloads().planDependencies());
+            metadata.put("replayCertificationGaps", request.replayPayloads().certificationGaps());
+        }
         if (recorder != null) {
             metadata.put("nodeControlModes", recorder.controlModes());
             metadata.put("sideEffectIntents", request.context().sideEffectJournal().snapshots());

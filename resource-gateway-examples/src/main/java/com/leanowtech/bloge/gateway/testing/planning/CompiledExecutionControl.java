@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.planning;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 
 import java.util.List;
 import java.util.Map;
@@ -18,12 +19,14 @@ import java.util.Map;
  * @param controls resolved controls keyed by governance invocation-site id
  * @param rules frozen source rules in declaration order
  * @param inventory exact reachable runtime bindings used to compute fingerprints and resolve a run
+ * @param replayPayloads exact governed values frozen before compilation
  */
 public record CompiledExecutionControl(
         EffectiveExecutionPlan effectivePlan,
         Map<String, ResolvedControl> controls,
         List<FixtureRule> rules,
-        InvocationInventory inventory
+        InvocationInventory inventory,
+        ResolvedReplayPayloads replayPayloads
 ) {
     /** Creates immutable runtime collections. */
     public CompiledExecutionControl {
@@ -31,6 +34,15 @@ public record CompiledExecutionControl(
         rules = rules == null ? List.of() : List.copyOf(rules);
         inventory = inventory == null
                 ? new InvocationInventory(List.of(), Map.of(), Map.of()) : inventory;
+        replayPayloads = replayPayloads == null ? ResolvedReplayPayloads.empty() : replayPayloads;
+    }
+
+    /** Backward-compatible constructor for controls without REPLAY behavior. */
+    public CompiledExecutionControl(EffectiveExecutionPlan effectivePlan,
+                                    Map<String, ResolvedControl> controls,
+                                    List<FixtureRule> rules,
+                                    InvocationInventory inventory) {
+        this(effectivePlan, controls, rules, inventory, ResolvedReplayPayloads.empty());
     }
 
     /**

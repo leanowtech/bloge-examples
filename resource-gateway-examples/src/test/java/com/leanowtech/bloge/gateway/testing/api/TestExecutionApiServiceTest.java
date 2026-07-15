@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -29,7 +30,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class TestExecutionApiServiceTest {
@@ -41,6 +45,7 @@ class TestExecutionApiServiceTest {
     private final InMemorySecurityEvents securityEvents = new InMemorySecurityEvents();
     private Graph graph;
     private TestExecutionApiService service;
+    private TestReplayPayloadService replayPayloadService;
     private String targetFingerprint;
 
     @BeforeEach
@@ -57,8 +62,10 @@ class TestExecutionApiServiceTest {
                         "controlled-graph", null, null, List.of("subject")));
         doNothing().when(graphService).validateInput(org.mockito.ArgumentMatchers.eq("controlled-graph"),
                 org.mockito.ArgumentMatchers.any());
+        replayPayloadService = mock(TestReplayPayloadService.class);
         service = new TestExecutionApiService(graphService, new DefaultOperatorRegistry(), resources,
-                new BlgeExpressionEvaluator(), mapper, fixtures, runs, securityEvents, Duration.ofDays(7));
+                new BlgeExpressionEvaluator(), mapper, fixtures, runs, securityEvents,
+                Duration.ofDays(7), replayPayloadService);
         targetFingerprint = GraphExecutionTargetSnapshot.capture(mapper, graph, resources).fingerprint();
     }
 
@@ -236,6 +243,37 @@ class TestExecutionApiServiceTest {
                 .isInstanceOf(IntegrationProblemException.class)
                 .satisfies(failure -> assertThat(((IntegrationProblemException) failure).problem().code())
                         .isEqualTo("RG.INTEGRATION.SECURITY_AUDIT_UNAVAILABLE"));
+    }
+
+    @Test
+    void replayClosureIsResolvedAtRegistrationAndAgainBeforeScheduling() {
+        String replayRef = "bloge-replay:approved-order@7#sha256:" + "c".repeat(64);
+        FixtureRule replay = new FixtureRule(FixtureRule.SCHEMA_VERSION, "approved-replay",
+                FixtureRule.Selector.node("subject"), FixtureRule.Behavior.replaying(replayRef),
+                FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+        FixtureBundle replayBundle = bundle("governed-replay", replay);
+        ResolvedReplayPayloads resolved = new ResolvedReplayPayloads(Map.of(replayRef,
+                new ResolvedReplayPayloads.Payload(replayRef, "INTERNAL",
+                        "{\"result\":\"approved\"}", "source-run", "subject", 1,
+                        "sha256:" + "d".repeat(64), "sha256:" + "e".repeat(64),
+                        java.time.Instant.parse("2030-01-01T00:00:00Z"), true, List.of())));
+        when(replayPayloadService.resolve(any(FixtureBundle.class),
+                any(IntegrationRequestContext.class))).thenReturn(resolved);
+
+        StoredFixtureBundle stored = service.registerFixture("governed-replay",
+                new FixtureBundleRegistrationRequest("", target(), replayBundle), identity("test"));
+        TestExecutionApiResponse response = service.execute(request(null,
+                new TestExecutionApiRequest.FixtureBundleRef("governed-replay", 1,
+                        stored.fingerprint()), TestExecutionApiRequest.Verbosity.FULL), identity("test"));
+
+        verify(replayPayloadService, times(2)).resolve(any(FixtureBundle.class),
+                any(IntegrationRequestContext.class));
+        assertThat(response.plan().replayDependencies()).singleElement()
+                .satisfies(dependency -> assertThat(dependency.replayRef()).isEqualTo(replayRef));
+        assertThat(response.evidence().nodeTrace()).singleElement().satisfies(trace -> {
+            assertThat(trace.status()).isEqualTo("MOCKED");
+            assertThat(trace.fidelity()).isEqualTo("REPLAYED");
+        });
     }
 
     private TestExecutionApiRequest request(FixtureBundle inline,

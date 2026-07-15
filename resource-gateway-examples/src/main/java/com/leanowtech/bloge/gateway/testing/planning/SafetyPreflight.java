@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.testing.planning;
 
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
+import com.leanowtech.bloge.gateway.testing.domain.ReplayPayloadRef;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -12,8 +14,9 @@ import java.util.Set;
 /**
  * Validates v1 protocol activation boundaries before selectors are resolved or code is executed.
  *
- * <p>Logical DELAY/TIMEOUT controls are accepted only with an explicit run clock. Retry occurrence,
- * stream, sequence, replay, and deterministic random fields remain fail-closed reservations.</p>
+ * <p>Logical DELAY/TIMEOUT controls are accepted only with an explicit run clock. REPLAY is
+ * accepted only when every exact reference was governed and frozen before compilation. Retry
+ * occurrence, stream, sequence, and deterministic random fields remain fail-closed reservations.</p>
  */
 public class SafetyPreflight {
 
@@ -27,6 +30,19 @@ public class SafetyPreflight {
      * @param targetFingerprint actual frozen target fingerprint
      */
     public void validate(FixtureBundle bundle, String authorizedPurpose, String targetFingerprint) {
+        validate(bundle, authorizedPurpose, targetFingerprint, ResolvedReplayPayloads.empty());
+    }
+
+    /**
+     * Validates a bundle and its exact pre-resolved replay dependency closure.
+     *
+     * @param bundle frozen fixture bundle
+     * @param authorizedPurpose server-minted execution purpose
+     * @param targetFingerprint actual frozen target fingerprint
+     * @param replayPayloads governed payloads resolved before planner entry
+     */
+    public void validate(FixtureBundle bundle, String authorizedPurpose, String targetFingerprint,
+                         ResolvedReplayPayloads replayPayloads) {
         List<String> diagnostics = new ArrayList<>();
         if (bundle == null) {
             reject("Fixture bundle is required.");
@@ -57,9 +73,19 @@ public class SafetyPreflight {
         }
 
         Set<String> ruleIds = new HashSet<>();
+        Set<String> replayRefs = new HashSet<>();
         for (int i = 0; i < bundle.rules().size(); i++) {
             validateRule(bundle.rules().get(i), i, ruleIds, diagnostics,
-                    bundle.logicalClock() != null);
+                    bundle.logicalClock() != null, replayRefs);
+        }
+        ResolvedReplayPayloads resolved = replayPayloads == null
+                ? ResolvedReplayPayloads.empty() : replayPayloads;
+        replayRefs.stream().filter(ref -> !resolved.references().contains(ref)).sorted()
+                .forEach(ref -> diagnostics.add("Replay dependency was not resolved: " + ref));
+        resolved.references().stream().filter(ref -> !replayRefs.contains(ref)).sorted()
+                .forEach(ref -> diagnostics.add("Resolved replay dependency is not referenced: " + ref));
+        if (replayRefs.size() != resolved.references().size()) {
+            diagnostics.add("Replay dependency closure must exactly match fixture REPLAY rules.");
         }
         if (!diagnostics.isEmpty()) {
             throw new ControlPlanRejectedException("CONTROL_PLAN_REJECTED", bounded(diagnostics));
@@ -67,7 +93,8 @@ public class SafetyPreflight {
     }
 
     private static void validateRule(FixtureRule rule, int index, Set<String> ruleIds,
-                                     List<String> diagnostics, boolean logicalClockConfigured) {
+                                     List<String> diagnostics, boolean logicalClockConfigured,
+                                     Set<String> replayRefs) {
         String prefix = "rules[" + index + "]";
         if (rule == null) {
             diagnostics.add(prefix + " must not be null.");
@@ -88,12 +115,17 @@ public class SafetyPreflight {
             diagnostics.add(prefix + " uses functionRef, which requires engine FunctionCallSite support.");
         }
         FixtureRule.Behavior behavior = rule.behavior();
-        if (Set.of(FixtureRule.BehaviorKind.STREAM, FixtureRule.BehaviorKind.REPLAY)
-                .contains(behavior.kind())) {
+        if (behavior.kind() == FixtureRule.BehaviorKind.STREAM) {
             diagnostics.add(prefix + " uses reserved behavior " + behavior.kind() + ".");
         }
-        if (!behavior.sequence().isEmpty() || !behavior.replayRef().isBlank()) {
-            diagnostics.add(prefix + " populates reserved sequence or replay fields.");
+        if (!behavior.sequence().isEmpty()) {
+            diagnostics.add(prefix + " populates reserved sequence fields.");
+        }
+        boolean replay = behavior.kind() == FixtureRule.BehaviorKind.REPLAY;
+        if (replay) {
+            validateReplayBehavior(prefix, rule, diagnostics, replayRefs);
+        } else if (!behavior.replayRef().isBlank()) {
+            diagnostics.add(prefix + ".behavior.replayRef is valid only for REPLAY.");
         }
         boolean timeBehavior = behavior.kind() == FixtureRule.BehaviorKind.DELAY
                 || behavior.kind() == FixtureRule.BehaviorKind.TIMEOUT;
@@ -147,6 +179,34 @@ public class SafetyPreflight {
                 diagnostics.add(prefix + ".selector.match.boundedRegex['" + path + "'] " + reason + ".");
             }
         });
+    }
+
+    private static void validateReplayBehavior(String prefix, FixtureRule rule,
+                                               List<String> diagnostics, Set<String> replayRefs) {
+        FixtureRule.Behavior behavior = rule.behavior();
+        if (behavior.replayRef().isBlank()) {
+            diagnostics.add(prefix + ".behavior.replayRef is required for REPLAY.");
+        } else {
+            try {
+                replayRefs.add(ReplayPayloadRef.parse(behavior.replayRef()).canonical());
+            } catch (IllegalArgumentException invalid) {
+                diagnostics.add(prefix + ".behavior.replayRef must be an exact canonical replay reference.");
+            }
+        }
+        if (behavior.boundary() != FixtureRule.DoubleBoundary.NODE) {
+            diagnostics.add(prefix + " REPLAY is supported only at the NODE boundary.");
+        }
+        if (behavior.value() != null || !behavior.rawBody().isBlank()
+                || behavior.statusCode() != null || !behavior.headers().isEmpty()
+                || !behavior.errorCode().isBlank() || !behavior.errorType().isBlank()
+                || !behavior.errorMessage().isBlank() || behavior.after() != null
+                || !behavior.sequence().isEmpty()) {
+            diagnostics.add(prefix + " REPLAY can carry only replayRef; payload and fault fields are forbidden.");
+        }
+        if (rule.consumption().onUnmatched() != FixtureRule.UnmatchedAction.FAIL
+                || rule.consumption().onExhausted() != FixtureRule.ExhaustedAction.FAIL) {
+            diagnostics.add(prefix + " REPLAY cannot fall back to REAL when unmatched or exhausted.");
+        }
     }
 
     private static List<String> bounded(List<String> diagnostics) {

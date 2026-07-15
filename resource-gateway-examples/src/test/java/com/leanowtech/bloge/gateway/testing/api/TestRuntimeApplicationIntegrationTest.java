@@ -86,7 +86,7 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("abandonedSuiteRunReconciliation", true);
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("governedTestReplayPayloadCapture", true)
-                .containsEntry("testReplayBehavior", false);
+                .containsEntry("testReplayBehavior", true);
         assertThat(capabilities.getBody().payload().supportedObjects())
                 .containsEntry("testSuiteCatalogMaterialization",
                         List.of(TestSuiteCatalogMaterializationResponse.SCHEMA_VERSION));

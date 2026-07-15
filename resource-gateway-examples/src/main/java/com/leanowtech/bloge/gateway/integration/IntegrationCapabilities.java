@@ -191,6 +191,7 @@ public record IntegrationCapabilities(
             objects.put("fixtureBundle", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.FixtureBundle.SCHEMA_VERSION));
             objects.put("effectiveExecutionPlan", List.of(
+                    com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan.SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan.SCHEMA_VERSION));
             objects.put("testRunEvidence", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence.SCHEMA_VERSION));
@@ -285,7 +286,7 @@ public record IntegrationCapabilities(
         features.put("suiteRunOwnerLease", testExecutionEndpointEnabled);
         features.put("abandonedSuiteRunReconciliation", testExecutionEndpointEnabled);
         features.put("governedTestReplayPayloadCapture", testExecutionEndpointEnabled);
-        features.put("testReplayBehavior", false);
+        features.put("testReplayBehavior", testExecutionEndpointEnabled);
         features.put("streamingOperatorTestExecution", false);
         features.put("suspendableOperatorTestExecution", false);
 

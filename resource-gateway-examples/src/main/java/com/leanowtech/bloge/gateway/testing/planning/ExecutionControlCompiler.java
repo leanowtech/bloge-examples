@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -68,8 +69,27 @@ public class ExecutionControlCompiler {
      */
     public CompiledExecutionControl compile(Graph graph, FixtureBundle fixtureBundle,
                                             String authorizedPurpose, String targetFingerprint) {
+        return compile(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
+                ResolvedReplayPayloads.empty());
+    }
+
+    /**
+     * Compiles a plan whose governed replay dependencies were resolved before planner entry.
+     *
+     * @param graph frozen graph artifact
+     * @param fixtureBundle frozen fixture bundle
+     * @param authorizedPurpose server-minted purpose
+     * @param targetFingerprint selected artifact fingerprint
+     * @param replayPayloads exact run-scoped replay values
+     * @return executable and auditable frozen plan
+     */
+    public CompiledExecutionControl compile(Graph graph, FixtureBundle fixtureBundle,
+                                            String authorizedPurpose, String targetFingerprint,
+                                            ResolvedReplayPayloads replayPayloads) {
         Objects.requireNonNull(graph, "graph");
-        safetyPreflight.validate(fixtureBundle, authorizedPurpose, targetFingerprint);
+        ResolvedReplayPayloads resolvedReplays = replayPayloads == null
+                ? ResolvedReplayPayloads.empty() : replayPayloads;
+        safetyPreflight.validate(fixtureBundle, authorizedPurpose, targetFingerprint, resolvedReplays);
 
         InvocationInventory inventory = inventoryBuilder.build(graph, targetFingerprint);
         Map<String, CompiledExecutionControl.ResolvedControl> controls = new LinkedHashMap<>(
@@ -116,6 +136,7 @@ public class ExecutionControlCompiler {
                         "invocationSiteId", entry.site().invocationSiteId(),
                         "bindingFingerprint", entry.site().runtimeBindingFingerprint())).toList(),
                 "sites", sites,
+                "replayDependencies", resolvedReplays.planDependencies(),
                 "defaults", defaults);
         String planFingerprint = ProtocolFingerprint.of(objectMapper, fingerprintMaterial);
         EffectiveExecutionPlan effectivePlan = new EffectiveExecutionPlan(
@@ -126,9 +147,11 @@ public class ExecutionControlCompiler {
                 targetFingerprint,
                 fixtureFingerprint,
                 sites,
+                resolvedReplays.planDependencies(),
                 defaults,
                 List.of());
-        return new CompiledExecutionControl(effectivePlan, controls, fixtureBundle.rules(), inventory);
+        return new CompiledExecutionControl(effectivePlan, controls, fixtureBundle.rules(), inventory,
+                resolvedReplays);
     }
 
     private boolean externalEffect(InvocationInventory.Entry entry) {
@@ -221,6 +244,9 @@ public class ExecutionControlCompiler {
         if (behavior.kind() == FixtureRule.BehaviorKind.REAL
                 || behavior.kind() == FixtureRule.BehaviorKind.SPY) {
             return "REAL";
+        }
+        if (behavior.kind() == FixtureRule.BehaviorKind.REPLAY) {
+            return "REPLAYED";
         }
         if (behavior.statusCode() != null && behavior.value() == null) {
             return behavior.boundary() == FixtureRule.DoubleBoundary.TRANSPORT

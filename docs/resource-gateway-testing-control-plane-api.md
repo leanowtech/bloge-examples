@@ -90,7 +90,8 @@ The local test-profile defaults are:
 | Operation | Required `X-Purpose` |
 | --- | --- |
 | target discovery | any testing purpose, including suite read/write |
-| execute, batch, child-run query, suite execute/query | `TEST_EXECUTION` |
+| execute, batch, child-run query, suite execute/query without REPLAY | `TEST_EXECUTION` |
+| execute or suite execute when any fixture uses REPLAY | `TEST_REPLAY` |
 | fixture revision query | `TEST_FIXTURE_READ` |
 | immutable fixture registration | `TEST_FIXTURE_WRITE` |
 | governed replay payload capture/query | `TEST_REPLAY` |
@@ -381,9 +382,55 @@ Query it with `GET /api/testing/replay-payloads/orders-approved?revision=1` and
 payload-free tombstone. The captured object contains only the selected sanitized output; historical
 request data, credentials, and side-effect outcomes are not copied or replayed.
 
-At this checkpoint capture and retention are active, while fixture `kind=REPLAY` remains
-fail-closed. Capability probe therefore reports `governedTestReplayPayloadCapture=true` and
-`testReplayBehavior=false` until execution activation is committed.
+### 4.2b Execute a governed replay fixture
+
+Put the exact reference returned by capture into a node-boundary fixture rule. The caller may not
+also provide `value`, protocol response, fault, delay, or sequence fields, and both unmatched and
+exhausted policies must remain `FAIL`:
+
+```json
+{
+  "schemaVersion": "bloge.fixtureRule.v1",
+  "ruleId": "replay-approved-order",
+  "selector": {"graphPath": "/root", "nodeId": "fetchOrder"},
+  "behavior": {
+    "kind": "REPLAY",
+    "boundary": "NODE",
+    "replayRef": "bloge-replay:orders-approved@1#sha256:<64 lowercase hex>"
+  },
+  "consumption": {
+    "required": true,
+    "minUses": 1,
+    "maxUses": 1,
+    "onExhausted": "FAIL",
+    "onUnmatched": "FAIL"
+  },
+  "schemaCheck": {"mode": "STRICT", "waiverReason": ""}
+}
+```
+
+Registering a fixture containing `REPLAY`, executing a graph/operator with it, or executing a suite
+that depends on it requires `X-Purpose: TEST_REPLAY`. Ordinary fixtures continue to use their
+existing purposes. Resolution happens before planning: every exact ref is rechecked for scope,
+lifecycle, clearance, classification, immutable fingerprint, and descriptor/value integrity; then
+canonical JSON is frozen into a run-scoped internal object. The planner and runtime receive no
+repository handle, and a missing, expired, purged, changed, oversized, or unauthorized dependency
+fails before any graph node is scheduled.
+
+`bloge.effectiveExecutionPlan.v2` binds payload-free replay identity and source lineage in
+`replayDependencies`; the payload itself is never embedded in the plan or plan fingerprint
+material. Runtime materializes a fresh value per invocation, validates it with BLOGE's declared
+operator output schema, returns it without invoking the real operator, and emits node/attempt
+status `MOCKED`, fidelity `REPLAYED`, and control mode `REPLAY`. There is no fallback-to-real path.
+
+One run may resolve at most 1,000 distinct replay refs and 16 MiB of canonical frozen payloads.
+A replay captured from a non-executable draft or otherwise non-certifiable source makes the whole
+run `EXPLORATORY`; it cannot be upgraded by storing the fixture. A signed immutable executable
+publication source may remain certification-eligible when every other certification gate passes.
+
+Capability probe now reports both `governedTestReplayPayloadCapture=true` and
+`testReplayBehavior=true`. It advertises effective-plan v1 for readers and v2 as the current
+producer contract.
 
 ### 4.2.2 Register an immutable test suite
 
@@ -477,6 +524,10 @@ Authorization: Bearer bloge-aneke-demo-token
 X-Purpose: TEST_EXECUTION
 Content-Type: application/json
 ```
+
+Use `X-Purpose: TEST_REPLAY` instead when any case fixture contains a `REPLAY` rule. The suite
+service preserves that verified purpose for every child execution, so replay authorization is
+checked again while resolving each exact payload reference.
 
 ```json
 {
@@ -916,6 +967,9 @@ Implemented now:
 - profile, identity, purpose, tenant/environment, and classification gates;
 - exact governed replay-payload capture with signed source lineage, server-side sanitization,
   independent retention, and payload-free expiry tombstones;
+- exact governed `REPLAY` execution with pre-plan closure resolution, immutable integrity and
+  lifecycle rechecks, run-scoped payload freezing, payload-free plan v2 lineage, BLOGE output-schema
+  gating, zero real-operator calls, `REPLAYED` evidence, and certification downgrade propagation;
 - independent datasource, tables, retention, evidence sanitization, and security events;
 - immutable plan plus graph/operator/resource dependency fingerprints;
 - profile-sensitive capability probe and production control-field guard.
@@ -949,8 +1003,7 @@ Implemented now:
 
 Still intentionally outside this increment:
 
-- executable `REPLAY` fixture behavior, retry-attempt/occurrence selectors,
-  streaming/suspendable controls and evidence, and
+- retry-attempt/occurrence selectors, streaming/suspendable controls and evidence, and
   durable-resume plan restoration;
 - signed certification, full branch/rule/retry/fallback/compensation semantic coverage, ANEKE
   projection, and mutation testing;

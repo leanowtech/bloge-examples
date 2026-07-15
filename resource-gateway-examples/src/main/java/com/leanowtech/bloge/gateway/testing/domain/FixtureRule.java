@@ -26,7 +26,7 @@ public record FixtureRule(
     /** Current fixture-rule protocol version. */
     public static final String SCHEMA_VERSION = "bloge.fixtureRule.v1";
 
-    /** All behavior names are frozen in v1; STREAM and REPLAY remain reserved. */
+    /** All behavior names are frozen in v1; STREAM remains reserved. */
     public enum BehaviorKind {
         REAL,
         RETURN,
@@ -200,7 +200,8 @@ public record FixtureRule(
 
     /**
      * Declarative double behavior. Time controls require a bundle logical clock; stream, sequence,
-     * and replay fields remain protocol reservations in v1.
+     * and sequence fields remain protocol reservations in v1. REPLAY accepts only an exact
+     * governed replay reference resolved by the authorized server boundary.
      *
      * @param kind requested behavior
      * @param boundary node or transport replacement boundary
@@ -213,7 +214,7 @@ public record FixtureRule(
      * @param errorMessage bounded diagnostic message
      * @param after required logical delay or timeout duration for DELAY/TIMEOUT
      * @param sequence scripted behavior sequence, reserved in v1
-     * @param replayRef governed replay payload reference, reserved in v1
+     * @param replayRef governed replay payload reference used only by REPLAY
      */
     public record Behavior(
             BehaviorKind kind,
@@ -283,6 +284,12 @@ public record FixtureRule(
         public static Behavior timeout(Duration after, String errorCode, String errorMessage) {
             return new Behavior(BehaviorKind.TIMEOUT, DoubleBoundary.NODE, null, "", null,
                     Map.of(), errorCode, "TIMEOUT", errorMessage, after, List.of(), "");
+        }
+
+        /** @return a node-boundary replay backed by one exact governed payload revision */
+        public static Behavior replaying(String replayRef) {
+            return new Behavior(BehaviorKind.REPLAY, DoubleBoundary.NODE, null, "", null,
+                    Map.of(), "", "", "", null, List.of(), replayRef);
         }
 
         /** @return a fail-closed behavior that proves a site was not invoked */

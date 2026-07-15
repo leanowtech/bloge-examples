@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 
 import org.junit.jupiter.api.Test;
 
@@ -25,6 +26,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ExecutionControlCompilerTest {
 
     private static final String TARGET = "sha256:" + "a".repeat(64);
+    private static final String REPLAY_REF = "bloge-replay:approved-order@7#sha256:"
+            + "c".repeat(64);
     private final DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
     private final ExecutionControlCompiler compiler = new ExecutionControlCompiler(
             registry, new ObjectMapper());
@@ -175,6 +178,50 @@ class ExecutionControlCompilerTest {
                         assertThat(ex.diagnostics()).anyMatch(item -> item.contains("randomSeed")));
     }
 
+    @Test
+    void replayRequiresAnExactPreResolvedDependencyClosure() {
+        FixtureRule replay = rule("replay", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.replaying(REPLAY_REF));
+
+        assertThatThrownBy(() -> compiler.compile(graph(new ReadOnlyOperator()), bundle(replay),
+                "GRAPH_CONTRACT_TEST", TARGET))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, ex ->
+                        assertThat(ex.diagnostics()).anyMatch(item -> item.contains("not resolved")));
+
+        assertThatThrownBy(() -> compiler.compile(graph(new ReadOnlyOperator()), bundle(),
+                "GRAPH_CONTRACT_TEST", TARGET, replays(true, "source-a")))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, ex ->
+                        assertThat(ex.diagnostics()).anyMatch(item -> item.contains("not referenced")));
+    }
+
+    @Test
+    void replayDependencyIsPayloadFreeAndParticipatesInTheVersionTwoPlanIdentity() throws Exception {
+        FixtureRule replay = rule("replay", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.replaying(REPLAY_REF));
+
+        CompiledExecutionControl first = compiler.compile(graph(new ReadOnlyOperator()), bundle(replay),
+                "GRAPH_CONTRACT_TEST", TARGET, replays(true, "source-a"));
+        CompiledExecutionControl changedLineage = compiler.compile(graph(new ReadOnlyOperator()), bundle(replay),
+                "GRAPH_CONTRACT_TEST", TARGET, replays(true, "source-b"));
+
+        assertThat(first.effectivePlan().schemaVersion())
+                .isEqualTo(EffectiveExecutionPlan.SCHEMA_VERSION);
+        assertThat(first.effectivePlan().replayDependencies()).singleElement().satisfies(dependency -> {
+            assertThat(dependency.replayRef()).isEqualTo(REPLAY_REF);
+            assertThat(dependency.sourceRunId()).isEqualTo("source-a");
+            assertThat(dependency.certificationEligible()).isTrue();
+        });
+        assertThat(first.effectivePlan().resolvedSites()).singleElement().satisfies(site -> {
+            assertThat(site.behavior()).isEqualTo(FixtureRule.BehaviorKind.REPLAY);
+            assertThat(site.fidelity()).isEqualTo("REPLAYED");
+        });
+        assertThat(first.effectivePlan().planFingerprint())
+                .isNotEqualTo(changedLineage.effectivePlan().planFingerprint());
+        assertThat(new ObjectMapper().findAndRegisterModules()
+                .writeValueAsString(first.effectivePlan()))
+                .doesNotContain("APPROVE", "canonicalJson");
+    }
+
     private static Graph graph(Operator<Object, Object> operator) {
         return new GraphBuilder("subject-graph").node("subject", operator).build();
     }
@@ -204,6 +251,15 @@ class ExecutionControlCompilerTest {
                                     FixtureRule.Behavior behavior) {
         return new FixtureRule(FixtureRule.SCHEMA_VERSION, id, selector, behavior,
                 FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+    }
+
+    private static ResolvedReplayPayloads replays(boolean certificationEligible,
+                                                   String sourceRunId) {
+        return new ResolvedReplayPayloads(Map.of(REPLAY_REF, new ResolvedReplayPayloads.Payload(
+                REPLAY_REF, "INTERNAL", "{\"decision\":\"APPROVE\"}", sourceRunId,
+                "decision", 1, "sha256:" + "d".repeat(64), "sha256:" + "e".repeat(64),
+                Instant.parse("2030-01-01T00:00:00Z"), certificationEligible,
+                certificationEligible ? List.of() : List.of("SOURCE_NOT_CERTIFIABLE"))));
     }
 
     private static class ReadOnlyOperator implements Operator<Object, Object> {

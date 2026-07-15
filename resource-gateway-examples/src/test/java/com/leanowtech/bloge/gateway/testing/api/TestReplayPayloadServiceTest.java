@@ -5,6 +5,9 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseReplayPayloadRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecurityEventRepository;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.runtime.ConfiguredVisualPayloadGovernancePolicy;
@@ -33,6 +36,8 @@ class TestReplayPayloadServiceTest {
     private TestReplayPayloadService service;
     private DatabaseVisualGraphRunRepository sourceRuns;
     private DatabaseTestSecurityEventRepository securityEvents;
+    private DatabaseReplayPayloadRepository replayRepository;
+    private JdbcTemplate replayJdbc;
     private VisualGraphRunRecord source;
 
     @BeforeEach
@@ -54,12 +59,12 @@ class TestReplayPayloadServiceTest {
 
         var testDataSource = new DriverManagerDataSource(
                 "jdbc:h2:mem:replay-test-vault-" + System.nanoTime() + ";DB_CLOSE_DELAY=-1", "sa", "");
-        JdbcTemplate testJdbc = new JdbcTemplate(testDataSource);
-        DatabaseReplayPayloadRepository replayPayloads = new DatabaseReplayPayloadRepository(testJdbc, mapper);
-        replayPayloads.init();
-        securityEvents = new DatabaseTestSecurityEventRepository(testJdbc, mapper);
+        replayJdbc = new JdbcTemplate(testDataSource);
+        replayRepository = new DatabaseReplayPayloadRepository(replayJdbc, mapper);
+        replayRepository.init();
+        securityEvents = new DatabaseTestSecurityEventRepository(replayJdbc, mapper);
         securityEvents.init();
-        service = new TestReplayPayloadService(sourceRuns, replayPayloads, securityEvents,
+        service = new TestReplayPayloadService(sourceRuns, replayRepository, securityEvents,
                 mapper, Duration.ofDays(30));
     }
 
@@ -142,6 +147,66 @@ class TestReplayPayloadServiceTest {
                 409, "RG.TEST.REPLAY_SOURCE_TRUNCATED");
     }
 
+    @Test
+    void resolvesAnExactSanitizedDependencyClosureOnlyForReplayPurpose() {
+        StoredReplayPayload captured = service.capture("orders-approved",
+                request(source, "CONFIDENTIAL", 1,
+                        source.payloadRetention().expiresAt().minusSeconds(1)), replayIdentity());
+        String ref = captured.descriptor().reference().canonical();
+        FixtureBundle replayBundle = replayBundle(ref);
+
+        ResolvedReplayPayloads resolved = service.resolve(replayBundle, replayIdentity());
+
+        assertThat(resolved.references()).containsExactly(ref);
+        assertThat(resolved.require(ref).materialize(new ObjectMapper(), "business.operator"))
+                .isEqualTo(Map.of("orderId", "O-1", "decision", "approved",
+                        "apiToken", "[REDACTED]"));
+        assertThat(resolved.require(ref).canonicalJson())
+                .contains("[REDACTED]")
+                .doesNotContain("source-secret");
+        assertThat(resolved.planDependencies()).singleElement().satisfies(dependency -> {
+            assertThat(dependency.replayRef()).isEqualTo(ref);
+            assertThat(dependency.sourceRunId()).isEqualTo(source.runId());
+            assertThat(dependency.certificationEligible()).isFalse();
+        });
+        assertProblem(() -> service.resolve(replayBundle,
+                        identity("TEST_EXECUTION", "test", Set.of("quality"), "RESTRICTED")),
+                403, "RG.TEST.REPLAY_PURPOSE_REQUIRED");
+        assertThat(service.resolve(emptyBundle(),
+                identity("TEST_EXECUTION", "test", Set.of(), "PUBLIC")).references()).isEmpty();
+    }
+
+    @Test
+    void resolveRejectsFingerprintDriftExpiredValuesAndVaultTampering() {
+        StoredReplayPayload captured = service.capture("orders-approved",
+                request(source, "CONFIDENTIAL", 1,
+                        source.payloadRetention().expiresAt().minusSeconds(1)), replayIdentity());
+        String ref = captured.descriptor().reference().canonical();
+        String wrongRef = ref.substring(0, ref.length() - 1)
+                + (ref.endsWith("a") ? "b" : "a");
+        assertProblem(() -> service.resolve(replayBundle(wrongRef), replayIdentity()),
+                409, "RG.TEST.REPLAY_FINGERPRINT_CONFLICT");
+
+        replayJdbc.update("""
+                UPDATE test_replay_payloads SET payload_json = ?
+                WHERE replay_payload_id = ? AND revision = ?
+                """, "{\"decision\":\"tampered\"}", "orders-approved", 1);
+        assertProblem(() -> service.resolve(replayBundle(ref), replayIdentity()),
+                409, "RG.TEST.REPLAY_INTEGRITY_INVALID");
+
+        StoredReplayPayload expiring = service.capture("orders-expiring",
+                request(source, "CONFIDENTIAL", 1,
+                        source.payloadRetention().expiresAt().minusSeconds(2)), replayIdentity());
+        replayJdbc.update("""
+                UPDATE test_replay_payloads SET expires_at = ?
+                WHERE replay_payload_id = ? AND revision = ?
+                """, java.sql.Timestamp.from(Instant.now().minusSeconds(1)), "orders-expiring", 1);
+        assertThat(replayRepository.purgeExpired(10)).isEqualTo(1);
+        assertProblem(() -> service.resolve(
+                        replayBundle(expiring.descriptor().reference().canonical()), replayIdentity()),
+                410, "RG.TEST.REPLAY_PAYLOAD_UNAVAILABLE");
+    }
+
     private static ReplayPayloadCaptureRequest request(VisualGraphRunRecord run,
                                                        String classification,
                                                        int attempt,
@@ -150,6 +215,21 @@ class TestReplayPayloadServiceTest {
                 new ReplayPayloadCaptureRequest.Source(run.runId(), "fetchOrder", attempt,
                         run.evidenceMaterialFingerprint(), run.payloadRetention().payloadFingerprint()),
                 classification, expiresAt);
+    }
+
+    private static FixtureBundle replayBundle(String replayRef) {
+        FixtureRule replay = new FixtureRule(FixtureRule.SCHEMA_VERSION, "replay",
+                FixtureRule.Selector.node("fetchOrder"), FixtureRule.Behavior.replaying(replayRef),
+                FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+        return new FixtureBundle(FixtureBundle.SCHEMA_VERSION, "replay-fixture", 1,
+                "sha256:" + "b".repeat(64), "CONFIDENTIAL", null, null,
+                List.of(replay), List.of(), Map.of());
+    }
+
+    private static FixtureBundle emptyBundle() {
+        return new FixtureBundle(FixtureBundle.SCHEMA_VERSION, "plain-fixture", 1,
+                "sha256:" + "b".repeat(64), "INTERNAL", null, null,
+                List.of(), List.of(), Map.of());
     }
 
     private static VisualGraphRunRecord sourceRecord(String runId, String attemptStatus, Object output) {

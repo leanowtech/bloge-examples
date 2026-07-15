@@ -1,9 +1,9 @@
-# Stage 2 Governed Replay Payload Verification
+# Stage 2 Governed Replay Payload And Execution Verification
 
 ## Scope
 
-This increment establishes the governed F4 data source before activating `FixtureRule.REPLAY`.
-It does not treat arbitrary fixture JSON as historical truth.
+This increment establishes the governed F4 data source and activates `FixtureRule.REPLAY` without
+treating arbitrary fixture JSON as historical truth.
 
 Implemented contracts:
 
@@ -17,6 +17,11 @@ Implemented contracts:
 - destination retention capped by both source expiry and server maximum;
 - isolated JDBC value storage with `EXPIRED` payload-free tombstones;
 - bounded scheduled expiry sweep and read-time expiry convergence;
+- pre-plan exact dependency-closure resolution with a 1,000-ref and 16 MiB run budget;
+- run-scoped canonical payload freezing with no repository access from planner or runtime;
+- payload-free `bloge.effectiveExecutionPlan.v2` dependency identity and source lineage;
+- fresh value materialization per invocation, BLOGE output-schema validation, and zero real calls;
+- `MOCKED`/`REPLAYED` node and attempt evidence plus whole-run certification downgrade;
 - schema, capability, endpoint, and configuration documentation.
 
 The captured value is only the selected sanitized node output. Source input, credentials,
@@ -41,7 +46,11 @@ upgrade a non-certifiable payload merely because its fixture is stored.
 | classification downgrade or insufficient clearance/group | bad request/forbidden |
 | source or capture truncation | conflict |
 | expiry beyond source/server policy | bad request |
-| expired stored value | gone; no fallback and no payload in tombstone |
+| missing, expired, or purged stored value | fail before scheduling; no fallback and no payload in tombstone |
+| descriptor/value integrity mismatch | conflict plus security event before scheduling |
+| replay closure differs from fixture refs | control-plan rejection |
+| replay output violates operator schema | execution failure; real operator remains uncalled |
+| more than 1,000 refs or 16 MiB frozen JSON | bounded request rejection |
 | same id/revision with different content | immutable revision conflict |
 
 ## Verification
@@ -52,17 +61,20 @@ Focused command:
 mvn -f resource-gateway-examples/pom.xml \
   -Dtest=TestRuntimeProfileIsolationTest,ReplayPayloadRefTest,\
 DatabaseReplayPayloadRepositoryTest,TestReplayPayloadServiceTest,TestExecutionControllerTest,\
-TestingControlProtocolSchemaTest,TestabilityCapabilitiesTest,\
-TestRuntimeApplicationIntegrationTest test
+TestExecutionApiServiceTest,TestSuiteExecutionServiceTest,ExecutionControlCompilerTest,\
+TestRunServiceTest,TestingControlProtocolSchemaTest,TestingDomainProtocolTest,\
+TestabilityCapabilitiesTest,TestRuntimeApplicationIntegrationTest test
 ```
 
-Result: 26 tests, 0 failures, 0 errors.
+Result: 94 tests, 0 failures, 0 errors, 0 skipped.
 
 The focused matrix proves canonical reference rejection, immutable/scoped persistence, JSON-null
 round-trip, scheduled/read-time expiry convergence, signed source capture, repeat sanitization,
 exact-attempt selection, purpose/scope/group/clearance/fingerprint/classification rejection,
-truncation rejection, HTTP purpose routing, schema parity, capability truthfulness, and real Spring
-profile assembly including its visual-run repository dependency.
+truncation rejection, exact fixture closure, payload-free control-plan lineage, schema-gated replay
+execution without a real operator call, graph/operator/suite purpose routing, schema parity,
+capability truthfulness, and real Spring profile assembly including its visual-run repository
+dependency.
 
 Full project gate:
 
@@ -70,19 +82,22 @@ Full project gate:
 mvn -f resource-gateway-examples/pom.xml -Pfrontend clean verify
 ```
 
-Result: build success; 1771 tests, 0 failures, 0 errors, 0 skipped.
+Result: build success; 1781 tests, 0 failures, 0 errors, 0 skipped.
 
-The nine new public replay types also pass isolated `javadoc -Xdoclint:all` with zero warnings.
-The repository-wide Javadoc goal remains outside this increment because existing unrelated source
-files still carry historical doclint debt.
+The newly introduced `ResolvedReplayPayloads` runtime type also passes isolated
+`javadoc -Xdoclint:all` with zero warnings. A wider pass over changed public types still reports
+historical documentation-completeness warnings; the repository-wide Javadoc cleanup remains
+outside this increment.
 
-## Deliberate Boundary
+## Execution Boundary
 
 Capability probe reports:
 
 - `governedTestReplayPayloadCapture=true`;
-- `testReplayBehavior=false`.
+- `testReplayBehavior=true`.
 
-`SafetyPreflight` continues to reject `kind=REPLAY` until the next increment freezes all referenced
-payloads into the effective plan, executes without repository access, emits `REPLAYED` fidelity,
-and blocks certification when any replay dependency is non-certifiable.
+Only the authorized API boundary may resolve replay storage. Fixture registration validates the
+dependency closure, and each execution resolves it again to recheck lifecycle and authorization.
+`SafetyPreflight` requires exact closure equality and rejects payload-bearing, transport-boundary,
+or fallback-to-real REPLAY rules. `TestDoubleFactory` consumes only the frozen run object, emits
+`REPLAYED`, and never calls the real binding. STREAM behavior remains reserved.

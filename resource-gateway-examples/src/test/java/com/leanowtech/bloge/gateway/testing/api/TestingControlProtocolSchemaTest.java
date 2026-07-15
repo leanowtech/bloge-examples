@@ -168,6 +168,14 @@ class TestingControlProtocolSchemaTest {
                 .extracting(JsonNode::asText)
                 .containsExactly("NOT_EVALUATED", "ELIGIBLE", "BLOCKED");
         assertThat(definitions.at("/effectivePlan/additionalProperties").asBoolean()).isFalse();
+        assertThat(definitions.at("/effectivePlan/required")).extracting(JsonNode::asText)
+                .contains("replayDependencies");
+        assertThat(definitions.at(
+                "/effectivePlan/properties/replayDependencies/items/$ref").asText())
+                .isEqualTo("#/$defs/replayDependency");
+        assertThat(definitions.at("/replayDependency/additionalProperties").asBoolean()).isFalse();
+        assertThat(definitions.at("/replayDependency/properties/replayRef/pattern").asText())
+                .contains("bloge-replay:");
         assertThat(definitions.at("/testRunEvidence/additionalProperties").asBoolean()).isFalse();
     }
 

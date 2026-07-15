@@ -42,6 +42,7 @@ public final class TestSuiteExecutionService {
     private static final int MAX_METADATA_BYTES = 16_384;
     private static final int MAX_DIAGNOSTIC_LENGTH = 512;
     private static final Set<String> ENABLED_ENVIRONMENTS = Set.of("test", "staging");
+    private static final Set<String> EXECUTION_PURPOSES = Set.of("TEST_EXECUTION", "TEST_REPLAY");
     private static final List<String> CLASSIFICATIONS = List.of(
             "PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED");
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
@@ -565,10 +566,10 @@ public final class TestSuiteExecutionService {
 
     private void requireExecutionIdentity(IntegrationRequestContext identity) {
         Objects.requireNonNull(identity, "identity").requireComplete();
-        if (!"TEST_EXECUTION".equals(identity.purpose())) {
+        if (!EXECUTION_PURPOSES.contains(identity.purpose())) {
             throw new IntegrationProblemException(IntegrationProblem.forbidden(
                     "RG.TEST.SUITE_EXECUTION_PURPOSE_FORBIDDEN",
-                    "Suite execution requires a verified TEST_EXECUTION workload purpose.",
+                    "Suite execution requires a verified TEST_EXECUTION or TEST_REPLAY workload purpose.",
                     identity.correlationId(), Map.of()));
         }
         if (!ENABLED_ENVIRONMENTS.contains(identity.environmentId().toLowerCase(Locale.ROOT))) {

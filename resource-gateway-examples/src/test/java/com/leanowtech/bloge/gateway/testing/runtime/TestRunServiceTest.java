@@ -14,6 +14,7 @@ import com.leanowtech.bloge.core.model.ResilienceConfig;
 import com.leanowtech.bloge.core.model.SagaConfig;
 import com.leanowtech.bloge.core.schema.OpaqueSchema;
 import com.leanowtech.bloge.core.schema.SchemaValidationLevel;
+import com.leanowtech.bloge.core.schema.TypedSchema;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.operator.SideEffectType;
@@ -40,6 +41,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TestRunServiceTest {
 
     private static final String TARGET = "sha256:" + "b".repeat(64);
+    private static final String REPLAY_REF = "bloge-replay:approved-order@7#sha256:"
+            + "c".repeat(64);
     private final TestRunService service = new TestRunService(
             new DefaultOperatorRegistry(), new ObjectMapper(), null);
 
@@ -108,6 +111,83 @@ class TestRunServiceTest {
         TestExecutionResult denied = service.execute(request(graph, bundle(denyRule)));
         assertThat(denied.evidence().nodeTrace()).singleElement()
                 .satisfies(trace -> assertThat(trace.errorCode()).isEqualTo("SIDE_EFFECT_DENIED"));
+        assertThat(calls).hasValue(0);
+    }
+
+    @Test
+    void governedReplayNeverCallsTheRealBindingAndEmitsPayloadFreeLineage() {
+        AtomicInteger calls = new AtomicInteger();
+        FixtureRule replay = rule("approved-replay", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.replaying(REPLAY_REF));
+        ResolvedReplayPayloads payloads = replays(
+                "{\"decision\":\"APPROVE\",\"score\":780}", true);
+        TestExecutionRequest request = new TestExecutionRequest(
+                single(new CountingExternalOperator(calls)),
+                new GraphContext(Map.of("input", Map.of("customerId", "C-1"))), bundle(replay),
+                "GRAPH_CONTRACT_TEST", TARGET, TestExecutionRequest.FixtureSource.STORED,
+                Map.of(), true, payloads);
+
+        TestExecutionResult result = service.execute(request);
+
+        assertThat(result.passed()).isTrue();
+        assertThat(calls).hasValue(0);
+        assertThat(result.graphResult().getOutput("subject", Map.class))
+                .containsEntry("decision", "APPROVE")
+                .containsEntry("score", 780);
+        assertThat(result.plan().replayDependencies()).singleElement()
+                .satisfies(dependency -> assertThat(dependency.replayRef()).isEqualTo(REPLAY_REF));
+        assertThat(result.evidence().nodeTrace()).singleElement().satisfies(trace -> {
+            assertThat(trace.status()).isEqualTo("MOCKED");
+            assertThat(trace.fidelity()).isEqualTo("REPLAYED");
+            assertThat(trace.attempts()).singleElement().satisfies(attempt -> {
+                assertThat(attempt.status()).isEqualTo("MOCKED");
+                assertThat(attempt.fidelity()).isEqualTo("REPLAYED");
+            });
+        });
+        assertThat(result.evidence().metadata().get("nodeControlModes"))
+                .isEqualTo(Map.of("/root/subject#PRIMARY", "REPLAY"));
+        assertThat(result.evidence().metadata().get("replayDependencies").toString())
+                .contains(REPLAY_REF, "source-run-1")
+                .doesNotContain("APPROVE", "canonicalJson");
+        assertThat(result.evidence().evidenceClass())
+                .isEqualTo(TestRunEvidence.EvidenceClass.CERTIFIABLE);
+    }
+
+    @Test
+    void nonCertifiableReplayDowngradesTheWholeRun() {
+        FixtureRule replay = rule("draft-replay", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.replaying(REPLAY_REF));
+        TestExecutionRequest request = new TestExecutionRequest(single(new PureOperator()),
+                new GraphContext(Map.of("input", "ignored")), bundle(replay),
+                "GRAPH_CONTRACT_TEST", TARGET, TestExecutionRequest.FixtureSource.STORED,
+                Map.of(), true, replays("\"historical\"", false));
+
+        TestExecutionResult result = service.execute(request);
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.evidence().evidenceClass())
+                .isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
+        assertThat(result.evidence().metadata().get("replayCertificationGaps").toString())
+                .contains(REPLAY_REF, "SOURCE_NOT_CERTIFIABLE");
+    }
+
+    @Test
+    void replayOutputMustSatisfyTheBlogeOperatorSchemaBeforeItCanEscape() {
+        AtomicInteger calls = new AtomicInteger();
+        Graph typed = withOutputSchema(single(new CountingExternalOperator(calls)),
+                new TypedSchema(String.class));
+        FixtureRule replay = rule("wrong-type", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.replaying(REPLAY_REF));
+        TestExecutionRequest request = new TestExecutionRequest(typed,
+                new GraphContext(Map.of("input", "ignored")), bundle(replay),
+                "GRAPH_CONTRACT_TEST", TARGET, TestExecutionRequest.FixtureSource.STORED,
+                Map.of(), true, replays("42", true));
+
+        TestExecutionResult result = service.execute(request);
+
+        assertThat(result.evidence().status()).isEqualTo(TestRunEvidence.Status.EXECUTION_FAILED);
+        assertThat(result.evidence().nodeTrace()).singleElement().satisfies(trace ->
+                assertThat(trace.errorCode()).isEqualTo("FIXTURE_OUTPUT_SCHEMA_MISMATCH"));
         assertThat(calls).hasValue(0);
     }
 
@@ -734,6 +814,15 @@ class TestRunServiceTest {
                 graph.definitionSource(), graph.streamingOutputNodeId(), graph.streamingInputs());
     }
 
+    private static Graph withOutputSchema(Graph graph,
+                                          com.leanowtech.bloge.core.schema.SchemaDescriptor schema) {
+        var node = graph.nodes().get("subject").toBuilder().outputSchema(schema).build();
+        return new Graph(graph.name(), Map.of("subject", node), graph.edges(), graph.sourceNodes(),
+                graph.terminalNodes(), graph.schemaValidationLevel(), graph.embeddedOperators(),
+                graph.declaredInputSchema(), graph.declaredOutputSchema(), graph.sagaConfig(),
+                graph.definitionSource(), graph.streamingOutputNodeId(), graph.streamingInputs());
+    }
+
     private static TestExecutionRequest request(Graph graph, FixtureBundle bundle) {
         return new TestExecutionRequest(graph, new GraphContext(Map.of("input", "hello")), bundle,
                 "GRAPH_CONTRACT_TEST", TARGET, TestExecutionRequest.FixtureSource.INLINE, Map.of());
@@ -753,6 +842,15 @@ class TestRunServiceTest {
                                     FixtureRule.Behavior behavior) {
         return new FixtureRule(FixtureRule.SCHEMA_VERSION, id, selector, behavior,
                 FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+    }
+
+    private static ResolvedReplayPayloads replays(String canonicalJson,
+                                                   boolean certificationEligible) {
+        return new ResolvedReplayPayloads(Map.of(REPLAY_REF, new ResolvedReplayPayloads.Payload(
+                REPLAY_REF, "INTERNAL", canonicalJson, "source-run-1", "decision", 1,
+                "sha256:" + "d".repeat(64), "sha256:" + "e".repeat(64),
+                Instant.parse("2030-01-01T00:00:00Z"), certificationEligible,
+                certificationEligible ? List.of() : List.of("SOURCE_NOT_CERTIFIABLE"))));
     }
 
     /** Test-only nested container that makes a child failure visible to the parent's retry policy. */

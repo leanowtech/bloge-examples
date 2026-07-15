@@ -697,18 +697,39 @@
         "toInvocationSiteId": {"type": "string"}
       }
     },
+    "replayDependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replayRef", "replayPayloadId", "revision", "fingerprint", "classification", "sourceRunId", "sourceNodeId", "sourceAttempt", "sourceRunFingerprint", "sourcePayloadFingerprint", "expiresAt", "certificationEligible", "certificationGaps"],
+      "properties": {
+        "replayRef": {"type": "string", "pattern": "^bloge-replay:[A-Za-z0-9][A-Za-z0-9._-]{0,254}@[1-9][0-9]*#sha256:[a-f0-9]{64}$"},
+        "replayPayloadId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$"},
+        "revision": {"type": "integer", "minimum": 1},
+        "fingerprint": {"$ref": "#/$defs/fingerprint"},
+        "classification": {"enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]},
+        "sourceRunId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "sourceNodeId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "sourceAttempt": {"type": "integer", "minimum": 1},
+        "sourceRunFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "sourcePayloadFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "expiresAt": {"type": "string", "format": "date-time"},
+        "certificationEligible": {"type": "boolean"},
+        "certificationGaps": {"type": "array", "maxItems": 100, "items": {"type": "string", "maxLength": 300}}
+      }
+    },
     "effectivePlan": {
       "type": ["object", "null"],
       "additionalProperties": false,
-      "required": ["schemaVersion", "planId", "planFingerprint", "authorizedPurpose", "targetFingerprint", "fixtureBundleFingerprint", "resolvedSites", "defaultPolicies", "diagnostics"],
+      "required": ["schemaVersion", "planId", "planFingerprint", "authorizedPurpose", "targetFingerprint", "fixtureBundleFingerprint", "resolvedSites", "replayDependencies", "defaultPolicies", "diagnostics"],
       "properties": {
-        "schemaVersion": {"const": "bloge.effectiveExecutionPlan.v1"},
+        "schemaVersion": {"const": "bloge.effectiveExecutionPlan.v2"},
         "planId": {"type": "string"},
         "planFingerprint": {"$ref": "#/$defs/fingerprint"},
         "authorizedPurpose": {"enum": ["GRAPH_CONTRACT_TEST", "OPERATOR_UNIT_TEST"]},
         "targetFingerprint": {"$ref": "#/$defs/fingerprint"},
         "fixtureBundleFingerprint": {"$ref": "#/$defs/fingerprint"},
         "resolvedSites": {"type": "array"},
+        "replayDependencies": {"type": "array", "maxItems": 1000, "items": {"$ref": "#/$defs/replayDependency"}},
         "defaultPolicies": {"type": "object"},
         "diagnostics": {"type": "array", "items": {"type": "string"}}
       }

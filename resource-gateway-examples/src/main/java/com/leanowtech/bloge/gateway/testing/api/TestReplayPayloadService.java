@@ -4,7 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
+import com.leanowtech.bloge.gateway.testing.domain.ReplayPayloadRef;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
@@ -16,8 +20,10 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualRunPayloadStatus;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -43,6 +49,8 @@ public final class TestReplayPayloadService {
             "PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED");
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,254}");
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+    private static final int MAX_REPLAY_REFERENCES = 1_000;
+    private static final int MAX_FROZEN_REPLAY_BYTES = 16 * 1_024 * 1_024;
 
     private final VisualGraphRunRepository sourceRuns;
     private final ReplayPayloadRepository payloads;
@@ -116,11 +124,16 @@ public final class TestReplayPayloadService {
                 sourceStatus.descriptor().classification(), identity);
         requireClearance(classification, identity);
         boolean signedPublication = VisualGraphRunRecord.SOURCE_PUBLICATION.equals(run.sourceKind())
+                && "EXECUTABLE".equals(run.sourceArtifactKind())
                 && sourceRuns.evidenceSigner().verify(
                 run.evidenceSeal(), run.evidenceMaterialFingerprint()).valid();
         List<String> gaps = new ArrayList<>();
         if (!VisualGraphRunRecord.SOURCE_PUBLICATION.equals(run.sourceKind())) {
             gaps.add("SOURCE_NOT_IMMUTABLE_PUBLICATION_RUN");
+        }
+        if (VisualGraphRunRecord.SOURCE_PUBLICATION.equals(run.sourceKind())
+                && !"EXECUTABLE".equals(run.sourceArtifactKind())) {
+            gaps.add("SOURCE_PUBLICATION_NOT_EXECUTABLE");
         }
         if (!signedPublication) {
             gaps.add("SOURCE_NOT_CERTIFIABLE");
@@ -131,12 +144,9 @@ public final class TestReplayPayloadService {
                 access.payload().payloadFingerprint(), run.environment());
         ReplayPayloadDescriptor.Redaction redaction = redaction(
                 access.payload().redaction(), sanitized.redaction());
-        ReplayPayloadDescriptor draft = new ReplayPayloadDescriptor("", replayPayloadId,
-                request.revision(), "", classification, source, redaction, now, request.expiresAt(),
-                signedPublication, gaps);
-        String fingerprint = ProtocolFingerprint.of(objectMapper,
-                Map.of("descriptor", draft, "value",
-                        sanitized.output() == null ? objectMapper.nullNode() : sanitized.output()));
+        String fingerprint = replayFingerprint(replayPayloadId, request.revision(), classification,
+                source, redaction, now, request.expiresAt(), signedPublication, gaps,
+                sanitized.output());
         ReplayPayloadDescriptor descriptor = new ReplayPayloadDescriptor("", replayPayloadId,
                 request.revision(), fingerprint, classification, source, redaction, now,
                 request.expiresAt(), signedPublication, gaps);
@@ -181,6 +191,9 @@ public final class TestReplayPayloadService {
             throw unavailable(identity, "RG.TEST.REPLAY_STORE_UNAVAILABLE",
                     "The isolated replay payload vault is unavailable.");
         }
+        if (stored.descriptor() == null) {
+            replayIntegrityFailure(identity, normalized(replayPayloadId));
+        }
         requireClearance(stored.descriptor().classification(), identity);
         if (!stored.readable()) {
             throw new IntegrationProblemException(IntegrationProblem.gone(
@@ -189,7 +202,77 @@ public final class TestReplayPayloadService {
                     Map.of("state", stored.state(),
                             "expiresAt", stored.descriptor().expiresAt())));
         }
+        verifyStoredIntegrity(stored, identity);
         return stored;
+    }
+
+    /**
+     * Resolves the exact REPLAY dependency closure before execution-control compilation.
+     *
+     * <p>Normal fixtures return an empty set without requiring replay privilege. A fixture that
+     * contains REPLAY rules requires {@code TEST_REPLAY}; every value is scope, lifecycle,
+     * clearance, classification, reference, and integrity checked before canonical JSON is frozen.
+     * No repository handle crosses into the planner or runtime.</p>
+     *
+     * @param bundle authorized fixture bundle
+     * @param identity verified workload identity
+     * @return exact run-scoped replay payload closure
+     */
+    public ResolvedReplayPayloads resolve(FixtureBundle bundle, IntegrationRequestContext identity) {
+        Objects.requireNonNull(bundle, "bundle");
+        List<String> rawRefs = bundle.rules().stream().filter(Objects::nonNull)
+                .filter(rule -> rule.behavior().kind() == FixtureRule.BehaviorKind.REPLAY)
+                .map(rule -> rule.behavior().replayRef()).distinct().toList();
+        if (rawRefs.isEmpty()) {
+            return ResolvedReplayPayloads.empty();
+        }
+        requireReplayIdentity(identity);
+        if (rawRefs.size() > MAX_REPLAY_REFERENCES) {
+            throw badRequest(identity, "RG.TEST.REPLAY_REFERENCE_LIMIT",
+                    "Fixture exceeds the bounded replay dependency count.",
+                    Map.of("maximum", MAX_REPLAY_REFERENCES));
+        }
+        String fixtureClassification = normalized(bundle.classification()).toUpperCase(Locale.ROOT);
+        if (!CLASSIFICATIONS.contains(fixtureClassification)) {
+            throw badRequest(identity, "RG.TEST.REPLAY_CLASSIFICATION_INVALID",
+                    "Fixture classification is not recognized by replay governance.", Map.of());
+        }
+
+        Map<String, ResolvedReplayPayloads.Payload> resolved = new LinkedHashMap<>();
+        long totalBytes = 0;
+        for (String rawRef : rawRefs) {
+            ReplayPayloadRef ref;
+            try {
+                ref = ReplayPayloadRef.parse(rawRef);
+            } catch (IllegalArgumentException invalid) {
+                throw badRequest(identity, "RG.TEST.REPLAY_REF_INVALID",
+                        "REPLAY requires an exact canonical governed payload reference.", Map.of());
+            }
+            StoredReplayPayload stored = find(ref.replayPayloadId(), ref.revision(), identity);
+            ReplayPayloadDescriptor descriptor = stored.descriptor();
+            if (!ref.fingerprint().equals(descriptor.fingerprint())) {
+                throw conflict(identity, "RG.TEST.REPLAY_FINGERPRINT_CONFLICT",
+                        "Replay payload differs from the fixture's immutable reference.", Map.of());
+            }
+            requireNoClassificationDowngrade(fixtureClassification,
+                    descriptor.classification(), identity);
+            verifyStoredIntegrity(stored, identity);
+            String canonicalJson = canonicalJson(stored.value(), identity);
+            totalBytes += canonicalJson.getBytes(StandardCharsets.UTF_8).length;
+            if (totalBytes > MAX_FROZEN_REPLAY_BYTES) {
+                throw badRequest(identity, "RG.TEST.REPLAY_PAYLOAD_LIMIT",
+                        "Resolved replay payloads exceed the bounded run memory budget.",
+                        Map.of("maximumBytes", MAX_FROZEN_REPLAY_BYTES));
+            }
+            ReplayPayloadDescriptor.Source source = descriptor.source();
+            resolved.put(ref.canonical(), new ResolvedReplayPayloads.Payload(
+                    ref.canonical(), descriptor.classification(), canonicalJson,
+                    source.runId(), source.nodeId(), source.attempt(),
+                    source.runEvidenceFingerprint(), source.sourcePayloadFingerprint(),
+                    descriptor.expiresAt(), descriptor.certificationEligible(),
+                    descriptor.certificationGaps()));
+        }
+        return new ResolvedReplayPayloads(resolved);
     }
 
     private void validateCaptureRequest(String pathId, ReplayPayloadCaptureRequest request,
@@ -205,6 +288,53 @@ public final class TestReplayPayloadService {
             throw badRequest(identity, "RG.TEST.REPLAY_CAPTURE_REQUEST_INVALID",
                     "Capture requires an exact source fingerprint, node attempt, classification, and future expiry.",
                     Map.of());
+        }
+    }
+
+    private void verifyStoredIntegrity(StoredReplayPayload stored,
+                                       IntegrationRequestContext identity) {
+        ReplayPayloadDescriptor descriptor = stored.descriptor();
+        if (descriptor == null || !stored.readable()
+                || !CLASSIFICATIONS.contains(descriptor.classification())
+                || !FINGERPRINT.matcher(descriptor.fingerprint()).matches()) {
+            replayIntegrityFailure(identity, descriptor == null ? "" : descriptor.replayPayloadId());
+        }
+        String actual = replayFingerprint(descriptor.replayPayloadId(), descriptor.revision(),
+                descriptor.classification(), descriptor.source(), descriptor.redaction(),
+                descriptor.capturedAt(), descriptor.expiresAt(), descriptor.certificationEligible(),
+                descriptor.certificationGaps(), stored.value());
+        if (!descriptor.fingerprint().equals(actual)) {
+            replayIntegrityFailure(identity, descriptor.replayPayloadId());
+        }
+    }
+
+    private void replayIntegrityFailure(IntegrationRequestContext identity, String replayPayloadId) {
+        securityEvent(identity, "REPLAY_PAYLOAD_INTEGRITY_INVALID", "REJECTED",
+                "RG.TEST.REPLAY_INTEGRITY_INVALID",
+                replayPayloadId.isBlank() ? Map.of() : Map.of("replayPayloadId", replayPayloadId));
+        throw conflict(identity, "RG.TEST.REPLAY_INTEGRITY_INVALID",
+                "Replay payload failed immutable integrity verification.", Map.of());
+    }
+
+    private String replayFingerprint(String replayPayloadId, long revision, String classification,
+                                     ReplayPayloadDescriptor.Source source,
+                                     ReplayPayloadDescriptor.Redaction redaction,
+                                     Instant capturedAt, Instant expiresAt,
+                                     boolean certificationEligible, List<String> certificationGaps,
+                                     Object value) {
+        ReplayPayloadDescriptor draft = new ReplayPayloadDescriptor("", replayPayloadId,
+                revision, "", classification, source, redaction, capturedAt, expiresAt,
+                certificationEligible, certificationGaps);
+        return ProtocolFingerprint.of(objectMapper, Map.of("descriptor", draft, "value",
+                value == null ? objectMapper.nullNode() : value));
+    }
+
+    private String canonicalJson(Object value, IntegrationRequestContext identity) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException invalid) {
+            throw conflict(identity, "RG.TEST.REPLAY_VALUE_INVALID",
+                    "Replay payload cannot be frozen as protocol JSON.", Map.of());
         }
     }
 

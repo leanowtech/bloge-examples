@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,9 +36,12 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("suiteRunOwnerLease", true)
                 .containsEntry("abandonedSuiteRunReconciliation", true)
                 .containsEntry("governedTestReplayPayloadCapture", true)
-                .containsEntry("testReplayBehavior", false)
+                .containsEntry("testReplayBehavior", true)
                 .containsEntry("streamingOperatorTestExecution", false)
                 .containsEntry("suspendableOperatorTestExecution", false);
+        assertThat(enabled.supportedObjects().get("effectiveExecutionPlan"))
+                .containsExactly(EffectiveExecutionPlan.SCHEMA_VERSION_V1,
+                        EffectiveExecutionPlan.SCHEMA_VERSION);
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.path().equals("/api/testing/executions"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/graphs/{graphName}"));

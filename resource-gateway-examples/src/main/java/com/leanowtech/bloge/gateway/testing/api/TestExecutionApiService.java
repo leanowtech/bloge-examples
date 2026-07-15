@@ -20,6 +20,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceSanitizer;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorInputCoercer;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorMicroGraphRunner;
 import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionResult;
 import com.leanowtech.bloge.gateway.testing.runtime.TestRunService;
@@ -61,6 +62,7 @@ public final class TestExecutionApiService {
     private final FixtureBundleRepository fixtureRepository;
     private final TestRunRepository runRepository;
     private final TestSecurityEventRepository securityEvents;
+    private final TestReplayPayloadService replayPayloads;
     private final TestEvidenceSanitizer sanitizer;
     private final Duration retention;
 
@@ -73,6 +75,34 @@ public final class TestExecutionApiService {
                                    TestRunRepository runRepository,
                                    TestSecurityEventRepository securityEvents,
                                    Duration retention) {
+        this(graphService, operatorRegistry, resourceRegistry, expressionEvaluator, objectMapper,
+                fixtureRepository, runRepository, securityEvents, retention, null);
+    }
+
+    /**
+     * Creates the public execution adapter with governed replay dependency resolution.
+     *
+     * @param graphService graph target registry
+     * @param operatorRegistry frozen operator registry
+     * @param resourceRegistry frozen resource registry
+     * @param expressionEvaluator resource expression evaluator
+     * @param objectMapper protocol mapper
+     * @param fixtureRepository immutable fixture registry
+     * @param runRepository isolated test-run store
+     * @param securityEvents required security audit sink
+     * @param retention test-run evidence retention
+     * @param replayPayloads governed replay resolver; required only by REPLAY fixtures
+     */
+    public TestExecutionApiService(GatewayGraphService graphService,
+                                   OperatorRegistry operatorRegistry,
+                                   ResourceRegistry resourceRegistry,
+                                   BlgeExpressionEvaluator expressionEvaluator,
+                                   ObjectMapper objectMapper,
+                                   FixtureBundleRepository fixtureRepository,
+                                   TestRunRepository runRepository,
+                                   TestSecurityEventRepository securityEvents,
+                                   Duration retention,
+                                   TestReplayPayloadService replayPayloads) {
         this.graphService = Objects.requireNonNull(graphService, "graphService");
         this.operatorRegistry = Objects.requireNonNull(operatorRegistry, "operatorRegistry");
         this.resourceRegistry = Objects.requireNonNull(resourceRegistry, "resourceRegistry");
@@ -81,6 +111,7 @@ public final class TestExecutionApiService {
         this.fixtureRepository = Objects.requireNonNull(fixtureRepository, "fixtureRepository");
         this.runRepository = Objects.requireNonNull(runRepository, "runRepository");
         this.securityEvents = Objects.requireNonNull(securityEvents, "securityEvents");
+        this.replayPayloads = replayPayloads;
         this.sanitizer = new TestEvidenceSanitizer(objectMapper);
         this.retention = retention == null || retention.isNegative() || retention.isZero()
                 ? Duration.ofDays(30) : retention;
@@ -102,13 +133,15 @@ public final class TestExecutionApiService {
         }
 
         ResolvedFixture fixture = resolveFixture(request, target.fingerprint(), identity);
+        ResolvedReplayPayloads resolvedReplays = resolveReplayPayloads(fixture.bundle(), identity);
         ResourceFixtureRuntime resourceRuntime = new ResourceFixtureRuntime(
                 target.resourceRegistry(), expressionEvaluator, objectMapper);
         TestRunService kernel = new TestRunService(operatorRegistry, objectMapper, resourceRuntime);
         Map<String, Object> metadata = executionMetadata(request, identity, target);
         TestExecutionResult result = kernel.execute(new TestExecutionRequest(
                 target.graph(), new GraphContext(request.context()), fixture.bundle(), AUTHORIZED_PURPOSE,
-                target.fingerprint(), fixture.source(), metadata, target.certificationEligible()));
+                target.fingerprint(), fixture.source(), metadata, target.certificationEligible(),
+                resolvedReplays));
         TestRunEvidence sanitized = sanitizer.sanitize(result.evidence());
         TestRunRecord record = new TestRunRecord(sanitized.runId(), identity.tenantId(),
                 identity.organizationId(), identity.projectId(), identity.environmentId(), identity.actorId(),
@@ -178,6 +211,7 @@ public final class TestExecutionApiService {
         requireTargetFingerprint(request.target(), target.fingerprint(), identity);
         ResolvedFixture fixture = resolveFixture(request.fixtureBundle(), request.fixtureBundleRef(),
                 target.fingerprint(), identity);
+        ResolvedReplayPayloads resolvedReplays = resolveReplayPayloads(fixture.bundle(), identity);
         Object typedInput;
         try {
             typedInput = OperatorInputCoercer.coerce(request.input(), target.metadata(), objectMapper);
@@ -191,7 +225,7 @@ public final class TestExecutionApiService {
                 new OperatorMicroGraphRunner.Request(target.operatorRef(), target.synchronousOperator(),
                         target.fingerprint(), typedInput, fixture.bundle(), AUTHORIZED_OPERATOR_PURPOSE,
                         fixture.source(), target.certificationEligible(),
-                        operatorExecutionMetadata(request, identity, target)));
+                        operatorExecutionMetadata(request, identity, target), resolvedReplays));
         TestRunEvidence sanitized = sanitizer.sanitize(result.execution().evidence());
         TestRunRecord record = new TestRunRecord(sanitized.runId(), identity.tenantId(),
                 identity.organizationId(), identity.projectId(), identity.environmentId(), identity.actorId(),
@@ -268,6 +302,7 @@ public final class TestExecutionApiService {
                     "Fixture targetFingerprint does not identify the current frozen target dependencies.",
                     Map.of("currentTargetFingerprint", targetFingerprint));
         }
+        resolveReplayPayloads(bundle, identity);
         String fingerprint = ProtocolFingerprint.of(objectMapper, bundle);
         StoredFixtureBundle stored = new StoredFixtureBundle("", identity.tenantId(), identity.environmentId(),
                 bundle.fixtureBundleId(), bundle.revision(), fingerprint, bundle, Instant.now(), identity.actorId());
@@ -305,6 +340,21 @@ public final class TestExecutionApiService {
     private ResolvedFixture resolveFixture(TestExecutionApiRequest request, String targetFingerprint,
                                            IntegrationRequestContext identity) {
         return resolveFixture(request.fixtureBundle(), request.fixtureBundleRef(), targetFingerprint, identity);
+    }
+
+    private ResolvedReplayPayloads resolveReplayPayloads(FixtureBundle bundle,
+                                                          IntegrationRequestContext identity) {
+        boolean hasReplay = bundle.rules().stream().filter(Objects::nonNull)
+                .anyMatch(rule -> rule.behavior().kind()
+                        == com.leanowtech.bloge.gateway.testing.domain.FixtureRule.BehaviorKind.REPLAY);
+        if (!hasReplay) {
+            return ResolvedReplayPayloads.empty();
+        }
+        if (replayPayloads == null) {
+            throw unavailable(identity, "RG.TEST.REPLAY_RESOLVER_UNAVAILABLE",
+                    "Governed replay payload resolution is unavailable.");
+        }
+        return replayPayloads.resolve(bundle, identity);
     }
 
     private ResolvedFixture resolveFixture(FixtureBundle inline,

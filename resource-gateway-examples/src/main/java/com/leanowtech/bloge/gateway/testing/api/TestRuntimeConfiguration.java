@@ -102,10 +102,11 @@ public class TestRuntimeConfiguration {
             FixtureBundleRepository fixtureRepository,
             TestRunRepository runRepository,
             TestSecurityEventRepository securityEvents,
+            TestReplayPayloadService replayPayloadService,
             @Value("${gateway.testing.store.retention-days:30}") long retentionDays) {
         return new TestExecutionApiService(graphService, operatorRegistry, resourceRegistry,
                 expressionEvaluator, objectMapper, fixtureRepository, runRepository, securityEvents,
-                Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))));
+                Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))), replayPayloadService);
     }
 
     /** Assembles the dependency-validating immutable suite registry service. */

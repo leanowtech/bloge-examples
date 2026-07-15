@@ -139,6 +139,12 @@ class TestingDomainProtocolTest {
                         FixtureRule.DoubleBoundary.TRANSPORT,
                         List.of("policy-success"),
                         "PROTOCOL_DERIVED")),
+                List.of(new EffectiveExecutionPlan.ReplayDependency(
+                        "bloge-replay:policy-response@4#sha256:" + "a".repeat(64),
+                        "policy-response", 4, "sha256:" + "a".repeat(64), "INTERNAL",
+                        "source-run-1", "fetchPolicy", 1,
+                        "sha256:" + "b".repeat(64), "sha256:" + "c".repeat(64),
+                        Instant.parse("2026-08-15T09:00:00Z"), true, List.of())),
                 Map.of("externalRead", "DENY_UNMATCHED"),
                 List.of());
         TestRunEvidence evidence = new TestRunEvidence(
@@ -164,8 +170,14 @@ class TestingDomainProtocolTest {
                 Map.of("suiteId", "order-risk"));
 
         TestRunEvidence restored = mapper.readValue(mapper.writeValueAsBytes(evidence), TestRunEvidence.class);
+        EffectiveExecutionPlan restoredPlan = mapper.readValue(
+                mapper.writeValueAsBytes(plan), EffectiveExecutionPlan.class);
 
         assertThat(restored).isEqualTo(evidence);
+        assertThat(restoredPlan).isEqualTo(plan);
+        assertThat(restoredPlan.schemaVersion()).isEqualTo(EffectiveExecutionPlan.SCHEMA_VERSION);
+        assertThat(restoredPlan.replayDependencies()).singleElement().satisfies(dependency ->
+                assertThat(dependency.replayPayloadId()).isEqualTo("policy-response"));
         assertThat(restored.planFingerprint()).isEqualTo(plan.planFingerprint());
         assertThat(restored.nodeTrace()).singleElement()
                 .satisfies(trace -> {

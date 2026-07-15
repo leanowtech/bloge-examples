@@ -91,6 +91,30 @@ class TestSuiteExecutionServiceTest {
     }
 
     @Test
+    void replayPurposeExecutesSuiteThroughTheRealServiceBoundary() {
+        IntegrationRequestContext replayIdentity = new IntegrationRequestContext(
+                "tenant-a", "org-a", "project-a", "test", "local", "WORKLOAD", "runner",
+                "", "TEST_REPLAY", "correlation-replay", Set.of("quality"), "CONFIDENTIAL", "");
+        when(registry.find("suite-a", 3, replayIdentity)).thenReturn(storedSuite());
+        when(executions.describeGraphTarget("graph-a", replayIdentity))
+                .thenReturn(graphTarget(TARGET, true));
+        when(executions.execute(any(), eq(replayIdentity)))
+                .thenReturn(response("run-golden-replay", "golden", "/root/fetch#PRIMARY",
+                                "/root/fetch#PRIMARY", "/root/output#PRIMARY",
+                                TestRunEvidence.Status.PASSED,
+                                TestRunEvidence.EvidenceClass.CERTIFIABLE))
+                .thenReturn(response("run-negative-replay", "negative", "/root/output#PRIMARY",
+                                "", "", TestRunEvidence.Status.PASSED,
+                                TestRunEvidence.EvidenceClass.CERTIFIABLE));
+
+        TestSuiteExecutionResponse result = service.execute("suite-a", request("replay-request",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL), replayIdentity);
+
+        assertThat(result.evidence().status()).isEqualTo(TestSuiteRunEvidence.Status.PASSED);
+        verify(executions, times(2)).execute(any(), eq(replayIdentity));
+    }
+
+    @Test
     void failFastStopsSchedulingAfterFirstFailedCaseAndCannotPromotePartialEvidence() {
         when(registry.find("suite-a", 3, identity)).thenReturn(storedSuite());
         when(executions.describeGraphTarget("graph-a", identity)).thenReturn(graphTarget(TARGET, true));

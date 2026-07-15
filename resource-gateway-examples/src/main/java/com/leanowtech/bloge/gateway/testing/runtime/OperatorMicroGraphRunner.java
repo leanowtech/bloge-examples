@@ -76,7 +76,8 @@ public class OperatorMicroGraphRunner {
                 request.fixtureSource(),
                 Map.copyOf(metadata),
                 request.certificationEligible()
-                        && assessment.classification() == Classification.EXECUTABLE_UNIT));
+                        && assessment.classification() == Classification.EXECUTABLE_UNIT,
+                request.replayPayloads()));
         return new Result(assessment.classification(), bindingFingerprint,
                 assessment.reasons(), execution);
     }
@@ -144,13 +145,15 @@ public class OperatorMicroGraphRunner {
      * @param fixtureSource fixture provenance
      * @param certificationEligible binding-level certification readiness
      * @param metadata bounded caller provenance
+     * @param replayPayloads run-scoped replay values resolved by the authorized API boundary
      */
     public record Request(String operatorRef, Operator<?, ?> operator,
                           String runtimeBindingFingerprint, Object input,
                           FixtureBundle fixtureBundle, String authorizedPurpose,
                           TestExecutionRequest.FixtureSource fixtureSource,
                           boolean certificationEligible,
-                          Map<String, Object> metadata) {
+                          Map<String, Object> metadata,
+                          ResolvedReplayPayloads replayPayloads) {
         /** Normalizes request identifiers. */
         public Request {
             operatorRef = normalized(operatorRef);
@@ -160,6 +163,19 @@ public class OperatorMicroGraphRunner {
             authorizedPurpose = authorizedPurpose == null ? "OPERATOR_UNIT_TEST" : authorizedPurpose.trim();
             fixtureSource = fixtureSource == null ? TestExecutionRequest.FixtureSource.INLINE : fixtureSource;
             metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
+            replayPayloads = replayPayloads == null ? ResolvedReplayPayloads.empty() : replayPayloads;
+        }
+
+        /** Backward-compatible request without governed replay dependencies. */
+        public Request(String operatorRef, Operator<?, ?> operator,
+                       String runtimeBindingFingerprint, Object input,
+                       FixtureBundle fixtureBundle, String authorizedPurpose,
+                       TestExecutionRequest.FixtureSource fixtureSource,
+                       boolean certificationEligible,
+                       Map<String, Object> metadata) {
+            this(operatorRef, operator, runtimeBindingFingerprint, input, fixtureBundle,
+                    authorizedPurpose, fixtureSource, certificationEligible, metadata,
+                    ResolvedReplayPayloads.empty());
         }
 
         /** Backward-compatible request without caller provenance metadata. */
@@ -168,7 +184,7 @@ public class OperatorMicroGraphRunner {
                        FixtureBundle fixtureBundle, String authorizedPurpose,
                        TestExecutionRequest.FixtureSource fixtureSource) {
             this(operatorRef, operator, runtimeBindingFingerprint, input, fixtureBundle,
-                    authorizedPurpose, fixtureSource, true, Map.of());
+                    authorizedPurpose, fixtureSource, true, Map.of(), ResolvedReplayPayloads.empty());
         }
 
         /** Backward-compatible request that assumes the caller already froze certification readiness. */
@@ -178,7 +194,7 @@ public class OperatorMicroGraphRunner {
                        TestExecutionRequest.FixtureSource fixtureSource,
                        Map<String, Object> metadata) {
             this(operatorRef, operator, runtimeBindingFingerprint, input, fixtureBundle,
-                    authorizedPurpose, fixtureSource, true, metadata);
+                    authorizedPurpose, fixtureSource, true, metadata, ResolvedReplayPayloads.empty());
         }
     }
 

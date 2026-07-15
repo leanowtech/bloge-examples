@@ -274,6 +274,65 @@ class TestExecutionControllerTest {
     }
 
     @Test
+    void replayPurposeMayResolveFixturesAcrossGraphFixtureAndSuiteEndpoints() throws Exception {
+        TestExecutionApiService execution = mock(TestExecutionApiService.class);
+        TestSuiteRegistryService suites = mock(TestSuiteRegistryService.class);
+        TestSuiteExecutionService suiteRuns = mock(TestSuiteExecutionService.class);
+        TestExecutionApiRequest.Target target = new TestExecutionApiRequest.Target(
+                "GRAPH", "graph-a", "sha256:" + "a".repeat(64));
+        when(execution.execute(any(), any())).thenReturn(new TestExecutionApiResponse(
+                "", "run-replay", target, null, null, null));
+        com.leanowtech.bloge.gateway.testing.domain.FixtureBundle fixture =
+                new com.leanowtech.bloge.gateway.testing.domain.FixtureBundle(
+                        "", "fixture-a", 1, target.fingerprint(), "INTERNAL", null, null,
+                        List.of(), List.of(), Map.of());
+        when(execution.registerFixture(eq("fixture-a"), any(), any())).thenReturn(
+                new StoredFixtureBundle("", "tenant-a", "test", "fixture-a", 1,
+                        "sha256:" + "b".repeat(64), fixture, Instant.now(), "runner"));
+        when(suiteRuns.execute(eq("suite-a"), any(), any())).thenReturn(
+                new TestSuiteExecutionResponse("", "suite-replay", "sha256:" + "c".repeat(64), null));
+        MockMvc mvc = mvc(execution, suites, suiteRuns, Set.of("TEST_REPLAY"));
+
+        mvc.perform(post("/api/testing/executions")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_REPLAY")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"target":{"kind":"GRAPH","id":"graph-a","fingerprint":""},
+                                 "executionPurpose":"GRAPH_CONTRACT_TEST","context":{},"verbosity":"SUMMARY"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.runId").value("run-replay"));
+        mvc.perform(put("/api/testing/fixture-bundles/fixture-a")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_REPLAY")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"target":{"kind":"GRAPH","id":"graph-a","fingerprint":""}}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fixtureBundleId").value("fixture-a"));
+        mvc.perform(post("/api/testing/suites/suite-a/executions")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_REPLAY")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"suiteRef":{"suiteId":"suite-a","revision":1,
+                                 "fingerprint":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+                                 "clientRequestId":"replay-ci","strategy":"COLLECT_ALL","metadata":{}}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.suiteRunId").value("suite-replay"));
+
+        verify(execution).execute(any(), org.mockito.ArgumentMatchers.argThat(identity ->
+                identity.purpose().equals("TEST_REPLAY")));
+        verify(execution).registerFixture(eq("fixture-a"), any(),
+                org.mockito.ArgumentMatchers.argThat(identity -> identity.purpose().equals("TEST_REPLAY")));
+        verify(suiteRuns).execute(eq("suite-a"), any(),
+                org.mockito.ArgumentMatchers.argThat(identity -> identity.purpose().equals("TEST_REPLAY")));
+    }
+
+    @Test
     void catalogMaterializationUsesSuiteWritePurposeAndVerifiedScope() throws Exception {
         TestExecutionApiService execution = mock(TestExecutionApiService.class);
         TestSuiteRegistryService suites = mock(TestSuiteRegistryService.class);

@@ -15,7 +15,8 @@ public record TestExecutionRequest(
         String targetFingerprint,
         FixtureSource fixtureSource,
         Map<String, Object> metadata,
-        boolean certificationEligible
+        boolean certificationEligible,
+        ResolvedReplayPayloads replayPayloads
 ) {
     /** Provenance used for evidence trust classification. */
     public enum FixtureSource {
@@ -30,6 +31,7 @@ public record TestExecutionRequest(
         targetFingerprint = targetFingerprint == null ? "" : targetFingerprint.trim();
         fixtureSource = fixtureSource == null ? FixtureSource.INLINE : fixtureSource;
         metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
+        replayPayloads = replayPayloads == null ? ResolvedReplayPayloads.empty() : replayPayloads;
     }
 
     /** Backward-compatible internal constructor for already-frozen adapters. */
@@ -37,6 +39,15 @@ public record TestExecutionRequest(
                                 String authorizedPurpose, String targetFingerprint,
                                 FixtureSource fixtureSource, Map<String, Object> metadata) {
         this(graph, context, fixtureBundle, authorizedPurpose, targetFingerprint,
-                fixtureSource, metadata, true);
+                fixtureSource, metadata, true, ResolvedReplayPayloads.empty());
+    }
+
+    /** Backward-compatible internal constructor without governed replay dependencies. */
+    public TestExecutionRequest(Graph graph, GraphContext context, FixtureBundle fixtureBundle,
+                                String authorizedPurpose, String targetFingerprint,
+                                FixtureSource fixtureSource, Map<String, Object> metadata,
+                                boolean certificationEligible) {
+        this(graph, context, fixtureBundle, authorizedPurpose, targetFingerprint,
+                fixtureSource, metadata, certificationEligible, ResolvedReplayPayloads.empty());
     }
 }

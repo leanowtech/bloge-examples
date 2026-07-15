@@ -9,12 +9,11 @@ import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.operator.SideEffectProtocol;
 import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.core.schema.OpaqueSchema;
+import com.leanowtech.bloge.core.schema.SchemaValidator;
 import com.leanowtech.bloge.gateway.operator.HttpResourceInput;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOutput;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
-import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
-import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -56,12 +55,34 @@ public class TestDoubleFactory {
                                            List<FixtureRule> rules,
                                            Object realOperator, boolean implicitDeny,
                                            InvocationRecorder recorder) {
+        return create(node, binding, rules, realOperator, implicitDeny, recorder,
+                ResolvedReplayPayloads.empty());
+    }
+
+    /**
+     * Creates one controlled operator with exact run-scoped replay values.
+     *
+     * @param node frozen node specification
+     * @param binding occurrence-specific invocation coordinates
+     * @param rules preflight-resolved candidate rules
+     * @param realOperator frozen real binding
+     * @param implicitDeny whether the planner synthesized fail-closed denial
+     * @param recorder per-run trace and consumption recorder
+     * @param replayPayloads payloads frozen before plan compilation
+     * @return operator passed only to the independent test engine
+     */
+    @SuppressWarnings("unchecked")
+    public Operator<Object, Object> create(NodeSpec node, InvocationRecorder.InvocationBinding binding,
+                                           List<FixtureRule> rules,
+                                           Object realOperator, boolean implicitDeny,
+                                           InvocationRecorder recorder,
+                                           ResolvedReplayPayloads replayPayloads) {
         if (!(realOperator instanceof Operator<?, ?> typed)) {
             throw new IllegalArgumentException("Node '" + node.id()
                     + "' is not a synchronous Operator and cannot use v1 execution control.");
         }
         Operator<Object, Object> controlled = new ControlledOperator(node, binding.site(), rules,
-                (Operator<Object, Object>) typed, implicitDeny, recorder);
+                (Operator<Object, Object>) typed, implicitDeny, recorder, replayPayloads);
         return observed(node, binding, controlled, recorder);
     }
 
@@ -100,16 +121,20 @@ public class TestDoubleFactory {
         private final Operator<Object, Object> real;
         private final boolean implicitDeny;
         private final InvocationRecorder recorder;
+        private final ResolvedReplayPayloads replayPayloads;
 
         private ControlledOperator(NodeSpec node, InvocationSite site, List<FixtureRule> rules,
                                    Operator<Object, Object> real, boolean implicitDeny,
-                                   InvocationRecorder recorder) {
+                                   InvocationRecorder recorder,
+                                   ResolvedReplayPayloads replayPayloads) {
             this.node = node;
             this.site = Objects.requireNonNull(site, "site");
             this.rules = List.copyOf(rules);
             this.real = real;
             this.implicitDeny = implicitDeny;
             this.recorder = recorder;
+            this.replayPayloads = replayPayloads == null
+                    ? ResolvedReplayPayloads.empty() : replayPayloads;
         }
 
         @Override
@@ -181,10 +206,25 @@ public class TestDoubleFactory {
                     recorder.markFidelity(site, "OUTPUT_LEVEL");
                     throw controlledFailure(behavior, "TEST_CONTROL_DENIED");
                 }
-                case STREAM, REPLAY -> throw new TestControlException(
+                case REPLAY -> replayValue(rule);
+                case STREAM -> throw new TestControlException(
                         "CONTROL_PLAN_RESERVED_BEHAVIOR", "CONTROL_PLAN",
                         "Behavior " + behavior.kind() + " is reserved in v1.");
             };
+        }
+
+        private Object replayValue(FixtureRule rule) {
+            recorder.markFidelity(site, "REPLAYED");
+            Object output;
+            try {
+                output = replayPayloads.require(rule.behavior().replayRef())
+                        .materialize(objectMapper, node.operatorRef());
+            } catch (IllegalArgumentException missing) {
+                throw new TestControlException("REPLAY_PAYLOAD_NOT_FROZEN", "REPLAY",
+                        "Replay payload was not frozen into the effective execution plan.");
+            }
+            validateOutput(rule, output);
+            return output;
         }
 
         private Object returnValue(FixtureRule rule, Object input, OperatorContext context) throws Exception {
@@ -216,11 +256,8 @@ public class TestDoubleFactory {
                     || node.outputSchema() instanceof OpaqueSchema) {
                 return;
             }
-            SchemaEnvelope schema = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12",
-                    node.outputSchema().toMap());
-            List<String> errors = VisualSchemaValidator.validateValue(schema, schemaVisible(output), "/output")
-                    .stream().filter(diagnostic -> diagnostic.error())
-                    .map(diagnostic -> diagnostic.message()).toList();
+            List<String> errors = SchemaValidator.validateInstance(node.id(), output, node.outputSchema())
+                    .stream().map(violation -> violation.path() + ": " + violation.message()).toList();
             if (!errors.isEmpty()) {
                 throw new TestControlException("FIXTURE_OUTPUT_SCHEMA_MISMATCH", "SCHEMA_VALIDATION",
                         String.join("; ", errors));
@@ -328,31 +365,4 @@ public class TestDoubleFactory {
         return new HttpResourceInput(resourceId == null ? "" : String.valueOf(resourceId), params);
     }
 
-    private Object schemaVisible(Object value) {
-        if (value == null || value instanceof String || value instanceof Number || value instanceof Boolean) {
-            return value;
-        }
-        if (value instanceof Map<?, ?> map) {
-            Map<String, Object> normalized = new LinkedHashMap<>();
-            map.forEach((key, item) -> normalized.put(String.valueOf(key), schemaVisible(item)));
-            return normalized;
-        }
-        if (value instanceof List<?> list) {
-            return list.stream().map(this::schemaVisible).toList();
-        }
-        if (value.getClass().isRecord()) {
-            Map<String, Object> normalized = new LinkedHashMap<>();
-            for (var component : value.getClass().getRecordComponents()) {
-                try {
-                    normalized.put(component.getName(),
-                            schemaVisible(component.getAccessor().invoke(value)));
-                } catch (ReflectiveOperationException ex) {
-                    throw new TestControlException("FIXTURE_OUTPUT_NORMALIZATION_FAILED",
-                            "SCHEMA_VALIDATION", "Cannot inspect fixture output record.");
-                }
-            }
-            return normalized;
-        }
-        return value;
-    }
 }
