@@ -93,6 +93,17 @@ public class TestRuntimeConfiguration {
                 fixtureRepository, suiteRepository, securityEvents);
     }
 
+    /** Assembles deterministic migration of the trusted legacy graph catalog. */
+    @Bean
+    TestSuiteCatalogMaterializationService testSuiteCatalogMaterializationService(
+            TestExecutionApiService executionService,
+            TestSuiteRegistryService suiteRegistry,
+            GatewayGraphService graphService,
+            ObjectMapper objectMapper) {
+        return new TestSuiteCatalogMaterializationService(
+                executionService, suiteRegistry, graphService, objectMapper);
+    }
+
     /** Assembles the idempotent immutable-suite runner and coverage evaluator. */
     @Bean
     TestSuiteExecutionService testSuiteExecutionService(

@@ -5,7 +5,8 @@ Resource Gateway testing control plane without depending on its Spring Boot
 implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 
 - a bounded JDK HTTP client for graph/operator target discovery, fixture and immutable-suite
-  registries, graph/operator execution, suite execution, and persisted child/aggregate-run lookup;
+  registries, built-in graph-catalog materialization, graph/operator execution, suite execution,
+  and persisted child/aggregate-run lookup;
 - a fail-closed `FixtureBundleBuilder` for output-level and transport-level
   protocol fixtures;
 - a dependency-closed `TestSuiteBuilder` with exact target and fixture references;
@@ -140,6 +141,23 @@ JUnitXmlReportWriter.writeSuite(
         suiteRun,
         true);
 ```
+
+Migrate the seven built-in graph suites into the same immutable registry without parsing raw maps:
+
+```java
+TestSuiteCatalogMaterialization catalog =
+        client.materializeBuiltInGraphContractCatalog();
+
+for (TestSuiteCatalogMaterialization.SuiteAsset asset : catalog.suites()) {
+    TestSuiteCatalogMaterialization.ExactSuiteRef ref = asset.suiteRef();
+    System.out.println(asset.sourceSuiteId() + " -> " + ref.exactRef());
+}
+```
+
+The operation is idempotent for unchanged graph dependencies and source cases. Its payload-free exact
+references can be supplied directly to `executeSuite` or to the CI command below; target, descriptor,
+case, intent, assertion, or policy changes produce a new immutable revision instead of overwriting
+history.
 
 `TestSuiteRun` links each case to its child `runId`, exact fixture revision, evidence class,
 assertion counters, and stable diagnostic code. It intentionally excludes child inputs, outputs,

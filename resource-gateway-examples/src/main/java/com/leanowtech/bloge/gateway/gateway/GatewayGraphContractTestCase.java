@@ -15,6 +15,7 @@ import java.util.Map;
  * @param outputNode optional terminal node override
  * @param assertions output assertions
  * @param nodeAssertions node-scoped assertions keyed by graph node id
+ * @param caseType governance intent retained when the case becomes an immutable common suite asset
  */
 public record GatewayGraphContractTestCase(
         String schemaVersion,
@@ -24,9 +25,18 @@ public record GatewayGraphContractTestCase(
         List<GatewayGraphResourceMock> resourceMocks,
         String outputNode,
         List<GatewayGraphTestAssertion> assertions,
-        Map<String, List<GatewayGraphTestAssertion>> nodeAssertions
+        Map<String, List<GatewayGraphTestAssertion>> nodeAssertions,
+        CaseType caseType
 ) {
     public static final String SCHEMA_VERSION = "bloge.gatewayGraphContractTestCase.v1";
+
+    /** Governance intent shared with the common TestSuite protocol during catalog migration. */
+    public enum CaseType {
+        GOLDEN,
+        NEGATIVE,
+        BOUNDARY,
+        REGRESSION
+    }
 
     /**
      * Creates a test case.
@@ -48,6 +58,22 @@ public record GatewayGraphContractTestCase(
                     nodeAssertionsForNode == null ? List.of() : List.copyOf(nodeAssertionsForNode)));
             nodeAssertions = Map.copyOf(normalized);
         }
+        caseType = caseType == null ? CaseType.REGRESSION : caseType;
+    }
+
+    /**
+     * Preserves the original canonical constructor and defaults legacy rows to regression intent.
+     */
+    public GatewayGraphContractTestCase(String schemaVersion,
+                                        String name,
+                                        String description,
+                                        Map<String, Object> context,
+                                        List<GatewayGraphResourceMock> resourceMocks,
+                                        String outputNode,
+                                        List<GatewayGraphTestAssertion> assertions,
+                                        Map<String, List<GatewayGraphTestAssertion>> nodeAssertions) {
+        this(schemaVersion, name, description, context, resourceMocks, outputNode, assertions,
+                nodeAssertions, CaseType.REGRESSION);
     }
 
     /**
@@ -58,7 +84,8 @@ public record GatewayGraphContractTestCase(
                                         List<GatewayGraphResourceMock> resourceMocks,
                                         String outputNode,
                                         List<GatewayGraphTestAssertion> assertions) {
-        this(SCHEMA_VERSION, name, "", context, resourceMocks, outputNode, assertions, Map.of());
+        this(SCHEMA_VERSION, name, "", context, resourceMocks, outputNode, assertions, Map.of(),
+                CaseType.REGRESSION);
     }
 
     /**
@@ -70,6 +97,26 @@ public record GatewayGraphContractTestCase(
                                         String outputNode,
                                         List<GatewayGraphTestAssertion> assertions,
                                         Map<String, List<GatewayGraphTestAssertion>> nodeAssertions) {
-        this(SCHEMA_VERSION, name, "", context, resourceMocks, outputNode, assertions, nodeAssertions);
+        this(SCHEMA_VERSION, name, "", context, resourceMocks, outputNode, assertions, nodeAssertions,
+                CaseType.REGRESSION);
+    }
+
+    /**
+     * Creates a table row with an explicit governance intent.
+     *
+     * @param caseType case intent used by common suite coverage
+     * @param name display name
+     * @param context graph context input
+     * @param resourceMocks mocked downstream resource responses
+     * @param outputNode optional terminal node override
+     * @param assertions output assertions
+     */
+    public GatewayGraphContractTestCase(CaseType caseType,
+                                        String name,
+                                        Map<String, Object> context,
+                                        List<GatewayGraphResourceMock> resourceMocks,
+                                        String outputNode,
+                                        List<GatewayGraphTestAssertion> assertions) {
+        this(SCHEMA_VERSION, name, "", context, resourceMocks, outputNode, assertions, Map.of(), caseType);
     }
 }

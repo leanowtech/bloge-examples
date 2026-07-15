@@ -73,7 +73,14 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("immutableTestSuiteRegistry", true)
                 .containsEntry("immutableTestSuiteExecution", true)
-                .containsEntry("suiteSemanticCoverageVerdict", true);
+                .containsEntry("suiteSemanticCoverageVerdict", true)
+                .containsEntry("builtInGraphSuiteCatalogMaterialization", true);
+        assertThat(capabilities.getBody().payload().supportedObjects())
+                .containsEntry("testSuiteCatalogMaterialization",
+                        List.of(TestSuiteCatalogMaterializationResponse.SCHEMA_VERSION));
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.method().equals("PUT")
+                        && endpoint.path().equals("/api/testing/catalogs/gateway-graph-contract-v1"));
 
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth("bloge-aneke-demo-token");

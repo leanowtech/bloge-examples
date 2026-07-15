@@ -10,11 +10,9 @@ import com.leanowtech.bloge.core.model.NodeStatus;
 import com.leanowtech.bloge.core.model.NodeSpec;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.operator.HttpResourceInput;
-import com.leanowtech.bloge.gateway.operator.HttpResourceOutput;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
-import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
@@ -31,7 +29,7 @@ import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -61,6 +59,8 @@ public class GatewayGraphContractTestService {
     private final OperatorRegistry operatorRegistry;
     private final ResourceRegistry resourceRegistry;
     private final BlgeExpressionEvaluator expressionEvaluator;
+    private final GatewayGraphContractFixtureMapper fixtureMapper =
+            new GatewayGraphContractFixtureMapper();
 
     /**
      * @param graphService resource graph service
@@ -434,69 +434,8 @@ public class GatewayGraphContractTestService {
     private FixtureBundle contractFixtureBundle(GatewayGraphContractTestCase testCase,
                                                 GatewayGraphContract contract,
                                                 String targetFingerprint) {
-        List<FixtureRule> rules = new ArrayList<>();
-        for (int i = 0; i < testCase.resourceMocks().size(); i++) {
-            GatewayGraphResourceMock mock = testCase.resourceMocks().get(i);
-            FixtureRule.Selector selector = FixtureRule.Selector.resource(mock.resourceId());
-            if (!mock.expectedParams().isEmpty()) {
-                selector = selector.matching(FixtureRule.Match.pathEquals("/params", mock.expectedParams()));
-            }
-            FixtureRule.Behavior behavior = resourceBehavior(mock);
-            FixtureRule.Consumption consumption = new FixtureRule.Consumption(
-                    mock.required(), mock.minUses(), mock.maxUses(),
-                    FixtureRule.ExhaustedAction.FAIL, FixtureRule.UnmatchedAction.FAIL);
-            rules.add(new FixtureRule(FixtureRule.SCHEMA_VERSION, "resource-mock-" + i,
-                    selector, behavior, consumption, FixtureRule.SchemaCheck.strict()));
-        }
-        return new FixtureBundle(FixtureBundle.SCHEMA_VERSION,
-                "gateway-contract:" + testCase.name(), 1, targetFingerprint, "INTERNAL",
-                null, null, rules, kernelAssertions(testCase, contract),
-                Map.of("adapter", "gateway-graph-contract-v1"));
-    }
-
-    private FixtureRule.Behavior resourceBehavior(GatewayGraphResourceMock mock) {
-        if (mock.fixtureMode() == GatewayGraphResourceMock.FixtureMode.OUTPUT_LEVEL) {
-            return FixtureRule.Behavior.returning(new HttpResourceOutput(
-                    mock.resourceId(), mock.statusCode(), mock.payload(), mock.rawBody(),
-                    Duration.ofMillis(mock.durationMs()), mock.success()));
-        }
-        FixtureRule.DoubleBoundary boundary = mock.fixtureMode()
-                == GatewayGraphResourceMock.FixtureMode.TRANSPORT_LEVEL
-                ? FixtureRule.DoubleBoundary.TRANSPORT
-                : FixtureRule.DoubleBoundary.NODE;
-        return FixtureRule.Behavior.protocolResponse(mock.rawBody(), mock.statusCode(),
-                mock.responseHeaders(), boundary);
-    }
-
-    private List<FixtureBundle.Assertion> kernelAssertions(GatewayGraphContractTestCase testCase,
-                                                           GatewayGraphContract contract) {
-        List<FixtureBundle.Assertion> assertions = new ArrayList<>();
-        String outputNode = testCase.outputNode().isBlank()
-                ? contract.outputNodes().stream().findFirst().orElse("")
-                : testCase.outputNode();
-        assertions.add(new FixtureBundle.Assertion("OUTPUT_PATH", outputNode, "", "MATCHES_SCHEMA",
-                contract.outputSchema().schema(), null));
-        testCase.assertions().forEach(assertion -> assertions.add(kernelAssertion(
-                "OUTPUT_PATH", outputNode, assertion)));
-        testCase.nodeAssertions().forEach((nodeId, values) -> values.forEach(assertion ->
-                assertions.add(kernelAssertion("NODE_OUTPUT", nodeId, assertion))));
-        return List.copyOf(assertions);
-    }
-
-    private static FixtureBundle.Assertion kernelAssertion(String scope, String nodeId,
-                                                            GatewayGraphTestAssertion assertion) {
-        return switch (assertion.mode()) {
-            case OUTPUT_EQUALS -> new FixtureBundle.Assertion(
-                    scope, nodeId, "", "EQUALS", assertion.expectedValue(), null);
-            case OUTPUT_MATCHES_SCHEMA -> new FixtureBundle.Assertion(
-                    scope, nodeId, "", "MATCHES_SCHEMA", assertion.expectedValue(), null);
-            case PATH_EQUALS -> new FixtureBundle.Assertion(
-                    scope, nodeId, assertion.path(), "EQUALS", assertion.expectedValue(), null);
-            case PATH_EXISTS -> new FixtureBundle.Assertion(
-                    scope, nodeId, assertion.path(), "EXISTS", null, null);
-            case PATH_ABSENT -> new FixtureBundle.Assertion(
-                    scope, nodeId, assertion.path(), "ABSENT", null, null);
-        };
+        return fixtureMapper.map("gateway-contract:" + testCase.name(), 1, targetFingerprint,
+                testCase, contract, Map.of("adapter", "gateway-graph-contract-v1"));
     }
 
     private GraphExecutionTargetSnapshot targetSnapshot(Graph graph) {
@@ -599,7 +538,7 @@ public class GatewayGraphContractTestService {
                                                         JsonNode outputNode,
                                                         String target) {
         if (assertion.mode() == GatewayGraphTestAssertion.Mode.OUTPUT_EQUALS) {
-            return jsonEquals(assertion.expectedValue(), output)
+            return jsonEquals(assertion.expectedValue(), output, assertion.numericTolerance())
                     ? List.of()
                     : List.of(assertionFailed(subject, "output equals expected value", target + "/expectedValue"));
         }
@@ -614,7 +553,8 @@ public class GatewayGraphContractTestService {
         }
         JsonNode actualValue = outputNode.at(assertion.path());
         return switch (assertion.mode()) {
-            case PATH_EQUALS -> jsonEquals(assertion.expectedValue(), actualValue)
+            case PATH_EQUALS -> jsonEquals(assertion.expectedValue(), actualValue,
+                    assertion.numericTolerance())
                     ? List.of()
                     : List.of(assertionFailed(subject,
                             "path '%s' equals expected value".formatted(assertion.path()),
@@ -680,15 +620,30 @@ public class GatewayGraphContractTestService {
                 target);
     }
 
-    private boolean jsonEquals(Object expected, Object actual) {
+    private boolean jsonEquals(Object expected, Object actual, Double tolerance) {
+        if (tolerance != null && expected instanceof Number expectedNumber
+                && actual instanceof Number actualNumber) {
+            return withinTolerance(expectedNumber, actualNumber, tolerance);
+        }
         JsonNode expectedNode = objectMapper.valueToTree(expected);
         JsonNode actualNode = objectMapper.valueToTree(actual);
         return expectedNode.equals(actualNode);
     }
 
-    private boolean jsonEquals(Object expected, JsonNode actual) {
+    private boolean jsonEquals(Object expected, JsonNode actual, Double tolerance) {
+        if (tolerance != null && expected instanceof Number expectedNumber && actual.isNumber()) {
+            BigDecimal delta = actual.decimalValue()
+                    .subtract(new BigDecimal(String.valueOf(expectedNumber))).abs();
+            return delta.compareTo(BigDecimal.valueOf(tolerance)) <= 0;
+        }
         JsonNode expectedNode = objectMapper.valueToTree(expected);
         return expectedNode.equals(actual);
+    }
+
+    private static boolean withinTolerance(Number expected, Number actual, double tolerance) {
+        BigDecimal delta = new BigDecimal(String.valueOf(actual))
+                .subtract(new BigDecimal(String.valueOf(expected))).abs();
+        return delta.compareTo(BigDecimal.valueOf(tolerance)) <= 0;
     }
 
     private static boolean validJsonPointer(String path) {

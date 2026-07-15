@@ -12,7 +12,7 @@ import java.util.Map;
  * nested resource fixtures and occurrence-addressable evidence prove each parallel item remains
  * isolated and auditable.</p>
  */
-final class BuiltInGatewayGraphContractTestSuites {
+public final class BuiltInGatewayGraphContractTestSuites {
 
     private BuiltInGatewayGraphContractTestSuites() {
     }
@@ -22,7 +22,7 @@ final class BuiltInGatewayGraphContractTestSuites {
      *
      * @return immutable built-in suite catalog
      */
-    static List<GatewayGraphContractTestSuite> all() {
+    public static List<GatewayGraphContractTestSuite> all() {
         return List.of(
                 aiEnrichedSearch(),
                 creditScore(),
@@ -34,7 +34,7 @@ final class BuiltInGatewayGraphContractTestSuites {
     }
 
     private static GatewayGraphContractTestSuite aiEnrichedSearch() {
-        GatewayGraphContractTestCase search = testCase(
+        GatewayGraphContractTestCase search = testCase(GatewayGraphContractTestCase.CaseType.GOLDEN,
                 "materializes metadata tokens and citations",
                 Map.of("query", "How does BLOGE stream graph output?"),
                 List.of(),
@@ -51,7 +51,7 @@ final class BuiltInGatewayGraphContractTestSuites {
     }
 
     private static GatewayGraphContractTestSuite creditScore() {
-        GatewayGraphContractTestCase primary = testCase(
+        GatewayGraphContractTestCase primary = testCase(GatewayGraphContractTestCase.CaseType.GOLDEN,
                 "primary provider wins",
                 Map.of("userId", "primary-user"),
                 List.of(transport(
@@ -65,7 +65,7 @@ final class BuiltInGatewayGraphContractTestSuites {
                 Map.of("userId", "secondary-user"),
                 "{\"errorMessage\":\"primary capacity exhausted\"}",
                 503).expectingUses(2, 2);
-        GatewayGraphContractTestCase secondary = testCase(
+        GatewayGraphContractTestCase secondary = testCase(GatewayGraphContractTestCase.CaseType.NEGATIVE,
                 "secondary provider serves after primary retry exhaustion",
                 Map.of("userId", "secondary-user"),
                 List.of(
@@ -87,7 +87,7 @@ final class BuiltInGatewayGraphContractTestSuites {
     }
 
     private static GatewayGraphContractTestSuite enrichOrderList() {
-        GatewayGraphContractTestCase emptyList = testCase(
+        GatewayGraphContractTestCase emptyList = testCase(GatewayGraphContractTestCase.CaseType.BOUNDARY,
                 "empty order list completes without nested resource calls",
                 Map.of("userId", "no-orders"),
                 List.of(transport(
@@ -96,7 +96,7 @@ final class BuiltInGatewayGraphContractTestSuites {
                         "{\"success\":true,\"data\":{\"orders\":[]}}")),
                 "collectEnriched",
                 equal("/orders", List.of()));
-        GatewayGraphContractTestCase twoOrders = testCase(
+        GatewayGraphContractTestCase twoOrders = testCase(GatewayGraphContractTestCase.CaseType.GOLDEN,
                 "two orders receive independent shipping and invoice enrichment",
                 Map.of("userId", "two-orders"),
                 List.of(
@@ -128,7 +128,7 @@ final class BuiltInGatewayGraphContractTestSuites {
     }
 
     private static GatewayGraphContractTestSuite loanDecisionPolicy() {
-        GatewayGraphContractTestCase prime = testCase(
+        GatewayGraphContractTestCase prime = testCase(GatewayGraphContractTestCase.CaseType.GOLDEN,
                 "prime applicant approves through R1",
                 Map.of("applicantId", "prime", "requestedAmount", 450_000.0),
                 List.of(transport(
@@ -137,7 +137,7 @@ final class BuiltInGatewayGraphContractTestSuites {
                         "{\"code\":0,\"message\":\"OK\",\"data\":{\"applicantId\":\"prime\",\"score\":780,\"segment\":\"private-bank\"}}")),
                 "assembleLoanDecision",
                 equal("/policy/ruleId", "R1"), equal("/policy/decision", "approved"));
-        GatewayGraphContractTestCase declined = testCase(
+        GatewayGraphContractTestCase declined = testCase(GatewayGraphContractTestCase.CaseType.NEGATIVE,
                 "declined applicant falls through R4",
                 Map.of("applicantId", "decline", "requestedAmount", 120_000.0),
                 List.of(transport(
@@ -157,7 +157,7 @@ final class BuiltInGatewayGraphContractTestSuites {
     }
 
     private static GatewayGraphContractTestSuite productDetail() {
-        GatewayGraphContractTestCase physical = testCase(
+        GatewayGraphContractTestCase physical = testCase(GatewayGraphContractTestCase.CaseType.GOLDEN,
                 "physical product receives shipping details",
                 Map.of("productId", "physical-1"),
                 List.of(
@@ -167,7 +167,7 @@ final class BuiltInGatewayGraphContractTestSuites {
                                 "{\"shippable\":true,\"estimatedDays\":3,\"carrier\":\"FedEx\"}")),
                 "assemblePhysical",
                 equal("/productType", "physical"), equal("/shipping/estimatedDays", 3));
-        GatewayGraphContractTestCase digital = testCase(
+        GatewayGraphContractTestCase digital = testCase(GatewayGraphContractTestCase.CaseType.GOLDEN,
                 "digital product receives license details",
                 Map.of("productId", "digital-1"),
                 List.of(
@@ -177,7 +177,7 @@ final class BuiltInGatewayGraphContractTestSuites {
                                 "{\"valid\":true,\"license\":{\"licenseType\":\"perpetual\",\"downloadUrl\":\"https://cdn.example.com/editor\"}}")),
                 "assembleDigital",
                 equal("/productType", "digital"), equal("/license/licenseType", "perpetual"));
-        GatewayGraphContractTestCase generic = testCase(
+        GatewayGraphContractTestCase generic = testCase(GatewayGraphContractTestCase.CaseType.BOUNDARY,
                 "unknown product type uses generic branch",
                 Map.of("productId", "service-1"),
                 List.of(transport("catalog-service.getProduct", Map.of("productId", "service-1"),
@@ -196,7 +196,7 @@ final class BuiltInGatewayGraphContractTestSuites {
     }
 
     private static GatewayGraphContractTestSuite resourceDispatch() {
-        GatewayGraphContractTestCase profile = testCase(
+        GatewayGraphContractTestCase profile = testCase(GatewayGraphContractTestCase.CaseType.REGRESSION,
                 "dispatches a BodyCode profile descriptor",
                 Map.of("resourceId", "user-service.getProfile", "params", Map.of("userId", "dispatch-user")),
                 List.of(transport(
@@ -207,7 +207,7 @@ final class BuiltInGatewayGraphContractTestSuites {
                 equal("/resourceId", "user-service.getProfile"),
                 equal("/payload/name", "Ada"),
                 equal("/success", true));
-        GatewayGraphContractTestCase invoice = testCase(
+        GatewayGraphContractTestCase invoice = testCase(GatewayGraphContractTestCase.CaseType.REGRESSION,
                 "dispatches a query-mapped invoice descriptor",
                 Map.of("resourceId", "invoice-service.getInvoice", "params", Map.of("orderId", "order-42")),
                 List.of(transport(
@@ -229,7 +229,7 @@ final class BuiltInGatewayGraphContractTestSuites {
     }
 
     private static GatewayGraphContractTestSuite userDashboard() {
-        GatewayGraphContractTestCase happy = testCase(
+        GatewayGraphContractTestCase happy = testCase(GatewayGraphContractTestCase.CaseType.GOLDEN,
                 "all five dashboard resources succeed",
                 Map.of("userId", "dashboard-user"),
                 dashboardFixtures("dashboard-user", false),
@@ -239,7 +239,7 @@ final class BuiltInGatewayGraphContractTestSuites {
                 equal("/recommendations/entries/0", "rec-1"),
                 equal("/wallet", 100.5),
                 equal("/notifications/unread", 3));
-        GatewayGraphContractTestCase degraded = testCase(
+        GatewayGraphContractTestCase degraded = testCase(GatewayGraphContractTestCase.CaseType.NEGATIVE,
                 "optional services degrade after bounded retries",
                 Map.of("userId", "degraded-user"),
                 dashboardFixtures("degraded-user", true),
@@ -296,12 +296,14 @@ final class BuiltInGatewayGraphContractTestSuites {
                 new GatewayGraphContractTestSuiteRequest(graphName, cases), policy);
     }
 
-    private static GatewayGraphContractTestCase testCase(String name,
+    private static GatewayGraphContractTestCase testCase(GatewayGraphContractTestCase.CaseType caseType,
+                                                        String name,
                                                         Map<String, Object> context,
                                                         List<GatewayGraphResourceMock> mocks,
                                                         String outputNode,
                                                         GatewayGraphTestAssertion... assertions) {
-        return new GatewayGraphContractTestCase(name, context, mocks, outputNode, List.of(assertions));
+        return new GatewayGraphContractTestCase(caseType, name, context, mocks, outputNode,
+                List.of(assertions));
     }
 
     private static GatewayGraphContractTestCoveragePolicy policy(int cases,

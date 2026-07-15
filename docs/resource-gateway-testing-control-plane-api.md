@@ -9,8 +9,8 @@
 Machine-readable schema bundle:
 [testing-control-plane-v1.schema.json](schemas/resource-gateway-testing/testing-control-plane-v1.schema.json).
 It defines every public payload: graph/operator target descriptors, fixture and test-suite
-registration/stored revisions, graph/operator and immutable-suite execution requests, common and
-aggregate responses, effective plan, and evidence.
+registration/stored revisions, built-in graph-catalog materialization, graph/operator and
+immutable-suite execution requests, common and aggregate responses, effective plan, and evidence.
 
 ## 1. What This API Is
 
@@ -92,6 +92,7 @@ The local test-profile defaults are:
 | immutable fixture registration | `TEST_FIXTURE_WRITE` |
 | test-suite revision query | `TEST_SUITE_READ` |
 | immutable test-suite registration | `TEST_SUITE_WRITE` |
+| built-in graph catalog materialization | `TEST_SUITE_WRITE` |
 
 The local demo bearer is `bloge-aneke-demo-token` and is granted all five testing purposes.
 Production credentials should keep fixture authors, suite authors, readers, and runners separate.
@@ -509,8 +510,38 @@ Aggregate status is `RUNNING`, `PASSED`, `COMPLETED_WITH_FAILURES`, `PARTIAL`, o
 `promotion.status=ELIGIBLE` means only that the server-owned suite policy is satisfied; it is not a
 signature, certification, owner approval, ANEKE gate decision, or publication.
 
-Test-kit methods and canvas `Save as governed suite` remain adapter work; direct API users can now
-run the authoritative suite asset without rebuilding mutable execution requests case by case.
+The Canvas executable operator suite and standalone test-kit both consume this exact protocol; they
+do not reconstruct an aggregate result from mutable row responses.
+
+### 4.2.4 Materialize the built-in graph catalog
+
+The seven legacy resource-graph suites already execute through the common kernel, but their source
+table assets predate `bloge.testSuite.v1`. Materialize all 14 cases into the caller's tenant and
+environment scope with one idempotent operation:
+
+```bash
+curl -sS -X PUT \
+  http://localhost:8080/api/testing/catalogs/gateway-graph-contract-v1 \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_SUITE_WRITE'
+```
+
+The `bloge.testSuiteCatalogMaterialization.v1` response contains a `catalogFingerprint` and, for
+each source suite, its graph, case count, exact destination suite reference, and one exact fixture
+reference per case. It contains no test payload or registry timestamp. Callers can compare repeated
+responses directly and pass `suites[].suiteRef` to the suite execution endpoint or CI CLI.
+
+Materialization preserves the four case intents, F3 transport fixtures, bounded retry consumption,
+numeric assertion tolerance, graph/output schema assertions, and legacy required-output-node
+coverage. Required node ids are resolved through the planner's frozen invocation inventory, so an
+`httpResource` output is correctly required as `#RESOURCE`, not guessed as `#PRIMARY`.
+
+Destination ids remain stable. Revisions are derived from canonical source content plus the exact
+graph dependency fingerprint. A graph, descriptor, case, assertion, intent, or policy change creates
+a new immutable revision while old evidence remains reproducible. The operation commits fixture
+revisions before their referring suite. If a later item fails, a retry converges on the same content;
+the only possible residue is an unreferenced immutable revision, never a partially mutated suite.
+The registry's unique keys and equivalent-content checks also make concurrent retries fail closed.
 
 ### 4.3 Execute with a stored fixture
 
@@ -663,7 +694,8 @@ JDK HTTP client, JUnit 5 assertions, and JUnit XML:
 mvn -f resource-gateway-test-kit/pom.xml clean install
 ```
 
-The client exposes immutable suite register/find/execute/query operations. Execution requires an
+The client exposes immutable suite register/find/execute/query operations and a typed
+`materializeBuiltInGraphContractCatalog()` operation. Execution requires an
 exact revision, full SHA-256 fingerprint, and explicit `clientRequestId`; malformed identities are
 rejected before any network call. The exact packaged Draft 2020-12 schema validates complete suite
 registration and execution values at runtime, and every returned suite/run identity is rebound to the
@@ -689,8 +721,9 @@ assert, and report example.
 
 ### 4.6 Run the built-in graph dogfooding catalog
 
-The compatibility graph-suite adapter now delegates to the same execution-control kernel. Its stored
-catalog covers all seven built-in graphs with 14 cases:
+The compatibility graph-suite adapter delegates to the same execution-control kernel. Its stored
+catalog covers all seven built-in graphs with 14 cases. The old endpoints remain available for
+authoring compatibility:
 
 ```bash
 curl -sS http://localhost:8080/api/gateway/graphs/contracts/tests/suites
@@ -703,6 +736,12 @@ remain exploratory. `enrichOrderList` includes a certifiable two-item parallel f
 nested shipping and invoice calls are independently controlled and occurrence-addressed. The
 detailed matrix and unreachable-endpoint proof are in
 [Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md).
+
+For governed API/CLI/CI use, call the materialization endpoint from section 4.2.4 and execute the
+returned exact suite references through `/api/testing/suites/{suiteId}/executions`. The end-to-end
+proof that all seven materialized suites return `PASSED + SATISFIED + ELIGIBLE` against unreachable
+real endpoints is recorded in
+[Stage 2 catalog materialization verification](resource-gateway-execution-data-control-plane-stage2-catalog-materialization-verification.md).
 
 ## 5. Verbosity And Persistence
 
@@ -794,9 +833,10 @@ Implemented now:
 - profile-sensitive capability probe and production control-field guard.
 - standalone Maven test-kit with HTTP client, fail-closed fixture/suite builders, child/suite-run
   projections, JUnit 5 assertions, fail-closed CI CLI, payload-free JUnit XML, executable shaded
-  artifact, and packaged canonical JSON Schema.
-- complete seven-graph/14-case built-in dogfooding catalog, F3 legacy-suite migration, bounded retry
-  consumption, and a Spring proof that root and synchronous nested resource calls do not escape fixtures.
+  artifact, typed built-in catalog materialization, and packaged canonical JSON Schema.
+- complete seven-graph/14-case built-in dogfooding catalog, F3 legacy-suite migration into exact
+  fixture/TestSuite revisions, four case intents, numeric tolerance, bounded retry consumption, and
+  a Spring proof that root and synchronous nested resource calls do not escape fixtures.
 - run-scoped advancing logical clock plus bounded `DELAY` and `TIMEOUT`; timeout injection uses the
   real BLOGE retry/fallback chain and emits normalized logical-time evidence.
 - recursively frozen synchronous subgraph/foreach/loop/compensation sites, with run-scoped fixture

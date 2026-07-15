@@ -21,6 +21,7 @@ class TestabilityCapabilitiesTest {
                 "testExecutionBatchRequest", "testExecutionBatchResponse", "fixtureBundleRegistrationRequest",
                 "storedFixtureBundle", "testSuite", "testSuiteRegistrationRequest", "storedTestSuite",
                 "testSuiteExecutionRequest", "testSuiteExecutionResponse", "testSuiteRunEvidence",
+                "testSuiteCatalogMaterialization",
                 "fixtureBundle", "effectiveExecutionPlan", "testRunEvidence",
                 "testGraphTargetDescriptor", "testOperatorExecutionRequest", "testOperatorTargetDescriptor");
         assertThat(enabled.features()).containsEntry("operatorMicroGraphExecution", true)
@@ -28,6 +29,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("immutableTestSuiteExecution", true)
                 .containsEntry("suiteSemanticCoverageVerdict", true)
                 .containsEntry("suitePromotionEligibilityVerdict", true)
+                .containsEntry("builtInGraphSuiteCatalogMaterialization", true)
                 .containsEntry("streamingOperatorTestExecution", false)
                 .containsEntry("suspendableOperatorTestExecution", false);
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.path().equals("/api/testing/executions"));
@@ -45,5 +47,7 @@ class TestabilityCapabilitiesTest {
                 && endpoint.path().equals("/api/testing/suites/{suiteId}/executions"));
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("GET")
                 && endpoint.path().equals("/api/testing/suite-executions/{suiteRunId}"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("PUT")
+                && endpoint.path().equals("/api/testing/catalogs/gateway-graph-contract-v1"));
     }
 }

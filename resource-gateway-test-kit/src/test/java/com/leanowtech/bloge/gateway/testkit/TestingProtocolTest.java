@@ -47,6 +47,8 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1);
             assertConstant(definitions, "testSuiteRunEvidence",
                     TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V1);
+            assertConstant(definitions, "testSuiteCatalogMaterialization",
+                    TestingProtocol.TEST_SUITE_CATALOG_MATERIALIZATION_V1);
         }
     }
 

@@ -12,7 +12,7 @@ isolated, with their own Maven build and dependency lifecycle.
 | `mono-examples/` | Broad BLOGE scenario catalog (beginner flows, integration recipes, durable/session/state-machine patterns, BPMN conversion samples) | Single-module Maven project |
 | `graph-engine-examples/` | Graph-engine control-plane stack (model, mybatis persistence, AI authoring, service facade, server, CLI) | Multi-module Maven reactor |
 | `resource-gateway-examples/` | Spring Boot API resource gateway using DSL orchestration + generic `httpResource` operator | Single-module Maven Spring Boot app |
-| `resource-gateway-test-kit/` | Standalone HTTP client, fixture/suite builders, JUnit 5 assertions/XML, and fail-closed governed-suite CI CLI | Maven library + executable CLI JAR |
+| `resource-gateway-test-kit/` | Standalone HTTP client, typed graph-catalog materialization, fixture/suite builders, JUnit 5 assertions/XML, and fail-closed governed-suite CI CLI | Maven library + executable CLI JAR |
 | `docs/ai/` | AI prompt assets and DSL references used by graph-engine AI module | Markdown docs packaged as resources |
 
 ## Requirements

@@ -114,11 +114,14 @@ InMemoryGatewayGraphContractTestSuiteRepository
 | 字段 | 含义 |
 | --- | --- |
 | `name` | 表格测试行名称 |
+| `caseType` | 用例意图：`GOLDEN`、`NEGATIVE`、`BOUNDARY` 或 `REGRESSION`；历史 JSON 缺省为 `REGRESSION` |
 | `context` | graph 输入上下文，必须满足 graph `inputSchema` |
 | `resourceMocks` | 下游 `httpResource` mock 响应行 |
 | `outputNode` | 可选，指定本 case 要检查的终态输出节点 |
 | `assertions` | 对终态输出执行的断言 |
 | `nodeAssertions` | 对中间节点输出执行的断言，key 是 node id |
+
+`OUTPUT_EQUALS` 与 `PATH_EQUALS` assertion 可选配置非负有限数值 `numericTolerance`。未配置时仍为精确比较；非数值比较、其他 assertion mode、负数、`NaN` 或 infinity 均在构造/反序列化时 fail closed。
 
 `resourceMocks` 只替换 descriptor-backed `httpResource` 调用。Graph topology、DSL 编译产物、decision table、branch、transform、fallback 等仍然通过真实 BLOGE engine 执行。
 
@@ -223,6 +226,15 @@ Coverage policy 字段：
 合计 7 suites、14 cases、28 个被观察到的 root/nested 资源调用和 37 个业务断言。所有 resource fixture 均为显式
 `TRANSPORT_LEVEL`；Spring dogfooding 还会把 descriptor endpoint 指向不可连接地址，任何 fixture 逃逸都会使测试确定失败。同步 foreach/loop/subgraph/compensation 的 node/edge evidence 已按 structural site、runtime correlation 和 graph occurrence 展开；streaming/suspendable 仍不可认证。
 详细证明见 [Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md)。
+
+兼容 catalog 不是治理证据的最终身份。已认证调用方可执行：
+
+```http
+PUT /api/testing/catalogs/gateway-graph-contract-v1
+X-Purpose: TEST_SUITE_WRITE
+```
+
+服务会在调用方 tenant 与 test/staging environment 内，将 7 个 source suite 和 14 个 case 幂等物化为内容寻址的 immutable fixture/TestSuite revision，并只返回 source-to-exact-ref 映射。物化后的 suite 继续通过统一 `TestSuiteExecutionService` 执行；source 或 target dependency 漂移会产生新 revision，重复请求则返回完全相同的引用。完整协议、部分失败与重试语义见 [Testing Control Plane API](resource-gateway-testing-control-plane-api.md) 和 [Stage 2 catalog materialization verification](resource-gateway-execution-data-control-plane-stage2-catalog-materialization-verification.md)。
 
 ## 4.1 Resource Graph Mock Draft
 
@@ -489,6 +501,7 @@ mvn -f resource-gateway-examples/pom.xml \
 | `GraphArtifactFingerprintTest` | 指纹稳定性、DSL 源和边完成语义变化检测 |
 | `builtInSuiteCatalogCoversEveryGraphAndUsesExplicitTransportFixtures` | 七图/14-case catalog 完整性、全部 F3 fixture、retry 精确消费次数、非空 foreach suite |
 | `everyBuiltInGraphSuiteRunsThroughRealWiringWithoutUncontrolledResourceCalls` | 真实 Spring wiring 批量执行七图；不可达 endpoint 下 28 次 root/nested resource 调用全部由 transport fixture 接管；37 个断言通过 |
+| `BuiltInTestSuiteCatalogMaterializationIntegrationTest` | 两次物化返回完全一致；7 个 exact suite/14 个 exact fixture 均可查询并经统一 runner 达到 `PASSED + SATISFIED + ELIGIBLE`；错误 purpose 被拒绝；不可达 endpoint 证明无网络逃逸 |
 | `validatesTypedRecordOutputsThroughTheJsonObjectContractModel` | typed Java record 与 JSON map 使用同一 schema 可见形态，避免 graph gate 和 kernel assertion 结论分裂 |
 
 Graph contract coverage:
@@ -521,6 +534,8 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 | `mvn -f resource-gateway-examples/pom.xml clean verify` | Reached 1390 tests; failed on one existing browser DOM test with Selenium `StaleElementReferenceException` |
 | `mvn -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerPersistsConfigUnionBranchSelectionInRealBrowser -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，confirms the full-run failure was browser timing/flakiness rather than the resource graph contract path |
 | `mvn -f resource-gateway-examples/pom.xml clean verify`（Stage 2 dogfooding） | Passed，1691 tests；0 failures，0 errors，33 conditional skips；真实 Chrome 回归与 JAR 打包成功 |
+| catalog materialization focused command（见上方测试矩阵） | Passed，34 tests；0 failures，0 errors，0 skipped；含真实 Spring 七图/14-case exact suite 执行 |
+| `mvn -f resource-gateway-examples/pom.xml -Pfrontend clean verify`（catalog materialization） | Passed，1757 tests；0 failures，0 errors，34 conditional skips；前端 production build、真实 Chrome 回归与 JAR 打包成功 |
 
 ## 8. 当前进展评估
 
@@ -531,17 +546,18 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 | Public endpoint output schema gate | Done | graph 成功后按 `outputNodes` 选择终态输出，并用 `outputSchema` 校验后再返回 |
 | Contract catalog API | Done | `/api/gateway/graphs/contracts` |
 | Mock table suite API | Done | `/api/gateway/graphs/contracts/tests/run` |
-| 下游 API 无真实调用验证 | Done for root resource nodes | 真实 graph engine 执行；Spring dogfooding 将 descriptor 指向不可达 endpoint，fixture 逃逸会确定失败 |
+| 下游 API 无真实调用验证 | Done for synchronous root/nested resource nodes | 真实 graph engine 执行；Spring dogfooding 将 descriptor 指向不可达 endpoint，fixture 逃逸会确定失败 |
 | 终态输出 schema 校验 | Done | runtime endpoint 与 contract test 都使用 graph `outputSchema` |
 | 中间节点/算子输出断言 | Done | `nodeAssertions` keyed by node id |
 | Resource graph mock draft | Done | `/api/gateway/graphs/contracts/tests/draft` 基于 graph input schema 与 resource response schema 生成可编辑 row |
 | Operator schema mock draft | Done | `/api/visual/operators/tests/draft` 基于 operator schema 生成可编辑 table row |
 | 自动 mock 数据生成 | Done for draft | graph/operator 均可生成可编辑 mock row；复杂 runtime-dependent graph mock 仍以 warning 提示人工补齐 |
-| Suite registry | Done | in-memory repository + list/get/put/run API + 七图/14-case 内置 catalog |
+| Suite registry | Done | immutable fixture/TestSuite registry + list/get/put/run API；七图/14-case 兼容 catalog 可幂等物化为 exact governed revisions |
+| Built-in catalog materialization | Done | `PUT /api/testing/catalogs/gateway-graph-contract-v1` + typed test-kit projection；内容寻址、作用域隔离、可重试、payload-free 响应 |
 | Batch runner | Done | `POST /api/gateway/graphs/contracts/tests/suites/run-all` 聚合 suite、case、coverage |
 | Coverage policy | Done | suite 级阈值可要求 case、schema validation、mock call、assertion、output node 覆盖 |
-| F2/F3 resource fixture | Done for root resource nodes | 显式 protocol/transport 边界、响应头与 bounded consumption；nested invocation 仍待寻址 |
-| 仓库级 no-egress dogfooding | Done for root resource nodes | 七图/13 case 全绿；foreach body 如实降级为 exploratory |
+| F2/F3 resource fixture | Done for synchronous root/nested resource nodes | 显式 protocol/transport 边界、响应头与 bounded consumption；按 structural site、correlation、occurrence、attempt 寻址 |
+| 仓库级 no-egress dogfooding | Done for synchronous root/nested resource nodes | 七图/14 case 全绿；非空 foreach 的四个嵌套资源 occurrence 均由 F3 fixture 控制并产生 certifiable evidence |
 | 批量 CI 报告 | Partial | 已有机器可读 batch result；还缺独立 HTML/历史趋势报告 |
 | Standalone operator table suite | Done | `/api/visual/operators/tests/run` + stored suite + run-all |
 | Canvas executable operator suite | Done | 双击节点后按行/批量执行公共 operator target + micro-graph API；native SPY、resource TRANSPORT、opaque fail-closed |

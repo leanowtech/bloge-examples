@@ -187,6 +187,27 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Materializes the trusted built-in graph contract catalog into the caller's immutable scope.
+     *
+     * <p>The returned exact references can be passed directly to {@link #executeSuite(String, long,
+     * String, String, SuiteStrategy, Map)} or to the suite CLI. Repeating this call over unchanged
+     * source and dependencies returns the same projection.</p>
+     *
+     * @return typed payload-free source-to-destination reference inventory
+     */
+    public TestSuiteCatalogMaterialization materializeBuiltInGraphContractCatalog() {
+        JsonNode response = exchange("PUT", "/api/testing/catalogs/gateway-graph-contract-v1", "",
+                "TEST_SUITE_WRITE", null);
+        requireVersion(response, TestingProtocol.TEST_SUITE_CATALOG_MATERIALIZATION_V1);
+        try {
+            return TestSuiteCatalogMaterialization.from(response);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned an invalid test-suite catalog materialization projection.");
+        }
+    }
+
+    /**
      * Executes one exact immutable suite revision with a caller-owned idempotency key.
      *
      * @param suiteId exact suite id

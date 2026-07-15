@@ -1782,6 +1782,10 @@ immutable fixture revision，再把所有行组织成一份 `bloge.testSuite.v1`
 Published provenance 只是 `CERTIFIABLE` 的必要条件，不是保证：runtime composability、schema strictness、resource fixture fidelity
 仍由服务端最终裁决；`ELIGIBLE` 也只表示当前 suite policy 满足，不是签名认证、ANEKE 审批或生产发布。右侧全图 Test Suite 仍复用
 mock simulation，真实执行纯 DSL primitive，其他 operator 由 fixture 或 schema sample 替换，也不能被解释为 production-real execution。
+这条限制只针对画布里尚未发布的临时 graph 表格。Resource Gateway 内置七张正式 resource graph 的 14 个 contract case 已可通过
+`PUT /api/testing/catalogs/gateway-graph-contract-v1` 一键物化为内容寻址 fixture 和一等 `bloge.testSuite.v1`，随后由公共 runner、Java
+test-kit 或 CI CLI 执行；物化结果会保留 `Golden / Negative / Boundary / Regression` 意图、F3 transport fixture、重试消费约束、
+numeric tolerance 和结构 coverage。
 完整的 graph contract、fault injection、replay regression 和生产隔离目标见
 [工业级可测试性与执行数据控制反转演进方案](resource-gateway-industrial-testability-evolution-plan.md)。
 
@@ -1966,11 +1970,15 @@ Test Suite 是画布内的 authoring-side transient runner。需要把测试资�
 | 层级 | 入口 | 用途 |
 | --- | --- | --- |
 | 画布内调试 | `/author/` Test Suite | 作者快速构造路径、调试 mock、验证 transform/decision/foreach 编排逻辑 |
-| Resource graph suite | `/api/gateway/graphs/contracts/tests/*` | 对正式 resource graph 按 input/output schema、resource mock 和 coverage policy 批量验证 |
+| Resource graph compatibility suite | `/api/gateway/graphs/contracts/tests/*` | 编辑或兼容运行旧 table asset；执行内核已统一，但资产身份仍是旧协议 |
+| Governed built-in graph suite | `PUT /api/testing/catalogs/gateway-graph-contract-v1`，再执行返回的 exact suite ref | 把七图/14 case 物化为租户/环境隔离的不可变 fixture/TestSuite，供 API、test-kit、CLI 和 CI 共用 |
 | Operator suite | `/api/visual/operators/tests/*` | 对单个 operator 的 input/config/output schema 和 mock output 断言做表格验证 |
 | Published golden | `/api/visual/golden-cases/*` | 对不可变 publication 做发布级回归和认证 |
 
 更完整的后端表格测试模型见 [Resource Graph Schema Mock Table Testing](./bloge-resource-graph-schema-mock-table-testing.md)。
+物化操作在相同 graph dependency 与 source case 下幂等；任何 graph、resource descriptor、case intent、fixture、断言或 policy
+变化都会生成新 revision，不覆盖旧证据。具体请求、响应和 CI 接法见
+[Resource Gateway Testing Control Plane API](resource-gateway-testing-control-plane-api.md#424-materialize-the-built-in-graph-catalog)。
 
 ### 5.7 第七步：Validate
 

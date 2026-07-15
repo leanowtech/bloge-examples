@@ -226,6 +226,39 @@ class TestExecutionControllerTest {
         verifyNoInteractions(execution, suites);
     }
 
+    @Test
+    void catalogMaterializationUsesSuiteWritePurposeAndVerifiedScope() throws Exception {
+        TestExecutionApiService execution = mock(TestExecutionApiService.class);
+        TestSuiteRegistryService suites = mock(TestSuiteRegistryService.class);
+        TestSuiteExecutionService suiteRuns = mock(TestSuiteExecutionService.class);
+        TestSuiteCatalogMaterializationService catalogs =
+                mock(TestSuiteCatalogMaterializationService.class);
+        TestSuiteCatalogMaterializationResponse response =
+                new TestSuiteCatalogMaterializationResponse("", "catalog-a",
+                        "sha256:" + "a".repeat(64), "tenant-a", "test", 1, 1, List.of(
+                        new TestSuiteCatalogMaterializationResponse.SuiteAsset(
+                                "source-a", "graph-a", 1,
+                                new TestSuiteExecutionRequest.SuiteRef(
+                                        "suite-a", 3, "sha256:" + "b".repeat(64)),
+                                List.of(new TestSuite.FixtureBundleRef(
+                                        "fixture-a", 2, "sha256:" + "c".repeat(64))))));
+        when(catalogs.materializeBuiltIn(any())).thenReturn(response);
+        MockMvc mvc = mvc(execution, suites, suiteRuns, catalogs, Set.of("TEST_SUITE_WRITE"));
+
+        mvc.perform(put("/api/testing/catalogs/gateway-graph-contract-v1")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_SUITE_WRITE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion")
+                        .value(TestSuiteCatalogMaterializationResponse.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.suites[0].suiteRef.suiteId").value("suite-a"));
+
+        verify(catalogs).materializeBuiltIn(org.mockito.ArgumentMatchers.argThat(context ->
+                context.purpose().equals("TEST_SUITE_WRITE")
+                        && context.tenantId().equals("tenant-a")));
+        verifyNoInteractions(execution, suites, suiteRuns);
+    }
+
     private static MockMvc mvc(TestExecutionApiService service) {
         return mvc(service, mock(TestSuiteRegistryService.class), Set.of("TEST_EXECUTION"));
     }
@@ -240,6 +273,15 @@ class TestExecutionControllerTest {
                                TestSuiteRegistryService suites,
                                TestSuiteExecutionService suiteRuns,
                                Set<String> purposes) {
+        return mvc(service, suites, suiteRuns,
+                mock(TestSuiteCatalogMaterializationService.class), purposes);
+    }
+
+    private static MockMvc mvc(TestExecutionApiService service,
+                               TestSuiteRegistryService suites,
+                               TestSuiteExecutionService suiteRuns,
+                               TestSuiteCatalogMaterializationService catalogs,
+                               Set<String> purposes) {
         RecordingAudit audit = new RecordingAudit();
         IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity(
                 "test-runtime", "tenant-a", "org-a", "project-a", "test", "local",
@@ -248,7 +290,7 @@ class TestExecutionControllerTest {
         IntegrationRequestAuthenticator authenticator = new IntegrationRequestAuthenticator(
                 new StaticBearerIntegrationIdentityResolver("test-token", identity, false), audit);
         return MockMvcBuilders.standaloneSetup(new TestExecutionController(
-                        service, suites, suiteRuns, authenticator))
+                        service, suites, suiteRuns, catalogs, authenticator))
                 .setControllerAdvice(new TestExecutionProblemHandler()).build();
     }
 

@@ -163,6 +163,68 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void materializesBuiltInGraphCatalogWithTypedExactReferences() {
+        ResourceGatewayTestClient client = client();
+
+        TestSuiteCatalogMaterialization catalog =
+                client.materializeBuiltInGraphContractCatalog();
+
+        assertThat(catalog.catalogId()).isEqualTo("resource-gateway.built-in-graph-contracts");
+        assertThat(catalog.catalogFingerprint()).isEqualTo(FINGERPRINT);
+        assertThat(catalog.totalSuites()).isEqualTo(1);
+        assertThat(catalog.totalCases()).isEqualTo(1);
+        assertThat(catalog.suites()).singleElement().satisfies(asset -> {
+            assertThat(asset.sourceSuiteId()).isEqualTo("loan-policy");
+            assertThat(asset.graphName()).isEqualTo("loanDecisionPolicy");
+            assertThat(asset.suiteRef().exactRef())
+                    .isEqualTo("rg-built-in-loan-policy@7#" + FINGERPRINT);
+            assertThat(asset.fixtureRefs()).singleElement().satisfies(fixture -> {
+                assertThat(fixture.fixtureBundleId()).isEqualTo("rg-built-in-loan-policy-case-001");
+                assertThat(fixture.revision()).isEqualTo(3);
+            });
+        });
+        JsonNode mutable = catalog.rawResponse();
+        ((ObjectNode) mutable).put("catalogId", "mutated");
+        assertThat(catalog.rawResponse().path("catalogId").asText())
+                .isEqualTo("resource-gateway.built-in-graph-contracts");
+        assertThat(requests).singleElement().satisfies(request -> {
+            assertThat(request.method()).isEqualTo("PUT");
+            assertThat(request.rawPath()).endsWith("/catalogs/gateway-graph-contract-v1");
+            assertThat(request.purpose()).isEqualTo("TEST_SUITE_WRITE");
+        });
+    }
+
+    @Test
+    void rejectsCatalogResponseWithSelfInconsistentAggregateCounts() throws Exception {
+        ObjectNode response = (ObjectNode) JSON.readTree(catalogMaterializationResponse());
+        response.put("totalCases", 2);
+
+        assertThatThrownBy(() -> TestSuiteCatalogMaterialization.from(response))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("case count");
+    }
+
+    @Test
+    void rejectsCatalogProjectionThatReusesAFixtureAcrossSuites() {
+        var fixture = new TestSuiteCatalogMaterialization.ExactFixtureRef(
+                "fixture-a", 1, FINGERPRINT);
+        var first = new TestSuiteCatalogMaterialization.SuiteAsset(
+                "source-a", "graph-a", 1,
+                new TestSuiteCatalogMaterialization.ExactSuiteRef("suite-a", 1, FINGERPRINT),
+                List.of(fixture));
+        var second = new TestSuiteCatalogMaterialization.SuiteAsset(
+                "source-b", "graph-b", 1,
+                new TestSuiteCatalogMaterialization.ExactSuiteRef("suite-b", 1, FINGERPRINT),
+                List.of(fixture));
+
+        assertThatThrownBy(() -> new TestSuiteCatalogMaterialization(
+                "catalog-a", FINGERPRINT, "tenant", "test", 2, 2,
+                List.of(first, second), null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("unique exact fixture");
+    }
+
+    @Test
     void rejectsInexactSuiteIdentityBeforeAnyNetworkCall() {
         ResourceGatewayTestClient client = client();
 
@@ -284,7 +346,9 @@ class ResourceGatewayTestClientTest {
                     + "\"runId\":\"private-child-payload\",\"evidence\":{\"status\":\"NOT_A_STATUS\"}}");
             return;
         }
-        if (path.contains("/suite-executions/") || path.endsWith("/executions") && path.contains("/suites/")) {
+        if (path.endsWith("/catalogs/gateway-graph-contract-v1")) {
+            respond(exchange, 200, catalogMaterializationResponse());
+        } else if (path.contains("/suite-executions/") || path.endsWith("/executions") && path.contains("/suites/")) {
             respond(exchange, 200, suiteRunResponse());
         } else if (path.contains("/suites/")) {
             respond(exchange, 200, storedSuiteResponse());
@@ -390,6 +454,19 @@ class ResourceGatewayTestClientTest {
                      "certifiableCases":2,"minimumCertifiableCases":2,"targetCertificationEligible":true,
                      "coverageSatisfied":true,"allCasesCompleted":true},
                    "diagnostics":[],"metadata":{"private":"not-projected"}}}
+                """.formatted(FINGERPRINT);
+    }
+
+    private static String catalogMaterializationResponse() {
+        return """
+                {"schemaVersion":"bloge.testSuiteCatalogMaterialization.v1",
+                 "catalogId":"resource-gateway.built-in-graph-contracts","catalogFingerprint":"%1$s",
+                 "tenantId":"tenant","environmentId":"test","totalSuites":1,"totalCases":1,
+                 "suites":[{"sourceSuiteId":"loan-policy","graphName":"loanDecisionPolicy",
+                   "caseCount":1,"suiteRef":{"suiteId":"rg-built-in-loan-policy","revision":7,
+                     "fingerprint":"%1$s"},"fixtureBundleRefs":[
+                     {"fixtureBundleId":"rg-built-in-loan-policy-case-001","revision":3,
+                      "fingerprint":"%1$s"}]}]}
                 """.formatted(FINGERPRINT);
     }
 

@@ -46,6 +46,9 @@ public final class TestingProtocol {
             "bloge.testSuiteExecutionResponse.v1";
     /** Aggregate immutable suite-run evidence wire version. */
     public static final String TEST_SUITE_RUN_EVIDENCE_V1 = "bloge.testSuiteRunEvidence.v1";
+    /** Built-in graph catalog materialization response wire version. */
+    public static final String TEST_SUITE_CATALOG_MATERIALIZATION_V1 =
+            "bloge.testSuiteCatalogMaterialization.v1";
 
     /** Classpath location of the authoritative JSON Schema packaged in the test-kit JAR. */
     public static final String SCHEMA_RESOURCE =

@@ -44,6 +44,9 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestSuiteExecutionRequest.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteExecutionResponse/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteCatalogMaterialization/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteCatalogMaterializationResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteRunEvidence/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteRunEvidence.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testGraphTargetDescriptor/properties/schemaVersion/const").asText())
@@ -87,6 +90,7 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("storedTestSuite")).isTrue();
         assertThat(definitions.has("testSuiteExecutionRequest")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponse")).isTrue();
+        assertThat(definitions.has("testSuiteCatalogMaterialization")).isTrue();
         assertThat(definitions.has("testSuiteRunEvidence")).isTrue();
         assertThat(definitions.at("/fixtureBundleRegistrationRequest/properties/target/$ref").asText())
                 .isEqualTo("#/$defs/target");
@@ -130,6 +134,12 @@ class TestingControlProtocolSchemaTest {
                 .containsExactly("fromInvocationSiteId", "toInvocationSiteId");
         assertThat(definitions.at("/testSuiteExecutionRequest/properties/suiteRef/$ref").asText())
                 .isEqualTo("#/$defs/testSuiteRef");
+        assertThat(definitions.at(
+                "/testSuiteCatalogMaterialization/properties/suites/items/$ref").asText())
+                .isEqualTo("#/$defs/testSuiteCatalogSuiteAsset");
+        assertThat(definitions.at(
+                "/testSuiteCatalogSuiteAsset/properties/fixtureBundleRefs/items/$ref").asText())
+                .isEqualTo("#/$defs/governedFixtureBundleRef");
         assertThat(definitions.at("/testSuiteExecutionRequest/properties/clientRequestId/minLength").asInt())
                 .isEqualTo(1);
         assertThat(definitions.at("/testSuiteRunEvidence/properties/status/enum"))

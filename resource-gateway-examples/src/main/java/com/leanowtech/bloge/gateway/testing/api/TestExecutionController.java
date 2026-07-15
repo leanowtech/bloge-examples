@@ -27,15 +27,18 @@ public class TestExecutionController {
     private final TestExecutionApiService service;
     private final TestSuiteRegistryService suiteRegistry;
     private final TestSuiteExecutionService suiteExecutions;
+    private final TestSuiteCatalogMaterializationService catalogMaterialization;
     private final IntegrationRequestAuthenticator authenticator;
 
     public TestExecutionController(TestExecutionApiService service,
                                    TestSuiteRegistryService suiteRegistry,
                                    TestSuiteExecutionService suiteExecutions,
+                                   TestSuiteCatalogMaterializationService catalogMaterialization,
                                    IntegrationRequestAuthenticator authenticator) {
         this.service = service;
         this.suiteRegistry = suiteRegistry;
         this.suiteExecutions = suiteExecutions;
+        this.catalogMaterialization = catalogMaterialization;
         this.authenticator = authenticator;
     }
 
@@ -115,6 +118,16 @@ public class TestExecutionController {
                                      @RequestHeader HttpHeaders headers) {
         return suiteRegistry.find(suiteId, revision,
                 context(headers, IntegrationOperation.TEST_SUITE_READ));
+    }
+
+    /**
+     * Materializes the trusted legacy graph catalog into exact caller-scoped fixture and suite assets.
+     */
+    @PutMapping("/catalogs/gateway-graph-contract-v1")
+    public TestSuiteCatalogMaterializationResponse materializeGatewayGraphContractCatalog(
+            @RequestHeader HttpHeaders headers) {
+        return catalogMaterialization.materializeBuiltIn(
+                context(headers, IntegrationOperation.TEST_SUITE_WRITE));
     }
 
     /** Executes one exact immutable suite revision with an idempotent client request key. */

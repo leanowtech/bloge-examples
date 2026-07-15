@@ -86,12 +86,21 @@ the PID and selected port are kept under `target/example-pids/`.
 The testing API requires `Authorization: Bearer bloge-aneke-demo-token` and a
 least-privilege `X-Purpose` (`TEST_EXECUTION`, fixture read/write, or suite read/write) in the local
 test profile. Immutable suites use `TEST_SUITE_READ` and `TEST_SUITE_WRITE`; exact suite execution
-and suite-run query use `TEST_EXECUTION`. See
+and suite-run query use `TEST_EXECUTION`. Materialize the seven built-in graph suites into exact
+common fixture/TestSuite revisions with:
+
+```bash
+curl -sS -X PUT http://localhost:8080/api/testing/catalogs/gateway-graph-contract-v1 \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_SUITE_WRITE'
+```
+
+See
 [Testing Control Plane API](../docs/resource-gateway-testing-control-plane-api.md)
 for the complete target-discovery, fixture-registration, execution, evidence,
 and production-isolation workflow. Java/JUnit/CI consumers can use the independent
 [Resource Gateway Test Kit](../resource-gateway-test-kit/README.md) for fixture and immutable-suite
-builders, exact suite execution, payload-free assertions/XML, and the fail-closed CLI instead of
+builders, typed catalog materialization, exact suite execution, payload-free assertions/XML, and the fail-closed CLI instead of
 hand-assembling HTTP requests or interpreting aggregate evidence ad hoc.
 
 Batch-migrate existing `.bloge` files after the service is running:

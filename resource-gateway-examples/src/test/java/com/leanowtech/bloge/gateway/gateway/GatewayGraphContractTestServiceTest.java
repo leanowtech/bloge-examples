@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -94,6 +95,70 @@ class GatewayGraphContractTestServiceTest {
                     assertThat(caseResult.diagnostics()).isEmpty();
                     assertThat(caseResult.assertionCount()).isEqualTo(2);
                 });
+    }
+
+    @Test
+    void numericToleranceIsAppliedByCompatibilityAndUnifiedAssertionPaths() throws IOException {
+        GatewayGraphContractTestService service = testService("loan-decision-policy");
+        GatewayGraphContractTestCase testCase = new GatewayGraphContractTestCase(
+                "score tolerance",
+                Map.of("applicantId", "prime", "requestedAmount", 450_000.0),
+                List.of(new GatewayGraphResourceMock(
+                        "loan-applicant-service.getProfile",
+                        Map.of("applicantId", "prime"),
+                        Map.of("applicantId", "prime", "score", 780, "segment", "private-bank"))),
+                "assembleLoanDecision",
+                List.of(new GatewayGraphTestAssertion(
+                        GatewayGraphTestAssertion.Mode.PATH_EQUALS,
+                        "/applicant/score",
+                        779.8,
+                        0.2)));
+
+        GatewayGraphContractTestSuiteResult result = service.run(new GatewayGraphContractTestSuite(
+                "numeric-tolerance", "Numeric tolerance", "", List.of("numeric"),
+                new GatewayGraphContractTestSuiteRequest("loanDecisionPolicy", List.of(testCase)),
+                GatewayGraphContractTestCoveragePolicy.none()));
+
+        assertThat(result.passed()).as("contract result: %s", result).isTrue();
+        assertThat(result.results().getFirst().evidence().status()).isEqualTo(TestRunEvidence.Status.PASSED);
+    }
+
+    @Test
+    void numericToleranceFailsOutsideTheBoundAndRejectsInvalidDeclarations() throws IOException {
+        GatewayGraphContractTestService service = testService("loan-decision-policy");
+        GatewayGraphContractTestCase testCase = new GatewayGraphContractTestCase(
+                "score outside tolerance",
+                Map.of("applicantId", "prime", "requestedAmount", 450_000.0),
+                List.of(new GatewayGraphResourceMock(
+                        "loan-applicant-service.getProfile",
+                        Map.of("applicantId", "prime"),
+                        Map.of("applicantId", "prime", "score", 780, "segment", "private-bank"))),
+                "assembleLoanDecision",
+                List.of(new GatewayGraphTestAssertion(
+                        GatewayGraphTestAssertion.Mode.PATH_EQUALS,
+                        "/applicant/score",
+                        779.8,
+                        0.19)));
+
+        GatewayGraphContractTestSuiteResult result = service.run(new GatewayGraphContractTestSuiteRequest(
+                "loanDecisionPolicy", List.of(testCase)));
+
+        assertThat(result.passed()).isFalse();
+        assertThat(result.results().getFirst().diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("gateway.graphContractTest.assertionFailed"));
+        assertThatThrownBy(() -> new GatewayGraphTestAssertion(
+                GatewayGraphTestAssertion.Mode.PATH_EQUALS, "/value", 1, -0.01))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("numericTolerance");
+        assertThatThrownBy(() -> new GatewayGraphTestAssertion(
+                GatewayGraphTestAssertion.Mode.PATH_EXISTS, "/value", null, 0.1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("equality");
+        assertThatThrownBy(() -> new GatewayGraphTestAssertion(
+                GatewayGraphTestAssertion.Mode.PATH_EQUALS, "/value", "one", 0.1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("numeric expectedValue");
     }
 
     @Test
@@ -195,6 +260,25 @@ class GatewayGraphContractTestServiceTest {
         assertThat(mock.responseHeaders()).isEmpty();
         assertThat(mock.minUses()).isEqualTo(1);
         assertThat(mock.maxUses()).isEqualTo(1);
+    }
+
+    @Test
+    void legacyCaseAndAssertionJsonDefaultToRegressionAndExactEquality() throws Exception {
+        GatewayGraphContractTestCase testCase = objectMapper.readValue("""
+                {
+                  "schemaVersion":"bloge.gatewayGraphContractTestCase.v1",
+                  "name":"legacy row",
+                  "description":"",
+                  "context":{},
+                  "resourceMocks":[],
+                  "outputNode":"result",
+                  "assertions":[{"mode":"PATH_EQUALS","path":"/score","expectedValue":780}],
+                  "nodeAssertions":{}
+                }
+                """, GatewayGraphContractTestCase.class);
+
+        assertThat(testCase.caseType()).isEqualTo(GatewayGraphContractTestCase.CaseType.REGRESSION);
+        assertThat(testCase.assertions().getFirst().numericTolerance()).isNull();
     }
 
     @Test
