@@ -7,6 +7,12 @@ import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.dsl.compiler.GraphLoader;
+import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
+import com.leanowtech.bloge.gateway.resource.ParameterMapping;
+import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
+import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.resource.ResponseProtocol;
+import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.visual.resource.InMemoryResourceDesignContractRegistry;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractBootstrap;
 import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
@@ -18,8 +24,12 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -107,6 +117,82 @@ class GatewayGraphContractTestServiceTest {
         assertThat(result.coverage().inputSchemaValidated()).isZero();
         assertThat(result.results().getFirst().diagnostics())
                 .anySatisfy(diagnostic -> assertThat(diagnostic.message()).contains("requestedAmount"));
+    }
+
+    @Test
+    void storedTransportFixtureUsesRealResponseProtocolAndProducesCertifiableEvidence() throws IOException {
+        MapRegistry resources = new MapRegistry();
+        resources.put(new ResourceDescriptor(
+                "loan-applicant-service.getProfile",
+                "https://unreachable.invalid/applicants/{applicantId}",
+                "GET",
+                Map.of(),
+                null,
+                Duration.ofSeconds(1),
+                new ParameterMapping(Map.of("applicantId", "ctx.params.applicantId"), Map.of(), null),
+                new ResponseProtocol.BodyCode("code", Set.of(0), "message"),
+                "data"));
+        GatewayGraphContractTestService service = testService("loan-decision-policy", resources);
+        GatewayGraphContractTestCase testCase = new GatewayGraphContractTestCase(
+                "transport prime applicant",
+                Map.of("applicantId", "prime", "requestedAmount", 450_000.0),
+                List.of(GatewayGraphResourceMock.transportResponse(
+                        "loan-applicant-service.getProfile",
+                        Map.of("applicantId", "prime"),
+                        """
+                                {"code":0,"message":"OK","data":{"applicantId":"prime","score":780,"segment":"private-bank"}}
+                                """,
+                        200,
+                        Map.of("X-Test-Trace", "fixture-1"),
+                        true)),
+                "assembleLoanDecision",
+                List.of(new GatewayGraphTestAssertion(
+                        GatewayGraphTestAssertion.Mode.PATH_EQUALS,
+                        "/policy/ruleId",
+                        "R1")));
+        GatewayGraphContractTestSuite stored = new GatewayGraphContractTestSuite(
+                "transport-fixture", "Transport fixture", "", List.of("f3"),
+                new GatewayGraphContractTestSuiteRequest("loanDecisionPolicy", List.of(testCase)),
+                GatewayGraphContractTestCoveragePolicy.none());
+
+        GatewayGraphContractTestSuiteResult certified = service.run(stored);
+        GatewayGraphContractTestSuiteResult inline = service.run(stored.request());
+
+        assertThat(certified.passed()).as("stored suite result: %s", certified).isTrue();
+        assertThat(objectMapper.valueToTree(certified.results().getFirst().output())
+                .at("/applicant/score").asInt()).isEqualTo(780);
+        assertThat(certified.results().getFirst().evidence().evidenceClass())
+                .isEqualTo(TestRunEvidence.EvidenceClass.CERTIFIABLE);
+        assertThat(certified.results().getFirst().evidence().nodes())
+                .filteredOn(node -> node.nodeId().equals("fetchApplicant"))
+                .singleElement()
+                .satisfies(node -> {
+                    assertThat(node.operatorRef()).isEqualTo("httpResource");
+                    assertThat(node.status()).isEqualTo("MOCKED");
+                    assertThat(node.fidelity()).isEqualTo("TRANSPORT_LEVEL");
+                });
+        assertThat(inline.passed()).isTrue();
+        assertThat(inline.results().getFirst().evidence().evidenceClass())
+                .isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
+    }
+
+    @Test
+    void resourceMockJsonWithoutFidelityFieldsRemainsOutputLevelCompatible() throws Exception {
+        GatewayGraphResourceMock mock = objectMapper.readValue("""
+                {
+                  "resourceId":"customer.get",
+                  "expectedParams":{"customerId":"C-1"},
+                  "payload":{"name":"Ada"},
+                  "statusCode":200,
+                  "rawBody":"",
+                  "durationMs":0,
+                  "success":true,
+                  "required":true
+                }
+                """, GatewayGraphResourceMock.class);
+
+        assertThat(mock.fixtureMode()).isEqualTo(GatewayGraphResourceMock.FixtureMode.OUTPUT_LEVEL);
+        assertThat(mock.responseHeaders()).isEmpty();
     }
 
     @Test
@@ -284,6 +370,11 @@ class GatewayGraphContractTestServiceTest {
     }
 
     private static GatewayGraphContractTestService testService(String resourceName) throws IOException {
+        return testService(resourceName, null);
+    }
+
+    private static GatewayGraphContractTestService testService(String resourceName,
+                                                               ResourceRegistry resources) throws IOException {
         var registry = new DefaultOperatorRegistry();
         registry.registerRaw("httpResource", new NoopOperator());
         var loader = new GraphLoader(registry);
@@ -299,13 +390,42 @@ class GatewayGraphContractTestServiceTest {
                 graphService,
                 new ObjectMapper(),
                 new JsonSchemaSampleGenerator(),
-                resourceContracts);
+                resourceContracts,
+                resources,
+                resources == null ? null : new BlgeExpressionEvaluator());
     }
 
     private static class NoopOperator implements Operator<Object, Object> {
         @Override
         public Object execute(Object input, OperatorContext ctx) {
             return Map.of();
+        }
+    }
+
+    private static final class MapRegistry implements ResourceRegistry {
+        private final Map<String, ResourceDescriptor> descriptors = new LinkedHashMap<>();
+
+        void put(ResourceDescriptor descriptor) {
+            descriptors.put(descriptor.resourceId(), descriptor);
+        }
+
+        @Override
+        public ResourceDescriptor resolve(String resourceId) {
+            ResourceDescriptor descriptor = descriptors.get(resourceId);
+            if (descriptor == null) {
+                throw new IllegalArgumentException("Unknown resource: " + resourceId);
+            }
+            return descriptor;
+        }
+
+        @Override
+        public boolean contains(String resourceId) {
+            return descriptors.containsKey(resourceId);
+        }
+
+        @Override
+        public Collection<ResourceDescriptor> all() {
+            return List.copyOf(descriptors.values());
         }
     }
 }

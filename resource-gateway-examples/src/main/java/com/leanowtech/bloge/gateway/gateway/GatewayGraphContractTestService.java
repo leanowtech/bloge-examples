@@ -8,6 +8,7 @@ import com.leanowtech.bloge.core.engine.GraphResult;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.model.NodeStatus;
 import com.leanowtech.bloge.core.model.NodeSpec;
+import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.operator.HttpResourceInput;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOutput;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
@@ -15,7 +16,7 @@ import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
-import com.leanowtech.bloge.gateway.testing.evidence.GraphArtifactFingerprint;
+import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionResult;
@@ -57,7 +58,9 @@ public class GatewayGraphContractTestService {
     private final ObjectMapper objectMapper;
     private final JsonSchemaSampleGenerator sampleGenerator;
     private final ResourceDesignContractRegistry resourceContracts;
-    private final TestRunService testRunService;
+    private final OperatorRegistry operatorRegistry;
+    private final ResourceRegistry resourceRegistry;
+    private final BlgeExpressionEvaluator expressionEvaluator;
 
     /**
      * @param graphService resource graph service
@@ -101,13 +104,10 @@ public class GatewayGraphContractTestService {
         this.objectMapper = objectMapper;
         this.sampleGenerator = sampleGenerator == null ? new JsonSchemaSampleGenerator() : sampleGenerator;
         this.resourceContracts = resourceContracts;
-        ResourceFixtureRuntime resourceRuntime = resourceRegistry == null || expressionEvaluator == null
-                ? null : new ResourceFixtureRuntime(resourceRegistry, expressionEvaluator, objectMapper);
-        this.testRunService = new TestRunService(
-                graphService.engine().operatorRegistry().orElseThrow(() ->
-                        new IllegalStateException("Graph engine does not expose its operator registry.")),
-                objectMapper,
-                resourceRuntime);
+        this.operatorRegistry = graphService.engine().operatorRegistry().orElseThrow(() ->
+                new IllegalStateException("Graph engine does not expose its operator registry."));
+        this.resourceRegistry = resourceRegistry;
+        this.expressionEvaluator = expressionEvaluator;
     }
 
     /**
@@ -117,7 +117,8 @@ public class GatewayGraphContractTestService {
      * @return suite result
      */
     public GatewayGraphContractTestSuiteResult run(GatewayGraphContractTestSuiteRequest request) {
-        return run(request, GatewayGraphContractTestCoveragePolicy.none());
+        return run(request, GatewayGraphContractTestCoveragePolicy.none(),
+                TestExecutionRequest.FixtureSource.INLINE);
     }
 
     /**
@@ -132,7 +133,8 @@ public class GatewayGraphContractTestService {
                         new GatewayGraphContractTestSuiteRequest("", List.of()),
                         GatewayGraphContractTestCoveragePolicy.none())
                 : suite;
-        return run(safeSuite.request(), safeSuite.coveragePolicy());
+        return run(safeSuite.request(), safeSuite.coveragePolicy(),
+                TestExecutionRequest.FixtureSource.STORED);
     }
 
     /**
@@ -270,7 +272,8 @@ public class GatewayGraphContractTestService {
     }
 
     private GatewayGraphContractTestSuiteResult run(GatewayGraphContractTestSuiteRequest request,
-                                                    GatewayGraphContractTestCoveragePolicy coveragePolicy) {
+                                                    GatewayGraphContractTestCoveragePolicy coveragePolicy,
+                                                    TestExecutionRequest.FixtureSource fixtureSource) {
         GatewayGraphContractTestSuiteRequest safeRequest = request == null
                 ? new GatewayGraphContractTestSuiteRequest("", List.of())
                 : request;
@@ -293,14 +296,15 @@ public class GatewayGraphContractTestService {
 
         List<GatewayGraphContractTestCaseResult> results = new ArrayList<>();
         for (GatewayGraphContractTestCase testCase : safeRequest.cases()) {
-            results.add(runCase(graph, contract, testCase));
+            results.add(runCase(graph, contract, testCase, fixtureSource));
         }
         return suiteResult(contract.graphName(), results, List.of(), coveragePolicy);
     }
 
     private GatewayGraphContractTestCaseResult runCase(Graph graph,
                                                        GatewayGraphContract contract,
-                                                       GatewayGraphContractTestCase testCase) {
+                                                       GatewayGraphContractTestCase testCase,
+                                                       TestExecutionRequest.FixtureSource fixtureSource) {
         GatewayGraphContractTestCase safeCase = testCase == null
                 ? new GatewayGraphContractTestCase("", Map.of(), List.of(), "", List.of(), Map.of())
                 : testCase;
@@ -312,26 +316,30 @@ public class GatewayGraphContractTestService {
             return caseResult(safeCase, false, false, "", null, false, List.of(), Map.of(), diagnostics);
         }
 
-        String targetFingerprint = GraphArtifactFingerprint.of(objectMapper, graph);
-        FixtureBundle fixtureBundle = contractFixtureBundle(safeCase, targetFingerprint);
-        TestExecutionResult execution = testRunService.execute(new TestExecutionRequest(
+        GraphExecutionTargetSnapshot target = targetSnapshot(graph);
+        FixtureBundle fixtureBundle = contractFixtureBundle(safeCase, contract, target.fingerprint());
+        TestRunService runService = runService(target);
+        TestExecutionResult execution = runService.execute(new TestExecutionRequest(
                 graph,
                 new GraphContext(safeCase.context()),
                 fixtureBundle,
                 "GRAPH_CONTRACT_TEST",
-                targetFingerprint,
-                TestExecutionRequest.FixtureSource.INLINE,
-                Map.of("adapter", "GatewayGraphContractTestService", "caseName", safeCase.name())));
+                target.fingerprint(),
+                fixtureSource,
+                Map.of("adapter", "GatewayGraphContractTestService", "caseName", safeCase.name()),
+                target.certificationEligible()));
         GraphResult result = execution.graphResult();
         List<GatewayGraphResourceInvocation> invocations = resourceInvocations(execution.evidence());
         diagnostics.addAll(resourceMockDiagnostics(safeCase.resourceMocks(), execution.evidence()));
+        diagnostics.addAll(executionEvidenceDiagnostics(execution.evidence()));
         if (result == null) {
             diagnostics.add(VisualDiagnostic.error("gateway.graphContractTest.graphExecutionException",
                     "Contract-test graph execution failed before producing a result: %s"
                             .formatted(String.join("; ", execution.evidence().diagnostics())),
                     "/graph"));
             return caseResult(safeCase, false, false, "", null, false,
-                    invocations, Map.of(), diagnostics);
+                    invocations, Map.of(), diagnostics, 0,
+                    GatewayGraphContractTestCaseResult.EvidenceSummary.from(execution.evidence()));
         }
 
         if (!result.isSuccess()) {
@@ -356,7 +364,8 @@ public class GatewayGraphContractTestService {
                 && outputConforms
                 && diagnostics.stream().noneMatch(VisualDiagnostic::error);
         return caseResult(safeCase, passed, result.isSuccess(), outputNode, output, outputConforms,
-                invocations, result.statusMap(), diagnostics, assertionCount(safeCase));
+                invocations, result.statusMap(), diagnostics, assertionCount(safeCase),
+                GatewayGraphContractTestCaseResult.EvidenceSummary.from(execution.evidence()));
     }
 
     private List<VisualDiagnostic> validateSuiteRequest(GatewayGraphContractTestSuiteRequest request) {
@@ -423,6 +432,7 @@ public class GatewayGraphContractTestService {
     }
 
     private FixtureBundle contractFixtureBundle(GatewayGraphContractTestCase testCase,
+                                                GatewayGraphContract contract,
                                                 String targetFingerprint) {
         List<FixtureRule> rules = new ArrayList<>();
         for (int i = 0; i < testCase.resourceMocks().size(); i++) {
@@ -431,9 +441,7 @@ public class GatewayGraphContractTestService {
             if (!mock.expectedParams().isEmpty()) {
                 selector = selector.matching(FixtureRule.Match.pathEquals("/params", mock.expectedParams()));
             }
-            FixtureRule.Behavior behavior = FixtureRule.Behavior.returning(new HttpResourceOutput(
-                    mock.resourceId(), mock.statusCode(), mock.payload(), mock.rawBody(),
-                    Duration.ofMillis(mock.durationMs()), mock.success()));
+            FixtureRule.Behavior behavior = resourceBehavior(mock);
             FixtureRule.Consumption consumption = mock.required()
                     ? FixtureRule.Consumption.once() : FixtureRule.Consumption.optionalOnce();
             rules.add(new FixtureRule(FixtureRule.SCHEMA_VERSION, "resource-mock-" + i,
@@ -441,7 +449,84 @@ public class GatewayGraphContractTestService {
         }
         return new FixtureBundle(FixtureBundle.SCHEMA_VERSION,
                 "gateway-contract:" + testCase.name(), 1, targetFingerprint, "INTERNAL",
-                null, null, rules, List.of(), Map.of("adapter", "gateway-graph-contract-v1"));
+                null, null, rules, kernelAssertions(testCase, contract),
+                Map.of("adapter", "gateway-graph-contract-v1"));
+    }
+
+    private FixtureRule.Behavior resourceBehavior(GatewayGraphResourceMock mock) {
+        if (mock.fixtureMode() == GatewayGraphResourceMock.FixtureMode.OUTPUT_LEVEL) {
+            return FixtureRule.Behavior.returning(new HttpResourceOutput(
+                    mock.resourceId(), mock.statusCode(), mock.payload(), mock.rawBody(),
+                    Duration.ofMillis(mock.durationMs()), mock.success()));
+        }
+        FixtureRule.DoubleBoundary boundary = mock.fixtureMode()
+                == GatewayGraphResourceMock.FixtureMode.TRANSPORT_LEVEL
+                ? FixtureRule.DoubleBoundary.TRANSPORT
+                : FixtureRule.DoubleBoundary.NODE;
+        return FixtureRule.Behavior.protocolResponse(mock.rawBody(), mock.statusCode(),
+                mock.responseHeaders(), boundary);
+    }
+
+    private List<FixtureBundle.Assertion> kernelAssertions(GatewayGraphContractTestCase testCase,
+                                                           GatewayGraphContract contract) {
+        List<FixtureBundle.Assertion> assertions = new ArrayList<>();
+        String outputNode = testCase.outputNode().isBlank()
+                ? contract.outputNodes().stream().findFirst().orElse("")
+                : testCase.outputNode();
+        assertions.add(new FixtureBundle.Assertion("OUTPUT_PATH", outputNode, "", "MATCHES_SCHEMA",
+                contract.outputSchema().schema(), null));
+        testCase.assertions().forEach(assertion -> assertions.add(kernelAssertion(
+                "OUTPUT_PATH", outputNode, assertion)));
+        testCase.nodeAssertions().forEach((nodeId, values) -> values.forEach(assertion ->
+                assertions.add(kernelAssertion("NODE_OUTPUT", nodeId, assertion))));
+        return List.copyOf(assertions);
+    }
+
+    private static FixtureBundle.Assertion kernelAssertion(String scope, String nodeId,
+                                                            GatewayGraphTestAssertion assertion) {
+        return switch (assertion.mode()) {
+            case OUTPUT_EQUALS -> new FixtureBundle.Assertion(
+                    scope, nodeId, "", "EQUALS", assertion.expectedValue(), null);
+            case OUTPUT_MATCHES_SCHEMA -> new FixtureBundle.Assertion(
+                    scope, nodeId, "", "MATCHES_SCHEMA", assertion.expectedValue(), null);
+            case PATH_EQUALS -> new FixtureBundle.Assertion(
+                    scope, nodeId, assertion.path(), "EQUALS", assertion.expectedValue(), null);
+            case PATH_EXISTS -> new FixtureBundle.Assertion(
+                    scope, nodeId, assertion.path(), "EXISTS", null, null);
+            case PATH_ABSENT -> new FixtureBundle.Assertion(
+                    scope, nodeId, assertion.path(), "ABSENT", null, null);
+        };
+    }
+
+    private GraphExecutionTargetSnapshot targetSnapshot(Graph graph) {
+        return GraphExecutionTargetSnapshot.capture(objectMapper, graph, resourceRegistry);
+    }
+
+    private TestRunService runService(GraphExecutionTargetSnapshot target) {
+        ResourceFixtureRuntime runtime = expressionEvaluator == null
+                ? null : new ResourceFixtureRuntime(target.resourceRegistry(), expressionEvaluator, objectMapper);
+        return new TestRunService(operatorRegistry, objectMapper, runtime);
+    }
+
+    private static List<VisualDiagnostic> executionEvidenceDiagnostics(TestRunEvidence evidence) {
+        if (evidence == null || evidence.status() == TestRunEvidence.Status.PASSED) {
+            return List.of();
+        }
+        String detail = evidence.diagnostics().isEmpty()
+                ? evidence.status().name()
+                : evidence.status() + ": " + boundedDiagnostics(evidence.diagnostics());
+        return List.of(VisualDiagnostic.error(
+                "gateway.graphContractTest.controlledExecutionFailed",
+                "Controlled test execution did not pass: " + detail,
+                "/evidence/status"));
+    }
+
+    private static String boundedDiagnostics(List<String> diagnostics) {
+        String detail = diagnostics.stream().limit(10).collect(Collectors.joining("; "));
+        if (detail.length() <= 2_000) {
+            return detail;
+        }
+        return detail.substring(0, 1_997) + "...";
     }
 
     private static List<GatewayGraphResourceInvocation> resourceInvocations(TestRunEvidence evidence) {
@@ -625,7 +710,8 @@ public class GatewayGraphContractTestService {
                                                           Map<String, NodeStatus> statusMap,
                                                           List<VisualDiagnostic> diagnostics) {
         return caseResult(testCase, passed, graphSuccess, outputNode, output, outputConforms,
-                invocations, statusMap, diagnostics, 0);
+                invocations, statusMap, diagnostics, 0,
+                GatewayGraphContractTestCaseResult.EvidenceSummary.empty());
     }
 
     private GatewayGraphContractTestCaseResult caseResult(GatewayGraphContractTestCase testCase,
@@ -637,9 +723,10 @@ public class GatewayGraphContractTestService {
                                                           List<GatewayGraphResourceInvocation> invocations,
                                                           Map<String, NodeStatus> statusMap,
                                                           List<VisualDiagnostic> diagnostics,
-                                                          int assertionCount) {
+                                                          int assertionCount,
+                                                          GatewayGraphContractTestCaseResult.EvidenceSummary evidence) {
         return new GatewayGraphContractTestCaseResult(testCase.name(), passed, graphSuccess, outputNode, output,
-                outputConforms, invocations, statusMap, diagnostics, assertionCount);
+                outputConforms, invocations, statusMap, diagnostics, assertionCount, evidence);
     }
 
     private GatewayGraphContractTestSuiteResult suiteResult(

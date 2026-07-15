@@ -2,9 +2,11 @@ package com.leanowtech.bloge.gateway.testing.evidence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.model.Graph;
+import com.leanowtech.bloge.core.model.NodeKind;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,11 +46,26 @@ public record GraphExecutionTargetSnapshot(
         String composite = ProtocolFingerprint.of(mapper, Map.of(
                 "graphFingerprint", graphFingerprint,
                 "resourceDescriptorFingerprints", dependencies));
-        List<String> gaps = graph.definitionSource() == null
+        List<String> gaps = new ArrayList<>();
+        if (graph.definitionSource() == null
                 || graph.definitionSource().payloadJson() == null
-                || graph.definitionSource().payloadJson().isBlank()
-                ? List.of("Graph has no recoverable immutable definition source.") : List.of();
+                || graph.definitionSource().payloadJson().isBlank()) {
+            gaps.add("Graph has no recoverable immutable definition source.");
+        }
+        graph.nodes().values().stream()
+                .filter(node -> nestedInvocationInventoryUnavailable(node.metadata().kind()))
+                .sorted(Comparator.comparing(node -> node.id()))
+                .forEach(node -> gaps.add("Node '%s' uses %s; nested invocation sites are not yet "
+                        .formatted(node.id(), node.metadata().kind().wireValue())
+                        + "inventory-addressable by testing-control-plane v1."));
         return new GraphExecutionTargetSnapshot(graph, frozen, composite, Map.copyOf(dependencies),
-                gaps.isEmpty(), gaps);
+                gaps.isEmpty(), List.copyOf(gaps));
+    }
+
+    private static boolean nestedInvocationInventoryUnavailable(NodeKind kind) {
+        return kind == NodeKind.FOREACH
+                || kind == NodeKind.STREAMING_FOREACH
+                || kind == NodeKind.LOOP
+                || kind == NodeKind.STREAMING_LOOP;
     }
 }

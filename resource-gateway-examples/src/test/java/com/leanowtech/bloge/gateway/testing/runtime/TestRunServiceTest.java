@@ -226,6 +226,41 @@ class TestRunServiceTest {
     }
 
     @Test
+    void jsonSchemaAssertionsAreEvaluatedInsideTheEvidenceKernel() {
+        Operator<Object, Object> score = new PureOperator() {
+            @Override
+            public Object execute(Object input, OperatorContext ctx) {
+                return Map.of("score", 780, "decision", "APPROVE");
+            }
+        };
+        Map<String, Object> matchingSchema = Map.of(
+                "type", "object",
+                "required", List.of("score", "decision"),
+                "properties", Map.of(
+                        "score", Map.of("type", "integer"),
+                        "decision", Map.of("type", "string")));
+        FixtureBundle matching = new FixtureBundle(FixtureBundle.SCHEMA_VERSION,
+                "schema-match", 1, TARGET, "INTERNAL", null, null, List.of(),
+                List.of(new FixtureBundle.Assertion(
+                        "OUTPUT_PATH", "subject", "", "MATCHES_SCHEMA", matchingSchema, null)),
+                Map.of());
+
+        TestExecutionResult passed = service.execute(request(single(score), matching));
+
+        assertThat(passed.evidence().status()).isEqualTo(TestRunEvidence.Status.PASSED);
+        assertThat(passed.evidence().assertionResults()).singleElement()
+                .satisfies(assertion -> assertThat(assertion.passed()).isTrue());
+
+        FixtureBundle mismatching = new FixtureBundle(FixtureBundle.SCHEMA_VERSION,
+                "schema-mismatch", 1, TARGET, "INTERNAL", null, null, List.of(),
+                List.of(new FixtureBundle.Assertion(
+                        "OUTPUT_PATH", "subject", "", "MATCHES_SCHEMA",
+                        Map.of("type", "string"), null)), Map.of());
+        TestExecutionResult failed = service.execute(request(single(score), mismatching));
+        assertThat(failed.evidence().status()).isEqualTo(TestRunEvidence.Status.ASSERTION_FAILED);
+    }
+
+    @Test
     void graphFailureTakesPrecedenceOverAssertionsThatCannotBeEvaluated() {
         Operator<Object, Object> failure = new PureOperator() {
             @Override

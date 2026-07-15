@@ -72,5 +72,14 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(descriptor.target().fingerprint()).startsWith("sha256:");
         assertThat(descriptor.contract().inputSchema().schema()).isNotEmpty();
         assertThat(descriptor.certificationEligible()).isTrue();
+
+        var nestedTarget = restTemplate.exchange("/api/testing/targets/graphs/enrichOrderList",
+                HttpMethod.GET, new HttpEntity<>(headers), JsonNode.class);
+        assertThat(nestedTarget.getStatusCode()).isEqualTo(HttpStatus.OK);
+        TestGraphTargetDescriptor nestedDescriptor = objectMapper.treeToValue(
+                nestedTarget.getBody(), TestGraphTargetDescriptor.class);
+        assertThat(nestedDescriptor.certificationEligible()).isFalse();
+        assertThat(nestedDescriptor.certificationGaps())
+                .anyMatch(gap -> gap.contains("nested invocation sites") && gap.contains("foreach"));
     }
 }

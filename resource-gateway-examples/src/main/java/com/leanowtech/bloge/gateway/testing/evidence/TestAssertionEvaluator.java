@@ -6,6 +6,8 @@ import com.leanowtech.bloge.core.engine.GraphResult;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -90,12 +92,15 @@ public class TestAssertionEvaluator {
                 : objectMapper.convertValue(selected, Object.class);
     }
 
-    private static boolean compare(String operator, Object expected, Object actual,
-                                   Double tolerance) {
+    private boolean compare(String operator, Object expected, Object actual,
+                            Double tolerance) {
         String normalized = normalizedOperator(operator);
         if ("EXISTS".equals(normalized)) return actual != MissingValue.INSTANCE;
         if ("ABSENT".equals(normalized)) return actual == MissingValue.INSTANCE;
         if (actual == MissingValue.INSTANCE) return false;
+        if ("MATCHES_SCHEMA".equals(normalized)) {
+            return matchesSchema(expected, actual);
+        }
         if ("EQUALS".equals(normalized) && tolerance != null
                 && actual instanceof Number && expected instanceof Number) {
             BigDecimal delta = decimal(actual).subtract(decimal(expected)).abs();
@@ -111,6 +116,26 @@ public class TestAssertionEvaluator {
             case "CONTAINS" -> actual instanceof String text && text.contains(String.valueOf(expected));
             default -> false;
         };
+    }
+
+    private boolean matchesSchema(Object expected, Object actual) {
+        if (!(expected instanceof Map<?, ?> rawSchema)) {
+            return false;
+        }
+        Map<String, Object> schema = new java.util.LinkedHashMap<>();
+        rawSchema.forEach((key, value) -> schema.put(String.valueOf(key), value));
+        SchemaEnvelope envelope;
+        try {
+            envelope = schema.get("schema") instanceof Map<?, ?>
+                    ? objectMapper.convertValue(schema, SchemaEnvelope.class)
+                    : new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema);
+        } catch (IllegalArgumentException invalidSchema) {
+            return false;
+        }
+        return VisualSchemaValidator.validateEnvelope(envelope, "/expectedSchema").stream()
+                .noneMatch(diagnostic -> diagnostic.error())
+                && VisualSchemaValidator.validateValue(envelope, actual, "/actual").stream()
+                .noneMatch(diagnostic -> diagnostic.error());
     }
 
     private static boolean compareNumbers(Object actual, Object expected,
