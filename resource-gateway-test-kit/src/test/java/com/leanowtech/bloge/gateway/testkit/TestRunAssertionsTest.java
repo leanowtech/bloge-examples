@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.opentest4j.AssertionFailedError;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TestRunAssertionsTest {
@@ -19,6 +20,12 @@ class TestRunAssertionsTest {
         assertThatCode(() -> TestRunAssertions.assertCertifiable(run)).doesNotThrowAnyException();
         assertThatCode(() -> TestRunAssertions.assertFixturesSatisfied(run)).doesNotThrowAnyException();
         assertThatCode(() -> TestRunAssertions.assertNoRealInvocations(run)).doesNotThrowAnyException();
+        assertThat(run.nodeTraces()).singleElement().satisfies(node -> {
+            assertThat(node.occurrence()).isZero();
+            assertThat(node.graphOccurrence()).isZero();
+            assertThat(node.attempts()).isEmpty();
+        });
+        assertThat(run.edgeTraces()).isEmpty();
     }
 
     @Test
@@ -36,6 +43,18 @@ class TestRunAssertionsTest {
         assertThatThrownBy(() -> TestRunAssertions.assertNoRealInvocations(run))
                 .isInstanceOf(AssertionFailedError.class)
                 .hasMessageContaining("node-a");
+    }
+
+    @Test
+    void rejectsNegativeOccurrenceAndAttemptCoordinates() {
+        assertThatThrownBy(() -> new TestRun.NodeTrace("node", "operator", "SUCCESS", "REAL",
+                "", 1, "/root/node#primary", "/root", "", -1, 1, java.util.List.of()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TestRun.AttemptTrace(-1, "FAILED", "REAL", "ERROR", 1))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TestRun.EdgeTrace("a->b", "TRANSFERRED", "/root", "", -1,
+                "/root/a#primary", "/root/b#primary"))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     private static String run(String status, String evidenceClass, String nodeStatus, boolean fixturePassed) {

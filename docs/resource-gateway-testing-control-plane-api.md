@@ -352,7 +352,9 @@ mvn -f resource-gateway-test-kit/pom.xml clean install
 
 The client requests a fresh bearer credential for every operation, supplies the correct
 `X-Purpose`, rejects protocol-version drift and oversized bodies, and omits payload/problem details
-from exceptions and reports. See the
+from exceptions and reports. Its typed `TestRun` projection retains node/site/correlation/occurrence,
+retry-attempt, and edge endpoint facts without carrying payload values; legacy v1 responses remain
+readable as zero-coordinate summaries. See the
 [test-kit guide](../resource-gateway-test-kit/README.md) for a complete discover, register, execute,
 assert, and report example.
 

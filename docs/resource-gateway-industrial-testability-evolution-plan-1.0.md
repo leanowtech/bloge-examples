@@ -17,7 +17,7 @@ Stage 1 实现证据与复现命令见
 Stage 1 全量验收：Resource Gateway `clean verify` 共 1653 tests、0 failures、0 errors、34 个条件跳过，JAR 打包成功。
 Stage 2 当前增量验收：Resource Gateway `clean verify` 共 1699 tests、0 failures、0 errors、34 个条件跳过，真实浏览器回归与 JAR 打包成功。
 Nested invocation 增量聚焦验收：37 tests、0 failures；非空 foreach 的三个 item 全部消费同一受限 fixture，真实外部算子调用数为 0，compensation 使用独立 site 且真实补偿调用数为 0。项目 `clean verify` 执行 1704 tests 时 1703 通过、1 个既有浏览器 connectability readiness 用例瞬时超时；该失败用例随即独立复跑 1/1 通过。此记录不得改写为一次严格全绿的全量运行。
-独立 test-kit 当前 `clean verify` 共 11 tests、0 failures、0 errors，JAR 与权威 testing-control-plane v1 schema 一同打包成功。
+独立 test-kit 当前 `clean verify` 共 12 tests、0 failures、0 errors；JAR 与权威 testing-control-plane v1 schema 一同打包成功，并提供 payload-free occurrence/attempt/edge 强类型投影及旧 v1 响应兼容。
 这里的“完成”只指内核与已列出的 adapter。Stage 2 已开放首个公共 graph control plane、持久化 store、test-kit，并完成全部内置图的 stored-suite F3 迁移与 dogfooding；但公共
 operator run adapter、streaming/suspendable control/evidence 和物理隔离仍不得提前写入产品可用清单。当前 API 与运行方式见
 [Testing Control Plane API](resource-gateway-testing-control-plane-api.md)。
@@ -250,7 +250,8 @@ flowchart LR
 | 33 | nested node kind 先令 target certification-ineligible | foreach/loop 内嵌图尚未继承 run-scoped resolver；根图替换不能证明内层无逃逸 | 空集合 case 直接认证（假阴性）；不允许任何 foreach 测试（丢失外层 contract 价值） |
 | 34 | dogfooding 以不可达 descriptor endpoint 做逃逸证明 | 仅看 fixture 数量无法证明真实 binding 未被调用；连接必失败地址让逃逸成为确定失败 | 只断言 MOCKED 标签（实现 bug 可自证）；依赖外部 mock server（仍可能误路由） |
 | 35 | DELAY/TIMEOUT 使用每 run advancing logical clock，审计时间保持真实 | BLOGE retry/loop 已统一经 `TimeSource`；零墙钟可把 30 天 delay 压缩到毫秒级，且 timeout 仍走原生异常分类和 retry/fallback | 改全局系统时钟（跨 run 污染）；真实 sleep（慢且 flaky）；把逻辑时间写入 GraphContext（污染业务协议） |
-| 36 | nested 控制使用引擎原生 run-scoped resolver + 递归冻结清单，认证资格暂不随之放开 | 结构 path 必须由 BLOGE 与 RG 同源；preflight 限 64 层/10000 site、拒绝循环与重复；foreach/compensation 已证明零真实调用，但现有 node/edge evidence 仍按局部 nodeId 聚合 | 重写 DSL 注入 mock（证据错指 artifact）；只在运行时发现 child（无法预审）；控制一通就认证（trace 可能碰撞） |
+| 36 | nested 控制使用引擎原生 run-scoped resolver + 递归冻结清单；同步认证仅在 occurrence-addressable node/edge evidence 完成后放开 | 结构 path 必须由 BLOGE 与 RG 同源；preflight 限 64 层/10000 site、拒绝循环与重复；site occurrence、runtime correlation、containing graph occurrence 与 attempt 已关闭碰撞，流式节点仍 fail closed | 重写 DSL 注入 mock（证据错指 artifact）；只在运行时发现 child（无法预审）；控制一通就认证（trace 可能碰撞） |
+| 37 | 独立 test-kit 强类型保留 node/attempt/edge 坐标但不保留 payload | 治理和 CI 不应退回解析 raw JSON；结构坐标可直接消费，payload 仍只通过显式授权的 `rawResponse()` 诊断；旧 v1 producer 缺字段时映射为零坐标和空列表 | 只升级服务端 schema（客户端继续靠 Map）；把 payload 放入摘要（扩大泄密面）；拒绝旧响应（无必要兼容破坏） |
 
 ### 十、风险与未验证假设（诚实清单）
 

@@ -17,6 +17,7 @@ import java.util.List;
  * @param fixtureBundleFingerprint resolved fixture fingerprint
  * @param planFingerprint compiled control-plan fingerprint
  * @param nodeTraces payload-free node summaries
+ * @param edgeTraces payload-free edge transfer summaries
  * @param fixtureConsumptions fixture-use summaries
  * @param assertionResults payload-free assertion summaries
  * @param diagnostics bounded server diagnostics, excluded from built-in reports
@@ -30,6 +31,7 @@ public record TestRun(
         String fixtureBundleFingerprint,
         String planFingerprint,
         List<NodeTrace> nodeTraces,
+        List<EdgeTrace> edgeTraces,
         List<FixtureConsumption> fixtureConsumptions,
         List<AssertionResult> assertionResults,
         List<String> diagnostics,
@@ -72,13 +74,76 @@ public record TestRun(
      *
      * @param nodeId graph node id
      * @param operatorRef resolved operator reference
-     * @param status execution observation such as MOCKED or REAL
+     * @param status execution outcome such as SUCCESS, MOCKED, FAILED, or SKIPPED
      * @param fidelity observed fixture fidelity
      * @param errorCode normalized error code
      * @param durationMs observed duration in milliseconds
+     * @param invocationSiteId stable structural invocation-site id
+     * @param graphPath stable path of the graph that owns the occurrence
+     * @param correlationKey foreach, loop, or business correlation coordinate
+     * @param occurrence one-based site binding occurrence; zero means legacy unknown
+     * @param graphOccurrence one-based containing-graph occurrence; zero means legacy unknown
+     * @param attempts ordered payload-free delegate-attempt summaries
      */
     public record NodeTrace(String nodeId, String operatorRef, String status, String fidelity,
-                            String errorCode, long durationMs) {
+                            String errorCode, long durationMs, String invocationSiteId,
+                            String graphPath, String correlationKey, int occurrence,
+                            int graphOccurrence, List<AttemptTrace> attempts) {
+        /** Backward-compatible constructor for callers compiled against the original v1 summary. */
+        public NodeTrace(String nodeId, String operatorRef, String status, String fidelity,
+                         String errorCode, long durationMs) {
+            this(nodeId, operatorRef, status, fidelity, errorCode, durationMs,
+                    "", "", "", 0, 0, List.of());
+        }
+
+        /** Normalizes the nested attempt collection and rejects invalid wire coordinates. */
+        public NodeTrace {
+            if (durationMs < 0 || occurrence < 0 || graphOccurrence < 0) {
+                throw new IllegalArgumentException("Node trace durations and occurrences must be non-negative");
+            }
+            attempts = attempts == null ? List.of() : List.copyOf(attempts);
+        }
+    }
+
+    /**
+     * One payload-free delegate call within a node occurrence.
+     *
+     * @param attempt one-based retry attempt; zero means legacy unknown
+     * @param status SUCCESS, FAILED, TIMEOUT, or MOCKED
+     * @param fidelity observed execution fidelity
+     * @param errorCode normalized failure code
+     * @param durationMs observed attempt duration in milliseconds
+     */
+    public record AttemptTrace(int attempt, String status, String fidelity,
+                               String errorCode, long durationMs) {
+        /** Rejects invalid wire counters before they reach CI assertions. */
+        public AttemptTrace {
+            if (attempt < 0 || durationMs < 0) {
+                throw new IllegalArgumentException("Attempt trace counters must be non-negative");
+            }
+        }
+    }
+
+    /**
+     * Payload-free edge transfer summary addressable within one containing-graph occurrence.
+     *
+     * @param edgeId stable edge id
+     * @param status TRANSFERRED, SKIPPED, or NOT_TRANSFERRED
+     * @param graphPath stable path of the graph that owns the edge
+     * @param correlationKey foreach, loop, or business correlation coordinate
+     * @param graphOccurrence one-based containing-graph occurrence; zero means legacy unknown
+     * @param fromInvocationSiteId stable source invocation-site id
+     * @param toInvocationSiteId stable target invocation-site id
+     */
+    public record EdgeTrace(String edgeId, String status, String graphPath,
+                            String correlationKey, int graphOccurrence,
+                            String fromInvocationSiteId, String toInvocationSiteId) {
+        /** Rejects invalid wire coordinates before they reach CI assertions. */
+        public EdgeTrace {
+            if (graphOccurrence < 0) {
+                throw new IllegalArgumentException("Edge graphOccurrence must be non-negative");
+            }
+        }
     }
 
     /**
@@ -115,10 +180,23 @@ public record TestRun(
     public TestRun {
         runId = normalized(runId);
         nodeTraces = nodeTraces == null ? List.of() : List.copyOf(nodeTraces);
+        edgeTraces = edgeTraces == null ? List.of() : List.copyOf(edgeTraces);
         fixtureConsumptions = fixtureConsumptions == null ? List.of() : List.copyOf(fixtureConsumptions);
         assertionResults = assertionResults == null ? List.of() : List.copyOf(assertionResults);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         rawResponse = rawResponse == null ? null : rawResponse.deepCopy();
+    }
+
+    /** Backward-compatible constructor for callers that do not yet consume edge summaries. */
+    public TestRun(String runId, Status status, EvidenceClass evidenceClass,
+                   String targetFingerprint, String fixtureBundleFingerprint,
+                   String planFingerprint, List<NodeTrace> nodeTraces,
+                   List<FixtureConsumption> fixtureConsumptions,
+                   List<AssertionResult> assertionResults, List<String> diagnostics,
+                   JsonNode rawResponse) {
+        this(runId, status, evidenceClass, targetFingerprint, fixtureBundleFingerprint,
+                planFingerprint, nodeTraces, List.of(), fixtureConsumptions,
+                assertionResults, diagnostics, rawResponse);
     }
 
     /**
@@ -149,10 +227,25 @@ public record TestRun(
                 evidence.path("evidenceClass").asText(), "evidenceClass");
 
         List<NodeTrace> nodes = new ArrayList<>();
-        evidence.path("nodeTrace").forEach(node -> nodes.add(new NodeTrace(
-                node.path("nodeId").asText(), node.path("operatorRef").asText(),
-                node.path("status").asText(), node.path("fidelity").asText(),
-                node.path("errorCode").asText(), node.path("durationMs").asLong())));
+        evidence.path("nodeTrace").forEach(node -> {
+            List<AttemptTrace> attempts = new ArrayList<>();
+            node.path("attempts").forEach(attempt -> attempts.add(new AttemptTrace(
+                    attempt.path("attempt").asInt(), attempt.path("status").asText(),
+                    attempt.path("fidelity").asText(), attempt.path("errorCode").asText(),
+                    attempt.path("durationMs").asLong())));
+            nodes.add(new NodeTrace(node.path("nodeId").asText(), node.path("operatorRef").asText(),
+                    node.path("status").asText(), node.path("fidelity").asText(),
+                    node.path("errorCode").asText(), node.path("durationMs").asLong(),
+                    node.path("invocationSiteId").asText(), node.path("graphPath").asText(),
+                    node.path("correlationKey").asText(), node.path("occurrence").asInt(),
+                    node.path("graphOccurrence").asInt(), attempts));
+        });
+        List<EdgeTrace> edges = new ArrayList<>();
+        evidence.path("edgeTrace").forEach(edge -> edges.add(new EdgeTrace(
+                edge.path("edgeId").asText(), edge.path("status").asText(),
+                edge.path("graphPath").asText(), edge.path("correlationKey").asText(),
+                edge.path("graphOccurrence").asInt(), edge.path("fromInvocationSiteId").asText(),
+                edge.path("toInvocationSiteId").asText())));
         List<FixtureConsumption> fixtures = new ArrayList<>();
         evidence.path("fixtureConsumptions").forEach(fixture -> fixtures.add(new FixtureConsumption(
                 fixture.path("ruleId").asText(), fixture.path("uses").asInt(),
@@ -165,8 +258,8 @@ public record TestRun(
         evidence.path("diagnostics").forEach(value -> diagnostics.add(bounded(value.asText(), 1024)));
         return new TestRun(runId, status, evidenceClass, evidence.path("targetFingerprint").asText(),
                 evidence.path("fixtureBundleFingerprint").asText(),
-                evidence.path("planFingerprint").asText(), nodes, fixtures, assertions, diagnostics,
-                response);
+                evidence.path("planFingerprint").asText(), nodes, edges, fixtures, assertions,
+                diagnostics, response);
     }
 
     /**

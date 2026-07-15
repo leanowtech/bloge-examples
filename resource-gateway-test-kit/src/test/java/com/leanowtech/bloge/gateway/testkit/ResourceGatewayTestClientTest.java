@@ -61,6 +61,21 @@ class ResourceGatewayTestClientTest {
         assertThat(found.revision()).isEqualTo(3);
         assertThat(executed.runId()).isEqualTo("run-42");
         assertThat(executed.status()).isEqualTo(TestRun.Status.PASSED);
+        assertThat(executed.nodeTraces()).singleElement().satisfies(node -> {
+            assertThat(node.invocationSiteId()).isEqualTo("/root/credit#primary");
+            assertThat(node.graphPath()).isEqualTo("/root");
+            assertThat(node.correlationKey()).isEqualTo("application-42");
+            assertThat(node.occurrence()).isEqualTo(2);
+            assertThat(node.graphOccurrence()).isEqualTo(1);
+            assertThat(node.attempts()).extracting(TestRun.AttemptTrace::attempt)
+                    .containsExactly(1, 2);
+        });
+        assertThat(executed.edgeTraces()).singleElement().satisfies(edge -> {
+            assertThat(edge.status()).isEqualTo("TRANSFERRED");
+            assertThat(edge.graphOccurrence()).isEqualTo(1);
+            assertThat(edge.fromInvocationSiteId()).isEqualTo("/root/input#primary");
+            assertThat(edge.toInvocationSiteId()).isEqualTo("/root/credit#primary");
+        });
         assertThat(batch.runs()).hasSize(2);
         assertThat(batch.exitCode()).isZero();
         assertThat(queried.evidenceClass()).isEqualTo(TestRun.EvidenceClass.CERTIFIABLE);
@@ -201,7 +216,21 @@ class ResourceGatewayTestClientTest {
                    "status":"PASSED","evidenceClass":"CERTIFIABLE",
                    "targetFingerprint":"%1$s","fixtureBundleFingerprint":"%1$s",
                    "planFingerprint":"%1$s","nodeTrace":[{"nodeId":"credit","operatorRef":"httpResource",
-                     "status":"MOCKED","fidelity":"TRANSPORT_LEVEL","errorCode":"","durationMs":2}],
+                     "status":"MOCKED","fidelity":"TRANSPORT_LEVEL","input":"private-input",
+                     "output":"private-output","errorCode":"","durationMs":2,
+                     "invocationSiteId":"/root/credit#primary","graphPath":"/root",
+                     "correlationKey":"application-42","occurrence":2,"graphOccurrence":1,
+                     "attempts":[
+                       {"attempt":1,"status":"FAILED","fidelity":"TRANSPORT_LEVEL",
+                        "input":"private-attempt-input","output":null,"errorCode":"TIMEOUT","durationMs":1},
+                       {"attempt":2,"status":"MOCKED","fidelity":"TRANSPORT_LEVEL",
+                        "input":"private-attempt-input","output":"private-attempt-output",
+                        "errorCode":"","durationMs":1}]}],
+                   "edgeTrace":[{"edgeId":"input->credit","status":"TRANSFERRED",
+                     "value":"private-edge-value","graphPath":"/root",
+                     "correlationKey":"application-42","graphOccurrence":1,
+                     "fromInvocationSiteId":"/root/input#primary",
+                     "toInvocationSiteId":"/root/credit#primary"}],
                    "fixtureConsumptions":[{"ruleId":"credit","uses":1,"required":true,"status":"SATISFIED"}],
                    "assertionResults":[{"scope":"OUTPUT_PATH","path":"/approved","passed":true,
                      "diagnostic":""}],"diagnostics":[]}}

@@ -9,6 +9,7 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 - a fail-closed `FixtureBundleBuilder` for output-level and transport-level
   protocol fixtures;
 - payload-safe typed run summaries and JUnit 5 assertions;
+- occurrence-addressable node, retry-attempt, and edge summaries without payload fields;
 - payload-free JUnit XML with deterministic CI exit codes.
 
 ## Build
@@ -65,6 +66,12 @@ TestRunAssertions.assertCertifiable(run);
 TestRunAssertions.assertFixturesSatisfied(run);
 TestRunAssertions.assertNoRealInvocations(run);
 
+TestRun.NodeTrace occurrence = run.nodeTraces().getFirst();
+String site = occurrence.invocationSiteId();
+int graphOccurrence = occurrence.graphOccurrence();
+List<TestRun.AttemptTrace> attempts = occurrence.attempts();
+List<TestRun.EdgeTrace> edges = run.edgeTraces();
+
 JUnitXmlReportWriter.write(
         Path.of("target/surefire-reports/resource-gateway-contracts.xml"),
         "loan-policy",
@@ -76,6 +83,13 @@ fixtures are required for certifiable evidence. Resource fixtures that need to
 prove response protocol and payload extraction behavior should use
 `protocolResponse`; `returnValue` is an output-level double and cannot by itself
 earn certifiable evidence for a resource site.
+
+The typed summaries retain `invocationSiteId`, `graphPath`, `correlationKey`,
+site `occurrence`, containing `graphOccurrence`, retry attempts, and edge
+endpoints. They intentionally omit node/attempt/edge payload values; use
+`rawResponse()` only in an explicitly authorized diagnostic path when sanitized
+payload inspection is required. Producers that predate occurrence coordinates
+remain readable and project zero coordinates plus empty attempt/edge lists.
 
 For timeout, retry, fallback, or time-dependent business rules, declare one
 run-scoped logical clock and use `delay` or `timeout`:
