@@ -27,13 +27,16 @@ public final class TestEvidenceSanitizer {
                 node.nodeId(), node.operatorRef(), node.status(), node.fidelity(),
                 sanitizeValue(node.input()), sanitizeValue(node.output()), node.errorCode(), node.durationMs(),
                 node.invocationSiteId(), node.graphPath(), node.correlationKey(), node.occurrence(),
+                node.graphOccurrence(),
                 node.attempts().stream().map(attempt -> new TestRunEvidence.AttemptTrace(
                         attempt.attempt(), attempt.status(), attempt.fidelity(),
                         sanitizeValue(attempt.input()), sanitizeValue(attempt.output()),
                         attempt.errorCode(), attempt.durationMs())).toList()
         )).toList();
         var edges = evidence.edgeTrace().stream().map(edge -> new TestRunEvidence.EdgeTrace(
-                edge.edgeId(), edge.status(), sanitizeValue(edge.value()))).toList();
+                edge.edgeId(), edge.status(), sanitizeValue(edge.value()), edge.graphPath(),
+                edge.correlationKey(), edge.graphOccurrence(), edge.fromInvocationSiteId(),
+                edge.toInvocationSiteId())).toList();
         var assertions = evidence.assertionResults().stream().map(assertion ->
                 new TestRunEvidence.AssertionResult(assertion.scope(), assertion.path(), assertion.passed(),
                         sanitizeValue(assertion.expected()), sanitizeValue(assertion.actual()),

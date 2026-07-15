@@ -126,7 +126,7 @@ public class TestRunService {
                 startedAt,
                 Instant.now(),
                 nodes,
-                recorder.edgeTraces(request.graph(), graphResult),
+                recorder.edgeTraces(compiled.inventory(), nodes),
                 consumptions,
                 assertions,
                 diagnostics,
@@ -152,12 +152,14 @@ public class TestRunService {
         CompiledExecutionControl.ResolvedControl control = compiled.controls()
                 .get(entry.site().invocationSiteId());
         var runtimeSite = entry.site().withCorrelationKey(resolution.site().correlationKey());
-        if (control == null) {
-            return entry.frozenOperator() instanceof Operator<?, ?>
-                    ? doubleFactory.observe(entry.node(), runtimeSite, entry.frozenOperator(), recorder)
-                    : entry.frozenOperator();
+        if (control == null && !(entry.frozenOperator() instanceof Operator<?, ?>)) {
+            return entry.frozenOperator();
         }
-        return doubleFactory.create(entry.node(), runtimeSite, control.rules(),
+        var binding = recorder.bind(runtimeSite, resolution.graphContext());
+        if (control == null) {
+            return doubleFactory.observe(entry.node(), binding, entry.frozenOperator(), recorder);
+        }
+        return doubleFactory.create(entry.node(), binding, control.rules(),
                 entry.frozenOperator(), control.implicitDeny(), recorder);
     }
 

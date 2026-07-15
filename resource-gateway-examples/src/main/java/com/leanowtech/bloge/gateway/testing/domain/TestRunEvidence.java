@@ -100,17 +100,18 @@ public record TestRunEvidence(
      * @param graphPath stable path of the graph that owns this occurrence
      * @param correlationKey foreach, loop, or business correlation coordinate
      * @param occurrence one-based resolver binding occurrence; zero means legacy unknown
+     * @param graphOccurrence one-based containing-graph execution occurrence; zero means legacy unknown
      * @param attempts ordered one-based delegate-attempt facts for this occurrence
      */
     public record NodeTrace(String nodeId, String operatorRef, String status, String fidelity,
                             Object input, Object output, String errorCode, long durationMs,
                             String invocationSiteId, String graphPath, String correlationKey,
-                            int occurrence, List<AttemptTrace> attempts) {
+                            int occurrence, int graphOccurrence, List<AttemptTrace> attempts) {
         /** Backward-compatible constructor for v1 producers without occurrence coordinates. */
         public NodeTrace(String nodeId, String operatorRef, String status, String fidelity,
                          Object input, Object output, String errorCode, long durationMs) {
             this(nodeId, operatorRef, status, fidelity, input, output, errorCode, durationMs,
-                    "", "", "", 0, List.of());
+                    "", "", "", 0, 0, List.of());
         }
 
         /** Normalizes node trace labels. */
@@ -125,6 +126,9 @@ public record TestRunEvidence(
             correlationKey = trimmed(correlationKey);
             if (occurrence < 0) {
                 throw new IllegalArgumentException("occurrence must be >= 0");
+            }
+            if (graphOccurrence < 0) {
+                throw new IllegalArgumentException("graphOccurrence must be >= 0");
             }
             attempts = immutableList(attempts);
         }
@@ -163,12 +167,31 @@ public record TestRunEvidence(
      * @param edgeId stable edge id
      * @param status transfer status
      * @param value sanitized transferred value
+     * @param graphPath stable path of the graph that owns the edge
+     * @param correlationKey foreach, loop, or business correlation coordinate
+     * @param graphOccurrence one-based containing-graph execution occurrence
+     * @param fromInvocationSiteId stable source invocation-site id
+     * @param toInvocationSiteId stable target invocation-site id
      */
-    public record EdgeTrace(String edgeId, String status, Object value) {
+    public record EdgeTrace(String edgeId, String status, Object value, String graphPath,
+                            String correlationKey, int graphOccurrence,
+                            String fromInvocationSiteId, String toInvocationSiteId) {
+        /** Backward-compatible constructor for v1 producers without graph execution coordinates. */
+        public EdgeTrace(String edgeId, String status, Object value) {
+            this(edgeId, status, value, "", "", 0, "", "");
+        }
+
         /** Normalizes edge trace labels. */
         public EdgeTrace {
             edgeId = trimmed(edgeId);
             status = trimmed(status);
+            graphPath = trimmed(graphPath);
+            correlationKey = trimmed(correlationKey);
+            if (graphOccurrence < 0) {
+                throw new IllegalArgumentException("graphOccurrence must be >= 0");
+            }
+            fromInvocationSiteId = trimmed(fromInvocationSiteId);
+            toInvocationSiteId = trimmed(toInvocationSiteId);
         }
     }
 

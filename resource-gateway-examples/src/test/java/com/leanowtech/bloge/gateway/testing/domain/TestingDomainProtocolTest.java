@@ -19,11 +19,17 @@ class TestingDomainProtocolTest {
     void occurrenceAndAttemptCoordinatesRejectNegativeProtocolValues() {
         assertThatIllegalArgumentException().isThrownBy(() -> new TestRunEvidence.NodeTrace(
                 "node", "operator", "SUCCESS", "REAL", null, null, "", 0,
-                "/root/node#PRIMARY", "/root", "", -1, List.of()));
+                "/root/node#PRIMARY", "/root", "", -1, 1, List.of()));
+        assertThatIllegalArgumentException().isThrownBy(() -> new TestRunEvidence.NodeTrace(
+                "node", "operator", "SUCCESS", "REAL", null, null, "", 0,
+                "/root/node#PRIMARY", "/root", "", 1, -1, List.of()));
         assertThatIllegalArgumentException().isThrownBy(() -> new TestRunEvidence.AttemptTrace(
                 -1, "SUCCESS", "REAL", null, null, "", 0));
         assertThatIllegalArgumentException().isThrownBy(() -> new TestRunEvidence.AttemptTrace(
                 1, "SUCCESS", "REAL", null, null, "", -1));
+        assertThatIllegalArgumentException().isThrownBy(() -> new TestRunEvidence.EdgeTrace(
+                "a->b", "TRANSFERRED", null, "/root", "", -1,
+                "/root/a#PRIMARY", "/root/b#PRIMARY"));
     }
 
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();

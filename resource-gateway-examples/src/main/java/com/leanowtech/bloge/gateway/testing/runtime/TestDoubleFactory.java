@@ -44,7 +44,7 @@ public class TestDoubleFactory {
      * Creates one node-scoped controlled operator.
      *
      * @param node frozen node specification
-     * @param site occurrence-specific invocation coordinates
+     * @param binding occurrence-specific invocation coordinates
      * @param rules preflight-resolved, pairwise-disjoint candidate rules
      * @param realOperator frozen real binding
      * @param implicitDeny whether missing rules represent fail-closed external-effect policy
@@ -52,7 +52,7 @@ public class TestDoubleFactory {
      * @return operator passed only to the independent test engine
      */
     @SuppressWarnings("unchecked")
-    public Operator<Object, Object> create(NodeSpec node, InvocationSite site,
+    public Operator<Object, Object> create(NodeSpec node, InvocationRecorder.InvocationBinding binding,
                                            List<FixtureRule> rules,
                                            Object realOperator, boolean implicitDeny,
                                            InvocationRecorder recorder) {
@@ -60,9 +60,9 @@ public class TestDoubleFactory {
             throw new IllegalArgumentException("Node '" + node.id()
                     + "' is not a synchronous Operator and cannot use v1 execution control.");
         }
-        Operator<Object, Object> controlled = new ControlledOperator(node, site, rules,
+        Operator<Object, Object> controlled = new ControlledOperator(node, binding.site(), rules,
                 (Operator<Object, Object>) typed, implicitDeny, recorder);
-        return observed(node, site, controlled, recorder);
+        return observed(node, binding, controlled, recorder);
     }
 
     /**
@@ -70,25 +70,27 @@ public class TestDoubleFactory {
      * by test doubles. The wrapper delegates operator safety metadata unchanged.
      *
      * @param node frozen node specification
-     * @param site occurrence-specific invocation coordinates
+     * @param binding occurrence-specific invocation coordinates
      * @param realOperator frozen real binding
      * @param recorder per-run evidence recorder
      * @return observed operator passed only to the independent test engine
      */
     @SuppressWarnings("unchecked")
-    public Operator<Object, Object> observe(NodeSpec node, InvocationSite site,
+    public Operator<Object, Object> observe(NodeSpec node,
+                                            InvocationRecorder.InvocationBinding binding,
                                             Object realOperator, InvocationRecorder recorder) {
         if (!(realOperator instanceof Operator<?, ?> typed)) {
             throw new IllegalArgumentException("Node '" + node.id()
                     + "' is not a synchronous Operator and cannot produce v1 attempt evidence.");
         }
-        return observed(node, site, (Operator<Object, Object>) typed, recorder);
+        return observed(node, binding, (Operator<Object, Object>) typed, recorder);
     }
 
-    private Operator<Object, Object> observed(NodeSpec node, InvocationSite site,
+    private Operator<Object, Object> observed(NodeSpec node,
+                                              InvocationRecorder.InvocationBinding binding,
                                               Operator<Object, Object> delegate,
                                               InvocationRecorder recorder) {
-        return new ObservedOperator(node, recorder.bind(site), delegate, recorder);
+        return new ObservedOperator(node, binding, delegate, recorder);
     }
 
     private final class ControlledOperator implements Operator<Object, Object> {

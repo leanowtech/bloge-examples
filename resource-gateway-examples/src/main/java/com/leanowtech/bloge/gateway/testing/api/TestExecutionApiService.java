@@ -391,12 +391,15 @@ public final class TestExecutionApiService {
                         node.nodeId(), node.operatorRef(), node.status(), node.fidelity(),
                         null, null, node.errorCode(), node.durationMs(), node.invocationSiteId(),
                         node.graphPath(), node.correlationKey(), node.occurrence(),
+                        node.graphOccurrence(),
                         node.attempts().stream().map(attempt -> new TestRunEvidence.AttemptTrace(
                                 attempt.attempt(), attempt.status(), attempt.fidelity(), null, null,
                                 attempt.errorCode(), attempt.durationMs())).toList())).toList();
         var edges = safe == TestExecutionApiRequest.Verbosity.SUMMARY ? List.<TestRunEvidence.EdgeTrace>of()
                 : evidence.edgeTrace().stream().map(edge ->
-                        new TestRunEvidence.EdgeTrace(edge.edgeId(), edge.status(), null)).toList();
+                        new TestRunEvidence.EdgeTrace(edge.edgeId(), edge.status(), null,
+                                edge.graphPath(), edge.correlationKey(), edge.graphOccurrence(),
+                                edge.fromInvocationSiteId(), edge.toInvocationSiteId())).toList();
         return new TestRunEvidence(evidence.schemaVersion(), evidence.runId(), evidence.status(),
                 evidence.evidenceClass(), evidence.executionPurpose(), evidence.targetFingerprint(),
                 evidence.fixtureBundleFingerprint(), evidence.planFingerprint(), evidence.startedAt(),

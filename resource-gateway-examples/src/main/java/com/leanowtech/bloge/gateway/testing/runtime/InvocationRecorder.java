@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.testing.runtime;
 
+import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.engine.GraphResult;
 import com.leanowtech.bloge.core.exception.OperatorTimeoutException;
 import com.leanowtech.bloge.core.model.ConditionalEdge;
@@ -19,6 +20,8 @@ import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -41,6 +44,9 @@ public class InvocationRecorder implements ExecutionListener {
     private final Map<String, AtomicInteger> usesByRule = new ConcurrentHashMap<>();
     private final Map<RuntimeSiteKey, AtomicInteger> occurrences = new ConcurrentHashMap<>();
     private final Map<InvocationBinding, InvocationFact> invocationFacts = new ConcurrentHashMap<>();
+    private final Map<RuntimeGraphKey, AtomicInteger> graphOccurrences = new ConcurrentHashMap<>();
+    private final IdentityHashMap<GraphContext, Map<RuntimeGraphKey, Integer>> graphOccurrencesByContext =
+            new IdentityHashMap<>();
 
     /** Marks the effective fidelity before a controlled invocation returns or fails. */
     public void markFidelity(InvocationSite site, String fidelity) {
@@ -49,13 +55,19 @@ public class InvocationRecorder implements ExecutionListener {
 
     /**
      * Allocates a stable, one-based occurrence when the run-scoped resolver binds one operator.
-     * Retries reuse this binding; a nested graph re-entry allocates the next occurrence.
+     * Retries reuse this binding; a nested graph re-entry allocates the next occurrence. Object
+     * identity of the execution-local graph context joins sibling nodes without entering evidence.
+     *
+     * @param site runtime structural and correlation coordinates
+     * @param graphContext context instance shared by nodes in one containing graph execution
+     * @return immutable site and containing-graph occurrence binding
      */
-    public InvocationBinding bind(InvocationSite site) {
+    public InvocationBinding bind(InvocationSite site, GraphContext graphContext) {
         RuntimeSiteKey key = RuntimeSiteKey.from(site);
         int occurrence = occurrences.computeIfAbsent(key, ignored -> new AtomicInteger())
                 .incrementAndGet();
-        InvocationBinding binding = new InvocationBinding(site, occurrence);
+        int graphOccurrence = bindGraphOccurrence(site, graphContext);
+        InvocationBinding binding = new InvocationBinding(site, occurrence, graphOccurrence);
         invocationFacts.put(binding, new InvocationFact(binding));
         return binding;
     }
@@ -191,6 +203,110 @@ public class InvocationRecorder implements ExecutionListener {
         return edges.stream().sorted(Comparator.comparing(TestRunEvidence.EdgeTrace::edgeId)).toList();
     }
 
+    /**
+     * Reconstructs occurrence-addressable root and nested edge facts from the frozen inventory and
+     * node evidence. Graph-execution occurrence, rather than per-node occurrence, joins source and
+     * target facts so conditional skips in an earlier re-entry cannot shift later pairings.
+     */
+    public List<TestRunEvidence.EdgeTrace> edgeTraces(InvocationInventory inventory,
+                                                      List<TestRunEvidence.NodeTrace> nodeTraces) {
+        Map<String, GraphEvidenceShape> shapes = evidenceShapes(inventory);
+        List<TestRunEvidence.EdgeTrace> edges = new ArrayList<>();
+        Map<GraphOccurrenceKey, List<TestRunEvidence.NodeTrace>> groups = new LinkedHashMap<>();
+        nodeTraces.stream().filter(trace -> trace.graphOccurrence() > 0)
+                .forEach(trace -> groups.computeIfAbsent(GraphOccurrenceKey.from(trace),
+                        ignored -> new ArrayList<>()).add(trace));
+        groups.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(group -> {
+            GraphEvidenceShape shape = shapes.get(group.getKey().graphPath());
+            if (shape != null) {
+                appendOccurrenceEdges(shape, group.getKey(), group.getValue(), edges);
+            }
+        });
+        return edges.stream().sorted(edgeTraceOrder()).toList();
+    }
+
+    private static Map<String, GraphEvidenceShape> evidenceShapes(InvocationInventory inventory) {
+        Map<String, GraphEvidenceShapeBuilder> builders = new LinkedHashMap<>();
+        for (InvocationInventory.Entry entry : inventory.entries()) {
+            if (entry.site().invocationKind() == InvocationSite.InvocationKind.COMPENSATION) {
+                continue;
+            }
+            GraphEvidenceShapeBuilder builder = builders.computeIfAbsent(entry.site().graphPath(),
+                    ignored -> new GraphEvidenceShapeBuilder(entry.graph()));
+            builder.siteByNode.put(entry.site().nodeId(), entry.site().invocationSiteId());
+        }
+        Map<String, GraphEvidenceShape> shapes = new LinkedHashMap<>();
+        builders.forEach((path, builder) -> shapes.put(path, builder.build()));
+        return Map.copyOf(shapes);
+    }
+
+    private static void appendOccurrenceEdges(GraphEvidenceShape shape, GraphOccurrenceKey key,
+                                              List<TestRunEvidence.NodeTrace> traces,
+                                              List<TestRunEvidence.EdgeTrace> output) {
+        Map<String, TestRunEvidence.NodeTrace> byNode = new LinkedHashMap<>();
+        for (TestRunEvidence.NodeTrace trace : traces) {
+            if (trace.invocationSiteId().equals(shape.siteByNode().get(trace.nodeId()))) {
+                byNode.put(trace.nodeId(), trace);
+            }
+        }
+        for (Edge edge : shape.graph().edges()) {
+            TestRunEvidence.NodeTrace source = byNode.get(edge.from());
+            Object value = source == null ? null : source.output();
+            switch (edge) {
+                case DirectEdge direct -> output.add(occurrenceEdgeTrace(direct.from() + "->" + direct.to(),
+                        direct.from(), direct.to(), value, false, key, shape, byNode));
+                case StreamEdge stream -> output.add(occurrenceEdgeTrace(stream.from() + "~>" + stream.to(),
+                        stream.from(), stream.to(), value, false, key, shape, byNode));
+                case ConditionalEdge conditional -> {
+                    for (Edge.Branch branch : conditional.branches()) {
+                        output.add(occurrenceEdgeTrace(conditional.from() + "?->" + branch.target(),
+                                conditional.from(), branch.target(), value, true, key, shape, byNode));
+                    }
+                    if (conditional.otherwise() != null) {
+                        output.add(occurrenceEdgeTrace(conditional.from() + "?:->" + conditional.otherwise(),
+                                conditional.from(), conditional.otherwise(), value, true, key, shape, byNode));
+                    }
+                }
+            }
+        }
+    }
+
+    private static TestRunEvidence.EdgeTrace occurrenceEdgeTrace(
+            String localId, String from, String to, Object value, boolean conditional,
+            GraphOccurrenceKey key, GraphEvidenceShape shape,
+            Map<String, TestRunEvidence.NodeTrace> byNode) {
+        TestRunEvidence.NodeTrace source = byNode.get(from);
+        TestRunEvidence.NodeTrace target = byNode.get(to);
+        boolean sourceSucceeded = source != null
+                && ("SUCCESS".equals(source.status()) || "MOCKED".equals(source.status()));
+        boolean targetInvoked = target != null && !"SKIPPED".equals(target.status())
+                && !"CANCELLED".equals(target.status()) && !"NOT_INVOKED".equals(target.status());
+        String status = sourceSucceeded && targetInvoked ? "TRANSFERRED"
+                : conditional && sourceSucceeded ? "SKIPPED" : "NOT_TRANSFERRED";
+        String edgeId = "/root".equals(key.graphPath()) ? localId
+                : key.graphPath() + "/" + escapedEdgeId(localId);
+        return addressedEdgeTrace(edgeId, status, value, key, shape, from, to);
+    }
+
+    private static TestRunEvidence.EdgeTrace addressedEdgeTrace(
+            String edgeId, String status, Object value, GraphOccurrenceKey key,
+            GraphEvidenceShape shape, String from, String to) {
+        return new TestRunEvidence.EdgeTrace(edgeId, status, value, key.graphPath(),
+                key.correlationKey(), key.graphOccurrence(), shape.siteByNode().getOrDefault(from, ""),
+                shape.siteByNode().getOrDefault(to, ""));
+    }
+
+    private static String escapedEdgeId(String localId) {
+        return localId.replace("~", "~0").replace("/", "~1");
+    }
+
+    private static Comparator<TestRunEvidence.EdgeTrace> edgeTraceOrder() {
+        return Comparator.comparing(TestRunEvidence.EdgeTrace::graphPath)
+                .thenComparing(TestRunEvidence.EdgeTrace::correlationKey)
+                .thenComparingInt(TestRunEvidence.EdgeTrace::graphOccurrence)
+                .thenComparing(TestRunEvidence.EdgeTrace::edgeId);
+    }
+
     /** Produces immutable per-rule consumption facts. */
     public List<TestRunEvidence.FixtureConsumption> consumptions(List<FixtureRule> rules) {
         return rules.stream().map(rule -> {
@@ -226,6 +342,17 @@ public class InvocationRecorder implements ExecutionListener {
 
     private String fidelity(InvocationBinding binding) {
         return fidelityByRuntimeSite.getOrDefault(RuntimeSiteKey.from(binding.site()), "REAL");
+    }
+
+    private synchronized int bindGraphOccurrence(InvocationSite site, GraphContext graphContext) {
+        if (graphContext == null) {
+            throw new IllegalArgumentException("graphContext must not be null");
+        }
+        RuntimeGraphKey graphKey = RuntimeGraphKey.from(site);
+        Map<RuntimeGraphKey, Integer> contextBindings = graphOccurrencesByContext
+                .computeIfAbsent(graphContext, ignored -> new LinkedHashMap<>());
+        return contextBindings.computeIfAbsent(graphKey, ignored -> graphOccurrences
+                .computeIfAbsent(graphKey, key -> new AtomicInteger()).incrementAndGet());
     }
 
     private InvocationFact fact(InvocationBinding binding) {
@@ -275,7 +402,7 @@ public class InvocationRecorder implements ExecutionListener {
                     normalized(status), "REAL", null,
                     result.findOutput(site.nodeId(), Object.class).orElse(null), "",
                     millis(result.nodeTimings().get(site.nodeId())), site.invocationSiteId(),
-                    site.graphPath(), "", 1, List.of()));
+                    site.graphPath(), "", 1, 1, List.of()));
         }
     }
 
@@ -312,8 +439,8 @@ public class InvocationRecorder implements ExecutionListener {
     private record StartFact(String operatorRef, Object input) {
     }
 
-    /** Stable one-run occurrence allocation reused by every retry attempt. */
-    public record InvocationBinding(InvocationSite site, int occurrence) {
+    /** Stable site and graph occurrence allocation reused by every retry attempt. */
+    public record InvocationBinding(InvocationSite site, int occurrence, int graphOccurrence) {
         /** Rejects malformed bindings before they can create ambiguous evidence. */
         public InvocationBinding {
             if (site == null) {
@@ -322,12 +449,57 @@ public class InvocationRecorder implements ExecutionListener {
             if (occurrence < 1) {
                 throw new IllegalArgumentException("occurrence must be >= 1");
             }
+            if (graphOccurrence < 1) {
+                throw new IllegalArgumentException("graphOccurrence must be >= 1");
+            }
         }
     }
 
     private record RuntimeSiteKey(String invocationSiteId, String correlationKey) {
         private static RuntimeSiteKey from(InvocationSite site) {
             return new RuntimeSiteKey(site.invocationSiteId(), site.correlationKey());
+        }
+    }
+
+    private record RuntimeGraphKey(String graphPath, String correlationKey) {
+        private static RuntimeGraphKey from(InvocationSite site) {
+            return new RuntimeGraphKey(site.graphPath(), site.correlationKey());
+        }
+    }
+
+    private record GraphOccurrenceKey(String graphPath, String correlationKey, int graphOccurrence)
+            implements Comparable<GraphOccurrenceKey> {
+        private static GraphOccurrenceKey from(TestRunEvidence.NodeTrace trace) {
+            return new GraphOccurrenceKey(trace.graphPath(), trace.correlationKey(),
+                    trace.graphOccurrence());
+        }
+
+        @Override
+        public int compareTo(GraphOccurrenceKey other) {
+            int path = graphPath.compareTo(other.graphPath);
+            if (path != 0) return path;
+            int correlation = correlationKey.compareTo(other.correlationKey);
+            if (correlation != 0) return correlation;
+            return Integer.compare(graphOccurrence, other.graphOccurrence);
+        }
+    }
+
+    private record GraphEvidenceShape(Graph graph, Map<String, String> siteByNode) {
+        private GraphEvidenceShape {
+            siteByNode = Map.copyOf(siteByNode);
+        }
+    }
+
+    private static final class GraphEvidenceShapeBuilder {
+        private final Graph graph;
+        private final Map<String, String> siteByNode = new LinkedHashMap<>();
+
+        private GraphEvidenceShapeBuilder(Graph graph) {
+            this.graph = graph;
+        }
+
+        private GraphEvidenceShape build() {
+            return new GraphEvidenceShape(graph, siteByNode);
         }
     }
 
@@ -370,7 +542,8 @@ public class InvocationRecorder implements ExecutionListener {
             InvocationSite site = binding.site();
             return new TestRunEvidence.NodeTrace(site.nodeId(), operatorRef, status, fidelity,
                     input, output, errorCode, duration, site.invocationSiteId(), site.graphPath(),
-                    site.correlationKey(), binding.occurrence(), orderedAttempts);
+                    site.correlationKey(), binding.occurrence(), binding.graphOccurrence(),
+                    orderedAttempts);
         }
     }
 }

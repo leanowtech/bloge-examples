@@ -6,6 +6,8 @@ import com.leanowtech.bloge.core.dsl.GraphBuilder;
 import com.leanowtech.bloge.core.engine.GraphEngine;
 import com.leanowtech.bloge.core.engine.NestedExecutionCoordinates;
 import com.leanowtech.bloge.core.engine.operators.ForEachOperator;
+import com.leanowtech.bloge.core.engine.operators.SubGraphOperator;
+import com.leanowtech.bloge.core.model.Edge;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.model.NodeSpec;
 import com.leanowtech.bloge.core.model.ResilienceConfig;
@@ -140,6 +142,39 @@ class TestRunServiceTest {
         assertThat(result.evidence().status()).isEqualTo(TestRunEvidence.Status.FIXTURE_UNUSED);
         assertThat(result.evidence().fixtureConsumptions()).singleElement()
                 .satisfies(consumption -> assertThat(consumption.status()).isEqualTo("UNUSED"));
+        assertThat(result.evidence().edgeTrace()).singleElement().satisfies(edge -> {
+            assertThat(edge.status()).isEqualTo("NOT_TRANSFERRED");
+            assertThat(edge.graphPath()).isEqualTo("/root");
+            assertThat(edge.graphOccurrence()).isEqualTo(1);
+            assertThat(edge.fromInvocationSiteId()).isEqualTo("/root/first#PRIMARY");
+            assertThat(edge.toInvocationSiteId()).isEqualTo("/root/subject#PRIMARY");
+        });
+    }
+
+    @Test
+    void directEdgeRecordsTransferWhenTargetRunsAndThenFails() {
+        Operator<Object, Object> targetFailure = new PureOperator() {
+            @Override
+            public Object execute(Object input, OperatorContext context) {
+                throw new IllegalStateException("target rejects transferred value");
+            }
+        };
+        Graph graph = new GraphBuilder("target-failure")
+                .node("source", new PureOperator())
+                .input((results, context) -> context.get("input"))
+                .node("target", targetFailure)
+                .dependsOn("source")
+                .build();
+
+        TestExecutionResult result = service.execute(request(graph, bundle()));
+
+        assertThat(result.evidence().status()).isEqualTo(TestRunEvidence.Status.EXECUTION_FAILED);
+        assertThat(result.evidence().edgeTrace()).singleElement().satisfies(edge -> {
+            assertThat(edge.status()).isEqualTo("TRANSFERRED");
+            assertThat(edge.value()).isEqualTo("real:hello");
+            assertThat(edge.fromInvocationSiteId()).isEqualTo("/root/source#PRIMARY");
+            assertThat(edge.toInvocationSiteId()).isEqualTo("/root/target#PRIMARY");
+        });
     }
 
     @Test
@@ -454,10 +489,14 @@ class TestRunServiceTest {
         AtomicInteger realCalls = new AtomicInteger();
         DefaultOperatorRegistry nestedRegistry = new DefaultOperatorRegistry();
         nestedRegistry.register("customer.lookup", new CountingExternalOperator(realCalls));
+        nestedRegistry.register("pure.after", new PureOperator());
         NodeSpec lookup = new NodeSpec("lookup", "customer.lookup", null,
                 ResilienceConfig.DEFAULT, Map.of(), OpaqueSchema.INSTANCE, OpaqueSchema.INSTANCE);
-        Graph child = new Graph("item-body", Map.of("lookup", lookup), List.of(),
-                Set.of("lookup"), Set.of("lookup"), SchemaValidationLevel.OFF);
+        NodeSpec after = new NodeSpec("after", "pure.after", null,
+                ResilienceConfig.DEFAULT, Map.of(), OpaqueSchema.INSTANCE, OpaqueSchema.INSTANCE);
+        Graph child = new Graph("item-body", Map.of("lookup", lookup, "after", after),
+                List.of(new Edge.Direct("lookup", "after")), Set.of("lookup"), Set.of("after"),
+                SchemaValidationLevel.OFF);
         ForEachOperator foreach = new ForEachOperator(child, nestedRegistry, false);
         Graph root = new GraphBuilder("foreach-control")
                 .node("enrich", foreach)
@@ -484,16 +523,17 @@ class TestRunServiceTest {
                         result.graphResult() == null ? "null" : result.graphResult().errors())
                 .isTrue();
         assertThat(result.graphResult().getOutput("enrich", List.class)).containsExactly(
-                Map.of("lookup", "fixture"),
-                Map.of("lookup", "fixture"),
-                Map.of("lookup", "fixture"));
+                Map.of("after", "real:null"),
+                Map.of("after", "real:null"),
+                Map.of("after", "real:null"));
         assertThat(realCalls).hasValue(0);
         assertThat(result.evidence().fixtureConsumptions()).singleElement()
                 .satisfies(consumption -> assertThat(consumption.uses()).isEqualTo(3));
         assertThat(result.evidence().metadata().get("nodeControlModes"))
                 .isEqualTo(Map.of("/root/enrich/item-body/lookup#PRIMARY", "RETURN"));
         assertThat(result.evidence().nodeTrace().stream()
-                .filter(trace -> "/root/enrich/item-body".equals(trace.graphPath())).toList())
+                .filter(trace -> "/root/enrich/item-body".equals(trace.graphPath())
+                        && "lookup".equals(trace.nodeId())).toList())
                 .hasSize(3)
                 .allSatisfy(trace -> {
                     assertThat(trace.invocationSiteId())
@@ -504,6 +544,19 @@ class TestRunServiceTest {
                             .satisfies(attempt -> assertThat(attempt.attempt()).isEqualTo(1));
                 })
                 .extracting(TestRunEvidence.NodeTrace::correlationKey)
+                .doesNotHaveDuplicates();
+        assertThat(result.evidence().edgeTrace().stream()
+                .filter(edge -> "/root/enrich/item-body".equals(edge.graphPath())).toList())
+                .hasSize(3)
+                .allSatisfy(edge -> {
+                    assertThat(edge.status()).isEqualTo("TRANSFERRED");
+                    assertThat(edge.graphOccurrence()).isEqualTo(1);
+                    assertThat(edge.fromInvocationSiteId())
+                            .isEqualTo("/root/enrich/item-body/lookup#PRIMARY");
+                    assertThat(edge.toInvocationSiteId())
+                            .isEqualTo("/root/enrich/item-body/after#PRIMARY");
+                })
+                .extracting(TestRunEvidence.EdgeTrace::correlationKey)
                 .doesNotHaveDuplicates();
     }
 
@@ -524,6 +577,8 @@ class TestRunServiceTest {
         Graph child = new GraphBuilder("child-body")
                 .node("child", flakyChild)
                 .input((results, context) -> context.get("input"))
+                .node("after", new PureOperator())
+                .dependsOn("child")
                 .build();
         Graph root = new GraphBuilder("nested-reentry")
                 .node("nested", new FailingNestedOperator(child, nestedRegistry))
@@ -539,22 +594,88 @@ class TestRunServiceTest {
                 .isTrue();
         assertThat(childCalls).hasValue(2);
         assertThat(result.evidence().nodeTrace().stream()
-                .filter(trace -> "/root/nested/child-body".equals(trace.graphPath())).toList())
+                .filter(trace -> "/root/nested/child-body".equals(trace.graphPath())
+                        && "child".equals(trace.nodeId())).toList())
                 .hasSize(2)
                 .extracting(TestRunEvidence.NodeTrace::occurrence)
                 .containsExactly(1, 2);
         assertThat(result.evidence().nodeTrace().stream()
-                .filter(trace -> "/root/nested/child-body".equals(trace.graphPath())).toList())
+                .filter(trace -> "/root/nested/child-body".equals(trace.graphPath())
+                        && "child".equals(trace.nodeId())).toList())
+                .extracting(TestRunEvidence.NodeTrace::graphOccurrence)
+                .containsExactly(1, 2);
+        assertThat(result.evidence().nodeTrace().stream()
+                .filter(trace -> "/root/nested/child-body".equals(trace.graphPath())
+                        && "child".equals(trace.nodeId())).toList())
                 .allSatisfy(trace -> {
                     assertThat(trace.correlationKey()).isEmpty();
                     assertThat(trace.attempts()).singleElement()
                             .satisfies(attempt -> assertThat(attempt.attempt()).isEqualTo(1));
                 });
         assertThat(result.evidence().nodeTrace().stream()
+                .filter(trace -> "/root/nested/child-body".equals(trace.graphPath())
+                        && "after".equals(trace.nodeId())).findFirst()).hasValueSatisfying(trace -> {
+                    assertThat(trace.occurrence()).isEqualTo(1);
+                    assertThat(trace.graphOccurrence()).isEqualTo(2);
+                });
+        assertThat(result.evidence().edgeTrace().stream()
+                .filter(edge -> "/root/nested/child-body".equals(edge.graphPath())).toList())
+                .hasSize(2)
+                .satisfiesExactly(
+                        edge -> {
+                            assertThat(edge.graphOccurrence()).isEqualTo(1);
+                            assertThat(edge.status()).isEqualTo("NOT_TRANSFERRED");
+                        },
+                        edge -> {
+                            assertThat(edge.graphOccurrence()).isEqualTo(2);
+                            assertThat(edge.status()).isEqualTo("TRANSFERRED");
+                            assertThat(edge.fromInvocationSiteId())
+                                    .isEqualTo("/root/nested/child-body/child#PRIMARY");
+                            assertThat(edge.toInvocationSiteId())
+                                    .isEqualTo("/root/nested/child-body/after#PRIMARY");
+                        });
+        assertThat(result.evidence().nodeTrace().stream()
                 .filter(trace -> "/root".equals(trace.graphPath())
                         && "nested".equals(trace.nodeId())).findFirst()).hasValueSatisfying(trace ->
                 assertThat(trace.attempts()).extracting(TestRunEvidence.AttemptTrace::attempt)
                         .containsExactly(1, 2));
+    }
+
+    @Test
+    void nestedConditionalEdgesDistinguishTransferredAndSkippedBranches() {
+        Operator<Object, Object> route = new PureOperator() {
+            @Override
+            public Object execute(Object input, OperatorContext context) {
+                return "A";
+            }
+        };
+        Graph child = new GraphBuilder("conditional-body")
+                .node("route", route)
+                .node("branchA", new PureOperator())
+                .node("branchB", new PureOperator())
+                .branch("route")
+                .when("A"::equals, "branchA")
+                .otherwise("branchB")
+                .build();
+        Graph root = new GraphBuilder("nested-conditional")
+                .node("sub", new SubGraphOperator(child, new DefaultOperatorRegistry()))
+                .input((results, context) -> Map.of())
+                .build();
+
+        TestExecutionResult result = service.execute(request(root, bundle()));
+
+        assertThat(result.passed()).isTrue();
+        var nestedEdges = result.evidence().edgeTrace().stream()
+                .filter(edge -> "/root/sub/conditional-body".equals(edge.graphPath())).toList();
+        assertThat(nestedEdges).hasSize(2)
+                .extracting(TestRunEvidence.EdgeTrace::status)
+                .containsExactlyInAnyOrder("TRANSFERRED", "SKIPPED");
+        assertThat(nestedEdges).allSatisfy(edge -> {
+            assertThat(edge.graphOccurrence()).isEqualTo(1);
+            assertThat(edge.fromInvocationSiteId())
+                    .isEqualTo("/root/sub/conditional-body/route#PRIMARY");
+            assertThat(edge.toInvocationSiteId()).isNotBlank();
+        });
     }
 
     @Test
@@ -653,7 +774,7 @@ class TestRunServiceTest {
             if (!result.isSuccess()) {
                 throw new IllegalStateException("nested graph failed");
             }
-            return Map.of("child", result.findOutput("child", Object.class).orElse(null));
+            return Map.of("after", result.findOutput("after", Object.class).orElse(null));
         }
 
         @Override
