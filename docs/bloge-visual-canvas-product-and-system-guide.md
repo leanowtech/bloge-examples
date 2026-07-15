@@ -1753,6 +1753,12 @@ Operator Test Suite 和右侧全图 Test Suite 的边界不同：
 | Operator Detail 内的 Operator Test Suite | 单个节点/算子 | Input case、Output sample | 沉淀该算子的局部验证样例，并一键套用为节点 fixture |
 | 右侧 inspector 的 Test Suite | 整张 graph | Runtime context、fixture overrides、Expected graph output | 批量验证端到端编排路径和最终业务结果 |
 
+这里有一个重要边界：当前 Operator Test Suite 的 `Run Table` 验证 input/output sample 与 operator schema、断言是否
+自洽，不会调用真实 runtime binding；右侧全图 Test Suite 则复用 mock simulation，真实执行纯 DSL primitive，其他
+operator 由 fixture 或 schema sample 替换。两者都不能被解释为 production-real execution。真实 operator unit、
+graph contract、fault injection、replay regression 和生产隔离的统一目标方案见
+[工业级可测试性与执行数据控制反转演进方案](resource-gateway-industrial-testability-evolution-plan.md)。
+
 因此，当你只想确认某个 http resource、transform 或 decision table 节点“收到什么输入、应该吐出什么样例”时，优先在双击浮层里维护 Operator Test Suite；当你要验证整张图的 happy path、fallback path 或分支组合时，再进入右侧全图 Test Suite。
 
 Decision table 双击后的页面重点如下：
@@ -2339,6 +2345,7 @@ mvn -f resource-gateway-examples/pom.xml -Pfrontend \
 
 后续可以继续推进：
 
+- 建立 Execution Data Control Plane，区分 schema-contract 与 executable operator test，并统一 operator/graph/replay fixture、fault、coverage、evidence 和生产隔离；详见[工业级可测试性演进方案](resource-gateway-industrial-testability-evolution-plan.md)。
 - 把 `visual/*` 抽出更干净的可复用 core + adapter SPI。
 - 给 `/author/` 增加 stored draft 打开/保存/发布完整工作流。
 - 把 runtime binding handoff 做成更直接的控制面。

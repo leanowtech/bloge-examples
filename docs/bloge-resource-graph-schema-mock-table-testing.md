@@ -273,6 +273,12 @@ operator definition
   -> suite/batch coverage evidence
 ```
 
+必须准确理解这一层的证明强度：当前 `/api/visual/operators/tests/run` **不会调用真实 operator runtime binding**，
+它验证的是 input/config/mocked output/断言之间的 schema-contract 自洽性。因此当前模式应归类为
+`SCHEMA_CONTRACT`，不能把 passing result 解释为“operator 实现已经执行并正确”。真实执行指定 binding、控制内部依赖、
+注入故障和输出签名测试证据的演进设计见
+[Resource Gateway 工业级可测试性与执行数据控制反转演进方案](resource-gateway-industrial-testability-evolution-plan.md)。
+
 这补齐了 graph 外的 standalone operator 表格测试层。对于已经有真实 request-response runtime binding 的算子，后续可以在此基础上增加 executable adapter，把“schema mock 验证”升级成“mock + real execution 双模式验证”。
 
 ## 5. 断言能力
@@ -447,7 +453,11 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 ## 9. 差距与补强路线
 
-按“工业化可用”目标估算，当前差距已经从 3% 到 4% 继续收敛到约 2% 到 2.5%。核心 schema + mock + table test 主链路已打通：资源 graph 有 formal input/output schema，graph/operator 都能生成可编辑 mock row 并运行表格验证；画布内也已经有 Test Suite authoring 入口，可以直接基于当前 draft 批量验证多条 mock 路径。剩余差距主要是增强型治理能力，而不是主路径缺口。
+按本文件“schema + mock + table authoring”这一窄范围目标估算，当前差距约 2% 到 2.5%。核心链路已打通：资源 graph 有 formal input/output schema，graph/operator 都能生成可编辑 mock row 并运行表格验证；画布内也已经有 Test Suite authoring 入口，可以直接基于当前 draft 批量验证多条 mock 路径。
+
+这个数字**不代表 Resource Gateway 整体工业级可测试性的完成度**。真实 operator binding 执行、统一 fixture/control
+protocol、故障与非确定性控制、durable resume、语义覆盖率、签名测试证据和 production hard isolation 仍是实质缺口；
+它们不是“增强型治理”，而是从 mock authoring 走向业务正确性保障的下一条主链路。
 
 建议下一轮补强顺序：
 

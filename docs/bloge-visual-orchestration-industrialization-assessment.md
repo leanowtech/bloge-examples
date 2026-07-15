@@ -1256,6 +1256,7 @@ schema type/path 逻辑仍分散在多个类中。短期可接受；中期应抽
 
 | 优先级 | 方向 | 理由 | 最小可交付 |
 | --- | --- | --- | --- |
+| P0 | Execution Data Control Plane 与 executable test | 当前 operator suite 只验证 mocked output/schema 自洽，simulation 和 graph contract fixture 语义也未统一；没有真实 binding 执行、有效替换计划和生产硬隔离就不能形成工业级正确性证明 | 先冻结 `SCHEMA_CONTRACT`/`EXECUTABLE_UNIT` 语义，落 `ExecutionPurpose`、`InvocationSite`、`FixtureBundle`、`EffectiveExecutionPlan` v1 和 single-node micro graph runner；完整方案见 [工业级可测试性演进方案](resource-gateway-industrial-testability-evolution-plan.md) |
 | P0 | 深层 compatibility / value diagnostics 策略收敛 | effective kind 已统一，但 not/conditional/patternProperties/dependent schema 等深层判断仍在类内分散 | 选一个高风险 schema 子集，抽共享 value/schema policy 或补明确不可迁移边界 |
 | P0 | Runtime binding partial-failure 硬化 | 这是 DESIGN artifact 走向可执行 runtime 的主干 | 选一个尚未补偿的跨 repository mutation，补 replay/compensation/诊断 |
 | P1 | DSL 迁移任务台与 source writer 前置治理 | batch-report/batch-commit 后端和 CLI/CI 入口已有证据，但迁移负责人仍缺 Studio dashboard、coverage dashboard、人工 reviewed 状态和 VCS/source writer 接入 | 复用 CLI 与 TypeScript batch import contract，先做 Studio dashboard / source writer preflight，再把 rewrite gate、人工 reviewed 和 VCS PR 串成治理流 |

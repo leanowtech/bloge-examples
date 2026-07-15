@@ -474,6 +474,12 @@ HOLD_RELEASED/PURGED` 是 append-only 签名事件链。payload blob 删除后�
 
 ## 7. Contract Test Suite 与 ANEKE workbook 对齐
 
+本章聚焦 suite/evidence 如何进入 ANEKE workbook。Resource Gateway 自身从 schema mock table 走向真实 operator、
+subgraph、整图、故障注入和 replay regression 的统一执行架构，单独定义在
+[Resource Gateway 工业级可测试性与执行数据控制反转演进方案](resource-gateway-industrial-testability-evolution-plan.md)。
+该方案把 `EffectiveExecutionPlan` 和 `TestRunEvidence` 作为 workbook evidence 的上游事实，避免 ANEKE 消费一个
+无法说明 REAL/MOCK 边界的 passing result。
+
 Round 17 关闭的病根不是“再加几个 case 字段”，而是此前 gate result 没有记录它消费了哪些输入版本：一个
 `PASSED` 只绑定 draft，无法证明对应哪一版 workbook、dependency snapshot、suite revision、run evidence 或 gate
 policy。正式链路把 suite 定义、运行证据和治理结论拆成三个权威对象：

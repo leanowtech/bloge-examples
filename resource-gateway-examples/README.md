@@ -20,7 +20,7 @@ integration something the business flow can see, reason about, test, and change.
 | Graph-level contracts | Every built-in resource graph exposes formal input/output JSON Schema for system integration |
 | Schema-aware canvas | Drag, connect, validate, simulate, and publish under server-side schema checks |
 | Runtime-backed demos | Local upstreams, real gateway execution, mock simulation, SSE examples, and reusable publications |
-| Schema-gated table tests | Run real resource graphs with mocked downstream APIs, input/output schema validation, and node-level assertions |
+| Schema-gated table tests | Run real resource graphs with mocked downstream APIs; validate operator fixture contracts without pretending mocked outputs executed the real implementation |
 | Governed run controls | Absolute deadline, monotonic remaining-budget propagation, fenced cancel, durable owner lease/epoch, cross-instance commands, and automatic signed evidence recovery after owner failure |
 | Auditable external writes | Versioned write contracts, binding/activation conformance, execution-scoped journal, commit receipts, UNKNOWN_COMMIT DAG guard, and signed reconciliation evidence |
 | Dynamic workload identity | Atomic JWKS/revocation refresh, zero-restart key rotation, bounded propagation SLO, group/clearance/delegation claims, and explicit 401/503 semantics |
@@ -97,7 +97,7 @@ rewrite gate evidence and a reviewed VCS/source-writer flow.
 2. **Compose the business flow**: connect descriptors, transforms, decisions,
    subgraphs, and design-only operators under JSON Schema constraints.
 3. **Prove and promote it**: validate, simulate with mock or real evidence,
-   run graph/operator schema table suites, publish reusable graph products, and
+   run real-DAG graph contract suites and operator schema-contract suites, publish reusable graph products, and
    protect them with golden cases.
 
 The showcase covers dashboard aggregation, product enrichment, enriched orders,
@@ -208,6 +208,10 @@ mocked calls, assertions, or required output-node coverage.
 For the detailed contract-test design, request format, verification evidence,
 and remaining industrialization gaps, see
 [Resource Graph Schema Mock Table Testing](../docs/bloge-resource-graph-schema-mock-table-testing.md).
+The next industrial step is the
+[Execution Data Control Plane and testability evolution plan](../docs/resource-gateway-industrial-testability-evolution-plan.md):
+it separates schema-only operator checks from executable operator tests, unifies
+operator/graph/replay fixtures, and makes production isolation part of the runtime protocol.
 
 Create a provider-specific Java operator only when the provider behavior cannot
 be expressed cleanly as a descriptor-backed resource.
@@ -221,7 +225,9 @@ To add a user-supplied visual operator library:
 3. Validate and import it.
 4. Use `/api/visual/operators/tests/draft` to generate editable operator mock
    rows from each operator's input/config/output schemas, then save or batch-run
-   them through `/api/visual/operators/tests/suites`.
+   schema-contract checks through `/api/visual/operators/tests/suites`. This
+   current mode validates fixture and schema consistency; it does not execute a
+   real operator runtime binding.
 5. Drag operators, wire schemas, simulate, and export.
 
 The `/author/` built-in canvas examples also carry their own graph-level
