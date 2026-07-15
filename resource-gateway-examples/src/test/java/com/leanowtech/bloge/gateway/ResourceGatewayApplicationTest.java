@@ -2,9 +2,13 @@ package com.leanowtech.bloge.gateway;
 
 import com.leanowtech.bloge.core.engine.GraphEngine;
 import com.leanowtech.bloge.gateway.gateway.GatewayProperties;
+import com.leanowtech.bloge.gateway.gateway.GatewayGraphContractTestBatchResult;
+import com.leanowtech.bloge.gateway.gateway.GatewayGraphContractTestService;
+import com.leanowtech.bloge.gateway.gateway.GatewayGraphContractTestSuiteRepository;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
+import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,20 +51,59 @@ class ResourceGatewayApplicationTest {
     @Autowired
     private IntegrationAccessAuditRepository integrationAccessAudit;
 
+    @Autowired
+    private GatewayGraphContractTestService graphContractTests;
+
+    @Autowired
+    private GatewayGraphContractTestSuiteRepository graphContractTestSuites;
+
     @LocalServerPort
     private int port;
 
     @BeforeEach
     void seedDemoDescriptors() {
+        seedDemoDescriptors("http://localhost:" + port + "/demo-upstream");
+    }
+
+    private void seedDemoDescriptors(String baseUrl) {
         registry.all().stream()
                 .map(descriptor -> descriptor.resourceId())
                 .toList()
                 .forEach(registry::deregister);
 
         var properties = new GatewayProperties();
-        properties.setBaseUrl("http://localhost:" + port + "/demo-upstream");
+        properties.setBaseUrl(baseUrl);
         properties.setSeedDescriptors(true);
         new ResourceDescriptorBootstrap(registry, properties).seedDescriptors();
+    }
+
+    @Test
+    void everyBuiltInGraphSuiteRunsThroughRealWiringWithoutUncontrolledResourceCalls() {
+        seedDemoDescriptors("http://127.0.0.1:1/unreachable");
+
+        GatewayGraphContractTestBatchResult result = graphContractTests.runAll(graphContractTestSuites.all());
+
+        assertThat(result.passed()).as("built-in suite batch: %s", result).isTrue();
+        assertThat(result.totalSuites()).isEqualTo(7);
+        assertThat(result.totalCases()).isEqualTo(13);
+        assertThat(result.coverage().mockedResourceCalls()).isEqualTo(23);
+        assertThat(result.coverage().assertionCount()).isEqualTo(33);
+        assertThat(result.results()).allSatisfy(suite ->
+                assertThat(suite.result().results()).allSatisfy(testCase -> {
+                    assertThat(testCase.evidence().status()).isEqualTo(TestRunEvidence.Status.PASSED);
+                    if (suite.graphName().equals("enrichOrderList")) {
+                        assertThat(testCase.evidence().evidenceClass())
+                                .isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
+                    } else {
+                        assertThat(testCase.evidence().evidenceClass())
+                                .isEqualTo(TestRunEvidence.EvidenceClass.CERTIFIABLE);
+                    }
+                    assertThat(testCase.evidence().nodes())
+                            .filteredOn(node -> node.operatorRef().equals("httpResource")
+                                    && !node.status().equals("SKIPPED"))
+                            .allSatisfy(node -> assertThat(node.fidelity())
+                                    .isEqualTo("TRANSPORT_LEVEL"));
+                }));
     }
 
     @Test

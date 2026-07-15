@@ -193,6 +193,8 @@ class GatewayGraphContractTestServiceTest {
 
         assertThat(mock.fixtureMode()).isEqualTo(GatewayGraphResourceMock.FixtureMode.OUTPUT_LEVEL);
         assertThat(mock.responseHeaders()).isEmpty();
+        assertThat(mock.minUses()).isEqualTo(1);
+        assertThat(mock.maxUses()).isEqualTo(1);
     }
 
     @Test
@@ -326,8 +328,8 @@ class GatewayGraphContractTestServiceTest {
 
     @Test
     void batchRunAggregatesStoredSuiteEvidence() throws IOException {
-        GatewayGraphContractTestService service = testService("loan-decision-policy");
-        GatewayGraphContractTestSuiteRepository repository = new InMemoryGatewayGraphContractTestSuiteRepository();
+        GatewayGraphContractTestService service = testService("loan-decision-policy", loanResources());
+        GatewayGraphContractTestSuiteRepository repository = loanRepository();
 
         GatewayGraphContractTestBatchResult result = service.runAll(repository.all());
 
@@ -344,8 +346,8 @@ class GatewayGraphContractTestServiceTest {
     void contractTestApiListsRunsAndBatchesStoredSuites() throws Exception {
         MockMvc mockMvc = MockMvcBuilders
                 .standaloneSetup(new GatewayGraphContractTestController(
-                        testService("loan-decision-policy"),
-                        new InMemoryGatewayGraphContractTestSuiteRepository()))
+                        testService("loan-decision-policy", loanResources()),
+                        loanRepository()))
                 .build();
 
         mockMvc.perform(get("/api/gateway/graphs/contracts/tests/suites"))
@@ -367,6 +369,37 @@ class GatewayGraphContractTestServiceTest {
                 .andExpect(jsonPath("$.passed").value(true))
                 .andExpect(jsonPath("$.totalSuites").value(1))
                 .andExpect(jsonPath("$.coverage.mockedResourceCalls").value(2));
+    }
+
+    @Test
+    void builtInSuiteCatalogCoversEveryGraphAndUsesExplicitTransportFixtures() {
+        GatewayGraphContractTestSuiteRepository repository =
+                new InMemoryGatewayGraphContractTestSuiteRepository();
+
+        assertThat(repository.all()).hasSize(7);
+        assertThat(repository.all())
+                .extracting(suite -> suite.request().graphName())
+                .containsExactlyInAnyOrder(
+                        "aiEnrichedSearch",
+                        "creditScore",
+                        "enrichOrderList",
+                        "loanDecisionPolicy",
+                        "productDetail",
+                        "resourceDispatch",
+                        "userDashboard");
+        assertThat(repository.all().stream()
+                .flatMap(suite -> suite.request().cases().stream())
+                .flatMap(testCase -> testCase.resourceMocks().stream()))
+                .allSatisfy(mock -> assertThat(mock.fixtureMode())
+                        .isEqualTo(GatewayGraphResourceMock.FixtureMode.TRANSPORT_LEVEL));
+        assertThat(repository.find("enrich-order-list-outer-boundary").orElseThrow().tags())
+                .contains("exploratory", "nested-invocation-gap");
+        assertThat(repository.find("credit-score-provider-routing").orElseThrow()
+                .request().cases().get(1).resourceMocks().getFirst())
+                .satisfies(mock -> {
+                    assertThat(mock.minUses()).isEqualTo(2);
+                    assertThat(mock.maxUses()).isEqualTo(2);
+                });
     }
 
     private static GatewayGraphContractTestService testService(String resourceName) throws IOException {
@@ -393,6 +426,28 @@ class GatewayGraphContractTestServiceTest {
                 resourceContracts,
                 resources,
                 resources == null ? null : new BlgeExpressionEvaluator());
+    }
+
+    private static GatewayGraphContractTestSuiteRepository loanRepository() {
+        GatewayGraphContractTestSuite loan = new InMemoryGatewayGraphContractTestSuiteRepository()
+                .find("loan-decision-policy-smoke")
+                .orElseThrow();
+        return new InMemoryGatewayGraphContractTestSuiteRepository(List.of(loan));
+    }
+
+    private static ResourceRegistry loanResources() {
+        MapRegistry resources = new MapRegistry();
+        resources.put(new ResourceDescriptor(
+                "loan-applicant-service.getProfile",
+                "https://unreachable.invalid/applicants/{applicantId}",
+                "GET",
+                Map.of(),
+                null,
+                Duration.ofSeconds(1),
+                new ParameterMapping(Map.of("applicantId", "ctx.params.applicantId"), Map.of(), null),
+                new ResponseProtocol.BodyCode("code", Set.of(0, "0", "SUCCESS"), "message"),
+                "data"));
+        return resources;
     }
 
     private static class NoopOperator implements Operator<Object, Object> {

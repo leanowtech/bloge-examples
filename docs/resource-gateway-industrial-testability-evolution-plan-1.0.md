@@ -8,20 +8,22 @@
 | --- | --- | --- |
 | Stage 0 | 完成 | operator suite API/UI 显式 `SCHEMA_CONTRACT`；`testing/domain` 五个版本化 record；capability testability 描述；[ADR-001](adr/ADR-001-resource-gateway-test-runtime-isolation.md)、[ADR-002](adr/ADR-002-operator-composability-and-opaque-runtime.md) 与 [BLOGE framework requirement](bloge-framework-execution-control-requirement.md) |
 | Stage 1' | 完成 | `testing/planning/runtime/evidence` 内核；独立 test engine；五行为；F2/F3 resource fixture；micro-graph runner；旧 graph suite adapter；37 个聚焦测试与 1653 个项目测试全绿 |
-| Stage 2' | 进行中 | 已落地 target discovery、`/api/testing/executions`/batch/query、immutable fixture registry、独立 test-run store、10 态 evidence、profile/identity/生产协议隔离，以及独立 test-kit（HTTP client、fixture builder、JUnit 5 assertions、JUnit XML）；全示例 dogfooding、旧 suite F2/F3 迁移仍待完成 |
+| Stage 2' | 进行中 | 已落地 target discovery、`/api/testing/executions`/batch/query、immutable fixture registry、独立 test-run store、10 态 evidence、profile/identity/生产协议隔离、独立 test-kit，以及七图/13-case F3 dogfooding；公共 operator adapter、nested invocation 寻址与物理 network/runtime 隔离仍待完成 |
 
 Stage 0 验证基线：Resource Gateway `clean verify` 共 1624 tests、0 failures、33 个既有条件跳过；AuthorCanvas 聚焦回归 36 tests、0 failures。后续阶段必须继续维持该基线并增加对应反面用例。
 
 Stage 1 实现证据与复现命令见
 [Execution Data Control Plane Stage 1 verification](resource-gateway-execution-data-control-plane-stage1-verification.md)。
 Stage 1 全量验收：Resource Gateway `clean verify` 共 1653 tests、0 failures、0 errors、34 个条件跳过，JAR 打包成功。
-Stage 2 当前增量验收：Resource Gateway `clean verify` 共 1685 tests、0 failures、0 errors、2 个条件跳过，JAR 打包成功。
+Stage 2 当前增量验收：Resource Gateway `clean verify` 共 1691 tests、0 failures、0 errors、33 个条件跳过，真实浏览器回归与 JAR 打包成功。
 独立 test-kit 当前 `clean verify` 共 10 tests、0 failures、0 errors，JAR 与权威 testing-control-plane v1 schema 一同打包成功。
-这里的“完成”只指内核与已列出的 adapter。Stage 2 已开放首个公共 graph control plane、持久化 store 与 test-kit，但公共
-operator run adapter、全示例 dogfooding 和旧 suite F2/F3 迁移仍不得提前写入产品可用清单。当前 API 与运行方式见
+这里的“完成”只指内核与已列出的 adapter。Stage 2 已开放首个公共 graph control plane、持久化 store、test-kit，并完成全部内置图的 stored-suite F3 迁移与 dogfooding；但公共
+operator run adapter、foreach/loop/subgraph 精确寻址和物理隔离仍不得提前写入产品可用清单。当前 API 与运行方式见
 [Testing Control Plane API](resource-gateway-testing-control-plane-api.md)。
 独立 client adapter 的边界、测试矩阵与非声明见
 [Stage 2 test-kit verification](resource-gateway-execution-data-control-plane-stage2-test-kit-verification.md)。
+内置图矩阵、不可达 endpoint 逃逸证明与认证边界见
+[Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md)。
 
 ---
 
@@ -179,7 +181,7 @@ flowchart LR
 3. Suite registry/batch runner 改为向内核提交；coverage policy 复用；numeric tolerance 断言补齐。
 4. test-kit 模块（新 Maven module）：薄 HTTP client + FixtureBundle builder + JUnit 5 断言适配 + JUnit XML 输出。
 5. 安全告警（生产触碰类）：test purpose 触达生产 endpoint/credential、production run 携非空 control plan → 安全事件。
-6. Dogfooding：所有示例图（loan-decision、credit-score 等）建 suite，接入 `mvn -f pom.xml clean verify`；**存量示例 suite（含内置 `GatewayGraphResourceMock` 用例）迁移到 rawBody 形态以达认证门槛**（真实响应样例从既有 WireMock 用例与 demo-upstream 提取）；产出 verification doc。
+6. **已实现 Dogfooding**：七张示例图建立 13 个 case 并接入 `clean verify`；23 个根资源节点全部迁移为 F3 raw response，retry fixture 用 `minUses/maxUses` 精确计数；真实 Spring wiring 将 descriptor 指向 `127.0.0.1:1` 后仍全绿。`enrichOrderList` 因 foreach-body 尚不可寻址只覆盖空集合外层边界，并强制降级为 EXPLORATORY，禁止假认证。验证见 [Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md)。
 7. 维护本蓝图文档：所有实现期决策变更以 decision delta 追加进第九节，保持与北极星文档的引用一致性。
 
 **验收**：见第八节验证清单。
@@ -201,7 +203,7 @@ flowchart LR
 2. 反面用例：漏配 fixture 的外部算子 → FIXTURE_UNMATCHED（绝不真调外部）；required fixture 未消费 → FIXTURE_UNUSED；同级 selector 歧义 → CONTROL_PLAN_REJECTED；attempt/occurrence 使用 → 明确拒绝错误。
 3. 架构测试：test engine 实例构建配置不含生产横切拦截器（结构性证明 MOCKED 永不进响应缓存/限流/熔断统计）。
 4. 隔离测试：production profile 下 /api/testing/** bean 不存在；生产 run API 请求携 control 字段被拒并触发安全事件。
-5. Dogfooding：全部示例图 suite 达 coverage policy（minCases/minAssertionCount 等），CI 常态运行；以覆盖率指标做量化线。
+5. Dogfooding：全部七张示例图的 13 个 case 达 coverage policy；Spring 测试把 descriptor 指向不可达 endpoint，证明 23 个执行中的根资源节点全部由 F3 fixture 控制；33 个业务断言和证据分级进入 CI。foreach 空集合 case 只签发 EXPLORATORY。
 6. Conformance：Stage 1' 四类 operator 用例 + evidence class 正确分级（inline→EXPLORATORY，stored+无 waiver 且 ≥F2→CERTIFIABLE）。
 7. 保真度反面用例：resource 类 mocked site 为 OUTPUT_LEVEL（自报 success）的 run 断言不产生 CERTIFIABLE 证据；F2 形态下构造「rawBody 与预期 success 矛盾」的用例，断言以真实协议派生结果为准。
 8. 效应边界用例：L1 对 `HttpResourceOperator` 的 TRANSPORT 级测试断言参数映射/URL 渲染/协议解析被真实执行（stub 传输层捕获渲染后的请求并校验）。
@@ -240,15 +242,19 @@ flowchart LR
 | 28 | 独立 datasource 用 wrapper bean 持有，不发布第二个 `DataSource` | 保持生产 Boot/JdbcTemplate 单候选装配，同时获得独立连接池和数据库 | 同表 channel 字段（未来查询漏过滤）；直接发布第二 datasource（破坏现有自动装配） |
 | 29 | production run 控制字段在 servlet filter 前置拒绝并先写安全审计 | 不能押注 Jackson unknown-field 配置或每个未来 DTO 都记得加校验；覆盖多套 run API | 各 DTO 增 `testMode`（把后门写进协议）；仅日志告警后继续执行（业务风险仍发生） |
 | 30 | test-kit 采用顶层独立 Maven library，不改造 Resource Gateway 为 reactor | 服务端原启停/打包命令完全兼容；客户端只依赖版本化 wire schema，可独立发布升级；避免为了一个 adapter 搬迁整个 Spring Boot app | 将 `resource-gateway-examples` 原地改父 POM（目录迁移与脚本回归面大）；把 test-kit 放入服务端 JAR（形成实现依赖，无法独立演进） |
+| 31 | `GatewayGraphResourceMock` 用显式 `fixtureMode`，旧 JSON 缺省为 OUTPUT_LEVEL | 不能根据 `rawBody` 是否为空猜保真度；旧 payload fixture 的 success 语义必须兼容，且不得被误认证 | 自动把旧 row 升级为 F2/F3（行为漂移和假认证）；删除旧字段（协议破坏） |
+| 32 | fixture consumption 暴露 `minUses/maxUses` | retry/fallback 测试必须精确证明尝试次数，同一 rule 可重复消费且超/欠用均失败 | 每次 attempt 建同 selector rule（planner 歧义）；不计 attempt（错误路径覆盖不可证） |
+| 33 | nested node kind 先令 target certification-ineligible | foreach/loop 内嵌图尚未继承 run-scoped resolver；根图替换不能证明内层无逃逸 | 空集合 case 直接认证（假阴性）；不允许任何 foreach 测试（丢失外层 contract 价值） |
+| 34 | dogfooding 以不可达 descriptor endpoint 做逃逸证明 | 仅看 fixture 数量无法证明真实 binding 未被调用；连接必失败地址让逃逸成为确定失败 | 只断言 MOCKED 标签（实现 bug 可自证）；依赖外部 mock server（仍可能误路由） |
 
 ### 十、风险与未验证假设（诚实清单）
 
 1. **Stage 1 已确认边界**：`executeWithOperators` 的主节点替换已通过 conformance；foreach body/streaming/compensation 仍未统一寻址，因此 planner v1 只激活 PRIMARY 主节点、非 durable 图，其他坐标显式拒绝或不签发认证证据。
 2. **未验证**：correlationKey 在 foreach 场景的取值来源（item key 如何被内核感知）——若引擎不透出，v1 用 canonical match on item payload 兜底，correlationKey 降为预留。
-3. suite registry/batch runner 收编的回归风险——由行为保持测试兜底，但需防「顺手扩展」诱惑。
+3. **已验证并关闭主路径**：suite registry/batch runner 已收编全部七张示例图；13 case、coverage gate、stored provenance 和 payload-free evidence summary 通过真实 Spring wiring。新增图仍须同步 contract 与 suite，避免目录再次不完整。
 4. **已验证并关闭**：test-kit 不需要将 `resource-gateway-examples` 转为多模块；采用顶层独立 Maven library，并由根 README/AGENTS 固化独立构建命令。后续若建立聚合 verify，只能新增无搬迁的根级 aggregator，不得改变服务端 artifact 与启停路径。
 5. 引擎需求（ExecutionOptions 等）落地节奏不受本仓控制——v1 全程不依赖它，仅受益于未来下沉。
-6. 存量示例 suite 迁移 rawBody 形态需要真实上游响应样例（从既有 WireMock 用例与 demo-upstream 提取）——工作量示例级，但需逐条核对语义等价性（派生出的 success/payload 与原自报值一致），防止迁移本身引入行为漂移。
+6. **已验证并关闭**：存量与新增内置 suite 已从 WireMock/demo-upstream 提取真实 envelope 并迁移为 F3；BodyCode、BodyFlag、HttpStatus、StatusCodes、BlgeExpression 五种协议均在图级 case 中经过派生。后续 descriptor envelope 变化必须同步 fixture，否则测试应当失败而不是兼容吞掉。
 7. F2 派生依赖 descriptor 的 `ResponseProtocol`/payloadPath 配置正确——若 descriptor 本身配置错误，派生会「忠实地」复现该错误。这是特性而非缺陷（graph 测试本就应暴露 descriptor 配置错误），但需在使用文档中说明以免误判为 fixture 问题。
 8. Stage 2 当前 dependency policy 会因任一已注册 descriptor 变化而令所有 graph fixture stale，安全但影响面偏大；只有在 BLOGE 暴露可证明完整的静态/运行期 resource dependency manifest 后才能收窄。
 9. `EVIDENCE_INCOMPLETE` 当前随同步响应返回但不能查询（持久化本身失败）；后续需独立告警/恢复队列，不能把失败记录写回同一个失效 store 来制造假恢复。

@@ -442,8 +442,9 @@ public class GatewayGraphContractTestService {
                 selector = selector.matching(FixtureRule.Match.pathEquals("/params", mock.expectedParams()));
             }
             FixtureRule.Behavior behavior = resourceBehavior(mock);
-            FixtureRule.Consumption consumption = mock.required()
-                    ? FixtureRule.Consumption.once() : FixtureRule.Consumption.optionalOnce();
+            FixtureRule.Consumption consumption = new FixtureRule.Consumption(
+                    mock.required(), mock.minUses(), mock.maxUses(),
+                    FixtureRule.ExhaustedAction.FAIL, FixtureRule.UnmatchedAction.FAIL);
             rules.add(new FixtureRule(FixtureRule.SCHEMA_VERSION, "resource-mock-" + i,
                     selector, behavior, consumption, FixtureRule.SchemaCheck.strict()));
         }

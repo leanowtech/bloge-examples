@@ -657,6 +657,26 @@ class VisualSchemaValidatorTest {
                 });
     }
 
+    @Test
+    void validatesTypedRecordOutputsThroughTheJsonObjectContractModel() {
+        SchemaEnvelope schema = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "required", List.of("resourceId", "statusCode", "payload", "success"),
+                "properties", Map.of(
+                        "resourceId", Map.of("type", "string"),
+                        "statusCode", Map.of("type", "integer"),
+                        "payload", Map.of("type", "object"),
+                        "success", Map.of("type", "boolean")),
+                "additionalProperties", true));
+
+        var diagnostics = VisualSchemaValidator.validateValue(
+                schema,
+                new ResourceResult("customer.get", 200, Map.of("customerId", "C-1"), true),
+                "/output");
+
+        assertThat(diagnostics).isEmpty();
+    }
+
     private static Map<String, Object> conditionalPaymentSchema() {
         Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("type", "object");
@@ -674,5 +694,9 @@ class VisualSchemaValidatorTest {
         schema.put("then", Map.of("required", List.of("cardNumber")));
         schema.put("else", Map.of("required", List.of("bankAccount")));
         return schema;
+    }
+
+    private record ResourceResult(String resourceId, int statusCode,
+                                  Map<String, Object> payload, boolean success) {
     }
 }

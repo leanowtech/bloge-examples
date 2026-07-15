@@ -122,6 +122,30 @@ InMemoryGatewayGraphContractTestSuiteRepository
 
 `resourceMocks` 只替换 descriptor-backed `httpResource` 调用。Graph topology、DSL 编译产物、decision table、branch、transform、fallback 等仍然通过真实 BLOGE engine 执行。
 
+每个 `resourceMocks` 行同时是一条可审计 fixture 规则：
+
+| 字段 | 含义 |
+| --- | --- |
+| `resourceId` | 要匹配的 descriptor-backed resource id |
+| `expectedParams` | 可选的精确参数匹配条件；不匹配时 fail closed |
+| `fixtureMode` | `OUTPUT_LEVEL`、`PROTOCOL_DERIVED` 或 `TRANSPORT_LEVEL`，决定替换边界与证据等级 |
+| `payload` / `success` | 仅供 `OUTPUT_LEVEL` 使用的已解释算子输出 |
+| `statusCode` / `rawBody` / `responseHeaders` | F2/F3 使用的原始上游 HTTP 响应；仍由生产协议解析链处理 |
+| `required` | 兼容字段；为 `true` 时缺省 `minUses=1`，否则缺省 `minUses=0` |
+| `minUses` | 最少消费次数，用于证明 retry/loop 的预期调用基数 |
+| `maxUses` | 最大消费次数；`0` 表示不设上限，历史行缺省为 `1` |
+
+保真语义不能靠 suite 名称或存储位置推断：
+
+| `fixtureMode` | 实际替换点 | 最高保真度 | 证据用途 |
+| --- | --- | --- | --- |
+| `OUTPUT_LEVEL` | 直接提供 `HttpResourceOutput` | F1 | 兼容历史 table row，只能生成 `EXPLORATORY` 证据 |
+| `PROTOCOL_DERIVED` | 提供 raw response，由真实 `ResponseProtocol` 与 payload path 解释 | F2 | 证明响应协议和业务编排 |
+| `TRANSPORT_LEVEL` | 替换 HTTP transport，保留真实参数映射、URL 渲染、协议解释 | F3 | stored suite 且其余认证条件满足时可生成 `CERTIFIABLE` 证据 |
+
+`minUses/maxUses` 是确定性控制，不是覆盖率提示。实际消费低于最小值会得到 `FIXTURE_UNUSED`，超过最大值会得到
+`FIXTURE_EXHAUSTED`；两者都使 case 失败。retry/fallback 用例必须显式写出调用次数，不能以无限复用 fixture 掩盖错误的重试策略。
+
 ### 4.0 画布内 Test Suite 入口
 
 后端 schema-gated suite 是治理级能力；新版 `/author/` 现在还提供画布内 **Test Suite**，作为作者构造表格用例的低门槛入口。右侧 inspector 只保留轻量摘要和入口按钮，完整表格在浮层里编辑，避免大表格挤占节点配置空间。
@@ -184,11 +208,21 @@ Coverage policy 字段：
 | `minAssertionCount` | 至少配置并评估多少个终态/节点断言 |
 | `requiredOutputNodes` | 至少要被 passing case 覆盖的 output node |
 
-内置 in-memory suite：
+内置 in-memory catalog 不再只有一条 smoke path，而是让仓库自身持续执行全部七张资源图：
 
-| suiteId | 覆盖 |
-| --- | --- |
-| `loan-decision-policy-smoke` | loan decision table 的 R1 approval 与 R4 decline 两条路径；覆盖 `assembleLoanDecision` 输出节点、2 次 resource mock、4 个断言 |
+| suiteId | graph | case | 关键路径 | 证据等级 |
+| --- | --- | ---: | --- | --- |
+| `ai-enriched-search-streams` | `aiEnrichedSearch` | 1 | metadata、token stream、citation 汇总 | Certifiable |
+| `credit-score-provider-routing` | `creditScore` | 2 | primary 成功；primary 两次失败后 secondary fallback | Certifiable |
+| `enrich-order-list-outer-boundary` | `enrichOrderList` | 1 | 空订单集合与 foreach 外层边界 | Exploratory，nested invocation 尚不可寻址 |
+| `loan-decision-policy-smoke` | `loanDecisionPolicy` | 2 | decision table R1 approval 与 R4 decline | Certifiable |
+| `product-detail-all-branches` | `productDetail` | 3 | physical、digital、generic 三个 branch | Certifiable |
+| `resource-dispatch-descriptor-protocols` | `resourceDispatch` | 2 | BodyCode 与 query-mapped descriptor 协议 | Certifiable |
+| `user-dashboard-happy-and-degraded` | `userDashboard` | 2 | 并行聚合 happy path；bounded retry + fallback 降级 | Certifiable |
+
+合计 7 suites、13 cases、23 个被观察到的根资源节点调用和 33 个业务断言。所有 resource fixture 均为显式
+`TRANSPORT_LEVEL`；Spring dogfooding 还会把 descriptor endpoint 指向不可连接地址，任何 fixture 逃逸都会使测试确定失败。
+详细证明见 [Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md)。
 
 ## 4.1 Resource Graph Mock Draft
 
@@ -377,11 +411,15 @@ GatewayGraphContractTestService
           "expectedParams": {
             "applicantId": "prime"
           },
-          "payload": {
-            "applicantId": "prime",
-            "score": 780,
-            "segment": "private-bank"
-          }
+          "statusCode": 200,
+          "rawBody": "{\"code\":0,\"message\":\"OK\",\"data\":{\"applicantId\":\"prime\",\"score\":780,\"segment\":\"private-bank\"}}",
+          "responseHeaders": {
+            "Content-Type": "application/json"
+          },
+          "fixtureMode": "TRANSPORT_LEVEL",
+          "required": true,
+          "minUses": 1,
+          "maxUses": 1
         }
       ],
       "outputNode": "assembleLoanDecision",
@@ -427,7 +465,7 @@ Focused verification:
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-    -Dtest=GatewayGraphContractTestServiceTest,ExecutionControlCompilerTest,TestRunServiceTest,ResourceFixtureRuntimeTest,OperatorMicroGraphRunnerTest,GraphArtifactFingerprintTest test
+    -Dtest=GatewayGraphContractTestServiceTest,ResourceGatewayApplicationTest,VisualSchemaValidatorTest,ExecutionControlCompilerTest,TestRunServiceTest,ResourceFixtureRuntimeTest,OperatorMicroGraphRunnerTest,GraphArtifactFingerprintTest test
 ```
 
 当前覆盖：
@@ -444,6 +482,9 @@ mvn -f resource-gateway-examples/pom.xml \
 | `ResourceFixtureRuntimeTest` | 相同 raw body 在不同协议下派生不同结果；F3 捕获真实渲染 URL；204 空 body |
 | `OperatorMicroGraphRunnerTest` | 纯算子 EXECUTABLE_UNIT、opaque fail closed、httpResource TRANSPORT 认证 |
 | `GraphArtifactFingerprintTest` | 指纹稳定性、DSL 源和边完成语义变化检测 |
+| `builtInSuiteCatalogCoversEveryGraphAndUsesExplicitTransportFixtures` | 七图/13-case catalog 完整性、全部 F3 fixture、retry 精确消费次数 |
+| `everyBuiltInGraphSuiteRunsThroughRealWiringWithoutUncontrolledResourceCalls` | 真实 Spring wiring 批量执行七图；不可达 endpoint 下 23 次 root resource 调用全部由 transport fixture 接管；33 个断言通过 |
+| `validatesTypedRecordOutputsThroughTheJsonObjectContractModel` | typed Java record 与 JSON map 使用同一 schema 可见形态，避免 graph gate 和 kernel assertion 结论分裂 |
 
 Graph contract coverage:
 
@@ -474,6 +515,7 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 | `mvn -f resource-gateway-examples/pom.xml clean verify`（Stage 1） | Passed，1653 tests；0 failures，0 errors，34 conditional skips；JAR 打包成功 |
 | `mvn -f resource-gateway-examples/pom.xml clean verify` | Reached 1390 tests; failed on one existing browser DOM test with Selenium `StaleElementReferenceException` |
 | `mvn -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerPersistsConfigUnionBranchSelectionInRealBrowser -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，confirms the full-run failure was browser timing/flakiness rather than the resource graph contract path |
+| `mvn -f resource-gateway-examples/pom.xml clean verify`（Stage 2 dogfooding） | Passed，1691 tests；0 failures，0 errors，33 conditional skips；真实 Chrome 回归与 JAR 打包成功 |
 
 ## 8. 当前进展评估
 
@@ -484,15 +526,17 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 | Public endpoint output schema gate | Done | graph 成功后按 `outputNodes` 选择终态输出，并用 `outputSchema` 校验后再返回 |
 | Contract catalog API | Done | `/api/gateway/graphs/contracts` |
 | Mock table suite API | Done | `/api/gateway/graphs/contracts/tests/run` |
-| 下游 API 无真实调用验证 | Done | 只 mock `httpResource`，真实 graph engine 仍执行 |
+| 下游 API 无真实调用验证 | Done for root resource nodes | 真实 graph engine 执行；Spring dogfooding 将 descriptor 指向不可达 endpoint，fixture 逃逸会确定失败 |
 | 终态输出 schema 校验 | Done | runtime endpoint 与 contract test 都使用 graph `outputSchema` |
 | 中间节点/算子输出断言 | Done | `nodeAssertions` keyed by node id |
 | Resource graph mock draft | Done | `/api/gateway/graphs/contracts/tests/draft` 基于 graph input schema 与 resource response schema 生成可编辑 row |
 | Operator schema mock draft | Done | `/api/visual/operators/tests/draft` 基于 operator schema 生成可编辑 table row |
 | 自动 mock 数据生成 | Done for draft | graph/operator 均可生成可编辑 mock row；复杂 runtime-dependent graph mock 仍以 warning 提示人工补齐 |
-| Suite registry | Done | in-memory repository + list/get/put/run API + 内置 smoke suite |
+| Suite registry | Done | in-memory repository + list/get/put/run API + 七图/13-case 内置 catalog |
 | Batch runner | Done | `POST /api/gateway/graphs/contracts/tests/suites/run-all` 聚合 suite、case、coverage |
 | Coverage policy | Done | suite 级阈值可要求 case、schema validation、mock call、assertion、output node 覆盖 |
+| F2/F3 resource fixture | Done for root resource nodes | 显式 protocol/transport 边界、响应头与 bounded consumption；nested invocation 仍待寻址 |
+| 仓库级 no-egress dogfooding | Done for root resource nodes | 七图/13 case 全绿；foreach body 如实降级为 exploratory |
 | 批量 CI 报告 | Partial | 已有机器可读 batch result；还缺独立 HTML/历史趋势报告 |
 | Standalone operator table suite | Done | `/api/visual/operators/tests/run` + stored suite + run-all |
 | 画布内 Test Suite authoring 入口 | Done | `/author/` 支持多行 context、fixture override、expected output，并通过浮层表格逐行运行 transient simulate |

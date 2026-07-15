@@ -16,6 +16,8 @@ import java.util.Map;
  * @param required whether this mock must be consumed by the graph execution
  * @param responseHeaders transport response headers used by protocol-derived fixtures
  * @param fixtureMode explicit fidelity boundary; legacy rows default to {@link FixtureMode#OUTPUT_LEVEL}
+ * @param minUses minimum expected invocations; omitted legacy values derive from {@code required}
+ * @param maxUses maximum allowed invocations, or zero for unbounded; omitted legacy values default to one
  */
 public record GatewayGraphResourceMock(
         String resourceId,
@@ -27,7 +29,9 @@ public record GatewayGraphResourceMock(
         boolean success,
         boolean required,
         Map<String, String> responseHeaders,
-        FixtureMode fixtureMode
+        FixtureMode fixtureMode,
+        Integer minUses,
+        Integer maxUses
 ) {
     /**
      * Controls whether a fixture supplies an already-interpreted operator output or a raw upstream
@@ -57,6 +61,31 @@ public record GatewayGraphResourceMock(
         rawBody = rawBody == null ? "" : rawBody;
         durationMs = Math.max(durationMs, 0);
         responseHeaders = responseHeaders == null ? Map.of() : Map.copyOf(responseHeaders);
+        minUses = minUses == null ? (required ? 1 : 0) : Math.max(0, minUses);
+        maxUses = maxUses == null ? 1 : Math.max(0, maxUses);
+        if (required && minUses == 0) {
+            minUses = 1;
+        }
+        if (maxUses > 0 && minUses > maxUses) {
+            throw new IllegalArgumentException("Resource mock minUses must not exceed maxUses.");
+        }
+    }
+
+    /**
+     * Preserves the first explicit-fidelity constructor before invocation cardinality was added.
+     */
+    public GatewayGraphResourceMock(String resourceId,
+                                    Map<String, Object> expectedParams,
+                                    Object payload,
+                                    int statusCode,
+                                    String rawBody,
+                                    long durationMs,
+                                    boolean success,
+                                    boolean required,
+                                    Map<String, String> responseHeaders,
+                                    FixtureMode fixtureMode) {
+        this(resourceId, expectedParams, payload, statusCode, rawBody, durationMs, success, required,
+                responseHeaders, fixtureMode, null, null);
     }
 
     /**
@@ -80,7 +109,7 @@ public record GatewayGraphResourceMock(
                                     boolean success,
                                     boolean required) {
         this(resourceId, expectedParams, payload, statusCode, rawBody, durationMs, success, required,
-                Map.of(), FixtureMode.OUTPUT_LEVEL);
+                Map.of(), FixtureMode.OUTPUT_LEVEL, null, null);
     }
 
     /**
@@ -90,7 +119,7 @@ public record GatewayGraphResourceMock(
                                     Map<String, Object> expectedParams,
                                     Object payload) {
         this(resourceId, expectedParams, payload, 200, "", 0, true, true,
-                Map.of(), FixtureMode.OUTPUT_LEVEL);
+                Map.of(), FixtureMode.OUTPUT_LEVEL, null, null);
     }
 
     /**
@@ -137,6 +166,21 @@ public record GatewayGraphResourceMock(
                 FixtureMode.TRANSPORT_LEVEL);
     }
 
+    /**
+     * Returns a copy with an explicit bounded invocation cardinality.
+     *
+     * <p>This is required for deterministic retry and loop fixtures: every attempt consumes the same
+     * rule and the run fails when the observed count falls outside the declared range.</p>
+     *
+     * @param minimum minimum expected uses
+     * @param maximum maximum allowed uses, or zero for unbounded
+     * @return copied resource mock
+     */
+    public GatewayGraphResourceMock expectingUses(int minimum, int maximum) {
+        return new GatewayGraphResourceMock(resourceId, expectedParams, payload, statusCode, rawBody,
+                durationMs, success, required, responseHeaders, fixtureMode, minimum, maximum);
+    }
+
     private static GatewayGraphResourceMock rawResponse(String resourceId,
                                                         Map<String, Object> expectedParams,
                                                         String rawBody,
@@ -145,6 +189,6 @@ public record GatewayGraphResourceMock(
                                                         boolean required,
                                                         FixtureMode mode) {
         return new GatewayGraphResourceMock(resourceId, expectedParams, null, statusCode, rawBody,
-                0, false, required, responseHeaders, mode);
+                0, false, required, responseHeaders, mode, null, null);
     }
 }

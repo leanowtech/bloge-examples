@@ -109,17 +109,54 @@ public final class VisualSchemaValidator {
      */
     public static List<VisualDiagnostic> validateValue(SchemaEnvelope envelope, Object value, String path) {
         SchemaEnvelope effective = envelope == null ? SchemaEnvelope.opaque() : envelope;
-        if (valueMatchesSchema(value, effective.schema())) {
+        Object schemaVisibleValue = schemaVisibleValue(value);
+        if (valueMatchesSchema(schemaVisibleValue, effective.schema())) {
             return List.of();
         }
         List<VisualDiagnostic> diagnostics = new ArrayList<>();
-        collectValueDiagnostics(value, effective.schema(), path, diagnostics);
+        collectValueDiagnostics(schemaVisibleValue, effective.schema(), path, diagnostics);
         if (diagnostics.isEmpty()) {
             diagnostics.add(VisualDiagnostic.error("visual.context.schemaMismatch",
                     "Runtime context does not satisfy graph inputSchema.",
                     path));
         }
         return diagnostics;
+    }
+
+    /**
+     * Projects Java records into the same object model used by JSON maps before schema evaluation.
+     * This keeps graph-contract, fixture, simulation, and assertion validation consistent for typed
+     * operator outputs while preserving scalar domain values such as {@link Duration}.
+     */
+    private static Object schemaVisibleValue(Object value) {
+        if (value == null || value instanceof String || value instanceof Number || value instanceof Boolean) {
+            return value;
+        }
+        if (value instanceof Map<?, ?> rawMap) {
+            Map<String, Object> normalized = new LinkedHashMap<>();
+            rawMap.forEach((key, item) -> {
+                if (key != null) {
+                    normalized.put(String.valueOf(key), schemaVisibleValue(item));
+                }
+            });
+            return normalized;
+        }
+        if (value instanceof List<?> list) {
+            return list.stream().map(VisualSchemaValidator::schemaVisibleValue).toList();
+        }
+        if (value.getClass().isRecord()) {
+            Map<String, Object> normalized = new LinkedHashMap<>();
+            for (var component : value.getClass().getRecordComponents()) {
+                try {
+                    normalized.put(component.getName(),
+                            schemaVisibleValue(component.getAccessor().invoke(value)));
+                } catch (ReflectiveOperationException inaccessibleComponent) {
+                    return value;
+                }
+            }
+            return normalized;
+        }
+        return value;
     }
 
     @SuppressWarnings("unchecked")

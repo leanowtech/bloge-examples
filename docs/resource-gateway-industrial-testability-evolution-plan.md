@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0/1 已落地，Stage 2 graph control plane 与独立 test-kit 已部分落地 |
+| 状态 | Accepted / In implementation；Stage 0/1 已落地，Stage 2 graph control plane、test-kit 与内置图 dogfooding 已落地 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、operator 开发团队、QA、平台安全、SRE、ANEKE Tool Studio |
 | 设计目标 | 让调用方在测试运行中确定性控制 DAG 的外部数据、故障和非确定性来源，并产出可验证的测试证据 |
 | 非目标 | 不把 Resource Gateway 变成通用代码覆盖率平台；不允许普通生产请求携带测试替换指令；不替代 operator 代码仓库中的白盒单元测试 |
@@ -19,14 +19,15 @@
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
-| Stage 2 public control plane | In progress | target discovery、execution/batch/query、fixture registry、独立 test-run store、脱敏、10 态、profile/identity/production protocol guard，以及独立 HTTP/JUnit test-kit 已落地；服务端 1685 tests 与 test-kit 10 tests 全绿；公共 operator run UI/API、network isolation 与全图 dogfooding 待完成 |
+| Stage 2 public control plane | In progress | target discovery、execution/batch/query、fixture registry、独立 test-run store、脱敏、10 态、profile/identity/production protocol guard、独立 HTTP/JUnit test-kit，以及七图/13-case F3 dogfooding 已落地；公共 operator run UI/API、nested invocation 与物理 network isolation 待完成 |
 | Stage 3-5 | Not started | signed evidence、semantic coverage、deterministic services、replay、独立部署与规模化治理 |
 
 实现细节、行为兼容决策和可复现测试见
 [v1 实施蓝图](resource-gateway-industrial-testability-evolution-plan-1.0.md) 与
 [Stage 1 verification](resource-gateway-execution-data-control-plane-stage1-verification.md) 与
 [Testing Control Plane API](resource-gateway-testing-control-plane-api.md) 与
-[Stage 2 test-kit verification](resource-gateway-execution-data-control-plane-stage2-test-kit-verification.md)。北极星中的目标态能力未出现在上述
+[Stage 2 test-kit verification](resource-gateway-execution-data-control-plane-stage2-test-kit-verification.md) 与
+[Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md)。北极星中的目标态能力未出现在上述
 Done 行时，均不得从文档推断为产品已开放。
 
 ## 1. 结论先行
@@ -978,8 +979,7 @@ JUnit 5 assertions、JUnit XML 与 CI exit code 已在 Stage 2 首个增量落�
 
 **实现状态**：进行中。Stage 1 已完成 selector preflight、不可变 effective plan、主节点 replacement、consumption policy 与既有
 gateway graph suite adapter；Stage 2 已补 graph target discovery、公共执行/批量/查询、immutable fixture registry、独立持久化、证据脱敏、
-profile/identity guard、production run control-field guard，以及独立 test-kit（HTTP client、fixture builder、JUnit 5 assertions、JUnit XML）。时间类行为、复杂 invocation 寻址、公共 operator adapter、旧 suite
-F2/F3 迁移及全示例 dogfooding 仍是本阶段硬验收，不能因 endpoint 可用就宣称 Stage 2 完成。
+profile/identity guard、production run control-field guard、独立 test-kit，并完成七图/13-case built-in dogfooding：23 个根资源节点使用 F3，retry 以 bounded consumption 计数，Spring wiring 在不可达 endpoint 下证明没有根资源逃逸。时间类行为、复杂 invocation 寻址、公共 operator adapter 和物理 test-runtime/network isolation 仍是本阶段硬验收，不能因 dogfooding 全绿就宣称 Stage 2 完成。
 
 交付：
 

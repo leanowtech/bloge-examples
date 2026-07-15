@@ -277,6 +277,22 @@ from exceptions and reports. See the
 [test-kit guide](../resource-gateway-test-kit/README.md) for a complete discover, register, execute,
 assert, and report example.
 
+### 4.6 Run the built-in graph dogfooding catalog
+
+The compatibility graph-suite adapter now delegates to the same execution-control kernel. Its stored
+catalog covers all seven built-in graphs with 13 cases:
+
+```bash
+curl -sS http://localhost:8080/api/gateway/graphs/contracts/tests/suites
+curl -sS -X POST http://localhost:8080/api/gateway/graphs/contracts/tests/suites/run-all
+```
+
+All resource rows are explicit F3 transport fixtures. `minUses/maxUses` declares retry cardinality;
+old rows that omit fidelity/cardinality fields remain one-use `OUTPUT_LEVEL` fixtures and therefore
+remain exploratory. `enrichOrderList` is also exploratory until foreach-body invocation addressing is
+available. The detailed matrix and unreachable-endpoint proof are in
+[Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md).
+
 ## 5. Verbosity And Persistence
 
 | Verbosity | HTTP response | Persisted record |
@@ -334,6 +350,8 @@ Implemented now:
 - profile-sensitive capability probe and production control-field guard.
 - standalone Maven test-kit with HTTP client, fail-closed fixture builder, JUnit 5 assertions,
   payload-free JUnit XML, and packaged canonical JSON Schema.
+- complete seven-graph/13-case built-in dogfooding catalog, F3 legacy-suite migration, bounded retry
+  consumption, and a Spring proof that root resource calls do not escape fixtures.
 
 Still intentionally outside this increment:
 
@@ -342,7 +360,7 @@ Still intentionally outside this increment:
 - signed certification, semantic coverage, ANEKE projection, and mutation testing;
 - logical clock/random/UUID/function execution services;
 - a physically separate test-runtime deployment and network policy;
-- complete built-in graph dogfooding suites and legacy suite migration to F2/F3 fixtures.
+- non-empty foreach/loop/subgraph certification until nested invocation sites are addressable.
 
 Those items remain visible in the two industrial testability evolution plans and must not be inferred
 as complete from `executionEndpointEnabled=true`.

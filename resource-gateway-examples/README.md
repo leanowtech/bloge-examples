@@ -20,7 +20,7 @@ integration something the business flow can see, reason about, test, and change.
 | Graph-level contracts | Every built-in resource graph exposes formal input/output JSON Schema for system integration |
 | Schema-aware canvas | Drag, connect, validate, simulate, and publish under server-side schema checks |
 | Runtime-backed demos | Local upstreams, real gateway execution, mock simulation, SSE examples, and reusable publications |
-| Schema-gated table tests | Run real resource graphs with mocked downstream APIs; validate operator fixture contracts without pretending mocked outputs executed the real implementation |
+| Schema-gated table tests | Run 13 built-in cases across all seven resource graphs with F3 transport fixtures, bounded retry consumption, coverage gates, and fidelity evidence |
 | Isolated testing control plane | Test/staging-only target discovery, immutable fixture registry, caller-driven DAG execution, sanitized evidence retention, batch runs, and production control-field guard |
 | Governed run controls | Absolute deadline, monotonic remaining-budget propagation, fenced cancel, durable owner lease/epoch, cross-instance commands, and automatic signed evidence recovery after owner failure |
 | Auditable external writes | Versioned write contracts, binding/activation conformance, execution-scoped journal, commit receipts, UNKNOWN_COMMIT DAG guard, and signed reconciliation evidence |
@@ -225,6 +225,14 @@ Stored suites are available under
 `/api/gateway/graphs/contracts/tests/suites`; each suite can carry a coverage
 policy so batch runs fail when they lack enough cases, schema validations,
 mocked calls, assertions, or required output-node coverage.
+The built-in catalog covers all seven example graphs with 13 cases, 23
+controlled resource-node observations, and 33 business assertions. Resource
+rows use explicit F3 transport fixtures, so request mapping, URL rendering,
+descriptor response protocol, and payload extraction stay real. Retry cases
+declare `minUses/maxUses`, making credit-provider, wallet, and notification
+attempt counts part of the pass/fail result. `enrichOrderList` is intentionally
+tagged exploratory because BLOGE does not yet expose stable foreach-body
+invocation addresses; it cannot silently produce certifiable evidence.
 
 For the detailed contract-test design, request format, verification evidence,
 and remaining industrialization gaps, see
@@ -235,11 +243,14 @@ Stage 1 of its
 [Execution Data Control Plane v1 blueprint](../docs/resource-gateway-industrial-testability-evolution-plan-1.0.md)
 is implemented: it separates schema-only operator checks from executable micro-graph
 tests, supplies `REAL/RETURN/THROW/DENY/SPY`, supports F2 protocol-derived and F3
-transport-level HTTP fixtures, and records fingerprinted evidence. The generic public
+transport-level HTTP fixtures, and records fingerprinted evidence. All seven built-in
+graphs now dogfood that adapter under `clean verify`; the Spring integration proof points
+descriptors at an unreachable address and still requires every suite to pass, catching any
+root resource call that escapes its fixture. The generic public
 testing API, persistent test-run store, independent JUnit test kit, and
 production-profile endpoint isolation are now available as the first Stage 2
 increment. Public operator execution, temporal controls, complex nested
-invocation addressing, full example-graph dogfooding, and physical test-runtime
+invocation addressing, and physical test-runtime
 deployment isolation remain in progress and are not advertised as complete.
 
 Create a provider-specific Java operator only when the provider behavior cannot
