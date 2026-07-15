@@ -447,13 +447,21 @@ non-pass result; it does not cancel the case already running and therefore canno
 external side effect. The runner:
 
 1. verifies the exact suite fingerprint and current target fingerprint before any case runs;
-2. writes a `RUNNING` aggregate checkpoint before the first case and after every child run;
+2. atomically writes the first `RUNNING` checkpoint with a process-owner lease, renews that lease
+   while a child is running, and advances a database checkpoint fence after every child run;
 3. executes graph and operator cases through the existing authorized adapters with `FULL` internal
    evidence and only the suite's exact stored fixture reference;
 4. validates every child target, fixture, run id, and evidence identity before aggregation;
 5. derives invocation-site, edge-transfer, case-type, assertion-density, and required-fixture
    consumption coverage from child evidence rather than author metadata;
 6. stores one terminal `bloge.testSuiteRunEvidence.v1` and its canonical fingerprint.
+
+The owner lease is not a user lock. It is a short-lived runtime-instance claim that prevents a
+slow child from being mistaken for a dead process. Every heartbeat, checkpoint, and terminal write
+is scoped by tenant/environment/run id and the same owner id. The shared test-runtime database is
+the time authority, so application-node clock skew cannot expire a live owner. Heartbeat and checkpoint writes
+advance `checkpoint_version`; the abandoned-run sweeper can therefore terminalize a row only when
+status, expired lease, owner, and scanned version still match.
 
 The response links independently persisted child runs without copying their payloads. This
 abridged view omits required fields that remain authoritative in the machine schema:
@@ -512,6 +520,34 @@ signature, certification, owner approval, ANEKE gate decision, or publication.
 
 The Canvas executable operator suite and standalone test-kit both consume this exact protocol; they
 do not reconstruct an aggregate result from mutable row responses.
+
+#### Abandoned `RUNNING` reconciliation
+
+The test and staging profiles run a bounded anti-entropy sweep. When a process crashes, its
+heartbeats stop. After the lease expires, the sweeper converts the latest durable checkpoint to
+`EVIDENCE_INCOMPLETE` with diagnostic `ABANDONED_RUN_RECONCILED`:
+
+- completed child case results and child `runId` references are preserved exactly;
+- still-`PENDING` cases become case-level `EVIDENCE_INCOMPLETE`;
+- aggregate coverage becomes `INCOMPLETE` and promotion becomes `BLOCKED`;
+- reconciliation metadata records only owner fingerprint/version/timestamps, never raw owner,
+  fixture, or node payloads;
+- a status/version/owner/expiry compare-and-set prevents an old scan from overwriting a concurrent
+  heartbeat, checkpoint, or terminal result;
+- a failed candidate does not stop the batch, and the next scheduled sweep retries unresolved rows.
+
+This is **terminalization, not resume**. The sweeper never reruns a case because an abandoned case
+may have produced an unconfirmed external side effect. A caller may query the existing
+`suiteRunId`, inspect the fail-closed evidence, and decide whether a new idempotent suite execution
+is appropriate.
+
+| Environment variable | Default | Meaning |
+|---|---:|---|
+| `RG_TEST_SUITE_RUNNER_INSTANCE_ID` | generated per process | Stable owner for this process lifetime |
+| `RG_TEST_SUITE_LEASE_SECONDS` | `30` | Active owner lease; bounded to 5-3600 seconds |
+| `RG_TEST_SUITE_HEARTBEAT_SECONDS` | `5` | Renewal interval; normalized below the lease duration |
+| `RG_TEST_SUITE_RECONCILIATION_INTERVAL_MS` | `15000` | Fixed delay between anti-entropy sweeps |
+| `RG_TEST_SUITE_RECONCILIATION_BATCH_SIZE` | `100` | Oldest-first sweep bound; maximum 1000 |
 
 ### 4.2.4 Materialize the built-in graph catalog
 
@@ -856,6 +892,8 @@ Implemented now:
 - idempotent immutable-suite runner for graph and operator targets, durable per-case checkpoints,
   fail-fast/collect-all scheduling, child evidence identity checks, aggregate structural coverage,
   promotion eligibility verdict, suite-run query, and capability discovery.
+- process-owner suite-run leases, long-child heartbeats, database checkpoint fencing, and bounded
+  fail-closed reconciliation of abandoned `RUNNING` checkpoints.
 
 Still intentionally outside this increment:
 
@@ -863,8 +901,8 @@ Still intentionally outside this increment:
   durable-resume plan restoration;
 - signed certification, full branch/rule/retry/fallback/compensation semantic coverage, ANEKE
   projection, and mutation testing;
-- automatic resume/reconciliation of abandoned `RUNNING` checkpoints and suite-history
-  list/trend APIs;
+- automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
+  reconciliation alert SLOs, and suite-history list/trend APIs;
 - deterministic random/UUID/function execution services and deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;
 - certification of streaming foreach/loop graphs until their invocation and edge evidence is

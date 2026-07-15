@@ -21,6 +21,7 @@ class TestabilityCapabilitiesTest {
                 "testExecutionBatchRequest", "testExecutionBatchResponse", "fixtureBundleRegistrationRequest",
                 "storedFixtureBundle", "testSuite", "testSuiteRegistrationRequest", "storedTestSuite",
                 "testSuiteExecutionRequest", "testSuiteExecutionResponse", "testSuiteRunEvidence",
+                "testSuiteRunReconciliation",
                 "testSuiteCatalogMaterialization",
                 "fixtureBundle", "effectiveExecutionPlan", "testRunEvidence",
                 "testGraphTargetDescriptor", "testOperatorExecutionRequest", "testOperatorTargetDescriptor");
@@ -30,6 +31,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("suiteSemanticCoverageVerdict", true)
                 .containsEntry("suitePromotionEligibilityVerdict", true)
                 .containsEntry("builtInGraphSuiteCatalogMaterialization", true)
+                .containsEntry("suiteRunOwnerLease", true)
+                .containsEntry("abandonedSuiteRunReconciliation", true)
                 .containsEntry("streamingOperatorTestExecution", false)
                 .containsEntry("suspendableOperatorTestExecution", false);
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.path().equals("/api/testing/executions"));

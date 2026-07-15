@@ -51,6 +51,7 @@ public final class TestSuiteExecutionService {
     private final TestSuiteRunRepository runRepository;
     private final ObjectMapper objectMapper;
     private final TestSecurityEventRepository securityEvents;
+    private final TestSuiteRunLeaseCoordinator leaseCoordinator;
     private final TestSuiteEvidenceAggregator aggregator = new TestSuiteEvidenceAggregator();
     private final Duration retention;
 
@@ -70,11 +71,24 @@ public final class TestSuiteExecutionService {
                                      ObjectMapper objectMapper,
                                      TestSecurityEventRepository securityEvents,
                                      Duration retention) {
+        this(suiteRegistry, executions, runRepository, objectMapper, securityEvents, retention,
+                TestSuiteRunLeaseCoordinator.passive(Duration.ofMinutes(5)));
+    }
+
+    /** Creates a runner with an explicit process-wide lease coordinator. */
+    public TestSuiteExecutionService(TestSuiteRegistryService suiteRegistry,
+                                     TestExecutionApiService executions,
+                                     TestSuiteRunRepository runRepository,
+                                     ObjectMapper objectMapper,
+                                     TestSecurityEventRepository securityEvents,
+                                     Duration retention,
+                                     TestSuiteRunLeaseCoordinator leaseCoordinator) {
         this.suiteRegistry = Objects.requireNonNull(suiteRegistry, "suiteRegistry");
         this.executions = Objects.requireNonNull(executions, "executions");
         this.runRepository = Objects.requireNonNull(runRepository, "runRepository");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.securityEvents = Objects.requireNonNull(securityEvents, "securityEvents");
+        this.leaseCoordinator = Objects.requireNonNull(leaseCoordinator, "leaseCoordinator");
         this.retention = retention == null || retention.isNegative() || retention.isZero()
                 ? Duration.ofDays(30) : retention;
     }
@@ -112,14 +126,13 @@ public final class TestSuiteExecutionService {
         List<TestSuiteEvidenceAggregator.CaseObservation> observations = pending(stored.suite());
         TestSuiteRunEvidence running = evidence(stored, request, identity, suiteRunId, startedAt,
                 null, TestSuiteRunEvidence.Status.RUNNING, observations,
-                TestSuiteRunEvidence.CoverageVerdict.notEvaluated(),
-                TestSuiteRunEvidence.PromotionVerdict.notEvaluated(), List.of());
+                pendingCoverage(stored.suite()), pendingPromotion(stored.suite()), List.of());
         TestSuiteRunRecord record = new TestSuiteRunRecord(suiteRunId, request.clientRequestId(),
                 requestFingerprint, identity.tenantId(), identity.organizationId(), identity.projectId(),
                 identity.environmentId(), identity.actorId(), stored.suite().classification(), "", running,
                 startedAt, startedAt.plus(retention));
         try {
-            record = runRepository.create(record);
+            record = runRepository.create(record, leaseCoordinator.newLease());
         } catch (TestSuiteRunConflictException race) {
             TestSuiteRunRecord winner = findByClientRequestId(request.clientRequestId(), identity)
                     .orElseThrow(() -> conflict(identity, "RG.TEST.SUITE_RUN_IDEMPOTENCY_RETIRED",
@@ -131,34 +144,50 @@ public final class TestSuiteExecutionService {
                     "The independent suite-run store is unavailable.");
         }
 
+        try (TestSuiteRunLeaseCoordinator.LeaseGuard lease = leaseCoordinator.monitor(record)) {
+            return executeOwned(record, stored, request, identity, observations, lease);
+        }
+    }
+
+    private TestSuiteExecutionResponse executeOwned(
+            TestSuiteRunRecord record, StoredTestSuite stored, TestSuiteExecutionRequest request,
+            IntegrationRequestContext identity,
+            List<TestSuiteEvidenceAggregator.CaseObservation> observations,
+            TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
         TargetPreflight target;
         try {
             target = currentTarget(stored.suite(), identity);
         } catch (IntegrationProblemException rejected) {
-            return finishWithoutCases(record, stored, request, identity, observations,
+            return finishWithoutCases(record, stored, request, identity, observations, lease,
                     rejected.problem().code(), rejected.problem().title());
         } catch (RuntimeException failure) {
-            return finishWithoutCases(record, stored, request, identity, observations,
+            return finishWithoutCases(record, stored, request, identity, observations, lease,
                     "TARGET_PREFLIGHT_UNAVAILABLE",
                     "Target preflight failed before any suite case was scheduled.");
         }
         if (!stored.suite().target().fingerprint().equals(target.fingerprint())) {
-            return finishWithoutCases(record, stored, request, identity, observations,
+            return finishWithoutCases(record, stored, request, identity, observations, lease,
                     "TARGET_FINGERPRINT_CONFLICT",
                     "The suite target changed after this immutable revision was registered.");
         }
 
         for (int index = 0; index < stored.suite().cases().size(); index++) {
+            if (!lease.held()) {
+                markRemaining(observations, stored.suite(), index, "SUITE_RUN_LEASE_LOST",
+                        "Case scheduling stopped because active suite-run ownership could not be renewed.");
+                return finishEvidenceIncomplete(record, stored, request, identity, observations,
+                        target.state(), "SUITE_RUN_LEASE_LOST", lease);
+            }
             TestSuite.TestCase testCase = stored.suite().cases().get(index);
             observations.set(index, executeCase(stored, request, record.suiteRunId(), testCase, identity));
             try {
-                checkpoint(record, stored, request, identity, observations);
+                checkpoint(record, stored, request, identity, observations, lease);
             } catch (RuntimeException persistenceFailure) {
                 markRemaining(observations, stored.suite(), index + 1,
                         "SUITE_RUN_STORE_UNAVAILABLE",
                         "Case scheduling stopped because aggregate progress could not be persisted.");
                 return finishEvidenceIncomplete(record, stored, request, identity, observations,
-                        target.state(), "SUITE_RUN_STORE_UNAVAILABLE");
+                        target.state(), "SUITE_RUN_STORE_UNAVAILABLE", lease);
             }
             if (request.strategy() == TestSuiteExecutionRequest.Strategy.FAIL_FAST
                     && observations.get(index).result().status()
@@ -169,7 +198,7 @@ public final class TestSuiteExecutionService {
                 break;
             }
         }
-        return finish(record, stored, request, identity, observations, target.state(), List.of());
+        return finish(record, stored, request, identity, observations, target.state(), List.of(), lease);
     }
 
     /**
@@ -307,17 +336,19 @@ public final class TestSuiteExecutionService {
             TestSuiteRunRecord record, StoredTestSuite stored, TestSuiteExecutionRequest request,
             IntegrationRequestContext identity,
             List<TestSuiteEvidenceAggregator.CaseObservation> observations,
+            TestSuiteRunLeaseCoordinator.LeaseGuard lease,
             String diagnosticCode, String diagnostic) {
         markRemaining(observations, stored.suite(), 0, diagnosticCode, diagnostic);
         return finish(record, stored, request, identity, observations,
-                new TestSuiteEvidenceAggregator.TargetState(false, false), List.of(diagnosticCode));
+                new TestSuiteEvidenceAggregator.TargetState(false, false), List.of(diagnosticCode), lease);
     }
 
     private TestSuiteExecutionResponse finish(
             TestSuiteRunRecord record, StoredTestSuite stored, TestSuiteExecutionRequest request,
             IntegrationRequestContext identity,
             List<TestSuiteEvidenceAggregator.CaseObservation> observations,
-            TestSuiteEvidenceAggregator.TargetState targetState, List<String> diagnostics) {
+            TestSuiteEvidenceAggregator.TargetState targetState, List<String> diagnostics,
+            TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
         TestSuiteEvidenceAggregator.Aggregate aggregate = aggregator.aggregate(
                 stored.suite(), observations, targetState);
         TestSuiteRunEvidence terminal = evidence(stored, request, identity, record.suiteRunId(),
@@ -326,9 +357,9 @@ public final class TestSuiteExecutionService {
         String fingerprint = ProtocolFingerprint.of(objectMapper, terminal);
         TestSuiteRunRecord completed = withEvidence(record, terminal, fingerprint);
         try {
-            return response(runRepository.update(completed));
+            return response(updateOwned(completed, lease));
         } catch (RuntimeException persistenceFailure) {
-            return persistIncompleteBestEffort(completed, "SUITE_RUN_TERMINAL_PERSISTENCE_FAILED");
+            return persistIncompleteBestEffort(completed, "SUITE_RUN_TERMINAL_PERSISTENCE_FAILED", lease);
         }
     }
 
@@ -336,7 +367,8 @@ public final class TestSuiteExecutionService {
             TestSuiteRunRecord record, StoredTestSuite stored, TestSuiteExecutionRequest request,
             IntegrationRequestContext identity,
             List<TestSuiteEvidenceAggregator.CaseObservation> observations,
-            TestSuiteEvidenceAggregator.TargetState targetState, String diagnostic) {
+            TestSuiteEvidenceAggregator.TargetState targetState, String diagnostic,
+            TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
         TestSuiteEvidenceAggregator.Aggregate aggregate = aggregator.aggregate(
                 stored.suite(), observations, targetState);
         TestSuiteRunEvidence incomplete = evidence(stored, request, identity, record.suiteRunId(),
@@ -345,7 +377,7 @@ public final class TestSuiteExecutionService {
         String fingerprint = ProtocolFingerprint.of(objectMapper, incomplete);
         TestSuiteRunRecord completed = withEvidence(record, incomplete, fingerprint);
         try {
-            runRepository.update(completed);
+            updateOwned(completed, lease);
         } catch (RuntimeException ignored) {
             // The response remains explicit about incomplete persistence and exposes child run ids.
         }
@@ -353,7 +385,8 @@ public final class TestSuiteExecutionService {
     }
 
     private TestSuiteExecutionResponse persistIncompleteBestEffort(
-            TestSuiteRunRecord record, String diagnostic) {
+            TestSuiteRunRecord record, String diagnostic,
+            TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
         TestSuiteRunEvidence previous = record.evidence();
         List<String> diagnostics = new ArrayList<>(previous.diagnostics());
         diagnostics.add(diagnostic);
@@ -373,7 +406,7 @@ public final class TestSuiteExecutionService {
         String fingerprint = ProtocolFingerprint.of(objectMapper, incomplete);
         TestSuiteRunRecord failed = withEvidence(record, incomplete, fingerprint);
         try {
-            failed = runRepository.update(failed);
+            failed = updateOwned(failed, lease);
         } catch (RuntimeException ignored) {
             // Child run ids remain visible in this fail-closed response even if the store stays down.
         }
@@ -382,12 +415,18 @@ public final class TestSuiteExecutionService {
 
     private void checkpoint(TestSuiteRunRecord record, StoredTestSuite stored,
                             TestSuiteExecutionRequest request, IntegrationRequestContext identity,
-                            List<TestSuiteEvidenceAggregator.CaseObservation> observations) {
+                            List<TestSuiteEvidenceAggregator.CaseObservation> observations,
+                            TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
         TestSuiteRunEvidence running = evidence(stored, request, identity, record.suiteRunId(),
                 record.createdAt(), null, TestSuiteRunEvidence.Status.RUNNING, observations,
-                TestSuiteRunEvidence.CoverageVerdict.notEvaluated(),
-                TestSuiteRunEvidence.PromotionVerdict.notEvaluated(), List.of());
-        runRepository.update(withEvidence(record, running, ""));
+                pendingCoverage(stored.suite()), pendingPromotion(stored.suite()), List.of());
+        updateOwned(withEvidence(record, running, ""), lease);
+    }
+
+    private TestSuiteRunRecord updateOwned(TestSuiteRunRecord record,
+                                           TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
+        Instant observedAt = runRepository.currentTime();
+        return runRepository.update(record, lease.renewal(), observedAt);
     }
 
     private TestSuiteRunEvidence evidence(
@@ -420,6 +459,22 @@ public final class TestSuiteExecutionService {
                             "", null, null, 0, 0, "", ""), null));
         }
         return observations;
+    }
+
+    private static TestSuiteRunEvidence.CoverageVerdict pendingCoverage(TestSuite suite) {
+        TestSuite.CoveragePolicy policy = suite.coveragePolicy();
+        return new TestSuiteRunEvidence.CoverageVerdict(
+                TestSuiteRunEvidence.CoverageStatus.NOT_EVALUATED, policy.minimumCases(), 0,
+                policy.requiredCaseTypes(), List.of(), policy.requiredCaseTypes(),
+                policy.requiredInvocationSiteIds(), List.of(), policy.requiredInvocationSiteIds(),
+                policy.requiredEdgeTransfers(), List.of(), policy.requiredEdgeTransfers(),
+                policy.minimumAssertionsPerCase(), List.of(), List.of(), false);
+    }
+
+    private static TestSuiteRunEvidence.PromotionVerdict pendingPromotion(TestSuite suite) {
+        return new TestSuiteRunEvidence.PromotionVerdict(
+                TestSuiteRunEvidence.PromotionStatus.NOT_EVALUATED, List.of(), false, 0,
+                suite.promotionPolicy().minimumCertifiableCases(), false, false, false);
     }
 
     private static void markRemaining(List<TestSuiteEvidenceAggregator.CaseObservation> observations,

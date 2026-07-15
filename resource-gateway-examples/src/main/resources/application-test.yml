@@ -4,6 +4,12 @@ gateway:
       environment-id: ${RG_INTEGRATION_ENVIRONMENT_ID:test}
       allowed-purposes: ${RG_INTEGRATION_ALLOWED_PURPOSES:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION,TEST_EXECUTION,TEST_FIXTURE_READ,TEST_FIXTURE_WRITE,TEST_SUITE_READ,TEST_SUITE_WRITE}
   testing:
+    suite-runs:
+      instance-id: ${RG_TEST_SUITE_RUNNER_INSTANCE_ID:}
+      lease-duration-seconds: ${RG_TEST_SUITE_LEASE_SECONDS:30}
+      heartbeat-interval-seconds: ${RG_TEST_SUITE_HEARTBEAT_SECONDS:5}
+      reconciliation-interval-ms: ${RG_TEST_SUITE_RECONCILIATION_INTERVAL_MS:15000}
+      reconciliation-batch-size: ${RG_TEST_SUITE_RECONCILIATION_BATCH_SIZE:100}
     store:
       jdbc-url: ${RG_TEST_STORE_JDBC_URL:jdbc:h2:file:./data/resource-gateway-test-runtime;AUTO_SERVER=TRUE}
       username: ${RG_TEST_STORE_USERNAME:sa}

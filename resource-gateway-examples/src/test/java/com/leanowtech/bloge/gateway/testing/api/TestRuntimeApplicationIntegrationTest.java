@@ -59,6 +59,9 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(context.getBeansOfType(TestExecutionController.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestRunRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestSuiteRunRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(TestSuiteRunLeaseCoordinator.class)).hasSize(1);
+        assertThat(context.getBeansOfType(TestSuiteRunReconciliationService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(TestSuiteRunReconciliationScheduler.class)).hasSize(1);
 
         var capabilities = restTemplate.exchange("/api/integration/capabilities", HttpMethod.GET,
                 HttpEntity.EMPTY,
@@ -75,6 +78,9 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("immutableTestSuiteExecution", true)
                 .containsEntry("suiteSemanticCoverageVerdict", true)
                 .containsEntry("builtInGraphSuiteCatalogMaterialization", true);
+        assertThat(capabilities.getBody().payload().features())
+                .containsEntry("suiteRunOwnerLease", true)
+                .containsEntry("abandonedSuiteRunReconciliation", true);
         assertThat(capabilities.getBody().payload().supportedObjects())
                 .containsEntry("testSuiteCatalogMaterialization",
                         List.of(TestSuiteCatalogMaterializationResponse.SCHEMA_VERSION));

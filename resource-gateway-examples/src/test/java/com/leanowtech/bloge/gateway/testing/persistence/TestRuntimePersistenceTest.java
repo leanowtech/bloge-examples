@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.testing.api.StoredTestSuite;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteConflictException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunConflictException;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunLease;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunRecord;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
@@ -136,7 +137,8 @@ class TestRuntimePersistenceTest {
                 "sha256:" + "c".repeat(64), "tenant-a", "org-a", "project-a", "test",
                 "runner", "INTERNAL", "", running, now, now.plusSeconds(3600));
 
-        suiteRuns.create(initial);
+        TestSuiteRunLease lease = new TestSuiteRunLease("instance-a", now.plusSeconds(30));
+        suiteRuns.create(initial, lease);
 
         assertThat(suiteRuns.find("tenant-a", "test", "suite-run-1")).contains(initial);
         assertThat(suiteRuns.findByClientRequestId("tenant-a", "test", "request-1"))
@@ -154,14 +156,88 @@ class TestRuntimePersistenceTest {
                 initial.requestFingerprint(), "tenant-a", "org-a", "project-a", "test", "runner",
                 "INTERNAL", "sha256:" + "d".repeat(64), terminal, now, now.plusSeconds(3600));
 
-        suiteRuns.update(completed);
+        suiteRuns.update(completed, new TestSuiteRunLease("instance-a", now.plusSeconds(60)), now);
 
         assertThat(suiteRuns.find("tenant-a", "test", "suite-run-1")).contains(completed);
         TestSuiteRunRecord duplicate = new TestSuiteRunRecord("suite-run-2", "request-1",
                 "sha256:" + "e".repeat(64), "tenant-a", "org-a", "project-a", "test", "runner",
                 "INTERNAL", "", running, now, now.plusSeconds(3600));
-        assertThatThrownBy(() -> suiteRuns.create(duplicate))
+        assertThatThrownBy(() -> suiteRuns.create(duplicate, lease))
                 .isInstanceOf(TestSuiteRunConflictException.class);
+    }
+
+    @Test
+    void suiteRunLeaseRenewalAndCheckpointVersionFenceAbandonedReconciliation() {
+        Instant now = Instant.parse("2026-07-16T08:00:00Z");
+        TestSuiteRunRecord initial = suiteRunRecord("suite-run-lease", "request-lease", now,
+                TestSuiteRunEvidence.Status.RUNNING);
+        TestSuiteRunLease initialLease = new TestSuiteRunLease("instance-a", now.plusSeconds(10));
+        suiteRuns.create(initial, initialLease);
+
+        assertThat(suiteRuns.findAbandoned(now.plusSeconds(9), 10)).isEmpty();
+        assertThat(suiteRuns.renewLease("tenant-a", "test", initial.suiteRunId(),
+                "instance-a", now.plusSeconds(40), now.plusSeconds(5))).isTrue();
+        assertThat(suiteRuns.renewLease("tenant-a", "test", initial.suiteRunId(),
+                "instance-b", now.plusSeconds(50), now.plusSeconds(6))).isFalse();
+        assertThat(suiteRuns.findAbandoned(now.plusSeconds(11), 10)).isEmpty();
+
+        var abandoned = suiteRuns.findAbandoned(now.plusSeconds(41), 10).getFirst();
+        assertThat(abandoned.record()).isEqualTo(initial);
+        assertThat(abandoned.leaseOwner()).isEqualTo("instance-a");
+        assertThat(abandoned.checkpointVersion()).isEqualTo(1);
+
+        TestSuiteRunRecord terminal = suiteRunRecord("suite-run-lease", "request-lease", now,
+                TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE);
+        assertThat(suiteRuns.reconcileAbandoned(abandoned, terminal, now.plusSeconds(41))).isTrue();
+        assertThat(suiteRuns.reconcileAbandoned(abandoned, terminal, now.plusSeconds(42))).isFalse();
+        assertThat(suiteRuns.find("tenant-a", "test", initial.suiteRunId()))
+                .contains(terminal);
+    }
+
+    @Test
+    void staleAbandonedCandidateCannotOverwriteConcurrentRunnerCheckpoint() {
+        Instant now = Instant.parse("2026-07-16T09:00:00Z");
+        TestSuiteRunRecord initial = suiteRunRecord("suite-run-race", "request-race", now,
+                TestSuiteRunEvidence.Status.RUNNING);
+        suiteRuns.create(initial, new TestSuiteRunLease("instance-a", now.plusSeconds(10)));
+        var staleCandidate = suiteRuns.findAbandoned(now.plusSeconds(11), 10).getFirst();
+
+        TestSuiteRunRecord checkpoint = suiteRunRecord("suite-run-race", "request-race", now,
+                TestSuiteRunEvidence.Status.RUNNING);
+        assertThat(suiteRuns.renewLease("tenant-a", "test", initial.suiteRunId(),
+                "instance-a", now.plusSeconds(60), now.plusSeconds(9))).isTrue();
+        TestSuiteRunRecord terminal = suiteRunRecord("suite-run-race", "request-race", now,
+                TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE);
+
+        assertThat(suiteRuns.reconcileAbandoned(staleCandidate, terminal, now.plusSeconds(12))).isFalse();
+        assertThat(suiteRuns.find("tenant-a", "test", initial.suiteRunId()))
+                .contains(checkpoint);
+        assertThat(suiteRuns.findAbandoned(now.plusSeconds(12), 10)).isEmpty();
+    }
+
+    private static TestSuiteRunRecord suiteRunRecord(String suiteRunId, String requestId,
+                                                     Instant now, TestSuiteRunEvidence.Status status) {
+        TestSuiteExecutionRequest.SuiteRef suiteRef = new TestSuiteExecutionRequest.SuiteRef(
+                "suite-a", 3, "sha256:" + "a".repeat(64));
+        TestSuite.Target target = new TestSuite.Target(
+                "GRAPH", "graph-a", "sha256:" + "b".repeat(64));
+        boolean terminal = status != TestSuiteRunEvidence.Status.RUNNING;
+        TestSuiteRunEvidence evidence = new TestSuiteRunEvidence("", suiteRunId, requestId,
+                status, "TEST_SUITE_EXECUTION", suiteRef, target, now,
+                terminal ? now.plusSeconds(41) : null, List.of(),
+                terminal ? new TestSuiteRunEvidence.CoverageVerdict(
+                        TestSuiteRunEvidence.CoverageStatus.INCOMPLETE, 0, 0, List.of(), List.of(),
+                        List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                        0, List.of(), List.of(), false)
+                        : TestSuiteRunEvidence.CoverageVerdict.notEvaluated(),
+                terminal ? new TestSuiteRunEvidence.PromotionVerdict(
+                        TestSuiteRunEvidence.PromotionStatus.BLOCKED,
+                        List.of("EVIDENCE_INCOMPLETE"), false, 0, 0, false, false, false)
+                        : TestSuiteRunEvidence.PromotionVerdict.notEvaluated(),
+                terminal ? List.of("ABANDONED_RUN_RECONCILED") : List.of(), Map.of());
+        return new TestSuiteRunRecord(suiteRunId, requestId, "sha256:" + "c".repeat(64),
+                "tenant-a", "org-a", "project-a", "test", "runner", "INTERNAL",
+                terminal ? "sha256:" + "d".repeat(64) : "", evidence, now, now.plusSeconds(3600));
     }
 
     @Test

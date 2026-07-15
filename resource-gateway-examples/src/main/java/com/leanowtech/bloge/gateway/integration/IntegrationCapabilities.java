@@ -178,6 +178,8 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION));
             objects.put("testSuiteRunEvidence", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence.SCHEMA_VERSION));
+            objects.put("testSuiteRunReconciliation", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestSuiteRunReconciliationResult.SCHEMA_VERSION));
             objects.put("testSuiteCatalogMaterialization", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteCatalogMaterializationResponse.SCHEMA_VERSION));
             objects.put("fixtureBundle", List.of(
@@ -274,6 +276,8 @@ public record IntegrationCapabilities(
         features.put("suiteSemanticCoverageVerdict", testExecutionEndpointEnabled);
         features.put("suitePromotionEligibilityVerdict", testExecutionEndpointEnabled);
         features.put("builtInGraphSuiteCatalogMaterialization", testExecutionEndpointEnabled);
+        features.put("suiteRunOwnerLease", testExecutionEndpointEnabled);
+        features.put("abandonedSuiteRunReconciliation", testExecutionEndpointEnabled);
         features.put("streamingOperatorTestExecution", false);
         features.put("suspendableOperatorTestExecution", false);
 

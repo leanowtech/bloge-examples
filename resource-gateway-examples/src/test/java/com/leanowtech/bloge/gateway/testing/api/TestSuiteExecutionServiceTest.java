@@ -341,7 +341,7 @@ class TestSuiteExecutionServiceTest {
         private boolean failNextTerminalUpdate;
 
         @Override
-        public TestSuiteRunRecord create(TestSuiteRunRecord record) {
+        public TestSuiteRunRecord create(TestSuiteRunRecord record, TestSuiteRunLease lease) {
             if (retiredClientRequestIds.contains(record.clientRequestId())) {
                 throw new TestSuiteRunConflictException("retired idempotency key");
             }
@@ -355,7 +355,8 @@ class TestSuiteExecutionServiceTest {
         }
 
         @Override
-        public TestSuiteRunRecord update(TestSuiteRunRecord record) {
+        public TestSuiteRunRecord update(TestSuiteRunRecord record, TestSuiteRunLease lease,
+                                         Instant observedAt) {
             if (failNextTerminalUpdate
                     && record.evidence().status() != TestSuiteRunEvidence.Status.RUNNING) {
                 failNextTerminalUpdate = false;
@@ -363,6 +364,23 @@ class TestSuiteExecutionServiceTest {
             }
             records.put(record.suiteRunId(), record);
             return record;
+        }
+
+        @Override
+        public boolean renewLease(String tenantId, String environmentId, String suiteRunId,
+                                  String ownerId, Instant expiresAt, Instant observedAt) {
+            return records.containsKey(suiteRunId);
+        }
+
+        @Override
+        public List<AbandonedTestSuiteRun> findAbandoned(Instant observedAt, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public boolean reconcileAbandoned(AbandonedTestSuiteRun abandoned,
+                                          TestSuiteRunRecord terminal, Instant observedAt) {
+            return false;
         }
 
         @Override

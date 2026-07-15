@@ -105,17 +105,46 @@ public class TestRuntimeConfiguration {
     }
 
     /** Assembles the idempotent immutable-suite runner and coverage evaluator. */
+    @Bean(destroyMethod = "close")
+    TestSuiteRunLeaseCoordinator testSuiteRunLeaseCoordinator(
+            TestSuiteRunRepository suiteRunRepository,
+            @Value("${gateway.testing.suite-runs.instance-id:}") String instanceId,
+            @Value("${gateway.testing.suite-runs.lease-duration-seconds:30}") long leaseSeconds,
+            @Value("${gateway.testing.suite-runs.heartbeat-interval-seconds:5}") long heartbeatSeconds) {
+        Duration lease = Duration.ofSeconds(Math.max(5, Math.min(3600, leaseSeconds)));
+        Duration heartbeat = Duration.ofSeconds(Math.max(1,
+                Math.min(Math.max(1, lease.toSeconds() - 1), heartbeatSeconds)));
+        return new TestSuiteRunLeaseCoordinator(suiteRunRepository, instanceId, lease, heartbeat);
+    }
+
+    /** Builds the fail-closed transformer for expired RUNNING suite evidence. */
+    @Bean
+    TestSuiteRunReconciliationService testSuiteRunReconciliationService(
+            TestSuiteRunRepository suiteRunRepository, ObjectMapper objectMapper) {
+        return new TestSuiteRunReconciliationService(suiteRunRepository, objectMapper);
+    }
+
+    /** Runs bounded anti-entropy sweeps only where the test runtime profile exists. */
+    @Bean
+    TestSuiteRunReconciliationScheduler testSuiteRunReconciliationScheduler(
+            TestSuiteRunReconciliationService reconciliationService,
+            @Value("${gateway.testing.suite-runs.reconciliation-batch-size:100}") int batchSize) {
+        return new TestSuiteRunReconciliationScheduler(reconciliationService, batchSize);
+    }
+
+    /** Assembles the idempotent immutable-suite runner and coverage evaluator. */
     @Bean
     TestSuiteExecutionService testSuiteExecutionService(
             TestSuiteRegistryService suiteRegistry,
             TestExecutionApiService executionService,
             TestSuiteRunRepository suiteRunRepository,
+            TestSuiteRunLeaseCoordinator leaseCoordinator,
             ObjectMapper objectMapper,
             TestSecurityEventRepository securityEvents,
             @Value("${gateway.testing.store.retention-days:30}") long retentionDays) {
         return new TestSuiteExecutionService(suiteRegistry, executionService, suiteRunRepository,
                 objectMapper, securityEvents,
-                Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))));
+                Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))), leaseCoordinator);
     }
 
     /** Marker consumed by the unauthenticated capability probe. */
