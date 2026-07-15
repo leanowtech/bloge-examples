@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.operator.HttpResourceInput;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOutput;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
+import com.leanowtech.bloge.gateway.testing.planning.SelectorResolver;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -81,7 +82,7 @@ public class TestDoubleFactory {
             throw new IllegalArgumentException("Node '" + node.id()
                     + "' is not a synchronous Operator and cannot use v1 execution control.");
         }
-        Operator<Object, Object> controlled = new ControlledOperator(node, binding.site(), rules,
+        Operator<Object, Object> controlled = new ControlledOperator(node, binding, rules,
                 (Operator<Object, Object>) typed, implicitDeny, recorder, replayPayloads);
         return observed(node, binding, controlled, recorder);
     }
@@ -116,6 +117,7 @@ public class TestDoubleFactory {
 
     private final class ControlledOperator implements Operator<Object, Object> {
         private final NodeSpec node;
+        private final InvocationRecorder.InvocationBinding binding;
         private final InvocationSite site;
         private final List<FixtureRule> rules;
         private final Operator<Object, Object> real;
@@ -123,12 +125,14 @@ public class TestDoubleFactory {
         private final InvocationRecorder recorder;
         private final ResolvedReplayPayloads replayPayloads;
 
-        private ControlledOperator(NodeSpec node, InvocationSite site, List<FixtureRule> rules,
+        private ControlledOperator(NodeSpec node, InvocationRecorder.InvocationBinding binding,
+                                   List<FixtureRule> rules,
                                    Operator<Object, Object> real, boolean implicitDeny,
                                    InvocationRecorder recorder,
                                    ResolvedReplayPayloads replayPayloads) {
             this.node = node;
-            this.site = Objects.requireNonNull(site, "site");
+            this.binding = Objects.requireNonNull(binding, "binding");
+            this.site = binding.site();
             this.rules = List.copyOf(rules);
             this.real = real;
             this.implicitDeny = implicitDeny;
@@ -140,8 +144,10 @@ public class TestDoubleFactory {
         @Override
         public Object execute(Object input, OperatorContext context) throws Exception {
             recorder.markFidelity(site, "OUTPUT_LEVEL");
+            int attempt = context.retryAttempt() + 1;
             List<FixtureRule> matched = rules.stream()
-                    .filter(rule -> matcher.matches(rule, input, site.correlationKey())).toList();
+                    .filter(rule -> matcher.matches(rule, input, site.correlationKey(),
+                            attempt, binding.occurrence())).toList();
             if (matched.isEmpty()) {
                 if (!implicitDeny && rules.stream().anyMatch(rule -> rule.consumption().onUnmatched()
                         == FixtureRule.UnmatchedAction.ALLOW_REAL)) {
@@ -155,12 +161,18 @@ public class TestDoubleFactory {
                         "No approved fixture matched invocation site "
                                 + site.invocationSiteId() + ".");
             }
-            if (matched.size() > 1) {
+            int winningPrecedence = matched.isEmpty() ? -1
+                    : SelectorResolver.precedence(matched.getFirst().selector());
+            List<FixtureRule> winning = matched.stream()
+                    .takeWhile(rule -> SelectorResolver.precedence(rule.selector())
+                            == winningPrecedence)
+                    .toList();
+            if (winning.size() > 1) {
                 throw new TestControlException("CONTROL_PLAN_RUNTIME_AMBIGUITY", "FIXTURE_MATCH",
                         "More than one fixture matched invocation site "
                                 + site.invocationSiteId() + ".");
             }
-            FixtureRule rule = matched.getFirst();
+            FixtureRule rule = winning.getFirst();
             int currentUses = recorder.uses(rule.ruleId());
             if (rule.consumption().maxUses() > 0 && currentUses >= rule.consumption().maxUses()) {
                 if (rule.consumption().onExhausted() == FixtureRule.ExhaustedAction.FALLBACK_TO_REAL) {

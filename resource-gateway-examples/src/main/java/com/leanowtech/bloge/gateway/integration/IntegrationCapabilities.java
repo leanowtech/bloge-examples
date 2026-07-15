@@ -294,6 +294,7 @@ public record IntegrationCapabilities(
                 && identityProvider.properties().get("revocationPropagationSloSeconds") instanceof Number);
         features.put("webhook", false);
         features.put("operatorMicroGraphExecution", testExecutionEndpointEnabled);
+        features.put("dynamicAttemptOccurrenceSelectors", testExecutionEndpointEnabled);
         features.put("immutableTestSuiteRegistry", testExecutionEndpointEnabled);
         features.put("immutableTestSuiteExecution", testExecutionEndpointEnabled);
         features.put("suiteSemanticCoverageVerdict", testExecutionEndpointEnabled);

@@ -20,6 +20,7 @@ class TestabilityCapabilitiesTest {
 
         assertThat(disabled.testability().executionEndpointEnabled()).isFalse();
         assertThat(disabled.endpoints()).noneMatch(endpoint -> endpoint.path().startsWith("/api/testing/"));
+        assertThat(disabled.features()).containsEntry("dynamicAttemptOccurrenceSelectors", false);
         assertThat(enabled.testability().executionEndpointEnabled()).isTrue();
         assertThat(enabled.supportedObjects()).containsKeys("testExecutionRequest", "testExecutionResponse",
                 "testExecutionBatchRequest", "testExecutionBatchResponse", "fixtureBundleRegistrationRequest",
@@ -32,6 +33,7 @@ class TestabilityCapabilitiesTest {
                 "testEvidenceIntegrity",
                 "testGraphTargetDescriptor", "testOperatorExecutionRequest", "testOperatorTargetDescriptor");
         assertThat(enabled.features()).containsEntry("operatorMicroGraphExecution", true)
+                .containsEntry("dynamicAttemptOccurrenceSelectors", true)
                 .containsEntry("immutableTestSuiteRegistry", true)
                 .containsEntry("immutableTestSuiteExecution", true)
                 .containsEntry("suiteSemanticCoverageVerdict", true)

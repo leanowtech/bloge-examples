@@ -28,6 +28,8 @@ class FixtureBundleBuilderTest {
                 .metadata("suiteRef", "loan-policy-regression")
                 .rule("credit-score")
                     .node("creditScore")
+                    .attempts(2, 1)
+                    .occurrences(3)
                     .matchPath("/applicant/id", "app-42")
                     .returnValue(Map.of("score", 780))
                     .requiredUses(1, 1)
@@ -52,6 +54,10 @@ class FixtureBundleBuilderTest {
 
         JsonNode first = bundle.path("rules").get(0);
         assertThat(first.path("selector").path("graphPath").asText()).isEqualTo("/root");
+        assertThat(first.path("selector").path("attempts")).containsExactly(
+                new ObjectMapper().valueToTree(1), new ObjectMapper().valueToTree(2));
+        assertThat(first.path("selector").path("occurrences")).singleElement()
+                .isEqualTo(new ObjectMapper().valueToTree(3));
         assertThat(first.path("selector").path("match").path("pathEquals").path("/applicant/id").asText())
                 .isEqualTo("app-42");
         assertThat(first.path("consumption").path("required").asBoolean()).isTrue();
@@ -123,6 +129,13 @@ class FixtureBundleBuilderTest {
                 .throwing("UPSTREAM_FAILED", "UpstreamException", "x".repeat(4_097)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("errorMessage");
+        assertThatThrownBy(() -> builder.rule("zero-attempt").node("provider").attempts(0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("between 1 and 100000");
+        assertThatThrownBy(() -> builder.rule("duplicate-occurrence").node("provider")
+                .occurrences(2, 2))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("duplicates");
 
         assertThat(builder.buildBundle().path("rules")).hasSize(1);
     }

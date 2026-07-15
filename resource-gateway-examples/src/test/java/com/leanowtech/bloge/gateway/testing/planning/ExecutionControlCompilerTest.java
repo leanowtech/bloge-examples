@@ -73,16 +73,75 @@ class ExecutionControlCompilerTest {
     }
 
     @Test
-    void reservedAttemptAndOccurrenceCoordinatesAreExplicitlyRejected() {
+    void dynamicCoordinatesAreOrderedAheadOfAnExplicitGeneralFallback() {
         FixtureRule.Selector selector = new FixtureRule.Selector("/root", "subject", "", "", "",
                 List.of(), List.of(), InvocationSite.InvocationKind.PRIMARY,
-                List.of(1), List.of(1), "", FixtureRule.Match.none());
+                List.of(1), List.of(2), "", FixtureRule.Match.none());
+        FixtureRule dynamic = rule("dynamic", selector, FixtureRule.Behavior.returning("specific"));
+        FixtureRule fallback = rule("fallback", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.returning("general"));
+
+        CompiledExecutionControl compiled = compiler.compile(graph(new ReadOnlyOperator()),
+                bundle(fallback, dynamic), "GRAPH_CONTRACT_TEST", TARGET);
+
+        assertThat(compiled.controls().get("/root/subject#PRIMARY").rules())
+                .extracting(FixtureRule::ruleId)
+                .containsExactly("dynamic", "fallback");
+        assertThat(compiled.effectivePlan().resolvedSites()).singleElement().satisfies(site ->
+                assertThat(site.ruleRefs()).containsExactly("dynamic", "fallback"));
+    }
+
+    @Test
+    void disjointAttemptSelectorsCanShareOneInvocationSite() {
+        FixtureRule first = rule("first-attempt", selector(List.of(1), List.of()),
+                FixtureRule.Behavior.throwing("FIRST_FAILED", "TEST", "retry"));
+        FixtureRule second = rule("second-attempt", selector(List.of(2), List.of()),
+                FixtureRule.Behavior.returning("recovered"));
+
+        CompiledExecutionControl compiled = compiler.compile(graph(new ReadOnlyOperator()),
+                bundle(first, second), "GRAPH_CONTRACT_TEST", TARGET);
+
+        assertThat(compiled.controls().get("/root/subject#PRIMARY").rules())
+                .extracting(FixtureRule::ruleId)
+                .containsExactly("first-attempt", "second-attempt");
+    }
+
+    @Test
+    void overlappingAttemptSelectorsAreRejectedAtEqualPrecedence() {
+        FixtureRule first = rule("attempts-1-2", selector(List.of(1, 2), List.of()),
+                FixtureRule.Behavior.returning("first"));
+        FixtureRule second = rule("attempts-2-3", selector(List.of(2, 3), List.of()),
+                FixtureRule.Behavior.returning("second"));
 
         assertThatThrownBy(() -> compiler.compile(graph(new ReadOnlyOperator()),
-                bundle(rule("reserved", selector, FixtureRule.Behavior.real())),
-                "GRAPH_CONTRACT_TEST", TARGET))
+                bundle(first, second), "GRAPH_CONTRACT_TEST", TARGET))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, ex -> {
+                    assertThat(ex.code()).isEqualTo("CONTROL_PLAN_AMBIGUOUS");
+                    assertThat(ex.diagnostics().getFirst()).contains("attempts-1-2", "attempts-2-3");
+                });
+    }
+
+    @Test
+    void nonCanonicalOrOutOfRangeDynamicCoordinatesAreRejected() {
+        FixtureRule nonIncreasing = rule("non-increasing", selector(List.of(2, 1), List.of()),
+                FixtureRule.Behavior.returning("x"));
+        FixtureRule duplicate = rule("duplicate", selector(List.of(), List.of(1, 1)),
+                FixtureRule.Behavior.returning("x"));
+        FixtureRule outOfRange = rule("out-of-range", selector(List.of(100_001), List.of()),
+                FixtureRule.Behavior.returning("x"));
+
+        assertThatThrownBy(() -> compiler.compile(graph(new ReadOnlyOperator()),
+                bundle(nonIncreasing), "GRAPH_CONTRACT_TEST", TARGET))
                 .isInstanceOfSatisfying(ControlPlanRejectedException.class, ex ->
-                        assertThat(ex.diagnostics()).anyMatch(item -> item.contains("attempt/occurrence")));
+                        assertThat(ex.diagnostics()).anyMatch(item -> item.contains("strictly increasing")));
+        assertThatThrownBy(() -> compiler.compile(graph(new ReadOnlyOperator()),
+                bundle(duplicate), "GRAPH_CONTRACT_TEST", TARGET))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, ex ->
+                        assertThat(ex.diagnostics()).anyMatch(item -> item.contains("duplicates")));
+        assertThatThrownBy(() -> compiler.compile(graph(new ReadOnlyOperator()),
+                bundle(outOfRange), "GRAPH_CONTRACT_TEST", TARGET))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, ex ->
+                        assertThat(ex.diagnostics()).anyMatch(item -> item.contains("between 1 and 100000")));
     }
 
     @Test
@@ -251,6 +310,13 @@ class ExecutionControlCompilerTest {
                                     FixtureRule.Behavior behavior) {
         return new FixtureRule(FixtureRule.SCHEMA_VERSION, id, selector, behavior,
                 FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+    }
+
+    private static FixtureRule.Selector selector(List<Integer> attempts,
+                                                 List<Integer> occurrences) {
+        return new FixtureRule.Selector("/root", "subject", "", "", "",
+                List.of(), List.of(), InvocationSite.InvocationKind.PRIMARY,
+                attempts, occurrences, "", FixtureRule.Match.none());
     }
 
     private static ResolvedReplayPayloads replays(boolean certificationEligible,

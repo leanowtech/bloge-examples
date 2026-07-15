@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 /**
@@ -26,6 +27,8 @@ public final class FixtureBundleBuilder {
     private static final int MAX_METADATA_ENTRIES = 100;
     private static final int MAX_PROTOCOL_BODY_CHARACTERS = 1_048_576;
     private static final int MAX_ERROR_MESSAGE_CHARACTERS = 4_096;
+    private static final int MAX_SELECTOR_COORDINATES = 100;
+    private static final int MAX_SELECTOR_COORDINATE = 100_000;
 
     /** Fixture payload governance classification. */
     public enum Classification {
@@ -533,6 +536,34 @@ public final class FixtureBundleBuilder {
         }
 
         /**
+         * Restricts this rule to one or more one-based retry attempts.
+         *
+         * <p>Attempts count actual delegate calls inside one occurrence. Values are canonicalized
+         * as a sorted set; an empty selector is represented by not calling this method.</p>
+         *
+         * @param values one-based attempts, combined as alternatives
+         * @return this rule builder
+         */
+        public RuleBuilder attempts(int... values) {
+            coordinates("attempts", values);
+            return this;
+        }
+
+        /**
+         * Restricts this rule to one or more one-based invocation-site occurrences.
+         *
+         * <p>Occurrence is scoped by invocation site and runtime correlation key. Engine retries
+         * stay within the same occurrence.</p>
+         *
+         * @param values one-based occurrences, combined as alternatives
+         * @return this rule builder
+         */
+        public RuleBuilder occurrences(int... values) {
+            coordinates("occurrences", values);
+            return this;
+        }
+
+        /**
          * Adds an exact JSON Pointer input match.
          * @param jsonPointer invocation-input JSON Pointer
          * @param expected expected JSON value
@@ -761,6 +792,25 @@ public final class FixtureBundleBuilder {
             behavior.putNull("after");
             behavior.putArray("sequence");
             behavior.put("replayRef", "");
+        }
+
+        private void coordinates(String field, int... values) {
+            if (values == null || values.length == 0 || values.length > MAX_SELECTOR_COORDINATES) {
+                throw new IllegalArgumentException(field + " requires 1 to "
+                        + MAX_SELECTOR_COORDINATES + " coordinates");
+            }
+            TreeSet<Integer> canonical = new TreeSet<>();
+            for (int value : values) {
+                if (value < 1 || value > MAX_SELECTOR_COORDINATE) {
+                    throw new IllegalArgumentException(field + " coordinates must be between 1 and "
+                            + MAX_SELECTOR_COORDINATE);
+                }
+                if (!canonical.add(value)) {
+                    throw new IllegalArgumentException(field + " coordinates must not contain duplicates");
+                }
+            }
+            ArrayNode array = selector.putArray(field);
+            canonical.forEach(array::add);
         }
 
         private static String positiveDuration(Duration value, String field) {

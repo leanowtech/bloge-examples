@@ -340,6 +340,45 @@ This mode verifies time-dependent business behavior and the graph's reaction to 
 not prove wall-clock watchdog accuracy, interruption of blocked operator code, or deterministic
 completion order between concurrent branches. Those remain engine/sandbox conformance concerns.
 
+### 4.2.1.1 Select retry attempts and graph re-entry occurrences
+
+`attempts` and `occurrences` are active runtime selector coordinates. Both are one-based, bounded
+to 100 values in the range `1..100000`, unique, and strictly increasing on the wire. An empty array
+matches every coordinate. Values inside one array are OR alternatives; non-empty attempt and
+occurrence arrays are combined with AND.
+
+The following pair drives the real BLOGE retry policy deterministically: the first delegate call
+times out, while the second returns a fixture value.
+
+```java
+FixtureBundleBuilder retryFixture = FixtureBundleBuilder
+        .graph(target.graphId(), target.fingerprint())
+        .id("credit-provider-retry")
+        .logicalClock(Instant.parse("2026-07-15T09:00:00Z"))
+        .rule("attempt-1-timeout")
+            .node("fetchCreditScore")
+            .attempts(1)
+            .timeout(Duration.ofSeconds(3), "FIRST_ATTEMPT_TIMEOUT", "retry")
+            .add()
+        .rule("attempt-2-recovery")
+            .node("fetchCreditScore")
+            .attempts(2)
+            .returnValue(Map.of("score", 780))
+            .add();
+```
+
+`occurrences(n)` selects the nth binding of one `invocationSiteId` and runtime correlation key.
+This is useful when a nested graph is re-entered by a parent retry or loop. A retry appends a new
+`AttemptTrace` inside the current occurrence; it never increments occurrence. Parallel foreach
+items normally have different correlation keys, so each item owns an independent occurrence series.
+
+Selector candidates are frozen in descending specificity. Attempt/occurrence-constrained rules
+therefore override an explicit general fallback for the same site. Same-precedence rules may share
+a site only when preflight can prove them disjoint by coordinate, correlation, resource, canonical
+input, or conflicting path equality. Overlapping peers return `CONTROL_PLAN_AMBIGUOUS` before any
+operator runs. A coordinate gap does not silently call the real operator: normal `onUnmatched`
+policy applies, which defaults to `FIXTURE_UNMATCHED`.
+
 ### 4.2a Capture a governed replay payload
 
 Replay data is never accepted as caller-supplied return JSON. Capture one exact successful node
@@ -994,7 +1033,8 @@ sequentially; one item cannot share mutable plan or fixture-consumption state wi
 
 Java consumers do not need to assemble wire payloads or CI reports manually. The independent
 `bloge-resource-gateway-test-kit` module provides graph/operator target, fixture/suite revision,
-child/suite-run projections, strict `FixtureBundleBuilder` and `TestSuiteBuilder` builders, a bounded
+child/suite-run projections, strict `FixtureBundleBuilder` and `TestSuiteBuilder` builders, dynamic
+attempt/occurrence selector methods, a bounded
 JDK HTTP client, JUnit 5 assertions, and JUnit XML:
 
 ```bash
@@ -1088,6 +1128,11 @@ provide that coordinate. Current synchronous execution emits positive coordinate
 increase `occurrence`; it appends another `AttemptTrace`, preserving the distinction between
 "the second foreach item" and "the second retry of one item".
 
+Fixture selectors use the same coordinates as evidence. `attempts=[1,2]` matches either delegate
+attempt inside an occurrence; `occurrences=[2]` matches only the second binding for that site and
+correlation key. When both are present, both constraints must hold. This identity reuse is what makes
+the control plan auditable against the resulting trace.
+
 `EdgeTrace` carries `graphPath`, `correlationKey`, `graphOccurrence`,
 `fromInvocationSiteId`, and `toInvocationSiteId`. Its status is:
 
@@ -1158,6 +1203,9 @@ Implemented now:
   a Spring proof that root and synchronous nested resource calls do not escape fixtures.
 - run-scoped advancing logical clock plus bounded `DELAY` and `TIMEOUT`; timeout injection uses the
   real BLOGE retry/fallback chain and emits normalized logical-time evidence.
+- one-based attempt/occurrence selectors with canonical bounds, specificity ordering, proven-disjoint
+  peers, explicit lower-precedence fallback, runtime unmatched fail-closed behavior, and the
+  `dynamicAttemptOccurrenceSelectors` capability marker.
 - recursively frozen synchronous subgraph/foreach/loop/compensation sites, with run-scoped fixture
   propagation and fail-closed cycle/depth/site limits.
 - occurrence-addressable synchronous node/attempt/edge evidence, including runtime correlation and
@@ -1186,9 +1234,8 @@ Implemented now:
 
 Still intentionally outside this increment:
 
-- retry-attempt/occurrence selectors, streaming/suspendable controls and evidence, and
-  durable-resume plan restoration;
-- signed certification decisions, key-set/revocation event feed, transparency-log proof, full
+- streaming/suspendable controls and evidence, and durable-resume plan restoration;
+- signed certification decisions, transparency-log proof, trusted pin distribution, full
   branch/rule/retry/fallback/compensation semantic coverage, ANEKE projection, and mutation testing;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
   reconciliation alert SLOs, and suite-history list/trend APIs;

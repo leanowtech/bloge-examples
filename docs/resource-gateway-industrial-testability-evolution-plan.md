@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
-| Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（四类 case intent、内容寻址 fixture/一等 suite 发布、精确 revision 执行与 aggregate coverage/promotion 回显）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、process-owner lease/heartbeat/checkpoint fence、abandoned RUNNING fail-closed reconciliation、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其 governed catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free plan v2 谱系与认证降级，以及同步 nested/foreach/loop/compensation 控制传播与 occurrence/attempt/node/edge evidence 已落地；streaming/suspendable control/evidence 与物理 network isolation 待完成 |
+| Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（四类 case intent、内容寻址 fixture/一等 suite 发布、精确 revision 执行与 aggregate coverage/promotion 回显）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、process-owner lease/heartbeat/checkpoint fence、abandoned RUNNING fail-closed reconciliation、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其 governed catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free plan v2 谱系与认证降级，以及同步 nested/foreach/loop/compensation 控制传播、动态 attempt/occurrence selector 与 occurrence/attempt/node/edge evidence 已落地；streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3 | In progress | graph/operator `TestRunEvidence`、suite checkpoint/terminal attestation、ordered child closure、payload-free portable bundle 已完成；signed atomic key-set、managed v1/v2 lifecycle、外部 fingerprint pin、签名时刻 retirement/prospective/retroactive revocation 与 test-kit offline verifier 已完成；semantic coverage、transparency proof、trusted pin distribution 和 ANEKE projection 待完成 |
 | Stage 4-5 | Not started | 剩余 deterministic random/UUID/function services、durable/streaming、独立部署与规模化治理 |
 
@@ -42,11 +42,16 @@
 [Stage 3 key lifecycle verification](resource-gateway-execution-data-control-plane-stage3-key-lifecycle-verification.md)。北极星中的目标态能力未出现在上述
 Done 行时，均不得从文档推断为产品已开放。
 
-当前严格验收基线：Resource Gateway `clean verify` 共 1806 tests、0 failures、0 errors、
+动态 attempt/occurrence selector 的一基坐标、优先级、失败边界和真实 retry/nested re-entry
+证明见 [Stage 2 dynamic selector verification](resource-gateway-execution-data-control-plane-stage2-dynamic-selector-verification.md)。
+Semantic coverage 不修改已签名 v1 canonical shape，而通过 suite/evidence v2 双读演进，见
+[ADR-003](adr/ADR-003-semantic-coverage-protocol-versioning.md)。
+
+当前严格验收基线：Resource Gateway `clean verify` 共 1813 tests、0 failures、0 errors、
 34 个条件跳过，真实浏览器回归与 Spring Boot JAR 打包成功；Canvas suite 聚焦 68 tests、
 前端全量 150 tests，并在桌面与 390 x 844 真实浏览器中完成两行一等 suite 发布；Canvas 对完整
 stored suite value、child evidence、coverage、promotion 与 aggregate 一致性 fail closed；immutable TestSuite
-runner/attestation/protocol 增量聚焦 49 tests；key lifecycle 增量聚焦 41 tests；suite-run lease/reconciliation/profile 聚焦 22 tests；built-in catalog materialization 增量聚焦 34 tests；suite consumer adapter 聚焦 21 tests、独立 test-kit
+runner/attestation/protocol 增量聚焦 49 tests；key lifecycle 增量聚焦 41 tests；动态 selector/capability/schema 增量聚焦 51 tests；suite-run lease/reconciliation/profile 聚焦 22 tests；built-in catalog materialization 增量聚焦 34 tests；suite consumer adapter 聚焦 21 tests、独立 test-kit
 `clean verify` 42 tests，均为 0 failures、0 errors，library/CLI JAR 均打包成功；完整 suite/catalog wire value
 按打包的 Draft 2020-12 schema 校验并回绑 request identity，`RUNNING` 在无 polling CLI 中退出 2，
 未知参数值与 validator 细节不进入日志，public JavaDoc 零告警且由 `verify` 门禁强制。
@@ -1031,13 +1036,13 @@ target discovery、micro-graph execution、immutable fixture、test-kit adapter 
 ### Stage 2：Execution Data Control Plane，3-5 周
 
 **实现状态**：进行中。Stage 1 已完成 selector preflight、不可变 effective plan、主节点 replacement、consumption policy 与既有
-gateway graph suite adapter；Stage 2 已补 graph target discovery、公共执行/批量/查询、immutable fixture registry、canvas 内容寻址 fixture 与一等 suite 发布、独立持久化、证据脱敏、profile/identity guard、production run control-field guard、独立 test-kit，并完成七图/14-case built-in dogfooding：28 个 root/nested 资源调用观测使用 F3，retry 以 bounded consumption 计数，Spring wiring 在不可达 endpoint 下证明没有 HTTP 调用逃逸。run-scoped logical clock、DELAY/TIMEOUT、同步 nested/foreach/loop/compensation 的结构寻址、控制传播与 occurrence/attempt/node/edge evidence、公共同步 operator adapter、canvas operator runner，以及一等 immutable `bloge.testSuite.v1` 的依赖闭包 registry/API、精确幂等 runner、逐 case checkpoint、结构覆盖与服务端 promotion eligibility 已落地。suite runner 进一步以 process-owner lease 和长 case 心跳证明活性，heartbeat/checkpoint 共用版本 fence；bounded sweeper 在 owner 过期后用 CAS 把旧 `RUNNING` 终态化为 promotion-blocked `EVIDENCE_INCOMPLETE`，保留 child ref 且不自动重跑可能有副作用的 case。Canvas 同时支持四类 case intent、完整 stored suite value 回绑、child/coverage/promotion/aggregate 逻辑一致性校验与聚合回显，异步运行期间冻结编辑并主动清除过期 publication；Java/JUnit/CI suite adapter 已提供 builder、强类型 projection/assertion、payload-free JUnit XML 和 fail-closed CLI。旧七图 catalog 已通过稳定 source id、canonical-content revision 和 exact ref 映射幂等物化为 7 份 governed suite 与 14 份 fixture，numeric tolerance 也已进入唯一兼容 mapper 和统一 assertion kernel。受治理 replay vault、exact-ref preflight closure、运行期冻结、plan v2 payload-free lineage、BLOGE schema gate、`REPLAYED` evidence 与认证降级已经闭环。streaming/suspendable control/evidence、跨故障域 recovery queue/告警 SLO 和物理 test-runtime/network isolation 仍是本阶段硬验收，不能因同步 suite 主路径通过就宣称 Stage 2 完成。
+gateway graph suite adapter；Stage 2 已补 graph target discovery、公共执行/批量/查询、immutable fixture registry、canvas 内容寻址 fixture 与一等 suite 发布、独立持久化、证据脱敏、profile/identity guard、production run control-field guard、独立 test-kit，并完成七图/14-case built-in dogfooding：28 个 root/nested 资源调用观测使用 F3，retry 以 bounded consumption 计数，Spring wiring 在不可达 endpoint 下证明没有 HTTP 调用逃逸。run-scoped logical clock、DELAY/TIMEOUT、同步 nested/foreach/loop/compensation 的结构寻址、控制传播、动态 attempt/occurrence selector 与 occurrence/attempt/node/edge evidence、公共同步 operator adapter、canvas operator runner，以及一等 immutable `bloge.testSuite.v1` 的依赖闭包 registry/API、精确幂等 runner、逐 case checkpoint、结构覆盖与服务端 promotion eligibility 已落地。动态 selector 复用 evidence 的一基坐标，按 specificity 冻结候选，只有可证明互斥的同级规则可共存；未覆盖坐标仍 fail closed。suite runner 进一步以 process-owner lease 和长 case 心跳证明活性，heartbeat/checkpoint 共用版本 fence；bounded sweeper 在 owner 过期后用 CAS 把旧 `RUNNING` 终态化为 promotion-blocked `EVIDENCE_INCOMPLETE`，保留 child ref 且不自动重跑可能有副作用的 case。Canvas 同时支持四类 case intent、完整 stored suite value 回绑、child/coverage/promotion/aggregate 逻辑一致性校验与聚合回显，异步运行期间冻结编辑并主动清除过期 publication；Java/JUnit/CI suite adapter 已提供 builder、强类型 projection/assertion、payload-free JUnit XML 和 fail-closed CLI。旧七图 catalog 已通过稳定 source id、canonical-content revision 和 exact ref 映射幂等物化为 7 份 governed suite 与 14 份 fixture，numeric tolerance 也已进入唯一兼容 mapper 和统一 assertion kernel。受治理 replay vault、exact-ref preflight closure、运行期冻结、plan v2 payload-free lineage、BLOGE schema gate、`REPLAYED` evidence 与认证降级已经闭环。streaming/suspendable control/evidence、跨故障域 recovery queue/告警 SLO 和物理 test-runtime/network isolation 仍是本阶段硬验收，不能因同步 suite 主路径通过就宣称 Stage 2 完成。
 
 交付：
 
 - BLOGE `ExecutionOptions` 和统一 `OperatorResolverChain`；
 - selector preflight 与不可变 effective plan；
-- `TIMEOUT/DELAY/REPLAY`、attempt/correlation selector、consumption policy（其中 DELAY/TIMEOUT/REPLAY、correlation 与 consumption 已完成，attempt/occurrence 仍待完成）；
+- `TIMEOUT/DELAY/REPLAY`、attempt/occurrence/correlation selector 与 consumption policy（已完成）；
 - nested/subgraph/foreach/compensation 统一寻址；
 - graph component 和 graph contract runner；
 - 现有 visual simulation、gateway graph suite 迁移到统一 runtime。

@@ -152,6 +152,13 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo("#/$defs/replayPayloadRedaction");
         assertThat(definitions.at("/behavior/properties/replayRef/pattern").asText())
                 .contains("bloge-replay:");
+        assertThat(definitions.at("/selector/properties/attempts/uniqueItems").asBoolean()).isTrue();
+        assertThat(definitions.at("/selector/properties/attempts/items/minimum").asInt()).isEqualTo(1);
+        assertThat(definitions.at("/selector/properties/attempts/items/maximum").asInt())
+                .isEqualTo(100_000);
+        assertThat(definitions.at("/selector/properties/occurrences/uniqueItems").asBoolean()).isTrue();
+        assertThat(definitions.at("/selector/properties/occurrences/items/maximum").asInt())
+                .isEqualTo(100_000);
         assertThat(definitions.at("/testSuite/properties/target/$ref").asText())
                 .isEqualTo("#/$defs/exactTarget");
         assertThat(definitions.at("/testSuiteCase/properties/fixtureBundleRef/$ref").asText())

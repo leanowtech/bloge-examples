@@ -37,6 +37,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 class TestRunServiceTest {
 
@@ -565,6 +566,92 @@ class TestRunServiceTest {
     }
 
     @Test
+    void attemptSelectorsScriptTimeoutThenRecoveryAcrossTheRealRetryChain() {
+        AtomicInteger realCalls = new AtomicInteger();
+        Graph graph = new GraphBuilder("attempt-controlled-retry")
+                .node("subject", new CountingExternalOperator(realCalls))
+                .input((results, context) -> context.get("input"))
+                .retry(1, Duration.ofSeconds(2))
+                .build();
+        FixtureRule first = rule("attempt-1-timeout",
+                dynamicSelector("/root", "subject", List.of(1), List.of()),
+                FixtureRule.Behavior.timeout(Duration.ofSeconds(3),
+                        "FIRST_ATTEMPT_TIMEOUT", "retry this call"));
+        FixtureRule second = rule("attempt-2-return",
+                dynamicSelector("/root", "subject", List.of(2), List.of()),
+                FixtureRule.Behavior.returning("recovered"));
+
+        TestExecutionResult result = service.execute(request(graph,
+                logicalBundle(Instant.parse("2026-07-15T09:00:00Z"), first, second)));
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.graphResult().getOutput("subject", String.class)).isEqualTo("recovered");
+        assertThat(realCalls).hasValue(0);
+        assertThat(result.evidence().fixtureConsumptions())
+                .extracting(TestRunEvidence.FixtureConsumption::ruleId,
+                        TestRunEvidence.FixtureConsumption::uses)
+                .containsExactly(tuple("attempt-1-timeout", 1), tuple("attempt-2-return", 1));
+        assertThat(result.evidence().nodeTrace()).singleElement().satisfies(trace -> {
+            assertThat(trace.occurrence()).isEqualTo(1);
+            assertThat(trace.status()).isEqualTo("MOCKED");
+            assertThat(trace.attempts()).extracting(TestRunEvidence.AttemptTrace::attempt)
+                    .containsExactly(1, 2);
+            assertThat(trace.attempts()).extracting(TestRunEvidence.AttemptTrace::status)
+                    .containsExactly("TIMEOUT", "MOCKED");
+            assertThat(trace.attempts()).extracting(TestRunEvidence.AttemptTrace::errorCode)
+                    .containsExactly("FIRST_ATTEMPT_TIMEOUT", "");
+        });
+        assertThat(result.evidence().metadata().get("logicalTime").toString())
+                .contains("elapsedMs=5000");
+    }
+
+    @Test
+    void unspecifiedRetryAttemptFailsClosedInsteadOfCallingTheRealOperator() {
+        AtomicInteger realCalls = new AtomicInteger();
+        Graph graph = new GraphBuilder("attempt-gap")
+                .node("subject", new CountingExternalOperator(realCalls))
+                .input((results, context) -> context.get("input"))
+                .retry(1, Duration.ZERO)
+                .build();
+        FixtureRule firstOnly = rule("attempt-1",
+                dynamicSelector("/root", "subject", List.of(1), List.of()),
+                FixtureRule.Behavior.timeout(Duration.ofSeconds(1),
+                        "FIRST_FAILED", "retry"));
+
+        TestExecutionResult result = service.execute(request(graph,
+                logicalBundle(Instant.parse("2026-07-15T09:00:00Z"), firstOnly)));
+
+        assertThat(result.passed()).isFalse();
+        assertThat(realCalls).hasValue(0);
+        assertThat(result.evidence().nodeTrace()).singleElement().satisfies(trace -> {
+            assertThat(trace.attempts()).extracting(TestRunEvidence.AttemptTrace::errorCode)
+                    .containsExactly("FIRST_FAILED", "FIXTURE_UNMATCHED");
+            assertThat(trace.attempts()).extracting(TestRunEvidence.AttemptTrace::attempt)
+                    .containsExactly(1, 2);
+        });
+    }
+
+    @Test
+    void lowerPrecedenceGeneralRuleIsAnExplicitRuntimeFallback() {
+        FixtureRule secondAttempt = new FixtureRule(FixtureRule.SCHEMA_VERSION, "attempt-2",
+                dynamicSelector("/root", "subject", List.of(2), List.of()),
+                FixtureRule.Behavior.returning("specific"), FixtureRule.Consumption.optionalOnce(),
+                FixtureRule.SchemaCheck.strict());
+        FixtureRule general = rule("general", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.returning("fallback"));
+
+        TestExecutionResult result = service.execute(request(single(new PureOperator()),
+                bundle(general, secondAttempt)));
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.graphResult().getOutput("subject", String.class)).isEqualTo("fallback");
+        assertThat(result.evidence().fixtureConsumptions())
+                .extracting(TestRunEvidence.FixtureConsumption::ruleId,
+                        TestRunEvidence.FixtureConsumption::uses)
+                .containsExactly(tuple("general", 1), tuple("attempt-2", 0));
+    }
+
+    @Test
     void nestedForeachFixtureControlsEveryItemWithoutCallingRealOperator() {
         AtomicInteger realCalls = new AtomicInteger();
         DefaultOperatorRegistry nestedRegistry = new DefaultOperatorRegistry();
@@ -718,7 +805,58 @@ class TestRunServiceTest {
                 .filter(trace -> "/root".equals(trace.graphPath())
                         && "nested".equals(trace.nodeId())).findFirst()).hasValueSatisfying(trace ->
                 assertThat(trace.attempts()).extracting(TestRunEvidence.AttemptTrace::attempt)
-                        .containsExactly(1, 2));
+                .containsExactly(1, 2));
+    }
+
+    @Test
+    void occurrenceSelectorsControlEachNestedGraphReentryIndependently() {
+        AtomicInteger realChildCalls = new AtomicInteger();
+        DefaultOperatorRegistry nestedRegistry = new DefaultOperatorRegistry();
+        Operator<Object, Object> realChild = new CountingExternalOperator(realChildCalls);
+        nestedRegistry.register("controlled-child", realChild);
+        nestedRegistry.register("pure-after", new PureOperator());
+        Graph child = new GraphBuilder("child-body")
+                .node("child", realChild)
+                .input((results, context) -> context.get("input"))
+                .node("after", new PureOperator())
+                .dependsOn("child")
+                .build();
+        Graph root = new GraphBuilder("occurrence-controlled-reentry")
+                .node("nested", new FailingNestedOperator(child, nestedRegistry))
+                .input((results, context) -> Map.of("input", context.get("input")))
+                .retry(1, Duration.ZERO)
+                .build();
+        FixtureRule first = rule("occurrence-1-fails",
+                dynamicSelector("/root/nested/child-body", "child", List.of(), List.of(1)),
+                FixtureRule.Behavior.throwing("FIRST_OCCURRENCE_FAILED", "TEST", "reenter"));
+        FixtureRule second = rule("occurrence-2-recovers",
+                dynamicSelector("/root/nested/child-body", "child", List.of(), List.of(2)),
+                FixtureRule.Behavior.returning("fixture-child"));
+
+        TestExecutionResult result = service.execute(request(root, bundle(first, second)));
+
+        assertThat(result.passed()).isTrue();
+        assertThat(realChildCalls).hasValue(0);
+        assertThat(result.graphResult().getOutput("nested", Map.class))
+                .isEqualTo(Map.of("after", "real:null"));
+        assertThat(result.evidence().fixtureConsumptions())
+                .extracting(TestRunEvidence.FixtureConsumption::ruleId,
+                        TestRunEvidence.FixtureConsumption::uses)
+                .containsExactly(tuple("occurrence-1-fails", 1), tuple("occurrence-2-recovers", 1));
+        assertThat(result.evidence().nodeTrace().stream()
+                .filter(trace -> "/root/nested/child-body".equals(trace.graphPath())
+                        && "child".equals(trace.nodeId())).toList())
+                .satisfiesExactly(
+                        trace -> {
+                            assertThat(trace.occurrence()).isEqualTo(1);
+                            assertThat(trace.status()).isEqualTo("FAILED");
+                            assertThat(trace.errorCode()).isEqualTo("FIRST_OCCURRENCE_FAILED");
+                        },
+                        trace -> {
+                            assertThat(trace.occurrence()).isEqualTo(2);
+                            assertThat(trace.status()).isEqualTo("MOCKED");
+                            assertThat(trace.output()).isEqualTo("fixture-child");
+                        });
     }
 
     @Test
@@ -842,6 +980,14 @@ class TestRunServiceTest {
                                     FixtureRule.Behavior behavior) {
         return new FixtureRule(FixtureRule.SCHEMA_VERSION, id, selector, behavior,
                 FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+    }
+
+    private static FixtureRule.Selector dynamicSelector(String graphPath, String nodeId,
+                                                        List<Integer> attempts,
+                                                        List<Integer> occurrences) {
+        return new FixtureRule.Selector(graphPath, nodeId, "", "", "",
+                List.of(), List.of(), InvocationSite.InvocationKind.PRIMARY,
+                attempts, occurrences, "", FixtureRule.Match.none());
     }
 
     private static ResolvedReplayPayloads replays(String canonicalJson,

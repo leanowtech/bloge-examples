@@ -46,8 +46,9 @@ public record CompiledExecutionControl(
     }
 
     /**
-     * Runtime resolution for a node. Multiple rules are allowed only when preflight proves their
-     * resource or canonical path constraints are disjoint.
+     * Runtime resolution for a node. Rules are ordered by descending selector specificity.
+     * Same-precedence rules coexist only when preflight proves a dynamic coordinate or input
+     * constraint makes them disjoint; lower-precedence rules remain available as explicit fallback.
      *
      * @param site stable invocation site
      * @param rules ordered candidate rules

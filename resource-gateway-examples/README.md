@@ -21,7 +21,7 @@ integration something the business flow can see, reason about, test, and change.
 | Schema-aware canvas | Drag, connect, validate, simulate, and publish under server-side schema checks |
 | Runtime-backed demos | Local upstreams, real gateway execution, mock simulation, SSE examples, and reusable publications |
 | Schema-gated table tests | Run 14 built-in cases across all seven resource graphs with F3 transport fixtures, bounded retry consumption, coverage gates, and fidelity evidence |
-| Isolated testing control plane | Test/staging-only graph/operator discovery, immutable fixture registry, caller-driven DAG and operator micro-graph execution, sanitized evidence retention, batch runs, and production control-field guard |
+| Isolated testing control plane | Test/staging-only graph/operator discovery, immutable fixture registry, caller-driven DAG and operator micro-graph execution, attempt/occurrence-specific doubles, sanitized evidence retention, batch runs, and production control-field guard |
 | Governed run controls | Absolute deadline, monotonic remaining-budget propagation, fenced cancel, durable owner lease/epoch, cross-instance commands, and automatic signed evidence recovery after owner failure |
 | Auditable external writes | Versioned write contracts, binding/activation conformance, execution-scoped journal, commit receipts, UNKNOWN_COMMIT DAG guard, and signed reconciliation evidence |
 | Dynamic workload identity | Atomic JWKS/revocation refresh, zero-restart key rotation, bounded propagation SLO, group/clearance/delegation claims, and explicit 401/503 semantics |
@@ -257,7 +257,8 @@ attempt counts part of the pass/fail result. The testing kernel now recursively
 freezes synchronous nested graphs and uses BLOGE run-scoped operator resolution
 to control foreach, loop, subgraph, and compensation sites. Node evidence is
 addressed by structural invocation site, runtime correlation, site occurrence,
-and containing-graph occurrence, with retries retained as attempt facts; edge
+and containing-graph occurrence, with retries retained as attempt facts. Fixture rules use the same
+one-based attempt/occurrence coordinates to script retry recovery or nested graph re-entry; edge
 evidence carries the same graph coordinates. `enrichOrderList` now certifies a
 two-item parallel foreach case with independently controlled shipping and
 invoice calls. Streaming/suspendable nested execution remains fail closed for
@@ -285,8 +286,9 @@ supports graph/operator cases, `COLLECT_ALL`/`FAIL_FAST`, durable per-case check
 node/edge coverage, promotion eligibility, signed child-run evidence, and signed suite
 checkpoint/terminal attestations at `POST /api/testing/suites/{suiteId}/executions`. Terminal runs
 can be exported as payload-free `bloge.testSuiteEvidenceBundle.v1` values and independently verified
-with the Java test-kit and the exact Ed25519 public key. Governed exact-reference REPLAY is available;
-streaming/suspendable control, semantic coverage, key revocation event feeds, and physical
+with the Java test-kit against a signed, externally pinned Ed25519 key-set. Governed exact-reference
+REPLAY and dynamic attempt/occurrence selectors are available; streaming/suspendable control,
+semantic coverage, transparency/pin distribution, and physical
 test-runtime deployment isolation remain in progress and are not advertised as complete.
 
 Create a provider-specific Java operator only when the provider behavior cannot

@@ -75,8 +75,13 @@ public record FixtureRule(
     }
 
     /**
-     * Declarative selector. Attempt and occurrence arrays are present for protocol stability but are
-     * rejected by the v1 planner until retry and concurrency semantics can be proven deterministic.
+     * Declarative selector over a frozen structural site and its runtime coordinates.
+     *
+     * <p>{@code attempts} and {@code occurrences} are one-based, strictly increasing sets. Values
+     * within one set are alternatives; non-empty attempt and occurrence sets are combined with
+     * AND. Attempt counts actual delegate calls within one occurrence. Occurrence counts repeated
+     * bindings of the same invocation site and correlation key, so a retry never advances the
+     * occurrence coordinate.</p>
      *
      * @param graphPath exact graph path
      * @param nodeId exact node id
@@ -86,8 +91,8 @@ public record FixtureRule(
      * @param capabilities required operator capability labels
      * @param tags required governance or authoring tags
      * @param invocationKind invocation kind, defaulting to PRIMARY
-     * @param attempts reserved retry attempts
-     * @param occurrences reserved invocation occurrences
+     * @param attempts allowed one-based delegate attempts, or empty for every attempt
+     * @param occurrences allowed one-based site occurrences, or empty for every occurrence
      * @param correlationKey exact business/foreach correlation key
      * @param match canonical input match constraints
      */

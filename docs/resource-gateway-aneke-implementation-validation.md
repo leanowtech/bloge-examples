@@ -5,10 +5,10 @@
 | 属性 | 内容 |
 |---|---|
 | 设计基线 | `docs/resource-gateway-aneke-tool-studio-integration-evolution-plan.md` |
-| 当前实现基线 | Round 18 完整验证（signed/pinned evidence key lifecycle） |
+| 当前实现基线 | Round 19 完整验证（dynamic attempt/occurrence fixture selectors） |
 | 评估日期 | 2026-07-16 |
 | 目标 | 仓库内加权实施差距 `<3%`；客户环境部署门禁单独列账且不得被数值掩盖 |
-| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1806 tests，0 failures，0 errors，34 个条件跳过，`BUILD SUCCESS`；独立 test-kit `clean verify`：42 tests，0 failures，0 errors，JavaDoc/doclint 与 library/CLI JAR 打包成功。Round 17 的 frontend production build、34 个真实 Chrome 场景与 `npm audit` 0 vulnerabilities 证据继续有效 |
+| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1813 tests，0 failures，0 errors，34 个条件跳过，真实浏览器回归与 JAR 打包 `BUILD SUCCESS`；独立 test-kit `clean verify`：42 tests，0 failures，0 errors，JavaDoc/doclint 与 library/CLI JAR 打包成功。Round 17 的 frontend production build、34 个真实 Chrome 场景与 `npm audit` 0 vulnerabilities 证据继续有效 |
 
 ## 1. 评分方法
 
@@ -1055,6 +1055,31 @@ objects/features/endpoints 均有精确测试。结构证据：
 [Resource Gateway 与 ANEKE workbook/gate 证据闭环](assets/resource-gateway-workbook-gate-evidence-loop.svg)，图源为
 [resource-gateway-workbook-gate-evidence-loop.drawio](assets/drawio/resource-gateway-workbook-gate-evidence-loop.drawio)。
 
+### 3.19 Dynamic attempt/occurrence fixture selector
+
+Round 19 激活 `bloge.fixtureRule.v1` 中已冻结但原先 fail-closed 的动态坐标，使调用方可以用多条显式
+fixture rule 编排同一 invocation site 的 retry 与 nested re-entry：
+
+```text
+attempt=1 TIMEOUT -> BLOGE real retry -> attempt=2 RETURN
+same site occurrence=1 THROW -> parent retry/re-entry -> occurrence=2 RETURN
+
+coordinate arrays: one-based, unique, strictly increasing, max 100 values, max value 100000
+same-precedence peers: coexist only when preflight proves disjoint
+specific rule miss: lower-precedence declared rule may match as explicit fallback
+all rules miss: FIXTURE_UNMATCHED, real external operator call count remains 0
+```
+
+Planner and runtime share one precedence function; runtime repeats the winning-level ambiguity check.
+Fixture fingerprints commit the selector values, evidence reuses the same occurrence/attempt coordinates, and
+the capability probe publishes `dynamicAttemptOccurrenceSelectors`. The independent test-kit provides bounded
+`.attempts(...)` / `.occurrences(...)` builders and packages the updated authoritative schema.
+
+This round does not raise the ANEKE weighted score: semantic branch/rule/retry/fallback/compensation promotion
+still requires typed suite/evidence v2 and must not mutate signed v1 canonical records. That compatibility decision
+is recorded in [ADR-003](adr/ADR-003-semantic-coverage-protocol-versioning.md). Verification is recorded in
+[Stage 2 dynamic selector verification](resource-gateway-execution-data-control-plane-stage2-dynamic-selector-verification.md).
+
 ## 4. 部署验收门禁
 
 以下项目不再是仓库内协议主链缺失，但仍是客户生产晋级的强制门禁。没有客户环境证据时，不得把
@@ -1094,6 +1119,7 @@ backoff/DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，�
 | 16 | governed detached replay payload lifecycle | payload 与签名 run record 分离；classification/retention、clearance/groups ABAC、expiry sweep、legal hold/release/purge、签名 hash-chain lifecycle event、事务 outbox、跨实例 CAS | 5.725% | 15 个 payload governance 聚焦 tests、真实 Spring/H2/HTTP 生命周期、5 份新增/升级 machine schema；最终合并全量验证由 Round 17 覆盖；corporate Draw.io 0 errors/warnings/crossings/overlaps |
 | 17 | correctness workbook/gate evidence loop + cross-instance replay | exact suite/evidence workbook seed、稳定 case/assertion ID、gate v2 decision basis、PASSED fail-closed、gate/outbox 原子提交、数据库唯一键幂等、跨实例 deterministic replay winner | 2.630% | 10 个 workbook/gate/replay 聚焦 tests、117 个 integration package tests、65 个 runtime package tests、1620 个全量 tests、34 个真实 Chrome 场景、npm audit 0 vulnerabilities；2 份 machine schema；corporate Draw.io 0 errors/warnings/crossings/overlaps |
 | 18 | signed/pinned evidence key lifecycle | 原子签名 key-set、managed v1 安全降级/v2 完整历史、外部 fingerprint pin、签名时刻 retirement/disable/prospective/retroactive revoke、独立 offline verifier | 2.630% | key lifecycle 聚焦 41 tests、test-kit 聚焦 21 tests/全量 42 tests、Resource Gateway 全量 1806 tests，全部 0 failures/0 errors；3 份新增/升级 machine schema；真实 managed sidecar Spring/H2/HTTP 闭环 |
+| 19 | dynamic attempt/occurrence fixture selectors | 一基 bounded canonical 坐标、同级可证明互斥、特定规则优先与显式通用回退、真实 retry/nested re-entry、unmatched 零外部逃逸、test-kit/capability/schema 同步 | 2.630% | selector/capability/schema 聚焦 51 tests、test-kit 全量 42 tests、Resource Gateway 全量 1813 tests，全部 0 failures/0 errors；真实浏览器回归、server/test-kit JAR 与 doclint 成功 |
 
 仓库内实施目标现已满足 `<3%`，但这不等于客户生产认证。第 4 节的 IAM、KMS/HSM、disconnect/binding 与存量副作用
 覆盖仍是环境晋级门禁；必须取得客户 conformance、故障演练和 SLO 证据后，才能声明对应部署通过。

@@ -15,12 +15,15 @@ import java.util.Set;
  * Validates v1 protocol activation boundaries before selectors are resolved or code is executed.
  *
  * <p>Logical DELAY/TIMEOUT controls are accepted only with an explicit run clock. REPLAY is
- * accepted only when every exact reference was governed and frozen before compilation. Retry
- * occurrence, stream, sequence, and deterministic random fields remain fail-closed reservations.</p>
+ * accepted only when every exact reference was governed and frozen before compilation. Dynamic
+ * attempt/occurrence selectors are bounded and canonical; stream, sequence, and deterministic
+ * random fields remain fail-closed reservations.</p>
  */
 public class SafetyPreflight {
 
     private static final Duration MAX_LOGICAL_ADVANCE = Duration.ofDays(365);
+    private static final int MAX_SELECTOR_COORDINATES = 100;
+    private static final int MAX_SELECTOR_COORDINATE = 100_000;
 
     /**
      * Validates the bundle and throws one bounded aggregate rejection when it is not executable.
@@ -108,9 +111,8 @@ public class SafetyPreflight {
         } else if (!ruleIds.add(rule.ruleId())) {
             diagnostics.add(prefix + ".ruleId duplicates '" + rule.ruleId() + "'.");
         }
-        if (!rule.selector().attempts().isEmpty() || !rule.selector().occurrences().isEmpty()) {
-            diagnostics.add(prefix + " uses reserved attempt/occurrence selectors.");
-        }
+        validateCoordinates(prefix + ".selector.attempts", rule.selector().attempts(), diagnostics);
+        validateCoordinates(prefix + ".selector.occurrences", rule.selector().occurrences(), diagnostics);
         if (!rule.selector().functionRef().isBlank()) {
             diagnostics.add(prefix + " uses functionRef, which requires engine FunctionCallSite support.");
         }
@@ -206,6 +208,28 @@ public class SafetyPreflight {
         if (rule.consumption().onUnmatched() != FixtureRule.UnmatchedAction.FAIL
                 || rule.consumption().onExhausted() != FixtureRule.ExhaustedAction.FAIL) {
             diagnostics.add(prefix + " REPLAY cannot fall back to REAL when unmatched or exhausted.");
+        }
+    }
+
+    private static void validateCoordinates(String path, List<Integer> values,
+                                            List<String> diagnostics) {
+        if (values.size() > MAX_SELECTOR_COORDINATES) {
+            diagnostics.add(path + " may contain at most " + MAX_SELECTOR_COORDINATES + " values.");
+            return;
+        }
+        int previous = 0;
+        for (int index = 0; index < values.size(); index++) {
+            Integer value = values.get(index);
+            if (value == null || value < 1 || value > MAX_SELECTOR_COORDINATE) {
+                diagnostics.add(path + "[" + index + "] must be between 1 and "
+                        + MAX_SELECTOR_COORDINATE + ".");
+                continue;
+            }
+            if (value <= previous) {
+                diagnostics.add(path + " must be strictly increasing without duplicates.");
+                return;
+            }
+            previous = value;
         }
     }
 

@@ -20,7 +20,16 @@ final class FixtureMatcher {
         this.objectMapper = objectMapper;
     }
 
-    boolean matches(FixtureRule rule, Object input, String runtimeCorrelationKey) {
+    boolean matches(FixtureRule rule, Object input, String runtimeCorrelationKey,
+                    int attempt, int occurrence) {
+        if (!rule.selector().attempts().isEmpty()
+                && !rule.selector().attempts().contains(attempt)) {
+            return false;
+        }
+        if (!rule.selector().occurrences().isEmpty()
+                && !rule.selector().occurrences().contains(occurrence)) {
+            return false;
+        }
         JsonNode actual = objectMapper.valueToTree(input);
         String resourceRef = rule.selector().resourceRef();
         if (!resourceRef.isBlank()

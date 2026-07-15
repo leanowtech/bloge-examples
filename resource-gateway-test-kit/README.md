@@ -7,8 +7,8 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 - a bounded JDK HTTP client for graph/operator target discovery, fixture and immutable-suite
   registries, built-in graph-catalog materialization, graph/operator execution, suite execution,
   and persisted child/aggregate-run lookup;
-- a fail-closed `FixtureBundleBuilder` for output-level and transport-level
-  protocol fixtures;
+- a fail-closed `FixtureBundleBuilder` for output-level and transport-level protocol fixtures,
+  including one-based attempt/occurrence selectors;
 - a dependency-closed `TestSuiteBuilder` with exact target and fixture references;
 - runtime validation against the packaged Draft 2020-12 schema plus request/response identity binding;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
@@ -283,6 +283,31 @@ require `logicalClock`, reject durations over 365 days, and consume no wall time
 They verify retry/fallback and time-dependent business semantics, not real
 watchdog timing or thread interruption.
 
+Use separate rules when each retry attempt or nested graph re-entry needs different behavior:
+
+```java
+FixtureBundleBuilder scriptedRetry = FixtureBundleBuilder
+        .graph(target.graphId(), target.fingerprint())
+        .id("scripted-retry")
+        .logicalClock(Instant.parse("2026-07-15T09:00:00Z"))
+        .rule("first-attempt-times-out")
+            .node("fetchCreditScore")
+            .attempts(1)
+            .timeout(Duration.ofSeconds(3))
+            .add()
+        .rule("second-attempt-recovers")
+            .node("fetchCreditScore")
+            .attempts(2)
+            .returnValue(Map.of("score", 780))
+            .add();
+```
+
+`attempts(...)` and `occurrences(...)` canonicalize their arguments as sorted one-based sets.
+Attempts count delegate calls within one occurrence; occurrences count repeated bindings for one
+site and correlation key. The dimensions are ANDed when both are present. Overlapping rules at the
+same precedence are rejected before execution, and a coordinate with no matching rule follows the
+declared unmatched policy, which defaults to fail closed.
+
 ## Security Defaults
 
 - A fresh bearer token is requested from the provider for each HTTP call.
@@ -296,9 +321,10 @@ watchdog timing or thread interruption.
 - Current v2 child runs require a structurally consistent versioned integrity manifest. Current v2
   suite runs require a signed checkpoint or terminal attestation. Historical v1 suite responses are
   accepted only as unsigned migration data and cannot be exported as trusted terminal bundles.
-- Offline suite verification fetches the exact key named by the attestation and accepts `ACTIVE` or
-  `RETIRED` Ed25519 keys. Missing keys return `KEY_UNAVAILABLE`; invalid signatures and material fail
-  closed without echoing evidence payloads.
+- Release-grade offline verification pins the signed atomic key-set fingerprint and reconstructs
+  ACTIVE, retirement, disable, and prospective/retroactive revocation at evidence signing time.
+  Exact-key lookup remains a migration/diagnostic path. Missing keys, pin mismatch, stale policy,
+  invalid signatures, and malformed material fail closed without echoing evidence payloads.
 - Suite requests and responses are validated against the exact packaged JSON Schema; returned suite
   id, revision, fingerprint, run id, and `clientRequestId` are rebound to the originating request.
 - Suite execution requires an exact positive revision, full lowercase SHA-256 fingerprint, and

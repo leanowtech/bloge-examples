@@ -82,8 +82,8 @@
         "capabilities": {"type": "array", "items": {"type": "string"}, "maxItems": 100},
         "tags": {"type": "array", "items": {"type": "string"}, "maxItems": 100},
         "invocationKind": {"enum": ["PRIMARY", "COMPENSATION", "FUNCTION", "RESOURCE", "SUBGRAPH"]},
-        "attempts": {"type": "array", "items": {"type": "integer", "minimum": 1}, "maxItems": 100},
-        "occurrences": {"type": "array", "items": {"type": "integer", "minimum": 1}, "maxItems": 100},
+        "attempts": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 100000}, "maxItems": 100, "uniqueItems": true},
+        "occurrences": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 100000}, "maxItems": 100, "uniqueItems": true},
         "correlationKey": {"type": "string", "maxLength": 512},
         "match": {"$ref": "#/$defs/match"}
       }

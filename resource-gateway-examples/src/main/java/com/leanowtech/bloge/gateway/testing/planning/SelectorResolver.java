@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/** Resolves the v1 static selector subset against a frozen recursive invocation inventory. */
+/** Resolves structural selectors and freezes runtime candidate precedence. */
 public class SelectorResolver {
 
     /**
@@ -24,7 +24,9 @@ public class SelectorResolver {
             InvocationInventory inventory,
             List<FixtureRule> rules) {
         Map<String, List<ScoredRule>> bySite = new LinkedHashMap<>();
-        for (FixtureRule rule : rules) {
+        for (int ruleIndex = 0; ruleIndex < rules.size(); ruleIndex++) {
+            FixtureRule rule = rules.get(ruleIndex);
+            int declarationIndex = ruleIndex;
             List<InvocationInventory.Entry> matched = inventory.entries().stream()
                     .filter(entry -> matches(entry, rule.selector()))
                     .toList();
@@ -32,26 +34,30 @@ public class SelectorResolver {
                 throw new ControlPlanRejectedException("CONTROL_PLAN_ZERO_MATCH", List.of(
                         "Fixture rule '" + rule.ruleId() + "' did not match any invocation site."));
             }
-            int score = specificity(rule.selector());
+            int score = precedence(rule.selector());
             matched.forEach(entry -> bySite.computeIfAbsent(
                             entry.site().invocationSiteId(), ignored -> new ArrayList<>())
-                    .add(new ScoredRule(rule, score)));
+                    .add(new ScoredRule(rule, score, declarationIndex)));
         }
 
         Map<String, CompiledExecutionControl.ResolvedControl> resolved = new LinkedHashMap<>();
         bySite.forEach((siteId, candidates) -> {
-            int max = candidates.stream().mapToInt(ScoredRule::score).max().orElse(0);
-            List<FixtureRule> winners = candidates.stream()
-                    .filter(candidate -> candidate.score() == max)
-                    .map(ScoredRule::rule)
-                    .toList();
-            if (winners.size() > 1 && !pairwiseDisjoint(winners)) {
-                throw new ControlPlanRejectedException("CONTROL_PLAN_AMBIGUOUS", List.of(
-                        "Invocation site '" + siteId + "' has same-precedence fixture rules: "
-                                + winners.stream().map(FixtureRule::ruleId).toList()));
+            Map<Integer, List<FixtureRule>> byPrecedence = new LinkedHashMap<>();
+            candidates.stream().sorted(java.util.Comparator.comparingInt(ScoredRule::score).reversed()
+                            .thenComparingInt(ScoredRule::declarationIndex))
+                    .forEach(candidate -> byPrecedence
+                            .computeIfAbsent(candidate.score(), ignored -> new ArrayList<>())
+                            .add(candidate.rule()));
+            for (List<FixtureRule> peers : byPrecedence.values()) {
+                if (peers.size() > 1 && !pairwiseDisjoint(peers)) {
+                    throw new ControlPlanRejectedException("CONTROL_PLAN_AMBIGUOUS", List.of(
+                            "Invocation site '" + siteId + "' has same-precedence fixture rules: "
+                                    + peers.stream().map(FixtureRule::ruleId).toList()));
+                }
             }
             InvocationSite site = inventory.byInvocationSiteId().get(siteId).site();
-            resolved.put(siteId, new CompiledExecutionControl.ResolvedControl(site, winners, false));
+            List<FixtureRule> ordered = byPrecedence.values().stream().flatMap(List::stream).toList();
+            resolved.put(siteId, new CompiledExecutionControl.ResolvedControl(site, ordered, false));
         });
         return resolved;
     }
@@ -101,13 +107,30 @@ public class SelectorResolver {
         return actual.containsAll(required);
     }
 
-    private static int specificity(FixtureRule.Selector selector) {
+    /**
+     * Computes the stable precedence shared by compile-time ordering and runtime fallback.
+     *
+     * @param selector immutable fixture selector
+     * @return larger value for a more constrained selector
+     */
+    public static int precedence(FixtureRule.Selector selector) {
         int score = 0;
         if (!selector.graphPath().isBlank()) score += 100;
         if (!selector.nodeId().isBlank()) score += 100;
         if (!selector.operatorRef().isBlank()) score += 50;
         if (!selector.resourceRef().isBlank()) score += 50;
+        if (!selector.functionRef().isBlank()) score += 50;
         if (!selector.capabilities().isEmpty() || !selector.tags().isEmpty()) score += 10;
+        if (!selector.attempts().isEmpty()) score += 30;
+        if (!selector.occurrences().isEmpty()) score += 30;
+        if (!selector.correlationKey().isBlank()) score += 20;
+        FixtureRule.Match match = selector.match();
+        if (match.canonicalInput() != null) score += 40;
+        score += Math.min(20, match.pathEquals().size() * 4);
+        score += Math.min(10, (match.pathsExist().size() + match.pathsAbsent().size()) * 2);
+        if (!match.schema().isEmpty()) score += 10;
+        if (!match.correlationKey().isBlank()) score += 10;
+        score += Math.min(10, match.boundedRegex().size() * 2);
         return score;
     }
 
@@ -123,6 +146,16 @@ public class SelectorResolver {
     }
 
     private static boolean provablyDisjoint(FixtureRule left, FixtureRule right) {
+        if (disjointCoordinates(left.selector().attempts(), right.selector().attempts())
+                || disjointCoordinates(left.selector().occurrences(), right.selector().occurrences())) {
+            return true;
+        }
+        String leftCorrelation = left.selector().correlationKey();
+        String rightCorrelation = right.selector().correlationKey();
+        if (!leftCorrelation.isBlank() && !rightCorrelation.isBlank()
+                && !leftCorrelation.equals(rightCorrelation)) {
+            return true;
+        }
         String leftResource = left.selector().resourceRef();
         String rightResource = right.selector().resourceRef();
         if (!leftResource.isBlank() && !rightResource.isBlank()
@@ -136,9 +169,26 @@ public class SelectorResolver {
                 return true;
             }
         }
+        Object leftCanonical = left.selector().match().canonicalInput();
+        Object rightCanonical = right.selector().match().canonicalInput();
+        if (leftCanonical != null && rightCanonical != null
+                && !Objects.equals(leftCanonical, rightCanonical)) {
+            return true;
+        }
+        String leftMatchCorrelation = left.selector().match().correlationKey();
+        String rightMatchCorrelation = right.selector().match().correlationKey();
+        if (!leftMatchCorrelation.isBlank() && !rightMatchCorrelation.isBlank()
+                && !leftMatchCorrelation.equals(rightMatchCorrelation)) {
+            return true;
+        }
         return false;
     }
 
-    private record ScoredRule(FixtureRule rule, int score) {
+    private static boolean disjointCoordinates(List<Integer> left, List<Integer> right) {
+        return !left.isEmpty() && !right.isEmpty()
+                && left.stream().noneMatch(right::contains);
+    }
+
+    private record ScoredRule(FixtureRule rule, int score, int declarationIndex) {
     }
 }
