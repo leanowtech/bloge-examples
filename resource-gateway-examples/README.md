@@ -85,7 +85,8 @@ the PID and selected port are kept under `target/example-pids/`.
 
 The testing API requires `Authorization: Bearer bloge-aneke-demo-token` and a
 least-privilege `X-Purpose` (`TEST_EXECUTION`, fixture read/write, or suite read/write) in the local
-test profile. Immutable suites use `TEST_SUITE_READ` and `TEST_SUITE_WRITE`. See
+test profile. Immutable suites use `TEST_SUITE_READ` and `TEST_SUITE_WRITE`; exact suite execution
+and suite-run query use `TEST_EXECUTION`. See
 [Testing Control Plane API](../docs/resource-gateway-testing-control-plane-api.md)
 for the complete target-discovery, fixture-registration, execution, evidence,
 and production-isolation workflow. Java/JUnit consumers can use the independent
@@ -258,8 +259,11 @@ root resource call that escapes its fixture. The generic public
 testing API, persistent test-run store, independent JUnit test kit,
 production-profile endpoint isolation, deterministic `DELAY/TIMEOUT`, and
 synchronous nested invocation control are now available as Stage 2 increments.
-Public operator execution, occurrence-level nested evidence, and the Author Canvas executable
-operator-suite adapter are available. REPLAY, streaming/suspendable control, and physical
+Public operator execution, occurrence-level nested evidence, the Author Canvas executable
+operator-suite adapter, and idempotent immutable-suite execution are available. The suite runner
+supports graph/operator cases, `COLLECT_ALL`/`FAIL_FAST`, durable per-case checkpoints, structural
+node/edge coverage, promotion eligibility, and child-run evidence links at
+`POST /api/testing/suites/{suiteId}/executions`. REPLAY, streaming/suspendable control, and physical
 test-runtime deployment isolation remain in progress and are not advertised as complete.
 
 Create a provider-specific Java operator only when the provider behavior cannot
@@ -283,8 +287,9 @@ To add a user-supplied visual operator library:
    from the frozen target, lowered input, fixture and row metadata, register immutable revision 1
    with `TEST_FIXTURE_WRITE`, verify the returned identity, and execute by stored ref with
    `TEST_EXECUTION`. The control plane also exposes a dependency-closed immutable
-   `bloge.testSuite.v1` registry at `/api/testing/suites/{suiteId}`; the canvas does not yet publish
-   its row table to that registry. Native operators run real code under a `SPY`; resource-backed visual operators
+   `bloge.testSuite.v1` registry at `/api/testing/suites/{suiteId}` and an exact suite runner at
+   `/api/testing/suites/{suiteId}/executions`; the canvas does not yet publish its row table to that
+   registry. Native operators run real code under a `SPY`; resource-backed visual operators
    lower to `httpResource` and replace only transport I/O, using the editable `Transport response`
    as the raw protocol fixture. Unsupported and `OPAQUE_RUNTIME` targets fail closed before
    execution. Stored provenance is necessary but not sufficient for `CERTIFIABLE` evidence: target

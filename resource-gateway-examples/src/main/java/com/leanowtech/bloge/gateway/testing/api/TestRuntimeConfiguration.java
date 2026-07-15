@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseFixtureBundleRep
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecurityEventRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRepository;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -43,6 +44,12 @@ public class TestRuntimeConfiguration {
     @Bean
     TestSuiteRepository testSuiteRepository(TestRuntimeDatabase database, ObjectMapper objectMapper) {
         return new DatabaseTestSuiteRepository(database.jdbc(), objectMapper);
+    }
+
+    /** @return recoverable aggregate suite-run store isolated from production run tables */
+    @Bean
+    TestSuiteRunRepository testSuiteRunRepository(TestRuntimeDatabase database, ObjectMapper objectMapper) {
+        return new DatabaseTestSuiteRunRepository(database.jdbc(), objectMapper);
     }
 
     @Bean
@@ -84,6 +91,20 @@ public class TestRuntimeConfiguration {
             TestSecurityEventRepository securityEvents) {
         return new TestSuiteRegistryService(graphService, operatorRegistry, resourceRegistry, objectMapper,
                 fixtureRepository, suiteRepository, securityEvents);
+    }
+
+    /** Assembles the idempotent immutable-suite runner and coverage evaluator. */
+    @Bean
+    TestSuiteExecutionService testSuiteExecutionService(
+            TestSuiteRegistryService suiteRegistry,
+            TestExecutionApiService executionService,
+            TestSuiteRunRepository suiteRunRepository,
+            ObjectMapper objectMapper,
+            TestSecurityEventRepository securityEvents,
+            @Value("${gateway.testing.store.retention-days:30}") long retentionDays) {
+        return new TestSuiteExecutionService(suiteRegistry, executionService, suiteRunRepository,
+                objectMapper, securityEvents,
+                Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))));
     }
 
     /** Marker consumed by the unauthenticated capability probe. */

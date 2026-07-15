@@ -195,12 +195,50 @@ class TestExecutionControllerTest {
         verifyNoInteractions(execution, suites);
     }
 
+    @Test
+    void suiteExecutionUsesTestExecutionPurposeAndExactIdempotentRequest() throws Exception {
+        TestExecutionApiService execution = mock(TestExecutionApiService.class);
+        TestSuiteRegistryService suites = mock(TestSuiteRegistryService.class);
+        TestSuiteExecutionService suiteRuns = mock(TestSuiteExecutionService.class);
+        when(suiteRuns.execute(eq("suite-a"), any(), any())).thenReturn(
+                new TestSuiteExecutionResponse("", "suite-run-1", "sha256:" + "f".repeat(64), null));
+        MockMvc mvc = mvc(execution, suites, suiteRuns, Set.of("TEST_EXECUTION"));
+
+        mvc.perform(post("/api/testing/suites/suite-a/executions")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_EXECUTION")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"schemaVersion":"bloge.testSuiteExecutionRequest.v1",
+                                 "suiteRef":{"suiteId":"suite-a","revision":3,
+                                 "fingerprint":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+                                 "clientRequestId":"ci-build-42","strategy":"COLLECT_ALL","metadata":{}}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.suiteRunId").value("suite-run-1"));
+
+        verify(suiteRuns).execute(eq("suite-a"),
+                org.mockito.ArgumentMatchers.argThat(request ->
+                        request.clientRequestId().equals("ci-build-42")
+                                && request.suiteRef().revision() == 3),
+                org.mockito.ArgumentMatchers.argThat(context ->
+                        context.purpose().equals("TEST_EXECUTION")));
+        verifyNoInteractions(execution, suites);
+    }
+
     private static MockMvc mvc(TestExecutionApiService service) {
         return mvc(service, mock(TestSuiteRegistryService.class), Set.of("TEST_EXECUTION"));
     }
 
     private static MockMvc mvc(TestExecutionApiService service,
                                TestSuiteRegistryService suites,
+                               Set<String> purposes) {
+        return mvc(service, suites, mock(TestSuiteExecutionService.class), purposes);
+    }
+
+    private static MockMvc mvc(TestExecutionApiService service,
+                               TestSuiteRegistryService suites,
+                               TestSuiteExecutionService suiteRuns,
                                Set<String> purposes) {
         RecordingAudit audit = new RecordingAudit();
         IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity(
@@ -209,7 +247,8 @@ class TestExecutionControllerTest {
                 Set.of("quality"), "CONFIDENTIAL", "", Instant.MAX);
         IntegrationRequestAuthenticator authenticator = new IntegrationRequestAuthenticator(
                 new StaticBearerIntegrationIdentityResolver("test-token", identity, false), audit);
-        return MockMvcBuilders.standaloneSetup(new TestExecutionController(service, suites, authenticator))
+        return MockMvcBuilders.standaloneSetup(new TestExecutionController(
+                        service, suites, suiteRuns, authenticator))
                 .setControllerAdvice(new TestExecutionProblemHandler()).build();
     }
 

@@ -316,6 +316,139 @@
         "createdBy": {"type": "string", "minLength": 1}
       }
     },
+    "testSuiteRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["suiteId", "revision", "fingerprint"],
+      "properties": {
+        "suiteId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "revision": {"type": "integer", "minimum": 1},
+        "fingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "testSuiteExecutionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteRef", "clientRequestId", "strategy", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteExecutionRequest.v1"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "clientRequestId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "strategy": {"enum": ["COLLECT_ALL", "FAIL_FAST"]},
+        "metadata": {"type": "object", "maxProperties": 100}
+      }
+    },
+    "testSuiteCaseResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "caseType", "fixtureBundleRef", "status", "runId",
+        "evidenceStatus", "evidenceClass", "assertionsEvaluated", "assertionsPassed",
+        "diagnosticCode", "diagnostic"],
+      "properties": {
+        "caseId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "caseType": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]},
+        "fixtureBundleRef": {"$ref": "#/$defs/governedFixtureBundleRef"},
+        "status": {"enum": ["PENDING", "PASSED", "FAILED", "NOT_SCHEDULED", "EVIDENCE_INCOMPLETE"]},
+        "runId": {"type": "string", "maxLength": 255},
+        "evidenceStatus": {"oneOf": [{"$ref": "#/$defs/runStatus"}, {"type": "null"}]},
+        "evidenceClass": {"type": ["string", "null"], "enum": ["EXPLORATORY", "CERTIFIABLE", null]},
+        "assertionsEvaluated": {"type": "integer", "minimum": 0},
+        "assertionsPassed": {"type": "integer", "minimum": 0},
+        "diagnosticCode": {"type": "string", "maxLength": 255},
+        "diagnostic": {"type": "string", "maxLength": 512}
+      }
+    },
+    "testSuiteCoverageVerdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "minimumCases", "completedCases", "requiredCaseTypes",
+        "observedCaseTypes", "missingCaseTypes", "requiredInvocationSiteIds",
+        "observedInvocationSiteIds", "missingInvocationSiteIds", "requiredEdgeTransfers",
+        "observedEdgeTransfers", "missingEdgeTransfers", "minimumAssertionsPerCase",
+        "assertionDensityViolations", "fixtureConsumptionViolations", "allCasesCompleted"],
+      "properties": {
+        "status": {"enum": ["NOT_EVALUATED", "SATISFIED", "UNSATISFIED", "INCOMPLETE"]},
+        "minimumCases": {"type": "integer", "minimum": 0, "maximum": 100},
+        "completedCases": {"type": "integer", "minimum": 0, "maximum": 100},
+        "requiredCaseTypes": {"type": "array", "uniqueItems": true,
+          "items": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]}},
+        "observedCaseTypes": {"type": "array", "uniqueItems": true,
+          "items": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]}},
+        "missingCaseTypes": {"type": "array", "uniqueItems": true,
+          "items": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]}},
+        "requiredInvocationSiteIds": {"type": "array", "uniqueItems": true, "maxItems": 10000,
+          "items": {"type": "string", "minLength": 1, "maxLength": 512}},
+        "observedInvocationSiteIds": {"type": "array", "uniqueItems": true, "maxItems": 10000,
+          "items": {"type": "string", "minLength": 1, "maxLength": 512}},
+        "missingInvocationSiteIds": {"type": "array", "uniqueItems": true, "maxItems": 10000,
+          "items": {"type": "string", "minLength": 1, "maxLength": 512}},
+        "requiredEdgeTransfers": {"type": "array", "uniqueItems": true, "maxItems": 10000,
+          "items": {"$ref": "#/$defs/testSuiteEdgeTransferRef"}},
+        "observedEdgeTransfers": {"type": "array", "uniqueItems": true, "maxItems": 10000,
+          "items": {"$ref": "#/$defs/testSuiteEdgeTransferRef"}},
+        "missingEdgeTransfers": {"type": "array", "uniqueItems": true, "maxItems": 10000,
+          "items": {"$ref": "#/$defs/testSuiteEdgeTransferRef"}},
+        "minimumAssertionsPerCase": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "assertionDensityViolations": {"type": "array", "uniqueItems": true, "maxItems": 100,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}},
+        "fixtureConsumptionViolations": {"type": "array", "uniqueItems": true, "maxItems": 100,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}},
+        "allCasesCompleted": {"type": "boolean"}
+      }
+    },
+    "testSuitePromotionVerdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reasons", "allCasesPassed", "certifiableCases",
+        "minimumCertifiableCases", "targetCertificationEligible", "coverageSatisfied",
+        "allCasesCompleted"],
+      "properties": {
+        "status": {"enum": ["NOT_EVALUATED", "ELIGIBLE", "BLOCKED"]},
+        "reasons": {"type": "array", "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}},
+        "allCasesPassed": {"type": "boolean"},
+        "certifiableCases": {"type": "integer", "minimum": 0, "maximum": 100},
+        "minimumCertifiableCases": {"type": "integer", "minimum": 0, "maximum": 100},
+        "targetCertificationEligible": {"type": "boolean"},
+        "coverageSatisfied": {"type": "boolean"},
+        "allCasesCompleted": {"type": "boolean"}
+      }
+    },
+    "testSuiteRunEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteRunId", "clientRequestId", "status",
+        "executionPurpose", "suiteRef", "target", "startedAt", "completedAt", "caseResults",
+        "coverage", "promotion", "diagnostics", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteRunEvidence.v1"},
+        "suiteRunId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "clientRequestId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "status": {"enum": ["RUNNING", "PASSED", "COMPLETED_WITH_FAILURES", "PARTIAL", "EVIDENCE_INCOMPLETE"]},
+        "executionPurpose": {"const": "TEST_SUITE_EXECUTION"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "target": {"$ref": "#/$defs/exactTarget"},
+        "startedAt": {"type": "string", "format": "date-time"},
+        "completedAt": {"type": ["string", "null"], "format": "date-time"},
+        "caseResults": {"type": "array", "minItems": 1, "maxItems": 100,
+          "items": {"$ref": "#/$defs/testSuiteCaseResult"}},
+        "coverage": {"$ref": "#/$defs/testSuiteCoverageVerdict"},
+        "promotion": {"$ref": "#/$defs/testSuitePromotionVerdict"},
+        "diagnostics": {"type": "array", "items": {"type": "string", "maxLength": 512}},
+        "metadata": {"type": "object"}
+      }
+    },
+    "testSuiteExecutionResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteRunId", "evidenceFingerprint", "evidence"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteExecutionResponse.v1"},
+        "suiteRunId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "evidenceFingerprint": {"oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]},
+        "evidence": {"$ref": "#/$defs/testSuiteRunEvidence"}
+      }
+    },
     "testExecutionRequest": {
       "type": "object",
       "additionalProperties": false,

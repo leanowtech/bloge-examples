@@ -20,10 +20,14 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.supportedObjects()).containsKeys("testExecutionRequest", "testExecutionResponse",
                 "testExecutionBatchRequest", "testExecutionBatchResponse", "fixtureBundleRegistrationRequest",
                 "storedFixtureBundle", "testSuite", "testSuiteRegistrationRequest", "storedTestSuite",
+                "testSuiteExecutionRequest", "testSuiteExecutionResponse", "testSuiteRunEvidence",
                 "fixtureBundle", "effectiveExecutionPlan", "testRunEvidence",
                 "testGraphTargetDescriptor", "testOperatorExecutionRequest", "testOperatorTargetDescriptor");
         assertThat(enabled.features()).containsEntry("operatorMicroGraphExecution", true)
                 .containsEntry("immutableTestSuiteRegistry", true)
+                .containsEntry("immutableTestSuiteExecution", true)
+                .containsEntry("suiteSemanticCoverageVerdict", true)
+                .containsEntry("suitePromotionEligibilityVerdict", true)
                 .containsEntry("streamingOperatorTestExecution", false)
                 .containsEntry("suspendableOperatorTestExecution", false);
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.path().equals("/api/testing/executions"));
@@ -37,5 +41,9 @@ class TestabilityCapabilitiesTest {
                 endpoint.method().equals("PUT") && endpoint.path().equals("/api/testing/suites/{suiteId}"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("GET") && endpoint.path().equals("/api/testing/suites/{suiteId}"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
+                && endpoint.path().equals("/api/testing/suites/{suiteId}/executions"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("GET")
+                && endpoint.path().equals("/api/testing/suite-executions/{suiteRunId}"));
     }
 }

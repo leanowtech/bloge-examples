@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
-| Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（含内容寻址 governed fixture row）、fixture registry、一等 immutable TestSuite 协议/registry/API、独立 test-run store、脱敏、10 态、profile/identity/production protocol guard、独立 HTTP/JUnit test-kit、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 nested/foreach/loop/compensation 控制传播与 occurrence/attempt/node/edge evidence 已落地；TestSuite runner/coverage verdict/adapters、streaming/suspendable control/evidence 与物理 network isolation 待完成 |
+| Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（含内容寻址 governed fixture row）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 HTTP/JUnit test-kit、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 nested/foreach/loop/compensation 控制传播与 occurrence/attempt/node/edge evidence 已落地；canvas/test-kit/CI suite adapters、streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3-5 | Not started | signed evidence、semantic coverage、剩余 deterministic random/UUID/function services、replay、独立部署与规模化治理 |
 
 实现细节、行为兼容决策和可复现测试见
@@ -29,13 +29,14 @@
 [Stage 2 test-kit verification](resource-gateway-execution-data-control-plane-stage2-test-kit-verification.md) 与
 [Stage 2 operator adapter verification](resource-gateway-execution-data-control-plane-stage2-operator-adapter-verification.md) 与
 [Stage 2 suite registry verification](resource-gateway-execution-data-control-plane-stage2-suite-registry-verification.md) 与
+[Stage 2 suite runner verification](resource-gateway-execution-data-control-plane-stage2-suite-runner-verification.md) 与
 [Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md) 与
 [Stage 2 logical-time verification](resource-gateway-execution-data-control-plane-stage2-logical-time-verification.md)。北极星中的目标态能力未出现在上述
 Done 行时，均不得从文档推断为产品已开放。
 
-当前严格验收基线：Resource Gateway `clean verify` 共 1736 tests、0 failures、0 errors、
-34 个条件跳过，真实浏览器回归与 Spring Boot JAR 打包成功；TestSuite registry 增量聚焦
-24 tests、独立 test-kit 13 tests，均为 0 failures、0 errors。
+当前严格验收基线：Resource Gateway `clean verify` 共 1748 tests、0 failures、0 errors、
+34 个条件跳过，真实浏览器回归与 Spring Boot JAR 打包成功；immutable TestSuite
+runner/protocol 增量聚焦 33 tests、独立 test-kit 13 tests，均为 0 failures、0 errors。
 
 ## 1. 结论先行
 
@@ -993,8 +994,7 @@ target discovery、micro-graph execution、immutable fixture、test-kit adapter 
 ### Stage 2：Execution Data Control Plane，3-5 周
 
 **实现状态**：进行中。Stage 1 已完成 selector preflight、不可变 effective plan、主节点 replacement、consumption policy 与既有
-gateway graph suite adapter；Stage 2 已补 graph target discovery、公共执行/批量/查询、immutable fixture registry、canvas governed fixture row、独立持久化、证据脱敏、
-profile/identity guard、production run control-field guard、独立 test-kit，并完成七图/14-case built-in dogfooding：28 个 root/nested 资源调用观测使用 F3，retry 以 bounded consumption 计数，Spring wiring 在不可达 endpoint 下证明没有 HTTP 调用逃逸。run-scoped logical clock、DELAY/TIMEOUT、同步 nested/foreach/loop/compensation 的结构寻址、控制传播与 occurrence/attempt/node/edge evidence、公共同步 operator adapter、canvas operator runner，以及一等 immutable `bloge.testSuite.v1` 的依赖闭包 registry/API 已落地；TestSuite runner/aggregate coverage verdict/画布与 test-kit adapter、REPLAY、streaming/suspendable control/evidence 和物理 test-runtime/network isolation 仍是本阶段硬验收，不能因 suite 可存储或同步控制用例通过就宣称 Stage 2 完成。
+gateway graph suite adapter；Stage 2 已补 graph target discovery、公共执行/批量/查询、immutable fixture registry、canvas governed fixture row、独立持久化、证据脱敏、profile/identity guard、production run control-field guard、独立 test-kit，并完成七图/14-case built-in dogfooding：28 个 root/nested 资源调用观测使用 F3，retry 以 bounded consumption 计数，Spring wiring 在不可达 endpoint 下证明没有 HTTP 调用逃逸。run-scoped logical clock、DELAY/TIMEOUT、同步 nested/foreach/loop/compensation 的结构寻址、控制传播与 occurrence/attempt/node/edge evidence、公共同步 operator adapter、canvas operator runner，以及一等 immutable `bloge.testSuite.v1` 的依赖闭包 registry/API、精确幂等 runner、逐 case checkpoint、结构覆盖与服务端 promotion eligibility 已落地；画布与 test-kit/CI suite adapter、旧七图 catalog 资产迁移、REPLAY、streaming/suspendable control/evidence 和物理 test-runtime/network isolation 仍是本阶段硬验收，不能因 suite runner 同步主路径通过就宣称 Stage 2 完成。
 
 交付：
 
@@ -1011,7 +1011,8 @@ profile/identity guard、production run control-field guard、独立 test-kit，
 
 交付：
 
-- node/edge/branch/rule/retry/fallback/compensation coverage；
+- 完成 branch/rule/retry/fallback/compensation coverage，并把已落地的 suite-level
+  invocation-site/edge-transfer/assertion-density/fixture-consumption 覆盖升级为可签名语义度量；
 - fixture consumption report；
 - signed `TestRunEvidence`；
 - ANEKE workbook projection；

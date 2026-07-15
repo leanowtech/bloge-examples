@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.domain;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 
 import org.junit.jupiter.api.Test;
 
@@ -173,5 +174,50 @@ class TestingDomainProtocolTest {
                     assertThat(trace.occurrence()).isZero();
                     assertThat(trace.attempts()).isEmpty();
                 });
+    }
+
+    @Test
+    void suiteRunEvidenceRoundTripsCanonicalCoverageWithoutEmbeddingChildPayloads() throws Exception {
+        TestSuiteExecutionRequest.SuiteRef suiteRef = new TestSuiteExecutionRequest.SuiteRef(
+                "risk-regression", 2, "sha256:" + "a".repeat(64));
+        TestSuite.Target target = new TestSuite.Target(
+                "GRAPH", "riskGraph", "sha256:" + "b".repeat(64));
+        TestSuite.FixtureBundleRef fixture = new TestSuite.FixtureBundleRef(
+                "risk-golden", 4, "sha256:" + "c".repeat(64));
+        TestSuiteRunEvidence.CoverageVerdict coverage = new TestSuiteRunEvidence.CoverageVerdict(
+                TestSuiteRunEvidence.CoverageStatus.SATISFIED, 1, 1,
+                List.of(TestSuite.CaseType.REGRESSION, TestSuite.CaseType.GOLDEN),
+                List.of(TestSuite.CaseType.GOLDEN, TestSuite.CaseType.REGRESSION), List.of(),
+                List.of("/root/z#PRIMARY", "/root/a#PRIMARY"),
+                List.of("/root/a#PRIMARY", "/root/z#PRIMARY"), List.of(),
+                List.of(new TestSuite.EdgeTransferRef("/root/z#PRIMARY", "/root/out#PRIMARY"),
+                        new TestSuite.EdgeTransferRef("/root/a#PRIMARY", "/root/z#PRIMARY")),
+                List.of(new TestSuite.EdgeTransferRef("/root/a#PRIMARY", "/root/z#PRIMARY"),
+                        new TestSuite.EdgeTransferRef("/root/z#PRIMARY", "/root/out#PRIMARY")),
+                List.of(), 1, List.of(), List.of(), true);
+        TestSuiteRunEvidence evidence = new TestSuiteRunEvidence("", "suite-run-1", "build-42",
+                TestSuiteRunEvidence.Status.PASSED, "TEST_SUITE_EXECUTION", suiteRef, target,
+                Instant.parse("2026-07-15T09:00:00Z"), Instant.parse("2026-07-15T09:00:02Z"),
+                List.of(new TestSuiteRunEvidence.CaseResult("golden", TestSuite.CaseType.GOLDEN,
+                        fixture, TestSuiteRunEvidence.CaseStatus.PASSED, "child-run-1",
+                        TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE,
+                        2, 2, "", "")), coverage,
+                new TestSuiteRunEvidence.PromotionVerdict(
+                        TestSuiteRunEvidence.PromotionStatus.ELIGIBLE, List.of(), true,
+                        1, 1, true, true, true), List.of(), Map.of("pipeline", "release"));
+
+        TestSuiteRunEvidence restored = mapper.readValue(
+                mapper.writeValueAsBytes(evidence), TestSuiteRunEvidence.class);
+
+        assertThat(restored).isEqualTo(evidence);
+        assertThat(restored.coverage().requiredInvocationSiteIds())
+                .containsExactly("/root/a#PRIMARY", "/root/z#PRIMARY");
+        assertThat(restored.caseResults().getFirst().runId()).isEqualTo("child-run-1");
+        assertThat(mapper.valueToTree(restored).toString())
+                .doesNotContain("nodeTrace", "input", "output");
+        assertThatIllegalArgumentException().isThrownBy(() ->
+                new TestSuiteRunEvidence.CaseResult("broken", TestSuite.CaseType.NEGATIVE,
+                        fixture, TestSuiteRunEvidence.CaseStatus.FAILED, "", null, null,
+                        1, 2, "", ""));
     }
 }

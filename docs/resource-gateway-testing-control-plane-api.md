@@ -9,8 +9,8 @@
 Machine-readable schema bundle:
 [testing-control-plane-v1.schema.json](schemas/resource-gateway-testing/testing-control-plane-v1.schema.json).
 It defines every public payload: graph/operator target descriptors, fixture and test-suite
-registration/stored revisions, graph/operator execution requests, common response, effective plan,
-and evidence.
+registration/stored revisions, graph/operator and immutable-suite execution requests, common and
+aggregate responses, effective plan, and evidence.
 
 ## 1. What This API Is
 
@@ -35,7 +35,8 @@ The trust transition is explicit:
 ## 2. Start And Stop
 
 The visual demo starts with the `test` profile by default, which assembles `/api/testing/**` and uses
-a separate H2/Hikari pool for fixtures, immutable test suites, test runs, and test security events:
+a separate H2/Hikari pool for fixtures, immutable test suites, child test runs, recoverable suite-run
+checkpoints, and test security events:
 
 ```bash
 ./scripts/start-visual-canvas-demo.sh --open
@@ -51,8 +52,8 @@ Choose a profile explicitly when needed:
 ./scripts/start-visual-canvas-demo.sh --profile production
 ```
 
-`production` intentionally has no `TestExecutionController`, fixture repository, test-run repository,
-or testability capability marker. The capability probe reports
+`production` intentionally has no `TestExecutionController`, fixture/suite repository,
+child/suite-run repository, or testability capability marker. The capability probe reports
 `testability.executionEndpointEnabled=false` in that profile.
 
 Direct Maven startup:
@@ -86,7 +87,7 @@ The local test-profile defaults are:
 | Operation | Required `X-Purpose` |
 | --- | --- |
 | target discovery | any testing purpose, including suite read/write |
-| execute, batch, run query | `TEST_EXECUTION` |
+| execute, batch, child-run query, suite execute/query | `TEST_EXECUTION` |
 | fixture revision query | `TEST_FIXTURE_READ` |
 | immutable fixture registration | `TEST_FIXTURE_WRITE` |
 | test-suite revision query | `TEST_SUITE_READ` |
@@ -414,10 +415,102 @@ curl -sS 'http://localhost:8080/api/testing/suites/loan-decision-regression?revi
   -H 'X-Purpose: TEST_SUITE_READ'
 ```
 
-This increment establishes the authoritative suite asset. Suite execution, aggregate coverage
-evaluation, promotion verdicts, test-kit methods, and canvas `Save as governed suite` are not yet
-exposed; until those adapters land, cases continue to execute through the exact fixture execution
-endpoints in the following sections.
+### 4.2.3 Execute an exact suite revision
+
+Suite execution accepts neither inline cases nor `latest`. The request binds the exact suite content
+and carries a tenant/environment-scoped idempotency key:
+
+```http
+POST /api/testing/suites/loan-decision-regression/executions
+Authorization: Bearer bloge-aneke-demo-token
+X-Purpose: TEST_EXECUTION
+Content-Type: application/json
+```
+
+```json
+{
+  "schemaVersion": "bloge.testSuiteExecutionRequest.v1",
+  "suiteRef": {
+    "suiteId": "loan-decision-regression",
+    "revision": 1,
+    "fingerprint": "sha256:<returned-by-suite-registration>"
+  },
+  "clientRequestId": "risk-ci-1842-loan-regression",
+  "strategy": "COLLECT_ALL",
+  "metadata": {"pipeline": "release-candidate", "buildId": "1842"}
+}
+```
+
+`COLLECT_ALL` schedules every bounded case. `FAIL_FAST` stops scheduling new cases after the first
+non-pass result; it does not cancel the case already running and therefore cannot pretend to undo an
+external side effect. The runner:
+
+1. verifies the exact suite fingerprint and current target fingerprint before any case runs;
+2. writes a `RUNNING` aggregate checkpoint before the first case and after every child run;
+3. executes graph and operator cases through the existing authorized adapters with `FULL` internal
+   evidence and only the suite's exact stored fixture reference;
+4. validates every child target, fixture, run id, and evidence identity before aggregation;
+5. derives invocation-site, edge-transfer, case-type, assertion-density, and required-fixture
+   consumption coverage from child evidence rather than author metadata;
+6. stores one terminal `bloge.testSuiteRunEvidence.v1` and its canonical fingerprint.
+
+The response links independently persisted child runs without copying their payloads. This
+abridged view omits required fields that remain authoritative in the machine schema:
+
+```json
+{
+  "schemaVersion": "bloge.testSuiteExecutionResponse.v1",
+  "suiteRunId": "<server-run-id>",
+  "evidenceFingerprint": "sha256:<aggregate-evidence>",
+  "evidence": {
+    "schemaVersion": "bloge.testSuiteRunEvidence.v1",
+    "status": "PASSED",
+    "caseResults": [
+      {
+        "caseId": "prime-r1",
+        "status": "PASSED",
+        "runId": "<child-test-run-id>",
+        "evidenceStatus": "PASSED",
+        "evidenceClass": "CERTIFIABLE"
+      }
+    ],
+    "coverage": {
+      "status": "SATISFIED",
+      "missingInvocationSiteIds": [],
+      "missingEdgeTransfers": [],
+      "assertionDensityViolations": [],
+      "fixtureConsumptionViolations": []
+    },
+    "promotion": {
+      "status": "ELIGIBLE",
+      "reasons": [],
+      "coverageSatisfied": true,
+      "allCasesCompleted": true
+    }
+  }
+}
+```
+
+The full wire shape is authoritative in the machine schema. Repeating the same
+`clientRequestId` with the same normalized request returns the existing checkpoint or terminal run
+without executing another case. Reusing it with different intent returns
+`RG.TEST.SUITE_RUN_IDEMPOTENCY_CONFLICT`.
+
+Query the latest durable checkpoint or terminal evidence:
+
+```bash
+curl -sS http://localhost:8080/api/testing/suite-executions/<suiteRunId> \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION'
+```
+
+Aggregate status is `RUNNING`, `PASSED`, `COMPLETED_WITH_FAILURES`, `PARTIAL`, or
+`EVIDENCE_INCOMPLETE`. Coverage failure prevents `PASSED` even when every child assertion passes.
+`promotion.status=ELIGIBLE` means only that the server-owned suite policy is satisfied; it is not a
+signature, certification, owner approval, ANEKE gate decision, or publication.
+
+Test-kit methods and canvas `Save as governed suite` remain adapter work; direct API users can now
+run the authoritative suite asset without rebuilding mutable execution requests case by case.
 
 ### 4.3 Execute with a stored fixture
 
@@ -681,14 +774,18 @@ Implemented now:
 - first-class immutable `bloge.testSuite.v1` protocol, dependency-closed registry, independent
   read/write purposes, target/fixture/classification drift checks, JDBC persistence, and capability
   discovery.
+- idempotent immutable-suite runner for graph and operator targets, durable per-case checkpoints,
+  fail-fast/collect-all scheduling, child evidence identity checks, aggregate structural coverage,
+  promotion eligibility verdict, suite-run query, and capability discovery.
 
 Still intentionally outside this increment:
 
 - `REPLAY`, retry-attempt/occurrence selectors, streaming/suspendable controls and evidence, and
   durable-resume plan restoration;
-- signed certification, semantic coverage, ANEKE projection, and mutation testing;
-- the TestSuite runner, aggregate node/edge coverage and promotion verdict, suite-run history, and
-  canvas/test-kit/CI adapters over the new registry;
+- signed certification, full branch/rule/retry/fallback/compensation semantic coverage, ANEKE
+  projection, and mutation testing;
+- canvas/test-kit/CI adapters over the suite registry and runner, automatic resume/reconciliation of
+  abandoned `RUNNING` checkpoints, and suite-history list/trend APIs;
 - deterministic random/UUID/function execution services and deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;
 - certification of streaming foreach/loop graphs until their invocation and edge evidence is

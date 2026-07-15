@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
 import com.leanowtech.bloge.gateway.integration.IntegrationCapabilities;
 import com.leanowtech.bloge.gateway.integration.IntegrationEnvelope;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,8 @@ import static org.assertj.core.api.Assertions.assertThat;
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "spring.profiles.active=test",
-                "gateway.seed-descriptors=false",
+                "gateway.seed-descriptors=true",
+                "gateway.base-url=http://127.0.0.1:1",
                 "gateway.integration.identity.environment-id=test",
                 "gateway.integration.identity.allowed-purposes=TEST_EXECUTION,TEST_FIXTURE_READ,TEST_FIXTURE_WRITE,TEST_SUITE_READ,TEST_SUITE_WRITE",
                 "spring.datasource.url=jdbc:h2:mem:testing-app-main;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false",
@@ -56,6 +58,7 @@ class TestRuntimeApplicationIntegrationTest {
     void realApplicationAdvertisesAndServesTheProfileGatedTargetProtocol() throws Exception {
         assertThat(context.getBeansOfType(TestExecutionController.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestRunRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(TestSuiteRunRepository.class)).hasSize(1);
 
         var capabilities = restTemplate.exchange("/api/integration/capabilities", HttpMethod.GET,
                 HttpEntity.EMPTY,
@@ -68,7 +71,9 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/operators/{operatorRef}"));
         assertThat(capabilities.getBody().payload().features())
-                .containsEntry("immutableTestSuiteRegistry", true);
+                .containsEntry("immutableTestSuiteRegistry", true)
+                .containsEntry("immutableTestSuiteExecution", true)
+                .containsEntry("suiteSemanticCoverageVerdict", true);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth("bloge-aneke-demo-token");
@@ -116,14 +121,25 @@ class TestRuntimeApplicationIntegrationTest {
 
         FixtureBundle fixture = new FixtureBundle("", "suite-fixture", 1,
                 descriptor.target().fingerprint(), "INTERNAL", null, null,
-                List.of(), List.of(), Map.of());
+                List.of(new FixtureRule("", "applicant-profile",
+                        FixtureRule.Selector.resource("loan-applicant-service.getProfile")
+                                .matching(FixtureRule.Match.pathEquals(
+                                        "/params", Map.of("applicantId", "prime"))),
+                        FixtureRule.Behavior.protocolResponse(
+                                "{\"code\":0,\"message\":\"OK\",\"data\":{\"applicantId\":\"prime\",\"score\":780,\"segment\":\"private-bank\"}}",
+                                200, Map.of(), FixtureRule.DoubleBoundary.TRANSPORT),
+                        new FixtureRule.Consumption(true, 1, 2,
+                                FixtureRule.ExhaustedAction.FAIL,
+                                FixtureRule.UnmatchedAction.FAIL),
+                        FixtureRule.SchemaCheck.strict())),
+                List.of(), Map.of());
         String fixtureFingerprint = ProtocolFingerprint.of(objectMapper, fixture);
         fixtureRepository.create(new StoredFixtureBundle("", "tenant-a", "test", "suite-fixture", 1,
                 fixtureFingerprint, fixture, Instant.now(), "integration-test"));
         TestSuite suite = new TestSuite("", "suite-integration", 1,
                 new TestSuite.Target("GRAPH", descriptor.target().id(), descriptor.target().fingerprint()),
                 "INTERNAL", List.of(new TestSuite.TestCase("golden", TestSuite.CaseType.GOLDEN,
-                Map.of("applicantId", "prime"), new TestSuite.FixtureBundleRef(
+                Map.of("applicantId", "prime", "requestedAmount", 450_000.0), new TestSuite.FixtureBundleRef(
                 "suite-fixture", 1, fixtureFingerprint), List.of("integration"), Map.of())),
                 TestSuite.CoveragePolicy.defaults(), TestSuite.PromotionPolicy.defaults(), Map.of());
         HttpHeaders suiteWriteHeaders = new HttpHeaders();
@@ -145,5 +161,39 @@ class TestRuntimeApplicationIntegrationTest {
                 HttpMethod.GET, new HttpEntity<>(suiteReadHeaders), StoredTestSuite.class);
         assertThat(found.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(found.getBody()).isEqualTo(registered.getBody());
+
+        TestSuiteExecutionRequest suiteExecution = new TestSuiteExecutionRequest("",
+                new TestSuiteExecutionRequest.SuiteRef("suite-integration", 1,
+                        registered.getBody().fingerprint()), "integration-suite-run-1",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL, Map.of("source", "spring-http-test"));
+        var suiteRun = restTemplate.exchange("/api/testing/suites/suite-integration/executions",
+                HttpMethod.POST, new HttpEntity<>(suiteExecution, headers),
+                TestSuiteExecutionResponse.class);
+        assertThat(suiteRun.getStatusCode())
+                .withFailMessage("suite execution failed: %s", suiteRun.getBody())
+                .isEqualTo(HttpStatus.OK);
+        assertThat(suiteRun.getBody()).isNotNull();
+        String childRunId = suiteRun.getBody().evidence().caseResults().getFirst().runId();
+        var childRun = restTemplate.exchange("/api/testing/executions/" + childRunId
+                        + "?verbosity=FULL", HttpMethod.GET, new HttpEntity<>(headers),
+                TestExecutionApiResponse.class);
+        assertThat(childRun.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(suiteRun.getBody().evidence().status())
+                .withFailMessage("suite evidence was not passing: %s; child evidence: %s",
+                        suiteRun.getBody().evidence(), childRun.getBody().evidence())
+                .isEqualTo(com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence.Status.PASSED);
+        assertThat(suiteRun.getBody().evidence().promotion().status())
+                .isEqualTo(com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence.PromotionStatus.ELIGIBLE);
+        assertThat(suiteRun.getBody().evidence().caseResults().getFirst().runId()).isNotBlank();
+
+        var suiteRunRetry = restTemplate.exchange("/api/testing/suites/suite-integration/executions",
+                HttpMethod.POST, new HttpEntity<>(suiteExecution, headers),
+                TestSuiteExecutionResponse.class);
+        assertThat(suiteRunRetry.getBody()).isEqualTo(suiteRun.getBody());
+        var suiteRunRead = restTemplate.exchange("/api/testing/suite-executions/"
+                        + suiteRun.getBody().suiteRunId(), HttpMethod.GET, new HttpEntity<>(headers),
+                TestSuiteExecutionResponse.class);
+        assertThat(suiteRunRead.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(suiteRunRead.getBody()).isEqualTo(suiteRun.getBody());
     }
 }

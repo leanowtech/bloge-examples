@@ -9,9 +9,13 @@ import com.leanowtech.bloge.gateway.testing.api.TestRunRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestSecurityEvent;
 import com.leanowtech.bloge.gateway.testing.api.StoredTestSuite;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteConflictException;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunConflictException;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunRecord;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -31,6 +35,7 @@ class TestRuntimePersistenceTest {
     private DatabaseTestRunRepository runs;
     private DatabaseTestSecurityEventRepository securityEvents;
     private DatabaseTestSuiteRepository suites;
+    private DatabaseTestSuiteRunRepository suiteRuns;
 
     @BeforeEach
     void setUp() {
@@ -42,10 +47,12 @@ class TestRuntimePersistenceTest {
         runs = new DatabaseTestRunRepository(jdbc, mapper);
         securityEvents = new DatabaseTestSecurityEventRepository(jdbc, mapper);
         suites = new DatabaseTestSuiteRepository(jdbc, mapper);
+        suiteRuns = new DatabaseTestSuiteRunRepository(jdbc, mapper);
         fixtures.init();
         runs.init();
         securityEvents.init();
         suites.init();
+        suiteRuns.init();
     }
 
     @Test
@@ -112,6 +119,49 @@ class TestRuntimePersistenceTest {
         assertThat(runs.find("tenant-a", "test", "run-1")).contains(record);
         assertThat(runs.find("tenant-b", "test", "run-1")).isEmpty();
         assertThat(runs.find("tenant-a", "prod", "run-1")).isEmpty();
+    }
+
+    @Test
+    void suiteRunCheckpointsAreScopedRecoverableAndDatabaseIdempotent() {
+        Instant now = Instant.now();
+        TestSuiteExecutionRequest.SuiteRef suiteRef = new TestSuiteExecutionRequest.SuiteRef(
+                "suite-a", 3, "sha256:" + "a".repeat(64));
+        TestSuite.Target target = new TestSuite.Target(
+                "GRAPH", "graph-a", "sha256:" + "b".repeat(64));
+        TestSuiteRunEvidence running = new TestSuiteRunEvidence("", "suite-run-1", "request-1",
+                TestSuiteRunEvidence.Status.RUNNING, "TEST_SUITE_EXECUTION", suiteRef, target,
+                now, null, List.of(), TestSuiteRunEvidence.CoverageVerdict.notEvaluated(),
+                TestSuiteRunEvidence.PromotionVerdict.notEvaluated(), List.of(), Map.of());
+        TestSuiteRunRecord initial = new TestSuiteRunRecord("suite-run-1", "request-1",
+                "sha256:" + "c".repeat(64), "tenant-a", "org-a", "project-a", "test",
+                "runner", "INTERNAL", "", running, now, now.plusSeconds(3600));
+
+        suiteRuns.create(initial);
+
+        assertThat(suiteRuns.find("tenant-a", "test", "suite-run-1")).contains(initial);
+        assertThat(suiteRuns.findByClientRequestId("tenant-a", "test", "request-1"))
+                .contains(initial);
+        assertThat(suiteRuns.find("tenant-b", "test", "suite-run-1")).isEmpty();
+        TestSuiteRunEvidence terminal = new TestSuiteRunEvidence("", "suite-run-1", "request-1",
+                TestSuiteRunEvidence.Status.PASSED, "TEST_SUITE_EXECUTION", suiteRef, target,
+                now, now.plusSeconds(1), List.of(), new TestSuiteRunEvidence.CoverageVerdict(
+                TestSuiteRunEvidence.CoverageStatus.SATISFIED, 0, 0, List.of(), List.of(), List.of(),
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), 0,
+                List.of(), List.of(), true), new TestSuiteRunEvidence.PromotionVerdict(
+                TestSuiteRunEvidence.PromotionStatus.ELIGIBLE, List.of(), true, 0, 0,
+                true, true, true), List.of(), Map.of());
+        TestSuiteRunRecord completed = new TestSuiteRunRecord("suite-run-1", "request-1",
+                initial.requestFingerprint(), "tenant-a", "org-a", "project-a", "test", "runner",
+                "INTERNAL", "sha256:" + "d".repeat(64), terminal, now, now.plusSeconds(3600));
+
+        suiteRuns.update(completed);
+
+        assertThat(suiteRuns.find("tenant-a", "test", "suite-run-1")).contains(completed);
+        TestSuiteRunRecord duplicate = new TestSuiteRunRecord("suite-run-2", "request-1",
+                "sha256:" + "e".repeat(64), "tenant-a", "org-a", "project-a", "test", "runner",
+                "INTERNAL", "", running, now, now.plusSeconds(3600));
+        assertThatThrownBy(() -> suiteRuns.create(duplicate))
+                .isInstanceOf(TestSuiteRunConflictException.class);
     }
 
     @Test

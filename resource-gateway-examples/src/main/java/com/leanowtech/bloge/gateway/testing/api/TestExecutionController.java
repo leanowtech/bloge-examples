@@ -26,13 +26,16 @@ public class TestExecutionController {
 
     private final TestExecutionApiService service;
     private final TestSuiteRegistryService suiteRegistry;
+    private final TestSuiteExecutionService suiteExecutions;
     private final IntegrationRequestAuthenticator authenticator;
 
     public TestExecutionController(TestExecutionApiService service,
                                    TestSuiteRegistryService suiteRegistry,
+                                   TestSuiteExecutionService suiteExecutions,
                                    IntegrationRequestAuthenticator authenticator) {
         this.service = service;
         this.suiteRegistry = suiteRegistry;
+        this.suiteExecutions = suiteExecutions;
         this.authenticator = authenticator;
     }
 
@@ -112,6 +115,25 @@ public class TestExecutionController {
                                      @RequestHeader HttpHeaders headers) {
         return suiteRegistry.find(suiteId, revision,
                 context(headers, IntegrationOperation.TEST_SUITE_READ));
+    }
+
+    /** Executes one exact immutable suite revision with an idempotent client request key. */
+    @PostMapping("/suites/{suiteId}/executions")
+    public TestSuiteExecutionResponse executeSuite(
+            @PathVariable String suiteId,
+            @RequestBody TestSuiteExecutionRequest request,
+            @RequestHeader HttpHeaders headers) {
+        return suiteExecutions.execute(suiteId, request,
+                context(headers, IntegrationOperation.TEST_SUITE_EXECUTION));
+    }
+
+    /** Resolves the latest durable checkpoint or terminal evidence for one suite run. */
+    @GetMapping("/suite-executions/{suiteRunId}")
+    public TestSuiteExecutionResponse findSuiteExecution(
+            @PathVariable String suiteRunId,
+            @RequestHeader HttpHeaders headers) {
+        return suiteExecutions.find(suiteRunId,
+                context(headers, IntegrationOperation.TEST_SUITE_EXECUTION));
     }
 
     private IntegrationRequestContext context(HttpHeaders headers, IntegrationOperation operation) {

@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -39,6 +40,12 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestSuiteRegistrationRequest.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/storedTestSuite/properties/schemaVersion/const").asText())
                 .isEqualTo(StoredTestSuite.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testSuiteExecutionRequest/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteExecutionRequest.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testSuiteExecutionResponse/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testSuiteRunEvidence/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteRunEvidence.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testGraphTargetDescriptor/properties/schemaVersion/const").asText())
                 .isEqualTo(TestGraphTargetDescriptor.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testOperatorExecutionRequest/properties/schemaVersion/const").asText())
@@ -78,6 +85,9 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("storedFixtureBundle")).isTrue();
         assertThat(definitions.has("testSuiteRegistrationRequest")).isTrue();
         assertThat(definitions.has("storedTestSuite")).isTrue();
+        assertThat(definitions.has("testSuiteExecutionRequest")).isTrue();
+        assertThat(definitions.has("testSuiteExecutionResponse")).isTrue();
+        assertThat(definitions.has("testSuiteRunEvidence")).isTrue();
         assertThat(definitions.at("/fixtureBundleRegistrationRequest/properties/target/$ref").asText())
                 .isEqualTo("#/$defs/target");
         assertThat(definitions.at("/testExecutionRequest/properties/target/$ref").asText())
@@ -118,6 +128,20 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.at("/testSuiteEdgeTransferRef/required"))
                 .extracting(JsonNode::asText)
                 .containsExactly("fromInvocationSiteId", "toInvocationSiteId");
+        assertThat(definitions.at("/testSuiteExecutionRequest/properties/suiteRef/$ref").asText())
+                .isEqualTo("#/$defs/testSuiteRef");
+        assertThat(definitions.at("/testSuiteExecutionRequest/properties/clientRequestId/minLength").asInt())
+                .isEqualTo(1);
+        assertThat(definitions.at("/testSuiteRunEvidence/properties/status/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly(Arrays.stream(TestSuiteRunEvidence.Status.values())
+                        .map(Enum::name).toArray(String[]::new));
+        assertThat(definitions.at(
+                "/testSuiteCoverageVerdict/properties/observedEdgeTransfers/items/$ref").asText())
+                .isEqualTo("#/$defs/testSuiteEdgeTransferRef");
+        assertThat(definitions.at("/testSuitePromotionVerdict/properties/status/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly("NOT_EVALUATED", "ELIGIBLE", "BLOCKED");
         assertThat(definitions.at("/effectivePlan/additionalProperties").asBoolean()).isFalse();
         assertThat(definitions.at("/testRunEvidence/additionalProperties").asBoolean()).isFalse();
     }
