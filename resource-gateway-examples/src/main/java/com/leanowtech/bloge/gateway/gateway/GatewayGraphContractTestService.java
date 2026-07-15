@@ -8,10 +8,18 @@ import com.leanowtech.bloge.core.engine.GraphResult;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.model.NodeStatus;
 import com.leanowtech.bloge.core.model.NodeSpec;
-import com.leanowtech.bloge.core.operator.Operator;
-import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.gateway.operator.HttpResourceInput;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOutput;
+import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
+import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
+import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.evidence.GraphArtifactFingerprint;
+import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
+import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionRequest;
+import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionResult;
+import com.leanowtech.bloge.gateway.testing.runtime.TestRunService;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
@@ -36,10 +44,11 @@ import java.util.stream.Collectors;
 /**
  * Runs table-driven, schema-gated contract tests for built-in resource gateway graphs.
  *
- * <p>The production graph topology and BLOGE engine still execute normally. Only descriptor-backed
- * {@code httpResource} calls are substituted with deterministic mock rows supplied by the suite.
- * This preserves decision-table, transform, branch, retry, and fallback behavior while avoiding
- * outbound downstream API calls.</p>
+ * <p>The production graph artifact executes through the unified execution-data-control kernel on
+ * a fresh, run-scoped BLOGE engine. Descriptor-backed {@code httpResource} calls are replaced by
+ * schema-gated fixture rules, while decision-table, transform, branch, retry, and fallback logic
+ * remains real. The isolated engine deliberately shares no application interceptor, listener,
+ * durable-store, cache, quota, or circuit-breaker state.</p>
  */
 @Service
 public class GatewayGraphContractTestService {
@@ -48,13 +57,14 @@ public class GatewayGraphContractTestService {
     private final ObjectMapper objectMapper;
     private final JsonSchemaSampleGenerator sampleGenerator;
     private final ResourceDesignContractRegistry resourceContracts;
+    private final TestRunService testRunService;
 
     /**
      * @param graphService resource graph service
      * @param objectMapper JSON mapper for assertion evaluation
      */
     public GatewayGraphContractTestService(GatewayGraphService graphService, ObjectMapper objectMapper) {
-        this(graphService, objectMapper, new JsonSchemaSampleGenerator(), null);
+        this(graphService, objectMapper, new JsonSchemaSampleGenerator(), null, null, null);
     }
 
     /**
@@ -63,15 +73,41 @@ public class GatewayGraphContractTestService {
      * @param sampleGenerator deterministic JSON Schema sample generator
      * @param resourceContracts resource design contract registry used for mock payload drafts
      */
-    @Autowired
     public GatewayGraphContractTestService(GatewayGraphService graphService,
                                            ObjectMapper objectMapper,
                                            JsonSchemaSampleGenerator sampleGenerator,
                                            ResourceDesignContractRegistry resourceContracts) {
+        this(graphService, objectMapper, sampleGenerator, resourceContracts, null, null);
+    }
+
+    /**
+     * Creates the production adapter over the shared execution data-control kernel.
+     *
+     * @param graphService graph catalog and compatibility output resolver
+     * @param objectMapper JSON mapper
+     * @param sampleGenerator schema-based draft generator
+     * @param resourceContracts authoring-time resource contracts
+     * @param resourceRegistry executable resource descriptor registry
+     * @param expressionEvaluator BLOGE expression evaluator used by F2/F3 resource fixtures
+     */
+    @Autowired
+    public GatewayGraphContractTestService(GatewayGraphService graphService,
+                                           ObjectMapper objectMapper,
+                                           JsonSchemaSampleGenerator sampleGenerator,
+                                           ResourceDesignContractRegistry resourceContracts,
+                                           ResourceRegistry resourceRegistry,
+                                           BlgeExpressionEvaluator expressionEvaluator) {
         this.graphService = graphService;
         this.objectMapper = objectMapper;
         this.sampleGenerator = sampleGenerator == null ? new JsonSchemaSampleGenerator() : sampleGenerator;
         this.resourceContracts = resourceContracts;
+        ResourceFixtureRuntime resourceRuntime = resourceRegistry == null || expressionEvaluator == null
+                ? null : new ResourceFixtureRuntime(resourceRegistry, expressionEvaluator, objectMapper);
+        this.testRunService = new TestRunService(
+                graphService.engine().operatorRegistry().orElseThrow(() ->
+                        new IllegalStateException("Graph engine does not expose its operator registry.")),
+                objectMapper,
+                resourceRuntime);
     }
 
     /**
@@ -276,24 +312,28 @@ public class GatewayGraphContractTestService {
             return caseResult(safeCase, false, false, "", null, false, List.of(), Map.of(), diagnostics);
         }
 
-        MockHttpResourceOperator mockResource = new MockHttpResourceOperator(safeCase.resourceMocks());
-        GraphResult result;
-        try {
-            result = graphService.engine().executeWithOperators(
-                    graph,
-                    new GraphContext(safeCase.context()),
-                    httpResourceOverrides(graph, mockResource));
-        } catch (RuntimeException ex) {
+        String targetFingerprint = GraphArtifactFingerprint.of(objectMapper, graph);
+        FixtureBundle fixtureBundle = contractFixtureBundle(safeCase, targetFingerprint);
+        TestExecutionResult execution = testRunService.execute(new TestExecutionRequest(
+                graph,
+                new GraphContext(safeCase.context()),
+                fixtureBundle,
+                "GRAPH_CONTRACT_TEST",
+                targetFingerprint,
+                TestExecutionRequest.FixtureSource.INLINE,
+                Map.of("adapter", "GatewayGraphContractTestService", "caseName", safeCase.name())));
+        GraphResult result = execution.graphResult();
+        List<GatewayGraphResourceInvocation> invocations = resourceInvocations(execution.evidence());
+        diagnostics.addAll(resourceMockDiagnostics(safeCase.resourceMocks(), execution.evidence()));
+        if (result == null) {
             diagnostics.add(VisualDiagnostic.error("gateway.graphContractTest.graphExecutionException",
                     "Contract-test graph execution failed before producing a result: %s"
-                            .formatted(ex.getMessage()),
+                            .formatted(String.join("; ", execution.evidence().diagnostics())),
                     "/graph"));
-            diagnostics.addAll(resourceMockDiagnostics(mockResource));
             return caseResult(safeCase, false, false, "", null, false,
-                    mockResource.invocations(), Map.of(), diagnostics);
+                    invocations, Map.of(), diagnostics);
         }
 
-        diagnostics.addAll(resourceMockDiagnostics(mockResource));
         if (!result.isSuccess()) {
             result.errors().forEach(error -> diagnostics.add(VisualDiagnostic.error(
                     "gateway.graphContractTest.graphExecutionFailed",
@@ -316,7 +356,7 @@ public class GatewayGraphContractTestService {
                 && outputConforms
                 && diagnostics.stream().noneMatch(VisualDiagnostic::error);
         return caseResult(safeCase, passed, result.isSuccess(), outputNode, output, outputConforms,
-                mockResource.invocations(), result.statusMap(), diagnostics, assertionCount(safeCase));
+                invocations, result.statusMap(), diagnostics, assertionCount(safeCase));
     }
 
     private List<VisualDiagnostic> validateSuiteRequest(GatewayGraphContractTestSuiteRequest request) {
@@ -363,21 +403,61 @@ public class GatewayGraphContractTestService {
         return diagnostics;
     }
 
-    private List<VisualDiagnostic> resourceMockDiagnostics(MockHttpResourceOperator mockResource) {
+    private List<VisualDiagnostic> resourceMockDiagnostics(List<GatewayGraphResourceMock> mocks,
+                                                           TestRunEvidence evidence) {
         List<VisualDiagnostic> diagnostics = new ArrayList<>();
-        mockResource.unusedRequiredMocks().forEach(mock -> diagnostics.add(VisualDiagnostic.error(
-                "gateway.graphContractTest.mockResourceNotUsed",
-                "Required mock resource '%s' with expectedParams %s was not called."
-                        .formatted(mock.resourceId(), mock.expectedParams()),
-                "/resourceMocks")));
+        Map<String, TestRunEvidence.FixtureConsumption> consumptions = evidence.fixtureConsumptions().stream()
+                .collect(Collectors.toMap(TestRunEvidence.FixtureConsumption::ruleId, item -> item));
+        for (int i = 0; i < mocks.size(); i++) {
+            GatewayGraphResourceMock mock = mocks.get(i);
+            TestRunEvidence.FixtureConsumption consumption = consumptions.get("resource-mock-" + i);
+            if (mock.required() && (consumption == null || consumption.uses() == 0)) {
+                diagnostics.add(VisualDiagnostic.error(
+                        "gateway.graphContractTest.mockResourceNotUsed",
+                        "Required mock resource '%s' with expectedParams %s was not called."
+                                .formatted(mock.resourceId(), mock.expectedParams()),
+                        "/resourceMocks"));
+            }
+        }
         return diagnostics;
     }
 
-    private static Map<String, Operator<?, ?>> httpResourceOverrides(Graph graph,
-                                                                     MockHttpResourceOperator mockResource) {
-        return graph.nodes().values().stream()
-                .filter(node -> "httpResource".equals(node.operatorRef()))
-                .collect(Collectors.toMap(NodeSpec::id, node -> mockResource));
+    private FixtureBundle contractFixtureBundle(GatewayGraphContractTestCase testCase,
+                                                String targetFingerprint) {
+        List<FixtureRule> rules = new ArrayList<>();
+        for (int i = 0; i < testCase.resourceMocks().size(); i++) {
+            GatewayGraphResourceMock mock = testCase.resourceMocks().get(i);
+            FixtureRule.Selector selector = FixtureRule.Selector.resource(mock.resourceId());
+            if (!mock.expectedParams().isEmpty()) {
+                selector = selector.matching(FixtureRule.Match.pathEquals("/params", mock.expectedParams()));
+            }
+            FixtureRule.Behavior behavior = FixtureRule.Behavior.returning(new HttpResourceOutput(
+                    mock.resourceId(), mock.statusCode(), mock.payload(), mock.rawBody(),
+                    Duration.ofMillis(mock.durationMs()), mock.success()));
+            FixtureRule.Consumption consumption = mock.required()
+                    ? FixtureRule.Consumption.once() : FixtureRule.Consumption.optionalOnce();
+            rules.add(new FixtureRule(FixtureRule.SCHEMA_VERSION, "resource-mock-" + i,
+                    selector, behavior, consumption, FixtureRule.SchemaCheck.strict()));
+        }
+        return new FixtureBundle(FixtureBundle.SCHEMA_VERSION,
+                "gateway-contract:" + testCase.name(), 1, targetFingerprint, "INTERNAL",
+                null, null, rules, List.of(), Map.of("adapter", "gateway-graph-contract-v1"));
+    }
+
+    private static List<GatewayGraphResourceInvocation> resourceInvocations(TestRunEvidence evidence) {
+        List<GatewayGraphResourceInvocation> invocations = new ArrayList<>();
+        evidence.nodeTrace().stream()
+                .filter(trace -> "httpResource".equals(trace.operatorRef()))
+                .forEach(trace -> {
+                    try {
+                        ResourceCall call = ResourceCall.from(trace.input());
+                        invocations.add(new GatewayGraphResourceInvocation(call.resourceId(), call.params(),
+                                "MOCKED".equals(trace.status()) && trace.errorCode().isBlank()));
+                    } catch (RuntimeException ignored) {
+                        // The unified evidence retains the malformed input; the compatibility view cannot project it.
+                    }
+                });
+        return List.copyOf(invocations);
     }
 
     private List<VisualDiagnostic> outputAssertionDiagnostics(GatewayGraphContractTestCase testCase, Object output) {
@@ -805,70 +885,6 @@ public class GatewayGraphContractTestService {
     private static String escapeJsonPointer(String segment) {
         return segment.replace("~", "~0").replace("/", "~1");
     }
-
-    private static class MockHttpResourceOperator implements Operator<Object, HttpResourceOutput> {
-
-        private final List<GatewayGraphResourceMock> mocks;
-        private final boolean[] consumed;
-        private final List<GatewayGraphResourceInvocation> invocations = new ArrayList<>();
-
-        MockHttpResourceOperator(List<GatewayGraphResourceMock> mocks) {
-            this.mocks = mocks == null ? List.of() : List.copyOf(mocks);
-            this.consumed = new boolean[this.mocks.size()];
-        }
-
-        @Override
-        public synchronized HttpResourceOutput execute(Object input, OperatorContext ctx) {
-            ResourceCall call = ResourceCall.from(input);
-            Match match = match(call);
-            invocations.add(new GatewayGraphResourceInvocation(call.resourceId(), call.params(), match.matched()));
-            if (!match.matched()) {
-                throw new IllegalArgumentException("No mock resource row matched resourceId '%s' and params %s."
-                        .formatted(call.resourceId(), call.params()));
-            }
-            GatewayGraphResourceMock mock = mocks.get(match.index());
-            consumed[match.index()] = true;
-            return new HttpResourceOutput(
-                    call.resourceId(),
-                    mock.statusCode(),
-                    mock.payload(),
-                    mock.rawBody(),
-                    Duration.ofMillis(mock.durationMs()),
-                    mock.success());
-        }
-
-        synchronized List<GatewayGraphResourceInvocation> invocations() {
-            return List.copyOf(invocations);
-        }
-
-        synchronized List<GatewayGraphResourceMock> unusedRequiredMocks() {
-            List<GatewayGraphResourceMock> unused = new ArrayList<>();
-            for (int i = 0; i < mocks.size(); i++) {
-                if (!consumed[i] && mocks.get(i).required()) {
-                    unused.add(mocks.get(i));
-                }
-            }
-            return unused;
-        }
-
-        private Match match(ResourceCall call) {
-            for (int i = 0; i < mocks.size(); i++) {
-                if (consumed[i]) {
-                    continue;
-                }
-                GatewayGraphResourceMock mock = mocks.get(i);
-                if (!mock.resourceId().equals(call.resourceId())) {
-                    continue;
-                }
-                if (mock.expectedParams().isEmpty() || Objects.equals(mock.expectedParams(), call.params())) {
-                    return new Match(i, true);
-                }
-            }
-            return new Match(-1, false);
-        }
-    }
-
-    private record Match(int index, boolean matched) {}
 
     private record ResourceCall(String resourceId, Map<String, Object> params) {
 

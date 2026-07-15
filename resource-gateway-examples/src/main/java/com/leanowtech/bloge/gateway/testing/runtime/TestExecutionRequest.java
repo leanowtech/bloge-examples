@@ -1,0 +1,33 @@
+package com.leanowtech.bloge.gateway.testing.runtime;
+
+import com.leanowtech.bloge.core.context.GraphContext;
+import com.leanowtech.bloge.core.model.Graph;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+
+import java.util.Map;
+
+/** Immutable internal request submitted by graph, operator, suite, and future HTTP adapters. */
+public record TestExecutionRequest(
+        Graph graph,
+        GraphContext context,
+        FixtureBundle fixtureBundle,
+        String authorizedPurpose,
+        String targetFingerprint,
+        FixtureSource fixtureSource,
+        Map<String, Object> metadata
+) {
+    /** Provenance used for evidence trust classification. */
+    public enum FixtureSource {
+        INLINE,
+        STORED
+    }
+
+    /** Normalizes nullable context and metadata without reading controls from business context. */
+    public TestExecutionRequest {
+        context = context == null ? new GraphContext() : context;
+        authorizedPurpose = authorizedPurpose == null ? "" : authorizedPurpose.trim();
+        targetFingerprint = targetFingerprint == null ? "" : targetFingerprint.trim();
+        fixtureSource = fixtureSource == null ? FixtureSource.INLINE : fixtureSource;
+        metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
+    }
+}

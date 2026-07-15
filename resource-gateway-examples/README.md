@@ -199,7 +199,12 @@ metadata so the browser can show each example's Graph Contract;
 `/api/gateway/graphs/contracts/tests/draft` generates editable mock rows from
 the graph input schema and resource response schemas before
 `/api/gateway/graphs/contracts/tests/run` executes table-driven suites against
-the real graph with downstream APIs replaced by deterministic resource mocks.
+the real graph through a fresh, run-scoped test engine with downstream APIs
+replaced by deterministic, schema-gated fixture rules. The adapter now delegates
+to the shared Execution Data Control Plane kernel: selector preflight rejects
+zero-match and ambiguous plans, external effects fail closed, required fixtures
+must be consumed, and node/edge/assertion evidence is captured without sharing
+application interceptors, caches, quotas, circuit breakers, or durable stores.
 Stored suites are available under
 `/api/gateway/graphs/contracts/tests/suites`; each suite can carry a coverage
 policy so batch runs fail when they lack enough cases, schema validations,
@@ -208,10 +213,15 @@ mocked calls, assertions, or required output-node coverage.
 For the detailed contract-test design, request format, verification evidence,
 and remaining industrialization gaps, see
 [Resource Graph Schema Mock Table Testing](../docs/bloge-resource-graph-schema-mock-table-testing.md).
-The next industrial step is the
-[Execution Data Control Plane and testability evolution plan](../docs/resource-gateway-industrial-testability-evolution-plan.md):
-it separates schema-only operator checks from executable operator tests, unifies
-operator/graph/replay fixtures, and makes production isolation part of the runtime protocol.
+The industrial direction is defined by the
+[Execution Data Control Plane and testability evolution plan](../docs/resource-gateway-industrial-testability-evolution-plan.md).
+Stage 1 of its
+[Execution Data Control Plane v1 blueprint](../docs/resource-gateway-industrial-testability-evolution-plan-1.0.md)
+is implemented: it separates schema-only operator checks from executable micro-graph
+tests, supplies `REAL/RETURN/THROW/DENY/SPY`, supports F2 protocol-derived and F3
+transport-level HTTP fixtures, and records fingerprinted evidence. The generic public
+testing API, persistent test-run store, JUnit test kit, and production-profile endpoint
+isolation remain Stage 2 work and are not advertised as available yet.
 
 Create a provider-specific Java operator only when the provider behavior cannot
 be expressed cleanly as a descriptor-backed resource.
@@ -229,7 +239,11 @@ To add a user-supplied visual operator library:
    current mode validates fixture and schema consistency; it does not execute a
    real operator runtime binding. Results expose `mode=SCHEMA_CONTRACT`, and the
    canvas labels the editor `Schema Contract Suite` to make that proof strength explicit.
-5. Drag operators, wire schemas, simulate, and export.
+5. Runtime-backed operators can already be exercised by the internal
+   `OperatorMicroGraphRunner`; the public `Run Operator` API/UI adapter arrives in Stage 2.
+   `httpResource` can earn `EXECUTABLE_UNIT` only with a transport-boundary fixture, so
+   request mapping, URL rendering, response protocol, and payload extraction really execute.
+6. Drag operators, wire schemas, simulate, and export.
 
 The `/author/` built-in canvas examples also carry their own graph-level
 input/output schemas, and exported drafts include the current `inputSchema` so
@@ -241,6 +255,8 @@ This is a standalone Maven project. BLOGE artifacts must already exist in the
 local Maven repository.
 
 ```bash
+mvn -f resource-gateway-examples/pom.xml \
+    -Dtest=GatewayGraphContractTestServiceTest,ExecutionControlCompilerTest,TestRunServiceTest,ResourceFixtureRuntimeTest,OperatorMicroGraphRunnerTest,GraphArtifactFingerprintTest test
 mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-examples/pom.xml -Pfrontend package
 mvn -f resource-gateway-examples/pom.xml spring-boot:run

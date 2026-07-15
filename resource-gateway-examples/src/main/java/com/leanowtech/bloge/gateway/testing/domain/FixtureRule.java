@@ -126,6 +126,35 @@ public record FixtureRule(
             return new Selector("", "", "", "", "", List.of(), List.of(),
                     InvocationSite.InvocationKind.PRIMARY, List.of(), List.of(), "", Match.none());
         }
+
+        /** @return an exact root-graph node selector */
+        public static Selector node(String nodeId) {
+            return new Selector("/root", nodeId, "", "", "", List.of(), List.of(),
+                    InvocationSite.InvocationKind.PRIMARY, List.of(), List.of(), "", Match.none());
+        }
+
+        /** @return an operator-wide primary invocation selector */
+        public static Selector operator(String operatorRef) {
+            return new Selector("", "", operatorRef, "", "", List.of(), List.of(),
+                    InvocationSite.InvocationKind.PRIMARY, List.of(), List.of(), "", Match.none());
+        }
+
+        /** @return a descriptor-backed resource selector */
+        public static Selector resource(String resourceRef) {
+            return new Selector("", "", "", resourceRef, "", List.of(), List.of(),
+                    InvocationSite.InvocationKind.RESOURCE, List.of(), List.of(), "", Match.none());
+        }
+
+        /**
+         * Returns a copy with additional input-match constraints.
+         *
+         * @param value input constraints
+         * @return copied selector
+         */
+        public Selector matching(Match value) {
+            return new Selector(graphPath, nodeId, operatorRef, resourceRef, functionRef,
+                    capabilities, tags, invocationKind, attempts, occurrences, correlationKey, value);
+        }
     }
 
     /**
@@ -161,6 +190,11 @@ public record FixtureRule(
         /** @return match specification with no constraints */
         public static Match none() {
             return new Match(null, Map.of(), List.of(), List.of(), Map.of(), "", Map.of());
+        }
+
+        /** @return an exact JSON Pointer equality constraint */
+        public static Match pathEquals(String path, Object value) {
+            return new Match(null, Map.of(path, value), List.of(), List.of(), Map.of(), "", Map.of());
         }
     }
 
@@ -212,6 +246,38 @@ public record FixtureRule(
             return new Behavior(BehaviorKind.REAL, DoubleBoundary.NODE, null, "", null,
                     Map.of(), "", "", "", null, List.of(), "");
         }
+
+        /** @return a node-boundary fixed return behavior */
+        public static Behavior returning(Object value) {
+            return new Behavior(BehaviorKind.RETURN, DoubleBoundary.NODE, value, "", null,
+                    Map.of(), "", "", "", null, List.of(), "");
+        }
+
+        /** @return a protocol response used to exercise real resource response handling */
+        public static Behavior protocolResponse(String rawBody, int statusCode,
+                                                Map<String, String> headers,
+                                                DoubleBoundary boundary) {
+            return new Behavior(BehaviorKind.RETURN, boundary, null, rawBody, statusCode,
+                    headers, "", "", "", null, List.of(), "");
+        }
+
+        /** @return a standardized non-retryable injected failure */
+        public static Behavior throwing(String errorCode, String errorType, String errorMessage) {
+            return new Behavior(BehaviorKind.THROW, DoubleBoundary.NODE, null, "", null,
+                    Map.of(), errorCode, errorType, errorMessage, null, List.of(), "");
+        }
+
+        /** @return a fail-closed behavior that proves a site was not invoked */
+        public static Behavior deny(String errorCode, String errorMessage) {
+            return new Behavior(BehaviorKind.DENY, DoubleBoundary.NODE, null, "", null,
+                    Map.of(), errorCode, "DENIED_INVOCATION", errorMessage, null, List.of(), "");
+        }
+
+        /** @return a real invocation whose input, output, and side-effect facts are observed */
+        public static Behavior spy() {
+            return new Behavior(BehaviorKind.SPY, DoubleBoundary.NODE, null, "", null,
+                    Map.of(), "", "", "", null, List.of(), "");
+        }
     }
 
     /**
@@ -257,6 +323,11 @@ public record FixtureRule(
         /** @return one required, fail-closed use */
         public static Consumption once() {
             return new Consumption(true, 1, 1, ExhaustedAction.FAIL, UnmatchedAction.FAIL);
+        }
+
+        /** @return an optional, single-use fail-closed policy */
+        public static Consumption optionalOnce() {
+            return new Consumption(false, 0, 1, ExhaustedAction.FAIL, UnmatchedAction.FAIL);
         }
     }
 

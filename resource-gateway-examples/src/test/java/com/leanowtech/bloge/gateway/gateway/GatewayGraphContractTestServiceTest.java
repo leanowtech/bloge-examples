@@ -72,7 +72,7 @@ class GatewayGraphContractTestServiceTest {
                                         "declined"))))
                 )));
 
-        assertThat(result.passed()).isTrue();
+        assertThat(result.passed()).as("contract result: %s", result).isTrue();
         assertThat(result.totalCases()).isEqualTo(2);
         assertThat(result.passedCases()).isEqualTo(2);
         assertThat(result.coverage().contractOutputSchemaValidated()).isEqualTo(2);
@@ -168,7 +168,7 @@ class GatewayGraphContractTestServiceTest {
                 .containsEntry("applicantId", "prime");
         assertThat(draft.suite().cases().getFirst().assertions().getFirst().mode())
                 .isEqualTo(GatewayGraphTestAssertion.Mode.OUTPUT_MATCHES_SCHEMA);
-        assertThat(result.passed()).isTrue();
+        assertThat(result.passed()).as("draft contract result: %s", result).isTrue();
         assertThat(result.coverage().contractOutputSchemaValidated()).isEqualTo(1);
     }
 

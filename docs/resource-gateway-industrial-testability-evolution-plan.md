@@ -7,11 +7,25 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Proposed，作为架构讨论和工程拆解基线 |
+| 状态 | Accepted / In implementation；Stage 0 与 Stage 1 内核已落地，Stage 2+ 待实施 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、operator 开发团队、QA、平台安全、SRE、ANEKE Tool Studio |
 | 设计目标 | 让调用方在测试运行中确定性控制 DAG 的外部数据、故障和非确定性来源，并产出可验证的测试证据 |
 | 非目标 | 不把 Resource Gateway 变成通用代码覆盖率平台；不允许普通生产请求携带测试替换指令；不替代 operator 代码仓库中的白盒单元测试 |
 | 第一原则 | 测试控制必须是运行期带外控制，不进入业务 `GraphContext`，不改变 DSL 业务语义，不能被生产请求伪造 |
+
+### 实施快照（2026-07-15）
+
+| 范围 | 状态 | 代码/证据 |
+| --- | --- | --- |
+| Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |
+| Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
+| Stage 2 public control plane | Not started | `/api/testing/executions`、test-run store、test-kit、公共 operator run UI/API、profile/identity/network isolation tests |
+| Stage 3-5 | Not started | signed evidence、semantic coverage、deterministic services、replay、独立部署与规模化治理 |
+
+实现细节、行为兼容决策和可复现测试见
+[v1 实施蓝图](resource-gateway-industrial-testability-evolution-plan-1.0.md) 与
+[Stage 1 verification](resource-gateway-execution-data-control-plane-stage1-verification.md)。北极星中的目标态能力未出现在上述
+Done 行时，均不得从文档推断为产品已开放。
 
 ## 1. 结论先行
 
@@ -942,6 +956,9 @@ batch_queue_depth / tenant_throttled_total
 
 ### Stage 1：Executable Operator Test，2-4 周
 
+**实现状态**：内核与 Java micro-graph runner 已完成；37 个聚焦 conformance tests 及 1653 个项目测试全绿。画布 `Run Operator`、JUnit XML/CI adapter
+按 v1 蓝图归入 Stage 2，当前 `/api/visual/operators/tests/run` 仍严格标识为 `SCHEMA_CONTRACT`。
+
 交付：
 
 - runtime binding 精确定位；
@@ -955,6 +972,9 @@ batch_queue_depth / tenant_throttled_total
 验收：至少覆盖内置纯 operator、`HttpResourceOperator` sandbox、失败 operator 和 side-effect DENY 四类 conformance case。
 
 ### Stage 2：Execution Data Control Plane，3-5 周
+
+**实现状态**：未开始。Stage 1 已提前完成 selector preflight、不可变 effective plan、主节点 replacement、consumption policy 与既有
+gateway graph suite 迁移；本阶段必须补公共入口、持久化、test-kit、profile 硬隔离和全示例 dogfooding，不能因内核存在就跳过这些验收。
 
 交付：
 

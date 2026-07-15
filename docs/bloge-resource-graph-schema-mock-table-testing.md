@@ -283,7 +283,43 @@ operator definition
 `Schema Contract Suite`，操作是 `Validate Case` / `Validate All`。任何消费方都应按 `mode` 判断证据含义，不能根据
 `passed=true` 推断 operator runtime binding 已被执行。
 
-这补齐了 graph 外的 standalone operator 表格测试层。对于已经有真实 request-response runtime binding 的算子，后续可以在此基础上增加 executable adapter，把“schema mock 验证”升级成“mock + real execution 双模式验证”。
+这补齐了 graph 外的 standalone operator 表格测试层。Stage 1 已经在服务端内核增加
+`OperatorMicroGraphRunner`：它把冻结的 runtime binding 编译成单节点 graph，复用统一 planner、double、assertion 和 evidence
+执行真实算子；不满足 Composability Contract 的算子明确返回 `OPAQUE_RUNTIME`。当前画布 REST 入口仍是
+`SCHEMA_CONTRACT`，尚未把微图能力冒充成已经开放的 UI 功能；公共 `Run Operator` adapter 属于 Stage 2。
+
+### 4.4 Execution Data Control Plane Stage 1
+
+既有 graph suite 已收编为统一内核的第一个 adapter。一次 case 的真实路径是：
+
+```text
+GatewayGraphContractTestService
+  -> FixtureBundle + frozen target fingerprint
+  -> SafetyPreflight + SelectorResolver
+  -> EffectiveExecutionPlan
+  -> fresh run-scoped GraphEngine
+  -> executeWithOperators(test doubles)
+  -> node/edge trace + fixture consumption + assertion
+  -> TestRunEvidence
+```
+
+关键运行语义：
+
+| 规则 | 当前行为 |
+| --- | --- |
+| 外部效应未配置 fixture | 合成 `IMPLICIT_DENY`，结果为 `FIXTURE_UNMATCHED`，绝不静默真调 |
+| selector 零命中或同优先级歧义 | 运行前返回 `CONTROL_PLAN_REJECTED`，不会启动 graph |
+| required fixture 未消费 | 终态为 `FIXTURE_UNUSED` |
+| `REAL/RETURN/THROW/DENY/SPY` | 五种时间无关行为已激活；时间、stream、replay 字段存在但 v1 显式拒绝 |
+| resource payload RETURN | `OUTPUT_LEVEL`，只可生成 `EXPLORATORY` 证据 |
+| raw body + status RETURN | 走真实 `ResponseProtocol`/payloadPath，记为 `PROTOCOL_DERIVED` |
+| `boundary=TRANSPORT` | 用 `StubHttpRequestOperator` 替换传输层，参数映射、URL 渲染和协议解析真实执行 |
+| SPY | 真实执行；evidence 记录节点控制模式和脱敏 side-effect journal 快照 |
+| bounded regex | 最长 256 字符、候选值最长 4096 字符；group/alternation/look-around/backreference 在 preflight 拒绝 |
+
+旧 `GatewayGraphResourceMock` 为兼容已有 API 仍解释为 OUTPUT_LEVEL fixture，不能因存储为 suite 就自动升级为认证证据。
+调用方必须显式提供 raw protocol response 或 transport fixture，才可能达到 F2/F3。这样避免兼容迁移偷偷改变旧 case
+的 `success/payload` 语义。
 
 ## 5. 断言能力
 
@@ -391,8 +427,7 @@ Focused verification:
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-    -Dtest=GatewayGraphContractTestServiceTest \
-    -Dsurefire.failIfNoSpecifiedTests=false test
+    -Dtest=GatewayGraphContractTestServiceTest,ExecutionControlCompilerTest,TestRunServiceTest,ResourceFixtureRuntimeTest,OperatorMicroGraphRunnerTest,GraphArtifactFingerprintTest test
 ```
 
 当前覆盖：
@@ -404,6 +439,11 @@ mvn -f resource-gateway-examples/pom.xml \
 | `contractTestApiRunsTableSuites` | REST API 可运行 suite 并返回 coverage 与 mock invocation |
 | `draftGeneratesEditableGraphMockSuiteFromFormalSchemas` | graph contract draft 生成 context、resource mock payload、output schema 断言，并可直接运行通过 |
 | `contractTestApiDraftsGraphMockSuites` | REST API 可返回 formal graph contract 与可编辑 mock suite 草稿 |
+| `ExecutionControlCompilerTest` | selector 冻结、零命中/歧义/保留坐标/危险正则拒绝、外部效应隐式 DENY |
+| `TestRunServiceTest` | 五行为、消费检查、断言容差、隔离引擎、拒绝证据、SPY side-effect intent |
+| `ResourceFixtureRuntimeTest` | 相同 raw body 在不同协议下派生不同结果；F3 捕获真实渲染 URL；204 空 body |
+| `OperatorMicroGraphRunnerTest` | 纯算子 EXECUTABLE_UNIT、opaque fail closed、httpResource TRANSPORT 认证 |
+| `GraphArtifactFingerprintTest` | 指纹稳定性、DSL 源和边完成语义变化检测 |
 
 Graph contract coverage:
 
@@ -430,6 +470,8 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 | `mvn -f resource-gateway-examples/pom.xml -Dtest=GatewayIntegrationTest,ResourceExecuteIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，14 tests；验证公开 gateway endpoint 返回前执行 output schema gate |
 | `mvn -f resource-gateway-examples/pom.xml -Dtest=GatewayGraphContractCatalogTest,GatewayGraphContractTestServiceTest,VisualOperatorContractTestServiceTest,ResourceGatewayApplicationTest -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，21 tests；覆盖 graph/operator schema drafts, stored suites, Spring wiring, graph-level I/O schema guard |
 | `mvn -f resource-gateway-examples/pom.xml -Dtest=VisualOperatorContractTestServiceTest -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，5 tests；覆盖 operator schema mock table run、draft、stored suite、run-all、非法 schema assertion 诊断 |
+| Stage 1 kernel focused command（见上） | Passed，37 tests；0 failures/errors/skips |
+| `mvn -f resource-gateway-examples/pom.xml clean verify`（Stage 1） | Passed，1653 tests；0 failures，0 errors，34 conditional skips；JAR 打包成功 |
 | `mvn -f resource-gateway-examples/pom.xml clean verify` | Reached 1390 tests; failed on one existing browser DOM test with Selenium `StaleElementReferenceException` |
 | `mvn -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerPersistsConfigUnionBranchSelectionInRealBrowser -Dsurefire.failIfNoSpecifiedTests=false test` | Passed，confirms the full-run failure was browser timing/flakiness rather than the resource graph contract path |
 
