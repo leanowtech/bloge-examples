@@ -139,6 +139,53 @@ class TestExecutionControllerTest {
     }
 
     @Test
+    void replayPayloadCaptureUsesDedicatedPurposeAndExactSourceCommand() throws Exception {
+        TestExecutionApiService execution = mock(TestExecutionApiService.class);
+        TestReplayPayloadService replays = mock(TestReplayPayloadService.class);
+        ReplayPayloadDescriptor descriptor = new ReplayPayloadDescriptor("", "replay-a", 1,
+                "sha256:" + "a".repeat(64), "CONFIDENTIAL",
+                new ReplayPayloadDescriptor.Source("GOVERNED_RUN_NODE_ATTEMPT", "run-a", "fetch", 2,
+                        "sha256:" + "b".repeat(64), "sha256:" + "c".repeat(64), "test"),
+                ReplayPayloadDescriptor.Redaction.empty(), Instant.now(), Instant.now().plusSeconds(3600),
+                true, List.of());
+        when(replays.capture(eq("replay-a"), any(), any())).thenReturn(new StoredReplayPayload(
+                "", "tenant-a", "test", descriptor, StoredReplayPayload.AVAILABLE,
+                true, Map.of("decision", "approved"), Instant.now(), "runner"));
+        MockMvc mvc = mvc(execution, mock(TestSuiteRegistryService.class),
+                mock(TestSuiteExecutionService.class), mock(TestSuiteCatalogMaterializationService.class),
+                replays, Set.of("TEST_REPLAY"));
+        String command = """
+                {"schemaVersion":"bloge.replayPayloadCaptureRequest.v1","revision":1,
+                 "source":{"runId":"run-a","nodeId":"fetch","attempt":2,
+                 "runEvidenceFingerprint":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                 "payloadFingerprint":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+                 "classification":"CONFIDENTIAL","expiresAt":"2099-01-01T00:00:00Z"}
+                """;
+
+        mvc.perform(put("/api/testing/replay-payloads/replay-a")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_REPLAY")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content(command))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.descriptor.replayPayloadId").value("replay-a"))
+                .andExpect(jsonPath("$.payloadAvailable").value(true));
+
+        verify(replays).capture(eq("replay-a"),
+                org.mockito.ArgumentMatchers.argThat(request -> request.source().attempt() == 2),
+                org.mockito.ArgumentMatchers.argThat(identity -> identity.purpose().equals("TEST_REPLAY")));
+
+        MockMvc executionOnly = mvc(execution);
+        executionOnly.perform(put("/api/testing/replay-payloads/replay-a")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_EXECUTION")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content(command))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("RG.INTEGRATION.PURPOSE_FORBIDDEN"));
+    }
+
+    @Test
     void suiteRegistryUsesDedicatedWritePurposeAndExactRevisionPath() throws Exception {
         TestExecutionApiService execution = mock(TestExecutionApiService.class);
         TestSuiteRegistryService suites = mock(TestSuiteRegistryService.class);
@@ -282,6 +329,16 @@ class TestExecutionControllerTest {
                                TestSuiteExecutionService suiteRuns,
                                TestSuiteCatalogMaterializationService catalogs,
                                Set<String> purposes) {
+        return mvc(service, suites, suiteRuns, catalogs,
+                mock(TestReplayPayloadService.class), purposes);
+    }
+
+    private static MockMvc mvc(TestExecutionApiService service,
+                               TestSuiteRegistryService suites,
+                               TestSuiteExecutionService suiteRuns,
+                               TestSuiteCatalogMaterializationService catalogs,
+                               TestReplayPayloadService replays,
+                               Set<String> purposes) {
         RecordingAudit audit = new RecordingAudit();
         IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity(
                 "test-runtime", "tenant-a", "org-a", "project-a", "test", "local",
@@ -290,7 +347,7 @@ class TestExecutionControllerTest {
         IntegrationRequestAuthenticator authenticator = new IntegrationRequestAuthenticator(
                 new StaticBearerIntegrationIdentityResolver("test-token", identity, false), audit);
         return MockMvcBuilders.standaloneSetup(new TestExecutionController(
-                        service, suites, suiteRuns, catalogs, authenticator))
+                        service, suites, suiteRuns, catalogs, replays, authenticator))
                 .setControllerAdvice(new TestExecutionProblemHandler()).build();
     }
 

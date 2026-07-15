@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "gateway.seed-descriptors=true",
                 "gateway.base-url=http://127.0.0.1:1",
                 "gateway.integration.identity.environment-id=test",
-                "gateway.integration.identity.allowed-purposes=TEST_EXECUTION,TEST_FIXTURE_READ,TEST_FIXTURE_WRITE,TEST_SUITE_READ,TEST_SUITE_WRITE",
+                "gateway.integration.identity.allowed-purposes=TEST_EXECUTION,TEST_FIXTURE_READ,TEST_FIXTURE_WRITE,TEST_REPLAY,TEST_SUITE_READ,TEST_SUITE_WRITE",
                 "spring.datasource.url=jdbc:h2:mem:testing-app-main;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false",
                 "gateway.testing.store.jdbc-url=jdbc:h2:mem:testing-app-control;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
         }
@@ -62,6 +62,9 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(context.getBeansOfType(TestSuiteRunLeaseCoordinator.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestSuiteRunReconciliationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestSuiteRunReconciliationScheduler.class)).hasSize(1);
+        assertThat(context.getBeansOfType(ReplayPayloadRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(TestReplayPayloadService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(ReplayPayloadRetentionScheduler.class)).hasSize(1);
 
         var capabilities = restTemplate.exchange("/api/integration/capabilities", HttpMethod.GET,
                 HttpEntity.EMPTY,
@@ -81,6 +84,9 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("suiteRunOwnerLease", true)
                 .containsEntry("abandonedSuiteRunReconciliation", true);
+        assertThat(capabilities.getBody().payload().features())
+                .containsEntry("governedTestReplayPayloadCapture", true)
+                .containsEntry("testReplayBehavior", false);
         assertThat(capabilities.getBody().payload().supportedObjects())
                 .containsEntry("testSuiteCatalogMaterialization",
                         List.of(TestSuiteCatalogMaterializationResponse.SCHEMA_VERSION));

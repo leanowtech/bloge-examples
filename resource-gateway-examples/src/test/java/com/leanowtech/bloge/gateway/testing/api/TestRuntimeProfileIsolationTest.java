@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.TestabilityAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.env.MapPropertySource;
@@ -36,6 +37,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(TestExecutionApiService.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestRunRepository.class)).hasSize(1);
             assertThat(context.getBeansOfType(FixtureBundleRepository.class)).hasSize(1);
+            assertThat(context.getBeansOfType(ReplayPayloadRepository.class)).hasSize(1);
+            assertThat(context.getBeansOfType(TestReplayPayloadService.class)).hasSize(1);
             assertThat(context.getBean(TestabilityAvailability.class).executionEndpointEnabled()).isTrue();
         }
     }
@@ -60,6 +63,7 @@ class TestRuntimeProfileIsolationTest {
         context.registerBean(GatewayGraphService.class, () -> mock(GatewayGraphService.class));
         context.registerBean(OperatorRegistry.class, () -> mock(OperatorRegistry.class));
         context.registerBean(ResourceRegistry.class, () -> mock(ResourceRegistry.class));
+        context.registerBean(VisualGraphRunRepository.class, () -> mock(VisualGraphRunRepository.class));
         context.registerBean(BlgeExpressionEvaluator.class, () -> new BlgeExpressionEvaluator());
         context.registerBean(IntegrationRequestAuthenticator.class,
                 () -> mock(IntegrationRequestAuthenticator.class));

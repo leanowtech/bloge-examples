@@ -28,17 +28,20 @@ public class TestExecutionController {
     private final TestSuiteRegistryService suiteRegistry;
     private final TestSuiteExecutionService suiteExecutions;
     private final TestSuiteCatalogMaterializationService catalogMaterialization;
+    private final TestReplayPayloadService replayPayloads;
     private final IntegrationRequestAuthenticator authenticator;
 
     public TestExecutionController(TestExecutionApiService service,
                                    TestSuiteRegistryService suiteRegistry,
                                    TestSuiteExecutionService suiteExecutions,
                                    TestSuiteCatalogMaterializationService catalogMaterialization,
+                                   TestReplayPayloadService replayPayloads,
                                    IntegrationRequestAuthenticator authenticator) {
         this.service = service;
         this.suiteRegistry = suiteRegistry;
         this.suiteExecutions = suiteExecutions;
         this.catalogMaterialization = catalogMaterialization;
+        this.replayPayloads = replayPayloads;
         this.authenticator = authenticator;
     }
 
@@ -100,6 +103,26 @@ public class TestExecutionController {
                                            @RequestHeader HttpHeaders headers) {
         return service.findFixture(fixtureBundleId, revision,
                 context(headers, IntegrationOperation.TEST_FIXTURE_READ));
+    }
+
+    /** Captures one exact successful attempt from the governed run payload vault. */
+    @PutMapping("/replay-payloads/{replayPayloadId}")
+    public StoredReplayPayload captureReplayPayload(
+            @PathVariable String replayPayloadId,
+            @RequestBody ReplayPayloadCaptureRequest request,
+            @RequestHeader HttpHeaders headers) {
+        return replayPayloads.capture(replayPayloadId, request,
+                context(headers, IntegrationOperation.TEST_REPLAY_WRITE));
+    }
+
+    /** Resolves one exact governed replay payload while its value remains available. */
+    @GetMapping("/replay-payloads/{replayPayloadId}")
+    public StoredReplayPayload findReplayPayload(
+            @PathVariable String replayPayloadId,
+            @RequestParam long revision,
+            @RequestHeader HttpHeaders headers) {
+        return replayPayloads.find(replayPayloadId, revision,
+                context(headers, IntegrationOperation.TEST_REPLAY_READ));
     }
 
     /** Registers one dependency-closed immutable test-suite revision. */

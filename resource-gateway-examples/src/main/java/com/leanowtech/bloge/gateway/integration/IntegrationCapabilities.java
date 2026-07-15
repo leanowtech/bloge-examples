@@ -166,6 +166,12 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.FixtureBundleRegistrationRequest.SCHEMA_VERSION));
             objects.put("storedFixtureBundle", List.of(
                     com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundle.SCHEMA_VERSION));
+            objects.put("replayPayloadCaptureRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.ReplayPayloadCaptureRequest.SCHEMA_VERSION));
+            objects.put("replayPayloadDescriptor", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.ReplayPayloadDescriptor.SCHEMA_VERSION));
+            objects.put("storedReplayPayload", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.StoredReplayPayload.SCHEMA_VERSION));
             objects.put("testSuite", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestSuite.SCHEMA_VERSION));
             objects.put("testSuiteRegistrationRequest", List.of(
@@ -278,6 +284,8 @@ public record IntegrationCapabilities(
         features.put("builtInGraphSuiteCatalogMaterialization", testExecutionEndpointEnabled);
         features.put("suiteRunOwnerLease", testExecutionEndpointEnabled);
         features.put("abandonedSuiteRunReconciliation", testExecutionEndpointEnabled);
+        features.put("governedTestReplayPayloadCapture", testExecutionEndpointEnabled);
+        features.put("testReplayBehavior", false);
         features.put("streamingOperatorTestExecution", false);
         features.put("suspendableOperatorTestExecution", false);
 
@@ -314,6 +322,8 @@ public record IntegrationCapabilities(
             endpoints.add(new Endpoint("GET", "/api/testing/executions/{runId}"));
             endpoints.add(new Endpoint("PUT", "/api/testing/fixture-bundles/{fixtureBundleId}"));
             endpoints.add(new Endpoint("GET", "/api/testing/fixture-bundles/{fixtureBundleId}"));
+            endpoints.add(new Endpoint("PUT", "/api/testing/replay-payloads/{replayPayloadId}"));
+            endpoints.add(new Endpoint("GET", "/api/testing/replay-payloads/{replayPayloadId}"));
             endpoints.add(new Endpoint("PUT", "/api/testing/suites/{suiteId}"));
             endpoints.add(new Endpoint("GET", "/api/testing/suites/{suiteId}"));
             endpoints.add(new Endpoint("PUT", "/api/testing/catalogs/gateway-graph-contract-v1"));

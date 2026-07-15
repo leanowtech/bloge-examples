@@ -72,6 +72,9 @@ Independent-store settings:
 | `gateway.testing.store.password` | `RG_TEST_STORE_PASSWORD` | empty |
 | `gateway.testing.store.maximum-pool-size` | `RG_TEST_STORE_MAXIMUM_POOL_SIZE` | `4` |
 | `gateway.testing.store.retention-days` | `RG_TEST_STORE_RETENTION_DAYS` | `30` |
+| `gateway.testing.replay-payloads.maximum-retention-days` | `RG_TEST_REPLAY_MAX_RETENTION_DAYS` | `30` |
+| `gateway.testing.replay-payloads.sweep-interval-ms` | `RG_TEST_REPLAY_SWEEP_INTERVAL_MS` | `60000` |
+| `gateway.testing.replay-payloads.sweep-batch-size` | `RG_TEST_REPLAY_SWEEP_BATCH_SIZE` | `100` |
 
 ## 3. Authentication
 
@@ -79,7 +82,7 @@ Testing endpoints require a verified bearer and the least-privilege purpose for 
 
 ```text
 Authorization: Bearer <verified workload credential>
-X-Purpose: TEST_EXECUTION | TEST_FIXTURE_READ | TEST_FIXTURE_WRITE | TEST_SUITE_READ | TEST_SUITE_WRITE
+X-Purpose: TEST_EXECUTION | TEST_FIXTURE_READ | TEST_FIXTURE_WRITE | TEST_REPLAY | TEST_SUITE_READ | TEST_SUITE_WRITE
 ```
 
 The local test-profile defaults are:
@@ -90,11 +93,12 @@ The local test-profile defaults are:
 | execute, batch, child-run query, suite execute/query | `TEST_EXECUTION` |
 | fixture revision query | `TEST_FIXTURE_READ` |
 | immutable fixture registration | `TEST_FIXTURE_WRITE` |
+| governed replay payload capture/query | `TEST_REPLAY` |
 | test-suite revision query | `TEST_SUITE_READ` |
 | immutable test-suite registration | `TEST_SUITE_WRITE` |
 | built-in graph catalog materialization | `TEST_SUITE_WRITE` |
 
-The local demo bearer is `bloge-aneke-demo-token` and is granted all five testing purposes.
+The local demo bearer is `bloge-aneke-demo-token` and is granted all six testing purposes.
 Production credentials should keep fixture authors, suite authors, readers, and runners separate.
 `RG_INTEGRATION_ENVIRONMENT_ID` and `RG_INTEGRATION_ALLOWED_PURPOSES` override profile defaults;
 deployment manifests must set both explicitly so a staging runner cannot inherit production identity claims.
@@ -334,6 +338,52 @@ Time-control rules obey these fail-closed constraints:
 This mode verifies time-dependent business behavior and the graph's reaction to timeout. It does
 not prove wall-clock watchdog accuracy, interruption of blocked operator code, or deterministic
 completion order between concurrent branches. Those remain engine/sandbox conformance concerns.
+
+### 4.2a Capture a governed replay payload
+
+Replay data is never accepted as caller-supplied return JSON. Capture one exact successful node
+attempt from the signed, detached visual run payload vault:
+
+```http
+PUT /api/testing/replay-payloads/orders-approved
+Authorization: Bearer <verified workload credential>
+X-Purpose: TEST_REPLAY
+Content-Type: application/json
+
+{
+  "schemaVersion": "bloge.replayPayloadCaptureRequest.v1",
+  "revision": 1,
+  "source": {
+    "runId": "run-2026-07-16-001",
+    "nodeId": "fetchOrder",
+    "attempt": 1,
+    "runEvidenceFingerprint": "sha256:<64 lowercase hex>",
+    "payloadFingerprint": "sha256:<64 lowercase hex>"
+  },
+  "classification": "CONFIDENTIAL",
+  "expiresAt": "2026-07-23T00:00:00Z"
+}
+```
+
+Capture succeeds only when source run and payload scope match the verified identity, both
+fingerprints match, the run and payload lifecycle signatures verify, the selected attempt is
+`SUCCESS`, clearance/group policy passes, classification is not downgraded, neither sanitizer
+truncated data, and destination expiry is within both source retention and server policy.
+
+The response contains an exact reference such as:
+
+```text
+bloge-replay:orders-approved@1#sha256:<64 lowercase hex>
+```
+
+Query it with `GET /api/testing/replay-payloads/orders-approved?revision=1` and
+`X-Purpose: TEST_REPLAY`. Retention sweeps physically remove the value but preserve an `EXPIRED`
+payload-free tombstone. The captured object contains only the selected sanitized output; historical
+request data, credentials, and side-effect outcomes are not copied or replayed.
+
+At this checkpoint capture and retention are active, while fixture `kind=REPLAY` remains
+fail-closed. Capability probe therefore reports `governedTestReplayPayloadCapture=true` and
+`testReplayBehavior=false` until execution activation is committed.
 
 ### 4.2.2 Register an immutable test suite
 
@@ -864,6 +914,8 @@ Implemented now:
 - public graph target discovery/execution/batch/query and operator target discovery/micro-graph
   execution APIs, sharing one fixture registry, evidence model, and run store;
 - profile, identity, purpose, tenant/environment, and classification gates;
+- exact governed replay-payload capture with signed source lineage, server-side sanitization,
+  independent retention, and payload-free expiry tombstones;
 - independent datasource, tables, retention, evidence sanitization, and security events;
 - immutable plan plus graph/operator/resource dependency fingerprints;
 - profile-sensitive capability probe and production control-field guard.
@@ -897,7 +949,8 @@ Implemented now:
 
 Still intentionally outside this increment:
 
-- `REPLAY`, retry-attempt/occurrence selectors, streaming/suspendable controls and evidence, and
+- executable `REPLAY` fixture behavior, retry-attempt/occurrence selectors,
+  streaming/suspendable controls and evidence, and
   durable-resume plan restoration;
 - signed certification, full branch/rule/retry/fallback/compensation semantic coverage, ANEKE
   projection, and mutation testing;

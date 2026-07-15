@@ -7,11 +7,13 @@ import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
 import com.leanowtech.bloge.gateway.integration.TestabilityAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseFixtureBundleRepository;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseReplayPayloadRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecurityEventRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -40,6 +42,12 @@ public class TestRuntimeConfiguration {
         return new DatabaseFixtureBundleRepository(database.jdbc(), objectMapper);
     }
 
+    /** @return governed replay payload vault isolated in the test-runtime database */
+    @Bean
+    ReplayPayloadRepository replayPayloadRepository(TestRuntimeDatabase database, ObjectMapper objectMapper) {
+        return new DatabaseReplayPayloadRepository(database.jdbc(), objectMapper);
+    }
+
     /** @return immutable suite registry isolated in the test-runtime database */
     @Bean
     TestSuiteRepository testSuiteRepository(TestRuntimeDatabase database, ObjectMapper objectMapper) {
@@ -61,6 +69,27 @@ public class TestRuntimeConfiguration {
     TestSecurityEventRepository testSecurityEventRepository(TestRuntimeDatabase database,
                                                             ObjectMapper objectMapper) {
         return new DatabaseTestSecurityEventRepository(database.jdbc(), objectMapper);
+    }
+
+    /** Captures exact sanitized outputs from signed run history into the isolated replay vault. */
+    @Bean
+    TestReplayPayloadService testReplayPayloadService(
+            VisualGraphRunRepository visualGraphRunRepository,
+            ReplayPayloadRepository replayPayloadRepository,
+            TestSecurityEventRepository securityEvents,
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.replay-payloads.maximum-retention-days:30}") long retentionDays) {
+        return new TestReplayPayloadService(visualGraphRunRepository, replayPayloadRepository,
+                securityEvents, objectMapper,
+                Duration.ofDays(Math.max(1, Math.min(365, retentionDays))));
+    }
+
+    /** Applies replay retention independently from visual run-history retention. */
+    @Bean
+    ReplayPayloadRetentionScheduler replayPayloadRetentionScheduler(
+            ReplayPayloadRepository replayPayloadRepository,
+            @Value("${gateway.testing.replay-payloads.sweep-batch-size:100}") int batchSize) {
+        return new ReplayPayloadRetentionScheduler(replayPayloadRepository, batchSize);
     }
 
     @Bean

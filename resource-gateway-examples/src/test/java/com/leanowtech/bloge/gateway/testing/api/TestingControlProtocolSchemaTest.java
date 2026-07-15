@@ -34,6 +34,12 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(FixtureBundleRegistrationRequest.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/storedFixtureBundle/properties/schemaVersion/const").asText())
                 .isEqualTo(StoredFixtureBundle.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/replayPayloadCaptureRequest/properties/schemaVersion/const").asText())
+                .isEqualTo(ReplayPayloadCaptureRequest.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/replayPayloadDescriptor/properties/schemaVersion/const").asText())
+                .isEqualTo(ReplayPayloadDescriptor.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/storedReplayPayload/properties/schemaVersion/const").asText())
+                .isEqualTo(StoredReplayPayload.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuite/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuite.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteRegistrationRequest/properties/schemaVersion/const").asText())
@@ -86,6 +92,9 @@ class TestingControlProtocolSchemaTest {
 
         assertThat(definitions.has("fixtureBundleRegistrationRequest")).isTrue();
         assertThat(definitions.has("storedFixtureBundle")).isTrue();
+        assertThat(definitions.has("replayPayloadCaptureRequest")).isTrue();
+        assertThat(definitions.has("replayPayloadDescriptor")).isTrue();
+        assertThat(definitions.has("storedReplayPayload")).isTrue();
         assertThat(definitions.has("testSuiteRegistrationRequest")).isTrue();
         assertThat(definitions.has("storedTestSuite")).isTrue();
         assertThat(definitions.has("testSuiteExecutionRequest")).isTrue();
@@ -115,6 +124,12 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestExecutionBatchRequest.MAX_EXECUTIONS);
         assertThat(definitions.at("/testExecutionBatchResponse/properties/executions/items/$ref").asText())
                 .isEqualTo("#/$defs/testExecutionResponse");
+        assertThat(definitions.at("/replayPayloadCaptureRequest/properties/source/$ref").asText())
+                .isEqualTo("#/$defs/replayPayloadCaptureSource");
+        assertThat(definitions.at("/replayPayloadDescriptor/properties/redaction/$ref").asText())
+                .isEqualTo("#/$defs/replayPayloadRedaction");
+        assertThat(definitions.at("/behavior/properties/replayRef/pattern").asText())
+                .contains("bloge-replay:");
         assertThat(definitions.at("/testSuite/properties/target/$ref").asText())
                 .isEqualTo("#/$defs/exactTarget");
         assertThat(definitions.at("/testSuiteCase/properties/fixtureBundleRef/$ref").asText())

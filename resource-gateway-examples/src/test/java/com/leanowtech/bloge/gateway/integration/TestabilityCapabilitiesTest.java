@@ -20,6 +20,7 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.supportedObjects()).containsKeys("testExecutionRequest", "testExecutionResponse",
                 "testExecutionBatchRequest", "testExecutionBatchResponse", "fixtureBundleRegistrationRequest",
                 "storedFixtureBundle", "testSuite", "testSuiteRegistrationRequest", "storedTestSuite",
+                "replayPayloadCaptureRequest", "replayPayloadDescriptor", "storedReplayPayload",
                 "testSuiteExecutionRequest", "testSuiteExecutionResponse", "testSuiteRunEvidence",
                 "testSuiteRunReconciliation",
                 "testSuiteCatalogMaterialization",
@@ -33,6 +34,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("builtInGraphSuiteCatalogMaterialization", true)
                 .containsEntry("suiteRunOwnerLease", true)
                 .containsEntry("abandonedSuiteRunReconciliation", true)
+                .containsEntry("governedTestReplayPayloadCapture", true)
+                .containsEntry("testReplayBehavior", false)
                 .containsEntry("streamingOperatorTestExecution", false)
                 .containsEntry("suspendableOperatorTestExecution", false);
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.path().equals("/api/testing/executions"));
@@ -52,5 +55,7 @@ class TestabilityCapabilitiesTest {
                 && endpoint.path().equals("/api/testing/suite-executions/{suiteRunId}"));
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("PUT")
                 && endpoint.path().equals("/api/testing/catalogs/gateway-graph-contract-v1"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("PUT")
+                && endpoint.path().equals("/api/testing/replay-payloads/{replayPayloadId}"));
     }
 }
