@@ -23,6 +23,9 @@ import type {
   OperatorLibraryValidationResult,
   OperatorCatalogResponse,
   OperatorDefinition,
+  OperatorTestCaseRun,
+  OperatorTestExecutionResponse,
+  OperatorTestTargetDescriptor,
   SimulationRequest,
   SimulationResponse,
   VisualValidationResult,
@@ -61,12 +64,39 @@ async function readJsonMutation<T>(response: Response): Promise<T> {
   return payload;
 }
 
+async function readTestingJson<T>(response: Response): Promise<T> {
+  const payload = await readJsonBody<T & {
+    code?: string;
+    detail?: string;
+    diagnostics?: Array<{ message?: string; code?: string }>;
+  }>(response);
+  if (!response.ok) {
+    const firstDiagnostic = payload?.diagnostics?.find((diagnostic) => diagnostic.message || diagnostic.code);
+    const detail = payload?.detail || firstDiagnostic?.message || firstDiagnostic?.code
+      || payload?.code || response.statusText;
+    throw new Error(`Request failed: ${response.status} ${detail}`);
+  }
+  if (!payload) {
+    throw new Error(`Request failed: ${response.status} empty response`);
+  }
+  return payload;
+}
+
 export type BlogeApiTransport = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 const defaultBlogeApiTransport: BlogeApiTransport = (input, init) => (
   init === undefined ? fetch(input) : fetch(input, init)
 );
 let blogeApiTransport: BlogeApiTransport = defaultBlogeApiTransport;
+
+/** Supplies workload authentication for the isolated test control plane. */
+export type OperatorTestHeadersProvider = () => Record<string, string>;
+
+const defaultOperatorTestHeadersProvider: OperatorTestHeadersProvider = () => ({
+  // This identity is accepted only by the repository's test/staging demo profiles.
+  Authorization: 'Bearer bloge-aneke-demo-token',
+});
+let operatorTestHeadersProvider = defaultOperatorTestHeadersProvider;
 
 /**
  * Replaces the HTTP transport used by the visual authoring client.
@@ -81,6 +111,16 @@ export function setBlogeApiTransport(transport: BlogeApiTransport): void {
 
 export function resetBlogeApiTransport(): void {
   blogeApiTransport = defaultBlogeApiTransport;
+}
+
+/** Lets a VSCode extension or authenticated host supply short-lived testing credentials. */
+export function setOperatorTestHeadersProvider(provider: OperatorTestHeadersProvider): void {
+  operatorTestHeadersProvider = provider;
+}
+
+/** Restores the local test-profile credential used by the standalone demo. */
+export function resetOperatorTestHeadersProvider(): void {
+  operatorTestHeadersProvider = defaultOperatorTestHeadersProvider;
 }
 
 function sendRequest(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -256,6 +296,238 @@ export async function simulate(request: SimulationRequest): Promise<SimulationRe
       body: JSON.stringify(request),
     }),
   );
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function operatorTestingHeaders(json = false): Record<string, string> {
+  return {
+    ...operatorTestHeadersProvider(),
+    'X-Purpose': 'TEST_EXECUTION',
+    ...(json ? { 'Content-Type': 'application/json' } : {}),
+  };
+}
+
+/** Resolves the executable registry binding represented by a visual operator definition. */
+export function operatorRuntimeRef(operator: OperatorDefinition): string {
+  return operator.lowering?.operatorRef?.trim() || operator.operatorRef;
+}
+
+function resourceLowering(operator: OperatorDefinition): boolean {
+  return operator.lowering?.mode === 'resource-descriptor' || operatorRuntimeRef(operator) === 'httpResource';
+}
+
+function resourceId(operator: OperatorDefinition, input: unknown): string {
+  const configured = operator.lowering?.parameters?.resourceId;
+  const supplied = recordValue(input)?.resourceId;
+  const resolved = typeof configured === 'string' && configured.trim()
+    ? configured.trim()
+    : typeof supplied === 'string' ? supplied.trim() : '';
+  if (!resolved) {
+    throw new Error('Resource-backed operator tests require lowering.parameters.resourceId.');
+  }
+  return resolved;
+}
+
+function loweredOperatorInput(operator: OperatorDefinition, input: unknown): unknown {
+  if (!resourceLowering(operator)) {
+    return input;
+  }
+  const inputObject = recordValue(input);
+  const flatParams = inputObject
+    ? Object.fromEntries(Object.entries(inputObject).filter(([key]) => key !== 'resourceId'))
+    : input;
+  const params = inputObject && Object.prototype.hasOwnProperty.call(inputObject, 'params')
+    ? inputObject.params
+    : flatParams;
+  const lowered: Record<string, unknown> = {
+    resourceId: resourceId(operator, input),
+    params: params ?? {},
+  };
+  for (const key of ['headerOverrides', 'authOverride', 'timeoutOverride']) {
+    if (inputObject && Object.prototype.hasOwnProperty.call(inputObject, key)) {
+      lowered[key] = inputObject[key];
+    }
+  }
+  return lowered;
+}
+
+function expectedRuntimeOutput(operator: OperatorDefinition, expectedOutput: unknown): {
+  path: string;
+  value: unknown;
+} {
+  if (!resourceLowering(operator)) {
+    return { path: '', value: expectedOutput };
+  }
+  const expectedObject = recordValue(expectedOutput);
+  return {
+    path: '/payload',
+    value: expectedObject && Object.prototype.hasOwnProperty.call(expectedObject, 'payload')
+      ? expectedObject.payload
+      : expectedOutput,
+  };
+}
+
+function boundedProtocolId(value: string, fallback: string): string {
+  const normalized = value.trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+  return (normalized || fallback).slice(0, 80);
+}
+
+/**
+ * Builds an inline exploratory fixture that executes the real operator binding. Resource-backed
+ * operators replace only transport I/O; self-contained operators use a SPY around real code.
+ */
+export function buildOperatorTestExecutionRequest(
+  operator: OperatorDefinition,
+  target: OperatorTestTargetDescriptor,
+  input: unknown,
+  expectedOutput: unknown,
+  transportResponse: unknown,
+  caseRef: string,
+): Record<string, unknown> {
+  const runtimeRef = operatorRuntimeRef(operator);
+  const resource = resourceLowering(operator);
+  const expected = expectedRuntimeOutput(operator, expectedOutput);
+  const selector = {
+    graphPath: '/root',
+    nodeId: 'subject',
+    operatorRef: resource ? '' : runtimeRef,
+    resourceRef: resource ? resourceId(operator, input) : '',
+    functionRef: '',
+    capabilities: [],
+    tags: [],
+    invocationKind: resource ? 'RESOURCE' : 'PRIMARY',
+    attempts: [],
+    occurrences: [],
+    correlationKey: '',
+    match: {
+      canonicalInput: null,
+      pathEquals: {},
+      pathsExist: [],
+      pathsAbsent: [],
+      schema: {},
+      correlationKey: '',
+      boundedRegex: {},
+    },
+  };
+  const behavior = resource ? {
+    kind: 'RETURN',
+    boundary: 'TRANSPORT',
+    value: null,
+    rawBody: JSON.stringify(transportResponse ?? expected.value),
+    statusCode: 200,
+    headers: { 'Content-Type': 'application/json' },
+    errorCode: '',
+    errorType: '',
+    errorMessage: '',
+    after: null,
+    sequence: [],
+    replayRef: '',
+  } : {
+    kind: 'SPY',
+    boundary: 'NODE',
+    value: null,
+    rawBody: '',
+    statusCode: null,
+    headers: {},
+    errorCode: '',
+    errorType: '',
+    errorMessage: '',
+    after: null,
+    sequence: [],
+    replayRef: '',
+  };
+  const fixtureId = `canvas-${boundedProtocolId(runtimeRef, 'operator')}-${boundedProtocolId(caseRef, 'case')}`;
+  return {
+    schemaVersion: 'bloge.testOperatorExecutionRequest.v1',
+    target: target.target,
+    executionPurpose: 'OPERATOR_UNIT_TEST',
+    input: loweredOperatorInput(operator, input),
+    fixtureBundle: {
+      schemaVersion: 'bloge.fixtureBundle.v1',
+      fixtureBundleId: fixtureId,
+      revision: 1,
+      targetFingerprint: target.target.fingerprint,
+      classification: 'INTERNAL',
+      logicalClock: null,
+      randomSeed: null,
+      rules: [{
+        schemaVersion: 'bloge.fixtureRule.v1',
+        ruleId: resource ? 'subject-transport' : 'subject-spy',
+        selector,
+        behavior,
+        consumption: {
+          required: true,
+          minUses: 1,
+          maxUses: 1,
+          onExhausted: 'FAIL',
+          onUnmatched: 'FAIL',
+        },
+        schemaCheck: { mode: 'STRICT', waiverReason: '' },
+      }],
+      assertions: [{
+        scope: 'OUTPUT_PATH',
+        nodeId: 'subject',
+        path: expected.path,
+        operator: 'EQUALS',
+        expected: expected.value,
+        numericTolerance: null,
+      }],
+      metadata: {
+        source: 'author-canvas',
+        visualOperatorRef: operator.operatorRef,
+      },
+    },
+    fixtureBundleRef: null,
+    verbosity: 'FULL',
+    metadata: {
+      suiteRef: `canvas:${operator.operatorRef}`,
+      caseRef,
+      visualOperatorRef: operator.operatorRef,
+    },
+  };
+}
+
+/** Discovers and executes one operator table row through the real micro-graph testing kernel. */
+export async function runOperatorTestCase(
+  operator: OperatorDefinition,
+  input: unknown,
+  expectedOutput: unknown,
+  transportResponse: unknown,
+  caseRef: string,
+): Promise<OperatorTestCaseRun> {
+  const runtimeRef = operatorRuntimeRef(operator);
+  const target = await readTestingJson<OperatorTestTargetDescriptor>(
+    await sendRequest(`/api/testing/targets/operators/${encodeURIComponent(runtimeRef)}`, {
+      headers: operatorTestingHeaders(),
+    }),
+  );
+  if (!target.executionSupported) {
+    throw new Error(target.certificationGaps[0] || 'The runtime binding cannot execute synchronously.');
+  }
+  if (target.testabilityClass === 'OPAQUE_RUNTIME') {
+    throw new Error(target.certificationGaps[0]
+      || 'The runtime binding has no controllable test boundary and cannot be executed safely.');
+  }
+  if (!['EXECUTABLE_UNIT', 'CONDITIONAL_TRANSPORT'].includes(target.testabilityClass)) {
+    throw new Error(target.certificationGaps[0]
+      || `The runtime binding testability class '${target.testabilityClass}' is not executable by this canvas.`);
+  }
+  const request = buildOperatorTestExecutionRequest(
+    operator, target, input, expectedOutput, transportResponse, caseRef,
+  );
+  const response = await readTestingJson<OperatorTestExecutionResponse>(
+    await sendRequest(`/api/testing/targets/operators/${encodeURIComponent(runtimeRef)}/executions`, {
+      method: 'POST',
+      headers: operatorTestingHeaders(true),
+      body: JSON.stringify(request),
+    }),
+  );
+  return { target, response };
 }
 
 /** Validates a transient visual graph draft through the server-authoritative schema/readiness gate. */

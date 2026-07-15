@@ -313,14 +313,17 @@ operator definition
 注入故障和输出签名测试证据的演进设计见
 [Resource Gateway 工业级可测试性与执行数据控制反转演进方案](resource-gateway-industrial-testability-evolution-plan.md)。
 
-该证明强度不是文档约定：suite run API 的响应会显式返回 `mode: "SCHEMA_CONTRACT"`，画布中的对应编辑器命名为
-`Schema Contract Suite`，操作是 `Validate Case` / `Validate All`。任何消费方都应按 `mode` 判断证据含义，不能根据
-`passed=true` 推断 operator runtime binding 已被执行。
+该证明强度不是文档约定：suite run API 的响应会显式返回 `mode: "SCHEMA_CONTRACT"`。任何消费方都应按
+`mode` 判断证据含义，不能根据 `passed=true` 推断 operator runtime binding 已被执行。
 
 这补齐了 graph 外的 standalone operator 表格测试层。Stage 1 已经在服务端内核增加
 `OperatorMicroGraphRunner`：它把冻结的 runtime binding 编译成单节点 graph，复用统一 planner、double、assertion 和 evidence
-执行真实算子；不满足 Composability Contract 的算子明确返回 `OPAQUE_RUNTIME`。当前画布 REST 入口仍是
-`SCHEMA_CONTRACT`，尚未把微图能力冒充成已经开放的 UI 功能；公共 `Run Operator` adapter 属于 Stage 2。
+执行真实算子；不满足 Composability Contract 的算子明确返回 `OPAQUE_RUNTIME`。`/author/` 双击节点后的
+`Executable Operator Suite` 已迁移到这条公共 adapter：先调用
+`GET /api/testing/targets/operators/{operatorRef}` 冻结并审查目标，再调用
+`POST /api/testing/targets/operators/{operatorRef}/executions` 运行真实微图。native operator 使用 `SPY` 保留真实主体执行，
+resource operator 只在 `TRANSPORT` 边界注入可编辑原始响应。画布临时行使用 inline fixture，因此 passing 结果仍明确为
+`EXPLORATORY`；需要 `CERTIFIABLE` 时必须把 fixture 注册为不可变 revision，并通过测试控制面或 test-kit 执行。
 
 ### 4.4 Execution Data Control Plane Stage 1
 
@@ -539,11 +542,12 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 | 仓库级 no-egress dogfooding | Done for root resource nodes | 七图/13 case 全绿；foreach body 如实降级为 exploratory |
 | 批量 CI 报告 | Partial | 已有机器可读 batch result；还缺独立 HTML/历史趋势报告 |
 | Standalone operator table suite | Done | `/api/visual/operators/tests/run` + stored suite + run-all |
+| Canvas executable operator suite | Done | 双击节点后按行/批量执行公共 operator target + micro-graph API；native SPY、resource TRANSPORT、opaque fail-closed |
 | 画布内 Test Suite authoring 入口 | Done | `/author/` 支持多行 context、fixture override、expected output，并通过浮层表格逐行运行 transient simulate |
 
 ## 9. 差距与补强路线
 
-按本文件“schema + mock + table authoring”这一窄范围目标估算，当前差距约 2% 到 2.5%。核心链路已打通：资源 graph 有 formal input/output schema，graph/operator 都能生成可编辑 mock row 并运行表格验证；画布内也已经有 Test Suite authoring 入口，可以直接基于当前 draft 批量验证多条 mock 路径。
+按本文件“schema + mock + table authoring”这一窄范围目标估算，当前差距约 2% 到 2.5%。核心链路已打通：资源 graph 有 formal input/output schema，graph/operator 都能生成可编辑 mock row 并运行表格验证；画布内既能基于当前 draft 批量验证 graph mock 路径，也能在 Operator Detail 中真实试跑可组合的单个 runtime binding。
 
 这个数字**不代表 Resource Gateway 整体工业级可测试性的完成度**。真实 operator binding 执行、统一 fixture/control
 protocol、故障与非确定性控制、durable resume、语义覆盖率、签名测试证据和 production hard isolation 仍是实质缺口；

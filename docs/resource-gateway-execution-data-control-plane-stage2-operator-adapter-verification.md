@@ -64,6 +64,7 @@ The capability probe advertises both objects/endpoints and
 | real Spring registry exposes `httpResource` as conditional transport | `TestRuntimeApplicationIntegrationTest` |
 | controller purposes, schema versions, capability objects/endpoints | `TestExecutionControllerTest`, `TestingControlProtocolSchemaTest`, `TestabilityCapabilitiesTest` |
 | independent client discovers and runs operator; builder emits OPERATOR payloads | `ResourceGatewayTestClientTest`, `FixtureBundleBuilderTest` |
+| Author Canvas discovers targets, lowers visual resources, sends isolated headers, runs micro graphs, and fails opaque targets closed | `api.test.ts`, `AuthorCanvas.test.tsx` |
 
 ## Reproduce
 
@@ -72,16 +73,20 @@ mvn -f resource-gateway-examples/pom.xml \
   -Dtest=TestOperatorExecutionApiServiceTest,OperatorMicroGraphRunnerTest,TestExecutionControllerTest,TestRuntimeApplicationIntegrationTest,TestingControlProtocolSchemaTest,TestabilityCapabilitiesTest test
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 mvn -f resource-gateway-examples/pom.xml clean verify
+cd resource-gateway-examples/src/main/frontend && npm test
 ```
 
 Focused server tests: 30 tests, 0 failures, 0 errors, 0 skipped. Standalone test-kit: 13 tests,
 0 failures, 0 errors, 0 skipped. Resource Gateway `clean verify`: 1726 tests, 0 failures,
-0 errors, 34 conditional skips, with the Spring Boot JAR packaged successfully.
+0 errors, 34 conditional skips, with the Spring Boot JAR packaged successfully. Author Canvas:
+139 Vitest cases, 0 failures.
 
 ## Explicit Non-Claims
 
-- The canvas operator-suite action still proves `SCHEMA_CONTRACT`; it has not yet been migrated to
-  this executable API.
+- The canvas `Executable Operator Suite` now uses this API, but its inline authoring fixture produces
+  `EXPLORATORY` evidence. It is not a governed immutable suite revision and cannot by itself satisfy a
+  release certification gate. The separate `/api/visual/operators/tests/*` asset API remains
+  `SCHEMA_CONTRACT`.
 - Streaming and suspendable operator execution/evidence are not implemented.
 - Arbitrary hidden static/global state cannot be proven absent by a Java declaration. The manifest,
   behavior and state providers are governance contracts tied to conformance artifact identity;

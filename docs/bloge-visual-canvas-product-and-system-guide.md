@@ -1740,32 +1740,42 @@ POST /api/visual/connections/check
 2. **关键属性可编辑**：所有节点都能改显示 label；resource/http 节点还提供 Resource ID、Method、URL/route、Timeout 等常用运行属性输入框，写回节点 `config`。
 3. **图形化输入绑定**：浮层内置 `Node Inputs`，可以 Add Binding、选择 `ctx` 或 `constant`、配置 Target port/path，也能接收 Runtime Context 变量 chip 拖拽。
 4. **Input/Output 样例**：Output sample 和 Expected input 可以在浮层内直接维护，写入 `GraphDraft.nodeFixtures`，用于 mock simulate 和表格测试。
-5. **Operator Test Suite**：每个节点都有自己的表格测试数据，按行维护 Input case 和 Output sample；点击 Apply Fixture 会把该行套用为当前节点的 Expected input / Output sample，用来验证该算子的合同和 mock 行为。
+5. **Executable Operator Suite**：每个节点都有自己的表格测试数据，按行维护 Input case 和 Expected output；resource/http 算子还会显示 Transport response。Run Case / Run All 会真实执行单节点微图，Apply Fixture 则只把该行套用为当前节点的 Expected input / Output sample。
 6. **Schema 摘要优先**：每个端口先显示 schema 类型、字段数和字段表；Raw schema 仍可展开查看，避免用户一上来就读大段 JSON。
 7. **专属交互区**：decision table 和 transform 会在同一浮层内展开可编辑区域；foreach 会展开循环向导；generic/design operator 保留高级 config JSON 入口。
 
 | 算子族 | 双击后的浮层能力 | 写入 draft 的配置 |
 | --- | --- | --- |
-| `bloge:decisionTable` | 详情 + 规则矩阵 + 节点级 Operator Test Suite。可编辑 hit policy、output type、条件列、输出列、规则行和 otherwise fallback | `config.hitPolicy`、`config.outputType`、`config.conditionColumns`、`config.outputColumns`、`config.rules[]`、`nodeFixtures[nodeId]` |
-| `bloge:transform` | 详情 + 字段映射表 + 节点级 Operator Test Suite。可编辑输出字段名和 BLOGE 表达式，可新增/删除 assignment，并在 Expression 下方使用函数 chip、函数名补全和签名提示 | `config.assignments`、`nodeFixtures[nodeId]` |
-| `__foreach__:*` | 详情 + Loop guide + 节点级 Operator Test Suite。按 `Bind collection -> Run per item -> Collect result list` 展示循环语义，帮助用户理解 array 输入、item context 和 list 输出 | 通常由 operator contract / runtime 定义；测试行可套用为 `nodeFixtures[nodeId]` |
-| resource / http operator | 详情 + 可编辑 Resource ID、Method、URL/route、Timeout、Node Inputs、Input/Output samples、节点级 Operator Test Suite、schema 摘要和高级 config JSON | `config.resourceId/method/url/timeoutMs`、`inputs.*`、`nodeFixtures[nodeId]` |
-| generic / design operator | 详情 + label、Node Inputs、Input/Output samples、节点级 Operator Test Suite、schema 摘要和高级 config JSON | `label`、`inputs.*`、`config`、`nodeFixtures[nodeId]` |
+| `bloge:decisionTable` | 详情 + 规则矩阵 + 节点级 Executable Operator Suite。可编辑 hit policy、output type、条件列、输出列、规则行和 otherwise fallback | `config.hitPolicy`、`config.outputType`、`config.conditionColumns`、`config.outputColumns`、`config.rules[]`、`nodeFixtures[nodeId]` |
+| `bloge:transform` | 详情 + 字段映射表 + 节点级 Executable Operator Suite。可编辑输出字段名和 BLOGE 表达式，可新增/删除 assignment，并在 Expression 下方使用函数 chip、函数名补全和签名提示 | `config.assignments`、`nodeFixtures[nodeId]` |
+| `__foreach__:*` | 详情 + Loop guide + 节点级 Executable Operator Suite。按 `Bind collection -> Run per item -> Collect result list` 展示循环语义，帮助用户理解 array 输入、item context 和 list 输出 | 通常由 operator contract / runtime 定义；测试行可套用为 `nodeFixtures[nodeId]` |
+| resource / http operator | 详情 + 可编辑 Resource ID、Method、URL/route、Timeout、Node Inputs、Input/Output samples、节点级 Executable Operator Suite、schema 摘要和高级 config JSON | `config.resourceId/method/url/timeoutMs`、`inputs.*`、`nodeFixtures[nodeId]` |
+| generic / design operator | 详情 + label、Node Inputs、Input/Output samples、节点级 Executable Operator Suite、schema 摘要和高级 config JSON | `label`、`inputs.*`、`config`、`nodeFixtures[nodeId]` |
 
 Operator Test Suite 和右侧全图 Test Suite 的边界不同：
 
 | 测试入口 | 粒度 | 主要数据 | 用途 |
 | --- | --- | --- | --- |
-| Operator Detail 内的 Operator Test Suite | 单个节点/算子 | Input case、Output sample | 沉淀该算子的局部验证样例，并一键套用为节点 fixture |
+| Operator Detail 内的 Executable Operator Suite | 单个节点/算子 | Input case、Expected output；resource 另有 Transport response | 发现冻结 runtime target，真实执行单节点微图，并可把样例套用为节点 fixture |
 | 右侧 inspector 的 Test Suite | 整张 graph | Runtime context、fixture overrides、Expected graph output | 批量验证端到端编排路径和最终业务结果 |
 
-这里有一个重要边界：当前 Operator Test Suite 的 `Run Table` 验证 input/output sample 与 operator schema、断言是否
-自洽，不会调用真实 runtime binding；右侧全图 Test Suite 则复用 mock simulation，真实执行纯 DSL primitive，其他
-operator 由 fixture 或 schema sample 替换。两者都不能被解释为 production-real execution。真实 operator unit、
-graph contract、fault injection、replay regression 和生产隔离的统一目标方案见
+这里有一个重要边界：`Executable Operator Suite` 不再调用旧的 schema-only table runner。点击 Run Case / Run All 时，
+画布先调用 operator target discovery，冻结 runtime fingerprint 并检查 testability class，再调用公共 micro-graph execution：
+native operator 使用 `SPY` 观察真实主体；resource operator 降级到 `httpResource`，只以表格中的 Transport response 替换
+transport I/O，因此 request mapping、协议解析和 payload extraction 仍会执行。`OPAQUE_RUNTIME`、不支持的 execution model
+或缺失 runtime lowering 会在执行前 fail closed。
+
+表格使用 inline fixture，适合快速试验，因此 passing 行显示真实 run id 和 `EXPLORATORY` evidence，不等于可发布认证。
+若要获得 `CERTIFIABLE`，需要通过 testing control plane 或 Java test-kit 注册不可变 fixture revision 再执行。右侧全图 Test
+Suite 仍复用 mock simulation，真实执行纯 DSL primitive，其他 operator 由 fixture 或 schema sample 替换，也不能被解释为
+production-real execution。完整的 graph contract、fault injection、replay regression 和生产隔离目标见
 [工业级可测试性与执行数据控制反转演进方案](resource-gateway-industrial-testability-evolution-plan.md)。
 
-因此，当你只想确认某个 http resource、transform 或 decision table 节点“收到什么输入、应该吐出什么样例”时，优先在双击浮层里维护 Operator Test Suite；当你要验证整张图的 happy path、fallback path 或分支组合时，再进入右侧全图 Test Suite。
+resource 行的 Expected output 表示算子应交付的逻辑 payload；Transport response 表示外部系统原始协议响应。系统首次生成时会保持二者联动，但一旦用户手工编辑 Transport response，后续修改 Expected output 不会覆盖这份自定义 fixture。
+
+演示服务以 `test` profile 启动时使用专用 demo identity，并发送 `X-Purpose: TEST_EXECUTION`。VSCode/嵌入式宿主必须替换凭证 provider，production profile 不暴露测试 endpoint。因而不能通过复制前端请求把控制字段带入生产运行面。
+
+因此，当你要验证某个 http resource、transform 或 decision table 的真实可组合 runtime 行为时，优先在双击浮层里运行 Executable Operator Suite；当你要验证整张图的 happy path、fallback path 或分支组合时，再进入右侧全图 Test Suite。
 
 Decision table 双击后的页面重点如下：
 

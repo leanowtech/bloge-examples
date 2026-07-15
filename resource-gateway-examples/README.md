@@ -258,9 +258,9 @@ root resource call that escapes its fixture. The generic public
 testing API, persistent test-run store, independent JUnit test kit,
 production-profile endpoint isolation, deterministic `DELAY/TIMEOUT`, and
 synchronous nested invocation control are now available as Stage 2 increments.
-Public operator execution, occurrence-level nested evidence, streaming control,
-and physical test-runtime deployment isolation remain in progress and are not
-advertised as complete.
+Public operator execution, occurrence-level nested evidence, and the Author Canvas executable
+operator-suite adapter are available. REPLAY, streaming/suspendable control, and physical
+test-runtime deployment isolation remain in progress and are not advertised as complete.
 
 Create a provider-specific Java operator only when the provider behavior cannot
 be expressed cleanly as a descriptor-backed resource.
@@ -276,11 +276,15 @@ To add a user-supplied visual operator library:
    rows from each operator's input/config/output schemas, then save or batch-run
    schema-contract checks through `/api/visual/operators/tests/suites`. This
    current mode validates fixture and schema consistency; it does not execute a
-   real operator runtime binding. Results expose `mode=SCHEMA_CONTRACT`, and the
-   canvas labels the editor `Schema Contract Suite` to make that proof strength explicit.
-5. Runtime-backed operators can already be exercised by the internal
-   `OperatorMicroGraphRunner`; the public API and Java test-kit adapter now reuse it, while the
-   canvas `Run Operator` action still uses the schema-contract runner until its UI migration. A
+   real operator runtime binding. Results expose `mode=SCHEMA_CONTRACT`.
+5. Double-click a canvas node and use `Executable Operator Suite` to run one case or the whole
+   table through the isolated testing control plane. The canvas first discovers the frozen runtime
+   target and then invokes the one-node micro graph. Native operators run real code under a `SPY`;
+   resource-backed visual operators lower to `httpResource` and replace only transport I/O, using
+   the editable `Transport response` as the raw protocol fixture. Unsupported and
+   `OPAQUE_RUNTIME` targets fail closed before execution. Inline authoring rows deliberately produce
+   `EXPLORATORY` evidence; register an immutable fixture revision through the testing API or test kit
+   when a release gate requires certifiable provenance. A
    stateless/read-only declaration is not enough for certification: non-resource bindings also need
    a versioned, fingerprinted `OperatorComposabilityManifestProvider` declaration.
    `httpResource` can earn `EXECUTABLE_UNIT` only with a transport-boundary fixture, so

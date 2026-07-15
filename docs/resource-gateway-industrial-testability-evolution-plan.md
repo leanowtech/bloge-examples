@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
-| Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、fixture registry、独立 test-run store、脱敏、10 态、profile/identity/production protocol guard、独立 HTTP/JUnit test-kit、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 nested/foreach/loop/compensation 控制传播与 occurrence/attempt/node/edge evidence 已落地；canvas operator runner 迁移、streaming/suspendable control/evidence 与物理 network isolation 待完成 |
+| Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite、fixture registry、独立 test-run store、脱敏、10 态、profile/identity/production protocol guard、独立 HTTP/JUnit test-kit、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 nested/foreach/loop/compensation 控制传播与 occurrence/attempt/node/edge evidence 已落地；streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3-5 | Not started | signed evidence、semantic coverage、剩余 deterministic random/UUID/function services、replay、独立部署与规模化治理 |
 
 实现细节、行为兼容决策和可复现测试见
@@ -98,6 +98,10 @@ assertion 是否能在 mockedOutputs 上通过
 
 这证明了测试数据自洽，却没有证明 operator 实现正确。严格说，它当前是
 **Operator Schema Fixture Validation**，不是 executable operator unit test。继续沿用“operator test 已跑通”的表述会制造错误安全感。
+
+> 2026-07-15 落地校正：本节描述仍适用于 `/api/visual/operators/tests/*` 的持久化 schema suite；它继续诚实返回
+> `SCHEMA_CONTRACT`。React Author Canvas 的 `Executable Operator Suite` 已改走公共 operator target discovery 与
+> micro-graph execution，不再调用该 schema-only runner。两条入口并存，证据等级不得混用。
 
 正确演进不是删掉它，而是把模式显式拆开：
 
@@ -965,11 +969,11 @@ batch_queue_depth / tenant_throttled_total
 
 ### Stage 1：Executable Operator Test，2-4 周
 
-**实现状态**：内核与 Java micro-graph runner 已完成；37 个聚焦 conformance tests 及 1653 个项目测试全绿。独立 test-kit 的
+**实现状态**：内核与 Java micro-graph runner 已完成；独立 test-kit 的
 JUnit 5 assertions、JUnit XML 与 CI exit code 已在 Stage 2 首个增量落地；公共同步 operator
-target discovery、micro-graph execution、immutable fixture 和 test-kit adapter 已落地。画布
-`Run Operator` 尚未迁移，当前 `/api/visual/operators/tests/run` 继续严格标识为
-`SCHEMA_CONTRACT`，不能借公共 API 的存在自动改名。
+target discovery、micro-graph execution、immutable fixture、test-kit adapter 和 Author Canvas
+`Executable Operator Suite` 已落地。当前 `/api/visual/operators/tests/run` 继续严格标识为
+`SCHEMA_CONTRACT`；画布通过另一组隔离 API 执行真实 binding，不能借 UI 迁移反向改写旧 API 的证明语义。
 
 交付：
 
@@ -987,7 +991,7 @@ target discovery、micro-graph execution、immutable fixture 和 test-kit adapte
 
 **实现状态**：进行中。Stage 1 已完成 selector preflight、不可变 effective plan、主节点 replacement、consumption policy 与既有
 gateway graph suite adapter；Stage 2 已补 graph target discovery、公共执行/批量/查询、immutable fixture registry、独立持久化、证据脱敏、
-profile/identity guard、production run control-field guard、独立 test-kit，并完成七图/14-case built-in dogfooding：28 个 root/nested 资源调用观测使用 F3，retry 以 bounded consumption 计数，Spring wiring 在不可达 endpoint 下证明没有 HTTP 调用逃逸。run-scoped logical clock、DELAY/TIMEOUT、同步 nested/foreach/loop/compensation 的结构寻址、控制传播与 occurrence/attempt/node/edge evidence，以及公共同步 operator adapter 也已落地；REPLAY、streaming/suspendable control/evidence、canvas operator runner 迁移和物理 test-runtime/network isolation 仍是本阶段硬验收，不能因同步控制用例通过就宣称 Stage 2 完成。
+profile/identity guard、production run control-field guard、独立 test-kit，并完成七图/14-case built-in dogfooding：28 个 root/nested 资源调用观测使用 F3，retry 以 bounded consumption 计数，Spring wiring 在不可达 endpoint 下证明没有 HTTP 调用逃逸。run-scoped logical clock、DELAY/TIMEOUT、同步 nested/foreach/loop/compensation 的结构寻址、控制传播与 occurrence/attempt/node/edge evidence、公共同步 operator adapter，以及 canvas operator runner 迁移也已落地；REPLAY、streaming/suspendable control/evidence 和物理 test-runtime/network isolation 仍是本阶段硬验收，不能因同步控制用例通过就宣称 Stage 2 完成。
 
 交付：
 

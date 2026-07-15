@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | Stage 0 | 完成 | operator suite API/UI 显式 `SCHEMA_CONTRACT`；`testing/domain` 五个版本化 record；capability testability 描述；[ADR-001](adr/ADR-001-resource-gateway-test-runtime-isolation.md)、[ADR-002](adr/ADR-002-operator-composability-and-opaque-runtime.md) 与 [BLOGE framework requirement](bloge-framework-execution-control-requirement.md) |
 | Stage 1' | 完成 | `testing/planning/runtime/evidence` 内核；独立 test engine；五行为；F2/F3 resource fixture；micro-graph runner；旧 graph suite adapter；37 个聚焦测试与 1653 个项目测试全绿 |
-| Stage 2' | 进行中 | 已落地 graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、immutable fixture registry、独立 test-run store、10 态 evidence、profile/identity/生产协议隔离、独立 test-kit、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 root/nested/foreach/loop/compensation 的结构寻址、控制传播和 occurrence/attempt/node/edge evidence；canvas operator runner 迁移、streaming/suspendable control/evidence 与物理 network/runtime 隔离仍待完成 |
+| Stage 2' | 进行中 | 已落地 graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite、immutable fixture registry、独立 test-run store、10 态 evidence、profile/identity/生产协议隔离、独立 test-kit、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 root/nested/foreach/loop/compensation 的结构寻址、控制传播和 occurrence/attempt/node/edge evidence；streaming/suspendable control/evidence 与物理 network/runtime 隔离仍待完成 |
 
 Stage 0 验证基线：Resource Gateway `clean verify` 共 1624 tests、0 failures、33 个既有条件跳过；AuthorCanvas 聚焦回归 36 tests、0 failures。后续阶段必须继续维持该基线并增加对应反面用例。
 
@@ -19,7 +19,7 @@ Stage 2 当前严格验收：Resource Gateway `clean verify` 共 1726 tests、0 
 Nested invocation 增量聚焦验收：37 tests、0 failures；非空 foreach 的三个 item 全部消费同一受限 fixture，真实外部算子调用数为 0，compensation 使用独立 site 且真实补偿调用数为 0。项目 `clean verify` 执行 1704 tests 时 1703 通过、1 个既有浏览器 connectability readiness 用例瞬时超时；该失败用例随即独立复跑 1/1 通过。此记录不得改写为一次严格全绿的全量运行。
 独立 test-kit 当前 `clean verify` 共 13 tests、0 failures、0 errors；JAR 与权威 testing-control-plane v1 schema 一同打包成功，并提供 graph/operator target、OPERATOR fixture/execution、payload-free occurrence/attempt/edge 强类型投影及旧 v1 响应兼容。
 这里的“完成”只指内核与已列出的 adapter。Stage 2 已开放首个公共 graph control plane、持久化 store、test-kit，并完成全部内置图的 stored-suite F3 迁移与 dogfooding；但公共
-operator API/test-kit adapter 已开放，但 canvas runner 迁移、streaming/suspendable control/evidence 和物理隔离仍不得提前写入产品可用清单。当前 API 与运行方式见
+operator API/test-kit adapter 和 canvas runner 已开放，但 streaming/suspendable control/evidence 和物理隔离仍不得提前写入产品可用清单。当前 API 与运行方式见
 [Testing Control Plane API](resource-gateway-testing-control-plane-api.md)。
 独立 client adapter 的边界、测试矩阵与非声明见
 [Stage 2 test-kit verification](resource-gateway-execution-data-control-plane-stage2-test-kit-verification.md)。
@@ -270,7 +270,7 @@ flowchart LR
 8. Stage 2 当前 dependency policy 会因任一已注册 descriptor 变化而令所有 graph fixture stale，安全但影响面偏大；只有在 BLOGE 暴露可证明完整的静态/运行期 resource dependency manifest 后才能收窄。
 9. `EVIDENCE_INCOMPLETE` 当前随同步响应返回但不能查询（持久化本身失败）；后续需独立告警/恢复队列，不能把失败记录写回同一个失效 store 来制造假恢复。
 10. **已验证但有限定**：逻辑 sleep 是原子、单调、零墙钟推进；并发分支的读取顺序仍由 BLOGE 调度决定。TIMEOUT 验证业务恢复语义，不验证真实 watchdog 精度、阻塞线程中断或 wall-clock deadline，这些必须由 BLOGE/sandbox conformance 另证。
-11. **公共同步 operator 主路径已闭环但 UI 未迁移**：target discovery、immutable OPERATOR fixture、typed input、micro graph、证据持久化和 test-kit 已落地。现有 canvas `/api/visual/operators/tests/run` 仍是 `SCHEMA_CONTRACT`；迁移前不得在 UI 宣称运行了真实 binding。
+11. **公共同步 operator 主路径与 UI 已闭环**：target discovery、immutable OPERATOR fixture、typed input、micro graph、证据持久化、test-kit 和 Author Canvas `Executable Operator Suite` 已落地。旧 `/api/visual/operators/tests/run` 仍是 `SCHEMA_CONTRACT`；画布使用测试控制面的独立 endpoint，先发现目标、再执行真实 binding。inline 行只签发 `EXPLORATORY`，不得冒充不可变测试资产或发布认证。
 12. **composability 已 fail-closed，但反作弊仍有明确负空间**：无状态检查只解决 instance state；缺 manifest 的无状态 READ_ONLY binding 已降级 OPAQUE，声明 TIME/RANDOM/UUID/IDENTITY/FEATURE_FLAG 或通用 dependency port 也在 v1 降级。manifest、behavior 与 state provider 仍是治理合同而非沙箱证明；Stage 5 仍需 egress policy、sandbox conformance 和声明/观测漂移检测。
 
 ### 十一、明确排除（v1 不做）

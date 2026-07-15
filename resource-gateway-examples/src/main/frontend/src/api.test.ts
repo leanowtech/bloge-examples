@@ -15,6 +15,8 @@ import {
   fetchVisualGraphRun,
   importOperatorLibraryText,
   previewDslImport,
+  resetOperatorTestHeadersProvider,
+  runOperatorTestCase,
   runGatewayScenario,
   resetBlogeApiTransport,
   setBlogeApiTransport,
@@ -25,7 +27,107 @@ import {
 describe('operator library API client', () => {
   afterEach(() => {
     resetBlogeApiTransport();
+    resetOperatorTestHeadersProvider();
     vi.restoreAllMocks();
+  });
+
+  it('runs a native operator through target discovery and a SPY micro-graph fixture', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === '/api/testing/targets/operators/customer.normalize') {
+        expect(init?.headers).toMatchObject({
+          Authorization: 'Bearer bloge-aneke-demo-token',
+          'X-Purpose': 'TEST_EXECUTION',
+        });
+        return new Response(JSON.stringify({
+          schemaVersion: 'bloge.testOperatorTargetDescriptor.v2',
+          target: { kind: 'OPERATOR', id: 'customer.normalize', fingerprint: 'sha256:target' },
+          testabilityClass: 'EXECUTABLE_UNIT',
+          executionSupported: true,
+          certificationEligible: true,
+          certificationRequirements: [],
+          certificationGaps: [],
+        }));
+      }
+      if (url === '/api/testing/targets/operators/customer.normalize/executions') {
+        const body = JSON.parse(String(init?.body));
+        expect(body).toMatchObject({
+          target: { kind: 'OPERATOR', id: 'customer.normalize', fingerprint: 'sha256:target' },
+          input: { name: 'Ada' },
+          fixtureBundle: {
+            fixtureBundleId: 'canvas-customer.normalize-uppercase-case-1',
+            rules: [{
+              selector: { nodeId: 'subject', operatorRef: 'customer.normalize' },
+              behavior: { kind: 'SPY', boundary: 'NODE' },
+            }],
+            assertions: [{ nodeId: 'subject', path: '', expected: { normalized: 'ADA' } }],
+          },
+          metadata: { caseRef: 'uppercase / case #1' },
+        });
+        return new Response(JSON.stringify({
+          schemaVersion: 'bloge.testExecutionResponse.v1',
+          runId: 'run-native-1',
+          target: body.target,
+          evidence: {
+            status: 'PASSED',
+            evidenceClass: 'EXPLORATORY',
+            diagnostics: [],
+            nodeTrace: [{ nodeId: 'subject', status: 'SUCCESS', output: { normalized: 'ADA' } }],
+            assertionResults: [{ scope: 'OUTPUT_PATH', path: '', passed: true }],
+          },
+        }));
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const result = await runOperatorTestCase({
+      operatorRef: 'visual:normalize',
+      lowering: { mode: 'native', operatorRef: 'customer.normalize' },
+      ports: { inputs: [], outputs: [] },
+    }, { name: 'Ada' }, { normalized: 'ADA' }, null, 'uppercase / case #1');
+
+    expect(result.response.runId).toBe('run-native-1');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails closed before execution when target discovery classifies an operator as opaque', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      schemaVersion: 'bloge.testOperatorTargetDescriptor.v2',
+      target: { kind: 'OPERATOR', id: 'legacy.external', fingerprint: 'sha256:opaque' },
+      testabilityClass: 'OPAQUE_RUNTIME',
+      executionSupported: true,
+      certificationEligible: false,
+      certificationRequirements: [],
+      certificationGaps: ['Binding has no formal operator composability manifest.'],
+    })));
+
+    await expect(runOperatorTestCase({
+      operatorRef: 'legacy.external',
+      lowering: { mode: 'native' },
+      ports: { inputs: [], outputs: [] },
+    }, {}, {}, null, 'unsafe')).rejects
+      .toThrow('Binding has no formal operator composability manifest.');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed before execution for an unsupported or future target class', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      schemaVersion: 'bloge.testOperatorTargetDescriptor.v2',
+      target: { kind: 'OPERATOR', id: 'stream.events', fingerprint: 'sha256:stream' },
+      testabilityClass: 'UNSUPPORTED_EXECUTION_MODEL',
+      executionSupported: true,
+      certificationEligible: false,
+      certificationRequirements: [],
+      certificationGaps: ['Streaming execution is not supported by protocol v1.'],
+    })));
+
+    await expect(runOperatorTestCase({
+      operatorRef: 'stream.events',
+      lowering: { mode: 'native' },
+      ports: { inputs: [], outputs: [] },
+    }, {}, {}, null, 'stream')).rejects
+      .toThrow('Streaming execution is not supported by protocol v1.');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('can route visual API calls through a custom transport', async () => {

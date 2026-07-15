@@ -403,6 +403,29 @@ for certification: an opaque binding, unformalized configured state, schema waiv
 resource replacement forces `EXPLORATORY`. `HttpResourceOperator` earns `CERTIFIABLE` only when its
 selected resource interactions use strict `boundary=TRANSPORT` protocol responses.
 
+### 4.3.2 Run from Author Canvas
+
+In `/author/`, double-click a node and open `Executable Operator Suite`. `Run Case` and `Run All`
+perform the same two-step protocol as an API client:
+
+1. Resolve `lowering.operatorRef` (or the visual `operatorRef`) and discover the frozen target.
+2. Reject `OPAQUE_RUNTIME` and unsupported targets before execution.
+3. For a native binding, run real code with a strict node-level `SPY` rule.
+4. For a resource visual operator, lower the visual input to `{resourceId, params}`, run
+   `httpResource`, and inject the editable `Transport response` only at `TRANSPORT` boundary.
+5. Compare native whole output or resource `/payload` against `Expected output`, then show the real
+   run id, evidence class, diagnostics, and actual subject output in the table row.
+
+The canvas sends `X-Purpose: TEST_EXECUTION` and obtains authorization headers from a replaceable
+host provider. The standalone demo provider uses the test-profile demo identity; a VSCode or embedded
+host must inject its own short-lived credential. Testing endpoints exist only in test/staging profiles
+and are absent in production.
+
+Canvas rows use inline fixtures for rapid authoring, so evidence is always `EXPLORATORY`. `Apply
+Fixture` writes the row back to the visual draft's ordinary node fixture; it does not register an
+immutable testing-control-plane fixture. Register and reference a governed fixture revision when a CI
+or publish gate requires `CERTIFIABLE` provenance.
+
 ### 4.4 Query a run or run a batch
 
 ```bash
@@ -551,13 +574,13 @@ Implemented now:
 - operator implementation closure, schema, runtime-state, and resource dependency fingerprints;
   stateless and explicitly snapshot-providing configured bindings can certify, while opaque state
   fails closed.
+- Author Canvas `Executable Operator Suite` target discovery, native `SPY`, resource
+  `TRANSPORT` lowering, real run/evidence display, and opaque-target fail-closed behavior.
 
 Still intentionally outside this increment:
 
 - `REPLAY`, retry-attempt/occurrence selectors, streaming/suspendable controls and evidence, and
   durable-resume plan restoration;
-- canvas `Run Operator` migration from its current `SCHEMA_CONTRACT` table runner to this public
-  executable adapter;
 - signed certification, semantic coverage, ANEKE projection, and mutation testing;
 - deterministic random/UUID/function execution services and deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;

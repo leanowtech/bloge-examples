@@ -671,15 +671,54 @@ describe('AuthorCanvas built-in canvas examples', () => {
           ],
         });
       }
+      if (url === '/api/testing/targets/operators/httpResource') {
+        expect(init?.headers).toMatchObject({
+          Authorization: 'Bearer bloge-aneke-demo-token',
+          'X-Purpose': 'TEST_EXECUTION',
+        });
+        return jsonResponse(operatorTestTarget('httpResource', 'CONDITIONAL_TRANSPORT'));
+      }
+      if (url === '/api/testing/targets/operators/httpResource/executions') {
+        expect(init).toMatchObject({
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer bloge-aneke-demo-token',
+            'X-Purpose': 'TEST_EXECUTION',
+            'Content-Type': 'application/json',
+          },
+        });
+        const body = JSON.parse(String(init?.body));
+        expect(body).toMatchObject({
+          schemaVersion: 'bloge.testOperatorExecutionRequest.v1',
+          target: { kind: 'OPERATOR', id: 'httpResource', fingerprint: 'sha256:operator-target' },
+          executionPurpose: 'OPERATOR_UNIT_TEST',
+          fixtureBundle: {
+            targetFingerprint: 'sha256:operator-target',
+            rules: [{
+              selector: { nodeId: 'subject', resourceRef: 'loan-applicant-service.getProfile' },
+              behavior: { kind: 'RETURN', boundary: 'TRANSPORT', statusCode: 200 },
+            }],
+            assertions: [{ nodeId: 'subject', path: '/payload', operator: 'EQUALS' }],
+          },
+        });
+        expect(body.input).toEqual({
+          resourceId: 'loan-applicant-service.getProfile',
+          params: { applicantId: 'applicant-1001' },
+        });
+        expect(JSON.parse(body.fixtureBundle.rules[0].behavior.rawBody)).toMatchObject({
+          code: 0,
+          success: true,
+          data: { applicantId: 'applicant-1001', score: 715 },
+        });
+        return jsonResponse(operatorTestExecution('operator-run-1', {
+          resourceId: 'loan-applicant-service.getProfile',
+          statusCode: 200,
+          payload: body.fixtureBundle.assertions[0].expected,
+          success: true,
+        }));
+      }
       if (url === '/api/visual/graphs/simulate') {
         const body = JSON.parse(String(init?.body));
-        if (body.outputNode === 'n1') {
-          expect(body.draft.nodes.map((node: { id: string }) => node.id)).toEqual(['n1']);
-          expect(body.draft.edges).toEqual([]);
-          expect(Object.keys(body.fixtures)).toEqual(['n1']);
-          expect(body.fixtures.n1.expectedInput).toEqual({ params: { applicantId: 'applicant-1001' } });
-          return jsonResponse(operatorSimulationResponse('n1', body.fixtures.n1.output));
-        }
         const applicantId = body.context?.applicantId;
         if (applicantId === 'applicant-2002') {
           expect(body.fixtures.n2.output.payload.score).toBe(650);
@@ -900,7 +939,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
       .toContain('"score": 650');
   });
 
-  it('runs a built-in resource operator test case against a scoped graph slice', async () => {
+  it('runs a built-in resource operator test through the controlled runtime micro graph', async () => {
     await act(async () => {
       root = createRoot(host);
       root.render(<AuthorCanvas />);
@@ -912,11 +951,23 @@ describe('AuthorCanvas built-in canvas examples', () => {
     await click(query<HTMLButtonElement>('[data-testid="canvas-example-load:loan-policy-fallback"]'));
     await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
     await waitFor(() =>
-      expect(query('[data-testid="operator-test-suite"]').textContent).toContain('Schema Contract Suite'),
+      expect(query('[data-testid="operator-test-suite"]').textContent).toContain('Executable Operator Suite'),
     );
 
     expect(query<HTMLTextAreaElement>('[data-testid="operator-test-input:0"]').value)
       .toContain('"applicantId": "applicant-1001"');
+    expect(query<HTMLTextAreaElement>('[data-testid="operator-test-transport:0"]').value)
+      .toContain('"code": 0');
+    const transportFixture = query<HTMLTextAreaElement>('[data-testid="operator-test-transport:0"]');
+    const customTransport = transportFixture.value.replace(
+      '"message": "OK"',
+      '"message": "OK",\n  "fixtureSource": "author-supplied"',
+    );
+    await setControlValue(transportFixture, customTransport);
+    const expectedOutput = query<HTMLTextAreaElement>('[data-testid="operator-test-output:0"]');
+    await setControlValue(expectedOutput, `${expectedOutput.value}\n`);
+    expect(query<HTMLTextAreaElement>('[data-testid="operator-test-transport:0"]').value)
+      .toBe(customTransport);
     await click(query<HTMLButtonElement>('[data-testid="operator-test-run:0"]'));
 
     await waitFor(() =>
@@ -924,7 +975,11 @@ describe('AuthorCanvas built-in canvas examples', () => {
     );
     expect(query('[data-testid="operator-test-summary"]').textContent).toContain('1/1 passed');
     expect(query('[data-testid="operator-test-result:0"]').textContent)
-      .toContain('Schema contract accepted');
+      .toContain('Real micro-graph PASSED · EXPLORATORY · run operator-run-1');
+    expect(query('[data-testid="operator-test-actual:0"]').textContent)
+      .toContain('loan-applicant-service.getProfile');
+    expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/api/visual/graphs/simulate'))
+      .toHaveLength(0);
   });
 
   it('runs built-in example test table cases through simulate with row fixture overrides', async () => {
@@ -1435,17 +1490,29 @@ describe('AuthorCanvas connection guide', () => {
       if (url === '/api/visual/operators') {
         return jsonResponse({ operators: [httpResourceOperator(), streamingOperator()] });
       }
-      if (url === '/api/visual/graphs/simulate') {
+      if (url === '/api/testing/targets/operators/httpResource') {
+        return jsonResponse(operatorTestTarget('httpResource', 'CONDITIONAL_TRANSPORT'));
+      }
+      if (url === '/api/testing/targets/operators/httpResource/executions') {
         const body = JSON.parse(String(init?.body));
-        expect(body.outputNode).toBe('n1');
-        expect(body.draft.output.nodeId).toBe('n1');
-        expect(body.draft.nodes.map((node: { id: string }) => node.id)).toEqual(['n1']);
-        expect(body.draft.edges).toEqual([]);
-        expect(body.fixtures.n1).toMatchObject({
-          expectedInput: { customerId: 'c-42' },
-          output: { ok: false, source: 'operator-case' },
+        expect(body).toMatchObject({
+          fixtureBundle: {
+            rules: [{
+              selector: { resourceRef: 'customer-service.get' },
+              behavior: { boundary: 'TRANSPORT' },
+            }],
+            assertions: [{ path: '/payload', expected: { ok: false, source: 'operator-case' } }],
+          },
         });
-        return jsonResponse(operatorSimulationResponse('n1', { ok: false, source: 'operator-case' }));
+        expect(body.input).toEqual({
+          resourceId: 'customer-service.get',
+          params: { customerId: 'c-42' },
+        });
+        return jsonResponse(operatorTestExecution('operator-run-2', {
+          resourceId: 'customer-service.get',
+          payload: { ok: false, source: 'operator-case' },
+          success: true,
+        }));
       }
       throw new Error(`Unexpected fetch: ${url}`);
     });
@@ -1495,7 +1562,7 @@ describe('AuthorCanvas connection guide', () => {
     await click(dialogQuery<HTMLButtonElement>('[data-testid="node-input-add"]'));
     await setControlValue(dialogQuery<HTMLInputElement>('[data-testid="node-input-context-path:0"]'), 'request.customerId');
     await setControlValue(dialogQuery<HTMLTextAreaElement>('[data-testid="operator-detail-output-fixture"]'), '{"ok":true}');
-    expect(dialogQuery('[data-testid="operator-test-suite"]').textContent).toContain('Schema Contract Suite');
+    expect(dialogQuery('[data-testid="operator-test-suite"]').textContent).toContain('Executable Operator Suite');
     expect(dialogQuery('[data-testid="operator-test-status:0"]').textContent).toContain('valid');
     await click(dialogQuery<HTMLButtonElement>('[data-testid="operator-test-add"]'));
     await waitFor(() =>
@@ -1503,7 +1570,7 @@ describe('AuthorCanvas connection guide', () => {
     );
     await setControlValue(
       dialogQuery<HTMLTextAreaElement>('[data-testid="operator-test-input:1"]'),
-      '{"customerId":"c-42"}',
+      '{"resourceId":"customer-service.get","customerId":"c-42"}',
     );
     await setControlValue(
       dialogQuery<HTMLTextAreaElement>('[data-testid="operator-test-output:1"]'),
@@ -1514,7 +1581,7 @@ describe('AuthorCanvas connection guide', () => {
       expect(dialogQuery('[data-testid="operator-test-status:1"]').textContent).toContain('passed'),
     );
     expect(dialogQuery('[data-testid="operator-test-result:1"]').textContent)
-      .toContain('Schema contract accepted');
+      .toContain('Real micro-graph PASSED · EXPLORATORY · run operator-run-2');
     await click(dialogQuery<HTMLButtonElement>('[data-testid="operator-test-apply:1"]'));
 
     const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
@@ -1534,7 +1601,7 @@ describe('AuthorCanvas connection guide', () => {
     });
     expect(exported.nodeFixtures).toMatchObject({
       n1: {
-        expectedInput: { customerId: 'c-42' },
+        expectedInput: { resourceId: 'customer-service.get', customerId: 'c-42' },
         output: { ok: false, source: 'operator-case' },
       },
     });
@@ -2617,25 +2684,6 @@ function loanSimulationResponse(output: Record<string, unknown>): SimulationResp
   };
 }
 
-function operatorSimulationResponse(nodeId: string, output: Record<string, unknown>): SimulationResponse {
-  return {
-    validated: true,
-    compiled: true,
-    success: true,
-    graphName: 'visualGraph',
-    outputNode: nodeId,
-    output,
-    results: { [nodeId]: output },
-    statusMap: { [nodeId]: 'mocked' },
-    mockedNodeIds: [nodeId],
-    realNodeIds: [],
-    terminalOutputConforms: true,
-    diagnostics: [],
-    errors: [],
-    generatedDsl: 'graph visualGraph {}',
-  };
-}
-
 function httpResourceOperator(): OperatorDefinition {
   return {
     operatorRef: 'httpResource',
@@ -2771,14 +2819,19 @@ function resourceOperator(
   requiredParams: string[],
   payloadProperties: Record<string, unknown>,
 ): OperatorDefinition {
+  const resourceId = operatorRef.slice('resource:'.length);
   const requestProperties = Object.fromEntries(
     requiredParams.map((param) => [param, { type: 'string' }]),
   );
   return {
     operatorRef,
     display: { name, description: `${name} resource.`, tags: ['resource'] },
-    source: { kind: 'resource-descriptor', libraryId: operatorRef.slice('resource:'.length) },
-    lowering: { mode: 'resource-descriptor' },
+    source: { kind: 'resource-descriptor', libraryId: resourceId },
+    lowering: {
+      mode: 'resource-descriptor',
+      operatorRef: 'httpResource',
+      parameters: { resourceId, payloadPath: 'data' },
+    },
     ports: {
       inputs: [
         {
@@ -2810,6 +2863,44 @@ function schema(schemaBody: Record<string, unknown>): SchemaEnvelope {
     format: 'json-schema',
     version: '2020-12',
     schema: schemaBody,
+  };
+}
+
+function operatorTestTarget(
+  operatorRef: string,
+  testabilityClass: 'EXECUTABLE_UNIT' | 'CONDITIONAL_TRANSPORT' = 'EXECUTABLE_UNIT',
+) {
+  return {
+    schemaVersion: 'bloge.testOperatorTargetDescriptor.v2',
+    target: { kind: 'OPERATOR', id: operatorRef, fingerprint: 'sha256:operator-target' },
+    testabilityClass,
+    executionSupported: true,
+    certificationEligible: true,
+    certificationRequirements: testabilityClass === 'CONDITIONAL_TRANSPORT'
+      ? ['Every selected resource invocation requires a strict TRANSPORT raw-response fixture.']
+      : [],
+    certificationGaps: [],
+  };
+}
+
+function operatorTestExecution(runId: string, output: unknown) {
+  return {
+    schemaVersion: 'bloge.testExecutionResponse.v1',
+    runId,
+    target: { kind: 'OPERATOR', id: 'httpResource', fingerprint: 'sha256:operator-target' },
+    evidence: {
+      status: 'PASSED',
+      evidenceClass: 'EXPLORATORY',
+      diagnostics: [],
+      nodeTrace: [{
+        nodeId: 'subject',
+        operatorRef: 'httpResource',
+        status: 'SUCCESS',
+        fidelity: 'TRANSPORT_LEVEL',
+        output,
+      }],
+      assertionResults: [{ scope: 'OUTPUT_PATH', path: '/payload', passed: true }],
+    },
   };
 }
 

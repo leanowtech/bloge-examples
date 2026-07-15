@@ -45,7 +45,11 @@ export interface OperatorDefinition {
   source?: { kind?: string; libraryId?: string };
   ports?: { inputs: OperatorPort[]; outputs: OperatorPort[] };
   capabilities?: OperatorCapabilities;
-  lowering?: { mode?: string };
+  lowering?: {
+    mode?: string;
+    operatorRef?: string;
+    parameters?: Record<string, unknown>;
+  };
   runtimeReadiness?: {
     state?: string;
     level?: string;
@@ -53,6 +57,58 @@ export interface OperatorDefinition {
     title?: string;
     summary?: string;
   };
+}
+
+/** Frozen runtime binding returned by the isolated operator testing control plane. */
+export interface OperatorTestTargetDescriptor {
+  schemaVersion: string;
+  target: {
+    kind: 'OPERATOR';
+    id: string;
+    fingerprint: string;
+  };
+  testabilityClass: 'EXECUTABLE_UNIT' | 'CONDITIONAL_TRANSPORT' | 'OPAQUE_RUNTIME' | 'UNSUPPORTED_EXECUTION_MODEL';
+  executionSupported: boolean;
+  certificationEligible: boolean;
+  certificationRequirements: string[];
+  certificationGaps: string[];
+}
+
+/** Sanitized evidence projection returned by one controlled operator micro-graph run. */
+export interface OperatorTestExecutionResponse {
+  schemaVersion: string;
+  runId: string;
+  target: {
+    kind: 'OPERATOR';
+    id: string;
+    fingerprint: string;
+  };
+  evidence: {
+    status: string;
+    evidenceClass: 'EXPLORATORY' | 'CERTIFIABLE';
+    diagnostics?: string[];
+    nodeTrace?: Array<{
+      nodeId: string;
+      operatorRef: string;
+      status: string;
+      fidelity: string;
+      output?: unknown;
+      errorCode?: string;
+      durationMs?: number;
+    }>;
+    assertionResults?: Array<{
+      scope: string;
+      path: string;
+      passed: boolean;
+      diagnostic?: string;
+    }>;
+  };
+}
+
+/** Combined discovery and execution result used by the canvas operator test table. */
+export interface OperatorTestCaseRun {
+  target: OperatorTestTargetDescriptor;
+  response: OperatorTestExecutionResponse;
 }
 
 /** A BLOGE expression function exposed to authoring editors. */
