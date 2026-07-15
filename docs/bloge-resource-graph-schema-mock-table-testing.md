@@ -322,8 +322,10 @@ operator definition
 `Executable Operator Suite` 已迁移到这条公共 adapter：先调用
 `GET /api/testing/targets/operators/{operatorRef}` 冻结并审查目标，再调用
 `POST /api/testing/targets/operators/{operatorRef}/executions` 运行真实微图。native operator 使用 `SPY` 保留真实主体执行，
-resource operator 只在 `TRANSPORT` 边界注入可编辑原始响应。画布临时行使用 inline fixture，因此 passing 结果仍明确为
-`EXPLORATORY`；需要 `CERTIFIABLE` 时必须把 fixture 注册为不可变 revision，并通过测试控制面或 test-kit 执行。
+resource operator 只在 `TRANSPORT` 边界注入可编辑原始响应。画布的 `Run*` 使用 inline fixture，因此 passing 结果仍明确为
+`EXPLORATORY`；`Govern*` 会把单行内容注册为内容寻址的不可变 revision、校验 registry 身份，再按 stored ref 执行。stored
+provenance 只是 `CERTIFIABLE` 的必要条件，最终等级仍取决于 target composability、strict schema 和 fixture fidelity；当前单行
+governed fixture 也还不是一等 immutable `TestSuite` registry。
 
 ### 4.4 Execution Data Control Plane Stage 1
 

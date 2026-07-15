@@ -26,6 +26,7 @@ import type {
   OperatorTestCaseRun,
   OperatorTestExecutionResponse,
   OperatorTestTargetDescriptor,
+  StoredOperatorTestFixture,
   SimulationRequest,
   SimulationResponse,
   VisualValidationResult,
@@ -304,10 +305,10 @@ function recordValue(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function operatorTestingHeaders(json = false): Record<string, string> {
+function operatorTestingHeaders(purpose: 'TEST_EXECUTION' | 'TEST_FIXTURE_WRITE', json = false): Record<string, string> {
   return {
     ...operatorTestHeadersProvider(),
-    'X-Purpose': 'TEST_EXECUTION',
+    'X-Purpose': purpose,
     ...(json ? { 'Content-Type': 'application/json' } : {}),
   };
 }
@@ -375,6 +376,63 @@ function expectedRuntimeOutput(operator: OperatorDefinition, expectedOutput: unk
 function boundedProtocolId(value: string, fallback: string): string {
   const normalized = value.trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
   return (normalized || fallback).slice(0, 80);
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === undefined) {
+    return 'null';
+  }
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value) ?? 'null';
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(',')}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entry]) => entry !== undefined)
+    .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
+  return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`).join(',')}}`;
+}
+
+async function sha256Hex(value: unknown): Promise<string> {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error('Governed fixture registration requires Web Crypto SHA-256 support.');
+  }
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(canonicalJson(value)),
+  );
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function validateExecutableOperatorTarget(target: OperatorTestTargetDescriptor): void {
+  if (!target.executionSupported) {
+    throw new Error(target.certificationGaps[0] || 'The runtime binding cannot execute synchronously.');
+  }
+  if (target.testabilityClass === 'OPAQUE_RUNTIME') {
+    throw new Error(target.certificationGaps[0]
+      || 'The runtime binding has no controllable test boundary and cannot be executed safely.');
+  }
+  if (!['EXECUTABLE_UNIT', 'CONDITIONAL_TRANSPORT'].includes(target.testabilityClass)) {
+    throw new Error(target.certificationGaps[0]
+      || `The runtime binding testability class '${target.testabilityClass}' is not executable by this canvas.`);
+  }
+}
+
+async function discoverOperatorTestTarget(
+  operator: OperatorDefinition,
+  purpose: 'TEST_EXECUTION' | 'TEST_FIXTURE_WRITE',
+): Promise<OperatorTestTargetDescriptor> {
+  const runtimeRef = operatorRuntimeRef(operator);
+  const target = await readTestingJson<OperatorTestTargetDescriptor>(
+    await sendRequest(`/api/testing/targets/operators/${encodeURIComponent(runtimeRef)}`, {
+      headers: operatorTestingHeaders(purpose),
+    }),
+  );
+  validateExecutableOperatorTarget(target);
+  return target;
 }
 
 /**
@@ -501,33 +559,80 @@ export async function runOperatorTestCase(
   caseRef: string,
 ): Promise<OperatorTestCaseRun> {
   const runtimeRef = operatorRuntimeRef(operator);
-  const target = await readTestingJson<OperatorTestTargetDescriptor>(
-    await sendRequest(`/api/testing/targets/operators/${encodeURIComponent(runtimeRef)}`, {
-      headers: operatorTestingHeaders(),
-    }),
-  );
-  if (!target.executionSupported) {
-    throw new Error(target.certificationGaps[0] || 'The runtime binding cannot execute synchronously.');
-  }
-  if (target.testabilityClass === 'OPAQUE_RUNTIME') {
-    throw new Error(target.certificationGaps[0]
-      || 'The runtime binding has no controllable test boundary and cannot be executed safely.');
-  }
-  if (!['EXECUTABLE_UNIT', 'CONDITIONAL_TRANSPORT'].includes(target.testabilityClass)) {
-    throw new Error(target.certificationGaps[0]
-      || `The runtime binding testability class '${target.testabilityClass}' is not executable by this canvas.`);
-  }
+  const target = await discoverOperatorTestTarget(operator, 'TEST_EXECUTION');
   const request = buildOperatorTestExecutionRequest(
     operator, target, input, expectedOutput, transportResponse, caseRef,
   );
   const response = await readTestingJson<OperatorTestExecutionResponse>(
     await sendRequest(`/api/testing/targets/operators/${encodeURIComponent(runtimeRef)}/executions`, {
       method: 'POST',
-      headers: operatorTestingHeaders(true),
+      headers: operatorTestingHeaders('TEST_EXECUTION', true),
       body: JSON.stringify(request),
     }),
   );
   return { target, response };
+}
+
+/** Registers a content-addressed immutable fixture revision, then executes the operator by stored ref. */
+export async function governOperatorTestCase(
+  operator: OperatorDefinition,
+  input: unknown,
+  expectedOutput: unknown,
+  transportResponse: unknown,
+  caseRef: string,
+): Promise<OperatorTestCaseRun> {
+  const runtimeRef = operatorRuntimeRef(operator);
+  const target = await discoverOperatorTestTarget(operator, 'TEST_FIXTURE_WRITE');
+  const inlineRequest = buildOperatorTestExecutionRequest(
+    operator, target, input, expectedOutput, transportResponse, caseRef,
+  );
+  const inlineFixture = inlineRequest.fixtureBundle as Record<string, unknown>;
+  const contentDigest = await sha256Hex({
+    target: target.target,
+    input: inlineRequest.input,
+    fixture: { ...inlineFixture, fixtureBundleId: '' },
+    metadata: inlineRequest.metadata,
+  });
+  const fixtureBundleId = [
+    'canvas',
+    boundedProtocolId(runtimeRef, 'operator').slice(0, 32),
+    boundedProtocolId(caseRef, 'case').slice(0, 32),
+    contentDigest,
+  ].join('-');
+  const fixtureBundle = { ...inlineFixture, fixtureBundleId, revision: 1 };
+  const storedFixture = await readTestingJson<StoredOperatorTestFixture>(
+    await sendRequest(`/api/testing/fixture-bundles/${encodeURIComponent(fixtureBundleId)}`, {
+      method: 'PUT',
+      headers: operatorTestingHeaders('TEST_FIXTURE_WRITE', true),
+      body: JSON.stringify({
+        schemaVersion: 'bloge.fixtureBundleRegistrationRequest.v1',
+        target: target.target,
+        fixtureBundle,
+      }),
+    }),
+  );
+  if (storedFixture.fixtureBundleId !== fixtureBundleId
+      || storedFixture.revision !== 1
+      || !storedFixture.fingerprint?.trim()) {
+    throw new Error('Fixture registry returned an inconsistent stored fixture identity.');
+  }
+  const storedRequest = {
+    ...inlineRequest,
+    fixtureBundle: null,
+    fixtureBundleRef: {
+      fixtureBundleId: storedFixture.fixtureBundleId,
+      revision: storedFixture.revision,
+      fingerprint: storedFixture.fingerprint,
+    },
+  };
+  const response = await readTestingJson<OperatorTestExecutionResponse>(
+    await sendRequest(`/api/testing/targets/operators/${encodeURIComponent(runtimeRef)}/executions`, {
+      method: 'POST',
+      headers: operatorTestingHeaders('TEST_EXECUTION', true),
+      body: JSON.stringify(storedRequest),
+    }),
+  );
+  return { target, response, storedFixture };
 }
 
 /** Validates a transient visual graph draft through the server-authoritative schema/readiness gate. */

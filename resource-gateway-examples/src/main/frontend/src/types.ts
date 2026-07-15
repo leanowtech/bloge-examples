@@ -105,10 +105,23 @@ export interface OperatorTestExecutionResponse {
   };
 }
 
+/** Immutable fixture revision registered in the isolated testing control plane. */
+export interface StoredOperatorTestFixture {
+  schemaVersion: string;
+  tenantId: string;
+  environmentId: string;
+  fixtureBundleId: string;
+  revision: number;
+  fingerprint: string;
+  createdAt: string;
+  createdBy: string;
+}
+
 /** Combined discovery and execution result used by the canvas operator test table. */
 export interface OperatorTestCaseRun {
   target: OperatorTestTargetDescriptor;
   response: OperatorTestExecutionResponse;
+  storedFixture?: StoredOperatorTestFixture;
 }
 
 /** A BLOGE expression function exposed to authoring editors. */

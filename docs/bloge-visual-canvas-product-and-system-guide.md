@@ -1740,7 +1740,7 @@ POST /api/visual/connections/check
 2. **关键属性可编辑**：所有节点都能改显示 label；resource/http 节点还提供 Resource ID、Method、URL/route、Timeout 等常用运行属性输入框，写回节点 `config`。
 3. **图形化输入绑定**：浮层内置 `Node Inputs`，可以 Add Binding、选择 `ctx` 或 `constant`、配置 Target port/path，也能接收 Runtime Context 变量 chip 拖拽。
 4. **Input/Output 样例**：Output sample 和 Expected input 可以在浮层内直接维护，写入 `GraphDraft.nodeFixtures`，用于 mock simulate 和表格测试。
-5. **Executable Operator Suite**：每个节点都有自己的表格测试数据，按行维护 Input case 和 Expected output；resource/http 算子还会显示 Transport response。Run Case / Run All 会真实执行单节点微图，Apply Fixture 则只把该行套用为当前节点的 Expected input / Output sample。
+5. **Executable Operator Suite**：每个节点都有自己的表格测试数据，按行维护 Input case 和 Expected output；resource/http 算子还会显示 Transport response。Run Case / Run All 以 inline fixture 快速执行单节点微图；Govern + Run / Govern All 先注册内容寻址的不可变 fixture revision，再按 stored ref 执行；Apply Fixture 只把该行套用为当前节点的 Expected input / Output sample。
 6. **Schema 摘要优先**：每个端口先显示 schema 类型、字段数和字段表；Raw schema 仍可展开查看，避免用户一上来就读大段 JSON。
 7. **专属交互区**：decision table 和 transform 会在同一浮层内展开可编辑区域；foreach 会展开循环向导；generic/design operator 保留高级 config JSON 入口。
 
@@ -1765,15 +1765,22 @@ native operator 使用 `SPY` 观察真实主体；resource operator 降级到 `h
 transport I/O，因此 request mapping、协议解析和 payload extraction 仍会执行。`OPAQUE_RUNTIME`、不支持的 execution model
 或缺失 runtime lowering 会在执行前 fail closed。
 
-表格使用 inline fixture，适合快速试验，因此 passing 行显示真实 run id 和 `EXPLORATORY` evidence，不等于可发布认证。
-若要获得 `CERTIFIABLE`，需要通过 testing control plane 或 Java test-kit 注册不可变 fixture revision 再执行。右侧全图 Test
-Suite 仍复用 mock simulation，真实执行纯 DSL primitive，其他 operator 由 fixture 或 schema sample 替换，也不能被解释为
-production-real execution。完整的 graph contract、fault injection、replay regression 和生产隔离目标见
+`Run Case / Run All` 使用 inline fixture，适合快速试验，因此 passing 行显示真实 run id 和 `EXPLORATORY` evidence，不等于可发布认证。
+`Govern + Run / Govern All` 会冻结同一 target，把 target、lowered input、fixture 和 row metadata 规范化后生成内容寻址 ID，以
+`TEST_FIXTURE_WRITE` 注册不可变 revision 1，校验 registry 返回的 ID/revision/fingerprint，再切换到 `TEST_EXECUTION` 按 stored ref
+运行。未改动的行可幂等复用同一 revision；关键内容改变会产生新 ID，不会覆盖历史。registry 身份不一致时在执行前失败关闭。
+
+Governed provenance 只是 `CERTIFIABLE` 的必要条件，不是保证：runtime composability、schema strictness、resource fixture fidelity
+仍由服务端最终裁决。当前 `Govern All` 是逐行注册和运行，还不是一个可独立版本化、绑定 coverage/promotion policy 的一等
+`TestSuite` 资产。右侧全图 Test Suite 仍复用 mock simulation，真实执行纯 DSL primitive，其他 operator 由 fixture 或 schema
+sample 替换，也不能被解释为 production-real execution。完整的 graph contract、fault injection、replay regression 和生产隔离目标见
 [工业级可测试性与执行数据控制反转演进方案](resource-gateway-industrial-testability-evolution-plan.md)。
 
 resource 行的 Expected output 表示算子应交付的逻辑 payload；Transport response 表示外部系统原始协议响应。系统首次生成时会保持二者联动，但一旦用户手工编辑 Transport response，后续修改 Expected output 不会覆盖这份自定义 fixture。
 
-演示服务以 `test` profile 启动时使用专用 demo identity，并发送 `X-Purpose: TEST_EXECUTION`。VSCode/嵌入式宿主必须替换凭证 provider，production profile 不暴露测试 endpoint。因而不能通过复制前端请求把控制字段带入生产运行面。
+演示服务以 `test` profile 启动时使用专用 demo identity；运行使用 `X-Purpose: TEST_EXECUTION`，治理写入使用
+`X-Purpose: TEST_FIXTURE_WRITE`。VSCode/嵌入式宿主必须替换凭证 provider，并应把 author 与 runner 权限拆分；production profile
+不暴露测试 endpoint。因而不能通过复制前端请求把控制字段带入生产运行面。
 
 因此，当你要验证某个 http resource、transform 或 decision table 的真实可组合 runtime 行为时，优先在双击浮层里运行 Executable Operator Suite；当你要验证整张图的 happy path、fallback path 或分支组合时，再进入右侧全图 Test Suite。
 

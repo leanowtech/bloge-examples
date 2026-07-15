@@ -278,13 +278,15 @@ To add a user-supplied visual operator library:
    current mode validates fixture and schema consistency; it does not execute a
    real operator runtime binding. Results expose `mode=SCHEMA_CONTRACT`.
 5. Double-click a canvas node and use `Executable Operator Suite` to run one case or the whole
-   table through the isolated testing control plane. The canvas first discovers the frozen runtime
-   target and then invokes the one-node micro graph. Native operators run real code under a `SPY`;
-   resource-backed visual operators lower to `httpResource` and replace only transport I/O, using
-   the editable `Transport response` as the raw protocol fixture. Unsupported and
-   `OPAQUE_RUNTIME` targets fail closed before execution. Inline authoring rows deliberately produce
-   `EXPLORATORY` evidence; register an immutable fixture revision through the testing API or test kit
-   when a release gate requires certifiable provenance. A
+   table through the isolated testing control plane. `Run Case` / `Run All` use inline fixtures for
+   fast `EXPLORATORY` feedback. `Govern + Run` / `Govern All` derive a content-addressed fixture id
+   from the frozen target, lowered input, fixture and row metadata, register immutable revision 1
+   with `TEST_FIXTURE_WRITE`, verify the returned identity, and execute by stored ref with
+   `TEST_EXECUTION`. Native operators run real code under a `SPY`; resource-backed visual operators
+   lower to `httpResource` and replace only transport I/O, using the editable `Transport response`
+   as the raw protocol fixture. Unsupported and `OPAQUE_RUNTIME` targets fail closed before
+   execution. Stored provenance is necessary but not sufficient for `CERTIFIABLE` evidence: target
+   composability, strict schema checks and fixture fidelity must also qualify. A
    stateless/read-only declaration is not enough for certification: non-resource bindings also need
    a versioned, fingerprinted `OperatorComposabilityManifestProvider` declaration.
    `httpResource` can earn `EXECUTABLE_UNIT` only with a transport-boundary fixture, so

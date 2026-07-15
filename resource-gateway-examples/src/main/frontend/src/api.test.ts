@@ -13,6 +13,7 @@ import {
   fetchGraphDraft,
   fetchOperatorCatalog,
   fetchVisualGraphRun,
+  governOperatorTestCase,
   importOperatorLibraryText,
   previewDslImport,
   resetOperatorTestHeadersProvider,
@@ -128,6 +129,151 @@ describe('operator library API client', () => {
     }, {}, {}, null, 'stream')).rejects
       .toThrow('Streaming execution is not supported by protocol v1.');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('registers a content-addressed immutable fixture and executes the operator by stored ref', async () => {
+    let storedFixtureId = '';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === '/api/testing/targets/operators/customer.normalize') {
+        expect(init?.headers).toMatchObject({
+          Authorization: 'Bearer bloge-aneke-demo-token',
+          'X-Purpose': 'TEST_FIXTURE_WRITE',
+        });
+        return new Response(JSON.stringify({
+          schemaVersion: 'bloge.testOperatorTargetDescriptor.v2',
+          target: { kind: 'OPERATOR', id: 'customer.normalize', fingerprint: 'sha256:target' },
+          testabilityClass: 'EXECUTABLE_UNIT',
+          executionSupported: true,
+          certificationEligible: true,
+          certificationRequirements: [],
+          certificationGaps: [],
+        }));
+      }
+      if (url.startsWith('/api/testing/fixture-bundles/')) {
+        expect(init).toMatchObject({
+          method: 'PUT',
+          headers: {
+            Authorization: 'Bearer bloge-aneke-demo-token',
+            'X-Purpose': 'TEST_FIXTURE_WRITE',
+            'Content-Type': 'application/json',
+          },
+        });
+        const requestedFixtureId = decodeURIComponent(url.slice('/api/testing/fixture-bundles/'.length));
+        expect(requestedFixtureId).toMatch(/^canvas-customer\.normalize-uppercase-case-[0-9a-f]{64}$/);
+        if (storedFixtureId) {
+          expect(requestedFixtureId).toBe(storedFixtureId);
+        } else {
+          storedFixtureId = requestedFixtureId;
+        }
+        const body = JSON.parse(String(init?.body));
+        expect(body).toMatchObject({
+          schemaVersion: 'bloge.fixtureBundleRegistrationRequest.v1',
+          target: { kind: 'OPERATOR', id: 'customer.normalize', fingerprint: 'sha256:target' },
+          fixtureBundle: {
+            fixtureBundleId: storedFixtureId,
+            revision: 1,
+            rules: [{ behavior: { kind: 'SPY', boundary: 'NODE' } }],
+          },
+        });
+        return new Response(JSON.stringify({
+          schemaVersion: 'bloge.storedFixtureBundle.v1',
+          tenantId: 'tenant-a',
+          environmentId: 'test',
+          fixtureBundleId: storedFixtureId,
+          revision: 1,
+          fingerprint: 'sha256:stored-fixture',
+          createdAt: '2026-07-15T12:00:00Z',
+          createdBy: 'author-canvas',
+        }));
+      }
+      if (url === '/api/testing/targets/operators/customer.normalize/executions') {
+        expect(init?.headers).toMatchObject({
+          Authorization: 'Bearer bloge-aneke-demo-token',
+          'X-Purpose': 'TEST_EXECUTION',
+        });
+        const body = JSON.parse(String(init?.body));
+        expect(body.fixtureBundle).toBeNull();
+        expect(body.fixtureBundleRef).toEqual({
+          fixtureBundleId: storedFixtureId,
+          revision: 1,
+          fingerprint: 'sha256:stored-fixture',
+        });
+        return new Response(JSON.stringify({
+          schemaVersion: 'bloge.testExecutionResponse.v1',
+          runId: 'run-governed-1',
+          target: body.target,
+          evidence: {
+            status: 'PASSED',
+            evidenceClass: 'CERTIFIABLE',
+            diagnostics: [],
+            nodeTrace: [{ nodeId: 'subject', status: 'SUCCESS', output: { normalized: 'ADA' } }],
+            assertionResults: [{ scope: 'OUTPUT_PATH', path: '', passed: true }],
+          },
+        }));
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const result = await governOperatorTestCase({
+      operatorRef: 'visual:normalize',
+      lowering: { mode: 'native', operatorRef: 'customer.normalize' },
+      ports: { inputs: [], outputs: [] },
+    }, { name: 'Ada', locale: 'en' }, { normalized: 'ADA', locale: 'en' }, null, 'uppercase case');
+
+    const repeated = await governOperatorTestCase({
+      operatorRef: 'visual:normalize',
+      lowering: { mode: 'native', operatorRef: 'customer.normalize' },
+      ports: { inputs: [], outputs: [] },
+    }, { locale: 'en', name: 'Ada' }, { locale: 'en', normalized: 'ADA' }, null, 'uppercase case');
+
+    expect(result.response.runId).toBe('run-governed-1');
+    expect(repeated.storedFixture?.fixtureBundleId).toBe(storedFixtureId);
+    expect(result.storedFixture).toMatchObject({
+      fixtureBundleId: storedFixtureId,
+      revision: 1,
+      fingerprint: 'sha256:stored-fixture',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+  });
+
+  it('fails closed before execution when the fixture registry returns a different identity', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/testing/targets/operators/customer.normalize') {
+        return new Response(JSON.stringify({
+          schemaVersion: 'bloge.testOperatorTargetDescriptor.v2',
+          target: { kind: 'OPERATOR', id: 'customer.normalize', fingerprint: 'sha256:target' },
+          testabilityClass: 'EXECUTABLE_UNIT',
+          executionSupported: true,
+          certificationEligible: true,
+          certificationRequirements: [],
+          certificationGaps: [],
+        }));
+      }
+      if (url.startsWith('/api/testing/fixture-bundles/')) {
+        return new Response(JSON.stringify({
+          schemaVersion: 'bloge.storedFixtureBundle.v1',
+          tenantId: 'tenant-a',
+          environmentId: 'test',
+          fixtureBundleId: 'different-fixture',
+          revision: 1,
+          fingerprint: '',
+          createdAt: '2026-07-15T12:00:00Z',
+          createdBy: 'author-canvas',
+        }));
+      }
+      throw new Error(`Execution must not start after inconsistent fixture registration: ${url}`);
+    });
+
+    await expect(governOperatorTestCase({
+      operatorRef: 'visual:normalize',
+      lowering: { mode: 'native', operatorRef: 'customer.normalize' },
+      ports: { inputs: [], outputs: [] },
+    }, { name: 'Ada' }, { normalized: 'ADA' }, null, 'uppercase case')).rejects
+      .toThrow('Fixture registry returned an inconsistent stored fixture identity.');
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('can route visual API calls through a custom transport', async () => {

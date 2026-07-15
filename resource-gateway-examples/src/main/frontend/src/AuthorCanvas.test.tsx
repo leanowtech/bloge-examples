@@ -658,6 +658,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     host = document.createElement('div');
     document.body.appendChild(host);
+    let governedFixtureId = '';
     fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === '/api/visual/operators') {
@@ -674,9 +675,52 @@ describe('AuthorCanvas built-in canvas examples', () => {
       if (url === '/api/testing/targets/operators/httpResource') {
         expect(init?.headers).toMatchObject({
           Authorization: 'Bearer bloge-aneke-demo-token',
-          'X-Purpose': 'TEST_EXECUTION',
+          'X-Purpose': 'TEST_FIXTURE_WRITE',
         });
         return jsonResponse(operatorTestTarget('httpResource', 'CONDITIONAL_TRANSPORT'));
+      }
+      if (url.startsWith('/api/testing/fixture-bundles/')) {
+        expect(init).toMatchObject({
+          method: 'PUT',
+          headers: {
+            Authorization: 'Bearer bloge-aneke-demo-token',
+            'X-Purpose': 'TEST_FIXTURE_WRITE',
+            'Content-Type': 'application/json',
+          },
+        });
+        governedFixtureId = decodeURIComponent(url.slice('/api/testing/fixture-bundles/'.length));
+        expect(governedFixtureId).toMatch(/^canvas-httpResource-case-1-[0-9a-f]{64}$/);
+        const body = JSON.parse(String(init?.body));
+        expect(body).toMatchObject({
+          schemaVersion: 'bloge.fixtureBundleRegistrationRequest.v1',
+          target: { kind: 'OPERATOR', id: 'httpResource', fingerprint: 'sha256:operator-target' },
+          fixtureBundle: {
+            fixtureBundleId: governedFixtureId,
+            revision: 1,
+            targetFingerprint: 'sha256:operator-target',
+            rules: [{
+              selector: { nodeId: 'subject', resourceRef: 'loan-applicant-service.getProfile' },
+              behavior: { kind: 'RETURN', boundary: 'TRANSPORT', statusCode: 200 },
+            }],
+            assertions: [{ nodeId: 'subject', path: '/payload', operator: 'EQUALS' }],
+          },
+        });
+        expect(JSON.parse(body.fixtureBundle.rules[0].behavior.rawBody)).toMatchObject({
+          code: 0,
+          success: true,
+          fixtureSource: 'author-supplied',
+          data: { applicantId: 'applicant-1001', score: 715 },
+        });
+        return jsonResponse({
+          schemaVersion: 'bloge.storedFixtureBundle.v1',
+          tenantId: 'tenant-a',
+          environmentId: 'test',
+          fixtureBundleId: governedFixtureId,
+          revision: 1,
+          fingerprint: 'sha256:governed-fixture',
+          createdAt: '2026-07-15T12:00:00Z',
+          createdBy: 'author-canvas',
+        });
       }
       if (url === '/api/testing/targets/operators/httpResource/executions') {
         expect(init).toMatchObject({
@@ -692,30 +736,23 @@ describe('AuthorCanvas built-in canvas examples', () => {
           schemaVersion: 'bloge.testOperatorExecutionRequest.v1',
           target: { kind: 'OPERATOR', id: 'httpResource', fingerprint: 'sha256:operator-target' },
           executionPurpose: 'OPERATOR_UNIT_TEST',
-          fixtureBundle: {
-            targetFingerprint: 'sha256:operator-target',
-            rules: [{
-              selector: { nodeId: 'subject', resourceRef: 'loan-applicant-service.getProfile' },
-              behavior: { kind: 'RETURN', boundary: 'TRANSPORT', statusCode: 200 },
-            }],
-            assertions: [{ nodeId: 'subject', path: '/payload', operator: 'EQUALS' }],
+          fixtureBundle: null,
+          fixtureBundleRef: {
+            fixtureBundleId: governedFixtureId,
+            revision: 1,
+            fingerprint: 'sha256:governed-fixture',
           },
         });
         expect(body.input).toEqual({
           resourceId: 'loan-applicant-service.getProfile',
           params: { applicantId: 'applicant-1001' },
         });
-        expect(JSON.parse(body.fixtureBundle.rules[0].behavior.rawBody)).toMatchObject({
-          code: 0,
-          success: true,
-          data: { applicantId: 'applicant-1001', score: 715 },
-        });
         return jsonResponse(operatorTestExecution('operator-run-1', {
           resourceId: 'loan-applicant-service.getProfile',
           statusCode: 200,
-          payload: body.fixtureBundle.assertions[0].expected,
+          payload: { applicantId: 'applicant-1001', score: 715 },
           success: true,
-        }));
+        }, 'CERTIFIABLE'));
       }
       if (url === '/api/visual/graphs/simulate') {
         const body = JSON.parse(String(init?.body));
@@ -968,14 +1005,16 @@ describe('AuthorCanvas built-in canvas examples', () => {
     await setControlValue(expectedOutput, `${expectedOutput.value}\n`);
     expect(query<HTMLTextAreaElement>('[data-testid="operator-test-transport:0"]').value)
       .toBe(customTransport);
-    await click(query<HTMLButtonElement>('[data-testid="operator-test-run:0"]'));
+    await click(query<HTMLButtonElement>('[data-testid="operator-test-govern:0"]'));
 
     await waitFor(() =>
       expect(query('[data-testid="operator-test-status:0"]').textContent).toContain('passed'),
     );
     expect(query('[data-testid="operator-test-summary"]').textContent).toContain('1/1 passed');
     expect(query('[data-testid="operator-test-result:0"]').textContent)
-      .toContain('Real micro-graph PASSED · EXPLORATORY · run operator-run-1');
+      .toContain('Governed micro-graph PASSED · CERTIFIABLE · fixture canvas-httpResource-case-1-');
+    expect(query('[data-testid="operator-test-result:0"]').textContent)
+      .toContain('@1 · run operator-run-1');
     expect(query('[data-testid="operator-test-actual:0"]').textContent)
       .toContain('loan-applicant-service.getProfile');
     expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/api/visual/graphs/simulate'))
@@ -2883,14 +2922,18 @@ function operatorTestTarget(
   };
 }
 
-function operatorTestExecution(runId: string, output: unknown) {
+function operatorTestExecution(
+  runId: string,
+  output: unknown,
+  evidenceClass: 'EXPLORATORY' | 'CERTIFIABLE' = 'EXPLORATORY',
+) {
   return {
     schemaVersion: 'bloge.testExecutionResponse.v1',
     runId,
     target: { kind: 'OPERATOR', id: 'httpResource', fingerprint: 'sha256:operator-target' },
     evidence: {
       status: 'PASSED',
-      evidenceClass: 'EXPLORATORY',
+      evidenceClass,
       diagnostics: [],
       nodeTrace: [{
         nodeId: 'subject',

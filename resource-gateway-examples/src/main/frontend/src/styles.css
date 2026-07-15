@@ -2652,6 +2652,10 @@ button.secondary:disabled {
   grid-column: 1 / -1;
 }
 
+.operator-test-table .test-table-row-heading {
+  flex-wrap: wrap;
+}
+
 .operator-test-table .fixture-field {
   min-width: 0;
 }

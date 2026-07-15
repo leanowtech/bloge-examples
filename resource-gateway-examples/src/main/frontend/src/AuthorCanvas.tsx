@@ -33,6 +33,7 @@ import {
   fetchGraphDraft,
   fetchOperatorCatalog,
   fetchVisualGraphRun,
+  governOperatorTestCase,
   importOperatorLibraryText,
   previewDslImport,
   runOperatorTestCase,
@@ -842,6 +843,9 @@ function evaluateOperatorTestResult(
   const subject = evidence.nodeTrace?.find((trace) => trace.nodeId === 'subject')
     ?? evidence.nodeTrace?.[0];
   const actualOutput = subject?.output;
+  const storedFixtureRef = run.storedFixture
+    ? `${run.storedFixture.fixtureBundleId}@${run.storedFixture.revision}`
+    : '';
   if (evidence.status !== 'PASSED') {
     const failedAssertion = evidence.assertionResults?.find((assertion) => !assertion.passed);
     return {
@@ -850,7 +854,7 @@ function evaluateOperatorTestResult(
       status: 'failed',
       detail: failedAssertion?.diagnostic
         || evidence.diagnostics?.[0]
-        || `${evidence.status} · run ${run.response.runId}`,
+        || `${evidence.status}${storedFixtureRef ? ` · fixture ${storedFixtureRef}` : ''} · run ${run.response.runId}`,
       actualOutput,
       expectedInput: compilation.input,
       fixtureOutput: compilation.output,
@@ -863,7 +867,9 @@ function evaluateOperatorTestResult(
     id: row.id,
     name: row.name.trim() || row.id,
     status: 'passed',
-    detail: `Real micro-graph PASSED · ${evidence.evidenceClass} · run ${run.response.runId}`,
+    detail: run.storedFixture
+      ? `Governed micro-graph PASSED · ${evidence.evidenceClass} · fixture ${storedFixtureRef} · run ${run.response.runId}`
+      : `Real micro-graph PASSED · ${evidence.evidenceClass} · run ${run.response.runId}`,
     actualOutput,
     expectedInput: compilation.input,
     fixtureOutput: compilation.output,
@@ -2763,6 +2769,8 @@ function OperatorTestSuiteEditor({
   onApplyFixture,
   onRun,
   onRunAll,
+  onGovern,
+  onGovernAll,
 }: {
   operator?: OperatorDefinition;
   rows: OperatorTestSuiteDraftRow[];
@@ -2775,6 +2783,8 @@ function OperatorTestSuiteEditor({
   onApplyFixture: (row: OperatorTestSuiteDraftRow) => void;
   onRun: (row: OperatorTestSuiteDraftRow) => void;
   onRunAll: () => void;
+  onGovern: (row: OperatorTestSuiteDraftRow) => void;
+  onGovernAll: () => void;
 }) {
   const transportControlled = operatorUsesTransportFixture(operator);
   const invalidCount = rows
@@ -2809,6 +2819,16 @@ function OperatorTestSuiteEditor({
             title={runDisabledReason}
           >
             {running ? 'Running' : 'Run All'}
+          </button>
+          <button
+            type="button"
+            className="secondary compact"
+            data-testid="operator-test-govern-all"
+            onClick={onGovernAll}
+            disabled={running || rows.length === 0 || invalidCount > 0 || Boolean(runDisabledReason)}
+            title={runDisabledReason}
+          >
+            Govern All
           </button>
           <button
             type="button"
@@ -2854,6 +2874,16 @@ function OperatorTestSuiteEditor({
                     title={runDisabledReason}
                   >
                     Run Case
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary compact"
+                    data-testid={`operator-test-govern:${index}`}
+                    onClick={() => onGovern(row)}
+                    disabled={running || Boolean(compilation.error) || Boolean(runDisabledReason)}
+                    title={runDisabledReason}
+                  >
+                    Govern + Run
                   </button>
                   <button
                     type="button"
@@ -3073,6 +3103,8 @@ function OperatorDetailDialog({
   onOperatorTestApplyFixture,
   onOperatorTestRun,
   onOperatorTestRunAll,
+  onOperatorTestGovern,
+  onOperatorTestGovernAll,
   onDecisionChange,
   onTransformChange,
 }: {
@@ -3108,6 +3140,8 @@ function OperatorDetailDialog({
   onOperatorTestApplyFixture: (row: OperatorTestSuiteDraftRow) => void;
   onOperatorTestRun: (row: OperatorTestSuiteDraftRow) => void;
   onOperatorTestRunAll: () => void;
+  onOperatorTestGovern: (row: OperatorTestSuiteDraftRow) => void;
+  onOperatorTestGovernAll: () => void;
   onDecisionChange: (editor: DecisionTableEditorModel) => void;
   onTransformChange: (editor: TransformEditorModel) => void;
 }) {
@@ -3192,6 +3226,8 @@ function OperatorDetailDialog({
             onApplyFixture={onOperatorTestApplyFixture}
             onRun={onOperatorTestRun}
             onRunAll={onOperatorTestRunAll}
+            onGovern={onOperatorTestGovern}
+            onGovernAll={onOperatorTestGovernAll}
           />
 
           <SchemaPortCards title="Input schema" direction="input" ports={inputs} />
@@ -5971,7 +6007,11 @@ export default function AuthorCanvas() {
     );
   }, []);
 
-  const runOperatorTestRows = useCallback(async (nodeId: string, rowsToRun: OperatorTestSuiteDraftRow[]) => {
+  const runOperatorTestRows = useCallback(async (
+    nodeId: string,
+    rowsToRun: OperatorTestSuiteDraftRow[],
+    governed = false,
+  ) => {
     if (rowsToRun.length === 0) {
       return;
     }
@@ -6027,7 +6067,9 @@ export default function AuthorCanvas() {
             id: row.id,
             name: row.name.trim() || row.id,
             status: 'running',
-            detail: 'Freezing the runtime binding and running its real one-node micro graph.',
+            detail: governed
+              ? 'Registering an immutable fixture revision, then running the frozen one-node micro graph.'
+              : 'Freezing the runtime binding and running its real one-node micro graph.',
             expectedInput: compilation.input,
             fixtureOutput: compilation.output,
           },
@@ -6035,7 +6077,7 @@ export default function AuthorCanvas() {
       }));
 
       try {
-        const run = await runOperatorTestCase(
+        const run = await (governed ? governOperatorTestCase : runOperatorTestCase)(
           operator,
           compilation.input,
           compilation.output,
@@ -7654,6 +7696,12 @@ export default function AuthorCanvas() {
           }}
           onOperatorTestRunAll={() => {
             void runOperatorTestRows(operatorDetailNode.id, operatorDetailTestRows);
+          }}
+          onOperatorTestGovern={(row) => {
+            void runOperatorTestRows(operatorDetailNode.id, [row], true);
+          }}
+          onOperatorTestGovernAll={() => {
+            void runOperatorTestRows(operatorDetailNode.id, operatorDetailTestRows, true);
           }}
           onDecisionChange={(editor) => updateDecisionTableRules(operatorDetailNode.id, editor)}
           onTransformChange={(editor) => updateTransformAssignments(operatorDetailNode.id, editor)}

@@ -406,7 +406,7 @@ selected resource interactions use strict `boundary=TRANSPORT` protocol response
 ### 4.3.2 Run from Author Canvas
 
 In `/author/`, double-click a node and open `Executable Operator Suite`. `Run Case` and `Run All`
-perform the same two-step protocol as an API client:
+perform the rapid inline path:
 
 1. Resolve `lowering.operatorRef` (or the visual `operatorRef`) and discover the frozen target.
 2. Reject `OPAQUE_RUNTIME` and unsupported targets before execution.
@@ -421,10 +421,21 @@ host provider. The standalone demo provider uses the test-profile demo identity;
 host must inject its own short-lived credential. Testing endpoints exist only in test/staging profiles
 and are absent in production.
 
-Canvas rows use inline fixtures for rapid authoring, so evidence is always `EXPLORATORY`. `Apply
-Fixture` writes the row back to the visual draft's ordinary node fixture; it does not register an
-immutable testing-control-plane fixture. Register and reference a governed fixture revision when a CI
-or publish gate requires `CERTIFIABLE` provenance.
+`Govern + Run` and `Govern All` perform a second, provenance-bearing path. The client canonicalizes
+the frozen target, lowered input, fixture and row metadata, derives a bounded content-addressed id,
+registers immutable revision 1 through `PUT /api/testing/fixture-bundles/{id}` with
+`X-Purpose: TEST_FIXTURE_WRITE`, verifies that the registry returned the same id/revision and a
+non-empty authoritative fingerprint, and only then executes with `fixtureBundleRef` under
+`X-Purpose: TEST_EXECUTION`. Repeating unchanged row content is idempotent; changing relevant content
+produces a different id instead of mutating history. A registry identity mismatch fails before the
+execution POST.
+
+`Run*` remains the fast inline `EXPLORATORY` loop. `Govern*` supplies stored provenance, but it does
+not promise `CERTIFIABLE`: target composability, strict schema checks and fixture fidelity still
+govern the server-authoritative evidence class. `Govern All` currently governs and executes each row
+independently; it is not yet an immutable first-class `TestSuite` revision. `Apply Fixture` only
+writes the row back to the visual draft's ordinary node fixture and never registers a control-plane
+fixture.
 
 ### 4.4 Query a run or run a batch
 
@@ -575,13 +586,16 @@ Implemented now:
   stateless and explicitly snapshot-providing configured bindings can certify, while opaque state
   fails closed.
 - Author Canvas `Executable Operator Suite` target discovery, native `SPY`, resource
-  `TRANSPORT` lowering, real run/evidence display, and opaque-target fail-closed behavior.
+  `TRANSPORT` lowering, real run/evidence display, content-addressed governed row registration,
+  stored-ref execution, registry-identity validation, and opaque-target fail-closed behavior.
 
 Still intentionally outside this increment:
 
 - `REPLAY`, retry-attempt/occurrence selectors, streaming/suspendable controls and evidence, and
   durable-resume plan restoration;
 - signed certification, semantic coverage, ANEKE projection, and mutation testing;
+- a first-class immutable `TestSuite` registry that groups cases, coverage policy, promotion policy,
+  fixture refs and run history as one revisioned asset;
 - deterministic random/UUID/function execution services and deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;
 - certification of streaming foreach/loop graphs until their invocation and edge evidence is
