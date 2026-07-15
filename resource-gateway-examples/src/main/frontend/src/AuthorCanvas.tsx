@@ -762,7 +762,7 @@ function evaluateOperatorTestResult(
     name: row.name.trim() || row.id,
     status: 'passed',
     detail: response.mockedNodeIds?.includes(nodeId)
-      ? 'Input assertion matched; fixture output accepted.'
+      ? 'Schema contract accepted the input and fixture output.'
       : 'Simulation succeeded.',
     actualOutput,
     expectedInput: compilation.input,
@@ -2724,7 +2724,7 @@ function OperatorTestSuiteEditor({
   return (
     <section className="operator-detail-section operator-test-suite" data-testid="operator-test-suite">
       <div className="operator-detail-section-heading">
-        <h3>Operator Test Suite</h3>
+        <h3>Schema Contract Suite</h3>
         <div className="test-table-actions">
           <span className={`table-status ${summaryStatus}`} data-testid="operator-test-summary">
             {resultLabel}
@@ -2737,7 +2737,7 @@ function OperatorTestSuiteEditor({
             disabled={running || rows.length === 0 || invalidCount > 0 || Boolean(runDisabledReason)}
             title={runDisabledReason}
           >
-            {running ? 'Running' : 'Run All'}
+            {running ? 'Validating' : 'Validate All'}
           </button>
           <button
             type="button"
@@ -2782,7 +2782,7 @@ function OperatorTestSuiteEditor({
                     disabled={running || Boolean(compilation.error) || Boolean(runDisabledReason)}
                     title={runDisabledReason}
                   >
-                    Run Case
+                    Validate Case
                   </button>
                   <button
                     type="button"
@@ -2842,7 +2842,7 @@ function OperatorTestSuiteEditor({
           })}
         </ol>
       ) : (
-        <p className="muted">No operator test cases.</p>
+        <p className="muted">No schema contract cases.</p>
       )}
     </section>
   );
@@ -5924,7 +5924,7 @@ export default function AuthorCanvas() {
             id: row.id,
             name: row.name.trim() || row.id,
             status: 'running',
-            detail: 'Running scoped simulate with this operator fixture.',
+            detail: 'Validating this input and fixture against the scoped graph contract.',
             expectedInput: compilation.input,
             fixtureOutput: compilation.output,
           },

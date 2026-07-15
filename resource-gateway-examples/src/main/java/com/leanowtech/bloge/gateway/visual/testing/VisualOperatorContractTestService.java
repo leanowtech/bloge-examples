@@ -20,7 +20,8 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Runs schema-gated, table-driven operator contract tests without invoking real downstream APIs.
+ * Validates table-driven operator fixtures against catalog schemas without invoking an operator
+ * runtime binding. Results are explicitly classified as {@code SCHEMA_CONTRACT} evidence.
  */
 @Service
 public class VisualOperatorContractTestService {
@@ -529,6 +530,7 @@ public class VisualOperatorContractTestService {
                 VisualOperatorContractTestSuiteResult.SCHEMA_VERSION,
                 operatorRef,
                 operatorVersion,
+                VisualOperatorContractTestSuiteResult.Mode.SCHEMA_CONTRACT,
                 passed,
                 totalCases,
                 passedCases,

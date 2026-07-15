@@ -279,6 +279,10 @@ operator definition
 注入故障和输出签名测试证据的演进设计见
 [Resource Gateway 工业级可测试性与执行数据控制反转演进方案](resource-gateway-industrial-testability-evolution-plan.md)。
 
+该证明强度不是文档约定：suite run API 的响应会显式返回 `mode: "SCHEMA_CONTRACT"`，画布中的对应编辑器命名为
+`Schema Contract Suite`，操作是 `Validate Case` / `Validate All`。任何消费方都应按 `mode` 判断证据含义，不能根据
+`passed=true` 推断 operator runtime binding 已被执行。
+
 这补齐了 graph 外的 standalone operator 表格测试层。对于已经有真实 request-response runtime binding 的算子，后续可以在此基础上增加 executable adapter，把“schema mock 验证”升级成“mock + real execution 双模式验证”。
 
 ## 5. 断言能力

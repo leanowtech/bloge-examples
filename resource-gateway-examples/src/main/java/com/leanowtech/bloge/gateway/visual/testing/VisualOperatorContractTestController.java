@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * REST API for schema-gated operator mock/table contract tests.
+ * REST API for schema-only operator fixture contract checks.
  */
 @RestController
 @RequestMapping("/api/visual/operators/tests")
@@ -32,7 +32,7 @@ public class VisualOperatorContractTestController {
     }
 
     /**
-     * Runs an operator table-test suite.
+     * Validates an operator fixture table against catalog schemas and assertions.
      *
      * @param request suite request
      * @return suite result

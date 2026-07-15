@@ -912,7 +912,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
     await click(query<HTMLButtonElement>('[data-testid="canvas-example-load:loan-policy-fallback"]'));
     await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
     await waitFor(() =>
-      expect(query('[data-testid="operator-test-suite"]').textContent).toContain('Operator Test Suite'),
+      expect(query('[data-testid="operator-test-suite"]').textContent).toContain('Schema Contract Suite'),
     );
 
     expect(query<HTMLTextAreaElement>('[data-testid="operator-test-input:0"]').value)
@@ -924,7 +924,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
     );
     expect(query('[data-testid="operator-test-summary"]').textContent).toContain('1/1 passed');
     expect(query('[data-testid="operator-test-result:0"]').textContent)
-      .toContain('Input assertion matched');
+      .toContain('Schema contract accepted');
   });
 
   it('runs built-in example test table cases through simulate with row fixture overrides', async () => {
@@ -1495,7 +1495,7 @@ describe('AuthorCanvas connection guide', () => {
     await click(dialogQuery<HTMLButtonElement>('[data-testid="node-input-add"]'));
     await setControlValue(dialogQuery<HTMLInputElement>('[data-testid="node-input-context-path:0"]'), 'request.customerId');
     await setControlValue(dialogQuery<HTMLTextAreaElement>('[data-testid="operator-detail-output-fixture"]'), '{"ok":true}');
-    expect(dialogQuery('[data-testid="operator-test-suite"]').textContent).toContain('Operator Test Suite');
+    expect(dialogQuery('[data-testid="operator-test-suite"]').textContent).toContain('Schema Contract Suite');
     expect(dialogQuery('[data-testid="operator-test-status:0"]').textContent).toContain('valid');
     await click(dialogQuery<HTMLButtonElement>('[data-testid="operator-test-add"]'));
     await waitFor(() =>
@@ -1514,7 +1514,7 @@ describe('AuthorCanvas connection guide', () => {
       expect(dialogQuery('[data-testid="operator-test-status:1"]').textContent).toContain('passed'),
     );
     expect(dialogQuery('[data-testid="operator-test-result:1"]').textContent)
-      .toContain('Input assertion matched');
+      .toContain('Schema contract accepted');
     await click(dialogQuery<HTMLButtonElement>('[data-testid="operator-test-apply:1"]'));
 
     const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));

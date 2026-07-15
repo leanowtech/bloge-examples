@@ -44,6 +44,7 @@ class VisualOperatorContractTestServiceTest {
                                         null)))))));
 
         assertThat(result.passed()).isTrue();
+        assertThat(result.mode()).isEqualTo(VisualOperatorContractTestSuiteResult.Mode.SCHEMA_CONTRACT);
         assertThat(result.totalCases()).isEqualTo(1);
         assertThat(result.coverage().inputPortSchemaValidated()).isEqualTo(1);
         assertThat(result.coverage().configSchemaValidated()).isEqualTo(1);
@@ -125,6 +126,7 @@ class VisualOperatorContractTestServiceTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.schemaVersion").value(VisualOperatorContractTestSuiteResult.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.mode").value("SCHEMA_CONTRACT"))
                 .andExpect(jsonPath("$.operatorRef").value("risk:eligibility"))
                 .andExpect(jsonPath("$.passed").value(true))
                 .andExpect(jsonPath("$.coverage.mockedOutputSchemaValidated").value(1));

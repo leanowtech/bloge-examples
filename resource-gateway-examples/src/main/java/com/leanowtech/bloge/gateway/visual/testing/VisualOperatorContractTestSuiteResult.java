@@ -10,6 +10,7 @@ import java.util.List;
  * @param schemaVersion result schema version
  * @param operatorRef visual operator reference
  * @param operatorVersion catalog operator version
+ * @param mode proof strength of this suite execution
  * @param passed whether every row passed
  * @param totalCases total rows
  * @param passedCases passing rows
@@ -22,6 +23,7 @@ public record VisualOperatorContractTestSuiteResult(
         String schemaVersion,
         String operatorRef,
         String operatorVersion,
+        Mode mode,
         boolean passed,
         int totalCases,
         int passedCases,
@@ -33,12 +35,21 @@ public record VisualOperatorContractTestSuiteResult(
     public static final String SCHEMA_VERSION = "bloge.visualOperatorContractTestSuiteResult.v1";
 
     /**
+     * Proof strength exposed to clients. The current service only checks fixture/schema consistency
+     * and must never be presented as executable operator verification.
+     */
+    public enum Mode {
+        SCHEMA_CONTRACT
+    }
+
+    /**
      * Creates a suite result.
      */
     public VisualOperatorContractTestSuiteResult {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
         operatorRef = operatorRef == null ? "" : operatorRef;
         operatorVersion = operatorVersion == null ? "" : operatorVersion;
+        mode = mode == null ? Mode.SCHEMA_CONTRACT : mode;
         coverage = coverage == null ? new Coverage(0, 0, 0, 0, 0) : coverage;
         results = results == null ? List.of() : List.copyOf(results);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);

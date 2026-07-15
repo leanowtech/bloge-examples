@@ -227,7 +227,8 @@ To add a user-supplied visual operator library:
    rows from each operator's input/config/output schemas, then save or batch-run
    schema-contract checks through `/api/visual/operators/tests/suites`. This
    current mode validates fixture and schema consistency; it does not execute a
-   real operator runtime binding.
+   real operator runtime binding. Results expose `mode=SCHEMA_CONTRACT`, and the
+   canvas labels the editor `Schema Contract Suite` to make that proof strength explicit.
 5. Drag operators, wire schemas, simulate, and export.
 
 The `/author/` built-in canvas examples also carry their own graph-level

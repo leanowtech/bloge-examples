@@ -21,6 +21,7 @@ public record IntegrationCapabilities(
         IntegrationIdentityResolver.Descriptor identityProvider,
         VisualEvidenceSigner.Descriptor evidenceSigner,
         VisualPayloadGovernancePolicy.Descriptor payloadGovernance,
+        Testability testability,
         List<Endpoint> endpoints
 ) {
     public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.capabilities.v1";
@@ -40,6 +41,7 @@ public record IntegrationCapabilities(
                 : evidenceSigner;
         payloadGovernance = payloadGovernance == null
                 ? unavailablePayloadGovernance() : payloadGovernance;
+        testability = testability == null ? Testability.schemaContractOnly() : testability;
         endpoints = endpoints == null ? List.of() : List.copyOf(endpoints);
     }
 
@@ -51,7 +53,8 @@ public record IntegrationCapabilities(
                                    IntegrationIdentityResolver.Descriptor identityProvider,
                                    List<Endpoint> endpoints) {
         this(schemaVersion, protocol, protocolVersion, supportedObjects, features, identityProvider,
-                VisualEvidenceSigner.unavailable().descriptor(), unavailablePayloadGovernance(), endpoints);
+                VisualEvidenceSigner.unavailable().descriptor(), unavailablePayloadGovernance(),
+                Testability.schemaContractOnly(), endpoints);
     }
 
     public static IntegrationCapabilities current() {
@@ -217,7 +220,7 @@ public record IntegrationCapabilities(
         features.put("webhook", false);
 
         return new IntegrationCapabilities("", "", "", objects, features, identityProvider, signer,
-                payloadGovernance, List.of(
+                payloadGovernance, Testability.schemaContractOnly(), List.of(
                 new Endpoint("GET", "/api/integration/capabilities"),
                 new Endpoint("GET", "/api/integration/drafts/{draftId}/export"),
                 new Endpoint("GET", "/api/integration/drafts/{draftId}/correctness-workbook"),
@@ -258,6 +261,34 @@ public record IntegrationCapabilities(
         public Endpoint {
             method = method == null ? "" : method.trim().toUpperCase();
             path = path == null ? "" : path.trim();
+        }
+    }
+
+    /**
+     * Machine-readable state of the execution-control protocol.
+     *
+     * @param protocolVersion Resource Gateway testability protocol version
+     * @param enabledEnvironments environments allowed to expose caller-driven testing endpoints
+     * @param schemaContractMode whether schema-only operator checks are available
+     * @param executionEndpointEnabled whether caller-driven execution is currently implemented
+     */
+    public record Testability(
+            String protocolVersion,
+            List<String> enabledEnvironments,
+            boolean schemaContractMode,
+            boolean executionEndpointEnabled
+    ) {
+        /** Normalizes capability values. */
+        public Testability {
+            protocolVersion = protocolVersion == null || protocolVersion.isBlank()
+                    ? "bloge.testing.v1" : protocolVersion.trim();
+            enabledEnvironments = enabledEnvironments == null
+                    ? List.of() : List.copyOf(enabledEnvironments);
+        }
+
+        /** @return Stage 0 capability before the execution endpoint is activated */
+        public static Testability schemaContractOnly() {
+            return new Testability("bloge.testing.v1", List.of("test", "staging"), true, false);
         }
     }
 }

@@ -78,6 +78,11 @@ class GraphDraftDependencyProtocolSchemaTest {
         assertThat(capabilities.features())
                 .containsEntry("graphDraftConsistentDependencySnapshot", true)
                 .containsEntry("graphDraftStructuredDependencyRefs", true);
+        assertThat(capabilities.testability().protocolVersion()).isEqualTo("bloge.testing.v1");
+        assertThat(capabilities.testability().enabledEnvironments())
+                .containsExactly("test", "staging");
+        assertThat(capabilities.testability().schemaContractMode()).isTrue();
+        assertThat(capabilities.testability().executionEndpointEnabled()).isFalse();
     }
 
     private JsonNode schema(String file) throws Exception {
