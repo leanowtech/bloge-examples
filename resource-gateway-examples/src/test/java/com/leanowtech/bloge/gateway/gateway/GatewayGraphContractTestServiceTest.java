@@ -392,8 +392,12 @@ class GatewayGraphContractTestServiceTest {
                 .flatMap(testCase -> testCase.resourceMocks().stream()))
                 .allSatisfy(mock -> assertThat(mock.fixtureMode())
                         .isEqualTo(GatewayGraphResourceMock.FixtureMode.TRANSPORT_LEVEL));
-        assertThat(repository.find("enrich-order-list-outer-boundary").orElseThrow().tags())
-                .contains("exploratory", "nested-invocation-gap");
+        assertThat(repository.find("enrich-order-list-occurrence-control").orElseThrow())
+                .satisfies(suite -> {
+                    assertThat(suite.tags()).contains("parallel", "certifiable");
+                    assertThat(suite.request().cases()).hasSize(2);
+                    assertThat(suite.request().cases().get(1).resourceMocks()).hasSize(5);
+                });
         assertThat(repository.find("credit-score-provider-routing").orElseThrow()
                 .request().cases().get(1).resourceMocks().getFirst())
                 .satisfies(mock -> {

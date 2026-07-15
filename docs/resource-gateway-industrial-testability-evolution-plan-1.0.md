@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | Stage 0 | 完成 | operator suite API/UI 显式 `SCHEMA_CONTRACT`；`testing/domain` 五个版本化 record；capability testability 描述；[ADR-001](adr/ADR-001-resource-gateway-test-runtime-isolation.md)、[ADR-002](adr/ADR-002-operator-composability-and-opaque-runtime.md) 与 [BLOGE framework requirement](bloge-framework-execution-control-requirement.md) |
 | Stage 1' | 完成 | `testing/planning/runtime/evidence` 内核；独立 test engine；五行为；F2/F3 resource fixture；micro-graph runner；旧 graph suite adapter；37 个聚焦测试与 1653 个项目测试全绿 |
-| Stage 2' | 进行中 | 已落地 target discovery、`/api/testing/executions`/batch/query、immutable fixture registry、独立 test-run store、10 态 evidence、profile/identity/生产协议隔离、独立 test-kit、七图/13-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 root/nested/foreach/loop/compensation 的结构寻址与控制传播；公共 operator adapter、嵌套 occurrence 级 evidence、streaming control 与物理 network/runtime 隔离仍待完成 |
+| Stage 2' | 进行中 | 已落地 target discovery、`/api/testing/executions`/batch/query、immutable fixture registry、独立 test-run store、10 态 evidence、profile/identity/生产协议隔离、独立 test-kit、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 root/nested/foreach/loop/compensation 的结构寻址、控制传播和 occurrence/attempt/node/edge evidence；公共 operator adapter、streaming/suspendable control/evidence 与物理 network/runtime 隔离仍待完成 |
 
 Stage 0 验证基线：Resource Gateway `clean verify` 共 1624 tests、0 failures、33 个既有条件跳过；AuthorCanvas 聚焦回归 36 tests、0 failures。后续阶段必须继续维持该基线并增加对应反面用例。
 
@@ -19,7 +19,7 @@ Stage 2 当前增量验收：Resource Gateway `clean verify` 共 1699 tests、0 
 Nested invocation 增量聚焦验收：37 tests、0 failures；非空 foreach 的三个 item 全部消费同一受限 fixture，真实外部算子调用数为 0，compensation 使用独立 site 且真实补偿调用数为 0。项目 `clean verify` 执行 1704 tests 时 1703 通过、1 个既有浏览器 connectability readiness 用例瞬时超时；该失败用例随即独立复跑 1/1 通过。此记录不得改写为一次严格全绿的全量运行。
 独立 test-kit 当前 `clean verify` 共 11 tests、0 failures、0 errors，JAR 与权威 testing-control-plane v1 schema 一同打包成功。
 这里的“完成”只指内核与已列出的 adapter。Stage 2 已开放首个公共 graph control plane、持久化 store、test-kit，并完成全部内置图的 stored-suite F3 迁移与 dogfooding；但公共
-operator run adapter、嵌套 occurrence 级 evidence、streaming control 和物理隔离仍不得提前写入产品可用清单。当前 API 与运行方式见
+operator run adapter、streaming/suspendable control/evidence 和物理隔离仍不得提前写入产品可用清单。当前 API 与运行方式见
 [Testing Control Plane API](resource-gateway-testing-control-plane-api.md)。
 独立 client adapter 的边界、测试矩阵与非声明见
 [Stage 2 test-kit verification](resource-gateway-execution-data-control-plane-stage2-test-kit-verification.md)。
@@ -184,7 +184,7 @@ flowchart LR
 3. Suite registry/batch runner 改为向内核提交；coverage policy 复用；numeric tolerance 断言补齐。
 4. test-kit 模块（新 Maven module）：薄 HTTP client + FixtureBundle builder + JUnit 5 断言适配 + JUnit XML 输出。
 5. 安全告警（生产触碰类）：test purpose 触达生产 endpoint/credential、production run 携非空 control plan → 安全事件。
-6. **已实现 Dogfooding**：七张示例图建立 13 个 case 并接入 `clean verify`；23 个根资源节点全部迁移为 F3 raw response，retry fixture 用 `minUses/maxUses` 精确计数；真实 Spring wiring 将 descriptor 指向 `127.0.0.1:1` 后仍全绿。`enrichOrderList` 当前仍只覆盖空集合外层边界并强制降级为 EXPLORATORY；虽然同步 foreach-body 已可控制，但必须先补齐 occurrence 级 evidence 与内置非空 suite，才能解除该限制。验证见 [Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md)。
+6. **已实现 Dogfooding**：七张示例图建立 14 个 case 并接入 `clean verify`；28 个资源调用观测全部使用 F3 raw response，retry fixture 用 `minUses/maxUses` 精确计数；真实 Spring wiring 将 descriptor 指向 `127.0.0.1:1` 后仍全绿。`enrichOrderList` 同时覆盖空集合边界与两条订单的并行 foreach body，后者对四个嵌套资源 occurrence 独立注入和断言，并依靠 occurrence-addressable node/edge evidence 签发 CERTIFIABLE。验证见 [Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md)。
 7. 维护本蓝图文档：所有实现期决策变更以 decision delta 追加进第九节，保持与北极星文档的引用一致性。
 
 **验收**：见第八节验证清单。
@@ -206,7 +206,7 @@ flowchart LR
 2. 反面用例：漏配 fixture 的外部算子 → FIXTURE_UNMATCHED（绝不真调外部）；required fixture 未消费 → FIXTURE_UNUSED；同级 selector 歧义 → CONTROL_PLAN_REJECTED；attempt/occurrence 使用 → 明确拒绝错误。
 3. 架构测试：test engine 实例构建配置不含生产横切拦截器（结构性证明 MOCKED 永不进响应缓存/限流/熔断统计）。
 4. 隔离测试：production profile 下 /api/testing/** bean 不存在；生产 run API 请求携 control 字段被拒并触发安全事件。
-5. Dogfooding：全部七张示例图的 13 个 case 达 coverage policy；Spring 测试把 descriptor 指向不可达 endpoint，证明 23 个执行中的根资源节点全部由 F3 fixture 控制；33 个业务断言和证据分级进入 CI。foreach 空集合 case 仍只签发 EXPLORATORY，下一增量改为非空 nested fixture 后才能重新评估认证资格。
+5. Dogfooding：全部七张示例图的 14 个 case 达 coverage policy；Spring 测试把 descriptor 指向不可达 endpoint，证明 28 个执行中的 root/nested 资源调用观测全部由 F3 fixture 控制；37 个业务断言和证据分级进入 CI。非空 foreach case 对两条并行订单、四次嵌套资源调用和各自 correlation/graph occurrence 完成认证验证。
 6. Conformance：Stage 1' 四类 operator 用例 + evidence class 正确分级（inline→EXPLORATORY，stored+无 waiver 且 ≥F2→CERTIFIABLE）。
 7. 保真度反面用例：resource 类 mocked site 为 OUTPUT_LEVEL（自报 success）的 run 断言不产生 CERTIFIABLE 证据；F2 形态下构造「rawBody 与预期 success 矛盾」的用例，断言以真实协议派生结果为准。
 8. 效应边界用例：L1 对 `HttpResourceOperator` 的 TRANSPORT 级测试断言参数映射/URL 渲染/协议解析被真实执行（stub 传输层捕获渲染后的请求并校验）。
@@ -254,9 +254,9 @@ flowchart LR
 
 ### 十、风险与未验证假设（诚实清单）
 
-1. **已验证但证据未闭环**：BLOGE run-scoped resolver 已贯通同步 root、subgraph、foreach、loop 与 compensation；RG preflight 递归冻结同源 path，并对循环、重复、深度和 site 总量 fail closed。streaming/suspendable 控制、durable resume 恢复仍未激活；嵌套 target 继续不签发认证证据，直至 node/edge trace 携带完整 site 与 occurrence。
-2. **已验证基础来源**：foreach/loop 的 `correlationKey` 由 BLOGE 运行时产生并传给 resolver，结构 path 不含 occurrence。当前 fixture matcher 可按该 runtime correlation 或输入业务 correlation 匹配；attempt/occurrence selector 仍保留为拒绝态，证据账本尚未逐 occurrence 展开。
-3. **已验证并关闭主路径**：suite registry/batch runner 已收编全部七张示例图；13 case、coverage gate、stored provenance 和 payload-free evidence summary 通过真实 Spring wiring。新增图仍须同步 contract 与 suite，避免目录再次不完整。
+1. **同步证据主路径已闭环**：BLOGE run-scoped resolver 已贯通同步 root、subgraph、foreach、loop 与 compensation；RG preflight 递归冻结同源 path，并对循环、重复、深度和 site 总量 fail closed。node/edge trace 已携带结构 site、runtime correlation、site occurrence、containing graph occurrence，重试作为 occurrence 内 attempt 列表保留。streaming/suspendable 控制与证据、durable resume 恢复仍未激活。
+2. **已验证基础来源**：foreach/loop 的 `correlationKey` 由 BLOGE 运行时产生并传给 resolver，结构 path 不含 occurrence。当前 fixture matcher 可按该 runtime correlation 或输入业务 correlation 匹配；attempt/occurrence selector 仍保留为拒绝态，但 evidence 已逐 occurrence/attempt 展开，后续开放 selector 时必须复用同一坐标语义。
+3. **已验证并关闭主路径**：suite registry/batch runner 已收编全部七张示例图；14 case、coverage gate、stored provenance 和 payload-safe occurrence evidence 通过真实 Spring wiring。新增图仍须同步 contract 与 suite，避免目录再次不完整。
 4. **已验证并关闭**：test-kit 不需要将 `resource-gateway-examples` 转为多模块；采用顶层独立 Maven library，并由根 README/AGENTS 固化独立构建命令。后续若建立聚合 verify，只能新增无搬迁的根级 aggregator，不得改变服务端 artifact 与启停路径。
 5. **已关闭同步主路径**：BLOGE `ExecutionOptions.operatorResolver` 与 `NestedGraphProvider` 已在同工作区引擎源码落地并通过 `bloge-core` 1928 tests；Resource Gateway 当前直接依赖该 SPI。后续发布必须保证 BLOGE artifact 版本包含这两个协议，不能只依赖开发机本地安装。
 6. **已验证并关闭**：存量与新增内置 suite 已从 WireMock/demo-upstream 提取真实 envelope 并迁移为 F3；BodyCode、BodyFlag、HttpStatus、StatusCodes、BlgeExpression 五种协议均在图级 case 中经过派生。后续 descriptor envelope 变化必须同步 fixture，否则测试应当失败而不是兼容吞掉。

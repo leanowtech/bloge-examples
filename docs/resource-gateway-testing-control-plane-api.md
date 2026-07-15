@@ -359,7 +359,7 @@ assert, and report example.
 ### 4.6 Run the built-in graph dogfooding catalog
 
 The compatibility graph-suite adapter now delegates to the same execution-control kernel. Its stored
-catalog covers all seven built-in graphs with 13 cases:
+catalog covers all seven built-in graphs with 14 cases:
 
 ```bash
 curl -sS http://localhost:8080/api/gateway/graphs/contracts/tests/suites
@@ -368,8 +368,9 @@ curl -sS -X POST http://localhost:8080/api/gateway/graphs/contracts/tests/suites
 
 All resource rows are explicit F3 transport fixtures. `minUses/maxUses` declares retry cardinality;
 old rows that omit fidelity/cardinality fields remain one-use `OUTPUT_LEVEL` fixtures and therefore
-remain exploratory. `enrichOrderList` is also exploratory until foreach-body invocation addressing is
-available. The detailed matrix and unreachable-endpoint proof are in
+remain exploratory. `enrichOrderList` includes a certifiable two-item parallel foreach case whose
+nested shipping and invoice calls are independently controlled and occurrence-addressed. The
+detailed matrix and unreachable-endpoint proof are in
 [Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md).
 
 ## 5. Verbosity And Persistence
@@ -383,6 +384,38 @@ available. The detailed matrix and unreachable-endpoint proof are in
 Sensitive keys, bearer/basic credentials, labeled secrets, oversized collections, deep objects, and
 long strings are redacted or truncated before `rg_test_run_records` is written. Raw in-memory
 `GraphResult` is never persisted by this API.
+
+### 5.1 Occurrence and retry coordinates
+
+`NodeTrace` is one logical node occurrence, not one row per retry. Consumers must use the complete
+coordinate instead of joining on local `nodeId`:
+
+| Field | Meaning |
+| --- | --- |
+| `invocationSiteId` | stable structural primary/compensation site id |
+| `graphPath` | path of the graph owning the node, such as `/root/enrichOrders/foreach` |
+| `correlationKey` | runtime foreach/loop or business correlation coordinate |
+| `occurrence` | one-based binding count for this invocation site |
+| `graphOccurrence` | one-based execution of the containing graph; joins sibling nodes and edges even when a branch skips a site |
+| `attempts[]` | ordered actual delegate calls inside the occurrence; `attempt` is one-based |
+
+`occurrence=0`, `graphOccurrence=0`, or `attempt=0` is reserved for a legacy producer that cannot
+provide that coordinate. Current synchronous execution emits positive coordinates. A retry does not
+increase `occurrence`; it appends another `AttemptTrace`, preserving the distinction between
+"the second foreach item" and "the second retry of one item".
+
+`EdgeTrace` carries `graphPath`, `correlationKey`, `graphOccurrence`,
+`fromInvocationSiteId`, and `toInvocationSiteId`. Its status is:
+
+- `TRANSFERRED`: source completed successfully or was mocked and the target was actually invoked;
+- `SKIPPED`: a conditional edge was not selected after a successful source;
+- `NOT_TRANSFERRED`: source did not produce a transferable value or the target was not invoked for a
+  non-conditional path.
+
+A target that later fails still has an incoming `TRANSFERRED` edge: transfer evidence describes data
+movement, while node evidence describes processing outcome. `STANDARD` responses retain all
+coordinates and attempt status/fidelity but omit node, attempt, and edge payload values. `FULL`
+returns sanitized values.
 
 ## 6. Status Model
 
@@ -429,22 +462,24 @@ Implemented now:
 - profile-sensitive capability probe and production control-field guard.
 - standalone Maven test-kit with HTTP client, fail-closed fixture builder, JUnit 5 assertions,
   payload-free JUnit XML, and packaged canonical JSON Schema.
-- complete seven-graph/13-case built-in dogfooding catalog, F3 legacy-suite migration, bounded retry
-  consumption, and a Spring proof that root resource calls do not escape fixtures.
+- complete seven-graph/14-case built-in dogfooding catalog, F3 legacy-suite migration, bounded retry
+  consumption, and a Spring proof that root and synchronous nested resource calls do not escape fixtures.
 - run-scoped advancing logical clock plus bounded `DELAY` and `TIMEOUT`; timeout injection uses the
   real BLOGE retry/fallback chain and emits normalized logical-time evidence.
 - recursively frozen synchronous subgraph/foreach/loop/compensation sites, with run-scoped fixture
   propagation and fail-closed cycle/depth/site limits.
+- occurrence-addressable synchronous node/attempt/edge evidence, including runtime correlation and
+  containing-graph occurrence coordinates; non-empty parallel foreach certification is enabled.
 
 Still intentionally outside this increment:
 
-- `REPLAY`, retry-attempt selectors, occurrence-level correlation evidence, streaming/suspendable
-  controls, and durable-resume plan restoration;
+- `REPLAY`, retry-attempt/occurrence selectors, streaming/suspendable controls and evidence, and
+  durable-resume plan restoration;
 - signed certification, semantic coverage, ANEKE projection, and mutation testing;
 - deterministic random/UUID/function execution services and deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;
-- non-empty foreach/loop/subgraph certification until nested node/edge evidence is
-  occurrence-addressable and the built-in suites exercise it.
+- certification of streaming foreach/loop graphs until their invocation and edge evidence is
+  occurrence-addressable and built-in suites exercise it.
 
 Those items remain visible in the two industrial testability evolution plans and must not be inferred
 as complete from `executionEndpointEnabled=true`.

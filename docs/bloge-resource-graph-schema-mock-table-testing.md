@@ -214,14 +214,14 @@ Coverage policy 字段：
 | --- | --- | ---: | --- | --- |
 | `ai-enriched-search-streams` | `aiEnrichedSearch` | 1 | metadata、token stream、citation 汇总 | Certifiable |
 | `credit-score-provider-routing` | `creditScore` | 2 | primary 成功；primary 两次失败后 secondary fallback | Certifiable |
-| `enrich-order-list-outer-boundary` | `enrichOrderList` | 1 | 空订单集合与 foreach 外层边界 | Exploratory，nested invocation 尚不可寻址 |
+| `enrich-order-list-occurrence-control` | `enrichOrderList` | 2 | 空集合边界；两条订单并行 shipping/invoice enrichment | Certifiable |
 | `loan-decision-policy-smoke` | `loanDecisionPolicy` | 2 | decision table R1 approval 与 R4 decline | Certifiable |
 | `product-detail-all-branches` | `productDetail` | 3 | physical、digital、generic 三个 branch | Certifiable |
 | `resource-dispatch-descriptor-protocols` | `resourceDispatch` | 2 | BodyCode 与 query-mapped descriptor 协议 | Certifiable |
 | `user-dashboard-happy-and-degraded` | `userDashboard` | 2 | 并行聚合 happy path；bounded retry + fallback 降级 | Certifiable |
 
-合计 7 suites、13 cases、23 个被观察到的根资源节点调用和 33 个业务断言。所有 resource fixture 均为显式
-`TRANSPORT_LEVEL`；Spring dogfooding 还会把 descriptor endpoint 指向不可连接地址，任何 fixture 逃逸都会使测试确定失败。
+合计 7 suites、14 cases、28 个被观察到的 root/nested 资源调用和 37 个业务断言。所有 resource fixture 均为显式
+`TRANSPORT_LEVEL`；Spring dogfooding 还会把 descriptor endpoint 指向不可连接地址，任何 fixture 逃逸都会使测试确定失败。同步 foreach/loop/subgraph/compensation 的 node/edge evidence 已按 structural site、runtime correlation 和 graph occurrence 展开；streaming/suspendable 仍不可认证。
 详细证明见 [Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md)。
 
 ## 4.1 Resource Graph Mock Draft
@@ -482,8 +482,8 @@ mvn -f resource-gateway-examples/pom.xml \
 | `ResourceFixtureRuntimeTest` | 相同 raw body 在不同协议下派生不同结果；F3 捕获真实渲染 URL；204 空 body |
 | `OperatorMicroGraphRunnerTest` | 纯算子 EXECUTABLE_UNIT、opaque fail closed、httpResource TRANSPORT 认证 |
 | `GraphArtifactFingerprintTest` | 指纹稳定性、DSL 源和边完成语义变化检测 |
-| `builtInSuiteCatalogCoversEveryGraphAndUsesExplicitTransportFixtures` | 七图/13-case catalog 完整性、全部 F3 fixture、retry 精确消费次数 |
-| `everyBuiltInGraphSuiteRunsThroughRealWiringWithoutUncontrolledResourceCalls` | 真实 Spring wiring 批量执行七图；不可达 endpoint 下 23 次 root resource 调用全部由 transport fixture 接管；33 个断言通过 |
+| `builtInSuiteCatalogCoversEveryGraphAndUsesExplicitTransportFixtures` | 七图/14-case catalog 完整性、全部 F3 fixture、retry 精确消费次数、非空 foreach suite |
+| `everyBuiltInGraphSuiteRunsThroughRealWiringWithoutUncontrolledResourceCalls` | 真实 Spring wiring 批量执行七图；不可达 endpoint 下 28 次 root/nested resource 调用全部由 transport fixture 接管；37 个断言通过 |
 | `validatesTypedRecordOutputsThroughTheJsonObjectContractModel` | typed Java record 与 JSON map 使用同一 schema 可见形态，避免 graph gate 和 kernel assertion 结论分裂 |
 
 Graph contract coverage:
@@ -532,7 +532,7 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 | Resource graph mock draft | Done | `/api/gateway/graphs/contracts/tests/draft` 基于 graph input schema 与 resource response schema 生成可编辑 row |
 | Operator schema mock draft | Done | `/api/visual/operators/tests/draft` 基于 operator schema 生成可编辑 table row |
 | 自动 mock 数据生成 | Done for draft | graph/operator 均可生成可编辑 mock row；复杂 runtime-dependent graph mock 仍以 warning 提示人工补齐 |
-| Suite registry | Done | in-memory repository + list/get/put/run API + 七图/13-case 内置 catalog |
+| Suite registry | Done | in-memory repository + list/get/put/run API + 七图/14-case 内置 catalog |
 | Batch runner | Done | `POST /api/gateway/graphs/contracts/tests/suites/run-all` 聚合 suite、case、coverage |
 | Coverage policy | Done | suite 级阈值可要求 case、schema validation、mock call、assertion、output node 覆盖 |
 | F2/F3 resource fixture | Done for root resource nodes | 显式 protocol/transport 边界、响应头与 bounded consumption；nested invocation 仍待寻址 |

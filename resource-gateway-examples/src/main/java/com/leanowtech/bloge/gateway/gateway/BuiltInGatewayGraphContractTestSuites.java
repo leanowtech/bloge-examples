@@ -8,9 +8,9 @@ import java.util.Map;
  *
  * <p>Resource responses are supplied at the transport boundary so the production URL mapping,
  * response protocol, payload extraction, branch, retry, fallback, decision-table, and aggregation
- * behavior remains under test. The foreach example deliberately uses an empty outer collection
- * until occurrence-level nested evidence and its non-empty built-in fixtures are complete; its
- * suite is tagged as exploratory instead of creating false certification evidence.</p>
+ * behavior remains under test. The foreach example includes both empty and non-empty collections;
+ * nested resource fixtures and occurrence-addressable evidence prove each parallel item remains
+ * isolated and auditable.</p>
  */
 final class BuiltInGatewayGraphContractTestSuites {
 
@@ -96,14 +96,35 @@ final class BuiltInGatewayGraphContractTestSuites {
                         "{\"success\":true,\"data\":{\"orders\":[]}}")),
                 "collectEnriched",
                 equal("/orders", List.of()));
+        GatewayGraphContractTestCase twoOrders = testCase(
+                "two orders receive independent shipping and invoice enrichment",
+                Map.of("userId", "two-orders"),
+                List.of(
+                        transport("order-service.listOrders", Map.of("userId", "two-orders"),
+                                "{\"success\":true,\"data\":{\"userId\":\"two-orders\",\"orders\":["
+                                        + "{\"orderId\":\"ord-1\",\"amount\":29.99,\"status\":\"shipped\"},"
+                                        + "{\"orderId\":\"ord-2\",\"amount\":59.0,\"status\":\"processing\"}]}}"),
+                        transport("logistics-service.getShipping", Map.of("orderId", "ord-1"),
+                                "{\"status\":\"shipped\",\"trackingNumber\":\"TRK-001\"}"),
+                        transport("invoice-service.getInvoice", Map.of("orderId", "ord-1"),
+                                "{\"status\":\"OK\",\"invoice\":{\"invoiceId\":\"inv-1\",\"amount\":29.99}}"),
+                        transport("logistics-service.getShipping", Map.of("orderId", "ord-2"),
+                                "{\"status\":\"processing\"}"),
+                        transport("invoice-service.getInvoice", Map.of("orderId", "ord-2"),
+                                "{\"status\":\"OK\",\"invoice\":{\"invoiceId\":\"inv-2\",\"amount\":59.0}}")),
+                "collectEnriched",
+                equal("/orders/0/assembleEnriched/orderData/orderId", "ord-1"),
+                equal("/orders/0/assembleEnriched/shipping/trackingNumber", "TRK-001"),
+                equal("/orders/0/assembleEnriched/invoice/invoiceId", "inv-1"),
+                equal("/orders/1/assembleEnriched/invoice/invoiceId", "inv-2"));
         return suite(
-                "enrich-order-list-outer-boundary",
-                "Order enrichment outer boundary",
-                "Exercises the foreach outer boundary without pretending nested invocation control exists.",
-                List.of("built-in", "foreach", "resource", "exploratory", "nested-invocation-gap"),
+                "enrich-order-list-occurrence-control",
+                "Order enrichment occurrence control",
+                "Covers empty and parallel non-empty foreach paths with per-item resource evidence.",
+                List.of("built-in", "foreach", "resource", "parallel", "certifiable"),
                 "enrichOrderList",
-                List.of(emptyList),
-                policy(1, 1, 1, 1, 1, "collectEnriched"));
+                List.of(emptyList, twoOrders),
+                policy(2, 2, 2, 6, 5, "collectEnriched"));
     }
 
     private static GatewayGraphContractTestSuite loanDecisionPolicy() {

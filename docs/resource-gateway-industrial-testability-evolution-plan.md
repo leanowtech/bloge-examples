@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
-| Stage 2 public control plane | In progress | target discovery、execution/batch/query、fixture registry、独立 test-run store、脱敏、10 态、profile/identity/production protocol guard、独立 HTTP/JUnit test-kit、七图/13-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 nested/foreach/loop/compensation 控制传播已落地；公共 operator run UI/API、occurrence 级 evidence、streaming control 与物理 network isolation 待完成 |
+| Stage 2 public control plane | In progress | target discovery、execution/batch/query、fixture registry、独立 test-run store、脱敏、10 态、profile/identity/production protocol guard、独立 HTTP/JUnit test-kit、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 nested/foreach/loop/compensation 控制传播与 occurrence/attempt/node/edge evidence 已落地；公共 operator run UI/API、streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3-5 | Not started | signed evidence、semantic coverage、剩余 deterministic random/UUID/function services、replay、独立部署与规模化治理 |
 
 实现细节、行为兼容决策和可复现测试见
@@ -980,7 +980,7 @@ JUnit 5 assertions、JUnit XML 与 CI exit code 已在 Stage 2 首个增量落�
 
 **实现状态**：进行中。Stage 1 已完成 selector preflight、不可变 effective plan、主节点 replacement、consumption policy 与既有
 gateway graph suite adapter；Stage 2 已补 graph target discovery、公共执行/批量/查询、immutable fixture registry、独立持久化、证据脱敏、
-profile/identity guard、production run control-field guard、独立 test-kit，并完成七图/13-case built-in dogfooding：23 个根资源节点使用 F3，retry 以 bounded consumption 计数，Spring wiring 在不可达 endpoint 下证明没有根资源逃逸。run-scoped logical clock、DELAY/TIMEOUT、同步 nested/foreach/loop/compensation 的结构寻址与控制传播也已落地；REPLAY、occurrence 级 evidence、streaming control、公共 operator adapter 和物理 test-runtime/network isolation 仍是本阶段硬验收，不能因控制用例通过就宣称 Stage 2 完成。
+profile/identity guard、production run control-field guard、独立 test-kit，并完成七图/14-case built-in dogfooding：28 个 root/nested 资源调用观测使用 F3，retry 以 bounded consumption 计数，Spring wiring 在不可达 endpoint 下证明没有 HTTP 调用逃逸。run-scoped logical clock、DELAY/TIMEOUT、同步 nested/foreach/loop/compensation 的结构寻址、控制传播与 occurrence/attempt/node/edge evidence 也已落地；REPLAY、streaming/suspendable control/evidence、公共 operator adapter 和物理 test-runtime/network isolation 仍是本阶段硬验收，不能因同步控制用例通过就宣称 Stage 2 完成。
 
 交付：
 

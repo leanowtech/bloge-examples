@@ -219,6 +219,56 @@
     "runStatus": {
       "enum": ["PASSED", "ASSERTION_FAILED", "EXECUTION_FAILED", "CONTROL_PLAN_REJECTED", "FIXTURE_UNMATCHED", "FIXTURE_UNUSED", "CONTROL_PLAN_UNAVAILABLE", "EVIDENCE_INCOMPLETE", "CANCELLED", "TIMED_OUT"]
     },
+    "attemptTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt", "status", "fidelity", "input", "output", "errorCode", "durationMs"],
+      "properties": {
+        "attempt": {"type": "integer", "minimum": 0},
+        "status": {"enum": ["SUCCESS", "FAILED", "TIMEOUT", "MOCKED"]},
+        "fidelity": {"enum": ["REAL", "OUTPUT_LEVEL", "PROTOCOL_DERIVED", "TRANSPORT_LEVEL", "REPLAYED"]},
+        "input": {},
+        "output": {},
+        "errorCode": {"type": "string"},
+        "durationMs": {"type": "integer", "minimum": 0}
+      }
+    },
+    "nodeTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeId", "operatorRef", "status", "fidelity", "input", "output", "errorCode", "durationMs", "invocationSiteId", "graphPath", "correlationKey", "occurrence", "graphOccurrence", "attempts"],
+      "properties": {
+        "nodeId": {"type": "string"},
+        "operatorRef": {"type": "string"},
+        "status": {"enum": ["SUCCESS", "FAILED", "TIMEOUT", "SKIPPED", "MOCKED"]},
+        "fidelity": {"enum": ["REAL", "OUTPUT_LEVEL", "PROTOCOL_DERIVED", "TRANSPORT_LEVEL", "REPLAYED"]},
+        "input": {},
+        "output": {},
+        "errorCode": {"type": "string"},
+        "durationMs": {"type": "integer", "minimum": 0},
+        "invocationSiteId": {"type": "string"},
+        "graphPath": {"type": "string"},
+        "correlationKey": {"type": "string"},
+        "occurrence": {"type": "integer", "minimum": 0},
+        "graphOccurrence": {"type": "integer", "minimum": 0},
+        "attempts": {"type": "array", "items": {"$ref": "#/$defs/attemptTrace"}}
+      }
+    },
+    "edgeTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["edgeId", "status", "value", "graphPath", "correlationKey", "graphOccurrence", "fromInvocationSiteId", "toInvocationSiteId"],
+      "properties": {
+        "edgeId": {"type": "string"},
+        "status": {"enum": ["TRANSFERRED", "SKIPPED", "NOT_TRANSFERRED"]},
+        "value": {},
+        "graphPath": {"type": "string"},
+        "correlationKey": {"type": "string"},
+        "graphOccurrence": {"type": "integer", "minimum": 0},
+        "fromInvocationSiteId": {"type": "string"},
+        "toInvocationSiteId": {"type": "string"}
+      }
+    },
     "effectivePlan": {
       "type": ["object", "null"],
       "additionalProperties": false,
@@ -250,8 +300,8 @@
         "planFingerprint": {"type": "string"},
         "startedAt": {"type": "string", "format": "date-time"},
         "completedAt": {"type": "string", "format": "date-time"},
-        "nodeTrace": {"type": "array"},
-        "edgeTrace": {"type": "array"},
+        "nodeTrace": {"type": "array", "items": {"$ref": "#/$defs/nodeTrace"}},
+        "edgeTrace": {"type": "array", "items": {"$ref": "#/$defs/edgeTrace"}},
         "fixtureConsumptions": {"type": "array"},
         "assertionResults": {"type": "array"},
         "diagnostics": {"type": "array", "items": {"type": "string"}},

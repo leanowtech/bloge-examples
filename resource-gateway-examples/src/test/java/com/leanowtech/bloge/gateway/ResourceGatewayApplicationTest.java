@@ -85,19 +85,14 @@ class ResourceGatewayApplicationTest {
 
         assertThat(result.passed()).as("built-in suite batch: %s", result).isTrue();
         assertThat(result.totalSuites()).isEqualTo(7);
-        assertThat(result.totalCases()).isEqualTo(13);
-        assertThat(result.coverage().mockedResourceCalls()).isEqualTo(23);
-        assertThat(result.coverage().assertionCount()).isEqualTo(33);
+        assertThat(result.totalCases()).isEqualTo(14);
+        assertThat(result.coverage().mockedResourceCalls()).isEqualTo(28);
+        assertThat(result.coverage().assertionCount()).isEqualTo(37);
         assertThat(result.results()).allSatisfy(suite ->
                 assertThat(suite.result().results()).allSatisfy(testCase -> {
                     assertThat(testCase.evidence().status()).isEqualTo(TestRunEvidence.Status.PASSED);
-                    if (suite.graphName().equals("enrichOrderList")) {
-                        assertThat(testCase.evidence().evidenceClass())
-                                .isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
-                    } else {
-                        assertThat(testCase.evidence().evidenceClass())
-                                .isEqualTo(TestRunEvidence.EvidenceClass.CERTIFIABLE);
-                    }
+                    assertThat(testCase.evidence().evidenceClass())
+                            .isEqualTo(TestRunEvidence.EvidenceClass.CERTIFIABLE);
                     assertThat(testCase.evidence().nodes())
                             .filteredOn(node -> node.operatorRef().equals("httpResource")
                                     && !node.status().equals("SKIPPED"))

@@ -78,9 +78,7 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(nestedTarget.getStatusCode()).isEqualTo(HttpStatus.OK);
         TestGraphTargetDescriptor nestedDescriptor = objectMapper.treeToValue(
                 nestedTarget.getBody(), TestGraphTargetDescriptor.class);
-        assertThat(nestedDescriptor.certificationEligible()).isFalse();
-        assertThat(nestedDescriptor.certificationGaps())
-                .anyMatch(gap -> gap.contains("nested invocation evidence")
-                        && gap.contains("occurrence-addressable") && gap.contains("foreach"));
+        assertThat(nestedDescriptor.certificationEligible()).isTrue();
+        assertThat(nestedDescriptor.certificationGaps()).isEmpty();
     }
 }

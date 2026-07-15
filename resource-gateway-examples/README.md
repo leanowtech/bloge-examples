@@ -225,17 +225,20 @@ Stored suites are available under
 `/api/gateway/graphs/contracts/tests/suites`; each suite can carry a coverage
 policy so batch runs fail when they lack enough cases, schema validations,
 mocked calls, assertions, or required output-node coverage.
-The built-in catalog covers all seven example graphs with 13 cases, 23
-controlled resource-node observations, and 33 business assertions. Resource
+The built-in catalog covers all seven example graphs with 14 cases, 28
+controlled resource-call observations, and 37 business assertions. Resource
 rows use explicit F3 transport fixtures, so request mapping, URL rendering,
 descriptor response protocol, and payload extraction stay real. Retry cases
 declare `minUses/maxUses`, making credit-provider, wallet, and notification
 attempt counts part of the pass/fail result. The testing kernel now recursively
 freezes synchronous nested graphs and uses BLOGE run-scoped operator resolution
-to control foreach, loop, subgraph, and compensation sites. `enrichOrderList`
-remains intentionally exploratory until its built-in suite uses non-empty items
-and occurrence-level node/edge evidence is available; structural control alone
-cannot silently produce certifiable evidence.
+to control foreach, loop, subgraph, and compensation sites. Node evidence is
+addressed by structural invocation site, runtime correlation, site occurrence,
+and containing-graph occurrence, with retries retained as attempt facts; edge
+evidence carries the same graph coordinates. `enrichOrderList` now certifies a
+two-item parallel foreach case with independently controlled shipping and
+invoice calls. Streaming/suspendable nested execution remains fail closed for
+certification.
 
 For the detailed contract-test design, request format, verification evidence,
 and remaining industrialization gaps, see

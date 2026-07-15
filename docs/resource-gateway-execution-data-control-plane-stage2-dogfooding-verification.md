@@ -1,7 +1,8 @@
 # Resource Gateway Stage 2 Built-in Graph Dogfooding Verification
 
 > Verified scope: built-in graph contract suites, F3 resource fixtures, stored-suite evidence
-> classification, retry cardinality, and fail-closed root resource isolation.
+> classification, retry cardinality, occurrence-addressable nested evidence, and fail-closed
+> resource isolation.
 
 ## 1. Acceptance Result
 
@@ -12,14 +13,14 @@ transport is replaced.
 | Metric | Result |
 | --- | ---: |
 | Built-in graphs / suites | 7 / 7 |
-| Executable cases | 13 |
-| Observed controlled resource nodes | 23 |
-| Business assertions | 33 |
+| Executable cases | 14 |
+| Observed controlled resource calls | 28 |
+| Business assertions | 37 |
 | Suite failures in Spring dogfooding | 0 |
-| Uncontrolled root HTTP calls | 0 |
-| Certifiable graph suites | 6 |
-| Explicitly exploratory graph suites | 1 (`enrichOrderList`) |
-| Repository gate | 1691 tests, 0 failures, 0 errors, 33 conditional skips |
+| Uncontrolled HTTP calls | 0 |
+| Certifiable graph suites | 7 |
+| Explicitly exploratory graph suites | 0 |
+| Repository gate | 1709 tests, 0 failures, 0 errors, 2 conditional skips |
 
 ## 2. Suite Matrix
 
@@ -27,7 +28,7 @@ transport is replaced.
 | --- | --- | ---: | --- | --- |
 | `aiEnrichedSearch` | `ai-enriched-search-streams` | 1 | three stream channels materialize | certifiable |
 | `creditScore` | `credit-score-provider-routing` | 2 | primary success; two failed attempts then secondary | certifiable |
-| `enrichOrderList` | `enrich-order-list-outer-boundary` | 1 | F3 outer resource and empty foreach boundary | exploratory |
+| `enrichOrderList` | `enrich-order-list-occurrence-control` | 2 | empty boundary; two parallel items with independent shipping and invoice fixtures | certifiable |
 | `loanDecisionPolicy` | `loan-decision-policy-smoke` | 2 | BodyCode extraction and decision rules R1/R4 | certifiable |
 | `productDetail` | `product-detail-all-branches` | 3 | physical, digital, and generic branches | certifiable |
 | `resourceDispatch` | `resource-dispatch-descriptor-protocols` | 2 | dynamic BodyCode descriptors and typed output contract | certifiable |
@@ -48,21 +49,24 @@ The batch still passes. Therefore every executed root `httpResource` node was in
 fixture; an escape to the real transport would fail against the unreachable endpoint. The test also
 asserts that each executed `httpResource` node observation is `TRANSPORT_LEVEL`.
 
-This proves application-level fail-closed behavior for root graph resource nodes. It does not replace
-the Stage 5 requirement for an independent test deployment and deny-by-default network policy.
+The non-empty `enrichOrderList` case additionally consumes two shipping and two invoice fixtures
+inside the parallel foreach body. This proves application-level fail-closed behavior for the
+executed root and synchronous nested resource occurrences. It does not replace the Stage 5
+requirement for an independent test deployment and deny-by-default network policy.
 
 ## 4. Honest Certification Boundary
 
 Resource Gateway now recursively freezes BLOGE nested graph bindings and run-scoped resolution can
-control synchronous foreach/loop/subgraph/compensation sites. The remaining certification gap is
-evidence: current node/edge trace projection still aggregates by local node id and cannot prove every
-parallel occurrence independently. `GraphExecutionTargetSnapshot` therefore continues to mark graphs
-containing `FOREACH`, `STREAMING_FOREACH`, `LOOP`, or `STREAMING_LOOP` as certification-ineligible.
+evidence for streaming/suspendable execution. `NodeTrace` now identifies each synchronous execution
+by structural `invocationSiteId`, `graphPath`, runtime `correlationKey`, site `occurrence`, and
+containing `graphOccurrence`; retries are retained as ordered `attempts` inside that occurrence.
+`EdgeTrace` uses the same graph coordinates and both endpoint site ids, so parallel branches and
+re-entered nested graphs do not collapse onto local node ids.
 
-The order enrichment suite uses an empty order list so no nested resource is invoked and tags itself
-`nested-invocation-gap`. It validates the outer contract but emits `EXPLORATORY`, never
-`CERTIFIABLE`, evidence. A non-empty foreach certification case is blocked until the suite is migrated
-and node/edge evidence carries structural site plus occurrence coordinates.
+`GraphExecutionTargetSnapshot` therefore permits synchronous `FOREACH` and `LOOP` certification but
+continues to mark `STREAMING_FOREACH` and `STREAMING_LOOP` certification-ineligible. The order
+enrichment suite proves the newly opened boundary with two parallel items and independently asserted
+outputs. Streaming/suspendable control and evidence remain explicitly outside this proof.
 
 ## 5. Reproduce
 
@@ -86,7 +90,7 @@ curl -sS http://localhost:8080/api/gateway/graphs/contracts/tests/suites
 curl -sS -X POST http://localhost:8080/api/gateway/graphs/contracts/tests/suites/run-all
 ```
 
-The second response must report `totalSuites=7`, `totalCases=13`, and `passed=true`.
+The second response must report `totalSuites=7`, `totalCases=14`, and `passed=true`.
 
-The recorded repository gate completed on 2026-07-15 with all 1691 tests green, including the real
+The recorded repository gate completed on 2026-07-15 with all 1709 tests green, including the real
 Chrome authoring regression suite, and produced the executable Spring Boot JAR.

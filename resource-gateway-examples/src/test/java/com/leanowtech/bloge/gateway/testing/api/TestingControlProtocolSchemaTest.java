@@ -72,4 +72,26 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.at("/effectivePlan/additionalProperties").asBoolean()).isFalse();
         assertThat(definitions.at("/testRunEvidence/additionalProperties").asBoolean()).isFalse();
     }
+
+    @Test
+    void evidenceSchemaFreezesOccurrenceAttemptAndEdgeCoordinates() throws Exception {
+        JsonNode definitions = new ObjectMapper().readTree(Files.readString(Path.of("..", "docs", "schemas",
+                "resource-gateway-testing", "testing-control-plane-v1.schema.json"))).path("$defs");
+
+        assertThat(definitions.at("/testRunEvidence/properties/nodeTrace/items/$ref").asText())
+                .isEqualTo("#/$defs/nodeTrace");
+        assertThat(definitions.at("/testRunEvidence/properties/edgeTrace/items/$ref").asText())
+                .isEqualTo("#/$defs/edgeTrace");
+        assertThat(definitions.at("/nodeTrace/required")).extracting(JsonNode::asText)
+                .contains("invocationSiteId", "graphPath", "correlationKey", "occurrence",
+                        "graphOccurrence", "attempts");
+        assertThat(definitions.at("/nodeTrace/properties/attempts/items/$ref").asText())
+                .isEqualTo("#/$defs/attemptTrace");
+        assertThat(definitions.at("/attemptTrace/properties/attempt/minimum").asInt()).isZero();
+        assertThat(definitions.at("/edgeTrace/required")).extracting(JsonNode::asText)
+                .contains("graphPath", "correlationKey", "graphOccurrence",
+                        "fromInvocationSiteId", "toInvocationSiteId");
+        assertThat(definitions.at("/edgeTrace/properties/status/enum")).extracting(JsonNode::asText)
+                .containsExactly("TRANSFERRED", "SKIPPED", "NOT_TRANSFERRED");
+    }
 }
