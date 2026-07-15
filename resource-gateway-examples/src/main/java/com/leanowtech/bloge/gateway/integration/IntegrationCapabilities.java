@@ -166,6 +166,12 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.FixtureBundleRegistrationRequest.SCHEMA_VERSION));
             objects.put("storedFixtureBundle", List.of(
                     com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundle.SCHEMA_VERSION));
+            objects.put("testSuite", List.of(
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuite.SCHEMA_VERSION));
+            objects.put("testSuiteRegistrationRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistrationRequest.SCHEMA_VERSION));
+            objects.put("storedTestSuite", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.StoredTestSuite.SCHEMA_VERSION));
             objects.put("fixtureBundle", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.FixtureBundle.SCHEMA_VERSION));
             objects.put("effectiveExecutionPlan", List.of(
@@ -255,6 +261,7 @@ public record IntegrationCapabilities(
                 && identityProvider.properties().get("revocationPropagationSloSeconds") instanceof Number);
         features.put("webhook", false);
         features.put("operatorMicroGraphExecution", testExecutionEndpointEnabled);
+        features.put("immutableTestSuiteRegistry", testExecutionEndpointEnabled);
         features.put("streamingOperatorTestExecution", false);
         features.put("suspendableOperatorTestExecution", false);
 
@@ -291,6 +298,8 @@ public record IntegrationCapabilities(
             endpoints.add(new Endpoint("GET", "/api/testing/executions/{runId}"));
             endpoints.add(new Endpoint("PUT", "/api/testing/fixture-bundles/{fixtureBundleId}"));
             endpoints.add(new Endpoint("GET", "/api/testing/fixture-bundles/{fixtureBundleId}"));
+            endpoints.add(new Endpoint("PUT", "/api/testing/suites/{suiteId}"));
+            endpoints.add(new Endpoint("GET", "/api/testing/suites/{suiteId}"));
         }
         return new IntegrationCapabilities("", "", "", objects, features, identityProvider, signer,
                 payloadGovernance, testExecutionEndpointEnabled

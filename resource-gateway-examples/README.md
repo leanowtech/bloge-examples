@@ -84,8 +84,8 @@ succeeds. Process output is written to `target/example-logs/visual-canvas-demo.l
 the PID and selected port are kept under `target/example-pids/`.
 
 The testing API requires `Authorization: Bearer bloge-aneke-demo-token` and a
-least-privilege `X-Purpose` (`TEST_EXECUTION`, `TEST_FIXTURE_READ`, or
-`TEST_FIXTURE_WRITE`) in the local test profile. See
+least-privilege `X-Purpose` (`TEST_EXECUTION`, fixture read/write, or suite read/write) in the local
+test profile. Immutable suites use `TEST_SUITE_READ` and `TEST_SUITE_WRITE`. See
 [Testing Control Plane API](../docs/resource-gateway-testing-control-plane-api.md)
 for the complete target-discovery, fixture-registration, execution, evidence,
 and production-isolation workflow. Java/JUnit consumers can use the independent
@@ -282,7 +282,9 @@ To add a user-supplied visual operator library:
    fast `EXPLORATORY` feedback. `Govern + Run` / `Govern All` derive a content-addressed fixture id
    from the frozen target, lowered input, fixture and row metadata, register immutable revision 1
    with `TEST_FIXTURE_WRITE`, verify the returned identity, and execute by stored ref with
-   `TEST_EXECUTION`. Native operators run real code under a `SPY`; resource-backed visual operators
+   `TEST_EXECUTION`. The control plane also exposes a dependency-closed immutable
+   `bloge.testSuite.v1` registry at `/api/testing/suites/{suiteId}`; the canvas does not yet publish
+   its row table to that registry. Native operators run real code under a `SPY`; resource-backed visual operators
    lower to `httpResource` and replace only transport I/O, using the editable `Transport response`
    as the raw protocol fixture. Unsupported and `OPAQUE_RUNTIME` targets fail closed before
    execution. Stored provenance is necessary but not sufficient for `CERTIFIABLE` evidence: target

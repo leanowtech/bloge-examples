@@ -25,11 +25,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class TestExecutionController {
 
     private final TestExecutionApiService service;
+    private final TestSuiteRegistryService suiteRegistry;
     private final IntegrationRequestAuthenticator authenticator;
 
     public TestExecutionController(TestExecutionApiService service,
+                                   TestSuiteRegistryService suiteRegistry,
                                    IntegrationRequestAuthenticator authenticator) {
         this.service = service;
+        this.suiteRegistry = suiteRegistry;
         this.authenticator = authenticator;
     }
 
@@ -91,6 +94,24 @@ public class TestExecutionController {
                                            @RequestHeader HttpHeaders headers) {
         return service.findFixture(fixtureBundleId, revision,
                 context(headers, IntegrationOperation.TEST_FIXTURE_READ));
+    }
+
+    /** Registers one dependency-closed immutable test-suite revision. */
+    @PutMapping("/suites/{suiteId}")
+    public StoredTestSuite registerSuite(@PathVariable String suiteId,
+                                         @RequestBody TestSuiteRegistrationRequest request,
+                                         @RequestHeader HttpHeaders headers) {
+        return suiteRegistry.register(suiteId, request,
+                context(headers, IntegrationOperation.TEST_SUITE_WRITE));
+    }
+
+    /** Resolves one exact governed test-suite revision. */
+    @GetMapping("/suites/{suiteId}")
+    public StoredTestSuite findSuite(@PathVariable String suiteId,
+                                     @RequestParam long revision,
+                                     @RequestHeader HttpHeaders headers) {
+        return suiteRegistry.find(suiteId, revision,
+                context(headers, IntegrationOperation.TEST_SUITE_READ));
     }
 
     private IntegrationRequestContext context(HttpHeaders headers, IntegrationOperation operation) {

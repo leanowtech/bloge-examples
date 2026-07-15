@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseFixtureBundleRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecurityEventRepository;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -38,6 +39,12 @@ public class TestRuntimeConfiguration {
         return new DatabaseFixtureBundleRepository(database.jdbc(), objectMapper);
     }
 
+    /** @return immutable suite registry isolated in the test-runtime database */
+    @Bean
+    TestSuiteRepository testSuiteRepository(TestRuntimeDatabase database, ObjectMapper objectMapper) {
+        return new DatabaseTestSuiteRepository(database.jdbc(), objectMapper);
+    }
+
     @Bean
     TestRunRepository testRunRepository(TestRuntimeDatabase database, ObjectMapper objectMapper) {
         return new DatabaseTestRunRepository(database.jdbc(), objectMapper);
@@ -63,6 +70,20 @@ public class TestRuntimeConfiguration {
         return new TestExecutionApiService(graphService, operatorRegistry, resourceRegistry,
                 expressionEvaluator, objectMapper, fixtureRepository, runRepository, securityEvents,
                 Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))));
+    }
+
+    /** Assembles the dependency-validating immutable suite registry service. */
+    @Bean
+    TestSuiteRegistryService testSuiteRegistryService(
+            GatewayGraphService graphService,
+            OperatorRegistry operatorRegistry,
+            ResourceRegistry resourceRegistry,
+            ObjectMapper objectMapper,
+            FixtureBundleRepository fixtureRepository,
+            TestSuiteRepository suiteRepository,
+            TestSecurityEventRepository securityEvents) {
+        return new TestSuiteRegistryService(graphService, operatorRegistry, resourceRegistry, objectMapper,
+                fixtureRepository, suiteRepository, securityEvents);
     }
 
     /** Marker consumed by the unauthenticated capability probe. */

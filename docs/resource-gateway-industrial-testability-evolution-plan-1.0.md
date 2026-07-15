@@ -8,14 +8,14 @@
 | --- | --- | --- |
 | Stage 0 | 完成 | operator suite API/UI 显式 `SCHEMA_CONTRACT`；`testing/domain` 五个版本化 record；capability testability 描述；[ADR-001](adr/ADR-001-resource-gateway-test-runtime-isolation.md)、[ADR-002](adr/ADR-002-operator-composability-and-opaque-runtime.md) 与 [BLOGE framework requirement](bloge-framework-execution-control-requirement.md) |
 | Stage 1' | 完成 | `testing/planning/runtime/evidence` 内核；独立 test engine；五行为；F2/F3 resource fixture；micro-graph runner；旧 graph suite adapter；37 个聚焦测试与 1653 个项目测试全绿 |
-| Stage 2' | 进行中 | 已落地 graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（含内容寻址 governed fixture row）、immutable fixture registry、独立 test-run store、10 态 evidence、profile/identity/生产协议隔离、独立 test-kit、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 root/nested/foreach/loop/compensation 的结构寻址、控制传播和 occurrence/attempt/node/edge evidence；一等 immutable TestSuite registry、streaming/suspendable control/evidence 与物理 network/runtime 隔离仍待完成 |
+| Stage 2' | 进行中 | 已落地 graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（含内容寻址 governed fixture row）、immutable fixture registry、独立 TestSuite 协议/registry/API、独立 test-run store、10 态 evidence、profile/identity/生产协议隔离、独立 test-kit、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 root/nested/foreach/loop/compensation 的结构寻址、控制传播和 occurrence/attempt/node/edge evidence；TestSuite runner/coverage verdict/adapters、streaming/suspendable control/evidence 与物理 network/runtime 隔离仍待完成 |
 
 Stage 0 验证基线：Resource Gateway `clean verify` 共 1624 tests、0 failures、33 个既有条件跳过；AuthorCanvas 聚焦回归 36 tests、0 failures。后续阶段必须继续维持该基线并增加对应反面用例。
 
 Stage 1 实现证据与复现命令见
 [Execution Data Control Plane Stage 1 verification](resource-gateway-execution-data-control-plane-stage1-verification.md)。
 Stage 1 全量验收：Resource Gateway `clean verify` 共 1653 tests、0 failures、0 errors、34 个条件跳过，JAR 打包成功。
-Stage 2 当前严格验收：Resource Gateway `clean verify` 共 1726 tests、0 failures、0 errors、34 个条件跳过，真实浏览器回归与 JAR 打包成功。公共同步算子适配器聚焦 30 tests、独立 test-kit 13 tests，均为 0 failures、0 errors。
+Stage 2 当前严格验收：Resource Gateway `clean verify` 共 1736 tests、0 failures、0 errors、34 个条件跳过，真实浏览器回归与 JAR 打包成功。TestSuite registry 增量聚焦 24 tests、独立 test-kit 13 tests，均为 0 failures、0 errors；test-kit JAR 已打包更新后的权威 schema。
 Nested invocation 增量聚焦验收：37 tests、0 failures；非空 foreach 的三个 item 全部消费同一受限 fixture，真实外部算子调用数为 0，compensation 使用独立 site 且真实补偿调用数为 0。项目 `clean verify` 执行 1704 tests 时 1703 通过、1 个既有浏览器 connectability readiness 用例瞬时超时；该失败用例随即独立复跑 1/1 通过。此记录不得改写为一次严格全绿的全量运行。
 独立 test-kit 当前 `clean verify` 共 13 tests、0 failures、0 errors；JAR 与权威 testing-control-plane v1 schema 一同打包成功，并提供 graph/operator target、OPERATOR fixture/execution、payload-free occurrence/attempt/edge 强类型投影及旧 v1 响应兼容。
 这里的“完成”只指内核与已列出的 adapter。Stage 2 已开放首个公共 graph control plane、持久化 store、test-kit，并完成全部内置图的 stored-suite F3 迁移与 dogfooding；但公共
@@ -25,6 +25,8 @@ operator API/test-kit adapter 和 canvas runner 已开放，但 streaming/suspen
 [Stage 2 test-kit verification](resource-gateway-execution-data-control-plane-stage2-test-kit-verification.md)。
 公共同步算子执行、runtime-binding 冻结与认证反例见
 [Stage 2 operator adapter verification](resource-gateway-execution-data-control-plane-stage2-operator-adapter-verification.md)。
+一等 TestSuite 的协议边界、依赖闭包、权限反例和非声明见
+[Stage 2 suite registry verification](resource-gateway-execution-data-control-plane-stage2-suite-registry-verification.md)。
 内置图矩阵、不可达 endpoint 逃逸证明与认证边界见
 [Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md)。
 逻辑时间、时间故障注入及其非声明见
@@ -262,7 +264,7 @@ flowchart LR
 
 1. **同步证据主路径已闭环**：BLOGE run-scoped resolver 已贯通同步 root、subgraph、foreach、loop 与 compensation；RG preflight 递归冻结同源 path，并对循环、重复、深度和 site 总量 fail closed。node/edge trace 已携带结构 site、runtime correlation、site occurrence、containing graph occurrence，重试作为 occurrence 内 attempt 列表保留。streaming/suspendable 控制与证据、durable resume 恢复仍未激活。
 2. **已验证基础来源**：foreach/loop 的 `correlationKey` 由 BLOGE 运行时产生并传给 resolver，结构 path 不含 occurrence。当前 fixture matcher 可按该 runtime correlation 或输入业务 correlation 匹配；attempt/occurrence selector 仍保留为拒绝态，但 evidence 已逐 occurrence/attempt 展开，后续开放 selector 时必须复用同一坐标语义。
-3. **已验证并关闭主路径**：suite registry/batch runner 已收编全部七张示例图；14 case、coverage gate、stored provenance 和 payload-safe occurrence evidence 通过真实 Spring wiring。新增图仍须同步 contract 与 suite，避免目录再次不完整。
+3. **已验证但须区分两层资产**：既有 graph-contract catalog/batch runner 已收编全部七张示例图；14 case、coverage gate、stored provenance 和 payload-safe occurrence evidence 通过真实 Spring wiring。新的一等 `bloge.testSuite.v1` registry 已落地依赖闭包存储，但 runner 尚未接管该 catalog；新增图仍须同步 contract 与旧 catalog，直到迁移完成。
 4. **已验证并关闭**：test-kit 不需要将 `resource-gateway-examples` 转为多模块；采用顶层独立 Maven library，并由根 README/AGENTS 固化独立构建命令。后续若建立聚合 verify，只能新增无搬迁的根级 aggregator，不得改变服务端 artifact 与启停路径。
 5. **已关闭同步主路径**：BLOGE `ExecutionOptions.operatorResolver` 与 `NestedGraphProvider` 已在同工作区引擎源码落地并通过 `bloge-core` 1928 tests；Resource Gateway 当前直接依赖该 SPI。后续发布必须保证 BLOGE artifact 版本包含这两个协议，不能只依赖开发机本地安装。
 6. **已验证并关闭**：存量与新增内置 suite 已从 WireMock/demo-upstream 提取真实 envelope 并迁移为 F3；BodyCode、BodyFlag、HttpStatus、StatusCodes、BlgeExpression 五种协议均在图级 case 中经过派生。后续 descriptor envelope 变化必须同步 fixture，否则测试应当失败而不是兼容吞掉。
@@ -270,7 +272,7 @@ flowchart LR
 8. Stage 2 当前 dependency policy 会因任一已注册 descriptor 变化而令所有 graph fixture stale，安全但影响面偏大；只有在 BLOGE 暴露可证明完整的静态/运行期 resource dependency manifest 后才能收窄。
 9. `EVIDENCE_INCOMPLETE` 当前随同步响应返回但不能查询（持久化本身失败）；后续需独立告警/恢复队列，不能把失败记录写回同一个失效 store 来制造假恢复。
 10. **已验证但有限定**：逻辑 sleep 是原子、单调、零墙钟推进；并发分支的读取顺序仍由 BLOGE 调度决定。TIMEOUT 验证业务恢复语义，不验证真实 watchdog 精度、阻塞线程中断或 wall-clock deadline，这些必须由 BLOGE/sandbox conformance 另证。
-11. **公共同步 operator 主路径与 UI 已闭环**：target discovery、immutable OPERATOR fixture、typed input、micro graph、证据持久化、test-kit 和 Author Canvas `Executable Operator Suite` 已落地。旧 `/api/visual/operators/tests/run` 仍是 `SCHEMA_CONTRACT`；画布使用测试控制面的独立 endpoint，`Run*` 以 inline fixture 快速执行并只签发 `EXPLORATORY`，`Govern*` 则生成内容寻址 ID、注册不可变单行 fixture revision、校验返回身份后按 stored ref 执行。单行 governed fixture 仍不等于一等 immutable `TestSuite` 资产，也不自动获得发布认证。
+11. **公共同步 operator 主路径与 UI 已闭环**：target discovery、immutable OPERATOR fixture、typed input、micro graph、证据持久化、test-kit 和 Author Canvas `Executable Operator Suite` 已落地。旧 `/api/visual/operators/tests/run` 仍是 `SCHEMA_CONTRACT`；画布使用测试控制面的独立 endpoint，`Run*` 以 inline fixture 快速执行并只签发 `EXPLORATORY`，`Govern*` 则生成内容寻址 ID、注册不可变单行 fixture revision、校验返回身份后按 stored ref 执行。一等 immutable `bloge.testSuite.v1` 已具备独立权限、依赖闭包校验、持久化和查询 API；但画布尚未把多行表发布为该资产，suite runner/coverage verdict 也未开放。单行 governed fixture 仍不等于 suite，也不自动获得发布认证。
 12. **composability 已 fail-closed，但反作弊仍有明确负空间**：无状态检查只解决 instance state；缺 manifest 的无状态 READ_ONLY binding 已降级 OPAQUE，声明 TIME/RANDOM/UUID/IDENTITY/FEATURE_FLAG 或通用 dependency port 也在 v1 降级。manifest、behavior 与 state provider 仍是治理合同而非沙箱证明；Stage 5 仍需 egress policy、sandbox conformance 和声明/观测漂移检测。
 
 ### 十一、明确排除（v1 不做）

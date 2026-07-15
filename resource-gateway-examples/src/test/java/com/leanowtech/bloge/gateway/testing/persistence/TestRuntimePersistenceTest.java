@@ -7,7 +7,10 @@ import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestRunRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestSecurityEvent;
+import com.leanowtech.bloge.gateway.testing.api.StoredTestSuite;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteConflictException;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +30,7 @@ class TestRuntimePersistenceTest {
     private DatabaseFixtureBundleRepository fixtures;
     private DatabaseTestRunRepository runs;
     private DatabaseTestSecurityEventRepository securityEvents;
+    private DatabaseTestSuiteRepository suites;
 
     @BeforeEach
     void setUp() {
@@ -37,9 +41,11 @@ class TestRuntimePersistenceTest {
         fixtures = new DatabaseFixtureBundleRepository(jdbc, mapper);
         runs = new DatabaseTestRunRepository(jdbc, mapper);
         securityEvents = new DatabaseTestSecurityEventRepository(jdbc, mapper);
+        suites = new DatabaseTestSuiteRepository(jdbc, mapper);
         fixtures.init();
         runs.init();
         securityEvents.init();
+        suites.init();
     }
 
     @Test
@@ -57,6 +63,34 @@ class TestRuntimePersistenceTest {
                 "sha256:different", bundle, stored.createdAt(), "runner");
         assertThatThrownBy(() -> fixtures.create(conflict))
                 .isInstanceOf(FixtureBundleConflictException.class)
+                .hasMessageContaining("different immutable content");
+    }
+
+    @Test
+    void immutableSuiteRevisionRoundTripsWithPolicyAndRejectsCrossScopeOrOverwrite() {
+        String target = "sha256:" + "a".repeat(64);
+        String fixture = "sha256:" + "b".repeat(64);
+        TestSuite suite = new TestSuite("", "suite-a", 3,
+                new TestSuite.Target("GRAPH", "graph-a", target), "INTERNAL",
+                List.of(new TestSuite.TestCase("golden", TestSuite.CaseType.GOLDEN,
+                        Map.of("orderId", "O-1"), new TestSuite.FixtureBundleRef(
+                        "fixture-a", 2, fixture), List.of("ci"), Map.of())),
+                new TestSuite.CoveragePolicy(1, List.of(TestSuite.CaseType.GOLDEN),
+                        List.of("/root/fetch#PRIMARY"), List.of(new TestSuite.EdgeTransferRef(
+                        "/root/fetch#PRIMARY", "/root/output#PRIMARY")), 1, true),
+                new TestSuite.PromotionPolicy(true, 1, true), Map.of("owner", "quality"));
+        StoredTestSuite stored = new StoredTestSuite("", "tenant-a", "test", "suite-a", 3,
+                "sha256:" + "c".repeat(64), suite, Instant.now(), "runner");
+
+        suites.create(stored);
+
+        assertThat(suites.find("tenant-a", "test", "suite-a", 3)).contains(stored);
+        assertThat(suites.find("tenant-b", "test", "suite-a", 3)).isEmpty();
+        assertThat(suites.find("tenant-a", "staging", "suite-a", 3)).isEmpty();
+        StoredTestSuite conflict = new StoredTestSuite("", "tenant-a", "test", "suite-a", 3,
+                "sha256:" + "d".repeat(64), suite, stored.createdAt(), "runner");
+        assertThatThrownBy(() -> suites.create(conflict))
+                .isInstanceOf(TestSuiteConflictException.class)
                 .hasMessageContaining("different immutable content");
     }
 

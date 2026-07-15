@@ -8,8 +8,9 @@
 
 Machine-readable schema bundle:
 [testing-control-plane-v1.schema.json](schemas/resource-gateway-testing/testing-control-plane-v1.schema.json).
-It defines every public payload: graph/operator target descriptors, fixture registration and stored
-revision, graph/operator execution requests, common response, effective plan, and evidence.
+It defines every public payload: graph/operator target descriptors, fixture and test-suite
+registration/stored revisions, graph/operator execution requests, common response, effective plan,
+and evidence.
 
 ## 1. What This API Is
 
@@ -34,7 +35,7 @@ The trust transition is explicit:
 ## 2. Start And Stop
 
 The visual demo starts with the `test` profile by default, which assembles `/api/testing/**` and uses
-a separate H2/Hikari pool for fixtures, test runs, and test security events:
+a separate H2/Hikari pool for fixtures, immutable test suites, test runs, and test security events:
 
 ```bash
 ./scripts/start-visual-canvas-demo.sh --open
@@ -77,20 +78,22 @@ Testing endpoints require a verified bearer and the least-privilege purpose for 
 
 ```text
 Authorization: Bearer <verified workload credential>
-X-Purpose: TEST_EXECUTION | TEST_FIXTURE_READ | TEST_FIXTURE_WRITE
+X-Purpose: TEST_EXECUTION | TEST_FIXTURE_READ | TEST_FIXTURE_WRITE | TEST_SUITE_READ | TEST_SUITE_WRITE
 ```
 
 The local test-profile defaults are:
 
 | Operation | Required `X-Purpose` |
 | --- | --- |
-| target discovery | any of `TEST_EXECUTION`, `TEST_FIXTURE_READ`, `TEST_FIXTURE_WRITE` |
+| target discovery | any testing purpose, including suite read/write |
 | execute, batch, run query | `TEST_EXECUTION` |
 | fixture revision query | `TEST_FIXTURE_READ` |
 | immutable fixture registration | `TEST_FIXTURE_WRITE` |
+| test-suite revision query | `TEST_SUITE_READ` |
+| immutable test-suite registration | `TEST_SUITE_WRITE` |
 
-The local demo bearer is `bloge-aneke-demo-token` and is granted all three purposes. Production
-credentials should keep author, reader, and runner responsibilities separate.
+The local demo bearer is `bloge-aneke-demo-token` and is granted all five testing purposes.
+Production credentials should keep fixture authors, suite authors, readers, and runners separate.
 `RG_INTEGRATION_ENVIRONMENT_ID` and `RG_INTEGRATION_ALLOWED_PURPOSES` override profile defaults;
 deployment manifests must set both explicitly so a staging runner cannot inherit production identity claims.
 
@@ -330,6 +333,92 @@ This mode verifies time-dependent business behavior and the graph's reaction to 
 not prove wall-clock watchdog accuracy, interruption of blocked operator code, or deterministic
 completion order between concurrent branches. Those remain engine/sandbox conformance concerns.
 
+### 4.2.2 Register an immutable test suite
+
+A suite is a reviewed execution manifest, not an inline list of mutable fixtures. Every case carries
+an exact fixture id, revision, and full fingerprint; the suite itself freezes the target fingerprint,
+case intent, coverage policy, promotion policy, classification, and provenance:
+
+```http
+PUT /api/testing/suites/loan-decision-regression
+Authorization: Bearer bloge-aneke-demo-token
+X-Purpose: TEST_SUITE_WRITE
+Content-Type: application/json
+```
+
+```json
+{
+  "schemaVersion": "bloge.testSuiteRegistrationRequest.v1",
+  "testSuite": {
+    "schemaVersion": "bloge.testSuite.v1",
+    "suiteId": "loan-decision-regression",
+    "revision": 1,
+    "target": {
+      "kind": "GRAPH",
+      "id": "loanDecisionPolicy",
+      "fingerprint": "sha256:<from-target-descriptor>"
+    },
+    "classification": "INTERNAL",
+    "cases": [
+      {
+        "caseId": "prime-r1",
+        "caseType": "GOLDEN",
+        "input": {"applicantId": "prime", "requestedAmount": 450000},
+        "fixtureBundleRef": {
+          "fixtureBundleId": "loan-prime-v1",
+          "revision": 1,
+          "fingerprint": "sha256:<returned-by-fixture-registration>"
+        },
+        "tags": ["ci", "release-gate"],
+        "metadata": {"requirementId": "RISK-1024"}
+      }
+    ],
+    "coveragePolicy": {
+      "minimumCases": 1,
+      "requiredCaseTypes": ["GOLDEN"],
+      "requiredInvocationSiteIds": ["/root/assembleLoanDecision#PRIMARY"],
+      "requiredEdgeTransfers": [],
+      "minimumAssertionsPerCase": 1,
+      "requireAllFixtureRulesConsumed": true
+    },
+    "promotionPolicy": {
+      "requireAllCasesPassed": true,
+      "minimumCertifiableCases": 1,
+      "requireTargetCertificationEligible": true
+    },
+    "metadata": {"owner": "risk-quality"}
+  }
+}
+```
+
+Registration is dependency-closed and fail closed:
+
+- the current target must exactly match the suite target fingerprint;
+- every case must resolve an existing fixture in the same verified tenant and environment;
+- blank or stale fixture fingerprints are rejected; there is no implicit `latest` lookup;
+- suite classification must be at least as restrictive as every fixture classification;
+- graph case input must be a JSON object, case ids must be unique, and cases are bounded to 100;
+- required case types, minimum case count, and minimum assertion density must already be satisfiable;
+- `requireTargetCertificationEligible=true` rejects a target revision with certification gaps;
+- `(tenant, environment, suiteId, revision)` is immutable and idempotent for equivalent content.
+
+Coverage uses `invocationSiteId` and explicit source/destination site pairs rather than local
+`nodeId` or `edgeId`. The structural coordinate includes graph path and invocation kind, so the same
+node name in a root graph, foreach body, and compensation graph cannot collapse into one false hit.
+
+Query an exact revision with a separate reader purpose:
+
+```bash
+curl -sS 'http://localhost:8080/api/testing/suites/loan-decision-regression?revision=1' \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_SUITE_READ'
+```
+
+This increment establishes the authoritative suite asset. Suite execution, aggregate coverage
+evaluation, promotion verdicts, test-kit methods, and canvas `Save as governed suite` are not yet
+exposed; until those adapters land, cases continue to execute through the exact fixture execution
+endpoints in the following sections.
+
 ### 4.3 Execute with a stored fixture
 
 ```http
@@ -433,7 +522,8 @@ execution POST.
 `Run*` remains the fast inline `EXPLORATORY` loop. `Govern*` supplies stored provenance, but it does
 not promise `CERTIFIABLE`: target composability, strict schema checks and fixture fidelity still
 govern the server-authoritative evidence class. `Govern All` currently governs and executes each row
-independently; it is not yet an immutable first-class `TestSuite` revision. `Apply Fixture` only
+independently; it does not yet register the first-class `bloge.testSuite.v1` revision available at
+`/api/testing/suites/{suiteId}`. `Apply Fixture` only
 writes the row back to the visual draft's ordinary node fixture and never registers a control-plane
 fixture.
 
@@ -588,14 +678,17 @@ Implemented now:
 - Author Canvas `Executable Operator Suite` target discovery, native `SPY`, resource
   `TRANSPORT` lowering, real run/evidence display, content-addressed governed row registration,
   stored-ref execution, registry-identity validation, and opaque-target fail-closed behavior.
+- first-class immutable `bloge.testSuite.v1` protocol, dependency-closed registry, independent
+  read/write purposes, target/fixture/classification drift checks, JDBC persistence, and capability
+  discovery.
 
 Still intentionally outside this increment:
 
 - `REPLAY`, retry-attempt/occurrence selectors, streaming/suspendable controls and evidence, and
   durable-resume plan restoration;
 - signed certification, semantic coverage, ANEKE projection, and mutation testing;
-- a first-class immutable `TestSuite` registry that groups cases, coverage policy, promotion policy,
-  fixture refs and run history as one revisioned asset;
+- the TestSuite runner, aggregate node/edge coverage and promotion verdict, suite-run history, and
+  canvas/test-kit/CI adapters over the new registry;
 - deterministic random/UUID/function execution services and deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;
 - certification of streaming foreach/loop graphs until their invocation and edge evidence is

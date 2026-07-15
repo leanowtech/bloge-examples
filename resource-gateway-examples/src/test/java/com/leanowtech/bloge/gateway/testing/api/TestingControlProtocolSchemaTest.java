@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -32,6 +33,12 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(FixtureBundleRegistrationRequest.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/storedFixtureBundle/properties/schemaVersion/const").asText())
                 .isEqualTo(StoredFixtureBundle.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testSuite/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuite.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testSuiteRegistrationRequest/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteRegistrationRequest.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/storedTestSuite/properties/schemaVersion/const").asText())
+                .isEqualTo(StoredTestSuite.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testGraphTargetDescriptor/properties/schemaVersion/const").asText())
                 .isEqualTo(TestGraphTargetDescriptor.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testOperatorExecutionRequest/properties/schemaVersion/const").asText())
@@ -69,6 +76,8 @@ class TestingControlProtocolSchemaTest {
 
         assertThat(definitions.has("fixtureBundleRegistrationRequest")).isTrue();
         assertThat(definitions.has("storedFixtureBundle")).isTrue();
+        assertThat(definitions.has("testSuiteRegistrationRequest")).isTrue();
+        assertThat(definitions.has("storedTestSuite")).isTrue();
         assertThat(definitions.at("/fixtureBundleRegistrationRequest/properties/target/$ref").asText())
                 .isEqualTo("#/$defs/target");
         assertThat(definitions.at("/testExecutionRequest/properties/target/$ref").asText())
@@ -92,6 +101,23 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestExecutionBatchRequest.MAX_EXECUTIONS);
         assertThat(definitions.at("/testExecutionBatchResponse/properties/executions/items/$ref").asText())
                 .isEqualTo("#/$defs/testExecutionResponse");
+        assertThat(definitions.at("/testSuite/properties/target/$ref").asText())
+                .isEqualTo("#/$defs/exactTarget");
+        assertThat(definitions.at("/testSuiteCase/properties/fixtureBundleRef/$ref").asText())
+                .isEqualTo("#/$defs/governedFixtureBundleRef");
+        assertThat(definitions.at("/governedFixtureBundleRef/properties/fingerprint/$ref").asText())
+                .isEqualTo("#/$defs/fingerprint");
+        assertThat(definitions.at("/testSuite/properties/cases/maxItems").asInt())
+                .isEqualTo(TestSuiteRegistryService.MAX_CASES);
+        assertThat(definitions.at(
+                "/testSuiteCoveragePolicy/properties/requiredInvocationSiteIds/items/type").asText())
+                .isEqualTo("string");
+        assertThat(definitions.at(
+                "/testSuiteCoveragePolicy/properties/requiredEdgeTransfers/items/$ref").asText())
+                .isEqualTo("#/$defs/testSuiteEdgeTransferRef");
+        assertThat(definitions.at("/testSuiteEdgeTransferRef/required"))
+                .extracting(JsonNode::asText)
+                .containsExactly("fromInvocationSiteId", "toInvocationSiteId");
         assertThat(definitions.at("/effectivePlan/additionalProperties").asBoolean()).isFalse();
         assertThat(definitions.at("/testRunEvidence/additionalProperties").asBoolean()).isFalse();
     }

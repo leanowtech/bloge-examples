@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://leanowtech.example/schemas/resource-gateway-testing/testing-control-plane-v1.schema.json",
   "title": "Resource Gateway Testing Control Plane v1",
-  "description": "Wire contracts for target discovery, immutable fixtures, controlled execution, plans, and sanitized evidence.",
+  "description": "Wire contracts for target discovery, immutable fixtures and suites, controlled execution, plans, and sanitized evidence.",
   "$defs": {
     "fingerprint": {
       "type": "string",
@@ -191,6 +191,127 @@
         "revision": {"type": "integer", "minimum": 1},
         "fingerprint": {"$ref": "#/$defs/fingerprint"},
         "bundle": {"$ref": "#/$defs/fixtureBundle"},
+        "createdAt": {"type": "string", "format": "date-time"},
+        "createdBy": {"type": "string", "minLength": 1}
+      }
+    },
+    "exactTarget": {
+      "allOf": [
+        {"$ref": "#/$defs/target"},
+        {"properties": {"fingerprint": {"$ref": "#/$defs/fingerprint"}}}
+      ]
+    },
+    "governedFixtureBundleRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixtureBundleId", "revision", "fingerprint"],
+      "properties": {
+        "fixtureBundleId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "revision": {"type": "integer", "minimum": 1},
+        "fingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "testSuiteCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "caseType", "input", "fixtureBundleRef", "tags", "metadata"],
+      "properties": {
+        "caseId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "caseType": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]},
+        "input": true,
+        "fixtureBundleRef": {"$ref": "#/$defs/governedFixtureBundleRef"},
+        "tags": {
+          "type": "array", "uniqueItems": true, "maxItems": 64,
+          "items": {"type": "string", "minLength": 1, "maxLength": 128}
+        },
+        "metadata": {"type": "object", "maxProperties": 100}
+      }
+    },
+    "testSuiteEdgeTransferRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fromInvocationSiteId", "toInvocationSiteId"],
+      "properties": {
+        "fromInvocationSiteId": {"type": "string", "minLength": 1, "maxLength": 512},
+        "toInvocationSiteId": {"type": "string", "minLength": 1, "maxLength": 512}
+      }
+    },
+    "testSuiteCoveragePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimumCases", "requiredCaseTypes", "requiredInvocationSiteIds", "requiredEdgeTransfers",
+        "minimumAssertionsPerCase", "requireAllFixtureRulesConsumed"],
+      "properties": {
+        "minimumCases": {"type": "integer", "minimum": 1, "maximum": 100},
+        "requiredCaseTypes": {
+          "type": "array", "uniqueItems": true, "maxItems": 4,
+          "items": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]}
+        },
+        "requiredInvocationSiteIds": {
+          "type": "array", "uniqueItems": true, "maxItems": 10000,
+          "items": {"type": "string", "minLength": 1, "maxLength": 512}
+        },
+        "requiredEdgeTransfers": {
+          "type": "array", "uniqueItems": true, "maxItems": 10000,
+          "items": {"$ref": "#/$defs/testSuiteEdgeTransferRef"}
+        },
+        "minimumAssertionsPerCase": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "requireAllFixtureRulesConsumed": {"type": "boolean"}
+      }
+    },
+    "testSuitePromotionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requireAllCasesPassed", "minimumCertifiableCases",
+        "requireTargetCertificationEligible"],
+      "properties": {
+        "requireAllCasesPassed": {"type": "boolean"},
+        "minimumCertifiableCases": {"type": "integer", "minimum": 0, "maximum": 100},
+        "requireTargetCertificationEligible": {"type": "boolean"}
+      }
+    },
+    "testSuite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteId", "revision", "target", "classification", "cases",
+        "coveragePolicy", "promotionPolicy", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuite.v1"},
+        "suiteId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "revision": {"type": "integer", "minimum": 1},
+        "target": {"$ref": "#/$defs/exactTarget"},
+        "classification": {"enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]},
+        "cases": {
+          "type": "array", "minItems": 1, "maxItems": 100,
+          "items": {"$ref": "#/$defs/testSuiteCase"}
+        },
+        "coveragePolicy": {"$ref": "#/$defs/testSuiteCoveragePolicy"},
+        "promotionPolicy": {"$ref": "#/$defs/testSuitePromotionPolicy"},
+        "metadata": {"type": "object", "maxProperties": 100}
+      }
+    },
+    "testSuiteRegistrationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "testSuite"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteRegistrationRequest.v1"},
+        "testSuite": {"$ref": "#/$defs/testSuite"}
+      }
+    },
+    "storedTestSuite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "tenantId", "environmentId", "suiteId", "revision",
+        "fingerprint", "suite", "createdAt", "createdBy"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.storedTestSuite.v1"},
+        "tenantId": {"type": "string", "minLength": 1},
+        "environmentId": {"type": "string", "minLength": 1},
+        "suiteId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "revision": {"type": "integer", "minimum": 1},
+        "fingerprint": {"$ref": "#/$defs/fingerprint"},
+        "suite": {"$ref": "#/$defs/testSuite"},
         "createdAt": {"type": "string", "format": "date-time"},
         "createdBy": {"type": "string", "minLength": 1}
       }

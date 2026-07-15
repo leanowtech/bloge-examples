@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationWorkloadIdentity;
 import com.leanowtech.bloge.gateway.integration.StaticBearerIntegrationIdentityResolver;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -19,6 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -136,15 +138,78 @@ class TestExecutionControllerTest {
         org.mockito.Mockito.verifyNoInteractions(service);
     }
 
+    @Test
+    void suiteRegistryUsesDedicatedWritePurposeAndExactRevisionPath() throws Exception {
+        TestExecutionApiService execution = mock(TestExecutionApiService.class);
+        TestSuiteRegistryService suites = mock(TestSuiteRegistryService.class);
+        TestSuite suite = new TestSuite("", "suite-a", 1,
+                new TestSuite.Target("GRAPH", "graph-a", "sha256:" + "a".repeat(64)),
+                "INTERNAL", List.of(), TestSuite.CoveragePolicy.defaults(),
+                TestSuite.PromotionPolicy.defaults(), Map.of());
+        when(suites.register(eq("suite-a"), any(), any())).thenReturn(new StoredTestSuite(
+                "", "tenant-a", "test", "suite-a", 1, "sha256:" + "b".repeat(64),
+                suite, Instant.now(), "runner"));
+        MockMvc mvc = mvc(execution, suites, Set.of("TEST_SUITE_WRITE"));
+
+        mvc.perform(put("/api/testing/suites/suite-a")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_SUITE_WRITE")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"schemaVersion":"bloge.testSuiteRegistrationRequest.v1",
+                                 "testSuite":{"schemaVersion":"bloge.testSuite.v1","suiteId":"suite-a",
+                                 "revision":1,"target":{"kind":"GRAPH","id":"graph-a",
+                                 "fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+                                 "classification":"INTERNAL","cases":[],
+                                 "coveragePolicy":{"minimumCases":1,"requiredCaseTypes":[],
+                                 "requiredInvocationSiteIds":[],"requiredEdgeTransfers":[],"minimumAssertionsPerCase":0,
+                                 "requireAllFixtureRulesConsumed":true},
+                                 "promotionPolicy":{"requireAllCasesPassed":true,
+                                 "minimumCertifiableCases":1,"requireTargetCertificationEligible":true},
+                                 "metadata":{}}}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.suiteId").value("suite-a"))
+                .andExpect(jsonPath("$.revision").value(1));
+
+        verify(suites).register(eq("suite-a"), any(),
+                org.mockito.ArgumentMatchers.argThat(identity ->
+                        identity.purpose().equals("TEST_SUITE_WRITE")));
+        verifyNoInteractions(execution);
+    }
+
+    @Test
+    void executionPurposeCannotWriteGovernedSuiteRevisions() throws Exception {
+        TestExecutionApiService execution = mock(TestExecutionApiService.class);
+        TestSuiteRegistryService suites = mock(TestSuiteRegistryService.class);
+        MockMvc mvc = mvc(execution, suites, Set.of("TEST_EXECUTION"));
+
+        mvc.perform(put("/api/testing/suites/suite-a")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_EXECUTION")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("RG.INTEGRATION.PURPOSE_FORBIDDEN"));
+
+        verifyNoInteractions(execution, suites);
+    }
+
     private static MockMvc mvc(TestExecutionApiService service) {
+        return mvc(service, mock(TestSuiteRegistryService.class), Set.of("TEST_EXECUTION"));
+    }
+
+    private static MockMvc mvc(TestExecutionApiService service,
+                               TestSuiteRegistryService suites,
+                               Set<String> purposes) {
         RecordingAudit audit = new RecordingAudit();
         IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity(
                 "test-runtime", "tenant-a", "org-a", "project-a", "test", "local",
-                "WORKLOAD", "runner", "", Set.of("TEST_EXECUTION"), Instant.MAX, true,
+                "WORKLOAD", "runner", "", purposes, Instant.MAX, true,
                 Set.of("quality"), "CONFIDENTIAL", "", Instant.MAX);
         IntegrationRequestAuthenticator authenticator = new IntegrationRequestAuthenticator(
                 new StaticBearerIntegrationIdentityResolver("test-token", identity, false), audit);
-        return MockMvcBuilders.standaloneSetup(new TestExecutionController(service, authenticator))
+        return MockMvcBuilders.standaloneSetup(new TestExecutionController(service, suites, authenticator))
                 .setControllerAdvice(new TestExecutionProblemHandler()).build();
     }
 
