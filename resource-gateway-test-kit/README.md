@@ -4,13 +4,15 @@
 Resource Gateway testing control plane without depending on its Spring Boot
 implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 
-- a bounded JDK HTTP client for graph/operator target discovery, fixture registry,
-  graph single/batch execution, operator micro-graph execution, and persisted-run lookup;
+- a bounded JDK HTTP client for graph/operator target discovery, fixture and immutable-suite
+  registries, graph/operator execution, suite execution, and persisted child/aggregate-run lookup;
 - a fail-closed `FixtureBundleBuilder` for output-level and transport-level
   protocol fixtures;
-- payload-safe typed run summaries and JUnit 5 assertions;
+- a dependency-closed `TestSuiteBuilder` with exact target and fixture references;
+- payload-safe typed child/suite-run summaries and JUnit 5 assertions;
 - occurrence-addressable node, retry-attempt, and edge summaries without payload fields;
-- payload-free JUnit XML with deterministic CI exit codes.
+- payload-free JUnit XML with deterministic CI exit codes;
+- an executable `-cli.jar` that fails closed on suite, coverage, or promotion-policy failure.
 
 ## Build
 
@@ -105,6 +107,76 @@ TestRunAssertions.assertPassed(operatorRun);
 TestRunAssertions.assertCertifiable(operatorRun);
 ```
 
+Build and execute one immutable suite without hand-writing the suite protocol:
+
+```java
+TestSuiteBuilder suite = TestSuiteBuilder.operator(operator)
+        .id("normalization-regression")
+        .revision(1)
+        .addCase("uppercase", TestSuiteBuilder.CaseType.GOLDEN,
+                Map.of("name", "Ada"), operatorRevision)
+        .requireCaseTypes(TestSuiteBuilder.CaseType.GOLDEN)
+        .metadata(Map.of("owner", "customer-platform"));
+
+TestSuiteRevision storedSuite = client.registerSuite(
+        "normalization-regression", suite.registrationRequest());
+
+TestSuiteRun suiteRun = client.executeSuite(
+        storedSuite.suiteId(),
+        storedSuite.revision(),
+        storedSuite.fingerprint(),
+        "pipeline-982-job-4",
+        ResourceGatewayTestClient.SuiteStrategy.COLLECT_ALL,
+        Map.of("source", "junit"));
+
+TestSuiteRunAssertions.assertPassed(suiteRun);
+TestSuiteRunAssertions.assertAllCasesPassed(suiteRun);
+TestSuiteRunAssertions.assertCoverageSatisfied(suiteRun);
+TestSuiteRunAssertions.assertPromotionEligible(suiteRun);
+
+JUnitXmlReportWriter.writeSuite(
+        Path.of("target/surefire-reports/resource-gateway-suite.xml"),
+        suiteRun,
+        true);
+```
+
+`TestSuiteRun` links each case to its child `runId`, exact fixture revision, evidence class,
+assertion counters, and stable diagnostic code. It intentionally excludes child inputs, outputs,
+and free-form diagnostics from its reportable projection. `promotionEligible()` means only that the
+run satisfies the suite's policy and may be submitted to a later gate; it does not mean signed,
+certified, approved, or published.
+
+## CI Command
+
+`clean package` produces both the library JAR and a dependency-contained
+`bloge-resource-gateway-test-kit-1.0.0-cli.jar`. Credentials are accepted only through the
+environment, while the exact suite identity and caller-owned idempotency key are explicit:
+
+```bash
+export RESOURCE_GATEWAY_TOKEN='<short-lived workload token>'
+
+java -jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-cli.jar \
+  --base-uri http://localhost:8080 \
+  --suite-id normalization-regression \
+  --revision 1 \
+  --fingerprint 'sha256:<64 lowercase hex characters>' \
+  --client-request-id "${CI_PIPELINE_ID}-${CI_JOB_ID}" \
+  --strategy COLLECT_ALL \
+  --report target/test-results/resource-gateway-suite.xml
+```
+
+The command returns:
+
+- `0` only when suite status is `PASSED`, coverage is `SATISFIED`, every case passed, and promotion
+  status is `ELIGIBLE`;
+- `1` when governed evidence was obtained but the suite gate failed;
+- `2` when configuration, transport, protocol validation, or report generation failed.
+
+`--allow-non-eligible` disables only the promotion-eligibility requirement; execution, all cases,
+and coverage must still pass. The CLI never accepts a token argument, never generates an idempotency
+key implicitly, and writes a one-test infrastructure failure report when execution fails before
+governed suite evidence is available.
+
 `EXECUTABLE_UNIT` does not by itself imply certification. The server also requires a frozen
 implementation closure, runtime state, and v2 composability manifest. Stateless operators satisfy
 only the state-freezing condition; they do not qualify automatically. Configured operators implement
@@ -161,6 +233,8 @@ watchdog timing or thread interruption.
 - Exceptions and JUnit XML omit credentials, request bodies, node input/output,
   and problem `details`; use the run/correlation id for authorized diagnosis.
 - Unknown response protocol versions fail immediately.
+- Suite execution requires an exact positive revision, full lowercase SHA-256 fingerprint, and
+  explicit `clientRequestId` before any network call.
 
 The packaged schema is available at `TestingProtocol.SCHEMA_RESOURCE`. Full
 server endpoint, identity, and profile requirements are documented in

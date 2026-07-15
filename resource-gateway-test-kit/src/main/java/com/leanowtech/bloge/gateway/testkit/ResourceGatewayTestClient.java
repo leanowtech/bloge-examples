@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -40,6 +41,14 @@ public final class ResourceGatewayTestClient {
         STANDARD,
         /** Full sanitized evidence projection. */
         FULL
+    }
+
+    /** Scheduling strategy for one immutable governed suite run. */
+    public enum SuiteStrategy {
+        /** Execute every case and aggregate all failures. */
+        COLLECT_ALL,
+        /** Stop scheduling new cases after the first terminal case failure. */
+        FAIL_FAST
     }
 
     /** Supplies a short-lived bearer credential at request time. */
@@ -132,6 +141,84 @@ public final class ResourceGatewayTestClient {
                 "revision=" + revision, "TEST_FIXTURE_READ", null);
         requireVersion(response, TestingProtocol.STORED_FIXTURE_BUNDLE_V1);
         return FixtureBundleRevision.from(response);
+    }
+
+    /**
+     * Registers one dependency-closed immutable test-suite revision.
+     *
+     * @param suiteId suite id used in the endpoint
+     * @param registrationRequest schema-complete registration request
+     * @return committed immutable suite revision
+     */
+    public TestSuiteRevision registerSuite(String suiteId, JsonNode registrationRequest) {
+        JsonNode response = exchange("PUT", "/api/testing/suites/" + segment(suiteId), "",
+                "TEST_SUITE_WRITE", requiredObject(registrationRequest, "registrationRequest"));
+        requireVersion(response, TestingProtocol.STORED_TEST_SUITE_V1);
+        return projectSuiteRevision(response);
+    }
+
+    /**
+     * Reads one exact tenant- and environment-scoped suite revision.
+     *
+     * @param suiteId stable suite id
+     * @param revision positive immutable revision
+     * @return stored suite identity projection
+     */
+    public TestSuiteRevision findSuite(String suiteId, long revision) {
+        if (revision < 1) {
+            throw new IllegalArgumentException("revision must be at least 1");
+        }
+        JsonNode response = exchange("GET", "/api/testing/suites/" + segment(suiteId),
+                "revision=" + revision, "TEST_SUITE_READ", null);
+        requireVersion(response, TestingProtocol.STORED_TEST_SUITE_V1);
+        return projectSuiteRevision(response);
+    }
+
+    /**
+     * Executes one exact immutable suite revision with a caller-owned idempotency key.
+     *
+     * @param suiteId exact suite id
+     * @param revision exact immutable revision
+     * @param fingerprint full SHA-256 suite fingerprint
+     * @param clientRequestId stable idempotency key for this execution intent
+     * @param strategy scheduling strategy, defaulting to COLLECT_ALL
+     * @param metadata bounded provenance metadata
+     * @return aggregate suite-run projection
+     */
+    public TestSuiteRun executeSuite(String suiteId, long revision, String fingerprint,
+                                     String clientRequestId, SuiteStrategy strategy,
+                                     Map<String, ?> metadata) {
+        String id = requiredIdentifier(clientRequestId, "clientRequestId", 255);
+        if (revision < 1) {
+            throw new IllegalArgumentException("revision must be at least 1");
+        }
+        String exactFingerprint = requiredFingerprint(fingerprint);
+        ObjectNode request = JSON.createObjectNode();
+        request.put("schemaVersion", TestingProtocol.TEST_SUITE_EXECUTION_REQUEST_V1);
+        ObjectNode suiteRef = request.putObject("suiteRef");
+        suiteRef.put("suiteId", requiredIdentifier(suiteId, "suiteId", 255));
+        suiteRef.put("revision", revision);
+        suiteRef.put("fingerprint", exactFingerprint);
+        request.put("clientRequestId", id);
+        request.put("strategy", (strategy == null ? SuiteStrategy.COLLECT_ALL : strategy).name());
+        request.set("metadata", metadata == null ? JSON.createObjectNode() : JSON.valueToTree(metadata));
+        JsonNode response = exchange("POST", "/api/testing/suites/" + segment(suiteId) + "/executions",
+                "", "TEST_EXECUTION", request);
+        requireVersion(response, TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1);
+        return projectSuiteRun(response);
+    }
+
+    /**
+     * Retrieves the latest durable checkpoint or terminal evidence for one suite run.
+     *
+     * @param suiteRunId durable aggregate run id
+     * @return aggregate suite-run projection
+     */
+    public TestSuiteRun findSuiteRun(String suiteRunId) {
+        JsonNode response = exchange("GET", "/api/testing/suite-executions/" + segment(suiteRunId),
+                "", "TEST_EXECUTION", null);
+        requireVersion(response, TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1);
+        return projectSuiteRun(response);
     }
 
     /**
@@ -320,6 +407,24 @@ public final class ResourceGatewayTestClient {
         }
     }
 
+    private static TestSuiteRevision projectSuiteRevision(JsonNode response) {
+        try {
+            return TestSuiteRevision.from(response);
+        } catch (IllegalArgumentException failure) {
+            throw ResourceGatewayTestException.local("RG.TESTKIT.RESPONSE_CONTRACT_INVALID",
+                    "The server returned an invalid test-suite revision projection.", failure);
+        }
+    }
+
+    private static TestSuiteRun projectSuiteRun(JsonNode response) {
+        try {
+            return TestSuiteRun.from(response);
+        } catch (IllegalArgumentException failure) {
+            throw ResourceGatewayTestException.local("RG.TESTKIT.RESPONSE_CONTRACT_INVALID",
+                    "The server returned an invalid suite-run projection.", failure);
+        }
+    }
+
     private static void requireVersion(JsonNode response, String expected) {
         String actual = response.path("schemaVersion").asText();
         if (!expected.equals(actual)) {
@@ -360,6 +465,23 @@ public final class ResourceGatewayTestClient {
             }
         }
         return encoded.toString();
+    }
+
+    private static String requiredIdentifier(String value, String field, int maximum) {
+        String normalized = normalized(value);
+        if (normalized.isBlank() || normalized.length() > maximum
+                || normalized.contains("\r") || normalized.contains("\n")) {
+            throw new IllegalArgumentException(field + " must contain 1 to " + maximum + " safe characters");
+        }
+        return normalized;
+    }
+
+    private static String requiredFingerprint(String value) {
+        String normalized = normalized(value);
+        if (!normalized.matches("sha256:[0-9a-f]{64}")) {
+            throw new IllegalArgumentException("fingerprint must be a full lowercase SHA-256 fingerprint");
+        }
+        return normalized;
     }
 
     private static URI validateBaseUri(URI value) {

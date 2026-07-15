@@ -89,9 +89,10 @@ test profile. Immutable suites use `TEST_SUITE_READ` and `TEST_SUITE_WRITE`; exa
 and suite-run query use `TEST_EXECUTION`. See
 [Testing Control Plane API](../docs/resource-gateway-testing-control-plane-api.md)
 for the complete target-discovery, fixture-registration, execution, evidence,
-and production-isolation workflow. Java/JUnit consumers can use the independent
-[Resource Gateway Test Kit](../resource-gateway-test-kit/README.md) instead of
-hand-assembling HTTP requests and JUnit XML.
+and production-isolation workflow. Java/JUnit/CI consumers can use the independent
+[Resource Gateway Test Kit](../resource-gateway-test-kit/README.md) for fixture and immutable-suite
+builders, exact suite execution, payload-free assertions/XML, and the fail-closed CLI instead of
+hand-assembling HTTP requests or interpreting aggregate evidence ad hoc.
 
 Batch-migrate existing `.bloge` files after the service is running:
 

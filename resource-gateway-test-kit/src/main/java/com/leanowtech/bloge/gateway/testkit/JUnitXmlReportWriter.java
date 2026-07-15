@@ -75,6 +75,99 @@ public final class JUnitXmlReportWriter {
         return new Report(values.size(), failures);
     }
 
+    /**
+     * Writes one payload-free testcase per governed case plus one fail-closed aggregate gate.
+     * The gate requires a passing suite and satisfied coverage; promotion eligibility is optional
+     * only when the caller explicitly disables it.
+     *
+     * @param output destination XML file
+     * @param run immutable suite-run projection
+     * @param requirePromotionEligible whether {@code ELIGIBLE} is required for a zero exit code
+     * @return emitted report counters
+     * @throws IOException when directories or XML cannot be written
+     */
+    public static Report writeSuite(Path output, TestSuiteRun run,
+                                    boolean requirePromotionEligible) throws IOException {
+        Objects.requireNonNull(output, "output");
+        Objects.requireNonNull(run, "run");
+        int caseFailures = (int) run.caseResults().stream().filter(result -> !result.passed()).count();
+        boolean gatePassed = run.gateFailureCodes(requirePromotionEligible).isEmpty();
+        int failures = caseFailures + (gatePassed ? 0 : 1);
+        Path parent = output.toAbsolutePath().getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        XMLOutputFactory factory = XMLOutputFactory.newFactory();
+        try (OutputStream stream = Files.newOutputStream(output)) {
+            XMLStreamWriter xml = factory.createXMLStreamWriter(stream, StandardCharsets.UTF_8.name());
+            xml.writeStartDocument(StandardCharsets.UTF_8.name(), "1.0");
+            xml.writeStartElement("testsuite");
+            xml.writeAttribute("name", bounded("resource-gateway suite " + run.suiteId(), 512));
+            xml.writeAttribute("tests", Integer.toString(run.caseResults().size() + 1));
+            xml.writeAttribute("failures", Integer.toString(failures));
+            xml.writeAttribute("errors", "0");
+            xml.writeAttribute("skipped", "0");
+            for (TestSuiteRun.CaseResult result : run.caseResults()) {
+                writeSuiteCase(xml, result);
+            }
+            writeSuiteGate(xml, run, requirePromotionEligible, gatePassed);
+            xml.writeEndElement();
+            xml.writeEndDocument();
+            xml.flush();
+            xml.close();
+        } catch (XMLStreamException failure) {
+            throw new IOException("Unable to write Resource Gateway suite JUnit XML", failure);
+        }
+        return new Report(run.caseResults().size() + 1, failures);
+    }
+
+    /**
+     * Writes a one-test infrastructure failure report when the CI adapter cannot obtain suite
+     * evidence. The caller must provide an already sanitized stable code and summary.
+     *
+     * @param output destination XML file
+     * @param suiteName requested suite name
+     * @param code stable failure code
+     * @param summary bounded payload-free summary
+     * @return one-test failing report
+     * @throws IOException when directories or XML cannot be written
+     */
+    public static Report writeInfrastructureFailure(Path output, String suiteName,
+                                                    String code, String summary) throws IOException {
+        Objects.requireNonNull(output, "output");
+        Path parent = output.toAbsolutePath().getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        XMLOutputFactory factory = XMLOutputFactory.newFactory();
+        try (OutputStream stream = Files.newOutputStream(output)) {
+            XMLStreamWriter xml = factory.createXMLStreamWriter(stream, StandardCharsets.UTF_8.name());
+            xml.writeStartDocument(StandardCharsets.UTF_8.name(), "1.0");
+            xml.writeStartElement("testsuite");
+            xml.writeAttribute("name", bounded(suiteName, 512));
+            xml.writeAttribute("tests", "1");
+            xml.writeAttribute("failures", "1");
+            xml.writeAttribute("errors", "0");
+            xml.writeAttribute("skipped", "0");
+            xml.writeStartElement("testcase");
+            xml.writeAttribute("classname", "resource-gateway.governed-suite");
+            xml.writeAttribute("name", "suite-infrastructure");
+            xml.writeStartElement("failure");
+            xml.writeAttribute("type", bounded(code, 255));
+            xml.writeAttribute("message", bounded(summary, 512));
+            xml.writeCharacters("The suite adapter did not obtain governed terminal evidence.");
+            xml.writeEndElement();
+            xml.writeEndElement();
+            xml.writeEndElement();
+            xml.writeEndDocument();
+            xml.flush();
+            xml.close();
+        } catch (XMLStreamException failure) {
+            throw new IOException("Unable to write Resource Gateway infrastructure JUnit XML", failure);
+        }
+        return new Report(1, 1);
+    }
+
     private static void writeRun(XMLStreamWriter xml, TestRun run, int index) throws XMLStreamException {
         xml.writeStartElement("testcase");
         xml.writeAttribute("classname", "resource-gateway.graph-contract");
@@ -95,6 +188,63 @@ public final class JUnitXmlReportWriter {
                 + "; targetFingerprint=" + bounded(run.targetFingerprint(), 80)
                 + "; fixtureBundleFingerprint=" + bounded(run.fixtureBundleFingerprint(), 80)
                 + "; planFingerprint=" + bounded(run.planFingerprint(), 80));
+        xml.writeEndElement();
+        xml.writeEndElement();
+    }
+
+    private static void writeSuiteCase(XMLStreamWriter xml, TestSuiteRun.CaseResult result)
+            throws XMLStreamException {
+        xml.writeStartElement("testcase");
+        xml.writeAttribute("classname", "resource-gateway.governed-suite");
+        xml.writeAttribute("name", bounded("case-" + result.caseId(), 512));
+        if (!result.passed()) {
+            xml.writeStartElement("failure");
+            xml.writeAttribute("type", "ResourceGateway." + result.status());
+            String code = result.diagnosticCode().isBlank() ? result.status().name() : result.diagnosticCode();
+            xml.writeAttribute("message", bounded(code, 512));
+            xml.writeCharacters("Inspect the authorized testing API using child runId="
+                    + bounded(result.runId(), 256) + ".");
+            xml.writeEndElement();
+        }
+        xml.writeStartElement("system-out");
+        xml.writeCharacters("caseType=" + bounded(result.caseType(), 64)
+                + "; status=" + result.status()
+                + "; runId=" + bounded(result.runId(), 256)
+                + "; evidenceStatus=" + bounded(result.evidenceStatus(), 64)
+                + "; evidenceClass=" + bounded(result.evidenceClass(), 64)
+                + "; fixture=" + bounded(result.fixtureBundleId(), 256) + "@" + result.fixtureRevision()
+                + "; fixtureFingerprint=" + bounded(result.fixtureFingerprint(), 80)
+                + "; assertions=" + result.assertionsPassed() + "/" + result.assertionsEvaluated());
+        xml.writeEndElement();
+        xml.writeEndElement();
+    }
+
+    private static void writeSuiteGate(XMLStreamWriter xml, TestSuiteRun run,
+                                       boolean requirePromotionEligible, boolean gatePassed)
+            throws XMLStreamException {
+        xml.writeStartElement("testcase");
+        xml.writeAttribute("classname", "resource-gateway.governed-suite");
+        xml.writeAttribute("name", "suite-gate");
+        if (!gatePassed) {
+            String codes = String.join(",", run.gateFailureCodes(requirePromotionEligible));
+            xml.writeStartElement("failure");
+            xml.writeAttribute("type", "ResourceGateway.SUITE_GATE_BLOCKED");
+            xml.writeAttribute("message", bounded(codes, 512));
+            xml.writeCharacters("Inspect the authorized testing API using suiteRunId="
+                    + bounded(run.suiteRunId(), 256) + ".");
+            xml.writeEndElement();
+        }
+        xml.writeStartElement("system-out");
+        xml.writeCharacters("suiteRunId=" + bounded(run.suiteRunId(), 256)
+                + "; status=" + run.status()
+                + "; suite=" + bounded(run.suiteId(), 256) + "@" + run.suiteRevision()
+                + "; suiteFingerprint=" + bounded(run.suiteFingerprint(), 80)
+                + "; target=" + bounded(run.targetKind(), 32) + ":" + bounded(run.targetId(), 256)
+                + "; targetFingerprint=" + bounded(run.targetFingerprint(), 80)
+                + "; evidenceFingerprint=" + bounded(run.evidenceFingerprint(), 80)
+                + "; coverage=" + run.coverageStatus()
+                + "; promotion=" + run.promotionStatus()
+                + "; promotionRequired=" + requirePromotionEligible);
         xml.writeEndElement();
         xml.writeEndElement();
     }

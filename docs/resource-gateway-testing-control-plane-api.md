@@ -631,16 +631,28 @@ curl -sS 'http://localhost:8080/api/testing/executions/<runId>?verbosity=SUMMARY
 `POST /api/testing/executions/batch` accepts 1-100 independent requests. Stage 2 runs them
 sequentially; one item cannot share mutable plan or fixture-consumption state with another.
 
-### 4.5 Java and JUnit 5 test kit
+### 4.5 Java, JUnit 5, and CI test kit
 
 Java consumers do not need to assemble wire payloads or CI reports manually. The independent
-`bloge-resource-gateway-test-kit` module provides graph/operator target, fixture, and run
-projections, a strict
-`FixtureBundleBuilder`, a bounded JDK HTTP client, JUnit 5 assertions, and JUnit XML:
+`bloge-resource-gateway-test-kit` module provides graph/operator target, fixture/suite revision,
+child/suite-run projections, strict `FixtureBundleBuilder` and `TestSuiteBuilder` builders, a bounded
+JDK HTTP client, JUnit 5 assertions, and JUnit XML:
 
 ```bash
 mvn -f resource-gateway-test-kit/pom.xml clean install
 ```
+
+The client exposes immutable suite register/find/execute/query operations. Execution requires an
+exact revision, full SHA-256 fingerprint, and explicit `clientRequestId`; malformed identities are
+rejected before any network call. `TestSuiteRun` exposes payload-free case links, structural coverage,
+and promotion eligibility, while `TestSuiteRunAssertions` separates execution, case, coverage, and
+eligibility assertions.
+
+`clean package` also emits an executable `*-cli.jar`. It reads the bearer token only from
+`RESOURCE_GATEWAY_TOKEN`, requires the exact suite reference and caller-owned idempotency key, writes
+payload-free JUnit XML, and returns `0` only for `PASSED + SATISFIED + ELIGIBLE`, `1` for a governed
+gate failure, and `2` for configuration/transport/protocol/report failure. An explicit
+`--allow-non-eligible` relaxes only eligibility; it never relaxes case or coverage correctness.
 
 The client requests a fresh bearer credential for every operation, supplies the correct
 `X-Purpose`, rejects protocol-version drift and oversized bodies, and omits payload/problem details
@@ -755,8 +767,9 @@ Implemented now:
 - independent datasource, tables, retention, evidence sanitization, and security events;
 - immutable plan plus graph/operator/resource dependency fingerprints;
 - profile-sensitive capability probe and production control-field guard.
-- standalone Maven test-kit with HTTP client, fail-closed fixture builder, JUnit 5 assertions,
-  payload-free JUnit XML, and packaged canonical JSON Schema.
+- standalone Maven test-kit with HTTP client, fail-closed fixture/suite builders, child/suite-run
+  projections, JUnit 5 assertions, fail-closed CI CLI, payload-free JUnit XML, executable shaded
+  artifact, and packaged canonical JSON Schema.
 - complete seven-graph/14-case built-in dogfooding catalog, F3 legacy-suite migration, bounded retry
   consumption, and a Spring proof that root and synchronous nested resource calls do not escape fixtures.
 - run-scoped advancing logical clock plus bounded `DELAY` and `TIMEOUT`; timeout injection uses the
@@ -784,8 +797,8 @@ Still intentionally outside this increment:
   durable-resume plan restoration;
 - signed certification, full branch/rule/retry/fallback/compensation semantic coverage, ANEKE
   projection, and mutation testing;
-- canvas/test-kit/CI adapters over the suite registry and runner, automatic resume/reconciliation of
-  abandoned `RUNNING` checkpoints, and suite-history list/trend APIs;
+- Canvas publication/execution adapter over the suite registry and runner, automatic
+  resume/reconciliation of abandoned `RUNNING` checkpoints, and suite-history list/trend APIs;
 - deterministic random/UUID/function execution services and deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;
 - certification of streaming foreach/loop graphs until their invocation and edge evidence is

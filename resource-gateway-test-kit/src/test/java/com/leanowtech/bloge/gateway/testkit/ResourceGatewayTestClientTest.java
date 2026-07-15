@@ -111,6 +111,71 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void registersExecutesAndQueriesOneExactImmutableSuite() {
+        ResourceGatewayTestClient client = client();
+        ObjectNode registration = JSON.createObjectNode().put("suite", "governed-policy");
+
+        TestSuiteRevision registered = client.registerSuite("suite/policy", registration);
+        TestSuiteRevision found = client.findSuite("suite/policy", 7);
+        TestSuiteRun executed = client.executeSuite("suite/policy", 7, FINGERPRINT,
+                "pipeline/982", ResourceGatewayTestClient.SuiteStrategy.FAIL_FAST,
+                Map.of("source", "ci"));
+        TestSuiteRun queried = client.findSuiteRun("suite-run/42");
+
+        assertThat(registered.suiteId()).isEqualTo("suite/policy");
+        assertThat(registered.revision()).isEqualTo(7);
+        assertThat(registered.fingerprint()).isEqualTo(FINGERPRINT);
+        assertThat(registered.targetKind()).isEqualTo("OPERATOR");
+        assertThat(registered.targetId()).isEqualTo("customer.normalize/v2");
+        assertThat(registered.caseCount()).isEqualTo(2);
+        assertThat(found.exactRef()).isEqualTo("suite/policy@7#" + FINGERPRINT);
+        assertThat(executed.suiteRunId()).isEqualTo("suite-run/42");
+        assertThat(executed.status()).isEqualTo(TestSuiteRun.Status.PASSED);
+        assertThat(executed.coverageStatus()).isEqualTo(TestSuiteRun.CoverageStatus.SATISFIED);
+        assertThat(executed.promotionStatus()).isEqualTo(TestSuiteRun.PromotionStatus.ELIGIBLE);
+        assertThat(executed.passed()).isTrue();
+        assertThat(executed.promotionEligible()).isTrue();
+        assertThat(executed.caseResults()).extracting(TestSuiteRun.CaseResult::caseId)
+                .containsExactly("golden", "boundary");
+        assertThat(executed.caseResults()).allSatisfy(result -> {
+            assertThat(result.status()).isEqualTo(TestSuiteRun.CaseStatus.PASSED);
+            assertThat(result.runId()).startsWith("run-");
+            assertThat(result.fixtureFingerprint()).isEqualTo(FINGERPRINT);
+        });
+        assertThat(queried.suiteRunId()).isEqualTo(executed.suiteRunId());
+
+        assertThat(requests).extracting(CapturedRequest::purpose)
+                .containsExactly("TEST_SUITE_WRITE", "TEST_SUITE_READ", "TEST_EXECUTION", "TEST_EXECUTION");
+        assertThat(requests.get(0).method()).isEqualTo("PUT");
+        assertThat(requests.get(0).rawPath()).endsWith("/suites/suite%2Fpolicy");
+        assertThat(requests.get(1).rawQuery()).isEqualTo("revision=7");
+        assertThat(requests.get(2).rawPath()).endsWith("/suites/suite%2Fpolicy/executions");
+        assertThat(requests.get(2).body().path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_EXECUTION_REQUEST_V1);
+        assertThat(requests.get(2).body().path("suiteRef").path("revision").asLong()).isEqualTo(7);
+        assertThat(requests.get(2).body().path("suiteRef").path("fingerprint").asText()).isEqualTo(FINGERPRINT);
+        assertThat(requests.get(2).body().path("clientRequestId").asText()).isEqualTo("pipeline/982");
+        assertThat(requests.get(2).body().path("strategy").asText()).isEqualTo("FAIL_FAST");
+        assertThat(requests.get(2).body().path("metadata").path("source").asText()).isEqualTo("ci");
+        assertThat(requests.get(3).rawPath()).endsWith("/suite-executions/suite-run%2F42");
+    }
+
+    @Test
+    void rejectsInexactSuiteIdentityBeforeAnyNetworkCall() {
+        ResourceGatewayTestClient client = client();
+
+        assertThatThrownBy(() -> client.executeSuite("loan-policy", 1, "sha256:short", "pipeline-1",
+                ResourceGatewayTestClient.SuiteStrategy.COLLECT_ALL, Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("full lowercase SHA-256");
+        assertThatThrownBy(() -> client.executeSuite("loan-policy", 1, FINGERPRINT, " ",
+                ResourceGatewayTestClient.SuiteStrategy.COLLECT_ALL, Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("clientRequestId");
+        assertThat(requests).isEmpty();
+    }
+
+    @Test
     void mapsProblemDetailsWithoutLeakingCredentialOrRequestBody() {
         ResourceGatewayTestClient client = client();
         ObjectNode body = JSON.createObjectNode().put("private", "customer-secret-payload");
@@ -187,7 +252,11 @@ class ResourceGatewayTestClientTest {
             respond(exchange, 200, "{\"value\":\"" + "sensitive-response-content".repeat(20) + "\"}");
             return;
         }
-        if ("GET".equals(exchange.getRequestMethod()) && path.contains("/targets/operators/")) {
+        if (path.contains("/suite-executions/") || path.endsWith("/executions") && path.contains("/suites/")) {
+            respond(exchange, 200, suiteRunResponse());
+        } else if (path.contains("/suites/")) {
+            respond(exchange, 200, storedSuiteResponse());
+        } else if ("GET".equals(exchange.getRequestMethod()) && path.contains("/targets/operators/")) {
             respond(exchange, 200, operatorTargetResponse());
         } else if (path.contains("/targets/graphs/")) {
             respond(exchange, 200, targetResponse());
@@ -233,6 +302,52 @@ class ResourceGatewayTestClientTest {
                 {"schemaVersion":"bloge.storedFixtureBundle.v1","tenantId":"tenant",
                  "environmentId":"test","fixtureBundleId":"fixture/approved","revision":3,
                  "fingerprint":"%s","bundle":{},"createdAt":"2026-07-15T10:15:30Z","createdBy":"ci"}
+                """.formatted(FINGERPRINT);
+    }
+
+    private static String storedSuiteResponse() {
+        return """
+                {"schemaVersion":"bloge.storedTestSuite.v1","tenantId":"tenant",
+                 "environmentId":"test","suiteId":"suite/policy","revision":7,
+                 "fingerprint":"%1$s","suite":{"schemaVersion":"bloge.testSuite.v1",
+                   "suiteId":"suite/policy","revision":7,
+                   "target":{"kind":"OPERATOR","id":"customer.normalize/v2","fingerprint":"%1$s"},
+                   "classification":"INTERNAL","cases":[{"caseId":"golden"},{"caseId":"boundary"}],
+                   "coveragePolicy":{},"promotionPolicy":{},"metadata":{}},
+                 "createdAt":"2026-07-15T10:15:30Z","createdBy":"ci"}
+                """.formatted(FINGERPRINT);
+    }
+
+    private static String suiteRunResponse() {
+        return """
+                {"schemaVersion":"bloge.testSuiteExecutionResponse.v1","suiteRunId":"suite-run/42",
+                 "evidenceFingerprint":"%1$s","evidence":{"schemaVersion":"bloge.testSuiteRunEvidence.v1",
+                   "suiteRunId":"suite-run/42","clientRequestId":"pipeline/982","status":"PASSED",
+                   "executionPurpose":"TEST_SUITE_EXECUTION",
+                   "suiteRef":{"suiteId":"suite/policy","revision":7,"fingerprint":"%1$s"},
+                   "target":{"kind":"OPERATOR","id":"customer.normalize/v2","fingerprint":"%1$s"},
+                   "startedAt":"2026-07-15T10:15:30Z","completedAt":"2026-07-15T10:15:31Z",
+                   "caseResults":[
+                     {"caseId":"golden","caseType":"GOLDEN",
+                      "fixtureBundleRef":{"fixtureBundleId":"fixture-golden","revision":1,"fingerprint":"%1$s"},
+                      "status":"PASSED","runId":"run-golden","evidenceStatus":"PASSED",
+                      "evidenceClass":"CERTIFIABLE","assertionsEvaluated":1,"assertionsPassed":1,
+                      "diagnosticCode":"","diagnostic":""},
+                     {"caseId":"boundary","caseType":"BOUNDARY",
+                      "fixtureBundleRef":{"fixtureBundleId":"fixture-boundary","revision":1,"fingerprint":"%1$s"},
+                      "status":"PASSED","runId":"run-boundary","evidenceStatus":"PASSED",
+                      "evidenceClass":"CERTIFIABLE","assertionsEvaluated":1,"assertionsPassed":1,
+                      "diagnosticCode":"","diagnostic":""}],
+                   "coverage":{"status":"SATISFIED","minimumCases":2,"completedCases":2,
+                     "requiredCaseTypes":["GOLDEN","BOUNDARY"],"observedCaseTypes":["GOLDEN","BOUNDARY"],
+                     "missingCaseTypes":[],"requiredInvocationSiteIds":[],"observedInvocationSiteIds":[],
+                     "missingInvocationSiteIds":[],"requiredEdgeTransfers":[],"observedEdgeTransfers":[],
+                     "missingEdgeTransfers":[],"minimumAssertionsPerCase":1,
+                     "assertionDensityViolations":[],"fixtureConsumptionViolations":[],"allCasesCompleted":true},
+                   "promotion":{"status":"ELIGIBLE","reasons":[],"allCasesPassed":true,
+                     "certifiableCases":2,"minimumCertifiableCases":2,"targetCertificationEligible":true,
+                     "coverageSatisfied":true,"allCasesCompleted":true},
+                   "diagnostics":[],"metadata":{"private":"not-projected"}}}
                 """.formatted(FINGERPRINT);
     }
 

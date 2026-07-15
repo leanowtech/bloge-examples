@@ -31,6 +31,21 @@ public final class TestingProtocol {
     public static final String OPERATOR_TARGET_DESCRIPTOR_V2 = "bloge.testOperatorTargetDescriptor.v2";
     /** Test-run evidence wire version. */
     public static final String TEST_RUN_EVIDENCE_V1 = "bloge.testRunEvidence.v1";
+    /** Immutable test-suite wire version. */
+    public static final String TEST_SUITE_V1 = "bloge.testSuite.v1";
+    /** Test-suite registration request wire version. */
+    public static final String TEST_SUITE_REGISTRATION_REQUEST_V1 =
+            "bloge.testSuiteRegistrationRequest.v1";
+    /** Stored immutable test-suite response wire version. */
+    public static final String STORED_TEST_SUITE_V1 = "bloge.storedTestSuite.v1";
+    /** Exact immutable suite execution request wire version. */
+    public static final String TEST_SUITE_EXECUTION_REQUEST_V1 =
+            "bloge.testSuiteExecutionRequest.v1";
+    /** Immutable suite execution response wire version. */
+    public static final String TEST_SUITE_EXECUTION_RESPONSE_V1 =
+            "bloge.testSuiteExecutionResponse.v1";
+    /** Aggregate immutable suite-run evidence wire version. */
+    public static final String TEST_SUITE_RUN_EVIDENCE_V1 = "bloge.testSuiteRunEvidence.v1";
 
     /** Classpath location of the authoritative JSON Schema packaged in the test-kit JAR. */
     public static final String SCHEMA_RESOURCE =
