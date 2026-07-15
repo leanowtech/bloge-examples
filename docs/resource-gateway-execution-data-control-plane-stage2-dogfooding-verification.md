@@ -53,15 +53,16 @@ the Stage 5 requirement for an independent test deployment and deny-by-default n
 
 ## 4. Honest Certification Boundary
 
-BLOGE foreach/loop bodies currently retain an embedded subgraph/operator registry. Root-node
-replacement cannot inventory or control those nested invocation sites. `GraphExecutionTargetSnapshot`
-therefore marks graphs containing `FOREACH`, `STREAMING_FOREACH`, `LOOP`, or `STREAMING_LOOP` as
-certification-ineligible.
+Resource Gateway now recursively freezes BLOGE nested graph bindings and run-scoped resolution can
+control synchronous foreach/loop/subgraph/compensation sites. The remaining certification gap is
+evidence: current node/edge trace projection still aggregates by local node id and cannot prove every
+parallel occurrence independently. `GraphExecutionTargetSnapshot` therefore continues to mark graphs
+containing `FOREACH`, `STREAMING_FOREACH`, `LOOP`, or `STREAMING_LOOP` as certification-ineligible.
 
 The order enrichment suite uses an empty order list so no nested resource is invoked and tags itself
 `nested-invocation-gap`. It validates the outer contract but emits `EXPLORATORY`, never
-`CERTIFIABLE`, evidence. A non-empty foreach certification case is blocked until BLOGE exposes stable
-invocation paths and run-scoped resolver propagation for embedded graphs.
+`CERTIFIABLE`, evidence. A non-empty foreach certification case is blocked until the suite is migrated
+and node/edge evidence carries structural site plus occurrence coordinates.
 
 ## 5. Reproduce
 

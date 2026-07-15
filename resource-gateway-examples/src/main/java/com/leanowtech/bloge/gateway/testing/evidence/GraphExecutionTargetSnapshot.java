@@ -53,16 +53,16 @@ public record GraphExecutionTargetSnapshot(
             gaps.add("Graph has no recoverable immutable definition source.");
         }
         graph.nodes().values().stream()
-                .filter(node -> nestedInvocationInventoryUnavailable(node.metadata().kind()))
+                .filter(node -> nestedInvocationEvidenceIncomplete(node.metadata().kind()))
                 .sorted(Comparator.comparing(node -> node.id()))
-                .forEach(node -> gaps.add("Node '%s' uses %s; nested invocation sites are not yet "
+                .forEach(node -> gaps.add("Node '%s' uses %s; nested invocation evidence is not yet "
                         .formatted(node.id(), node.metadata().kind().wireValue())
-                        + "inventory-addressable by testing-control-plane v1."));
+                        + "occurrence-addressable by testing-control-plane v1."));
         return new GraphExecutionTargetSnapshot(graph, frozen, composite, Map.copyOf(dependencies),
                 gaps.isEmpty(), List.copyOf(gaps));
     }
 
-    private static boolean nestedInvocationInventoryUnavailable(NodeKind kind) {
+    private static boolean nestedInvocationEvidenceIncomplete(NodeKind kind) {
         return kind == NodeKind.FOREACH
                 || kind == NodeKind.STREAMING_FOREACH
                 || kind == NodeKind.LOOP

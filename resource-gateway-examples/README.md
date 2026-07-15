@@ -230,9 +230,12 @@ controlled resource-node observations, and 33 business assertions. Resource
 rows use explicit F3 transport fixtures, so request mapping, URL rendering,
 descriptor response protocol, and payload extraction stay real. Retry cases
 declare `minUses/maxUses`, making credit-provider, wallet, and notification
-attempt counts part of the pass/fail result. `enrichOrderList` is intentionally
-tagged exploratory because BLOGE does not yet expose stable foreach-body
-invocation addresses; it cannot silently produce certifiable evidence.
+attempt counts part of the pass/fail result. The testing kernel now recursively
+freezes synchronous nested graphs and uses BLOGE run-scoped operator resolution
+to control foreach, loop, subgraph, and compensation sites. `enrichOrderList`
+remains intentionally exploratory until its built-in suite uses non-empty items
+and occurrence-level node/edge evidence is available; structural control alone
+cannot silently produce certifiable evidence.
 
 For the detailed contract-test design, request format, verification evidence,
 and remaining industrialization gaps, see
@@ -247,11 +250,12 @@ transport-level HTTP fixtures, and records fingerprinted evidence. All seven bui
 graphs now dogfood that adapter under `clean verify`; the Spring integration proof points
 descriptors at an unreachable address and still requires every suite to pass, catching any
 root resource call that escapes its fixture. The generic public
-testing API, persistent test-run store, independent JUnit test kit, and
-production-profile endpoint isolation are now available as the first Stage 2
-increment. Public operator execution, temporal controls, complex nested
-invocation addressing, and physical test-runtime
-deployment isolation remain in progress and are not advertised as complete.
+testing API, persistent test-run store, independent JUnit test kit,
+production-profile endpoint isolation, deterministic `DELAY/TIMEOUT`, and
+synchronous nested invocation control are now available as Stage 2 increments.
+Public operator execution, occurrence-level nested evidence, streaming control,
+and physical test-runtime deployment isolation remain in progress and are not
+advertised as complete.
 
 Create a provider-specific Java operator only when the provider behavior cannot
 be expressed cleanly as a descriptor-backed resource.

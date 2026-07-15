@@ -3,8 +3,9 @@ package com.leanowtech.bloge.gateway.testing.runtime;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.engine.GraphEngine;
 import com.leanowtech.bloge.core.engine.GraphResult;
-import com.leanowtech.bloge.core.model.Graph;
+import com.leanowtech.bloge.core.engine.ExecutionOptions;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
+import com.leanowtech.bloge.core.spi.OperatorResolutionRequest;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
@@ -14,6 +15,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestAssertionEvaluator;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.ControlPlanRejectedException;
 import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
+import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -83,14 +85,16 @@ public class TestRunService {
         }
 
         InvocationRecorder recorder = new InvocationRecorder();
-        Map<String, Object> overrides = overrides(request.graph(), compiled, recorder);
         GraphResult graphResult = null;
         List<String> diagnostics = new ArrayList<>();
         AdvancingLogicalTimeSource logicalTime = request.fixtureBundle().logicalClock() == null
                 ? null : new AdvancingLogicalTimeSource(request.fixtureBundle().logicalClock());
         GraphEngine engine = engineFactory.create(recorder, logicalTime);
         try {
-            graphResult = engine.executeWithOperators(request.graph(), request.context(), overrides);
+            ExecutionOptions options = ExecutionOptions.builder()
+                    .operatorResolver(resolution -> resolveOperator(resolution, compiled, recorder))
+                    .build();
+            graphResult = engine.execute(request.graph(), request.context(), options);
         } catch (RuntimeException ex) {
             diagnostics.add(bounded("Test engine failed before producing GraphResult: " + ex.getMessage()));
         } finally {
@@ -133,20 +137,24 @@ public class TestRunService {
         return engineFactory.configuration();
     }
 
-    private Map<String, Object> overrides(Graph graph, CompiledExecutionControl compiled,
-                                          InvocationRecorder recorder) {
-        Map<String, Object> overrides = new LinkedHashMap<>();
-        graph.nodes().forEach((nodeId, node) -> {
-            Object real = compiled.frozenOperators().get(nodeId);
-            CompiledExecutionControl.ResolvedControl control = compiled.controls().get(nodeId);
-            if (control == null) {
-                overrides.put(nodeId, real);
-                return;
-            }
-            overrides.put(nodeId, doubleFactory.create(node, control.rules(), real,
-                    control.implicitDeny(), recorder));
-        });
-        return Map.copyOf(overrides);
+    private Object resolveOperator(OperatorResolutionRequest resolution,
+                                   CompiledExecutionControl compiled,
+                                   InvocationRecorder recorder) {
+        InvocationInventory.Entry entry = compiled.inventory().byEngineStructuralId()
+                .get(resolution.site().structuralId());
+        if (entry == null || entry.graph() != resolution.graph()) {
+            throw new TestControlException("CONTROL_PLAN_RUNTIME_SITE_UNPLANNED", "CONTROL_PLAN",
+                    "Runtime invocation was absent from the frozen inventory: "
+                            + resolution.site().structuralId());
+        }
+        CompiledExecutionControl.ResolvedControl control = compiled.controls()
+                .get(entry.site().invocationSiteId());
+        if (control == null) {
+            return entry.frozenOperator();
+        }
+        return doubleFactory.create(entry.node(),
+                entry.site().withCorrelationKey(resolution.site().correlationKey()),
+                control.rules(), entry.frozenOperator(), control.implicitDeny(), recorder);
     }
 
     private TestRunEvidence rejectedEvidence(String runId, TestExecutionRequest request,

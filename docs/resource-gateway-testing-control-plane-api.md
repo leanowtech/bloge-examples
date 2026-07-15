@@ -433,14 +433,18 @@ Implemented now:
   consumption, and a Spring proof that root resource calls do not escape fixtures.
 - run-scoped advancing logical clock plus bounded `DELAY` and `TIMEOUT`; timeout injection uses the
   real BLOGE retry/fallback chain and emits normalized logical-time evidence.
+- recursively frozen synchronous subgraph/foreach/loop/compensation sites, with run-scoped fixture
+  propagation and fail-closed cycle/depth/site limits.
 
 Still intentionally outside this increment:
 
-- `REPLAY`, retry-attempt, correlation-lineage, nested/subgraph, foreach, and compensation controls;
+- `REPLAY`, retry-attempt selectors, occurrence-level correlation evidence, streaming/suspendable
+  controls, and durable-resume plan restoration;
 - signed certification, semantic coverage, ANEKE projection, and mutation testing;
 - deterministic random/UUID/function execution services and deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;
-- non-empty foreach/loop/subgraph certification until nested invocation sites are addressable.
+- non-empty foreach/loop/subgraph certification until nested node/edge evidence is
+  occurrence-addressable and the built-in suites exercise it.
 
 Those items remain visible in the two industrial testability evolution plans and must not be inferred
 as complete from `executionEndpointEnabled=true`.

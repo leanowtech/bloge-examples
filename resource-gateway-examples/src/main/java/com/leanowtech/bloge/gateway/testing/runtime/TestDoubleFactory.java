@@ -12,6 +12,7 @@ import com.leanowtech.bloge.core.schema.OpaqueSchema;
 import com.leanowtech.bloge.gateway.operator.HttpResourceInput;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOutput;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
+import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 
@@ -42,6 +43,7 @@ public class TestDoubleFactory {
      * Creates one node-scoped controlled operator.
      *
      * @param node frozen node specification
+     * @param site occurrence-specific invocation coordinates
      * @param rules preflight-resolved, pairwise-disjoint candidate rules
      * @param realOperator frozen real binding
      * @param implicitDeny whether missing rules represent fail-closed external-effect policy
@@ -49,28 +51,31 @@ public class TestDoubleFactory {
      * @return operator passed only to the independent test engine
      */
     @SuppressWarnings("unchecked")
-    public Operator<Object, Object> create(NodeSpec node, List<FixtureRule> rules,
+    public Operator<Object, Object> create(NodeSpec node, InvocationSite site,
+                                           List<FixtureRule> rules,
                                            Object realOperator, boolean implicitDeny,
                                            InvocationRecorder recorder) {
         if (!(realOperator instanceof Operator<?, ?> typed)) {
             throw new IllegalArgumentException("Node '" + node.id()
                     + "' is not a synchronous Operator and cannot use v1 execution control.");
         }
-        return new ControlledOperator(node, rules, (Operator<Object, Object>) typed,
+        return new ControlledOperator(node, site, rules, (Operator<Object, Object>) typed,
                 implicitDeny, recorder);
     }
 
     private final class ControlledOperator implements Operator<Object, Object> {
         private final NodeSpec node;
+        private final InvocationSite site;
         private final List<FixtureRule> rules;
         private final Operator<Object, Object> real;
         private final boolean implicitDeny;
         private final InvocationRecorder recorder;
 
-        private ControlledOperator(NodeSpec node, List<FixtureRule> rules,
+        private ControlledOperator(NodeSpec node, InvocationSite site, List<FixtureRule> rules,
                                    Operator<Object, Object> real, boolean implicitDeny,
                                    InvocationRecorder recorder) {
             this.node = node;
+            this.site = Objects.requireNonNull(site, "site");
             this.rules = List.copyOf(rules);
             this.real = real;
             this.implicitDeny = implicitDeny;
@@ -79,29 +84,32 @@ public class TestDoubleFactory {
 
         @Override
         public Object execute(Object input, OperatorContext context) throws Exception {
-            List<FixtureRule> matched = rules.stream().filter(rule -> matcher.matches(rule, input)).toList();
+            List<FixtureRule> matched = rules.stream()
+                    .filter(rule -> matcher.matches(rule, input, site.correlationKey())).toList();
             if (matched.isEmpty()) {
                 if (!implicitDeny && rules.stream().anyMatch(rule -> rule.consumption().onUnmatched()
                         == FixtureRule.UnmatchedAction.ALLOW_REAL)) {
-                    recorder.markFidelity(node.id(), "REAL");
-                    recorder.markControlMode(node.id(), "REAL");
+                    recorder.markFidelity(site, "REAL");
+                    recorder.markControlMode(site, "REAL");
                     return real.execute(input, context);
                 }
-                recorder.markFidelity(node.id(), "OUTPUT_LEVEL");
-                recorder.markControlMode(node.id(), implicitDeny ? "IMPLICIT_DENY" : "UNMATCHED");
+                recorder.markFidelity(site, "OUTPUT_LEVEL");
+                recorder.markControlMode(site, implicitDeny ? "IMPLICIT_DENY" : "UNMATCHED");
                 throw new TestControlException("FIXTURE_UNMATCHED", "FIXTURE_MATCH",
-                        "No approved fixture matched invocation site " + node.id() + ".");
+                        "No approved fixture matched invocation site "
+                                + site.invocationSiteId() + ".");
             }
             if (matched.size() > 1) {
                 throw new TestControlException("CONTROL_PLAN_RUNTIME_AMBIGUITY", "FIXTURE_MATCH",
-                        "More than one fixture matched invocation site " + node.id() + ".");
+                        "More than one fixture matched invocation site "
+                                + site.invocationSiteId() + ".");
             }
             FixtureRule rule = matched.getFirst();
             int currentUses = recorder.uses(rule.ruleId());
             if (rule.consumption().maxUses() > 0 && currentUses >= rule.consumption().maxUses()) {
                 if (rule.consumption().onExhausted() == FixtureRule.ExhaustedAction.FALLBACK_TO_REAL) {
-                    recorder.markFidelity(node.id(), "REAL");
-                    recorder.markControlMode(node.id(), "REAL");
+                    recorder.markFidelity(site, "REAL");
+                    recorder.markControlMode(site, "REAL");
                     return real.execute(input, context);
                 }
                 throw new TestControlException("FIXTURE_EXHAUSTED", "FIXTURE_CONSUMPTION",
@@ -113,14 +121,14 @@ public class TestDoubleFactory {
 
         private Object apply(FixtureRule rule, Object input, OperatorContext context) throws Exception {
             FixtureRule.Behavior behavior = rule.behavior();
-            recorder.markControlMode(node.id(), behavior.kind().name());
+            recorder.markControlMode(site, behavior.kind().name());
             return switch (behavior.kind()) {
                 case REAL -> {
-                    recorder.markFidelity(node.id(), "REAL");
+                    recorder.markFidelity(site, "REAL");
                     yield real.execute(input, context);
                 }
                 case SPY -> {
-                    recorder.markFidelity(node.id(), "REAL");
+                    recorder.markFidelity(site, "REAL");
                     yield real.execute(input, context);
                 }
                 case RETURN -> returnValue(rule, input, context);
@@ -129,17 +137,17 @@ public class TestDoubleFactory {
                     yield returnValue(rule, input, context);
                 }
                 case TIMEOUT -> {
-                    recorder.markFidelity(node.id(), "OUTPUT_LEVEL");
+                    recorder.markFidelity(site, "OUTPUT_LEVEL");
                     context.timeSource().sleep(behavior.after());
                     throw new OperatorTimeoutException(node.id(), behavior.after(),
                             controlledFailure(behavior, "TEST_TIMEOUT"));
                 }
                 case THROW -> {
-                    recorder.markFidelity(node.id(), "OUTPUT_LEVEL");
+                    recorder.markFidelity(site, "OUTPUT_LEVEL");
                     throw controlledFailure(behavior, "TEST_THROW");
                 }
                 case DENY -> {
-                    recorder.markFidelity(node.id(), "OUTPUT_LEVEL");
+                    recorder.markFidelity(site, "OUTPUT_LEVEL");
                     throw controlledFailure(behavior, "TEST_CONTROL_DENIED");
                 }
                 case STREAM, REPLAY -> throw new TestControlException(
@@ -159,13 +167,13 @@ public class TestDoubleFactory {
                 }
                 String fidelity = behavior.boundary() == FixtureRule.DoubleBoundary.TRANSPORT
                         ? "TRANSPORT_LEVEL" : "PROTOCOL_DERIVED";
-                recorder.markFidelity(node.id(), fidelity);
+                recorder.markFidelity(site, fidelity);
                 output = resourceRuntime.execute(behavior, input, context);
             } else if ("httpResource".equals(node.operatorRef())) {
-                recorder.markFidelity(node.id(), "OUTPUT_LEVEL");
+                recorder.markFidelity(site, "OUTPUT_LEVEL");
                 output = resourceOutput(input, behavior);
             } else {
-                recorder.markFidelity(node.id(), "OUTPUT_LEVEL");
+                recorder.markFidelity(site, "OUTPUT_LEVEL");
                 output = behavior.value();
             }
             validateOutput(rule, output);

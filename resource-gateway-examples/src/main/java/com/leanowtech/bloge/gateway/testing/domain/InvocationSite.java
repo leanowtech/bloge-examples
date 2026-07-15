@@ -68,7 +68,19 @@ public record InvocationSite(
      */
     public String invocationSiteId() {
         String prefix = "/".equals(graphPath) ? "" : graphPath;
-        return prefix + "/" + nodeId + "#" + invocationKind;
+        return prefix + "/" + escape(nodeId) + "#" + invocationKind;
+    }
+
+    /**
+     * Binds runtime occurrence coordinates without changing the structural invocation identity.
+     *
+     * @param runtimeCorrelationKey foreach, loop, or business correlation coordinate
+     * @return occurrence-specific immutable site
+     */
+    public InvocationSite withCorrelationKey(String runtimeCorrelationKey) {
+        return new InvocationSite(schemaVersion, artifactFingerprint, graphPath, nodeId,
+                operatorRef, resourceRef, functionRef, runtimeBindingFingerprint, invocationKind,
+                attempt, runtimeCorrelationKey, occurrence);
     }
 
     private static String normalizeGraphPath(String value) {
@@ -86,5 +98,9 @@ public record InvocationSite(
 
     private static String trimmed(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private static String escape(String value) {
+        return value.replace("~", "~0").replace("/", "~1");
     }
 }

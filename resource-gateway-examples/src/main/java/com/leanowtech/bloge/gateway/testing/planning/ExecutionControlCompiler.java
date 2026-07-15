@@ -1,8 +1,13 @@
 package com.leanowtech.bloge.gateway.testing.planning;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.core.engine.operators.ForEachOperator;
+import com.leanowtech.bloge.core.engine.operators.LoopOperator;
+import com.leanowtech.bloge.core.engine.operators.ParallelSubGraphOperator;
+import com.leanowtech.bloge.core.engine.operators.StreamingForEachOperator;
+import com.leanowtech.bloge.core.engine.operators.StreamingLoopOperator;
+import com.leanowtech.bloge.core.engine.operators.SubGraphOperator;
 import com.leanowtech.bloge.core.model.Graph;
-import com.leanowtech.bloge.core.model.NodeSpec;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
@@ -28,10 +33,10 @@ import java.util.UUID;
  */
 public class ExecutionControlCompiler {
 
-    private final OperatorRegistry registry;
     private final ObjectMapper objectMapper;
     private final SafetyPreflight safetyPreflight;
     private final SelectorResolver selectorResolver;
+    private final InvocationInventoryBuilder inventoryBuilder;
 
     /**
      * @param registry frozen operator binding inventory used by the independent test engine
@@ -44,10 +49,11 @@ public class ExecutionControlCompiler {
     /** Constructor for focused tests and policy extension. */
     public ExecutionControlCompiler(OperatorRegistry registry, ObjectMapper objectMapper,
                                     SafetyPreflight safetyPreflight, SelectorResolver selectorResolver) {
-        this.registry = Objects.requireNonNull(registry, "registry");
+        Objects.requireNonNull(registry, "registry");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.safetyPreflight = Objects.requireNonNull(safetyPreflight, "safetyPreflight");
         this.selectorResolver = Objects.requireNonNull(selectorResolver, "selectorResolver");
+        this.inventoryBuilder = new InvocationInventoryBuilder(registry);
     }
 
     /**
@@ -65,30 +71,27 @@ public class ExecutionControlCompiler {
         Objects.requireNonNull(graph, "graph");
         safetyPreflight.validate(fixtureBundle, authorizedPurpose, targetFingerprint);
 
-        Map<String, Object> frozenOperators = freezeOperators(graph);
-        Map<String, String> bindingFingerprints = bindingFingerprints(graph, frozenOperators);
+        InvocationInventory inventory = inventoryBuilder.build(graph, targetFingerprint);
         Map<String, CompiledExecutionControl.ResolvedControl> controls = new LinkedHashMap<>(
-                selectorResolver.resolve(graph, targetFingerprint, bindingFingerprints, fixtureBundle.rules()));
+                selectorResolver.resolve(inventory, fixtureBundle.rules()));
 
-        for (NodeSpec node : graph.nodes().values()) {
-            if (!controls.containsKey(node.id())
-                    && externalEffect(node, frozenOperators.get(node.id()))) {
-                InvocationSite site = selectorResolver.site(node, targetFingerprint,
-                        bindingFingerprints.get(node.id()));
-                controls.put(node.id(), new CompiledExecutionControl.ResolvedControl(
-                        site, List.of(implicitDeny(node)), true));
+        for (InvocationInventory.Entry entry : inventory.entries()) {
+            String siteId = entry.site().invocationSiteId();
+            if (!controls.containsKey(siteId) && externalEffect(entry)) {
+                controls.put(siteId, new CompiledExecutionControl.ResolvedControl(
+                        entry.site(), List.of(implicitDeny(entry)), true));
             }
         }
-        rejectUnsafeExternalReal(graph, controls, frozenOperators);
+        rejectUnsupportedControlledBindings(inventory, controls);
+        rejectUnsafeExternalReal(inventory, controls);
 
         String fixtureFingerprint = ProtocolFingerprint.of(objectMapper, fixtureBundle);
         List<EffectiveExecutionPlan.ResolvedSite> sites = new ArrayList<>();
-        for (NodeSpec node : graph.nodes().values()) {
-            CompiledExecutionControl.ResolvedControl control = controls.get(node.id());
+        for (InvocationInventory.Entry entry : inventory.entries()) {
+            CompiledExecutionControl.ResolvedControl control =
+                    controls.get(entry.site().invocationSiteId());
             if (control == null) {
-                InvocationSite site = selectorResolver.site(node, targetFingerprint,
-                        bindingFingerprints.get(node.id()));
-                sites.add(new EffectiveExecutionPlan.ResolvedSite(site.invocationSiteId(),
+                sites.add(new EffectiveExecutionPlan.ResolvedSite(entry.site().invocationSiteId(),
                         EffectiveExecutionPlan.Resolution.REAL, FixtureRule.BehaviorKind.REAL,
                         FixtureRule.DoubleBoundary.NODE, List.of(), "REAL"));
             } else {
@@ -108,6 +111,10 @@ public class ExecutionControlCompiler {
                 "purpose", authorizedPurpose,
                 "target", targetFingerprint,
                 "fixture", fixtureFingerprint,
+                "inventory", inventory.entries().stream().map(entry -> Map.of(
+                        "engineStructuralId", entry.engineStructuralId(),
+                        "invocationSiteId", entry.site().invocationSiteId(),
+                        "bindingFingerprint", entry.site().runtimeBindingFingerprint())).toList(),
                 "sites", sites,
                 "defaults", defaults);
         String planFingerprint = ProtocolFingerprint.of(objectMapper, fingerprintMaterial);
@@ -121,59 +128,54 @@ public class ExecutionControlCompiler {
                 sites,
                 defaults,
                 List.of());
-        return new CompiledExecutionControl(effectivePlan, controls, fixtureBundle.rules(), frozenOperators);
+        return new CompiledExecutionControl(effectivePlan, controls, fixtureBundle.rules(), inventory);
     }
 
-    /** Resolves the real operator using the same node-id, embedded-ref, registry ordering as BLOGE. */
-    private Object resolveRealOperator(Graph graph, NodeSpec node) {
-        if (graph.embeddedOperators().containsKey(node.id())) {
-            return graph.embeddedOperators().get(node.id());
-        }
-        if (graph.embeddedOperators().containsKey(node.operatorRef())) {
-            return graph.embeddedOperators().get(node.operatorRef());
-        }
-        return registry.lookup(node.operatorRef());
-    }
-
-    private Map<String, Object> freezeOperators(Graph graph) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        graph.nodes().values().forEach(node -> result.put(node.id(), resolveRealOperator(graph, node)));
-        return Map.copyOf(result);
-    }
-
-    private Map<String, String> bindingFingerprints(Graph graph,
-                                                    Map<String, Object> frozenOperators) {
-        Map<String, String> result = new LinkedHashMap<>();
-        graph.nodes().values().forEach(node -> {
-            if (node.operatorFingerprint() != null) {
-                result.put(node.id(), node.operatorFingerprint());
-                return;
-            }
-            Object operator = frozenOperators.get(node.id());
-            result.put(node.id(), ProtocolFingerprint.ofText(
-                    node.operatorRef() + "|" + operator.getClass().getName() + "|"
-                            + node.inputSchema().describe() + "|" + node.outputSchema().describe()));
-        });
-        return Map.copyOf(result);
-    }
-
-    private boolean externalEffect(NodeSpec node, Object raw) {
-        if (node.metadata().kind() != null) {
+    private boolean externalEffect(InvocationInventory.Entry entry) {
+        var node = entry.node();
+        if (node.metadata().kind() != null
+                && entry.site().invocationKind() != InvocationSite.InvocationKind.COMPENSATION) {
             return false;
         }
         if ("httpResource".equals(node.operatorRef())) {
             return true;
         }
-        return raw instanceof Operator<?, ?> operator
+        if (isBuiltInNestedContainer(entry.frozenOperator())) {
+            return false;
+        }
+        return entry.frozenOperator() instanceof Operator<?, ?> operator
                 && operator.sideEffectType() != SideEffectType.READ_ONLY;
     }
 
+    private static boolean isBuiltInNestedContainer(Object operator) {
+        return operator instanceof SubGraphOperator
+                || operator instanceof ForEachOperator
+                || operator instanceof LoopOperator
+                || operator instanceof ParallelSubGraphOperator
+                || operator instanceof StreamingForEachOperator
+                || operator instanceof StreamingLoopOperator;
+    }
+
+    private static void rejectUnsupportedControlledBindings(
+            InvocationInventory inventory,
+            Map<String, CompiledExecutionControl.ResolvedControl> controls) {
+        controls.forEach((siteId, control) -> {
+            InvocationInventory.Entry entry = inventory.byInvocationSiteId().get(siteId);
+            if (entry != null && !(entry.frozenOperator() instanceof Operator<?, ?>)) {
+                throw new ControlPlanRejectedException(
+                        "CONTROL_PLAN_UNSUPPORTED_OPERATOR_TYPE", List.of(
+                        "Invocation site '" + siteId
+                                + "' is not a synchronous Operator and cannot be controlled by v1."));
+            }
+        });
+    }
+
     private void rejectUnsafeExternalReal(
-            Graph graph, Map<String, CompiledExecutionControl.ResolvedControl> controls,
-            Map<String, Object> frozenOperators) {
-        controls.forEach((nodeId, control) -> {
-            NodeSpec node = graph.nodes().get(nodeId);
-            if (control.implicitDeny() || !externalEffect(node, frozenOperators.get(nodeId))) {
+            InvocationInventory inventory,
+            Map<String, CompiledExecutionControl.ResolvedControl> controls) {
+        controls.forEach((siteId, control) -> {
+            InvocationInventory.Entry entry = inventory.byInvocationSiteId().get(siteId);
+            if (entry == null || control.implicitDeny() || !externalEffect(entry)) {
                 return;
             }
             boolean unsafe = control.rules().stream().anyMatch(rule ->
@@ -182,15 +184,20 @@ public class ExecutionControlCompiler {
                             || rule.consumption().onExhausted() == FixtureRule.ExhaustedAction.FALLBACK_TO_REAL);
             if (unsafe) {
                 throw new ControlPlanRejectedException("CONTROL_PLAN_UNSAFE_EXTERNAL_REAL", List.of(
-                        "External-effect site '/root/" + nodeId
+                        "External-effect site '" + siteId
                                 + "' cannot use REAL/SPY or a fallback-to-real policy in v1."));
             }
         });
     }
 
-    private static FixtureRule implicitDeny(NodeSpec node) {
-        return new FixtureRule(FixtureRule.SCHEMA_VERSION, "implicit-deny:" + node.id(),
-                FixtureRule.Selector.node(node.id()),
+    private static FixtureRule implicitDeny(InvocationInventory.Entry entry) {
+        InvocationSite site = entry.site();
+        FixtureRule.Selector selector = new FixtureRule.Selector(
+                site.graphPath(), site.nodeId(), site.operatorRef(), "", "",
+                List.of(), List.of(), site.invocationKind(), List.of(), List.of(), "",
+                FixtureRule.Match.none());
+        return new FixtureRule(FixtureRule.SCHEMA_VERSION,
+                "implicit-deny:" + site.invocationSiteId(), selector,
                 FixtureRule.Behavior.throwing("FIXTURE_UNMATCHED", "UNCONTROLLED_EXTERNAL_EFFECT",
                         "External-effect invocation has no matching fixture."),
                 FixtureRule.Consumption.optionalOnce(), FixtureRule.SchemaCheck.strict());

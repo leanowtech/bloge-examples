@@ -3,7 +3,13 @@ package com.leanowtech.bloge.gateway.testing.runtime;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.dsl.GraphBuilder;
+import com.leanowtech.bloge.core.engine.operators.ForEachOperator;
 import com.leanowtech.bloge.core.model.Graph;
+import com.leanowtech.bloge.core.model.NodeSpec;
+import com.leanowtech.bloge.core.model.ResilienceConfig;
+import com.leanowtech.bloge.core.model.SagaConfig;
+import com.leanowtech.bloge.core.schema.OpaqueSchema;
+import com.leanowtech.bloge.core.schema.SchemaValidationLevel;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.operator.SideEffectType;
@@ -20,6 +26,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -323,7 +330,7 @@ class TestRunServiceTest {
 
         assertThat(result.passed()).isTrue();
         assertThat(result.evidence().metadata().get("nodeControlModes"))
-                .isEqualTo(Map.of("subject", "SPY"));
+                .isEqualTo(Map.of("/root/subject#PRIMARY", "SPY"));
         assertThat((List<?>) result.evidence().metadata().get("sideEffectIntents"))
                 .singleElement().satisfies(snapshot -> {
                     String serialized = String.valueOf(snapshot);
@@ -370,7 +377,7 @@ class TestRunServiceTest {
                         "current", "2026-08-14T09:00:00Z",
                         "elapsedMs", Duration.ofDays(30).toMillis()));
         assertThat(result.evidence().metadata().get("nodeControlModes"))
-                .isEqualTo(Map.of("subject", "DELAY"));
+                .isEqualTo(Map.of("/root/subject#PRIMARY", "DELAY"));
     }
 
     @Test
@@ -418,6 +425,92 @@ class TestRunServiceTest {
         });
         assertThat(result.evidence().metadata().get("logicalTime").toString())
                 .contains("elapsedMs=8000");
+    }
+
+    @Test
+    void nestedForeachFixtureControlsEveryItemWithoutCallingRealOperator() {
+        AtomicInteger realCalls = new AtomicInteger();
+        DefaultOperatorRegistry nestedRegistry = new DefaultOperatorRegistry();
+        nestedRegistry.register("customer.lookup", new CountingExternalOperator(realCalls));
+        NodeSpec lookup = new NodeSpec("lookup", "customer.lookup", null,
+                ResilienceConfig.DEFAULT, Map.of(), OpaqueSchema.INSTANCE, OpaqueSchema.INSTANCE);
+        Graph child = new Graph("item-body", Map.of("lookup", lookup), List.of(),
+                Set.of("lookup"), Set.of("lookup"), SchemaValidationLevel.OFF);
+        ForEachOperator foreach = new ForEachOperator(child, nestedRegistry, false);
+        Graph root = new GraphBuilder("foreach-control")
+                .node("enrich", foreach)
+                .input((results, context) -> context.get("input"))
+                .build();
+        FixtureRule.Selector selector = new FixtureRule.Selector(
+                "/root/enrich/item-body", "lookup", "", "", "",
+                List.of(), List.of(), InvocationSite.InvocationKind.PRIMARY,
+                List.of(), List.of(), "", FixtureRule.Match.none());
+        FixtureRule fixture = new FixtureRule(FixtureRule.SCHEMA_VERSION, "nested-fixed",
+                selector, FixtureRule.Behavior.returning("fixture"),
+                new FixtureRule.Consumption(true, 3, 3,
+                        FixtureRule.ExhaustedAction.FAIL, FixtureRule.UnmatchedAction.FAIL),
+                FixtureRule.SchemaCheck.strict());
+        TestExecutionRequest request = new TestExecutionRequest(root,
+                new GraphContext(Map.of("input", List.of("A", "B", "C"))), bundle(fixture),
+                "GRAPH_CONTRACT_TEST", TARGET, TestExecutionRequest.FixtureSource.INLINE, Map.of());
+
+        TestExecutionResult result = service.execute(request);
+
+        assertThat(result.passed())
+                .withFailMessage("status=%s diagnostics=%s graphErrors=%s",
+                        result.evidence().status(), result.evidence().diagnostics(),
+                        result.graphResult() == null ? "null" : result.graphResult().errors())
+                .isTrue();
+        assertThat(result.graphResult().getOutput("enrich", List.class)).containsExactly(
+                Map.of("lookup", "fixture"),
+                Map.of("lookup", "fixture"),
+                Map.of("lookup", "fixture"));
+        assertThat(realCalls).hasValue(0);
+        assertThat(result.evidence().fixtureConsumptions()).singleElement()
+                .satisfies(consumption -> assertThat(consumption.uses()).isEqualTo(3));
+        assertThat(result.evidence().metadata().get("nodeControlModes"))
+                .isEqualTo(Map.of("/root/enrich/item-body/lookup#PRIMARY", "RETURN"));
+    }
+
+    @Test
+    void compensationFixtureUsesIndependentCompensationSiteAndNeverCallsRealUndo() {
+        AtomicInteger realCompensationCalls = new AtomicInteger();
+        Operator<Object, Object> realCompensation = new CountingExternalOperator(
+                realCompensationCalls);
+        Operator<Object, Object> failure = new PureOperator() {
+            @Override
+            public Object execute(Object input, OperatorContext context) {
+                throw new IllegalStateException("force saga rollback");
+            }
+        };
+        Graph graph = new GraphBuilder("compensation-control")
+                .saga(SagaConfig.backward())
+                .node("reserve", new PureOperator())
+                .input((results, context) -> "reservation")
+                .compensate(realCompensation)
+                .node("fail", failure)
+                .dependsOn("reserve")
+                .build();
+        FixtureRule.Selector compensationSelector = new FixtureRule.Selector(
+                "/root", "reserve", "", "", "", List.of(), List.of(),
+                InvocationSite.InvocationKind.COMPENSATION,
+                List.of(), List.of(), "", FixtureRule.Match.none());
+        FixtureRule fixture = rule("undo-fixture", compensationSelector,
+                FixtureRule.Behavior.returning("controlled-undo"));
+
+        TestExecutionResult result = service.execute(request(graph, bundle(fixture)));
+
+        assertThat(result.graphResult()).isNotNull();
+        assertThat(result.graphResult().isSuccess()).isFalse();
+        assertThat(result.graphResult().compensationResults()).singleElement().satisfies(undo -> {
+            assertThat(undo.isSuccess()).isTrue();
+            assertThat(undo.output()).isEqualTo("controlled-undo");
+        });
+        assertThat(realCompensationCalls).hasValue(0);
+        assertThat(result.evidence().fixtureConsumptions()).singleElement()
+                .satisfies(consumption -> assertThat(consumption.uses()).isEqualTo(1));
+        assertThat(result.evidence().metadata().get("nodeControlModes"))
+                .isEqualTo(Map.of("/root/reserve#COMPENSATION", "RETURN"));
     }
 
     private static Graph single(Operator<Object, Object> operator) {

@@ -80,6 +80,7 @@ class TestRuntimeApplicationIntegrationTest {
                 nestedTarget.getBody(), TestGraphTargetDescriptor.class);
         assertThat(nestedDescriptor.certificationEligible()).isFalse();
         assertThat(nestedDescriptor.certificationGaps())
-                .anyMatch(gap -> gap.contains("nested invocation sites") && gap.contains("foreach"));
+                .anyMatch(gap -> gap.contains("nested invocation evidence")
+                        && gap.contains("occurrence-addressable") && gap.contains("foreach"));
     }
 }

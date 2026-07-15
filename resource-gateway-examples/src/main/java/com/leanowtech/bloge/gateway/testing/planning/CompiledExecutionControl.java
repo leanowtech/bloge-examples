@@ -15,21 +15,22 @@ import java.util.Map;
  * the runtime without rereading mutable fixture storage during execution.</p>
  *
  * @param effectivePlan payload-free auditable plan projection
- * @param controls resolved node controls keyed by root graph node id
+ * @param controls resolved controls keyed by governance invocation-site id
  * @param rules frozen source rules in declaration order
- * @param frozenOperators exact root-node runtime bindings used to compute binding fingerprints
+ * @param inventory exact reachable runtime bindings used to compute fingerprints and resolve a run
  */
 public record CompiledExecutionControl(
         EffectiveExecutionPlan effectivePlan,
         Map<String, ResolvedControl> controls,
         List<FixtureRule> rules,
-        Map<String, Object> frozenOperators
+        InvocationInventory inventory
 ) {
     /** Creates immutable runtime collections. */
     public CompiledExecutionControl {
         controls = controls == null ? Map.of() : Map.copyOf(controls);
         rules = rules == null ? List.of() : List.copyOf(rules);
-        frozenOperators = frozenOperators == null ? Map.of() : Map.copyOf(frozenOperators);
+        inventory = inventory == null
+                ? new InvocationInventory(List.of(), Map.of(), Map.of()) : inventory;
     }
 
     /**

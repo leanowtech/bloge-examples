@@ -9,8 +9,8 @@ import java.util.Map;
  * <p>Resource responses are supplied at the transport boundary so the production URL mapping,
  * response protocol, payload extraction, branch, retry, fallback, decision-table, and aggregation
  * behavior remains under test. The foreach example deliberately uses an empty outer collection
- * until nested invocation sites become addressable; its suite is tagged as exploratory instead of
- * creating false certification evidence.</p>
+ * until occurrence-level nested evidence and its non-empty built-in fixtures are complete; its
+ * suite is tagged as exploratory instead of creating false certification evidence.</p>
  */
 final class BuiltInGatewayGraphContractTestSuites {
 

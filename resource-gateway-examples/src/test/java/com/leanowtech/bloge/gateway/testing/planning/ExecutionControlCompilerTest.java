@@ -87,8 +87,8 @@ class ExecutionControlCompilerTest {
         CompiledExecutionControl result = compiler.compile(graph(new ExternalOperator()),
                 bundle(), "GRAPH_CONTRACT_TEST", TARGET);
 
-        assertThat(result.controls()).containsKey("subject");
-        assertThat(result.controls().get("subject").implicitDeny()).isTrue();
+        assertThat(result.controls()).containsKey("/root/subject#PRIMARY");
+        assertThat(result.controls().get("/root/subject#PRIMARY").implicitDeny()).isTrue();
         assertThat(result.effectivePlan().resolvedSites()).singleElement().satisfies(site ->
                 assertThat(site.resolution()).isEqualTo(EffectiveExecutionPlan.Resolution.DENIED));
     }
@@ -131,8 +131,10 @@ class ExecutionControlCompilerTest {
                 graph, bundle(), "GRAPH_CONTRACT_TEST", TARGET);
         registry.register("mutable-binding", replacement);
 
-        assertThat(compiled.frozenOperators().get("subject")).isSameAs(first);
-        assertThat(compiled.frozenOperators().get("subject")).isNotSameAs(replacement);
+        assertThat(compiled.inventory().byInvocationSiteId()
+                .get("/root/subject#PRIMARY").frozenOperator()).isSameAs(first);
+        assertThat(compiled.inventory().byInvocationSiteId()
+                .get("/root/subject#PRIMARY").frozenOperator()).isNotSameAs(replacement);
     }
 
     @Test

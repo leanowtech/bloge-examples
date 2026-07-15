@@ -11,6 +11,7 @@ import com.leanowtech.bloge.core.model.StreamEdge;
 import com.leanowtech.bloge.core.spi.ExecutionListener;
 import com.leanowtech.bloge.core.spi.event.NodeEvent;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
+import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 
 import java.time.Duration;
@@ -33,22 +34,22 @@ public class InvocationRecorder implements ExecutionListener {
     private final Map<String, StartFact> starts = new ConcurrentHashMap<>();
     private final Map<String, TestRunEvidence.NodeTrace> traces = new ConcurrentHashMap<>();
     private final Map<String, String> fidelityByNode = new ConcurrentHashMap<>();
-    private final Map<String, String> controlModeByNode = new ConcurrentHashMap<>();
+    private final Map<String, String> controlModeBySite = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> usesByRule = new ConcurrentHashMap<>();
 
     /** Marks the effective fidelity before a controlled invocation returns or fails. */
-    public void markFidelity(String nodeId, String fidelity) {
-        fidelityByNode.put(nodeId, fidelity);
+    public void markFidelity(InvocationSite site, String fidelity) {
+        fidelityByNode.put(site.nodeId(), fidelity);
     }
 
-    /** Records the effective REAL/RETURN/THROW/DENY/SPY control mode for evidence projection. */
-    public void markControlMode(String nodeId, String controlMode) {
-        controlModeByNode.put(nodeId, controlMode);
+    /** Records the effective REAL/RETURN/THROW/DENY/SPY mode by structural invocation site. */
+    public void markControlMode(InvocationSite site, String controlMode) {
+        controlModeBySite.put(site.invocationSiteId(), controlMode);
     }
 
-    /** @return immutable node-to-control-mode facts in stable node-id order */
+    /** @return immutable site-to-control-mode facts in stable structural-id order */
     public Map<String, String> controlModes() {
-        return Map.copyOf(new TreeMap<>(controlModeByNode));
+        return Map.copyOf(new TreeMap<>(controlModeBySite));
     }
 
     /** Records one fixture use atomically. */
