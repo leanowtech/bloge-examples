@@ -48,18 +48,24 @@ class ResourceGatewayTestClientTest {
         ObjectNode registration = JSON.createObjectNode().put("fixture", "loan-approved");
 
         GraphTargetDescriptor target = client.describeGraphTarget("loan decision/v2");
+        OperatorTargetDescriptor operator = client.describeOperatorTarget("customer.normalize/v2");
         FixtureBundleRevision registered = client.registerFixture("fixture/approved", registration);
         FixtureBundleRevision found = client.findFixture("fixture/approved", 3);
         TestRun executed = client.execute(execution);
+        TestRun operatorRun = client.executeOperator("customer.normalize/v2", execution);
         TestRunBatch batch = client.executeBatch(List.of(execution, execution.deepCopy()));
         TestRun queried = client.findRun("run/42", ResourceGatewayTestClient.Verbosity.FULL);
 
         assertThat(target.graphId()).isEqualTo("loan decision/v2");
         assertThat(target.fingerprint()).isEqualTo(FINGERPRINT);
         assertThat(target.certificationEligible()).isTrue();
+        assertThat(operator.operatorRef()).isEqualTo("customer.normalize/v2");
+        assertThat(operator.testabilityClass()).isEqualTo("EXECUTABLE_UNIT");
+        assertThat(operator.executionSupported()).isTrue();
         assertThat(registered.fixtureBundleId()).isEqualTo("fixture/approved");
         assertThat(found.revision()).isEqualTo(3);
         assertThat(executed.runId()).isEqualTo("run-42");
+        assertThat(operatorRun.runId()).isEqualTo("run-42");
         assertThat(executed.status()).isEqualTo(TestRun.Status.PASSED);
         assertThat(executed.nodeTraces()).singleElement().satisfies(node -> {
             assertThat(node.invocationSiteId()).isEqualTo("/root/credit#primary");
@@ -84,17 +90,19 @@ class ResourceGatewayTestClientTest {
         assertThat(queried.rawResponse().path("runId").asText()).isEqualTo("run-42");
 
         assertThat(requests).extracting(CapturedRequest::purpose)
-                .containsExactly("TEST_EXECUTION", "TEST_FIXTURE_WRITE", "TEST_FIXTURE_READ",
-                        "TEST_EXECUTION", "TEST_EXECUTION", "TEST_EXECUTION");
+                .containsExactly("TEST_EXECUTION", "TEST_EXECUTION", "TEST_FIXTURE_WRITE",
+                        "TEST_FIXTURE_READ", "TEST_EXECUTION", "TEST_EXECUTION",
+                        "TEST_EXECUTION", "TEST_EXECUTION");
         assertThat(requests).allSatisfy(request -> {
             assertThat(request.authorization()).isEqualTo("Bearer super-secret-token");
             assertThat(request.correlationId()).isNotBlank();
             assertThat(request.accept()).isEqualTo("application/json");
         });
         assertThat(requests.get(0).rawPath()).endsWith("/loan%20decision%2Fv2");
-        assertThat(requests.get(2).rawQuery()).isEqualTo("revision=3");
-        assertThat(requests.get(5).rawQuery()).isEqualTo("verbosity=FULL");
-        assertThat(requests.get(4).body().path("schemaVersion").asText())
+        assertThat(requests.get(1).rawPath()).endsWith("/customer.normalize%2Fv2");
+        assertThat(requests.get(3).rawQuery()).isEqualTo("revision=3");
+        assertThat(requests.get(7).rawQuery()).isEqualTo("verbosity=FULL");
+        assertThat(requests.get(6).body().path("schemaVersion").asText())
                 .isEqualTo(TestingProtocol.TEST_EXECUTION_BATCH_REQUEST_V1);
     }
 
@@ -175,7 +183,9 @@ class ResourceGatewayTestClientTest {
             respond(exchange, 200, "{\"value\":\"" + "sensitive-response-content".repeat(20) + "\"}");
             return;
         }
-        if (path.contains("/targets/graphs/")) {
+        if ("GET".equals(exchange.getRequestMethod()) && path.contains("/targets/operators/")) {
+            respond(exchange, 200, operatorTargetResponse());
+        } else if (path.contains("/targets/graphs/")) {
             respond(exchange, 200, targetResponse());
         } else if (path.contains("/fixture-bundles/")) {
             respond(exchange, 200, storedFixtureResponse());
@@ -194,6 +204,20 @@ class ResourceGatewayTestClientTest {
                  "contract":{},"resourceDependencyFingerprints":{},
                  "dependencyPolicy":"CONSERVATIVE_ALL_REGISTERED",
                  "certificationEligible":true,"certificationGaps":[]}
+                """.formatted(FINGERPRINT);
+    }
+
+    private static String operatorTargetResponse() {
+        return """
+                {"schemaVersion":"bloge.testOperatorTargetDescriptor.v1",
+                 "target":{"kind":"OPERATOR","id":"customer.normalize/v2","fingerprint":"%1$s"},
+                 "implementationFingerprint":"%1$s","runtimeBindingStateFingerprint":"%1$s",
+                 "schemaFingerprint":"%1$s",
+                 "inputSchema":{},"outputSchema":{},"executionModel":"SYNCHRONOUS",
+                 "sideEffectType":"READ_ONLY","idempotency":"IDEMPOTENT","sideEffectProtocol":{},
+                 "testabilityClass":"EXECUTABLE_UNIT","resourceDependencyFingerprints":{},
+                 "dependencyPolicy":"NONE_DECLARED","executionSupported":true,
+                 "certificationEligible":true,"certificationRequirements":[],"certificationGaps":[]}
                 """.formatted(FINGERPRINT);
     }
 

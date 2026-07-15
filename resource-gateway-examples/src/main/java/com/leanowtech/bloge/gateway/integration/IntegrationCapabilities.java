@@ -174,6 +174,10 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence.SCHEMA_VERSION));
             objects.put("testGraphTargetDescriptor", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestGraphTargetDescriptor.SCHEMA_VERSION));
+            objects.put("testOperatorExecutionRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestOperatorExecutionApiRequest.SCHEMA_VERSION));
+            objects.put("testOperatorTargetDescriptor", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestOperatorTargetDescriptor.SCHEMA_VERSION));
         }
 
         Map<String, Boolean> features = new LinkedHashMap<>();
@@ -250,6 +254,9 @@ public record IntegrationCapabilities(
         features.put("credentialRevocationPropagationSlo", identityProvider != null
                 && identityProvider.properties().get("revocationPropagationSloSeconds") instanceof Number);
         features.put("webhook", false);
+        features.put("operatorMicroGraphExecution", testExecutionEndpointEnabled);
+        features.put("streamingOperatorTestExecution", false);
+        features.put("suspendableOperatorTestExecution", false);
 
         List<Endpoint> endpoints = new java.util.ArrayList<>(List.of(
                 new Endpoint("GET", "/api/integration/capabilities"),
@@ -278,6 +285,8 @@ public record IntegrationCapabilities(
         if (testExecutionEndpointEnabled) {
             endpoints.add(new Endpoint("POST", "/api/testing/executions"));
             endpoints.add(new Endpoint("GET", "/api/testing/targets/graphs/{graphName}"));
+            endpoints.add(new Endpoint("GET", "/api/testing/targets/operators/{operatorRef}"));
+            endpoints.add(new Endpoint("POST", "/api/testing/targets/operators/{operatorRef}/executions"));
             endpoints.add(new Endpoint("POST", "/api/testing/executions/batch"));
             endpoints.add(new Endpoint("GET", "/api/testing/executions/{runId}"));
             endpoints.add(new Endpoint("PUT", "/api/testing/fixture-bundles/{fixtureBundleId}"));

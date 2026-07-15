@@ -65,6 +65,30 @@ class OperatorMicroGraphRunnerTest {
     }
 
     @Test
+    void storedOutputDoubleCannotMakeAnOpaqueBindingCertifiable() {
+        TestRunService service = new TestRunService(new DefaultOperatorRegistry(),
+                new ObjectMapper(), null);
+        OperatorMicroGraphRunner runner = new OperatorMicroGraphRunner(service);
+        String target = "sha256:" + "d".repeat(64);
+        FixtureRule rule = new FixtureRule(FixtureRule.SCHEMA_VERSION, "controlled-output",
+                FixtureRule.Selector.operator("legacy.external"),
+                FixtureRule.Behavior.returning(Map.of("status", "controlled")),
+                FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+        FixtureBundle bundle = new FixtureBundle(FixtureBundle.SCHEMA_VERSION, "opaque", 1,
+                target, "INTERNAL", null, null, List.of(rule), List.of(), Map.of());
+
+        OperatorMicroGraphRunner.Result result = runner.execute(new OperatorMicroGraphRunner.Request(
+                "legacy.external", new OpaqueExternalOperator(), target, Map.of(), bundle,
+                "OPERATOR_UNIT_TEST", TestExecutionRequest.FixtureSource.STORED));
+
+        assertThat(result.execution().evidence().status()).isEqualTo(TestRunEvidence.Status.PASSED);
+        assertThat(result.execution().evidence().evidenceClass())
+                .isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
+        assertThat(result.execution().evidence().metadata())
+                .containsEntry("targetCertificationEligible", false);
+    }
+
+    @Test
     void httpResourceRequiresTransportFixtureAndThenProducesCertifiableProtocolEvidence() {
         ObjectMapper mapper = new ObjectMapper();
         BlgeExpressionEvaluator evaluator = new BlgeExpressionEvaluator();

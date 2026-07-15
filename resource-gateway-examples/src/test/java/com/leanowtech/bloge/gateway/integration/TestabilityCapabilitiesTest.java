@@ -20,9 +20,16 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.supportedObjects()).containsKeys("testExecutionRequest", "testExecutionResponse",
                 "testExecutionBatchRequest", "testExecutionBatchResponse", "fixtureBundleRegistrationRequest",
                 "storedFixtureBundle", "fixtureBundle", "effectiveExecutionPlan", "testRunEvidence",
-                "testGraphTargetDescriptor");
+                "testGraphTargetDescriptor", "testOperatorExecutionRequest", "testOperatorTargetDescriptor");
+        assertThat(enabled.features()).containsEntry("operatorMicroGraphExecution", true)
+                .containsEntry("streamingOperatorTestExecution", false)
+                .containsEntry("suspendableOperatorTestExecution", false);
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.path().equals("/api/testing/executions"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/graphs/{graphName}"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint ->
+                endpoint.path().equals("/api/testing/targets/operators/{operatorRef}"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint ->
+                endpoint.path().equals("/api/testing/targets/operators/{operatorRef}/executions"));
     }
 }

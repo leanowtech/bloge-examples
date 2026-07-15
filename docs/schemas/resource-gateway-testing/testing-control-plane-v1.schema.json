@@ -13,10 +13,22 @@
       "additionalProperties": false,
       "required": ["kind", "id", "fingerprint"],
       "properties": {
-        "kind": {"const": "GRAPH"},
-        "id": {"type": "string", "minLength": 1, "maxLength": 255},
+        "kind": {"enum": ["GRAPH", "OPERATOR"]},
+        "id": {"type": "string", "minLength": 1, "maxLength": 512},
         "fingerprint": {"oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]}
       }
+    },
+    "graphTarget": {
+      "allOf": [
+        {"$ref": "#/$defs/target"},
+        {"properties": {"kind": {"const": "GRAPH"}}}
+      ]
+    },
+    "operatorTarget": {
+      "allOf": [
+        {"$ref": "#/$defs/target"},
+        {"properties": {"kind": {"const": "OPERATOR"}}}
+      ]
     },
     "fixtureBundleRef": {
       "type": "object",
@@ -189,7 +201,7 @@
       "required": ["schemaVersion", "target", "executionPurpose", "context", "fixtureBundle", "fixtureBundleRef", "verbosity", "metadata"],
       "properties": {
         "schemaVersion": {"const": "bloge.testExecutionRequest.v1"},
-        "target": {"$ref": "#/$defs/target"},
+        "target": {"$ref": "#/$defs/graphTarget"},
         "executionPurpose": {"const": "GRAPH_CONTRACT_TEST"},
         "context": {"type": "object"},
         "fixtureBundle": {"oneOf": [{"$ref": "#/$defs/fixtureBundle"}, {"type": "null"}]},
@@ -200,6 +212,36 @@
       "oneOf": [
         {"properties": {"fixtureBundle": {"$ref": "#/$defs/fixtureBundle"}, "fixtureBundleRef": {"type": "null"}}},
         {"properties": {"fixtureBundle": {"type": "null"}, "fixtureBundleRef": {"$ref": "#/$defs/fixtureBundleRef"}}}
+      ]
+    },
+    "testOperatorExecutionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "target", "executionPurpose", "input", "fixtureBundle",
+        "fixtureBundleRef", "verbosity", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testOperatorExecutionRequest.v1"},
+        "target": {"$ref": "#/$defs/operatorTarget"},
+        "executionPurpose": {"const": "OPERATOR_UNIT_TEST"},
+        "input": true,
+        "fixtureBundle": {"oneOf": [{"$ref": "#/$defs/fixtureBundle"}, {"type": "null"}]},
+        "fixtureBundleRef": {"oneOf": [{"$ref": "#/$defs/fixtureBundleRef"}, {"type": "null"}]},
+        "verbosity": {"enum": ["SUMMARY", "STANDARD", "FULL"]},
+        "metadata": {"type": "object", "maxProperties": 100}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "fixtureBundle": {"$ref": "#/$defs/fixtureBundle"},
+            "fixtureBundleRef": {"type": "null"}
+          }
+        },
+        {
+          "properties": {
+            "fixtureBundle": {"type": "null"},
+            "fixtureBundleRef": {"$ref": "#/$defs/fixtureBundleRef"}
+          }
+        }
       ]
     },
     "testExecutionBatchRequest": {
@@ -277,7 +319,7 @@
         "schemaVersion": {"const": "bloge.effectiveExecutionPlan.v1"},
         "planId": {"type": "string"},
         "planFingerprint": {"$ref": "#/$defs/fingerprint"},
-        "authorizedPurpose": {"const": "GRAPH_CONTRACT_TEST"},
+        "authorizedPurpose": {"enum": ["GRAPH_CONTRACT_TEST", "OPERATOR_UNIT_TEST"]},
         "targetFingerprint": {"$ref": "#/$defs/fingerprint"},
         "fixtureBundleFingerprint": {"$ref": "#/$defs/fingerprint"},
         "resolvedSites": {"type": "array"},
@@ -294,7 +336,7 @@
         "runId": {"type": "string"},
         "status": {"$ref": "#/$defs/runStatus"},
         "evidenceClass": {"enum": ["EXPLORATORY", "CERTIFIABLE"]},
-        "executionPurpose": {"const": "GRAPH_CONTRACT_TEST"},
+        "executionPurpose": {"enum": ["GRAPH_CONTRACT_TEST", "OPERATOR_UNIT_TEST"]},
         "targetFingerprint": {"$ref": "#/$defs/fingerprint"},
         "fixtureBundleFingerprint": {"$ref": "#/$defs/fingerprint"},
         "planFingerprint": {"type": "string"},
@@ -321,6 +363,46 @@
         "evidence": {"$ref": "#/$defs/testRunEvidence"}
       }
     },
+    "testOperatorTargetDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "target", "implementationFingerprint",
+        "runtimeBindingStateFingerprint", "schemaFingerprint",
+        "inputSchema", "outputSchema", "executionModel", "sideEffectType", "idempotency",
+        "sideEffectProtocol", "testabilityClass", "resourceDependencyFingerprints",
+        "dependencyPolicy", "executionSupported", "certificationEligible",
+        "certificationRequirements", "certificationGaps"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testOperatorTargetDescriptor.v1"},
+        "target": {"$ref": "#/$defs/operatorTarget"},
+        "implementationFingerprint": {
+          "oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]
+        },
+        "runtimeBindingStateFingerprint": {
+          "oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]
+        },
+        "schemaFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "inputSchema": {"type": "object"},
+        "outputSchema": {"type": "object"},
+        "executionModel": {"enum": ["SYNCHRONOUS", "STREAMING", "SUSPENDABLE", "UNSUPPORTED"]},
+        "sideEffectType": {"enum": ["READ_ONLY", "WRITE", "EXTERNAL_CALL", "MIXED"]},
+        "idempotency": {"enum": ["IDEMPOTENT", "NOT_IDEMPOTENT", "UNKNOWN"]},
+        "sideEffectProtocol": {"type": "object"},
+        "testabilityClass": {
+          "enum": ["EXECUTABLE_UNIT", "CONDITIONAL_TRANSPORT", "OPAQUE_RUNTIME",
+            "UNSUPPORTED_EXECUTION_MODEL"]
+        },
+        "resourceDependencyFingerprints": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/fingerprint"}
+        },
+        "dependencyPolicy": {"enum": ["NONE_DECLARED", "CONSERVATIVE_ALL_REGISTERED"]},
+        "executionSupported": {"type": "boolean"},
+        "certificationEligible": {"type": "boolean"},
+        "certificationRequirements": {"type": "array", "items": {"type": "string"}},
+        "certificationGaps": {"type": "array", "items": {"type": "string"}}
+      }
+    },
     "testExecutionBatchResponse": {
       "type": "object",
       "additionalProperties": false,
@@ -341,7 +423,7 @@
       "required": ["schemaVersion", "target", "contract", "resourceDependencyFingerprints", "dependencyPolicy", "certificationEligible", "certificationGaps"],
       "properties": {
         "schemaVersion": {"const": "bloge.testGraphTargetDescriptor.v1"},
-        "target": {"$ref": "#/$defs/target"},
+        "target": {"$ref": "#/$defs/graphTarget"},
         "contract": {"type": "object"},
         "resourceDependencyFingerprints": {
           "type": "object",

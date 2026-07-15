@@ -79,6 +79,47 @@ class TestExecutionControllerTest {
     }
 
     @Test
+    void operatorDiscoveryAndExecutionUseDedicatedPathsAndPurposes() throws Exception {
+        TestExecutionApiService service = mock(TestExecutionApiService.class);
+        TestExecutionApiRequest.Target target = new TestExecutionApiRequest.Target(
+                "OPERATOR", "customer.normalize", "sha256:target");
+        when(service.describeOperatorTarget(eq("customer.normalize"), any())).thenReturn(
+                new TestOperatorTargetDescriptor("", target, "sha256:implementation", "sha256:state",
+                        "sha256:schema",
+                        Map.of(), Map.of(), "SYNCHRONOUS", "READ_ONLY", "IDEMPOTENT", Map.of(),
+                        "EXECUTABLE_UNIT", Map.of(), "NONE_DECLARED", true, true, List.of(), List.of()));
+        TestExecutionApiResponse response = new TestExecutionApiResponse("", "run-operator-1", target,
+                new TestExecutionApiResponse.ResolvedFixtureBundleRef(
+                        "INLINE", "fixture-a", 1, "sha256:fixture"), null, null);
+        when(service.executeOperator(eq("customer.normalize"), any(), any())).thenReturn(response);
+        MockMvc mvc = mvc(service);
+
+        mvc.perform(get("/api/testing/targets/operators/customer.normalize")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_EXECUTION"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.target.kind").value("OPERATOR"))
+                .andExpect(jsonPath("$.testabilityClass").value("EXECUTABLE_UNIT"));
+        mvc.perform(post("/api/testing/targets/operators/customer.normalize/executions")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_EXECUTION")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"schemaVersion":"bloge.testOperatorExecutionRequest.v1",
+                                 "target":{"kind":"OPERATOR","id":"customer.normalize","fingerprint":""},
+                                 "executionPurpose":"OPERATOR_UNIT_TEST","input":{"value":"Ada"},
+                                 "fixtureBundle":null,
+                                 "fixtureBundleRef":{"fixtureBundleId":"fixture-a","revision":1,"fingerprint":""},
+                                 "verbosity":"STANDARD","metadata":{}}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.runId").value("run-operator-1"));
+
+        verify(service).describeOperatorTarget(eq("customer.normalize"), any());
+        verify(service).executeOperator(eq("customer.normalize"), any(), any());
+    }
+
+    @Test
     void executionPurposeCannotWriteGovernedFixtureRevisions() throws Exception {
         TestExecutionApiService service = mock(TestExecutionApiService.class);
         MockMvc mvc = mvc(service);

@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
-| Stage 2 public control plane | In progress | target discovery、execution/batch/query、fixture registry、独立 test-run store、脱敏、10 态、profile/identity/production protocol guard、独立 HTTP/JUnit test-kit、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 nested/foreach/loop/compensation 控制传播与 occurrence/attempt/node/edge evidence 已落地；公共 operator run UI/API、streaming/suspendable control/evidence 与物理 network isolation 待完成 |
+| Stage 2 public control plane | In progress | graph/operator target discovery、graph execution/batch/query、operator micro-graph execution、fixture registry、独立 test-run store、脱敏、10 态、profile/identity/production protocol guard、独立 HTTP/JUnit test-kit、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 nested/foreach/loop/compensation 控制传播与 occurrence/attempt/node/edge evidence 已落地；canvas operator runner 迁移、streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3-5 | Not started | signed evidence、semantic coverage、剩余 deterministic random/UUID/function services、replay、独立部署与规模化治理 |
 
 实现细节、行为兼容决策和可复现测试见
@@ -27,9 +27,14 @@
 [Stage 1 verification](resource-gateway-execution-data-control-plane-stage1-verification.md) 与
 [Testing Control Plane API](resource-gateway-testing-control-plane-api.md) 与
 [Stage 2 test-kit verification](resource-gateway-execution-data-control-plane-stage2-test-kit-verification.md) 与
+[Stage 2 operator adapter verification](resource-gateway-execution-data-control-plane-stage2-operator-adapter-verification.md) 与
 [Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md) 与
 [Stage 2 logical-time verification](resource-gateway-execution-data-control-plane-stage2-logical-time-verification.md)。北极星中的目标态能力未出现在上述
 Done 行时，均不得从文档推断为产品已开放。
+
+当前严格验收基线：Resource Gateway `clean verify` 共 1722 tests、0 failures、0 errors、
+34 个条件跳过，真实浏览器回归与 Spring Boot JAR 打包成功；公共同步算子适配器聚焦
+26 tests、独立 test-kit 13 tests，均为 0 failures、0 errors。
 
 ## 1. 结论先行
 
@@ -961,8 +966,10 @@ batch_queue_depth / tenant_throttled_total
 ### Stage 1：Executable Operator Test，2-4 周
 
 **实现状态**：内核与 Java micro-graph runner 已完成；37 个聚焦 conformance tests 及 1653 个项目测试全绿。独立 test-kit 的
-JUnit 5 assertions、JUnit XML 与 CI exit code 已在 Stage 2 首个增量落地；画布 `Run Operator` 仍待公共 adapter，当前
-`/api/visual/operators/tests/run` 继续严格标识为 `SCHEMA_CONTRACT`。
+JUnit 5 assertions、JUnit XML 与 CI exit code 已在 Stage 2 首个增量落地；公共同步 operator
+target discovery、micro-graph execution、immutable fixture 和 test-kit adapter 已落地。画布
+`Run Operator` 尚未迁移，当前 `/api/visual/operators/tests/run` 继续严格标识为
+`SCHEMA_CONTRACT`，不能借公共 API 的存在自动改名。
 
 交付：
 
@@ -980,7 +987,7 @@ JUnit 5 assertions、JUnit XML 与 CI exit code 已在 Stage 2 首个增量落�
 
 **实现状态**：进行中。Stage 1 已完成 selector preflight、不可变 effective plan、主节点 replacement、consumption policy 与既有
 gateway graph suite adapter；Stage 2 已补 graph target discovery、公共执行/批量/查询、immutable fixture registry、独立持久化、证据脱敏、
-profile/identity guard、production run control-field guard、独立 test-kit，并完成七图/14-case built-in dogfooding：28 个 root/nested 资源调用观测使用 F3，retry 以 bounded consumption 计数，Spring wiring 在不可达 endpoint 下证明没有 HTTP 调用逃逸。run-scoped logical clock、DELAY/TIMEOUT、同步 nested/foreach/loop/compensation 的结构寻址、控制传播与 occurrence/attempt/node/edge evidence 也已落地；REPLAY、streaming/suspendable control/evidence、公共 operator adapter 和物理 test-runtime/network isolation 仍是本阶段硬验收，不能因同步控制用例通过就宣称 Stage 2 完成。
+profile/identity guard、production run control-field guard、独立 test-kit，并完成七图/14-case built-in dogfooding：28 个 root/nested 资源调用观测使用 F3，retry 以 bounded consumption 计数，Spring wiring 在不可达 endpoint 下证明没有 HTTP 调用逃逸。run-scoped logical clock、DELAY/TIMEOUT、同步 nested/foreach/loop/compensation 的结构寻址、控制传播与 occurrence/attempt/node/edge evidence，以及公共同步 operator adapter 也已落地；REPLAY、streaming/suspendable control/evidence、canvas operator runner 迁移和物理 test-runtime/network isolation 仍是本阶段硬验收，不能因同步控制用例通过就宣称 Stage 2 完成。
 
 交付：
 

@@ -34,6 +34,10 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(StoredFixtureBundle.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testGraphTargetDescriptor/properties/schemaVersion/const").asText())
                 .isEqualTo(TestGraphTargetDescriptor.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testOperatorExecutionRequest/properties/schemaVersion/const").asText())
+                .isEqualTo(TestOperatorExecutionApiRequest.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testOperatorTargetDescriptor/properties/schemaVersion/const").asText())
+                .isEqualTo(TestOperatorTargetDescriptor.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/fixtureBundle/properties/schemaVersion/const").asText())
                 .isEqualTo(FixtureBundle.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/effectivePlan/properties/schemaVersion/const").asText())
@@ -65,6 +69,18 @@ class TestingControlProtocolSchemaTest {
 
         assertThat(definitions.has("fixtureBundleRegistrationRequest")).isTrue();
         assertThat(definitions.has("storedFixtureBundle")).isTrue();
+        assertThat(definitions.at("/fixtureBundleRegistrationRequest/properties/target/$ref").asText())
+                .isEqualTo("#/$defs/target");
+        assertThat(definitions.at("/testExecutionRequest/properties/target/$ref").asText())
+                .isEqualTo("#/$defs/graphTarget");
+        assertThat(definitions.at("/testOperatorExecutionRequest/properties/target/$ref").asText())
+                .isEqualTo("#/$defs/operatorTarget");
+        assertThat(definitions.at("/testOperatorExecutionRequest/properties/executionPurpose/const").asText())
+                .isEqualTo("OPERATOR_UNIT_TEST");
+        assertThat(definitions.at("/testOperatorTargetDescriptor/required"))
+                .extracting(JsonNode::asText)
+                .contains("implementationFingerprint", "runtimeBindingStateFingerprint",
+                        "schemaFingerprint", "testabilityClass", "certificationEligible");
         assertThat(definitions.at("/testExecutionBatchRequest/properties/executions/maxItems").asInt())
                 .isEqualTo(TestExecutionBatchRequest.MAX_EXECUTIONS);
         assertThat(definitions.at("/testExecutionBatchResponse/properties/executions/items/$ref").asText())

@@ -4,8 +4,8 @@
 Resource Gateway testing control plane without depending on its Spring Boot
 implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 
-- a bounded JDK HTTP client for target discovery, fixture registry, single/batch
-  execution, and persisted-run lookup;
+- a bounded JDK HTTP client for graph/operator target discovery, fixture registry,
+  graph single/batch execution, operator micro-graph execution, and persisted-run lookup;
 - a fail-closed `FixtureBundleBuilder` for output-level and transport-level
   protocol fixtures;
 - payload-safe typed run summaries and JUnit 5 assertions;
@@ -77,6 +77,40 @@ JUnitXmlReportWriter.write(
         "loan-policy",
         List.of(run));
 ```
+
+Run an exact synchronous operator binding with the same governed fixture and evidence protocol:
+
+```java
+OperatorTargetDescriptor operator = client.describeOperatorTarget("customer.normalize");
+
+FixtureBundleBuilder operatorFixture = FixtureBundleBuilder
+        .operator(operator.operatorRef(), operator.fingerprint())
+        .id("normalize-contract")
+        .rule("real-binding")
+            .operator(operator.operatorRef())
+            .spy()
+            .requiredUses(1, 1)
+            .add()
+        .assertOutput("/normalized", "EQUALS", "ADA");
+
+FixtureBundleRevision operatorRevision = client.registerFixture(
+        "normalize-contract", operatorFixture.registrationRequest());
+TestRun operatorRun = client.executeOperator(operator.operatorRef(),
+        operatorFixture.storedOperatorExecution(operatorRevision.fingerprint(),
+                Map.of("name", "Ada"),
+                ResourceGatewayTestClient.Verbosity.STANDARD,
+                Map.of("suiteRef", "normalization", "caseRef", "uppercase")));
+
+TestRunAssertions.assertPassed(operatorRun);
+TestRunAssertions.assertCertifiable(operatorRun);
+```
+
+`EXECUTABLE_UNIT` does not by itself imply certification. The server also requires a frozen
+implementation closure and runtime state. Stateless operators qualify automatically; configured
+operators implement `OperatorRuntimeBindingSnapshotProvider` on the server and return bounded,
+credential-free configuration facts. An unformalized stateful or opaque binding still runs when
+the plan can control it, but its evidence remains `EXPLORATORY`. `HttpResourceOperator` requires
+transport-level resource fixtures so its mapping and response protocol execute for real.
 
 Use inline fixtures only for exploratory authoring. Registered immutable
 fixtures are required for certifiable evidence. Resource fixtures that need to

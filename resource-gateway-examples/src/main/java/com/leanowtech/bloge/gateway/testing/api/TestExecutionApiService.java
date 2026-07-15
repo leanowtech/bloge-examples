@@ -14,8 +14,11 @@ import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
+import com.leanowtech.bloge.gateway.testing.evidence.OperatorExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceSanitizer;
+import com.leanowtech.bloge.gateway.testing.runtime.OperatorInputCoercer;
+import com.leanowtech.bloge.gateway.testing.runtime.OperatorMicroGraphRunner;
 import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionResult;
@@ -41,6 +44,7 @@ import java.util.Set;
 public final class TestExecutionApiService {
 
     public static final String AUTHORIZED_PURPOSE = "GRAPH_CONTRACT_TEST";
+    public static final String AUTHORIZED_OPERATOR_PURPOSE = "OPERATOR_UNIT_TEST";
     private static final Set<String> ENABLED_ENVIRONMENTS = Set.of("test", "staging");
     private static final Set<String> FIXTURE_CLASSIFICATIONS = Set.of(
             "PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED");
@@ -135,6 +139,73 @@ public final class TestExecutionApiService {
                 "CONSERVATIVE_ALL_REGISTERED", target.certificationEligible(), target.certificationGaps());
     }
 
+    /** Returns the frozen binding, schema and testability facts needed to author operator fixtures. */
+    public TestOperatorTargetDescriptor describeOperatorTarget(String operatorRef,
+                                                               IntegrationRequestContext identity) {
+        requireTestIdentity(identity);
+        OperatorExecutionTargetSnapshot target = requireOperator(operatorRef, identity);
+        return new TestOperatorTargetDescriptor("",
+                new TestExecutionApiRequest.Target("OPERATOR", target.operatorRef(), target.fingerprint()),
+                target.implementationFingerprint(), target.runtimeBindingStateFingerprint(),
+                target.schemaFingerprint(), target.inputSchema(),
+                target.outputSchema(), target.executionModel(), target.sideEffectType(), target.idempotency(),
+                target.sideEffectProtocol(), target.testabilityClass(),
+                target.resourceDependencyFingerprints(), target.dependencyPolicy(),
+                target.executionSupported(), target.certificationEligible(),
+                target.certificationRequirements(), target.certificationGaps());
+    }
+
+    /**
+     * Executes one frozen synchronous operator as a one-node BLOGE graph and persists sanitized evidence.
+     *
+     * @param operatorRef path-bound registry reference
+     * @param request versioned operator execution request
+     * @param identity verified integration identity
+     * @return controlled execution response using the common evidence contract
+     */
+    public TestExecutionApiResponse executeOperator(String operatorRef,
+                                                    TestOperatorExecutionApiRequest request,
+                                                    IntegrationRequestContext identity) {
+        requireTestIdentity(identity);
+        validateOperatorRequest(operatorRef, request, identity);
+        OperatorExecutionTargetSnapshot target = requireOperator(operatorRef, identity);
+        if (!target.executionSupported()) {
+            throw badRequest(identity, "RG.TEST.OPERATOR_EXECUTION_MODEL_UNSUPPORTED",
+                    "testing-control-plane v1 only executes synchronous operator bindings.",
+                    Map.of("executionModel", target.executionModel()));
+        }
+        requireTargetFingerprint(request.target(), target.fingerprint(), identity);
+        ResolvedFixture fixture = resolveFixture(request.fixtureBundle(), request.fixtureBundleRef(),
+                target.fingerprint(), identity);
+        Object typedInput;
+        try {
+            typedInput = OperatorInputCoercer.coerce(request.input(), target.metadata(), objectMapper);
+        } catch (IllegalArgumentException invalidInput) {
+            throw badRequest(identity, "RG.TEST.OPERATOR_INPUT_INVALID", invalidInput.getMessage(), Map.of());
+        }
+        ResourceFixtureRuntime resourceRuntime = new ResourceFixtureRuntime(
+                target.resourceRegistry(), expressionEvaluator, objectMapper);
+        TestRunService kernel = new TestRunService(operatorRegistry, objectMapper, resourceRuntime);
+        OperatorMicroGraphRunner.Result result = new OperatorMicroGraphRunner(kernel).execute(
+                new OperatorMicroGraphRunner.Request(target.operatorRef(), target.synchronousOperator(),
+                        target.fingerprint(), typedInput, fixture.bundle(), AUTHORIZED_OPERATOR_PURPOSE,
+                        fixture.source(), target.certificationEligible(),
+                        operatorExecutionMetadata(request, identity, target)));
+        TestRunEvidence sanitized = sanitizer.sanitize(result.execution().evidence());
+        TestRunRecord record = new TestRunRecord(sanitized.runId(), identity.tenantId(),
+                identity.organizationId(), identity.projectId(), identity.environmentId(), identity.actorId(),
+                new TestExecutionApiRequest.Target("OPERATOR", target.operatorRef(), target.fingerprint()),
+                fixture.reference(), request.verbosity(), result.execution().plan(), sanitized,
+                sanitized.completedAt(), sanitized.completedAt().plus(retention));
+        try {
+            runRepository.create(record);
+        } catch (RuntimeException persistenceFailure) {
+            TestRunEvidence incomplete = evidenceIncomplete(sanitized, persistenceFailure);
+            return response(record, result.execution().plan(), incomplete, request.verbosity());
+        }
+        return response(record, result.execution().plan(), sanitized, request.verbosity());
+    }
+
     /** Executes a bounded set of independent requests sequentially. */
     public TestExecutionBatchResponse executeBatch(TestExecutionBatchRequest request,
                                                    IntegrationRequestContext identity) {
@@ -189,14 +260,12 @@ public final class TestExecutionApiService {
                     Map.of());
         }
         requireClearance(bundle.classification(), identity);
-        Graph graph = requireGraph(request.target(), identity);
-        GraphExecutionTargetSnapshot target = GraphExecutionTargetSnapshot.capture(
-                objectMapper, graph, resourceRegistry);
-        requireTargetFingerprint(request.target(), target.fingerprint(), identity);
-        if (!target.fingerprint().equals(bundle.targetFingerprint())) {
+        String targetFingerprint = currentTargetFingerprint(request.target(), identity);
+        requireTargetFingerprint(request.target(), targetFingerprint, identity);
+        if (!targetFingerprint.equals(bundle.targetFingerprint())) {
             throw conflict(identity, "RG.TEST.FIXTURE_TARGET_STALE",
-                    "Fixture targetFingerprint does not identify the current frozen graph dependencies.",
-                    Map.of("currentTargetFingerprint", target.fingerprint()));
+                    "Fixture targetFingerprint does not identify the current frozen target dependencies.",
+                    Map.of("currentTargetFingerprint", targetFingerprint));
         }
         String fingerprint = ProtocolFingerprint.of(objectMapper, bundle);
         StoredFixtureBundle stored = new StoredFixtureBundle("", identity.tenantId(), identity.environmentId(),
@@ -234,8 +303,14 @@ public final class TestExecutionApiService {
 
     private ResolvedFixture resolveFixture(TestExecutionApiRequest request, String targetFingerprint,
                                            IntegrationRequestContext identity) {
-        if (request.fixtureBundle() != null) {
-            FixtureBundle inline = request.fixtureBundle();
+        return resolveFixture(request.fixtureBundle(), request.fixtureBundleRef(), targetFingerprint, identity);
+    }
+
+    private ResolvedFixture resolveFixture(FixtureBundle inline,
+                                           TestExecutionApiRequest.FixtureBundleRef fixtureReference,
+                                           String targetFingerprint,
+                                           IntegrationRequestContext identity) {
+        if (inline != null) {
             requireClearance(inline.classification(), identity);
             if (!targetFingerprint.equals(inline.targetFingerprint())) {
                 throw conflict(identity, "RG.TEST.FIXTURE_TARGET_STALE",
@@ -247,7 +322,7 @@ public final class TestExecutionApiService {
                     new TestExecutionApiResponse.ResolvedFixtureBundleRef("INLINE", inline.fixtureBundleId(),
                             inline.revision(), fingerprint));
         }
-        TestExecutionApiRequest.FixtureBundleRef reference = request.fixtureBundleRef();
+        TestExecutionApiRequest.FixtureBundleRef reference = fixtureReference;
         StoredFixtureBundle stored = findFixture(reference.fixtureBundleId(), reference.revision(), identity);
         if (!reference.fingerprint().isBlank() && !reference.fingerprint().equals(stored.fingerprint())) {
             throw conflict(identity, "RG.TEST.FIXTURE_FINGERPRINT_CONFLICT",
@@ -300,6 +375,38 @@ public final class TestExecutionApiService {
         }
     }
 
+    private void validateOperatorRequest(String operatorRef, TestOperatorExecutionApiRequest request,
+                                         IntegrationRequestContext identity) {
+        if (request == null
+                || !TestOperatorExecutionApiRequest.SCHEMA_VERSION.equals(request.schemaVersion())) {
+            throw badRequest(identity, "RG.TEST.OPERATOR_REQUEST_SCHEMA_VERSION_INVALID",
+                    "Unsupported operator execution request schemaVersion.", Map.of());
+        }
+        if (!AUTHORIZED_OPERATOR_PURPOSE.equals(request.executionPurpose())) {
+            throw badRequest(identity, "RG.TEST.EXECUTION_PURPOSE_INVALID",
+                    "executionPurpose must explicitly be OPERATOR_UNIT_TEST; authorization remains server-owned.",
+                    Map.of());
+        }
+        boolean inline = request.fixtureBundle() != null;
+        boolean stored = request.fixtureBundleRef() != null;
+        if (inline == stored) {
+            throw badRequest(identity, "RG.TEST.FIXTURE_SOURCE_INVALID",
+                    "Exactly one of fixtureBundle or fixtureBundleRef is required.", Map.of());
+        }
+        String pathRef = normalized(operatorRef);
+        if (request.target() == null || !"OPERATOR".equals(request.target().kind())
+                || request.target().id().isBlank() || !pathRef.equals(request.target().id())) {
+            throw badRequest(identity, "RG.TEST.OPERATOR_TARGET_INVALID",
+                    "Path and request target must identify the same registered OPERATOR.", Map.of());
+        }
+        requireBounded(request.input(), MAX_CONTEXT_BYTES, "input", identity);
+        requireBounded(request.metadata(), MAX_METADATA_BYTES, "metadata", identity);
+        if (request.metadata().containsKey(null) || request.metadata().containsValue(null)) {
+            throw badRequest(identity, "RG.TEST.METADATA_INVALID",
+                    "metadata keys and values must be non-null protocol facts.", Map.of());
+        }
+    }
+
     private Graph requireGraph(TestExecutionApiRequest.Target target, IntegrationRequestContext identity) {
         if (target == null || !"GRAPH".equals(target.kind()) || target.id().isBlank()) {
             throw badRequest(identity, "RG.TEST.TARGET_INVALID", "A GRAPH target is required.", Map.of());
@@ -310,6 +417,32 @@ public final class TestExecutionApiService {
             throw new IntegrationProblemException(IntegrationProblem.notFound(
                     "RG.TEST.TARGET_NOT_FOUND", "Graph target was not found.", identity.correlationId(), Map.of()));
         }
+    }
+
+    private OperatorExecutionTargetSnapshot requireOperator(String operatorRef,
+                                                             IntegrationRequestContext identity) {
+        try {
+            return OperatorExecutionTargetSnapshot.capture(
+                    objectMapper, normalized(operatorRef), operatorRegistry, resourceRegistry);
+        } catch (IllegalArgumentException notFound) {
+            throw new IntegrationProblemException(IntegrationProblem.notFound(
+                    "RG.TEST.OPERATOR_TARGET_NOT_FOUND", "Operator target was not found.",
+                    identity.correlationId(), Map.of()));
+        }
+    }
+
+    private String currentTargetFingerprint(TestExecutionApiRequest.Target target,
+                                            IntegrationRequestContext identity) {
+        if (target == null) {
+            throw badRequest(identity, "RG.TEST.TARGET_INVALID", "A fixture target is required.", Map.of());
+        }
+        return switch (target.kind()) {
+            case "GRAPH" -> GraphExecutionTargetSnapshot.capture(
+                    objectMapper, requireGraph(target, identity), resourceRegistry).fingerprint();
+            case "OPERATOR" -> requireOperator(target.id(), identity).fingerprint();
+            default -> throw badRequest(identity, "RG.TEST.TARGET_INVALID",
+                    "Fixture target kind must be GRAPH or OPERATOR.", Map.of("kind", target.kind()));
+        };
     }
 
     private void requireTestIdentity(IntegrationRequestContext identity) {
@@ -364,6 +497,28 @@ public final class TestExecutionApiService {
         metadata.put("resourceDependencyFingerprints", target.dependencyFingerprints());
         metadata.put("resourceDependencyPolicy", "CONSERVATIVE_ALL_REGISTERED");
         metadata.put("targetCertificationEligible", target.certificationEligible());
+        metadata.put("targetCertificationGaps", target.certificationGaps());
+        return Map.copyOf(metadata);
+    }
+
+    private Map<String, Object> operatorExecutionMetadata(TestOperatorExecutionApiRequest request,
+                                                          IntegrationRequestContext identity,
+                                                          OperatorExecutionTargetSnapshot target) {
+        Map<String, Object> metadata = new LinkedHashMap<>(request.metadata());
+        metadata.put("tenantId", identity.tenantId());
+        metadata.put("organizationId", identity.organizationId());
+        metadata.put("projectId", identity.projectId());
+        metadata.put("environmentId", identity.environmentId());
+        metadata.put("actorId", identity.actorId());
+        metadata.put("correlationId", identity.correlationId());
+        metadata.put("implementationFingerprint", target.implementationFingerprint());
+        metadata.put("runtimeBindingStateFingerprint", target.runtimeBindingStateFingerprint());
+        metadata.put("schemaFingerprint", target.schemaFingerprint());
+        metadata.put("resourceDependencyFingerprints", target.resourceDependencyFingerprints());
+        metadata.put("resourceDependencyPolicy", target.dependencyPolicy());
+        metadata.put("baselineTestabilityClass", target.testabilityClass());
+        metadata.put("targetCertificationEligible", target.certificationEligible());
+        metadata.put("targetCertificationRequirements", target.certificationRequirements());
         metadata.put("targetCertificationGaps", target.certificationGaps());
         return Map.copyOf(metadata);
     }

@@ -25,6 +25,31 @@ public final class ProtocolFingerprint {
      * @return {@code sha256:<hex>}
      */
     public static String of(ObjectMapper mapper, Object value) {
+        return sha256(canonicalBytes(mapper, value));
+    }
+
+    /**
+     * Canonically fingerprints a protocol value while enforcing the encoded size on the same
+     * immutable byte sequence that is hashed.
+     *
+     * @param mapper application JSON mapper
+     * @param value protocol value
+     * @param maximumBytes positive canonical byte limit
+     * @return {@code sha256:<hex>}
+     */
+    public static String ofBounded(ObjectMapper mapper, Object value, int maximumBytes) {
+        if (maximumBytes < 1) {
+            throw new IllegalArgumentException("maximumBytes must be positive");
+        }
+        byte[] canonical = canonicalBytes(mapper, value);
+        if (canonical.length > maximumBytes) {
+            throw new IllegalArgumentException("Canonical protocol value exceeds "
+                    + maximumBytes + " bytes");
+        }
+        return sha256(canonical);
+    }
+
+    private static byte[] canonicalBytes(ObjectMapper mapper, Object value) {
         ObjectMapper canonical = mapper.copy()
                 .registerModule(new JavaTimeModule())
                 .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
@@ -32,7 +57,7 @@ public final class ProtocolFingerprint {
         canonical.setConfig(canonical.getSerializationConfig()
                 .with(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY));
         try {
-            return sha256(canonical.writeValueAsBytes(value));
+            return canonical.writeValueAsBytes(value);
         } catch (JsonProcessingException ex) {
             throw new IllegalArgumentException("Protocol value cannot be fingerprinted", ex);
         }
@@ -41,6 +66,16 @@ public final class ProtocolFingerprint {
     /** @return a prefixed SHA-256 fingerprint for UTF-8 text */
     public static String ofText(String value) {
         return sha256((value == null ? "" : value).getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Returns a prefixed SHA-256 fingerprint for an immutable binary artifact.
+     *
+     * @param value binary artifact bytes; {@code null} is treated as an empty artifact
+     * @return {@code sha256:<hex>}
+     */
+    public static String ofBytes(byte[] value) {
+        return sha256(value == null ? new byte[0] : value);
     }
 
     private static String sha256(byte[] bytes) {

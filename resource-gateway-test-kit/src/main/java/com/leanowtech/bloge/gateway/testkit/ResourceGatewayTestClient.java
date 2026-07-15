@@ -94,6 +94,18 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Discovers one frozen operator binding, schemas and executable testability classification.
+     * @param operatorRef registered operator reference
+     * @return typed operator target descriptor
+     */
+    public OperatorTargetDescriptor describeOperatorTarget(String operatorRef) {
+        JsonNode response = exchange("GET", "/api/testing/targets/operators/" + segment(operatorRef), "",
+                "TEST_EXECUTION", null);
+        requireVersion(response, TestingProtocol.OPERATOR_TARGET_DESCRIPTOR_V1);
+        return OperatorTargetDescriptor.from(response);
+    }
+
+    /**
      * Registers one immutable fixture revision.
      * @param fixtureBundleId fixture id used in the endpoint
      * @param registrationRequest schema-complete registration request
@@ -129,6 +141,20 @@ public final class ResourceGatewayTestClient {
      */
     public TestRun execute(JsonNode executionRequest) {
         JsonNode response = exchange("POST", "/api/testing/executions", "", "TEST_EXECUTION",
+                requiredObject(executionRequest, "executionRequest"));
+        requireVersion(response, TestingProtocol.TEST_EXECUTION_RESPONSE_V1);
+        return projectRun(response);
+    }
+
+    /**
+     * Executes one operator request through the server's one-node BLOGE test kernel.
+     * @param operatorRef path-bound registered operator reference
+     * @param executionRequest schema-complete operator execution request
+     * @return persisted run projection
+     */
+    public TestRun executeOperator(String operatorRef, JsonNode executionRequest) {
+        JsonNode response = exchange("POST", "/api/testing/targets/operators/" + segment(operatorRef)
+                        + "/executions", "", "TEST_EXECUTION",
                 requiredObject(executionRequest, "executionRequest"));
         requireVersion(response, TestingProtocol.TEST_EXECUTION_RESPONSE_V1);
         return projectRun(response);

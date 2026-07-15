@@ -14,7 +14,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Fluent builder for schema-complete fixture bundles and controlled graph execution requests.
+ * Fluent builder for schema-complete fixture bundles and controlled graph/operator requests.
  * Defaults are strict and fail closed: rules are required exactly once, unmatched/exhausted sites
  * fail, and schema checks are enabled.
  */
@@ -39,7 +39,8 @@ public final class FixtureBundleBuilder {
         RESTRICTED
     }
 
-    private final String graphId;
+    private final String targetKind;
+    private final String targetId;
     private final String targetFingerprint;
     private final Map<String, JsonNode> metadata = new LinkedHashMap<>();
     private final ArrayNode rules = JSON.createArrayNode();
@@ -51,8 +52,9 @@ public final class FixtureBundleBuilder {
     private Instant logicalClock;
     private Long randomSeed;
 
-    private FixtureBundleBuilder(String graphId, String targetFingerprint) {
-        this.graphId = required(graphId, "graphId", 255);
+    private FixtureBundleBuilder(String targetKind, String targetId, String targetFingerprint) {
+        this.targetKind = required(targetKind, "targetKind", 32);
+        this.targetId = required(targetId, "targetId", 512);
         this.targetFingerprint = fingerprint(targetFingerprint, "targetFingerprint");
     }
 
@@ -63,7 +65,18 @@ public final class FixtureBundleBuilder {
      * @return new strict fixture builder
      */
     public static FixtureBundleBuilder graph(String graphId, String targetFingerprint) {
-        return new FixtureBundleBuilder(graphId, targetFingerprint);
+        return new FixtureBundleBuilder("GRAPH", required(graphId, "graphId", 255), targetFingerprint);
+    }
+
+    /**
+     * Starts a fixture bundle for one frozen operator binding.
+     * @param operatorRef registered operator reference
+     * @param targetFingerprint composite fingerprint returned by operator target discovery
+     * @return new strict fixture builder
+     */
+    public static FixtureBundleBuilder operator(String operatorRef, String targetFingerprint) {
+        return new FixtureBundleBuilder("OPERATOR", required(operatorRef, "operatorRef", 512),
+                targetFingerprint);
     }
 
     /**
@@ -232,7 +245,8 @@ public final class FixtureBundleBuilder {
     public ObjectNode inlineExecution(Map<String, ?> context,
                                       ResourceGatewayTestClient.Verbosity verbosity,
                                       Map<String, ?> executionMetadata) {
-        ObjectNode request = executionBase(context, verbosity, executionMetadata);
+        requireTargetKind("GRAPH");
+        ObjectNode request = graphExecutionBase(context, verbosity, executionMetadata);
         request.set("fixtureBundle", buildBundle());
         request.putNull("fixtureBundleRef");
         return request;
@@ -250,7 +264,34 @@ public final class FixtureBundleBuilder {
                                       ResourceGatewayTestClient.Verbosity verbosity,
                                       Map<String, ?> executionMetadata) {
         requireFixtureId();
-        ObjectNode request = executionBase(context, verbosity, executionMetadata);
+        requireTargetKind("GRAPH");
+        ObjectNode request = graphExecutionBase(context, verbosity, executionMetadata);
+        request.putNull("fixtureBundle");
+        ObjectNode reference = request.putObject("fixtureBundleRef");
+        reference.put("fixtureBundleId", fixtureBundleId);
+        reference.put("revision", revision);
+        reference.put("fingerprint", fingerprint(fixtureFingerprint, "fixtureFingerprint"));
+        return request;
+    }
+
+    /** Builds an exploratory inline-fixture operator execution request. */
+    public ObjectNode inlineOperatorExecution(Object input,
+                                              ResourceGatewayTestClient.Verbosity verbosity,
+                                              Map<String, ?> executionMetadata) {
+        requireTargetKind("OPERATOR");
+        ObjectNode request = operatorExecutionBase(input, verbosity, executionMetadata);
+        request.set("fixtureBundle", buildBundle());
+        request.putNull("fixtureBundleRef");
+        return request;
+    }
+
+    /** Builds a governed stored-fixture operator execution request. */
+    public ObjectNode storedOperatorExecution(String fixtureFingerprint, Object input,
+                                              ResourceGatewayTestClient.Verbosity verbosity,
+                                              Map<String, ?> executionMetadata) {
+        requireTargetKind("OPERATOR");
+        requireFixtureId();
+        ObjectNode request = operatorExecutionBase(input, verbosity, executionMetadata);
         request.putNull("fixtureBundle");
         ObjectNode reference = request.putObject("fixtureBundleRef");
         reference.put("fixtureBundleId", fixtureBundleId);
@@ -278,9 +319,9 @@ public final class FixtureBundleBuilder {
         return this;
     }
 
-    private ObjectNode executionBase(Map<String, ?> context,
-                                     ResourceGatewayTestClient.Verbosity verbosity,
-                                     Map<String, ?> executionMetadata) {
+    private ObjectNode graphExecutionBase(Map<String, ?> context,
+                                          ResourceGatewayTestClient.Verbosity verbosity,
+                                          Map<String, ?> executionMetadata) {
         Map<String, ?> metadataValues = executionMetadata == null ? Map.of() : executionMetadata;
         if (metadataValues.size() > MAX_METADATA_ENTRIES) {
             throw new IllegalArgumentException("Execution metadata may contain at most 100 entries");
@@ -296,12 +337,42 @@ public final class FixtureBundleBuilder {
         return request;
     }
 
+    private ObjectNode operatorExecutionBase(Object input,
+                                             ResourceGatewayTestClient.Verbosity verbosity,
+                                             Map<String, ?> executionMetadata) {
+        Map<String, ?> metadataValues = checkedExecutionMetadata(executionMetadata);
+        ObjectNode request = JSON.createObjectNode();
+        request.put("schemaVersion", TestingProtocol.OPERATOR_EXECUTION_REQUEST_V1);
+        request.set("target", target());
+        request.put("executionPurpose", "OPERATOR_UNIT_TEST");
+        request.set("input", JSON.valueToTree(input));
+        request.put("verbosity", (verbosity == null
+                ? ResourceGatewayTestClient.Verbosity.STANDARD : verbosity).name());
+        request.set("metadata", JSON.valueToTree(metadataValues));
+        return request;
+    }
+
+    private static Map<String, ?> checkedExecutionMetadata(Map<String, ?> executionMetadata) {
+        Map<String, ?> values = executionMetadata == null ? Map.of() : executionMetadata;
+        if (values.size() > MAX_METADATA_ENTRIES) {
+            throw new IllegalArgumentException("Execution metadata may contain at most 100 entries");
+        }
+        return values;
+    }
+
     private ObjectNode target() {
         ObjectNode target = JSON.createObjectNode();
-        target.put("kind", "GRAPH");
-        target.put("id", graphId);
+        target.put("kind", targetKind);
+        target.put("id", targetId);
         target.put("fingerprint", targetFingerprint);
         return target;
+    }
+
+    private void requireTargetKind(String expected) {
+        if (!expected.equals(targetKind)) {
+            throw new IllegalStateException(expected + " execution cannot be built for " + targetKind
+                    + " target " + targetId);
+        }
     }
 
     private void addRule(String ruleId, ObjectNode rule) {

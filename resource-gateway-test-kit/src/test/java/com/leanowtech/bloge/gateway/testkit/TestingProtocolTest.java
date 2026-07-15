@@ -30,6 +30,10 @@ class TestingProtocolTest {
             assertConstant(definitions, "storedFixtureBundle", TestingProtocol.STORED_FIXTURE_BUNDLE_V1);
             assertConstant(definitions, "testGraphTargetDescriptor",
                     TestingProtocol.GRAPH_TARGET_DESCRIPTOR_V1);
+            assertConstant(definitions, "testOperatorExecutionRequest",
+                    TestingProtocol.OPERATOR_EXECUTION_REQUEST_V1);
+            assertConstant(definitions, "testOperatorTargetDescriptor",
+                    TestingProtocol.OPERATOR_TARGET_DESCRIPTOR_V1);
             assertConstant(definitions, "testRunEvidence", TestingProtocol.TEST_RUN_EVIDENCE_V1);
         }
     }

@@ -161,6 +161,38 @@ class FixtureBundleBuilderTest {
                 .hasMessageContaining("365 days");
     }
 
+    @Test
+    void buildsOperatorFixtureRegistrationAndTypedMicroGraphRequests() {
+        FixtureBundleBuilder fixture = FixtureBundleBuilder.operator("customer.normalize", FINGERPRINT)
+                .id("normalize-contract")
+                .rule("execute-real-binding")
+                    .operator("customer.normalize")
+                    .spy()
+                    .requiredUses(1, 1)
+                    .add()
+                .assertOutput("/normalized", "EQUALS", "ADA");
+
+        JsonNode registration = fixture.registrationRequest();
+        JsonNode inline = fixture.inlineOperatorExecution(Map.of("name", "Ada"),
+                ResourceGatewayTestClient.Verbosity.FULL, Map.of("caseRef", "uppercase"));
+        JsonNode stored = fixture.storedOperatorExecution("sha256:" + "b".repeat(64),
+                Map.of("name", "Ada"), ResourceGatewayTestClient.Verbosity.STANDARD, Map.of());
+
+        assertThat(registration.path("target").path("kind").asText()).isEqualTo("OPERATOR");
+        assertThat(registration.path("target").path("id").asText()).isEqualTo("customer.normalize");
+        assertThat(inline.path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.OPERATOR_EXECUTION_REQUEST_V1);
+        assertThat(inline.path("executionPurpose").asText()).isEqualTo("OPERATOR_UNIT_TEST");
+        assertThat(inline.path("input").path("name").asText()).isEqualTo("Ada");
+        assertThat(inline.path("fixtureBundle").isObject()).isTrue();
+        assertThat(stored.path("fixtureBundleRef").path("fingerprint").asText())
+                .isEqualTo("sha256:" + "b".repeat(64));
+        assertThatThrownBy(() -> fixture.inlineExecution(Map.of(),
+                ResourceGatewayTestClient.Verbosity.STANDARD, Map.of()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("GRAPH execution");
+    }
+
     private static JsonNode schema() throws Exception {
         try (InputStream input = FixtureBundleBuilderTest.class.getResourceAsStream(
                 "/schemas/resource-gateway-testing/testing-control-plane-v1.schema.json")) {

@@ -46,6 +46,23 @@ public class TestExecutionController {
                 context(headers, IntegrationOperation.TEST_TARGET_READ));
     }
 
+    /** Discovers one frozen operator binding and its executable testability contract. */
+    @GetMapping("/targets/operators/{operatorRef}")
+    public TestOperatorTargetDescriptor describeOperatorTarget(@PathVariable String operatorRef,
+                                                               @RequestHeader HttpHeaders headers) {
+        return service.describeOperatorTarget(operatorRef,
+                context(headers, IntegrationOperation.TEST_TARGET_READ));
+    }
+
+    /** Executes one operator through the common one-node BLOGE test kernel. */
+    @PostMapping("/targets/operators/{operatorRef}/executions")
+    public TestExecutionApiResponse executeOperator(@PathVariable String operatorRef,
+                                                    @RequestBody TestOperatorExecutionApiRequest request,
+                                                    @RequestHeader HttpHeaders headers) {
+        return service.executeOperator(operatorRef, request,
+                context(headers, IntegrationOperation.TEST_EXECUTION));
+    }
+
     @PostMapping("/executions/batch")
     public TestExecutionBatchResponse executeBatch(@RequestBody TestExecutionBatchRequest request,
                                                    @RequestHeader HttpHeaders headers) {

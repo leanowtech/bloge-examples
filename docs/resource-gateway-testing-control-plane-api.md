@@ -8,20 +8,22 @@
 
 Machine-readable schema bundle:
 [testing-control-plane-v1.schema.json](schemas/resource-gateway-testing/testing-control-plane-v1.schema.json).
-It defines every public payload: target descriptor, fixture registration and stored revision,
-single/batch execution request and response, effective plan, and evidence.
+It defines every public payload: graph/operator target descriptors, fixture registration and stored
+revision, graph/operator execution requests, common response, effective plan, and evidence.
 
 ## 1. What This API Is
 
-The testing control plane lets a verified caller freeze a graph target, inject deterministic
-operator/resource fixtures, execute the real DAG on an isolated short-lived BLOGE engine, and retain
-sanitized evidence. It is an engineering protocol, not a `testMode` switch on production execution.
+The testing control plane lets a verified caller freeze a graph or operator binding, inject
+deterministic operator/resource fixtures, execute the real DAG or a one-node micro graph on an
+isolated short-lived BLOGE engine, and retain sanitized evidence. It is an engineering protocol,
+not a `testMode` switch on production execution.
 
 The trust transition is explicit:
 
 1. `IntegrationRequestAuthenticator` verifies the bearer workload and `X-Purpose`.
 2. `TestExecutionApiService` accepts only identities whose trusted environment is `test` or `staging`.
-3. The server mints `GRAPH_CONTRACT_TEST`; request content cannot mint an authorized purpose.
+3. The endpoint mints `GRAPH_CONTRACT_TEST` or `OPERATOR_UNIT_TEST`; request content cannot mint an
+   authorized purpose.
 4. The graph, operator bindings, and a conservative snapshot of all resource descriptors are frozen.
 5. `ExecutionControlCompiler` resolves every selector and rejects zero-match, ambiguity, stale target,
    unsafe external REAL/SPY, and fallback-to-real plans before graph execution.
@@ -118,6 +120,33 @@ The response contains:
 The conservative policy exists because BLOGE expressions may compute `resourceId` at runtime. A
 descriptor change may invalidate more fixture bundles than strictly necessary, but the system never
 certifies against an incomplete dependency set.
+
+### 4.1.1 Discover and freeze an operator binding
+
+```bash
+curl -sS http://localhost:8080/api/testing/targets/operators/httpResource \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION'
+```
+
+`bloge.testOperatorTargetDescriptor.v1` returns the operator target fingerprint, implementation
+closure fingerprint, runtime-binding-state fingerprint, schema fingerprint, input/output schemas,
+execution model, side-effect/idempotency declarations, resource dependencies, and explicit
+testability facts:
+
+| `testabilityClass` | Meaning |
+| --- | --- |
+| `EXECUTABLE_UNIT` | Synchronous declared-read-only binding can execute for real |
+| `CONDITIONAL_TRANSPORT` | `HttpResourceOperator` is executable only with strict transport fixtures |
+| `OPAQUE_RUNTIME` | Effects are not exposed through a controllable composability port |
+| `UNSUPPORTED_EXECUTION_MODEL` | Streaming/suspendable execution is discoverable but blocked in v1 |
+
+Discovery never executes the operator. `certificationEligible=true` additionally requires
+fingerprintable implementation bytes and formalized runtime state. A stateless binding satisfies the
+latter automatically. A configured binding must implement `OperatorRuntimeBindingSnapshotProvider`;
+the returned bounded credential-free map is fingerprinted but never returned or persisted.
+`HttpResourceOperator` has a built-in contract that fingerprints its protocol-processing class
+closure and the conservative descriptor snapshot.
 
 ### 4.2 Register an immutable governed fixture
 
@@ -329,6 +358,44 @@ immediately but always produce `EXPLORATORY` evidence. Stored bundles can produc
 evidence only when there is no schema waiver and each mocked resource site is protocol-derived or
 transport-level rather than an output-level self-report.
 
+### 4.3.1 Execute a frozen operator binding
+
+Register the fixture through the same fixture endpoint with `target.kind=OPERATOR`, then submit:
+
+```http
+POST /api/testing/targets/operators/customer.normalize/executions
+Authorization: Bearer bloge-aneke-demo-token
+X-Purpose: TEST_EXECUTION
+Content-Type: application/json
+```
+
+```json
+{
+  "schemaVersion": "bloge.testOperatorExecutionRequest.v1",
+  "target": {
+    "kind": "OPERATOR",
+    "id": "customer.normalize",
+    "fingerprint": "sha256:<from-operator-target-descriptor>"
+  },
+  "executionPurpose": "OPERATOR_UNIT_TEST",
+  "input": {"name": "Ada"},
+  "fixtureBundle": null,
+  "fixtureBundleRef": {
+    "fixtureBundleId": "normalize-contract",
+    "revision": 1,
+    "fingerprint": "sha256:<returned-by-registration>"
+  },
+  "verbosity": "FULL",
+  "metadata": {"suiteRef": "customer-normalization", "caseRef": "uppercase"}
+}
+```
+
+The service converts JSON input to the registry-declared Java input type, runs the exact binding as
+node `subject`, and returns `bloge.testExecutionResponse.v1`. Stored provenance alone is never enough
+for certification: an opaque binding, unformalized configured state, schema waiver, or output-level
+resource replacement forces `EXPLORATORY`. `HttpResourceOperator` earns `CERTIFIABLE` only when its
+selected resource interactions use strict `boundary=TRANSPORT` protocol responses.
+
 ### 4.4 Query a run or run a batch
 
 ```bash
@@ -343,7 +410,8 @@ sequentially; one item cannot share mutable plan or fixture-consumption state wi
 ### 4.5 Java and JUnit 5 test kit
 
 Java consumers do not need to assemble wire payloads or CI reports manually. The independent
-`bloge-resource-gateway-test-kit` module provides target/fixture/run projections, a strict
+`bloge-resource-gateway-test-kit` module provides graph/operator target, fixture, and run
+projections, a strict
 `FixtureBundleBuilder`, a bounded JDK HTTP client, JUnit 5 assertions, and JUnit XML:
 
 ```bash
@@ -457,7 +525,8 @@ Nested `controlPlan`, `requestedControls`, `fixtureBundle`, `fixtureBundleRef`, 
 
 Implemented now:
 
-- public graph target discovery, fixture registration, execute, batch, and query APIs;
+- public graph target discovery/execution/batch/query and operator target discovery/micro-graph
+  execution APIs, sharing one fixture registry, evidence model, and run store;
 - profile, identity, purpose, tenant/environment, and classification gates;
 - independent datasource, tables, retention, evidence sanitization, and security events;
 - immutable plan plus graph/operator/resource dependency fingerprints;
@@ -472,11 +541,16 @@ Implemented now:
   propagation and fail-closed cycle/depth/site limits.
 - occurrence-addressable synchronous node/attempt/edge evidence, including runtime correlation and
   containing-graph occurrence coordinates; non-empty parallel foreach certification is enabled.
+- operator implementation closure, schema, runtime-state, and resource dependency fingerprints;
+  stateless and explicitly snapshot-providing configured bindings can certify, while opaque state
+  fails closed.
 
 Still intentionally outside this increment:
 
 - `REPLAY`, retry-attempt/occurrence selectors, streaming/suspendable controls and evidence, and
   durable-resume plan restoration;
+- canvas `Run Operator` migration from its current `SCHEMA_CONTRACT` table runner to this public
+  executable adapter;
 - signed certification, semantic coverage, ANEKE projection, and mutation testing;
 - deterministic random/UUID/function execution services and deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;

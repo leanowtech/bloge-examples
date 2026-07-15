@@ -55,6 +55,8 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(capabilities.getBody().payload().testability().executionEndpointEnabled()).isTrue();
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/graphs/{graphName}"));
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.path().equals("/api/testing/targets/operators/{operatorRef}"));
 
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth("bloge-aneke-demo-token");
@@ -80,5 +82,20 @@ class TestRuntimeApplicationIntegrationTest {
                 nestedTarget.getBody(), TestGraphTargetDescriptor.class);
         assertThat(nestedDescriptor.certificationEligible()).isTrue();
         assertThat(nestedDescriptor.certificationGaps()).isEmpty();
+
+        var operatorTarget = restTemplate.exchange("/api/testing/targets/operators/httpResource",
+                HttpMethod.GET, new HttpEntity<>(headers), JsonNode.class);
+        assertThat(operatorTarget.getStatusCode())
+                .withFailMessage("operator target discovery failed: %s", operatorTarget.getBody())
+                .isEqualTo(HttpStatus.OK);
+        TestOperatorTargetDescriptor operatorDescriptor = objectMapper.treeToValue(
+                operatorTarget.getBody(), TestOperatorTargetDescriptor.class);
+        assertThat(operatorDescriptor.target().kind()).isEqualTo("OPERATOR");
+        assertThat(operatorDescriptor.target().id()).isEqualTo("httpResource");
+        assertThat(operatorDescriptor.implementationFingerprint()).startsWith("sha256:");
+        assertThat(operatorDescriptor.testabilityClass()).isEqualTo("CONDITIONAL_TRANSPORT");
+        assertThat(operatorDescriptor.certificationEligible()).isTrue();
+        assertThat(operatorDescriptor.certificationRequirements())
+                .anyMatch(requirement -> requirement.contains("TRANSPORT"));
     }
 }

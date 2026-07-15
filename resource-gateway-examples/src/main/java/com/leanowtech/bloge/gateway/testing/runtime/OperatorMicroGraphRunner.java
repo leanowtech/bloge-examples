@@ -56,15 +56,27 @@ public class OperatorMicroGraphRunner {
                 ? defaultBundle(request.operator(), bindingFingerprint)
                 : request.fixtureBundle();
         Assessment assessment = assess(request.operator(), bundle, bindingFingerprint);
+        Map<String, Object> metadata = new LinkedHashMap<>(request.metadata());
+        metadata.put("targetKind", "OPERATOR");
+        metadata.put("operatorRef", request.operatorRef());
+        metadata.put("testabilityClass", assessment.classification().name());
+        metadata.put("targetCertificationEligible",
+                request.certificationEligible()
+                        && assessment.classification() == Classification.EXECUTABLE_UNIT);
+        Map<String, Object> graphContext = new LinkedHashMap<>();
+        if (request.input() != null) {
+            graphContext.put("operatorInput", request.input());
+        }
         TestExecutionResult execution = testRunService.execute(new TestExecutionRequest(
                 graph,
-                new GraphContext(Map.of("operatorInput", request.input())),
+                new GraphContext(graphContext),
                 bundle,
                 request.authorizedPurpose(),
                 bindingFingerprint,
                 request.fixtureSource(),
-                Map.of("targetKind", "OPERATOR_BINDING", "operatorRef", request.operatorRef(),
-                        "classification", assessment.classification().name())));
+                Map.copyOf(metadata),
+                request.certificationEligible()
+                        && assessment.classification() == Classification.EXECUTABLE_UNIT));
         return new Result(assessment.classification(), bindingFingerprint,
                 assessment.reasons(), execution);
     }
@@ -130,11 +142,15 @@ public class OperatorMicroGraphRunner {
      * @param fixtureBundle optional control bundle; null means one REAL rule
      * @param authorizedPurpose server-authorized purpose
      * @param fixtureSource fixture provenance
+     * @param certificationEligible binding-level certification readiness
+     * @param metadata bounded caller provenance
      */
     public record Request(String operatorRef, Operator<?, ?> operator,
                           String runtimeBindingFingerprint, Object input,
                           FixtureBundle fixtureBundle, String authorizedPurpose,
-                          TestExecutionRequest.FixtureSource fixtureSource) {
+                          TestExecutionRequest.FixtureSource fixtureSource,
+                          boolean certificationEligible,
+                          Map<String, Object> metadata) {
         /** Normalizes request identifiers. */
         public Request {
             operatorRef = normalized(operatorRef);
@@ -143,6 +159,26 @@ public class OperatorMicroGraphRunner {
                     ? "" : runtimeBindingFingerprint.trim();
             authorizedPurpose = authorizedPurpose == null ? "OPERATOR_UNIT_TEST" : authorizedPurpose.trim();
             fixtureSource = fixtureSource == null ? TestExecutionRequest.FixtureSource.INLINE : fixtureSource;
+            metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
+        }
+
+        /** Backward-compatible request without caller provenance metadata. */
+        public Request(String operatorRef, Operator<?, ?> operator,
+                       String runtimeBindingFingerprint, Object input,
+                       FixtureBundle fixtureBundle, String authorizedPurpose,
+                       TestExecutionRequest.FixtureSource fixtureSource) {
+            this(operatorRef, operator, runtimeBindingFingerprint, input, fixtureBundle,
+                    authorizedPurpose, fixtureSource, true, Map.of());
+        }
+
+        /** Backward-compatible request that assumes the caller already froze certification readiness. */
+        public Request(String operatorRef, Operator<?, ?> operator,
+                       String runtimeBindingFingerprint, Object input,
+                       FixtureBundle fixtureBundle, String authorizedPurpose,
+                       TestExecutionRequest.FixtureSource fixtureSource,
+                       Map<String, Object> metadata) {
+            this(operatorRef, operator, runtimeBindingFingerprint, input, fixtureBundle,
+                    authorizedPurpose, fixtureSource, true, metadata);
         }
     }
 

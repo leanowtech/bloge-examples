@@ -20,8 +20,8 @@ integration something the business flow can see, reason about, test, and change.
 | Graph-level contracts | Every built-in resource graph exposes formal input/output JSON Schema for system integration |
 | Schema-aware canvas | Drag, connect, validate, simulate, and publish under server-side schema checks |
 | Runtime-backed demos | Local upstreams, real gateway execution, mock simulation, SSE examples, and reusable publications |
-| Schema-gated table tests | Run 13 built-in cases across all seven resource graphs with F3 transport fixtures, bounded retry consumption, coverage gates, and fidelity evidence |
-| Isolated testing control plane | Test/staging-only target discovery, immutable fixture registry, caller-driven DAG execution, sanitized evidence retention, batch runs, and production control-field guard |
+| Schema-gated table tests | Run 14 built-in cases across all seven resource graphs with F3 transport fixtures, bounded retry consumption, coverage gates, and fidelity evidence |
+| Isolated testing control plane | Test/staging-only graph/operator discovery, immutable fixture registry, caller-driven DAG and operator micro-graph execution, sanitized evidence retention, batch runs, and production control-field guard |
 | Governed run controls | Absolute deadline, monotonic remaining-budget propagation, fenced cancel, durable owner lease/epoch, cross-instance commands, and automatic signed evidence recovery after owner failure |
 | Auditable external writes | Versioned write contracts, binding/activation conformance, execution-scoped journal, commit receipts, UNKNOWN_COMMIT DAG guard, and signed reconciliation evidence |
 | Dynamic workload identity | Atomic JWKS/revocation refresh, zero-restart key rotation, bounded propagation SLO, group/clearance/delegation claims, and explicit 401/503 semantics |
@@ -53,6 +53,8 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `http://localhost:8080/api/gateway/graphs/contracts` | Inspect resource graph input/output contracts |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}` | Freeze the graph/resource target fingerprint before authoring fixtures (test/staging only) |
 | `POST http://localhost:8080/api/testing/executions` | Run an isolated inline or governed fixture plan and retain sanitized evidence (test/staging only) |
+| `GET http://localhost:8080/api/testing/targets/operators/{operatorRef}` | Inspect frozen binding/schema/state fingerprints and executable testability (test/staging only) |
+| `POST http://localhost:8080/api/testing/targets/operators/{operatorRef}/executions` | Run the exact synchronous binding as a controlled one-node BLOGE graph (test/staging only) |
 | `POST http://localhost:8080/api/gateway/graphs/contracts/tests/draft` | Generate editable graph mock/table suites from graph and resource schemas |
 | `POST http://localhost:8080/api/gateway/graphs/contracts/tests/run` | Run schema-gated mock/table contract suites |
 | `POST http://localhost:8080/api/gateway/graphs/contracts/tests/suites/run-all` | Run every stored contract suite with coverage policy checks |
@@ -277,7 +279,8 @@ To add a user-supplied visual operator library:
    real operator runtime binding. Results expose `mode=SCHEMA_CONTRACT`, and the
    canvas labels the editor `Schema Contract Suite` to make that proof strength explicit.
 5. Runtime-backed operators can already be exercised by the internal
-   `OperatorMicroGraphRunner`; the public `Run Operator` API/UI adapter arrives in Stage 2.
+   `OperatorMicroGraphRunner`; the public API and Java test-kit adapter now reuse it, while the
+   canvas `Run Operator` action still uses the schema-contract runner until its UI migration.
    `httpResource` can earn `EXECUTABLE_UNIT` only with a transport-boundary fixture, so
    request mapping, URL rendering, response protocol, and payload extraction really execute.
 6. Drag operators, wire schemas, simulate, and export.
