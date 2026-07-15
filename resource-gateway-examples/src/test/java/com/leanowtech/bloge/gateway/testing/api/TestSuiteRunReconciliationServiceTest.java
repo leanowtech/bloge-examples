@@ -3,7 +3,11 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -16,10 +20,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class TestSuiteRunReconciliationServiceTest {
+
+    private ObjectMapper objectMapper;
+    private TestSuiteRunAttestationService attestations;
+
+    @BeforeEach
+    void setUp() {
+        objectMapper = new ObjectMapper().findAndRegisterModules();
+        attestations = new TestSuiteRunAttestationService(
+                objectMapper, new InMemoryVisualEvidenceSigner());
+    }
 
     @Test
     void expiredRunBecomesFailClosedEvidenceWhileCompletedCaseFactsArePreserved() {
@@ -31,7 +46,7 @@ class TestSuiteRunReconciliationServiceTest {
         when(repository.findAbandoned(sweepAt, 25)).thenReturn(List.of(abandoned));
         when(repository.reconcileAbandoned(eq(abandoned), any(), eq(sweepAt))).thenReturn(true);
         TestSuiteRunReconciliationService service = new TestSuiteRunReconciliationService(
-                repository, new ObjectMapper().findAndRegisterModules(),
+                repository, objectMapper, attestations,
                 Clock.fixed(sweepAt, ZoneOffset.UTC));
 
         TestSuiteRunReconciliationResult result = service.reconcileExpired(25);
@@ -45,6 +60,7 @@ class TestSuiteRunReconciliationServiceTest {
         verify(repository).reconcileAbandoned(eq(abandoned), terminalCaptor.capture(), eq(sweepAt));
         TestSuiteRunRecord terminal = terminalCaptor.getValue();
         assertThat(terminal.evidenceFingerprint()).startsWith("sha256:");
+        assertThat(terminal.attestation().terminallyVerifiable()).isTrue();
         assertThat(terminal.evidence().status())
                 .isEqualTo(TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE);
         assertThat(terminal.evidence().completedAt()).isEqualTo(sweepAt);
@@ -87,7 +103,7 @@ class TestSuiteRunReconciliationServiceTest {
         when(repository.reconcileAbandoned(eq(failed), any(), eq(sweepAt)))
                 .thenThrow(new IllegalStateException("store unavailable"));
         TestSuiteRunReconciliationService service = new TestSuiteRunReconciliationService(
-                repository, new ObjectMapper().findAndRegisterModules(),
+                repository, objectMapper, attestations,
                 Clock.fixed(sweepAt, ZoneOffset.UTC));
 
         TestSuiteRunReconciliationResult result = service.reconcileExpired(10);
@@ -99,7 +115,35 @@ class TestSuiteRunReconciliationServiceTest {
         assertThat(result.reconciledSuiteRunIds()).isEmpty();
     }
 
-    private static TestSuiteRunRecord runningRecord() {
+    @Test
+    void tamperedCheckpointIsRejectedWithoutWritingDerivedEvidence() {
+        Instant sweepAt = Instant.parse("2026-07-16T12:00:00Z");
+        TestSuiteRunRepository repository = mock(TestSuiteRunRepository.class);
+        TestSuiteRunRecord signed = runningRecord();
+        TestSuiteRunEvidence altered = new TestSuiteRunEvidence("", signed.suiteRunId(),
+                signed.clientRequestId(), signed.evidence().status(), signed.evidence().executionPurpose(),
+                signed.evidence().suiteRef(), signed.evidence().target(), signed.evidence().startedAt(),
+                null, signed.evidence().caseResults(), signed.evidence().coverage(),
+                signed.evidence().promotion(), List.of("tampered"), signed.evidence().metadata());
+        TestSuiteRunRecord tampered = new TestSuiteRunRecord(signed.suiteRunId(),
+                signed.clientRequestId(), signed.requestFingerprint(), signed.tenantId(),
+                signed.organizationId(), signed.projectId(), signed.environmentId(), signed.actorId(),
+                signed.classification(), "", altered, signed.attestation(), signed.createdAt(),
+                signed.expiresAt());
+        AbandonedTestSuiteRun abandoned = new AbandonedTestSuiteRun(
+                tampered, 9, "instance-dead", sweepAt.minusSeconds(1));
+        when(repository.findAbandoned(sweepAt, 10)).thenReturn(List.of(abandoned));
+        TestSuiteRunReconciliationService service = new TestSuiteRunReconciliationService(
+                repository, objectMapper, attestations, Clock.fixed(sweepAt, ZoneOffset.UTC));
+
+        TestSuiteRunReconciliationResult result = service.reconcileExpired(10);
+
+        assertThat(result.failed()).isEqualTo(1);
+        assertThat(result.reconciled()).isZero();
+        verify(repository, never()).reconcileAbandoned(any(), any(), any());
+    }
+
+    private TestSuiteRunRecord runningRecord() {
         Instant started = Instant.parse("2026-07-16T09:55:00Z");
         TestSuiteExecutionRequest.SuiteRef suiteRef = new TestSuiteExecutionRequest.SuiteRef(
                 "suite-a", 3, "sha256:" + "a".repeat(64));
@@ -124,19 +168,31 @@ class TestSuiteRunReconciliationServiceTest {
                 started, null, cases, TestSuiteRunEvidence.CoverageVerdict.notEvaluated(),
                 TestSuiteRunEvidence.PromotionVerdict.notEvaluated(), List.of(),
                 Map.of("tenantId", "tenant-a"));
-        return new TestSuiteRunRecord("suite-run-1", "request-1", "sha256:" + "d".repeat(64),
+        String requestFingerprint = "sha256:" + "d".repeat(64);
+        List<TestSuiteRunAttestation.ChildEvidenceRef> children = List.of(
+                new TestSuiteRunAttestation.ChildEvidenceRef(
+                        "golden", "child-run-1", "sha256:" + "1".repeat(64)),
+                new TestSuiteRunAttestation.ChildEvidenceRef(
+                        "negative", "child-run-3", "sha256:" + "3".repeat(64)));
+        TestSuiteRunAttestation attestation = attestations.seal(evidence, requestFingerprint,
+                children, TestSuiteRunAttestation.Scope.CHECKPOINT).attestation();
+        return new TestSuiteRunRecord("suite-run-1", "request-1", requestFingerprint,
                 "tenant-a", "org-a", "project-a", "test", "runner", "INTERNAL", "",
-                evidence, started, started.plusSeconds(3600));
+                evidence, attestation, started, started.plusSeconds(3600));
     }
 
-    private static TestSuiteRunRecord withId(TestSuiteRunRecord source, String runId, String requestId) {
+    private TestSuiteRunRecord withId(TestSuiteRunRecord source, String runId, String requestId) {
         TestSuiteRunEvidence evidence = source.evidence();
         TestSuiteRunEvidence renamed = new TestSuiteRunEvidence("", runId, requestId,
                 evidence.status(), evidence.executionPurpose(), evidence.suiteRef(), evidence.target(),
                 evidence.startedAt(), evidence.completedAt(), evidence.caseResults(), evidence.coverage(),
                 evidence.promotion(), evidence.diagnostics(), evidence.metadata());
+        TestSuiteRunAttestation attestation = attestations.seal(renamed,
+                source.requestFingerprint(), source.attestation().childEvidenceRefs(),
+                TestSuiteRunAttestation.Scope.CHECKPOINT).attestation();
         return new TestSuiteRunRecord(runId, requestId, source.requestFingerprint(), source.tenantId(),
                 source.organizationId(), source.projectId(), source.environmentId(), source.actorId(),
-                source.classification(), "", renamed, source.createdAt(), source.expiresAt());
+                source.classification(), "", renamed, attestation,
+                source.createdAt(), source.expiresAt());
     }
 }

@@ -239,7 +239,7 @@ public final class ResourceGatewayTestClient {
         TestingProtocolSchemaValidator.require(request, "testSuiteExecutionRequest");
         JsonNode response = exchange("POST", "/api/testing/suites/" + segment(exactSuiteId) + "/executions",
                 "", "TEST_EXECUTION", request);
-        requireVersion(response, TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1);
+        requireSuiteExecutionResponseVersion(response);
         TestSuiteRun run = projectSuiteRun(response);
         requireSuiteRunIdentity(run, exactSuiteId, revision, exactFingerprint, id);
         return run;
@@ -255,7 +255,7 @@ public final class ResourceGatewayTestClient {
         String exactSuiteRunId = requiredIdentifier(suiteRunId, "suiteRunId", 255);
         JsonNode response = exchange("GET", "/api/testing/suite-executions/" + segment(exactSuiteRunId),
                 "", "TEST_EXECUTION", null);
-        requireVersion(response, TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1);
+        requireSuiteExecutionResponseVersion(response);
         TestSuiteRun run = projectSuiteRun(response);
         try {
             run.requireRunIdentity(exactSuiteRunId);
@@ -263,6 +263,68 @@ public final class ResourceGatewayTestClient {
             throw responseContractInvalid("The server returned a mismatched suite-run identity.");
         }
         return run;
+    }
+
+    /**
+     * Retrieves one verified terminal, payload-free suite evidence bundle.
+     *
+     * @param suiteRunId durable aggregate run id
+     * @return typed portable evidence bundle
+     */
+    public TestSuiteEvidenceBundle findSuiteEvidenceBundle(String suiteRunId) {
+        String exactSuiteRunId = requiredIdentifier(suiteRunId, "suiteRunId", 255);
+        JsonNode response = exchange("GET", "/api/testing/suite-executions/"
+                + segment(exactSuiteRunId) + "/evidence-bundle", "", "TEST_EXECUTION", null);
+        requireVersion(response, TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V1);
+        try {
+            TestSuiteEvidenceBundle bundle = TestSuiteEvidenceBundle.from(response);
+            if (!exactSuiteRunId.equals(bundle.suiteRunId())) {
+                throw new IllegalArgumentException("Suite evidence bundle identity is inconsistent");
+            }
+            return bundle;
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned an invalid portable suite evidence bundle.");
+        }
+    }
+
+    /**
+     * Resolves one public evidence verification key from the integration protocol.
+     *
+     * @param keyId attestation verification key id
+     * @return typed public verification key
+     */
+    public EvidenceVerificationKey findEvidenceVerificationKey(String keyId) {
+        String exactKeyId = requiredIdentifier(keyId, "keyId", 512);
+        JsonNode response = exchange("GET", "/api/integration/evidence-keys/" + segment(exactKeyId),
+                "", "TEST_EXECUTION", null);
+        try {
+            return EvidenceVerificationKey.fromEnvelope(response, exactKeyId);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned an invalid evidence verification key envelope.");
+        }
+    }
+
+    /**
+     * Fetches and independently verifies one terminal suite evidence bundle.
+     *
+     * @param suiteRunId durable aggregate run id
+     * @return payload-free offline verification result
+     */
+    public TestSuiteEvidenceVerifier.VerificationResult verifySuiteEvidence(String suiteRunId) {
+        TestSuiteEvidenceBundle bundle = findSuiteEvidenceBundle(suiteRunId);
+        EvidenceVerificationKey key;
+        try {
+            key = findEvidenceVerificationKey(bundle.attestation().keyId());
+        } catch (ResourceGatewayTestException failure) {
+            if ("RG.INTEGRATION.EVIDENCE_KEY_NOT_FOUND".equals(failure.code())
+                    || "RG.INTEGRATION.EVIDENCE_KEY_PROVIDER_UNAVAILABLE".equals(failure.code())) {
+                return new TestSuiteEvidenceVerifier().verify(bundle, null);
+            }
+            throw failure;
+        }
+        return new TestSuiteEvidenceVerifier().verify(bundle, key);
     }
 
     /**
@@ -501,6 +563,15 @@ public final class ResourceGatewayTestClient {
                 && !TestingProtocol.TEST_EXECUTION_RESPONSE_V2.equals(actual)) {
             throw ResourceGatewayTestException.local("RG.TESTKIT.PROTOCOL_VERSION_MISMATCH",
                     "The server returned an unsupported test execution response version.", null);
+        }
+    }
+
+    private static void requireSuiteExecutionResponseVersion(JsonNode response) {
+        String actual = response.path("schemaVersion").asText();
+        if (!TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1.equals(actual)
+                && !TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V2.equals(actual)) {
+            throw ResourceGatewayTestException.local("RG.TESTKIT.PROTOCOL_VERSION_MISMATCH",
+                    "The server returned an unsupported suite execution response version.", null);
         }
     }
 

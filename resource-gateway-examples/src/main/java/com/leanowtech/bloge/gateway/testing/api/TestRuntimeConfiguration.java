@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteReposit
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -79,6 +80,14 @@ public class TestRuntimeConfiguration {
     TestEvidenceIntegrityService testEvidenceIntegrityService(ObjectMapper objectMapper,
                                                                ObjectProvider<VisualEvidenceSigner> evidenceSigner) {
         return new TestEvidenceIntegrityService(objectMapper,
+                evidenceSigner.getIfAvailable(VisualEvidenceSigner::unavailable));
+    }
+
+    /** Reuses the configured signing authority for aggregate suite checkpoints and evidence. */
+    @Bean
+    TestSuiteRunAttestationService testSuiteRunAttestationService(
+            ObjectMapper objectMapper, ObjectProvider<VisualEvidenceSigner> evidenceSigner) {
+        return new TestSuiteRunAttestationService(objectMapper,
                 evidenceSigner.getIfAvailable(VisualEvidenceSigner::unavailable));
     }
 
@@ -163,8 +172,9 @@ public class TestRuntimeConfiguration {
     /** Builds the fail-closed transformer for expired RUNNING suite evidence. */
     @Bean
     TestSuiteRunReconciliationService testSuiteRunReconciliationService(
-            TestSuiteRunRepository suiteRunRepository, ObjectMapper objectMapper) {
-        return new TestSuiteRunReconciliationService(suiteRunRepository, objectMapper);
+            TestSuiteRunRepository suiteRunRepository, ObjectMapper objectMapper,
+            TestSuiteRunAttestationService attestations) {
+        return new TestSuiteRunReconciliationService(suiteRunRepository, objectMapper, attestations);
     }
 
     /** Runs bounded anti-entropy sweeps only where the test runtime profile exists. */
@@ -182,12 +192,14 @@ public class TestRuntimeConfiguration {
             TestExecutionApiService executionService,
             TestSuiteRunRepository suiteRunRepository,
             TestSuiteRunLeaseCoordinator leaseCoordinator,
+            TestSuiteRunAttestationService attestations,
             ObjectMapper objectMapper,
             TestSecurityEventRepository securityEvents,
             @Value("${gateway.testing.store.retention-days:30}") long retentionDays) {
         return new TestSuiteExecutionService(suiteRegistry, executionService, suiteRunRepository,
                 objectMapper, securityEvents,
-                Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))), leaseCoordinator);
+                Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))), leaseCoordinator,
+                attestations);
     }
 
     /** Marker consumed by the unauthenticated capability probe. */

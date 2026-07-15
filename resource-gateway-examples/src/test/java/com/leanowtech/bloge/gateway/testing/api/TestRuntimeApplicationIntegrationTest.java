@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -219,6 +220,25 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(suiteRun.getBody().evidence().promotion().status())
                 .isEqualTo(com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence.PromotionStatus.ELIGIBLE);
         assertThat(suiteRun.getBody().evidence().caseResults().getFirst().runId()).isNotBlank();
+        assertThat(suiteRun.getBody().schemaVersion())
+                .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION);
+        assertThat(suiteRun.getBody().attestation().terminallyVerifiable()).isTrue();
+        assertThat(suiteRun.getBody().attestation().childEvidenceRefs()).singleElement()
+                .satisfies(child -> {
+                    assertThat(child.runId()).isEqualTo(childRunId);
+                    assertThat(child.evidenceFingerprint())
+                            .isEqualTo(ProtocolFingerprint.of(objectMapper, childRun.getBody().evidence()));
+                });
+
+        var portable = restTemplate.exchange("/api/testing/suite-executions/"
+                        + suiteRun.getBody().suiteRunId() + "/evidence-bundle",
+                HttpMethod.GET, new HttpEntity<>(headers), TestSuiteEvidenceBundle.class);
+        assertThat(portable.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(portable.getBody()).isNotNull();
+        assertThat(portable.getBody().bundleFingerprint()).startsWith("sha256:");
+        assertThat(portable.getBody().attestation()).isEqualTo(suiteRun.getBody().attestation());
+        assertThat(objectMapper.valueToTree(portable.getBody()).toString())
+                .doesNotContain("spring-http-test", "applicantId", "requestedAmount");
 
         var suiteRunRetry = restTemplate.exchange("/api/testing/suites/suite-integration/executions",
                 HttpMethod.POST, new HttpEntity<>(suiteExecution, headers),

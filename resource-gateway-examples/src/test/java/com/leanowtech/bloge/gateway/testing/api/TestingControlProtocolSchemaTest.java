@@ -7,6 +7,8 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import org.junit.jupiter.api.Test;
 
@@ -53,8 +55,14 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(StoredTestSuite.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteExecutionRequest/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteExecutionRequest.SCHEMA_VERSION);
-        assertThat(schema.at("/$defs/testSuiteExecutionResponse/properties/schemaVersion/const").asText())
+        assertThat(schema.at("/$defs/testSuiteExecutionResponseV2/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testSuiteExecutionResponseV1/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION_V1);
+        assertThat(schema.at("/$defs/testSuiteRunAttestation/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testSuiteEvidenceBundle/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteEvidenceBundle.SCHEMA_VERSION);
         assertThat(schema.at(
                 "/$defs/testSuiteCatalogMaterialization/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteCatalogMaterializationResponse.SCHEMA_VERSION);
@@ -104,6 +112,10 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("storedTestSuite")).isTrue();
         assertThat(definitions.has("testSuiteExecutionRequest")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponse")).isTrue();
+        assertThat(definitions.has("testSuiteExecutionResponseV1")).isTrue();
+        assertThat(definitions.has("testSuiteExecutionResponseV2")).isTrue();
+        assertThat(definitions.has("testSuiteRunAttestation")).isTrue();
+        assertThat(definitions.has("testSuiteEvidenceBundle")).isTrue();
         assertThat(definitions.has("testSuiteCatalogMaterialization")).isTrue();
         assertThat(definitions.has("testSuiteRunEvidence")).isTrue();
         assertThat(definitions.has("testEvidenceIntegrity")).isTrue();
@@ -144,6 +156,10 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo("#/$defs/fingerprint");
         assertThat(definitions.at("/testSuite/properties/cases/maxItems").asInt())
                 .isEqualTo(TestSuiteRegistryService.MAX_CASES);
+        assertThat(definitions.at("/testSuiteExecutionResponseV2/properties/attestation/$ref").asText())
+                .isEqualTo("#/$defs/testSuiteRunAttestation");
+        assertThat(definitions.at("/testSuiteEvidenceBundle/properties/payloadPolicy/const").asText())
+                .isEqualTo("OMITTED");
         assertThat(definitions.at(
                 "/testSuiteCoveragePolicy/properties/requiredInvocationSiteIds/items/type").asText())
                 .isEqualTo("string");

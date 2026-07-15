@@ -2,8 +2,11 @@ package com.leanowtech.bloge.gateway.testing.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -27,6 +30,7 @@ public final class TestSuiteRunReconciliationService {
 
     private final TestSuiteRunRepository repository;
     private final ObjectMapper objectMapper;
+    private final TestSuiteRunAttestationService attestations;
     private final Clock clock;
 
     /**
@@ -37,13 +41,36 @@ public final class TestSuiteRunReconciliationService {
      */
     public TestSuiteRunReconciliationService(TestSuiteRunRepository repository,
                                              ObjectMapper objectMapper) {
-        this(repository, objectMapper, null);
+        this(repository, objectMapper,
+                new TestSuiteRunAttestationService(objectMapper, VisualEvidenceSigner.unavailable()), null);
+    }
+
+    /**
+     * Creates the production service with an explicit aggregate signing authority.
+     *
+     * @param repository durable checkpoint, lease, and reconciliation boundary
+     * @param objectMapper canonical evidence fingerprint serializer
+     * @param attestations checkpoint and terminal signing boundary
+     */
+    public TestSuiteRunReconciliationService(TestSuiteRunRepository repository,
+                                             ObjectMapper objectMapper,
+                                             TestSuiteRunAttestationService attestations) {
+        this(repository, objectMapper, attestations, null);
     }
 
     TestSuiteRunReconciliationService(TestSuiteRunRepository repository,
                                       ObjectMapper objectMapper, Clock clock) {
+        this(repository, objectMapper,
+                new TestSuiteRunAttestationService(objectMapper, VisualEvidenceSigner.unavailable()), clock);
+    }
+
+    TestSuiteRunReconciliationService(TestSuiteRunRepository repository,
+                                      ObjectMapper objectMapper,
+                                      TestSuiteRunAttestationService attestations,
+                                      Clock clock) {
         this.repository = Objects.requireNonNull(repository, "repository");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.attestations = Objects.requireNonNull(attestations, "attestations");
         this.clock = clock;
     }
 
@@ -82,6 +109,7 @@ public final class TestSuiteRunReconciliationService {
     private TestSuiteRunRecord terminal(AbandonedTestSuiteRun abandoned, Instant completedAt) {
         TestSuiteRunRecord record = abandoned.record();
         TestSuiteRunEvidence previous = record.evidence();
+        requireTrustedCheckpoint(record);
         List<TestSuiteRunEvidence.CaseResult> cases = previous.caseResults().stream()
                 .map(this::terminalCase).toList();
         int completedCases = (int) cases.stream().filter(this::hasCompletedChildEvidence).count();
@@ -116,11 +144,49 @@ public final class TestSuiteRunReconciliationService {
                 previous.executionPurpose(), previous.suiteRef(), previous.target(), previous.startedAt(),
                 completedAt, cases, coverage, promotion,
                 merged(previous.diagnostics(), List.of(ABANDONED_RUN_RECONCILED)), metadata);
-        String fingerprint = ProtocolFingerprint.of(objectMapper, terminal);
+        TestSuiteRunAttestationService.SealResult seal = attestations.seal(terminal,
+                record.requestFingerprint(), record.attestation().childEvidenceRefs(),
+                TestSuiteRunAttestation.Scope.TERMINAL);
+        if (!seal.verified()) {
+            throw new IllegalStateException("Reconciled terminal evidence could not be signed: "
+                    + seal.failureCode());
+        }
+        String fingerprint = seal.attestation().aggregateEvidenceFingerprint();
         return new TestSuiteRunRecord(record.suiteRunId(), record.clientRequestId(),
                 record.requestFingerprint(), record.tenantId(), record.organizationId(), record.projectId(),
                 record.environmentId(), record.actorId(), record.classification(), fingerprint, terminal,
+                seal.attestation(),
                 record.createdAt(), record.expiresAt());
+    }
+
+    private void requireTrustedCheckpoint(TestSuiteRunRecord record) {
+        if (record.evidence() == null
+                || record.evidence().status() != TestSuiteRunEvidence.Status.RUNNING
+                || record.attestation().scope() != TestSuiteRunAttestation.Scope.CHECKPOINT
+                || !record.requestFingerprint().equals(record.attestation().requestFingerprint())
+                || attestations.verify(record.evidence(), record.attestation())
+                != TestSuiteRunAttestationService.Verification.VERIFIED
+                || !closureMatches(record)) {
+            throw new IllegalStateException("Abandoned suite checkpoint failed integrity verification");
+        }
+    }
+
+    private static boolean closureMatches(TestSuiteRunRecord record) {
+        List<TestSuiteRunAttestation.ChildEvidenceRef> children = record.attestation().childEvidenceRefs();
+        int childIndex = 0;
+        for (TestSuiteRunEvidence.CaseResult result : record.evidence().caseResults()) {
+            if (result.runId().isBlank()) {
+                continue;
+            }
+            if (childIndex >= children.size()) {
+                return false;
+            }
+            TestSuiteRunAttestation.ChildEvidenceRef child = children.get(childIndex++);
+            if (!result.caseId().equals(child.caseId()) || !result.runId().equals(child.runId())) {
+                return false;
+            }
+        }
+        return childIndex == children.size();
     }
 
     private TestSuiteRunEvidence.CaseResult terminalCase(TestSuiteRunEvidence.CaseResult result) {

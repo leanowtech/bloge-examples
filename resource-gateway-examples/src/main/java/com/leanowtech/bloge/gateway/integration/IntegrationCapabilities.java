@@ -182,9 +182,14 @@ public record IntegrationCapabilities(
             objects.put("testSuiteExecutionRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest.SCHEMA_VERSION));
             objects.put("testSuiteExecutionResponse", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION));
             objects.put("testSuiteRunEvidence", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence.SCHEMA_VERSION));
+            objects.put("testSuiteRunAttestation", List.of(
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.SCHEMA_VERSION));
+            objects.put("testSuiteEvidenceBundle", List.of(
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle.SCHEMA_VERSION));
             objects.put("testSuiteRunReconciliation", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteRunReconciliationResult.SCHEMA_VERSION));
             objects.put("testSuiteCatalogMaterialization", List.of(
@@ -292,6 +297,10 @@ public record IntegrationCapabilities(
         features.put("testReplayBehavior", testExecutionEndpointEnabled);
         features.put("signedTestRunEvidence", testExecutionEndpointEnabled && signer.available());
         features.put("suiteSignedChildEvidenceGate", testExecutionEndpointEnabled && signer.available());
+        features.put("signedTestSuiteRunAttestation",
+                testExecutionEndpointEnabled && signer.available());
+        features.put("portableTestSuiteEvidenceBundle",
+                testExecutionEndpointEnabled && signer.available());
         features.put("streamingOperatorTestExecution", false);
         features.put("suspendableOperatorTestExecution", false);
 
@@ -335,6 +344,8 @@ public record IntegrationCapabilities(
             endpoints.add(new Endpoint("PUT", "/api/testing/catalogs/gateway-graph-contract-v1"));
             endpoints.add(new Endpoint("POST", "/api/testing/suites/{suiteId}/executions"));
             endpoints.add(new Endpoint("GET", "/api/testing/suite-executions/{suiteRunId}"));
+            endpoints.add(new Endpoint("GET",
+                    "/api/testing/suite-executions/{suiteRunId}/evidence-bundle"));
         }
         return new IntegrationCapabilities("", "", "", objects, features, identityProvider, signer,
                 payloadGovernance, testExecutionEndpointEnabled

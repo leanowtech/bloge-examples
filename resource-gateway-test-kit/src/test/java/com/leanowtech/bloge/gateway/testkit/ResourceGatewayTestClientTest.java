@@ -33,6 +33,7 @@ class ResourceGatewayTestClientTest {
     void startServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/testing", this::handle);
+        server.createContext("/api/integration", this::handle);
         server.start();
     }
 
@@ -163,6 +164,25 @@ class ResourceGatewayTestClientTest {
         assertThat(requests.get(2).body().path("strategy").asText()).isEqualTo("FAIL_FAST");
         assertThat(requests.get(2).body().path("metadata").path("source").asText()).isEqualTo("ci");
         assertThat(requests.get(3).rawPath()).endsWith("/suite-executions/suite-run%2F42");
+    }
+
+    @Test
+    void retrievesPortableSuiteEvidenceAndItsExactVerificationKey() {
+        ResourceGatewayTestClient client = client();
+
+        TestSuiteEvidenceBundle bundle = client.findSuiteEvidenceBundle("suite-run/42");
+        EvidenceVerificationKey key = client.findEvidenceVerificationKey("test-key-1");
+
+        assertThat(bundle.suiteRunId()).isEqualTo("suite-run/42");
+        assertThat(bundle.payloadPolicy()).isEqualTo(TestSuiteEvidenceBundle.PayloadPolicy.OMITTED);
+        assertThat(bundle.attestation().keyId()).isEqualTo("test-key-1");
+        assertThat(key.keyId()).isEqualTo("test-key-1");
+        assertThat(key.verificationAllowed()).isTrue();
+        assertThat(requests).extracting(CapturedRequest::rawPath)
+                .containsExactly("/api/testing/suite-executions/suite-run%2F42/evidence-bundle",
+                        "/api/integration/evidence-keys/test-key-1");
+        assertThat(requests).extracting(CapturedRequest::purpose)
+                .containsExactly("TEST_EXECUTION", "TEST_EXECUTION");
     }
 
     @Test
@@ -349,7 +369,11 @@ class ResourceGatewayTestClientTest {
                     + "\"runId\":\"private-child-payload\",\"evidence\":{\"status\":\"NOT_A_STATUS\"}}");
             return;
         }
-        if (path.endsWith("/catalogs/gateway-graph-contract-v1")) {
+        if (path.endsWith("/evidence-bundle")) {
+            respond(exchange, 200, suiteEvidenceBundleResponse());
+        } else if (path.contains("/evidence-keys/")) {
+            respond(exchange, 200, evidenceKeyResponse());
+        } else if (path.endsWith("/catalogs/gateway-graph-contract-v1")) {
             respond(exchange, 200, catalogMaterializationResponse());
         } else if (path.contains("/suite-executions/") || path.endsWith("/executions") && path.contains("/suites/")) {
             respond(exchange, 200, suiteRunResponse());
@@ -457,6 +481,41 @@ class ResourceGatewayTestClientTest {
                      "certifiableCases":2,"minimumCertifiableCases":2,"targetCertificationEligible":true,
                      "coverageSatisfied":true,"allCasesCompleted":true},
                    "diagnostics":[],"metadata":{"private":"not-projected"}}}
+                """.formatted(FINGERPRINT);
+    }
+
+    private static String suiteEvidenceBundleResponse() throws IOException {
+        String evidence = JSON.readTree(suiteRunResponse()).path("evidence").toString();
+        return """
+                {"schemaVersion":"bloge.testSuiteEvidenceBundle.v1","suiteRunId":"suite-run/42",
+                 "bundleFingerprint":"%1$s","payloadPolicy":"OMITTED",
+                 "attestation":{"schemaVersion":"bloge.testSuiteRunAttestation.v1",
+                   "signatureStatus":"VERIFIED","scope":"TERMINAL","suiteRunId":"suite-run/42",
+                   "suiteRef":{"suiteId":"suite/policy","revision":7,"fingerprint":"%1$s"},
+                   "requestFingerprint":"%1$s","aggregateEvidenceFingerprint":"%1$s",
+                   "childEvidenceRefs":[
+                     {"caseId":"golden","runId":"run-golden","evidenceFingerprint":"%1$s"},
+                     {"caseId":"boundary","runId":"run-boundary","evidenceFingerprint":"%1$s"}],
+                   "signedAt":"2026-07-15T10:15:31Z","keyId":"test-key-1",
+                   "algorithm":"Ed25519","signature":"AA==","independentlyVerifiable":true},
+                 "evidence":%2$s}
+                """.formatted(FINGERPRINT, evidence);
+    }
+
+    private static String evidenceKeyResponse() {
+        return """
+                {"protocol":"ToolStudioResourceGatewayProtocol","protocolVersion":"1.0",
+                 "resourceGatewayVersion":"1.0.0",
+                 "schemaVersion":"toolStudio.resourceGateway.envelope.v1",
+                 "producedAt":"2026-07-15T10:15:31Z",
+                 "compatibility":{"minConsumerVersion":"1.0","backwardCompatible":true,
+                   "breakingChanges":[]},
+                 "payloadKind":"EVIDENCE_VERIFICATION_KEY",
+                 "payloadSchemaVersion":"toolStudio.resourceGateway.evidenceVerificationKey.v1",
+                 "payloadFingerprint":"%1$s",
+                 "payload":{"schemaVersion":"toolStudio.resourceGateway.evidenceVerificationKey.v1",
+                   "keyId":"test-key-1","algorithm":"Ed25519","encodedPublicKey":"AA==",
+                   "createdAt":"2026-07-15T10:00:00Z","state":"ACTIVE","provider":"test"}}
                 """.formatted(FINGERPRINT);
     }
 

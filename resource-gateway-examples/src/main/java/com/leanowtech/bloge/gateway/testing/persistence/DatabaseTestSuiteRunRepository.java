@@ -7,6 +7,8 @@ import com.leanowtech.bloge.gateway.testing.api.AbandonedTestSuiteRun;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunLease;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunRepository;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -242,6 +244,30 @@ public final class DatabaseTestSuiteRunRepository implements TestSuiteRunReposit
                 || record.clientRequestId().isBlank() || record.createdAt() == null
                 || record.expiresAt() == null) {
             throw new IllegalArgumentException("Complete suite-run checkpoint is required");
+        }
+        TestSuiteRunAttestation attestation = record.attestation();
+        boolean running = record.evidence().status() == TestSuiteRunEvidence.Status.RUNNING;
+        boolean verified = attestation.signatureStatus()
+                == TestSuiteRunAttestation.SignatureStatus.VERIFIED
+                && attestation.independentlyVerifiable();
+        boolean unavailableTerminal = !running
+                && attestation.signatureStatus()
+                == TestSuiteRunAttestation.SignatureStatus.VERIFICATION_UNAVAILABLE
+                && record.evidence().status() == TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE
+                && record.evidence().promotion().status()
+                == TestSuiteRunEvidence.PromotionStatus.BLOCKED;
+        boolean scopeMatches = attestation.scope() == (running
+                ? TestSuiteRunAttestation.Scope.CHECKPOINT
+                : TestSuiteRunAttestation.Scope.TERMINAL);
+        boolean identityMatches = record.suiteRunId().equals(attestation.suiteRunId())
+                && record.requestFingerprint().equals(attestation.requestFingerprint());
+        boolean fingerprintMatches = running
+                ? record.evidenceFingerprint().isBlank()
+                : record.evidenceFingerprint().equals(attestation.aggregateEvidenceFingerprint());
+        if ((!verified && !unavailableTerminal) || !scopeMatches
+                || !identityMatches || !fingerprintMatches) {
+            throw new IllegalArgumentException(
+                    "Suite-run persistence requires a structurally valid signed attestation");
         }
     }
 

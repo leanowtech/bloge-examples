@@ -18,6 +18,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,7 @@ class TestRuntimePersistenceTest {
     private DatabaseTestSecurityEventRepository securityEvents;
     private DatabaseTestSuiteRepository suites;
     private DatabaseTestSuiteRunRepository suiteRuns;
+    private TestSuiteRunAttestationService suiteAttestations;
 
     @BeforeEach
     void setUp() {
@@ -51,6 +53,8 @@ class TestRuntimePersistenceTest {
         securityEvents = new DatabaseTestSecurityEventRepository(jdbc, mapper);
         suites = new DatabaseTestSuiteRepository(jdbc, mapper);
         suiteRuns = new DatabaseTestSuiteRunRepository(jdbc, mapper);
+        suiteAttestations = new TestSuiteRunAttestationService(
+                mapper, new InMemoryVisualEvidenceSigner());
         fixtures.init();
         runs.init();
         securityEvents.init();
@@ -155,9 +159,14 @@ class TestRuntimePersistenceTest {
                 TestSuiteRunEvidence.Status.RUNNING, "TEST_SUITE_EXECUTION", suiteRef, target,
                 now, null, List.of(), TestSuiteRunEvidence.CoverageVerdict.notEvaluated(),
                 TestSuiteRunEvidence.PromotionVerdict.notEvaluated(), List.of(), Map.of());
+        String requestFingerprint = "sha256:" + "c".repeat(64);
+        var runningAttestation = suiteAttestations.seal(running, requestFingerprint, List.of(),
+                com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.Scope.CHECKPOINT)
+                .attestation();
         TestSuiteRunRecord initial = new TestSuiteRunRecord("suite-run-1", "request-1",
-                "sha256:" + "c".repeat(64), "tenant-a", "org-a", "project-a", "test",
-                "runner", "INTERNAL", "", running, now, now.plusSeconds(3600));
+                requestFingerprint, "tenant-a", "org-a", "project-a", "test",
+                "runner", "INTERNAL", "", running, runningAttestation,
+                now, now.plusSeconds(3600));
 
         TestSuiteRunLease lease = new TestSuiteRunLease("instance-a", now.plusSeconds(30));
         suiteRuns.create(initial, lease);
@@ -174,18 +183,48 @@ class TestRuntimePersistenceTest {
                 List.of(), List.of(), true), new TestSuiteRunEvidence.PromotionVerdict(
                 TestSuiteRunEvidence.PromotionStatus.ELIGIBLE, List.of(), true, 0, 0,
                 true, true, true), List.of(), Map.of());
+        var terminalAttestation = suiteAttestations.seal(terminal, requestFingerprint, List.of(),
+                com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.Scope.TERMINAL)
+                .attestation();
         TestSuiteRunRecord completed = new TestSuiteRunRecord("suite-run-1", "request-1",
                 initial.requestFingerprint(), "tenant-a", "org-a", "project-a", "test", "runner",
-                "INTERNAL", "sha256:" + "d".repeat(64), terminal, now, now.plusSeconds(3600));
+                "INTERNAL", terminalAttestation.aggregateEvidenceFingerprint(), terminal,
+                terminalAttestation, now, now.plusSeconds(3600));
 
         suiteRuns.update(completed, new TestSuiteRunLease("instance-a", now.plusSeconds(60)), now);
 
         assertThat(suiteRuns.find("tenant-a", "test", "suite-run-1")).contains(completed);
+        TestSuiteRunEvidence duplicateEvidence = new TestSuiteRunEvidence("", "suite-run-2",
+                "request-1", running.status(), running.executionPurpose(), running.suiteRef(),
+                running.target(), running.startedAt(), null, running.caseResults(), running.coverage(),
+                running.promotion(), running.diagnostics(), running.metadata());
+        String duplicateFingerprint = "sha256:" + "e".repeat(64);
+        var duplicateAttestation = suiteAttestations.seal(duplicateEvidence, duplicateFingerprint,
+                List.of(), com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.Scope.CHECKPOINT)
+                .attestation();
         TestSuiteRunRecord duplicate = new TestSuiteRunRecord("suite-run-2", "request-1",
-                "sha256:" + "e".repeat(64), "tenant-a", "org-a", "project-a", "test", "runner",
-                "INTERNAL", "", running, now, now.plusSeconds(3600));
+                duplicateFingerprint, "tenant-a", "org-a", "project-a", "test", "runner",
+                "INTERNAL", "", duplicateEvidence, duplicateAttestation,
+                now, now.plusSeconds(3600));
         assertThatThrownBy(() -> suiteRuns.create(duplicate, lease))
                 .isInstanceOf(TestSuiteRunConflictException.class);
+    }
+
+    @Test
+    void unsignedSuiteCheckpointCannotCrossPersistenceBoundary() {
+        Instant now = Instant.parse("2026-07-16T08:00:00Z");
+        TestSuiteRunRecord signed = suiteRunRecord("suite-run-unsigned", "request-unsigned", now,
+                TestSuiteRunEvidence.Status.RUNNING);
+        TestSuiteRunRecord unsigned = new TestSuiteRunRecord(signed.suiteRunId(),
+                signed.clientRequestId(), signed.requestFingerprint(), signed.tenantId(),
+                signed.organizationId(), signed.projectId(), signed.environmentId(),
+                signed.actorId(), signed.classification(), signed.evidenceFingerprint(),
+                signed.evidence(), signed.createdAt(), signed.expiresAt());
+
+        assertThatThrownBy(() -> suiteRuns.create(unsigned,
+                new TestSuiteRunLease("instance-a", now.plusSeconds(30))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("signed attestation");
     }
 
     @Test
@@ -224,8 +263,6 @@ class TestRuntimePersistenceTest {
         suiteRuns.create(initial, new TestSuiteRunLease("instance-a", now.plusSeconds(10)));
         var staleCandidate = suiteRuns.findAbandoned(now.plusSeconds(11), 10).getFirst();
 
-        TestSuiteRunRecord checkpoint = suiteRunRecord("suite-run-race", "request-race", now,
-                TestSuiteRunEvidence.Status.RUNNING);
         assertThat(suiteRuns.renewLease("tenant-a", "test", initial.suiteRunId(),
                 "instance-a", now.plusSeconds(60), now.plusSeconds(9))).isTrue();
         TestSuiteRunRecord terminal = suiteRunRecord("suite-run-race", "request-race", now,
@@ -233,12 +270,12 @@ class TestRuntimePersistenceTest {
 
         assertThat(suiteRuns.reconcileAbandoned(staleCandidate, terminal, now.plusSeconds(12))).isFalse();
         assertThat(suiteRuns.find("tenant-a", "test", initial.suiteRunId()))
-                .contains(checkpoint);
+                .contains(initial);
         assertThat(suiteRuns.findAbandoned(now.plusSeconds(12), 10)).isEmpty();
     }
 
-    private static TestSuiteRunRecord suiteRunRecord(String suiteRunId, String requestId,
-                                                     Instant now, TestSuiteRunEvidence.Status status) {
+    private TestSuiteRunRecord suiteRunRecord(String suiteRunId, String requestId,
+                                              Instant now, TestSuiteRunEvidence.Status status) {
         TestSuiteExecutionRequest.SuiteRef suiteRef = new TestSuiteExecutionRequest.SuiteRef(
                 "suite-a", 3, "sha256:" + "a".repeat(64));
         TestSuite.Target target = new TestSuite.Target(
@@ -257,9 +294,15 @@ class TestRuntimePersistenceTest {
                         List.of("EVIDENCE_INCOMPLETE"), false, 0, 0, false, false, false)
                         : TestSuiteRunEvidence.PromotionVerdict.notEvaluated(),
                 terminal ? List.of("ABANDONED_RUN_RECONCILED") : List.of(), Map.of());
-        return new TestSuiteRunRecord(suiteRunId, requestId, "sha256:" + "c".repeat(64),
+        String requestFingerprint = "sha256:" + "c".repeat(64);
+        var attestation = suiteAttestations.seal(evidence, requestFingerprint, List.of(), terminal
+                ? com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.Scope.TERMINAL
+                : com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.Scope.CHECKPOINT)
+                .attestation();
+        return new TestSuiteRunRecord(suiteRunId, requestId, requestFingerprint,
                 "tenant-a", "org-a", "project-a", "test", "runner", "INTERNAL",
-                terminal ? "sha256:" + "d".repeat(64) : "", evidence, now, now.plusSeconds(3600));
+                terminal ? attestation.aggregateEvidenceFingerprint() : "", evidence, attestation,
+                now, now.plusSeconds(3600));
     }
 
     @Test

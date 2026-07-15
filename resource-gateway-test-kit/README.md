@@ -13,6 +13,8 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 - runtime validation against the packaged Draft 2020-12 schema plus request/response identity binding;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
 - typed v2 child-evidence integrity manifests with v1 migration compatibility;
+- signed suite checkpoint/terminal attestations, payload-free evidence-bundle export, verification
+  key lookup, and dependency-light offline Ed25519 verification;
 - occurrence-addressable node, retry-attempt, and edge summaries without payload fields;
 - payload-free JUnit XML with deterministic CI exit codes;
 - an executable `-cli.jar` that fails closed on suite, coverage, or promotion-policy failure.
@@ -137,6 +139,12 @@ TestSuiteRunAssertions.assertAllCasesPassed(suiteRun);
 TestSuiteRunAssertions.assertCoverageSatisfied(suiteRun);
 TestSuiteRunAssertions.assertPromotionEligible(suiteRun);
 
+TestSuiteEvidenceVerifier.VerificationResult verification =
+        client.verifySuiteEvidence(suiteRun.suiteRunId());
+if (!verification.verified()) {
+    throw new IllegalStateException(verification.reasonCode());
+}
+
 JUnitXmlReportWriter.writeSuite(
         Path.of("target/surefire-reports/resource-gateway-suite.xml"),
         suiteRun,
@@ -162,9 +170,26 @@ history.
 
 `TestSuiteRun` links each case to its child `runId`, exact fixture revision, evidence class,
 assertion counters, and stable diagnostic code. It intentionally excludes child inputs, outputs,
-and free-form diagnostics from its reportable projection. `promotionEligible()` means only that the
-run satisfies the suite's policy and may be submitted to a later gate; it does not mean signed,
-certified, approved, or published.
+and free-form diagnostics from its reportable projection. Current v2 responses also expose a signed
+`CHECKPOINT` or `TERMINAL` attestation; v1 responses remain readable but explicitly unsigned.
+`promotionEligible()` means only that the run satisfies the suite's policy and may be submitted to a
+later gate; it does not mean certified, approved, or published.
+
+For explicit control over key resolution, export and verify the same portable terminal bundle in
+three steps:
+
+```java
+TestSuiteEvidenceBundle bundle = client.findSuiteEvidenceBundle(suiteRun.suiteRunId());
+EvidenceVerificationKey key = client.findEvidenceVerificationKey(
+        bundle.attestation().keyId());
+TestSuiteEvidenceVerifier.VerificationResult verification =
+        new TestSuiteEvidenceVerifier().verify(bundle, key);
+```
+
+The verifier independently recomputes the aggregate, bundle, and signature-material fingerprints,
+checks the ordered child run closure and key lifecycle policy, and verifies Ed25519. It reports only
+bounded reason codes. The bundle uses `payloadPolicy=OMITTED`; child input/output values remain in
+governed server storage. It is not a replay payload package, publish decision, or ANEKE workbook.
 
 ## CI Command
 
@@ -255,9 +280,12 @@ watchdog timing or thread interruption.
 - Exceptions and JUnit XML omit credentials, request bodies, node input/output,
   and problem `details`; use the run/correlation id for authorized diagnosis.
 - Unknown response protocol versions fail immediately.
-- Current v2 child runs require a structurally consistent versioned integrity manifest. The client
-  exposes signature and projection facts but does not fetch verification keys or perform offline
-  Ed25519 verification; use the server read gate or a governance verifier for cryptographic trust.
+- Current v2 child runs require a structurally consistent versioned integrity manifest. Current v2
+  suite runs require a signed checkpoint or terminal attestation. Historical v1 suite responses are
+  accepted only as unsigned migration data and cannot be exported as trusted terminal bundles.
+- Offline suite verification fetches the exact key named by the attestation and accepts `ACTIVE` or
+  `RETIRED` Ed25519 keys. Missing keys return `KEY_UNAVAILABLE`; invalid signatures and material fail
+  closed without echoing evidence payloads.
 - Suite requests and responses are validated against the exact packaged JSON Schema; returned suite
   id, revision, fingerprint, run id, and `clientRequestId` are rebound to the originating request.
 - Suite execution requires an exact positive revision, full lowercase SHA-256 fingerprint, and

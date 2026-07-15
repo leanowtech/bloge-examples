@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -169,6 +170,15 @@ public class TestExecutionController {
             @PathVariable String suiteRunId,
             @RequestHeader HttpHeaders headers) {
         return suiteExecutions.find(suiteRunId,
+                context(headers, IntegrationOperation.TEST_SUITE_EXECUTION));
+    }
+
+    /** Exports one verified terminal aggregate without child request or response payloads. */
+    @GetMapping("/suite-executions/{suiteRunId}/evidence-bundle")
+    public TestSuiteEvidenceBundle exportSuiteEvidence(
+            @PathVariable String suiteRunId,
+            @RequestHeader HttpHeaders headers) {
+        return suiteExecutions.evidenceBundle(suiteRunId,
                 context(headers, IntegrationOperation.TEST_SUITE_EXECUTION));
     }
 

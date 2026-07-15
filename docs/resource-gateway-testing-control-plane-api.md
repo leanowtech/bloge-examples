@@ -569,7 +569,7 @@ abridged view omits required fields that remain authoritative in the machine sch
 
 ```json
 {
-  "schemaVersion": "bloge.testSuiteExecutionResponse.v1",
+  "schemaVersion": "bloge.testSuiteExecutionResponse.v2",
   "suiteRunId": "<server-run-id>",
   "evidenceFingerprint": "sha256:<aggregate-evidence>",
   "evidence": {
@@ -597,6 +597,25 @@ abridged view omits required fields that remain authoritative in the machine sch
       "coverageSatisfied": true,
       "allCasesCompleted": true
     }
+  },
+  "attestation": {
+    "schemaVersion": "bloge.testSuiteRunAttestation.v1",
+    "signatureStatus": "VERIFIED",
+    "scope": "TERMINAL",
+    "suiteRunId": "<server-run-id>",
+    "requestFingerprint": "sha256:<normalized-suite-request>",
+    "aggregateEvidenceFingerprint": "sha256:<aggregate-evidence>",
+    "childEvidenceRefs": [
+      {
+        "caseId": "prime-r1",
+        "runId": "<child-test-run-id>",
+        "evidenceFingerprint": "sha256:<complete-child-evidence>"
+      }
+    ],
+    "keyId": "<verification-key-id>",
+    "algorithm": "Ed25519",
+    "signature": "<base64-detached-signature>",
+    "independentlyVerifiable": true
   }
 }
 ```
@@ -617,7 +636,9 @@ curl -sS http://localhost:8080/api/testing/suite-executions/<suiteRunId> \
 Aggregate status is `RUNNING`, `PASSED`, `COMPLETED_WITH_FAILURES`, `PARTIAL`, or
 `EVIDENCE_INCOMPLETE`. Coverage failure prevents `PASSED` even when every child assertion passes.
 `promotion.status=ELIGIBLE` means only that the server-owned suite policy is satisfied; it is not a
-signature, certification, owner approval, ANEKE gate decision, or publication.
+certification, owner approval, ANEKE gate decision, or publication. New servers return v2 with a
+signed `CHECKPOINT` or `TERMINAL` attestation. The v1 response remains a read-only migration shape
+for historical unsigned records and must not be upgraded to trusted evidence by inference.
 
 The Canvas executable operator suite and standalone test-kit both consume this exact protocol; they
 do not reconstruct an aggregate result from mutable row responses.
@@ -866,14 +887,91 @@ fail-closed to `EVIDENCE_INCOMPLETE + EXPLORATORY` with
 Immutable-suite aggregation requests FULL child evidence and verifies every child signature before
 trusting its evidence class or counters. An unsigned or altered child produces
 `RG.TEST.SUITE_CHILD_EVIDENCE_INTEGRITY_INVALID`, an aggregate `EVIDENCE_INCOMPLETE`, and blocked
-promotion. The aggregate `bloge.testSuiteRunEvidence.v1` itself is not yet detached-signed; this
-increment closes child substitution and tampering, not the final suite-bundle attestation problem.
+promotion. Every initial and subsequent `RUNNING` checkpoint is signed with `scope=CHECKPOINT`
+before persistence. A terminal write uses `scope=TERMINAL` and binds the aggregate fingerprint plus
+the ordered `{caseId, runId, evidenceFingerprint}` child closure. A reconciliation worker first
+verifies the abandoned checkpoint, preserves its closed child references, constructs a fail-closed
+terminal aggregate, and signs that terminal result; altered or unsigned checkpoints are rejected
+instead of being recovered as trusted progress.
 
 The verification key named by `integrity.keyId` is available through
 `GET /api/integration/evidence-keys/{keyId}` under the integration identity protocol. Local profiles
 use the persistent Ed25519 signer; managed deployments can use the existing KMS/HSM signer and key
 history. Consumers must enforce key state, validity policy, algorithm, and fingerprint
 canonicalization rather than treating `signatureStatus=VERIFIED` as a self-authenticating claim.
+
+### 4.3.4 Export and independently verify terminal suite evidence
+
+Export one payload-free portable bundle after a suite reaches a terminal state:
+
+```bash
+curl -sS http://localhost:8080/api/testing/suite-executions/<suiteRunId>/evidence-bundle \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION'
+```
+
+The response is `bloge.testSuiteEvidenceBundle.v1`. It contains `payloadPolicy=OMITTED`, the exact
+`bloge.testSuiteRunEvidence.v1`, its terminal attestation, and a canonical `bundleFingerprint` over
+`{payloadPolicy, attestation, evidence}`. Child input/output payloads remain in governed storage;
+the bundle carries only signed child evidence references. A `RUNNING` checkpoint, unavailable
+signer, unsigned historical record, altered aggregate, or non-terminal attestation cannot be
+exported and fails closed through the testing problem protocol.
+
+The suite attestation signs the SHA-256 fingerprint of this canonical material, not the pretty
+printed bundle JSON:
+
+```json
+{
+  "schemaVersion": "bloge.testSuiteRunAttestation.v1",
+  "scope": "TERMINAL",
+  "suiteRunId": "<suite-run-id>",
+  "suiteRef": {"suiteId": "<id>", "revision": 1, "fingerprint": "sha256:<suite>"},
+  "requestFingerprint": "sha256:<normalized-suite-request>",
+  "aggregateEvidenceFingerprint": "sha256:<aggregate-evidence>",
+  "childEvidenceRefs": [
+    {"caseId": "<case>", "runId": "<child-run>",
+      "evidenceFingerprint": "sha256:<complete-child-evidence>"}
+  ],
+  "signedAt": "2026-07-16T00:00:00Z"
+}
+```
+
+Object keys are recursively sorted, arrays retain protocol order, times are ISO-8601 text, and the
+canonical UTF-8 bytes are SHA-256 fingerprinted. The Ed25519 signature is over the resulting
+`sha256:<64-lowercase-hex>` text. Consumers must preserve child order: sorting or substituting child
+references invalidates the signature.
+
+The standalone test-kit implements that verification without depending on server code:
+
+```java
+TestSuiteEvidenceBundle bundle = client.findSuiteEvidenceBundle(suiteRunId);
+EvidenceVerificationKey key = client.findEvidenceVerificationKey(
+        bundle.attestation().keyId());
+TestSuiteEvidenceVerifier.VerificationResult result =
+        new TestSuiteEvidenceVerifier().verify(bundle, key);
+
+if (!result.verified()) {
+    throw new IllegalStateException(result.reasonCode());
+}
+
+// Convenience form: fetch bundle + key, then perform the same independent checks.
+TestSuiteEvidenceVerifier.VerificationResult verified =
+        client.verifySuiteEvidence(suiteRunId);
+```
+
+The verifier recomputes aggregate, bundle, and signature-material fingerprints; verifies ordered
+case/run closure and Ed25519; requires the path-bound key id; accepts only `ACTIVE` or `RETIRED`
+keys; and rejects signatures predating key creation beyond the bounded clock-skew allowance. Its
+outcomes are `VERIFIED`, `INVALID`, `KEY_UNAVAILABLE`, or `POLICY_REJECTED`, with payload-free reason
+codes suitable for CI logs. It never trusts the producer's `VERIFIED` field by itself.
+
+This v1 bundle is a portable integrity and provenance fact, not a complete certification package.
+It deliberately does not contain replay payload attachments, a key-set/revocation event stream,
+transparency-log inclusion proof, ANEKE workbook projection, publish-gate decision, or owner
+approval. Those remain separate governed protocols.
+
+The protocol invariants, negative matrix, and reproducible gates are recorded in
+[Stage 3 suite attestation verification](resource-gateway-execution-data-control-plane-stage3-suite-attestation-verification.md).
 
 ### 4.4 Query a run or run a batch
 
@@ -897,16 +995,19 @@ JDK HTTP client, JUnit 5 assertions, and JUnit XML:
 mvn -f resource-gateway-test-kit/pom.xml clean install
 ```
 
-The client exposes immutable suite register/find/execute/query operations and a typed
+The client exposes immutable suite register/find/execute/query operations, terminal evidence-bundle
+export, verification-key lookup, independent Ed25519 verification, and a typed
 `materializeBuiltInGraphContractCatalog()` operation. Execution requires an
 exact revision, full SHA-256 fingerprint, and explicit `clientRequestId`; malformed identities are
 rejected before any network call. The exact packaged Draft 2020-12 schema validates complete suite
 registration and execution values at runtime, and every returned suite/run identity is rebound to the
-originating request before it can reach assertions or reporters. It accepts execution response v1
-for migration and v2 for current servers. `TestRun.integrity()` validates and exposes the v2
-signature/projection manifest; it does not yet fetch public keys or perform consumer-side Ed25519
-verification. `TestSuiteRun` exposes payload-free
-case links, structural coverage, and promotion eligibility, while `TestSuiteRunAssertions` separates
+originating request before it can reach assertions or reporters. It accepts suite execution response
+v1 as an explicitly unsigned migration shape and v2 for current servers. `TestRun.integrity()`
+validates and exposes the child v2 signature/projection manifest. `TestSuiteRun.attestation()`
+exposes the aggregate checkpoint/terminal signature, while `findSuiteEvidenceBundle`,
+`findEvidenceVerificationKey`, and `verifySuiteEvidence` provide the portable consumer-verification
+path. `TestSuiteRun` also exposes payload-free case links, structural coverage, and promotion
+eligibility, while `TestSuiteRunAssertions` separates
 execution, case, coverage, and eligibility assertions.
 
 `clean package` also emits an executable `*-cli.jar`. It reads the bearer token only from
@@ -1027,7 +1128,7 @@ Nested `controlPlan`, `requestedControls`, `fixtureBundle`, `fixtureBundleRef`, 
 `RG.PRODUCTION.CONTROL_FIELD_FORBIDDEN`. The rejection must first commit a credential-free
 `PRODUCTION_RUN_CONTROL_GUARD` audit record; audit failure returns 503 and remains fail closed.
 
-## 8. Current Stage 2 Boundaries
+## 8. Current Stage 2/3 Boundaries
 
 Implemented now:
 
@@ -1072,14 +1173,16 @@ Implemented now:
 - detached Ed25519 signatures over complete sanitized graph/operator child-run evidence, immediate
   producer verification, verification on read, projection lineage, and a signed-child requirement
   before suite aggregation can promote evidence.
+- signed suite `CHECKPOINT` and `TERMINAL` attestations, persistence/read/reconciliation verification,
+  ordered child evidence closure, payload-free terminal bundle export, verification-key lookup, and
+  independent Ed25519 verification in the standalone test-kit.
 
 Still intentionally outside this increment:
 
 - retry-attempt/occurrence selectors, streaming/suspendable controls and evidence, and
   durable-resume plan restoration;
-- detached signatures over aggregate suite evidence, consumer-side/offline verifier support,
-  signed certification, full branch/rule/retry/fallback/compensation semantic coverage, ANEKE
-  projection, and mutation testing;
+- signed certification decisions, key-set/revocation event feed, transparency-log proof, full
+  branch/rule/retry/fallback/compensation semantic coverage, ANEKE projection, and mutation testing;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
   reconciliation alert SLOs, and suite-history list/trend APIs;
 - deterministic random/UUID/function execution services and deterministic concurrent scheduling;

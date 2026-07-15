@@ -570,7 +570,44 @@
         "metadata": {"type": "object"}
       }
     },
-    "testSuiteExecutionResponse": {
+    "testSuiteRunAttestationChild": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "runId", "evidenceFingerprint"],
+      "properties": {
+        "caseId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "runId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "testSuiteRunAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "signatureStatus", "scope", "suiteRunId", "suiteRef",
+        "requestFingerprint", "aggregateEvidenceFingerprint", "childEvidenceRefs", "signedAt",
+        "keyId", "algorithm", "signature", "independentlyVerifiable"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteRunAttestation.v1"},
+        "signatureStatus": {"enum": ["VERIFIED", "UNSIGNED", "VERIFICATION_UNAVAILABLE"]},
+        "scope": {"enum": ["CHECKPOINT", "TERMINAL"]},
+        "suiteRunId": {"type": "string", "maxLength": 255},
+        "suiteRef": {"oneOf": [{"$ref": "#/$defs/testSuiteRef"}, {"type": "null"}]},
+        "requestFingerprint": {"oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]},
+        "aggregateEvidenceFingerprint": {
+          "oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]
+        },
+        "childEvidenceRefs": {
+          "type": "array", "maxItems": 100,
+          "items": {"$ref": "#/$defs/testSuiteRunAttestationChild"}
+        },
+        "signedAt": {"type": "string", "format": "date-time"},
+        "keyId": {"type": "string", "maxLength": 512},
+        "algorithm": {"type": "string", "maxLength": 128},
+        "signature": {"type": "string", "maxLength": 4096},
+        "independentlyVerifiable": {"type": "boolean"}
+      }
+    },
+    "testSuiteExecutionResponseV1": {
       "type": "object",
       "additionalProperties": false,
       "required": ["schemaVersion", "suiteRunId", "evidenceFingerprint", "evidence"],
@@ -578,6 +615,38 @@
         "schemaVersion": {"const": "bloge.testSuiteExecutionResponse.v1"},
         "suiteRunId": {"type": "string", "minLength": 1, "maxLength": 255},
         "evidenceFingerprint": {"oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]},
+        "evidence": {"$ref": "#/$defs/testSuiteRunEvidence"}
+      }
+    },
+    "testSuiteExecutionResponseV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteRunId", "evidenceFingerprint", "evidence", "attestation"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteExecutionResponse.v2"},
+        "suiteRunId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "evidenceFingerprint": {"oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]},
+        "evidence": {"$ref": "#/$defs/testSuiteRunEvidence"},
+        "attestation": {"$ref": "#/$defs/testSuiteRunAttestation"}
+      }
+    },
+    "testSuiteExecutionResponse": {
+      "oneOf": [
+        {"$ref": "#/$defs/testSuiteExecutionResponseV1"},
+        {"$ref": "#/$defs/testSuiteExecutionResponseV2"}
+      ]
+    },
+    "testSuiteEvidenceBundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteRunId", "bundleFingerprint", "payloadPolicy",
+        "attestation", "evidence"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteEvidenceBundle.v1"},
+        "suiteRunId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "bundleFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "payloadPolicy": {"const": "OMITTED"},
+        "attestation": {"$ref": "#/$defs/testSuiteRunAttestation"},
         "evidence": {"$ref": "#/$defs/testSuiteRunEvidence"}
       }
     },

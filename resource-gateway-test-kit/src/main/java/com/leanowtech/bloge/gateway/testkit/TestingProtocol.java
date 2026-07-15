@@ -48,8 +48,20 @@ public final class TestingProtocol {
     /** Immutable suite execution response wire version. */
     public static final String TEST_SUITE_EXECUTION_RESPONSE_V1 =
             "bloge.testSuiteExecutionResponse.v1";
+    /** Current signed immutable suite execution response wire version. */
+    public static final String TEST_SUITE_EXECUTION_RESPONSE_V2 =
+            "bloge.testSuiteExecutionResponse.v2";
     /** Aggregate immutable suite-run evidence wire version. */
     public static final String TEST_SUITE_RUN_EVIDENCE_V1 = "bloge.testSuiteRunEvidence.v1";
+    /** Signed suite checkpoint and terminal closure wire version. */
+    public static final String TEST_SUITE_RUN_ATTESTATION_V1 =
+            "bloge.testSuiteRunAttestation.v1";
+    /** Portable payload-free terminal suite evidence bundle wire version. */
+    public static final String TEST_SUITE_EVIDENCE_BUNDLE_V1 =
+            "bloge.testSuiteEvidenceBundle.v1";
+    /** Resource Gateway evidence verification key wire version. */
+    public static final String EVIDENCE_VERIFICATION_KEY_V1 =
+            "toolStudio.resourceGateway.evidenceVerificationKey.v1";
     /** Built-in graph catalog materialization response wire version. */
     public static final String TEST_SUITE_CATALOG_MATERIALIZATION_V1 =
             "bloge.testSuiteCatalogMaterialization.v1";

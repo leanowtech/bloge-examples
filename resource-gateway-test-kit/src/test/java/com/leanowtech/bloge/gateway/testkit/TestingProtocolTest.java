@@ -49,10 +49,17 @@ class TestingProtocolTest {
             assertConstant(definitions, "storedTestSuite", TestingProtocol.STORED_TEST_SUITE_V1);
             assertConstant(definitions, "testSuiteExecutionRequest",
                     TestingProtocol.TEST_SUITE_EXECUTION_REQUEST_V1);
-            assertConstant(definitions, "testSuiteExecutionResponse",
+            assertConstant(definitions, "testSuiteExecutionResponseV1",
                     TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1);
+            assertConstant(definitions, "testSuiteExecutionResponseV2",
+                    TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V2);
+            assertThat(definitions.at("/testSuiteExecutionResponse/oneOf")).hasSize(2);
             assertConstant(definitions, "testSuiteRunEvidence",
                     TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V1);
+            assertConstant(definitions, "testSuiteRunAttestation",
+                    TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V1);
+            assertConstant(definitions, "testSuiteEvidenceBundle",
+                    TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V1);
             assertConstant(definitions, "testSuiteCatalogMaterialization",
                     TestingProtocol.TEST_SUITE_CATALOG_MATERIALIZATION_V1);
         }

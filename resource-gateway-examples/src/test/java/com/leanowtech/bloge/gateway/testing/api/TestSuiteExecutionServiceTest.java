@@ -5,7 +5,11 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -41,6 +45,7 @@ class TestSuiteExecutionServiceTest {
     private TestSecurityEventRepository securityEvents;
     private TestSuiteExecutionService service;
     private IntegrationRequestContext identity;
+    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
@@ -48,9 +53,12 @@ class TestSuiteExecutionServiceTest {
         executions = mock(TestExecutionApiService.class);
         runRepository = new InMemorySuiteRunRepository();
         securityEvents = mock(TestSecurityEventRepository.class);
+        objectMapper = new ObjectMapper().findAndRegisterModules();
         service = new TestSuiteExecutionService(registry, executions, runRepository,
-                new ObjectMapper().findAndRegisterModules(), securityEvents,
-                Duration.ofDays(30));
+                objectMapper, securityEvents, Duration.ofDays(30),
+                TestSuiteRunLeaseCoordinator.passive(Duration.ofMinutes(5)),
+                new TestSuiteRunAttestationService(objectMapper,
+                        new InMemoryVisualEvidenceSigner()));
         when(executions.verifyEvidence(any())).thenReturn(true);
         identity = new IntegrationRequestContext("tenant-a", "org-a", "project-a", "test", "local",
                 "WORKLOAD", "runner", "", "TEST_EXECUTION", "correlation-a",
@@ -83,12 +91,96 @@ class TestSuiteExecutionServiceTest {
         assertThat(result.evidence().promotion().status())
                 .isEqualTo(TestSuiteRunEvidence.PromotionStatus.ELIGIBLE);
         assertThat(result.evidenceFingerprint()).startsWith("sha256:");
+        assertThat(result.schemaVersion()).isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION);
+        assertThat(result.attestation().terminallyVerifiable()).isTrue();
+        assertThat(result.attestation().childEvidenceRefs())
+                .extracting(TestSuiteRunAttestation.ChildEvidenceRef::runId)
+                .containsExactly("run-golden", "run-negative");
+        assertThat(result.evidence().metadata())
+                .containsKey("requestMetadataFingerprint")
+                .doesNotContainKey("requestMetadata");
 
         TestSuiteExecutionResponse retry = service.execute("suite-a", request("request-a",
                 TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity);
         assertThat(retry).isEqualTo(result);
         verify(executions, times(2)).execute(any(), eq(identity));
         assertThat(runRepository.records).hasSize(1);
+    }
+
+    @Test
+    void terminalSuiteExportsPortablePayloadFreeEvidenceBundle() {
+        when(registry.find("suite-a", 3, identity)).thenReturn(storedSuite());
+        when(executions.describeGraphTarget("graph-a", identity)).thenReturn(graphTarget(TARGET, true));
+        when(executions.execute(any(), eq(identity)))
+                .thenReturn(response("run-golden", "golden", "/root/fetch#PRIMARY",
+                                "/root/fetch#PRIMARY", "/root/output#PRIMARY",
+                                TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE))
+                .thenReturn(response("run-negative", "negative", "/root/output#PRIMARY", "", "",
+                                TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE));
+        TestSuiteExecutionResponse run = service.execute("suite-a", request("portable-evidence",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity);
+
+        TestSuiteEvidenceBundle bundle = service.evidenceBundle(run.suiteRunId(), identity);
+
+        assertThat(bundle.schemaVersion()).isEqualTo(TestSuiteEvidenceBundle.SCHEMA_VERSION);
+        assertThat(bundle.payloadPolicy()).isEqualTo(TestSuiteEvidenceBundle.PayloadPolicy.OMITTED);
+        assertThat(bundle.bundleFingerprint()).startsWith("sha256:");
+        assertThat(bundle.attestation()).isEqualTo(run.attestation());
+        assertThat(objectMapper.valueToTree(bundle).toString())
+                .doesNotContain("orderId", "nightly", "requestMetadata\"");
+    }
+
+    @Test
+    void tamperedPersistedAggregateIsAuditedAndRejectedOnRead() {
+        when(registry.find("suite-a", 3, identity)).thenReturn(storedSuite());
+        when(executions.describeGraphTarget("graph-a", identity)).thenReturn(graphTarget(TARGET, true));
+        when(executions.execute(any(), eq(identity)))
+                .thenReturn(response("run-golden", "golden", "/root/fetch#PRIMARY",
+                                "/root/fetch#PRIMARY", "/root/output#PRIMARY",
+                                TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE))
+                .thenReturn(response("run-negative", "negative", "/root/output#PRIMARY", "", "",
+                                TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE));
+        TestSuiteExecutionResponse run = service.execute("suite-a", request("tamper-read",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity);
+        TestSuiteRunRecord stored = runRepository.records.get(run.suiteRunId());
+        TestSuiteRunEvidence evidence = stored.evidence();
+        Map<String, Object> metadata = new LinkedHashMap<>(evidence.metadata());
+        metadata.put("tampered", true);
+        TestSuiteRunEvidence altered = new TestSuiteRunEvidence("", evidence.suiteRunId(),
+                evidence.clientRequestId(), evidence.status(), evidence.executionPurpose(),
+                evidence.suiteRef(), evidence.target(), evidence.startedAt(), evidence.completedAt(),
+                evidence.caseResults(), evidence.coverage(), evidence.promotion(), evidence.diagnostics(),
+                metadata);
+        runRepository.records.put(run.suiteRunId(), new TestSuiteRunRecord(stored.suiteRunId(),
+                stored.clientRequestId(), stored.requestFingerprint(), stored.tenantId(),
+                stored.organizationId(), stored.projectId(), stored.environmentId(), stored.actorId(),
+                stored.classification(), stored.evidenceFingerprint(), altered, stored.attestation(),
+                stored.createdAt(), stored.expiresAt()));
+
+        assertThatThrownBy(() -> service.find(run.suiteRunId(), identity))
+                .isInstanceOf(IntegrationProblemException.class)
+                .satisfies(error -> assertThat(((IntegrationProblemException) error).problem().code())
+                        .isEqualTo("RG.TEST.SUITE_ATTESTATION_INVALID"));
+        verify(securityEvents).append(org.mockito.ArgumentMatchers.argThat(event ->
+                event.eventType().equals("TEST_SUITE_ATTESTATION_INVALID")));
+    }
+
+    @Test
+    void unavailableInitialAttestationPreventsAnyCaseOrCheckpointWrite() {
+        when(registry.find("suite-a", 3, identity)).thenReturn(storedSuite());
+        TestSuiteExecutionService unavailable = new TestSuiteExecutionService(
+                registry, executions, runRepository, objectMapper, securityEvents,
+                Duration.ofDays(30), TestSuiteRunLeaseCoordinator.passive(Duration.ofMinutes(5)),
+                new TestSuiteRunAttestationService(objectMapper,
+                        com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner.unavailable()));
+
+        assertThatThrownBy(() -> unavailable.execute("suite-a", request("no-signer",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity))
+                .isInstanceOf(IntegrationProblemException.class)
+                .satisfies(error -> assertThat(((IntegrationProblemException) error).problem().code())
+                        .isEqualTo("RG.TEST.SUITE_ATTESTATION_UNAVAILABLE"));
+        assertThat(runRepository.records).isEmpty();
+        verifyNoInteractions(executions);
     }
 
     @Test

@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationWorkloadIdentity;
 import com.leanowtech.bloge.gateway.integration.StaticBearerIntegrationIdentityResolver;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -271,6 +272,33 @@ class TestExecutionControllerTest {
                 org.mockito.ArgumentMatchers.argThat(context ->
                         context.purpose().equals("TEST_EXECUTION")));
         verifyNoInteractions(execution, suites);
+    }
+
+    @Test
+    void terminalSuiteEvidenceBundleUsesAuthenticatedExecutionScope() throws Exception {
+        TestExecutionApiService execution = mock(TestExecutionApiService.class);
+        TestSuiteExecutionService suiteRuns = mock(TestSuiteExecutionService.class);
+        TestSuiteEvidenceBundle bundle = mock(TestSuiteEvidenceBundle.class);
+        when(bundle.schemaVersion()).thenReturn(TestSuiteEvidenceBundle.SCHEMA_VERSION);
+        when(bundle.suiteRunId()).thenReturn("suite-run-1");
+        when(bundle.bundleFingerprint()).thenReturn("sha256:" + "e".repeat(64));
+        when(bundle.payloadPolicy()).thenReturn(TestSuiteEvidenceBundle.PayloadPolicy.OMITTED);
+        when(suiteRuns.evidenceBundle(eq("suite-run-1"), any())).thenReturn(bundle);
+        MockMvc mvc = mvc(execution, mock(TestSuiteRegistryService.class), suiteRuns,
+                Set.of("TEST_EXECUTION"));
+
+        mvc.perform(get("/api/testing/suite-executions/suite-run-1/evidence-bundle")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_EXECUTION"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(TestSuiteEvidenceBundle.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.suiteRunId").value("suite-run-1"))
+                .andExpect(jsonPath("$.payloadPolicy").value("OMITTED"));
+
+        verify(suiteRuns).evidenceBundle(eq("suite-run-1"),
+                org.mockito.ArgumentMatchers.argThat(identity ->
+                        identity.purpose().equals("TEST_EXECUTION")));
+        verifyNoInteractions(execution);
     }
 
     @Test

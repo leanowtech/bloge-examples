@@ -27,6 +27,7 @@ import java.util.List;
  * @param coverageStatus aggregate structural coverage verdict
  * @param promotionStatus policy eligibility verdict, not a certification or publication
  * @param promotionReasons stable policy reason codes
+ * @param attestation signed checkpoint or terminal aggregate closure; unsigned for v1 responses
  * @param rawResponse defensive complete response for explicit authorized inspection
  */
 public record TestSuiteRun(
@@ -44,6 +45,7 @@ public record TestSuiteRun(
         CoverageStatus coverageStatus,
         PromotionStatus promotionStatus,
         List<String> promotionReasons,
+        TestSuiteRunAttestation attestation,
         JsonNode rawResponse
 ) {
     /** Aggregate suite execution states. */
@@ -182,6 +184,7 @@ public record TestSuiteRun(
         promotionReasons = promotionReasons == null ? List.of() : promotionReasons.stream()
                 .map(reason -> machineCode(reason, "promotion reason"))
                 .toList();
+        attestation = attestation == null ? TestSuiteRunAttestation.unsigned() : attestation;
         if (suiteRunId.isBlank() || clientRequestId.isBlank() || status == null || suiteId.isBlank()
                 || suiteRevision < 1 || !fingerprint(suiteFingerprint)
                 || !List.of("GRAPH", "OPERATOR").contains(targetKind)
@@ -200,8 +203,8 @@ public record TestSuiteRun(
     }
 
     /**
-     * Projects a {@code bloge.testSuiteExecutionResponse.v1} without copying child payloads into
-     * reportable fields.
+     * Projects a v1 or signed v2 suite response without copying child payloads into reportable
+     * fields.
      *
      * @param response decoded suite execution response
      * @return immutable suite-run projection
@@ -227,6 +230,10 @@ public record TestSuiteRun(
         });
         List<String> reasons = new ArrayList<>();
         evidence.path("promotion").path("reasons").forEach(reason -> reasons.add(reason.asText()));
+        TestSuiteRunAttestation attestation = TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V2.equals(
+                response.path("schemaVersion").asText())
+                ? TestSuiteRunAttestation.from(response.path("attestation"))
+                : TestSuiteRunAttestation.unsigned();
         return new TestSuiteRun(response.path("suiteRunId").asText(evidence.path("suiteRunId").asText()),
                 evidence.path("clientRequestId").asText(),
                 enumValue(Status.class, evidence.path("status").asText(), "status"),
@@ -237,7 +244,7 @@ public record TestSuiteRun(
                 enumValue(CoverageStatus.class, evidence.path("coverage").path("status").asText(),
                         "coverage status"),
                 enumValue(PromotionStatus.class, evidence.path("promotion").path("status").asText(),
-                        "promotion status"), reasons, response);
+                        "promotion status"), reasons, attestation, response);
     }
 
     /**
