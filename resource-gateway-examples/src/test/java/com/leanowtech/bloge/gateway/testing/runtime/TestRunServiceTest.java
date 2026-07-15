@@ -3,6 +3,8 @@ package com.leanowtech.bloge.gateway.testing.runtime;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.dsl.GraphBuilder;
+import com.leanowtech.bloge.core.engine.GraphEngine;
+import com.leanowtech.bloge.core.engine.NestedExecutionCoordinates;
 import com.leanowtech.bloge.core.engine.operators.ForEachOperator;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.model.NodeSpec;
@@ -14,6 +16,8 @@ import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
+import com.leanowtech.bloge.core.spi.NestedGraphProvider;
+import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
@@ -43,11 +47,22 @@ class TestRunServiceTest {
 
         TestExecutionResult result = service.execute(request(graph, bundle()));
 
-        assertThat(result.passed()).isTrue();
+        assertThat(result.passed())
+                .withFailMessage("status=%s diagnostics=%s traces=%s", result.evidence().status(),
+                        result.evidence().diagnostics(), result.evidence().nodeTrace())
+                .isTrue();
         assertThat(result.graphResult().getOutput("subject", String.class)).isEqualTo("real:hello");
         assertThat(result.evidence().nodeTrace()).singleElement().satisfies(trace -> {
             assertThat(trace.status()).isEqualTo("SUCCESS");
             assertThat(trace.fidelity()).isEqualTo("REAL");
+            assertThat(trace.invocationSiteId()).isEqualTo("/root/subject#PRIMARY");
+            assertThat(trace.graphPath()).isEqualTo("/root");
+            assertThat(trace.correlationKey()).isEmpty();
+            assertThat(trace.occurrence()).isEqualTo(1);
+            assertThat(trace.attempts()).singleElement().satisfies(attempt -> {
+                assertThat(attempt.attempt()).isEqualTo(1);
+                assertThat(attempt.status()).isEqualTo("SUCCESS");
+            });
         });
         assertThat(result.evidence().evidenceClass()).isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
     }
@@ -422,6 +437,13 @@ class TestRunServiceTest {
         assertThat(result.evidence().nodeTrace()).singleElement().satisfies(trace -> {
             assertThat(trace.status()).isEqualTo("MOCKED");
             assertThat(trace.output()).isEqualTo("safe-fallback");
+            assertThat(trace.occurrence()).isEqualTo(1);
+            assertThat(trace.attempts()).extracting(TestRunEvidence.AttemptTrace::attempt)
+                    .containsExactly(1, 2);
+            assertThat(trace.attempts()).extracting(TestRunEvidence.AttemptTrace::status)
+                    .containsExactly("TIMEOUT", "TIMEOUT");
+            assertThat(trace.attempts()).extracting(TestRunEvidence.AttemptTrace::durationMs)
+                    .containsExactly(3000L, 3000L);
         });
         assertThat(result.evidence().metadata().get("logicalTime").toString())
                 .contains("elapsedMs=8000");
@@ -470,6 +492,69 @@ class TestRunServiceTest {
                 .satisfies(consumption -> assertThat(consumption.uses()).isEqualTo(3));
         assertThat(result.evidence().metadata().get("nodeControlModes"))
                 .isEqualTo(Map.of("/root/enrich/item-body/lookup#PRIMARY", "RETURN"));
+        assertThat(result.evidence().nodeTrace().stream()
+                .filter(trace -> "/root/enrich/item-body".equals(trace.graphPath())).toList())
+                .hasSize(3)
+                .allSatisfy(trace -> {
+                    assertThat(trace.invocationSiteId())
+                            .isEqualTo("/root/enrich/item-body/lookup#PRIMARY");
+                    assertThat(trace.correlationKey()).isNotBlank();
+                    assertThat(trace.occurrence()).isEqualTo(1);
+                    assertThat(trace.attempts()).singleElement()
+                            .satisfies(attempt -> assertThat(attempt.attempt()).isEqualTo(1));
+                })
+                .extracting(TestRunEvidence.NodeTrace::correlationKey)
+                .doesNotHaveDuplicates();
+    }
+
+    @Test
+    void nestedGraphReentryAllocatesOccurrencesWhileRetriesStayInsideEachOccurrence() {
+        AtomicInteger childCalls = new AtomicInteger();
+        DefaultOperatorRegistry nestedRegistry = new DefaultOperatorRegistry();
+        Operator<Object, Object> flakyChild = new PureOperator() {
+            @Override
+            public Object execute(Object input, OperatorContext context) {
+                if (childCalls.getAndIncrement() == 0) {
+                    throw new IllegalStateException("first nested execution fails");
+                }
+                return "nested-ok";
+            }
+        };
+        nestedRegistry.register("flaky-child", flakyChild);
+        Graph child = new GraphBuilder("child-body")
+                .node("child", flakyChild)
+                .input((results, context) -> context.get("input"))
+                .build();
+        Graph root = new GraphBuilder("nested-reentry")
+                .node("nested", new FailingNestedOperator(child, nestedRegistry))
+                .input((results, context) -> Map.of("input", context.get("input")))
+                .retry(1, Duration.ZERO)
+                .build();
+
+        TestExecutionResult result = service.execute(request(root, bundle()));
+
+        assertThat(result.passed())
+                .withFailMessage("status=%s diagnostics=%s traces=%s", result.evidence().status(),
+                        result.evidence().diagnostics(), result.evidence().nodeTrace())
+                .isTrue();
+        assertThat(childCalls).hasValue(2);
+        assertThat(result.evidence().nodeTrace().stream()
+                .filter(trace -> "/root/nested/child-body".equals(trace.graphPath())).toList())
+                .hasSize(2)
+                .extracting(TestRunEvidence.NodeTrace::occurrence)
+                .containsExactly(1, 2);
+        assertThat(result.evidence().nodeTrace().stream()
+                .filter(trace -> "/root/nested/child-body".equals(trace.graphPath())).toList())
+                .allSatisfy(trace -> {
+                    assertThat(trace.correlationKey()).isEmpty();
+                    assertThat(trace.attempts()).singleElement()
+                            .satisfies(attempt -> assertThat(attempt.attempt()).isEqualTo(1));
+                });
+        assertThat(result.evidence().nodeTrace().stream()
+                .filter(trace -> "/root".equals(trace.graphPath())
+                        && "nested".equals(trace.nodeId())).findFirst()).hasValueSatisfying(trace ->
+                assertThat(trace.attempts()).extracting(TestRunEvidence.AttemptTrace::attempt)
+                        .containsExactly(1, 2));
     }
 
     @Test
@@ -547,6 +632,39 @@ class TestRunServiceTest {
                                     FixtureRule.Behavior behavior) {
         return new FixtureRule(FixtureRule.SCHEMA_VERSION, id, selector, behavior,
                 FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+    }
+
+    /** Test-only nested container that makes a child failure visible to the parent's retry policy. */
+    private static final class FailingNestedOperator
+            implements Operator<Map<String, Object>, Map<String, Object>>, NestedGraphProvider {
+        private final Graph child;
+        private final OperatorRegistry registry;
+
+        private FailingNestedOperator(Graph child, OperatorRegistry registry) {
+            this.child = child;
+            this.registry = registry;
+        }
+
+        @Override
+        public Map<String, Object> execute(Map<String, Object> input, OperatorContext context) {
+            var result = GraphEngine.executeNestedGraph(child, new GraphContext(input), registry,
+                    new NestedExecutionCoordinates(null, context.executionId(), context.nodeId(),
+                            child.name(), null));
+            if (!result.isSuccess()) {
+                throw new IllegalStateException("nested graph failed");
+            }
+            return Map.of("child", result.findOutput("child", Object.class).orElse(null));
+        }
+
+        @Override
+        public List<NestedGraphBinding> nestedGraphBindings() {
+            return List.of(new NestedGraphBinding(child.name(), child, registry));
+        }
+
+        @Override
+        public SideEffectType sideEffectType() {
+            return SideEffectType.READ_ONLY;
+        }
     }
 
     private static class PureOperator implements Operator<Object, Object> {

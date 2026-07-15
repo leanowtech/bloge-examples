@@ -25,7 +25,12 @@ public final class TestEvidenceSanitizer {
         Objects.requireNonNull(evidence, "evidence");
         var nodes = evidence.nodeTrace().stream().map(node -> new TestRunEvidence.NodeTrace(
                 node.nodeId(), node.operatorRef(), node.status(), node.fidelity(),
-                sanitizeValue(node.input()), sanitizeValue(node.output()), node.errorCode(), node.durationMs()
+                sanitizeValue(node.input()), sanitizeValue(node.output()), node.errorCode(), node.durationMs(),
+                node.invocationSiteId(), node.graphPath(), node.correlationKey(), node.occurrence(),
+                node.attempts().stream().map(attempt -> new TestRunEvidence.AttemptTrace(
+                        attempt.attempt(), attempt.status(), attempt.fidelity(),
+                        sanitizeValue(attempt.input()), sanitizeValue(attempt.output()),
+                        attempt.errorCode(), attempt.durationMs())).toList()
         )).toList();
         var edges = evidence.edgeTrace().stream().map(edge -> new TestRunEvidence.EdgeTrace(
                 edge.edgeId(), edge.status(), sanitizeValue(edge.value()))).toList();

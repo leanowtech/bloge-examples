@@ -10,9 +10,21 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TestingDomainProtocolTest {
+
+    @Test
+    void occurrenceAndAttemptCoordinatesRejectNegativeProtocolValues() {
+        assertThatIllegalArgumentException().isThrownBy(() -> new TestRunEvidence.NodeTrace(
+                "node", "operator", "SUCCESS", "REAL", null, null, "", 0,
+                "/root/node#PRIMARY", "/root", "", -1, List.of()));
+        assertThatIllegalArgumentException().isThrownBy(() -> new TestRunEvidence.AttemptTrace(
+                -1, "SUCCESS", "REAL", null, null, "", 0));
+        assertThatIllegalArgumentException().isThrownBy(() -> new TestRunEvidence.AttemptTrace(
+                1, "SUCCESS", "REAL", null, null, "", -1));
+    }
 
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
 
@@ -149,6 +161,11 @@ class TestingDomainProtocolTest {
         assertThat(restored).isEqualTo(evidence);
         assertThat(restored.planFingerprint()).isEqualTo(plan.planFingerprint());
         assertThat(restored.nodeTrace()).singleElement()
-                .satisfies(trace -> assertThat(trace.fidelity()).isEqualTo("PROTOCOL_DERIVED"));
+                .satisfies(trace -> {
+                    assertThat(trace.fidelity()).isEqualTo("PROTOCOL_DERIVED");
+                    assertThat(trace.invocationSiteId()).isEmpty();
+                    assertThat(trace.occurrence()).isZero();
+                    assertThat(trace.attempts()).isEmpty();
+                });
     }
 }

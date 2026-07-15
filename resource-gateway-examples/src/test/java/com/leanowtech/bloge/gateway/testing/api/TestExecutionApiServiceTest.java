@@ -78,6 +78,10 @@ class TestExecutionApiServiceTest {
         assertThat(response.evidence().nodeTrace()).singleElement().satisfies(node -> {
             assertThat(node.input()).isNull();
             assertThat(node.output()).isNull();
+            assertThat(node.attempts()).singleElement().satisfies(attempt -> {
+                assertThat(attempt.input()).isNull();
+                assertThat(attempt.output()).isNull();
+            });
         });
         TestRunRecord persisted = runs.find("tenant-a", "test", response.runId()).orElseThrow();
         assertThat(persisted.evidence().metadata()).containsEntry("payloadSanitized", true);
@@ -85,6 +89,11 @@ class TestExecutionApiServiceTest {
             assertThat(node.output()).isInstanceOf(Map.class);
             assertThat(((Map<?, ?>) node.output()).get("password")).isEqualTo("[REDACTED]");
             assertThat(String.valueOf(node.output())).doesNotContain("do-not-store");
+            assertThat(node.attempts()).singleElement().satisfies(attempt -> {
+                assertThat(attempt.output()).isInstanceOf(Map.class);
+                assertThat(String.valueOf(attempt.output())).contains("[REDACTED]")
+                        .doesNotContain("do-not-store");
+            });
         });
         assertThat(response.plan().authorizedPurpose()).isEqualTo("GRAPH_CONTRACT_TEST");
     }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.engine.GraphEngine;
 import com.leanowtech.bloge.core.engine.GraphResult;
 import com.leanowtech.bloge.core.engine.ExecutionOptions;
+import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.core.spi.OperatorResolutionRequest;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
@@ -106,7 +107,8 @@ public class TestRunService {
         consumptions.forEach(item -> uses.put(item.ruleId(), item.uses()));
         List<TestRunEvidence.AssertionResult> assertions = assertionEvaluator.evaluate(
                 request.fixtureBundle().assertions(), request.graph(), graphResult, uses);
-        List<TestRunEvidence.NodeTrace> nodes = recorder.nodeTraces(request.graph(), graphResult);
+        List<TestRunEvidence.NodeTrace> nodes = recorder.nodeTraces(
+                compiled.inventory(), request.graph(), graphResult);
         TestRunEvidence.Status status = terminalStatus(graphResult, nodes, consumptions, assertions, diagnostics);
         graphDiagnostics(graphResult, diagnostics);
         consumptionDiagnostics(consumptions, diagnostics);
@@ -149,12 +151,14 @@ public class TestRunService {
         }
         CompiledExecutionControl.ResolvedControl control = compiled.controls()
                 .get(entry.site().invocationSiteId());
+        var runtimeSite = entry.site().withCorrelationKey(resolution.site().correlationKey());
         if (control == null) {
-            return entry.frozenOperator();
+            return entry.frozenOperator() instanceof Operator<?, ?>
+                    ? doubleFactory.observe(entry.node(), runtimeSite, entry.frozenOperator(), recorder)
+                    : entry.frozenOperator();
         }
-        return doubleFactory.create(entry.node(),
-                entry.site().withCorrelationKey(resolution.site().correlationKey()),
-                control.rules(), entry.frozenOperator(), control.implicitDeny(), recorder);
+        return doubleFactory.create(entry.node(), runtimeSite, control.rules(),
+                entry.frozenOperator(), control.implicitDeny(), recorder);
     }
 
     private TestRunEvidence rejectedEvidence(String runId, TestExecutionRequest request,

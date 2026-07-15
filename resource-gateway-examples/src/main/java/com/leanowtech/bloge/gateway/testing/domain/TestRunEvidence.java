@@ -96,9 +96,23 @@ public record TestRunEvidence(
      * @param output sanitized node output
      * @param errorCode normalized error code
      * @param durationMs observed duration
+     * @param invocationSiteId stable structural invocation-site id
+     * @param graphPath stable path of the graph that owns this occurrence
+     * @param correlationKey foreach, loop, or business correlation coordinate
+     * @param occurrence one-based resolver binding occurrence; zero means legacy unknown
+     * @param attempts ordered one-based delegate-attempt facts for this occurrence
      */
     public record NodeTrace(String nodeId, String operatorRef, String status, String fidelity,
-                            Object input, Object output, String errorCode, long durationMs) {
+                            Object input, Object output, String errorCode, long durationMs,
+                            String invocationSiteId, String graphPath, String correlationKey,
+                            int occurrence, List<AttemptTrace> attempts) {
+        /** Backward-compatible constructor for v1 producers without occurrence coordinates. */
+        public NodeTrace(String nodeId, String operatorRef, String status, String fidelity,
+                         Object input, Object output, String errorCode, long durationMs) {
+            this(nodeId, operatorRef, status, fidelity, input, output, errorCode, durationMs,
+                    "", "", "", 0, List.of());
+        }
+
         /** Normalizes node trace labels. */
         public NodeTrace {
             nodeId = trimmed(nodeId);
@@ -106,6 +120,40 @@ public record TestRunEvidence(
             status = trimmed(status);
             fidelity = trimmed(fidelity);
             errorCode = trimmed(errorCode);
+            invocationSiteId = trimmed(invocationSiteId);
+            graphPath = trimmed(graphPath);
+            correlationKey = trimmed(correlationKey);
+            if (occurrence < 0) {
+                throw new IllegalArgumentException("occurrence must be >= 0");
+            }
+            attempts = immutableList(attempts);
+        }
+    }
+
+    /**
+     * One actual delegate call within a node occurrence.
+     *
+     * @param attempt one-based attempt number
+     * @param status SUCCESS, FAILED, TIMEOUT, or MOCKED
+     * @param fidelity REAL, OUTPUT_LEVEL, PROTOCOL_DERIVED, TRANSPORT_LEVEL, or REPLAYED
+     * @param input sanitized attempt input
+     * @param output sanitized attempt output
+     * @param errorCode normalized failure code
+     * @param durationMs observed attempt duration
+     */
+    public record AttemptTrace(int attempt, String status, String fidelity, Object input,
+                               Object output, String errorCode, long durationMs) {
+        /** Normalizes labels and rejects negative wire values. */
+        public AttemptTrace {
+            if (attempt < 0) {
+                throw new IllegalArgumentException("attempt must be >= 0");
+            }
+            status = trimmed(status);
+            fidelity = trimmed(fidelity);
+            errorCode = trimmed(errorCode);
+            if (durationMs < 0) {
+                throw new IllegalArgumentException("durationMs must be >= 0");
+            }
         }
     }
 

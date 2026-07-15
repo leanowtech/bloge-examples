@@ -17,6 +17,7 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -59,8 +60,35 @@ public class TestDoubleFactory {
             throw new IllegalArgumentException("Node '" + node.id()
                     + "' is not a synchronous Operator and cannot use v1 execution control.");
         }
-        return new ControlledOperator(node, site, rules, (Operator<Object, Object>) typed,
-                implicitDeny, recorder);
+        Operator<Object, Object> controlled = new ControlledOperator(node, site, rules,
+                (Operator<Object, Object>) typed, implicitDeny, recorder);
+        return observed(node, site, controlled, recorder);
+    }
+
+    /**
+     * Wraps an uncontrolled synchronous binding with the same occurrence and attempt observer used
+     * by test doubles. The wrapper delegates operator safety metadata unchanged.
+     *
+     * @param node frozen node specification
+     * @param site occurrence-specific invocation coordinates
+     * @param realOperator frozen real binding
+     * @param recorder per-run evidence recorder
+     * @return observed operator passed only to the independent test engine
+     */
+    @SuppressWarnings("unchecked")
+    public Operator<Object, Object> observe(NodeSpec node, InvocationSite site,
+                                            Object realOperator, InvocationRecorder recorder) {
+        if (!(realOperator instanceof Operator<?, ?> typed)) {
+            throw new IllegalArgumentException("Node '" + node.id()
+                    + "' is not a synchronous Operator and cannot produce v1 attempt evidence.");
+        }
+        return observed(node, site, (Operator<Object, Object>) typed, recorder);
+    }
+
+    private Operator<Object, Object> observed(NodeSpec node, InvocationSite site,
+                                              Operator<Object, Object> delegate,
+                                              InvocationRecorder recorder) {
+        return new ObservedOperator(node, recorder.bind(site), delegate, recorder);
     }
 
     private final class ControlledOperator implements Operator<Object, Object> {
@@ -84,6 +112,7 @@ public class TestDoubleFactory {
 
         @Override
         public Object execute(Object input, OperatorContext context) throws Exception {
+            recorder.markFidelity(site, "OUTPUT_LEVEL");
             List<FixtureRule> matched = rules.stream()
                     .filter(rule -> matcher.matches(rule, input, site.correlationKey())).toList();
             if (matched.isEmpty()) {
@@ -209,6 +238,59 @@ public class TestDoubleFactory {
         @Override
         public SideEffectProtocol sideEffectProtocol() {
             return real.sideEffectProtocol();
+        }
+    }
+
+    /** Captures one immutable occurrence summary plus every delegate attempt. */
+    private static final class ObservedOperator implements Operator<Object, Object> {
+        private final NodeSpec node;
+        private final InvocationRecorder.InvocationBinding binding;
+        private final Operator<Object, Object> delegate;
+        private final InvocationRecorder recorder;
+
+        private ObservedOperator(NodeSpec node, InvocationRecorder.InvocationBinding binding,
+                                 Operator<Object, Object> delegate, InvocationRecorder recorder) {
+            this.node = Objects.requireNonNull(node, "node");
+            this.binding = Objects.requireNonNull(binding, "binding");
+            this.delegate = Objects.requireNonNull(delegate, "delegate");
+            this.recorder = Objects.requireNonNull(recorder, "recorder");
+        }
+
+        @Override
+        public Object execute(Object input, OperatorContext context) throws Exception {
+            Instant logicalStart = context.timeSource().now();
+            long wallStart = System.nanoTime();
+            try {
+                Object output = delegate.execute(input, context);
+                recorder.recordSuccess(binding, node, input, output, context.retryAttempt() + 1,
+                        elapsedMillis(logicalStart, context.timeSource().now(), wallStart));
+                return output;
+            } catch (Exception failure) {
+                recorder.recordFailure(binding, node, input, failure, context.retryAttempt() + 1,
+                        elapsedMillis(logicalStart, context.timeSource().now(), wallStart));
+                throw failure;
+            }
+        }
+
+        @Override
+        public Idempotency idempotency() {
+            return delegate.idempotency();
+        }
+
+        @Override
+        public SideEffectType sideEffectType() {
+            return delegate.sideEffectType();
+        }
+
+        @Override
+        public SideEffectProtocol sideEffectProtocol() {
+            return delegate.sideEffectProtocol();
+        }
+
+        private static long elapsedMillis(Instant logicalStart, Instant logicalEnd, long wallStart) {
+            long logical = Math.max(0, Duration.between(logicalStart, logicalEnd).toMillis());
+            long wall = Math.max(0, Duration.ofNanos(System.nanoTime() - wallStart).toMillis());
+            return Math.max(logical, wall);
         }
     }
 
