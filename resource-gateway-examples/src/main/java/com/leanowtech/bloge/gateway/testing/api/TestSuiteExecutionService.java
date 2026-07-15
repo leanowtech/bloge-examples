@@ -8,12 +8,18 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteProtocol;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceProtocol;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
+import com.leanowtech.bloge.gateway.testing.domain.SemanticCoverageVerdict;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteEvidenceAggregator;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunEvidenceProtocolCodec;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 
 import java.time.Duration;
@@ -58,7 +64,8 @@ public final class TestSuiteExecutionService {
     private final TestSecurityEventRepository securityEvents;
     private final TestSuiteRunLeaseCoordinator leaseCoordinator;
     private final TestSuiteRunAttestationService attestations;
-    private final TestSuiteEvidenceAggregator aggregator = new TestSuiteEvidenceAggregator();
+    private final TestSuiteEvidenceAggregator aggregator;
+    private final TestSuiteRunEvidenceProtocolCodec evidenceCodec;
     private final Duration retention;
 
     /**
@@ -122,6 +129,8 @@ public final class TestSuiteExecutionService {
         this.securityEvents = Objects.requireNonNull(securityEvents, "securityEvents");
         this.leaseCoordinator = Objects.requireNonNull(leaseCoordinator, "leaseCoordinator");
         this.attestations = Objects.requireNonNull(attestations, "attestations");
+        this.aggregator = new TestSuiteEvidenceAggregator(objectMapper);
+        this.evidenceCodec = new TestSuiteRunEvidenceProtocolCodec(objectMapper);
         this.retention = retention == null || retention.isNegative() || retention.isZero()
                 ? Duration.ofDays(30) : retention;
     }
@@ -157,9 +166,10 @@ public final class TestSuiteExecutionService {
         Instant startedAt = Instant.now();
         String suiteRunId = UUID.randomUUID().toString();
         List<TestSuiteEvidenceAggregator.CaseObservation> observations = pending(stored.suite());
-        TestSuiteRunEvidence running = evidence(stored, request, identity, suiteRunId, startedAt,
+        TestSuiteRunEvidenceProtocol running = evidence(stored, request, identity, suiteRunId, startedAt,
                 null, TestSuiteRunEvidence.Status.RUNNING, observations,
-                pendingCoverage(stored.suite()), pendingPromotion(stored.suite()), List.of());
+                pendingCoverage(stored.suite()), pendingSemanticCoverage(stored.suite()),
+                pendingPromotion(stored.suite()), List.of());
         TestSuiteRunAttestationService.SealResult initialSeal = attestations.seal(running,
                 requestFingerprint, List.of(), TestSuiteRunAttestation.Scope.CHECKPOINT);
         if (!initialSeal.verified()) {
@@ -289,7 +299,9 @@ public final class TestSuiteExecutionService {
         }
         BundleMaterial material = new BundleMaterial(TestSuiteEvidenceBundle.PayloadPolicy.OMITTED,
                 response.attestation(), response.evidence());
-        return new TestSuiteEvidenceBundle("", response.suiteRunId(),
+        String schemaVersion = response.evidence() instanceof TestSuiteRunEvidenceV2
+                ? TestSuiteEvidenceBundle.SCHEMA_VERSION_V2 : TestSuiteEvidenceBundle.SCHEMA_VERSION;
+        return new TestSuiteEvidenceBundle(schemaVersion, response.suiteRunId(),
                 ProtocolFingerprint.of(objectMapper, material), material.payloadPolicy(),
                 material.attestation(), material.evidence());
     }
@@ -297,7 +309,7 @@ public final class TestSuiteExecutionService {
     private TestSuiteEvidenceAggregator.CaseObservation executeCase(
             StoredTestSuite stored, TestSuiteExecutionRequest request, String suiteRunId,
             TestSuite.TestCase testCase, IntegrationRequestContext identity) {
-        TestSuite suite = stored.suite();
+        TestSuiteProtocol suite = stored.suite();
         TestExecutionApiRequest.FixtureBundleRef fixtureRef = new TestExecutionApiRequest.FixtureBundleRef(
                 testCase.fixtureBundleRef().fixtureBundleId(), testCase.fixtureBundleRef().revision(),
                 testCase.fixtureBundleRef().fingerprint());
@@ -336,7 +348,7 @@ public final class TestSuiteExecutionService {
     }
 
     private TestSuiteEvidenceAggregator.CaseObservation childObservation(
-            TestSuite suite, TestSuite.TestCase testCase, TestExecutionApiResponse child) {
+            TestSuiteProtocol suite, TestSuite.TestCase testCase, TestExecutionApiResponse child) {
         if (!validChildIdentity(suite, testCase, child)) {
             return new TestSuiteEvidenceAggregator.CaseObservation(new TestSuiteRunEvidence.CaseResult(
                     testCase.caseId(), testCase.caseType(), testCase.fixtureBundleRef(),
@@ -368,7 +380,7 @@ public final class TestSuiteExecutionService {
                 diagnostic), evidence);
     }
 
-    private static boolean validChildIdentity(TestSuite suite, TestSuite.TestCase testCase,
+    private static boolean validChildIdentity(TestSuiteProtocol suite, TestSuite.TestCase testCase,
                                               TestExecutionApiResponse child) {
         if (child == null || child.evidence() == null || child.target() == null
                 || child.fixtureBundleRef() == null || child.runId().isBlank()
@@ -387,7 +399,8 @@ public final class TestSuiteExecutionService {
                 && expectedFixture.fingerprint().equals(child.evidence().fixtureBundleFingerprint());
     }
 
-    private TargetPreflight currentTarget(TestSuite suite, IntegrationRequestContext identity) {
+    private TargetPreflight currentTarget(TestSuiteProtocol suite,
+                                          IntegrationRequestContext identity) {
         if ("GRAPH".equals(suite.target().kind())) {
             TestGraphTargetDescriptor descriptor = executions.describeGraphTarget(suite.target().id(), identity);
             return new TargetPreflight(descriptor.target().fingerprint(),
@@ -421,9 +434,9 @@ public final class TestSuiteExecutionService {
             TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
         TestSuiteEvidenceAggregator.Aggregate aggregate = aggregator.aggregate(
                 stored.suite(), observations, targetState);
-        TestSuiteRunEvidence terminal = evidence(stored, request, identity, record.suiteRunId(),
+        TestSuiteRunEvidenceProtocol terminal = evidence(stored, request, identity, record.suiteRunId(),
                 record.createdAt(), Instant.now(), aggregate.status(), observations,
-                aggregate.coverage(), aggregate.promotion(), diagnostics);
+                aggregate.coverage(), aggregate.semanticCoverage(), aggregate.promotion(), diagnostics);
         TestSuiteRunRecord completed = terminalRecord(record, terminal, observations);
         try {
             return response(updateOwned(completed, lease));
@@ -440,9 +453,10 @@ public final class TestSuiteExecutionService {
             TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
         TestSuiteEvidenceAggregator.Aggregate aggregate = aggregator.aggregate(
                 stored.suite(), observations, targetState);
-        TestSuiteRunEvidence incomplete = evidence(stored, request, identity, record.suiteRunId(),
+        TestSuiteRunEvidenceProtocol incomplete = evidence(stored, request, identity, record.suiteRunId(),
                 record.createdAt(), Instant.now(), TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE,
-                observations, aggregate.coverage(), aggregate.promotion(), List.of(diagnostic));
+                observations, aggregate.coverage(), aggregate.semanticCoverage(), aggregate.promotion(),
+                List.of(diagnostic));
         TestSuiteRunRecord completed = terminalRecord(record, incomplete, observations);
         try {
             updateOwned(completed, lease);
@@ -455,7 +469,7 @@ public final class TestSuiteExecutionService {
     private TestSuiteExecutionResponse persistIncompleteBestEffort(
             TestSuiteRunRecord record, String diagnostic,
             TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
-        TestSuiteRunEvidence incomplete = failClosed(record.evidence(), diagnostic);
+        TestSuiteRunEvidenceProtocol incomplete = failClosed(record.evidence(), diagnostic);
         TestSuiteRunRecord failed = terminalRecordFromChildren(record, incomplete,
                 record.attestation().childEvidenceRefs());
         try {
@@ -470,9 +484,10 @@ public final class TestSuiteExecutionService {
                             TestSuiteExecutionRequest request, IntegrationRequestContext identity,
                             List<TestSuiteEvidenceAggregator.CaseObservation> observations,
                             TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
-        TestSuiteRunEvidence running = evidence(stored, request, identity, record.suiteRunId(),
+        TestSuiteRunEvidenceProtocol running = evidence(stored, request, identity, record.suiteRunId(),
                 record.createdAt(), null, TestSuiteRunEvidence.Status.RUNNING, observations,
-                pendingCoverage(stored.suite()), pendingPromotion(stored.suite()), List.of());
+                pendingCoverage(stored.suite()), pendingSemanticCoverage(stored.suite()),
+                pendingPromotion(stored.suite()), List.of());
         TestSuiteRunAttestationService.SealResult seal = attestations.seal(running,
                 record.requestFingerprint(), childRefs(observations),
                 TestSuiteRunAttestation.Scope.CHECKPOINT);
@@ -488,11 +503,12 @@ public final class TestSuiteExecutionService {
         return runRepository.update(record, lease.renewal(), observedAt);
     }
 
-    private TestSuiteRunEvidence evidence(
+    private TestSuiteRunEvidenceProtocol evidence(
             StoredTestSuite stored, TestSuiteExecutionRequest request, IntegrationRequestContext identity,
             String suiteRunId, Instant startedAt, Instant completedAt, TestSuiteRunEvidence.Status status,
             List<TestSuiteEvidenceAggregator.CaseObservation> observations,
             TestSuiteRunEvidence.CoverageVerdict coverage,
+            SemanticCoverageVerdict semanticCoverage,
             TestSuiteRunEvidence.PromotionVerdict promotion, List<String> diagnostics) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("tenantId", identity.tenantId());
@@ -504,13 +520,19 @@ public final class TestSuiteExecutionService {
         metadata.put("strategy", request.strategy().name());
         metadata.put("requestMetadataFingerprint", ProtocolFingerprint.of(objectMapper,
                 request.metadata()));
+        List<TestSuiteRunEvidence.CaseResult> results = observations.stream()
+                .map(TestSuiteEvidenceAggregator.CaseObservation::result).toList();
+        if (stored.suite() instanceof TestSuiteV2) {
+            return new TestSuiteRunEvidenceV2("", suiteRunId, request.clientRequestId(), status,
+                    AUTHORIZED_PURPOSE, request.suiteRef(), stored.suite().target(), startedAt,
+                    completedAt, results, coverage, semanticCoverage, promotion, diagnostics, metadata);
+        }
         return new TestSuiteRunEvidence("", suiteRunId, request.clientRequestId(), status,
-                AUTHORIZED_PURPOSE, request.suiteRef(), stored.suite().target(), startedAt, completedAt,
-                observations.stream().map(TestSuiteEvidenceAggregator.CaseObservation::result).toList(),
-                coverage, promotion, diagnostics, metadata);
+                AUTHORIZED_PURPOSE, request.suiteRef(), stored.suite().target(), startedAt,
+                completedAt, results, coverage, promotion, diagnostics, metadata);
     }
 
-    private static List<TestSuiteEvidenceAggregator.CaseObservation> pending(TestSuite suite) {
+    private static List<TestSuiteEvidenceAggregator.CaseObservation> pending(TestSuiteProtocol suite) {
         List<TestSuiteEvidenceAggregator.CaseObservation> observations = new ArrayList<>();
         for (TestSuite.TestCase testCase : suite.cases()) {
             observations.add(new TestSuiteEvidenceAggregator.CaseObservation(
@@ -521,7 +543,7 @@ public final class TestSuiteExecutionService {
         return observations;
     }
 
-    private static TestSuiteRunEvidence.CoverageVerdict pendingCoverage(TestSuite suite) {
+    private static TestSuiteRunEvidence.CoverageVerdict pendingCoverage(TestSuiteProtocol suite) {
         TestSuite.CoveragePolicy policy = suite.coveragePolicy();
         return new TestSuiteRunEvidence.CoverageVerdict(
                 TestSuiteRunEvidence.CoverageStatus.NOT_EVALUATED, policy.minimumCases(), 0,
@@ -531,14 +553,21 @@ public final class TestSuiteExecutionService {
                 policy.minimumAssertionsPerCase(), List.of(), List.of(), false);
     }
 
-    private static TestSuiteRunEvidence.PromotionVerdict pendingPromotion(TestSuite suite) {
+    private static SemanticCoverageVerdict pendingSemanticCoverage(TestSuiteProtocol suite) {
+        return suite instanceof TestSuiteV2 v2
+                ? SemanticCoverageVerdict.notEvaluated(v2.semanticCoveragePolicy().requirements())
+                : SemanticCoverageVerdict.notEvaluated(List.of());
+    }
+
+    private static TestSuiteRunEvidence.PromotionVerdict pendingPromotion(TestSuiteProtocol suite) {
         return new TestSuiteRunEvidence.PromotionVerdict(
                 TestSuiteRunEvidence.PromotionStatus.NOT_EVALUATED, List.of(), false, 0,
                 suite.promotionPolicy().minimumCertifiableCases(), false, false, false);
     }
 
     private static void markRemaining(List<TestSuiteEvidenceAggregator.CaseObservation> observations,
-                                      TestSuite suite, int fromIndex, String code, String diagnostic) {
+                                      TestSuiteProtocol suite, int fromIndex, String code,
+                                      String diagnostic) {
         for (int index = fromIndex; index < suite.cases().size(); index++) {
             TestSuite.TestCase testCase = suite.cases().get(index);
             observations.set(index, new TestSuiteEvidenceAggregator.CaseObservation(
@@ -561,7 +590,7 @@ public final class TestSuiteExecutionService {
                 "caseType", testCase.caseType().name());
     }
 
-    private static TestExecutionApiRequest.Target target(TestSuite suite) {
+    private static TestExecutionApiRequest.Target target(TestSuiteProtocol suite) {
         return new TestExecutionApiRequest.Target(suite.target().kind(), suite.target().id(),
                 suite.target().fingerprint());
     }
@@ -589,15 +618,15 @@ public final class TestSuiteExecutionService {
     }
 
     private TestSuiteRunRecord terminalRecord(
-            TestSuiteRunRecord record, TestSuiteRunEvidence evidence,
+            TestSuiteRunRecord record, TestSuiteRunEvidenceProtocol evidence,
             List<TestSuiteEvidenceAggregator.CaseObservation> observations) {
         return terminalRecordFromChildren(record, evidence, childRefs(observations));
     }
 
     private TestSuiteRunRecord terminalRecordFromChildren(
-            TestSuiteRunRecord record, TestSuiteRunEvidence evidence,
+            TestSuiteRunRecord record, TestSuiteRunEvidenceProtocol evidence,
             List<TestSuiteRunAttestation.ChildEvidenceRef> children) {
-        TestSuiteRunEvidence safeEvidence = evidence;
+        TestSuiteRunEvidenceProtocol safeEvidence = evidence;
         TestSuiteRunAttestationService.SealResult seal = attestations.seal(safeEvidence,
                 record.requestFingerprint(), children, TestSuiteRunAttestation.Scope.TERMINAL);
         if (!seal.verified()) {
@@ -605,12 +634,12 @@ public final class TestSuiteExecutionService {
             seal = attestations.seal(safeEvidence, record.requestFingerprint(), children,
                     TestSuiteRunAttestation.Scope.TERMINAL);
         }
-        String fingerprint = ProtocolFingerprint.of(objectMapper, safeEvidence);
+        String fingerprint = evidenceCodec.fingerprint(safeEvidence);
         return withEvidence(record, safeEvidence, fingerprint, seal.attestation());
     }
 
-    private static TestSuiteRunEvidence failClosed(TestSuiteRunEvidence previous,
-                                                   String diagnostic) {
+    private static TestSuiteRunEvidenceProtocol failClosed(TestSuiteRunEvidenceProtocol previous,
+                                                           String diagnostic) {
         List<String> diagnostics = new ArrayList<>(previous.diagnostics());
         if (diagnostic != null && !diagnostic.isBlank() && !diagnostics.contains(diagnostic)) {
             diagnostics.add(diagnostic);
@@ -625,6 +654,18 @@ public final class TestSuiteExecutionService {
                 previous.promotion().minimumCertifiableCases(),
                 previous.promotion().targetCertificationEligible(),
                 previous.promotion().coverageSatisfied(), previous.promotion().allCasesCompleted());
+        if (previous instanceof TestSuiteRunEvidenceV2 v2) {
+            SemanticCoverageVerdict semantic = new SemanticCoverageVerdict(
+                    SemanticCoverageVerdict.Status.INCOMPLETE,
+                    v2.semanticCoverage().required(), v2.semanticCoverage().observed(),
+                    v2.semanticCoverage().missingRequirementIds(),
+                    v2.semanticCoverage().unavailable());
+            return new TestSuiteRunEvidenceV2("", previous.suiteRunId(), previous.clientRequestId(),
+                    TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE, previous.executionPurpose(),
+                    previous.suiteRef(), previous.target(), previous.startedAt(), previous.completedAt(),
+                    previous.caseResults(), previous.coverage(), semantic, blocked, diagnostics,
+                    previous.metadata());
+        }
         return new TestSuiteRunEvidence("", previous.suiteRunId(), previous.clientRequestId(),
                 TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE, previous.executionPurpose(),
                 previous.suiteRef(), previous.target(), previous.startedAt(), previous.completedAt(),
@@ -692,7 +733,7 @@ public final class TestSuiteExecutionService {
     }
 
     private static TestSuiteRunRecord withEvidence(
-            TestSuiteRunRecord record, TestSuiteRunEvidence evidence, String fingerprint,
+            TestSuiteRunRecord record, TestSuiteRunEvidenceProtocol evidence, String fingerprint,
             TestSuiteRunAttestation attestation) {
         return new TestSuiteRunRecord(record.suiteRunId(), record.clientRequestId(),
                 record.requestFingerprint(), record.tenantId(), record.organizationId(), record.projectId(),
@@ -702,7 +743,10 @@ public final class TestSuiteExecutionService {
     }
 
     private static TestSuiteExecutionResponse response(TestSuiteRunRecord record) {
-        return new TestSuiteExecutionResponse("", record.suiteRunId(),
+        String schemaVersion = record.evidence() instanceof TestSuiteRunEvidenceV2
+                ? TestSuiteExecutionResponse.SCHEMA_VERSION_V3
+                : TestSuiteExecutionResponse.SCHEMA_VERSION;
+        return new TestSuiteExecutionResponse(schemaVersion, record.suiteRunId(),
                 record.evidenceFingerprint(), record.evidence(), record.attestation());
     }
 
@@ -831,7 +875,7 @@ public final class TestSuiteExecutionService {
     private record BundleMaterial(
             TestSuiteEvidenceBundle.PayloadPolicy payloadPolicy,
             TestSuiteRunAttestation attestation,
-            TestSuiteRunEvidence evidence
+            TestSuiteRunEvidenceProtocol evidence
     ) {
     }
 }

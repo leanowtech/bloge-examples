@@ -3,8 +3,11 @@ package com.leanowtech.bloge.gateway.testing.evidence;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.domain.SemanticCoveragePolicy;
+import com.leanowtech.bloge.gateway.testing.domain.SemanticCoverageVerdict;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
@@ -115,6 +118,38 @@ class TestSuiteRunAttestationServiceTest {
                 .isEqualTo(TestSuiteRunAttestationService.SIGNER_UNAVAILABLE);
         assertThat(result.attestation().signatureStatus())
                 .isEqualTo(TestSuiteRunAttestation.SignatureStatus.VERIFICATION_UNAVAILABLE);
+    }
+
+    @Test
+    void semanticEvidenceUsesIndependentV2SignatureDomain() {
+        TestSuiteRunEvidence structural = evidence(TestSuiteRunEvidence.Status.PASSED, Map.of());
+        var requirement = new SemanticCoveragePolicy.RetryRequirement("retry",
+                SemanticCoveragePolicy.Kind.RETRY, "/root/remote#PRIMARY", 2);
+        TestSuiteRunEvidenceV2 semantic = new TestSuiteRunEvidenceV2("", structural.suiteRunId(),
+                structural.clientRequestId(), structural.status(), structural.executionPurpose(),
+                structural.suiteRef(), structural.target(), structural.startedAt(), structural.completedAt(),
+                structural.caseResults(), structural.coverage(), new SemanticCoverageVerdict(
+                SemanticCoverageVerdict.Status.SATISFIED, List.of(requirement), List.of(
+                new SemanticCoverageVerdict.Observation("retry", SemanticCoveragePolicy.Kind.RETRY,
+                        List.of("golden"))), List.of(), List.of()), structural.promotion(),
+                structural.diagnostics(), structural.metadata());
+
+        var seal = service.seal(semantic, REQUEST_FINGERPRINT, children(),
+                TestSuiteRunAttestation.Scope.TERMINAL);
+        TestSuiteRunAttestation downgradedDomain = new TestSuiteRunAttestation(
+                TestSuiteRunAttestation.SCHEMA_VERSION, seal.attestation().signatureStatus(),
+                seal.attestation().scope(), seal.attestation().suiteRunId(), seal.attestation().suiteRef(),
+                seal.attestation().requestFingerprint(), seal.attestation().aggregateEvidenceFingerprint(),
+                seal.attestation().childEvidenceRefs(), seal.attestation().signedAt(),
+                seal.attestation().keyId(), seal.attestation().algorithm(),
+                seal.attestation().signature(), true);
+
+        assertThat(seal.attestation().schemaVersion())
+                .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V2);
+        assertThat(service.verify(semantic, seal.attestation()))
+                .isEqualTo(TestSuiteRunAttestationService.Verification.VERIFIED);
+        assertThat(service.verify(semantic, downgradedDomain))
+                .isEqualTo(TestSuiteRunAttestationService.Verification.INVALID);
     }
 
     private static TestSuiteRunAttestation copy(

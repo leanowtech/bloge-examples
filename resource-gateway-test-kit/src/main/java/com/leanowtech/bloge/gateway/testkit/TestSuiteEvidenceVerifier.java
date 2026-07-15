@@ -151,6 +151,20 @@ public final class TestSuiteEvidenceVerifier {
             return result(Outcome.INVALID, "TERMINAL_ATTESTATION_REQUIRED",
                     bundle.suiteRunId(), attestation.keyId());
         }
+        boolean v2 = TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V2.equals(
+                bundle.evidence().path("schemaVersion").asText());
+        String expectedAttestationVersion = v2
+                ? TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V2
+                : TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V1;
+        String expectedBundleVersion = v2
+                ? TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V2
+                : TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V1;
+        if (!expectedAttestationVersion.equals(attestation.schemaVersion())
+                || !expectedBundleVersion.equals(
+                bundle.rawResponse().path("schemaVersion").asText())) {
+            return result(Outcome.INVALID, "EVIDENCE_GENERATION_MISMATCH",
+                    bundle.suiteRunId(), attestation.keyId());
+        }
         if (!key.keyId().equals(attestation.keyId())) {
             return result(Outcome.INVALID, "VERIFICATION_KEY_ID_MISMATCH",
                     bundle.suiteRunId(), attestation.keyId());
@@ -468,7 +482,7 @@ public final class TestSuiteEvidenceVerifier {
 
     private static ObjectNode signatureMaterial(TestSuiteRunAttestation value) {
         ObjectNode material = JSON.createObjectNode();
-        material.put("schemaVersion", TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V1);
+        material.put("schemaVersion", value.schemaVersion());
         material.put("scope", value.scope().name());
         material.put("suiteRunId", value.suiteRunId());
         ObjectNode suiteRef = material.putObject("suiteRef");

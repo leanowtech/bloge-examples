@@ -9,7 +9,8 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   and persisted child/aggregate-run lookup;
 - a fail-closed `FixtureBundleBuilder` for output-level and transport-level protocol fixtures,
   including one-based attempt/occurrence selectors;
-- a dependency-closed `TestSuiteBuilder` with exact target and fixture references;
+- a dependency-closed `TestSuiteBuilder` with exact target/fixture references and typed semantic
+  branch, decision, retry, fallback, timeout, and compensation requirements;
 - runtime validation against the packaged Draft 2020-12 schema plus request/response identity binding;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
 - typed v2 child-evidence integrity manifests with v1 migration compatibility;
@@ -151,6 +152,29 @@ JUnitXmlReportWriter.writeSuite(
         true);
 ```
 
+Calling any semantic requirement method emits `bloge.testSuite.v2`; builders without these methods
+remain on v1:
+
+```java
+TestSuiteBuilder semanticSuite = TestSuiteBuilder.graph(target)
+        .id("loan-semantic-regression")
+        .addCase("prime", TestSuiteBuilder.CaseType.GOLDEN,
+                Map.of("applicantId", "prime"), stored)
+        .requireBranchTransferred("approve-branch",
+                "/root/decision#PRIMARY", "/root/approve#PRIMARY")
+        .requireDecisionRule("prime-rule", "/root/decision#PRIMARY", "/rule", "PRIME")
+        .requireRetry("bureau-retry", "/root/bureau#PRIMARY", 2)
+        .requireTimeout("bureau-timeout", "/root/bureau#PRIMARY", "UPSTREAM_TIMEOUT");
+
+TestSuiteRevision storedSemanticSuite = client.registerSuite(
+        "loan-semantic-regression", semanticSuite.registrationRequest());
+TestSuiteRun semanticRun = client.executeSuite(
+        storedSemanticSuite.suiteId(), storedSemanticSuite.revision(),
+        storedSemanticSuite.fingerprint(), "pipeline-semantic-1",
+        ResourceGatewayTestClient.SuiteStrategy.COLLECT_ALL, Map.of());
+TestSuiteRun.SemanticCoverage semanticCoverage = semanticRun.requireSemanticCoverage();
+```
+
 Migrate the seven built-in graph suites into the same immutable registry without parsing raw maps:
 
 ```java
@@ -170,8 +194,10 @@ history.
 
 `TestSuiteRun` links each case to its child `runId`, exact fixture revision, evidence class,
 assertion counters, and stable diagnostic code. It intentionally excludes child inputs, outputs,
-and free-form diagnostics from its reportable projection. Current v2 responses also expose a signed
-`CHECKPOINT` or `TERMINAL` attestation; v1 responses remain readable but explicitly unsigned.
+and free-form diagnostics from its reportable projection. Structural v2 and semantic v3 responses
+expose a signed `CHECKPOINT` or `TERMINAL` attestation; v1 responses remain readable but explicitly
+unsigned. Semantic-aware consumers call `requireSemanticCoverage()` so historical v1 fails as
+`SEMANTIC_COVERAGE_UNAVAILABLE` rather than appearing empty and satisfied.
 `promotionEligible()` means only that the run satisfies the suite's policy and may be submitted to a
 later gate; it does not mean certified, approved, or published.
 
@@ -318,9 +344,10 @@ declared unmatched policy, which defaults to fail closed.
 - Exceptions and JUnit XML omit credentials, request bodies, node input/output,
   and problem `details`; use the run/correlation id for authorized diagnosis.
 - Unknown response protocol versions fail immediately.
-- Current v2 child runs require a structurally consistent versioned integrity manifest. Current v2
-  suite runs require a signed checkpoint or terminal attestation. Historical v1 suite responses are
-  accepted only as unsigned migration data and cannot be exported as trusted terminal bundles.
+- Current v2 child runs require a structurally consistent versioned integrity manifest. Structural
+  suite response v2 and semantic response v3 require generation-matched signed checkpoint or
+  terminal attestations. Historical v1 suite responses are accepted only as unsigned migration data
+  and cannot be exported as trusted terminal bundles.
 - Release-grade offline verification pins the signed atomic key-set fingerprint and reconstructs
   ACTIVE, retirement, disable, and prospective/retroactive revocation at evidence signing time.
   Exact-key lookup remains a migration/diagnostic path. Missing keys, pin mismatch, stale policy,

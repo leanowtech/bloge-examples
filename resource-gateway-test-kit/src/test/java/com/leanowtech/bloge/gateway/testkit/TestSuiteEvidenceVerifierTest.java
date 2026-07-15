@@ -97,6 +97,20 @@ class TestSuiteEvidenceVerifierTest {
     }
 
     @Test
+    void mixedEvidenceAttestationAndBundleGenerationsFailClosed() throws Exception {
+        Fixture fixture = fixture(List.of(child("golden", "child-run-1", CHILD)));
+        ObjectNode v2Evidence = (ObjectNode) fixture.bundle().evidence();
+        v2Evidence.put("schemaVersion", TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V2);
+        TestSuiteEvidenceBundle mixed = new TestSuiteEvidenceBundle(
+                fixture.bundle().suiteRunId(), fixture.bundle().bundleFingerprint(),
+                fixture.bundle().payloadPolicy(), fixture.bundle().attestation(), v2Evidence,
+                fixture.bundle().rawResponse());
+
+        assertThat(new TestSuiteEvidenceVerifier().verify(mixed, fixture.key()).reasonCode())
+                .isEqualTo("EVIDENCE_GENERATION_MISMATCH");
+    }
+
+    @Test
     void verifiesPinnedCompleteKeySetAndZeroDowntimeRotationOverlap() throws Exception {
         Fixture fixture = fixture(List.of(child("golden", "child-run-1", CHILD)));
         EvidenceVerificationKeySet keySet = keySet(fixture,

@@ -17,6 +17,10 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.SemanticCoveragePolicy;
+import com.leanowtech.bloge.gateway.testing.domain.SemanticCoverageVerdict;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
@@ -106,6 +110,80 @@ class TestRuntimePersistenceTest {
         assertThatThrownBy(() -> suites.create(conflict))
                 .isInstanceOf(TestSuiteConflictException.class)
                 .hasMessageContaining("different immutable content");
+    }
+
+    @Test
+    void semanticSuiteAndCheckpointRetainTheirConcreteV2Generations() {
+        String targetFingerprint = "sha256:" + "a".repeat(64);
+        String fixtureFingerprint = "sha256:" + "b".repeat(64);
+        var retry = new SemanticCoveragePolicy.RetryRequirement("retry",
+                SemanticCoveragePolicy.Kind.RETRY, "/root/remote#PRIMARY", 2);
+        TestSuite.FixtureBundleRef fixture = new TestSuite.FixtureBundleRef(
+                "fixture-v2", 1, fixtureFingerprint);
+        TestSuiteV2 suite = new TestSuiteV2("", "suite-v2", 1,
+                new TestSuite.Target("GRAPH", "graph-v2", targetFingerprint), "INTERNAL",
+                List.of(new TestSuite.TestCase("golden", TestSuite.CaseType.GOLDEN,
+                        Map.of(), fixture, List.of(), Map.of())), TestSuite.CoveragePolicy.defaults(),
+                new SemanticCoveragePolicy(List.of(retry)),
+                new TestSuite.PromotionPolicy(true, 1, true), Map.of());
+        StoredTestSuite storedSuite = new StoredTestSuite("", "tenant-a", "test", "suite-v2", 1,
+                "sha256:" + "c".repeat(64), suite, Instant.now(), "runner");
+        suites.create(storedSuite);
+
+        Instant now = Instant.parse("2026-07-16T08:00:00Z");
+        TestSuiteExecutionRequest.SuiteRef suiteRef = new TestSuiteExecutionRequest.SuiteRef(
+                "suite-v2", 1, storedSuite.fingerprint());
+        TestSuiteRunEvidenceV2 evidence = new TestSuiteRunEvidenceV2("", "suite-run-v2", "request-v2",
+                TestSuiteRunEvidence.Status.RUNNING, "TEST_SUITE_EXECUTION", suiteRef, suite.target(),
+                now, null, List.of(), TestSuiteRunEvidence.CoverageVerdict.notEvaluated(),
+                SemanticCoverageVerdict.notEvaluated(List.of(retry)),
+                TestSuiteRunEvidence.PromotionVerdict.notEvaluated(), List.of(), Map.of());
+        String requestFingerprint = "sha256:" + "d".repeat(64);
+        var attestation = suiteAttestations.seal(evidence, requestFingerprint, List.of(),
+                com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.Scope.CHECKPOINT)
+                .attestation();
+        TestSuiteRunRecord record = new TestSuiteRunRecord("suite-run-v2", "request-v2",
+                requestFingerprint, "tenant-a", "org-a", "project-a", "test", "runner", "INTERNAL",
+                "", evidence, attestation, now, now.plusSeconds(3600));
+        var downgradedAttestation = new com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation(
+                com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.SCHEMA_VERSION,
+                attestation.signatureStatus(), attestation.scope(), attestation.suiteRunId(),
+                attestation.suiteRef(), attestation.requestFingerprint(),
+                attestation.aggregateEvidenceFingerprint(), attestation.childEvidenceRefs(),
+                attestation.signedAt(), attestation.keyId(), attestation.algorithm(),
+                attestation.signature(), true);
+        TestSuiteRunRecord mixedGeneration = new TestSuiteRunRecord(record.suiteRunId(),
+                record.clientRequestId(), record.requestFingerprint(), record.tenantId(),
+                record.organizationId(), record.projectId(), record.environmentId(), record.actorId(),
+                record.classification(), record.evidenceFingerprint(), record.evidence(),
+                downgradedAttestation, record.createdAt(), record.expiresAt());
+
+        assertThatThrownBy(() -> suiteRuns.create(mixedGeneration,
+                new TestSuiteRunLease("instance-a", now.plusSeconds(30))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("signed attestation");
+        TestSuiteRunEvidenceV2 mislabeledEvidence = new TestSuiteRunEvidenceV2(
+                TestSuiteRunEvidence.SCHEMA_VERSION, evidence.suiteRunId(), evidence.clientRequestId(),
+                evidence.status(), evidence.executionPurpose(), evidence.suiteRef(), evidence.target(),
+                evidence.startedAt(), evidence.completedAt(), evidence.caseResults(), evidence.coverage(),
+                evidence.semanticCoverage(), evidence.promotion(), evidence.diagnostics(), evidence.metadata());
+        TestSuiteRunRecord mislabeledGeneration = new TestSuiteRunRecord(record.suiteRunId(),
+                record.clientRequestId(), record.requestFingerprint(), record.tenantId(),
+                record.organizationId(), record.projectId(), record.environmentId(), record.actorId(),
+                record.classification(), record.evidenceFingerprint(), mislabeledEvidence,
+                record.attestation(), record.createdAt(), record.expiresAt());
+        assertThatThrownBy(() -> suiteRuns.create(mislabeledGeneration,
+                new TestSuiteRunLease("instance-a", now.plusSeconds(30))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("signed attestation");
+        suiteRuns.create(record, new TestSuiteRunLease("instance-a", now.plusSeconds(30)));
+
+        assertThat(suites.find("tenant-a", "test", "suite-v2", 1).orElseThrow().suite())
+                .isInstanceOf(TestSuiteV2.class).isEqualTo(suite);
+        TestSuiteRunRecord restored = suiteRuns.find("tenant-a", "test", "suite-run-v2").orElseThrow();
+        assertThat(restored.evidence()).isInstanceOf(TestSuiteRunEvidenceV2.class).isEqualTo(evidence);
+        assertThat(restored.attestation().schemaVersion())
+                .isEqualTo(com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.SCHEMA_VERSION_V2);
     }
 
     @Test

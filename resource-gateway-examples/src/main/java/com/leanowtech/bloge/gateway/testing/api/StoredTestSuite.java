@@ -1,6 +1,6 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
-import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteProtocol;
 
 import java.time.Instant;
 
@@ -24,7 +24,7 @@ public record StoredTestSuite(
         String suiteId,
         long revision,
         String fingerprint,
-        TestSuite suite,
+        TestSuiteProtocol suite,
         Instant createdAt,
         String createdBy
 ) {

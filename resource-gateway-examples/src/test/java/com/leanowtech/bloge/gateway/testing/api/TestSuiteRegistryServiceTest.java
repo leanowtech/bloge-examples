@@ -13,6 +13,8 @@ import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.domain.SemanticCoveragePolicy;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.BeforeEach;
@@ -205,6 +207,38 @@ class TestSuiteRegistryServiceTest {
                 identity("tenant-a", "test", "CONFIDENTIAL")),
                 "RG.TEST.SUITE_TARGET_NOT_CERTIFIABLE", 400);
         assertThat(suites.values).isEmpty();
+    }
+
+    @Test
+    void registersTypedSemanticV2AndRejectsAnEmptySemanticPolicy() {
+        TestSuite structural = suite("suite-v2", 1, "INTERNAL", targetFingerprint,
+                List.of(testCase("golden", TestSuite.CaseType.GOLDEN, internalFixture)),
+                TestSuite.CoveragePolicy.defaults());
+        TestSuiteV2 semantic = new TestSuiteV2("", structural.suiteId(), structural.revision(),
+                structural.target(), structural.classification(), structural.cases(),
+                structural.coveragePolicy(), new SemanticCoveragePolicy(List.of(
+                new SemanticCoveragePolicy.BranchRequirement("branch",
+                        SemanticCoveragePolicy.Kind.BRANCH_TRANSFERRED,
+                        "/root/input#PRIMARY", "/root/subject#PRIMARY"),
+                new SemanticCoveragePolicy.SiteRequirement("compensation",
+                        SemanticCoveragePolicy.Kind.COMPENSATION,
+                        "/root/refund#COMPENSATION", ""))),
+                structural.promotionPolicy(), structural.metadata());
+
+        StoredTestSuite stored = service.register("suite-v2",
+                new TestSuiteRegistrationRequest("", semantic),
+                identity("tenant-a", "test", "CONFIDENTIAL"));
+
+        assertThat(stored.suite()).isInstanceOf(TestSuiteV2.class);
+        assertThat(stored.fingerprint()).isEqualTo(ProtocolFingerprint.of(mapper, semantic));
+
+        TestSuiteV2 empty = new TestSuiteV2("", "suite-v2-empty", 1, structural.target(),
+                structural.classification(), structural.cases(), structural.coveragePolicy(),
+                SemanticCoveragePolicy.empty(), structural.promotionPolicy(), structural.metadata());
+        assertProblem(() -> service.register("suite-v2-empty",
+                new TestSuiteRegistrationRequest("", empty),
+                identity("tenant-a", "test", "CONFIDENTIAL")),
+                "RG.TEST.SUITE_SEMANTIC_POLICY_INVALID", 400);
     }
 
     private StoredFixtureBundle storeFixture(String id, String classification, long revision) {

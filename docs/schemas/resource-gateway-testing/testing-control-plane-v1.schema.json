@@ -368,6 +368,80 @@
         "requireTargetCertificationEligible": {"type": "boolean"}
       }
     },
+    "semanticBranchRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirementId", "kind", "fromInvocationSiteId", "toInvocationSiteId"],
+      "properties": {
+        "requirementId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "kind": {"enum": ["BRANCH_TRANSFERRED", "BRANCH_SKIPPED"]},
+        "fromInvocationSiteId": {"type": "string", "minLength": 1, "maxLength": 512},
+        "toInvocationSiteId": {"type": "string", "minLength": 1, "maxLength": 512}
+      }
+    },
+    "semanticDecisionRuleRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirementId", "kind", "invocationSiteId", "outputJsonPointer", "expectedScalar"],
+      "properties": {
+        "requirementId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "kind": {"const": "DECISION_RULE"},
+        "invocationSiteId": {"type": "string", "minLength": 1, "maxLength": 512},
+        "outputJsonPointer": {"type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^/"},
+        "expectedScalar": {"type": ["string", "number", "integer", "boolean", "null"]}
+      }
+    },
+    "semanticRetryRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirementId", "kind", "invocationSiteId", "minimumAttempts"],
+      "properties": {
+        "requirementId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "kind": {"const": "RETRY"},
+        "invocationSiteId": {"type": "string", "minLength": 1, "maxLength": 512},
+        "minimumAttempts": {"type": "integer", "minimum": 2, "maximum": 100000}
+      }
+    },
+    "semanticSiteRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"enum": ["FALLBACK", "COMPENSATION"]}}},
+          "then": {"properties": {"errorCode": {"const": ""}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "COMPENSATION"}}},
+          "then": {"properties": {"invocationSiteId": {"pattern": "#COMPENSATION$"}}}
+        }
+      ],
+      "required": ["requirementId", "kind", "invocationSiteId", "errorCode"],
+      "properties": {
+        "requirementId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "kind": {"enum": ["FALLBACK", "TIMEOUT", "COMPENSATION"]},
+        "invocationSiteId": {"type": "string", "minLength": 1, "maxLength": 512},
+        "errorCode": {"type": "string", "maxLength": 255, "pattern": "^$|^[A-Z][A-Z0-9_.-]{0,254}$"}
+      }
+    },
+    "semanticRequirement": {
+      "oneOf": [
+        {"$ref": "#/$defs/semanticBranchRequirement"},
+        {"$ref": "#/$defs/semanticDecisionRuleRequirement"},
+        {"$ref": "#/$defs/semanticRetryRequirement"},
+        {"$ref": "#/$defs/semanticSiteRequirement"}
+      ]
+    },
+    "semanticCoveragePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirements"],
+      "properties": {
+        "requirements": {
+          "type": "array", "minItems": 1, "maxItems": 1000,
+          "items": {"$ref": "#/$defs/semanticRequirement"}
+        }
+      }
+    },
     "testSuite": {
       "type": "object",
       "additionalProperties": false,
@@ -388,13 +462,40 @@
         "metadata": {"type": "object", "maxProperties": 100}
       }
     },
+    "testSuiteV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteId", "revision", "target", "classification", "cases",
+        "coveragePolicy", "semanticCoveragePolicy", "promotionPolicy", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuite.v2"},
+        "suiteId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "revision": {"type": "integer", "minimum": 1},
+        "target": {"$ref": "#/$defs/exactTarget"},
+        "classification": {"enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]},
+        "cases": {
+          "type": "array", "minItems": 1, "maxItems": 100,
+          "items": {"$ref": "#/$defs/testSuiteCase"}
+        },
+        "coveragePolicy": {"$ref": "#/$defs/testSuiteCoveragePolicy"},
+        "semanticCoveragePolicy": {"$ref": "#/$defs/semanticCoveragePolicy"},
+        "promotionPolicy": {"$ref": "#/$defs/testSuitePromotionPolicy"},
+        "metadata": {"type": "object", "maxProperties": 100}
+      }
+    },
+    "testSuiteProtocol": {
+      "oneOf": [
+        {"$ref": "#/$defs/testSuite"},
+        {"$ref": "#/$defs/testSuiteV2"}
+      ]
+    },
     "testSuiteRegistrationRequest": {
       "type": "object",
       "additionalProperties": false,
       "required": ["schemaVersion", "testSuite"],
       "properties": {
         "schemaVersion": {"const": "bloge.testSuiteRegistrationRequest.v1"},
-        "testSuite": {"$ref": "#/$defs/testSuite"}
+        "testSuite": {"$ref": "#/$defs/testSuiteProtocol"}
       }
     },
     "storedTestSuite": {
@@ -409,7 +510,7 @@
         "suiteId": {"type": "string", "minLength": 1, "maxLength": 255},
         "revision": {"type": "integer", "minimum": 1},
         "fingerprint": {"$ref": "#/$defs/fingerprint"},
-        "suite": {"$ref": "#/$defs/testSuite"},
+        "suite": {"$ref": "#/$defs/testSuiteProtocol"},
         "createdAt": {"type": "string", "format": "date-time"},
         "createdBy": {"type": "string", "minLength": 1}
       }
@@ -636,6 +737,68 @@
         "metadata": {"type": "object"}
       }
     },
+    "semanticCoverageObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirementId", "kind", "caseIds"],
+      "properties": {
+        "requirementId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "kind": {"enum": ["BRANCH_TRANSFERRED", "BRANCH_SKIPPED", "DECISION_RULE", "RETRY",
+          "FALLBACK", "TIMEOUT", "COMPENSATION"]},
+        "caseIds": {"type": "array", "minItems": 1, "maxItems": 100, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}}
+      }
+    },
+    "semanticCoverageUnavailable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirementId", "reasonCode"],
+      "properties": {
+        "requirementId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "reasonCode": {"type": "string", "pattern": "^[A-Z][A-Z0-9_.-]{0,254}$"}
+      }
+    },
+    "semanticCoverageVerdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "required", "observed", "missingRequirementIds", "unavailable"],
+      "properties": {
+        "status": {"enum": ["NOT_EVALUATED", "SATISFIED", "UNSATISFIED", "INCOMPLETE"]},
+        "required": {"type": "array", "minItems": 1, "maxItems": 1000,
+          "items": {"$ref": "#/$defs/semanticRequirement"}},
+        "observed": {"type": "array", "maxItems": 1000,
+          "items": {"$ref": "#/$defs/semanticCoverageObservation"}},
+        "missingRequirementIds": {"type": "array", "maxItems": 1000, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}},
+        "unavailable": {"type": "array", "maxItems": 1000,
+          "items": {"$ref": "#/$defs/semanticCoverageUnavailable"}}
+      }
+    },
+    "testSuiteRunEvidenceV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteRunId", "clientRequestId", "status",
+        "executionPurpose", "suiteRef", "target", "startedAt", "completedAt", "caseResults",
+        "coverage", "semanticCoverage", "promotion", "diagnostics", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteRunEvidence.v2"},
+        "suiteRunId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "clientRequestId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "status": {"enum": ["RUNNING", "PASSED", "COMPLETED_WITH_FAILURES", "PARTIAL", "EVIDENCE_INCOMPLETE"]},
+        "executionPurpose": {"const": "TEST_SUITE_EXECUTION"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "target": {"$ref": "#/$defs/exactTarget"},
+        "startedAt": {"type": "string", "format": "date-time"},
+        "completedAt": {"type": ["string", "null"], "format": "date-time"},
+        "caseResults": {"type": "array", "minItems": 1, "maxItems": 100,
+          "items": {"$ref": "#/$defs/testSuiteCaseResult"}},
+        "coverage": {"$ref": "#/$defs/testSuiteCoverageVerdict"},
+        "semanticCoverage": {"$ref": "#/$defs/semanticCoverageVerdict"},
+        "promotion": {"$ref": "#/$defs/testSuitePromotionVerdict"},
+        "diagnostics": {"type": "array", "items": {"type": "string", "maxLength": 512}},
+        "metadata": {"type": "object"}
+      }
+    },
     "testSuiteRunAttestationChild": {
       "type": "object",
       "additionalProperties": false,
@@ -654,6 +817,33 @@
         "keyId", "algorithm", "signature", "independentlyVerifiable"],
       "properties": {
         "schemaVersion": {"const": "bloge.testSuiteRunAttestation.v1"},
+        "signatureStatus": {"enum": ["VERIFIED", "UNSIGNED", "VERIFICATION_UNAVAILABLE"]},
+        "scope": {"enum": ["CHECKPOINT", "TERMINAL"]},
+        "suiteRunId": {"type": "string", "maxLength": 255},
+        "suiteRef": {"oneOf": [{"$ref": "#/$defs/testSuiteRef"}, {"type": "null"}]},
+        "requestFingerprint": {"oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]},
+        "aggregateEvidenceFingerprint": {
+          "oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]
+        },
+        "childEvidenceRefs": {
+          "type": "array", "maxItems": 100,
+          "items": {"$ref": "#/$defs/testSuiteRunAttestationChild"}
+        },
+        "signedAt": {"type": "string", "format": "date-time"},
+        "keyId": {"type": "string", "maxLength": 512},
+        "algorithm": {"type": "string", "maxLength": 128},
+        "signature": {"type": "string", "maxLength": 4096},
+        "independentlyVerifiable": {"type": "boolean"}
+      }
+    },
+    "testSuiteRunAttestationV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "signatureStatus", "scope", "suiteRunId", "suiteRef",
+        "requestFingerprint", "aggregateEvidenceFingerprint", "childEvidenceRefs", "signedAt",
+        "keyId", "algorithm", "signature", "independentlyVerifiable"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteRunAttestation.v2"},
         "signatureStatus": {"enum": ["VERIFIED", "UNSIGNED", "VERIFICATION_UNAVAILABLE"]},
         "scope": {"enum": ["CHECKPOINT", "TERMINAL"]},
         "suiteRunId": {"type": "string", "maxLength": 255},
@@ -696,13 +886,26 @@
         "attestation": {"$ref": "#/$defs/testSuiteRunAttestation"}
       }
     },
+    "testSuiteExecutionResponseV3": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteRunId", "evidenceFingerprint", "evidence", "attestation"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteExecutionResponse.v3"},
+        "suiteRunId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "evidenceFingerprint": {"oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]},
+        "evidence": {"$ref": "#/$defs/testSuiteRunEvidenceV2"},
+        "attestation": {"$ref": "#/$defs/testSuiteRunAttestationV2"}
+      }
+    },
     "testSuiteExecutionResponse": {
       "oneOf": [
         {"$ref": "#/$defs/testSuiteExecutionResponseV1"},
-        {"$ref": "#/$defs/testSuiteExecutionResponseV2"}
+        {"$ref": "#/$defs/testSuiteExecutionResponseV2"},
+        {"$ref": "#/$defs/testSuiteExecutionResponseV3"}
       ]
     },
-    "testSuiteEvidenceBundle": {
+    "testSuiteEvidenceBundleV1": {
       "type": "object",
       "additionalProperties": false,
       "required": ["schemaVersion", "suiteRunId", "bundleFingerprint", "payloadPolicy",
@@ -715,6 +918,26 @@
         "attestation": {"$ref": "#/$defs/testSuiteRunAttestation"},
         "evidence": {"$ref": "#/$defs/testSuiteRunEvidence"}
       }
+    },
+    "testSuiteEvidenceBundleV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteRunId", "bundleFingerprint", "payloadPolicy",
+        "attestation", "evidence"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteEvidenceBundle.v2"},
+        "suiteRunId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "bundleFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "payloadPolicy": {"const": "OMITTED"},
+        "attestation": {"$ref": "#/$defs/testSuiteRunAttestationV2"},
+        "evidence": {"$ref": "#/$defs/testSuiteRunEvidenceV2"}
+      }
+    },
+    "testSuiteEvidenceBundle": {
+      "oneOf": [
+        {"$ref": "#/$defs/testSuiteEvidenceBundleV1"},
+        {"$ref": "#/$defs/testSuiteEvidenceBundleV2"}
+      ]
     },
     "testExecutionRequest": {
       "type": "object",

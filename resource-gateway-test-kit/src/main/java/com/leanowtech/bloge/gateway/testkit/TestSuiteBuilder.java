@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Fail-closed builder for one immutable {@code bloge.testSuite.v1} registration request.
+ * Fail-closed builder for an immutable v1 or semantic v2 suite registration request.
  *
  * <p>The builder accepts only exact stored fixture revisions and a discovered target fingerprint.
  * Its conservative defaults require every case to pass, every case to be certifiable, at least one
@@ -55,6 +55,7 @@ public final class TestSuiteBuilder {
     private final LinkedHashSet<CaseType> requiredCaseTypes = new LinkedHashSet<>();
     private final LinkedHashSet<String> requiredInvocationSites = new LinkedHashSet<>();
     private final List<EdgeTransfer> requiredEdgeTransfers = new ArrayList<>();
+    private final List<SemanticRequirement> semanticRequirements = new ArrayList<>();
     private String suiteId = "";
     private long revision = 1;
     private Classification classification = Classification.INTERNAL;
@@ -238,6 +239,128 @@ public final class TestSuiteBuilder {
     }
 
     /**
+     * Adds a requirement that one addressed branch edge transfers a value.
+     *
+     * @param requirementId stable suite-local requirement identity
+     * @param from source invocation site
+     * @param to destination invocation site
+     * @return this builder
+     */
+    public TestSuiteBuilder requireBranchTransferred(String requirementId, String from, String to) {
+        return addSemantic(new SemanticRequirement(required(requirementId, "requirementId", 255),
+                "BRANCH_TRANSFERRED", required(from, "fromInvocationSiteId", 512),
+                required(to, "toInvocationSiteId", 512), "", null, 0, ""));
+    }
+
+    /**
+     * Adds a requirement that one addressed conditional branch is skipped.
+     *
+     * @param requirementId stable suite-local requirement identity
+     * @param from source invocation site
+     * @param to skipped destination invocation site
+     * @return this builder
+     */
+    public TestSuiteBuilder requireBranchSkipped(String requirementId, String from, String to) {
+        return addSemantic(new SemanticRequirement(required(requirementId, "requirementId", 255),
+                "BRANCH_SKIPPED", required(from, "fromInvocationSiteId", 512),
+                required(to, "toInvocationSiteId", 512), "", null, 0, ""));
+    }
+
+    /**
+     * Requires a scalar decision result at a sanitized node-output JSON Pointer.
+     *
+     * @param requirementId stable suite-local requirement identity
+     * @param invocationSiteId structural decision invocation site
+     * @param outputJsonPointer RFC 6901 pointer into sanitized node output
+     * @param expectedScalar expected string, number, boolean, or null
+     * @return this builder
+     */
+    public TestSuiteBuilder requireDecisionRule(String requirementId, String invocationSiteId,
+                                                String outputJsonPointer, Object expectedScalar) {
+        String pointer = required(outputJsonPointer, "outputJsonPointer", 1024);
+        JsonNode expected = snapshot(expectedScalar);
+        if (!pointer.startsWith("/") || !expected.isValueNode()) {
+            throw new IllegalArgumentException(
+                    "Decision semantic coverage requires a JSON Pointer and scalar expectation");
+        }
+        return addSemantic(new SemanticRequirement(required(requirementId, "requirementId", 255),
+                "DECISION_RULE", required(invocationSiteId, "invocationSiteId", 512), "",
+                pointer, expected, 0, ""));
+    }
+
+    /**
+     * Adds a requirement for at least two delegate attempts at one addressed site.
+     *
+     * @param requirementId stable suite-local requirement identity
+     * @param invocationSiteId structural retried invocation site
+     * @param minimumAttempts required attempt count from 2 through 100000
+     * @return this builder
+     */
+    public TestSuiteBuilder requireRetry(String requirementId, String invocationSiteId,
+                                         int minimumAttempts) {
+        if (minimumAttempts < 2 || minimumAttempts > 100_000) {
+            throw new IllegalArgumentException("minimumAttempts must be between 2 and 100000");
+        }
+        return addSemantic(siteRequirement(requirementId, "RETRY", invocationSiteId,
+                minimumAttempts, ""));
+    }
+
+    /**
+     * Adds a requirement that engine fallback completes at one addressed site.
+     *
+     * @param requirementId stable suite-local requirement identity
+     * @param invocationSiteId structural fallback invocation site
+     * @return this builder
+     */
+    public TestSuiteBuilder requireFallback(String requirementId, String invocationSiteId) {
+        return addSemantic(siteRequirement(requirementId, "FALLBACK", invocationSiteId, 0, ""));
+    }
+
+    /**
+     * Adds a requirement for any timeout at one addressed site.
+     *
+     * @param requirementId stable suite-local requirement identity
+     * @param invocationSiteId structural timed invocation site
+     * @return this builder
+     */
+    public TestSuiteBuilder requireTimeout(String requirementId, String invocationSiteId) {
+        return requireTimeout(requirementId, invocationSiteId, "");
+    }
+
+    /**
+     * Adds a requirement for a timeout with an optional stable error code.
+     *
+     * @param requirementId stable suite-local requirement identity
+     * @param invocationSiteId structural timed invocation site
+     * @param errorCode optional stable timeout machine code
+     * @return this builder
+     */
+    public TestSuiteBuilder requireTimeout(String requirementId, String invocationSiteId,
+                                           String errorCode) {
+        String code = errorCode == null ? "" : errorCode.trim();
+        if (!code.isBlank() && !code.matches("[A-Z][A-Z0-9_.-]{0,254}")) {
+            throw new IllegalArgumentException("errorCode must be a stable machine code");
+        }
+        return addSemantic(siteRequirement(requirementId, "TIMEOUT", invocationSiteId, 0, code));
+    }
+
+    /**
+     * Adds a requirement that an addressed compensation invocation executes.
+     *
+     * @param requirementId stable suite-local requirement identity
+     * @param invocationSiteId structural site ending in {@code #COMPENSATION}
+     * @return this builder
+     */
+    public TestSuiteBuilder requireCompensation(String requirementId, String invocationSiteId) {
+        String site = required(invocationSiteId, "invocationSiteId", 512);
+        if (!site.endsWith("#COMPENSATION")) {
+            throw new IllegalArgumentException(
+                    "Compensation requirements must address a #COMPENSATION invocation site");
+        }
+        return addSemantic(siteRequirement(requirementId, "COMPENSATION", site, 0, ""));
+    }
+
+    /**
      * Sets the minimum evaluated assertion count for every case.
      *
      * @param value minimum evaluated assertions for every case
@@ -333,7 +456,8 @@ public final class TestSuiteBuilder {
         ObjectNode request = JSON.createObjectNode();
         request.put("schemaVersion", TestingProtocol.TEST_SUITE_REGISTRATION_REQUEST_V1);
         ObjectNode suite = request.putObject("testSuite");
-        suite.put("schemaVersion", TestingProtocol.TEST_SUITE_V1);
+        suite.put("schemaVersion", semanticRequirements.isEmpty()
+                ? TestingProtocol.TEST_SUITE_V1 : TestingProtocol.TEST_SUITE_V2);
         suite.put("suiteId", suiteId);
         suite.put("revision", revision);
         ObjectNode target = suite.putObject("target");
@@ -372,6 +496,13 @@ public final class TestSuiteBuilder {
                 });
         coverage.put("minimumAssertionsPerCase", minimumAssertionsPerCase);
         coverage.put("requireAllFixtureRulesConsumed", requireAllFixtureRulesConsumed);
+        if (!semanticRequirements.isEmpty()) {
+            ArrayNode requirements = suite.putObject("semanticCoveragePolicy")
+                    .putArray("requirements");
+            semanticRequirements.stream()
+                    .sorted(java.util.Comparator.comparing(SemanticRequirement::requirementId))
+                    .forEach(value -> writeSemanticRequirement(requirements.addObject(), value));
+        }
         ObjectNode promotion = suite.putObject("promotionPolicy");
         promotion.put("requireAllCasesPassed", requireAllCasesPassed);
         promotion.put("minimumCertifiableCases", certifiableCases);
@@ -392,6 +523,52 @@ public final class TestSuiteBuilder {
         ArrayNode tags = output.putArray("tags");
         value.tags().forEach(tags::add);
         output.set("metadata", value.metadata().deepCopy());
+    }
+
+    private TestSuiteBuilder addSemantic(SemanticRequirement requirement) {
+        if (semanticRequirements.size() >= 1_000) {
+            throw new IllegalArgumentException("A suite may contain at most 1000 semantic requirements");
+        }
+        if (semanticRequirements.stream().anyMatch(existing ->
+                existing.requirementId().equals(requirement.requirementId()))) {
+            throw new IllegalArgumentException(
+                    "Duplicate semantic requirement id: " + requirement.requirementId());
+        }
+        semanticRequirements.add(requirement);
+        return this;
+    }
+
+    private static SemanticRequirement siteRequirement(String requirementId, String kind,
+                                                       String invocationSiteId,
+                                                       int minimumAttempts, String errorCode) {
+        return new SemanticRequirement(required(requirementId, "requirementId", 255), kind,
+                required(invocationSiteId, "invocationSiteId", 512), "", "", null,
+                minimumAttempts, errorCode);
+    }
+
+    private static void writeSemanticRequirement(ObjectNode output, SemanticRequirement value) {
+        output.put("requirementId", value.requirementId());
+        output.put("kind", value.kind());
+        switch (value.kind()) {
+            case "BRANCH_TRANSFERRED", "BRANCH_SKIPPED" -> {
+                output.put("fromInvocationSiteId", value.site());
+                output.put("toInvocationSiteId", value.toSite());
+            }
+            case "DECISION_RULE" -> {
+                output.put("invocationSiteId", value.site());
+                output.put("outputJsonPointer", value.outputJsonPointer());
+                output.set("expectedScalar", value.expectedScalar().deepCopy());
+            }
+            case "RETRY" -> {
+                output.put("invocationSiteId", value.site());
+                output.put("minimumAttempts", value.minimumAttempts());
+            }
+            case "FALLBACK", "TIMEOUT", "COMPENSATION" -> {
+                output.put("invocationSiteId", value.site());
+                output.put("errorCode", value.errorCode());
+            }
+            default -> throw new IllegalStateException("Unsupported semantic requirement kind");
+        }
     }
 
     private static List<String> normalizedTags(List<String> values) {
@@ -446,5 +623,11 @@ public final class TestSuiteBuilder {
     }
 
     private record EdgeTransfer(String from, String to) {
+    }
+
+    private record SemanticRequirement(String requirementId, String kind, String site,
+                                       String toSite, String outputJsonPointer,
+                                       JsonNode expectedScalar, int minimumAttempts,
+                                       String errorCode) {
     }
 }

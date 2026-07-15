@@ -1,11 +1,10 @@
 package com.leanowtech.bloge.gateway.testing.persistence;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.StoredTestSuite;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteConflictException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRepository;
-import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteProtocolCodec;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -19,12 +18,12 @@ import java.util.Optional;
 public final class DatabaseTestSuiteRepository implements TestSuiteRepository {
 
     private final JdbcTemplate jdbc;
-    private final ObjectMapper objectMapper;
+    private final TestSuiteProtocolCodec codec;
 
     /** Creates a suite repository over the independent test-runtime database. */
     public DatabaseTestSuiteRepository(JdbcTemplate jdbc, ObjectMapper objectMapper) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
-        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.codec = new TestSuiteProtocolCodec(Objects.requireNonNull(objectMapper, "objectMapper"));
     }
 
     /** Creates the additive suite table without changing fixture or run tables. */
@@ -61,7 +60,7 @@ public final class DatabaseTestSuiteRepository implements TestSuiteRepository {
                         suite_json, created_at, created_by
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """, suite.tenantId(), suite.environmentId(), suite.suiteId(), suite.revision(),
-                    suite.fingerprint(), write(suite.suite()), Timestamp.from(suite.createdAt()),
+                    suite.fingerprint(), codec.write(suite.suite()), Timestamp.from(suite.createdAt()),
                     suite.createdBy());
             return suite;
         } catch (DataIntegrityViolationException race) {
@@ -84,7 +83,7 @@ public final class DatabaseTestSuiteRepository implements TestSuiteRepository {
                         """, (rs, row) -> new StoredTestSuite("",
                         rs.getString("tenant_id"), rs.getString("environment_id"),
                         rs.getString("suite_id"), rs.getLong("revision"),
-                        rs.getString("fingerprint"), read(rs.getString("suite_json"), TestSuite.class),
+                        rs.getString("fingerprint"), codec.read(rs.getString("suite_json")),
                         rs.getTimestamp("created_at").toInstant(), rs.getString("created_by")),
                 tenantId, environmentId, suiteId, revision);
         return results.stream().findFirst();
@@ -108,19 +107,4 @@ public final class DatabaseTestSuiteRepository implements TestSuiteRepository {
         }
     }
 
-    private String write(Object value) {
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException failure) {
-            throw new IllegalStateException("Cannot serialize test suite", failure);
-        }
-    }
-
-    private <T> T read(String value, Class<T> type) {
-        try {
-            return objectMapper.readValue(value, type);
-        } catch (JsonProcessingException failure) {
-            throw new IllegalStateException("Stored test suite is corrupt", failure);
-        }
-    }
 }

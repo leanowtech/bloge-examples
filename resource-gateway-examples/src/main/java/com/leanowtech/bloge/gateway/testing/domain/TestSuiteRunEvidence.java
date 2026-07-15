@@ -48,7 +48,7 @@ public record TestSuiteRunEvidence(
         PromotionVerdict promotion,
         List<String> diagnostics,
         Map<String, Object> metadata
-) {
+) implements TestSuiteRunEvidenceProtocol {
     /** Current aggregate evidence protocol version. */
     public static final String SCHEMA_VERSION = "bloge.testSuiteRunEvidence.v1";
 

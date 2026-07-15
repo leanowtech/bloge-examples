@@ -37,6 +37,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("immutableTestSuiteRegistry", true)
                 .containsEntry("immutableTestSuiteExecution", true)
                 .containsEntry("suiteSemanticCoverageVerdict", true)
+                .containsEntry("typedSemanticCoverageV2", true)
                 .containsEntry("suitePromotionEligibilityVerdict", true)
                 .containsEntry("builtInGraphSuiteCatalogMaterialization", true)
                 .containsEntry("suiteRunOwnerLease", true)
@@ -54,7 +55,8 @@ class TestabilityCapabilitiesTest {
                         TestExecutionApiResponse.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteExecutionResponse"))
                 .containsExactly(TestSuiteExecutionResponse.SCHEMA_VERSION_V1,
-                        TestSuiteExecutionResponse.SCHEMA_VERSION);
+                        TestSuiteExecutionResponse.SCHEMA_VERSION,
+                        TestSuiteExecutionResponse.SCHEMA_VERSION_V3);
         assertThat(enabled.supportedObjects().get("effectiveExecutionPlan"))
                 .containsExactly(EffectiveExecutionPlan.SCHEMA_VERSION_V1,
                         EffectiveExecutionPlan.SCHEMA_VERSION);

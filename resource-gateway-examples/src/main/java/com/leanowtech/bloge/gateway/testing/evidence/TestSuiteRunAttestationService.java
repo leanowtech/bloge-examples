@@ -3,7 +3,8 @@ package com.leanowtech.bloge.gateway.testing.evidence;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
-import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceProtocol;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
 
@@ -28,6 +29,7 @@ public final class TestSuiteRunAttestationService {
     private final ObjectMapper objectMapper;
     private final VisualEvidenceSigner signer;
     private final Clock clock;
+    private final TestSuiteRunEvidenceProtocolCodec evidenceCodec;
 
     /**
      * Creates an attestation boundary using UTC system time.
@@ -45,6 +47,7 @@ public final class TestSuiteRunAttestationService {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.signer = signer == null ? VisualEvidenceSigner.unavailable() : signer;
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.evidenceCodec = new TestSuiteRunEvidenceProtocolCodec(objectMapper);
     }
 
     /**
@@ -56,23 +59,24 @@ public final class TestSuiteRunAttestationService {
      * @param scope checkpoint or terminal signature scope
      * @return verified attestation or a bounded fail-closed result
      */
-    public SealResult seal(TestSuiteRunEvidence evidence, String requestFingerprint,
+    public SealResult seal(TestSuiteRunEvidenceProtocol evidence, String requestFingerprint,
                            List<TestSuiteRunAttestation.ChildEvidenceRef> children,
                            TestSuiteRunAttestation.Scope scope) {
         Objects.requireNonNull(evidence, "evidence");
         Objects.requireNonNull(scope, "scope");
         List<TestSuiteRunAttestation.ChildEvidenceRef> safeChildren = immutable(children);
-        String aggregateFingerprint = ProtocolFingerprint.of(objectMapper, evidence);
+        String aggregateFingerprint = evidenceCodec.fingerprint(evidence);
         if (!signer.available()) {
             return SealResult.failed(TestSuiteRunAttestation.unavailable(scope, evidence,
                     requestFingerprint, aggregateFingerprint, safeChildren), SIGNER_UNAVAILABLE);
         }
         try {
             Instant signedAt = clock.instant();
-            String materialFingerprint = materialFingerprint(scope, evidence.suiteRunId(),
+            String schemaVersion = attestationVersion(evidence);
+            String materialFingerprint = materialFingerprint(schemaVersion, scope, evidence.suiteRunId(),
                     evidence.suiteRef(), requestFingerprint, aggregateFingerprint, safeChildren, signedAt);
             VisualRunEvidenceSeal seal = signer.seal(materialFingerprint);
-            TestSuiteRunAttestation attestation = new TestSuiteRunAttestation("",
+            TestSuiteRunAttestation attestation = new TestSuiteRunAttestation(schemaVersion,
                     TestSuiteRunAttestation.SignatureStatus.VERIFIED, scope, evidence.suiteRunId(),
                     evidence.suiteRef(), requestFingerprint, aggregateFingerprint, safeChildren,
                     signedAt, seal.keyId(), seal.algorithm(), seal.signature(), true);
@@ -94,7 +98,7 @@ public final class TestSuiteRunAttestationService {
      * @param attestation persisted signature manifest
      * @return bounded trust result
      */
-    public Verification verify(TestSuiteRunEvidence evidence,
+    public Verification verify(TestSuiteRunEvidenceProtocol evidence,
                                TestSuiteRunAttestation attestation) {
         if (evidence == null || attestation == null
                 || attestation.signatureStatus() == TestSuiteRunAttestation.SignatureStatus.UNSIGNED) {
@@ -104,7 +108,7 @@ public final class TestSuiteRunAttestationService {
                 == TestSuiteRunAttestation.SignatureStatus.VERIFICATION_UNAVAILABLE) {
             return Verification.UNAVAILABLE;
         }
-        if (!TestSuiteRunAttestation.SCHEMA_VERSION.equals(attestation.schemaVersion())
+        if (!attestationVersion(evidence).equals(attestation.schemaVersion())
                 || !attestation.independentlyVerifiable()
                 || !evidence.suiteRunId().equals(attestation.suiteRunId())
                 || !Objects.equals(evidence.suiteRef(), attestation.suiteRef())) {
@@ -112,7 +116,7 @@ public final class TestSuiteRunAttestationService {
         }
         String aggregateFingerprint;
         try {
-            aggregateFingerprint = ProtocolFingerprint.of(objectMapper, evidence);
+            aggregateFingerprint = evidenceCodec.fingerprint(evidence);
         } catch (RuntimeException failure) {
             return Verification.INVALID;
         }
@@ -134,7 +138,8 @@ public final class TestSuiteRunAttestationService {
                     || !List.of("ACTIVE", "RETIRED").contains(key.state())) {
                 return Verification.INVALID;
             }
-            String materialFingerprint = materialFingerprint(attestation.scope(),
+            String materialFingerprint = materialFingerprint(attestation.schemaVersion(),
+                    attestation.scope(),
                     attestation.suiteRunId(), attestation.suiteRef(),
                     attestation.requestFingerprint(), attestation.aggregateEvidenceFingerprint(),
                     attestation.childEvidenceRefs(), attestation.signedAt());
@@ -152,13 +157,19 @@ public final class TestSuiteRunAttestationService {
     }
 
     private String materialFingerprint(
-            TestSuiteRunAttestation.Scope scope, String suiteRunId,
+            String schemaVersion, TestSuiteRunAttestation.Scope scope, String suiteRunId,
             TestSuiteExecutionRequest.SuiteRef suiteRef, String requestFingerprint,
             String aggregateFingerprint,
             List<TestSuiteRunAttestation.ChildEvidenceRef> children, Instant signedAt) {
         return ProtocolFingerprint.of(objectMapper, new SignatureMaterial(
-                TestSuiteRunAttestation.SCHEMA_VERSION, scope, suiteRunId, suiteRef,
+                schemaVersion, scope, suiteRunId, suiteRef,
                 requestFingerprint, aggregateFingerprint, immutable(children), signedAt));
+    }
+
+    private static String attestationVersion(TestSuiteRunEvidenceProtocol evidence) {
+        return evidence instanceof TestSuiteRunEvidenceV2
+                ? TestSuiteRunAttestation.SCHEMA_VERSION_V2
+                : TestSuiteRunAttestation.SCHEMA_VERSION;
     }
 
     private static List<TestSuiteRunAttestation.ChildEvidenceRef> immutable(

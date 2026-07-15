@@ -182,7 +182,7 @@ class TestSuiteRunReconciliationServiceTest {
     }
 
     private TestSuiteRunRecord withId(TestSuiteRunRecord source, String runId, String requestId) {
-        TestSuiteRunEvidence evidence = source.evidence();
+        TestSuiteRunEvidence evidence = (TestSuiteRunEvidence) source.evidence();
         TestSuiteRunEvidence renamed = new TestSuiteRunEvidence("", runId, requestId,
                 evidence.status(), evidence.executionPurpose(), evidence.suiteRef(), evidence.target(),
                 evidence.startedAt(), evidence.completedAt(), evidence.caseResults(), evidence.coverage(),

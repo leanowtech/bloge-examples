@@ -44,6 +44,7 @@ class TestingProtocolTest {
                     .isEqualTo("bloge.testOperatorTargetDescriptor.v1");
             assertConstant(definitions, "testRunEvidence", TestingProtocol.TEST_RUN_EVIDENCE_V1);
             assertConstant(definitions, "testSuite", TestingProtocol.TEST_SUITE_V1);
+            assertConstant(definitions, "testSuiteV2", TestingProtocol.TEST_SUITE_V2);
             assertConstant(definitions, "testSuiteRegistrationRequest",
                     TestingProtocol.TEST_SUITE_REGISTRATION_REQUEST_V1);
             assertConstant(definitions, "storedTestSuite", TestingProtocol.STORED_TEST_SUITE_V1);
@@ -53,13 +54,22 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1);
             assertConstant(definitions, "testSuiteExecutionResponseV2",
                     TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V2);
-            assertThat(definitions.at("/testSuiteExecutionResponse/oneOf")).hasSize(2);
+            assertConstant(definitions, "testSuiteExecutionResponseV3",
+                    TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V3);
+            assertThat(definitions.at("/testSuiteExecutionResponse/oneOf")).hasSize(3);
             assertConstant(definitions, "testSuiteRunEvidence",
                     TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V1);
+            assertConstant(definitions, "testSuiteRunEvidenceV2",
+                    TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V2);
             assertConstant(definitions, "testSuiteRunAttestation",
                     TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V1);
-            assertConstant(definitions, "testSuiteEvidenceBundle",
+            assertConstant(definitions, "testSuiteRunAttestationV2",
+                    TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V2);
+            assertConstant(definitions, "testSuiteEvidenceBundleV1",
                     TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V1);
+            assertConstant(definitions, "testSuiteEvidenceBundleV2",
+                    TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V2);
+            assertThat(definitions.at("/testSuiteEvidenceBundle/oneOf")).hasSize(2);
             assertConstant(definitions, "evidenceVerificationKeySet",
                     TestingProtocol.EVIDENCE_VERIFICATION_KEY_SET_V1);
             assertConstant(definitions, "testSuiteCatalogMaterialization",

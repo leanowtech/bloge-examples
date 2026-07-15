@@ -37,6 +37,8 @@ public final class TestingProtocol {
     public static final String TEST_EVIDENCE_INTEGRITY_V1 = "bloge.testEvidenceIntegrity.v1";
     /** Immutable test-suite wire version. */
     public static final String TEST_SUITE_V1 = "bloge.testSuite.v1";
+    /** Immutable suite generation with typed orchestration-semantic requirements. */
+    public static final String TEST_SUITE_V2 = "bloge.testSuite.v2";
     /** Test-suite registration request wire version. */
     public static final String TEST_SUITE_REGISTRATION_REQUEST_V1 =
             "bloge.testSuiteRegistrationRequest.v1";
@@ -51,14 +53,25 @@ public final class TestingProtocol {
     /** Current signed immutable suite execution response wire version. */
     public static final String TEST_SUITE_EXECUTION_RESPONSE_V2 =
             "bloge.testSuiteExecutionResponse.v2";
+    /** Signed suite response carrying semantic aggregate evidence. */
+    public static final String TEST_SUITE_EXECUTION_RESPONSE_V3 =
+            "bloge.testSuiteExecutionResponse.v3";
     /** Aggregate immutable suite-run evidence wire version. */
     public static final String TEST_SUITE_RUN_EVIDENCE_V1 = "bloge.testSuiteRunEvidence.v1";
+    /** Aggregate suite evidence with a typed semantic coverage verdict. */
+    public static final String TEST_SUITE_RUN_EVIDENCE_V2 = "bloge.testSuiteRunEvidence.v2";
     /** Signed suite checkpoint and terminal closure wire version. */
     public static final String TEST_SUITE_RUN_ATTESTATION_V1 =
             "bloge.testSuiteRunAttestation.v1";
+    /** Domain-separated attestation for semantic aggregate evidence. */
+    public static final String TEST_SUITE_RUN_ATTESTATION_V2 =
+            "bloge.testSuiteRunAttestation.v2";
     /** Portable payload-free terminal suite evidence bundle wire version. */
     public static final String TEST_SUITE_EVIDENCE_BUNDLE_V1 =
             "bloge.testSuiteEvidenceBundle.v1";
+    /** Portable payload-free bundle carrying semantic aggregate evidence. */
+    public static final String TEST_SUITE_EVIDENCE_BUNDLE_V2 =
+            "bloge.testSuiteEvidenceBundle.v2";
     /** Resource Gateway evidence verification key wire version. */
     public static final String EVIDENCE_VERIFICATION_KEY_V1 =
             "toolStudio.resourceGateway.evidenceVerificationKey.v1";

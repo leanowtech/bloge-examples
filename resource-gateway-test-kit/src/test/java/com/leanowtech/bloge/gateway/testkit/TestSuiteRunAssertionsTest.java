@@ -81,6 +81,53 @@ class TestSuiteRunAssertionsTest {
                 });
     }
 
+    @Test
+    void exposesTypedSemanticVerdictAndRejectsSilentV1Fallback() throws Exception {
+        TestSuiteRun historical = run("PASSED", "PASSED", "SATISFIED", "ELIGIBLE", "");
+        ObjectNode semanticResponse = suiteResponse(
+                "PASSED", "PASSED", "SATISFIED", "ELIGIBLE", "");
+        semanticResponse.put("schemaVersion", TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V3);
+        ObjectNode evidence = (ObjectNode) semanticResponse.path("evidence");
+        evidence.put("schemaVersion", TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V2);
+        ObjectNode semantic = evidence.putObject("semanticCoverage");
+        semantic.put("status", "SATISFIED");
+        ObjectNode required = semantic.putArray("required").addObject();
+        required.put("requirementId", "retry");
+        required.put("kind", "RETRY");
+        required.put("invocationSiteId", "/root/remote#PRIMARY");
+        required.put("minimumAttempts", 2);
+        ObjectNode observed = semantic.putArray("observed").addObject();
+        observed.put("requirementId", "retry");
+        observed.put("kind", "RETRY");
+        observed.putArray("caseIds").add("golden");
+        semantic.putArray("missingRequirementIds");
+        semantic.putArray("unavailable");
+        ObjectNode attestation = semanticResponse.putObject("attestation");
+        attestation.put("schemaVersion", TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V2);
+        attestation.put("signatureStatus", "UNSIGNED");
+        attestation.put("scope", "CHECKPOINT");
+        attestation.put("suiteRunId", "");
+        attestation.putNull("suiteRef");
+        attestation.put("requestFingerprint", "");
+        attestation.put("aggregateEvidenceFingerprint", "");
+        attestation.putArray("childEvidenceRefs");
+        attestation.put("signedAt", "1970-01-01T00:00:00Z");
+        attestation.put("keyId", "");
+        attestation.put("algorithm", "");
+        attestation.put("signature", "");
+        attestation.put("independentlyVerifiable", false);
+
+        TestSuiteRun semanticRun = TestSuiteRun.from(semanticResponse);
+
+        assertThat(semanticRun.requireSemanticCoverage().status())
+                .isEqualTo(TestSuiteRun.SemanticCoverageStatus.SATISFIED);
+        assertThat(semanticRun.requireSemanticCoverage().observedRequirementIds())
+                .containsExactly("retry");
+        assertThatThrownBy(historical::requireSemanticCoverage)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("SEMANTIC_COVERAGE_UNAVAILABLE");
+    }
+
     private static TestSuiteRun run(String status, String caseStatus, String coverage,
                                     String promotion, String reason) throws Exception {
         return TestSuiteRun.from(suiteResponse(status, caseStatus, coverage, promotion, reason));

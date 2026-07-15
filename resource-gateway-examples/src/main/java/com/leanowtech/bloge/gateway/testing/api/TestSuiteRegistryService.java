@@ -10,9 +10,12 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteProtocol;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
+import com.leanowtech.bloge.gateway.testing.domain.SemanticCoveragePolicy;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.OperatorExecutionTargetSnapshot;
-import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteProtocolCodec;
 
 import java.time.Instant;
 import java.util.HashSet;
@@ -44,12 +47,14 @@ public final class TestSuiteRegistryService {
     private static final int MAX_IDENTIFIER_LENGTH = 255;
     private static final int MAX_TARGET_ID_LENGTH = 512;
     private static final int MAX_COVERAGE_IDENTIFIERS = 10_000;
+    private static final int MAX_SEMANTIC_REQUIREMENTS = 1_000;
     private static final int MAX_TAGS = 64;
     private static final int MAX_TAG_LENGTH = 128;
     private static final Set<String> ENABLED_ENVIRONMENTS = Set.of("test", "staging");
     private static final List<String> CLASSIFICATIONS = List.of(
             "PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED");
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+    private static final Pattern MACHINE_CODE = Pattern.compile("[A-Z][A-Z0-9_.-]{0,254}");
 
     private final GatewayGraphService graphService;
     private final OperatorRegistry operatorRegistry;
@@ -58,6 +63,7 @@ public final class TestSuiteRegistryService {
     private final FixtureBundleRepository fixtureRepository;
     private final TestSuiteRepository suiteRepository;
     private final TestSecurityEventRepository securityEvents;
+    private final TestSuiteProtocolCodec suiteCodec;
 
     /**
      * Creates a registry service over frozen target discovery and independent test stores.
@@ -84,6 +90,7 @@ public final class TestSuiteRegistryService {
         this.fixtureRepository = Objects.requireNonNull(fixtureRepository, "fixtureRepository");
         this.suiteRepository = Objects.requireNonNull(suiteRepository, "suiteRepository");
         this.securityEvents = Objects.requireNonNull(securityEvents, "securityEvents");
+        this.suiteCodec = new TestSuiteProtocolCodec(objectMapper);
     }
 
     /**
@@ -103,7 +110,7 @@ public final class TestSuiteRegistryService {
             throw badRequest(identity, "RG.TEST.SUITE_REQUEST_INVALID",
                     "A versioned test-suite registration request is required.", Map.of());
         }
-        TestSuite suite = request.testSuite();
+        TestSuiteProtocol suite = request.testSuite();
         validateIdentity(suiteId, suite, identity);
         requireClearance(suite.classification(), identity);
         requireBounded(suite.metadata(), MAX_METADATA_BYTES, "testSuite.metadata", identity);
@@ -123,7 +130,7 @@ public final class TestSuiteRegistryService {
         }
 
         validatePoliciesAndCases(suite, identity);
-        String fingerprint = ProtocolFingerprint.of(objectMapper, suite);
+        String fingerprint = suiteCodec.fingerprint(suite);
         StoredTestSuite stored = new StoredTestSuite("", identity.tenantId(), identity.environmentId(),
                 suite.suiteId(), suite.revision(), fingerprint, suite, Instant.now(), identity.actorId());
         try {
@@ -169,9 +176,13 @@ public final class TestSuiteRegistryService {
         return stored;
     }
 
-    private void validateIdentity(String pathSuiteId, TestSuite suite,
+    private void validateIdentity(String pathSuiteId, TestSuiteProtocol suite,
                                   IntegrationRequestContext identity) {
-        if (!TestSuite.SCHEMA_VERSION.equals(suite.schemaVersion())
+        boolean supportedGeneration = suite instanceof TestSuite
+                && TestSuite.SCHEMA_VERSION.equals(suite.schemaVersion())
+                || suite instanceof TestSuiteV2
+                && TestSuiteV2.SCHEMA_VERSION.equals(suite.schemaVersion());
+        if (!supportedGeneration
                 || normalized(pathSuiteId).isBlank()
                 || !normalized(pathSuiteId).equals(suite.suiteId())
                 || suite.suiteId().length() > MAX_IDENTIFIER_LENGTH || suite.revision() <= 0) {
@@ -188,12 +199,14 @@ public final class TestSuiteRegistryService {
         }
     }
 
-    private void validatePoliciesAndCases(TestSuite suite, IntegrationRequestContext identity) {
+    private void validatePoliciesAndCases(TestSuiteProtocol suite,
+                                          IntegrationRequestContext identity) {
         if (suite.cases().isEmpty() || suite.cases().size() > MAX_CASES) {
             throw badRequest(identity, "RG.TEST.SUITE_CASE_COUNT_INVALID",
                     "A test suite must contain between 1 and 100 cases.", Map.of("maximum", MAX_CASES));
         }
         validateCoveragePolicy(suite, identity);
+        validateSemanticCoveragePolicy(suite, identity);
         validatePromotionPolicy(suite, identity);
 
         Set<String> caseIds = new HashSet<>();
@@ -212,7 +225,8 @@ public final class TestSuiteRegistryService {
         }
     }
 
-    private void validateCoveragePolicy(TestSuite suite, IntegrationRequestContext identity) {
+    private void validateCoveragePolicy(TestSuiteProtocol suite,
+                                        IntegrationRequestContext identity) {
         TestSuite.CoveragePolicy policy = suite.coveragePolicy();
         if (policy == null || policy.minimumCases() < 1 || policy.minimumCases() > suite.cases().size()
                 || policy.minimumAssertionsPerCase() < 0 || policy.minimumAssertionsPerCase() > 1_000
@@ -225,7 +239,60 @@ public final class TestSuiteRegistryService {
         requireEdgeTransfers(policy.requiredEdgeTransfers(), identity);
     }
 
-    private void validatePromotionPolicy(TestSuite suite, IntegrationRequestContext identity) {
+    private void validateSemanticCoveragePolicy(TestSuiteProtocol suite,
+                                                IntegrationRequestContext identity) {
+        if (!(suite instanceof TestSuiteV2 semanticSuite)) {
+            return;
+        }
+        List<SemanticCoveragePolicy.Requirement> requirements =
+                semanticSuite.semanticCoveragePolicy().requirements();
+        if (requirements.isEmpty() || requirements.size() > MAX_SEMANTIC_REQUIREMENTS) {
+            throw badRequest(identity, "RG.TEST.SUITE_SEMANTIC_POLICY_INVALID",
+                    "A v2 suite must contain between 1 and 1000 semantic requirements.",
+                    Map.of("maximum", MAX_SEMANTIC_REQUIREMENTS));
+        }
+        for (SemanticCoveragePolicy.Requirement requirement : requirements) {
+            if (requirement.requirementId().isBlank()
+                    || requirement.requirementId().length() > MAX_IDENTIFIER_LENGTH) {
+                throw semanticPolicyInvalid(identity,
+                        "Semantic requirement identities must be bounded and non-empty.", requirement);
+            }
+            if (requirement instanceof SemanticCoveragePolicy.BranchRequirement branch) {
+                requireSemanticSite(branch.fromInvocationSiteId(), identity, requirement);
+                requireSemanticSite(branch.toInvocationSiteId(), identity, requirement);
+            } else if (requirement instanceof SemanticCoveragePolicy.DecisionRuleRequirement decision) {
+                requireSemanticSite(decision.invocationSiteId(), identity, requirement);
+                if (!decision.outputJsonPointer().startsWith("/")
+                        || decision.outputJsonPointer().length() > MAX_TARGET_ID_LENGTH
+                        || !objectMapper.valueToTree(decision.expectedScalar()).isValueNode()) {
+                    throw semanticPolicyInvalid(identity,
+                            "Decision requirements need a bounded JSON Pointer and scalar expectation.",
+                            requirement);
+                }
+            } else if (requirement instanceof SemanticCoveragePolicy.RetryRequirement retry) {
+                requireSemanticSite(retry.invocationSiteId(), identity, requirement);
+                if (retry.minimumAttempts() > 100_000) {
+                    throw semanticPolicyInvalid(identity,
+                            "Retry minimumAttempts must be between 2 and 100000.", requirement);
+                }
+            } else if (requirement instanceof SemanticCoveragePolicy.SiteRequirement site) {
+                requireSemanticSite(site.invocationSiteId(), identity, requirement);
+                if (!site.errorCode().isBlank() && !MACHINE_CODE.matcher(site.errorCode()).matches()) {
+                    throw semanticPolicyInvalid(identity,
+                            "Timeout errorCode must be a stable bounded machine code.", requirement);
+                }
+                if (site.kind() == SemanticCoveragePolicy.Kind.COMPENSATION
+                        && !site.invocationSiteId().endsWith("#COMPENSATION")) {
+                    throw semanticPolicyInvalid(identity,
+                            "Compensation requirements must address a COMPENSATION invocation site.",
+                            requirement);
+                }
+            }
+        }
+    }
+
+    private void validatePromotionPolicy(TestSuiteProtocol suite,
+                                         IntegrationRequestContext identity) {
         TestSuite.PromotionPolicy policy = suite.promotionPolicy();
         if (policy == null || policy.minimumCertifiableCases() < 0
                 || policy.minimumCertifiableCases() > suite.cases().size()) {
@@ -234,7 +301,8 @@ public final class TestSuiteRegistryService {
         }
     }
 
-    private void validateCaseShape(TestSuite suite, TestSuite.TestCase testCase, Set<String> caseIds,
+    private void validateCaseShape(TestSuiteProtocol suite, TestSuite.TestCase testCase,
+                                   Set<String> caseIds,
                                    IntegrationRequestContext identity) {
         if (testCase == null || testCase.caseId().isBlank()
                 || testCase.caseId().length() > MAX_IDENTIFIER_LENGTH || testCase.caseType() == null
@@ -283,7 +351,7 @@ public final class TestSuiteRegistryService {
         }
     }
 
-    private void validateFixtureDependency(TestSuite suite, TestSuite.TestCase testCase,
+    private void validateFixtureDependency(TestSuiteProtocol suite, TestSuite.TestCase testCase,
                                            StoredFixtureBundle fixture,
                                            IntegrationRequestContext identity) {
         requireClearance(fixture.bundle().classification(), identity);
@@ -312,6 +380,23 @@ public final class TestSuiteRegistryService {
                     Map.of("caseId", testCase.caseId(),
                             "actualAssertions", fixture.bundle().assertions().size()));
         }
+    }
+
+    private void requireSemanticSite(String invocationSiteId,
+                                     IntegrationRequestContext identity,
+                                     SemanticCoveragePolicy.Requirement requirement) {
+        if (invocationSiteId.isBlank() || invocationSiteId.length() > MAX_TARGET_ID_LENGTH) {
+            throw semanticPolicyInvalid(identity,
+                    "Semantic requirements need bounded structural invocation-site ids.", requirement);
+        }
+    }
+
+    private IntegrationProblemException semanticPolicyInvalid(
+            IntegrationRequestContext identity, String detail,
+            SemanticCoveragePolicy.Requirement requirement) {
+        return badRequest(identity, "RG.TEST.SUITE_SEMANTIC_POLICY_INVALID", detail,
+                Map.of("requirementId", requirement.requirementId(),
+                        "kind", requirement.kind().name()));
     }
 
     private ResolvedTarget currentTarget(TestSuite.Target target,

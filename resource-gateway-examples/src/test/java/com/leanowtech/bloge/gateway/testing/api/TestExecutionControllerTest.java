@@ -7,6 +7,8 @@ import com.leanowtech.bloge.gateway.integration.IntegrationWorkloadIdentity;
 import com.leanowtech.bloge.gateway.integration.StaticBearerIntegrationIdentityResolver;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -249,7 +251,7 @@ class TestExecutionControllerTest {
         TestSuiteRegistryService suites = mock(TestSuiteRegistryService.class);
         TestSuiteExecutionService suiteRuns = mock(TestSuiteExecutionService.class);
         when(suiteRuns.execute(eq("suite-a"), any(), any())).thenReturn(
-                new TestSuiteExecutionResponse("", "suite-run-1", "sha256:" + "f".repeat(64), null));
+                suiteExecutionResponse("suite-run-1", "sha256:" + "f".repeat(64)));
         MockMvc mvc = mvc(execution, suites, suiteRuns, Set.of("TEST_EXECUTION"));
 
         mvc.perform(post("/api/testing/suites/suite-a/executions")
@@ -263,6 +265,8 @@ class TestExecutionControllerTest {
                                  "clientRequestId":"ci-build-42","strategy":"COLLECT_ALL","metadata":{}}
                                 """))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion")
+                        .value(TestSuiteExecutionResponse.SCHEMA_VERSION))
                 .andExpect(jsonPath("$.suiteRunId").value("suite-run-1"));
 
         verify(suiteRuns).execute(eq("suite-a"),
@@ -318,7 +322,7 @@ class TestExecutionControllerTest {
                 new StoredFixtureBundle("", "tenant-a", "test", "fixture-a", 1,
                         "sha256:" + "b".repeat(64), fixture, Instant.now(), "runner"));
         when(suiteRuns.execute(eq("suite-a"), any(), any())).thenReturn(
-                new TestSuiteExecutionResponse("", "suite-replay", "sha256:" + "c".repeat(64), null));
+                suiteExecutionResponse("suite-replay", "sha256:" + "c".repeat(64)));
         MockMvc mvc = mvc(execution, suites, suiteRuns, Set.of("TEST_REPLAY"));
 
         mvc.perform(post("/api/testing/executions")
@@ -395,6 +399,16 @@ class TestExecutionControllerTest {
 
     private static MockMvc mvc(TestExecutionApiService service) {
         return mvc(service, mock(TestSuiteRegistryService.class), Set.of("TEST_EXECUTION"));
+    }
+
+    private static TestSuiteExecutionResponse suiteExecutionResponse(
+            String suiteRunId, String evidenceFingerprint) {
+        TestSuiteRunEvidence evidence = new TestSuiteRunEvidence(
+                "", suiteRunId, "controller-test", TestSuiteRunEvidence.Status.RUNNING,
+                "GRAPH_CONTRACT_TEST", null, null, Instant.now(), null,
+                List.of(), null, null, List.of(), Map.of());
+        return new TestSuiteExecutionResponse(TestSuiteExecutionResponse.SCHEMA_VERSION,
+                suiteRunId, evidenceFingerprint, evidence, TestSuiteRunAttestation.unsigned());
     }
 
     private static MockMvc mvc(TestExecutionApiService service,

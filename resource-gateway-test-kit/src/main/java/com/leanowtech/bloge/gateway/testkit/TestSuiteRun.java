@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * CI-oriented, payload-free projection of one immutable governed suite run.
@@ -96,6 +97,70 @@ public record TestSuiteRun(
         ELIGIBLE,
         /** Stable policy reasons prevent eligibility. */
         BLOCKED
+    }
+
+    /** Semantic coverage states emitted only by suite evidence v2. */
+    public enum SemanticCoverageStatus {
+        /** A running checkpoint has not evaluated semantic coverage. */
+        NOT_EVALUATED,
+        /** Every typed semantic requirement has trusted observations. */
+        SATISFIED,
+        /** Complete trusted evidence is missing at least one required fact. */
+        UNSATISFIED,
+        /** Evidence fidelity or completeness cannot prove at least one fact. */
+        INCOMPLETE
+    }
+
+    /**
+     * One payload-free semantic requirement whose trusted source fact was unavailable.
+     *
+     * @param requirementId stable suite-local requirement identity
+     * @param reasonCode stable reason the fact could not be evaluated
+     */
+    public record SemanticUnavailable(String requirementId, String reasonCode) {
+        /** Normalizes stable identities and reason codes. */
+        public SemanticUnavailable {
+            requirementId = normalized(requirementId);
+            reasonCode = machineCode(reasonCode, "semantic unavailable reason");
+            if (requirementId.isBlank() || reasonCode.isBlank()) {
+                throw new IllegalArgumentException("Semantic unavailable fact is incomplete");
+            }
+        }
+    }
+
+    /**
+     * Strongly typed payload-free projection of a v2 semantic coverage verdict.
+     *
+     * @param status aggregate semantic coverage state
+     * @param requiredRequirementIds exact signed requirement identities
+     * @param observedRequirementIds requirements with trusted observations
+     * @param missingRequirementIds requirements absent from complete trusted evidence
+     * @param unavailable requirements whose source facts could not be evaluated
+     */
+    public record SemanticCoverage(
+            SemanticCoverageStatus status,
+            List<String> requiredRequirementIds,
+            List<String> observedRequirementIds,
+            List<String> missingRequirementIds,
+            List<SemanticUnavailable> unavailable
+    ) {
+        /** Defensively snapshots verdict collections. */
+        public SemanticCoverage {
+            requiredRequirementIds = immutableIds(requiredRequirementIds);
+            observedRequirementIds = immutableIds(observedRequirementIds);
+            missingRequirementIds = immutableIds(missingRequirementIds);
+            unavailable = unavailable == null ? List.of() : List.copyOf(unavailable);
+            if (status == null || requiredRequirementIds.isEmpty()) {
+                throw new IllegalArgumentException("Semantic coverage verdict is incomplete");
+            }
+        }
+
+        private static List<String> immutableIds(List<String> values) {
+            if (values == null) {
+                return List.of();
+            }
+            return values.stream().map(TestSuiteRun::normalized).toList();
+        }
     }
 
     /**
@@ -203,8 +268,8 @@ public record TestSuiteRun(
     }
 
     /**
-     * Projects a v1 or signed v2 suite response without copying child payloads into reportable
-     * fields.
+     * Projects a historical v1, structural v2, or semantic v3 suite response without copying child
+     * payloads into reportable fields.
      *
      * @param response decoded suite execution response
      * @return immutable suite-run projection
@@ -230,8 +295,10 @@ public record TestSuiteRun(
         });
         List<String> reasons = new ArrayList<>();
         evidence.path("promotion").path("reasons").forEach(reason -> reasons.add(reason.asText()));
-        TestSuiteRunAttestation attestation = TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V2.equals(
-                response.path("schemaVersion").asText())
+        String responseVersion = response.path("schemaVersion").asText();
+        TestSuiteRunAttestation attestation = List.of(
+                TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V2,
+                TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V3).contains(responseVersion)
                 ? TestSuiteRunAttestation.from(response.path("attestation"))
                 : TestSuiteRunAttestation.unsigned();
         return new TestSuiteRun(response.path("suiteRunId").asText(evidence.path("suiteRunId").asText()),
@@ -267,6 +334,43 @@ public record TestSuiteRun(
     }
 
     /**
+     * Returns semantic coverage when the producer emitted v2 aggregate evidence.
+     *
+     * @return empty for historical structural evidence v1
+     */
+    public Optional<SemanticCoverage> semanticCoverage() {
+        JsonNode evidence = rawResponse == null ? null : rawResponse.path("evidence");
+        if (evidence == null || !TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V2.equals(
+                evidence.path("schemaVersion").asText())) {
+            return Optional.empty();
+        }
+        JsonNode value = evidence.path("semanticCoverage");
+        List<String> required = new ArrayList<>();
+        value.path("required").forEach(item -> required.add(item.path("requirementId").asText()));
+        List<String> observed = new ArrayList<>();
+        value.path("observed").forEach(item -> observed.add(item.path("requirementId").asText()));
+        List<String> missing = new ArrayList<>();
+        value.path("missingRequirementIds").forEach(item -> missing.add(item.asText()));
+        List<SemanticUnavailable> unavailable = new ArrayList<>();
+        value.path("unavailable").forEach(item -> unavailable.add(new SemanticUnavailable(
+                item.path("requirementId").asText(), item.path("reasonCode").asText())));
+        return Optional.of(new SemanticCoverage(enumValue(SemanticCoverageStatus.class,
+                value.path("status").asText(), "semantic coverage status"), required, observed,
+                missing, unavailable));
+    }
+
+    /**
+     * Requires semantic coverage support instead of silently treating v1 as an empty verdict.
+     *
+     * @return typed semantic verdict
+     * @throws IllegalStateException with a stable code when only v1 evidence is available
+     */
+    public SemanticCoverage requireSemanticCoverage() {
+        return semanticCoverage().orElseThrow(() -> new IllegalStateException(
+                "SEMANTIC_COVERAGE_UNAVAILABLE"));
+    }
+
+    /**
      * Returns stable, payload-free gate failure codes for CI output.
      *
      * @param requirePromotionEligible whether policy eligibility is mandatory
@@ -280,6 +384,8 @@ public record TestSuiteRun(
         if (coverageStatus != CoverageStatus.SATISFIED) {
             codes.add("COVERAGE_" + coverageStatus.name());
         }
+        semanticCoverage().filter(value -> value.status() != SemanticCoverageStatus.SATISFIED)
+                .ifPresent(value -> codes.add("SEMANTIC_COVERAGE_" + value.status().name()));
         if (caseResults.stream().anyMatch(result -> !result.passed())) {
             codes.add("CASE_FAILURES_PRESENT");
         }

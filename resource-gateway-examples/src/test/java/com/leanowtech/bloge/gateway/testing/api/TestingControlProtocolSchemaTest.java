@@ -10,6 +10,8 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.visual.runtime.EvidenceVerificationKeySet;
 import org.junit.jupiter.api.Test;
 
@@ -50,6 +52,8 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(StoredReplayPayload.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuite/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuite.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testSuiteV2/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteV2.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteRegistrationRequest/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteRegistrationRequest.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/storedTestSuite/properties/schemaVersion/const").asText())
@@ -60,10 +64,16 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteExecutionResponseV1/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION_V1);
+        assertThat(schema.at("/$defs/testSuiteExecutionResponseV3/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION_V3);
         assertThat(schema.at("/$defs/testSuiteRunAttestation/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION);
-        assertThat(schema.at("/$defs/testSuiteEvidenceBundle/properties/schemaVersion/const").asText())
+        assertThat(schema.at("/$defs/testSuiteRunAttestationV2/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V2);
+        assertThat(schema.at("/$defs/testSuiteEvidenceBundleV1/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteEvidenceBundle.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testSuiteEvidenceBundleV2/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteEvidenceBundle.SCHEMA_VERSION_V2);
         assertThat(schema.at("/$defs/evidenceVerificationKeySet/properties/schemaVersion/const").asText())
                 .isEqualTo(EvidenceVerificationKeySet.SCHEMA_VERSION);
         assertThat(schema.at(
@@ -71,6 +81,8 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestSuiteCatalogMaterializationResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteRunEvidence/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteRunEvidence.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testSuiteRunEvidenceV2/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteRunEvidenceV2.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testGraphTargetDescriptor/properties/schemaVersion/const").asText())
                 .isEqualTo(TestGraphTargetDescriptor.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testOperatorExecutionRequest/properties/schemaVersion/const").asText())
@@ -117,6 +129,7 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("testSuiteExecutionResponse")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponseV1")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponseV2")).isTrue();
+        assertThat(definitions.has("testSuiteExecutionResponseV3")).isTrue();
         assertThat(definitions.has("testSuiteRunAttestation")).isTrue();
         assertThat(definitions.has("testSuiteEvidenceBundle")).isTrue();
         assertThat(definitions.has("evidenceVerificationKeySet")).isTrue();
@@ -169,8 +182,13 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestSuiteRegistryService.MAX_CASES);
         assertThat(definitions.at("/testSuiteExecutionResponseV2/properties/attestation/$ref").asText())
                 .isEqualTo("#/$defs/testSuiteRunAttestation");
-        assertThat(definitions.at("/testSuiteEvidenceBundle/properties/payloadPolicy/const").asText())
+        assertThat(definitions.at("/testSuiteEvidenceBundleV1/properties/payloadPolicy/const").asText())
                 .isEqualTo("OMITTED");
+        assertThat(definitions.at("/testSuiteEvidenceBundle/oneOf")).hasSize(2);
+        assertThat(definitions.at("/testSuiteProtocol/oneOf")).hasSize(2);
+        assertThat(definitions.at("/semanticRequirement/oneOf")).hasSize(4);
+        assertThat(definitions.at("/semanticCoveragePolicy/properties/requirements/maxItems").asInt())
+                .isEqualTo(1_000);
         assertThat(definitions.at(
                 "/testSuiteCoveragePolicy/properties/requiredInvocationSiteIds/items/type").asText())
                 .isEqualTo("string");

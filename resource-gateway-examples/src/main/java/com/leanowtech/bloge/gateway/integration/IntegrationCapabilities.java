@@ -178,7 +178,8 @@ public record IntegrationCapabilities(
             objects.put("storedReplayPayload", List.of(
                     com.leanowtech.bloge.gateway.testing.api.StoredReplayPayload.SCHEMA_VERSION));
             objects.put("testSuite", List.of(
-                    com.leanowtech.bloge.gateway.testing.domain.TestSuite.SCHEMA_VERSION));
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuite.SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2.SCHEMA_VERSION));
             objects.put("testSuiteRegistrationRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistrationRequest.SCHEMA_VERSION));
             objects.put("storedTestSuite", List.of(
@@ -187,13 +188,17 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest.SCHEMA_VERSION));
             objects.put("testSuiteExecutionResponse", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION_V1,
-                    com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION));
+                    com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION_V3));
             objects.put("testSuiteRunEvidence", List.of(
-                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence.SCHEMA_VERSION));
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence.SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2.SCHEMA_VERSION));
             objects.put("testSuiteRunAttestation", List.of(
-                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.SCHEMA_VERSION));
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.SCHEMA_VERSION_V2));
             objects.put("testSuiteEvidenceBundle", List.of(
-                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle.SCHEMA_VERSION));
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle.SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle.SCHEMA_VERSION_V2));
             objects.put("testSuiteRunReconciliation", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteRunReconciliationResult.SCHEMA_VERSION));
             objects.put("testSuiteCatalogMaterialization", List.of(
@@ -298,6 +303,7 @@ public record IntegrationCapabilities(
         features.put("immutableTestSuiteRegistry", testExecutionEndpointEnabled);
         features.put("immutableTestSuiteExecution", testExecutionEndpointEnabled);
         features.put("suiteSemanticCoverageVerdict", testExecutionEndpointEnabled);
+        features.put("typedSemanticCoverageV2", testExecutionEndpointEnabled);
         features.put("suitePromotionEligibilityVerdict", testExecutionEndpointEnabled);
         features.put("builtInGraphSuiteCatalogMaterialization", testExecutionEndpointEnabled);
         features.put("suiteRunOwnerLease", testExecutionEndpointEnabled);

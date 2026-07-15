@@ -1,6 +1,6 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
-import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 
 import java.time.Instant;
@@ -34,7 +34,7 @@ public record TestSuiteRunRecord(
         String actorId,
         String classification,
         String evidenceFingerprint,
-        TestSuiteRunEvidence evidence,
+        TestSuiteRunEvidenceProtocol evidence,
         TestSuiteRunAttestation attestation,
         Instant createdAt,
         Instant expiresAt
@@ -54,7 +54,7 @@ public record TestSuiteRunRecord(
             String suiteRunId, String clientRequestId, String requestFingerprint,
             String tenantId, String organizationId, String projectId, String environmentId,
             String actorId, String classification, String evidenceFingerprint,
-            TestSuiteRunEvidence evidence, Instant createdAt, Instant expiresAt) {
+            TestSuiteRunEvidenceProtocol evidence, Instant createdAt, Instant expiresAt) {
         this(suiteRunId, clientRequestId, requestFingerprint, tenantId, organizationId, projectId,
                 environmentId, actorId, classification, evidenceFingerprint, evidence,
                 TestSuiteRunAttestation.unsigned(), createdAt, expiresAt);

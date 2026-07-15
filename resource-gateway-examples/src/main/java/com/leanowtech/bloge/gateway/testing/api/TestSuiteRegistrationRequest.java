@@ -1,6 +1,6 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
-import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteProtocol;
 
 /**
  * Versioned request for registering one immutable test-suite revision.
@@ -8,7 +8,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
  * @param schemaVersion registration protocol version
  * @param testSuite immutable suite content
  */
-public record TestSuiteRegistrationRequest(String schemaVersion, TestSuite testSuite) {
+public record TestSuiteRegistrationRequest(String schemaVersion, TestSuiteProtocol testSuite) {
     /** Current registration request protocol version. */
     public static final String SCHEMA_VERSION = "bloge.testSuiteRegistrationRequest.v1";
 

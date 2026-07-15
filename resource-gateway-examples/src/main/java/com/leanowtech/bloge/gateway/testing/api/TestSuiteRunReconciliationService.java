@@ -1,9 +1,12 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.domain.SemanticCoverageVerdict;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceProtocol;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
@@ -108,7 +111,7 @@ public final class TestSuiteRunReconciliationService {
 
     private TestSuiteRunRecord terminal(AbandonedTestSuiteRun abandoned, Instant completedAt) {
         TestSuiteRunRecord record = abandoned.record();
-        TestSuiteRunEvidence previous = record.evidence();
+        TestSuiteRunEvidenceProtocol previous = record.evidence();
         requireTrustedCheckpoint(record);
         List<TestSuiteRunEvidence.CaseResult> cases = previous.caseResults().stream()
                 .map(this::terminalCase).toList();
@@ -139,11 +142,8 @@ public final class TestSuiteRunReconciliationService {
                 objectMapper, Map.of("ownerId", abandoned.leaseOwner())));
         metadata.put("expiredLeaseAt", abandoned.leaseExpiresAt());
         metadata.put("expiredCheckpointVersion", abandoned.checkpointVersion());
-        TestSuiteRunEvidence terminal = new TestSuiteRunEvidence("", previous.suiteRunId(),
-                previous.clientRequestId(), TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE,
-                previous.executionPurpose(), previous.suiteRef(), previous.target(), previous.startedAt(),
-                completedAt, cases, coverage, promotion,
-                merged(previous.diagnostics(), List.of(ABANDONED_RUN_RECONCILED)), metadata);
+        TestSuiteRunEvidenceProtocol terminal = reconciledEvidence(previous, completedAt, cases,
+                coverage, promotion, metadata);
         TestSuiteRunAttestationService.SealResult seal = attestations.seal(terminal,
                 record.requestFingerprint(), record.attestation().childEvidenceRefs(),
                 TestSuiteRunAttestation.Scope.TERMINAL);
@@ -157,6 +157,39 @@ public final class TestSuiteRunReconciliationService {
                 record.environmentId(), record.actorId(), record.classification(), fingerprint, terminal,
                 seal.attestation(),
                 record.createdAt(), record.expiresAt());
+    }
+
+    private static TestSuiteRunEvidenceProtocol reconciledEvidence(
+            TestSuiteRunEvidenceProtocol previous, Instant completedAt,
+            List<TestSuiteRunEvidence.CaseResult> cases,
+            TestSuiteRunEvidence.CoverageVerdict coverage,
+            TestSuiteRunEvidence.PromotionVerdict promotion, Map<String, Object> metadata) {
+        List<String> diagnostics = merged(previous.diagnostics(), List.of(ABANDONED_RUN_RECONCILED));
+        if (previous instanceof TestSuiteRunEvidenceV2 v2) {
+            List<String> observed = v2.semanticCoverage().observed().stream()
+                    .map(SemanticCoverageVerdict.Observation::requirementId).toList();
+            List<SemanticCoverageVerdict.Unavailable> unavailable = new ArrayList<>(
+                    v2.semanticCoverage().unavailable());
+            v2.semanticCoverage().required().stream()
+                    .map(requirement -> requirement.requirementId())
+                    .filter(requirementId -> !observed.contains(requirementId))
+                    .filter(requirementId -> unavailable.stream().noneMatch(item ->
+                            requirementId.equals(item.requirementId())))
+                    .map(requirementId -> new SemanticCoverageVerdict.Unavailable(
+                            requirementId, "SEMANTIC_EVIDENCE_INCOMPLETE"))
+                    .forEach(unavailable::add);
+            SemanticCoverageVerdict semanticCoverage = new SemanticCoverageVerdict(
+                    SemanticCoverageVerdict.Status.INCOMPLETE, v2.semanticCoverage().required(),
+                    v2.semanticCoverage().observed(), List.of(), unavailable);
+            return new TestSuiteRunEvidenceV2("", previous.suiteRunId(), previous.clientRequestId(),
+                    TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE, previous.executionPurpose(),
+                    previous.suiteRef(), previous.target(), previous.startedAt(), completedAt, cases,
+                    coverage, semanticCoverage, promotion, diagnostics, metadata);
+        }
+        return new TestSuiteRunEvidence("", previous.suiteRunId(), previous.clientRequestId(),
+                TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE, previous.executionPurpose(),
+                previous.suiteRef(), previous.target(), previous.startedAt(), completedAt, cases,
+                coverage, promotion, diagnostics, metadata);
     }
 
     private void requireTrustedCheckpoint(TestSuiteRunRecord record) {

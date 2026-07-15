@@ -110,7 +110,8 @@ public record TestSuiteRunAttestation(
             throw new IllegalArgumentException("Suite attestation state and scope are required");
         }
         if (signatureStatus == SignatureStatus.VERIFIED
-                && (!TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V1.equals(schemaVersion)
+                && (!List.of(TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V1,
+                        TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V2).contains(schemaVersion)
                 || suiteRunId.isBlank() || suiteRef == null || !fingerprint(requestFingerprint)
                 || !fingerprint(aggregateEvidenceFingerprint) || Instant.EPOCH.equals(signedAt)
                 || keyId.isBlank() || algorithm.isBlank() || signature.isBlank()

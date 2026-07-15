@@ -5,10 +5,10 @@
 | 属性 | 内容 |
 |---|---|
 | 设计基线 | `docs/resource-gateway-aneke-tool-studio-integration-evolution-plan.md` |
-| 当前实现基线 | Round 19 完整验证（dynamic attempt/occurrence fixture selectors） |
+| 当前实现基线 | Round 20 完整验证（typed signed semantic coverage v2） |
 | 评估日期 | 2026-07-16 |
 | 目标 | 仓库内加权实施差距 `<3%`；客户环境部署门禁单独列账且不得被数值掩盖 |
-| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1813 tests，0 failures，0 errors，34 个条件跳过，真实浏览器回归与 JAR 打包 `BUILD SUCCESS`；独立 test-kit `clean verify`：42 tests，0 failures，0 errors，JavaDoc/doclint 与 library/CLI JAR 打包成功。Round 17 的 frontend production build、34 个真实 Chrome 场景与 `npm audit` 0 vulnerabilities 证据继续有效 |
+| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1822 tests，0 failures，0 errors，34 个条件跳过，真实浏览器回归与 JAR 打包 `BUILD SUCCESS`；独立 test-kit `clean verify`：46 tests，0 failures，0 errors，JavaDoc/doclint 与 library/CLI JAR 打包成功。Round 17 的 frontend production build、34 个真实 Chrome 场景与 `npm audit` 0 vulnerabilities 证据继续有效 |
 
 ## 1. 评分方法
 
@@ -1080,6 +1080,43 @@ still requires typed suite/evidence v2 and must not mutate signed v1 canonical r
 is recorded in [ADR-003](adr/ADR-003-semantic-coverage-protocol-versioning.md). Verification is recorded in
 [Stage 2 dynamic selector verification](resource-gateway-execution-data-control-plane-stage2-dynamic-selector-verification.md).
 
+### 3.20 Typed semantic coverage v2
+
+Round 20 implements ADR-003 without mutating historical signed v1 canonical records:
+
+```text
+bloge.testSuite.v1 + bloge.testSuiteRunEvidence.v1 + attestation.v1
+  -> unchanged structural generation and fingerprint path
+
+bloge.testSuite.v2
+  -> typed branch transferred/skipped, decision rule, retry, fallback, timeout, compensation policy
+  -> unique stable requirement ids and bounded structural coordinates
+
+certifiable child evidence
+  -> observed fact
+complete trusted evidence without fact
+  -> UNSATISFIED + missing requirement
+sanitized/legacy/exploratory/incomplete source
+  -> INCOMPLETE + unavailable reason
+
+bloge.testSuiteRunEvidence.v2
+  -> bloge.testSuiteRunAttestation.v2
+  -> bloge.testSuiteExecutionResponse.v3
+  -> bloge.testSuiteEvidenceBundle.v2
+```
+
+Versioned codecs retain concrete generations across fingerprints and JDBC restart. Registry,
+persistence, response, bundle, attestation, authoritative JSON Schema, capability probe, and the
+independent test-kit reject mixed generations. The test-kit keeps structural builders on v1,
+automatically emits v2 when semantic requirements are declared, and makes a semantic-aware consumer
+reject v1 as `SEMANTIC_COVERAGE_UNAVAILABLE`.
+
+This closes the Resource Gateway side of typed signed semantic coverage. It does not raise the ANEKE
+weighted score because ANEKE workbook projection and N/N-1 cross-product conformance are still absent;
+the audited repository gap therefore remains `2.630%` rather than being cosmetically reduced.
+Verification is recorded in
+[Stage 3 semantic coverage verification](resource-gateway-execution-data-control-plane-stage3-semantic-coverage-verification.md).
+
 ## 4. 部署验收门禁
 
 以下项目不再是仓库内协议主链缺失，但仍是客户生产晋级的强制门禁。没有客户环境证据时，不得把
@@ -1120,6 +1157,7 @@ backoff/DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，�
 | 17 | correctness workbook/gate evidence loop + cross-instance replay | exact suite/evidence workbook seed、稳定 case/assertion ID、gate v2 decision basis、PASSED fail-closed、gate/outbox 原子提交、数据库唯一键幂等、跨实例 deterministic replay winner | 2.630% | 10 个 workbook/gate/replay 聚焦 tests、117 个 integration package tests、65 个 runtime package tests、1620 个全量 tests、34 个真实 Chrome 场景、npm audit 0 vulnerabilities；2 份 machine schema；corporate Draw.io 0 errors/warnings/crossings/overlaps |
 | 18 | signed/pinned evidence key lifecycle | 原子签名 key-set、managed v1 安全降级/v2 完整历史、外部 fingerprint pin、签名时刻 retirement/disable/prospective/retroactive revoke、独立 offline verifier | 2.630% | key lifecycle 聚焦 41 tests、test-kit 聚焦 21 tests/全量 42 tests、Resource Gateway 全量 1806 tests，全部 0 failures/0 errors；3 份新增/升级 machine schema；真实 managed sidecar Spring/H2/HTTP 闭环 |
 | 19 | dynamic attempt/occurrence fixture selectors | 一基 bounded canonical 坐标、同级可证明互斥、特定规则优先与显式通用回退、真实 retry/nested re-entry、unmatched 零外部逃逸、test-kit/capability/schema 同步 | 2.630% | selector/capability/schema 聚焦 51 tests、test-kit 全量 42 tests、Resource Gateway 全量 1813 tests，全部 0 failures/0 errors；真实浏览器回归、server/test-kit JAR 与 doclint 成功 |
+| 20 | typed signed semantic coverage v2 | v1 canonical 冻结；七类 typed requirement；certifiable-only fact extraction；missing/unavailable 分流；suite/evidence/attestation/response/bundle 独立代际；JDBC/test-kit 双读与混代际拒绝 | 2.630% | semantic/codec/registry/persistence/attestation/schema/capability 聚焦 52 tests、test-kit 全量 46 tests、Resource Gateway 全量 1822 tests，全部 0 failures/0 errors；server/test-kit JAR 与 public JavaDoc/doclint 成功 |
 
 仓库内实施目标现已满足 `<3%`，但这不等于客户生产认证。第 4 节的 IAM、KMS/HSM、disconnect/binding 与存量副作用
 覆盖仍是环境晋级门禁；必须取得客户 conformance、故障演练和 SLO 证据后，才能声明对应部署通过。

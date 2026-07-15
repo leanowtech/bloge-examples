@@ -5,9 +5,13 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.domain.SemanticCoveragePolicy;
+import com.leanowtech.bloge.gateway.testing.domain.SemanticCoverageVerdict;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
@@ -131,6 +135,53 @@ class TestSuiteExecutionServiceTest {
     }
 
     @Test
+    void semanticV2SuiteProducesV3ResponseSignedEvidenceAndPortableBundle() {
+        StoredTestSuite structural = storedSuite();
+        TestSuite base = (TestSuite) structural.suite();
+        TestSuiteV2 semantic = new TestSuiteV2("", base.suiteId(), base.revision(), base.target(),
+                base.classification(), base.cases(), base.coveragePolicy(), new SemanticCoveragePolicy(
+                List.of(new SemanticCoveragePolicy.BranchRequirement("fetch-output",
+                        SemanticCoveragePolicy.Kind.BRANCH_TRANSFERRED,
+                        "/root/fetch#PRIMARY", "/root/output#PRIMARY"))),
+                base.promotionPolicy(), base.metadata());
+        when(registry.find("suite-a", 3, identity)).thenReturn(new StoredTestSuite("", "tenant-a",
+                "test", "suite-a", 3, SUITE, semantic, Instant.now(), "runner"));
+        when(executions.describeGraphTarget("graph-a", identity)).thenReturn(graphTarget(TARGET, true));
+        when(executions.execute(any(), eq(identity)))
+                .thenReturn(response("run-golden", "golden", "/root/fetch#PRIMARY",
+                                "/root/fetch#PRIMARY", "/root/output#PRIMARY",
+                                TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE))
+                .thenReturn(response("run-negative", "negative", "/root/output#PRIMARY", "", "",
+                                TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE));
+
+        TestSuiteExecutionResponse response = service.execute("suite-a", request("semantic-v2",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity);
+        TestSuiteEvidenceBundle bundle = service.evidenceBundle(response.suiteRunId(), identity);
+
+        assertThat(response.schemaVersion()).isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION_V3);
+        assertThat(response.evidence()).isInstanceOf(TestSuiteRunEvidenceV2.class);
+        assertThat(((TestSuiteRunEvidenceV2) response.evidence()).semanticCoverage().status())
+                .isEqualTo(SemanticCoverageVerdict.Status.SATISFIED);
+        assertThat(response.attestation().schemaVersion())
+                .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V2);
+        assertThat(bundle.schemaVersion()).isEqualTo(TestSuiteEvidenceBundle.SCHEMA_VERSION_V2);
+        assertThat(bundle.evidence()).isInstanceOf(TestSuiteRunEvidenceV2.class);
+
+        TestSuiteRunEvidenceV2 mislabeled = withSchema(
+                (TestSuiteRunEvidenceV2) response.evidence(), TestSuiteRunEvidence.SCHEMA_VERSION);
+        assertThatThrownBy(() -> new TestSuiteExecutionResponse(
+                TestSuiteExecutionResponse.SCHEMA_VERSION_V3, response.suiteRunId(),
+                response.evidenceFingerprint(), mislabeled, response.attestation()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("generations must match");
+        assertThatThrownBy(() -> new TestSuiteEvidenceBundle(
+                TestSuiteEvidenceBundle.SCHEMA_VERSION_V2, bundle.suiteRunId(),
+                bundle.bundleFingerprint(), bundle.payloadPolicy(), bundle.attestation(), mislabeled))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("incomplete");
+    }
+
+    @Test
     void tamperedPersistedAggregateIsAuditedAndRejectedOnRead() {
         when(registry.find("suite-a", 3, identity)).thenReturn(storedSuite());
         when(executions.describeGraphTarget("graph-a", identity)).thenReturn(graphTarget(TARGET, true));
@@ -143,7 +194,7 @@ class TestSuiteExecutionServiceTest {
         TestSuiteExecutionResponse run = service.execute("suite-a", request("tamper-read",
                 TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity);
         TestSuiteRunRecord stored = runRepository.records.get(run.suiteRunId());
-        TestSuiteRunEvidence evidence = stored.evidence();
+        TestSuiteRunEvidence evidence = (TestSuiteRunEvidence) stored.evidence();
         Map<String, Object> metadata = new LinkedHashMap<>(evidence.metadata());
         metadata.put("tampered", true);
         TestSuiteRunEvidence altered = new TestSuiteRunEvidence("", evidence.suiteRunId(),
@@ -293,7 +344,7 @@ class TestSuiteExecutionServiceTest {
 
     @Test
     void operatorSuiteUsesMicroGraphExecutionWithExactFixtureReference() {
-        TestSuite graphSuite = storedSuite().suite();
+        TestSuite graphSuite = (TestSuite) storedSuite().suite();
         TestSuite operatorSuite = new TestSuite("", "operator-suite", 1,
                 new TestSuite.Target("OPERATOR", "customer.normalize", TARGET), "INTERNAL",
                 List.of(graphSuite.cases().getFirst()),
@@ -473,6 +524,15 @@ class TestSuiteExecutionServiceTest {
                 new TestExecutionApiRequest.Target(targetKind, targetId, TARGET),
                 new TestExecutionApiResponse.ResolvedFixtureBundleRef(
                         "STORED", fixtureId, fixtureRevision, fixtureFingerprint), null, evidence);
+    }
+
+    private static TestSuiteRunEvidenceV2 withSchema(TestSuiteRunEvidenceV2 source,
+                                                     String schemaVersion) {
+        return new TestSuiteRunEvidenceV2(schemaVersion, source.suiteRunId(),
+                source.clientRequestId(), source.status(), source.executionPurpose(),
+                source.suiteRef(), source.target(), source.startedAt(), source.completedAt(),
+                source.caseResults(), source.coverage(), source.semanticCoverage(),
+                source.promotion(), source.diagnostics(), source.metadata());
     }
 
     private static final class InMemorySuiteRunRepository implements TestSuiteRunRepository {

@@ -283,12 +283,13 @@ synchronous nested invocation control are now available as Stage 2 increments.
 Public operator execution, occurrence-level nested evidence, the Author Canvas executable
 operator-suite adapter, and idempotent immutable-suite execution are available. The suite runner
 supports graph/operator cases, `COLLECT_ALL`/`FAIL_FAST`, durable per-case checkpoints, structural
-node/edge coverage, promotion eligibility, signed child-run evidence, and signed suite
+node/edge coverage, typed branch/decision/retry/fallback/timeout/compensation semantic coverage,
+promotion eligibility, signed child-run evidence, and signed suite
 checkpoint/terminal attestations at `POST /api/testing/suites/{suiteId}/executions`. Terminal runs
-can be exported as payload-free `bloge.testSuiteEvidenceBundle.v1` values and independently verified
+can be exported as payload-free generation-matched `bloge.testSuiteEvidenceBundle.v1/v2` values and independently verified
 with the Java test-kit against a signed, externally pinned Ed25519 key-set. Governed exact-reference
 REPLAY and dynamic attempt/occurrence selectors are available; streaming/suspendable control,
-semantic coverage, transparency/pin distribution, and physical
+ANEKE semantic projection, transparency/pin distribution, and physical
 test-runtime deployment isolation remain in progress and are not advertised as complete.
 
 Create a provider-specific Java operator only when the provider behavior cannot

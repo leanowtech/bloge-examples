@@ -544,6 +544,42 @@ Coverage uses `invocationSiteId` and explicit source/destination site pairs rath
 `nodeId` or `edgeId`. The structural coordinate includes graph path and invocation kind, so the same
 node name in a root graph, foreach body, and compensation graph cannot collapse into one false hit.
 
+To require orchestration behavior rather than only structural presence, register a new immutable
+revision as `bloge.testSuite.v2` and add `semanticCoveragePolicy`. The registration envelope remains
+`bloge.testSuiteRegistrationRequest.v1` because it already dispatches the nested suite by version:
+
+```json
+{
+  "schemaVersion": "bloge.testSuite.v2",
+  "semanticCoveragePolicy": {
+    "requirements": [
+      {"requirementId": "prime-branch", "kind": "BRANCH_TRANSFERRED",
+       "fromInvocationSiteId": "/root/decision#PRIMARY",
+       "toInvocationSiteId": "/root/approve#PRIMARY"},
+      {"requirementId": "manual-skipped", "kind": "BRANCH_SKIPPED",
+       "fromInvocationSiteId": "/root/decision#PRIMARY",
+       "toInvocationSiteId": "/root/manual#PRIMARY"},
+      {"requirementId": "rule-prime", "kind": "DECISION_RULE",
+       "invocationSiteId": "/root/decision#PRIMARY",
+       "outputJsonPointer": "/rule", "expectedScalar": "PRIME"},
+      {"requirementId": "credit-retry", "kind": "RETRY",
+       "invocationSiteId": "/root/credit#PRIMARY", "minimumAttempts": 2},
+      {"requirementId": "bureau-fallback", "kind": "FALLBACK",
+       "invocationSiteId": "/root/bureau#PRIMARY", "errorCode": ""},
+      {"requirementId": "bureau-timeout", "kind": "TIMEOUT",
+       "invocationSiteId": "/root/bureau#PRIMARY", "errorCode": "UPSTREAM_TIMEOUT"},
+      {"requirementId": "reserve-compensation", "kind": "COMPENSATION",
+       "invocationSiteId": "/root/releaseReservation#COMPENSATION", "errorCode": ""}
+    ]
+  }
+}
+```
+
+This fragment replaces only the suite `schemaVersion` and adds the shown policy; target, cases,
+structural coverage, promotion policy, and metadata remain required. Requirement ids are unique and
+canonicalized. Decision expectations must be scalar JSON values. Compensation sites must end in
+`#COMPENSATION`; only timeout requirements may carry a non-empty machine error code.
+
 Query an exact revision with a separate reader purpose:
 
 ```bash
@@ -594,7 +630,8 @@ external side effect. The runner:
 4. validates every child target, fixture, run id, and evidence identity before aggregation;
 5. derives invocation-site, edge-transfer, case-type, assertion-density, and required-fixture
    consumption coverage from child evidence rather than author metadata;
-6. stores one terminal `bloge.testSuiteRunEvidence.v1` and its canonical fingerprint.
+6. stores terminal `bloge.testSuiteRunEvidence.v1` for a structural v1 suite or independently
+   canonicalized `bloge.testSuiteRunEvidence.v2` for a semantic v2 suite.
 
 The owner lease is not a user lock. It is a short-lived runtime-instance claim that prevents a
 slow child from being mistaken for a dead process. Every heartbeat, checkpoint, and terminal write
@@ -678,6 +715,13 @@ Aggregate status is `RUNNING`, `PASSED`, `COMPLETED_WITH_FAILURES`, `PARTIAL`, o
 certification, owner approval, ANEKE gate decision, or publication. New servers return v2 with a
 signed `CHECKPOINT` or `TERMINAL` attestation. The v1 response remains a read-only migration shape
 for historical unsigned records and must not be upgraded to trusted evidence by inference.
+
+A semantic v2 suite returns `bloge.testSuiteExecutionResponse.v3`,
+`bloge.testSuiteRunEvidence.v2`, and `bloge.testSuiteRunAttestation.v2`. Its required
+`semanticCoverage` contains the signed `required`, server-derived `observed`, complete-evidence
+`missingRequirementIds`, and trust/sanitization `unavailable` facts. `UNSATISFIED` means trusted
+complete evidence did not contain a required fact; `INCOMPLETE` means Resource Gateway could not
+prove the fact. Both block promotion. Only `CERTIFIABLE` child evidence can satisfy a requirement.
 
 The Canvas executable operator suite and standalone test-kit both consume this exact protocol; they
 do not reconstruct an aggregate result from mutable row responses.
@@ -952,8 +996,9 @@ curl -sS http://localhost:8080/api/testing/suite-executions/<suiteRunId>/evidenc
   -H 'X-Purpose: TEST_EXECUTION'
 ```
 
-The response is `bloge.testSuiteEvidenceBundle.v1`. It contains `payloadPolicy=OMITTED`, the exact
-`bloge.testSuiteRunEvidence.v1`, its terminal attestation, and a canonical `bundleFingerprint` over
+The response is `bloge.testSuiteEvidenceBundle.v1` for structural evidence or
+`bloge.testSuiteEvidenceBundle.v2` for semantic evidence. It contains `payloadPolicy=OMITTED`, the exact
+v1/v2 aggregate, its generation-matched terminal attestation, and a canonical `bundleFingerprint` over
 `{payloadPolicy, attestation, evidence}`. Child input/output payloads remain in governed storage;
 the bundle carries only signed child evidence references. A `RUNNING` checkpoint, unavailable
 signer, unsigned historical record, altered aggregate, or non-terminal attestation cannot be
@@ -1009,7 +1054,7 @@ coherence, and exact key membership; then evaluates `ACTIVATED`, `RETIRED`, `DIS
 for CI logs. It never trusts the producer's `VERIFIED` field by itself. The single-key overload remains
 a compatibility path and is insufficient for a release gate.
 
-This v1 bundle is a portable integrity and provenance fact, not a complete certification package.
+These bundles are portable integrity and provenance facts, not complete certification packages.
 It deliberately does not contain replay payload attachments, transparency-log inclusion proof,
 ANEKE workbook projection, publish-gate decision, or owner approval. Key lifecycle is a separate
 signed and pinned protocol rather than copied into every bundle.
@@ -1017,6 +1062,8 @@ signed and pinned protocol rather than copied into every bundle.
 The protocol invariants, negative matrix, and reproducible gates are recorded in
 [Stage 3 suite attestation verification](resource-gateway-execution-data-control-plane-stage3-suite-attestation-verification.md)
 and [Stage 3 key lifecycle verification](resource-gateway-execution-data-control-plane-stage3-key-lifecycle-verification.md).
+Semantic generation rules and negative compatibility evidence are recorded in
+[Stage 3 semantic coverage verification](resource-gateway-execution-data-control-plane-stage3-semantic-coverage-verification.md).
 
 ### 4.4 Query a run or run a batch
 
@@ -1048,13 +1095,17 @@ exact revision, full SHA-256 fingerprint, and explicit `clientRequestId`; malfor
 rejected before any network call. The exact packaged Draft 2020-12 schema validates complete suite
 registration and execution values at runtime, and every returned suite/run identity is rebound to the
 originating request before it can reach assertions or reporters. It accepts suite execution response
-v1 as an explicitly unsigned migration shape and v2 for current servers. `TestRun.integrity()`
+v1 as an explicitly unsigned migration shape, structural v2, and semantic v3. `TestRun.integrity()`
 validates and exposes the child v2 signature/projection manifest. `TestSuiteRun.attestation()`
 exposes the aggregate checkpoint/terminal signature, while `findSuiteEvidenceBundle`,
 `findEvidenceVerificationKeySet`, and the pinned `verifySuiteEvidence` overload provide the
 release-grade consumer-verification path. The exact-key overload remains available for migration.
-`TestSuiteRun` also exposes payload-free case links, structural coverage, and promotion
-eligibility, while `TestSuiteRunAssertions` separates
+`TestSuiteBuilder` keeps structural suites on v1 and automatically emits v2 after
+`requireBranchTransferred`, `requireBranchSkipped`, `requireDecisionRule`, `requireRetry`,
+`requireFallback`, `requireTimeout`, or `requireCompensation` is called. `TestSuiteRun` exposes
+payload-free case links, structural coverage, and promotion eligibility. Semantic-aware consumers
+call `requireSemanticCoverage()`; historical v1 fails with `SEMANTIC_COVERAGE_UNAVAILABLE` instead
+of appearing empty and satisfied. `TestSuiteRunAssertions` separates
 execution, case, coverage, and eligibility assertions.
 
 `clean package` also emits an executable `*-cli.jar`. It reads the bearer token only from
@@ -1217,9 +1268,9 @@ Implemented now:
   `TRANSPORT` lowering, real exploratory run/evidence display, four case intents, content-addressed
   fixture and first-class suite publication, exact-revision aggregate execution, coverage/promotion
   display, response-intent validation, and opaque-target fail-closed behavior.
-- first-class immutable `bloge.testSuite.v1` protocol, dependency-closed registry, independent
-  read/write purposes, target/fixture/classification drift checks, JDBC persistence, and capability
-  discovery.
+- first-class immutable `bloge.testSuite.v1` structural and `bloge.testSuite.v2` semantic protocols,
+  dependency-closed dual-read registry, independent read/write purposes,
+  target/fixture/classification drift checks, JDBC persistence, and capability discovery.
 - idempotent immutable-suite runner for graph and operator targets, durable per-case checkpoints,
   fail-fast/collect-all scheduling, child evidence identity checks, aggregate structural coverage,
   promotion eligibility verdict, suite-run query, and capability discovery.
@@ -1231,12 +1282,15 @@ Implemented now:
 - signed suite `CHECKPOINT` and `TERMINAL` attestations, persistence/read/reconciliation verification,
   ordered child evidence closure, payload-free terminal bundle export, verification-key lookup, and
   independent Ed25519 verification in the standalone test-kit.
+- typed branch transfer/skip, decision-rule, retry, fallback, timeout, and compensation requirements;
+  certifiable-evidence-only aggregation; distinct missing/unavailable verdicts; generation-matched
+  aggregate attestation/bundle export; and fail-closed test-kit semantic projection.
 
 Still intentionally outside this increment:
 
 - streaming/suspendable controls and evidence, and durable-resume plan restoration;
-- signed certification decisions, transparency-log proof, trusted pin distribution, full
-  branch/rule/retry/fallback/compensation semantic coverage, ANEKE projection, and mutation testing;
+- signed certification decisions, transparency-log proof, trusted pin distribution, ANEKE semantic
+  workbook projection, and mutation testing;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
   reconciliation alert SLOs, and suite-history list/trend APIs;
 - deterministic random/UUID/function execution services and deterministic concurrent scheduling;

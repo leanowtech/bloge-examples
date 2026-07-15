@@ -35,7 +35,7 @@ public record TestSuite(
         CoveragePolicy coveragePolicy,
         PromotionPolicy promotionPolicy,
         Map<String, Object> metadata
-) {
+) implements TestSuiteProtocol {
     /** Current immutable suite protocol version. */
     public static final String SCHEMA_VERSION = "bloge.testSuite.v1";
 

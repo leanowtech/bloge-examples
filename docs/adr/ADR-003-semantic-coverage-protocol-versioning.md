@@ -150,9 +150,14 @@ protocol generation is cheaper and safer than an apparently additive v1 edit.
 
 ## Follow-ups
 
-- add byte-for-byte v1 suite and aggregate canonical golden vectors;
-- implement the versioned codec registry before adding semantic fields;
-- define bounded v2 JSON Schemas and negative compatibility tests;
-- add branch/retry/fallback/timeout/compensation aggregation tests from FULL child evidence;
-- add test-kit and ANEKE N/N-1 consumer conformance matrices;
-- update capability negotiation and deprecation policy before enabling v2 by default.
+- [x] preserve v1 concrete canonical records and verify v1 JSON/fingerprint round-trip;
+- [x] implement versioned suite/evidence codec dispatch before adding semantic fields;
+- [x] define bounded v2 JSON Schemas and negative generation-compatibility tests;
+- [x] add branch/decision/retry/fallback/timeout/compensation aggregation tests from certifiable evidence;
+- [x] add independent test-kit N/N-1 projection and fail-closed v1 semantic rejection;
+- [x] update capability negotiation with explicit supported generations;
+- [ ] add ANEKE N/N-1 consumer conformance and workbook projection;
+- [ ] define deprecation telemetry and minimum compatibility window before any future v1 retirement.
+
+Implementation and reproducible evidence are recorded in
+[Stage 3 semantic coverage verification](../resource-gateway-execution-data-control-plane-stage3-semantic-coverage-verification.md).

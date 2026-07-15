@@ -95,6 +95,48 @@ class TestSuiteBuilderTest {
                 .hasMessageContaining("fixture revision");
     }
 
+    @Test
+    void semanticRequirementsUpgradeSuiteToV2AndRemainDeterministicallyOrdered() {
+        GraphTargetDescriptor target = new GraphTargetDescriptor("loanDecision", FINGERPRINT,
+                Map.of(), "CONSERVATIVE_ALL_REGISTERED", true, List.of(), null);
+
+        ObjectNode request = TestSuiteBuilder.graph(target).id("semantic-loan-policy")
+                .addCase("golden", TestSuiteBuilder.CaseType.GOLDEN, Map.of(), fixture("fixture-v2"))
+                .requireTimeout("timeout", "/root/remote#PRIMARY", "UPSTREAM_TIMEOUT")
+                .requireDecisionRule("decision", "/root/decision#PRIMARY", "/rule", "APPROVE")
+                .requireBranchTransferred("branch", "/root/input#PRIMARY", "/root/decision#PRIMARY")
+                .requireRetry("retry", "/root/remote#PRIMARY", 3)
+                .requireFallback("fallback", "/root/remote#PRIMARY")
+                .requireCompensation("compensation", "/root/refund#COMPENSATION")
+                .registrationRequest();
+
+        assertThat(request.at("/testSuite/schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_V2);
+        assertThat(request.at("/testSuite/semanticCoveragePolicy/requirements"))
+                .extracting(item -> item.path("requirementId").asText())
+                .containsExactly("branch", "compensation", "decision", "fallback", "retry", "timeout");
+        assertThat(request.at("/testSuite/semanticCoveragePolicy/requirements/2/expectedScalar").asText())
+                .isEqualTo("APPROVE");
+    }
+
+    @Test
+    void semanticBuilderRejectsDuplicateIdentityAndInvalidCoordinates() {
+        GraphTargetDescriptor target = new GraphTargetDescriptor("loanDecision", FINGERPRINT,
+                Map.of(), "CONSERVATIVE_ALL_REGISTERED", true, List.of(), null);
+        TestSuiteBuilder builder = TestSuiteBuilder.graph(target).id("semantic-invalid")
+                .addCase("golden", TestSuiteBuilder.CaseType.GOLDEN, Map.of(), fixture("fixture-v2"))
+                .requireRetry("retry", "/root/remote#PRIMARY", 2);
+
+        assertThatThrownBy(() -> builder.requireFallback("retry", "/root/remote#PRIMARY"))
+                .hasMessageContaining("Duplicate semantic requirement");
+        assertThatThrownBy(() -> builder.requireDecisionRule(
+                "decision", "/root/decision#PRIMARY", "not-a-pointer", Map.of()))
+                .hasMessageContaining("JSON Pointer and scalar");
+        assertThatThrownBy(() -> builder.requireCompensation(
+                "compensation", "/root/refund#PRIMARY"))
+                .hasMessageContaining("#COMPENSATION");
+    }
+
     private static FixtureBundleRevision fixture(String id) {
         return new FixtureBundleRevision(id, 1, FINGERPRINT, "tenant", "test",
                 Instant.parse("2026-07-15T10:15:30Z"), "ci", null);
