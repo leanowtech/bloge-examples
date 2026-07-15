@@ -53,6 +53,30 @@ final class TestingProtocolSchemaValidator {
         }
     }
 
+    /**
+     * Requires a value to satisfy the root of another packaged Draft 2020-12 schema.
+     *
+     * @param value decoded protocol value
+     * @param resource absolute classpath schema resource
+     */
+    static void requireRoot(JsonNode value, String resource) {
+        if (value == null) {
+            throw invalid("root");
+        }
+        List<com.networknt.schema.Error> errors;
+        try {
+            errors = rootSchema(resource).validate(value.toString(), InputFormat.JSON,
+                    context -> context.executionConfig(config -> config
+                            .formatAssertionsEnabled(true)
+                            .failFast(true)));
+        } catch (RuntimeException failure) {
+            throw invalid("root");
+        }
+        if (!errors.isEmpty()) {
+            throw invalid("root");
+        }
+    }
+
     private static Schema schema(String definition) {
         return DEFINITIONS.computeIfAbsent(definition, TestingProtocolSchemaValidator::load);
     }
@@ -72,6 +96,30 @@ final class TestingProtocolSchemaValidator {
             return REGISTRY.getSchema(definitionSchema.toString(), InputFormat.JSON);
         } catch (IOException | RuntimeException failure) {
             throw new IllegalStateException("The packaged testing protocol schema is unavailable");
+        }
+    }
+
+    private static Schema rootSchema(String resource) {
+        String safeResource = resource == null ? "" : resource.trim();
+        if (!safeResource.startsWith("/schemas/") || !safeResource.endsWith(".json")) {
+            throw new IllegalArgumentException("Packaged protocol schema resource is invalid");
+        }
+        return DEFINITIONS.computeIfAbsent("root:" + safeResource,
+                ignored -> loadRoot(safeResource));
+    }
+
+    private static Schema loadRoot(String resource) {
+        try (InputStream input = TestingProtocolSchemaValidator.class.getResourceAsStream(resource)) {
+            if (input == null) {
+                throw new IOException("Schema resource is absent");
+            }
+            JsonNode decoded = JSON.readTree(input);
+            if (!decoded.isObject()) {
+                throw new IOException("Schema root is invalid");
+            }
+            return REGISTRY.getSchema(decoded.toString(), InputFormat.JSON);
+        } catch (IOException | RuntimeException failure) {
+            throw new IllegalStateException("The packaged protocol schema is unavailable");
         }
     }
 

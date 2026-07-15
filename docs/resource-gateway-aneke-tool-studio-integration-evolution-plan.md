@@ -488,17 +488,21 @@ policy。正式链路把 suite 定义、运行证据和治理结论拆成三个�
 
 图源：[resource-gateway-workbook-gate-evidence-loop.drawio](assets/drawio/resource-gateway-workbook-gate-evidence-loop.drawio)。
 
-1. Resource Gateway 从 exact GraphDraft revision 和一致 dependency snapshot 生成
-   `CorrectnessWorkbookBundle.v1`。它读取精确 suite revision，生成稳定 case/assertion ID，输出脱敏测试材料和已验签
-   run evidence refs，并对整个 bundle 计算 fingerprint。
-2. ANEKE 导入 seed 后创建自己的 workbook，执行组织级 publish-gate policy。registry、workbook 和最终决策仍以
+1. Resource Gateway 保留两条不可混用的投影。`CorrectnessWorkbookBundle.v1` 从 exact GraphDraft revision 和一致
+   dependency snapshot 生成，服务历史 visual operator-contract table；它读取精确 suite revision，生成稳定
+   case/assertion ID，输出脱敏测试材料和已验签 run evidence refs。
+2. testing control plane 的 graph/operator semantic suite 从 exact `bloge.testSuite.v2` revision 生成独立的
+   `SemanticCorrectnessWorkbookBundle.v1`。它输出 typed semantic policy、payload-free case identity、verified terminal
+   `bloge.testSuiteRunEvidence.v2` verdict 和 attestation ref；不得按 draft graphName 猜 suite，也不得把 structural v1
+   解释成“语义要求为空”。
+3. ANEKE 导入 seed 后创建自己的 workbook，执行组织级 publish-gate policy。registry、workbook 和最终决策仍以
    ANEKE 为权威源。
-3. ANEKE 返回 `GovernanceGateResult.v2`。`decisionBasis` 固化 workbook/source bundle、snapshot、suite、evidence、
+4. ANEKE 返回 `GovernanceGateResult.v2`。`decisionBasis` 固化 workbook/source bundle、snapshot、suite、evidence、
    policy 和 required checks。
-4. Resource Gateway 不重算治理政策，只验证这些 refs 能否回到当前不可变事实。`PASSED` 缺依据返回
+5. Resource Gateway 不重算治理政策，只验证这些 refs 能否回到当前不可变事实。`PASSED` 缺依据返回
    `RG.INTEGRATION.GATE_BASIS_INCOMPLETE`，代际漂移返回 `RG.INTEGRATION.GATE_BASIS_STALE`，跨 scope evidence 返回
    最小披露 404。
-5. 合法 gate result 与 `GOVERNANCE_GATE_RESULT_RECEIVED` 进入同一事务；并发实例由数据库唯一键裁决，相同内容
+6. 合法 gate result 与 `GOVERNANCE_GATE_RESULT_RECEIVED` 进入同一事务；并发实例由数据库唯一键裁决，相同内容
    幂等，异内容冲突。Author view 除 draft revision 外还比较 dependency snapshot，suite/readiness 漂移会自动 stale。
 
 workbook seed 的核心形状：
@@ -573,6 +577,22 @@ workbook seed 的核心形状：
 `GOVERNANCE_EXPECTATION`。suite tag `case-kind:golden|negative|boundary|regression` 明确 case kind；没有显式标签时
 协议返回 `REGRESSION + DEFAULTED`，消费者必须保留 mappingStatus，不能把默认映射标成原作者意图。完整机器合同见
 `correctness-workbook-bundle-v1.schema.json` 与 `governance-gate-result-v2.schema.json`。
+
+semantic suite seed 由
+`GET /api/integration/test-suites/{suiteId}/revisions/{revision}/semantic-correctness-workbook`
+导出，使用 `WORKBOOK_SYNC`。其机器合同是
+`semantic-correctness-workbook-bundle-v1.schema.json`，并具有以下强约束：
+
+- 只接受 exact v2 suite、v2 aggregate 和 v2 terminal attestation；任一混代际、scope/target/ref/fingerprint 漂移整包拒绝；
+- case input、fixture payload、suite metadata value、child payload 和 free-text diagnostic 均不出域；
+- `NO_TERMINAL_EVIDENCE`、`VERIFICATION_UNAVAILABLE`、`NO_ELIGIBLE_EVIDENCE` 分开表达，只有
+  `READY` 才允许进入下一步，但不等价于 ANEKE 批准；
+- 最多投影最新 100 条，candidate/unavailable/truncated 一同进入 bundle fingerprint；历史趋势另走分页协议；
+- ANEKE 必须跟随每条 evidence endpoint，使用带外 pin 独立验证 portable bundle，不能只相信 producer 的 READY。
+
+当前 `GovernanceGateResult.v2` 仍以 draft workbook basis 为主，尚未把 semantic workbook fingerprint 设为一等
+decision-basis ref。因此本轮完成的是“语义事实可确定性进入 ANEKE adapter”，不是 semantic publish gate 的最终闭环；
+下一协议代际必须显式绑定该 fingerprint，禁止把这段缺口藏在 `requiredChecks` 文本里。
 
 ## 8. Deep Link 设计
 
@@ -663,7 +683,7 @@ POST /api/integration/gate-results
 | 工作项 | 交付物 | 验收 |
 |---|---|---|
 | Deep link | draft/node/operator/run/gate issue URL | ANEKE 点击可直接定位到画布上下文 |
-| Correctness workbook projection | Round 17 `CorrectnessWorkbookBundle.v1` + exact suite/evidence refs | ANEKE 可确定性导入且知道默认映射与脱敏事实 |
+| Correctness workbook projection | Round 17 draft `CorrectnessWorkbookBundle.v1` + exact semantic-suite `SemanticCorrectnessWorkbookBundle.v1` + independent test-kit consumer | ANEKE 可确定性区分历史表格 seed 与 typed semantic seed；v1 不伪装语义覆盖；evidence 可回到便携验签 bundle |
 | Gate result ingestion | `GovernanceGateResult.v2` decision basis + Author UI panel | PASSED 必须可回指 workbook/snapshot/suite/evidence/policy；漂移自动 stale |
 | Operator runtime readiness profile | owner、risk、secret policy、idempotency、SLA、runtime binding、artifact provenance/SBOM | ANEKE 能判断工具可发布/可执行性 |
 | Evidence to workbook mapping | verified runId/evidence fingerprint -> workbook rows | run evidence 能成为 correctness workbook 证据且防跨 scope/伪造引用 |

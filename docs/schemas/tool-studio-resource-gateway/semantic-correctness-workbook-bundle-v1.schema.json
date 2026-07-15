@@ -1,0 +1,346 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/semantic-correctness-workbook-bundle-v1.schema.json",
+  "title": "Tool Studio Resource Gateway Semantic Correctness Workbook Bundle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "payloadPolicy", "suite", "evidence", "manifest"],
+  "properties": {
+    "schemaVersion": {"const": "toolStudio.resourceGateway.semanticCorrectnessWorkbookBundle.v1"},
+    "payloadPolicy": {"const": "OMITTED"},
+    "suite": {"$ref": "#/$defs/suite"},
+    "evidence": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {"$ref": "#/$defs/evidence"}
+    },
+    "manifest": {"$ref": "#/$defs/manifest"}
+  },
+  "$defs": {
+    "fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "fingerprint"],
+      "properties": {
+        "kind": {"enum": ["GRAPH", "OPERATOR"]},
+        "id": {"type": "string", "minLength": 1, "maxLength": 512},
+        "fingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "fixtureRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixtureBundleId", "revision", "fingerprint"],
+      "properties": {
+        "fixtureBundleId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "revision": {"type": "integer", "minimum": 1},
+        "fingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "caseRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "caseType", "fixtureBundleRef", "tags"],
+      "properties": {
+        "caseId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "caseType": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]},
+        "fixtureBundleRef": {"$ref": "#/$defs/fixtureRef"},
+        "tags": {
+          "type": "array", "uniqueItems": true, "maxItems": 100,
+          "items": {"type": "string", "maxLength": 255}
+        }
+      }
+    },
+    "edgeRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fromInvocationSiteId", "toInvocationSiteId"],
+      "properties": {
+        "fromInvocationSiteId": {"type": "string", "minLength": 1, "maxLength": 512},
+        "toInvocationSiteId": {"type": "string", "minLength": 1, "maxLength": 512}
+      }
+    },
+    "coveragePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimumCases", "requiredCaseTypes", "requiredInvocationSiteIds",
+        "requiredEdgeTransfers", "minimumAssertionsPerCase", "requireAllFixtureRulesConsumed"],
+      "properties": {
+        "minimumCases": {"type": "integer", "minimum": 1, "maximum": 100},
+        "requiredCaseTypes": {"type": "array", "uniqueItems": true, "maxItems": 4,
+          "items": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]}},
+        "requiredInvocationSiteIds": {"type": "array", "uniqueItems": true, "maxItems": 10000,
+          "items": {"type": "string", "minLength": 1, "maxLength": 512}},
+        "requiredEdgeTransfers": {"type": "array", "uniqueItems": true, "maxItems": 10000,
+          "items": {"$ref": "#/$defs/edgeRef"}},
+        "minimumAssertionsPerCase": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "requireAllFixtureRulesConsumed": {"type": "boolean"}
+      }
+    },
+    "promotionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requireAllCasesPassed", "minimumCertifiableCases",
+        "requireTargetCertificationEligible"],
+      "properties": {
+        "requireAllCasesPassed": {"type": "boolean"},
+        "minimumCertifiableCases": {"type": "integer", "minimum": 0, "maximum": 100},
+        "requireTargetCertificationEligible": {"type": "boolean"}
+      }
+    },
+    "semanticRequirement": {
+      "oneOf": [
+        {"$ref": "#/$defs/branchRequirement"},
+        {"$ref": "#/$defs/decisionRequirement"},
+        {"$ref": "#/$defs/retryRequirement"},
+        {"$ref": "#/$defs/siteRequirement"}
+      ]
+    },
+    "branchRequirement": {
+      "type": "object", "additionalProperties": false,
+      "required": ["requirementId", "kind", "fromInvocationSiteId", "toInvocationSiteId"],
+      "properties": {
+        "requirementId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "kind": {"enum": ["BRANCH_TRANSFERRED", "BRANCH_SKIPPED"]},
+        "fromInvocationSiteId": {"type": "string", "minLength": 1, "maxLength": 512},
+        "toInvocationSiteId": {"type": "string", "minLength": 1, "maxLength": 512}
+      }
+    },
+    "decisionRequirement": {
+      "type": "object", "additionalProperties": false,
+      "required": ["requirementId", "kind", "invocationSiteId", "outputJsonPointer", "expectedScalar"],
+      "properties": {
+        "requirementId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "kind": {"const": "DECISION_RULE"},
+        "invocationSiteId": {"type": "string", "minLength": 1, "maxLength": 512},
+        "outputJsonPointer": {"type": "string", "minLength": 1, "maxLength": 1024,
+          "pattern": "^/"},
+        "expectedScalar": {"type": ["string", "number", "integer", "boolean", "null"]}
+      }
+    },
+    "retryRequirement": {
+      "type": "object", "additionalProperties": false,
+      "required": ["requirementId", "kind", "invocationSiteId", "minimumAttempts"],
+      "properties": {
+        "requirementId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "kind": {"const": "RETRY"},
+        "invocationSiteId": {"type": "string", "minLength": 1, "maxLength": 512},
+        "minimumAttempts": {"type": "integer", "minimum": 2, "maximum": 100000}
+      }
+    },
+    "siteRequirement": {
+      "type": "object", "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"enum": ["FALLBACK", "COMPENSATION"]}}},
+          "then": {"properties": {"errorCode": {"const": ""}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "COMPENSATION"}}},
+          "then": {"properties": {"invocationSiteId": {"pattern": "#COMPENSATION$"}}}
+        }
+      ],
+      "required": ["requirementId", "kind", "invocationSiteId", "errorCode"],
+      "properties": {
+        "requirementId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "kind": {"enum": ["FALLBACK", "TIMEOUT", "COMPENSATION"]},
+        "invocationSiteId": {"type": "string", "minLength": 1, "maxLength": 512},
+        "errorCode": {"type": "string", "maxLength": 255,
+          "pattern": "^$|^[A-Z][A-Z0-9_.-]{0,254}$"}
+      }
+    },
+    "semanticPolicy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["requirements"],
+      "properties": {
+        "requirements": {"type": "array", "minItems": 1, "maxItems": 1000,
+          "items": {"$ref": "#/$defs/semanticRequirement"}}
+      }
+    },
+    "suite": {
+      "type": "object", "additionalProperties": false,
+      "required": ["suiteSchemaVersion", "suiteId", "revision", "suiteFingerprint", "target",
+        "classification", "cases", "coveragePolicy", "semanticCoveragePolicy", "promotionPolicy",
+        "metadataFingerprint"],
+      "properties": {
+        "suiteSchemaVersion": {"const": "bloge.testSuite.v2"},
+        "suiteId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "revision": {"type": "integer", "minimum": 1},
+        "suiteFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "target": {"$ref": "#/$defs/target"},
+        "classification": {"enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]},
+        "cases": {"type": "array", "minItems": 1, "maxItems": 100,
+          "items": {"$ref": "#/$defs/caseRef"}},
+        "coveragePolicy": {"$ref": "#/$defs/coveragePolicy"},
+        "semanticCoveragePolicy": {"$ref": "#/$defs/semanticPolicy"},
+        "promotionPolicy": {"$ref": "#/$defs/promotionPolicy"},
+        "metadataFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "caseResult": {
+      "type": "object", "additionalProperties": false,
+      "required": ["caseId", "caseType", "fixtureBundleRef", "status", "runId", "evidenceStatus",
+        "evidenceClass", "assertionsEvaluated", "assertionsPassed", "diagnosticCode"],
+      "properties": {
+        "caseId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "caseType": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]},
+        "fixtureBundleRef": {"$ref": "#/$defs/fixtureRef"},
+        "status": {"enum": ["PENDING", "PASSED", "FAILED", "NOT_SCHEDULED", "EVIDENCE_INCOMPLETE"]},
+        "runId": {"type": "string", "maxLength": 255},
+        "evidenceStatus": {"type": ["string", "null"], "enum": ["PASSED",
+          "ASSERTION_FAILED", "EXECUTION_FAILED", "CONTROL_PLAN_REJECTED",
+          "FIXTURE_UNMATCHED", "FIXTURE_UNUSED", "CONTROL_PLAN_UNAVAILABLE",
+          "EVIDENCE_INCOMPLETE", "CANCELLED", "TIMED_OUT", null]},
+        "evidenceClass": {"type": ["string", "null"], "enum": ["EXPLORATORY", "CERTIFIABLE", null]},
+        "assertionsEvaluated": {"type": "integer", "minimum": 0},
+        "assertionsPassed": {"type": "integer", "minimum": 0},
+        "diagnosticCode": {"type": "string", "maxLength": 255}
+      }
+    },
+    "coverageVerdict": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "minimumCases", "completedCases", "requiredCaseTypes", "observedCaseTypes",
+        "missingCaseTypes", "requiredInvocationSiteIds", "observedInvocationSiteIds",
+        "missingInvocationSiteIds", "requiredEdgeTransfers", "observedEdgeTransfers",
+        "missingEdgeTransfers", "minimumAssertionsPerCase", "assertionDensityViolations",
+        "fixtureConsumptionViolations", "allCasesCompleted"],
+      "properties": {
+        "status": {"enum": ["NOT_EVALUATED", "SATISFIED", "UNSATISFIED", "INCOMPLETE"]},
+        "minimumCases": {"type": "integer", "minimum": 0},
+        "completedCases": {"type": "integer", "minimum": 0},
+        "requiredCaseTypes": {"type": "array", "uniqueItems": true,
+          "items": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]}},
+        "observedCaseTypes": {"type": "array", "uniqueItems": true,
+          "items": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]}},
+        "missingCaseTypes": {"type": "array", "uniqueItems": true,
+          "items": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]}},
+        "requiredInvocationSiteIds": {"type": "array", "uniqueItems": true, "maxItems": 10000,
+          "items": {"type": "string", "minLength": 1, "maxLength": 512}},
+        "observedInvocationSiteIds": {"type": "array", "uniqueItems": true, "maxItems": 10000,
+          "items": {"type": "string", "minLength": 1, "maxLength": 512}},
+        "missingInvocationSiteIds": {"type": "array", "uniqueItems": true, "maxItems": 10000,
+          "items": {"type": "string", "minLength": 1, "maxLength": 512}},
+        "requiredEdgeTransfers": {"type": "array", "uniqueItems": true, "maxItems": 10000,
+          "items": {"$ref": "#/$defs/edgeRef"}},
+        "observedEdgeTransfers": {"type": "array", "uniqueItems": true, "maxItems": 10000,
+          "items": {"$ref": "#/$defs/edgeRef"}},
+        "missingEdgeTransfers": {"type": "array", "uniqueItems": true, "maxItems": 10000,
+          "items": {"$ref": "#/$defs/edgeRef"}},
+        "minimumAssertionsPerCase": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "assertionDensityViolations": {"type": "array", "uniqueItems": true, "maxItems": 100,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}},
+        "fixtureConsumptionViolations": {"type": "array", "uniqueItems": true, "maxItems": 100,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}},
+        "allCasesCompleted": {"type": "boolean"}
+      }
+    },
+    "semanticVerdict": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "required", "observed", "missingRequirementIds", "unavailable"],
+      "properties": {
+        "status": {"enum": ["NOT_EVALUATED", "SATISFIED", "UNSATISFIED", "INCOMPLETE"]},
+        "required": {"type": "array", "minItems": 1, "maxItems": 1000,
+          "items": {"$ref": "#/$defs/semanticRequirement"}},
+        "observed": {"type": "array", "maxItems": 1000, "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["requirementId", "kind", "caseIds"],
+          "properties": {
+            "requirementId": {"type": "string", "minLength": 1, "maxLength": 255},
+            "kind": {"enum": ["BRANCH_TRANSFERRED", "BRANCH_SKIPPED", "DECISION_RULE",
+              "RETRY", "FALLBACK", "TIMEOUT", "COMPENSATION"]},
+            "caseIds": {"type": "array", "minItems": 1, "maxItems": 100,
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1, "maxLength": 255}}
+          }}},
+        "missingRequirementIds": {"type": "array", "maxItems": 1000, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}},
+        "unavailable": {"type": "array", "maxItems": 1000, "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["requirementId", "reasonCode"],
+          "properties": {
+            "requirementId": {"type": "string", "minLength": 1, "maxLength": 255},
+            "reasonCode": {"type": "string", "pattern": "^[A-Z][A-Z0-9_.-]{0,254}$"}}
+        }}
+      }
+    },
+    "promotionVerdict": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "reasons", "allCasesPassed", "certifiableCases",
+        "minimumCertifiableCases", "targetCertificationEligible", "coverageSatisfied",
+        "allCasesCompleted"],
+      "properties": {
+        "status": {"enum": ["NOT_EVALUATED", "ELIGIBLE", "BLOCKED"]},
+        "reasons": {"type": "array", "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}},
+        "allCasesPassed": {"type": "boolean"},
+        "certifiableCases": {"type": "integer", "minimum": 0},
+        "minimumCertifiableCases": {"type": "integer", "minimum": 0},
+        "targetCertificationEligible": {"type": "boolean"},
+        "coverageSatisfied": {"type": "boolean"},
+        "allCasesCompleted": {"type": "boolean"}
+      }
+    },
+    "childEvidenceRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["caseId", "runId", "evidenceFingerprint"],
+      "properties": {
+        "caseId": {"type": "string", "minLength": 1},
+        "runId": {"type": "string", "minLength": 1},
+        "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "attestationRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "signedAt", "keyId", "algorithm", "childEvidenceRefs"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteRunAttestation.v2"},
+        "signedAt": {"type": "string", "format": "date-time"},
+        "keyId": {"type": "string", "minLength": 1, "maxLength": 512},
+        "algorithm": {"type": "string", "minLength": 1, "maxLength": 64},
+        "childEvidenceRefs": {"type": "array", "maxItems": 100,
+          "items": {"$ref": "#/$defs/childEvidenceRef"}}
+      }
+    },
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["suiteRunId", "evidenceSchemaVersion", "evidenceFingerprint", "status",
+        "caseResults", "coverage", "semanticCoverage", "promotion", "attestation",
+        "completedAt", "endpoint"],
+      "properties": {
+        "suiteRunId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "evidenceSchemaVersion": {"const": "bloge.testSuiteRunEvidence.v2"},
+        "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "status": {"enum": ["PASSED", "COMPLETED_WITH_FAILURES", "PARTIAL", "EVIDENCE_INCOMPLETE"]},
+        "caseResults": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/caseResult"}},
+        "coverage": {"$ref": "#/$defs/coverageVerdict"},
+        "semanticCoverage": {"$ref": "#/$defs/semanticVerdict"},
+        "promotion": {"$ref": "#/$defs/promotionVerdict"},
+        "attestation": {"$ref": "#/$defs/attestationRef"},
+        "completedAt": {"type": "string", "format": "date-time"},
+        "endpoint": {"type": "string", "minLength": 1, "maxLength": 1024,
+          "pattern": "^/api/testing/suite-executions/[^/?#]+/evidence-bundle$"}
+      }
+    },
+    "manifest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "bundleFingerprint", "projectionStatus", "caseCount",
+        "semanticRequirementCount", "candidateEvidenceCount", "verifiedEvidenceCount",
+        "unavailableEvidenceCount", "eligibleEvidenceCount", "evidenceTruncated", "gateReady"],
+      "properties": {
+        "schemaVersion": {"const": "toolStudio.resourceGateway.semanticCorrectnessWorkbookManifest.v1"},
+        "bundleFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "projectionStatus": {"enum": ["READY", "NO_TERMINAL_EVIDENCE",
+          "VERIFICATION_UNAVAILABLE", "NO_ELIGIBLE_EVIDENCE"]},
+        "caseCount": {"type": "integer", "minimum": 0},
+        "semanticRequirementCount": {"type": "integer", "minimum": 0},
+        "candidateEvidenceCount": {"type": "integer", "minimum": 0},
+        "verifiedEvidenceCount": {"type": "integer", "minimum": 0},
+        "unavailableEvidenceCount": {"type": "integer", "minimum": 0},
+        "eligibleEvidenceCount": {"type": "integer", "minimum": 0},
+        "evidenceTruncated": {"type": "boolean"},
+        "gateReady": {"type": "boolean"}
+      }
+    }
+  }
+}

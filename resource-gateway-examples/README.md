@@ -55,6 +55,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/testing/executions` | Run an isolated inline or governed fixture plan and retain sanitized evidence (test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/operators/{operatorRef}` | Inspect frozen binding/schema/state fingerprints and executable testability (test/staging only) |
 | `POST http://localhost:8080/api/testing/targets/operators/{operatorRef}/executions` | Run the exact synchronous binding as a controlled one-node BLOGE graph (test/staging only) |
+| `GET http://localhost:8080/api/integration/test-suites/{suiteId}/revisions/{revision}/semantic-correctness-workbook` | Export a payload-free ANEKE seed for one exact semantic suite and its verified terminal evidence (test/staging only) |
 | `POST http://localhost:8080/api/gateway/graphs/contracts/tests/draft` | Generate editable graph mock/table suites from graph and resource schemas |
 | `POST http://localhost:8080/api/gateway/graphs/contracts/tests/run` | Run schema-gated mock/table contract suites |
 | `POST http://localhost:8080/api/gateway/graphs/contracts/tests/suites/run-all` | Run every stored contract suite with coverage policy checks |
@@ -206,13 +207,20 @@ extends a signed hash chain. See the [lifecycle diagram](../docs/assets/resource
 [payload replay v2 schema](../docs/schemas/tool-studio-resource-gateway/payload-replay-bundle-v2.schema.json), and
 [usage guide](../docs/bloge-visual-canvas-product-and-system-guide.md#35-用-recorded-replay-重算正确性断言).
 
-ANEKE workbook integration now exports an immutable `CorrectnessWorkbookBundle.v1` from one exact draft/dependency
-snapshot. It carries exact operator-suite revisions, stable case/assertion IDs, sanitized table values, and verified run
-evidence references. ANEKE remains the workbook and publish-gate authority, but a `PASSED` result must use
+ANEKE workbook integration has two non-interchangeable protocols. `CorrectnessWorkbookBundle.v1` remains the frozen
+draft/dependency projection for visual operator-contract tables. The exact-suite endpoint exports
+`SemanticCorrectnessWorkbookBundle.v1` only for `bloge.testSuite.v2`, carrying typed semantic requirements and verified
+terminal `bloge.testSuiteRunEvidence.v2` refs without case input, fixture payload, or free-text diagnostics. Structural v1
+is rejected instead of being presented as empty semantic coverage; verification-authority outage is distinct from no
+retained evidence. ANEKE must fetch each referenced portable bundle and verify it against an independently pinned key set.
+
+ANEKE remains the workbook and publish-gate authority, but a `PASSED` result must use
 `GovernanceGateResult.v2` and include a verifiable decision basis for workbook source, dependency snapshot, suite/evidence
 refs, policy version, and every required check. Stale or incomplete bases fail closed; accepted gate results and their
 change events commit atomically. See the [evidence loop](../docs/assets/resource-gateway-workbook-gate-evidence-loop.svg),
-[workbook schema](../docs/schemas/tool-studio-resource-gateway/correctness-workbook-bundle-v1.schema.json), and
+[workbook schema](../docs/schemas/tool-studio-resource-gateway/correctness-workbook-bundle-v1.schema.json),
+[semantic workbook schema](../docs/schemas/tool-studio-resource-gateway/semantic-correctness-workbook-bundle-v1.schema.json),
+[semantic workbook verification](../docs/resource-gateway-execution-data-control-plane-stage3-aneke-semantic-workbook-verification.md), and
 [usage guide](../docs/bloge-visual-canvas-product-and-system-guide.md#351-把-contract-suite-和-run-evidence-交给-aneke-workbook).
 
 ## Extend It

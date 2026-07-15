@@ -86,6 +86,25 @@ class ToolStudioIntegrationControllerTest {
                 .andExpect(jsonPath("$.details.operation").value("RECORDED_REPLAY"));
     }
 
+    @Test
+    void semanticWorkbookRouteFailsClosedWithoutIsolatedTestRuntime() throws Exception {
+        MockMvc mvc = mvc(new ToolStudioIntegrationService(null, null, null, null));
+
+        mvc.perform(get("/api/integration/test-suites/suite-risk/revisions/2/"
+                        + "semantic-correctness-workbook")
+                        .header("X-Tenant-Id", "tenant-a")
+                        .header("X-Organization-Id", "knowledge-governance")
+                        .header("X-Environment-Id", "prod")
+                        .header("X-Actor-Id", "aneke-sync")
+                        .header("X-Purpose", "GOVERNANCE_EVIDENCE_INGESTION")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Correlation-Id", "corr-semantic-workbook"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code")
+                        .value("RG.INTEGRATION.SEMANTIC_WORKBOOK_UNAVAILABLE"))
+                .andExpect(jsonPath("$.correlationId").value("corr-semantic-workbook"));
+    }
+
     private static MockMvc mvc(ToolStudioIntegrationService service) {
         IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity("test-aneke", "tenant-a",
                 "knowledge-governance", "tool-studio", "prod", "", "WORKLOAD", "aneke-sync", "",

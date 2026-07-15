@@ -275,7 +275,7 @@ public final class ResourceGatewayTestClient {
         String exactSuiteRunId = requiredIdentifier(suiteRunId, "suiteRunId", 255);
         JsonNode response = exchange("GET", "/api/testing/suite-executions/"
                 + segment(exactSuiteRunId) + "/evidence-bundle", "", "TEST_EXECUTION", null);
-        requireVersion(response, TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V1);
+        requireSuiteEvidenceBundleVersion(response);
         try {
             TestSuiteEvidenceBundle bundle = TestSuiteEvidenceBundle.from(response);
             if (!exactSuiteRunId.equals(bundle.suiteRunId())) {
@@ -285,6 +285,36 @@ public final class ResourceGatewayTestClient {
         } catch (IllegalArgumentException failure) {
             throw responseContractInvalid(
                     "The server returned an invalid portable suite evidence bundle.");
+        }
+    }
+
+    /**
+     * Retrieves the payload-free ANEKE workbook seed for one exact semantic suite revision.
+     *
+     * @param suiteId stable semantic suite id
+     * @param revision exact immutable revision
+     * @return schema-validated semantic correctness workbook
+     */
+    public SemanticCorrectnessWorkbook findSemanticCorrectnessWorkbook(
+            String suiteId, long revision) {
+        String exactSuiteId = requiredIdentifier(suiteId, "suiteId", 255);
+        if (revision < 1) {
+            throw new IllegalArgumentException("revision must be at least 1");
+        }
+        JsonNode response = exchange("GET", "/api/integration/test-suites/"
+                        + segment(exactSuiteId) + "/revisions/" + revision
+                        + "/semantic-correctness-workbook", "", "WORKBOOK_SYNC", null);
+        try {
+            SemanticCorrectnessWorkbook workbook =
+                    SemanticCorrectnessWorkbook.fromEnvelope(response);
+            if (!exactSuiteId.equals(workbook.suiteId())
+                    || revision != workbook.suiteRevision()) {
+                throw new IllegalArgumentException("Semantic workbook suite identity is inconsistent");
+            }
+            return workbook;
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned an invalid semantic correctness workbook.");
         }
     }
 
@@ -612,9 +642,19 @@ public final class ResourceGatewayTestClient {
     private static void requireSuiteExecutionResponseVersion(JsonNode response) {
         String actual = response.path("schemaVersion").asText();
         if (!TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1.equals(actual)
-                && !TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V2.equals(actual)) {
+                && !TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V2.equals(actual)
+                && !TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V3.equals(actual)) {
             throw ResourceGatewayTestException.local("RG.TESTKIT.PROTOCOL_VERSION_MISMATCH",
                     "The server returned an unsupported suite execution response version.", null);
+        }
+    }
+
+    private static void requireSuiteEvidenceBundleVersion(JsonNode response) {
+        String actual = response.path("schemaVersion").asText();
+        if (!TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V1.equals(actual)
+                && !TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V2.equals(actual)) {
+            throw ResourceGatewayTestException.local("RG.TESTKIT.PROTOCOL_VERSION_MISMATCH",
+                    "The server returned an unsupported suite evidence bundle version.", null);
         }
     }
 

@@ -230,7 +230,23 @@ public final class DatabaseTestSuiteRunRepository implements TestSuiteRunReposit
                         SELECT record_json FROM rg_test_suite_run_records
                         WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
                           AND expires_at > CURRENT_TIMESTAMP
-                        """, tenantId, environmentId, clientRequestId);
+                """, tenantId, environmentId, clientRequestId);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public List<TestSuiteRunRecord> findTerminalBySuite(
+            String tenantId, String environmentId, String suiteId, long revision, int limit) {
+        int boundedLimit = Math.max(1, Math.min(limit, 1001));
+        return jdbc.query("""
+                        SELECT record_json FROM rg_test_suite_run_records
+                        WHERE tenant_id = ? AND environment_id = ?
+                          AND suite_id = ? AND suite_revision = ?
+                          AND status <> 'RUNNING' AND expires_at > CURRENT_TIMESTAMP
+                        ORDER BY created_at DESC, suite_run_id
+                        LIMIT ?
+                        """, (rs, row) -> read(rs.getString("record_json")),
+                tenantId, environmentId, suiteId, revision, boundedLimit);
     }
 
     private Optional<TestSuiteRunRecord> query(String sql, Object... arguments) {

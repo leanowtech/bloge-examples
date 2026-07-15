@@ -28,6 +28,7 @@ class TestabilityCapabilitiesTest {
                 "replayPayloadCaptureRequest", "replayPayloadDescriptor", "storedReplayPayload",
                 "testSuiteExecutionRequest", "testSuiteExecutionResponse", "testSuiteRunEvidence",
                 "testSuiteRunAttestation", "testSuiteEvidenceBundle", "testSuiteRunReconciliation",
+                "semanticCorrectnessWorkbookBundle",
                 "testSuiteCatalogMaterialization",
                 "fixtureBundle", "effectiveExecutionPlan", "testRunEvidence",
                 "testEvidenceIntegrity",
@@ -38,6 +39,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("immutableTestSuiteExecution", true)
                 .containsEntry("suiteSemanticCoverageVerdict", true)
                 .containsEntry("typedSemanticCoverageV2", true)
+                .containsEntry("semanticCorrectnessWorkbookProjection", true)
                 .containsEntry("suitePromotionEligibilityVerdict", true)
                 .containsEntry("builtInGraphSuiteCatalogMaterialization", true)
                 .containsEntry("suiteRunOwnerLease", true)
@@ -78,6 +80,9 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("GET")
                 && endpoint.path().equals(
                 "/api/testing/suite-executions/{suiteRunId}/evidence-bundle"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("GET")
+                && endpoint.path().equals("/api/integration/test-suites/{suiteId}/revisions/{revision}"
+                + "/semantic-correctness-workbook"));
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("PUT")
                 && endpoint.path().equals("/api/testing/catalogs/gateway-graph-contract-v1"));
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("PUT")

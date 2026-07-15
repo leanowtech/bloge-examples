@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.integration;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
@@ -199,6 +200,58 @@ class ToolStudioIntegrationServiceTest {
                         "GET /api/visual/run-controls/{requestId}",
                         "POST /api/visual/run-controls/{requestId}/cancel"
                 );
+    }
+
+    @Test
+    void wrapsSemanticWorkbookInTheStableIntegrationEnvelope() {
+        SemanticCorrectnessWorkbookProjectionService projection =
+                mock(SemanticCorrectnessWorkbookProjectionService.class);
+        ToolStudioIntegrationService service = service(null, null, null, null);
+        service.configureSemanticWorkbookProjection(projection);
+        IntegrationRequestContext context = integrationContext("corr-semantic-workbook");
+        SemanticCorrectnessWorkbookBundle workbook = semanticWorkbook();
+        when(projection.project("suite-risk", 2, context)).thenReturn(workbook);
+
+        IntegrationEnvelope<SemanticCorrectnessWorkbookBundle> envelope =
+                service.semanticCorrectnessWorkbook("suite-risk", 2, context);
+
+        assertThat(envelope.payloadKind()).isEqualTo("SEMANTIC_CORRECTNESS_WORKBOOK_BUNDLE");
+        assertThat(envelope.payloadSchemaVersion())
+                .isEqualTo(SemanticCorrectnessWorkbookBundle.SCHEMA_VERSION);
+        assertThat(envelope.payloadFingerprint()).startsWith("sha256:");
+        assertThat(envelope.payload()).isSameAs(workbook);
+    }
+
+    @Test
+    void mapsSemanticWorkbookSourceAndStoreFailuresToStableIntegrationProblems() {
+        SemanticCorrectnessWorkbookProjectionService projection =
+                mock(SemanticCorrectnessWorkbookProjectionService.class);
+        ToolStudioIntegrationService service = service(null, null, null, null);
+        service.configureSemanticWorkbookProjection(projection);
+        IntegrationRequestContext context = integrationContext("corr-semantic-workbook");
+        when(projection.project("suite-risk", 2, context))
+                .thenThrow(new SemanticCorrectnessWorkbookProjectionService.ProjectionException(
+                        "SUITE_EVIDENCE_GENERATION_MISMATCH", "mixed protocol generations"))
+                .thenThrow(new SemanticCorrectnessWorkbookProjectionService.StoreUnavailableException(
+                        "history unavailable", new IllegalStateException("database offline")));
+
+        assertThatThrownBy(() -> service.semanticCorrectnessWorkbook("suite-risk", 2, context))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    IntegrationProblem problem = failure.problem();
+                    assertThat(problem.status()).isEqualTo(409);
+                    assertThat(problem.code())
+                            .isEqualTo("RG.INTEGRATION.SEMANTIC_WORKBOOK_SOURCE_INVALID");
+                    assertThat(problem.details()).containsEntry(
+                            "reason", "SUITE_EVIDENCE_GENERATION_MISMATCH");
+                });
+        assertThatThrownBy(() -> service.semanticCorrectnessWorkbook("suite-risk", 2, context))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    IntegrationProblem problem = failure.problem();
+                    assertThat(problem.status()).isEqualTo(503);
+                    assertThat(problem.code())
+                            .isEqualTo("RG.INTEGRATION.SEMANTIC_WORKBOOK_STORE_UNAVAILABLE");
+                    assertThat(problem.retryable()).isTrue();
+                });
     }
 
     @Test
@@ -826,6 +879,21 @@ class ToolStudioIntegrationServiceTest {
                                                         VisualOperatorCatalog catalog,
                                                         VisualGraphRunRepository runs) {
         return new ToolStudioIntegrationService(repository, validator, catalog, runs);
+    }
+
+    private static SemanticCorrectnessWorkbookBundle semanticWorkbook() {
+        String fingerprint = "sha256:" + "a".repeat(64);
+        TestSuite.FixtureBundleRef fixture =
+                new TestSuite.FixtureBundleRef("fixture-risk", 3, fingerprint);
+        SemanticCorrectnessWorkbookBundle.Suite suite =
+                new SemanticCorrectnessWorkbookBundle.Suite(
+                        "bloge.testSuite.v2", "suite-risk", 2, fingerprint,
+                        new TestSuite.Target("GRAPH", "risk", fingerprint), "RESTRICTED",
+                        List.of(new SemanticCorrectnessWorkbookBundle.CaseRef(
+                                "golden", TestSuite.CaseType.GOLDEN, fixture, List.of("release"))),
+                        TestSuite.CoveragePolicy.defaults(), null,
+                        TestSuite.PromotionPolicy.defaults(), fingerprint);
+        return new SemanticCorrectnessWorkbookBundle("", "", suite, List.of(), null);
     }
 
     private static IntegrationRequestContext integrationContext(String correlationId) {

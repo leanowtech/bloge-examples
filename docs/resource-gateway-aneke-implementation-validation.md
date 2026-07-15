@@ -5,10 +5,10 @@
 | 属性 | 内容 |
 |---|---|
 | 设计基线 | `docs/resource-gateway-aneke-tool-studio-integration-evolution-plan.md` |
-| 当前实现基线 | Round 20 完整验证（typed signed semantic coverage v2） |
+| 当前实现基线 | Round 21 完整验证（exact-suite ANEKE semantic workbook seed） |
 | 评估日期 | 2026-07-16 |
 | 目标 | 仓库内加权实施差距 `<3%`；客户环境部署门禁单独列账且不得被数值掩盖 |
-| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1822 tests，0 failures，0 errors，34 个条件跳过，真实浏览器回归与 JAR 打包 `BUILD SUCCESS`；独立 test-kit `clean verify`：46 tests，0 failures，0 errors，JavaDoc/doclint 与 library/CLI JAR 打包成功。Round 17 的 frontend production build、34 个真实 Chrome 场景与 `npm audit` 0 vulnerabilities 证据继续有效 |
+| 最近全量验证 | 隔离 Maven repository 下 `mvn -f resource-gateway-examples/pom.xml clean verify`：1832 tests，0 failures，0 errors，34 个条件跳过，真实浏览器回归与 JAR 打包 `BUILD SUCCESS`；独立 test-kit `clean verify`：51 tests，0 failures，0 errors，JavaDoc/doclint、library/CLI JAR 与两份权威 schema 打包成功。Round 17 的 frontend production build、34 个真实 Chrome 场景与 `npm audit` 0 vulnerabilities 证据继续有效 |
 
 ## 1. 评分方法
 
@@ -1117,10 +1117,51 @@ the audited repository gap therefore remains `2.630%` rather than being cosmetic
 Verification is recorded in
 [Stage 3 semantic coverage verification](resource-gateway-execution-data-control-plane-stage3-semantic-coverage-verification.md).
 
+### 3.21 Exact-suite ANEKE semantic workbook seed
+
+Round 21 closes the repository-side gap between typed signed semantic evidence and a deterministic
+ANEKE-consumable seed without mutating the historical draft workbook protocol:
+
+```text
+CorrectnessWorkbookBundle.v1
+  -> frozen draft/operator-contract projection
+
+exact bloge.testSuite.v2 revision
+  + newest retained terminal evidence.v2
+  + verified terminal attestation.v2
+  -> SemanticCorrectnessWorkbookBundle.v1 (payloadPolicy=OMITTED)
+  -> independent test-kit Tool Studio schema validation
+  -> portable evidence bundle endpoint for out-of-band pin verification
+```
+
+The projector uses the registry's exact scope/clearance read, rechecks the immutable suite
+fingerprint, queries terminal history by tenant/environment/suite/revision, and fails the entire
+projection on invalid signatures, mixed generations, target/ref drift, or malformed terminal state.
+Verification-authority outage is counted as `VERIFICATION_UNAVAILABLE`, while an empty history is
+`NO_TERMINAL_EVIDENCE`; neither can become gate-ready. The newest 100-row bound, candidate count,
+unavailable count, and truncation flag are committed into the bundle fingerprint. Case inputs,
+fixture values, child payloads, free-text diagnostics, and metadata values do not cross the boundary.
+
+The independent test-kit packages the Tool Studio schema, calls with `WORKBOOK_SYNC`, validates the
+envelope and exact suite identity, projects bounded status enums, and exercises both semantic suite
+response v3 and evidence bundle v2 in addition to historical v1. This is a real consumer boundary,
+but not yet the real ANEKE release matrix.
+
+| 计分项 | Round 20 | Round 21 | 计分依据 | 仍未证明 |
+|---|---:|---:|---|---|
+| Workbook、gate feedback 与 Deep Link（权重 10） | 98% / 9.80 | 99% / 9.90 | graph/operator exact semantic suite seed、machine schema、独立 client、payload/trust/truncation fail-closed | `GovernanceGateResult` 对 semantic workbook fingerprint 的一等 basis；真实 ANEKE N/N-1 conformance |
+| 其他七个维度 | 87.570 | 87.570 | 本轮未声称额外闭环 | 原部署与协议缺口不变 |
+| **合计** | **97.370 / 差距 2.630%** | **97.470 / 差距 2.530%** | 只计入仓库内可复现的 semantic seed/consumer 增量 | 客户部署认证另列账 |
+
+未把该维度提高到 100% 的原因是病根仍有两段：`GovernanceGateResult.v2` 目前不能显式引用 semantic
+workbook fingerprint；test-kit 不是 ANEKE 的跨发布版本矩阵。也没有上调协议维度，因为同仓 N 代消费
+测试不能替代 N/N-1 producer/consumer negotiation。验证记录见
+[Stage 3 ANEKE semantic workbook verification](resource-gateway-execution-data-control-plane-stage3-aneke-semantic-workbook-verification.md)。
+
 ## 4. 部署验收门禁
 
 以下项目不再是仓库内协议主链缺失，但仍是客户生产晋级的强制门禁。没有客户环境证据时，不得把
-`2.630%` 的实现差距解释为“已通过生产认证”。
+`2.530%` 的实现差距解释为“已通过生产认证”。
 
 | ID | 部署门禁 | 病根 | 根治验收 |
 |---|---|---|---|
@@ -1158,6 +1199,7 @@ backoff/DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，�
 | 18 | signed/pinned evidence key lifecycle | 原子签名 key-set、managed v1 安全降级/v2 完整历史、外部 fingerprint pin、签名时刻 retirement/disable/prospective/retroactive revoke、独立 offline verifier | 2.630% | key lifecycle 聚焦 41 tests、test-kit 聚焦 21 tests/全量 42 tests、Resource Gateway 全量 1806 tests，全部 0 failures/0 errors；3 份新增/升级 machine schema；真实 managed sidecar Spring/H2/HTTP 闭环 |
 | 19 | dynamic attempt/occurrence fixture selectors | 一基 bounded canonical 坐标、同级可证明互斥、特定规则优先与显式通用回退、真实 retry/nested re-entry、unmatched 零外部逃逸、test-kit/capability/schema 同步 | 2.630% | selector/capability/schema 聚焦 51 tests、test-kit 全量 42 tests、Resource Gateway 全量 1813 tests，全部 0 failures/0 errors；真实浏览器回归、server/test-kit JAR 与 doclint 成功 |
 | 20 | typed signed semantic coverage v2 | v1 canonical 冻结；七类 typed requirement；certifiable-only fact extraction；missing/unavailable 分流；suite/evidence/attestation/response/bundle 独立代际；JDBC/test-kit 双读与混代际拒绝 | 2.630% | semantic/codec/registry/persistence/attestation/schema/capability 聚焦 52 tests、test-kit 全量 46 tests、Resource Gateway 全量 1822 tests，全部 0 failures/0 errors；server/test-kit JAR 与 public JavaDoc/doclint 成功 |
+| 21 | exact-suite ANEKE semantic workbook seed | exact v2 suite + verified terminal v2 aggregate/attestation；payload-free projection；missing/unavailable/truncation 分流；独立 Tool Studio schema consumer；v3/v2 wire consumption | 2.530% | semantic workbook 聚焦 40 tests、test-kit 全量 51 tests、Resource Gateway 全量 1832 tests，全部 0 failures/0 errors；真实浏览器、server/test-kit JAR、schema packaging 与 public JavaDoc/doclint 成功 |
 
 仓库内实施目标现已满足 `<3%`，但这不等于客户生产认证。第 4 节的 IAM、KMS/HSM、disconnect/binding 与存量副作用
 覆盖仍是环境晋级门禁；必须取得客户 conformance、故障演练和 SLO 证据后，才能声明对应部署通过。

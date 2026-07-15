@@ -173,7 +173,18 @@ TestSuiteRun semanticRun = client.executeSuite(
         storedSemanticSuite.fingerprint(), "pipeline-semantic-1",
         ResourceGatewayTestClient.SuiteStrategy.COLLECT_ALL, Map.of());
 TestSuiteRun.SemanticCoverage semanticCoverage = semanticRun.requireSemanticCoverage();
+
+SemanticCorrectnessWorkbook workbook = client.findSemanticCorrectnessWorkbook(
+        storedSemanticSuite.suiteId(), storedSemanticSuite.revision());
+workbook.requireGateReady();
 ```
+
+The semantic workbook call uses `WORKBOOK_SYNC` and validates the independent Tool Studio schema
+before projecting any field. It accepts only an exact `bloge.testSuite.v2` revision and exposes
+payload-free case identities, typed requirements, signed verdict references, truncation/trust state,
+and portable evidence endpoints. `READY` is a producer-side seed status, not a publish decision:
+retrieve every evidence bundle used by the gate and verify it with the independently distributed
+key-set pin shown below. Structural v1 is rejected rather than interpreted as empty semantic coverage.
 
 Migrate the seven built-in graph suites into the same immutable registry without parsing raw maps:
 
@@ -227,7 +238,9 @@ equivalent independent channel.
 The older `findEvidenceVerificationKey` and `verify(bundle, key)` path remains useful for migration
 and local diagnosis, but a single current-state key cannot prove atomic rotation or historical
 revocation. The bundle uses `payloadPolicy=OMITTED`; child input/output values remain in governed
-server storage. It is not a replay payload package, publish decision, or ANEKE workbook. See the
+server storage. It is not a replay payload package, publish decision, or complete ANEKE workbook;
+the semantic workbook projection contains references and verdicts, while this bundle supplies the
+portable material that must be independently verified. See the
 [key lifecycle verification record](../docs/resource-gateway-execution-data-control-plane-stage3-key-lifecycle-verification.md).
 
 ## CI Command

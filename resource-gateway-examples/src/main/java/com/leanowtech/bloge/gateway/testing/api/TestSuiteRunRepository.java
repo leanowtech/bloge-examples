@@ -90,4 +90,24 @@ public interface TestSuiteRunRepository {
      */
     Optional<TestSuiteRunRecord> findByClientRequestId(String tenantId, String environmentId,
                                                        String clientRequestId);
+
+    /**
+     * Returns a bounded newest-first history of retained terminal runs for one exact suite revision.
+     *
+     * <p>The query is deliberately scoped by tenant and environment before deserialization. A
+     * governance projection must never discover another scope's run and filter it in memory.</p>
+     *
+     * @param tenantId verified tenant scope
+     * @param environmentId verified non-production environment
+     * @param suiteId exact immutable suite id
+     * @param revision exact immutable suite revision
+     * @param limit maximum retained terminal records to return
+     * @return newest-first terminal records
+     * @throws UnsupportedOperationException when an adapter has no exact history-query support;
+     *         callers must not confuse missing adapter capability with an empty history
+     */
+    default List<TestSuiteRunRecord> findTerminalBySuite(
+            String tenantId, String environmentId, String suiteId, long revision, int limit) {
+        throw new UnsupportedOperationException("Terminal suite history query is not implemented");
+    }
 }

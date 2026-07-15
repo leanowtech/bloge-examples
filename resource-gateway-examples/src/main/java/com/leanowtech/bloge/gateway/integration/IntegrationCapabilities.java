@@ -199,6 +199,8 @@ public record IntegrationCapabilities(
             objects.put("testSuiteEvidenceBundle", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle.SCHEMA_VERSION,
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle.SCHEMA_VERSION_V2));
+            objects.put("semanticCorrectnessWorkbookBundle", List.of(
+                    SemanticCorrectnessWorkbookBundle.SCHEMA_VERSION));
             objects.put("testSuiteRunReconciliation", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteRunReconciliationResult.SCHEMA_VERSION));
             objects.put("testSuiteCatalogMaterialization", List.of(
@@ -304,6 +306,7 @@ public record IntegrationCapabilities(
         features.put("immutableTestSuiteExecution", testExecutionEndpointEnabled);
         features.put("suiteSemanticCoverageVerdict", testExecutionEndpointEnabled);
         features.put("typedSemanticCoverageV2", testExecutionEndpointEnabled);
+        features.put("semanticCorrectnessWorkbookProjection", testExecutionEndpointEnabled);
         features.put("suitePromotionEligibilityVerdict", testExecutionEndpointEnabled);
         features.put("builtInGraphSuiteCatalogMaterialization", testExecutionEndpointEnabled);
         features.put("suiteRunOwnerLease", testExecutionEndpointEnabled);
@@ -362,6 +365,9 @@ public record IntegrationCapabilities(
             endpoints.add(new Endpoint("GET", "/api/testing/suite-executions/{suiteRunId}"));
             endpoints.add(new Endpoint("GET",
                     "/api/testing/suite-executions/{suiteRunId}/evidence-bundle"));
+            endpoints.add(new Endpoint("GET",
+                    "/api/integration/test-suites/{suiteId}/revisions/{revision}"
+                            + "/semantic-correctness-workbook"));
         }
         return new IntegrationCapabilities("", "", "", objects, features, identityProvider, signer,
                 payloadGovernance, testExecutionEndpointEnabled

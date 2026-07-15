@@ -1065,6 +1065,52 @@ and [Stage 3 key lifecycle verification](resource-gateway-execution-data-control
 Semantic generation rules and negative compatibility evidence are recorded in
 [Stage 3 semantic coverage verification](resource-gateway-execution-data-control-plane-stage3-semantic-coverage-verification.md).
 
+### 4.3.5 Project one exact semantic suite into an ANEKE workbook seed
+
+The draft-oriented `CorrectnessWorkbookBundle.v1` remains frozen for historical visual contract
+tables. Typed testing-control-plane suites use a separate exact-revision projection:
+
+```bash
+curl -sS \
+  http://localhost:8080/api/integration/test-suites/<suiteId>/revisions/<revision>/semantic-correctness-workbook \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: WORKBOOK_SYNC'
+```
+
+The payload is `toolStudio.resourceGateway.semanticCorrectnessWorkbookBundle.v1`. The endpoint is
+available only when the isolated test runtime is present (`test` or `staging`) and requires one exact
+`bloge.testSuite.v2` revision. It never infers a suite from a draft or graph display name. Historical
+`bloge.testSuite.v1` is rejected with a stable conflict instead of being interpreted as an empty
+semantic policy.
+
+The projection carries payload-free case/fixture identities, structural and typed semantic policies,
+the newest retained terminal v2 aggregates, signed semantic and promotion verdicts, and v2 terminal
+attestation references. Case input, fixture values, suite metadata values, child input/output, and
+free-text diagnostics are omitted. Omitted metadata is committed by fingerprint. Each evidence row
+links to its URL-encoded portable bundle endpoint; consumers must fetch and independently verify that
+bundle against an out-of-band pinned key set before using it in a release decision.
+
+The manifest distinguishes states that governance must not collapse:
+
+| `projectionStatus` | Meaning | Gate treatment |
+|---|---|---|
+| `READY` | At least one verified `PASSED + SATISFIED + ELIGIBLE` aggregate exists | seed may enter ANEKE validation |
+| `NO_TERMINAL_EVIDENCE` | no retained terminal candidate exists | block or require execution |
+| `VERIFICATION_UNAVAILABLE` | at least one candidate could not be checked because the authority was unavailable | retry; never treat as missing or passing |
+| `NO_ELIGIBLE_EVIDENCE` | verified evidence exists but none satisfies semantic and promotion policy | block |
+
+At most 100 newest verified terminal rows are projected. The manifest binds candidate count,
+unavailable count, and `evidenceTruncated`; consumers must not mistake this bounded seed for a complete
+history API. An invalid/unsigned record, suite/evidence/attestation generation mismatch, target/scope
+drift, or fingerprint mismatch fails the whole request closed. This projection is a governance seed,
+not an ANEKE publish decision and not a replacement for portable-bundle verification.
+
+The machine contract is
+[semantic-correctness-workbook-bundle-v1.schema.json](schemas/tool-studio-resource-gateway/semantic-correctness-workbook-bundle-v1.schema.json).
+The independent Java consumer uses `findSemanticCorrectnessWorkbook(...)` and
+`SemanticCorrectnessWorkbook.requireGateReady()`; the verification and negative matrix are recorded in
+[Stage 3 ANEKE semantic workbook verification](resource-gateway-execution-data-control-plane-stage3-aneke-semantic-workbook-verification.md).
+
 ### 4.4 Query a run or run a batch
 
 ```bash
@@ -1289,8 +1335,8 @@ Implemented now:
 Still intentionally outside this increment:
 
 - streaming/suspendable controls and evidence, and durable-resume plan restoration;
-- signed certification decisions, transparency-log proof, trusted pin distribution, ANEKE semantic
-  workbook projection, and mutation testing;
+- signed certification decisions, transparency-log proof, trusted pin distribution, ANEKE
+  `GovernanceGateResult` binding to the semantic workbook fingerprint, and mutation testing;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
   reconciliation alert SLOs, and suite-history list/trend APIs;
 - deterministic random/UUID/function execution services and deterministic concurrent scheduling;

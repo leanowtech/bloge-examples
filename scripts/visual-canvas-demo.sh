@@ -192,9 +192,10 @@ Demo URLs:
   Active profile:   ${SPRING_PROFILE}
 
 Integration API templates:
-  Workbook seed:   GET  /api/integration/drafts/{draftId}/correctness-workbook?revision={revision}
-  Gate feedback:   POST /api/integration/gate-results
-  Test execution:  POST /api/testing/executions  (Bearer token + X-Purpose: TEST_EXECUTION)
+  Draft workbook:    GET  /api/integration/drafts/{draftId}/correctness-workbook?revision={revision}
+  Semantic workbook: GET  /api/integration/test-suites/{suiteId}/revisions/{revision}/semantic-correctness-workbook
+  Gate feedback:     POST /api/integration/gate-results
+  Test execution:    POST /api/testing/executions  (Bearer token + X-Purpose: TEST_EXECUTION)
   Fixture registry: PUT /api/testing/fixture-bundles/{id} (X-Purpose: TEST_FIXTURE_WRITE)
 EOF
 }

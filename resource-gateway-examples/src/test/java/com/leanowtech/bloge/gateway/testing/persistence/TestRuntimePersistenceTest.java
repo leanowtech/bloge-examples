@@ -272,6 +272,12 @@ class TestRuntimePersistenceTest {
         suiteRuns.update(completed, new TestSuiteRunLease("instance-a", now.plusSeconds(60)), now);
 
         assertThat(suiteRuns.find("tenant-a", "test", "suite-run-1")).contains(completed);
+        assertThat(suiteRuns.findTerminalBySuite("tenant-a", "test", "suite-a", 3, 10))
+                .containsExactly(completed);
+        assertThat(suiteRuns.findTerminalBySuite("tenant-b", "test", "suite-a", 3, 10))
+                .isEmpty();
+        assertThat(suiteRuns.findTerminalBySuite("tenant-a", "test", "suite-a", 4, 10))
+                .isEmpty();
         TestSuiteRunEvidence duplicateEvidence = new TestSuiteRunEvidence("", "suite-run-2",
                 "request-1", running.status(), running.executionPurpose(), running.suiteRef(),
                 running.target(), running.startedAt(), null, running.caseResults(), running.coverage(),

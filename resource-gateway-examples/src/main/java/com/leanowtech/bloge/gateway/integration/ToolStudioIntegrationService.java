@@ -46,6 +46,7 @@ public class ToolStudioIntegrationService {
     private final SideEffectReconcilerRegistry sideEffectReconcilers;
     private final GraphDraftDependencySnapshotService dependencySnapshots;
     private final CorrectnessWorkbookProjectionService workbookProjection;
+    private SemanticCorrectnessWorkbookProjectionService semanticWorkbookProjection;
     private final ObjectMapper objectMapper;
     private boolean testExecutionEndpointEnabled;
 
@@ -82,6 +83,13 @@ public class ToolStudioIntegrationService {
     @Autowired(required = false)
     void configureTestability(TestabilityAvailability availability) {
         this.testExecutionEndpointEnabled = availability != null && availability.executionEndpointEnabled();
+    }
+
+    /** Receives the profile-owned semantic workbook projector with the isolated test runtime. */
+    @Autowired(required = false)
+    void configureSemanticWorkbookProjection(
+            SemanticCorrectnessWorkbookProjectionService semanticWorkbookProjection) {
+        this.semanticWorkbookProjection = semanticWorkbookProjection;
     }
 
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -201,6 +209,40 @@ public class ToolStudioIntegrationService {
                     "RG.INTEGRATION.WORKBOOK_SOURCE_CHANGED",
                     "A workbook source changed while the immutable bundle was being projected.",
                     context.correlationId(), Map.of("reason", failure.code())));
+        }
+    }
+
+    /**
+     * Exports one exact payload-free semantic suite and its verified terminal evidence to ANEKE.
+     *
+     * @param suiteId stable immutable suite id
+     * @param revision exact suite revision
+     * @param context verified Tool Studio workload scope
+     * @return semantic correctness workbook envelope
+     */
+    public IntegrationEnvelope<SemanticCorrectnessWorkbookBundle> semanticCorrectnessWorkbook(
+            String suiteId, long revision, IntegrationRequestContext context) {
+        context.requireComplete();
+        if (semanticWorkbookProjection == null) {
+            throw new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
+                    "RG.INTEGRATION.SEMANTIC_WORKBOOK_UNAVAILABLE",
+                    "Semantic workbook projection requires the isolated test runtime.",
+                    context.correlationId(), Map.of()));
+        }
+        try {
+            SemanticCorrectnessWorkbookBundle bundle =
+                    semanticWorkbookProjection.project(suiteId, revision, context);
+            return IntegrationEnvelope.of("SEMANTIC_CORRECTNESS_WORKBOOK_BUNDLE",
+                    SemanticCorrectnessWorkbookBundle.SCHEMA_VERSION, bundle);
+        } catch (SemanticCorrectnessWorkbookProjectionService.ProjectionException failure) {
+            throw new IntegrationProblemException(IntegrationProblem.conflict(
+                    "RG.INTEGRATION.SEMANTIC_WORKBOOK_SOURCE_INVALID",
+                    "The semantic workbook source cannot produce trusted governance facts.",
+                    context.correlationId(), Map.of("reason", failure.code())));
+        } catch (SemanticCorrectnessWorkbookProjectionService.StoreUnavailableException failure) {
+            throw new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
+                    "RG.INTEGRATION.SEMANTIC_WORKBOOK_STORE_UNAVAILABLE",
+                    "Semantic suite-run history is unavailable.", context.correlationId(), Map.of()));
         }
     }
 

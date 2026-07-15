@@ -684,6 +684,30 @@ suite tag 可用 `case-kind:golden`、`case-kind:negative`、`case-kind:boundary
 无损转换。测试输入、config、mocked output 和 expected value 在离开 Resource Gateway 前经过与 run payload 相同的
 有界 sanitizer，`redaction` 会列出命中路径。
 
+**如果 suite 来自 testing control plane，使用 semantic seed。** 不要把 `bloge.testSuite.v2`
+塞回 draft-oriented v1 形状，也不要按 graphName 猜它属于哪份 draft。使用精确 suite id/revision：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  -H "X-Purpose: WORKBOOK_SYNC" \
+  "http://localhost:8080/api/integration/test-suites/$SUITE_ID/revisions/$SUITE_REVISION/semantic-correctness-workbook"
+```
+
+`SemanticCorrectnessWorkbookBundle.v1` 返回 payload-free case/fixture identity、structural coverage、typed
+branch/decision/retry/fallback/timeout/compensation requirements、verified terminal v2 verdict、attestation ref 和
+portable evidence endpoint。它不会返回 case input、fixture value、child payload、suite metadata value 或 free-text
+diagnostic。structural `bloge.testSuite.v1` 会被明确拒绝，不会伪装成“没有语义要求”。
+
+先看 `manifest.projectionStatus`：`NO_TERMINAL_EVIDENCE` 表示尚无终态运行，
+`VERIFICATION_UNAVAILABLE` 表示验签权威暂不可用，`NO_ELIGIBLE_EVIDENCE` 表示证据已验证但未满足语义/晋级策略；
+只有 `READY` 可进入 ANEKE 下一步。即便 READY，ANEKE 仍要逐条读取 `evidence[].endpoint`，使用通过独立渠道分发的
+key-set fingerprint pin 验证 portable bundle；不能把 producer 状态当作信任根。投影最多包含最新 100 条，
+`candidateEvidenceCount` 与 `evidenceTruncated` 必须随 workbook 一起保存。
+
+当前 `GovernanceGateResult.v2` 仍以 draft workbook decision basis 为主，尚不能一等引用 semantic seed fingerprint。
+因此 semantic seed 可用于正确性工作簿导入和 adapter 联调，但在新 gate 协议落地前不得宣称完成 semantic publish
+decision 闭环。
+
 **第二步：ANEKE 运行自己的 workbook 和 publish-gate policy。** 它生成不可变
 `GovernanceGateResult.v2`，`decisionBasis` 必须带回 workbook ref、source bundle fingerprint、dependency snapshot、
 suite refs、evidence refs、policy id/version、required checks 和每项结果。例如：
@@ -741,7 +765,8 @@ run evidence 签名以及所有 `policy.requiredChecks`。通过结论缺依据�
 变更后 Author 侧 freshness 自动变为 `STALE`。
 
 v1 gate result 继续可用于 `BLOCKED/WARNING` 兼容反馈，但 v1 `PASSED` 会被拒绝，因为它无法证明 decision basis。
-机器合同：[correctness workbook bundle v1](schemas/tool-studio-resource-gateway/correctness-workbook-bundle-v1.schema.json) 和
+机器合同：[correctness workbook bundle v1](schemas/tool-studio-resource-gateway/correctness-workbook-bundle-v1.schema.json)、
+[semantic correctness workbook bundle v1](schemas/tool-studio-resource-gateway/semantic-correctness-workbook-bundle-v1.schema.json) 和
 [governance gate result v2](schemas/tool-studio-resource-gateway/governance-gate-result-v2.schema.json)。
 
 ### 3.6 读取 timeout、fallback 与 partial failure 证据
@@ -1113,9 +1138,10 @@ Legacy composer: http://localhost:8080/examples/gateway
   Active profile:   test
 
 Integration API templates:
-  Workbook seed: GET  /api/integration/drafts/{draftId}/correctness-workbook?revision={revision}
-  Gate feedback: POST /api/integration/gate-results
-  Test execution: POST /api/testing/executions  (Bearer token + X-Purpose: TEST_EXECUTION)
+  Draft workbook:    GET  /api/integration/drafts/{draftId}/correctness-workbook?revision={revision}
+  Semantic workbook: GET  /api/integration/test-suites/{suiteId}/revisions/{revision}/semantic-correctness-workbook
+  Gate feedback:     POST /api/integration/gate-results
+  Test execution:    POST /api/testing/executions  (Bearer token + X-Purpose: TEST_EXECUTION)
 ```
 
 脚本不会把“端口已监听”当成启动成功。它会等待公开的 capability endpoint 返回 2xx，确认协议、路由和 Spring

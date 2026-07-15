@@ -176,6 +176,16 @@ public class ToolStudioIntegrationController {
                 requestContext(headers, IntegrationOperation.WORKBOOK_EXPORT));
     }
 
+    /** Exports one exact semantic suite revision as a payload-free ANEKE workbook seed. */
+    @GetMapping("/test-suites/{suiteId}/revisions/{revision}/semantic-correctness-workbook")
+    public IntegrationEnvelope<SemanticCorrectnessWorkbookBundle> semanticCorrectnessWorkbook(
+            @PathVariable String suiteId,
+            @PathVariable long revision,
+            @RequestHeader HttpHeaders headers) {
+        return service.semanticCorrectnessWorkbook(suiteId, revision,
+                requestContext(headers, IntegrationOperation.WORKBOOK_EXPORT));
+    }
+
     @GetMapping("/drafts/{draftId}/gate-result")
     public IntegrationEnvelope<GovernanceGateView> governanceGate(@PathVariable String draftId,
                                                                   @RequestHeader HttpHeaders headers) {

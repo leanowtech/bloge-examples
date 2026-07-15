@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0/1 已落地，Stage 2 主路径持续收口，Stage 3 已完成 child + suite aggregate + pinned key lifecycle + typed semantic coverage 完整性链 |
+| 状态 | Accepted / In implementation；Stage 0/1 已落地，Stage 2 主路径持续收口，Stage 3 已完成 child + suite aggregate + pinned key lifecycle + typed semantic coverage + ANEKE semantic seed 完整性链 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、operator 开发团队、QA、平台安全、SRE、ANEKE Tool Studio |
 | 设计目标 | 让调用方在测试运行中确定性控制 DAG 的外部数据、故障和非确定性来源，并产出可验证的测试证据 |
 | 非目标 | 不把 Resource Gateway 变成通用代码覆盖率平台；不允许普通生产请求携带测试替换指令；不替代 operator 代码仓库中的白盒单元测试 |
@@ -20,7 +20,7 @@
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
 | Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（四类 case intent、内容寻址 fixture/一等 suite 发布、精确 revision 执行与 aggregate coverage/promotion 回显）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、process-owner lease/heartbeat/checkpoint fence、abandoned RUNNING fail-closed reconciliation、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其 governed catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free plan v2 谱系与认证降级，以及同步 nested/foreach/loop/compensation 控制传播、动态 attempt/occurrence selector 与 occurrence/attempt/node/edge evidence 已落地；streaming/suspendable control/evidence 与物理 network isolation 待完成 |
-| Stage 3 | In progress | graph/operator `TestRunEvidence`、suite checkpoint/terminal attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、外部 fingerprint pin、签名时刻 retirement/prospective/retroactive revocation 与 test-kit offline verifier 已完成；transparency proof、trusted pin distribution 和 ANEKE projection 待完成 |
+| Stage 3 | In progress | graph/operator `TestRunEvidence`、suite checkpoint/terminal attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、外部 fingerprint pin、签名时刻 retirement/prospective/retroactive revocation 与 test-kit offline verifier 已完成；exact-suite ANEKE semantic workbook seed 和独立 schema consumer 已完成；transparency proof、trusted pin distribution、真实 ANEKE N/N-1 conformance 与 gate basis 绑定待完成 |
 | Stage 4-5 | Not started | 剩余 deterministic random/UUID/function services、durable/streaming、独立部署与规模化治理 |
 
 实现细节、行为兼容决策和可复现测试见
@@ -47,14 +47,16 @@ Done 行时，均不得从文档推断为产品已开放。
 证明见 [Stage 2 dynamic selector verification](resource-gateway-execution-data-control-plane-stage2-dynamic-selector-verification.md)。
 Semantic coverage 不修改已签名 v1 canonical shape，而通过 suite/evidence v2 双读演进，见
 [ADR-003](adr/ADR-003-semantic-coverage-protocol-versioning.md)。
+Exact semantic suite 到 ANEKE payload-free workbook seed 的投影、失败边界和 consumer 证明见
+[Stage 3 ANEKE semantic workbook verification](resource-gateway-execution-data-control-plane-stage3-aneke-semantic-workbook-verification.md)。
 
-当前严格验收基线：Resource Gateway `clean verify` 共 1822 tests、0 failures、0 errors、
+当前严格验收基线：Resource Gateway `clean verify` 共 1832 tests、0 failures、0 errors、
 34 个条件跳过，真实浏览器回归与 Spring Boot JAR 打包成功；Canvas suite 聚焦 68 tests、
 前端全量 150 tests，并在桌面与 390 x 844 真实浏览器中完成两行一等 suite 发布；Canvas 对完整
 stored suite value、child evidence、coverage、promotion 与 aggregate 一致性 fail closed；immutable TestSuite
 runner/attestation/protocol 增量聚焦 49 tests；key lifecycle 增量聚焦 41 tests；动态 selector/capability/schema 增量聚焦 51 tests；typed semantic coverage/codec/registry/persistence/schema/capability 增量聚焦 52 tests；suite-run lease/reconciliation/profile 聚焦 22 tests；built-in catalog materialization 增量聚焦 34 tests；suite consumer adapter 聚焦 21 tests、独立 test-kit
-`clean verify` 46 tests，均为 0 failures、0 errors，library/CLI JAR 均打包成功；完整 suite/catalog wire value
-按打包的 Draft 2020-12 schema 校验并回绑 request identity，`RUNNING` 在无 polling CLI 中退出 2，
+`clean verify` 51 tests，均为 0 failures、0 errors，library/CLI JAR 均打包成功；完整 suite/catalog/semantic
+workbook wire value 按打包的 Draft 2020-12 schema 校验并回绑 request identity，`RUNNING` 在无 polling CLI 中退出 2，
 未知参数值与 validator 细节不进入日志，public JavaDoc 零告警且由 `verify` 门禁强制。
 
 ## 1. 结论先行
@@ -1065,8 +1067,11 @@ provider v2 携带有效期、`COMPLETE/CURRENT_STATE_ONLY` 和有序 lifecycle 
 降级为 current-state-only；Gateway 对 canonical snapshot fingerprint 签名并本地反验。独立 test-kit
 必须使用带外 pin，重算 key-set/aggregate/bundle/signature material，验证 key/event 当前状态一致性，
 并按 evidence `signedAt` 判断 activation、retirement、disable、prospective revocation 和 retroactive
-compromise。该链仍不能描述为完整 certification package，因为它不含 replay payload attachment、
-transparency proof、trusted pin distribution、ANEKE workbook projection 或 publish decision。
+compromise。第四增量将 exact `bloge.testSuite.v2`、verified terminal v2 aggregate 和 v2 attestation
+投影为 payload-free `SemanticCorrectnessWorkbookBundle.v1`，并由独立 test-kit 执行 Tool Studio schema
+校验与 fail-closed 状态投影。该链仍不能描述为完整 certification package，因为它不含 replay payload
+attachment、transparency proof、trusted pin distribution、真实 ANEKE cross-version conformance、semantic
+workbook fingerprint 的 gate basis 绑定或 publish decision。
 
 交付：
 
@@ -1076,7 +1081,7 @@ transparency proof、trusted pin distribution、ANEKE workbook projection 或 pu
 - signed `TestRunEvidence`（child-run、aggregate checkpoint/terminal attestation、portable bundle
   与 consumer verifier、signed/pinned key lifecycle 已完成；transparency proof 与 trusted pin
   distribution 待完成）；
-- ANEKE workbook projection；
+- ANEKE semantic workbook seed projection（已完成）；真实 consumer conformance 与 gate basis 绑定待完成；
 - stale/impact analysis；
 - Save as Suite / Promote to Golden。
 

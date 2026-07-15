@@ -78,6 +78,14 @@
                 <targetPath>schemas/resource-gateway-testing</targetPath>
                 <filtering>false</filtering>
             </resource>
+            <resource>
+                <directory>../docs/schemas/tool-studio-resource-gateway</directory>
+                <targetPath>schemas/tool-studio-resource-gateway</targetPath>
+                <filtering>false</filtering>
+                <includes>
+                    <include>semantic-correctness-workbook-bundle-v1.schema.json</include>
+                </includes>
+            </resource>
         </resources>
         <plugins>
             <plugin>

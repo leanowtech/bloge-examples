@@ -191,6 +191,91 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void consumesSemanticSuiteResponseV3AndEvidenceBundleV2() throws Exception {
+        ResourceGatewayTestClient client = client();
+
+        TestSuiteRun run = client.findSuiteRun("suite-run/semantic");
+        TestSuiteEvidenceBundle bundle = client.findSuiteEvidenceBundle("suite-run/semantic");
+
+        assertThat(run.requireSemanticCoverage().status())
+                .isEqualTo(TestSuiteRun.SemanticCoverageStatus.SATISFIED);
+        assertThat(run.attestation().schemaVersion())
+                .isEqualTo(TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V2);
+        assertThat(bundle.rawResponse().path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V2);
+        assertThat(bundle.evidence().path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V2);
+        assertThat(requests).extracting(CapturedRequest::rawPath)
+                .containsExactly("/api/testing/suite-executions/suite-run%2Fsemantic",
+                        "/api/testing/suite-executions/suite-run%2Fsemantic/evidence-bundle");
+    }
+
+    @Test
+    void retrievesSchemaValidatedSemanticWorkbookWithLeastPrivilegePurpose() {
+        ResourceGatewayTestClient client = client();
+
+        SemanticCorrectnessWorkbook workbook =
+                client.findSemanticCorrectnessWorkbook("suite/policy", 7);
+
+        assertThat(workbook.suiteId()).isEqualTo("suite/policy");
+        assertThat(workbook.suiteRevision()).isEqualTo(7);
+        assertThat(workbook.projectionStatus())
+                .isEqualTo(SemanticCorrectnessWorkbook.ProjectionStatus.READY);
+        assertThat(workbook.semanticRequirements()).singleElement().satisfies(requirement -> {
+            assertThat(requirement.requirementId()).isEqualTo("timeout");
+            assertThat(requirement.kind()).isEqualTo("TIMEOUT");
+        });
+        assertThat(workbook.evidence()).singleElement().satisfies(evidence -> {
+            assertThat(evidence.aggregateStatus())
+                    .isEqualTo(SemanticCorrectnessWorkbook.AggregateStatus.PASSED);
+            assertThat(evidence.semanticStatus())
+                    .isEqualTo(SemanticCorrectnessWorkbook.SemanticStatus.SATISFIED);
+            assertThat(evidence.promotionStatus())
+                    .isEqualTo(SemanticCorrectnessWorkbook.PromotionStatus.ELIGIBLE);
+            assertThat(evidence.keyId()).isEqualTo("test-key-1");
+        });
+        workbook.requireGateReady();
+        assertThat(requests).singleElement().satisfies(request -> {
+            assertThat(request.rawPath()).isEqualTo("/api/integration/test-suites/"
+                    + "suite%2Fpolicy/revisions/7/semantic-correctness-workbook");
+            assertThat(request.purpose()).isEqualTo("WORKBOOK_SYNC");
+        });
+    }
+
+    @Test
+    void rejectsSemanticWorkbookWhenRequiredVerdictIsRemoved() throws Exception {
+        ObjectNode envelope = (ObjectNode) JSON.readTree(semanticWorkbookResponse());
+        ((ObjectNode) envelope.at("/payload/evidence/0")).remove("semanticCoverage");
+
+        assertThatThrownBy(() -> SemanticCorrectnessWorkbook.fromEnvelope(envelope))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("schema validation")
+                .hasMessageNotContaining("customer-secret");
+    }
+
+    @Test
+    void rejectsSemanticWorkbookWithSelfInconsistentManifest() throws Exception {
+        ObjectNode envelope = (ObjectNode) JSON.readTree(semanticWorkbookResponse());
+        ((ObjectNode) envelope.at("/payload/manifest")).put("eligibleEvidenceCount", 0);
+
+        assertThatThrownBy(() -> SemanticCorrectnessWorkbook.fromEnvelope(envelope))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("manifest")
+                .hasMessageNotContaining("customer-secret");
+    }
+
+    @Test
+    void rejectsSemanticWorkbookWithExternalEvidenceEndpoint() throws Exception {
+        ObjectNode envelope = (ObjectNode) JSON.readTree(semanticWorkbookResponse());
+        ((ObjectNode) envelope.at("/payload/evidence/0"))
+                .put("endpoint", "https://attacker.invalid/evidence-bundle");
+
+        assertThatThrownBy(() -> SemanticCorrectnessWorkbook.fromEnvelope(envelope))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("schema validation");
+    }
+
+    @Test
     void materializesBuiltInGraphCatalogWithTypedExactReferences() {
         ResourceGatewayTestClient client = client();
 
@@ -374,8 +459,14 @@ class ResourceGatewayTestClientTest {
                     + "\"runId\":\"private-child-payload\",\"evidence\":{\"status\":\"NOT_A_STATUS\"}}");
             return;
         }
-        if (path.endsWith("/evidence-bundle")) {
+        if (path.endsWith("suite-run%2Fsemantic/evidence-bundle")) {
+            respond(exchange, 200, semanticSuiteEvidenceBundleResponse());
+        } else if (path.endsWith("suite-run%2Fsemantic")) {
+            respond(exchange, 200, semanticSuiteRunResponse());
+        } else if (path.endsWith("/evidence-bundle")) {
             respond(exchange, 200, suiteEvidenceBundleResponse());
+        } else if (path.endsWith("/semantic-correctness-workbook")) {
+            respond(exchange, 200, semanticWorkbookResponse());
         } else if (path.endsWith("/evidence-keys")) {
             respond(exchange, 200, evidenceKeySetResponse());
         } else if (path.contains("/evidence-keys/")) {
@@ -507,6 +598,103 @@ class ResourceGatewayTestClientTest {
                    "algorithm":"Ed25519","signature":"AA==","independentlyVerifiable":true},
                  "evidence":%2$s}
                 """.formatted(FINGERPRINT, evidence);
+    }
+
+    private static String semanticSuiteRunResponse() throws IOException {
+        ObjectNode response = (ObjectNode) JSON.readTree(suiteRunResponse());
+        response.put("schemaVersion", TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V3);
+        response.put("suiteRunId", "suite-run/semantic");
+        ObjectNode evidence = (ObjectNode) response.path("evidence");
+        evidence.put("schemaVersion", TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V2);
+        evidence.put("suiteRunId", "suite-run/semantic");
+        evidence.set("semanticCoverage", JSON.readTree(semanticWorkbookResponse())
+                .at("/payload/evidence/0/semanticCoverage").deepCopy());
+        ObjectNode attestation = (ObjectNode) JSON.readTree(suiteEvidenceBundleResponse())
+                .path("attestation").deepCopy();
+        attestation.put("schemaVersion", TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V2);
+        attestation.put("suiteRunId", "suite-run/semantic");
+        response.set("attestation", attestation);
+        return response.toString();
+    }
+
+    private static String semanticSuiteEvidenceBundleResponse() throws IOException {
+        JsonNode response = JSON.readTree(semanticSuiteRunResponse());
+        ObjectNode bundle = JSON.createObjectNode();
+        bundle.put("schemaVersion", TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V2);
+        bundle.put("suiteRunId", "suite-run/semantic");
+        bundle.put("bundleFingerprint", FINGERPRINT);
+        bundle.put("payloadPolicy", "OMITTED");
+        bundle.set("attestation", response.path("attestation").deepCopy());
+        bundle.set("evidence", response.path("evidence").deepCopy());
+        return bundle.toString();
+    }
+
+    private static String semanticWorkbookResponse() {
+        return """
+                {"protocol":"ToolStudioResourceGatewayProtocol","protocolVersion":"1.0",
+                 "resourceGatewayVersion":"1.0.0",
+                 "schemaVersion":"toolStudio.resourceGateway.envelope.v1",
+                 "producedAt":"2026-07-16T01:00:05Z",
+                 "compatibility":{"minConsumerVersion":"1.0","backwardCompatible":true,
+                   "breakingChanges":[]},
+                 "payloadKind":"SEMANTIC_CORRECTNESS_WORKBOOK_BUNDLE",
+                 "payloadSchemaVersion":"toolStudio.resourceGateway.semanticCorrectnessWorkbookBundle.v1",
+                 "payloadFingerprint":"%1$s",
+                 "payload":{
+                   "schemaVersion":"toolStudio.resourceGateway.semanticCorrectnessWorkbookBundle.v1",
+                   "payloadPolicy":"OMITTED",
+                   "suite":{"suiteSchemaVersion":"bloge.testSuite.v2","suiteId":"suite/policy",
+                     "revision":7,"suiteFingerprint":"%1$s",
+                     "target":{"kind":"OPERATOR","id":"customer.normalize/v2","fingerprint":"%1$s"},
+                     "classification":"INTERNAL",
+                     "cases":[{"caseId":"golden","caseType":"GOLDEN",
+                       "fixtureBundleRef":{"fixtureBundleId":"fixture-golden","revision":1,
+                         "fingerprint":"%1$s"},"tags":["release"]}],
+                     "coveragePolicy":{"minimumCases":1,"requiredCaseTypes":["GOLDEN"],
+                       "requiredInvocationSiteIds":["/root/risk#PRIMARY"],"requiredEdgeTransfers":[],
+                       "minimumAssertionsPerCase":1,"requireAllFixtureRulesConsumed":true},
+                     "semanticCoveragePolicy":{"requirements":[{"requirementId":"timeout",
+                       "kind":"TIMEOUT","invocationSiteId":"/root/risk#PRIMARY",
+                       "errorCode":"UPSTREAM_TIMEOUT"}]},
+                     "promotionPolicy":{"requireAllCasesPassed":true,"minimumCertifiableCases":1,
+                       "requireTargetCertificationEligible":true},"metadataFingerprint":"%1$s"},
+                   "evidence":[{"suiteRunId":"suite-run/42",
+                     "evidenceSchemaVersion":"bloge.testSuiteRunEvidence.v2",
+                     "evidenceFingerprint":"%1$s","status":"PASSED",
+                     "caseResults":[{"caseId":"golden","caseType":"GOLDEN",
+                       "fixtureBundleRef":{"fixtureBundleId":"fixture-golden","revision":1,
+                         "fingerprint":"%1$s"},"status":"PASSED","runId":"run-golden",
+                       "evidenceStatus":"PASSED","evidenceClass":"CERTIFIABLE",
+                       "assertionsEvaluated":1,"assertionsPassed":1,"diagnosticCode":""}],
+                     "coverage":{"status":"SATISFIED","minimumCases":1,"completedCases":1,
+                       "requiredCaseTypes":["GOLDEN"],"observedCaseTypes":["GOLDEN"],
+                       "missingCaseTypes":[],"requiredInvocationSiteIds":["/root/risk#PRIMARY"],
+                       "observedInvocationSiteIds":["/root/risk#PRIMARY"],
+                       "missingInvocationSiteIds":[],"requiredEdgeTransfers":[],
+                       "observedEdgeTransfers":[],"missingEdgeTransfers":[],
+                       "minimumAssertionsPerCase":1,"assertionDensityViolations":[],
+                       "fixtureConsumptionViolations":[],"allCasesCompleted":true},
+                     "semanticCoverage":{"status":"SATISFIED",
+                       "required":[{"requirementId":"timeout","kind":"TIMEOUT",
+                         "invocationSiteId":"/root/risk#PRIMARY","errorCode":"UPSTREAM_TIMEOUT"}],
+                       "observed":[{"requirementId":"timeout","kind":"TIMEOUT",
+                         "caseIds":["golden"]}],"missingRequirementIds":[],"unavailable":[]},
+                     "promotion":{"status":"ELIGIBLE","reasons":[],"allCasesPassed":true,
+                       "certifiableCases":1,"minimumCertifiableCases":1,
+                       "targetCertificationEligible":true,"coverageSatisfied":true,
+                       "allCasesCompleted":true},
+                     "attestation":{"schemaVersion":"bloge.testSuiteRunAttestation.v2",
+                       "signedAt":"2026-07-16T01:00:05Z","keyId":"test-key-1",
+                       "algorithm":"Ed25519","childEvidenceRefs":[{"caseId":"golden",
+                         "runId":"run-golden","evidenceFingerprint":"%1$s"}]},
+                     "completedAt":"2026-07-16T01:00:05Z",
+                     "endpoint":"/api/testing/suite-executions/suite-run%%2F42/evidence-bundle"}],
+                   "manifest":{"schemaVersion":"toolStudio.resourceGateway.semanticCorrectnessWorkbookManifest.v1",
+                     "bundleFingerprint":"%1$s","projectionStatus":"READY","caseCount":1,
+                     "semanticRequirementCount":1,"candidateEvidenceCount":1,
+                     "verifiedEvidenceCount":1,"unavailableEvidenceCount":0,
+                     "eligibleEvidenceCount":1,"evidenceTruncated":false,"gateReady":true}}}
+                """.formatted(FINGERPRINT);
     }
 
     private static String evidenceKeyResponse() {

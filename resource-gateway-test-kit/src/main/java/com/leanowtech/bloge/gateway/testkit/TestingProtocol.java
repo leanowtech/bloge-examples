@@ -81,10 +81,16 @@ public final class TestingProtocol {
     /** Built-in graph catalog materialization response wire version. */
     public static final String TEST_SUITE_CATALOG_MATERIALIZATION_V1 =
             "bloge.testSuiteCatalogMaterialization.v1";
+    /** Payload-free ANEKE workbook projection for semantic suite and evidence v2. */
+    public static final String SEMANTIC_CORRECTNESS_WORKBOOK_V1 =
+            "toolStudio.resourceGateway.semanticCorrectnessWorkbookBundle.v1";
 
     /** Classpath location of the authoritative JSON Schema packaged in the test-kit JAR. */
     public static final String SCHEMA_RESOURCE =
             "/schemas/resource-gateway-testing/testing-control-plane-v1.schema.json";
+    /** Classpath location of the semantic correctness workbook JSON Schema. */
+    public static final String SEMANTIC_WORKBOOK_SCHEMA_RESOURCE =
+            "/schemas/tool-studio-resource-gateway/semantic-correctness-workbook-bundle-v1.schema.json";
 
     private TestingProtocol() {
     }
