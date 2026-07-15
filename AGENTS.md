@@ -4,13 +4,14 @@ This file is a practical operating guide for coding agents working in this repos
 
 ## Scope
 
-Repository root contains three standalone Java example projects:
+Repository root contains three standalone Java example projects and one standalone client library:
 
 1. `mono-examples/`
 2. `graph-engine-examples/`
 3. `resource-gateway-examples/`
+4. `resource-gateway-test-kit/`
 
-Do not assume a single root Maven reactor for all three. Build each project independently.
+Do not assume a single root Maven reactor for these projects. Build each project independently.
 
 ## Environment Assumptions
 
@@ -31,6 +32,9 @@ mvn -f mono-examples/pom.xml clean test
 
 # Resource gateway
 mvn -f resource-gateway-examples/pom.xml clean verify
+
+# Resource gateway testing client
+mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
 ## Fast Feedback Commands
@@ -64,6 +68,12 @@ mvn -f resource-gateway-examples/pom.xml spring-boot:run
 - `HttpResourceOperator` is the core generic integration point; avoid introducing provider-specific duplicate operators unless required.
 - Registry and descriptor behavior is part of the public example surface; preserve backward-compatible request/response semantics when possible.
 
+### `resource-gateway-test-kit/`
+
+- Keep the library independent from Resource Gateway server artifacts and Spring Boot.
+- Treat the packaged testing-control-plane JSON Schema as the wire-contract authority.
+- Reporters and exception messages must not emit credentials or business payloads.
+
 ### `mono-examples/`
 
 - Large scenario catalog; changes should keep sample parity between Java API and DSL examples when both variants exist.
@@ -77,6 +87,7 @@ When modifying code:
 2. If module-scoped changes are made in `graph-engine-examples/`, run `-pl <module> -am` tests.
 3. For `resource-gateway-examples/`, run `mvn -f resource-gateway-examples/pom.xml clean verify` when touching controllers/operators/interceptors.
 4. For `mono-examples/`, run focused tests if available, then `clean test` for final verification.
+5. For `resource-gateway-test-kit/`, run `clean verify`; client protocol changes also require the Resource Gateway `clean verify` build.
 
 If local dependencies are missing, report it clearly and list the exact missing artifact(s).
 

@@ -86,7 +86,9 @@ least-privilege `X-Purpose` (`TEST_EXECUTION`, `TEST_FIXTURE_READ`, or
 `TEST_FIXTURE_WRITE`) in the local test profile. See
 [Testing Control Plane API](../docs/resource-gateway-testing-control-plane-api.md)
 for the complete target-discovery, fixture-registration, execution, evidence,
-and production-isolation workflow.
+and production-isolation workflow. Java/JUnit consumers can use the independent
+[Resource Gateway Test Kit](../resource-gateway-test-kit/README.md) instead of
+hand-assembling HTTP requests and JUnit XML.
 
 Batch-migrate existing `.bloge` files after the service is running:
 
@@ -234,8 +236,11 @@ Stage 1 of its
 is implemented: it separates schema-only operator checks from executable micro-graph
 tests, supplies `REAL/RETURN/THROW/DENY/SPY`, supports F2 protocol-derived and F3
 transport-level HTTP fixtures, and records fingerprinted evidence. The generic public
-testing API, persistent test-run store, JUnit test kit, and production-profile endpoint
-isolation remain Stage 2 work and are not advertised as available yet.
+testing API, persistent test-run store, independent JUnit test kit, and
+production-profile endpoint isolation are now available as the first Stage 2
+increment. Public operator execution, temporal controls, complex nested
+invocation addressing, full example-graph dogfooding, and physical test-runtime
+deployment isolation remain in progress and are not advertised as complete.
 
 Create a provider-specific Java operator only when the provider behavior cannot
 be expressed cleanly as a descriptor-backed resource.
@@ -272,6 +277,7 @@ local Maven repository.
 mvn -f resource-gateway-examples/pom.xml \
     -Dtest=GatewayGraphContractTestServiceTest,ExecutionControlCompilerTest,TestRunServiceTest,ResourceFixtureRuntimeTest,OperatorMicroGraphRunnerTest,GraphArtifactFingerprintTest test
 mvn -f resource-gateway-examples/pom.xml clean verify
+mvn -f resource-gateway-test-kit/pom.xml clean verify
 mvn -f resource-gateway-examples/pom.xml -Pfrontend package
 mvn -f resource-gateway-examples/pom.xml spring-boot:run
 ```

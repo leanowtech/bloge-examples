@@ -8,17 +8,20 @@
 | --- | --- | --- |
 | Stage 0 | 完成 | operator suite API/UI 显式 `SCHEMA_CONTRACT`；`testing/domain` 五个版本化 record；capability testability 描述；[ADR-001](adr/ADR-001-resource-gateway-test-runtime-isolation.md)、[ADR-002](adr/ADR-002-operator-composability-and-opaque-runtime.md) 与 [BLOGE framework requirement](bloge-framework-execution-control-requirement.md) |
 | Stage 1' | 完成 | `testing/planning/runtime/evidence` 内核；独立 test engine；五行为；F2/F3 resource fixture；micro-graph runner；旧 graph suite adapter；37 个聚焦测试与 1653 个项目测试全绿 |
-| Stage 2' | 进行中 | 已落地 target discovery、`/api/testing/executions`/batch/query、immutable fixture registry、独立 test-run store、10 态 evidence、profile/identity/生产协议隔离与 32 个新增聚焦测试；test-kit、全示例 dogfooding、旧 suite F2/F3 迁移仍待完成 |
+| Stage 2' | 进行中 | 已落地 target discovery、`/api/testing/executions`/batch/query、immutable fixture registry、独立 test-run store、10 态 evidence、profile/identity/生产协议隔离，以及独立 test-kit（HTTP client、fixture builder、JUnit 5 assertions、JUnit XML）；全示例 dogfooding、旧 suite F2/F3 迁移仍待完成 |
 
 Stage 0 验证基线：Resource Gateway `clean verify` 共 1624 tests、0 failures、33 个既有条件跳过；AuthorCanvas 聚焦回归 36 tests、0 failures。后续阶段必须继续维持该基线并增加对应反面用例。
 
 Stage 1 实现证据与复现命令见
 [Execution Data Control Plane Stage 1 verification](resource-gateway-execution-data-control-plane-stage1-verification.md)。
 Stage 1 全量验收：Resource Gateway `clean verify` 共 1653 tests、0 failures、0 errors、34 个条件跳过，JAR 打包成功。
-Stage 2 当前增量验收：Resource Gateway `clean verify` 共 1685 tests、0 failures、0 errors、34 个条件跳过，JAR 打包成功。
-这里的“完成”只指内核与第一个 adapter。Stage 2 已开放首个公共 graph control plane 和持久化 store，但 test-kit、公共
-operator run adapter、全示例 dogfooding和旧 suite F2/F3 迁移仍不得提前写入产品可用清单。当前 API 与运行方式见
+Stage 2 当前增量验收：Resource Gateway `clean verify` 共 1685 tests、0 failures、0 errors、2 个条件跳过，JAR 打包成功。
+独立 test-kit 当前 `clean verify` 共 10 tests、0 failures、0 errors，JAR 与权威 testing-control-plane v1 schema 一同打包成功。
+这里的“完成”只指内核与已列出的 adapter。Stage 2 已开放首个公共 graph control plane、持久化 store 与 test-kit，但公共
+operator run adapter、全示例 dogfooding 和旧 suite F2/F3 迁移仍不得提前写入产品可用清单。当前 API 与运行方式见
 [Testing Control Plane API](resource-gateway-testing-control-plane-api.md)。
+独立 client adapter 的边界、测试矩阵与非声明见
+[Stage 2 test-kit verification](resource-gateway-execution-data-control-plane-stage2-test-kit-verification.md)。
 
 ---
 
@@ -236,13 +239,14 @@ flowchart LR
 | 27 | Stage 2 对 resource dependency 采用全 registry 保守快照 | `resourceId` 可由 BLOGE 表达式运行期计算，静态依赖提取不完备；宁可额外 stale，不可漏绑后认证 | 只看 fixture selector（可能漏掉未命中外部边）；运行时读取 mutable registry（plan 与实际不一致） |
 | 28 | 独立 datasource 用 wrapper bean 持有，不发布第二个 `DataSource` | 保持生产 Boot/JdbcTemplate 单候选装配，同时获得独立连接池和数据库 | 同表 channel 字段（未来查询漏过滤）；直接发布第二 datasource（破坏现有自动装配） |
 | 29 | production run 控制字段在 servlet filter 前置拒绝并先写安全审计 | 不能押注 Jackson unknown-field 配置或每个未来 DTO 都记得加校验；覆盖多套 run API | 各 DTO 增 `testMode`（把后门写进协议）；仅日志告警后继续执行（业务风险仍发生） |
+| 30 | test-kit 采用顶层独立 Maven library，不改造 Resource Gateway 为 reactor | 服务端原启停/打包命令完全兼容；客户端只依赖版本化 wire schema，可独立发布升级；避免为了一个 adapter 搬迁整个 Spring Boot app | 将 `resource-gateway-examples` 原地改父 POM（目录迁移与脚本回归面大）；把 test-kit 放入服务端 JAR（形成实现依赖，无法独立演进） |
 
 ### 十、风险与未验证假设（诚实清单）
 
 1. **Stage 1 已确认边界**：`executeWithOperators` 的主节点替换已通过 conformance；foreach body/streaming/compensation 仍未统一寻址，因此 planner v1 只激活 PRIMARY 主节点、非 durable 图，其他坐标显式拒绝或不签发认证证据。
 2. **未验证**：correlationKey 在 foreach 场景的取值来源（item key 如何被内核感知）——若引擎不透出，v1 用 canonical match on item payload 兜底，correlationKey 降为预留。
 3. suite registry/batch runner 收编的回归风险——由行为保持测试兜底，但需防「顺手扩展」诱惑。
-4. test-kit 需要将 resource-gateway-examples 转多模块（父 pom 改造）——包结构变更需保持 AGENTS.md 构建命令兼容。
+4. **已验证并关闭**：test-kit 不需要将 `resource-gateway-examples` 转为多模块；采用顶层独立 Maven library，并由根 README/AGENTS 固化独立构建命令。后续若建立聚合 verify，只能新增无搬迁的根级 aggregator，不得改变服务端 artifact 与启停路径。
 5. 引擎需求（ExecutionOptions 等）落地节奏不受本仓控制——v1 全程不依赖它，仅受益于未来下沉。
 6. 存量示例 suite 迁移 rawBody 形态需要真实上游响应样例（从既有 WireMock 用例与 demo-upstream 提取）——工作量示例级，但需逐条核对语义等价性（派生出的 success/payload 与原自报值一致），防止迁移本身引入行为漂移。
 7. F2 派生依赖 descriptor 的 `ResponseProtocol`/payloadPath 配置正确——若 descriptor 本身配置错误，派生会「忠实地」复现该错误。这是特性而非缺陷（graph 测试本就应暴露 descriptor 配置错误），但需在使用文档中说明以免误判为 fixture 问题。

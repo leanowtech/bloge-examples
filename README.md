@@ -2,7 +2,8 @@
 
 This repository contains standalone example projects that demonstrate how to build on top of BLOGE runtime artifacts.
 
-Each example family is intentionally isolated, with its own Maven build and dependency lifecycle.
+Each example family and the Resource Gateway client test kit are intentionally
+isolated, with their own Maven build and dependency lifecycle.
 
 ## Projects
 
@@ -11,6 +12,7 @@ Each example family is intentionally isolated, with its own Maven build and depe
 | `mono-examples/` | Broad BLOGE scenario catalog (beginner flows, integration recipes, durable/session/state-machine patterns, BPMN conversion samples) | Single-module Maven project |
 | `graph-engine-examples/` | Graph-engine control-plane stack (model, mybatis persistence, AI authoring, service facade, server, CLI) | Multi-module Maven reactor |
 | `resource-gateway-examples/` | Spring Boot API resource gateway using DSL orchestration + generic `httpResource` operator | Single-module Maven Spring Boot app |
+| `resource-gateway-test-kit/` | Standalone HTTP client, fixture builder, JUnit 5 assertions, and JUnit XML adapter for the testing control plane | Single-module Maven library |
 | `docs/ai/` | AI prompt assets and DSL references used by graph-engine AI module | Markdown docs packaged as resources |
 
 ## Requirements
@@ -32,6 +34,9 @@ mvn -f mono-examples/pom.xml clean test
 
 # resource gateway examples
 mvn -f resource-gateway-examples/pom.xml clean verify
+
+# resource gateway test kit
+mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
 ## Run Key Examples
@@ -159,8 +164,9 @@ bloge-examples/
 |  |- server/
 |- mono-examples/
 |- resource-gateway-examples/
-|- AGENTS.MD
-|- README.MD
+|- resource-gateway-test-kit/
+|- AGENTS.md
+|- README.md
 ```
 
 ## Version Notes
@@ -177,6 +183,8 @@ bloge-examples/
 - `graph-engine-examples/README.md` for module-by-module graph-engine details
 - `resource-gateway-examples/README.md` for the focused Resource Gateway overview
   and `resource-gateway-examples/REFERENCE.md` for the full API/test reference
+- `resource-gateway-test-kit/README.md` for Java/JUnit controlled-execution and
+  CI report integration
 - `docs/bloge-visual-canvas-product-and-system-guide.md` for the visual canvas
   product guide, demo scripts, and system usage notes
 - `docs/bloge-vscode-extension-lightweight-authoring-plan.md` for the lighter

@@ -261,6 +261,22 @@ curl -sS 'http://localhost:8080/api/testing/executions/<runId>?verbosity=SUMMARY
 `POST /api/testing/executions/batch` accepts 1-100 independent requests. Stage 2 runs them
 sequentially; one item cannot share mutable plan or fixture-consumption state with another.
 
+### 4.5 Java and JUnit 5 test kit
+
+Java consumers do not need to assemble wire payloads or CI reports manually. The independent
+`bloge-resource-gateway-test-kit` module provides target/fixture/run projections, a strict
+`FixtureBundleBuilder`, a bounded JDK HTTP client, JUnit 5 assertions, and JUnit XML:
+
+```bash
+mvn -f resource-gateway-test-kit/pom.xml clean install
+```
+
+The client requests a fresh bearer credential for every operation, supplies the correct
+`X-Purpose`, rejects protocol-version drift and oversized bodies, and omits payload/problem details
+from exceptions and reports. See the
+[test-kit guide](../resource-gateway-test-kit/README.md) for a complete discover, register, execute,
+assert, and report example.
+
 ## 5. Verbosity And Persistence
 
 | Verbosity | HTTP response | Persisted record |
@@ -316,6 +332,8 @@ Implemented now:
 - independent datasource, tables, retention, evidence sanitization, and security events;
 - immutable plan plus graph/operator/resource dependency fingerprints;
 - profile-sensitive capability probe and production control-field guard.
+- standalone Maven test-kit with HTTP client, fail-closed fixture builder, JUnit 5 assertions,
+  payload-free JUnit XML, and packaged canonical JSON Schema.
 
 Still intentionally outside this increment:
 
@@ -324,7 +342,7 @@ Still intentionally outside this increment:
 - signed certification, semantic coverage, ANEKE projection, and mutation testing;
 - logical clock/random/UUID/function execution services;
 - a physically separate test-runtime deployment and network policy;
-- the standalone Maven test-kit and complete built-in graph dogfooding suites.
+- complete built-in graph dogfooding suites and legacy suite migration to F2/F3 fixtures.
 
 Those items remain visible in the two industrial testability evolution plans and must not be inferred
 as complete from `executionEndpointEnabled=true`.
