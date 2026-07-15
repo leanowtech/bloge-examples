@@ -653,12 +653,19 @@ describe('AuthorCanvas built-in canvas examples', () => {
   let root: Root | null = null;
   let host: HTMLDivElement;
   let fetchMock: ReturnType<typeof vi.fn>;
+  let governedSuiteId = '';
+  let governedSuiteExecutionGate: Promise<void> | undefined;
+  let releaseGovernedSuiteExecution: (() => void) | undefined;
 
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     host = document.createElement('div');
     document.body.appendChild(host);
-    let governedFixtureId = '';
+    const governedTargetFingerprint = `sha256:${'a'.repeat(64)}`;
+    const governedFixtureFingerprints = new Map<string, string>();
+    governedSuiteId = '';
+    governedSuiteExecutionGate = undefined;
+    releaseGovernedSuiteExecution = undefined;
     fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === '/api/visual/operators') {
@@ -673,11 +680,26 @@ describe('AuthorCanvas built-in canvas examples', () => {
         });
       }
       if (url === '/api/testing/targets/operators/httpResource') {
+        expect(init?.headers).toMatchObject({ Authorization: 'Bearer bloge-aneke-demo-token' });
+        expect(['TEST_SUITE_WRITE', 'TEST_EXECUTION'])
+          .toContain((init?.headers as Record<string, string>)['X-Purpose']);
+        const descriptor = operatorTestTarget('httpResource', 'CONDITIONAL_TRANSPORT');
+        return jsonResponse({
+          ...descriptor,
+          target: { ...descriptor.target, fingerprint: governedTargetFingerprint },
+        });
+      }
+      if (url === '/api/testing/targets/operators/httpResource/executions') {
         expect(init?.headers).toMatchObject({
           Authorization: 'Bearer bloge-aneke-demo-token',
-          'X-Purpose': 'TEST_FIXTURE_WRITE',
+          'X-Purpose': 'TEST_EXECUTION',
         });
-        return jsonResponse(operatorTestTarget('httpResource', 'CONDITIONAL_TRANSPORT'));
+        return jsonResponse(operatorTestExecution('operator-exploratory-after-publish', {
+          payload: {
+            applicantId: 'applicant-1001', score: 715, segment: 'prime',
+            income: 92000, employmentYears: 4,
+          },
+        }));
       }
       if (url.startsWith('/api/testing/fixture-bundles/')) {
         expect(init).toMatchObject({
@@ -688,16 +710,16 @@ describe('AuthorCanvas built-in canvas examples', () => {
             'Content-Type': 'application/json',
           },
         });
-        governedFixtureId = decodeURIComponent(url.slice('/api/testing/fixture-bundles/'.length));
-        expect(governedFixtureId).toMatch(/^canvas-httpResource-case-1-[0-9a-f]{64}$/);
+        const governedFixtureId = decodeURIComponent(url.slice('/api/testing/fixture-bundles/'.length));
+        expect(governedFixtureId).toMatch(/^canvas-httpResource-(case-1|operator-case-1)-[0-9a-f]{64}$/);
         const body = JSON.parse(String(init?.body));
         expect(body).toMatchObject({
           schemaVersion: 'bloge.fixtureBundleRegistrationRequest.v1',
-          target: { kind: 'OPERATOR', id: 'httpResource', fingerprint: 'sha256:operator-target' },
+          target: { kind: 'OPERATOR', id: 'httpResource', fingerprint: governedTargetFingerprint },
           fixtureBundle: {
             fixtureBundleId: governedFixtureId,
             revision: 1,
-            targetFingerprint: 'sha256:operator-target',
+            targetFingerprint: governedTargetFingerprint,
             rules: [{
               selector: { nodeId: 'subject', resourceRef: 'loan-applicant-service.getProfile' },
               behavior: { kind: 'RETURN', boundary: 'TRANSPORT', statusCode: 200 },
@@ -705,24 +727,69 @@ describe('AuthorCanvas built-in canvas examples', () => {
             assertions: [{ nodeId: 'subject', path: '/payload', operator: 'EQUALS' }],
           },
         });
-        expect(JSON.parse(body.fixtureBundle.rules[0].behavior.rawBody)).toMatchObject({
-          code: 0,
-          success: true,
-          fixtureSource: 'author-supplied',
-          data: { applicantId: 'applicant-1001', score: 715 },
-        });
+        if (governedFixtureId.includes('-case-1-') && !governedFixtureId.includes('-operator-case-1-')) {
+          expect(JSON.parse(body.fixtureBundle.rules[0].behavior.rawBody)).toMatchObject({
+            code: 0,
+            success: true,
+            fixtureSource: 'author-supplied',
+            data: { applicantId: 'applicant-1001', score: 715 },
+          });
+        }
+        const fixtureFingerprint = `sha256:${String.fromCharCode(98 + governedFixtureFingerprints.size).repeat(64)}`;
+        governedFixtureFingerprints.set(governedFixtureId, fixtureFingerprint);
         return jsonResponse({
           schemaVersion: 'bloge.storedFixtureBundle.v1',
           tenantId: 'tenant-a',
           environmentId: 'test',
           fixtureBundleId: governedFixtureId,
           revision: 1,
-          fingerprint: 'sha256:governed-fixture',
+          fingerprint: fixtureFingerprint,
           createdAt: '2026-07-15T12:00:00Z',
           createdBy: 'author-canvas',
         });
       }
-      if (url === '/api/testing/targets/operators/httpResource/executions') {
+      if (url.startsWith('/api/testing/suites/') && !url.endsWith('/executions')) {
+        expect(init).toMatchObject({
+          method: 'PUT',
+          headers: {
+            Authorization: 'Bearer bloge-aneke-demo-token',
+            'X-Purpose': 'TEST_SUITE_WRITE',
+            'Content-Type': 'application/json',
+          },
+        });
+        governedSuiteId = decodeURIComponent(url.slice('/api/testing/suites/'.length));
+        expect(governedSuiteId).toMatch(/^canvas-httpResource-n1-[0-9a-f]{64}$/);
+        const body = JSON.parse(String(init?.body));
+        expect(body).toMatchObject({
+          schemaVersion: 'bloge.testSuiteRegistrationRequest.v1',
+          testSuite: {
+            suiteId: governedSuiteId,
+            revision: 1,
+            target: { kind: 'OPERATOR', id: 'httpResource', fingerprint: governedTargetFingerprint },
+            cases: [
+              { caseId: 'case-1', caseType: 'GOLDEN' },
+              { caseId: 'operator-case-1', caseType: 'BOUNDARY' },
+            ],
+            coveragePolicy: {
+              minimumCases: 2,
+              requiredCaseTypes: ['BOUNDARY', 'GOLDEN'],
+            },
+            promotionPolicy: { minimumCertifiableCases: 2 },
+          },
+        });
+        return jsonResponse({
+          schemaVersion: 'bloge.storedTestSuite.v1',
+          tenantId: 'tenant-a',
+          environmentId: 'test',
+          suiteId: governedSuiteId,
+          revision: 1,
+          fingerprint: `sha256:${'d'.repeat(64)}`,
+          suite: body.testSuite,
+          createdAt: '2026-07-15T12:00:00Z',
+          createdBy: 'author-canvas',
+        });
+      }
+      if (url === `/api/testing/suites/${encodeURIComponent(governedSuiteId)}/executions`) {
         expect(init).toMatchObject({
           method: 'POST',
           headers: {
@@ -732,27 +799,14 @@ describe('AuthorCanvas built-in canvas examples', () => {
           },
         });
         const body = JSON.parse(String(init?.body));
-        expect(body).toMatchObject({
-          schemaVersion: 'bloge.testOperatorExecutionRequest.v1',
-          target: { kind: 'OPERATOR', id: 'httpResource', fingerprint: 'sha256:operator-target' },
-          executionPurpose: 'OPERATOR_UNIT_TEST',
-          fixtureBundle: null,
-          fixtureBundleRef: {
-            fixtureBundleId: governedFixtureId,
-            revision: 1,
-            fingerprint: 'sha256:governed-fixture',
-          },
-        });
-        expect(body.input).toEqual({
-          resourceId: 'loan-applicant-service.getProfile',
-          params: { applicantId: 'applicant-1001' },
-        });
-        return jsonResponse(operatorTestExecution('operator-run-1', {
-          resourceId: 'loan-applicant-service.getProfile',
-          statusCode: 200,
-          payload: { applicantId: 'applicant-1001', score: 715 },
-          success: true,
-        }, 'CERTIFIABLE'));
+        await governedSuiteExecutionGate;
+        return jsonResponse(operatorSuiteExecution(
+          'suite-run-1',
+          body.clientRequestId,
+          body.suiteRef,
+          [...governedFixtureFingerprints.entries()],
+          governedTargetFingerprint,
+        ));
       }
       if (url === '/api/visual/graphs/simulate') {
         const body = JSON.parse(String(init?.body));
@@ -976,7 +1030,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
       .toContain('"score": 650');
   });
 
-  it('runs a built-in resource operator test through the controlled runtime micro graph', async () => {
+  it('publishes built-in operator rows as one governed suite and renders aggregate evidence', async () => {
     await act(async () => {
       root = createRoot(host);
       root.render(<AuthorCanvas />);
@@ -1005,20 +1059,52 @@ describe('AuthorCanvas built-in canvas examples', () => {
     await setControlValue(expectedOutput, `${expectedOutput.value}\n`);
     expect(query<HTMLTextAreaElement>('[data-testid="operator-test-transport:0"]').value)
       .toBe(customTransport);
-    await click(query<HTMLButtonElement>('[data-testid="operator-test-govern:0"]'));
+    await click(query<HTMLButtonElement>('[data-testid="operator-test-add"]'));
+    await setControlValue(
+      query<HTMLSelectElement>('[data-testid="operator-test-case-type:1"]'),
+      'BOUNDARY',
+    );
+    governedSuiteExecutionGate = new Promise((resolve) => {
+      releaseGovernedSuiteExecution = resolve;
+    });
+    await click(query<HTMLButtonElement>('[data-testid="operator-test-govern-all"]'));
 
     await waitFor(() =>
-      expect(query('[data-testid="operator-test-status:0"]').textContent).toContain('passed'),
+      expect(query('[data-testid="operator-suite-publication"]').textContent).toContain('Publishing 2 immutable cases'),
     );
-    expect(query('[data-testid="operator-test-summary"]').textContent).toContain('1/1 passed');
+    expect(query<HTMLInputElement>('[data-testid="operator-test-name:0"]').disabled).toBe(true);
+    expect(query<HTMLSelectElement>('[data-testid="operator-test-case-type:1"]').disabled).toBe(true);
+    expect(query<HTMLTextAreaElement>('[data-testid="operator-test-input:0"]').disabled).toBe(true);
+    expect(query<HTMLTextAreaElement>('[data-testid="operator-test-output:0"]').disabled).toBe(true);
+    expect(query<HTMLTextAreaElement>('[data-testid="operator-test-transport:0"]').disabled).toBe(true);
+    expect(query<HTMLButtonElement>('[data-testid="operator-test-add"]').disabled).toBe(true);
+    expect(query<HTMLButtonElement>('[data-testid="operator-test-remove:1"]').disabled).toBe(true);
+    await act(async () => releaseGovernedSuiteExecution?.());
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-suite-publication"]').textContent).toContain('ELIGIBLE'),
+    );
+    expect(query('[data-testid="operator-test-summary"]').textContent).toContain('2/2 passed');
+    expect(query('[data-testid="operator-suite-publication"]').textContent)
+      .toContain('PASSED · coverage SATISFIED · promotion ELIGIBLE');
+    expect(query('[data-testid="operator-suite-publication"]').textContent)
+      .toContain(`${governedSuiteId}@1 · run suite-run-1`);
     expect(query('[data-testid="operator-test-result:0"]').textContent)
-      .toContain('Governed micro-graph PASSED · CERTIFIABLE · fixture canvas-httpResource-case-1-');
-    expect(query('[data-testid="operator-test-result:0"]').textContent)
-      .toContain('@1 · run operator-run-1');
-    expect(query('[data-testid="operator-test-actual:0"]').textContent)
-      .toContain('loan-applicant-service.getProfile');
+      .toContain('Governed suite case PASSED · CERTIFIABLE · child run operator-child-1');
+    expect(query('[data-testid="operator-test-result:1"]').textContent)
+      .toContain('Governed suite case PASSED · CERTIFIABLE · child run operator-child-2');
+    expect(document.querySelector('[data-testid="operator-test-actual:0"]')).toBeNull();
     expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/api/visual/graphs/simulate'))
       .toHaveLength(0);
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/executions')))
+      .toHaveLength(1);
+
+    await click(query<HTMLButtonElement>('[data-testid="operator-test-run:0"]'));
+    await waitFor(() =>
+      expect(query('[data-testid="operator-test-result:0"]').textContent)
+        .toContain('operator-exploratory-after-publish'),
+    );
+    expect(document.querySelector('[data-testid="operator-suite-publication"]')).toBeNull();
   });
 
   it('runs built-in example test table cases through simulate with row fixture overrides', async () => {
@@ -2943,6 +3029,61 @@ function operatorTestExecution(
         output,
       }],
       assertionResults: [{ scope: 'OUTPUT_PATH', path: '/payload', passed: true }],
+    },
+  };
+}
+
+function operatorSuiteExecution(
+  suiteRunId: string,
+  clientRequestId: string,
+  suiteRef: { suiteId: string; revision: number; fingerprint: string },
+  fixtures: Array<[string, string]>,
+  targetFingerprint: string,
+) {
+  const caseResults = fixtures.map(([fixtureBundleId, fingerprint], index) => ({
+    caseId: fixtureBundleId.includes('-operator-case-1-') ? 'operator-case-1' : 'case-1',
+    caseType: fixtureBundleId.includes('-operator-case-1-') ? 'BOUNDARY' : 'GOLDEN',
+    fixtureBundleRef: { fixtureBundleId, revision: 1, fingerprint },
+    status: 'PASSED',
+    runId: `operator-child-${index + 1}`,
+    evidenceStatus: 'PASSED',
+    evidenceClass: 'CERTIFIABLE',
+    assertionsEvaluated: 1,
+    assertionsPassed: 1,
+    diagnosticCode: '',
+    diagnostic: '',
+  }));
+  return {
+    schemaVersion: 'bloge.testSuiteExecutionResponse.v1',
+    suiteRunId,
+    evidenceFingerprint: `sha256:${'e'.repeat(64)}`,
+    evidence: {
+      schemaVersion: 'bloge.testSuiteRunEvidence.v1',
+      suiteRunId,
+      clientRequestId,
+      status: 'PASSED',
+      executionPurpose: 'TEST_SUITE_EXECUTION',
+      suiteRef,
+      target: { kind: 'OPERATOR', id: 'httpResource', fingerprint: targetFingerprint },
+      startedAt: '2026-07-15T12:00:00Z',
+      completedAt: '2026-07-15T12:00:01Z',
+      caseResults,
+      coverage: {
+        status: 'SATISFIED', minimumCases: 2, completedCases: 2,
+        requiredCaseTypes: ['BOUNDARY', 'GOLDEN'], observedCaseTypes: ['BOUNDARY', 'GOLDEN'],
+        missingCaseTypes: [], requiredInvocationSiteIds: [],
+        observedInvocationSiteIds: ['/root/subject#primary'], missingInvocationSiteIds: [],
+        requiredEdgeTransfers: [], observedEdgeTransfers: [], missingEdgeTransfers: [],
+        minimumAssertionsPerCase: 1, assertionDensityViolations: [], fixtureConsumptionViolations: [],
+        allCasesCompleted: true,
+      },
+      promotion: {
+        status: 'ELIGIBLE', reasons: [], allCasesPassed: true,
+        certifiableCases: 2, minimumCertifiableCases: 2, targetCertificationEligible: true,
+        coverageSatisfied: true, allCasesCompleted: true,
+      },
+      diagnostics: [],
+      metadata: {},
     },
   };
 }

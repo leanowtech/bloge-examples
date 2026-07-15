@@ -124,6 +124,136 @@ export interface OperatorTestCaseRun {
   storedFixture?: StoredOperatorTestFixture;
 }
 
+/** Governance intent assigned to one immutable operator suite case. */
+export type OperatorTestSuiteCaseType = 'GOLDEN' | 'NEGATIVE' | 'BOUNDARY' | 'REGRESSION';
+
+/** One Canvas-authored case to publish through the governed suite registry. */
+export interface OperatorTestSuiteCaseInput {
+  caseId: string;
+  caseType: OperatorTestSuiteCaseType;
+  name?: string;
+  input: unknown;
+  expectedOutput: unknown;
+  transportResponse: unknown;
+}
+
+/** Exact immutable fixture reference retained by a suite case and its evidence. */
+export interface GovernedFixtureReference {
+  fixtureBundleId: string;
+  revision: number;
+  fingerprint: string;
+}
+
+/** Immutable suite revision returned by the isolated testing control plane. */
+export interface StoredOperatorTestSuite {
+  schemaVersion: 'bloge.storedTestSuite.v1';
+  tenantId: string;
+  environmentId: string;
+  suiteId: string;
+  revision: number;
+  fingerprint: string;
+  suite: {
+    schemaVersion: 'bloge.testSuite.v1';
+    suiteId: string;
+    revision: number;
+    target: OperatorTestTargetDescriptor['target'];
+    classification: string;
+    cases: Array<{
+      caseId: string;
+      caseType: OperatorTestSuiteCaseType;
+      input: unknown;
+      fixtureBundleRef: GovernedFixtureReference;
+      tags: string[];
+      metadata: Record<string, unknown>;
+    }>;
+    coveragePolicy: {
+      minimumCases: number;
+      requiredCaseTypes: OperatorTestSuiteCaseType[];
+      requiredInvocationSiteIds: string[];
+      requiredEdgeTransfers: Array<{
+        fromInvocationSiteId: string;
+        toInvocationSiteId: string;
+      }>;
+      minimumAssertionsPerCase: number;
+      requireAllFixtureRulesConsumed: boolean;
+    };
+    promotionPolicy: {
+      requireAllCasesPassed: boolean;
+      minimumCertifiableCases: number;
+      requireTargetCertificationEligible: boolean;
+    };
+    metadata: Record<string, unknown>;
+  };
+  createdAt: string;
+  createdBy: string;
+}
+
+/** Payload-free aggregate evidence returned by one immutable suite execution. */
+export interface OperatorTestSuiteExecutionResponse {
+  schemaVersion: 'bloge.testSuiteExecutionResponse.v1';
+  suiteRunId: string;
+  evidenceFingerprint: string;
+  evidence: {
+    schemaVersion: 'bloge.testSuiteRunEvidence.v1';
+    suiteRunId: string;
+    clientRequestId: string;
+    status: 'RUNNING' | 'PASSED' | 'COMPLETED_WITH_FAILURES' | 'PARTIAL' | 'EVIDENCE_INCOMPLETE';
+    executionPurpose: 'TEST_SUITE_EXECUTION';
+    suiteRef: { suiteId: string; revision: number; fingerprint: string };
+    target: OperatorTestTargetDescriptor['target'];
+    caseResults: Array<{
+      caseId: string;
+      caseType: OperatorTestSuiteCaseType;
+      fixtureBundleRef: GovernedFixtureReference;
+      status: 'PENDING' | 'PASSED' | 'FAILED' | 'NOT_SCHEDULED' | 'EVIDENCE_INCOMPLETE';
+      runId: string;
+      evidenceStatus: string | null;
+      evidenceClass: 'EXPLORATORY' | 'CERTIFIABLE' | null;
+      assertionsEvaluated: number;
+      assertionsPassed: number;
+      diagnosticCode: string;
+      diagnostic: string;
+    }>;
+    coverage: {
+      status: 'NOT_EVALUATED' | 'SATISFIED' | 'UNSATISFIED' | 'INCOMPLETE';
+      minimumCases: number;
+      completedCases: number;
+      requiredCaseTypes: OperatorTestSuiteCaseType[];
+      observedCaseTypes: OperatorTestSuiteCaseType[];
+      missingCaseTypes: OperatorTestSuiteCaseType[];
+      requiredInvocationSiteIds: string[];
+      observedInvocationSiteIds: string[];
+      missingInvocationSiteIds: string[];
+      requiredEdgeTransfers: Array<{ fromInvocationSiteId: string; toInvocationSiteId: string }>;
+      observedEdgeTransfers: Array<{ fromInvocationSiteId: string; toInvocationSiteId: string }>;
+      missingEdgeTransfers: Array<{ fromInvocationSiteId: string; toInvocationSiteId: string }>;
+      minimumAssertionsPerCase: number;
+      assertionDensityViolations: string[];
+      fixtureConsumptionViolations: string[];
+      allCasesCompleted: boolean;
+    };
+    promotion: {
+      status: 'NOT_EVALUATED' | 'ELIGIBLE' | 'BLOCKED';
+      reasons: string[];
+      certifiableCases: number;
+      minimumCertifiableCases: number;
+      allCasesPassed: boolean;
+      targetCertificationEligible: boolean;
+      coverageSatisfied: boolean;
+      allCasesCompleted: boolean;
+    };
+    diagnostics: string[];
+  };
+}
+
+/** Combined publication and execution result consumed by the Canvas suite table. */
+export interface OperatorTestSuiteRun {
+  target: OperatorTestTargetDescriptor;
+  storedFixtures: StoredOperatorTestFixture[];
+  storedSuite: StoredOperatorTestSuite;
+  response: OperatorTestSuiteExecutionResponse;
+}
+
 /** A BLOGE expression function exposed to authoring editors. */
 export interface BuiltInFunctionDefinition {
   name: string;

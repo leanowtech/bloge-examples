@@ -3,6 +3,11 @@
 > Date: 2026-07-07  
 > Scope: `/author/` 通用可视化编排画布，本轮聚焦 foreach 可理解性、算子双击详情、Test Suite 浮层表格，以及图文产品手册同步。
 
+> 2026-07-15 后续闭环：本文件记录的是最初的浮层交互增量。Operator Detail 内的
+> `Executable Operator Suite` 现已支持四类 case intent，并能把多行发布为内容寻址 fixture 与
+> 一等 immutable TestSuite 后执行精确 revision。新增证据见
+> [Stage 2 Canvas suite publication verification](resource-gateway-execution-data-control-plane-stage2-canvas-suite-publication-verification.md)。
+
 ## 1. 本轮目标
 
 | 要求 | 状态 | 证据 |
@@ -100,7 +105,8 @@ right inspector lightweight summary
 
 剩余差距估算：约 **2%**，低于 3%。剩余项都不是当前 authoring 主链路阻断：
 
-1. Test Suite 还不能一键保存为后端 stored suite 或 publication golden case。
+1. 右侧 graph-level Test Suite 仍未发布为后端 stored suite；Operator Detail 的 operator-level
+   多行 suite 发布已经由后续增量关闭。publication golden case 仍是独立治理资产。
 2. foreach 还没有子图级 body designer；当前先解释 collection/item/result list 语义。
 3. Operator Detail 已有 schema 摘要与 raw schema，尚未提供 schema diff、sample payload 对照和端口级数据探针。
 

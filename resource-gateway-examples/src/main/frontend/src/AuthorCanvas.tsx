@@ -33,7 +33,7 @@ import {
   fetchGraphDraft,
   fetchOperatorCatalog,
   fetchVisualGraphRun,
-  governOperatorTestCase,
+  governOperatorTestSuite,
   importOperatorLibraryText,
   previewDslImport,
   runOperatorTestCase,
@@ -105,6 +105,8 @@ import type {
   OperatorDefinition,
   OperatorLibrary,
   OperatorPort,
+  OperatorTestSuiteCaseType,
+  OperatorTestSuiteRun,
   SchemaEnvelope,
   SimulationResponse,
   VisualDiagnostic,
@@ -422,6 +424,7 @@ interface TransformEditorModel {
 interface OperatorTestSuiteDraftRow {
   id: string;
   name: string;
+  caseType: OperatorTestSuiteCaseType;
   inputText: string;
   outputText: string;
   transportResponseText: string;
@@ -439,6 +442,14 @@ interface OperatorTestCaseResult {
   fixtureOutput?: unknown;
   runId?: string;
   evidenceClass?: string;
+}
+
+interface OperatorTestSuitePublicationResult {
+  status: OperatorTestCaseStatus;
+  detail: string;
+  suiteId?: string;
+  revision?: number;
+  suiteRunId?: string;
 }
 
 interface OperatorTestSuiteCompilation {
@@ -793,6 +804,7 @@ function defaultOperatorTestSuiteRows(
     {
       id: 'case-1',
       name: `${node.data.label} executable case`,
+      caseType: 'GOLDEN',
       inputText: formatDraftJson(operatorInputSample(operator)),
       outputText,
       transportResponseText: transportResponseTextForExpected(operator, expectedOutput),
@@ -875,6 +887,47 @@ function evaluateOperatorTestResult(
     fixtureOutput: compilation.output,
     runId: run.response.runId,
     evidenceClass: evidence.evidenceClass,
+  };
+}
+
+function evaluateGovernedOperatorSuite(
+  rows: OperatorTestSuiteDraftRow[],
+  run: OperatorTestSuiteRun,
+): {
+  publication: OperatorTestSuitePublicationResult;
+  caseResults: Record<string, OperatorTestCaseResult>;
+} {
+  const evidence = run.response.evidence;
+  const caseEvidence = new Map(evidence.caseResults.map((result) => [result.caseId, result]));
+  const caseResults = Object.fromEntries(rows.map((row) => {
+    const result = caseEvidence.get(row.id);
+    const passed = result?.status === 'PASSED';
+    const evidenceLabel = result?.evidenceClass ?? 'NO_EVIDENCE';
+    const runLabel = result?.runId ? ` · child run ${result.runId}` : '';
+    return [row.id, {
+      id: row.id,
+      name: row.name.trim() || row.id,
+      status: passed ? 'passed' as const : 'failed' as const,
+      detail: passed
+        ? `Governed suite case PASSED · ${evidenceLabel}${runLabel}`
+        : result?.diagnostic || result?.diagnosticCode
+          || `Governed suite case ${result?.status ?? 'EVIDENCE_INCOMPLETE'}${runLabel}`,
+      runId: result?.runId,
+      evidenceClass: result?.evidenceClass ?? undefined,
+    }];
+  }));
+  const eligible = evidence.status === 'PASSED'
+    && evidence.coverage.status === 'SATISFIED'
+    && evidence.promotion.status === 'ELIGIBLE';
+  return {
+    publication: {
+      status: eligible ? 'passed' : 'failed',
+      detail: `${evidence.status} · coverage ${evidence.coverage.status} · promotion ${evidence.promotion.status}`,
+      suiteId: run.storedSuite.suiteId,
+      revision: run.storedSuite.revision,
+      suiteRunId: run.response.suiteRunId,
+    },
+    caseResults,
   };
 }
 
@@ -2761,6 +2814,7 @@ function OperatorTestSuiteEditor({
   operator,
   rows,
   results,
+  publication,
   running,
   runDisabledReason,
   onAdd,
@@ -2775,6 +2829,7 @@ function OperatorTestSuiteEditor({
   operator?: OperatorDefinition;
   rows: OperatorTestSuiteDraftRow[];
   results: Record<string, OperatorTestCaseResult>;
+  publication?: OperatorTestSuitePublicationResult;
   running: boolean;
   runDisabledReason?: string;
   onAdd: () => void;
@@ -2818,7 +2873,7 @@ function OperatorTestSuiteEditor({
             disabled={running || rows.length === 0 || invalidCount > 0 || Boolean(runDisabledReason)}
             title={runDisabledReason}
           >
-            {running ? 'Running' : 'Run All'}
+            {running ? 'Running' : 'Run Exploratory'}
           </button>
           <button
             type="button"
@@ -2828,18 +2883,32 @@ function OperatorTestSuiteEditor({
             disabled={running || rows.length === 0 || invalidCount > 0 || Boolean(runDisabledReason)}
             title={runDisabledReason}
           >
-            Govern All
+            Publish Suite + Run
           </button>
           <button
             type="button"
             className="secondary compact"
             data-testid="operator-test-add"
             onClick={onAdd}
+            disabled={running}
           >
             Add Case
           </button>
         </div>
       </div>
+      {publication && (
+        <div
+          className={`operator-suite-publication ${publication.status}`}
+          data-testid="operator-suite-publication"
+        >
+          <strong>{publication.detail}</strong>
+          {publication.suiteId && (
+            <span>
+              {publication.suiteId}@{publication.revision} · run {publication.suiteRunId}
+            </span>
+          )}
+        </div>
+      )}
       {rows.length > 0 ? (
         <ol className="test-table-list operator-test-table">
           {rows.map((row, index) => {
@@ -2858,6 +2927,7 @@ function OperatorTestSuiteEditor({
                     data-testid={`operator-test-name:${index}`}
                     value={row.name}
                     onChange={(event) => onUpdate(row.id, { name: event.target.value })}
+                    disabled={running}
                   />
                   <span
                     className={`table-status ${rowStatus}`}
@@ -2865,6 +2935,23 @@ function OperatorTestSuiteEditor({
                   >
                     {compilation.error ? 'invalid' : result?.status ?? 'valid'}
                   </span>
+                  <label className="operator-test-case-type">
+                    <span>Intent</span>
+                    <select
+                      aria-label={`Operator test case intent ${index + 1}`}
+                      data-testid={`operator-test-case-type:${index}`}
+                      value={row.caseType}
+                      onChange={(event) => onUpdate(row.id, {
+                        caseType: event.target.value as OperatorTestSuiteCaseType,
+                      })}
+                      disabled={running}
+                    >
+                      <option value="GOLDEN">Golden</option>
+                      <option value="NEGATIVE">Negative</option>
+                      <option value="BOUNDARY">Boundary</option>
+                      <option value="REGRESSION">Regression</option>
+                    </select>
+                  </label>
                   <button
                     type="button"
                     className="primary compact"
@@ -2883,7 +2970,7 @@ function OperatorTestSuiteEditor({
                     disabled={running || Boolean(compilation.error) || Boolean(runDisabledReason)}
                     title={runDisabledReason}
                   >
-                    Govern + Run
+                    Publish Case + Run
                   </button>
                   <button
                     type="button"
@@ -2900,7 +2987,7 @@ function OperatorTestSuiteEditor({
                     aria-label={`Remove operator test case ${index + 1}`}
                     data-testid={`operator-test-remove:${index}`}
                     onClick={() => onRemove(row.id)}
-                    disabled={rows.length <= 1}
+                    disabled={running || rows.length <= 1}
                   >
                     Remove
                   </button>
@@ -2913,6 +3000,7 @@ function OperatorTestSuiteEditor({
                     spellCheck={false}
                     value={row.inputText}
                     onChange={(event) => onUpdate(row.id, { inputText: event.target.value })}
+                    disabled={running}
                   />
                 </label>
                 <label className="fixture-field">
@@ -2934,6 +3022,7 @@ function OperatorTestSuiteEditor({
                         : row.transportResponseText;
                       onUpdate(row.id, { outputText, transportResponseText });
                     }}
+                    disabled={running}
                   />
                 </label>
                 {transportControlled && (
@@ -2945,6 +3034,7 @@ function OperatorTestSuiteEditor({
                       spellCheck={false}
                       value={row.transportResponseText}
                       onChange={(event) => onUpdate(row.id, { transportResponseText: event.target.value })}
+                      disabled={running}
                     />
                   </label>
                 )}
@@ -3081,6 +3171,7 @@ function OperatorDetailDialog({
   fixtureError,
   operatorTestRows,
   operatorTestResults,
+  operatorTestPublication,
   operatorTestsRunning,
   operatorTestRunDisabledReason,
   onClose,
@@ -3118,6 +3209,7 @@ function OperatorDetailDialog({
   fixtureError: string | undefined;
   operatorTestRows: OperatorTestSuiteDraftRow[];
   operatorTestResults: Record<string, OperatorTestCaseResult>;
+  operatorTestPublication?: OperatorTestSuitePublicationResult;
   operatorTestsRunning: boolean;
   operatorTestRunDisabledReason?: string;
   onClose: () => void;
@@ -3218,6 +3310,7 @@ function OperatorDetailDialog({
             operator={operator}
             rows={operatorTestRows}
             results={operatorTestResults}
+            publication={operatorTestPublication}
             running={operatorTestsRunning}
             runDisabledReason={operatorTestRunDisabledReason}
             onAdd={onOperatorTestAdd}
@@ -4106,6 +4199,9 @@ export default function AuthorCanvas() {
   const [fixtureInputDrafts, setFixtureInputDrafts] = useState<Record<string, string>>({});
   const [operatorTestSuites, setOperatorTestSuites] = useState<Record<string, OperatorTestSuiteDraftRow[]>>({});
   const [operatorTestResults, setOperatorTestResults] = useState<Record<string, Record<string, OperatorTestCaseResult>>>({});
+  const [operatorTestPublications, setOperatorTestPublications] = useState<
+    Record<string, OperatorTestSuitePublicationResult>
+  >({});
   const [simulationTableRows, setSimulationTableRows] = useState<SimulationTableTestDraftRow[]>([]);
   const [simulationTableResults, setSimulationTableResults] = useState<Record<string, SimulationTableCaseResult>>({});
   const [tableTestingBusy, setTableTestingBusy] = useState(false);
@@ -4300,6 +4396,13 @@ export default function AuthorCanvas() {
           return next;
         });
         setOperatorTestResults((current) => {
+          const next = { ...current };
+          for (const id of removedNodeIds) {
+            delete next[id];
+          }
+          return next;
+        });
+        setOperatorTestPublications((current) => {
           const next = { ...current };
           for (const id of removedNodeIds) {
             delete next[id];
@@ -4779,6 +4882,7 @@ export default function AuthorCanvas() {
     setFixtureInputDrafts(nextFixtureInputDrafts);
     setOperatorTestSuites(nextOperatorTestSuites);
     setOperatorTestResults({});
+    setOperatorTestPublications({});
     setSimulationTableRows(nextSimulationTableRows);
     setSimulationTableResults({});
     setGraphName('visualGraph');
@@ -4953,8 +5057,11 @@ export default function AuthorCanvas() {
   const operatorDetailTestResults = operatorDetailNode
     ? operatorTestResults[operatorDetailNode.id] ?? {}
     : {};
-  const operatorDetailTestsRunning = Object.values(operatorDetailTestResults)
-    .some((testResult) => testResult.status === 'running');
+  const operatorDetailTestPublication = operatorDetailNode
+    ? operatorTestPublications[operatorDetailNode.id]
+    : undefined;
+  const operatorDetailTestsRunning = operatorDetailTestPublication?.status === 'running'
+    || Object.values(operatorDetailTestResults).some((testResult) => testResult.status === 'running');
   const operatorDetailTestRunDisabledReason = operatorDetailDefinition?.runtimeReadiness?.executable === false
     ? operatorDetailDefinition.runtimeReadiness.summary
       || 'This visual operator has no executable runtime binding.'
@@ -5257,6 +5364,7 @@ export default function AuthorCanvas() {
     setFixtureInputDrafts(nextFixtureInputDrafts);
     setOperatorTestSuites(nextOperatorTestSuites);
     setOperatorTestResults({});
+    setOperatorTestPublications({});
     setSimulationTableRows(nextSimulationTableRows);
     setSimulationTableResults({});
     setGraphName(imported.graphName);
@@ -5559,6 +5667,17 @@ export default function AuthorCanvas() {
     clearFixtureForNode(selectedNodeId);
   }, [clearFixtureForNode, selectedNodeId]);
 
+  const clearOperatorTestPublication = useCallback((nodeId: string) => {
+    setOperatorTestPublications((current) => {
+      if (!current[nodeId]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[nodeId];
+      return next;
+    });
+  }, []);
+
   const addOperatorTestRow = useCallback((node: Node<NodeData>, operator: OperatorDefinition | undefined) => {
     const nextIndex = operatorTestCounter.current + 1;
     operatorTestCounter.current = nextIndex;
@@ -5577,7 +5696,8 @@ export default function AuthorCanvas() {
         ],
       };
     });
-  }, []);
+    clearOperatorTestPublication(node.id);
+  }, [clearOperatorTestPublication]);
 
   const updateOperatorTestRow = useCallback((
     node: Node<NodeData>,
@@ -5600,7 +5720,8 @@ export default function AuthorCanvas() {
       delete nodeResults[rowId];
       return { ...current, [node.id]: nodeResults };
     });
-  }, []);
+    clearOperatorTestPublication(node.id);
+  }, [clearOperatorTestPublication]);
 
   const removeOperatorTestRow = useCallback((
     node: Node<NodeData>,
@@ -5625,7 +5746,8 @@ export default function AuthorCanvas() {
       delete nodeResults[rowId];
       return { ...current, [node.id]: nodeResults };
     });
-  }, []);
+    clearOperatorTestPublication(node.id);
+  }, [clearOperatorTestPublication]);
 
   const applyOperatorTestFixture = useCallback((nodeId: string, row: OperatorTestSuiteDraftRow) => {
     const compilation = parseOperatorTestSuiteRow(row);
@@ -6010,11 +6132,11 @@ export default function AuthorCanvas() {
   const runOperatorTestRows = useCallback(async (
     nodeId: string,
     rowsToRun: OperatorTestSuiteDraftRow[],
-    governed = false,
   ) => {
     if (rowsToRun.length === 0) {
       return;
     }
+    clearOperatorTestPublication(nodeId);
 
     const node = canvasNodes.find((candidate) => candidate.id === nodeId);
     const operator = node ? operatorByRef.get(node.operatorRef) : undefined;
@@ -6067,9 +6189,7 @@ export default function AuthorCanvas() {
             id: row.id,
             name: row.name.trim() || row.id,
             status: 'running',
-            detail: governed
-              ? 'Registering an immutable fixture revision, then running the frozen one-node micro graph.'
-              : 'Freezing the runtime binding and running its real one-node micro graph.',
+            detail: 'Freezing the runtime binding and running its real one-node micro graph.',
             expectedInput: compilation.input,
             fixtureOutput: compilation.output,
           },
@@ -6077,7 +6197,7 @@ export default function AuthorCanvas() {
       }));
 
       try {
-        const run = await (governed ? governOperatorTestCase : runOperatorTestCase)(
+        const run = await runOperatorTestCase(
           operator,
           compilation.input,
           compilation.output,
@@ -6107,6 +6227,98 @@ export default function AuthorCanvas() {
           },
         }));
       }
+    }
+  }, [canvasNodes, clearOperatorTestPublication, operatorByRef]);
+
+  const publishOperatorTestRows = useCallback(async (
+    nodeId: string,
+    rowsToPublish: OperatorTestSuiteDraftRow[],
+  ) => {
+    if (rowsToPublish.length === 0) {
+      return;
+    }
+    const node = canvasNodes.find((candidate) => candidate.id === nodeId);
+    const operator = node ? operatorByRef.get(node.operatorRef) : undefined;
+    if (!node || !operator) {
+      setOperatorTestPublications((current) => ({
+        ...current,
+        [nodeId]: {
+          status: 'failed',
+          detail: node
+            ? `Operator ${node.operatorRef} is not available in the current catalog.`
+            : `Canvas node ${nodeId} is no longer available.`,
+        },
+      }));
+      return;
+    }
+
+    const compiled = rowsToPublish.map((row) => ({ row, compilation: parseOperatorTestSuiteRow(row) }));
+    const invalid = compiled.find(({ compilation }) => compilation.error);
+    if (invalid) {
+      setOperatorTestPublications((current) => ({
+        ...current,
+        [nodeId]: { status: 'failed', detail: invalid.compilation.error ?? 'Operator test JSON is invalid.' },
+      }));
+      return;
+    }
+
+    setError('');
+    setOperatorTestPublications((current) => ({
+      ...current,
+      [nodeId]: {
+        status: 'running',
+        detail: `Publishing ${rowsToPublish.length} immutable case${rowsToPublish.length === 1 ? '' : 's'}...`,
+      },
+    }));
+    setOperatorTestResults((current) => ({
+      ...current,
+      [nodeId]: Object.fromEntries(compiled.map(({ row, compilation }) => [row.id, {
+          id: row.id,
+          name: row.name.trim() || row.id,
+          status: 'running' as const,
+          detail: 'Registering an immutable fixture and publishing the exact suite revision.',
+          expectedInput: compilation.input,
+          fixtureOutput: compilation.output,
+        }])),
+    }));
+
+    try {
+      const run = await governOperatorTestSuite(
+        operator,
+        nodeId,
+        compiled.map(({ row, compilation }) => ({
+          caseId: row.id,
+          caseType: row.caseType,
+          name: row.name,
+          input: compilation.input,
+          expectedOutput: compilation.output,
+          transportResponse: compilation.transportResponse,
+        })),
+      );
+      const evaluated = evaluateGovernedOperatorSuite(rowsToPublish, run);
+      setOperatorTestPublications((current) => ({
+        ...current,
+        [nodeId]: evaluated.publication,
+      }));
+      setOperatorTestResults((current) => ({
+        ...current,
+        [nodeId]: evaluated.caseResults,
+      }));
+    } catch (cause: unknown) {
+      const detail = String(cause);
+      setOperatorTestPublications((current) => ({
+        ...current,
+        [nodeId]: { status: 'failed', detail },
+      }));
+      setOperatorTestResults((current) => ({
+        ...current,
+        [nodeId]: Object.fromEntries(rowsToPublish.map((row) => [row.id, {
+            id: row.id,
+            name: row.name.trim() || row.id,
+            status: 'failed' as const,
+            detail,
+          }])),
+      }));
     }
   }, [canvasNodes, operatorByRef]);
 
@@ -7668,6 +7880,7 @@ export default function AuthorCanvas() {
           fixtureError={operatorDetailFixtureError}
           operatorTestRows={operatorDetailTestRows}
           operatorTestResults={operatorDetailTestResults}
+          operatorTestPublication={operatorDetailTestPublication}
           operatorTestsRunning={operatorDetailTestsRunning}
           operatorTestRunDisabledReason={operatorDetailTestRunDisabledReason}
           onClose={() => setOperatorDetailNodeId('')}
@@ -7698,10 +7911,10 @@ export default function AuthorCanvas() {
             void runOperatorTestRows(operatorDetailNode.id, operatorDetailTestRows);
           }}
           onOperatorTestGovern={(row) => {
-            void runOperatorTestRows(operatorDetailNode.id, [row], true);
+            void publishOperatorTestRows(operatorDetailNode.id, [row]);
           }}
           onOperatorTestGovernAll={() => {
-            void runOperatorTestRows(operatorDetailNode.id, operatorDetailTestRows, true);
+            void publishOperatorTestRows(operatorDetailNode.id, operatorDetailTestRows);
           }}
           onDecisionChange={(editor) => updateDecisionTableRules(operatorDetailNode.id, editor)}
           onTransformChange={(editor) => updateTransformAssignments(operatorDetailNode.id, editor)}

@@ -25,8 +25,12 @@ import type {
   OperatorDefinition,
   OperatorTestCaseRun,
   OperatorTestExecutionResponse,
+  OperatorTestSuiteCaseInput,
+  OperatorTestSuiteExecutionResponse,
+  OperatorTestSuiteRun,
   OperatorTestTargetDescriptor,
   StoredOperatorTestFixture,
+  StoredOperatorTestSuite,
   SimulationRequest,
   SimulationResponse,
   VisualValidationResult,
@@ -305,7 +309,9 @@ function recordValue(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function operatorTestingHeaders(purpose: 'TEST_EXECUTION' | 'TEST_FIXTURE_WRITE', json = false): Record<string, string> {
+type OperatorTestingPurpose = 'TEST_EXECUTION' | 'TEST_FIXTURE_WRITE' | 'TEST_SUITE_WRITE';
+
+function operatorTestingHeaders(purpose: OperatorTestingPurpose, json = false): Record<string, string> {
   return {
     ...operatorTestHeadersProvider(),
     'X-Purpose': purpose,
@@ -423,7 +429,7 @@ function validateExecutableOperatorTarget(target: OperatorTestTargetDescriptor):
 
 async function discoverOperatorTestTarget(
   operator: OperatorDefinition,
-  purpose: 'TEST_EXECUTION' | 'TEST_FIXTURE_WRITE',
+  purpose: OperatorTestingPurpose,
 ): Promise<OperatorTestTargetDescriptor> {
   const runtimeRef = operatorRuntimeRef(operator);
   const target = await readTestingJson<OperatorTestTargetDescriptor>(
@@ -573,16 +579,20 @@ export async function runOperatorTestCase(
   return { target, response };
 }
 
-/** Registers a content-addressed immutable fixture revision, then executes the operator by stored ref. */
-export async function governOperatorTestCase(
+interface RegisteredOperatorFixture {
+  request: Record<string, unknown>;
+  storedFixture: StoredOperatorTestFixture;
+}
+
+async function registerOperatorTestFixture(
   operator: OperatorDefinition,
+  target: OperatorTestTargetDescriptor,
   input: unknown,
   expectedOutput: unknown,
   transportResponse: unknown,
   caseRef: string,
-): Promise<OperatorTestCaseRun> {
+): Promise<RegisteredOperatorFixture> {
   const runtimeRef = operatorRuntimeRef(operator);
-  const target = await discoverOperatorTestTarget(operator, 'TEST_FIXTURE_WRITE');
   const inlineRequest = buildOperatorTestExecutionRequest(
     operator, target, input, expectedOutput, transportResponse, caseRef,
   );
@@ -611,28 +621,406 @@ export async function governOperatorTestCase(
       }),
     }),
   );
-  if (storedFixture.fixtureBundleId !== fixtureBundleId
+  if (storedFixture.schemaVersion !== 'bloge.storedFixtureBundle.v1'
+      || storedFixture.fixtureBundleId !== fixtureBundleId
       || storedFixture.revision !== 1
       || !storedFixture.fingerprint?.trim()) {
     throw new Error('Fixture registry returned an inconsistent stored fixture identity.');
   }
-  const storedRequest = {
-    ...inlineRequest,
-    fixtureBundle: null,
-    fixtureBundleRef: {
-      fixtureBundleId: storedFixture.fixtureBundleId,
-      revision: storedFixture.revision,
-      fingerprint: storedFixture.fingerprint,
+  return {
+    request: {
+      ...inlineRequest,
+      fixtureBundle: null,
+      fixtureBundleRef: {
+        fixtureBundleId: storedFixture.fixtureBundleId,
+        revision: storedFixture.revision,
+        fingerprint: storedFixture.fingerprint,
+      },
     },
+    storedFixture,
   };
+}
+
+/** Registers a content-addressed immutable fixture revision, then executes the operator by stored ref. */
+export async function governOperatorTestCase(
+  operator: OperatorDefinition,
+  input: unknown,
+  expectedOutput: unknown,
+  transportResponse: unknown,
+  caseRef: string,
+): Promise<OperatorTestCaseRun> {
+  const runtimeRef = operatorRuntimeRef(operator);
+  const target = await discoverOperatorTestTarget(operator, 'TEST_FIXTURE_WRITE');
+  const registered = await registerOperatorTestFixture(
+    operator, target, input, expectedOutput, transportResponse, caseRef,
+  );
   const response = await readTestingJson<OperatorTestExecutionResponse>(
     await sendRequest(`/api/testing/targets/operators/${encodeURIComponent(runtimeRef)}/executions`, {
       method: 'POST',
       headers: operatorTestingHeaders('TEST_EXECUTION', true),
-      body: JSON.stringify(storedRequest),
+      body: JSON.stringify(registered.request),
     }),
   );
-  return { target, response, storedFixture };
+  return { target, response, storedFixture: registered.storedFixture };
+}
+
+function fullFingerprint(value: string | undefined): boolean {
+  return /^sha256:[0-9a-f]{64}$/.test(value ?? '');
+}
+
+function sameTarget(
+  actual: OperatorTestTargetDescriptor['target'] | undefined,
+  expected: OperatorTestTargetDescriptor['target'],
+): boolean {
+  return actual?.kind === expected.kind
+    && actual.id === expected.id
+    && actual.fingerprint === expected.fingerprint;
+}
+
+function validateSuiteCases(cases: OperatorTestSuiteCaseInput[]): OperatorTestSuiteCaseInput[] {
+  if (cases.length < 1 || cases.length > 100) {
+    throw new Error('A Canvas operator suite must contain between 1 and 100 cases.');
+  }
+  const supportedTypes = new Set(['GOLDEN', 'NEGATIVE', 'BOUNDARY', 'REGRESSION']);
+  const identities = new Set<string>();
+  return cases.map((testCase) => {
+    const caseId = testCase.caseId.trim();
+    if (!caseId || caseId.length > 255 || identities.has(caseId)
+        || !supportedTypes.has(testCase.caseType)) {
+      throw new Error('Every Canvas suite case requires a unique bounded id and supported case type.');
+    }
+    identities.add(caseId);
+    return { ...testCase, caseId };
+  });
+}
+
+function validateStoredOperatorSuite(
+  stored: StoredOperatorTestSuite,
+  suiteId: string,
+  expectedSuite: StoredOperatorTestSuite['suite'],
+): void {
+  if (stored.schemaVersion !== 'bloge.storedTestSuite.v1'
+      || stored.suiteId !== suiteId
+      || stored.revision !== 1
+      || !fullFingerprint(stored.fingerprint)
+      || canonicalJson(stored.suite) !== canonicalJson(expectedSuite)) {
+    throw new Error('Suite registry returned an inconsistent stored suite identity.');
+  }
+}
+
+function nonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && Number(value) >= 0;
+}
+
+function sameCanonicalValues(left: unknown, right: unknown): boolean {
+  return canonicalJson(left) === canonicalJson(right);
+}
+
+function expectedAggregateStatus(
+  cases: OperatorTestSuiteExecutionResponse['evidence']['caseResults'],
+  coverageStatus: OperatorTestSuiteExecutionResponse['evidence']['coverage']['status'],
+): OperatorTestSuiteExecutionResponse['evidence']['status'] {
+  if (cases.some((testCase) => testCase.status === 'EVIDENCE_INCOMPLETE')) {
+    return 'EVIDENCE_INCOMPLETE';
+  }
+  if (cases.some((testCase) => testCase.status === 'PENDING' || testCase.status === 'NOT_SCHEDULED')) {
+    return 'PARTIAL';
+  }
+  if (cases.some((testCase) => testCase.status === 'FAILED')) {
+    return 'COMPLETED_WITH_FAILURES';
+  }
+  return coverageStatus === 'SATISFIED' ? 'PASSED' : 'COMPLETED_WITH_FAILURES';
+}
+
+function validateOperatorSuiteExecution(
+  response: OperatorTestSuiteExecutionResponse,
+  clientRequestId: string,
+  suiteRef: { suiteId: string; revision: number; fingerprint: string },
+  target: OperatorTestTargetDescriptor['target'],
+  expectedCases: Map<string, {
+    caseType: OperatorTestSuiteCaseInput['caseType'];
+    fixture: StoredOperatorTestFixture;
+  }>,
+  expectedSuite: StoredOperatorTestSuite['suite'],
+): void {
+  const evidence = response.evidence;
+  const terminalStatuses = new Set(['PASSED', 'COMPLETED_WITH_FAILURES', 'PARTIAL', 'EVIDENCE_INCOMPLETE']);
+  const caseStatuses = new Set(['PASSED', 'FAILED', 'NOT_SCHEDULED', 'EVIDENCE_INCOMPLETE']);
+  const evidenceStatuses = new Set([
+    'PASSED', 'ASSERTION_FAILED', 'EXECUTION_FAILED', 'CONTROL_PLAN_REJECTED',
+    'FIXTURE_UNMATCHED', 'FIXTURE_UNUSED', 'CONTROL_PLAN_UNAVAILABLE',
+    'EVIDENCE_INCOMPLETE', 'CANCELLED', 'TIMED_OUT',
+  ]);
+  const evidenceClasses = new Set(['EXPLORATORY', 'CERTIFIABLE']);
+  const caseResults = evidence?.caseResults ?? [];
+  const returnedCaseIds = new Set(caseResults.map((result) => result.caseId));
+  const caseIdentitiesMatch = caseResults.length === expectedCases.size
+    && returnedCaseIds.size === expectedCases.size
+    && [...expectedCases.keys()].every((caseId) => returnedCaseIds.has(caseId))
+    && caseResults.every((result) => {
+      const expected = expectedCases.get(result.caseId);
+      return expected !== undefined
+        && result.caseType === expected.caseType
+        && result.fixtureBundleRef?.fixtureBundleId === expected.fixture.fixtureBundleId
+        && result.fixtureBundleRef.revision === expected.fixture.revision
+        && result.fixtureBundleRef.fingerprint === expected.fixture.fingerprint
+        && caseStatuses.has(result.status)
+        && nonNegativeInteger(result.assertionsEvaluated)
+        && nonNegativeInteger(result.assertionsPassed)
+        && result.assertionsPassed <= result.assertionsEvaluated
+        && (result.evidenceStatus === null || evidenceStatuses.has(result.evidenceStatus))
+        && (result.evidenceClass === null || evidenceClasses.has(result.evidenceClass))
+        && (!['PASSED', 'FAILED'].includes(result.status) || (
+          Boolean(result.runId?.trim())
+          && result.evidenceStatus !== null
+          && result.evidenceClass !== null
+        ))
+        && (result.status !== 'NOT_SCHEDULED' || (
+          !result.runId?.trim()
+          && result.evidenceStatus === null
+          && result.evidenceClass === null
+          && result.assertionsEvaluated === 0
+          && result.assertionsPassed === 0
+        ))
+        && (result.status !== 'PASSED' || (
+          Boolean(result.runId?.trim())
+          && result.evidenceStatus === 'PASSED'
+          && result.evidenceClass !== null
+          && result.assertionsEvaluated >= expectedSuite.coveragePolicy.minimumAssertionsPerCase
+          && result.assertionsPassed === result.assertionsEvaluated
+        ));
+    });
+  const coverage = evidence?.coverage;
+  const promotion = evidence?.promotion;
+  const policy = expectedSuite.coveragePolicy;
+  const promotionPolicy = expectedSuite.promotionPolicy;
+  const childEvidenceCount = caseResults.filter((result) => (
+    Boolean(result.runId?.trim()) && result.evidenceStatus !== null
+  )).length;
+  const allCasesCompleted = caseResults.length === expectedCases.size
+    && caseResults.every((result) => result.status !== 'PENDING' && result.status !== 'NOT_SCHEDULED');
+  const observedCaseTypes = new Set(caseResults
+    .filter((result) => Boolean(result.runId?.trim()) && result.evidenceStatus !== null)
+    .map((result) => result.caseType));
+  const missingCaseTypes = policy.requiredCaseTypes.filter((caseType) => !observedCaseTypes.has(caseType));
+  const assertionDensityViolations = caseResults
+    .filter((result) => result.assertionsEvaluated < policy.minimumAssertionsPerCase)
+    .map((result) => result.caseId)
+    .sort();
+  const incompleteEvidence = caseResults.some((result) => (
+    !result.runId?.trim()
+    || result.evidenceStatus === null
+    || result.status === 'EVIDENCE_INCOMPLETE'
+    || result.status === 'NOT_SCHEDULED'
+    || result.status === 'PENDING'
+  ));
+  const coverageSatisfied = childEvidenceCount >= policy.minimumCases
+    && missingCaseTypes.length === 0
+    && assertionDensityViolations.length === 0
+    && coverage?.fixtureConsumptionViolations?.length === 0;
+  const derivedCoverageStatus = incompleteEvidence
+    ? 'INCOMPLETE'
+    : coverageSatisfied ? 'SATISFIED' : 'UNSATISFIED';
+  const certifiableCases = caseResults.filter((result) => (
+    Boolean(result.runId?.trim()) && result.evidenceClass === 'CERTIFIABLE'
+  )).length;
+  const allCasesPassed = allCasesCompleted
+    && caseResults.every((result) => result.status === 'PASSED');
+  const coverageMatches = coverage !== undefined
+    && ['SATISFIED', 'UNSATISFIED', 'INCOMPLETE'].includes(coverage.status)
+    && coverage.status === derivedCoverageStatus
+    && coverage.minimumCases === policy.minimumCases
+    && coverage.completedCases === childEvidenceCount
+    && coverage.minimumAssertionsPerCase === policy.minimumAssertionsPerCase
+    && Array.isArray(coverage.requiredCaseTypes)
+    && Array.isArray(coverage.observedCaseTypes)
+    && Array.isArray(coverage.missingCaseTypes)
+    && Array.isArray(coverage.assertionDensityViolations)
+    && Array.isArray(coverage.fixtureConsumptionViolations)
+    && sameCanonicalValues(coverage.requiredCaseTypes, policy.requiredCaseTypes)
+    && sameCanonicalValues(
+      [...coverage.observedCaseTypes].sort(),
+      [...observedCaseTypes].sort(),
+    )
+    && sameCanonicalValues(coverage.missingCaseTypes, missingCaseTypes)
+    && coverage.allCasesCompleted === allCasesCompleted
+    && sameCanonicalValues([...coverage.assertionDensityViolations].sort(), assertionDensityViolations);
+  const promotionMatches = promotion !== undefined
+    && ['ELIGIBLE', 'BLOCKED'].includes(promotion.status)
+    && nonNegativeInteger(promotion.certifiableCases)
+    && promotion.certifiableCases === certifiableCases
+    && promotion.minimumCertifiableCases === promotionPolicy.minimumCertifiableCases
+    && promotion.allCasesPassed === allCasesPassed
+    && promotion.coverageSatisfied === (derivedCoverageStatus === 'SATISFIED')
+    && promotion.allCasesCompleted === allCasesCompleted
+    && Array.isArray(promotion.reasons)
+    && (!promotionPolicy.requireTargetCertificationEligible
+      || promotion.targetCertificationEligible === true
+      || promotion.status === 'BLOCKED')
+    && (promotion.status !== 'ELIGIBLE' || (
+      promotion.reasons.length === 0
+      && (!promotionPolicy.requireAllCasesPassed || allCasesPassed)
+      && certifiableCases >= promotionPolicy.minimumCertifiableCases
+      && (!promotionPolicy.requireTargetCertificationEligible || promotion.targetCertificationEligible)
+      && derivedCoverageStatus === 'SATISFIED'
+      && allCasesCompleted
+    ));
+  const aggregateStatusMatches = coverageMatches
+    && evidence.status === expectedAggregateStatus(caseResults, coverage.status);
+  if (response.schemaVersion !== 'bloge.testSuiteExecutionResponse.v1'
+      || !response.suiteRunId?.trim()
+      || response.suiteRunId !== evidence?.suiteRunId
+      || !fullFingerprint(response.evidenceFingerprint)
+      || evidence?.schemaVersion !== 'bloge.testSuiteRunEvidence.v1'
+      || evidence.clientRequestId !== clientRequestId
+      || evidence.executionPurpose !== 'TEST_SUITE_EXECUTION'
+      || evidence.suiteRef?.suiteId !== suiteRef.suiteId
+      || evidence.suiteRef.revision !== suiteRef.revision
+      || evidence.suiteRef.fingerprint !== suiteRef.fingerprint
+      || !sameTarget(evidence.target, target)
+      || !terminalStatuses.has(evidence.status)
+      || !caseIdentitiesMatch
+      || !coverageMatches
+      || !promotionMatches
+      || !aggregateStatusMatches) {
+    throw new Error('Suite runner returned a response for a different execution intent.');
+  }
+}
+
+/**
+ * Publishes Canvas operator rows as content-addressed fixtures plus one immutable suite revision,
+ * then executes that exact revision through the common governed suite runner.
+ */
+export async function governOperatorTestSuite(
+  operator: OperatorDefinition,
+  canvasSuiteRef: string,
+  cases: OperatorTestSuiteCaseInput[],
+): Promise<OperatorTestSuiteRun> {
+  const normalizedCases = validateSuiteCases(cases);
+  const runtimeRef = operatorRuntimeRef(operator);
+  const target = await discoverOperatorTestTarget(operator, 'TEST_SUITE_WRITE');
+  if (target.schemaVersion !== 'bloge.testOperatorTargetDescriptor.v2'
+      || target.target.kind !== 'OPERATOR'
+      || target.target.id !== runtimeRef
+      || !fullFingerprint(target.target.fingerprint)) {
+    throw new Error('Operator target discovery did not return an exact content fingerprint.');
+  }
+
+  const registeredCases = [];
+  for (const testCase of normalizedCases) {
+    const registered = await registerOperatorTestFixture(
+      operator,
+      target,
+      testCase.input,
+      testCase.expectedOutput,
+      testCase.transportResponse,
+      testCase.caseId,
+    );
+    if (!fullFingerprint(registered.storedFixture.fingerprint)) {
+      throw new Error('Fixture registry did not return an exact content fingerprint.');
+    }
+    registeredCases.push({ testCase, registered });
+  }
+
+  const requiredCaseTypes = [...new Set(normalizedCases.map((testCase) => testCase.caseType))].sort();
+  const suiteContent = {
+    target: target.target,
+    classification: 'INTERNAL',
+    cases: registeredCases.map(({ testCase, registered }) => ({
+      caseId: testCase.caseId,
+      caseType: testCase.caseType,
+      input: registered.request.input,
+      fixtureBundleRef: {
+        fixtureBundleId: registered.storedFixture.fixtureBundleId,
+        revision: registered.storedFixture.revision,
+        fingerprint: registered.storedFixture.fingerprint,
+      },
+      tags: ['author-canvas', testCase.caseType.toLowerCase()].sort(),
+      metadata: {
+        source: 'author-canvas',
+        visualCaseName: (testCase.name?.trim() || testCase.caseId).slice(0, 255),
+      },
+    })),
+    coveragePolicy: {
+      minimumCases: normalizedCases.length,
+      requiredCaseTypes,
+      requiredInvocationSiteIds: [],
+      requiredEdgeTransfers: [],
+      minimumAssertionsPerCase: 1,
+      requireAllFixtureRulesConsumed: true,
+    },
+    promotionPolicy: {
+      requireAllCasesPassed: true,
+      minimumCertifiableCases: normalizedCases.length,
+      requireTargetCertificationEligible: true,
+    },
+    metadata: {
+      source: 'author-canvas',
+      visualOperatorRef: operator.operatorRef,
+      canvasSuiteRef: canvasSuiteRef.trim().slice(0, 255),
+    },
+  };
+  const suiteDigest = await sha256Hex(suiteContent);
+  const suiteId = [
+    'canvas',
+    boundedProtocolId(runtimeRef, 'operator').slice(0, 32),
+    boundedProtocolId(canvasSuiteRef, 'suite').slice(0, 32),
+    suiteDigest,
+  ].join('-');
+  const testSuite: StoredOperatorTestSuite['suite'] = {
+    schemaVersion: 'bloge.testSuite.v1',
+    suiteId,
+    revision: 1,
+    ...suiteContent,
+  };
+  const storedSuite = await readTestingJson<StoredOperatorTestSuite>(
+    await sendRequest(`/api/testing/suites/${encodeURIComponent(suiteId)}`, {
+      method: 'PUT',
+      headers: operatorTestingHeaders('TEST_SUITE_WRITE', true),
+      body: JSON.stringify({
+        schemaVersion: 'bloge.testSuiteRegistrationRequest.v1',
+        testSuite,
+      }),
+    }),
+  );
+  validateStoredOperatorSuite(storedSuite, suiteId, testSuite);
+
+  const suiteRef = { suiteId, revision: storedSuite.revision, fingerprint: storedSuite.fingerprint };
+  const clientRequestId = `canvas-suite-${await sha256Hex(suiteRef)}`;
+  const response = await readTestingJson<OperatorTestSuiteExecutionResponse>(
+    await sendRequest(`/api/testing/suites/${encodeURIComponent(suiteId)}/executions`, {
+      method: 'POST',
+      headers: operatorTestingHeaders('TEST_EXECUTION', true),
+      body: JSON.stringify({
+        schemaVersion: 'bloge.testSuiteExecutionRequest.v1',
+        suiteRef,
+        clientRequestId,
+        strategy: 'COLLECT_ALL',
+        metadata: {
+          source: 'author-canvas',
+          visualOperatorRef: operator.operatorRef,
+          canvasSuiteRef: canvasSuiteRef.trim().slice(0, 255),
+        },
+      }),
+    }),
+  );
+  validateOperatorSuiteExecution(
+    response,
+    clientRequestId,
+    suiteRef,
+    target.target,
+    new Map(registeredCases.map(({ testCase, registered }) => [testCase.caseId, {
+      caseType: testCase.caseType,
+      fixture: registered.storedFixture,
+    }])),
+    testSuite,
+  );
+  return {
+    target,
+    storedFixtures: registeredCases.map(({ registered }) => registered.storedFixture),
+    storedSuite,
+    response,
+  };
 }
 
 /** Validates a transient visual graph draft through the server-authoritative schema/readiness gate. */

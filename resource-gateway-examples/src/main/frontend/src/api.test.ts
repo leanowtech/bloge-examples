@@ -14,6 +14,7 @@ import {
   fetchOperatorCatalog,
   fetchVisualGraphRun,
   governOperatorTestCase,
+  governOperatorTestSuite,
   importOperatorLibraryText,
   previewDslImport,
   resetOperatorTestHeadersProvider,
@@ -274,6 +275,191 @@ describe('operator library API client', () => {
       .toThrow('Fixture registry returned an inconsistent stored fixture identity.');
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('publishes multiple operator rows as one immutable suite and executes the exact revision', async () => {
+    const targetFingerprint = `sha256:${'a'.repeat(64)}`;
+    const fixtureFingerprints = [`sha256:${'b'.repeat(64)}`, `sha256:${'c'.repeat(64)}`];
+    const storedFixtureIds: string[] = [];
+    let storedSuiteId = '';
+    let storedSuiteFingerprint = '';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === '/api/testing/targets/operators/customer.normalize') {
+        expect(init?.headers).toMatchObject({ 'X-Purpose': 'TEST_SUITE_WRITE' });
+        return new Response(JSON.stringify({
+          schemaVersion: 'bloge.testOperatorTargetDescriptor.v2',
+          target: { kind: 'OPERATOR', id: 'customer.normalize', fingerprint: targetFingerprint },
+          testabilityClass: 'EXECUTABLE_UNIT',
+          executionSupported: true,
+          certificationEligible: true,
+          certificationRequirements: [],
+          certificationGaps: [],
+        }));
+      }
+      if (url.startsWith('/api/testing/fixture-bundles/')) {
+        expect(init).toMatchObject({ method: 'PUT', headers: { 'X-Purpose': 'TEST_FIXTURE_WRITE' } });
+        const fixtureId = decodeURIComponent(url.slice('/api/testing/fixture-bundles/'.length));
+        const body = JSON.parse(String(init?.body));
+        expect(fixtureId).toMatch(/^canvas-customer\.normalize-(golden|boundary)-[0-9a-f]{64}$/);
+        expect(body.fixtureBundle.fixtureBundleId).toBe(fixtureId);
+        storedFixtureIds.push(fixtureId);
+        const fingerprint = fixtureFingerprints[storedFixtureIds.length - 1];
+        return new Response(JSON.stringify({
+          schemaVersion: 'bloge.storedFixtureBundle.v1',
+          tenantId: 'tenant-a',
+          environmentId: 'test',
+          fixtureBundleId: fixtureId,
+          revision: 1,
+          fingerprint,
+          createdAt: '2026-07-15T12:00:00Z',
+          createdBy: 'author-canvas',
+        }));
+      }
+      if (url.startsWith('/api/testing/suites/') && !url.endsWith('/executions')) {
+        expect(init).toMatchObject({ method: 'PUT', headers: { 'X-Purpose': 'TEST_SUITE_WRITE' } });
+        storedSuiteId = decodeURIComponent(url.slice('/api/testing/suites/'.length));
+        expect(storedSuiteId).toMatch(/^canvas-customer\.normalize-node-n1-[0-9a-f]{64}$/);
+        const body = JSON.parse(String(init?.body));
+        expect(body).toMatchObject({
+          schemaVersion: 'bloge.testSuiteRegistrationRequest.v1',
+          testSuite: {
+            schemaVersion: 'bloge.testSuite.v1',
+            suiteId: storedSuiteId,
+            revision: 1,
+            target: { kind: 'OPERATOR', id: 'customer.normalize', fingerprint: targetFingerprint },
+            classification: 'INTERNAL',
+            cases: [
+              {
+                caseId: 'golden',
+                caseType: 'GOLDEN',
+                input: { name: 'Ada' },
+                fixtureBundleRef: { fixtureBundleId: storedFixtureIds[0], revision: 1 },
+              },
+              {
+                caseId: 'boundary',
+                caseType: 'BOUNDARY',
+                input: { name: '' },
+                fixtureBundleRef: { fixtureBundleId: storedFixtureIds[1], revision: 1 },
+              },
+            ],
+            coveragePolicy: {
+              minimumCases: 2,
+              requiredCaseTypes: ['BOUNDARY', 'GOLDEN'],
+              minimumAssertionsPerCase: 1,
+              requireAllFixtureRulesConsumed: true,
+            },
+            promotionPolicy: {
+              requireAllCasesPassed: true,
+              minimumCertifiableCases: 2,
+              requireTargetCertificationEligible: true,
+            },
+          },
+        });
+        storedSuiteFingerprint = `sha256:${'d'.repeat(64)}`;
+        return new Response(JSON.stringify({
+          schemaVersion: 'bloge.storedTestSuite.v1',
+          tenantId: 'tenant-a',
+          environmentId: 'test',
+          suiteId: storedSuiteId,
+          revision: 1,
+          fingerprint: storedSuiteFingerprint,
+          suite: body.testSuite,
+          createdAt: '2026-07-15T12:00:00Z',
+          createdBy: 'author-canvas',
+        }));
+      }
+      if (url === `/api/testing/suites/${encodeURIComponent(storedSuiteId)}/executions`) {
+        expect(init).toMatchObject({ method: 'POST', headers: { 'X-Purpose': 'TEST_EXECUTION' } });
+        const body = JSON.parse(String(init?.body));
+        expect(body).toMatchObject({
+          schemaVersion: 'bloge.testSuiteExecutionRequest.v1',
+          suiteRef: { suiteId: storedSuiteId, revision: 1, fingerprint: storedSuiteFingerprint },
+          strategy: 'COLLECT_ALL',
+          metadata: { source: 'author-canvas', visualOperatorRef: 'visual:normalize' },
+        });
+        expect(body.clientRequestId).toMatch(/^canvas-suite-[0-9a-f]{64}$/);
+        return new Response(JSON.stringify(suiteExecutionResponse(
+          'suite-run-1', body.clientRequestId, body.suiteRef,
+          { kind: 'OPERATOR', id: 'customer.normalize', fingerprint: targetFingerprint },
+          [
+            { caseId: 'golden', caseType: 'GOLDEN', fixtureBundleId: storedFixtureIds[0],
+              fixtureFingerprint: fixtureFingerprints[0], runId: 'run-golden' },
+            { caseId: 'boundary', caseType: 'BOUNDARY', fixtureBundleId: storedFixtureIds[1],
+              fixtureFingerprint: fixtureFingerprints[1], runId: 'run-boundary' },
+          ],
+        )));
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const result = await governOperatorTestSuite({
+      operatorRef: 'visual:normalize',
+      lowering: { mode: 'native', operatorRef: 'customer.normalize' },
+      ports: { inputs: [], outputs: [] },
+    }, 'node n1', [
+      { caseId: 'golden', caseType: 'GOLDEN', input: { name: 'Ada' },
+        expectedOutput: { normalized: 'ADA' }, transportResponse: null },
+      { caseId: 'boundary', caseType: 'BOUNDARY', input: { name: '' },
+        expectedOutput: { normalized: '' }, transportResponse: null },
+    ]);
+
+    expect(result.storedFixtures).toHaveLength(2);
+    expect(result.storedSuite).toMatchObject({ suiteId: storedSuiteId, fingerprint: storedSuiteFingerprint });
+    expect(result.response.evidence).toMatchObject({
+      status: 'PASSED',
+      coverage: { status: 'SATISFIED' },
+      promotion: { status: 'ELIGIBLE' },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+
+  it('does not execute a Canvas suite when the registry rebinds its identity', async () => {
+    const fetchMock = mockSingleCaseSuiteProtocol({ storedSuiteId: 'different-suite' });
+
+    await expect(publishSingleGoldenSuite())
+      .rejects.toThrow('Suite registry returned an inconsistent stored suite identity.');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not execute a Canvas suite when the registry rewrites its policy', async () => {
+    const fetchMock = mockSingleCaseSuiteProtocol({ storedMinimumCertifiableCases: 0 });
+
+    await expect(publishSingleGoldenSuite())
+      .rejects.toThrow('Suite registry returned an inconsistent stored suite identity.');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('rejects a suite execution response bound to another Canvas request intent', async () => {
+    const fetchMock = mockSingleCaseSuiteProtocol({ executionSuiteId: 'different-suite' });
+
+    await expect(publishSingleGoldenSuite())
+      .rejects.toThrow('Suite runner returned a response for a different execution intent.');
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it('rejects a suite execution response that rewrites a Canvas case intent', async () => {
+    const fetchMock = mockSingleCaseSuiteProtocol({ executionCaseType: 'NEGATIVE' });
+
+    await expect(publishSingleGoldenSuite())
+      .rejects.toThrow('Suite runner returned a response for a different execution intent.');
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it.each([
+    ['a pending child hidden by a PASSED aggregate', { executionCaseStatus: 'PENDING' }],
+    ['a PASSED case without a child run reference', { executionRunId: '' }],
+    ['an ELIGIBLE aggregate backed only by exploratory evidence', { executionEvidenceClass: 'EXPLORATORY' }],
+    ['a SATISFIED aggregate below the assertion policy', {
+      executionAssertionsEvaluated: 0,
+      executionAssertionsPassed: 0,
+    }],
+  ])('rejects %s', async (_description, mutation) => {
+    const fetchMock = mockSingleCaseSuiteProtocol(mutation);
+
+    await expect(publishSingleGoldenSuite())
+      .rejects.toThrow('Suite runner returned a response for a different execution intent.');
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it('can route visual API calls through a custom transport', async () => {
@@ -735,3 +921,196 @@ describe('operator library API client', () => {
     }));
   });
 });
+
+function executableTarget(operatorId: string, fingerprint: string) {
+  return {
+    schemaVersion: 'bloge.testOperatorTargetDescriptor.v2',
+    target: { kind: 'OPERATOR', id: operatorId, fingerprint },
+    testabilityClass: 'EXECUTABLE_UNIT',
+    executionSupported: true,
+    certificationEligible: true,
+    certificationRequirements: [],
+    certificationGaps: [],
+  };
+}
+
+function storedFixture(fixtureBundleId: string, fingerprint: string) {
+  return {
+    schemaVersion: 'bloge.storedFixtureBundle.v1',
+    tenantId: 'tenant-a',
+    environmentId: 'test',
+    fixtureBundleId,
+    revision: 1,
+    fingerprint,
+    createdAt: '2026-07-15T12:00:00Z',
+    createdBy: 'author-canvas',
+  };
+}
+
+function suiteExecutionResponse(
+  suiteRunId: string,
+  clientRequestId: string,
+  suiteRef: { suiteId: string; revision: number; fingerprint: string },
+  target: { kind: string; id: string; fingerprint: string },
+  cases: Array<{
+    caseId: string;
+    caseType: string;
+    fixtureBundleId: string;
+    fixtureFingerprint: string;
+    runId: string;
+  }>,
+) {
+  return {
+    schemaVersion: 'bloge.testSuiteExecutionResponse.v1',
+    suiteRunId,
+    evidenceFingerprint: `sha256:${'e'.repeat(64)}`,
+    evidence: {
+      schemaVersion: 'bloge.testSuiteRunEvidence.v1',
+      suiteRunId,
+      clientRequestId,
+      status: 'PASSED',
+      executionPurpose: 'TEST_SUITE_EXECUTION',
+      suiteRef,
+      target,
+      startedAt: '2026-07-15T12:00:00Z',
+      completedAt: '2026-07-15T12:00:01Z',
+      caseResults: cases.map((testCase) => ({
+        caseId: testCase.caseId,
+        caseType: testCase.caseType,
+        fixtureBundleRef: {
+          fixtureBundleId: testCase.fixtureBundleId,
+          revision: 1,
+          fingerprint: testCase.fixtureFingerprint,
+        },
+        status: 'PASSED',
+        runId: testCase.runId,
+        evidenceStatus: 'PASSED',
+        evidenceClass: 'CERTIFIABLE',
+        assertionsEvaluated: 1,
+        assertionsPassed: 1,
+        diagnosticCode: '',
+        diagnostic: '',
+      })),
+      coverage: {
+        status: 'SATISFIED',
+        minimumCases: cases.length,
+        completedCases: cases.length,
+        requiredCaseTypes: [...new Set(cases.map((testCase) => testCase.caseType))].sort(),
+        observedCaseTypes: [...new Set(cases.map((testCase) => testCase.caseType))].sort(),
+        missingCaseTypes: [],
+        requiredInvocationSiteIds: [],
+        observedInvocationSiteIds: ['/root/subject#primary'],
+        missingInvocationSiteIds: [],
+        requiredEdgeTransfers: [],
+        observedEdgeTransfers: [],
+        missingEdgeTransfers: [],
+        minimumAssertionsPerCase: 1,
+        assertionDensityViolations: [],
+        fixtureConsumptionViolations: [],
+        allCasesCompleted: true,
+      },
+      promotion: {
+        status: 'ELIGIBLE',
+        reasons: [],
+        allCasesPassed: true,
+        certifiableCases: cases.length,
+        minimumCertifiableCases: cases.length,
+        targetCertificationEligible: true,
+        coverageSatisfied: true,
+        allCasesCompleted: true,
+      },
+      diagnostics: [],
+      metadata: {},
+    },
+  };
+}
+
+interface SingleCaseSuiteProtocolMutation {
+  storedSuiteId?: string;
+  storedMinimumCertifiableCases?: number;
+  executionSuiteId?: string;
+  executionCaseType?: string;
+  executionCaseStatus?: string;
+  executionRunId?: string;
+  executionEvidenceClass?: string;
+  executionAssertionsEvaluated?: number;
+  executionAssertionsPassed?: number;
+}
+
+function mockSingleCaseSuiteProtocol(
+  mutation: SingleCaseSuiteProtocolMutation = {},
+) {
+  const targetFingerprint = `sha256:${'a'.repeat(64)}`;
+  const fixtureFingerprint = `sha256:${'b'.repeat(64)}`;
+  const suiteFingerprint = `sha256:${'d'.repeat(64)}`;
+  let fixtureId = '';
+  let suiteId = '';
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (url.includes('/targets/operators/')) {
+      return new Response(JSON.stringify(executableTarget('customer.normalize', targetFingerprint)));
+    }
+    if (url.includes('/fixture-bundles/')) {
+      fixtureId = decodeURIComponent(url.slice('/api/testing/fixture-bundles/'.length));
+      return new Response(JSON.stringify(storedFixture(fixtureId, fixtureFingerprint)));
+    }
+    if (url.includes('/suites/') && !url.endsWith('/executions')) {
+      suiteId = decodeURIComponent(url.slice('/api/testing/suites/'.length));
+      const body = JSON.parse(String(init?.body));
+      if (mutation.storedMinimumCertifiableCases !== undefined) {
+        body.testSuite.promotionPolicy.minimumCertifiableCases = mutation.storedMinimumCertifiableCases;
+      }
+      return new Response(JSON.stringify({
+        schemaVersion: 'bloge.storedTestSuite.v1',
+        tenantId: 'tenant-a',
+        environmentId: 'test',
+        suiteId: mutation.storedSuiteId ?? suiteId,
+        revision: 1,
+        fingerprint: suiteFingerprint,
+        suite: body.testSuite,
+        createdAt: '2026-07-15T12:00:00Z',
+        createdBy: 'author-canvas',
+      }));
+    }
+    if (url.endsWith('/executions')) {
+      const body = JSON.parse(String(init?.body));
+      const response = suiteExecutionResponse(
+        'suite-run-negative',
+        body.clientRequestId,
+        {
+          ...body.suiteRef,
+          suiteId: mutation.executionSuiteId ?? body.suiteRef.suiteId,
+        },
+        { kind: 'OPERATOR', id: 'customer.normalize', fingerprint: targetFingerprint },
+        [{
+          caseId: 'golden',
+          caseType: mutation.executionCaseType ?? 'GOLDEN',
+          fixtureBundleId: fixtureId,
+          fixtureFingerprint,
+          runId: mutation.executionRunId ?? 'run-golden',
+        }],
+      );
+      const result = response.evidence.caseResults[0];
+      result.status = mutation.executionCaseStatus ?? result.status;
+      result.evidenceClass = mutation.executionEvidenceClass ?? result.evidenceClass;
+      result.assertionsEvaluated = mutation.executionAssertionsEvaluated ?? result.assertionsEvaluated;
+      result.assertionsPassed = mutation.executionAssertionsPassed ?? result.assertionsPassed;
+      return new Response(JSON.stringify(response));
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  });
+}
+
+function publishSingleGoldenSuite() {
+  return governOperatorTestSuite({
+    operatorRef: 'visual:normalize',
+    lowering: { mode: 'native', operatorRef: 'customer.normalize' },
+    ports: { inputs: [], outputs: [] },
+  }, 'node n1', [{
+    caseId: 'golden',
+    caseType: 'GOLDEN',
+    input: {},
+    expectedOutput: {},
+    transportResponse: null,
+  }]);
+}

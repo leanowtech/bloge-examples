@@ -283,14 +283,18 @@ To add a user-supplied visual operator library:
    current mode validates fixture and schema consistency; it does not execute a
    real operator runtime binding. Results expose `mode=SCHEMA_CONTRACT`.
 5. Double-click a canvas node and use `Executable Operator Suite` to run one case or the whole
-   table through the isolated testing control plane. `Run Case` / `Run All` use inline fixtures for
-   fast `EXPLORATORY` feedback. `Govern + Run` / `Govern All` derive a content-addressed fixture id
-   from the frozen target, lowered input, fixture and row metadata, register immutable revision 1
-   with `TEST_FIXTURE_WRITE`, verify the returned identity, and execute by stored ref with
-   `TEST_EXECUTION`. The control plane also exposes a dependency-closed immutable
-   `bloge.testSuite.v1` registry at `/api/testing/suites/{suiteId}` and an exact suite runner at
-   `/api/testing/suites/{suiteId}/executions`; the canvas does not yet publish its row table to that
-   registry. Native operators run real code under a `SPY`; resource-backed visual operators
+   table through the isolated testing control plane. `Run Case` / `Run Exploratory` use inline
+   fixtures for fast `EXPLORATORY` feedback. For governed evidence, choose a
+   `Golden`/`Negative`/`Boundary`/`Regression` intent and use `Publish Case + Run` or
+   `Publish Suite + Run`. The canvas registers content-addressed immutable fixtures with
+   `TEST_FIXTURE_WRITE`, publishes one dependency-closed `bloge.testSuite.v1` revision with
+   `TEST_SUITE_WRITE`, validates the complete returned identity, then executes that exact revision
+   through `/api/testing/suites/{suiteId}/executions` with `TEST_EXECUTION`. It displays payload-free
+   child run links plus aggregate execution, coverage, and promotion eligibility only after the
+   stored suite, child evidence, assertions, coverage, promotion, and aggregate status pass
+   fail-closed consistency checks. The table is read-only in flight; a later exploratory run clears
+   the stale publication banner. Native operators
+   run real code under a `SPY`; resource-backed visual operators
    lower to `httpResource` and replace only transport I/O, using the editable `Transport response`
    as the raw protocol fixture. Unsupported and `OPAQUE_RUNTIME` targets fail closed before
    execution. Stored provenance is necessary but not sufficient for `CERTIFIABLE` evidence: target

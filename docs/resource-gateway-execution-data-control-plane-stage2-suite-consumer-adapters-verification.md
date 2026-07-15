@@ -105,7 +105,9 @@ Measured on 2026-07-15 with Java 25 and Maven 3.9:
 
 ## Explicit Non-Claims
 
-- The Canvas does not yet publish its multi-row operator table as one immutable suite revision.
+- Canvas publication was outside this adapter increment; the later
+  [Canvas suite publication increment](resource-gateway-execution-data-control-plane-stage2-canvas-suite-publication-verification.md)
+  now publishes its multi-row operator table as one immutable suite revision.
 - The CLI does not poll or reconcile abandoned `RUNNING` suite checkpoints; it emits an
   infrastructure JUnit failure and exits `2`.
 - No suite list/history/trend API, shard coordinator, quota scheduler, or multi-region owner exists.

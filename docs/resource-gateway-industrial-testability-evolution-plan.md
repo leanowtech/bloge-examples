@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
-| Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（含内容寻址 governed fixture row）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 nested/foreach/loop/compensation 控制传播与 occurrence/attempt/node/edge evidence 已落地；Canvas 一等 suite 发布、streaming/suspendable control/evidence 与物理 network isolation 待完成 |
+| Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（四类 case intent、内容寻址 fixture/一等 suite 发布、精确 revision 执行与 aggregate coverage/promotion 回显）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 nested/foreach/loop/compensation 控制传播与 occurrence/attempt/node/edge evidence 已落地；streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3-5 | Not started | signed evidence、semantic coverage、剩余 deterministic random/UUID/function services、replay、独立部署与规模化治理 |
 
 实现细节、行为兼容决策和可复现测试见
@@ -31,12 +31,15 @@
 [Stage 2 suite registry verification](resource-gateway-execution-data-control-plane-stage2-suite-registry-verification.md) 与
 [Stage 2 suite runner verification](resource-gateway-execution-data-control-plane-stage2-suite-runner-verification.md) 与
 [Stage 2 suite consumer adapters verification](resource-gateway-execution-data-control-plane-stage2-suite-consumer-adapters-verification.md) 与
+[Stage 2 Canvas suite publication verification](resource-gateway-execution-data-control-plane-stage2-canvas-suite-publication-verification.md) 与
 [Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md) 与
 [Stage 2 logical-time verification](resource-gateway-execution-data-control-plane-stage2-logical-time-verification.md)。北极星中的目标态能力未出现在上述
 Done 行时，均不得从文档推断为产品已开放。
 
-当前严格验收基线：Resource Gateway `clean verify` 共 1748 tests、0 failures、0 errors、
-34 个条件跳过，真实浏览器回归与 Spring Boot JAR 打包成功；immutable TestSuite
+当前严格验收基线：Resource Gateway `-Pfrontend clean verify` 共 1748 tests、0 failures、0 errors、
+0 skipped，真实浏览器回归与 Spring Boot JAR 打包成功；Canvas suite 聚焦 68 tests、
+前端全量 150 tests，并在桌面与 390 x 844 真实浏览器中完成两行一等 suite 发布；Canvas 对完整
+stored suite value、child evidence、coverage、promotion 与 aggregate 一致性 fail closed；immutable TestSuite
 runner/protocol 增量聚焦 33 tests；suite consumer adapter 聚焦 21 tests、独立 test-kit
 `clean verify` 29 tests，均为 0 failures、0 errors，library/CLI JAR 均打包成功；完整 suite wire value
 按打包的 Draft 2020-12 schema 校验并回绑 request identity，`RUNNING` 在无 polling CLI 中退出 2，
@@ -107,8 +110,9 @@ assertion 是否能在 mockedOutputs 上通过
 
 > 2026-07-15 落地校正：本节描述仍适用于 `/api/visual/operators/tests/*` 的持久化 schema suite；它继续诚实返回
 > `SCHEMA_CONTRACT`。React Author Canvas 的 `Executable Operator Suite` 已改走公共 operator target discovery 与
-> micro-graph execution，不再调用该 schema-only runner；其中 `Govern*` 可把单行 fixture 注册为内容寻址不可变 revision
-> 再按 stored ref 执行。它仍不是一等 immutable `TestSuite` registry。两条入口并存，证据等级不得混用。
+> micro-graph execution，不再调用该 schema-only runner。`Run Case / Run Exploratory` 使用 inline fixture；
+> `Publish Case + Run / Publish Suite + Run` 则为每行注册内容寻址 fixture，并把一行或多行发布为一等 immutable
+> `bloge.testSuite.v1` 后执行精确 revision。两条入口并存，证据等级不得混用。
 
 正确演进不是删掉它，而是把模式显式拆开：
 
@@ -979,7 +983,8 @@ batch_queue_depth / tenant_throttled_total
 **实现状态**：内核与 Java micro-graph runner 已完成；独立 test-kit 的
 JUnit 5 assertions、JUnit XML 与 CI exit code 已在 Stage 2 首个增量落地；公共同步 operator
 target discovery、micro-graph execution、immutable fixture、test-kit adapter 和 Author Canvas
-`Executable Operator Suite` 已落地；画布还可将单行内容寻址 fixture 注册后按 stored ref 执行。当前
+`Executable Operator Suite` 已落地；画布可将一行或多行 case 发布为内容寻址 fixture 与一等 TestSuite，
+再执行并展示聚合 coverage/promotion evidence。当前
 `/api/visual/operators/tests/run` 继续严格标识为
 `SCHEMA_CONTRACT`；画布通过另一组隔离 API 执行真实 binding，不能借 UI 迁移反向改写旧 API 的证明语义。
 
@@ -998,7 +1003,7 @@ target discovery、micro-graph execution、immutable fixture、test-kit adapter 
 ### Stage 2：Execution Data Control Plane，3-5 周
 
 **实现状态**：进行中。Stage 1 已完成 selector preflight、不可变 effective plan、主节点 replacement、consumption policy 与既有
-gateway graph suite adapter；Stage 2 已补 graph target discovery、公共执行/批量/查询、immutable fixture registry、canvas governed fixture row、独立持久化、证据脱敏、profile/identity guard、production run control-field guard、独立 test-kit，并完成七图/14-case built-in dogfooding：28 个 root/nested 资源调用观测使用 F3，retry 以 bounded consumption 计数，Spring wiring 在不可达 endpoint 下证明没有 HTTP 调用逃逸。run-scoped logical clock、DELAY/TIMEOUT、同步 nested/foreach/loop/compensation 的结构寻址、控制传播与 occurrence/attempt/node/edge evidence、公共同步 operator adapter、canvas operator runner，以及一等 immutable `bloge.testSuite.v1` 的依赖闭包 registry/API、精确幂等 runner、逐 case checkpoint、结构覆盖与服务端 promotion eligibility 已落地。Java/JUnit/CI suite adapter 已提供 builder、强类型 projection/assertion、payload-free JUnit XML 和 fail-closed CLI；Canvas 一等 suite 发布、旧七图 catalog 资产迁移、REPLAY、streaming/suspendable control/evidence 和物理 test-runtime/network isolation 仍是本阶段硬验收，不能因 suite runner 同步主路径通过就宣称 Stage 2 完成。
+gateway graph suite adapter；Stage 2 已补 graph target discovery、公共执行/批量/查询、immutable fixture registry、canvas 内容寻址 fixture 与一等 suite 发布、独立持久化、证据脱敏、profile/identity guard、production run control-field guard、独立 test-kit，并完成七图/14-case built-in dogfooding：28 个 root/nested 资源调用观测使用 F3，retry 以 bounded consumption 计数，Spring wiring 在不可达 endpoint 下证明没有 HTTP 调用逃逸。run-scoped logical clock、DELAY/TIMEOUT、同步 nested/foreach/loop/compensation 的结构寻址、控制传播与 occurrence/attempt/node/edge evidence、公共同步 operator adapter、canvas operator runner，以及一等 immutable `bloge.testSuite.v1` 的依赖闭包 registry/API、精确幂等 runner、逐 case checkpoint、结构覆盖与服务端 promotion eligibility 已落地。Canvas 同时支持四类 case intent、完整 stored suite value 回绑、child/coverage/promotion/aggregate 逻辑一致性校验与聚合回显，异步运行期间冻结编辑并主动清除过期 publication；Java/JUnit/CI suite adapter 已提供 builder、强类型 projection/assertion、payload-free JUnit XML 和 fail-closed CLI。旧七图 catalog 资产迁移、REPLAY、streaming/suspendable control/evidence 和物理 test-runtime/network isolation 仍是本阶段硬验收，不能因同步 suite 主路径通过就宣称 Stage 2 完成。
 
 交付：
 

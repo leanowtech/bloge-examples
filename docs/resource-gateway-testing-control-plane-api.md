@@ -587,8 +587,8 @@ selected resource interactions use strict `boundary=TRANSPORT` protocol response
 
 ### 4.3.2 Run from Author Canvas
 
-In `/author/`, double-click a node and open `Executable Operator Suite`. `Run Case` and `Run All`
-perform the rapid inline path:
+In `/author/`, double-click a node and open `Executable Operator Suite`. `Run Case` and
+`Run Exploratory` perform the rapid inline path:
 
 1. Resolve `lowering.operatorRef` (or the visual `operatorRef`) and discover the frozen target.
 2. Reject `OPAQUE_RUNTIME` and unsupported targets before execution.
@@ -603,22 +603,43 @@ host provider. The standalone demo provider uses the test-profile demo identity;
 host must inject its own short-lived credential. Testing endpoints exist only in test/staging profiles
 and are absent in production.
 
-`Govern + Run` and `Govern All` perform a second, provenance-bearing path. The client canonicalizes
-the frozen target, lowered input, fixture and row metadata, derives a bounded content-addressed id,
-registers immutable revision 1 through `PUT /api/testing/fixture-bundles/{id}` with
-`X-Purpose: TEST_FIXTURE_WRITE`, verifies that the registry returned the same id/revision and a
-non-empty authoritative fingerprint, and only then executes with `fixtureBundleRef` under
-`X-Purpose: TEST_EXECUTION`. Repeating unchanged row content is idempotent; changing relevant content
-produces a different id instead of mutating history. A registry identity mismatch fails before the
-execution POST.
+`Publish Case + Run` and `Publish Suite + Run` perform the provenance-bearing path. Each row declares
+one governance intent: `GOLDEN`, `NEGATIVE`, `BOUNDARY`, or `REGRESSION`. The client then:
 
-`Run*` remains the fast inline `EXPLORATORY` loop. `Govern*` supplies stored provenance, but it does
-not promise `CERTIFIABLE`: target composability, strict schema checks and fixture fidelity still
-govern the server-authoritative evidence class. `Govern All` currently governs and executes each row
-independently; it does not yet register the first-class `bloge.testSuite.v1` revision available at
-`/api/testing/suites/{suiteId}`. `Apply Fixture` only
-writes the row back to the visual draft's ordinary node fixture and never registers a control-plane
-fixture.
+1. discovers one exact `bloge.testOperatorTargetDescriptor.v2` target under `TEST_SUITE_WRITE` and
+   requires the runtime id plus a full SHA-256 implementation-closure fingerprint;
+2. canonicalizes every lowered input, transport fixture, expected output, and row identity, derives
+   a bounded content-addressed fixture id, and registers immutable revision 1 under
+   `TEST_FIXTURE_WRITE`;
+3. builds one content-addressed `bloge.testSuite.v1` revision whose cases retain exact fixture refs
+   and case intent, with coverage requiring every represented case type and promotion requiring all
+   cases to pass with certifiable evidence;
+4. registers the suite under `TEST_SUITE_WRITE`, verifies the full returned immutable suite value
+   including classification, target, ordered cases, inputs, intents, fixture refs, metadata,
+   coverage policy, promotion policy, and authoritative fingerprint;
+5. executes that exact suite revision under `TEST_EXECUTION` with `COLLECT_ALL` and a deterministic
+   caller idempotency key;
+6. accepts aggregate evidence only when the suite ref, target, request id, case ids, case intents,
+   fixture refs, and suite-run identity match the submitted intent, and when child run presence,
+   evidence class, assertion counters, coverage, promotion, and aggregate status are internally
+   consistent.
+
+`Publish Case + Run` uses the same protocol with a legitimate one-case suite; it is not a shortcut
+around suite governance. `Publish Suite + Run` publishes all valid rows as one revision and renders
+payload-free child run links plus aggregate execution, coverage, and promotion status. Repeating
+unchanged content reuses the same immutable assets and idempotent suite run; changing any relevant
+target, case, fixture, or intent creates a different content address rather than mutating history.
+The table is read-only while either path is running. Starting an exploratory run clears any previous
+governed publication banner before execution so stale evidence is never presented as current.
+
+`Run*` remains the fast inline `EXPLORATORY` loop. Published provenance is necessary but does not
+promise `CERTIFIABLE`: target composability, strict schema checks, and fixture fidelity still govern
+the server-authoritative child evidence. Likewise `ELIGIBLE` is only the suite policy verdict, not a
+certificate, approval, or publication decision. `Apply Fixture` only writes a row back to the visual
+draft's ordinary node fixture and never registers a control-plane asset.
+
+The focused protocol, UI, negative-test, and real-browser evidence is recorded in
+[Stage 2 Canvas suite publication verification](resource-gateway-execution-data-control-plane-stage2-canvas-suite-publication-verification.md).
 
 ### 4.4 Query a run or run a batch
 
@@ -786,8 +807,9 @@ Implemented now:
   stateless and explicitly snapshot-providing configured bindings can certify, while opaque state
   fails closed.
 - Author Canvas `Executable Operator Suite` target discovery, native `SPY`, resource
-  `TRANSPORT` lowering, real run/evidence display, content-addressed governed row registration,
-  stored-ref execution, registry-identity validation, and opaque-target fail-closed behavior.
+  `TRANSPORT` lowering, real exploratory run/evidence display, four case intents, content-addressed
+  fixture and first-class suite publication, exact-revision aggregate execution, coverage/promotion
+  display, response-intent validation, and opaque-target fail-closed behavior.
 - first-class immutable `bloge.testSuite.v1` protocol, dependency-closed registry, independent
   read/write purposes, target/fixture/classification drift checks, JDBC persistence, and capability
   discovery.
@@ -801,8 +823,8 @@ Still intentionally outside this increment:
   durable-resume plan restoration;
 - signed certification, full branch/rule/retry/fallback/compensation semantic coverage, ANEKE
   projection, and mutation testing;
-- Canvas publication/execution adapter over the suite registry and runner, automatic
-  resume/reconciliation of abandoned `RUNNING` checkpoints, and suite-history list/trend APIs;
+- automatic resume/reconciliation of abandoned `RUNNING` checkpoints and suite-history
+  list/trend APIs;
 - deterministic random/UUID/function execution services and deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;
 - certification of streaming foreach/loop graphs until their invocation and edge evidence is

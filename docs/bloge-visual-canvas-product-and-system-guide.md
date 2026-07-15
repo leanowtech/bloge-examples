@@ -1740,7 +1740,7 @@ POST /api/visual/connections/check
 2. **关键属性可编辑**：所有节点都能改显示 label；resource/http 节点还提供 Resource ID、Method、URL/route、Timeout 等常用运行属性输入框，写回节点 `config`。
 3. **图形化输入绑定**：浮层内置 `Node Inputs`，可以 Add Binding、选择 `ctx` 或 `constant`、配置 Target port/path，也能接收 Runtime Context 变量 chip 拖拽。
 4. **Input/Output 样例**：Output sample 和 Expected input 可以在浮层内直接维护，写入 `GraphDraft.nodeFixtures`，用于 mock simulate 和表格测试。
-5. **Executable Operator Suite**：每个节点都有自己的表格测试数据，按行维护 Input case 和 Expected output；resource/http 算子还会显示 Transport response。Run Case / Run All 以 inline fixture 快速执行单节点微图；Govern + Run / Govern All 先注册内容寻址的不可变 fixture revision，再按 stored ref 执行；Apply Fixture 只把该行套用为当前节点的 Expected input / Output sample。
+5. **Executable Operator Suite**：每个节点都有自己的表格测试数据，按行维护 Input case、Expected output 和 `Golden / Negative / Boundary / Regression` 测试意图；resource/http 算子还会显示 Transport response。`Run Case / Run Exploratory` 以 inline fixture 快速执行单节点微图；`Publish Case + Run / Publish Suite + Run` 把行发布为内容寻址的不可变 fixture 与一等 TestSuite revision，再执行该精确 revision；Apply Fixture 只把该行套用为当前节点的 Expected input / Output sample。
 6. **Schema 摘要优先**：每个端口先显示 schema 类型、字段数和字段表；Raw schema 仍可展开查看，避免用户一上来就读大段 JSON。
 7. **专属交互区**：decision table 和 transform 会在同一浮层内展开可编辑区域；foreach 会展开循环向导；generic/design operator 保留高级 config JSON 入口。
 
@@ -1759,27 +1759,36 @@ Operator Test Suite 和右侧全图 Test Suite 的边界不同：
 | Operator Detail 内的 Executable Operator Suite | 单个节点/算子 | Input case、Expected output；resource 另有 Transport response | 发现冻结 runtime target，真实执行单节点微图，并可把样例套用为节点 fixture |
 | 右侧 inspector 的 Test Suite | 整张 graph | Runtime context、fixture overrides、Expected graph output | 批量验证端到端编排路径和最终业务结果 |
 
-这里有一个重要边界：`Executable Operator Suite` 不再调用旧的 schema-only table runner。点击 Run Case / Run All 时，
+这里有一个重要边界：`Executable Operator Suite` 不再调用旧的 schema-only table runner。点击 Run Case / Run Exploratory 时，
 画布先调用 operator target discovery，冻结 runtime fingerprint 并检查 testability class，再调用公共 micro-graph execution：
 native operator 使用 `SPY` 观察真实主体；resource operator 降级到 `httpResource`，只以表格中的 Transport response 替换
 transport I/O，因此 request mapping、协议解析和 payload extraction 仍会执行。`OPAQUE_RUNTIME`、不支持的 execution model
 或缺失 runtime lowering 会在执行前 fail closed。
 
-`Run Case / Run All` 使用 inline fixture，适合快速试验，因此 passing 行显示真实 run id 和 `EXPLORATORY` evidence，不等于可发布认证。
-`Govern + Run / Govern All` 会冻结同一 target，把 target、lowered input、fixture 和 row metadata 规范化后生成内容寻址 ID，以
-`TEST_FIXTURE_WRITE` 注册不可变 revision 1，校验 registry 返回的 ID/revision/fingerprint，再切换到 `TEST_EXECUTION` 按 stored ref
-运行。未改动的行可幂等复用同一 revision；关键内容改变会产生新 ID，不会覆盖历史。registry 身份不一致时在执行前失败关闭。
+`Run Case / Run Exploratory` 使用 inline fixture，适合快速试验，因此 passing 行显示真实 run id 和 `EXPLORATORY` evidence，不等于可发布认证。
+`Publish Case + Run / Publish Suite + Run` 会冻结同一 target，为每行把 lowered input、fixture 和 case metadata 规范化成内容寻址的
+immutable fixture revision，再把所有行组织成一份 `bloge.testSuite.v1`。套件保留每行 `GOLDEN / NEGATIVE / BOUNDARY / REGRESSION`
+意图，coverage policy 要求所有行和已声明意图都被完成，promotion policy 要求所有 case 通过且 evidence 可认证。画布以
+`TEST_FIXTURE_WRITE` 写 fixture、以 `TEST_SUITE_WRITE` 写 suite，逐层校验 registry 返回的 ID/revision/fingerprint/target/cases，最后
+以 `TEST_EXECUTION` 执行该精确 suite revision。画布会校验完整 suite value，并检查 child run、assertion、coverage、promotion 与 aggregate
+能否互相印证；任何身份、策略、case intent 或证据逻辑漂移都会失败关闭，不进入结果展示。请求执行期间整张测试表只读，避免返回结果错绑到
+中途编辑过的行；随后点击 `Run Case / Run Exploratory` 时，会先清除旧的 governed publication 聚合条。
 
-Governed provenance 只是 `CERTIFIABLE` 的必要条件，不是保证：runtime composability、schema strictness、resource fixture fidelity
-仍由服务端最终裁决。当前 `Govern All` 是逐行注册和运行，还不是一个可独立版本化、绑定 coverage/promotion policy 的一等
-`TestSuite` 资产。右侧全图 Test Suite 仍复用 mock simulation，真实执行纯 DSL primitive，其他 operator 由 fixture 或 schema
-sample 替换，也不能被解释为 production-real execution。完整的 graph contract、fault injection、replay regression 和生产隔离目标见
+点击 `Publish Suite + Run` 后，标题栏先显示 `n/n passed`；绿色聚合条显示 `PASSED · coverage SATISFIED · promotion ELIGIBLE`，下一行给出
+`suiteId@revision` 和 `suiteRunId`，每个 case 则显示 payload-free child run id 与 evidence class。未改动内容会幂等复用同一 fixture、suite
+和执行意图；修改 target、输入、期望、transport response 或 case intent 都会产生新的内容地址，不覆盖历史。单行
+`Publish Case + Run` 走同一协议，只是发布一份合法的一行 suite，而不是绕过治理的特殊通道。
+
+Published provenance 只是 `CERTIFIABLE` 的必要条件，不是保证：runtime composability、schema strictness、resource fixture fidelity
+仍由服务端最终裁决；`ELIGIBLE` 也只表示当前 suite policy 满足，不是签名认证、ANEKE 审批或生产发布。右侧全图 Test Suite 仍复用
+mock simulation，真实执行纯 DSL primitive，其他 operator 由 fixture 或 schema sample 替换，也不能被解释为 production-real execution。
+完整的 graph contract、fault injection、replay regression 和生产隔离目标见
 [工业级可测试性与执行数据控制反转演进方案](resource-gateway-industrial-testability-evolution-plan.md)。
 
 resource 行的 Expected output 表示算子应交付的逻辑 payload；Transport response 表示外部系统原始协议响应。系统首次生成时会保持二者联动，但一旦用户手工编辑 Transport response，后续修改 Expected output 不会覆盖这份自定义 fixture。
 
-演示服务以 `test` profile 启动时使用专用 demo identity；运行使用 `X-Purpose: TEST_EXECUTION`，治理写入使用
-`X-Purpose: TEST_FIXTURE_WRITE`。VSCode/嵌入式宿主必须替换凭证 provider，并应把 author 与 runner 权限拆分；production profile
+演示服务以 `test` profile 启动时使用专用 demo identity；运行使用 `X-Purpose: TEST_EXECUTION`，fixture 写入使用
+`X-Purpose: TEST_FIXTURE_WRITE`，suite 写入使用 `X-Purpose: TEST_SUITE_WRITE`。VSCode/嵌入式宿主必须替换凭证 provider，并应把 author 与 runner 权限拆分；production profile
 不暴露测试 endpoint。因而不能通过复制前端请求把控制字段带入生产运行面。
 
 因此，当你要验证某个 http resource、transform 或 decision table 的真实可组合 runtime 行为时，优先在双击浮层里运行 Executable Operator Suite；当你要验证整张图的 happy path、fallback path 或分支组合时，再进入右侧全图 Test Suite。
