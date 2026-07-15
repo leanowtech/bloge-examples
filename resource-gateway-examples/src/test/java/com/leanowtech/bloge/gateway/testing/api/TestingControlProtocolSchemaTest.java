@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
@@ -24,8 +25,12 @@ class TestingControlProtocolSchemaTest {
 
         assertThat(schema.at("/$defs/testExecutionRequest/properties/schemaVersion/const").asText())
                 .isEqualTo(TestExecutionApiRequest.SCHEMA_VERSION);
-        assertThat(schema.at("/$defs/testExecutionResponse/properties/schemaVersion/const").asText())
+        assertThat(schema.at("/$defs/testExecutionResponseV2/properties/schemaVersion/const").asText())
                 .isEqualTo(TestExecutionApiResponse.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testExecutionResponseV1/properties/schemaVersion/const").asText())
+                .isEqualTo(TestExecutionApiResponse.SCHEMA_VERSION_V1);
+        assertThat(schema.at("/$defs/testEvidenceIntegrity/properties/schemaVersion/const").asText())
+                .isEqualTo(TestEvidenceIntegrity.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testExecutionBatchRequest/properties/schemaVersion/const").asText())
                 .isEqualTo(TestExecutionBatchRequest.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testExecutionBatchResponse/properties/schemaVersion/const").asText())
@@ -101,6 +106,7 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("testSuiteExecutionResponse")).isTrue();
         assertThat(definitions.has("testSuiteCatalogMaterialization")).isTrue();
         assertThat(definitions.has("testSuiteRunEvidence")).isTrue();
+        assertThat(definitions.has("testEvidenceIntegrity")).isTrue();
         assertThat(definitions.at("/fixtureBundleRegistrationRequest/properties/target/$ref").asText())
                 .isEqualTo("#/$defs/target");
         assertThat(definitions.at("/testExecutionRequest/properties/target/$ref").asText())
@@ -177,6 +183,14 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.at("/replayDependency/properties/replayRef/pattern").asText())
                 .contains("bloge-replay:");
         assertThat(definitions.at("/testRunEvidence/additionalProperties").asBoolean()).isFalse();
+        assertThat(definitions.at("/testExecutionResponse/oneOf")).hasSize(2);
+        assertThat(definitions.at("/testExecutionResponseV2/required"))
+                .extracting(JsonNode::asText).contains("integrity", "evidence");
+        assertThat(definitions.at("/testExecutionResponseV2/properties/integrity/$ref").asText())
+                .isEqualTo("#/$defs/testEvidenceIntegrity");
+        assertThat(definitions.at("/testEvidenceIntegrity/properties/signatureStatus/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly("VERIFIED", "UNSIGNED", "VERIFICATION_UNAVAILABLE");
     }
 
     @Test

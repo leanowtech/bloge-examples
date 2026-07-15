@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import org.junit.jupiter.api.Test;
 
@@ -26,6 +28,7 @@ class TestabilityCapabilitiesTest {
                 "testSuiteRunReconciliation",
                 "testSuiteCatalogMaterialization",
                 "fixtureBundle", "effectiveExecutionPlan", "testRunEvidence",
+                "testEvidenceIntegrity",
                 "testGraphTargetDescriptor", "testOperatorExecutionRequest", "testOperatorTargetDescriptor");
         assertThat(enabled.features()).containsEntry("operatorMicroGraphExecution", true)
                 .containsEntry("immutableTestSuiteRegistry", true)
@@ -37,8 +40,13 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("abandonedSuiteRunReconciliation", true)
                 .containsEntry("governedTestReplayPayloadCapture", true)
                 .containsEntry("testReplayBehavior", true)
+                .containsEntry("signedTestRunEvidence", false)
+                .containsEntry("suiteSignedChildEvidenceGate", false)
                 .containsEntry("streamingOperatorTestExecution", false)
                 .containsEntry("suspendableOperatorTestExecution", false);
+        assertThat(enabled.supportedObjects().get("testExecutionResponse"))
+                .containsExactly(TestExecutionApiResponse.SCHEMA_VERSION_V1,
+                        TestExecutionApiResponse.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("effectiveExecutionPlan"))
                 .containsExactly(EffectiveExecutionPlan.SCHEMA_VERSION_V1,
                         EffectiveExecutionPlan.SCHEMA_VERSION);
@@ -61,5 +69,12 @@ class TestabilityCapabilitiesTest {
                 && endpoint.path().equals("/api/testing/catalogs/gateway-graph-contract-v1"));
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("PUT")
                 && endpoint.path().equals("/api/testing/replay-payloads/{replayPayloadId}"));
+
+        IntegrationCapabilities signed = IntegrationCapabilities.current(
+                new InMemoryVisualEvidenceSigner().descriptor(),
+                IntegrationIdentityResolver.unavailable().descriptor(), false, null, true);
+        assertThat(signed.features())
+                .containsEntry("signedTestRunEvidence", true)
+                .containsEntry("suiteSignedChildEvidenceGate", true);
     }
 }

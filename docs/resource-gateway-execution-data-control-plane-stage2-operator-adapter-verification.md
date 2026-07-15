@@ -13,7 +13,7 @@ The operator adapter is a thin protocol edge over the existing `OperatorMicroGra
 | Endpoint | Contract |
 | --- | --- |
 | `GET /api/testing/targets/operators/{operatorRef}` | `bloge.testOperatorTargetDescriptor.v2` |
-| `POST /api/testing/targets/operators/{operatorRef}/executions` | `bloge.testOperatorExecutionRequest.v1` -> common `bloge.testExecutionResponse.v1` |
+| `POST /api/testing/targets/operators/{operatorRef}/executions` | `bloge.testOperatorExecutionRequest.v1` -> signed common `bloge.testExecutionResponse.v2` (v1 remains a consumer compatibility version) |
 | `PUT /api/testing/fixture-bundles/{fixtureBundleId}` | Existing immutable registry now accepts `GRAPH` and `OPERATOR` targets |
 
 The capability probe advertises both objects/endpoints and

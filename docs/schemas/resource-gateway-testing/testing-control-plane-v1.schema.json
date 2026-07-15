@@ -757,7 +757,26 @@
         "metadata": {"type": "object"}
       }
     },
-    "testExecutionResponse": {
+    "testEvidenceIntegrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "evidenceFingerprint", "signatureStatus", "keyId",
+        "algorithm", "signedAt", "signature", "projection", "projectionFingerprint",
+        "independentlyVerifiable"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testEvidenceIntegrity.v1"},
+        "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "signatureStatus": {"enum": ["VERIFIED", "UNSIGNED", "VERIFICATION_UNAVAILABLE"]},
+        "keyId": {"type": "string", "maxLength": 255},
+        "algorithm": {"type": "string", "maxLength": 64},
+        "signedAt": {"type": "string", "format": "date-time"},
+        "signature": {"type": "string", "maxLength": 8192},
+        "projection": {"enum": ["SUMMARY", "STANDARD", "FULL"]},
+        "projectionFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "independentlyVerifiable": {"type": "boolean"}
+      }
+    },
+    "testExecutionResponseV1": {
       "type": "object",
       "additionalProperties": false,
       "required": ["schemaVersion", "runId", "target", "fixtureBundleRef", "plan", "evidence"],
@@ -769,6 +788,27 @@
         "plan": {"$ref": "#/$defs/effectivePlan"},
         "evidence": {"$ref": "#/$defs/testRunEvidence"}
       }
+    },
+    "testExecutionResponseV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "runId", "target", "fixtureBundleRef", "plan",
+        "integrity", "evidence"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testExecutionResponse.v2"},
+        "runId": {"type": "string", "minLength": 1},
+        "target": {"$ref": "#/$defs/target"},
+        "fixtureBundleRef": {"$ref": "#/$defs/resolvedFixtureBundleRef"},
+        "plan": {"$ref": "#/$defs/effectivePlan"},
+        "integrity": {"$ref": "#/$defs/testEvidenceIntegrity"},
+        "evidence": {"$ref": "#/$defs/testRunEvidence"}
+      }
+    },
+    "testExecutionResponse": {
+      "oneOf": [
+        {"$ref": "#/$defs/testExecutionResponseV1"},
+        {"$ref": "#/$defs/testExecutionResponseV2"}
+      ]
     },
     "operatorComposabilityManifest": {
       "type": "object",

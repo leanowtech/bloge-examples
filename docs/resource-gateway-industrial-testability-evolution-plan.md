@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0/1 已落地，Stage 2 graph control plane、Java/JUnit/CI suite adapter、内置图 dogfooding、governed catalog materialization 与 abandoned suite-run reconciliation 已落地 |
+| 状态 | Accepted / In implementation；Stage 0/1 已落地，Stage 2 主路径持续收口，Stage 3 已完成 signed child-run evidence 第一增量 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、operator 开发团队、QA、平台安全、SRE、ANEKE Tool Studio |
 | 设计目标 | 让调用方在测试运行中确定性控制 DAG 的外部数据、故障和非确定性来源，并产出可验证的测试证据 |
 | 非目标 | 不把 Resource Gateway 变成通用代码覆盖率平台；不允许普通生产请求携带测试替换指令；不替代 operator 代码仓库中的白盒单元测试 |
@@ -20,7 +20,8 @@
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
 | Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（四类 case intent、内容寻址 fixture/一等 suite 发布、精确 revision 执行与 aggregate coverage/promotion 回显）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、process-owner lease/heartbeat/checkpoint fence、abandoned RUNNING fail-closed reconciliation、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其 governed catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free plan v2 谱系与认证降级，以及同步 nested/foreach/loop/compensation 控制传播与 occurrence/attempt/node/edge evidence 已落地；streaming/suspendable control/evidence 与物理 network isolation 待完成 |
-| Stage 3-5 | Not started | signed evidence、semantic coverage、剩余 deterministic random/UUID/function services、独立部署与规模化治理 |
+| Stage 3 | In progress | graph/operator `TestRunEvidence` 已完成 canonical fingerprint、Ed25519 detached signature、写前自验、读时复验、verbosity projection lineage 与 suite signed-child gate；aggregate suite evidence 签名、consumer/offline verifier、semantic coverage 和 ANEKE projection 待完成 |
+| Stage 4-5 | Not started | 剩余 deterministic random/UUID/function services、durable/streaming、独立部署与规模化治理 |
 
 实现细节、行为兼容决策和可复现测试见
 [v1 实施蓝图](resource-gateway-industrial-testability-evolution-plan-1.0.md) 与
@@ -35,15 +36,16 @@
 [Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md) 与
 [Stage 2 catalog materialization verification](resource-gateway-execution-data-control-plane-stage2-catalog-materialization-verification.md) 与
 [Stage 2 logical-time verification](resource-gateway-execution-data-control-plane-stage2-logical-time-verification.md) 与
-[Stage 2 suite-run reconciliation verification](resource-gateway-execution-data-control-plane-stage2-suite-run-reconciliation-verification.md)。北极星中的目标态能力未出现在上述
+[Stage 2 suite-run reconciliation verification](resource-gateway-execution-data-control-plane-stage2-suite-run-reconciliation-verification.md) 与
+[Stage 3 signed test evidence verification](resource-gateway-execution-data-control-plane-stage3-signed-test-evidence-verification.md)。北极星中的目标态能力未出现在上述
 Done 行时，均不得从文档推断为产品已开放。
 
-当前严格验收基线：Resource Gateway `-Pfrontend clean verify` 共 1763 tests、0 failures、0 errors、
-34 个条件跳过，真实浏览器回归与 Spring Boot JAR 打包成功；Canvas suite 聚焦 68 tests、
+当前严格验收基线：Resource Gateway `-Pfrontend clean verify` 共 1791 tests、0 failures、0 errors、
+0 skipped，真实浏览器回归与 Spring Boot JAR 打包成功；Canvas suite 聚焦 68 tests、
 前端全量 150 tests，并在桌面与 390 x 844 真实浏览器中完成两行一等 suite 发布；Canvas 对完整
 stored suite value、child evidence、coverage、promotion 与 aggregate 一致性 fail closed；immutable TestSuite
 runner/protocol 增量聚焦 33 tests；suite-run lease/reconciliation/profile 聚焦 22 tests；built-in catalog materialization 增量聚焦 34 tests；suite consumer adapter 聚焦 21 tests、独立 test-kit
-`clean verify` 32 tests，均为 0 failures、0 errors，library/CLI JAR 均打包成功；完整 suite/catalog wire value
+`clean verify` 33 tests，均为 0 failures、0 errors，library/CLI JAR 均打包成功；完整 suite/catalog wire value
 按打包的 Draft 2020-12 schema 校验并回绑 request identity，`RUNNING` 在无 polling CLI 中退出 2，
 未知参数值与 validator 细节不进入日志，public JavaDoc 零告警且由 `verify` 门禁强制。
 
@@ -1042,12 +1044,20 @@ gateway graph suite adapter；Stage 2 已补 graph target discovery、公共执�
 
 ### Stage 3：正确性证据与语义覆盖，2-4 周
 
+**实现状态**：进行中。第一增量已对完整、脱敏后的 graph/operator child
+`TestRunEvidence` 计算 canonical fingerprint，复用 Resource Gateway 的本地 Ed25519 或 managed
+KMS/HSM signer 生成 detached signature，并在持久化前自验、查询时复验。`FULL` 响应可独立验签，
+`STANDARD/SUMMARY` 只保留签名谱系及各自 projection fingerprint；suite runner 在聚合前必须验证
+每个 FULL child，否则固化 `EVIDENCE_INCOMPLETE` 并阻断 promotion。当前尚未给 aggregate
+`TestSuiteRunEvidence` 签名，test-kit 也尚未提供公钥获取与离线密码学 verifier，不能把该增量描述为
+完整 certification bundle。
+
 交付：
 
 - 完成 branch/rule/retry/fallback/compensation coverage，并把已落地的 suite-level
   invocation-site/edge-transfer/assertion-density/fixture-consumption 覆盖升级为可签名语义度量；
 - fixture consumption report；
-- signed `TestRunEvidence`；
+- signed `TestRunEvidence`（child-run 第一增量已完成；aggregate attestation 与 consumer verifier 待完成）；
 - ANEKE workbook projection；
 - stale/impact analysis；
 - Save as Suite / Promote to Golden。

@@ -7,6 +7,8 @@ public final class TestingProtocol {
     public static final String TEST_EXECUTION_REQUEST_V1 = "bloge.testExecutionRequest.v1";
     /** Single execution response wire version. */
     public static final String TEST_EXECUTION_RESPONSE_V1 = "bloge.testExecutionResponse.v1";
+    /** Current signed single execution response wire version. */
+    public static final String TEST_EXECUTION_RESPONSE_V2 = "bloge.testExecutionResponse.v2";
     /** Batch execution request wire version. */
     public static final String TEST_EXECUTION_BATCH_REQUEST_V1 = "bloge.testExecutionBatchRequest.v1";
     /** Batch execution response wire version. */
@@ -31,6 +33,8 @@ public final class TestingProtocol {
     public static final String OPERATOR_TARGET_DESCRIPTOR_V2 = "bloge.testOperatorTargetDescriptor.v2";
     /** Test-run evidence wire version. */
     public static final String TEST_RUN_EVIDENCE_V1 = "bloge.testRunEvidence.v1";
+    /** Detached test-evidence integrity manifest wire version. */
+    public static final String TEST_EVIDENCE_INTEGRITY_V1 = "bloge.testEvidenceIntegrity.v1";
     /** Immutable test-suite wire version. */
     public static final String TEST_SUITE_V1 = "bloge.testSuite.v1";
     /** Test-suite registration request wire version. */

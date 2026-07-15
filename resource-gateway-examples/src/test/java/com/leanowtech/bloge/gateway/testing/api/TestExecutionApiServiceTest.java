@@ -14,9 +14,13 @@ import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
+import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -44,6 +48,7 @@ class TestExecutionApiServiceTest {
     private final InMemoryRuns runs = new InMemoryRuns();
     private final InMemorySecurityEvents securityEvents = new InMemorySecurityEvents();
     private Graph graph;
+    private GatewayGraphService graphService;
     private TestExecutionApiService service;
     private TestReplayPayloadService replayPayloadService;
     private String targetFingerprint;
@@ -55,7 +60,7 @@ class TestExecutionApiServiceTest {
                 .node("subject", operator).input((results, context) -> context.get("input"))
                 .build().withDefinitionSource(new GraphDefinitionSource(
                         "1.0.0", "bloge-dsl-json", "{\"name\":\"controlled-graph\"}"));
-        GatewayGraphService graphService = mock(GatewayGraphService.class);
+        graphService = mock(GatewayGraphService.class);
         when(graphService.requireGraph("controlled-graph")).thenReturn(graph);
         when(graphService.requireContract("controlled-graph")).thenReturn(
                 new com.leanowtech.bloge.gateway.gateway.GatewayGraphContract(
@@ -65,7 +70,8 @@ class TestExecutionApiServiceTest {
         replayPayloadService = mock(TestReplayPayloadService.class);
         service = new TestExecutionApiService(graphService, new DefaultOperatorRegistry(), resources,
                 new BlgeExpressionEvaluator(), mapper, fixtures, runs, securityEvents,
-                Duration.ofDays(7), replayPayloadService);
+                Duration.ofDays(7), replayPayloadService,
+                new TestEvidenceIntegrityService(mapper, new InMemoryVisualEvidenceSigner()));
         targetFingerprint = GraphExecutionTargetSnapshot.capture(mapper, graph, resources).fingerprint();
     }
 
@@ -82,6 +88,10 @@ class TestExecutionApiServiceTest {
 
         assertThat(response.evidence().status()).isEqualTo(TestRunEvidence.Status.PASSED);
         assertThat(response.evidence().evidenceClass()).isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
+        assertThat(response.integrity().signatureStatus())
+                .isEqualTo(TestEvidenceIntegrity.SignatureStatus.VERIFIED);
+        assertThat(response.integrity().projection()).isEqualTo(TestEvidenceIntegrity.Projection.STANDARD);
+        assertThat(response.integrity().independentlyVerifiable()).isFalse();
         assertThat(response.evidence().nodeTrace()).singleElement().satisfies(node -> {
             assertThat(node.input()).isNull();
             assertThat(node.output()).isNull();
@@ -91,6 +101,7 @@ class TestExecutionApiServiceTest {
             });
         });
         TestRunRecord persisted = runs.find("tenant-a", "test", response.runId()).orElseThrow();
+        assertThat(persisted.integrity().independentlyVerifiable()).isTrue();
         assertThat(persisted.evidence().metadata()).containsEntry("payloadSanitized", true);
         assertThat(persisted.evidence().nodeTrace()).singleElement().satisfies(node -> {
             assertThat(node.output()).isInstanceOf(Map.class);
@@ -103,6 +114,50 @@ class TestExecutionApiServiceTest {
             });
         });
         assertThat(response.plan().authorizedPurpose()).isEqualTo("GRAPH_CONTRACT_TEST");
+    }
+
+    @Test
+    void persistedEvidenceTamperingIsRejectedAndAuditedBeforeProjection() {
+        TestExecutionApiResponse executed = service.execute(request(bundle("inline"), null,
+                TestExecutionApiRequest.Verbosity.FULL), identity("test"));
+        TestRunRecord original = runs.values.get(executed.runId());
+        TestRunEvidence evidence = original.evidence();
+        TestRunEvidence tampered = new TestRunEvidence(evidence.schemaVersion(), evidence.runId(),
+                TestRunEvidence.Status.EXECUTION_FAILED, evidence.evidenceClass(),
+                evidence.executionPurpose(), evidence.targetFingerprint(),
+                evidence.fixtureBundleFingerprint(), evidence.planFingerprint(), evidence.startedAt(),
+                evidence.completedAt(), evidence.nodeTrace(), evidence.edgeTrace(),
+                evidence.fixtureConsumptions(), evidence.assertionResults(), evidence.diagnostics(),
+                evidence.metadata());
+        runs.values.put(executed.runId(), new TestRunRecord(original.runId(), original.tenantId(),
+                original.organizationId(), original.projectId(), original.environmentId(), original.actorId(),
+                original.target(), original.fixtureBundleRef(), original.requestedVerbosity(), original.plan(),
+                tampered, original.integrity(), original.createdAt(), original.expiresAt()));
+
+        assertThatThrownBy(() -> service.find(executed.runId(), TestExecutionApiRequest.Verbosity.FULL,
+                identity("test")))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure ->
+                        assertThat(failure.problem().code()).isEqualTo("RG.TEST.EVIDENCE_INTEGRITY_INVALID"));
+        assertThat(securityEvents.events).extracting(TestSecurityEvent::eventType)
+                .contains("TEST_EVIDENCE_INTEGRITY_INVALID");
+    }
+
+    @Test
+    void signerOutageMakesOtherwisePassingEvidenceIncompleteAndNonCertifiable() {
+        TestExecutionApiService unavailable = new TestExecutionApiService(graphService,
+                new DefaultOperatorRegistry(), resources, new BlgeExpressionEvaluator(), mapper,
+                fixtures, new InMemoryRuns(), securityEvents, Duration.ofDays(7), replayPayloadService,
+                new TestEvidenceIntegrityService(mapper, VisualEvidenceSigner.unavailable()));
+
+        TestExecutionApiResponse response = unavailable.execute(request(bundle("inline"), null,
+                TestExecutionApiRequest.Verbosity.FULL), identity("test"));
+
+        assertThat(response.evidence().status()).isEqualTo(TestRunEvidence.Status.EVIDENCE_INCOMPLETE);
+        assertThat(response.evidence().evidenceClass()).isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
+        assertThat(response.integrity().signatureStatus())
+                .isEqualTo(TestEvidenceIntegrity.SignatureStatus.VERIFICATION_UNAVAILABLE);
+        assertThat(response.evidence().diagnostics())
+                .anyMatch(value -> value.contains(TestEvidenceIntegrityService.SIGNER_UNAVAILABLE));
     }
 
     @Test

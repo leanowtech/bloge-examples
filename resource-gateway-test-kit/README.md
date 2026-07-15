@@ -12,6 +12,7 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 - a dependency-closed `TestSuiteBuilder` with exact target and fixture references;
 - runtime validation against the packaged Draft 2020-12 schema plus request/response identity binding;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
+- typed v2 child-evidence integrity manifests with v1 migration compatibility;
 - occurrence-addressable node, retry-attempt, and edge summaries without payload fields;
 - payload-free JUnit XML with deterministic CI exit codes;
 - an executable `-cli.jar` that fails closed on suite, coverage, or promotion-policy failure.
@@ -254,6 +255,9 @@ watchdog timing or thread interruption.
 - Exceptions and JUnit XML omit credentials, request bodies, node input/output,
   and problem `details`; use the run/correlation id for authorized diagnosis.
 - Unknown response protocol versions fail immediately.
+- Current v2 child runs require a structurally consistent versioned integrity manifest. The client
+  exposes signature and projection facts but does not fetch verification keys or perform offline
+  Ed25519 verification; use the server read gate or a governance verifier for cryptographic trust.
 - Suite requests and responses are validated against the exact packaged JSON Schema; returned suite
   id, revision, fingerprint, run id, and `clientRequestId` are rebound to the originating request.
 - Suite execution requires an exact positive revision, full lowercase SHA-256 fingerprint, and

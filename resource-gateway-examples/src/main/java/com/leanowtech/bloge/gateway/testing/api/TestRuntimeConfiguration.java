@@ -13,8 +13,11 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecurityEven
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
+import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -71,6 +74,14 @@ public class TestRuntimeConfiguration {
         return new DatabaseTestSecurityEventRepository(database.jdbc(), objectMapper);
     }
 
+    /** Reuses the configured local or managed signer for independently verifiable test evidence. */
+    @Bean
+    TestEvidenceIntegrityService testEvidenceIntegrityService(ObjectMapper objectMapper,
+                                                               ObjectProvider<VisualEvidenceSigner> evidenceSigner) {
+        return new TestEvidenceIntegrityService(objectMapper,
+                evidenceSigner.getIfAvailable(VisualEvidenceSigner::unavailable));
+    }
+
     /** Captures exact sanitized outputs from signed run history into the isolated replay vault. */
     @Bean
     TestReplayPayloadService testReplayPayloadService(
@@ -103,10 +114,12 @@ public class TestRuntimeConfiguration {
             TestRunRepository runRepository,
             TestSecurityEventRepository securityEvents,
             TestReplayPayloadService replayPayloadService,
+            TestEvidenceIntegrityService evidenceIntegrity,
             @Value("${gateway.testing.store.retention-days:30}") long retentionDays) {
         return new TestExecutionApiService(graphService, operatorRegistry, resourceRegistry,
                 expressionEvaluator, objectMapper, fixtureRepository, runRepository, securityEvents,
-                Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))), replayPayloadService);
+                Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))), replayPayloadService,
+                evidenceIntegrity);
     }
 
     /** Assembles the dependency-validating immutable suite registry service. */

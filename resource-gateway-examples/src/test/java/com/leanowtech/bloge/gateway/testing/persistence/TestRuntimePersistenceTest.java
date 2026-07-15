@@ -17,6 +17,8 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
+import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -109,17 +111,37 @@ class TestRuntimePersistenceTest {
                 TestRunEvidence.EvidenceClass.CERTIFIABLE, "GRAPH_CONTRACT_TEST", "sha256:target",
                 "sha256:fixture", "sha256:plan", now, now, List.of(), List.of(), List.of(), List.of(),
                 List.of(), Map.of("payloadSanitized", true));
+        var integrity = new TestEvidenceIntegrityService(mapper, new InMemoryVisualEvidenceSigner())
+                .seal(evidence).integrity();
         TestRunRecord record = new TestRunRecord("run-1", "tenant-a", "org-a", "project-a", "test",
                 "runner", new TestExecutionApiRequest.Target("GRAPH", "graph-a", "sha256:target"),
                 new TestExecutionApiResponse.ResolvedFixtureBundleRef("STORED", "fixture-a", 2,
                         "sha256:fixture"), TestExecutionApiRequest.Verbosity.FULL, null, evidence,
-                now, now.plusSeconds(3600));
+                integrity, now, now.plusSeconds(3600));
 
         runs.create(record);
 
         assertThat(runs.find("tenant-a", "test", "run-1")).contains(record);
         assertThat(runs.find("tenant-b", "test", "run-1")).isEmpty();
         assertThat(runs.find("tenant-a", "prod", "run-1")).isEmpty();
+    }
+
+    @Test
+    void certifiableEvidenceCannotCrossPersistenceBoundaryUnsigned() {
+        Instant now = Instant.now();
+        TestRunEvidence evidence = new TestRunEvidence("", "run-unsigned", TestRunEvidence.Status.PASSED,
+                TestRunEvidence.EvidenceClass.CERTIFIABLE, "GRAPH_CONTRACT_TEST", "sha256:target",
+                "sha256:fixture", "sha256:plan", now, now, List.of(), List.of(), List.of(), List.of(),
+                List.of(), Map.of());
+        TestRunRecord record = new TestRunRecord("run-unsigned", "tenant-a", "org-a", "project-a", "test",
+                "runner", new TestExecutionApiRequest.Target("GRAPH", "graph-a", "sha256:target"),
+                new TestExecutionApiResponse.ResolvedFixtureBundleRef("STORED", "fixture-a", 2,
+                        "sha256:fixture"), TestExecutionApiRequest.Verbosity.FULL, null, evidence,
+                null, now, now.plusSeconds(3600));
+
+        assertThatThrownBy(() -> runs.create(record))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("verified full-evidence signature");
     }
 
     @Test

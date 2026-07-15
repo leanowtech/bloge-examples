@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationCapabilities;
 import com.leanowtech.bloge.gateway.integration.IntegrationEnvelope;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
+import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.Test;
@@ -86,7 +87,14 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("abandonedSuiteRunReconciliation", true);
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("governedTestReplayPayloadCapture", true)
-                .containsEntry("testReplayBehavior", true);
+                .containsEntry("testReplayBehavior", true)
+                .containsEntry("signedTestRunEvidence", true)
+                .containsEntry("suiteSignedChildEvidenceGate", true);
+        assertThat(capabilities.getBody().payload().supportedObjects())
+                .containsEntry("testExecutionResponse", List.of(
+                        TestExecutionApiResponse.SCHEMA_VERSION_V1,
+                        TestExecutionApiResponse.SCHEMA_VERSION))
+                .containsEntry("testEvidenceIntegrity", List.of(TestEvidenceIntegrity.SCHEMA_VERSION));
         assertThat(capabilities.getBody().payload().supportedObjects())
                 .containsEntry("testSuiteCatalogMaterialization",
                         List.of(TestSuiteCatalogMaterializationResponse.SCHEMA_VERSION));
@@ -197,6 +205,13 @@ class TestRuntimeApplicationIntegrationTest {
                         + "?verbosity=FULL", HttpMethod.GET, new HttpEntity<>(headers),
                 TestExecutionApiResponse.class);
         assertThat(childRun.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(childRun.getBody()).isNotNull();
+        assertThat(childRun.getBody().schemaVersion()).isEqualTo(TestExecutionApiResponse.SCHEMA_VERSION);
+        assertThat(childRun.getBody().integrity().signatureStatus())
+                .isEqualTo(TestEvidenceIntegrity.SignatureStatus.VERIFIED);
+        assertThat(childRun.getBody().integrity().projection())
+                .isEqualTo(TestEvidenceIntegrity.Projection.FULL);
+        assertThat(childRun.getBody().integrity().independentlyVerifiable()).isTrue();
         assertThat(suiteRun.getBody().evidence().status())
                 .withFailMessage("suite evidence was not passing: %s; child evidence: %s",
                         suiteRun.getBody().evidence(), childRun.getBody().evidence())

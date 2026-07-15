@@ -748,7 +748,8 @@ Content-Type: application/json
 ```
 
 The service converts JSON input to the registry-declared Java input type, runs the exact binding as
-node `subject`, and returns `bloge.testExecutionResponse.v1`. Stored provenance alone is never enough
+node `subject`, and returns signed `bloge.testExecutionResponse.v2`. The test-kit still accepts
+historical unsigned v1 responses, but the server does not issue v1 for new executions. Stored provenance alone is never enough
 for certification: an opaque binding, unformalized configured state, schema waiver, or output-level
 resource replacement forces `EXPLORATORY`. `HttpResourceOperator` earns `CERTIFIABLE` only when its
 selected resource interactions use strict `boundary=TRANSPORT` protocol responses.
@@ -809,6 +810,71 @@ draft's ordinary node fixture and never registers a control-plane asset.
 The focused protocol, UI, negative-test, and real-browser evidence is recorded in
 [Stage 2 Canvas suite publication verification](resource-gateway-execution-data-control-plane-stage2-canvas-suite-publication-verification.md).
 
+### 4.3.3 Signed child-run evidence
+
+Every new graph or operator execution sanitizes the complete `bloge.testRunEvidence.v1`, computes a
+canonical SHA-256 fingerprint, and signs a domain-separated canonical envelope containing that
+fingerprint and the signing time with the shared Resource Gateway evidence signer. It immediately
+verifies the detached signature before persistence. The current response is:
+
+```json
+{
+  "schemaVersion": "bloge.testExecutionResponse.v2",
+  "runId": "<run-id>",
+  "target": {"kind": "GRAPH", "id": "loanDecisionPolicy", "fingerprint": "sha256:<target>"},
+  "fixtureBundleRef": {"source": "STORED", "fixtureBundleId": "loan-prime-v1",
+    "revision": 1, "fingerprint": "sha256:<fixture>"},
+  "plan": {"schemaVersion": "bloge.effectiveExecutionPlan.v2", "planFingerprint": "sha256:<plan>"},
+  "integrity": {
+    "schemaVersion": "bloge.testEvidenceIntegrity.v1",
+    "evidenceFingerprint": "sha256:<complete-sanitized-evidence>",
+    "signatureStatus": "VERIFIED",
+    "keyId": "<verification-key-id>",
+    "algorithm": "Ed25519",
+    "signedAt": "2026-07-16T00:00:00Z",
+    "signature": "<base64-detached-signature>",
+    "projection": "FULL",
+    "projectionFingerprint": "sha256:<evidence-in-this-response>",
+    "independentlyVerifiable": true
+  },
+  "evidence": {"schemaVersion": "bloge.testRunEvidence.v1", "runId": "<run-id>"}
+}
+```
+
+The fingerprint canonicalization sorts object properties and map entries, serializes time values as
+ISO-8601 text, then hashes the exact UTF-8 JSON bytes. The Ed25519 signature covers a second canonical
+SHA-256 value derived from `{schemaVersion, evidenceFingerprint, signedAt}`. This domain separation
+prevents a signature from another Resource Gateway evidence protocol from being transplanted and
+binds the signing time. Consumers must not hash arbitrary pretty-printed response JSON.
+
+Projection semantics are deliberate:
+
+| verbosity | `integrity.projection` | independently verifiable from this response |
+|---|---|---|
+| `FULL` | `FULL` | yes, when the two fingerprints are equal and signature status is `VERIFIED` |
+| `STANDARD` | `STANDARD` | no; the full-evidence seal is lineage and `projectionFingerprint` identifies the redacted projection |
+| `SUMMARY` | `SUMMARY` | no; node and edge traces are omitted |
+
+The service always verifies complete persisted evidence before answering a query, then applies the
+requested projection. A changed fingerprint, malformed signature, unsigned historical record, or
+inconsistent FULL manifest returns `409 RG.TEST.EVIDENCE_INTEGRITY_INVALID` and emits a security
+event. A temporarily unavailable verification authority returns
+`503 RG.TEST.EVIDENCE_VERIFICATION_UNAVAILABLE`. If signing a newly completed run fails, the run is
+fail-closed to `EVIDENCE_INCOMPLETE + EXPLORATORY` with
+`signatureStatus=VERIFICATION_UNAVAILABLE`; it cannot be promoted as certifiable evidence.
+
+Immutable-suite aggregation requests FULL child evidence and verifies every child signature before
+trusting its evidence class or counters. An unsigned or altered child produces
+`RG.TEST.SUITE_CHILD_EVIDENCE_INTEGRITY_INVALID`, an aggregate `EVIDENCE_INCOMPLETE`, and blocked
+promotion. The aggregate `bloge.testSuiteRunEvidence.v1` itself is not yet detached-signed; this
+increment closes child substitution and tampering, not the final suite-bundle attestation problem.
+
+The verification key named by `integrity.keyId` is available through
+`GET /api/integration/evidence-keys/{keyId}` under the integration identity protocol. Local profiles
+use the persistent Ed25519 signer; managed deployments can use the existing KMS/HSM signer and key
+history. Consumers must enforce key state, validity policy, algorithm, and fingerprint
+canonicalization rather than treating `signatureStatus=VERIFIED` as a self-authenticating claim.
+
 ### 4.4 Query a run or run a batch
 
 ```bash
@@ -836,7 +902,10 @@ The client exposes immutable suite register/find/execute/query operations and a 
 exact revision, full SHA-256 fingerprint, and explicit `clientRequestId`; malformed identities are
 rejected before any network call. The exact packaged Draft 2020-12 schema validates complete suite
 registration and execution values at runtime, and every returned suite/run identity is rebound to the
-originating request before it can reach assertions or reporters. `TestSuiteRun` exposes payload-free
+originating request before it can reach assertions or reporters. It accepts execution response v1
+for migration and v2 for current servers. `TestRun.integrity()` validates and exposes the v2
+signature/projection manifest; it does not yet fetch public keys or perform consumer-side Ed25519
+verification. `TestSuiteRun` exposes payload-free
 case links, structural coverage, and promotion eligibility, while `TestSuiteRunAssertions` separates
 execution, case, coverage, and eligibility assertions.
 
@@ -1000,12 +1069,16 @@ Implemented now:
   promotion eligibility verdict, suite-run query, and capability discovery.
 - process-owner suite-run leases, long-child heartbeats, database checkpoint fencing, and bounded
   fail-closed reconciliation of abandoned `RUNNING` checkpoints.
+- detached Ed25519 signatures over complete sanitized graph/operator child-run evidence, immediate
+  producer verification, verification on read, projection lineage, and a signed-child requirement
+  before suite aggregation can promote evidence.
 
 Still intentionally outside this increment:
 
 - retry-attempt/occurrence selectors, streaming/suspendable controls and evidence, and
   durable-resume plan restoration;
-- signed certification, full branch/rule/retry/fallback/compensation semantic coverage, ANEKE
+- detached signatures over aggregate suite evidence, consumer-side/offline verifier support,
+  signed certification, full branch/rule/retry/fallback/compensation semantic coverage, ANEKE
   projection, and mutation testing;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
   reconciliation alert SLOs, and suite-history list/trend APIs;

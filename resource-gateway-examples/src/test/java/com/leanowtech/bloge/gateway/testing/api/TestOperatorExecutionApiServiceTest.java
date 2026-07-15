@@ -17,10 +17,12 @@ import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.OperatorExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorComposabilityManifest;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorComposabilityManifestProvider;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorRuntimeBindingSnapshotProvider;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -60,7 +62,8 @@ class TestOperatorExecutionApiServiceTest {
         operators.registerRaw("customer.events", new EventStreamOperator());
         service = new TestExecutionApiService(mock(GatewayGraphService.class), operators, resources,
                 new BlgeExpressionEvaluator(), mapper, fixtures, runs, new InMemorySecurityEvents(),
-                Duration.ofDays(7));
+                Duration.ofDays(7), null,
+                new TestEvidenceIntegrityService(mapper, new InMemoryVisualEvidenceSigner()));
     }
 
     @Test

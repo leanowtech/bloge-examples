@@ -7,11 +7,15 @@ import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.TestabilityAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.env.MapPropertySource;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,6 +44,15 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(ReplayPayloadRepository.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestReplayPayloadService.class)).hasSize(1);
             assertThat(context.getBean(TestabilityAvailability.class).executionEndpointEnabled()).isTrue();
+            TestEvidenceIntegrityService.SealResult seal = context
+                    .getBean(TestEvidenceIntegrityService.class)
+                    .seal(new TestRunEvidence("", "profile-run",
+                            TestRunEvidence.Status.EVIDENCE_INCOMPLETE,
+                            TestRunEvidence.EvidenceClass.EXPLORATORY,
+                            "TEST", "", "", "", Instant.EPOCH, Instant.EPOCH,
+                            List.of(), List.of(), List.of(), List.of(), List.of(), Map.of()));
+            assertThat(seal.verified()).isFalse();
+            assertThat(seal.failureCode()).isEqualTo(TestEvidenceIntegrityService.SIGNER_UNAVAILABLE);
         }
     }
 

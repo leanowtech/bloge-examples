@@ -157,6 +157,7 @@ public record IntegrationCapabilities(
             objects.put("testExecutionRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest.SCHEMA_VERSION));
             objects.put("testExecutionResponse", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse.SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse.SCHEMA_VERSION));
             objects.put("testExecutionBatchRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestExecutionBatchRequest.SCHEMA_VERSION));
@@ -195,6 +196,8 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan.SCHEMA_VERSION));
             objects.put("testRunEvidence", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence.SCHEMA_VERSION));
+            objects.put("testEvidenceIntegrity", List.of(
+                    com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity.SCHEMA_VERSION));
             objects.put("testGraphTargetDescriptor", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestGraphTargetDescriptor.SCHEMA_VERSION));
             objects.put("testOperatorExecutionRequest", List.of(
@@ -287,6 +290,8 @@ public record IntegrationCapabilities(
         features.put("abandonedSuiteRunReconciliation", testExecutionEndpointEnabled);
         features.put("governedTestReplayPayloadCapture", testExecutionEndpointEnabled);
         features.put("testReplayBehavior", testExecutionEndpointEnabled);
+        features.put("signedTestRunEvidence", testExecutionEndpointEnabled && signer.available());
+        features.put("suiteSignedChildEvidenceGate", testExecutionEndpointEnabled && signer.available());
         features.put("streamingOperatorTestExecution", false);
         features.put("suspendableOperatorTestExecution", false);
 

@@ -71,6 +71,9 @@ class ResourceGatewayTestClientTest {
         assertThat(executed.runId()).isEqualTo("run-42");
         assertThat(operatorRun.runId()).isEqualTo("run-42");
         assertThat(executed.status()).isEqualTo(TestRun.Status.PASSED);
+        assertThat(executed.integrity().signed()).isTrue();
+        assertThat(executed.integrity().independentlyVerifiable()).isTrue();
+        assertThat(executed.integrity().projection()).isEqualTo(TestRun.Projection.FULL);
         assertThat(executed.nodeTraces()).singleElement().satisfies(node -> {
             assertThat(node.invocationSiteId()).isEqualTo("/root/credit#primary");
             assertThat(node.graphPath()).isEqualTo("/root");
@@ -472,11 +475,17 @@ class ResourceGatewayTestClientTest {
 
     private static String runResponse() {
         return """
-                {"schemaVersion":"bloge.testExecutionResponse.v1","runId":"run-42",
+                {"schemaVersion":"bloge.testExecutionResponse.v2","runId":"run-42",
                  "target":{"kind":"GRAPH","id":"loanDecision","fingerprint":"%1$s"},
                  "fixtureBundleRef":{"source":"STORED","fixtureBundleId":"fixture","revision":3,
                                       "fingerprint":"%1$s"},
                  "plan":{"planFingerprint":"%1$s"},
+                 "integrity":{"schemaVersion":"bloge.testEvidenceIntegrity.v1",
+                   "evidenceFingerprint":"%1$s","signatureStatus":"VERIFIED",
+                   "keyId":"test-key","algorithm":"Ed25519",
+                   "signedAt":"2026-07-15T10:15:30Z","signature":"detached-signature",
+                   "projection":"FULL","projectionFingerprint":"%1$s",
+                   "independentlyVerifiable":true},
                  "evidence":{"schemaVersion":"bloge.testRunEvidence.v1","runId":"run-42",
                    "status":"PASSED","evidenceClass":"CERTIFIABLE",
                    "targetFingerprint":"%1$s","fixtureBundleFingerprint":"%1$s",

@@ -282,6 +282,13 @@ public final class TestSuiteExecutionService {
                     0, 0, "RG.TEST.SUITE_CHILD_EVIDENCE_IDENTITY_INVALID",
                     "Child evidence did not preserve the suite target, fixture, and run identity."), null);
         }
+        if (!executions.verifyEvidence(child)) {
+            return new TestSuiteEvidenceAggregator.CaseObservation(new TestSuiteRunEvidence.CaseResult(
+                    testCase.caseId(), testCase.caseType(), testCase.fixtureBundleRef(),
+                    TestSuiteRunEvidence.CaseStatus.EVIDENCE_INCOMPLETE, "", null, null,
+                    0, 0, "RG.TEST.SUITE_CHILD_EVIDENCE_INTEGRITY_INVALID",
+                    "Child evidence was not a complete independently verifiable signed value."), null);
+        }
         TestRunEvidence evidence = child.evidence();
         int assertions = evidence.assertionResults().size();
         int passed = (int) evidence.assertionResults().stream()

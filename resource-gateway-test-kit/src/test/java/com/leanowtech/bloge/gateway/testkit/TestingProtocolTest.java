@@ -18,7 +18,13 @@ class TestingProtocolTest {
             JsonNode definitions = new ObjectMapper().readTree(input).path("$defs");
 
             assertConstant(definitions, "testExecutionRequest", TestingProtocol.TEST_EXECUTION_REQUEST_V1);
-            assertConstant(definitions, "testExecutionResponse", TestingProtocol.TEST_EXECUTION_RESPONSE_V1);
+            assertConstant(definitions, "testExecutionResponseV1",
+                    TestingProtocol.TEST_EXECUTION_RESPONSE_V1);
+            assertConstant(definitions, "testExecutionResponseV2",
+                    TestingProtocol.TEST_EXECUTION_RESPONSE_V2);
+            assertConstant(definitions, "testEvidenceIntegrity",
+                    TestingProtocol.TEST_EVIDENCE_INTEGRITY_V1);
+            assertThat(definitions.at("/testExecutionResponse/oneOf")).hasSize(2);
             assertConstant(definitions, "testExecutionBatchRequest",
                     TestingProtocol.TEST_EXECUTION_BATCH_REQUEST_V1);
             assertConstant(definitions, "testExecutionBatchResponse",

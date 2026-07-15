@@ -51,6 +51,7 @@ class TestSuiteExecutionServiceTest {
         service = new TestSuiteExecutionService(registry, executions, runRepository,
                 new ObjectMapper().findAndRegisterModules(), securityEvents,
                 Duration.ofDays(30));
+        when(executions.verifyEvidence(any())).thenReturn(true);
         identity = new IntegrationRequestContext("tenant-a", "org-a", "project-a", "test", "local",
                 "WORKLOAD", "runner", "", "TEST_EXECUTION", "correlation-a",
                 Set.of("quality"), "CONFIDENTIAL", "");
@@ -88,6 +89,29 @@ class TestSuiteExecutionServiceTest {
         assertThat(retry).isEqualTo(result);
         verify(executions, times(2)).execute(any(), eq(identity));
         assertThat(runRepository.records).hasSize(1);
+    }
+
+    @Test
+    void unsignedOrTamperedChildEvidenceCannotSatisfySuitePromotion() {
+        StoredTestSuite stored = storedSuite();
+        TestExecutionApiResponse child = response("run-golden", "golden", "/root/fetch#PRIMARY",
+                "/root/fetch#PRIMARY", "/root/output#PRIMARY",
+                TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE);
+        when(registry.find("suite-a", 3, identity)).thenReturn(stored);
+        when(executions.describeGraphTarget("graph-a", identity)).thenReturn(graphTarget(TARGET, true));
+        when(executions.execute(any(), eq(identity))).thenReturn(child);
+        when(executions.verifyEvidence(child)).thenReturn(false);
+
+        TestSuiteExecutionResponse result = service.execute("suite-a", request("request-unsigned",
+                TestSuiteExecutionRequest.Strategy.FAIL_FAST), identity);
+
+        assertThat(result.evidence().status()).isEqualTo(TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE);
+        assertThat(result.evidence().caseResults().getFirst().status())
+                .isEqualTo(TestSuiteRunEvidence.CaseStatus.EVIDENCE_INCOMPLETE);
+        assertThat(result.evidence().caseResults().getFirst().diagnosticCode())
+                .isEqualTo("RG.TEST.SUITE_CHILD_EVIDENCE_INTEGRITY_INVALID");
+        assertThat(result.evidence().promotion().status())
+                .isEqualTo(TestSuiteRunEvidence.PromotionStatus.BLOCKED);
     }
 
     @Test

@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.testkit;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -21,6 +23,7 @@ import java.util.List;
  * @param fixtureConsumptions fixture-use summaries
  * @param assertionResults payload-free assertion summaries
  * @param diagnostics bounded server diagnostics, excluded from built-in reports
+ * @param integrity detached signature and projection facts
  * @param rawResponse defensive complete response for explicit authorized inspection
  */
 public record TestRun(
@@ -35,6 +38,7 @@ public record TestRun(
         List<FixtureConsumption> fixtureConsumptions,
         List<AssertionResult> assertionResults,
         List<String> diagnostics,
+        Integrity integrity,
         JsonNode rawResponse
 ) {
     /** The ten terminal states frozen by testing-control-plane v1. */
@@ -67,6 +71,76 @@ public record TestRun(
         EXPLORATORY,
         /** Meets the frozen target, fixture, isolation, and evidence requirements. */
         CERTIFIABLE
+    }
+
+    /** Detached signature state returned by testing-control-plane v2. */
+    public enum SignatureStatus {
+        /** Signature was verified by the producer before persistence and response projection. */
+        VERIFIED,
+        /** Historical v1 evidence has no detached signature. */
+        UNSIGNED,
+        /** The producer could not establish integrity with its signing authority. */
+        VERIFICATION_UNAVAILABLE
+    }
+
+    /** Evidence projection carried by the execution response. */
+    public enum Projection {
+        /** Terminal and bounded aggregate facts only. */
+        SUMMARY,
+        /** Payload-free node and edge facts in addition to summary data. */
+        STANDARD,
+        /** Complete sanitized evidence covered by the detached signature. */
+        FULL
+    }
+
+    /**
+     * Payload-free cryptographic integrity projection.
+     *
+     * @param evidenceFingerprint canonical fingerprint of complete persisted evidence
+     * @param signatureStatus detached signature state
+     * @param keyId verification-key identifier
+     * @param algorithm signature algorithm
+     * @param signedAt signing time included in the producer's signed canonical envelope
+     * @param signature base64 detached signature
+     * @param projection response evidence projection
+     * @param projectionFingerprint canonical fingerprint of response evidence
+     * @param independentlyVerifiable whether this response contains exact complete signed evidence
+     */
+    public record Integrity(String evidenceFingerprint, SignatureStatus signatureStatus,
+                            String keyId, String algorithm, Instant signedAt, String signature,
+                            Projection projection, String projectionFingerprint,
+                            boolean independentlyVerifiable) {
+        /** Normalizes bounded protocol labels. */
+        public Integrity {
+            evidenceFingerprint = normalized(evidenceFingerprint);
+            signatureStatus = signatureStatus == null ? SignatureStatus.UNSIGNED : signatureStatus;
+            keyId = normalized(keyId);
+            algorithm = normalized(algorithm);
+            signedAt = signedAt == null ? Instant.EPOCH : signedAt;
+            signature = normalized(signature);
+            projection = projection == null ? Projection.FULL : projection;
+            projectionFingerprint = normalized(projectionFingerprint);
+        }
+
+        /**
+         * Creates the compatibility state for a v1 response without an integrity manifest.
+         *
+         * @return unsigned integrity projection
+         */
+        public static Integrity legacyUnsigned() {
+            return new Integrity("", SignatureStatus.UNSIGNED, "", "", Instant.EPOCH, "",
+                    Projection.FULL, "", false);
+        }
+
+        /**
+         * Indicates whether the producer established a detached signature.
+         *
+         * @return true only for a verified non-empty signature manifest
+         */
+        public boolean signed() {
+            return signatureStatus == SignatureStatus.VERIFIED
+                    && !evidenceFingerprint.isBlank() && !keyId.isBlank() && !signature.isBlank();
+        }
     }
 
     /**
@@ -193,6 +267,7 @@ public record TestRun(
         fixtureConsumptions = fixtureConsumptions == null ? List.of() : List.copyOf(fixtureConsumptions);
         assertionResults = assertionResults == null ? List.of() : List.copyOf(assertionResults);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
+        integrity = integrity == null ? Integrity.legacyUnsigned() : integrity;
         rawResponse = rawResponse == null ? null : rawResponse.deepCopy();
     }
 
@@ -219,7 +294,7 @@ public record TestRun(
                    JsonNode rawResponse) {
         this(runId, status, evidenceClass, targetFingerprint, fixtureBundleFingerprint,
                 planFingerprint, nodeTraces, List.of(), fixtureConsumptions,
-                assertionResults, diagnostics, rawResponse);
+                assertionResults, diagnostics, Integrity.legacyUnsigned(), rawResponse);
     }
 
     /**
@@ -236,12 +311,17 @@ public record TestRun(
      * Projects a testing-control-plane response without retaining node input/output in summary
      * fields.
      *
-     * @param response decoded {@code bloge.testExecutionResponse.v1}
+     * @param response decoded {@code bloge.testExecutionResponse.v1} or signed v2 response
      * @return immutable run projection
      */
     public static TestRun from(JsonNode response) {
         if (response == null || !response.isObject()) {
             throw new IllegalArgumentException("A test execution response object is required");
+        }
+        String responseVersion = response.path("schemaVersion").asText();
+        if (!TestingProtocol.TEST_EXECUTION_RESPONSE_V1.equals(responseVersion)
+                && !TestingProtocol.TEST_EXECUTION_RESPONSE_V2.equals(responseVersion)) {
+            throw new IllegalArgumentException("Unsupported test execution response version");
         }
         JsonNode evidence = response.path("evidence");
         String runId = response.path("runId").asText(evidence.path("runId").asText());
@@ -279,10 +359,17 @@ public record TestRun(
                 assertion.path("passed").asBoolean(), bounded(assertion.path("diagnostic").asText(), 1024))));
         List<String> diagnostics = new ArrayList<>();
         evidence.path("diagnostics").forEach(value -> diagnostics.add(bounded(value.asText(), 1024)));
+        Integrity integrity = TestingProtocol.TEST_EXECUTION_RESPONSE_V1.equals(responseVersion)
+                ? Integrity.legacyUnsigned() : integrity(response.path("integrity"));
+        if (TestingProtocol.TEST_EXECUTION_RESPONSE_V2.equals(responseVersion)
+                && evidenceClass == EvidenceClass.CERTIFIABLE
+                && integrity.signatureStatus() != SignatureStatus.VERIFIED) {
+            throw new IllegalArgumentException("Certifiable v2 evidence must carry a verified signature");
+        }
         return new TestRun(runId, status, evidenceClass, evidence.path("targetFingerprint").asText(),
                 evidence.path("fixtureBundleFingerprint").asText(),
                 evidence.path("planFingerprint").asText(), nodes, edges, fixtures, assertions,
-                diagnostics, response);
+                diagnostics, integrity, response);
     }
 
     /**
@@ -300,6 +387,51 @@ public record TestRun(
         } catch (RuntimeException failure) {
             throw new IllegalArgumentException("Unknown or missing test run " + field + ": " + value, failure);
         }
+    }
+
+    private static Integrity integrity(JsonNode value) {
+        if (value == null || !value.isObject()
+                || !TestingProtocol.TEST_EVIDENCE_INTEGRITY_V1
+                .equals(value.path("schemaVersion").asText())) {
+            throw new IllegalArgumentException("A versioned test evidence integrity manifest is required");
+        }
+        String evidenceFingerprint = requiredFingerprint(
+                value.path("evidenceFingerprint").asText(), "evidenceFingerprint");
+        String projectionFingerprint = requiredFingerprint(
+                value.path("projectionFingerprint").asText(), "projectionFingerprint");
+        SignatureStatus status = enumValue(SignatureStatus.class,
+                value.path("signatureStatus").asText(), "integrity signatureStatus");
+        Projection projection = enumValue(Projection.class,
+                value.path("projection").asText(), "integrity projection");
+        Instant signedAt;
+        try {
+            signedAt = Instant.parse(value.path("signedAt").asText());
+        } catch (DateTimeParseException failure) {
+            throw new IllegalArgumentException("Invalid test evidence signing time", failure);
+        }
+        Integrity integrity = new Integrity(evidenceFingerprint, status,
+                bounded(value.path("keyId").asText(), 255),
+                bounded(value.path("algorithm").asText(), 64), signedAt,
+                bounded(value.path("signature").asText(), 8192), projection,
+                projectionFingerprint, value.path("independentlyVerifiable").asBoolean());
+        if (status == SignatureStatus.VERIFIED && !integrity.signed()) {
+            throw new IllegalArgumentException("Verified test evidence integrity is incomplete");
+        }
+        boolean expectedIndependent = status == SignatureStatus.VERIFIED
+                && projection == Projection.FULL
+                && evidenceFingerprint.equals(projectionFingerprint);
+        if (integrity.independentlyVerifiable() != expectedIndependent) {
+            throw new IllegalArgumentException("Test evidence independent-verification claim is inconsistent");
+        }
+        return integrity;
+    }
+
+    private static String requiredFingerprint(String value, String field) {
+        String normalized = normalized(value);
+        if (!normalized.matches("sha256:[0-9a-f]{64}")) {
+            throw new IllegalArgumentException(field + " must be a canonical SHA-256 fingerprint");
+        }
+        return normalized;
     }
 
     private static String bounded(String value, int maximum) {

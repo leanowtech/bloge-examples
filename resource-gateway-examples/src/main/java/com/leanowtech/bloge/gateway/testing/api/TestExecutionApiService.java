@@ -12,10 +12,12 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.OperatorExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceSanitizer;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorInputCoercer;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorMicroGraphRunner;
@@ -24,6 +26,7 @@ import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionResult;
 import com.leanowtech.bloge.gateway.testing.runtime.TestRunService;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -63,6 +66,7 @@ public final class TestExecutionApiService {
     private final TestRunRepository runRepository;
     private final TestSecurityEventRepository securityEvents;
     private final TestReplayPayloadService replayPayloads;
+    private final TestEvidenceIntegrityService evidenceIntegrity;
     private final TestEvidenceSanitizer sanitizer;
     private final Duration retention;
 
@@ -76,7 +80,8 @@ public final class TestExecutionApiService {
                                    TestSecurityEventRepository securityEvents,
                                    Duration retention) {
         this(graphService, operatorRegistry, resourceRegistry, expressionEvaluator, objectMapper,
-                fixtureRepository, runRepository, securityEvents, retention, null);
+                fixtureRepository, runRepository, securityEvents, retention, null,
+                new TestEvidenceIntegrityService(objectMapper, VisualEvidenceSigner.unavailable()));
     }
 
     /**
@@ -103,6 +108,37 @@ public final class TestExecutionApiService {
                                    TestSecurityEventRepository securityEvents,
                                    Duration retention,
                                    TestReplayPayloadService replayPayloads) {
+        this(graphService, operatorRegistry, resourceRegistry, expressionEvaluator, objectMapper,
+                fixtureRepository, runRepository, securityEvents, retention, replayPayloads,
+                new TestEvidenceIntegrityService(objectMapper, VisualEvidenceSigner.unavailable()));
+    }
+
+    /**
+     * Creates the complete public execution adapter with governed replay and evidence integrity.
+     *
+     * @param graphService graph target registry
+     * @param operatorRegistry frozen operator registry
+     * @param resourceRegistry frozen resource registry
+     * @param expressionEvaluator resource expression evaluator
+     * @param objectMapper protocol mapper
+     * @param fixtureRepository immutable fixture registry
+     * @param runRepository isolated test-run store
+     * @param securityEvents required security audit sink
+     * @param retention test-run evidence retention
+     * @param replayPayloads governed replay resolver; required only by REPLAY fixtures
+     * @param evidenceIntegrity detached test-evidence signing and verification boundary
+     */
+    public TestExecutionApiService(GatewayGraphService graphService,
+                                   OperatorRegistry operatorRegistry,
+                                   ResourceRegistry resourceRegistry,
+                                   BlgeExpressionEvaluator expressionEvaluator,
+                                   ObjectMapper objectMapper,
+                                   FixtureBundleRepository fixtureRepository,
+                                   TestRunRepository runRepository,
+                                   TestSecurityEventRepository securityEvents,
+                                   Duration retention,
+                                   TestReplayPayloadService replayPayloads,
+                                   TestEvidenceIntegrityService evidenceIntegrity) {
         this.graphService = Objects.requireNonNull(graphService, "graphService");
         this.operatorRegistry = Objects.requireNonNull(operatorRegistry, "operatorRegistry");
         this.resourceRegistry = Objects.requireNonNull(resourceRegistry, "resourceRegistry");
@@ -112,6 +148,7 @@ public final class TestExecutionApiService {
         this.runRepository = Objects.requireNonNull(runRepository, "runRepository");
         this.securityEvents = Objects.requireNonNull(securityEvents, "securityEvents");
         this.replayPayloads = replayPayloads;
+        this.evidenceIntegrity = Objects.requireNonNull(evidenceIntegrity, "evidenceIntegrity");
         this.sanitizer = new TestEvidenceSanitizer(objectMapper);
         this.retention = retention == null || retention.isNegative() || retention.isZero()
                 ? Duration.ofDays(30) : retention;
@@ -142,19 +179,21 @@ public final class TestExecutionApiService {
                 target.graph(), new GraphContext(request.context()), fixture.bundle(), AUTHORIZED_PURPOSE,
                 target.fingerprint(), fixture.source(), metadata, target.certificationEligible(),
                 resolvedReplays));
-        TestRunEvidence sanitized = sanitizer.sanitize(result.evidence());
-        TestRunRecord record = new TestRunRecord(sanitized.runId(), identity.tenantId(),
+        SecuredEvidence secured = secureEvidence(sanitizer.sanitize(result.evidence()));
+        TestRunRecord record = new TestRunRecord(secured.evidence().runId(), identity.tenantId(),
                 identity.organizationId(), identity.projectId(), identity.environmentId(), identity.actorId(),
                 new TestExecutionApiRequest.Target("GRAPH", graph.name(), target.fingerprint()),
-                fixture.reference(), request.verbosity(), result.plan(), sanitized,
-                sanitized.completedAt(), sanitized.completedAt().plus(retention));
+                fixture.reference(), request.verbosity(), result.plan(), secured.evidence(), secured.integrity(),
+                secured.evidence().completedAt(), secured.evidence().completedAt().plus(retention));
         try {
             runRepository.create(record);
         } catch (RuntimeException persistenceFailure) {
-            TestRunEvidence incomplete = evidenceIncomplete(sanitized, persistenceFailure);
-            return response(record, result.plan(), incomplete, request.verbosity());
+            SecuredEvidence incomplete = secureEvidence(
+                    evidenceIncomplete(secured.evidence(), persistenceFailure));
+            return response(record, result.plan(), incomplete.evidence(), incomplete.integrity(),
+                    request.verbosity());
         }
-        return response(record, result.plan(), sanitized, request.verbosity());
+        return response(record, result.plan(), secured.evidence(), secured.integrity(), request.verbosity());
     }
 
     /** Returns the current graph contract and composite fingerprint needed to bind fixtures. */
@@ -226,19 +265,23 @@ public final class TestExecutionApiService {
                         target.fingerprint(), typedInput, fixture.bundle(), AUTHORIZED_OPERATOR_PURPOSE,
                         fixture.source(), target.certificationEligible(),
                         operatorExecutionMetadata(request, identity, target), resolvedReplays));
-        TestRunEvidence sanitized = sanitizer.sanitize(result.execution().evidence());
-        TestRunRecord record = new TestRunRecord(sanitized.runId(), identity.tenantId(),
+        SecuredEvidence secured = secureEvidence(sanitizer.sanitize(result.execution().evidence()));
+        TestRunRecord record = new TestRunRecord(secured.evidence().runId(), identity.tenantId(),
                 identity.organizationId(), identity.projectId(), identity.environmentId(), identity.actorId(),
                 new TestExecutionApiRequest.Target("OPERATOR", target.operatorRef(), target.fingerprint()),
-                fixture.reference(), request.verbosity(), result.execution().plan(), sanitized,
-                sanitized.completedAt(), sanitized.completedAt().plus(retention));
+                fixture.reference(), request.verbosity(), result.execution().plan(), secured.evidence(),
+                secured.integrity(), secured.evidence().completedAt(),
+                secured.evidence().completedAt().plus(retention));
         try {
             runRepository.create(record);
         } catch (RuntimeException persistenceFailure) {
-            TestRunEvidence incomplete = evidenceIncomplete(sanitized, persistenceFailure);
-            return response(record, result.execution().plan(), incomplete, request.verbosity());
+            SecuredEvidence incomplete = secureEvidence(
+                    evidenceIncomplete(secured.evidence(), persistenceFailure));
+            return response(record, result.execution().plan(), incomplete.evidence(),
+                    incomplete.integrity(), request.verbosity());
         }
-        return response(record, result.execution().plan(), sanitized, request.verbosity());
+        return response(record, result.execution().plan(), secured.evidence(),
+                secured.integrity(), request.verbosity());
     }
 
     /** Executes a bounded set of independent requests sequentially. */
@@ -274,8 +317,9 @@ public final class TestExecutionApiService {
             throw unavailable(identity, "RG.TEST.RUN_STORE_UNAVAILABLE",
                     "The independent test-run store is unavailable.");
         }
+        verifyStoredEvidence(record, identity);
         TestExecutionApiRequest.Verbosity effective = verbosity == null ? record.requestedVerbosity() : verbosity;
-        return response(record, record.plan(), record.evidence(), effective);
+        return response(record, record.plan(), record.evidence(), record.integrity(), effective);
     }
 
     /** Registers one immutable, clearance-checked fixture revision. */
@@ -578,9 +622,54 @@ public final class TestExecutionApiService {
     private TestExecutionApiResponse response(TestRunRecord record,
                                               com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan plan,
                                               TestRunEvidence evidence,
+                                              TestEvidenceIntegrity integrity,
                                               TestExecutionApiRequest.Verbosity verbosity) {
+        TestExecutionApiRequest.Verbosity selected = verbosity == null
+                ? TestExecutionApiRequest.Verbosity.STANDARD : verbosity;
+        TestRunEvidence projected = project(evidence, selected);
+        TestEvidenceIntegrity projectedIntegrity = evidenceIntegrity.project(integrity, projected,
+                TestEvidenceIntegrity.Projection.valueOf(selected.name()));
         return new TestExecutionApiResponse("", evidence.runId(), record.target(), record.fixtureBundleRef(),
-                plan, project(evidence, verbosity));
+                plan, projectedIntegrity, projected);
+    }
+
+    /**
+     * Revalidates a complete child response before suite aggregation trusts its evidence class.
+     *
+     * @param response child graph or operator execution response
+     * @return true only when the response carries complete independently verifiable evidence
+     */
+    boolean verifyEvidence(TestExecutionApiResponse response) {
+        return response != null && response.evidence() != null && response.integrity() != null
+                && response.integrity().independentlyVerifiable()
+                && evidenceIntegrity.verify(response.evidence(), response.integrity())
+                == TestEvidenceIntegrityService.Verification.VERIFIED;
+    }
+
+    private SecuredEvidence secureEvidence(TestRunEvidence evidence) {
+        TestEvidenceIntegrityService.SealResult sealed = evidenceIntegrity.seal(evidence);
+        if (sealed.verified()) {
+            return new SecuredEvidence(evidence, sealed.integrity());
+        }
+        TestRunEvidence incomplete = evidenceIntegrityIncomplete(evidence, sealed.failureCode());
+        return new SecuredEvidence(incomplete, evidenceIntegrity.unavailable(incomplete));
+    }
+
+    private void verifyStoredEvidence(TestRunRecord record, IntegrationRequestContext identity) {
+        TestEvidenceIntegrityService.Verification verification =
+                evidenceIntegrity.verify(record.evidence(), record.integrity());
+        if (verification == TestEvidenceIntegrityService.Verification.VERIFIED) {
+            return;
+        }
+        if (verification == TestEvidenceIntegrityService.Verification.UNAVAILABLE) {
+            throw unavailable(identity, "RG.TEST.EVIDENCE_VERIFICATION_UNAVAILABLE",
+                    "The test-evidence verification authority is unavailable.");
+        }
+        securityEvent(identity, "TEST_EVIDENCE_INTEGRITY_INVALID", "REJECTED",
+                "RG.TEST.EVIDENCE_INTEGRITY_INVALID",
+                Map.of("runId", record.runId(), "verification", verification.name()));
+        throw conflict(identity, "RG.TEST.EVIDENCE_INTEGRITY_INVALID",
+                "Persisted test evidence is unsigned or failed integrity verification.", Map.of());
     }
 
     private static TestRunEvidence project(TestRunEvidence evidence,
@@ -618,6 +707,18 @@ public final class TestExecutionApiService {
         List<String> diagnostics = new java.util.ArrayList<>(evidence.diagnostics());
         diagnostics.add("Sanitized test evidence could not be persisted: "
                 + failure.getClass().getSimpleName());
+        return new TestRunEvidence(evidence.schemaVersion(), evidence.runId(),
+                TestRunEvidence.Status.EVIDENCE_INCOMPLETE, TestRunEvidence.EvidenceClass.EXPLORATORY,
+                evidence.executionPurpose(), evidence.targetFingerprint(), evidence.fixtureBundleFingerprint(),
+                evidence.planFingerprint(), evidence.startedAt(), evidence.completedAt(), evidence.nodeTrace(),
+                evidence.edgeTrace(), evidence.fixtureConsumptions(), evidence.assertionResults(), diagnostics,
+                evidence.metadata());
+    }
+
+    private static TestRunEvidence evidenceIntegrityIncomplete(TestRunEvidence evidence, String failureCode) {
+        List<String> diagnostics = new java.util.ArrayList<>(evidence.diagnostics());
+        diagnostics.add("Test evidence integrity could not be established: "
+                + normalized(failureCode));
         return new TestRunEvidence(evidence.schemaVersion(), evidence.runId(),
                 TestRunEvidence.Status.EVIDENCE_INCOMPLETE, TestRunEvidence.EvidenceClass.EXPLORATORY,
                 evidence.executionPurpose(), evidence.targetFingerprint(), evidence.fixtureBundleFingerprint(),
@@ -686,5 +787,8 @@ public final class TestExecutionApiService {
             TestExecutionRequest.FixtureSource source,
             TestExecutionApiResponse.ResolvedFixtureBundleRef reference
     ) {
+    }
+
+    private record SecuredEvidence(TestRunEvidence evidence, TestEvidenceIntegrity integrity) {
     }
 }

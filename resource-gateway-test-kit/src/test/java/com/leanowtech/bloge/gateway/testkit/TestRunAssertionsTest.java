@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.testkit;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.opentest4j.AssertionFailedError;
@@ -55,6 +56,31 @@ class TestRunAssertionsTest {
         assertThatThrownBy(() -> new TestRun.EdgeTrace("a->b", "TRANSFERRED", "/root", "", -1,
                 "/root/a#primary", "/root/b#primary"))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void projectsAndValidatesSignedV2Integrity() throws Exception {
+        String fingerprint = "sha256:" + "a".repeat(64);
+        JsonNode response = JSON.readTree(run("PASSED", "CERTIFIABLE", "MOCKED", true));
+        ((com.fasterxml.jackson.databind.node.ObjectNode) response)
+                .put("schemaVersion", TestingProtocol.TEST_EXECUTION_RESPONSE_V2)
+                .set("integrity", JSON.createObjectNode()
+                        .put("schemaVersion", TestingProtocol.TEST_EVIDENCE_INTEGRITY_V1)
+                        .put("evidenceFingerprint", fingerprint)
+                        .put("signatureStatus", "VERIFIED")
+                        .put("keyId", "test-key")
+                        .put("algorithm", "Ed25519")
+                        .put("signedAt", "2026-07-15T10:15:30Z")
+                        .put("signature", "detached-signature")
+                        .put("projection", "FULL")
+                        .put("projectionFingerprint", fingerprint)
+                        .put("independentlyVerifiable", true));
+
+        TestRun projected = TestRun.from(response);
+
+        assertThat(projected.integrity().signed()).isTrue();
+        assertThat(projected.integrity().independentlyVerifiable()).isTrue();
+        assertThat(projected.integrity().projection()).isEqualTo(TestRun.Projection.FULL);
     }
 
     private static String run(String status, String evidenceClass, String nodeStatus, boolean fixturePassed) {

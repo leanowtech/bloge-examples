@@ -273,7 +273,7 @@ public final class ResourceGatewayTestClient {
     public TestRun execute(JsonNode executionRequest) {
         JsonNode response = exchange("POST", "/api/testing/executions", "", "TEST_EXECUTION",
                 requiredObject(executionRequest, "executionRequest"));
-        requireVersion(response, TestingProtocol.TEST_EXECUTION_RESPONSE_V1);
+        requireExecutionResponseVersion(response);
         return projectRun(response);
     }
 
@@ -287,7 +287,7 @@ public final class ResourceGatewayTestClient {
         JsonNode response = exchange("POST", "/api/testing/targets/operators/" + segment(operatorRef)
                         + "/executions", "", "TEST_EXECUTION",
                 requiredObject(executionRequest, "executionRequest"));
-        requireVersion(response, TestingProtocol.TEST_EXECUTION_RESPONSE_V1);
+        requireExecutionResponseVersion(response);
         return projectRun(response);
     }
 
@@ -308,7 +308,7 @@ public final class ResourceGatewayTestClient {
         requireVersion(response, TestingProtocol.TEST_EXECUTION_BATCH_RESPONSE_V1);
         List<TestRun> runs = new ArrayList<>();
         response.path("executions").forEach(item -> {
-            requireVersion(item, TestingProtocol.TEST_EXECUTION_RESPONSE_V1);
+            requireExecutionResponseVersion(item);
             runs.add(projectRun(item));
         });
         if (runs.size() != executionRequests.size()) {
@@ -328,7 +328,7 @@ public final class ResourceGatewayTestClient {
         String selected = (verbosity == null ? Verbosity.STANDARD : verbosity).name();
         JsonNode response = exchange("GET", "/api/testing/executions/" + segment(runId),
                 "verbosity=" + selected, "TEST_EXECUTION", null);
-        requireVersion(response, TestingProtocol.TEST_EXECUTION_RESPONSE_V1);
+        requireExecutionResponseVersion(response);
         return projectRun(response);
     }
 
@@ -492,6 +492,15 @@ public final class ResourceGatewayTestClient {
         if (!expected.equals(actual)) {
             throw ResourceGatewayTestException.local("RG.TESTKIT.PROTOCOL_VERSION_MISMATCH",
                     "The server returned an unsupported protocol version; expected " + expected + ".", null);
+        }
+    }
+
+    private static void requireExecutionResponseVersion(JsonNode response) {
+        String actual = response.path("schemaVersion").asText();
+        if (!TestingProtocol.TEST_EXECUTION_RESPONSE_V1.equals(actual)
+                && !TestingProtocol.TEST_EXECUTION_RESPONSE_V2.equals(actual)) {
+            throw ResourceGatewayTestException.local("RG.TESTKIT.PROTOCOL_VERSION_MISMATCH",
+                    "The server returned an unsupported test execution response version.", null);
         }
     }
 

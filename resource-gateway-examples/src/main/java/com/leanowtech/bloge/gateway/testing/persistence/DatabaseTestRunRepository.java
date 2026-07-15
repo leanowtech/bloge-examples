@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.TestRunRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestRunRepository;
+import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
+import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import jakarta.annotation.PostConstruct;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -47,6 +49,13 @@ public final class DatabaseTestRunRepository implements TestRunRepository {
     public TestRunRecord create(TestRunRecord record) {
         if (record == null || record.evidence() == null || record.runId() == null || record.runId().isBlank()) {
             throw new IllegalArgumentException("Complete test-run record is required");
+        }
+        if (record.evidence().evidenceClass() == TestRunEvidence.EvidenceClass.CERTIFIABLE
+                && (record.integrity().signatureStatus()
+                != TestEvidenceIntegrity.SignatureStatus.VERIFIED
+                || !record.integrity().independentlyVerifiable())) {
+            throw new IllegalArgumentException(
+                    "Certifiable test-run evidence requires a verified full-evidence signature");
         }
         int rows = jdbc.update("""
                 INSERT INTO rg_test_run_records (
