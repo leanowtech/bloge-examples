@@ -66,6 +66,57 @@ class ManagedVisualEvidenceSignerTest {
     }
 
     @Test
+    void exportsAtomicCompleteLifecycleSnapshotAcrossRotation() throws Exception {
+        MutableClock clock = clock();
+        MutableProvider provider = new MutableProvider(clock);
+        provider.completePolicy(true);
+        provider.addActive("kms-key-1");
+        ManagedVisualEvidenceSigner signer = signer(provider, clock);
+        provider.rotate("kms-key-2");
+        clock.advance(Duration.ofSeconds(2));
+
+        VisualEvidenceSigner.KeySetResolution resolution = signer.resolveKeySet();
+
+        assertThat(resolution.status()).isEqualTo(VisualEvidenceSigner.KeyResolutionStatus.AVAILABLE);
+        assertThat(resolution.keySet().activeKeyId()).isEqualTo("kms-key-2");
+        assertThat(resolution.keySet().policyCompleteness())
+                .isEqualTo(EvidenceVerificationKeySet.PolicyCompleteness.COMPLETE);
+        assertThat(resolution.keySet().keys())
+                .extracting(EvidenceVerificationKeySet.KeyPolicy::keyId,
+                        EvidenceVerificationKeySet.KeyPolicy::state)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("kms-key-1",
+                                EvidenceVerificationKeySet.KeyState.VERIFY_ONLY),
+                        org.assertj.core.groups.Tuple.tuple("kms-key-2",
+                                EvidenceVerificationKeySet.KeyState.ACTIVE));
+        assertThat(resolution.keySet().events())
+                .extracting(EvidenceVerificationKeySet.LifecycleEvent::type)
+                .contains(EvidenceVerificationKeySet.EventType.RETIRED,
+                        EvidenceVerificationKeySet.EventType.ACTIVATED);
+        assertThat(signer.descriptor().properties())
+                .containsEntry("keySetPolicyCompleteness", "COMPLETE")
+                .containsEntry("keySetPolicyAvailable", true);
+    }
+
+    @Test
+    void legacyProviderSnapshotRemainsExplicitlyCurrentStateOnly() throws Exception {
+        MutableClock clock = clock();
+        MutableProvider provider = new MutableProvider(clock);
+        provider.legacySchema(true);
+        provider.addActive("kms-key-1");
+        ManagedVisualEvidenceSigner signer = signer(provider, clock);
+
+        VisualEvidenceSigner.KeySetResolution resolution = signer.resolveKeySet();
+
+        assertThat(resolution.status()).isEqualTo(VisualEvidenceSigner.KeyResolutionStatus.AVAILABLE);
+        assertThat(resolution.keySet().policyCompleteness())
+                .isEqualTo(EvidenceVerificationKeySet.PolicyCompleteness.CURRENT_STATE_ONLY);
+        assertThat(resolution.keySet().events()).isEmpty();
+        assertThat(signer.descriptor().properties())
+                .containsEntry("keySetPolicyCompleteness", "CURRENT_STATE_ONLY");
+    }
+
+    @Test
     void retriesOnceWhenProviderRotatesBetweenDiscoveryAndSign() throws Exception {
         MutableClock clock = clock();
         MutableProvider provider = new MutableProvider(clock);
@@ -265,6 +316,8 @@ class ManagedVisualEvidenceSignerTest {
         private boolean corruptSignature;
         private boolean invalidSchema;
         private boolean invertedTimeWindow;
+        private boolean completePolicy;
+        private boolean legacySchema;
 
         private MutableProvider(MutableClock clock) {
             this.clock = clock;
@@ -313,6 +366,14 @@ class ManagedVisualEvidenceSignerTest {
             invertedTimeWindow = value;
         }
 
+        void completePolicy(boolean value) {
+            completePolicy = value;
+        }
+
+        void legacySchema(boolean value) {
+            legacySchema = value;
+        }
+
         int fetchCalls() {
             return fetchCalls.get();
         }
@@ -335,8 +396,36 @@ class ManagedVisualEvidenceSignerTest {
             Instant generatedAt = invertedTimeWindow ? clock.instant().plusSeconds(10) : clock.instant();
             Instant expiresAt = invertedTimeWindow
                     ? clock.instant().plusSeconds(5) : clock.instant().plus(snapshotLifetime);
-            return new KeySet(invalidSchema ? "invalid" : KeySet.SCHEMA_VERSION, generatedAt,
-                    expiresAt, activeKeyId, keys);
+            List<KeyLifecycleEvent> events = new ArrayList<>();
+            long sequence = 0;
+            if (completePolicy) {
+                for (ManagedKey key : keys) {
+                    events.add(new KeyLifecycleEvent(++sequence, "created:" + key.keyId(), key.keyId(),
+                            "CREATED", key.createdAt(), key.createdAt(), "", null, "KEY_CREATED"));
+                    if ("VERIFY_ONLY".equals(key.state())) {
+                        events.add(new KeyLifecycleEvent(++sequence, "activated:" + key.keyId(), key.keyId(),
+                                "ACTIVATED", key.createdAt(), key.createdAt(), "", null, "KEY_ACTIVATED"));
+                    }
+                    String type = switch (key.state()) {
+                        case "ACTIVE" -> "ACTIVATED";
+                        case "VERIFY_ONLY" -> "RETIRED";
+                        case "DISABLED" -> "DISABLED";
+                        case "REVOKED" -> "REVOKED";
+                        default -> throw new IllegalStateException("Unexpected state " + key.state());
+                    };
+                    boolean revoked = "REVOKED".equals(type);
+                    events.add(new KeyLifecycleEvent(++sequence,
+                            type.toLowerCase() + ":" + key.keyId(), key.keyId(), type,
+                            revoked || "RETIRED".equals(type) ? clock.instant() : key.createdAt(),
+                            revoked || "RETIRED".equals(type) ? clock.instant() : key.createdAt(),
+                            revoked ? "PROSPECTIVE" : "", null, "KEY_" + type));
+                }
+            }
+            String schemaVersion = invalidSchema ? "invalid" : legacySchema
+                    ? KeySet.SCHEMA_VERSION_V1 : KeySet.SCHEMA_VERSION;
+            return new KeySet(schemaVersion, generatedAt,
+                    expiresAt, activeKeyId, keys,
+                    completePolicy ? "COMPLETE" : "CURRENT_STATE_ONLY", events);
         }
 
         @Override

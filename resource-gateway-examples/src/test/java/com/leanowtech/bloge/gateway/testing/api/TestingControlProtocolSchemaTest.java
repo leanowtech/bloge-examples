@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
+import com.leanowtech.bloge.gateway.visual.runtime.EvidenceVerificationKeySet;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -63,6 +64,8 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteEvidenceBundle/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteEvidenceBundle.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/evidenceVerificationKeySet/properties/schemaVersion/const").asText())
+                .isEqualTo(EvidenceVerificationKeySet.SCHEMA_VERSION);
         assertThat(schema.at(
                 "/$defs/testSuiteCatalogMaterialization/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteCatalogMaterializationResponse.SCHEMA_VERSION);
@@ -116,6 +119,7 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("testSuiteExecutionResponseV2")).isTrue();
         assertThat(definitions.has("testSuiteRunAttestation")).isTrue();
         assertThat(definitions.has("testSuiteEvidenceBundle")).isTrue();
+        assertThat(definitions.has("evidenceVerificationKeySet")).isTrue();
         assertThat(definitions.has("testSuiteCatalogMaterialization")).isTrue();
         assertThat(definitions.has("testSuiteRunEvidence")).isTrue();
         assertThat(definitions.has("testEvidenceIntegrity")).isTrue();

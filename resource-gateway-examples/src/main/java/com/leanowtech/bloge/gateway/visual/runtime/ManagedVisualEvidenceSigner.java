@@ -217,6 +217,25 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
     }
 
     @Override
+    public KeySetResolution resolveKeySet() {
+        try {
+            State observed = usableState();
+            List<EvidenceVerificationKeySet.KeyPolicy> keys = observed.keys().values().stream()
+                    .map(KeyMaterial::policy)
+                    .sorted(java.util.Comparator.comparing(EvidenceVerificationKeySet.KeyPolicy::keyId))
+                    .toList();
+            return KeySetResolution.available(new EvidenceVerificationKeySet.Source(
+                    provider.providerName(), observed.generatedAt(), observed.expiresAt(),
+                    observed.activeKeyId(), observed.policyCompleteness(), keys,
+                    observed.lifecycleEvents()));
+        } catch (EvidenceSigningProviderException failure) {
+            return KeySetResolution.providerUnavailable(failure.code() + ": " + failure.getMessage());
+        } catch (RuntimeException failure) {
+            return KeySetResolution.providerUnavailable("INVALID_KEY_LIFECYCLE_POLICY");
+        }
+    }
+
+    @Override
     public boolean available() {
         try {
             State observed = usableState();
@@ -250,6 +269,9 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
         properties.put("returnedSignatureLocallyVerified", true);
         properties.put("privateMaterialPresent", false);
         properties.put("keyStates", states);
+        properties.put("keySetPolicyAvailable", true);
+        properties.put("keySetPolicyCompleteness", observed.policyCompleteness().name());
+        properties.put("keyLifecycleEventCount", observed.lifecycleEvents().size());
         properties.put("refreshSuccessCount", observed.refreshSuccessCount());
         properties.put("refreshFailureCount", observed.refreshFailureCount());
         properties.put("lastFailureCode", observed.lastFailureCode());
@@ -338,7 +360,8 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
 
     private State parseKeySet(ManagedEvidenceSigningProvider.KeySet keySet, Instant now, State previous) {
         if (keySet == null
-                || !ManagedEvidenceSigningProvider.KeySet.SCHEMA_VERSION.equals(keySet.schemaVersion())
+                || (!ManagedEvidenceSigningProvider.KeySet.SCHEMA_VERSION.equals(keySet.schemaVersion())
+                && !ManagedEvidenceSigningProvider.KeySet.SCHEMA_VERSION_V1.equals(keySet.schemaVersion()))
                 || keySet.generatedAt() == null || keySet.expiresAt() == null
                 || keySet.generatedAt().isAfter(now.plus(MAX_CLOCK_SKEW))
                 || !keySet.expiresAt().isAfter(keySet.generatedAt())
@@ -364,7 +387,27 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
             throw providerFailure("INVALID_KEY_SNAPSHOT",
                     "Managed signing key set must identify exactly one active key", false);
         }
+        EvidenceVerificationKeySet.PolicyCompleteness completeness =
+                ManagedEvidenceSigningProvider.KeySet.SCHEMA_VERSION_V1.equals(keySet.schemaVersion())
+                        ? EvidenceVerificationKeySet.PolicyCompleteness.CURRENT_STATE_ONLY
+                        : policyCompleteness(keySet.policyCompleteness());
+        List<EvidenceVerificationKeySet.LifecycleEvent> lifecycleEvents =
+                lifecycleEvents(keySet.lifecycleEvents());
+        if (completeness == EvidenceVerificationKeySet.PolicyCompleteness.COMPLETE
+                && lifecycleEvents.isEmpty()) {
+            throw providerFailure("INVALID_KEY_SNAPSHOT",
+                    "Complete managed signing policy requires lifecycle events", false);
+        }
+        try {
+            new EvidenceVerificationKeySet.Source(provider.providerName(), keySet.generatedAt(),
+                    keySet.expiresAt(), keySet.activeKeyId(), completeness,
+                    parsed.values().stream().map(KeyMaterial::policy).toList(), lifecycleEvents);
+        } catch (IllegalArgumentException failure) {
+            throw providerFailure("INVALID_KEY_SNAPSHOT",
+                    "Managed signing lifecycle policy is invalid", false, failure);
+        }
         return new State(Map.copyOf(parsed), keySet.activeKeyId(), keySet.generatedAt(), keySet.expiresAt(),
+                completeness, lifecycleEvents,
                 now, now.plus(settings.refreshInterval()), RefreshState.HEALTHY,
                 previous.refreshSuccessCount() + 1, previous.refreshFailureCount(), "");
     }
@@ -375,6 +418,8 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
                 || !ALGORITHM.equals(key.algorithm())
                 || key.encodedPublicKey().isBlank() || key.encodedPublicKey().length() > 1024
                 || key.createdAt() == null || key.createdAt().isAfter(now.plus(MAX_CLOCK_SKEW))
+                || key.notBefore() == null || key.notBefore().isBefore(key.createdAt())
+                || (key.notAfter() != null && !key.notAfter().isAfter(key.notBefore()))
                 || !List.of("ACTIVE", "VERIFY_ONLY", "DISABLED", "REVOKED").contains(key.state())
                 || key.providerKeyVersion().isBlank() || key.providerKeyVersion().length() > 255) {
             throw providerFailure("INVALID_KEY_SNAPSHOT", "Managed signing key metadata is invalid", false);
@@ -385,7 +430,11 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
                     .generatePublic(new X509EncodedKeySpec(encoded));
             VerificationKey descriptor = new VerificationKey("", key.keyId(), ALGORITHM,
                     key.encodedPublicKey(), key.createdAt(), key.state(), provider.providerName());
-            return new KeyMaterial(descriptor, publicKey, key.state(), key.providerKeyVersion());
+            EvidenceVerificationKeySet.KeyPolicy policy = new EvidenceVerificationKeySet.KeyPolicy(
+                    key.keyId(), ALGORITHM, key.encodedPublicKey(), key.createdAt(), key.notBefore(),
+                    key.notAfter(), EvidenceVerificationKeySet.KeyState.valueOf(key.state()),
+                    key.providerKeyVersion());
+            return new KeyMaterial(descriptor, publicKey, key.state(), key.providerKeyVersion(), policy);
         } catch (GeneralSecurityException | IllegalArgumentException failure) {
             throw providerFailure("INVALID_KEY_SNAPSHOT", "Managed signing public key is invalid", false, failure);
         }
@@ -399,6 +448,7 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
         RefreshState refreshState = retryable && previous.lastSuccessfulRefreshAt() != null
                 && previous.expiresAt().isAfter(now) ? RefreshState.DEGRADED : RefreshState.UNAVAILABLE;
         return new State(previous.keys(), previous.activeKeyId(), previous.generatedAt(), previous.expiresAt(),
+                previous.policyCompleteness(), previous.lifecycleEvents(),
                 previous.lastSuccessfulRefreshAt(), now.plus(retry), refreshState,
                 previous.refreshSuccessCount(), previous.refreshFailureCount() + 1, failureCode(failure));
     }
@@ -409,6 +459,7 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
             boolean retryable = failure instanceof EvidenceSigningProviderException providerFailure
                     && providerFailure.retryable();
             state = new State(observed.keys(), observed.activeKeyId(), observed.generatedAt(), observed.expiresAt(),
+                    observed.policyCompleteness(), observed.lifecycleEvents(),
                     observed.lastSuccessfulRefreshAt(), observed.nextRefreshAt(),
                     retryable ? RefreshState.DEGRADED : RefreshState.UNAVAILABLE,
                     observed.refreshSuccessCount(), observed.refreshFailureCount(), failureCode(failure));
@@ -420,7 +471,8 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
             State observed = state;
             if (observed.refreshState() == RefreshState.DEGRADED && observed.expiresAt().isAfter(clock.instant())) {
                 state = new State(observed.keys(), observed.activeKeyId(), observed.generatedAt(),
-                        observed.expiresAt(), observed.lastSuccessfulRefreshAt(), observed.nextRefreshAt(),
+                        observed.expiresAt(), observed.policyCompleteness(), observed.lifecycleEvents(),
+                        observed.lastSuccessfulRefreshAt(), observed.nextRefreshAt(),
                         RefreshState.HEALTHY, observed.refreshSuccessCount(), observed.refreshFailureCount(), "");
             }
         }
@@ -446,6 +498,33 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
 
     private static String normalize(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private static EvidenceVerificationKeySet.PolicyCompleteness policyCompleteness(String value) {
+        try {
+            return EvidenceVerificationKeySet.PolicyCompleteness.valueOf(normalize(value));
+        } catch (RuntimeException failure) {
+            throw providerFailure("INVALID_KEY_SNAPSHOT",
+                    "Managed signing policy completeness is invalid", false, failure);
+        }
+    }
+
+    private static List<EvidenceVerificationKeySet.LifecycleEvent> lifecycleEvents(
+            List<ManagedEvidenceSigningProvider.KeyLifecycleEvent> events) {
+        if (events == null) {
+            return List.of();
+        }
+        try {
+            return events.stream().map(event -> new EvidenceVerificationKeySet.LifecycleEvent(
+                    event.sequence(), event.eventId(), event.keyId(),
+                    EvidenceVerificationKeySet.EventType.valueOf(event.type()), event.occurredAt(),
+                    event.effectiveAt(), event.revocationMode().isBlank() ? null
+                    : EvidenceVerificationKeySet.RevocationMode.valueOf(event.revocationMode()),
+                    event.invalidFrom(), event.reasonCode())).toList();
+        } catch (RuntimeException failure) {
+            throw providerFailure("INVALID_KEY_SNAPSHOT",
+                    "Managed signing lifecycle events are invalid", false, failure);
+        }
     }
 
     public record Settings(Duration refreshInterval,
@@ -485,13 +564,16 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
     private record KeyMaterial(VerificationKey descriptor,
                                PublicKey publicKey,
                                String state,
-                               String providerKeyVersion) {
+                               String providerKeyVersion,
+                               EvidenceVerificationKeySet.KeyPolicy policy) {
     }
 
     private record State(Map<String, KeyMaterial> keys,
                          String activeKeyId,
                          Instant generatedAt,
                          Instant expiresAt,
+                         EvidenceVerificationKeySet.PolicyCompleteness policyCompleteness,
+                         List<EvidenceVerificationKeySet.LifecycleEvent> lifecycleEvents,
                          Instant lastSuccessfulRefreshAt,
                          Instant nextRefreshAt,
                          RefreshState refreshState,
@@ -503,18 +585,24 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
             activeKeyId = normalize(activeKeyId);
             generatedAt = generatedAt == null ? Instant.EPOCH : generatedAt;
             expiresAt = expiresAt == null ? Instant.EPOCH : expiresAt;
+            policyCompleteness = policyCompleteness == null
+                    ? EvidenceVerificationKeySet.PolicyCompleteness.CURRENT_STATE_ONLY
+                    : policyCompleteness;
+            lifecycleEvents = lifecycleEvents == null ? List.of() : List.copyOf(lifecycleEvents);
             nextRefreshAt = nextRefreshAt == null ? Instant.MIN : nextRefreshAt;
             refreshState = refreshState == null ? RefreshState.UNAVAILABLE : refreshState;
             lastFailureCode = normalize(lastFailureCode);
         }
 
         static State empty(Instant now) {
-            return new State(Map.of(), "", Instant.EPOCH, Instant.EPOCH, null, now,
+            return new State(Map.of(), "", Instant.EPOCH, Instant.EPOCH,
+                    EvidenceVerificationKeySet.PolicyCompleteness.CURRENT_STATE_ONLY, List.of(), null, now,
                     RefreshState.BOOTSTRAPPING, 0, 0, "");
         }
 
         State withRefreshState(RefreshState value, Instant nextRefresh) {
-            return new State(keys, activeKeyId, generatedAt, expiresAt, lastSuccessfulRefreshAt, nextRefresh,
+            return new State(keys, activeKeyId, generatedAt, expiresAt,
+                    policyCompleteness, lifecycleEvents, lastSuccessfulRefreshAt, nextRefresh,
                     value, refreshSuccessCount, refreshFailureCount, lastFailureCode);
         }
     }

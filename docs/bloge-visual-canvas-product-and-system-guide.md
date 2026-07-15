@@ -269,21 +269,25 @@ export RG_EVIDENCE_SIGNING_MANAGED_UNKNOWN_KEY_REFRESH_INTERVAL_SECONDS=5
 export RG_EVIDENCE_SIGNING_MANAGED_MAXIMUM_SNAPSHOT_LIFETIME_SECONDS=86400
 ```
 
-sidecar 的 `GET /v1/evidence-signing/keys` 返回一个不可拆分的 key generation 快照。必须恰好有一把 `ACTIVE` key；
-历史 key 可处于 `VERIFY_ONLY`，`DISABLED` 和 `REVOKED` 会分别导致历史验签返回明确状态：
+sidecar 的 `GET /v1/evidence-signing/keys` 返回一个不可拆分的 key generation 快照。v2 必须恰好有一把
+`ACTIVE` key，并携带有效期、历史完整性和有序生命周期事件；`VERIFY_ONLY`、`DISABLED`、前向撤销与追溯
+compromise 会按 evidence 的签名时刻产生不同结论：
 
 ```json
 {
-  "schemaVersion": "resourceGateway.managedEvidenceSigningKeys.v1",
-  "generatedAt": "2026-07-13T00:00:00Z",
+  "schemaVersion": "resourceGateway.managedEvidenceSigningKeys.v2",
+  "generatedAt": "2026-07-13T00:00:01Z",
   "expiresAt": "2026-07-13T00:05:00Z",
   "activeKeyId": "kms://evidence-signing/18",
+  "policyCompleteness": "COMPLETE",
   "keys": [
     {
       "keyId": "kms://evidence-signing/17",
       "algorithm": "Ed25519",
       "encodedPublicKey": "<base64-X509-public-key>",
       "createdAt": "2026-06-13T00:00:00Z",
+      "notBefore": "2026-06-13T00:00:00Z",
+      "notAfter": null,
       "state": "VERIFY_ONLY",
       "providerKeyVersion": "projects/.../cryptoKeyVersions/17"
     },
@@ -292,12 +296,39 @@ sidecar 的 `GET /v1/evidence-signing/keys` 返回一个不可拆分的 key gene
       "algorithm": "Ed25519",
       "encodedPublicKey": "<base64-X509-public-key>",
       "createdAt": "2026-07-13T00:00:00Z",
+      "notBefore": "2026-07-13T00:00:00Z",
+      "notAfter": null,
       "state": "ACTIVE",
       "providerKeyVersion": "projects/.../cryptoKeyVersions/18"
     }
+  ],
+  "lifecycleEvents": [
+    {"sequence": 1, "eventId": "created-17", "keyId": "kms://evidence-signing/17",
+      "type": "CREATED", "occurredAt": "2026-06-13T00:00:00Z",
+      "effectiveAt": "2026-06-13T00:00:00Z", "revocationMode": null,
+      "invalidFrom": null, "reasonCode": "KEY_CREATED"},
+    {"sequence": 2, "eventId": "activated-17", "keyId": "kms://evidence-signing/17",
+      "type": "ACTIVATED", "occurredAt": "2026-06-13T00:00:00Z",
+      "effectiveAt": "2026-06-13T00:00:00Z", "revocationMode": null,
+      "invalidFrom": null, "reasonCode": "KEY_ACTIVATED"},
+    {"sequence": 3, "eventId": "retired-17", "keyId": "kms://evidence-signing/17",
+      "type": "RETIRED", "occurredAt": "2026-07-13T00:00:00Z",
+      "effectiveAt": "2026-07-13T00:00:00Z", "revocationMode": null,
+      "invalidFrom": null, "reasonCode": "KEY_RETIRED"},
+    {"sequence": 4, "eventId": "created-18", "keyId": "kms://evidence-signing/18",
+      "type": "CREATED", "occurredAt": "2026-07-13T00:00:00Z",
+      "effectiveAt": "2026-07-13T00:00:00Z", "revocationMode": null,
+      "invalidFrom": null, "reasonCode": "KEY_CREATED"},
+    {"sequence": 5, "eventId": "activated-18", "keyId": "kms://evidence-signing/18",
+      "type": "ACTIVATED", "occurredAt": "2026-07-13T00:00:00Z",
+      "effectiveAt": "2026-07-13T00:00:00Z", "revocationMode": null,
+      "invalidFrom": null, "reasonCode": "KEY_ACTIVATED"}
   ]
 }
 ```
+
+`REVOKED/COMPROMISE_DECLARED` 必须额外给出 `PROSPECTIVE/RETROACTIVE`；追溯撤销还必须给出
+`invalidFrom`。v1 sidecar 在迁移期仍可读取，但 Gateway 会强制标为 `CURRENT_STATE_ONLY`，不能用于历史发布裁决。
 
 Resource Gateway 调用 `POST /v1/evidence-signing/sign` 时只发送 canonical fingerprint、随机 requestId、算法和预期
 keyId，不发送 evidence payload，更不会请求或接收 private key：
@@ -317,11 +348,13 @@ Gateway 会用当前快照公钥本地反验签名，只有反验成功才把 se
 sidecar 返回 `409` 表示 rotation race，Gateway 强制刷新并只重试一次；连续漂移会以 `ROTATION_UNSTABLE` 失败，
 不会偷偷改用旧 key。
 
-sidecar 和 ANEKE CI 可直接校验四份机器合同：
-[key snapshot](schemas/tool-studio-resource-gateway/managed-evidence-signing-keys-v1.schema.json)、
+sidecar 和 ANEKE CI 可直接校验以下机器合同：
+[managed key snapshot v2](schemas/tool-studio-resource-gateway/managed-evidence-signing-keys-v2.schema.json)、
+[managed key snapshot v1 compatibility](schemas/tool-studio-resource-gateway/managed-evidence-signing-keys-v1.schema.json)、
 [sign request](schemas/tool-studio-resource-gateway/managed-evidence-sign-request-v1.schema.json)、
 [sign response](schemas/tool-studio-resource-gateway/managed-evidence-sign-response-v1.schema.json) 和
-[capability descriptor](schemas/tool-studio-resource-gateway/evidence-signer-descriptor-v1.schema.json)。
+[capability descriptor](schemas/tool-studio-resource-gateway/evidence-signer-descriptor-v1.schema.json)。Gateway 对治理消费者发布的
+原子合同是 [evidence verification key set v1](schemas/tool-studio-resource-gateway/evidence-verification-key-set-v1.schema.json)。
 
 启动后检查：
 
@@ -329,16 +362,33 @@ sidecar 和 ANEKE CI 可直接校验四份机器合同：
 curl -sS http://localhost:8080/api/integration/capabilities | jq '.payload |
   {features: {managedEvidenceSigning: .features.managedEvidenceSigning,
               nonExportableEvidenceSigningKey: .features.nonExportableEvidenceSigningKey,
-              evidenceSigningFailClosed: .features.evidenceSigningFailClosed},
+              evidenceSigningFailClosed: .features.evidenceSigningFailClosed,
+              evidenceVerificationKeySet: .features.evidenceVerificationKeySet,
+              timeAwareEvidenceKeyRevocation: .features.timeAwareEvidenceKeyRevocation},
    signer: .evidenceSigner}'
 ```
+
+发布门禁再读取原子 public snapshot：
+
+```bash
+curl -sS http://localhost:8080/api/integration/evidence-keys \
+  | jq '.payload | {snapshotFingerprint, generatedAt, expiresAt, activeKeyId,
+                     policyCompleteness, keys, events, attestation}'
+```
+
+这里的 `snapshotFingerprint` 只是待治理系统登记的候选值，不能从同一响应读取后立刻当作 trust pin。
+ANEKE registry、受保护 CI 变量或签名 deployment manifest 必须通过独立通道提供精确 pin；test-kit 的
+`verifySuiteEvidence(suiteRunId, trustedPin)` 会验证 pin、snapshot 签名、完整事件历史，并按 evidence
+签名时间判断退役/禁用/前向撤销/追溯 compromise。完整威胁模型见
+[Stage 3 evidence key lifecycle verification](resource-gateway-execution-data-control-plane-stage3-key-lifecycle-verification.md)。
 
 生产结果应满足 `providerType=MANAGED_KMS_HSM`、`managedKeyCustody=true`、`privateKeyExportable=false`，并检查
 `state/activeKeyId/snapshotExpiresAt/refreshSuccessCount/refreshFailureCount/lastFailureCode`。网络 timeout、429 或 5xx
 只允许在 authority 自己声明的 `expiresAt` 前使用已缓存公钥做历史验签，状态为 `DEGRADED`；新签名仍必须实时调用
 provider，绝不本地降级。畸形 JSON、重复字段、private material、错误 key 集合或无法通过本地反验的签名立即进入
-`UNAVAILABLE`。快照过期后 evidence key lookup 返回可重试
-`503 RG.INTEGRATION.EVIDENCE_KEY_PROVIDER_UNAVAILABLE`，而真正不存在的 key 返回 404。
+`UNAVAILABLE`。快照过期后 exact evidence key lookup 返回可重试
+`503 RG.INTEGRATION.EVIDENCE_KEY_PROVIDER_UNAVAILABLE`，key-set 返回
+`503 RG.INTEGRATION.EVIDENCE_KEY_SET_PROVIDER_UNAVAILABLE`，而真正不存在的 exact key 返回 404。
 
 通用 HTTP adapter 使用 JVM TLS context，部署方可通过 JVM trust store/client key store 建立 mTLS。直接调用云 KMS SDK、
 SPIFFE workload identity 或厂商 HSM session 的团队可注册自己的 `ManagedEvidenceSigningProvider` Bean；上层轮换、反验、
@@ -2256,6 +2306,7 @@ resource gateway 自身继续保留：
 | `GET` | `/api/integration/runs/{runId}/replay` | 读取经脱敏的 recorded replay payload；当前不触发外部副作用 |
 | `POST` | `/api/integration/runs/{runId}/replay` | 以 `DENY` 副作用策略重算 recorded payload 断言，生成带 parent lineage 的新 replay run/evidence |
 | `GET` | `/api/integration/evidence-keys/{keyId}` | 获取 evidence seal 验签公钥 |
+| `GET` | `/api/integration/evidence-keys` | 获取可外部 pin 的原子 evidence key 生命周期快照；发布门禁应使用此接口 |
 | `POST` | `/api/integration/gate-results` | ANEKE 回写绑定 draft fingerprint 的治理门禁结果 |
 | `GET` | `/api/integration/events` | 按签名 opaque cursor 拉取固定 high-water 事件窗口；仅允许 `CHANGE_SYNC` purpose |
 | `GET` | `/api/integration/reconciliation` | 在一致数据库快照上返回租户/环境权威资产清单、计数、rolling fingerprint 和 checkpoint cursor |

@@ -22,6 +22,20 @@ public interface VisualEvidenceSigner {
                 .orElseGet(() -> KeyResolution.notFound("Evidence verification key was not found."));
     }
 
+    /**
+     * Resolves the bounded multi-key policy snapshot used for offline lifecycle decisions.
+     *
+     * <p>Implementations that cannot expose a coherent snapshot remain explicitly unavailable;
+     * callers must not reconstruct one by repeatedly reading individual keys because those reads
+     * could cross a rotation boundary.</p>
+     *
+     * @return atomic source snapshot or a bounded provider failure
+     */
+    default KeySetResolution resolveKeySet() {
+        return KeySetResolution.providerUnavailable(
+                "Evidence verification key-set policy is not available from this signer.");
+    }
+
     boolean available();
 
     default Descriptor descriptor() {
@@ -58,6 +72,28 @@ public interface VisualEvidenceSigner {
 
         public static KeyResolution providerUnavailable(String reason) {
             return new KeyResolution(KeyResolutionStatus.PROVIDER_UNAVAILABLE, null, reason);
+        }
+    }
+
+    /** Atomic key-set lookup result. */
+    record KeySetResolution(KeyResolutionStatus status,
+                            EvidenceVerificationKeySet.Source keySet,
+                            String reason) {
+        /** Normalizes absent provider results to an unavailable state. */
+        public KeySetResolution {
+            status = status == null ? KeyResolutionStatus.PROVIDER_UNAVAILABLE : status;
+            reason = reason == null ? "" : reason;
+        }
+
+        /** @return available coherent source snapshot */
+        public static KeySetResolution available(EvidenceVerificationKeySet.Source keySet) {
+            return new KeySetResolution(KeyResolutionStatus.AVAILABLE,
+                    java.util.Objects.requireNonNull(keySet, "keySet"), "");
+        }
+
+        /** @return provider-unavailable result without leaking provider diagnostics */
+        public static KeySetResolution providerUnavailable(String reason) {
+            return new KeySetResolution(KeyResolutionStatus.PROVIDER_UNAVAILABLE, null, reason);
         }
     }
 

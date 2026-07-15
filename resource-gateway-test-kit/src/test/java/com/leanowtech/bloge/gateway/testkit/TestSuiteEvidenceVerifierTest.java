@@ -12,6 +12,8 @@ import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.Signature;
 import java.time.Instant;
+import java.time.Clock;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
@@ -94,6 +96,123 @@ class TestSuiteEvidenceVerifierTest {
                 .isEqualTo(TestSuiteEvidenceVerifier.Outcome.POLICY_REJECTED);
     }
 
+    @Test
+    void verifiesPinnedCompleteKeySetAndZeroDowntimeRotationOverlap() throws Exception {
+        Fixture fixture = fixture(List.of(child("golden", "child-run-1", CHILD)));
+        EvidenceVerificationKeySet keySet = keySet(fixture,
+                EvidenceVerificationKeySet.KeyState.VERIFY_ONLY,
+                EvidenceVerificationKeySet.PolicyCompleteness.COMPLETE,
+                Instant.parse("2026-07-17T00:00:00Z"), List.of());
+        TestSuiteEvidenceVerifier verifier = verifierAt("2026-07-16T11:00:00Z");
+
+        TestSuiteEvidenceVerifier.VerificationResult result = verifier.verify(
+                fixture.bundle(), keySet, keySet.snapshotFingerprint());
+
+        assertThat(result.verified()).isTrue();
+        assertThat(verifier.verifyKeySet(keySet, keySet.snapshotFingerprint()).verified()).isTrue();
+    }
+
+    @Test
+    void prospectiveAndRetroactiveRevocationUseEvidenceSigningTime() throws Exception {
+        Fixture fixture = fixture(List.of(child("golden", "child-run-1", CHILD)));
+        EvidenceVerificationKeySet.LifecycleEvent prospectiveAfterSigning = event(3,
+                EvidenceVerificationKeySet.EventType.REVOKED,
+                Instant.parse("2026-07-16T10:30:00Z"),
+                EvidenceVerificationKeySet.RevocationMode.PROSPECTIVE, null);
+        EvidenceVerificationKeySet allowed = keySet(fixture,
+                EvidenceVerificationKeySet.KeyState.REVOKED,
+                EvidenceVerificationKeySet.PolicyCompleteness.COMPLETE,
+                Instant.parse("2026-07-17T00:00:00Z"), List.of(prospectiveAfterSigning));
+        EvidenceVerificationKeySet.LifecycleEvent prospectiveBeforeSigning = event(3,
+                EvidenceVerificationKeySet.EventType.REVOKED,
+                Instant.parse("2026-07-16T10:15:00Z"),
+                EvidenceVerificationKeySet.RevocationMode.PROSPECTIVE, null);
+        EvidenceVerificationKeySet rejected = keySet(fixture,
+                EvidenceVerificationKeySet.KeyState.REVOKED,
+                EvidenceVerificationKeySet.PolicyCompleteness.COMPLETE,
+                Instant.parse("2026-07-17T00:00:00Z"), List.of(prospectiveBeforeSigning));
+        EvidenceVerificationKeySet.LifecycleEvent compromise = event(3,
+                EvidenceVerificationKeySet.EventType.COMPROMISE_DECLARED,
+                Instant.parse("2026-07-16T11:00:00Z"),
+                EvidenceVerificationKeySet.RevocationMode.RETROACTIVE,
+                Instant.parse("2026-07-16T10:14:45Z"));
+        EvidenceVerificationKeySet retroactive = keySet(fixture,
+                EvidenceVerificationKeySet.KeyState.REVOKED,
+                EvidenceVerificationKeySet.PolicyCompleteness.COMPLETE,
+                Instant.parse("2026-07-17T00:00:00Z"), List.of(compromise));
+        TestSuiteEvidenceVerifier verifier = verifierAt("2026-07-16T11:05:00Z");
+
+        assertThat(verifier.verify(fixture.bundle(), allowed, allowed.snapshotFingerprint()).verified())
+                .isTrue();
+        assertThat(verifier.verify(fixture.bundle(), rejected, rejected.snapshotFingerprint()).reasonCode())
+                .isEqualTo("EVIDENCE_KEY_REVOKED_AT_SIGNING_TIME");
+        assertThat(verifier.verify(fixture.bundle(), retroactive,
+                retroactive.snapshotFingerprint()).reasonCode())
+                .isEqualTo("EVIDENCE_KEY_REVOKED_AT_SIGNING_TIME");
+    }
+
+    @Test
+    void pinPolicyFreshnessAndHistoryCompletenessFailClosedWithDistinctReasons() throws Exception {
+        Fixture fixture = fixture(List.of(child("golden", "child-run-1", CHILD)));
+        EvidenceVerificationKeySet complete = keySet(fixture,
+                EvidenceVerificationKeySet.KeyState.ACTIVE,
+                EvidenceVerificationKeySet.PolicyCompleteness.COMPLETE,
+                Instant.parse("2026-07-17T00:00:00Z"), List.of());
+        EvidenceVerificationKeySet incomplete = keySet(fixture,
+                EvidenceVerificationKeySet.KeyState.ACTIVE,
+                EvidenceVerificationKeySet.PolicyCompleteness.CURRENT_STATE_ONLY,
+                Instant.parse("2026-07-17T00:00:00Z"), List.of());
+        EvidenceVerificationKeySet stale = keySet(fixture,
+                EvidenceVerificationKeySet.KeyState.ACTIVE,
+                EvidenceVerificationKeySet.PolicyCompleteness.COMPLETE,
+                Instant.parse("2026-07-16T10:45:00Z"), List.of());
+        TestSuiteEvidenceVerifier verifier = verifierAt("2026-07-16T11:00:00Z");
+
+        assertThat(verifier.verifyKeySet(complete, "sha256:" + "0".repeat(64)).reasonCode())
+                .isEqualTo("KEY_SET_PIN_MISMATCH");
+        assertThat(verifier.verifyKeySet(incomplete, incomplete.snapshotFingerprint()).reasonCode())
+                .isEqualTo("KEY_LIFECYCLE_POLICY_INCOMPLETE");
+        assertThat(verifier.verifyKeySet(stale, stale.snapshotFingerprint()).reasonCode())
+                .isEqualTo("KEY_SET_STALE");
+    }
+
+    @Test
+    void rejectsEvidenceSignedAfterRetirementAndTamperedPinnedMaterial() throws Exception {
+        Fixture fixture = fixture(List.of(child("golden", "child-run-1", CHILD)));
+        EvidenceVerificationKeySet retiredBeforeSigning = keySet(fixture,
+                EvidenceVerificationKeySet.KeyState.VERIFY_ONLY,
+                EvidenceVerificationKeySet.PolicyCompleteness.COMPLETE,
+                Instant.parse("2026-07-17T00:00:00Z"), List.of(),
+                SIGNED_AT.minusSeconds(1));
+        EvidenceVerificationKeySet valid = keySet(fixture,
+                EvidenceVerificationKeySet.KeyState.ACTIVE,
+                EvidenceVerificationKeySet.PolicyCompleteness.COMPLETE,
+                Instant.parse("2026-07-17T00:00:00Z"), List.of());
+        ObjectNode tamperedRaw = (ObjectNode) valid.rawSnapshot();
+        ((ObjectNode) tamperedRaw.withArray("events").get(0)).put("reasonCode", "TAMPERED");
+        EvidenceVerificationKeySet tampered = new EvidenceVerificationKeySet(valid.schemaVersion(),
+                valid.snapshotFingerprint(), valid.provider(), valid.generatedAt(), valid.expiresAt(),
+                valid.activeKeyId(), valid.policyCompleteness(), valid.keys(), valid.events(),
+                valid.attestation(), tamperedRaw);
+        EvidenceVerificationKeySet reactivated = keySet(fixture,
+                EvidenceVerificationKeySet.KeyState.ACTIVE,
+                EvidenceVerificationKeySet.PolicyCompleteness.COMPLETE,
+                Instant.parse("2026-07-17T00:00:00Z"), List.of(
+                event(3, EvidenceVerificationKeySet.EventType.RETIRED,
+                        SIGNED_AT.minusSeconds(20), null, null),
+                event(4, EvidenceVerificationKeySet.EventType.ACTIVATED,
+                        SIGNED_AT.minusSeconds(10), null, null)));
+        TestSuiteEvidenceVerifier verifier = verifierAt("2026-07-16T11:00:00Z");
+
+        assertThat(verifier.verify(fixture.bundle(), retiredBeforeSigning,
+                retiredBeforeSigning.snapshotFingerprint()).reasonCode())
+                .isEqualTo("EVIDENCE_KEY_RETIRED_AT_SIGNING_TIME");
+        assertThat(verifier.verifyKeySet(tampered, tampered.snapshotFingerprint()).reasonCode())
+                .isEqualTo("KEY_SET_MATERIAL_INVALID");
+        assertThat(verifier.verify(fixture.bundle(), reactivated,
+                reactivated.snapshotFingerprint()).verified()).isTrue();
+    }
+
     private static Fixture fixture(List<TestSuiteRunAttestation.ChildEvidenceRef> children)
             throws Exception {
         KeyPair keyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
@@ -129,7 +248,148 @@ class TestSuiteEvidenceVerifierTest {
                 TestingProtocol.EVIDENCE_VERIFICATION_KEY_V1, keyId, "Ed25519",
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded()),
                 SIGNED_AT.minusSeconds(60), "ACTIVE", "test");
-        return new Fixture(bundle, key);
+        return new Fixture(bundle, key, keyPair);
+    }
+
+    private static EvidenceVerificationKeySet keySet(
+            Fixture fixture, EvidenceVerificationKeySet.KeyState evidenceKeyState,
+            EvidenceVerificationKeySet.PolicyCompleteness completeness, Instant expiresAt,
+            List<EvidenceVerificationKeySet.LifecycleEvent> policyEvents) throws Exception {
+        return keySet(fixture, evidenceKeyState, completeness, expiresAt, policyEvents,
+                SIGNED_AT.plusSeconds(1));
+    }
+
+    private static EvidenceVerificationKeySet keySet(
+            Fixture fixture, EvidenceVerificationKeySet.KeyState evidenceKeyState,
+            EvidenceVerificationKeySet.PolicyCompleteness completeness, Instant expiresAt,
+            List<EvidenceVerificationKeySet.LifecycleEvent> policyEvents,
+            Instant terminalStateAt) throws Exception {
+        KeyPair activePair = evidenceKeyState == EvidenceVerificationKeySet.KeyState.ACTIVE
+                ? fixture.keyPair() : KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        String activeKeyId = evidenceKeyState == EvidenceVerificationKeySet.KeyState.ACTIVE
+                ? fixture.key().keyId() : "test-ed25519-2";
+        Instant generatedAt = policyEvents.stream()
+                .map(EvidenceVerificationKeySet.LifecycleEvent::occurredAt)
+                .reduce(SIGNED_AT.plusSeconds(60), (left, right) -> left.isAfter(right) ? left : right);
+        ArrayNode keys = JSON.createArrayNode();
+        keys.add(keyPolicy(fixture.key().keyId(), fixture.keyPair(), evidenceKeyState,
+                SIGNED_AT.minusSeconds(60)));
+        if (!activeKeyId.equals(fixture.key().keyId())) {
+            keys.add(keyPolicy(activeKeyId, activePair, EvidenceVerificationKeySet.KeyState.ACTIVE,
+                    generatedAt));
+        }
+        ArrayNode events = JSON.createArrayNode();
+        long sequence = 0;
+        events.add(eventJson(new EvidenceVerificationKeySet.LifecycleEvent(++sequence,
+                "created:" + fixture.key().keyId(), fixture.key().keyId(),
+                EvidenceVerificationKeySet.EventType.CREATED, fixture.key().createdAt(),
+                fixture.key().createdAt(), null, null, "KEY_CREATED")));
+        events.add(eventJson(new EvidenceVerificationKeySet.LifecycleEvent(++sequence,
+                "activated:" + fixture.key().keyId(), fixture.key().keyId(),
+                EvidenceVerificationKeySet.EventType.ACTIVATED, fixture.key().createdAt(),
+                fixture.key().createdAt(), null, null, "KEY_ACTIVATED")));
+        EvidenceVerificationKeySet.EventType evidenceStateEvent = switch (evidenceKeyState) {
+            case ACTIVE, REVOKED -> null;
+            case VERIFY_ONLY -> EvidenceVerificationKeySet.EventType.RETIRED;
+            case DISABLED -> EvidenceVerificationKeySet.EventType.DISABLED;
+        };
+        if (evidenceStateEvent != null) {
+            events.add(eventJson(new EvidenceVerificationKeySet.LifecycleEvent(++sequence,
+                    evidenceStateEvent.name().toLowerCase() + ":" + fixture.key().keyId(),
+                    fixture.key().keyId(), evidenceStateEvent, terminalStateAt,
+                    terminalStateAt, null, null, "KEY_" + evidenceStateEvent.name())));
+        }
+        if (!activeKeyId.equals(fixture.key().keyId())) {
+            events.add(eventJson(new EvidenceVerificationKeySet.LifecycleEvent(++sequence,
+                    "created:" + activeKeyId, activeKeyId, EvidenceVerificationKeySet.EventType.CREATED,
+                    generatedAt, generatedAt, null, null, "KEY_CREATED")));
+            events.add(eventJson(new EvidenceVerificationKeySet.LifecycleEvent(++sequence,
+                    "activated:" + activeKeyId, activeKeyId,
+                    EvidenceVerificationKeySet.EventType.ACTIVATED, generatedAt, generatedAt,
+                    null, null, "KEY_ACTIVATED")));
+        }
+        for (EvidenceVerificationKeySet.LifecycleEvent event : policyEvents) {
+            events.add(eventJson(new EvidenceVerificationKeySet.LifecycleEvent(++sequence,
+                    event.eventId(), fixture.key().keyId(), event.type(), event.occurredAt(),
+                    event.effectiveAt(), event.revocationMode(), event.invalidFrom(), event.reasonCode())));
+        }
+        ObjectNode material = JSON.createObjectNode();
+        material.put("schemaVersion", TestingProtocol.EVIDENCE_VERIFICATION_KEY_SET_V1);
+        material.put("provider", "test");
+        material.put("generatedAt", generatedAt.toString());
+        material.put("expiresAt", expiresAt.toString());
+        material.put("activeKeyId", activeKeyId);
+        material.put("policyCompleteness", completeness.name());
+        material.set("keys", keys);
+        material.set("events", events);
+        String snapshotFingerprint = fingerprint(material);
+        Signature signer = Signature.getInstance("Ed25519");
+        signer.initSign(activePair.getPrivate());
+        signer.update(snapshotFingerprint.getBytes(StandardCharsets.UTF_8));
+        ObjectNode snapshot = material.deepCopy();
+        snapshot.put("snapshotFingerprint", snapshotFingerprint);
+        ObjectNode seal = snapshot.putObject("attestation");
+        seal.put("schemaVersion", "bloge.visualRunEvidenceSeal.v1");
+        seal.put("materialFingerprint", snapshotFingerprint);
+        seal.put("algorithm", "Ed25519");
+        seal.put("keyId", activeKeyId);
+        seal.put("signedAt", generatedAt.plusSeconds(1).toString());
+        seal.put("signature", Base64.getEncoder().encodeToString(signer.sign()));
+        ObjectNode envelope = JSON.createObjectNode();
+        envelope.put("payloadKind", "EVIDENCE_VERIFICATION_KEY_SET");
+        envelope.put("payloadSchemaVersion", TestingProtocol.EVIDENCE_VERIFICATION_KEY_SET_V1);
+        envelope.set("payload", snapshot);
+        return EvidenceVerificationKeySet.fromEnvelope(envelope);
+    }
+
+    private static ObjectNode keyPolicy(String keyId, KeyPair keyPair,
+                                        EvidenceVerificationKeySet.KeyState state,
+                                        Instant createdAt) {
+        ObjectNode key = JSON.createObjectNode();
+        key.put("keyId", keyId);
+        key.put("algorithm", "Ed25519");
+        key.put("encodedPublicKey", Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded()));
+        key.put("createdAt", createdAt.toString());
+        key.put("notBefore", createdAt.toString());
+        key.putNull("notAfter");
+        key.put("state", state.name());
+        key.put("providerKeyVersion", "version/" + keyId);
+        return key;
+    }
+
+    private static EvidenceVerificationKeySet.LifecycleEvent event(
+            long sequence, EvidenceVerificationKeySet.EventType type, Instant effectiveAt,
+            EvidenceVerificationKeySet.RevocationMode mode, Instant invalidFrom) {
+        return new EvidenceVerificationKeySet.LifecycleEvent(sequence, "policy-event-" + sequence,
+                "placeholder", type, effectiveAt, effectiveAt, mode, invalidFrom,
+                type == EvidenceVerificationKeySet.EventType.COMPROMISE_DECLARED
+                        ? "KEY_COMPROMISED" : "KEY_" + type.name());
+    }
+
+    private static ObjectNode eventJson(EvidenceVerificationKeySet.LifecycleEvent event) {
+        ObjectNode value = JSON.createObjectNode();
+        value.put("sequence", event.sequence());
+        value.put("eventId", event.eventId());
+        value.put("keyId", event.keyId());
+        value.put("type", event.type().name());
+        value.put("occurredAt", event.occurredAt().toString());
+        value.put("effectiveAt", event.effectiveAt().toString());
+        if (event.revocationMode() == null) {
+            value.putNull("revocationMode");
+        } else {
+            value.put("revocationMode", event.revocationMode().name());
+        }
+        if (event.invalidFrom() == null) {
+            value.putNull("invalidFrom");
+        } else {
+            value.put("invalidFrom", event.invalidFrom().toString());
+        }
+        value.put("reasonCode", event.reasonCode());
+        return value;
+    }
+
+    private static TestSuiteEvidenceVerifier verifierAt(String instant) {
+        return new TestSuiteEvidenceVerifier(Clock.fixed(Instant.parse(instant), ZoneOffset.UTC));
     }
 
     private static ObjectNode evidence() {
@@ -255,6 +515,7 @@ class TestSuiteEvidenceVerifierTest {
         return value.deepCopy();
     }
 
-    private record Fixture(TestSuiteEvidenceBundle bundle, EvidenceVerificationKey key) {
+    private record Fixture(TestSuiteEvidenceBundle bundle, EvidenceVerificationKey key,
+                           KeyPair keyPair) {
     }
 }

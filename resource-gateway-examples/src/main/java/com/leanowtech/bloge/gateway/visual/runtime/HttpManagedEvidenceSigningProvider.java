@@ -62,10 +62,23 @@ public final class HttpManagedEvidenceSigningProvider implements ManagedEvidence
             }
             parsed.add(new ManagedKey(text(key, "keyId"), text(key, "algorithm"),
                     text(key, "encodedPublicKey"), instant(key, "createdAt"), text(key, "state"),
-                    text(key, "providerKeyVersion")));
+                    text(key, "providerKeyVersion"), instant(key, "notBefore"),
+                    instant(key, "notAfter")));
+        }
+        List<KeyLifecycleEvent> events = new ArrayList<>();
+        JsonNode lifecycleEvents = root.path("lifecycleEvents");
+        if (!lifecycleEvents.isMissingNode() && !lifecycleEvents.isArray()) {
+            throw failure("INVALID_KEY_SNAPSHOT", "Managed signing lifecycle events are invalid", false);
+        }
+        for (JsonNode event : lifecycleEvents) {
+            events.add(new KeyLifecycleEvent(event.path("sequence").asLong(), text(event, "eventId"),
+                    text(event, "keyId"), text(event, "type"), instant(event, "occurredAt"),
+                    instant(event, "effectiveAt"), text(event, "revocationMode"),
+                    instant(event, "invalidFrom"), text(event, "reasonCode")));
         }
         return new KeySet(text(root, "schemaVersion"), instant(root, "generatedAt"),
-                instant(root, "expiresAt"), text(root, "activeKeyId"), parsed);
+                instant(root, "expiresAt"), text(root, "activeKeyId"), parsed,
+                text(root, "policyCompleteness"), events);
     }
 
     @Override

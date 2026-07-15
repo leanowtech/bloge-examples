@@ -96,6 +96,13 @@ class ManagedEvidenceSigningApplicationIntegrationTest {
         JsonNode publicKey = rest.getForObject("/api/integration/evidence-keys/hsm-key-1", JsonNode.class);
         assertThat(publicKey.path("payload").path("state").asText()).isEqualTo("ACTIVE");
         assertThat(publicKey.toString()).doesNotContain("privateKey", "encodedPrivateKey");
+        JsonNode keySet = rest.getForObject("/api/integration/evidence-keys", JsonNode.class);
+        assertThat(keySet.path("payloadKind").asText()).isEqualTo("EVIDENCE_VERIFICATION_KEY_SET");
+        assertThat(keySet.path("payload").path("policyCompleteness").asText()).isEqualTo("COMPLETE");
+        assertThat(keySet.path("payload").path("snapshotFingerprint").asText()).startsWith("sha256:");
+        assertThat(keySet.path("payload").path("attestation").path("keyId").asText())
+                .isEqualTo("hsm-key-1");
+        assertThat(keySet.toString()).doesNotContain("privateKey", "encodedPrivateKey", "privateMaterial");
 
         AUTHORITY.rotate("hsm-key-2");
         Thread.sleep(1_100);
@@ -181,20 +188,67 @@ class ManagedEvidenceSigningApplicationIntegrationTest {
         }
 
         private synchronized void keys(HttpExchange exchange) throws IOException {
-            List<Map<String, Object>> descriptors = keys.entrySet().stream().map(entry -> Map.<String, Object>of(
-                    "keyId", entry.getKey(),
-                    "algorithm", "Ed25519",
-                    "encodedPublicKey", Base64.getEncoder().encodeToString(entry.getValue().getPublic().getEncoded()),
-                    "createdAt", "2026-07-12T00:00:00Z",
-                    "state", states.get(entry.getKey()),
-                    "providerKeyVersion", "hsm/version/" + entry.getKey()
-            )).toList();
+            List<Map<String, Object>> descriptors = keys.entrySet().stream().map(entry -> {
+                Map<String, Object> descriptor = new LinkedHashMap<>();
+                descriptor.put("keyId", entry.getKey());
+                descriptor.put("algorithm", "Ed25519");
+                descriptor.put("encodedPublicKey", Base64.getEncoder()
+                        .encodeToString(entry.getValue().getPublic().getEncoded()));
+                descriptor.put("createdAt", "2026-07-12T00:00:00Z");
+                descriptor.put("state", states.get(entry.getKey()));
+                descriptor.put("providerKeyVersion", "hsm/version/" + entry.getKey());
+                descriptor.put("notBefore", "2026-07-12T00:00:00Z");
+                descriptor.put("notAfter", null);
+                return descriptor;
+            }).toList();
+            List<Map<String, Object>> events = new java.util.ArrayList<>();
+            long sequence = 0;
+            for (Map.Entry<String, String> entry : states.entrySet()) {
+                events.add(lifecycleEvent(++sequence, "created:" + entry.getKey(), entry.getKey(),
+                        "CREATED", "2026-07-12T00:00:00Z", "", null, "KEY_CREATED"));
+                if ("VERIFY_ONLY".equals(entry.getValue())) {
+                    events.add(lifecycleEvent(++sequence, "activated:" + entry.getKey(), entry.getKey(),
+                            "ACTIVATED", "2026-07-12T00:00:00Z", "", null, "KEY_ACTIVATED"));
+                }
+                String type = switch (entry.getValue()) {
+                    case "ACTIVE" -> "ACTIVATED";
+                    case "VERIFY_ONLY" -> "RETIRED";
+                    case "DISABLED" -> "DISABLED";
+                    case "REVOKED" -> "REVOKED";
+                    default -> throw new IllegalStateException("Unexpected state " + entry.getValue());
+                };
+                String effectiveAt = "REVOKED".equals(type) || "RETIRED".equals(type)
+                        ? Instant.now().toString() : "2026-07-12T00:00:00Z";
+                events.add(lifecycleEvent(++sequence, type.toLowerCase() + ":" + entry.getKey(),
+                        entry.getKey(), type, effectiveAt,
+                        "REVOKED".equals(type) ? "PROSPECTIVE" : null, null, "KEY_" + type));
+            }
+            Instant generatedAt = Instant.now();
             send(exchange, 200, Map.of(
                     "schemaVersion", ManagedEvidenceSigningProvider.KeySet.SCHEMA_VERSION,
-                    "generatedAt", Instant.now().toString(),
-                    "expiresAt", Instant.now().plusSeconds(30).toString(),
+                    "generatedAt", generatedAt.toString(),
+                    "expiresAt", generatedAt.plusSeconds(30).toString(),
                     "activeKeyId", activeKeyId,
-                    "keys", descriptors));
+                    "keys", descriptors,
+                    "policyCompleteness", "COMPLETE",
+                    "lifecycleEvents", events));
+        }
+
+        private static Map<String, Object> lifecycleEvent(long sequence, String eventId,
+                                                          String keyId, String type,
+                                                          String effectiveAt, String revocationMode,
+                                                          String invalidFrom, String reasonCode) {
+            Map<String, Object> event = new LinkedHashMap<>();
+            event.put("sequence", sequence);
+            event.put("eventId", eventId);
+            event.put("keyId", keyId);
+            event.put("type", type);
+            event.put("occurredAt", effectiveAt);
+            event.put("effectiveAt", effectiveAt);
+            event.put("revocationMode", revocationMode == null ? "" : revocationMode);
+            event.put("invalidFrom", invalidFrom);
+            event.put("reasonCode", reasonCode);
+            return event;
         }
 
         private synchronized void sign(HttpExchange exchange) throws IOException {

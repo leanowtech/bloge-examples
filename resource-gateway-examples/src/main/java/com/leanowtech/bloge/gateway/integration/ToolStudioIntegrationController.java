@@ -153,6 +153,13 @@ public class ToolStudioIntegrationController {
         return service.evidenceKey(keyId);
     }
 
+    /** Returns an atomic signed key policy snapshot; its fingerprint must be externally pinned. */
+    @GetMapping("/evidence-keys")
+    public IntegrationEnvelope<com.leanowtech.bloge.gateway.visual.runtime.EvidenceVerificationKeySet>
+            evidenceKeySet() {
+        return service.evidenceKeySet();
+    }
+
     @PostMapping("/gate-results")
     public IntegrationEnvelope<GovernanceGateResult> submitGateResult(
             @RequestBody GovernanceGateResult result,

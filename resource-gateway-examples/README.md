@@ -177,6 +177,16 @@ can use cached public keys only until the authority-declared expiry. Enable it w
 [custody lifecycle](../docs/assets/resource-gateway-managed-evidence-signing-custody.svg) and
 [managed signing setup](../docs/bloge-visual-canvas-product-and-system-guide.md#32-为运行证据启用-kmshsm-托管签名).
 
+Offline release gates can now fetch one signed atomic policy from `GET /api/integration/evidence-keys`
+instead of racing individual key reads. Managed key discovery v2 carries `notBefore/notAfter`,
+`COMPLETE/CURRENT_STATE_ONLY`, and ordered activation/retirement/disable/revocation/compromise facts.
+The independent test-kit requires an externally supplied snapshot fingerprint, validates the key-set
+attestation and lifecycle invariants, and applies prospective or retroactive revocation at the evidence
+signing time. The fingerprint returned in that same response is not a trust root. See the
+[key lifecycle verification record](../docs/resource-gateway-execution-data-control-plane-stage3-key-lifecycle-verification.md),
+[public key-set schema](../docs/schemas/tool-studio-resource-gateway/evidence-verification-key-set-v1.schema.json),
+and [managed v2 schema](../docs/schemas/tool-studio-resource-gateway/managed-evidence-signing-keys-v2.schema.json).
+
 Tool Studio draft export now reads one relevant-only dependency snapshot containing operator library revision,
 runtime binding and activation state, contract-suite revision, schema fingerprints, and a normalized readiness result.
 The service checks the draft and dependency fingerprint again after assembly. A concurrent relevant change returns

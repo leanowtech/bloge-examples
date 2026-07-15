@@ -42,7 +42,24 @@ public final class InMemoryVisualEvidenceSigner implements VisualEvidenceSigner 
     }
 
     @Override
+    public KeySetResolution resolveKeySet() {
+        return delegate.resolveKeySet();
+    }
+
+    @Override
     public boolean available() {
         return true;
+    }
+
+    @Override
+    public Descriptor descriptor() {
+        Ed25519VisualEvidenceSigner signer = (Ed25519VisualEvidenceSigner) delegate;
+        KeySetResolution keySet = signer.resolveKeySet();
+        return new Descriptor("", "LOCAL_MEMORY", "IN_MEMORY", true, "HEALTHY",
+                signer.activeKey().keyId(), false, true, signer.verificationKeyCount(),
+                signer.activeKey().createdAt(), null, 0, 0,
+                Map.of("productionReady", false,
+                        "keySetPolicyAvailable", true,
+                        "keySetPolicyCompleteness", keySet.keySet().policyCompleteness().name()));
     }
 }

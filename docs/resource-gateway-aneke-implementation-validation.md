@@ -5,10 +5,10 @@
 | 属性 | 内容 |
 |---|---|
 | 设计基线 | `docs/resource-gateway-aneke-tool-studio-integration-evolution-plan.md` |
-| 当前实现基线 | Round 17 完整验证（workbook/gate evidence loop + cross-instance replay） |
-| 评估日期 | 2026-07-13 |
+| 当前实现基线 | Round 18 完整验证（signed/pinned evidence key lifecycle） |
+| 评估日期 | 2026-07-16 |
 | 目标 | 仓库内加权实施差距 `<3%`；客户环境部署门禁单独列账且不得被数值掩盖 |
-| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml -Pfrontend clean verify`：1620 tests，0 failures，0 errors，0 skipped，`BUILD SUCCESS`（05:21，含 34 个真实 Chrome 场景）；frontend production build 通过，`npm audit` 0 vulnerabilities |
+| 最近全量验证 | `mvn -f resource-gateway-examples/pom.xml clean verify`：1806 tests，0 failures，0 errors，34 个条件跳过，`BUILD SUCCESS`；独立 test-kit `clean verify`：42 tests，0 failures，0 errors，JavaDoc/doclint 与 library/CLI JAR 打包成功。Round 17 的 frontend production build、34 个真实 Chrome 场景与 `npm audit` 0 vulnerabilities 证据继续有效 |
 
 ## 1. 评分方法
 
@@ -426,6 +426,16 @@ gate result 写入现在与 `GOVERNANCE_GATE_RESULT_RECEIVED` 同事务；数据
 Round 17 将总差距从 `5.725%` 收敛到 `2.630%`，首次满足目标的数值阈值。该分数只表示仓库内实现与可执行
 证据差距，不表示客户生产环境已经通过认证：真实 ANEKE、IdP、KMS/HSM、HA DB、residency 和 DR 仍必须走部署
 conformance。shadow/live replay 继续通过 capability 明确关闭，因而不是一个隐藏的未受控副作用路径。
+
+## 2.18 Round 18 重新审计
+
+Round 18 关闭了“evidence 只携带 `keyId`，消费者无法独立判断签名时刻密钥状态”的协议病根。新增原子、签名的
+`EvidenceVerificationKeySet.v1`，把 key material、用途、状态、有效期和完整生命周期事件绑定为同一个可指纹化快照；
+test-kit 必须使用组织外部保存的 fingerprint pin 验证快照，随后按 evidence 签名时刻重建 ACTIVE、retirement、disable、
+prospective revoke 与 retroactive compromise 语义。managed provider v1 只允许降级为 `CURRENT_STATE_ONLY`，不得伪装
+完整历史；v2 只有通过事件一致性校验才可声明 `COMPLETE`。本轮没有上调 Round 17 的 `2.630%` 评分，因为 trusted pin
+分发、transparency/witness、客户 KMS/HSM conformance、可信时间戳和跨地域恢复仍属于外部部署证明，不能用仓库内协议
+实现替代。
 
 ## 3. 已通过的证明
 
@@ -1053,7 +1063,7 @@ objects/features/endpoints 均有精确测试。结构证据：
 | ID | 部署门禁 | 病根 | 根治验收 |
 |---|---|---|---|
 | `IAM-01` | 客户组织身份策略与部署认证尚未端到端证明 | Round 13 已关闭动态 JWKS/revocation 与组织 claims；Round 16 已让 payload classification 对 clearance/groups 执行 fail-closed 策略。残余是客户真实 IdP/mTLS、多地域 authority、权威 classification registry/policy bundle、group 生命周期/orphan owner、break-glass 和正式告警/runbook | 客户 IdP + classification-policy conformance kit + signed policy bundle/version + group/owner lifecycle + emergency grant + multi-region outage/rollback + propagation SLO alert/report |
-| `OPS-01` | 客户 KMS/HSM custody 与灾备认证尚未完成 | Round 14 已关闭 private key 必须进入 H2、远端签名不反验、轮换状态不明确和 capability 不透明的代码病根；残余是客户 provider identity/policy、authoritative audit、历史 public-key retention、跨地域 KMS 和正式 SLO | 客户 KMS/HSM conformance kit + mTLS/workload policy + provider audit export + persistent public-key retention + region outage/restore/disable/revoke drill + latency/error SLO |
+| `OPS-01` | 客户 KMS/HSM custody、可信 pin 分发与灾备认证尚未完成 | Round 14 已关闭 private key 必须进入 H2、远端签名不反验和 capability 不透明；Round 18 已协议化原子 key-set、历史状态、外部 pin 与签名时刻 revoke 判定。残余是客户 provider identity/policy、pin 发布/恢复、transparency witness、authoritative audit、外部 provider 历史保留、跨地域 KMS 和正式 SLO | 客户 KMS/HSM conformance kit + mTLS/workload policy + 多方 pin 发布/compromise recovery + transparency/witness + provider audit export + historical-key retention + region outage/restore/disable/revoke drill + latency/error SLO |
 | `RUN-01` | disconnect/detach 与任意 binding 的预算合规尚未封口 | Round 10 已完成 OperatorContext、scheduler admission、retry/timeout/suspend、Resource Gateway/common HTTP 和 remote worker 的 remaining-budget 传播，并防止 wall-clock 回拨放宽预算；但客户端断开语义未版本化，私有 binding 仍可忽略合同 | versioned `detachPolicy` + disconnect race/fault tests + runtime binding conformance suite + non-cooperative I/O quarantine |
 | `RUN-02` | 副作用协议尚未覆盖企业 operator/binding 存量 | Round 12 已关闭正常目录下 `WRITE_EXTERNAL`、Java `SideEffectType.WRITE`、descriptor HTTP mutation 和低层 unsafe `httpRequest` 绕过；残余病根是实现可错报 effect、数据库/消息/私有 SDK 写边界不可见、默认 provider adapter registry 为空 | 制品 effect/egress 扫描 + runtime egress/DB/message telemetry + owner attestation 对账 + provider conformance kit + outage/restart/重复请求演练 + compensate policy + 覆盖率门禁 |
 
@@ -1083,6 +1093,7 @@ backoff/DLQ、retention 和投递指标仍为 Stage 4 的 P1/工业化差距，�
 | 15 | scope-safe GraphDraft consistent dependency snapshot | profile v2 + snapshot v1 固化 library/binding/activation/suite refs 与 readiness；相关资产两阶段重读防混代际；scope mismatch 最小披露；稳定 retryable 409；确定性相关资产指纹 | 8.375% | 23 个 snapshot/protocol/service 聚焦 tests、101 个 integration package tests（含真实 Spring/H2 依赖组装）、2 份 machine schema；1595 个全量 tests、34 个真实 Chrome 场景、npm audit 0 vulnerabilities；多库、多租户、missing/stale/blocked readiness、相关/无关并发漂移矩阵全部通过；corporate Draw.io 0 errors/warnings/crossings/overlaps |
 | 16 | governed detached replay payload lifecycle | payload 与签名 run record 分离；classification/retention、clearance/groups ABAC、expiry sweep、legal hold/release/purge、签名 hash-chain lifecycle event、事务 outbox、跨实例 CAS | 5.725% | 15 个 payload governance 聚焦 tests、真实 Spring/H2/HTTP 生命周期、5 份新增/升级 machine schema；最终合并全量验证由 Round 17 覆盖；corporate Draw.io 0 errors/warnings/crossings/overlaps |
 | 17 | correctness workbook/gate evidence loop + cross-instance replay | exact suite/evidence workbook seed、稳定 case/assertion ID、gate v2 decision basis、PASSED fail-closed、gate/outbox 原子提交、数据库唯一键幂等、跨实例 deterministic replay winner | 2.630% | 10 个 workbook/gate/replay 聚焦 tests、117 个 integration package tests、65 个 runtime package tests、1620 个全量 tests、34 个真实 Chrome 场景、npm audit 0 vulnerabilities；2 份 machine schema；corporate Draw.io 0 errors/warnings/crossings/overlaps |
+| 18 | signed/pinned evidence key lifecycle | 原子签名 key-set、managed v1 安全降级/v2 完整历史、外部 fingerprint pin、签名时刻 retirement/disable/prospective/retroactive revoke、独立 offline verifier | 2.630% | key lifecycle 聚焦 41 tests、test-kit 聚焦 21 tests/全量 42 tests、Resource Gateway 全量 1806 tests，全部 0 failures/0 errors；3 份新增/升级 machine schema；真实 managed sidecar Spring/H2/HTTP 闭环 |
 
 仓库内实施目标现已满足 `<3%`，但这不等于客户生产认证。第 4 节的 IAM、KMS/HSM、disconnect/binding 与存量副作用
 覆盖仍是环境晋级门禁；必须取得客户 conformance、故障演练和 SLO 证据后，才能声明对应部署通过。

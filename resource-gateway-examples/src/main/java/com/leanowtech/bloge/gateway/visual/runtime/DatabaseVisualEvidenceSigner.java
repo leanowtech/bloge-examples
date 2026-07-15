@@ -84,6 +84,11 @@ public final class DatabaseVisualEvidenceSigner implements VisualEvidenceSigner 
     }
 
     @Override
+    public KeySetResolution resolveKeySet() {
+        return delegate.resolveKeySet();
+    }
+
+    @Override
     public boolean available() {
         return true;
     }
@@ -93,10 +98,16 @@ public final class DatabaseVisualEvidenceSigner implements VisualEvidenceSigner 
         VerificationKey active = loadActiveDescriptor();
         int keyCount = delegate instanceof Ed25519VisualEvidenceSigner signer
                 ? signer.verificationKeyCount() : active == null ? 0 : 1;
+        KeySetResolution keySet = delegate.resolveKeySet();
+        String completeness = keySet.status() == KeyResolutionStatus.AVAILABLE
+                ? keySet.keySet().policyCompleteness().name() : "CURRENT_STATE_ONLY";
         return new Descriptor("", "LOCAL_DATABASE", "LOCAL_H2_DEMO", true, "HEALTHY",
                 active == null ? "" : active.keyId(), false, true, keyCount,
                 active == null ? null : active.createdAt(), null, 0, 0,
-                Map.of("productionReady", false, "privateKeyStorage", "DATABASE_PLAINTEXT_PKCS8"));
+                Map.of("productionReady", false,
+                        "privateKeyStorage", "DATABASE_PLAINTEXT_PKCS8",
+                        "keySetPolicyAvailable", true,
+                        "keySetPolicyCompleteness", completeness));
     }
 
     private VerificationKey loadActiveDescriptor() {

@@ -13,6 +13,8 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.runtime.EvidenceVerificationKeySet;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualReplayAssertionResult;
@@ -187,6 +189,7 @@ class ToolStudioIntegrationServiceTest {
                         "POST /api/integration/runs/{runId}/payload-retention/purge",
                         "POST /api/integration/payload-retention/purge-expired",
                         "GET /api/integration/evidence-keys/{keyId}",
+                        "GET /api/integration/evidence-keys",
                         "POST /api/integration/gate-results",
                         "GET /api/integration/drafts/{draftId}/gate-result",
                         "GET /api/integration/events",
@@ -376,6 +379,26 @@ class ToolStudioIntegrationServiceTest {
                 Base64.getDecoder().decode(key.payload().encodedPublicKey()))));
         verifier.update(envelope.payload().manifest().manifestHash().getBytes(StandardCharsets.UTF_8));
         assertThat(verifier.verify(Base64.getDecoder().decode(envelope.payload().manifest().signature()))).isTrue();
+
+        IntegrationEnvelope<EvidenceVerificationKeySet> keySetEnvelope = service.evidenceKeySet();
+        EvidenceVerificationKeySet keySet = keySetEnvelope.payload();
+        assertThat(keySetEnvelope.payloadKind()).isEqualTo("EVIDENCE_VERIFICATION_KEY_SET");
+        assertThat(keySet.policyCompleteness())
+                .isEqualTo(EvidenceVerificationKeySet.PolicyCompleteness.COMPLETE);
+        assertThat(keySet.keys()).singleElement().satisfies(policy -> {
+            assertThat(policy.keyId()).isEqualTo(key.payload().keyId());
+            assertThat(policy.state()).isEqualTo(EvidenceVerificationKeySet.KeyState.ACTIVE);
+        });
+        assertThat(keySet.events()).extracting(EvidenceVerificationKeySet.LifecycleEvent::type)
+                .containsExactly(EvidenceVerificationKeySet.EventType.CREATED,
+                        EvidenceVerificationKeySet.EventType.ACTIVATED);
+        assertThat(keySet.snapshotFingerprint()).isEqualTo(ProtocolFingerprint.of(
+                new ObjectMapper().findAndRegisterModules(), keySet.material()));
+        Signature keySetVerifier = Signature.getInstance("Ed25519");
+        keySetVerifier.initVerify(KeyFactory.getInstance("Ed25519").generatePublic(new X509EncodedKeySpec(
+                Base64.getDecoder().decode(keySet.keys().getFirst().encodedPublicKey()))));
+        keySetVerifier.update(keySet.snapshotFingerprint().getBytes(StandardCharsets.UTF_8));
+        assertThat(keySetVerifier.verify(Base64.getDecoder().decode(keySet.attestation().signature()))).isTrue();
     }
 
     @Test

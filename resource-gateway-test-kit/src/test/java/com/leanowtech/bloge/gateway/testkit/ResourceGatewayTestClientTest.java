@@ -172,17 +172,22 @@ class ResourceGatewayTestClientTest {
 
         TestSuiteEvidenceBundle bundle = client.findSuiteEvidenceBundle("suite-run/42");
         EvidenceVerificationKey key = client.findEvidenceVerificationKey("test-key-1");
+        EvidenceVerificationKeySet keySet = client.findEvidenceVerificationKeySet();
 
         assertThat(bundle.suiteRunId()).isEqualTo("suite-run/42");
         assertThat(bundle.payloadPolicy()).isEqualTo(TestSuiteEvidenceBundle.PayloadPolicy.OMITTED);
         assertThat(bundle.attestation().keyId()).isEqualTo("test-key-1");
         assertThat(key.keyId()).isEqualTo("test-key-1");
         assertThat(key.verificationAllowed()).isTrue();
+        assertThat(keySet.activeKeyId()).isEqualTo("test-key-1");
+        assertThat(keySet.policyCompleteness())
+                .isEqualTo(EvidenceVerificationKeySet.PolicyCompleteness.COMPLETE);
         assertThat(requests).extracting(CapturedRequest::rawPath)
                 .containsExactly("/api/testing/suite-executions/suite-run%2F42/evidence-bundle",
-                        "/api/integration/evidence-keys/test-key-1");
+                        "/api/integration/evidence-keys/test-key-1",
+                        "/api/integration/evidence-keys");
         assertThat(requests).extracting(CapturedRequest::purpose)
-                .containsExactly("TEST_EXECUTION", "TEST_EXECUTION");
+                .containsExactly("TEST_EXECUTION", "TEST_EXECUTION", "TEST_EXECUTION");
     }
 
     @Test
@@ -371,6 +376,8 @@ class ResourceGatewayTestClientTest {
         }
         if (path.endsWith("/evidence-bundle")) {
             respond(exchange, 200, suiteEvidenceBundleResponse());
+        } else if (path.endsWith("/evidence-keys")) {
+            respond(exchange, 200, evidenceKeySetResponse());
         } else if (path.contains("/evidence-keys/")) {
             respond(exchange, 200, evidenceKeyResponse());
         } else if (path.endsWith("/catalogs/gateway-graph-contract-v1")) {
@@ -516,6 +523,40 @@ class ResourceGatewayTestClientTest {
                  "payload":{"schemaVersion":"toolStudio.resourceGateway.evidenceVerificationKey.v1",
                    "keyId":"test-key-1","algorithm":"Ed25519","encodedPublicKey":"AA==",
                    "createdAt":"2026-07-15T10:00:00Z","state":"ACTIVE","provider":"test"}}
+                """.formatted(FINGERPRINT);
+    }
+
+    private static String evidenceKeySetResponse() {
+        return """
+                {"protocol":"ToolStudioResourceGatewayProtocol","protocolVersion":"1.0",
+                 "resourceGatewayVersion":"1.0.0",
+                 "schemaVersion":"toolStudio.resourceGateway.envelope.v1",
+                 "producedAt":"2026-07-15T10:15:31Z",
+                 "compatibility":{"minConsumerVersion":"1.0","backwardCompatible":true,
+                   "breakingChanges":[]},
+                 "payloadKind":"EVIDENCE_VERIFICATION_KEY_SET",
+                 "payloadSchemaVersion":"toolStudio.resourceGateway.evidenceVerificationKeySet.v1",
+                 "payloadFingerprint":"%1$s",
+                 "payload":{"schemaVersion":"toolStudio.resourceGateway.evidenceVerificationKeySet.v1",
+                   "snapshotFingerprint":"%1$s","provider":"test",
+                   "generatedAt":"2026-07-15T10:00:00Z","expiresAt":"2026-07-16T10:00:00Z",
+                   "activeKeyId":"test-key-1","policyCompleteness":"COMPLETE",
+                   "keys":[{"keyId":"test-key-1","algorithm":"Ed25519",
+                     "encodedPublicKey":"AA==","createdAt":"2026-07-15T10:00:00Z",
+                     "notBefore":"2026-07-15T10:00:00Z","notAfter":null,"state":"ACTIVE",
+                     "providerKeyVersion":"version/test-key-1"}],
+                   "events":[
+                     {"sequence":1,"eventId":"created:test-key-1","keyId":"test-key-1",
+                      "type":"CREATED","occurredAt":"2026-07-15T10:00:00Z",
+                      "effectiveAt":"2026-07-15T10:00:00Z","revocationMode":null,
+                      "invalidFrom":null,"reasonCode":"KEY_CREATED"},
+                     {"sequence":2,"eventId":"activated:test-key-1","keyId":"test-key-1",
+                      "type":"ACTIVATED","occurredAt":"2026-07-15T10:00:00Z",
+                      "effectiveAt":"2026-07-15T10:00:00Z","revocationMode":null,
+                      "invalidFrom":null,"reasonCode":"KEY_ACTIVATED"}],
+                   "attestation":{"schemaVersion":"bloge.visualRunEvidenceSeal.v1",
+                     "materialFingerprint":"%1$s","algorithm":"Ed25519","keyId":"test-key-1",
+                     "signedAt":"2026-07-15T10:00:01Z","signature":"AA=="}}}
                 """.formatted(FINGERPRINT);
     }
 

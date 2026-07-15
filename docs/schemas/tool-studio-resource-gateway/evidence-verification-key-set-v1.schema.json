@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/evidence-verification-key-set-v1.schema.json",
+  "title": "Resource Gateway Evidence Verification Key Set v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "snapshotFingerprint", "provider", "generatedAt", "expiresAt",
+    "activeKeyId", "policyCompleteness", "keys", "events", "attestation"],
+  "properties": {
+    "schemaVersion": {"const": "toolStudio.resourceGateway.evidenceVerificationKeySet.v1"},
+    "snapshotFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "provider": {"type": "string", "minLength": 1, "maxLength": 128},
+    "generatedAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "activeKeyId": {"$ref": "#/$defs/keyId"},
+    "policyCompleteness": {"enum": ["COMPLETE", "CURRENT_STATE_ONLY"]},
+    "keys": {"type": "array", "minItems": 1, "maxItems": 64,
+      "items": {"$ref": "#/$defs/key"}},
+    "events": {"type": "array", "maxItems": 512,
+      "items": {"$ref": "#/$defs/event"}},
+    "attestation": {"$ref": "#/$defs/attestation"}
+  },
+  "$defs": {
+    "fingerprint": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "keyId": {"type": "string", "minLength": 1, "maxLength": 255},
+    "key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keyId", "algorithm", "encodedPublicKey", "createdAt", "notBefore",
+        "notAfter", "state", "providerKeyVersion"],
+      "properties": {
+        "keyId": {"$ref": "#/$defs/keyId"},
+        "algorithm": {"const": "Ed25519"},
+        "encodedPublicKey": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "createdAt": {"type": "string", "format": "date-time"},
+        "notBefore": {"type": "string", "format": "date-time"},
+        "notAfter": {"type": ["string", "null"], "format": "date-time"},
+        "state": {"enum": ["ACTIVE", "VERIFY_ONLY", "DISABLED", "REVOKED"]},
+        "providerKeyVersion": {"type": "string", "maxLength": 255}
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "eventId", "keyId", "type", "occurredAt", "effectiveAt",
+        "revocationMode", "invalidFrom", "reasonCode"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1},
+        "eventId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "keyId": {"$ref": "#/$defs/keyId"},
+        "type": {"enum": ["CREATED", "ACTIVATED", "RETIRED", "DISABLED", "REVOKED",
+          "COMPROMISE_DECLARED"]},
+        "occurredAt": {"type": "string", "format": "date-time"},
+        "effectiveAt": {"type": "string", "format": "date-time"},
+        "revocationMode": {"type": ["string", "null"],
+          "enum": ["PROSPECTIVE", "RETROACTIVE", null]},
+        "invalidFrom": {"type": ["string", "null"], "format": "date-time"},
+        "reasonCode": {"type": "string", "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"}
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "materialFingerprint", "algorithm", "keyId", "signedAt",
+        "signature"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.visualRunEvidenceSeal.v1"},
+        "materialFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "algorithm": {"const": "Ed25519"},
+        "keyId": {"$ref": "#/$defs/keyId"},
+        "signedAt": {"type": "string", "format": "date-time"},
+        "signature": {"type": "string", "minLength": 1, "maxLength": 4096}
+      }
+    }
+  }
+}

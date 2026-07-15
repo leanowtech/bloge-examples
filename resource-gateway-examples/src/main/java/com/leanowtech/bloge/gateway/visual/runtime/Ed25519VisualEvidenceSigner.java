@@ -6,7 +6,9 @@ import java.security.KeyPair;
 import java.security.Signature;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -16,6 +18,7 @@ import java.util.Optional;
 final class Ed25519VisualEvidenceSigner implements VisualEvidenceSigner {
 
     private static final String ALGORITHM = "Ed25519";
+    private static final Instant POLICY_HORIZON = Instant.parse("9999-12-31T23:59:59Z");
 
     private final KeyPair activeKeyPair;
     private final VerificationKey activeKey;
@@ -76,6 +79,48 @@ final class Ed25519VisualEvidenceSigner implements VisualEvidenceSigner {
     public Optional<VerificationKey> key(String keyId) {
         VerificationMaterial material = verificationKeys.get(keyId);
         return material == null ? Optional.empty() : Optional.of(material.descriptor());
+    }
+
+    @Override
+    public KeySetResolution resolveKeySet() {
+        List<VerificationKey> ordered = verificationKeys.values().stream()
+                .map(VerificationMaterial::descriptor)
+                .sorted(Comparator.comparing(VerificationKey::createdAt)
+                        .thenComparing(VerificationKey::keyId))
+                .toList();
+        List<EvidenceVerificationKeySet.KeyPolicy> policies = ordered.stream()
+                .map(key -> new EvidenceVerificationKeySet.KeyPolicy(key.keyId(), key.algorithm(),
+                        key.encodedPublicKey(), key.createdAt(), key.createdAt(), null,
+                        key.keyId().equals(activeKey.keyId())
+                                ? EvidenceVerificationKeySet.KeyState.ACTIVE
+                                : EvidenceVerificationKeySet.KeyState.VERIFY_ONLY,
+                        key.keyId()))
+                .toList();
+        boolean complete = policies.size() == 1
+                && policies.getFirst().state() == EvidenceVerificationKeySet.KeyState.ACTIVE;
+        java.util.ArrayList<EvidenceVerificationKeySet.LifecycleEvent> events = new java.util.ArrayList<>();
+        long sequence = 0;
+        List<EvidenceVerificationKeySet.KeyPolicy> eventPolicies = complete ? policies : List.of();
+        for (EvidenceVerificationKeySet.KeyPolicy key : eventPolicies) {
+            events.add(new EvidenceVerificationKeySet.LifecycleEvent(++sequence,
+                    "created:" + key.keyId(), key.keyId(),
+                    EvidenceVerificationKeySet.EventType.CREATED, key.createdAt(), key.createdAt(),
+                    null, null, "KEY_CREATED"));
+            EvidenceVerificationKeySet.EventType eventType = key.state()
+                    == EvidenceVerificationKeySet.KeyState.ACTIVE
+                    ? EvidenceVerificationKeySet.EventType.ACTIVATED
+                    : EvidenceVerificationKeySet.EventType.RETIRED;
+            events.add(new EvidenceVerificationKeySet.LifecycleEvent(++sequence,
+                    eventType.name().toLowerCase(java.util.Locale.ROOT) + ":" + key.keyId(),
+                    key.keyId(), eventType, key.createdAt(), key.createdAt(), null, null,
+                    eventType == EvidenceVerificationKeySet.EventType.ACTIVATED
+                            ? "KEY_ACTIVATED" : "KEY_RETIRED"));
+        }
+        return KeySetResolution.available(new EvidenceVerificationKeySet.Source(activeKey.provider(),
+                activeKey.createdAt(), POLICY_HORIZON, activeKey.keyId(),
+                complete ? EvidenceVerificationKeySet.PolicyCompleteness.COMPLETE
+                        : EvidenceVerificationKeySet.PolicyCompleteness.CURRENT_STATE_ONLY,
+                policies, events));
     }
 
     @Override

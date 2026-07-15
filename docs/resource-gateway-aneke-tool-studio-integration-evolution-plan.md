@@ -1133,7 +1133,7 @@ Evidence bundle 必须从“可下载 JSON”提升为可验真的证据清单�
 
 签名不是为了宣称绝对不可抵赖，而是为了让下游检测传输、存储和人工处理中的篡改。需要法律级时间证明时，再对接企业 timestamp authority；不要在第一阶段伪称具备司法级不可抵赖能力。
 
-#### 21.1.1 Managed evidence signing custody（Round 14 已实现协议与通用适配器）
+#### 21.1.1 Managed evidence signing custody 与可验证 key lifecycle（协议与通用适配器已实现）
 
 `VisualEvidenceSigner` 不能只回答一个 `available` 布尔值。工业部署需要机器读取 provider type、health、active key、
 公钥代际数、快照到期时间、签名成功/失败计数、私钥是否可导出和 custody 是否托管。Round 14 新增
@@ -1155,14 +1155,23 @@ Evidence bundle 必须从“可下载 JSON”提升为可验真的证据清单�
 
 | API | schema | 只允许的敏感边界 |
 |---|---|---|
-| `GET /v1/evidence-signing/keys` | `resourceGateway.managedEvidenceSigningKeys.v1` | X.509 Ed25519 public key、keyId/version、createdAt、`ACTIVE/VERIFY_ONLY/DISABLED/REVOKED` |
+| `GET /v1/evidence-signing/keys` | `resourceGateway.managedEvidenceSigningKeys.v2`（兼容读取 v1） | X.509 Ed25519 public key、keyId/version、validity、`COMPLETE/CURRENT_STATE_ONLY` 与有序 lifecycle events |
 | `POST /v1/evidence-signing/sign` | `resourceGateway.managedEvidenceSignRequest.v1` / `managedEvidenceSignResponse.v1` | requestId、expected keyId、algorithm、canonical sha256 fingerprint、signedAt、signature |
 
-机器合同分别为 [key snapshot](schemas/tool-studio-resource-gateway/managed-evidence-signing-keys-v1.schema.json)、
+机器合同分别为 [key snapshot v2](schemas/tool-studio-resource-gateway/managed-evidence-signing-keys-v2.schema.json)、
+[key snapshot v1 compatibility](schemas/tool-studio-resource-gateway/managed-evidence-signing-keys-v1.schema.json)、
 [sign request](schemas/tool-studio-resource-gateway/managed-evidence-sign-request-v1.schema.json)、
 [sign response](schemas/tool-studio-resource-gateway/managed-evidence-sign-response-v1.schema.json) 和
 [signer descriptor](schemas/tool-studio-resource-gateway/evidence-signer-descriptor-v1.schema.json)。实现与 sidecar 的 CI
 必须校验这些 schema，不能只比较示例 JSON。
+
+Resource Gateway 向 ANEKE 公开 `GET /api/integration/evidence-keys`，返回
+`toolStudio.resourceGateway.evidenceVerificationKeySet.v1` 的原子、签名 public snapshot；机器合同见
+[public key set](schemas/tool-studio-resource-gateway/evidence-verification-key-set-v1.schema.json)。`snapshotFingerprint`
+必须由 ANEKE registry、受保护部署清单或等价独立通道建立 pin，不能从同一 Gateway 响应读取后自举信任。
+test-kit 会独立检查 pin、snapshot freshness、state/event 一致性和 Ed25519 attestation，再按 evidence 的
+`signedAt` 判断激活、退役、禁用、前向撤销或追溯 compromise。v1 provider 无历史事件时被强制降级为
+`CURRENT_STATE_ONLY`，不得进入 release gate。
 
 private key、private JWK `d` 或任何 private material 字段在 key ingress 出现即硬拒绝。生产 URI 必须 HTTPS、redirect
 关闭、response 流式限制为 128 KB、重复 JSON 字段拒绝。网络/timeout/429/5xx 可在 authority `expiresAt` 前把状态降为
@@ -1648,7 +1657,7 @@ operator 从 schema 导入到生产可用需要 `DISCOVERED -> DESCRIBED -> VERI
 | 证据 | run 成功但 node capture 缺失 | evidence 与执行耦合不完整 | completeness manifest + quarantine | 不完整证据不进入 gate |
 | 证据 | payload 被存储管理员修改 | 仅靠 ACL | content hash + signed manifest | 下游独立检测篡改 |
 | 证据 | sanitizer 升级后历史内容无法解释 | 不记录规则版本 | redaction profile/version/manifest | 可说明当时脱敏行为 |
-| 证据 | 签名密钥轮换后旧证据无法验证 | key history 丢失 | Round 14 已实现原子 public-key generation、`VERIFY_ONLY` history、keyId/version 和 disable/revoke 语义；部署仍需 retention policy | 历史签名持续可验，禁用/撤销有不同结论 |
+| 证据 | 签名密钥轮换后旧证据无法验证或被错误接受 | key history 丢失、逐 key 读取跨代、当前状态替代历史策略 | 已实现 signed atomic key-set、外部 fingerprint pin、`COMPLETE/CURRENT_STATE_ONLY`、`VERIFY_ONLY`、签名时刻退役/禁用和前向/追溯撤销；部署仍需 trusted pin distribution 与 retention policy | 历史签名持续可验，退役后伪签与 compromise 可被独立拒绝 |
 | 证据 | manifest 生成后补字段 | 原地修改不可变对象 | manifest revision + predecessor hash | 变更链完整 |
 | replay | recorded replay 误调用生产 API | replay 复用 live binding | mode-specific binding + egress deny | 默认零外部副作用 |
 | replay | live replay 重复扣款/写入 | 无 side-effect policy | dual approval + idempotency + allowlist | 高风险算子被阻断或去重 |

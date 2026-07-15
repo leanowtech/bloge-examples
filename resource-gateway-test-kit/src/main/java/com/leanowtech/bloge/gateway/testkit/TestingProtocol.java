@@ -62,6 +62,9 @@ public final class TestingProtocol {
     /** Resource Gateway evidence verification key wire version. */
     public static final String EVIDENCE_VERIFICATION_KEY_V1 =
             "toolStudio.resourceGateway.evidenceVerificationKey.v1";
+    /** Signed, externally pinnable multi-key lifecycle snapshot wire version. */
+    public static final String EVIDENCE_VERIFICATION_KEY_SET_V1 =
+            "toolStudio.resourceGateway.evidenceVerificationKeySet.v1";
     /** Built-in graph catalog materialization response wire version. */
     public static final String TEST_SUITE_CATALOG_MATERIALIZATION_V1 =
             "bloge.testSuiteCatalogMaterialization.v1";

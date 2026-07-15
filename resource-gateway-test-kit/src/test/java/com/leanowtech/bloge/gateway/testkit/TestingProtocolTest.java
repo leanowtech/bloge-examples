@@ -60,6 +60,8 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V1);
             assertConstant(definitions, "testSuiteEvidenceBundle",
                     TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V1);
+            assertConstant(definitions, "evidenceVerificationKeySet",
+                    TestingProtocol.EVIDENCE_VERIFICATION_KEY_SET_V1);
             assertConstant(definitions, "testSuiteCatalogMaterialization",
                     TestingProtocol.TEST_SUITE_CATALOG_MATERIALIZATION_V1);
         }

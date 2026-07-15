@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.EvidenceVerificationKeySet;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualReplayAssertionResult;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualReplayMetadata;
@@ -45,6 +46,7 @@ public class ToolStudioIntegrationService {
     private final SideEffectReconcilerRegistry sideEffectReconcilers;
     private final GraphDraftDependencySnapshotService dependencySnapshots;
     private final CorrectnessWorkbookProjectionService workbookProjection;
+    private final ObjectMapper objectMapper;
     private boolean testExecutionEndpointEnabled;
 
     @Autowired
@@ -63,7 +65,9 @@ public class ToolStudioIntegrationService {
         this.catalog = catalog;
         this.runRepository = runRepository;
         this.gateResultRepository = gateResultRepository;
-        this.replayAssertionEvaluator = new ReplayAssertionEvaluator(objectMapper);
+        this.objectMapper = objectMapper == null
+                ? new ObjectMapper().findAndRegisterModules() : objectMapper;
+        this.replayAssertionEvaluator = new ReplayAssertionEvaluator(this.objectMapper);
         this.identityResolver = identityResolver == null
                 ? IntegrationIdentityResolver.unavailable()
                 : identityResolver;
@@ -361,6 +365,41 @@ public class ToolStudioIntegrationService {
         VisualEvidenceSigner.VerificationKey key = resolution.key();
         return IntegrationEnvelope.of("EVIDENCE_VERIFICATION_KEY",
                 VisualEvidenceSigner.VerificationKey.SCHEMA_VERSION, key);
+    }
+
+    /**
+     * Publishes one atomic, signed multi-key lifecycle snapshot for pinned offline verification.
+     *
+     * <p>The returned fingerprint is the external trust pin. Consumers must not trust embedded
+     * keys solely because the snapshot is signed by one of those same keys.</p>
+     *
+     * @return signed public key policy without private material
+     */
+    public IntegrationEnvelope<EvidenceVerificationKeySet> evidenceKeySet() {
+        VisualEvidenceSigner signer = runRepository == null
+                ? VisualEvidenceSigner.unavailable()
+                : runRepository.evidenceSigner();
+        VisualEvidenceSigner.KeySetResolution resolution = signer.resolveKeySet();
+        if (resolution.status() != VisualEvidenceSigner.KeyResolutionStatus.AVAILABLE
+                || resolution.keySet() == null) {
+            throw new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
+                    "RG.INTEGRATION.EVIDENCE_KEY_SET_PROVIDER_UNAVAILABLE",
+                    "Evidence verification key-set provider is unavailable.", "",
+                    Map.of("reason", resolution.reason())
+            ));
+        }
+        try {
+            EvidenceVerificationKeySet keySet = EvidenceVerificationKeySet.publish(
+                    objectMapper, signer, resolution.keySet());
+            return IntegrationEnvelope.of("EVIDENCE_VERIFICATION_KEY_SET",
+                    EvidenceVerificationKeySet.SCHEMA_VERSION, keySet);
+        } catch (RuntimeException failure) {
+            throw new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
+                    "RG.INTEGRATION.EVIDENCE_KEY_SET_ATTESTATION_UNAVAILABLE",
+                    "Evidence verification key set could not be signed and verified.", "",
+                    Map.of("reason", failure.getClass().getSimpleName())
+            ));
+        }
     }
 
     public IntegrationEnvelope<GovernanceGateResult> submitGateResult(GovernanceGateResult result,

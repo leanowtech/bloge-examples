@@ -4,8 +4,9 @@
 >
 > Scope: signed suite checkpoints, terminal aggregate closure, portable payload-free evidence, and
 > consumer-side Ed25519 verification.
-> Result: implemented and fail-closed; semantic coverage, payload replay attachment, key event feed,
-> transparency proof, and ANEKE projection remain outside this increment.
+> Result: implemented and fail-closed. A subsequent Stage 3 increment added signed, externally
+> pinned key lifecycle snapshots; semantic coverage, payload replay attachment, transparency proof,
+> and ANEKE projection remain outside this increment.
 
 ## 1. Closed risk
 
@@ -30,6 +31,7 @@ This increment introduces two separate trust boundaries:
 | Suite attestation | `bloge.testSuiteRunAttestation.v1` | Domain-separated signature over suite/request/aggregate/child closure |
 | Portable evidence bundle | `bloge.testSuiteEvidenceBundle.v1` | Terminal aggregate and attestation with `payloadPolicy=OMITTED` |
 | Verification key | `toolStudio.resourceGateway.evidenceVerificationKey.v1` | Exact Ed25519 public key and lifecycle state |
+| Verification key set | `toolStudio.resourceGateway.evidenceVerificationKeySet.v1` | Atomic key history, external trust pin, and signing-time policy |
 
 The machine-authoritative shapes live in
 `docs/schemas/resource-gateway-testing/testing-control-plane-v1.schema.json`.
@@ -40,6 +42,7 @@ The machine-authoritative shapes live in
 | Read checkpoint/terminal | `GET /api/testing/suite-executions/{suiteRunId}` | `TEST_EXECUTION` |
 | Export terminal bundle | `GET /api/testing/suite-executions/{suiteRunId}/evidence-bundle` | `TEST_EXECUTION` |
 | Resolve exact public key | `GET /api/integration/evidence-keys/{keyId}` | `TEST_EXECUTION` |
+| Resolve atomic key policy | `GET /api/integration/evidence-keys` | `TEST_EXECUTION` |
 
 Capabilities advertise both suite response v1 and v2 for migration, plus the attestation, bundle,
 key, and endpoint feature identifiers. New execution responses are v2. V1 is historical unsigned
@@ -92,22 +95,33 @@ The test-kit provides:
 TestSuiteEvidenceBundle findSuiteEvidenceBundle(String suiteRunId);
 EvidenceVerificationKey findEvidenceVerificationKey(String keyId);
 TestSuiteEvidenceVerifier.VerificationResult verifySuiteEvidence(String suiteRunId);
+EvidenceVerificationKeySet findEvidenceVerificationKeySet();
+TestSuiteEvidenceVerifier.VerificationResult verifySuiteEvidence(
+        String suiteRunId, String trustedKeySetFingerprint);
 ```
 
 `TestSuiteEvidenceVerifier` independently performs:
 
 1. terminal attestation and `payloadPolicy=OMITTED` checks;
-2. exact key-id and Ed25519 algorithm checks;
-3. `ACTIVE` or `RETIRED` verification policy and bounded key-creation clock-skew checks;
-4. aggregate evidence fingerprint recomputation;
-5. ordered aggregate case/run closure comparison;
-6. bundle fingerprint recomputation over `{payloadPolicy, attestation, evidence}`;
-7. signature-material fingerprint recomputation and Ed25519 verification.
+2. externally pinned key-set material, freshness, and active-key attestation checks;
+3. unique key/event identity and complete lifecycle-state coherence checks;
+4. exact evidence key membership and validity-window checks;
+5. activation, retirement, disablement, and prospective/retroactive revocation at signing time;
+6. aggregate evidence fingerprint recomputation;
+7. ordered aggregate case/run closure comparison;
+8. bundle fingerprint recomputation over `{payloadPolicy, attestation, evidence}`;
+9. signature-material fingerprint recomputation and Ed25519 verification.
 
 The bounded outcomes are `VERIFIED`, `INVALID`, `KEY_UNAVAILABLE`, and `POLICY_REJECTED`. Results
 contain only suite run id, key id, and stable reason code. A missing key is distinct from invalid
 cryptographic material, so CI can retry availability failures without treating tampering as a
 transient outage.
+
+The exact-key overload remains a compatibility path. It cannot prove that separately fetched keys
+came from one rotation generation, and it cannot distinguish prospective from retroactive
+revocation. Release gates must use the key-set overload with a pin obtained outside the Resource
+Gateway response. Full lifecycle invariants and threat analysis are recorded in
+[Stage 3 key lifecycle verification](resource-gateway-execution-data-control-plane-stage3-key-lifecycle-verification.md).
 
 ## 5. Negative verification matrix
 
@@ -120,6 +134,9 @@ transient outage.
 | Wrong path-bound key id | Key-id mismatch, `INVALID` |
 | Unsupported algorithm or disallowed key state | `POLICY_REJECTED` |
 | Key absent/provider unavailable | `KEY_UNAVAILABLE`; never treated as verified |
+| Key-set pin mismatch, stale snapshot, or incomplete lifecycle | `POLICY_REJECTED`; never falls back to exact-key trust |
+| Evidence signed after retirement/disable/revocation | signing-time policy rejection with a stable reason |
+| Retroactive compromise invalidates older evidence | rejected from the declared `invalidFrom` time |
 | Initial signer unavailable | No child execution and no ordinary checkpoint write |
 | Terminal signer unavailable | Fail-closed terminal `EVIDENCE_INCOMPLETE + BLOCKED` only |
 | Unsigned checkpoint submitted directly to JDBC repository | Persistence rejects before serialization |
@@ -137,7 +154,7 @@ transient outage.
 | Recovery verification | `TestSuiteRunReconciliationService` |
 | Persistence boundary | `DatabaseTestSuiteRunRepository` |
 | Portable export | `TestSuiteEvidenceBundle`, `TestExecutionController` |
-| Consumer protocol types | `TestSuiteRunAttestation`, `TestSuiteEvidenceBundle`, `EvidenceVerificationKey` in test-kit |
+| Consumer protocol types | `TestSuiteRunAttestation`, `TestSuiteEvidenceBundle`, `EvidenceVerificationKey`, `EvidenceVerificationKeySet` in test-kit |
 | Offline verifier | `TestSuiteEvidenceVerifier` |
 | Authoritative wire validation | `testing-control-plane-v1.schema.json` |
 
@@ -155,8 +172,8 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
 The focused server matrix passes 49 tests with zero failures or errors. The independent test-kit
-passes all 38 tests with zero failures or errors. The full Resource Gateway `clean verify` gate
-passes 1802 tests with zero failures or errors and two conditional skips, then packages the Spring
+passes all 42 tests with zero failures or errors. The full Resource Gateway `clean verify` gate
+passes 1806 tests with zero failures or errors and 34 conditional skips, then packages the Spring
 Boot JAR successfully. The focused server matrix covers signature domains, child closure order, aggregate/request tamper,
 signer failure before child execution, persistence rejection, reconciliation, endpoint wiring,
 capabilities, JSON Schema, and a real Spring Boot HTTP round trip. The test-kit matrix covers exact
@@ -171,13 +188,12 @@ an operator is semantically correct, that fixture fidelity is sufficient, or tha
 approved. It also does not provide:
 
 - child payload replay attachments or decryption authorization;
-- a signed multi-key set, revocation event feed, or compromise-time policy;
 - transparency-log inclusion/consistency proofs or witness quorum;
 - semantic branch/rule/fallback/compensation coverage;
 - ANEKE workbook projection, owner approval, or publish-gate verdict;
 - cross-region evidence replication or independent timestamp authority.
 
-The next Stage 3 work should first formalize key compromise and revocation semantics because offline
-verification without historical key policy eventually becomes ambiguous. Semantic coverage and ANEKE
-projection should then consume this stable attestation boundary instead of inventing a second
-signature format.
+Key compromise and revocation semantics are now formalized by the separate pinned key-set protocol.
+The next trust-chain work is transparency/inclusion proof and trusted pin distribution. Semantic
+coverage and ANEKE projection should consume these stable attestation boundaries instead of inventing
+a second signature format.

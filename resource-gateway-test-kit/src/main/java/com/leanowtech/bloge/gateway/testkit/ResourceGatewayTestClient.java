@@ -307,6 +307,25 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Retrieves one atomic signed evidence-key lifecycle snapshot.
+     *
+     * <p>Retrieval alone does not establish trust. Callers must verify the returned value against
+     * a fingerprint pinned outside the response.</p>
+     *
+     * @return typed multi-key lifecycle snapshot
+     */
+    public EvidenceVerificationKeySet findEvidenceVerificationKeySet() {
+        JsonNode response = exchange("GET", "/api/integration/evidence-keys", "",
+                "TEST_EXECUTION", null);
+        try {
+            return EvidenceVerificationKeySet.fromEnvelope(response);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned an invalid evidence verification key-set envelope.");
+        }
+    }
+
+    /**
      * Fetches and independently verifies one terminal suite evidence bundle.
      *
      * @param suiteRunId durable aggregate run id
@@ -325,6 +344,30 @@ public final class ResourceGatewayTestClient {
             throw failure;
         }
         return new TestSuiteEvidenceVerifier().verify(bundle, key);
+    }
+
+    /**
+     * Performs release-grade suite verification against an independently pinned key-set snapshot.
+     *
+     * @param suiteRunId durable aggregate run id
+     * @param trustedKeySetFingerprint key-set material fingerprint pinned by governance configuration
+     * @return lifecycle-aware offline verification result
+     */
+    public TestSuiteEvidenceVerifier.VerificationResult verifySuiteEvidence(
+            String suiteRunId, String trustedKeySetFingerprint) {
+        TestSuiteEvidenceBundle bundle = findSuiteEvidenceBundle(suiteRunId);
+        EvidenceVerificationKeySet keySet;
+        try {
+            keySet = findEvidenceVerificationKeySet();
+        } catch (ResourceGatewayTestException failure) {
+            if ("RG.INTEGRATION.EVIDENCE_KEY_SET_PROVIDER_UNAVAILABLE".equals(failure.code())
+                    || "RG.INTEGRATION.EVIDENCE_KEY_SET_ATTESTATION_UNAVAILABLE".equals(failure.code())) {
+                return new TestSuiteEvidenceVerifier().verify(bundle, null,
+                        trustedKeySetFingerprint);
+            }
+            throw failure;
+        }
+        return new TestSuiteEvidenceVerifier().verify(bundle, keySet, trustedKeySetFingerprint);
     }
 
     /**

@@ -127,8 +127,12 @@ public record IntegrationCapabilities(
         objects.put("replayExecutionResult", List.of(ReplayExecutionResult.SCHEMA_VERSION));
         objects.put("evidenceVerificationKey", List.of(
                 com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner.VerificationKey.SCHEMA_VERSION));
+        objects.put("evidenceVerificationKeySet", List.of(
+                com.leanowtech.bloge.gateway.visual.runtime.EvidenceVerificationKeySet.SCHEMA_VERSION));
         objects.put("evidenceSignerDescriptor", List.of(VisualEvidenceSigner.Descriptor.SCHEMA_VERSION));
-        objects.put("managedEvidenceSigningKeys", List.of(ManagedEvidenceSigningProvider.KeySet.SCHEMA_VERSION));
+        objects.put("managedEvidenceSigningKeys", List.of(
+                ManagedEvidenceSigningProvider.KeySet.SCHEMA_VERSION_V1,
+                ManagedEvidenceSigningProvider.KeySet.SCHEMA_VERSION));
         objects.put("managedEvidenceSignRequest", List.of(
                 ManagedEvidenceSigningProvider.SignatureRequest.SCHEMA_VERSION));
         objects.put("managedEvidenceSignResponse", List.of(
@@ -263,6 +267,10 @@ public record IntegrationCapabilities(
                 && !signer.privateKeyExportable());
         features.put("evidenceSigningKeyRotation", signer.managedKeyCustody());
         features.put("evidenceSigningKeyRevocation", signer.managedKeyCustody());
+        features.put("evidenceVerificationKeySet", signer.available()
+                && Boolean.TRUE.equals(signer.properties().get("keySetPolicyAvailable")));
+        features.put("timeAwareEvidenceKeyRevocation", signer.available()
+                && "COMPLETE".equals(signer.properties().get("keySetPolicyCompleteness")));
         features.put("evidenceSigningFailClosed", signer.managedKeyCustody()
                 && Boolean.TRUE.equals(signer.properties().get("failClosedAfterSnapshotExpiry")));
         features.put("deepLinks", true);
@@ -319,6 +327,7 @@ public record IntegrationCapabilities(
                 new Endpoint("POST", "/api/integration/runs/{runId}/payload-retention/purge"),
                 new Endpoint("POST", "/api/integration/payload-retention/purge-expired"),
                 new Endpoint("GET", "/api/integration/evidence-keys/{keyId}"),
+                new Endpoint("GET", "/api/integration/evidence-keys"),
                 new Endpoint("POST", "/api/integration/gate-results"),
                 new Endpoint("GET", "/api/integration/drafts/{draftId}/gate-result"),
                 new Endpoint("GET", "/api/integration/events"),

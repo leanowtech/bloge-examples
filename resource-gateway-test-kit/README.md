@@ -175,21 +175,34 @@ and free-form diagnostics from its reportable projection. Current v2 responses a
 `promotionEligible()` means only that the run satisfies the suite's policy and may be submitted to a
 later gate; it does not mean certified, approved, or published.
 
-For explicit control over key resolution, export and verify the same portable terminal bundle in
-three steps:
+For release-grade verification, export the portable terminal bundle and one atomic key lifecycle
+snapshot, then compare it with a fingerprint obtained through an independent governance channel:
 
 ```java
 TestSuiteEvidenceBundle bundle = client.findSuiteEvidenceBundle(suiteRun.suiteRunId());
-EvidenceVerificationKey key = client.findEvidenceVerificationKey(
-        bundle.attestation().keyId());
+EvidenceVerificationKeySet keySet = client.findEvidenceVerificationKeySet();
+String trustedPin = System.getenv("RESOURCE_GATEWAY_EVIDENCE_KEY_SET_PIN");
 TestSuiteEvidenceVerifier.VerificationResult verification =
-        new TestSuiteEvidenceVerifier().verify(bundle, key);
+        new TestSuiteEvidenceVerifier().verify(bundle, keySet, trustedPin);
+
+// Convenience form: fetch the same bundle and key set, then apply the supplied pin.
+TestSuiteEvidenceVerifier.VerificationResult sameResult =
+        client.verifySuiteEvidence(suiteRun.suiteRunId(), trustedPin);
 ```
 
 The verifier independently recomputes the aggregate, bundle, and signature-material fingerprints,
-checks the ordered child run closure and key lifecycle policy, and verifies Ed25519. It reports only
-bounded reason codes. The bundle uses `payloadPolicy=OMITTED`; child input/output values remain in
-governed server storage. It is not a replay payload package, publish decision, or ANEKE workbook.
+checks the ordered child run closure, validates the signed snapshot against the external pin, and
+replays activation, retirement, disablement, prospective revocation, or retroactive compromise at
+the evidence signing time before verifying Ed25519. It reports only bounded reason codes. A
+`CURRENT_STATE_ONLY` snapshot fails closed for release use. Reading the pin from the same HTTP
+response does not create trust; use an ANEKE registry revision, protected CI configuration, or an
+equivalent independent channel.
+
+The older `findEvidenceVerificationKey` and `verify(bundle, key)` path remains useful for migration
+and local diagnosis, but a single current-state key cannot prove atomic rotation or historical
+revocation. The bundle uses `payloadPolicy=OMITTED`; child input/output values remain in governed
+server storage. It is not a replay payload package, publish decision, or ANEKE workbook. See the
+[key lifecycle verification record](../docs/resource-gateway-execution-data-control-plane-stage3-key-lifecycle-verification.md).
 
 ## CI Command
 

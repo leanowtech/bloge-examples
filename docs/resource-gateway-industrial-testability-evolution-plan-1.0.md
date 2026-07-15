@@ -9,16 +9,16 @@
 | Stage 0 | 完成 | operator suite API/UI 显式 `SCHEMA_CONTRACT`；`testing/domain` 五个版本化 record；capability testability 描述；[ADR-001](adr/ADR-001-resource-gateway-test-runtime-isolation.md)、[ADR-002](adr/ADR-002-operator-composability-and-opaque-runtime.md) 与 [BLOGE framework requirement](bloge-framework-execution-control-requirement.md) |
 | Stage 1' | 完成 | `testing/planning/runtime/evidence` 内核；独立 test engine；五行为；F2/F3 resource fixture；micro-graph runner；旧 graph suite adapter；37 个聚焦测试与 1653 个项目测试全绿 |
 | Stage 2' | 进行中 | 已落地 graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（含四类 case intent、内容寻址 fixture 与一等 TestSuite 发布、聚合执行/coverage/promotion 回显）、immutable fixture/TestSuite registry、幂等 TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、10 态 child evidence、profile/identity/生产协议隔离、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其内容寻址 catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free effective plan v2 谱系与认证降级，以及同步 root/nested/foreach/loop/compensation 的结构寻址、控制传播和 occurrence/attempt/node/edge evidence；streaming/suspendable control/evidence 与物理 network/runtime 隔离仍待完成 |
-| Stage 3 evidence chain | 进行中 | graph/operator child `TestRunEvidence` 已完成 canonical fingerprint、detached Ed25519 signature、写前自验、读时复验与 projection lineage；suite checkpoint/terminal aggregate attestation、ordered child evidence closure、payload-free portable bundle、verification-key lookup 与 test-kit offline Ed25519 verifier 已完成；semantic coverage、key-set/revocation feed、transparency proof 与 ANEKE projection 待完成 |
+| Stage 3 evidence chain | 进行中 | graph/operator child signature、suite checkpoint/terminal aggregate attestation、ordered child closure、payload-free portable bundle 已完成；signed atomic key-set、managed v1/v2 lifecycle、外部 fingerprint pin、签名时刻 retirement/disable/prospective/retroactive revocation 与 test-kit offline verifier 已完成；semantic coverage、transparency proof、trusted pin distribution 与 ANEKE projection 待完成 |
 
 Stage 0 验证基线：Resource Gateway `clean verify` 共 1624 tests、0 failures、33 个既有条件跳过；AuthorCanvas 聚焦回归 36 tests、0 failures。后续阶段必须继续维持该基线并增加对应反面用例。
 
 Stage 1 实现证据与复现命令见
 [Execution Data Control Plane Stage 1 verification](resource-gateway-execution-data-control-plane-stage1-verification.md)。
 Stage 1 全量验收：Resource Gateway `clean verify` 共 1653 tests、0 failures、0 errors、34 个条件跳过，JAR 打包成功。
-Stage 2/3 当前严格验收：Resource Gateway `clean verify` 共 1802 tests、0 failures、0 errors、2 skipped，真实浏览器回归与 JAR 打包成功；Canvas suite 聚焦 68 tests、前端全量 150 tests，桌面与 390 x 844 真实浏览器均完成两行 `GOLDEN + BOUNDARY` 一等 suite 发布并返回 `2/2 + SATISFIED + ELIGIBLE`。Canvas 对 registry 返回的完整 suite value 和 runner 返回的 child/coverage/promotion/aggregate 一致性 fail closed，异步执行期间冻结表格，探索运行会使旧 publication 失效。Immutable TestSuite runner/attestation/protocol 增量聚焦 49 tests；suite-run lease/reconciliation/profile 聚焦 22 tests；built-in catalog materialization 增量聚焦 34 tests；suite consumer adapter 聚焦 21 tests、独立 test-kit `clean verify` 38 tests，均为 0 failures、0 errors；test-kit library/CLI JAR 已打包更新后的权威 schema，完整 suite/catalog wire value 在消费前执行 Draft 2020-12 schema 校验和请求身份回绑，doclint 零告警并进入 `verify` 门禁。
+Stage 2/3 当前严格验收：Resource Gateway `clean verify` 共 1806 tests、0 failures、0 errors、34 个条件跳过，真实浏览器回归与 JAR 打包成功；Canvas suite 聚焦 68 tests、前端全量 150 tests，桌面与 390 x 844 真实浏览器均完成两行 `GOLDEN + BOUNDARY` 一等 suite 发布并返回 `2/2 + SATISFIED + ELIGIBLE`。Canvas 对 registry 返回的完整 suite value 和 runner 返回的 child/coverage/promotion/aggregate 一致性 fail closed，异步执行期间冻结表格，探索运行会使旧 publication 失效。Immutable TestSuite runner/attestation/protocol 增量聚焦 49 tests；key lifecycle 增量聚焦 41 tests；suite-run lease/reconciliation/profile 聚焦 22 tests；built-in catalog materialization 增量聚焦 34 tests；suite consumer adapter 聚焦 21 tests、独立 test-kit `clean verify` 42 tests，均为 0 failures、0 errors；test-kit library/CLI JAR 已打包更新后的权威 schema，完整 suite/catalog wire value 在消费前执行 Draft 2020-12 schema 校验和请求身份回绑，doclint 零告警并进入 `verify` 门禁。
 Nested invocation 增量聚焦验收：37 tests、0 failures；非空 foreach 的三个 item 全部消费同一受限 fixture，真实外部算子调用数为 0，compensation 使用独立 site 且真实补偿调用数为 0。项目 `clean verify` 执行 1704 tests 时 1703 通过、1 个既有浏览器 connectability readiness 用例瞬时超时；该失败用例随即独立复跑 1/1 通过。此记录不得改写为一次严格全绿的全量运行。
-独立 test-kit 当前 `clean verify` 共 38 tests、0 failures、0 errors；library JAR、依赖内置 CLI JAR 与权威 testing-control-plane v1 schema 一同打包成功，并提供 graph/operator target、fixture/suite builder、catalog materialization exact-ref 投影、child/suite-run/签名完整性 manifest 强类型投影、suite evidence bundle 离线验签、JUnit assertion/XML、精确幂等 suite 执行与旧 child-run v1 响应兼容。
+独立 test-kit 当前 `clean verify` 共 42 tests、0 failures、0 errors；library JAR、依赖内置 CLI JAR 与权威 testing-control-plane v1 schema 一同打包成功，并提供 graph/operator target、fixture/suite builder、catalog materialization exact-ref 投影、child/suite-run/签名完整性 manifest 强类型投影、signed key-set 外部 pin 与时态撤销校验、suite evidence bundle 离线验签、JUnit assertion/XML、精确幂等 suite 执行与旧 child-run v1 响应兼容。
 这里的“完成”只指内核与已列出的 adapter。Stage 2 已开放公共 graph/operator control plane、
 持久化 store、Java/JUnit/CI suite adapter 和 Canvas 多行一等 suite 发布/执行，并完成全部内置图的
 stored-suite F3 迁移与 dogfooding；streaming/suspendable control/evidence 和物理隔离仍不得提前
@@ -46,6 +46,8 @@ Stage 3 子运行证据签名、失败语义与非声明见
 [Stage 3 signed test evidence verification](resource-gateway-execution-data-control-plane-stage3-signed-test-evidence-verification.md)。
 Stage 3 suite checkpoint/terminal attestation、便携 bundle 与离线验签见
 [Stage 3 suite attestation verification](resource-gateway-execution-data-control-plane-stage3-suite-attestation-verification.md)。
+Stage 3 原子 key-set、带外 pin、生命周期与签名时刻撤销语义见
+[Stage 3 key lifecycle verification](resource-gateway-execution-data-control-plane-stage3-key-lifecycle-verification.md)。
 
 ---
 
@@ -123,7 +125,7 @@ flowchart LR
 | Schema 纪律 | 默认 strict；WARN/OFF 需显式声明+理由，evidence 标记 schema-waived，waived run 不得认证 | — | — |
 | 断言 | 既有 5 模式 + nodeAssertions + **numeric tolerance（v1 补齐）**，服务端可选 | — | property/mutation（P2） |
 | 供给 | `JsonSchemaSampleGenerator` 草稿生成（含 rawBody 模板，服务 F2 形态） | — | record-replay（phase 2，必须与 payload replay 共底座+脱敏前置） |
-| 证据 | 独立 test-run store、10 态枚举、fixture 命中链、每节点 MOCKED/REAL、每 mocked site 保真度事实、verbosity 参数；child evidence detached signature、suite checkpoint/terminal attestation、便携 bundle 与 consumer verifier 已落地 | — | semantic coverage、key lifecycle event feed、transparency proof 与 ANEKE projection（Stage 3 后续） |
+| 证据 | 独立 test-run store、10 态枚举、fixture 命中链、每节点 MOCKED/REAL、每 mocked site 保真度事实、verbosity 参数；child evidence detached signature、suite checkpoint/terminal attestation、便携 bundle、signed/pinned key lifecycle 与 consumer verifier 已落地 | — | semantic coverage、transparency proof、trusted pin distribution 与 ANEKE projection（Stage 3 后续） |
 
 ### 五、可靠性模型与保真度阶梯
 
@@ -222,7 +224,7 @@ flowchart LR
 
 **验收**：见第八节验证清单。
 
-#### Stage 3-5：按北极星文档执行（child evidence 签名、aggregate attestation/consumer verifier 已完成；语义 coverage/key lifecycle/ANEKE projection → ExecutionServices/FunctionCallSite/时间类行为 → 独立部署/配额/mutation）。
+#### Stage 3-5：按北极星文档执行（child evidence 签名、aggregate attestation、pinned key lifecycle/consumer verifier 已完成；语义 coverage/transparency/ANEKE projection → ExecutionServices/FunctionCallSite/时间类行为 → 独立部署/配额/mutation）。
 
 **Relevant files**
 - GatewayGraphContractTestServiceTest.java — Stage 1' 行为保持重构的安全网；`GatewayGraphContractTestService` 本体为内核提炼源

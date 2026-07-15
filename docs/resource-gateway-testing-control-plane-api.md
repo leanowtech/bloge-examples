@@ -894,11 +894,14 @@ verifies the abandoned checkpoint, preserves its closed child references, constr
 terminal aggregate, and signs that terminal result; altered or unsigned checkpoints are rejected
 instead of being recovered as trusted progress.
 
-The verification key named by `integrity.keyId` is available through
-`GET /api/integration/evidence-keys/{keyId}` under the integration identity protocol. Local profiles
-use the persistent Ed25519 signer; managed deployments can use the existing KMS/HSM signer and key
-history. Consumers must enforce key state, validity policy, algorithm, and fingerprint
-canonicalization rather than treating `signatureStatus=VERIFIED` as a self-authenticating claim.
+The verification key named by `integrity.keyId` remains available through
+`GET /api/integration/evidence-keys/{keyId}` for compatibility and diagnosis. Release consumers use
+`GET /api/integration/evidence-keys`, which returns one atomic
+`toolStudio.resourceGateway.evidenceVerificationKeySet.v1` snapshot containing validity bounds,
+current states, ordered lifecycle events, canonical `snapshotFingerprint`, and an active-key
+attestation. The fingerprint must be pinned through an independent governance channel; a snapshot
+cannot establish trust merely by signing itself with an embedded key. Managed provider v1 is
+explicitly `CURRENT_STATE_ONLY`; provider v2 can claim `COMPLETE` only after lifecycle validation.
 
 ### 4.3.4 Export and independently verify terminal suite evidence
 
@@ -941,37 +944,40 @@ canonical UTF-8 bytes are SHA-256 fingerprinted. The Ed25519 signature is over t
 `sha256:<64-lowercase-hex>` text. Consumers must preserve child order: sorting or substituting child
 references invalidates the signature.
 
-The standalone test-kit implements that verification without depending on server code:
+The standalone test-kit implements release-grade verification without depending on server code:
 
 ```java
 TestSuiteEvidenceBundle bundle = client.findSuiteEvidenceBundle(suiteRunId);
-EvidenceVerificationKey key = client.findEvidenceVerificationKey(
-        bundle.attestation().keyId());
+EvidenceVerificationKeySet keySet = client.findEvidenceVerificationKeySet();
+String trustedPin = System.getenv("RESOURCE_GATEWAY_EVIDENCE_KEY_SET_PIN");
 TestSuiteEvidenceVerifier.VerificationResult result =
-        new TestSuiteEvidenceVerifier().verify(bundle, key);
+        new TestSuiteEvidenceVerifier().verify(bundle, keySet, trustedPin);
 
 if (!result.verified()) {
     throw new IllegalStateException(result.reasonCode());
 }
 
-// Convenience form: fetch bundle + key, then perform the same independent checks.
+// Convenience form: fetch bundle + atomic key set, then apply the same external pin.
 TestSuiteEvidenceVerifier.VerificationResult verified =
-        client.verifySuiteEvidence(suiteRunId);
+        client.verifySuiteEvidence(suiteRunId, trustedPin);
 ```
 
 The verifier recomputes aggregate, bundle, and signature-material fingerprints; verifies ordered
-case/run closure and Ed25519; requires the path-bound key id; accepts only `ACTIVE` or `RETIRED`
-keys; and rejects signatures predating key creation beyond the bounded clock-skew allowance. Its
-outcomes are `VERIFIED`, `INVALID`, `KEY_UNAVAILABLE`, or `POLICY_REJECTED`, with payload-free reason
-codes suitable for CI logs. It never trusts the producer's `VERIFIED` field by itself.
+case/run closure and Ed25519; validates the external pin, snapshot freshness, attestation, key/event
+coherence, and exact key membership; then evaluates `ACTIVATED`, `RETIRED`, `DISABLED`, prospective
+`REVOKED`, and retroactive `COMPROMISE_DECLARED` at the evidence signing time. Its outcomes are
+`VERIFIED`, `INVALID`, `KEY_UNAVAILABLE`, or `POLICY_REJECTED`, with payload-free reason codes suitable
+for CI logs. It never trusts the producer's `VERIFIED` field by itself. The single-key overload remains
+a compatibility path and is insufficient for a release gate.
 
 This v1 bundle is a portable integrity and provenance fact, not a complete certification package.
-It deliberately does not contain replay payload attachments, a key-set/revocation event stream,
-transparency-log inclusion proof, ANEKE workbook projection, publish-gate decision, or owner
-approval. Those remain separate governed protocols.
+It deliberately does not contain replay payload attachments, transparency-log inclusion proof,
+ANEKE workbook projection, publish-gate decision, or owner approval. Key lifecycle is a separate
+signed and pinned protocol rather than copied into every bundle.
 
 The protocol invariants, negative matrix, and reproducible gates are recorded in
-[Stage 3 suite attestation verification](resource-gateway-execution-data-control-plane-stage3-suite-attestation-verification.md).
+[Stage 3 suite attestation verification](resource-gateway-execution-data-control-plane-stage3-suite-attestation-verification.md)
+and [Stage 3 key lifecycle verification](resource-gateway-execution-data-control-plane-stage3-key-lifecycle-verification.md).
 
 ### 4.4 Query a run or run a batch
 
@@ -996,7 +1002,7 @@ mvn -f resource-gateway-test-kit/pom.xml clean install
 ```
 
 The client exposes immutable suite register/find/execute/query operations, terminal evidence-bundle
-export, verification-key lookup, independent Ed25519 verification, and a typed
+export, exact-key and atomic key-set lookup, pinned lifecycle-aware Ed25519 verification, and a typed
 `materializeBuiltInGraphContractCatalog()` operation. Execution requires an
 exact revision, full SHA-256 fingerprint, and explicit `clientRequestId`; malformed identities are
 rejected before any network call. The exact packaged Draft 2020-12 schema validates complete suite
@@ -1005,8 +1011,9 @@ originating request before it can reach assertions or reporters. It accepts suit
 v1 as an explicitly unsigned migration shape and v2 for current servers. `TestRun.integrity()`
 validates and exposes the child v2 signature/projection manifest. `TestSuiteRun.attestation()`
 exposes the aggregate checkpoint/terminal signature, while `findSuiteEvidenceBundle`,
-`findEvidenceVerificationKey`, and `verifySuiteEvidence` provide the portable consumer-verification
-path. `TestSuiteRun` also exposes payload-free case links, structural coverage, and promotion
+`findEvidenceVerificationKeySet`, and the pinned `verifySuiteEvidence` overload provide the
+release-grade consumer-verification path. The exact-key overload remains available for migration.
+`TestSuiteRun` also exposes payload-free case links, structural coverage, and promotion
 eligibility, while `TestSuiteRunAssertions` separates
 execution, case, coverage, and eligibility assertions.
 
