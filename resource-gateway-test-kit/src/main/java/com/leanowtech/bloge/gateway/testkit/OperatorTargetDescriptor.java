@@ -60,7 +60,11 @@ public record OperatorTargetDescriptor(
         rawResponse = rawResponse == null ? null : rawResponse.deepCopy();
     }
 
-    /** @return defensive copy of the complete decoded response */
+    /**
+     * Returns the complete decoded response without exposing mutable state.
+     *
+     * @return defensive copy of the complete decoded response
+     */
     @Override
     public JsonNode rawResponse() {
         return rawResponse == null ? null : rawResponse.deepCopy();

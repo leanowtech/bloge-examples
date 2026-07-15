@@ -94,13 +94,23 @@ public final class TestSuiteBuilder {
         return new TestSuiteBuilder("OPERATOR", target.operatorRef(), target.fingerprint());
     }
 
-    /** @param value stable suite id @return this builder */
+    /**
+     * Sets the stable suite identifier.
+     *
+     * @param value stable suite id
+     * @return this builder
+     */
     public TestSuiteBuilder id(String value) {
         suiteId = required(value, "suiteId", 255);
         return this;
     }
 
-    /** @param value positive immutable revision @return this builder */
+    /**
+     * Sets the positive immutable revision.
+     *
+     * @param value positive immutable revision
+     * @return this builder
+     */
     public TestSuiteBuilder revision(long value) {
         if (value < 1) {
             throw new IllegalArgumentException("revision must be at least 1");
@@ -109,7 +119,12 @@ public final class TestSuiteBuilder {
         return this;
     }
 
-    /** @param value suite data classification @return this builder */
+    /**
+     * Sets the suite data classification.
+     *
+     * @param value suite data classification
+     * @return this builder
+     */
     public TestSuiteBuilder classification(Classification value) {
         classification = Objects.requireNonNull(value, "classification");
         return this;
@@ -154,13 +169,22 @@ public final class TestSuiteBuilder {
         if (fixture.revision() < 1) {
             throw new IllegalArgumentException("fixture revision must be at least 1");
         }
-        cases.add(new SuiteCase(id, Objects.requireNonNull(caseType, "caseType"), snapshot(input),
+        JsonNode inputSnapshot = snapshot(input);
+        if ("GRAPH".equals(targetKind) && !inputSnapshot.isObject()) {
+            throw new IllegalArgumentException("Graph suite case input must be a JSON object");
+        }
+        cases.add(new SuiteCase(id, Objects.requireNonNull(caseType, "caseType"), inputSnapshot,
                 required(fixture.fixtureBundleId(), "fixtureBundleId", 255), fixture.revision(),
                 fingerprint(fixture.fingerprint()), normalizedTags(tags), snapshotMap(caseMetadata)));
         return this;
     }
 
-    /** @param value explicit minimum case count @return this builder */
+    /**
+     * Sets the minimum number of cases required for coverage.
+     *
+     * @param value explicit minimum case count
+     * @return this builder
+     */
     public TestSuiteBuilder minimumCases(int value) {
         if (value < 1 || value > 100) {
             throw new IllegalArgumentException("minimumCases must be between 1 and 100");
@@ -169,7 +193,12 @@ public final class TestSuiteBuilder {
         return this;
     }
 
-    /** @param values case intents that must be observed @return this builder */
+    /**
+     * Replaces the case intents that must be represented and observed.
+     *
+     * @param values case intents that must be observed
+     * @return this builder
+     */
     public TestSuiteBuilder requireCaseTypes(CaseType... values) {
         requiredCaseTypes.clear();
         if (values != null) {
@@ -181,13 +210,24 @@ public final class TestSuiteBuilder {
         return this;
     }
 
-    /** @param invocationSiteId structure-addressed required site @return this builder */
+    /**
+     * Adds one structure-addressed invocation-site coverage requirement.
+     *
+     * @param invocationSiteId structure-addressed required site
+     * @return this builder
+     */
     public TestSuiteBuilder requireInvocationSite(String invocationSiteId) {
         requiredInvocationSites.add(required(invocationSiteId, "invocationSiteId", 512));
         return this;
     }
 
-    /** @param from source invocation site @param to destination invocation site @return this builder */
+    /**
+     * Adds one required transferred edge between structural invocation sites.
+     *
+     * @param from source invocation site
+     * @param to destination invocation site
+     * @return this builder
+     */
     public TestSuiteBuilder requireEdgeTransfer(String from, String to) {
         EdgeTransfer edge = new EdgeTransfer(required(from, "fromInvocationSiteId", 512),
                 required(to, "toInvocationSiteId", 512));
@@ -197,7 +237,12 @@ public final class TestSuiteBuilder {
         return this;
     }
 
-    /** @param value minimum evaluated assertions for every case @return this builder */
+    /**
+     * Sets the minimum evaluated assertion count for every case.
+     *
+     * @param value minimum evaluated assertions for every case
+     * @return this builder
+     */
     public TestSuiteBuilder minimumAssertionsPerCase(int value) {
         if (value < 0 || value > 1000) {
             throw new IllegalArgumentException("minimumAssertionsPerCase must be between 0 and 1000");
@@ -206,19 +251,34 @@ public final class TestSuiteBuilder {
         return this;
     }
 
-    /** @param value whether every required fixture rule must be consumed @return this builder */
+    /**
+     * Controls whether every required fixture rule must be consumed.
+     *
+     * @param value whether every required fixture rule must be consumed
+     * @return this builder
+     */
     public TestSuiteBuilder requireAllFixtureRulesConsumed(boolean value) {
         requireAllFixtureRulesConsumed = value;
         return this;
     }
 
-    /** @param value whether every case must pass for promotion eligibility @return this builder */
+    /**
+     * Controls whether every case must pass for promotion eligibility.
+     *
+     * @param value whether every case must pass for promotion eligibility
+     * @return this builder
+     */
     public TestSuiteBuilder requireAllCasesPassed(boolean value) {
         requireAllCasesPassed = value;
         return this;
     }
 
-    /** @param value minimum cases that must emit certifiable evidence @return this builder */
+    /**
+     * Sets the minimum number of cases that must emit certifiable evidence.
+     *
+     * @param value minimum cases that must emit certifiable evidence
+     * @return this builder
+     */
     public TestSuiteBuilder minimumCertifiableCases(int value) {
         if (value < 0 || value > 100) {
             throw new IllegalArgumentException("minimumCertifiableCases must be between 0 and 100");
@@ -227,13 +287,23 @@ public final class TestSuiteBuilder {
         return this;
     }
 
-    /** @param value whether target-level eligibility is mandatory @return this builder */
+    /**
+     * Controls whether target-level certification eligibility is mandatory.
+     *
+     * @param value whether target-level eligibility is mandatory
+     * @return this builder
+     */
     public TestSuiteBuilder requireTargetCertificationEligible(boolean value) {
         requireTargetCertificationEligible = value;
         return this;
     }
 
-    /** @param value bounded suite provenance metadata @return this builder */
+    /**
+     * Replaces bounded suite provenance metadata with a defensive snapshot.
+     *
+     * @param value bounded suite provenance metadata
+     * @return this builder
+     */
     public TestSuiteBuilder metadata(Map<String, ?> value) {
         metadata = snapshotMap(value);
         return this;
@@ -280,6 +350,15 @@ public final class TestSuiteBuilder {
                 ? cases.stream().map(SuiteCase::caseType)
                     .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
                 : requiredCaseTypes;
+        LinkedHashSet<CaseType> representedCaseTypes = cases.stream().map(SuiteCase::caseType)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        LinkedHashSet<CaseType> missingCaseTypes = new LinkedHashSet<>(effectiveCaseTypes);
+        missingCaseTypes.removeAll(representedCaseTypes);
+        if (!missingCaseTypes.isEmpty()) {
+            throw new IllegalStateException("requiredCaseTypes are not represented by cases: "
+                    + missingCaseTypes.stream().map(Enum::name).sorted()
+                    .collect(java.util.stream.Collectors.joining(",")));
+        }
         effectiveCaseTypes.stream().map(Enum::name).sorted().forEach(caseTypes::add);
         ArrayNode sites = coverage.putArray("requiredInvocationSiteIds");
         requiredInvocationSites.stream().sorted().forEach(sites::add);
@@ -298,6 +377,7 @@ public final class TestSuiteBuilder {
         promotion.put("minimumCertifiableCases", certifiableCases);
         promotion.put("requireTargetCertificationEligible", requireTargetCertificationEligible);
         suite.set("metadata", metadata.deepCopy());
+        TestingProtocolSchemaValidator.require(request, "testSuiteRegistrationRequest");
         return request;
     }
 

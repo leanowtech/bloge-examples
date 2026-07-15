@@ -151,10 +151,19 @@ public final class ResourceGatewayTestClient {
      * @return committed immutable suite revision
      */
     public TestSuiteRevision registerSuite(String suiteId, JsonNode registrationRequest) {
-        JsonNode response = exchange("PUT", "/api/testing/suites/" + segment(suiteId), "",
-                "TEST_SUITE_WRITE", requiredObject(registrationRequest, "registrationRequest"));
+        String exactSuiteId = requiredIdentifier(suiteId, "suiteId", 255);
+        JsonNode request = requiredObject(registrationRequest, "registrationRequest");
+        TestingProtocolSchemaValidator.require(request, "testSuiteRegistrationRequest");
+        if (!exactSuiteId.equals(request.at("/testSuite/suiteId").asText())) {
+            throw new IllegalArgumentException("Path and registration suite identity must match");
+        }
+        long revision = request.at("/testSuite/revision").asLong();
+        JsonNode response = exchange("PUT", "/api/testing/suites/" + segment(exactSuiteId), "",
+                "TEST_SUITE_WRITE", request);
         requireVersion(response, TestingProtocol.STORED_TEST_SUITE_V1);
-        return projectSuiteRevision(response);
+        TestSuiteRevision stored = projectSuiteRevision(response);
+        requireSuiteRevisionIdentity(stored, exactSuiteId, revision);
+        return stored;
     }
 
     /**
@@ -168,10 +177,13 @@ public final class ResourceGatewayTestClient {
         if (revision < 1) {
             throw new IllegalArgumentException("revision must be at least 1");
         }
-        JsonNode response = exchange("GET", "/api/testing/suites/" + segment(suiteId),
+        String exactSuiteId = requiredIdentifier(suiteId, "suiteId", 255);
+        JsonNode response = exchange("GET", "/api/testing/suites/" + segment(exactSuiteId),
                 "revision=" + revision, "TEST_SUITE_READ", null);
         requireVersion(response, TestingProtocol.STORED_TEST_SUITE_V1);
-        return projectSuiteRevision(response);
+        TestSuiteRevision stored = projectSuiteRevision(response);
+        requireSuiteRevisionIdentity(stored, exactSuiteId, revision);
+        return stored;
     }
 
     /**
@@ -189,6 +201,7 @@ public final class ResourceGatewayTestClient {
                                      String clientRequestId, SuiteStrategy strategy,
                                      Map<String, ?> metadata) {
         String id = requiredIdentifier(clientRequestId, "clientRequestId", 255);
+        String exactSuiteId = requiredIdentifier(suiteId, "suiteId", 255);
         if (revision < 1) {
             throw new IllegalArgumentException("revision must be at least 1");
         }
@@ -196,16 +209,19 @@ public final class ResourceGatewayTestClient {
         ObjectNode request = JSON.createObjectNode();
         request.put("schemaVersion", TestingProtocol.TEST_SUITE_EXECUTION_REQUEST_V1);
         ObjectNode suiteRef = request.putObject("suiteRef");
-        suiteRef.put("suiteId", requiredIdentifier(suiteId, "suiteId", 255));
+        suiteRef.put("suiteId", exactSuiteId);
         suiteRef.put("revision", revision);
         suiteRef.put("fingerprint", exactFingerprint);
         request.put("clientRequestId", id);
         request.put("strategy", (strategy == null ? SuiteStrategy.COLLECT_ALL : strategy).name());
         request.set("metadata", metadata == null ? JSON.createObjectNode() : JSON.valueToTree(metadata));
-        JsonNode response = exchange("POST", "/api/testing/suites/" + segment(suiteId) + "/executions",
+        TestingProtocolSchemaValidator.require(request, "testSuiteExecutionRequest");
+        JsonNode response = exchange("POST", "/api/testing/suites/" + segment(exactSuiteId) + "/executions",
                 "", "TEST_EXECUTION", request);
         requireVersion(response, TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1);
-        return projectSuiteRun(response);
+        TestSuiteRun run = projectSuiteRun(response);
+        requireSuiteRunIdentity(run, exactSuiteId, revision, exactFingerprint, id);
+        return run;
     }
 
     /**
@@ -215,10 +231,17 @@ public final class ResourceGatewayTestClient {
      * @return aggregate suite-run projection
      */
     public TestSuiteRun findSuiteRun(String suiteRunId) {
-        JsonNode response = exchange("GET", "/api/testing/suite-executions/" + segment(suiteRunId),
+        String exactSuiteRunId = requiredIdentifier(suiteRunId, "suiteRunId", 255);
+        JsonNode response = exchange("GET", "/api/testing/suite-executions/" + segment(exactSuiteRunId),
                 "", "TEST_EXECUTION", null);
         requireVersion(response, TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1);
-        return projectSuiteRun(response);
+        TestSuiteRun run = projectSuiteRun(response);
+        try {
+            run.requireRunIdentity(exactSuiteRunId);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid("The server returned a mismatched suite-run identity.");
+        }
+        return run;
     }
 
     /**
@@ -402,8 +425,7 @@ public final class ResourceGatewayTestClient {
         try {
             return TestRun.from(response);
         } catch (IllegalArgumentException failure) {
-            throw ResourceGatewayTestException.local("RG.TESTKIT.RESPONSE_CONTRACT_INVALID",
-                    "The server returned an invalid test-run projection.", failure);
+            throw responseContractInvalid("The server returned an invalid test-run projection.");
         }
     }
 
@@ -411,8 +433,7 @@ public final class ResourceGatewayTestClient {
         try {
             return TestSuiteRevision.from(response);
         } catch (IllegalArgumentException failure) {
-            throw ResourceGatewayTestException.local("RG.TESTKIT.RESPONSE_CONTRACT_INVALID",
-                    "The server returned an invalid test-suite revision projection.", failure);
+            throw responseContractInvalid("The server returned an invalid test-suite revision projection.");
         }
     }
 
@@ -420,16 +441,36 @@ public final class ResourceGatewayTestClient {
         try {
             return TestSuiteRun.from(response);
         } catch (IllegalArgumentException failure) {
-            throw ResourceGatewayTestException.local("RG.TESTKIT.RESPONSE_CONTRACT_INVALID",
-                    "The server returned an invalid suite-run projection.", failure);
+            throw responseContractInvalid("The server returned an invalid suite-run projection.");
         }
+    }
+
+    private static void requireSuiteRevisionIdentity(TestSuiteRevision stored, String suiteId, long revision) {
+        try {
+            stored.requireIdentity(suiteId, revision);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid("The server returned a mismatched test-suite revision identity.");
+        }
+    }
+
+    private static void requireSuiteRunIdentity(TestSuiteRun run, String suiteId, long revision,
+                                                String fingerprint, String clientRequestId) {
+        try {
+            run.requireExecutionIdentity(suiteId, revision, fingerprint, clientRequestId);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid("The server returned a mismatched suite-run response identity.");
+        }
+    }
+
+    private static ResourceGatewayTestException responseContractInvalid(String title) {
+        return ResourceGatewayTestException.local("RG.TESTKIT.RESPONSE_CONTRACT_INVALID", title, null);
     }
 
     private static void requireVersion(JsonNode response, String expected) {
         String actual = response.path("schemaVersion").asText();
         if (!expected.equals(actual)) {
             throw ResourceGatewayTestException.local("RG.TESTKIT.PROTOCOL_VERSION_MISMATCH",
-                    "Expected " + expected + " but received " + bounded(actual, 128) + ".", null);
+                    "The server returned an unsupported protocol version; expected " + expected + ".", null);
         }
     }
 

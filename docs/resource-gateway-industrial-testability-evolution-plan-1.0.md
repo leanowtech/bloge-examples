@@ -15,9 +15,9 @@ Stage 0 验证基线：Resource Gateway `clean verify` 共 1624 tests、0 failur
 Stage 1 实现证据与复现命令见
 [Execution Data Control Plane Stage 1 verification](resource-gateway-execution-data-control-plane-stage1-verification.md)。
 Stage 1 全量验收：Resource Gateway `clean verify` 共 1653 tests、0 failures、0 errors、34 个条件跳过，JAR 打包成功。
-Stage 2 当前严格验收：Resource Gateway `clean verify` 共 1748 tests、0 failures、0 errors、34 个条件跳过，真实浏览器回归与 JAR 打包成功。Immutable TestSuite runner/protocol 增量聚焦 33 tests；suite consumer adapter 聚焦 16 tests、独立 test-kit `clean verify` 24 tests，均为 0 failures、0 errors；test-kit library/CLI JAR 已打包更新后的权威 schema。
+Stage 2 当前严格验收：Resource Gateway `clean verify` 共 1748 tests、0 failures、0 errors、34 个条件跳过，真实浏览器回归与 JAR 打包成功。Immutable TestSuite runner/protocol 增量聚焦 33 tests；suite consumer adapter 聚焦 21 tests、独立 test-kit `clean verify` 29 tests，均为 0 failures、0 errors；test-kit library/CLI JAR 已打包更新后的权威 schema，完整 suite wire value 在消费前执行 Draft 2020-12 schema 校验和请求身份回绑，doclint 零告警并进入 `verify` 门禁。
 Nested invocation 增量聚焦验收：37 tests、0 failures；非空 foreach 的三个 item 全部消费同一受限 fixture，真实外部算子调用数为 0，compensation 使用独立 site 且真实补偿调用数为 0。项目 `clean verify` 执行 1704 tests 时 1703 通过、1 个既有浏览器 connectability readiness 用例瞬时超时；该失败用例随即独立复跑 1/1 通过。此记录不得改写为一次严格全绿的全量运行。
-独立 test-kit 当前 `clean verify` 共 24 tests、0 failures、0 errors；library JAR、依赖内置 CLI JAR 与权威 testing-control-plane v1 schema 一同打包成功，并提供 graph/operator target、fixture/suite builder、child/suite-run 强类型投影、JUnit assertion/XML、精确幂等 suite 执行与旧 child-run v1 响应兼容。
+独立 test-kit 当前 `clean verify` 共 29 tests、0 failures、0 errors；library JAR、依赖内置 CLI JAR 与权威 testing-control-plane v1 schema 一同打包成功，并提供 graph/operator target、fixture/suite builder、child/suite-run 强类型投影、JUnit assertion/XML、精确幂等 suite 执行与旧 child-run v1 响应兼容。
 这里的“完成”只指内核与已列出的 adapter。Stage 2 已开放公共 graph/operator control plane、
 持久化 store、Java/JUnit/CI suite adapter 和 Canvas 单行 runner，并完成全部内置图的
 stored-suite F3 迁移与 dogfooding；Canvas 多行表发布、streaming/suspendable control/evidence
@@ -275,6 +275,7 @@ flowchart LR
 | 39 | runtime binding state 采用肯定式冻结：无状态、显式 snapshot provider、或平台已知 httpResource 组合端口 | 仅哈希主类字节码无法感知构造配置漂移；任意反射序列化对象既可能泄密又不稳定。provider 只提交 64 KiB credential-free facts，值不出控制面，只保存 fingerprint | 忽略实例状态（旧 fixture 错绑新配置）；反射遍历字段（密钥泄露/循环/代理不稳定）；所有有状态 binding 一刀切禁用（阻断可治理迁移） |
 | 40 | TestSuite runner 以精确 content ref + scoped idempotency key + 逐 case durable checkpoint 为执行身份，coverage/promotion 只从 child evidence 派生 | 批量重试可能重复副作用，进程中断会丢失已完成 case，作者声明 coverage 会自证；数据库唯一约束封住并发副本竞态，child identity 二次校验封住错链，FAIL_FAST 仅停止新调度 | 重新拼 inline request（资产漂移）；只在内存去重（多副本失效）；失败时中断正在运行 case（副作用状态未知）；把 `ELIGIBLE` 当 certification（越权） |
 | 41 | CI suite adapter 默认要求执行、case、coverage 与 promotion eligibility 全部通过；token 只走环境，幂等键必须显式提供 | HTTP 200 不是业务正确性；自动 UUID 令基础设施重试重复执行，命令行 token 会进入进程列表；JUnit case + aggregate gate 同时保留局部与策略失败 | 只看 HTTP 状态（假绿）；默认忽略 BLOCKED（门禁失效）；自动生成幂等键（重试语义失控）；`--token`（凭证泄露面） |
+| 42 | test-kit 以打包 JSON Schema 做运行时完整 wire 校验，并将 response identity 回绑 request；`RUNNING` 在无 polling CLI 中退出 2 | 只校验被投影字段会让缺字段/错 intent 响应假绿；非终态不是业务 gate 失败；validator 消息和未知参数值都可能携带 payload，因此对外只给稳定泛化错误，JavaDoc 由 verify/doclint 强制 | 手写局部校验（与 schema 漂移）；错响应继续消费（证据串线）；`RUNNING` 退出 1（误报业务失败）；回显未知参数（潜在泄密） |
 
 ### 十、风险与未验证假设（诚实清单）
 

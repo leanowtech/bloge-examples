@@ -37,8 +37,10 @@ Done 行时，均不得从文档推断为产品已开放。
 
 当前严格验收基线：Resource Gateway `clean verify` 共 1748 tests、0 failures、0 errors、
 34 个条件跳过，真实浏览器回归与 Spring Boot JAR 打包成功；immutable TestSuite
-runner/protocol 增量聚焦 33 tests；suite consumer adapter 聚焦 16 tests、独立 test-kit
-`clean verify` 24 tests，均为 0 failures、0 errors，library/CLI JAR 均打包成功。
+runner/protocol 增量聚焦 33 tests；suite consumer adapter 聚焦 21 tests、独立 test-kit
+`clean verify` 29 tests，均为 0 failures、0 errors，library/CLI JAR 均打包成功；完整 suite wire value
+按打包的 Draft 2020-12 schema 校验并回绑 request identity，`RUNNING` 在无 polling CLI 中退出 2，
+未知参数值与 validator 细节不进入日志，public JavaDoc 零告警且由 `verify` 门禁强制。
 
 ## 1. 结论先行
 

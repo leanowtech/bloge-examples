@@ -111,9 +111,11 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
-    void registersExecutesAndQueriesOneExactImmutableSuite() {
+    void registersExecutesAndQueriesOneExactImmutableSuite() throws Exception {
         ResourceGatewayTestClient client = client();
-        ObjectNode registration = JSON.createObjectNode().put("suite", "governed-policy");
+        ObjectNode registration = JSON.createObjectNode();
+        registration.put("schemaVersion", TestingProtocol.TEST_SUITE_REGISTRATION_REQUEST_V1);
+        registration.set("testSuite", JSON.readTree(storedSuiteResponse()).path("suite").deepCopy());
 
         TestSuiteRevision registered = client.registerSuite("suite/policy", registration);
         TestSuiteRevision found = client.findSuite("suite/policy", 7);
@@ -176,6 +178,19 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void rejectsSuiteExecutionResponseBoundToAnotherRequestIntent() {
+        ResourceGatewayTestClient client = client();
+
+        assertThatThrownBy(() -> client.executeSuite("different-suite", 7, FINGERPRINT,
+                "pipeline/982", ResourceGatewayTestClient.SuiteStrategy.COLLECT_ALL, Map.of()))
+                .isInstanceOf(ResourceGatewayTestException.class)
+                .hasMessageContaining("response identity")
+                .hasMessageNotContaining("private");
+
+        assertThat(requests).hasSize(1);
+    }
+
+    @Test
     void mapsProblemDetailsWithoutLeakingCredentialOrRequestBody() {
         ResourceGatewayTestClient client = client();
         ObjectNode body = JSON.createObjectNode().put("private", "customer-secret-payload");
@@ -217,6 +232,18 @@ class ResourceGatewayTestClientTest {
                 });
     }
 
+    @Test
+    void rejectsMalformedChildRunWithoutRetainingPayloadBearingCause() {
+        ResourceGatewayTestClient client = client();
+
+        assertThatThrownBy(() -> client.findRun("malformed", ResourceGatewayTestClient.Verbosity.STANDARD))
+                .isInstanceOfSatisfying(ResourceGatewayTestException.class, failure -> {
+                    assertThat(failure.code()).isEqualTo("RG.TESTKIT.RESPONSE_CONTRACT_INVALID");
+                    assertThat(failure.getCause()).isNull();
+                    assertThat(failure.getMessage()).doesNotContain("private-child-payload");
+                });
+    }
+
     private ResourceGatewayTestClient client() {
         return ResourceGatewayTestClient.builder(baseUri())
                 .bearerToken(() -> "super-secret-token")
@@ -250,6 +277,11 @@ class ResourceGatewayTestClientTest {
         }
         if (path.endsWith("/oversized")) {
             respond(exchange, 200, "{\"value\":\"" + "sensitive-response-content".repeat(20) + "\"}");
+            return;
+        }
+        if (path.endsWith("/malformed")) {
+            respond(exchange, 200, "{\"schemaVersion\":\"bloge.testExecutionResponse.v1\","
+                    + "\"runId\":\"private-child-payload\",\"evidence\":{\"status\":\"NOT_A_STATUS\"}}");
             return;
         }
         if (path.contains("/suite-executions/") || path.endsWith("/executions") && path.contains("/suites/")) {
@@ -312,8 +344,18 @@ class ResourceGatewayTestClientTest {
                  "fingerprint":"%1$s","suite":{"schemaVersion":"bloge.testSuite.v1",
                    "suiteId":"suite/policy","revision":7,
                    "target":{"kind":"OPERATOR","id":"customer.normalize/v2","fingerprint":"%1$s"},
-                   "classification":"INTERNAL","cases":[{"caseId":"golden"},{"caseId":"boundary"}],
-                   "coveragePolicy":{},"promotionPolicy":{},"metadata":{}},
+                   "classification":"INTERNAL","cases":[
+                     {"caseId":"golden","caseType":"GOLDEN","input":{},
+                      "fixtureBundleRef":{"fixtureBundleId":"fixture-golden","revision":1,
+                        "fingerprint":"%1$s"},"tags":[],"metadata":{}},
+                     {"caseId":"boundary","caseType":"BOUNDARY","input":{},
+                      "fixtureBundleRef":{"fixtureBundleId":"fixture-boundary","revision":1,
+                        "fingerprint":"%1$s"},"tags":[],"metadata":{}}],
+                   "coveragePolicy":{"minimumCases":2,"requiredCaseTypes":["GOLDEN","BOUNDARY"],
+                     "requiredInvocationSiteIds":[],"requiredEdgeTransfers":[],
+                     "minimumAssertionsPerCase":1,"requireAllFixtureRulesConsumed":true},
+                   "promotionPolicy":{"requireAllCasesPassed":true,"minimumCertifiableCases":2,
+                     "requireTargetCertificationEligible":true},"metadata":{}},
                  "createdAt":"2026-07-15T10:15:30Z","createdBy":"ci"}
                 """.formatted(FINGERPRINT);
     }

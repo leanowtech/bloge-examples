@@ -89,7 +89,16 @@ public record TestRun(
                             String errorCode, long durationMs, String invocationSiteId,
                             String graphPath, String correlationKey, int occurrence,
                             int graphOccurrence, List<AttemptTrace> attempts) {
-        /** Backward-compatible constructor for callers compiled against the original v1 summary. */
+        /**
+         * Creates a backward-compatible summary without structural occurrence coordinates.
+         *
+         * @param nodeId graph node id
+         * @param operatorRef resolved operator reference
+         * @param status execution outcome
+         * @param fidelity observed fixture fidelity
+         * @param errorCode normalized error code
+         * @param durationMs observed duration in milliseconds
+         */
         public NodeTrace(String nodeId, String operatorRef, String status, String fidelity,
                          String errorCode, long durationMs) {
             this(nodeId, operatorRef, status, fidelity, errorCode, durationMs,
@@ -187,7 +196,21 @@ public record TestRun(
         rawResponse = rawResponse == null ? null : rawResponse.deepCopy();
     }
 
-    /** Backward-compatible constructor for callers that do not yet consume edge summaries. */
+    /**
+     * Creates a backward-compatible run projection without edge summaries.
+     *
+     * @param runId durable run id
+     * @param status terminal evidence status
+     * @param evidenceClass evidence trust class
+     * @param targetFingerprint frozen target fingerprint
+     * @param fixtureBundleFingerprint frozen fixture fingerprint
+     * @param planFingerprint effective-plan fingerprint
+     * @param nodeTraces payload-free node summaries
+     * @param fixtureConsumptions governed fixture consumption facts
+     * @param assertionResults evaluated assertion summaries
+     * @param diagnostics bounded diagnostics excluded from built-in reports
+     * @param rawResponse complete authorized response
+     */
     public TestRun(String runId, Status status, EvidenceClass evidenceClass,
                    String targetFingerprint, String fixtureBundleFingerprint,
                    String planFingerprint, List<NodeTrace> nodeTraces,

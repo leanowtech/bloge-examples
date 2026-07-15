@@ -274,7 +274,14 @@ public final class FixtureBundleBuilder {
         return request;
     }
 
-    /** Builds an exploratory inline-fixture operator execution request. */
+    /**
+     * Builds an exploratory inline-fixture operator execution request.
+     *
+     * @param input operator input value
+     * @param verbosity requested response projection
+     * @param executionMetadata suite and case provenance
+     * @return schema-complete inline-fixture operator request
+     */
     public ObjectNode inlineOperatorExecution(Object input,
                                               ResourceGatewayTestClient.Verbosity verbosity,
                                               Map<String, ?> executionMetadata) {
@@ -285,7 +292,15 @@ public final class FixtureBundleBuilder {
         return request;
     }
 
-    /** Builds a governed stored-fixture operator execution request. */
+    /**
+     * Builds a governed stored-fixture operator execution request.
+     *
+     * @param fixtureFingerprint fingerprint returned by fixture registration
+     * @param input operator input value
+     * @param verbosity requested response projection
+     * @param executionMetadata suite and case provenance
+     * @return schema-complete stored-fixture operator request
+     */
     public ObjectNode storedOperatorExecution(String fixtureFingerprint, Object input,
                                               ResourceGatewayTestClient.Verbosity verbosity,
                                               Map<String, ?> executionMetadata) {

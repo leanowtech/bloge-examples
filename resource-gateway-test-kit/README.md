@@ -9,6 +9,7 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 - a fail-closed `FixtureBundleBuilder` for output-level and transport-level
   protocol fixtures;
 - a dependency-closed `TestSuiteBuilder` with exact target and fixture references;
+- runtime validation against the packaged Draft 2020-12 schema plus request/response identity binding;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
 - occurrence-addressable node, retry-attempt, and edge summaries without payload fields;
 - payload-free JUnit XML with deterministic CI exit codes;
@@ -170,12 +171,14 @@ The command returns:
 - `0` only when suite status is `PASSED`, coverage is `SATISFIED`, every case passed, and promotion
   status is `ELIGIBLE`;
 - `1` when governed evidence was obtained but the suite gate failed;
-- `2` when configuration, transport, protocol validation, or report generation failed.
+- `2` when configuration, transport, protocol validation, report generation, or a non-terminal
+  `RUNNING` checkpoint prevents a trustworthy gate verdict.
 
 `--allow-non-eligible` disables only the promotion-eligibility requirement; execution, all cases,
 and coverage must still pass. The CLI never accepts a token argument, never generates an idempotency
 key implicitly, and writes a one-test infrastructure failure report when execution fails before
-governed suite evidence is available.
+governed terminal suite evidence is available. Unknown options and positional arguments are reported
+without echoing their values.
 
 `EXECUTABLE_UNIT` does not by itself imply certification. The server also requires a frozen
 implementation closure, runtime state, and v2 composability manifest. Stateless operators satisfy
@@ -233,9 +236,12 @@ watchdog timing or thread interruption.
 - Exceptions and JUnit XML omit credentials, request bodies, node input/output,
   and problem `details`; use the run/correlation id for authorized diagnosis.
 - Unknown response protocol versions fail immediately.
+- Suite requests and responses are validated against the exact packaged JSON Schema; returned suite
+  id, revision, fingerprint, run id, and `clientRequestId` are rebound to the originating request.
 - Suite execution requires an exact positive revision, full lowercase SHA-256 fingerprint, and
   explicit `clientRequestId` before any network call.
 
-The packaged schema is available at `TestingProtocol.SCHEMA_RESOURCE`. Full
+The packaged schema is available at `TestingProtocol.SCHEMA_RESOURCE`; `clean verify` also fails on
+public JavaDoc warnings so the client contract cannot silently lose parameter semantics. Full
 server endpoint, identity, and profile requirements are documented in
 [`docs/resource-gateway-testing-control-plane-api.md`](../docs/resource-gateway-testing-control-plane-api.md).

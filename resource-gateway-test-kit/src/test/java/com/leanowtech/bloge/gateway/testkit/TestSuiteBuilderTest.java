@@ -74,6 +74,19 @@ class TestSuiteBuilderTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("minimumCases");
 
+        TestSuiteBuilder unrepresentedType = TestSuiteBuilder.graph(target).id("missing-case-type")
+                .addCase("golden", TestSuiteBuilder.CaseType.GOLDEN, Map.of(), fixture("fixture-3"))
+                .requireCaseTypes(TestSuiteBuilder.CaseType.GOLDEN, TestSuiteBuilder.CaseType.NEGATIVE);
+        assertThatThrownBy(unrepresentedType::registrationRequest)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("requiredCaseTypes")
+                .hasMessageContaining("NEGATIVE");
+
+        assertThatThrownBy(() -> TestSuiteBuilder.graph(target).id("scalar-graph-input")
+                .addCase("golden", TestSuiteBuilder.CaseType.GOLDEN, "not-an-object", fixture("fixture-4")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Graph suite case input");
+
         FixtureBundleRevision invalidRevision = new FixtureBundleRevision("fixture-invalid", 0,
                 FINGERPRINT, "tenant", "test", Instant.parse("2026-07-15T10:15:30Z"), "ci", null);
         assertThatThrownBy(() -> TestSuiteBuilder.graph(target).id("invalid-fixture-suite")

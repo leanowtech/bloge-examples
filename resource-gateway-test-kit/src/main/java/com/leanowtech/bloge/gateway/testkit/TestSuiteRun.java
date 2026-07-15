@@ -158,7 +158,11 @@ public record TestSuiteRun(
             }
         }
 
-        /** @return true only when this case has a passing terminal child result */
+        /**
+         * Indicates whether this case has passing terminal child evidence.
+         *
+         * @return true only when this case has a passing terminal child result
+         */
         public boolean passed() {
             return status == CaseStatus.PASSED;
         }
@@ -179,7 +183,8 @@ public record TestSuiteRun(
                 .map(reason -> machineCode(reason, "promotion reason"))
                 .toList();
         if (suiteRunId.isBlank() || clientRequestId.isBlank() || status == null || suiteId.isBlank()
-                || suiteRevision < 1 || !fingerprint(suiteFingerprint) || targetKind.isBlank()
+                || suiteRevision < 1 || !fingerprint(suiteFingerprint)
+                || !List.of("GRAPH", "OPERATOR").contains(targetKind)
                 || targetId.isBlank() || !fingerprint(targetFingerprint) || caseResults.isEmpty()
                 || coverageStatus == null || promotionStatus == null) {
             throw new IllegalArgumentException("Suite-run evidence identity is incomplete");
@@ -202,10 +207,11 @@ public record TestSuiteRun(
      * @return immutable suite-run projection
      */
     public static TestSuiteRun from(JsonNode response) {
-        if (response == null || !response.isObject()) {
-            throw new IllegalArgumentException("A test-suite execution response object is required");
-        }
+        TestingProtocolSchemaValidator.require(response, "testSuiteExecutionResponse");
         JsonNode evidence = response.path("evidence");
+        if (!response.path("suiteRunId").asText().equals(evidence.path("suiteRunId").asText())) {
+            throw new IllegalArgumentException("Suite-run response identity is inconsistent");
+        }
         JsonNode suiteRef = evidence.path("suiteRef");
         JsonNode target = evidence.path("target");
         List<CaseResult> cases = new ArrayList<>();
@@ -213,8 +219,8 @@ public record TestSuiteRun(
             JsonNode fixture = value.path("fixtureBundleRef");
             cases.add(new CaseResult(value.path("caseId").asText(), value.path("caseType").asText(),
                     enumValue(CaseStatus.class, value.path("status").asText(), "case status"),
-                    value.path("runId").asText(), value.path("evidenceStatus").asText(),
-                    value.path("evidenceClass").asText(), fixture.path("fixtureBundleId").asText(),
+                    value.path("runId").asText(), nullableText(value.path("evidenceStatus")),
+                    nullableText(value.path("evidenceClass")), fixture.path("fixtureBundleId").asText(),
                     fixture.path("revision").asLong(), fixture.path("fingerprint").asText(),
                     value.path("assertionsEvaluated").asInt(), value.path("assertionsPassed").asInt(),
                     value.path("diagnosticCode").asText()));
@@ -277,7 +283,39 @@ public record TestSuiteRun(
         return List.copyOf(codes);
     }
 
-    /** @return defensive copy of the authorized complete response */
+    /**
+     * Requires the response to describe the exact caller-owned suite execution intent.
+     *
+     * @param expectedSuiteId requested suite id
+     * @param expectedRevision requested immutable revision
+     * @param expectedFingerprint requested suite fingerprint
+     * @param expectedClientRequestId caller-owned idempotency key
+     */
+    void requireExecutionIdentity(String expectedSuiteId, long expectedRevision,
+                                  String expectedFingerprint, String expectedClientRequestId) {
+        if (!suiteId.equals(normalized(expectedSuiteId)) || suiteRevision != expectedRevision
+                || !suiteFingerprint.equals(normalized(expectedFingerprint))
+                || !clientRequestId.equals(normalized(expectedClientRequestId))) {
+            throw new IllegalArgumentException("Suite-run response identity does not match the request");
+        }
+    }
+
+    /**
+     * Requires this response to describe the requested durable suite run.
+     *
+     * @param expectedSuiteRunId requested durable run id
+     */
+    void requireRunIdentity(String expectedSuiteRunId) {
+        if (!suiteRunId.equals(normalized(expectedSuiteRunId))) {
+            throw new IllegalArgumentException("Suite-run response identity does not match the request");
+        }
+    }
+
+    /**
+     * Returns the authorized complete response without exposing mutable state.
+     *
+     * @return defensive copy of the authorized complete response
+     */
     @Override
     public JsonNode rawResponse() {
         return rawResponse == null ? null : rawResponse.deepCopy();
@@ -287,8 +325,12 @@ public record TestSuiteRun(
         try {
             return Enum.valueOf(type, normalized(value));
         } catch (RuntimeException failure) {
-            throw new IllegalArgumentException("Unknown or missing suite-run " + field + ": " + value, failure);
+            throw new IllegalArgumentException("Unknown or missing suite-run " + field);
         }
+    }
+
+    private static String nullableText(JsonNode value) {
+        return value == null || value.isNull() ? "" : value.asText();
     }
 
     private static String machineCode(String value, String field) {

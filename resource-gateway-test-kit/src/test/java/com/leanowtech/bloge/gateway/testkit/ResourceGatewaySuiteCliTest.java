@@ -34,6 +34,7 @@ class ResourceGatewaySuiteCliTest {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/testing/suites/loan-policy/executions", this::executeSuite);
         server.createContext("/api/testing/suites/blocked-policy/executions", this::executeBlockedSuite);
+        server.createContext("/api/testing/suites/running-policy/executions", this::executeRunningSuite);
         server.start();
     }
 
@@ -121,6 +122,46 @@ class ResourceGatewaySuiteCliTest {
                 .doesNotContain("private diagnostic");
     }
 
+    @Test
+    void treatsNonTerminalCheckpointAsInfrastructureOutcome() throws Exception {
+        Path report = temporaryDirectory.resolve("ci/running.xml");
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ByteArrayOutputStream error = new ByteArrayOutputStream();
+
+        int exit = ResourceGatewaySuiteCli.run(new String[]{
+                        "--base-uri", "http://127.0.0.1:" + server.getAddress().getPort(),
+                        "--suite-id", "running-policy",
+                        "--revision", "3",
+                        "--fingerprint", FINGERPRINT,
+                        "--client-request-id", "pipeline-984-job-4",
+                        "--report", report.toString(),
+                }, Map.of("RESOURCE_GATEWAY_TOKEN", "ci-secret-token"),
+                new PrintStream(output), new PrintStream(error));
+
+        assertThat(exit).isEqualTo(2);
+        assertThat(output.toString(StandardCharsets.UTF_8)).isEmpty();
+        assertThat(error.toString(StandardCharsets.UTF_8))
+                .contains("RG.TESTKIT.SUITE_NON_TERMINAL")
+                .doesNotContain("private");
+        assertThat(Files.readString(report))
+                .contains("failures=\"1\"")
+                .contains("RG.TESTKIT.SUITE_NON_TERMINAL");
+    }
+
+    @Test
+    void neverEchoesUnexpectedPositionalArgumentThatMayContainASecret() {
+        String accidentalSecret = "accidental-secret-value";
+        ByteArrayOutputStream error = new ByteArrayOutputStream();
+
+        int exit = ResourceGatewaySuiteCli.run(new String[]{accidentalSecret}, Map.of(),
+                new PrintStream(new ByteArrayOutputStream()), new PrintStream(error));
+
+        assertThat(exit).isEqualTo(2);
+        assertThat(error.toString(StandardCharsets.UTF_8))
+                .contains("Unexpected positional argument")
+                .doesNotContain(accidentalSecret);
+    }
+
     private void executeSuite(HttpExchange exchange) throws IOException {
         purpose = exchange.getRequestHeaders().getFirst("X-Purpose");
         authorization = exchange.getRequestHeaders().getFirst("Authorization");
@@ -141,20 +182,36 @@ class ResourceGatewaySuiteCliTest {
         exchange.close();
     }
 
+    private void executeRunningSuite(HttpExchange exchange) throws IOException {
+        purpose = exchange.getRequestHeaders().getFirst("X-Purpose");
+        authorization = exchange.getRequestHeaders().getFirst("Authorization");
+        byte[] response = runningSuiteResponse().getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.sendResponseHeaders(200, response.length);
+        exchange.getResponseBody().write(response);
+        exchange.close();
+    }
+
     private static String suiteResponse() {
         return """
                 {"schemaVersion":"bloge.testSuiteExecutionResponse.v1","suiteRunId":"suite-run-982",
-                 "evidenceFingerprint":"%1$s","evidence":{"status":"PASSED",
-                   "clientRequestId":"pipeline-982-job-4",
+                 "evidenceFingerprint":"%1$s","evidence":{"schemaVersion":"bloge.testSuiteRunEvidence.v1",
+                   "suiteRunId":"suite-run-982","status":"PASSED","clientRequestId":"pipeline-982-job-4",
+                   "executionPurpose":"TEST_SUITE_EXECUTION",
                    "suiteRef":{"suiteId":"loan-policy","revision":3,"fingerprint":"%1$s"},
                    "target":{"kind":"GRAPH","id":"loanDecision","fingerprint":"%1$s"},
+                   "startedAt":"2026-07-15T10:15:30Z","completedAt":"2026-07-15T10:15:31Z",
                    "caseResults":[{"caseId":"golden","caseType":"GOLDEN","status":"PASSED",
                      "runId":"run-golden","fixtureBundleRef":{"fixtureBundleId":"f1","revision":1,
                      "fingerprint":"%1$s"},"evidenceStatus":"PASSED","evidenceClass":"CERTIFIABLE",
                      "assertionsEvaluated":1,"assertionsPassed":1,"diagnosticCode":"","diagnostic":""}],
                    "coverage":{"status":"SATISFIED","minimumCases":1,"completedCases":1,
-                     "missingCaseTypes":[],"missingInvocationSiteIds":[],"missingEdgeTransfers":[],
-                     "assertionDensityViolations":[],"fixtureConsumptionViolations":[]},
+                     "requiredCaseTypes":["GOLDEN"],"observedCaseTypes":["GOLDEN"],
+                     "missingCaseTypes":[],"requiredInvocationSiteIds":[],"observedInvocationSiteIds":[],
+                     "missingInvocationSiteIds":[],"requiredEdgeTransfers":[],"observedEdgeTransfers":[],
+                     "missingEdgeTransfers":[],"minimumAssertionsPerCase":1,
+                     "assertionDensityViolations":[],"fixtureConsumptionViolations":[],
+                     "allCasesCompleted":true},
                    "promotion":{"status":"ELIGIBLE","reasons":[],"allCasesPassed":true,
                      "certifiableCases":1,"minimumCertifiableCases":1,"targetCertificationEligible":true,
                      "coverageSatisfied":true,"allCasesCompleted":true},"diagnostics":[],"metadata":{}}}
@@ -164,21 +221,53 @@ class ResourceGatewaySuiteCliTest {
     private static String blockedSuiteResponse() {
         return """
                 {"schemaVersion":"bloge.testSuiteExecutionResponse.v1","suiteRunId":"suite-run-983",
-                 "evidenceFingerprint":"%1$s","evidence":{"status":"COMPLETED_WITH_FAILURES",
-                   "clientRequestId":"pipeline-983-job-4",
+                 "evidenceFingerprint":"%1$s","evidence":{"schemaVersion":"bloge.testSuiteRunEvidence.v1",
+                   "suiteRunId":"suite-run-983","status":"COMPLETED_WITH_FAILURES",
+                   "clientRequestId":"pipeline-983-job-4","executionPurpose":"TEST_SUITE_EXECUTION",
                    "suiteRef":{"suiteId":"blocked-policy","revision":3,"fingerprint":"%1$s"},
                    "target":{"kind":"GRAPH","id":"loanDecision","fingerprint":"%1$s"},
+                   "startedAt":"2026-07-15T10:15:30Z","completedAt":"2026-07-15T10:15:31Z",
                    "caseResults":[{"caseId":"negative","caseType":"NEGATIVE","status":"FAILED",
                      "runId":"run-negative","fixtureBundleRef":{"fixtureBundleId":"f2","revision":1,
                      "fingerprint":"%1$s"},"evidenceStatus":"ASSERTION_FAILED",
                      "evidenceClass":"CERTIFIABLE","assertionsEvaluated":1,"assertionsPassed":0,
                      "diagnosticCode":"ASSERTION_FAILED","diagnostic":"private diagnostic"}],
                    "coverage":{"status":"SATISFIED","minimumCases":1,"completedCases":1,
-                     "missingCaseTypes":[],"missingInvocationSiteIds":[],"missingEdgeTransfers":[],
-                     "assertionDensityViolations":[],"fixtureConsumptionViolations":[]},
+                     "requiredCaseTypes":["NEGATIVE"],"observedCaseTypes":["NEGATIVE"],
+                     "missingCaseTypes":[],"requiredInvocationSiteIds":[],"observedInvocationSiteIds":[],
+                     "missingInvocationSiteIds":[],"requiredEdgeTransfers":[],"observedEdgeTransfers":[],
+                     "missingEdgeTransfers":[],"minimumAssertionsPerCase":1,
+                     "assertionDensityViolations":[],"fixtureConsumptionViolations":[],
+                     "allCasesCompleted":true},
                    "promotion":{"status":"BLOCKED","reasons":["CASES_FAILED"],"allCasesPassed":false,
                      "certifiableCases":1,"minimumCertifiableCases":1,"targetCertificationEligible":true,
                      "coverageSatisfied":true,"allCasesCompleted":true},"diagnostics":[],"metadata":{}}}
+                """.formatted(FINGERPRINT);
+    }
+
+    private static String runningSuiteResponse() {
+        return """
+                {"schemaVersion":"bloge.testSuiteExecutionResponse.v1","suiteRunId":"suite-run-984",
+                 "evidenceFingerprint":"","evidence":{"schemaVersion":"bloge.testSuiteRunEvidence.v1",
+                   "suiteRunId":"suite-run-984","status":"RUNNING",
+                   "clientRequestId":"pipeline-984-job-4","executionPurpose":"TEST_SUITE_EXECUTION",
+                   "suiteRef":{"suiteId":"running-policy","revision":3,"fingerprint":"%1$s"},
+                   "target":{"kind":"GRAPH","id":"loanDecision","fingerprint":"%1$s"},
+                   "startedAt":"2026-07-15T10:15:30Z","completedAt":null,
+                   "caseResults":[{"caseId":"golden","caseType":"GOLDEN","status":"PENDING",
+                     "runId":"","fixtureBundleRef":{"fixtureBundleId":"f3","revision":1,
+                     "fingerprint":"%1$s"},"evidenceStatus":null,"evidenceClass":null,
+                     "assertionsEvaluated":0,"assertionsPassed":0,"diagnosticCode":"","diagnostic":""}],
+                   "coverage":{"status":"NOT_EVALUATED","minimumCases":1,"completedCases":0,
+                     "requiredCaseTypes":["GOLDEN"],"observedCaseTypes":[],"missingCaseTypes":["GOLDEN"],
+                     "requiredInvocationSiteIds":[],"observedInvocationSiteIds":[],
+                     "missingInvocationSiteIds":[],"requiredEdgeTransfers":[],"observedEdgeTransfers":[],
+                     "missingEdgeTransfers":[],"minimumAssertionsPerCase":1,
+                     "assertionDensityViolations":[],"fixtureConsumptionViolations":[],
+                     "allCasesCompleted":false},
+                   "promotion":{"status":"NOT_EVALUATED","reasons":[],"allCasesPassed":false,
+                     "certifiableCases":0,"minimumCertifiableCases":1,"targetCertificationEligible":true,
+                     "coverageSatisfied":false,"allCasesCompleted":false},"diagnostics":[],"metadata":{}}}
                 """.formatted(FINGERPRINT);
     }
 }

@@ -68,6 +68,12 @@ public final class ResourceGatewaySuiteCli {
             TestSuiteRun run = client.executeSuite(options.suiteId(), options.revision(),
                     options.fingerprint(), options.clientRequestId(), options.strategy(),
                     Map.of("source", "resource-gateway-suite-cli"));
+            if (run.status() == TestSuiteRun.Status.RUNNING) {
+                writeInfrastructureFailure(options, "RG.TESTKIT.SUITE_NON_TERMINAL",
+                        "The suite returned a non-terminal checkpoint; no gate verdict is available.",
+                        safeError);
+                return CONFIGURATION_ERROR;
+            }
             JUnitXmlReportWriter.Report report = JUnitXmlReportWriter.writeSuite(
                     options.report(), run, options.requirePromotionEligible());
             safeOutput.println("suiteRunId=" + safe(run.suiteRunId(), 256)
@@ -164,7 +170,7 @@ public final class ResourceGatewaySuiteCli {
             for (int index = 0; index < values.length; index++) {
                 String argument = normalized(values[index]);
                 if (!argument.startsWith("--")) {
-                    throw new IllegalArgumentException("Unexpected argument: " + argument);
+                    throw new IllegalArgumentException("Unexpected positional argument");
                 }
                 String name = argument.substring(2);
                 if ("allow-non-eligible".equals(name)) {

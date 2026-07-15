@@ -37,6 +37,16 @@ class TestingProtocolTest {
             assertThat(TestingProtocol.OPERATOR_TARGET_DESCRIPTOR_V1)
                     .isEqualTo("bloge.testOperatorTargetDescriptor.v1");
             assertConstant(definitions, "testRunEvidence", TestingProtocol.TEST_RUN_EVIDENCE_V1);
+            assertConstant(definitions, "testSuite", TestingProtocol.TEST_SUITE_V1);
+            assertConstant(definitions, "testSuiteRegistrationRequest",
+                    TestingProtocol.TEST_SUITE_REGISTRATION_REQUEST_V1);
+            assertConstant(definitions, "storedTestSuite", TestingProtocol.STORED_TEST_SUITE_V1);
+            assertConstant(definitions, "testSuiteExecutionRequest",
+                    TestingProtocol.TEST_SUITE_EXECUTION_REQUEST_V1);
+            assertConstant(definitions, "testSuiteExecutionResponse",
+                    TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1);
+            assertConstant(definitions, "testSuiteRunEvidence",
+                    TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V1);
         }
     }
 

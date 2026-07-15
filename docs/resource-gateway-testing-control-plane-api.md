@@ -644,21 +644,25 @@ mvn -f resource-gateway-test-kit/pom.xml clean install
 
 The client exposes immutable suite register/find/execute/query operations. Execution requires an
 exact revision, full SHA-256 fingerprint, and explicit `clientRequestId`; malformed identities are
-rejected before any network call. `TestSuiteRun` exposes payload-free case links, structural coverage,
-and promotion eligibility, while `TestSuiteRunAssertions` separates execution, case, coverage, and
-eligibility assertions.
+rejected before any network call. The exact packaged Draft 2020-12 schema validates complete suite
+registration and execution values at runtime, and every returned suite/run identity is rebound to the
+originating request before it can reach assertions or reporters. `TestSuiteRun` exposes payload-free
+case links, structural coverage, and promotion eligibility, while `TestSuiteRunAssertions` separates
+execution, case, coverage, and eligibility assertions.
 
 `clean package` also emits an executable `*-cli.jar`. It reads the bearer token only from
 `RESOURCE_GATEWAY_TOKEN`, requires the exact suite reference and caller-owned idempotency key, writes
 payload-free JUnit XML, and returns `0` only for `PASSED + SATISFIED + ELIGIBLE`, `1` for a governed
 gate failure, and `2` for configuration/transport/protocol/report failure. An explicit
-`--allow-non-eligible` relaxes only eligibility; it never relaxes case or coverage correctness.
+`--allow-non-eligible` relaxes only eligibility; it never relaxes case or coverage correctness. A
+valid but non-terminal `RUNNING` checkpoint also exits `2`, because no governed gate verdict exists.
 
 The client requests a fresh bearer credential for every operation, supplies the correct
 `X-Purpose`, rejects protocol-version drift and oversized bodies, and omits payload/problem details
 from exceptions and reports. Its typed `TestRun` projection retains node/site/correlation/occurrence,
 retry-attempt, and edge endpoint facts without carrying payload values; legacy v1 responses remain
-readable as zero-coordinate summaries. See the
+readable as zero-coordinate summaries. Unknown CLI argument values are never echoed, and test-kit
+`clean verify` fails on public JavaDoc warnings. See the
 [test-kit guide](../resource-gateway-test-kit/README.md) for a complete discover, register, execute,
 assert, and report example.
 

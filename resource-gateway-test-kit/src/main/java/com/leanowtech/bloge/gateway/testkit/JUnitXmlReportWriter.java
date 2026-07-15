@@ -4,7 +4,6 @@ import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -48,30 +47,11 @@ public final class JUnitXmlReportWriter {
         Objects.requireNonNull(output, "output");
         List<TestRun> values = runs == null ? List.of() : List.copyOf(runs);
         int failures = (int) values.stream().filter(run -> !run.passed()).count();
-        Path parent = output.toAbsolutePath().getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
-        XMLOutputFactory factory = XMLOutputFactory.newFactory();
-        try (OutputStream stream = Files.newOutputStream(output)) {
-            XMLStreamWriter xml = factory.createXMLStreamWriter(stream, StandardCharsets.UTF_8.name());
-            xml.writeStartDocument(StandardCharsets.UTF_8.name(), "1.0");
-            xml.writeStartElement("testsuite");
-            xml.writeAttribute("name", bounded(suiteName, 512));
-            xml.writeAttribute("tests", Integer.toString(values.size()));
-            xml.writeAttribute("failures", Integer.toString(failures));
-            xml.writeAttribute("errors", "0");
-            xml.writeAttribute("skipped", "0");
+        writeDocument(output, suiteName, values.size(), failures, xml -> {
             for (int index = 0; index < values.size(); index++) {
                 writeRun(xml, values.get(index), index);
             }
-            xml.writeEndElement();
-            xml.writeEndDocument();
-            xml.flush();
-            xml.close();
-        } catch (XMLStreamException failure) {
-            throw new IOException("Unable to write Resource Gateway JUnit XML", failure);
-        }
+        });
         return new Report(values.size(), failures);
     }
 
@@ -93,31 +73,13 @@ public final class JUnitXmlReportWriter {
         int caseFailures = (int) run.caseResults().stream().filter(result -> !result.passed()).count();
         boolean gatePassed = run.gateFailureCodes(requirePromotionEligible).isEmpty();
         int failures = caseFailures + (gatePassed ? 0 : 1);
-        Path parent = output.toAbsolutePath().getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
-        XMLOutputFactory factory = XMLOutputFactory.newFactory();
-        try (OutputStream stream = Files.newOutputStream(output)) {
-            XMLStreamWriter xml = factory.createXMLStreamWriter(stream, StandardCharsets.UTF_8.name());
-            xml.writeStartDocument(StandardCharsets.UTF_8.name(), "1.0");
-            xml.writeStartElement("testsuite");
-            xml.writeAttribute("name", bounded("resource-gateway suite " + run.suiteId(), 512));
-            xml.writeAttribute("tests", Integer.toString(run.caseResults().size() + 1));
-            xml.writeAttribute("failures", Integer.toString(failures));
-            xml.writeAttribute("errors", "0");
-            xml.writeAttribute("skipped", "0");
+        writeDocument(output, "resource-gateway suite " + run.suiteId(),
+                run.caseResults().size() + 1, failures, xml -> {
             for (TestSuiteRun.CaseResult result : run.caseResults()) {
                 writeSuiteCase(xml, result);
             }
             writeSuiteGate(xml, run, requirePromotionEligible, gatePassed);
-            xml.writeEndElement();
-            xml.writeEndDocument();
-            xml.flush();
-            xml.close();
-        } catch (XMLStreamException failure) {
-            throw new IOException("Unable to write Resource Gateway suite JUnit XML", failure);
-        }
+        });
         return new Report(run.caseResults().size() + 1, failures);
     }
 
@@ -135,20 +97,7 @@ public final class JUnitXmlReportWriter {
     public static Report writeInfrastructureFailure(Path output, String suiteName,
                                                     String code, String summary) throws IOException {
         Objects.requireNonNull(output, "output");
-        Path parent = output.toAbsolutePath().getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
-        XMLOutputFactory factory = XMLOutputFactory.newFactory();
-        try (OutputStream stream = Files.newOutputStream(output)) {
-            XMLStreamWriter xml = factory.createXMLStreamWriter(stream, StandardCharsets.UTF_8.name());
-            xml.writeStartDocument(StandardCharsets.UTF_8.name(), "1.0");
-            xml.writeStartElement("testsuite");
-            xml.writeAttribute("name", bounded(suiteName, 512));
-            xml.writeAttribute("tests", "1");
-            xml.writeAttribute("failures", "1");
-            xml.writeAttribute("errors", "0");
-            xml.writeAttribute("skipped", "0");
+        writeDocument(output, suiteName, 1, 1, xml -> {
             xml.writeStartElement("testcase");
             xml.writeAttribute("classname", "resource-gateway.governed-suite");
             xml.writeAttribute("name", "suite-infrastructure");
@@ -158,14 +107,39 @@ public final class JUnitXmlReportWriter {
             xml.writeCharacters("The suite adapter did not obtain governed terminal evidence.");
             xml.writeEndElement();
             xml.writeEndElement();
+        });
+        return new Report(1, 1);
+    }
+
+    private static void writeDocument(Path output, String suiteName, int tests, int failures,
+                                      XmlBody body) throws IOException {
+        Path parent = output.toAbsolutePath().getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        XMLOutputFactory factory = XMLOutputFactory.newFactory();
+        try (var stream = Files.newOutputStream(output)) {
+            XMLStreamWriter xml = factory.createXMLStreamWriter(stream, StandardCharsets.UTF_8.name());
+            xml.writeStartDocument(StandardCharsets.UTF_8.name(), "1.0");
+            xml.writeStartElement("testsuite");
+            xml.writeAttribute("name", bounded(suiteName, 512));
+            xml.writeAttribute("tests", Integer.toString(tests));
+            xml.writeAttribute("failures", Integer.toString(failures));
+            xml.writeAttribute("errors", "0");
+            xml.writeAttribute("skipped", "0");
+            body.write(xml);
             xml.writeEndElement();
             xml.writeEndDocument();
             xml.flush();
             xml.close();
         } catch (XMLStreamException failure) {
-            throw new IOException("Unable to write Resource Gateway infrastructure JUnit XML", failure);
+            throw new IOException("Unable to write Resource Gateway JUnit XML", failure);
         }
-        return new Report(1, 1);
+    }
+
+    @FunctionalInterface
+    private interface XmlBody {
+        void write(XMLStreamWriter xml) throws XMLStreamException;
     }
 
     private static void writeRun(XMLStreamWriter xml, TestRun run, int index) throws XMLStreamException {
