@@ -16,7 +16,7 @@ Implemented surfaces:
 | Surface | Verification |
 | --- | --- |
 | target discovery | encoded graph ids, `TEST_EXECUTION` purpose, typed fingerprint/readiness projection |
-| operator adapter | typed binding discovery, OPERATOR fixture requests, dedicated micro-graph execution, and common run projection |
+| operator adapter | v2 typed binding/composability discovery, OPERATOR fixture requests, dedicated micro-graph execution, and common run projection |
 | immutable fixture registry | write/read purposes, revision query, typed stored revision |
 | single/batch/query execution | protocol guards, result cardinality, ten-state typed run projection |
 | occurrence evidence | payload-free node/site/correlation/occurrence, retry-attempt, and edge endpoint projection; legacy zero-coordinate compatibility |
@@ -33,7 +33,7 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
 Test-kit result at this increment: 13 tests, 0 failures, 0 errors, 0 skipped. The latest server
-regression build completed with 1722 tests, 0 failures, 0 errors, 34 conditional skips, and a
+regression build completed with 1726 tests, 0 failures, 0 errors, 34 conditional skips, and a
 packaged Spring Boot JAR.
 
 ## Explicit Non-Claims
@@ -44,3 +44,5 @@ isolation remain open. The current
 JUnit XML is intentionally an evidence index, not an evidence dump; authorized users diagnose
 payload differences through the persisted run API. Synchronous nested/foreach/loop/compensation
 addressing, temporal `DELAY/TIMEOUT`, and seven-graph dogfooding are now implemented server-side.
+The client rejects the historical `bloge.testOperatorTargetDescriptor.v1`: required composability
+facts were added as a deliberate v2 protocol boundary instead of silently changing the v1 shape.

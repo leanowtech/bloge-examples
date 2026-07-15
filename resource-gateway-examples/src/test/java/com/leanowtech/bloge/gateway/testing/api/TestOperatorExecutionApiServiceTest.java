@@ -18,6 +18,8 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.OperatorExecutionTargetSnapshot;
+import com.leanowtech.bloge.gateway.testing.runtime.OperatorComposabilityManifest;
+import com.leanowtech.bloge.gateway.testing.runtime.OperatorComposabilityManifestProvider;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorRuntimeBindingSnapshotProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,6 +38,8 @@ import static org.mockito.Mockito.mock;
 
 class TestOperatorExecutionApiServiceTest {
 
+    private static final String CONFORMANCE_FINGERPRINT = "sha256:" + "c".repeat(64);
+
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final DefaultOperatorRegistry operators = new DefaultOperatorRegistry();
     private final EmptyResourceRegistry resources = new EmptyResourceRegistry();
@@ -50,6 +54,8 @@ class TestOperatorExecutionApiServiceTest {
         operators.register("configured.read", new ConfiguredReadOperator("tenant-a:"));
         operators.register("configured.snapshot", new SnapshotConfiguredReadOperator("tenant-a:"));
         operators.register("configured.oversized", new OversizedSnapshotOperator());
+        operators.register("undeclared.read", new UndeclaredReadOperator());
+        operators.register("clock.read", new ClockDependentReadOperator());
         operators.register("invalid.contract", new InvalidBehaviorContractOperator());
         operators.registerRaw("customer.events", new EventStreamOperator());
         service = new TestExecutionApiService(mock(GatewayGraphService.class), operators, resources,
@@ -67,6 +73,11 @@ class TestOperatorExecutionApiServiceTest {
         assertThat(target.implementationFingerprint()).startsWith("sha256:");
         assertThat(target.runtimeBindingStateFingerprint()).startsWith("sha256:");
         assertThat(target.schemaFingerprint()).startsWith("sha256:");
+        assertThat(target.composabilityFingerprint()).startsWith("sha256:");
+        assertThat(target.composabilityManifest())
+                .containsEntry("dependencyMode", "NONE")
+                .containsEntry("globalStateFree", true)
+                .containsEntry("conformanceFingerprint", CONFORMANCE_FINGERPRINT);
         assertThat(target.inputSchema()).isNotEmpty();
         assertThat(target.outputSchema()).isNotEmpty();
         assertThat(target.executionModel()).isEqualTo("SYNCHRONOUS");
@@ -118,6 +129,7 @@ class TestOperatorExecutionApiServiceTest {
         });
         assertThat(response.evidence().metadata())
                 .containsEntry("implementationFingerprint", target.implementationFingerprint())
+                .containsEntry("composabilityFingerprint", target.composabilityFingerprint())
                 .containsEntry("testabilityClass", "EXECUTABLE_UNIT");
         assertThat(runs.find("tenant-a", "test", response.runId())).isPresent();
     }
@@ -156,6 +168,32 @@ class TestOperatorExecutionApiServiceTest {
         assertThat(target.certificationEligible()).isFalse();
         assertThat(target.certificationGaps())
                 .anyMatch(gap -> gap.contains("instance state") && gap.contains("snapshot contract"));
+    }
+
+    @Test
+    void statelessReadOnlyBindingWithoutComposabilityManifestIsOpaque() {
+        TestOperatorTargetDescriptor target = service.describeOperatorTarget("undeclared.read", identity());
+
+        assertThat(target.runtimeBindingStateFingerprint()).startsWith("sha256:");
+        assertThat(target.composabilityFingerprint()).isEmpty();
+        assertThat(target.composabilityManifest()).isEmpty();
+        assertThat(target.testabilityClass()).isEqualTo(OperatorExecutionTargetSnapshot.OPAQUE_RUNTIME);
+        assertThat(target.executionSupported()).isTrue();
+        assertThat(target.certificationEligible()).isFalse();
+        assertThat(target.certificationGaps())
+                .contains("Binding has no formal operator composability manifest; hidden dependencies cannot be excluded.");
+    }
+
+    @Test
+    void declaredButUncontrolledExecutionServiceFailsCertificationClosed() {
+        TestOperatorTargetDescriptor target = service.describeOperatorTarget("clock.read", identity());
+
+        assertThat(target.composabilityFingerprint()).startsWith("sha256:");
+        assertThat(target.composabilityManifest()).containsEntry("executionServices", List.of("TIME"));
+        assertThat(target.testabilityClass()).isEqualTo(OperatorExecutionTargetSnapshot.OPAQUE_RUNTIME);
+        assertThat(target.certificationEligible()).isFalse();
+        assertThat(target.certificationGaps())
+                .anyMatch(gap -> gap.contains("execution services") && gap.contains("TIME"));
     }
 
     @Test
@@ -267,7 +305,8 @@ class TestOperatorExecutionApiServiceTest {
     private record GreetingInput(String name) {
     }
 
-    private static final class GreetingOperator implements Operator<GreetingInput, Map<String, Object>> {
+    private static final class GreetingOperator implements Operator<GreetingInput, Map<String, Object>>,
+            OperatorComposabilityManifestProvider {
         @Override
         public Map<String, Object> execute(GreetingInput input, OperatorContext context) {
             return Map.of("message", "Hello " + input.name());
@@ -276,6 +315,11 @@ class TestOperatorExecutionApiServiceTest {
         @Override
         public SideEffectType sideEffectType() {
             return SideEffectType.READ_ONLY;
+        }
+
+        @Override
+        public OperatorComposabilityManifest operatorComposabilityManifest() {
+            return selfContained("test:customer-greeting");
         }
     }
 
@@ -291,7 +335,8 @@ class TestOperatorExecutionApiServiceTest {
         }
     }
 
-    private static final class ConfiguredReadOperator implements Operator<Object, Object> {
+    private static final class ConfiguredReadOperator implements Operator<Object, Object>,
+            OperatorComposabilityManifestProvider {
         private final String prefix;
 
         private ConfiguredReadOperator(String prefix) {
@@ -307,10 +352,15 @@ class TestOperatorExecutionApiServiceTest {
         public SideEffectType sideEffectType() {
             return SideEffectType.READ_ONLY;
         }
+
+        @Override
+        public OperatorComposabilityManifest operatorComposabilityManifest() {
+            return selfContained("test:configured-read");
+        }
     }
 
     private static final class SnapshotConfiguredReadOperator implements Operator<Object, Object>,
-            OperatorRuntimeBindingSnapshotProvider {
+            OperatorRuntimeBindingSnapshotProvider, OperatorComposabilityManifestProvider {
         private final String prefix;
 
         private SnapshotConfiguredReadOperator(String prefix) {
@@ -331,10 +381,15 @@ class TestOperatorExecutionApiServiceTest {
         public Map<String, ?> runtimeBindingSnapshot() {
             return Map.of("prefix", prefix);
         }
+
+        @Override
+        public OperatorComposabilityManifest operatorComposabilityManifest() {
+            return selfContained("test:configured-snapshot");
+        }
     }
 
     private static final class OversizedSnapshotOperator implements Operator<Object, Object>,
-            OperatorRuntimeBindingSnapshotProvider {
+            OperatorRuntimeBindingSnapshotProvider, OperatorComposabilityManifestProvider {
         private final Object marker = new Object();
 
         @Override
@@ -351,9 +406,48 @@ class TestOperatorExecutionApiServiceTest {
         public Map<String, ?> runtimeBindingSnapshot() {
             return Map.of("value", "x".repeat(65_537));
         }
+
+        @Override
+        public OperatorComposabilityManifest operatorComposabilityManifest() {
+            return selfContained("test:oversized-snapshot");
+        }
     }
 
-    private static final class InvalidBehaviorContractOperator implements Operator<Object, Object> {
+    private static final class UndeclaredReadOperator implements Operator<Object, Object> {
+        @Override
+        public Object execute(Object input, OperatorContext context) {
+            return input;
+        }
+
+        @Override
+        public SideEffectType sideEffectType() {
+            return SideEffectType.READ_ONLY;
+        }
+    }
+
+    private static final class ClockDependentReadOperator implements Operator<Object, Object>,
+            OperatorComposabilityManifestProvider {
+        @Override
+        public Object execute(Object input, OperatorContext context) {
+            return input;
+        }
+
+        @Override
+        public SideEffectType sideEffectType() {
+            return SideEffectType.READ_ONLY;
+        }
+
+        @Override
+        public OperatorComposabilityManifest operatorComposabilityManifest() {
+            return new OperatorComposabilityManifest(OperatorComposabilityManifest.SCHEMA_VERSION,
+                    OperatorComposabilityManifest.DependencyMode.NONE, List.of(),
+                    List.of(OperatorComposabilityManifest.ExecutionService.TIME), true,
+                    "test:clock-read", CONFORMANCE_FINGERPRINT);
+        }
+    }
+
+    private static final class InvalidBehaviorContractOperator implements Operator<Object, Object>,
+            OperatorComposabilityManifestProvider {
         @Override
         public Object execute(Object input, OperatorContext context) {
             return input;
@@ -363,6 +457,15 @@ class TestOperatorExecutionApiServiceTest {
         public SideEffectType sideEffectType() {
             return null;
         }
+
+        @Override
+        public OperatorComposabilityManifest operatorComposabilityManifest() {
+            return selfContained("test:invalid-behavior");
+        }
+    }
+
+    private static OperatorComposabilityManifest selfContained(String suiteRef) {
+        return OperatorComposabilityManifest.selfContained(suiteRef, CONFORMANCE_FINGERPRINT);
     }
 
     private static final class EventStreamOperator implements StreamingOperator<Object, Object> {

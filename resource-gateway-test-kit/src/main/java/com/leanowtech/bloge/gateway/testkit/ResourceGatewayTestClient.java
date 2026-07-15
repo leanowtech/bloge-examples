@@ -101,7 +101,7 @@ public final class ResourceGatewayTestClient {
     public OperatorTargetDescriptor describeOperatorTarget(String operatorRef) {
         JsonNode response = exchange("GET", "/api/testing/targets/operators/" + segment(operatorRef), "",
                 "TEST_EXECUTION", null);
-        requireVersion(response, TestingProtocol.OPERATOR_TARGET_DESCRIPTOR_V1);
+        requireVersion(response, TestingProtocol.OPERATOR_TARGET_DESCRIPTOR_V2);
         return OperatorTargetDescriptor.from(response);
     }
 

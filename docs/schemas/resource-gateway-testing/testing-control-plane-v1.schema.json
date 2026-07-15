@@ -363,17 +363,52 @@
         "evidence": {"$ref": "#/$defs/testRunEvidence"}
       }
     },
+    "operatorComposabilityManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "dependencyMode", "dependencies", "executionServices",
+        "globalStateFree", "conformanceSuiteRef", "conformanceFingerprint"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.operatorComposabilityManifest.v1"},
+        "dependencyMode": {"enum": ["NONE", "DECLARED", "OPAQUE"]},
+        "dependencies": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ref", "kind", "controlBoundary"],
+            "properties": {
+              "ref": {"type": "string", "minLength": 1, "maxLength": 512},
+              "kind": {"enum": ["RESOURCE", "HTTP", "DATABASE", "MESSAGE", "FILESYSTEM", "SECRET", "OTHER"]},
+              "controlBoundary": {"enum": ["RESOURCE_BINDING", "EXECUTION_PROVIDER", "TRANSPORT_PORT", "UNMANAGED"]}
+            }
+          }
+        },
+        "executionServices": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["TIME", "RANDOM", "UUID", "IDENTITY", "FEATURE_FLAG"]}
+        },
+        "globalStateFree": {"type": "boolean"},
+        "conformanceSuiteRef": {"type": "string", "maxLength": 1024},
+        "conformanceFingerprint": {
+          "oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]
+        }
+      }
+    },
     "testOperatorTargetDescriptor": {
       "type": "object",
       "additionalProperties": false,
       "required": ["schemaVersion", "target", "implementationFingerprint",
-        "runtimeBindingStateFingerprint", "schemaFingerprint",
+        "runtimeBindingStateFingerprint", "schemaFingerprint", "composabilityFingerprint",
+        "composabilityManifest",
         "inputSchema", "outputSchema", "executionModel", "sideEffectType", "idempotency",
         "sideEffectProtocol", "testabilityClass", "resourceDependencyFingerprints",
         "dependencyPolicy", "executionSupported", "certificationEligible",
         "certificationRequirements", "certificationGaps"],
       "properties": {
-        "schemaVersion": {"const": "bloge.testOperatorTargetDescriptor.v1"},
+        "schemaVersion": {"const": "bloge.testOperatorTargetDescriptor.v2"},
         "target": {"$ref": "#/$defs/operatorTarget"},
         "implementationFingerprint": {
           "oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]
@@ -382,6 +417,15 @@
           "oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]
         },
         "schemaFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "composabilityFingerprint": {
+          "oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]
+        },
+        "composabilityManifest": {
+          "oneOf": [
+            {"type": "object", "maxProperties": 0},
+            {"$ref": "#/$defs/operatorComposabilityManifest"}
+          ]
+        },
         "inputSchema": {"type": "object"},
         "outputSchema": {"type": "object"},
         "executionModel": {"enum": ["SYNCHRONOUS", "STREAMING", "SUSPENDABLE", "UNSUPPORTED"]},

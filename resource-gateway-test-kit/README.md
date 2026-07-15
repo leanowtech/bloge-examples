@@ -106,9 +106,11 @@ TestRunAssertions.assertCertifiable(operatorRun);
 ```
 
 `EXECUTABLE_UNIT` does not by itself imply certification. The server also requires a frozen
-implementation closure and runtime state. Stateless operators qualify automatically; configured
-operators implement `OperatorRuntimeBindingSnapshotProvider` on the server and return bounded,
-credential-free configuration facts. An unformalized stateful or opaque binding still runs when
+implementation closure, runtime state, and v2 composability manifest. Stateless operators satisfy
+only the state-freezing condition; they do not qualify automatically. Configured operators implement
+`OperatorRuntimeBindingSnapshotProvider`, while non-resource certifiable operators implement
+`OperatorComposabilityManifestProvider` with a self-contained declaration and fingerprinted
+conformance suite. An undeclared, unformalized stateful, or opaque binding still runs when
 the plan can control it, but its evidence remains `EXPLORATORY`. `HttpResourceOperator` requires
 transport-level resource fixtures so its mapping and response protocol execute for real.
 

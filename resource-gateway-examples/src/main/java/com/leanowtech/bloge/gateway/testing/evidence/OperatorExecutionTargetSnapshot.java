@@ -16,6 +16,8 @@ import com.leanowtech.bloge.gateway.operator.ResponseValidator;
 import com.leanowtech.bloge.gateway.operator.UrlTemplateRenderer;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.testing.runtime.OperatorComposabilityManifest;
+import com.leanowtech.bloge.gateway.testing.runtime.OperatorComposabilityManifestProvider;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorRuntimeBindingSnapshotProvider;
 import com.leanowtech.bloge.operators.http.HttpRequestOperator;
 
@@ -45,6 +47,8 @@ import java.util.Objects;
  * @param implementationFingerprint executable implementation-closure fingerprint
  * @param runtimeBindingStateFingerprint behavior-relevant configured-state fingerprint
  * @param schemaFingerprint input/output schema fingerprint
+ * @param composabilityFingerprint formal dependency and determinism manifest fingerprint
+ * @param composabilityManifest credential-free composability manifest projection
  * @param resourceDependencyFingerprints descriptor fingerprints keyed by resource id
  * @param dependencyPolicy descriptor dependency policy
  * @param executionModel synchronous, streaming, suspendable, or unsupported model
@@ -66,6 +70,8 @@ public record OperatorExecutionTargetSnapshot(
         String implementationFingerprint,
         String runtimeBindingStateFingerprint,
         String schemaFingerprint,
+        String composabilityFingerprint,
+        Map<String, Object> composabilityManifest,
         Map<String, String> resourceDependencyFingerprints,
         String dependencyPolicy,
         String executionModel,
@@ -119,10 +125,12 @@ public record OperatorExecutionTargetSnapshot(
         Map<String, String> dependencies = resourceDependencies(mapper, binding, frozenResources);
         String implementation = implementationFingerprint(mapper, binding);
         BindingState bindingState = bindingState(mapper, binding, dependencies);
+        ComposabilitySnapshot composability = composabilitySnapshot(
+                mapper, binding, dependencies, implementation);
         String dependencyPolicy = binding instanceof HttpResourceOperator
                 ? "CONSERVATIVE_ALL_REGISTERED" : "NONE_DECLARED";
-        List<String> requirements = new ArrayList<>();
-        List<String> gaps = new ArrayList<>();
+        List<String> requirements = new ArrayList<>(composability.requirements());
+        List<String> gaps = new ArrayList<>(composability.gaps());
         if (!behavior.gap().isBlank()) {
             gaps.add(behavior.gap());
         }
@@ -135,12 +143,14 @@ public record OperatorExecutionTargetSnapshot(
         } else if (binding instanceof HttpResourceOperator) {
             classification = CONDITIONAL_TRANSPORT;
             requirements.add("Every selected resource invocation requires a strict TRANSPORT raw-response fixture.");
-        } else if (effect == SideEffectType.READ_ONLY) {
+        } else if (effect == SideEffectType.READ_ONLY && composability.certificationSupported()) {
             classification = EXECUTABLE_UNIT;
         } else {
             classification = OPAQUE_RUNTIME;
-            gaps.add("Binding declares " + effect
-                    + " but exposes no test composability port that proves side effects are isolated.");
+            if (effect != SideEffectType.READ_ONLY) {
+                gaps.add("Binding declares " + effect
+                        + " but exposes no test composability port that proves side effects are isolated.");
+            }
         }
         if (implementation.isBlank()) {
             gaps.add("Executable class bytes are unavailable, so the runtime implementation cannot be frozen.");
@@ -151,12 +161,14 @@ public record OperatorExecutionTargetSnapshot(
         boolean eligible = synchronous && implementation.length() > 0
                 && !bindingState.fingerprint().isBlank()
                 && behavior.gap().isBlank()
+                && composability.certificationSupported()
                 && (binding instanceof HttpResourceOperator || effect == SideEffectType.READ_ONLY);
         String targetFingerprint = ProtocolFingerprint.of(mapper, Map.ofEntries(
                 Map.entry("operatorRef", ref),
                 Map.entry("implementationFingerprint", implementation),
                 Map.entry("runtimeBindingStateFingerprint", bindingState.fingerprint()),
                 Map.entry("schemaFingerprint", schema),
+                Map.entry("composabilityFingerprint", composability.fingerprint()),
                 Map.entry("protocolMapperProfile", protocolMapperProfile(mapper)),
                 Map.entry("inputType", typeName(metadata.inputType())),
                 Map.entry("outputType", typeName(metadata.outputType())),
@@ -168,6 +180,7 @@ public record OperatorExecutionTargetSnapshot(
                 Map.entry("dependencyPolicy", dependencyPolicy)));
         return new OperatorExecutionTargetSnapshot(ref, binding, metadata, frozenResources,
                 targetFingerprint, implementation, bindingState.fingerprint(), schema,
+                composability.fingerprint(), composability.manifest(),
                 Map.copyOf(dependencies), dependencyPolicy,
                 model, effect.name(), idempotency.name(), protocolMap(protocol), classification,
                 synchronous, eligible, List.copyOf(requirements), List.copyOf(gaps));
@@ -282,6 +295,97 @@ public record OperatorExecutionTargetSnapshot(
     }
 
     private record BindingState(String fingerprint, String gap) {
+    }
+
+    private static ComposabilitySnapshot composabilitySnapshot(ObjectMapper mapper, Object binding,
+                                                                Map<String, String> resourceDependencies,
+                                                                String implementationFingerprint) {
+        if (binding instanceof HttpResourceOperator) {
+            List<Map<String, Object>> dependencies = resourceDependencies.keySet().stream()
+                    .sorted()
+                    .map(resourceId -> Map.<String, Object>of(
+                            "ref", resourceId,
+                            "kind", "RESOURCE",
+                            "controlBoundary", "TRANSPORT_PORT"))
+                    .toList();
+            Map<String, Object> manifest = Map.of(
+                    "schemaVersion", OperatorComposabilityManifest.SCHEMA_VERSION,
+                    "dependencyMode", "DECLARED",
+                    "dependencies", dependencies,
+                    "executionServices", List.of(),
+                    "globalStateFree", true,
+                    "conformanceSuiteRef", "builtin:http-resource-transport-conformance",
+                    "conformanceFingerprint", implementationFingerprint);
+            return boundedComposability(mapper, manifest, true, List.of(), List.of());
+        }
+        if (!(binding instanceof OperatorComposabilityManifestProvider provider)) {
+            return new ComposabilitySnapshot("", Map.of(), false, List.of(), List.of(
+                    "Binding has no formal operator composability manifest; hidden dependencies cannot be excluded."));
+        }
+        try {
+            OperatorComposabilityManifest manifest = provider.operatorComposabilityManifest();
+            if (manifest == null) {
+                return invalidComposability("Operator composability provider returned no manifest.");
+            }
+            Map<String, Object> protocol = manifest.toProtocolMap();
+            List<String> gaps = composabilityGaps(manifest);
+            return boundedComposability(mapper, protocol, gaps.isEmpty(), List.of(), gaps);
+        } catch (RuntimeException failure) {
+            return invalidComposability("Operator composability provider failed: "
+                    + failure.getClass().getSimpleName() + ".");
+        }
+    }
+
+    private static ComposabilitySnapshot boundedComposability(ObjectMapper mapper,
+                                                              Map<String, Object> manifest,
+                                                              boolean certificationSupported,
+                                                              List<String> requirements,
+                                                              List<String> gaps) {
+        try {
+            String fingerprint = ProtocolFingerprint.ofBounded(mapper, manifest, 65_536);
+            return new ComposabilitySnapshot(fingerprint, Map.copyOf(manifest), certificationSupported,
+                    List.copyOf(requirements), List.copyOf(gaps));
+        } catch (IllegalArgumentException failure) {
+            String gap = failure.getMessage() != null && failure.getMessage().contains("exceeds")
+                    ? "Operator composability manifest exceeds 65536 bytes."
+                    : "Operator composability manifest is not canonical JSON.";
+            return invalidComposability(gap);
+        }
+    }
+
+    private static List<String> composabilityGaps(OperatorComposabilityManifest manifest) {
+        List<String> gaps = new ArrayList<>();
+        if (!OperatorComposabilityManifest.SCHEMA_VERSION.equals(manifest.schemaVersion())) {
+            gaps.add("Operator composability manifest schemaVersion is unsupported.");
+        }
+        if (manifest.dependencyMode() != OperatorComposabilityManifest.DependencyMode.NONE
+                || !manifest.dependencies().isEmpty()) {
+            gaps.add("testing-control-plane v1 cannot certify generic declared dependency ports; "
+                    + "only self-contained bindings or the built-in HTTP transport boundary are supported.");
+        }
+        if (!manifest.executionServices().isEmpty()) {
+            gaps.add("Operator consumes execution services that v1 cannot yet inject: "
+                    + manifest.executionServices().stream().map(Enum::name).toList() + ".");
+        }
+        if (!manifest.globalStateFree()) {
+            gaps.add("Operator does not attest that undeclared mutable global state is absent.");
+        }
+        if (manifest.conformanceSuiteRef().isBlank()) {
+            gaps.add("Operator composability manifest has no conformance suite reference.");
+        }
+        if (!manifest.conformanceFingerprint().matches("sha256:[0-9a-f]{64}")) {
+            gaps.add("Operator composability manifest has no valid conformance suite fingerprint.");
+        }
+        return List.copyOf(gaps);
+    }
+
+    private static ComposabilitySnapshot invalidComposability(String gap) {
+        return new ComposabilitySnapshot("", Map.of(), false, List.of(), List.of(gap));
+    }
+
+    private record ComposabilitySnapshot(String fingerprint, Map<String, Object> manifest,
+                                         boolean certificationSupported, List<String> requirements,
+                                         List<String> gaps) {
     }
 
     private static String executionModel(Object binding) {

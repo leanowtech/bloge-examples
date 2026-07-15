@@ -80,7 +80,14 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.at("/testOperatorTargetDescriptor/required"))
                 .extracting(JsonNode::asText)
                 .contains("implementationFingerprint", "runtimeBindingStateFingerprint",
-                        "schemaFingerprint", "testabilityClass", "certificationEligible");
+                        "schemaFingerprint", "composabilityFingerprint", "composabilityManifest",
+                        "testabilityClass", "certificationEligible");
+        assertThat(definitions.at("/operatorComposabilityManifest/properties/dependencyMode/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly("NONE", "DECLARED", "OPAQUE");
+        assertThat(definitions.at("/operatorComposabilityManifest/properties/executionServices/items/enum"))
+                .extracting(JsonNode::asText)
+                .contains("TIME", "RANDOM", "UUID", "IDENTITY", "FEATURE_FLAG");
         assertThat(definitions.at("/testExecutionBatchRequest/properties/executions/maxItems").asInt())
                 .isEqualTo(TestExecutionBatchRequest.MAX_EXECUTIONS);
         assertThat(definitions.at("/testExecutionBatchResponse/properties/executions/items/$ref").asText())

@@ -85,7 +85,8 @@ class TestExecutionControllerTest {
                 "OPERATOR", "customer.normalize", "sha256:target");
         when(service.describeOperatorTarget(eq("customer.normalize"), any())).thenReturn(
                 new TestOperatorTargetDescriptor("", target, "sha256:implementation", "sha256:state",
-                        "sha256:schema",
+                        "sha256:schema", "sha256:composability",
+                        Map.of("dependencyMode", "NONE"),
                         Map.of(), Map.of(), "SYNCHRONOUS", "READ_ONLY", "IDEMPOTENT", Map.of(),
                         "EXECUTABLE_UNIT", Map.of(), "NONE_DECLARED", true, true, List.of(), List.of()));
         TestExecutionApiResponse response = new TestExecutionApiResponse("", "run-operator-1", target,

@@ -24,8 +24,11 @@ public final class TestingProtocol {
     public static final String GRAPH_TARGET_DESCRIPTOR_V1 = "bloge.testGraphTargetDescriptor.v1";
     /** Operator execution request wire version. */
     public static final String OPERATOR_EXECUTION_REQUEST_V1 = "bloge.testOperatorExecutionRequest.v1";
-    /** Operator target descriptor wire version. */
+    /** Historical operator target descriptor without a formal composability manifest. */
+    @Deprecated(forRemoval = false)
     public static final String OPERATOR_TARGET_DESCRIPTOR_V1 = "bloge.testOperatorTargetDescriptor.v1";
+    /** Current operator target descriptor with fail-closed composability facts. */
+    public static final String OPERATOR_TARGET_DESCRIPTOR_V2 = "bloge.testOperatorTargetDescriptor.v2";
     /** Test-run evidence wire version. */
     public static final String TEST_RUN_EVIDENCE_V1 = "bloge.testRunEvidence.v1";
 

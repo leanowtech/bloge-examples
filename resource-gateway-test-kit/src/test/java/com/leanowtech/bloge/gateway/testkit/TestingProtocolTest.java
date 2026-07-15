@@ -33,7 +33,9 @@ class TestingProtocolTest {
             assertConstant(definitions, "testOperatorExecutionRequest",
                     TestingProtocol.OPERATOR_EXECUTION_REQUEST_V1);
             assertConstant(definitions, "testOperatorTargetDescriptor",
-                    TestingProtocol.OPERATOR_TARGET_DESCRIPTOR_V1);
+                    TestingProtocol.OPERATOR_TARGET_DESCRIPTOR_V2);
+            assertThat(TestingProtocol.OPERATOR_TARGET_DESCRIPTOR_V1)
+                    .isEqualTo("bloge.testOperatorTargetDescriptor.v1");
             assertConstant(definitions, "testRunEvidence", TestingProtocol.TEST_RUN_EVIDENCE_V1);
         }
     }

@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
-| Stage 2 public control plane | In progress | graph/operator target discovery、graph execution/batch/query、operator micro-graph execution、fixture registry、独立 test-run store、脱敏、10 态、profile/identity/production protocol guard、独立 HTTP/JUnit test-kit、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 nested/foreach/loop/compensation 控制传播与 occurrence/attempt/node/edge evidence 已落地；canvas operator runner 迁移、streaming/suspendable control/evidence 与物理 network isolation 待完成 |
+| Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、fixture registry、独立 test-run store、脱敏、10 态、profile/identity/production protocol guard、独立 HTTP/JUnit test-kit、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 nested/foreach/loop/compensation 控制传播与 occurrence/attempt/node/edge evidence 已落地；canvas operator runner 迁移、streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3-5 | Not started | signed evidence、semantic coverage、剩余 deterministic random/UUID/function services、replay、独立部署与规模化治理 |
 
 实现细节、行为兼容决策和可复现测试见
@@ -32,9 +32,9 @@
 [Stage 2 logical-time verification](resource-gateway-execution-data-control-plane-stage2-logical-time-verification.md)。北极星中的目标态能力未出现在上述
 Done 行时，均不得从文档推断为产品已开放。
 
-当前严格验收基线：Resource Gateway `clean verify` 共 1722 tests、0 failures、0 errors、
+当前严格验收基线：Resource Gateway `clean verify` 共 1726 tests、0 failures、0 errors、
 34 个条件跳过，真实浏览器回归与 Spring Boot JAR 打包成功；公共同步算子适配器聚焦
-26 tests、独立 test-kit 13 tests，均为 0 failures、0 errors。
+30 tests、独立 test-kit 13 tests，均为 0 failures、0 errors。
 
 ## 1. 结论先行
 
@@ -1119,4 +1119,4 @@ profile/identity guard、production run control-field guard、独立 test-kit，
 
 本文建议答案为“接受”。这会增加一个部署单元和部分运维成本，但换来的不是一般防误操作，而是对“测试数据控制反转不会改变生产业务行为”的结构性保证。若这个决策不冻结，后面的 API、token、feature flag 都只能降低风险，无法根治风险。
 
-第二个需要后续 ADR 收敛的问题是：runtime binding 内部未声明依赖是否一律降级为 `OPAQUE_RUNTIME`。本文建议是肯定的，否则 Resource Gateway 会对自己不可观察、不可控制的 operator 给出过高正确性认证。
+第二个问题现已按 ADR-002 落实：runtime binding 缺少版本化 composability manifest 时一律降级为 `OPAQUE_RUNTIME`；无状态和 READ_ONLY 不再自动授予认证。当前 v1 运行语义只放行 self-contained manifest 与内置 httpResource transport 边界，通用 dependency port 和 execution service 在真正可注入前继续 fail-closed。

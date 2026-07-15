@@ -93,6 +93,10 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(operatorDescriptor.target().kind()).isEqualTo("OPERATOR");
         assertThat(operatorDescriptor.target().id()).isEqualTo("httpResource");
         assertThat(operatorDescriptor.implementationFingerprint()).startsWith("sha256:");
+        assertThat(operatorDescriptor.composabilityFingerprint()).startsWith("sha256:");
+        assertThat(operatorDescriptor.composabilityManifest())
+                .containsEntry("dependencyMode", "DECLARED")
+                .containsEntry("globalStateFree", true);
         assertThat(operatorDescriptor.testabilityClass()).isEqualTo("CONDITIONAL_TRANSPORT");
         assertThat(operatorDescriptor.certificationEligible()).isTrue();
         assertThat(operatorDescriptor.certificationRequirements())

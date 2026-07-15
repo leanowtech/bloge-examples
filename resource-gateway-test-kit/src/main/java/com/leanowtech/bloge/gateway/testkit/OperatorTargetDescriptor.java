@@ -15,6 +15,8 @@ import java.util.TreeMap;
  * @param implementationFingerprint executable class-byte fingerprint
  * @param runtimeBindingStateFingerprint behavior-relevant configured-state fingerprint
  * @param schemaFingerprint composite input/output schema fingerprint
+ * @param composabilityFingerprint dependency and determinism manifest fingerprint
+ * @param composability typed composability classification facts
  * @param executionModel binding execution model
  * @param sideEffectType declared side-effect type
  * @param idempotency declared idempotency
@@ -33,6 +35,8 @@ public record OperatorTargetDescriptor(
         String implementationFingerprint,
         String runtimeBindingStateFingerprint,
         String schemaFingerprint,
+        String composabilityFingerprint,
+        Composability composability,
         String executionModel,
         String sideEffectType,
         String idempotency,
@@ -52,6 +56,7 @@ public record OperatorTargetDescriptor(
         certificationRequirements = certificationRequirements == null
                 ? List.of() : List.copyOf(certificationRequirements);
         certificationGaps = certificationGaps == null ? List.of() : List.copyOf(certificationGaps);
+        composability = composability == null ? Composability.opaque() : composability;
         rawResponse = rawResponse == null ? null : rawResponse.deepCopy();
     }
 
@@ -71,14 +76,53 @@ public record OperatorTargetDescriptor(
         response.path("certificationRequirements").forEach(value -> requirements.add(value.asText()));
         List<String> gaps = new ArrayList<>();
         response.path("certificationGaps").forEach(value -> gaps.add(value.asText()));
+        JsonNode manifest = response.path("composabilityManifest");
+        List<String> executionServices = new ArrayList<>();
+        manifest.path("executionServices").forEach(value -> executionServices.add(value.asText()));
+        Composability composability = new Composability(
+                manifest.path("dependencyMode").asText("OPAQUE"),
+                manifest.path("dependencies").size(),
+                List.copyOf(executionServices),
+                manifest.path("globalStateFree").asBoolean(false),
+                manifest.path("conformanceSuiteRef").asText(),
+                manifest.path("conformanceFingerprint").asText());
         return new OperatorTargetDescriptor(target.path("id").asText(), target.path("fingerprint").asText(),
                 response.path("implementationFingerprint").asText(),
                 response.path("runtimeBindingStateFingerprint").asText(),
-                response.path("schemaFingerprint").asText(), response.path("executionModel").asText(),
+                response.path("schemaFingerprint").asText(),
+                response.path("composabilityFingerprint").asText(), composability,
+                response.path("executionModel").asText(),
                 response.path("sideEffectType").asText(), response.path("idempotency").asText(),
                 response.path("testabilityClass").asText(), Map.copyOf(dependencies),
                 response.path("dependencyPolicy").asText(), response.path("executionSupported").asBoolean(),
                 response.path("certificationEligible").asBoolean(), List.copyOf(requirements),
                 List.copyOf(gaps), response.deepCopy());
+    }
+
+    /**
+     * Payload-free composability projection used by CI and governance checks.
+     *
+     * @param dependencyMode NONE, DECLARED, OPAQUE, or an unknown future value
+     * @param dependencyCount declared external dependency count
+     * @param executionServices execution-scoped services consumed by the binding
+     * @param globalStateFree whether the binding attests no undeclared mutable global state
+     * @param conformanceSuiteRef stable conformance suite reference
+     * @param conformanceFingerprint immutable conformance artifact fingerprint
+     */
+    public record Composability(String dependencyMode, int dependencyCount,
+                                List<String> executionServices, boolean globalStateFree,
+                                String conformanceSuiteRef, String conformanceFingerprint) {
+        /** Normalizes absent protocol fields without inventing certification facts. */
+        public Composability {
+            dependencyMode = dependencyMode == null || dependencyMode.isBlank()
+                    ? "OPAQUE" : dependencyMode;
+            executionServices = executionServices == null ? List.of() : List.copyOf(executionServices);
+            conformanceSuiteRef = conformanceSuiteRef == null ? "" : conformanceSuiteRef;
+            conformanceFingerprint = conformanceFingerprint == null ? "" : conformanceFingerprint;
+        }
+
+        private static Composability opaque() {
+            return new Composability("OPAQUE", 0, List.of(), false, "", "");
+        }
     }
 }

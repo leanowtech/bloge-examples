@@ -280,7 +280,9 @@ To add a user-supplied visual operator library:
    canvas labels the editor `Schema Contract Suite` to make that proof strength explicit.
 5. Runtime-backed operators can already be exercised by the internal
    `OperatorMicroGraphRunner`; the public API and Java test-kit adapter now reuse it, while the
-   canvas `Run Operator` action still uses the schema-contract runner until its UI migration.
+   canvas `Run Operator` action still uses the schema-contract runner until its UI migration. A
+   stateless/read-only declaration is not enough for certification: non-resource bindings also need
+   a versioned, fingerprinted `OperatorComposabilityManifestProvider` declaration.
    `httpResource` can earn `EXECUTABLE_UNIT` only with a transport-boundary fixture, so
    request mapping, URL rendering, response protocol, and payload extraction really execute.
 6. Drag operators, wire schemas, simulate, and export.

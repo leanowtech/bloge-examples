@@ -8,14 +8,14 @@
 | --- | --- | --- |
 | Stage 0 | 完成 | operator suite API/UI 显式 `SCHEMA_CONTRACT`；`testing/domain` 五个版本化 record；capability testability 描述；[ADR-001](adr/ADR-001-resource-gateway-test-runtime-isolation.md)、[ADR-002](adr/ADR-002-operator-composability-and-opaque-runtime.md) 与 [BLOGE framework requirement](bloge-framework-execution-control-requirement.md) |
 | Stage 1' | 完成 | `testing/planning/runtime/evidence` 内核；独立 test engine；五行为；F2/F3 resource fixture；micro-graph runner；旧 graph suite adapter；37 个聚焦测试与 1653 个项目测试全绿 |
-| Stage 2' | 进行中 | 已落地 graph/operator target discovery、graph execution/batch/query、operator micro-graph execution、immutable fixture registry、独立 test-run store、10 态 evidence、profile/identity/生产协议隔离、独立 test-kit、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 root/nested/foreach/loop/compensation 的结构寻址、控制传播和 occurrence/attempt/node/edge evidence；canvas operator runner 迁移、streaming/suspendable control/evidence 与物理 network/runtime 隔离仍待完成 |
+| Stage 2' | 进行中 | 已落地 graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、immutable fixture registry、独立 test-run store、10 态 evidence、profile/identity/生产协议隔离、独立 test-kit、七图/14-case F3 dogfooding、run-scoped logical clock + DELAY/TIMEOUT，以及同步 root/nested/foreach/loop/compensation 的结构寻址、控制传播和 occurrence/attempt/node/edge evidence；canvas operator runner 迁移、streaming/suspendable control/evidence 与物理 network/runtime 隔离仍待完成 |
 
 Stage 0 验证基线：Resource Gateway `clean verify` 共 1624 tests、0 failures、33 个既有条件跳过；AuthorCanvas 聚焦回归 36 tests、0 failures。后续阶段必须继续维持该基线并增加对应反面用例。
 
 Stage 1 实现证据与复现命令见
 [Execution Data Control Plane Stage 1 verification](resource-gateway-execution-data-control-plane-stage1-verification.md)。
 Stage 1 全量验收：Resource Gateway `clean verify` 共 1653 tests、0 failures、0 errors、34 个条件跳过，JAR 打包成功。
-Stage 2 当前严格验收：Resource Gateway `clean verify` 共 1722 tests、0 failures、0 errors、34 个条件跳过，真实浏览器回归与 JAR 打包成功。公共同步算子适配器聚焦 26 tests、独立 test-kit 13 tests，均为 0 failures、0 errors。
+Stage 2 当前严格验收：Resource Gateway `clean verify` 共 1726 tests、0 failures、0 errors、34 个条件跳过，真实浏览器回归与 JAR 打包成功。公共同步算子适配器聚焦 30 tests、独立 test-kit 13 tests，均为 0 failures、0 errors。
 Nested invocation 增量聚焦验收：37 tests、0 failures；非空 foreach 的三个 item 全部消费同一受限 fixture，真实外部算子调用数为 0，compensation 使用独立 site 且真实补偿调用数为 0。项目 `clean verify` 执行 1704 tests 时 1703 通过、1 个既有浏览器 connectability readiness 用例瞬时超时；该失败用例随即独立复跑 1/1 通过。此记录不得改写为一次严格全绿的全量运行。
 独立 test-kit 当前 `clean verify` 共 13 tests、0 failures、0 errors；JAR 与权威 testing-control-plane v1 schema 一同打包成功，并提供 graph/operator target、OPERATOR fixture/execution、payload-free occurrence/attempt/edge 强类型投影及旧 v1 响应兼容。
 这里的“完成”只指内核与已列出的 adapter。Stage 2 已开放首个公共 graph control plane、持久化 store、test-kit，并完成全部内置图的 stored-suite F3 迁移与 dogfooding；但公共
@@ -187,7 +187,7 @@ flowchart LR
 4. test-kit 模块（新 Maven module）：薄 HTTP client + FixtureBundle builder + JUnit 5 断言适配 + JUnit XML 输出。
 5. 安全告警（生产触碰类）：test purpose 触达生产 endpoint/credential、production run 携非空 control plan → 安全事件。
 6. **已实现 Dogfooding**：七张示例图建立 14 个 case 并接入 `clean verify`；28 个资源调用观测全部使用 F3 raw response，retry fixture 用 `minUses/maxUses` 精确计数；真实 Spring wiring 将 descriptor 指向 `127.0.0.1:1` 后仍全绿。`enrichOrderList` 同时覆盖空集合边界与两条订单的并行 foreach body，后者对四个嵌套资源 occurrence 独立注入和断言，并依靠 occurrence-addressable node/edge evidence 签发 CERTIFIABLE。验证见 [Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md)。
-7. **已实现公共 operator adapter**：发现端点冻结实现闭包、schema、runtime state 与 resource dependency；执行端点把 JSON 输入转换为声明 Java 类型，并通过一节点 micro graph 复用同一 kernel/evidence/store；fixture registry 与独立 test-kit 同时支持 OPERATOR target。无状态只读 binding 或显式实现 `OperatorRuntimeBindingSnapshotProvider` 的有状态只读 binding 才有认证资格；`HttpResourceOperator` 还必须使用 TRANSPORT fixture；OPAQUE/未形式化状态即使 stored fixture 跑通也只能 EXPLORATORY。验证见 [Stage 2 operator adapter verification](resource-gateway-execution-data-control-plane-stage2-operator-adapter-verification.md)。
+7. **已实现公共 operator adapter**：发现端点冻结实现闭包、schema、runtime state、v2 composability manifest 与 resource dependency；执行端点把 JSON 输入转换为声明 Java 类型，并通过一节点 micro graph 复用同一 kernel/evidence/store；fixture registry 与独立 test-kit 同时支持 OPERATOR target。无状态只解决 runtime state 冻结，不再自动取得认证资格；非 resource binding 还必须提供 `OperatorComposabilityManifestProvider`，声明无外部依赖、无未托管全局状态、无尚未受控 execution service，并绑定 conformance suite 指纹。有状态 binding 另需 `OperatorRuntimeBindingSnapshotProvider`；`HttpResourceOperator` 必须使用 TRANSPORT fixture；任一条件缺失即使 stored fixture 跑通也只能 EXPLORATORY。验证见 [Stage 2 operator adapter verification](resource-gateway-execution-data-control-plane-stage2-operator-adapter-verification.md)。
 8. 维护本蓝图文档：所有实现期决策变更以 decision delta 追加进第九节，保持与北极星文档的引用一致性。
 
 **验收**：见第八节验证清单。
@@ -271,7 +271,7 @@ flowchart LR
 9. `EVIDENCE_INCOMPLETE` 当前随同步响应返回但不能查询（持久化本身失败）；后续需独立告警/恢复队列，不能把失败记录写回同一个失效 store 来制造假恢复。
 10. **已验证但有限定**：逻辑 sleep 是原子、单调、零墙钟推进；并发分支的读取顺序仍由 BLOGE 调度决定。TIMEOUT 验证业务恢复语义，不验证真实 watchdog 精度、阻塞线程中断或 wall-clock deadline，这些必须由 BLOGE/sandbox conformance 另证。
 11. **公共同步 operator 主路径已闭环但 UI 未迁移**：target discovery、immutable OPERATOR fixture、typed input、micro graph、证据持久化和 test-kit 已落地。现有 canvas `/api/visual/operators/tests/run` 仍是 `SCHEMA_CONTRACT`；迁移前不得在 UI 宣称运行了真实 binding。
-12. **runtime state 冻结有明确负空间**：无状态检查只能排除实例字段，不能证明不存在隐藏 static/global I/O；snapshot provider 是治理合同而非沙箱证明。Stage 5 仍需 egress policy、sandbox conformance 和声明/观测漂移检测。
+12. **composability 已 fail-closed，但反作弊仍有明确负空间**：无状态检查只解决 instance state；缺 manifest 的无状态 READ_ONLY binding 已降级 OPAQUE，声明 TIME/RANDOM/UUID/IDENTITY/FEATURE_FLAG 或通用 dependency port 也在 v1 降级。manifest、behavior 与 state provider 仍是治理合同而非沙箱证明；Stage 5 仍需 egress policy、sandbox conformance 和声明/观测漂移检测。
 
 ### 十一、明确排除（v1 不做）
 

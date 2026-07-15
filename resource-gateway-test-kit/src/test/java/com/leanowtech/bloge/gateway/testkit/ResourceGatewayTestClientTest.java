@@ -62,6 +62,10 @@ class ResourceGatewayTestClientTest {
         assertThat(operator.operatorRef()).isEqualTo("customer.normalize/v2");
         assertThat(operator.testabilityClass()).isEqualTo("EXECUTABLE_UNIT");
         assertThat(operator.executionSupported()).isTrue();
+        assertThat(operator.composabilityFingerprint()).isEqualTo(FINGERPRINT);
+        assertThat(operator.composability().dependencyMode()).isEqualTo("NONE");
+        assertThat(operator.composability().globalStateFree()).isTrue();
+        assertThat(operator.composability().conformanceFingerprint()).isEqualTo(FINGERPRINT);
         assertThat(registered.fixtureBundleId()).isEqualTo("fixture/approved");
         assertThat(found.revision()).isEqualTo(3);
         assertThat(executed.runId()).isEqualTo("run-42");
@@ -209,10 +213,13 @@ class ResourceGatewayTestClientTest {
 
     private static String operatorTargetResponse() {
         return """
-                {"schemaVersion":"bloge.testOperatorTargetDescriptor.v1",
+                {"schemaVersion":"bloge.testOperatorTargetDescriptor.v2",
                  "target":{"kind":"OPERATOR","id":"customer.normalize/v2","fingerprint":"%1$s"},
                  "implementationFingerprint":"%1$s","runtimeBindingStateFingerprint":"%1$s",
-                 "schemaFingerprint":"%1$s",
+                 "schemaFingerprint":"%1$s","composabilityFingerprint":"%1$s",
+                 "composabilityManifest":{"schemaVersion":"bloge.operatorComposabilityManifest.v1",
+                   "dependencyMode":"NONE","dependencies":[],"executionServices":[],
+                   "globalStateFree":true,"conformanceSuiteRef":"suite:normalize","conformanceFingerprint":"%1$s"},
                  "inputSchema":{},"outputSchema":{},"executionModel":"SYNCHRONOUS",
                  "sideEffectType":"READ_ONLY","idempotency":"IDEMPOTENT","sideEffectProtocol":{},
                  "testabilityClass":"EXECUTABLE_UNIT","resourceDependencyFingerprints":{},

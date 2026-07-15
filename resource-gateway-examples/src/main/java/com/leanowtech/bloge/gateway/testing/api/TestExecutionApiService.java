@@ -147,7 +147,8 @@ public final class TestExecutionApiService {
         return new TestOperatorTargetDescriptor("",
                 new TestExecutionApiRequest.Target("OPERATOR", target.operatorRef(), target.fingerprint()),
                 target.implementationFingerprint(), target.runtimeBindingStateFingerprint(),
-                target.schemaFingerprint(), target.inputSchema(),
+                target.schemaFingerprint(), target.composabilityFingerprint(), target.composabilityManifest(),
+                target.inputSchema(),
                 target.outputSchema(), target.executionModel(), target.sideEffectType(), target.idempotency(),
                 target.sideEffectProtocol(), target.testabilityClass(),
                 target.resourceDependencyFingerprints(), target.dependencyPolicy(),
@@ -514,6 +515,7 @@ public final class TestExecutionApiService {
         metadata.put("implementationFingerprint", target.implementationFingerprint());
         metadata.put("runtimeBindingStateFingerprint", target.runtimeBindingStateFingerprint());
         metadata.put("schemaFingerprint", target.schemaFingerprint());
+        metadata.put("composabilityFingerprint", target.composabilityFingerprint());
         metadata.put("resourceDependencyFingerprints", target.resourceDependencyFingerprints());
         metadata.put("resourceDependencyPolicy", target.dependencyPolicy());
         metadata.put("baselineTestabilityClass", target.testabilityClass());

@@ -129,22 +129,29 @@ curl -sS http://localhost:8080/api/testing/targets/operators/httpResource \
   -H 'X-Purpose: TEST_EXECUTION'
 ```
 
-`bloge.testOperatorTargetDescriptor.v1` returns the operator target fingerprint, implementation
-closure fingerprint, runtime-binding-state fingerprint, schema fingerprint, input/output schemas,
-execution model, side-effect/idempotency declarations, resource dependencies, and explicit
-testability facts:
+`bloge.testOperatorTargetDescriptor.v2` returns the operator target fingerprint, implementation
+closure fingerprint, runtime-binding-state fingerprint, schema fingerprint, composability manifest
+fingerprint, input/output schemas, execution model, side-effect/idempotency declarations, resource
+dependencies, and explicit testability facts. v2 is intentional: v1 did not carry the required
+composability facts and is retained by the Java test kit only as a historical version constant.
 
 | `testabilityClass` | Meaning |
 | --- | --- |
-| `EXECUTABLE_UNIT` | Synchronous declared-read-only binding can execute for real |
+| `EXECUTABLE_UNIT` | Synchronous read-only binding has a valid self-contained composability manifest |
 | `CONDITIONAL_TRANSPORT` | `HttpResourceOperator` is executable only with strict transport fixtures |
 | `OPAQUE_RUNTIME` | Effects are not exposed through a controllable composability port |
 | `UNSUPPORTED_EXECUTION_MODEL` | Streaming/suspendable execution is discoverable but blocked in v1 |
 
 Discovery never executes the operator. `certificationEligible=true` additionally requires
-fingerprintable implementation bytes and formalized runtime state. A stateless binding satisfies the
-latter automatically. A configured binding must implement `OperatorRuntimeBindingSnapshotProvider`;
-the returned bounded credential-free map is fingerprinted but never returned or persisted.
+fingerprintable implementation bytes, formalized runtime state, valid behavioral declarations, and a
+bounded `OperatorComposabilityManifest`. A stateless binding satisfies only the runtime-state
+condition; it no longer receives certification merely because it has no instance fields. A configured
+binding must implement `OperatorRuntimeBindingSnapshotProvider`; the returned bounded credential-free
+map is fingerprinted but never returned or persisted. A non-resource binding must also implement
+`OperatorComposabilityManifestProvider` and bind a self-contained dependency declaration to a
+conformance suite reference and SHA-256 artifact fingerprint. Missing manifests, declared execution
+services (`TIME`, `RANDOM`, `UUID`, `IDENTITY`, `FEATURE_FLAG`), generic dependency ports, mutable
+global state, or malformed conformance facts fail certification closed in v1 runtime semantics.
 `HttpResourceOperator` has a built-in contract that fingerprints its protocol-processing class
 closure and the conservative descriptor snapshot.
 

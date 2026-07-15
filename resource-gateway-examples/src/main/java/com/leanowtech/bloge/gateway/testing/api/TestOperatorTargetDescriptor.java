@@ -11,6 +11,8 @@ import java.util.Map;
  * @param implementationFingerprint executable class-byte fingerprint
  * @param runtimeBindingStateFingerprint behavior-relevant configured-state fingerprint
  * @param schemaFingerprint composite input/output schema fingerprint
+ * @param composabilityFingerprint dependency and determinism manifest fingerprint
+ * @param composabilityManifest credential-free dependency and determinism declaration
  * @param inputSchema BLOGE input schema representation
  * @param outputSchema BLOGE output schema representation
  * @param executionModel binding execution model
@@ -31,6 +33,8 @@ public record TestOperatorTargetDescriptor(
         String implementationFingerprint,
         String runtimeBindingStateFingerprint,
         String schemaFingerprint,
+        String composabilityFingerprint,
+        Map<String, Object> composabilityManifest,
         Map<String, Object> inputSchema,
         Map<String, Object> outputSchema,
         String executionModel,
@@ -46,11 +50,12 @@ public record TestOperatorTargetDescriptor(
         List<String> certificationGaps
 ) {
     /** Current public operator target descriptor version. */
-    public static final String SCHEMA_VERSION = "bloge.testOperatorTargetDescriptor.v1";
+    public static final String SCHEMA_VERSION = "bloge.testOperatorTargetDescriptor.v2";
 
     /** Defensively freezes nested protocol collections. */
     public TestOperatorTargetDescriptor {
         schemaVersion = normalized(schemaVersion).isBlank() ? SCHEMA_VERSION : normalized(schemaVersion);
+        composabilityManifest = composabilityManifest == null ? Map.of() : Map.copyOf(composabilityManifest);
         inputSchema = inputSchema == null ? Map.of() : Map.copyOf(inputSchema);
         outputSchema = outputSchema == null ? Map.of() : Map.copyOf(outputSchema);
         sideEffectProtocol = sideEffectProtocol == null ? Map.of() : Map.copyOf(sideEffectProtocol);
