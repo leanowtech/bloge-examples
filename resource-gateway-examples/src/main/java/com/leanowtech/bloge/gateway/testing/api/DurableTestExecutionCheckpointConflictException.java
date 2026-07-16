@@ -34,6 +34,10 @@ public final class DurableTestExecutionCheckpointConflictException extends Runti
         STALE_FENCE,
         /** The exact known lease has not yet expired according to the database clock. */
         LEASE_ACTIVE,
+        /** A recovery worker attempted to renew an owner lease after its database deadline. */
+        LEASE_EXPIRED,
+        /** A worker handoff is valid in shape but has no committed issuance record. */
+        UNRECOGNIZED_DISPATCH,
         /** The exact known checkpoint is terminal or permanently unavailable. */
         NOT_RESUMABLE,
         /** A scoped client request key already identifies different resume intent. */

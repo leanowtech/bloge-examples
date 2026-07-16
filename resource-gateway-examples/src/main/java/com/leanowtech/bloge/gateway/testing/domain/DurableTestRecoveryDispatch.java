@@ -9,7 +9,7 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
- * Immutable worker handoff issued atomically with a durable recovery owner claim.
+ * Immutable worker handoff issued with a durable recovery owner claim or lease heartbeat.
  *
  * <p>The dispatch carries no signal data, fixture value, replay payload, credential, or provider
  * seed. It proves only which authorized closure may execute under one exact owner/epoch/revision
@@ -73,11 +73,11 @@ public record DurableTestRecoveryDispatch(
     }
 
     /**
-     * Issues a dispatch for one newly claimed {@code RESUMING} checkpoint.
+     * Issues a dispatch for one newly claimed or heartbeat-renewed {@code RESUMING} checkpoint.
      *
      * @param objectMapper canonical protocol mapper
      * @param authorization authorization receipt bound to the pre-claim checkpoint
-     * @param checkpoint newly claimed checkpoint
+     * @param checkpoint newly claimed or renewed checkpoint
      * @return sealed payload-free worker handoff
      */
     public static DurableTestRecoveryDispatch issue(

@@ -10,7 +10,9 @@ extension, and retry waits plus queued, claimed, retried, failed, and dead-lette
 part of the same commit decision as lifecycle and node checkpoints. A public, authenticated
 owner-claim endpoint now performs the database-clock compare-and-set ownership handoff after exact
 dependency re-authorization; it deliberately does not itself resume BLOGE or expose a worker
-lifecycle. An internal `RecoverySession` can consume that re-authorized `RESUMING` closure, signal a
+lifecycle. An internal heartbeat protocol proves dispatch issuance, compares it with the live
+`RESUMING` fence, and atomically rotates the lease and successor dispatch. An internal
+`RecoverySession` can consume that re-authorized closure, signal a
 real persisted suspension synchronously, and atomically advance the staged aggregate at its next
 stable boundary. It is an orchestration building block, not a public recovery endpoint.
 Streaming recovery has
@@ -138,8 +140,35 @@ JSON values, every nested fingerprint, indexed projections, and the source-to-re
 internal lookup returns this historical dispatch only for the same scope, run, fence, and checkpoint.
 
 The dispatch is not a bearer token and does not make the claim a cold-start resume. No worker
-currently polls or consumes it, reconstructs and compares the executable closure after restart,
-runs the internal recovery session, renews the lease, or emits terminal evidence.
+currently polls or consumes it through an authenticated product endpoint, reconstructs and compares
+the executable closure after restart, runs the internal recovery session, or emits terminal evidence.
+
+## Internal Recovery Heartbeat
+
+`heartbeatRecoveryLeaseIdempotently(...)` closes the live-fence and ambiguous-response window for a
+trusted recovery worker. `RecoveryHeartbeatCommand` carries a caller-stable key, server-derived
+request fingerprint, exact source dispatch, and a whole-second lease extension from one second
+through one hour. Before consulting the live row, the repository proves that the source dispatch is
+the verified result of a committed owner claim or predecessor heartbeat. A merely self-consistent
+content fingerprint is insufficient: fingerprints prove integrity, not system issuance or caller
+identity.
+
+The database clock then decides whether the exact dispatch still controls a non-expired
+`RESUMING` checkpoint. Scope, engine execution, owner, lease epoch, revision, previous expiry, and
+checkpoint fingerprint are repeated in the SQL compare-and-set. Success advances exactly one control
+revision and extends the lease while preserving plan, fixture, provider, cursor, and BLOGE engine
+closure byte-for-byte. The same transaction issues a successor
+`bloge.durableTestRecoveryDispatch.v1` and writes a content-addressed
+`bloge.durableRecoveryHeartbeatRecord.v1` covering source and result fences, authorization,
+idempotency intent, duration, and database time. A transaction-bound payload-free audit/evidence
+mutation may join the same commit decision.
+
+The original key replays the exact successor after a lost response. A different key using the old
+dispatch sees `STALE_FENCE`; an expired owner sees `LEASE_EXPIRED`; a valid but unissued dispatch sees
+`UNRECOGNIZED_DISPATCH`. Same-key intent drift, duplicate replicas, JSON/index/fingerprint corruption,
+and companion-mutation failure all fail closed. This is still an internal persistence protocol. It
+does not authenticate a remote worker, schedule heartbeats, execute BLOGE, cancel a process, or
+produce terminal evidence.
 
 ## Transaction-Participating BLOGE Aggregate
 
@@ -254,7 +283,8 @@ transaction-participating execution/checkpoint/wait/work-item aggregate and inde
 factory both fail closed. Public owner claim now establishes a re-authorized fence and the internal
 session can advance one real cold signal. Owner claim atomically issues a payload-free,
 authorization-bound dispatch and supports exact scoped historical lookup. Worker acquisition with a
-live-fence comparison, lease heartbeat, terminal evidence, enforceable worker cancellation, and
+live-fence comparison and successor heartbeat now exists as an internal persistence protocol.
+Authenticated worker polling/running, terminal evidence, enforceable worker cancellation, and
 streaming recovery still must be completed before cold-start resume can be enabled as a product
 surface.
 
@@ -334,6 +364,16 @@ surface.
     or exactly one new signal suspension, and the BLOGE execution version must advance monotonically.
 30. The next control boundary sequence, actual engine version, cumulative fixture cursor, and four
     store mutations are one prepared recovery value. Publishing any subset is forbidden.
+31. A heartbeat source dispatch must resolve to exactly one verified owner-claim or predecessor
+    heartbeat result. Canonical content identity without a committed issuer record is rejected.
+32. Heartbeat CAS repeats the complete live dispatch fence and requires database time to remain
+    before its lease deadline. An expired worker cannot revive itself after takeover becomes legal.
+33. Heartbeat changes only revision, update time, lease deadline, checkpoint fingerprint, and
+    successor dispatch. Dependency, fixture, provider, cursor, engine, owner, and epoch closure is
+    immutable.
+34. The checkpoint CAS, immutable heartbeat result, successor dispatch, and companion audit/evidence
+    mutation have one commit decision. The source key replays that result; another key cannot reuse
+    the consumed dispatch.
 
 ## Automated Evidence
 
@@ -358,6 +398,11 @@ and canonical v1 JSON round-trip compatibility without an invented target field.
   rejection; and
 - two repository instances racing one expired lease with exactly one new owner and immediate
   fencing of the former owner;
+- database-clock heartbeat renewal with one-revision successor dispatch and exact historical lookup;
+- same-key replay and two-replica convergence on one committed successor;
+- stale, expired, self-consistent-but-unissued dispatch, malformed command, and same-key intent-drift
+  rejection;
+- heartbeat checkpoint/dispatch/record tamper detection and atomic companion-audit rollback;
 - durable command replay after an ambiguous response, same-key intent conflict, and strict command
   identity validation; and
 - two repository instances issuing the same command with one original result and one exact replay,
@@ -419,13 +464,16 @@ mvn -f resource-gateway-examples/pom.xml \
   -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,StagedBlogeExecutionCheckpointStoreTest,StagedBlogeDurableStateStoreTest,IndependentDurableTestEngineFactoryTest,IndependentDurableTestRecoverySessionTest,InvocationRecorderCheckpointTest,DurableTestRecoveryAuthorityTest,DurableTestRecoveryAuthorizerTest,DurableTestOwnerClaimServiceTest,DurableTestOwnerClaimControllerTest,TestingControlProtocolSchemaTest,TestabilityCapabilitiesTest,TestRuntimeProfileIsolationTest test
 ```
 
-The combined focused gate completed with 107 tests, zero failures, zero errors, and zero skips. The
+The combined focused gate completed with 115 tests, zero failures, zero errors, and zero skips. The
 recovery-session slice contributes six database-level tests; authorization-bound dispatch adds two
-database-level claim/replay, exact-lookup, and tamper cases plus two regional-authority cases.
-The repository-wide `clean verify` gate completed with 1978 tests, zero failures, zero errors, 34
+database-level claim/replay, exact-lookup, and tamper cases plus two regional-authority cases. The
+live-fence heartbeat slice adds eight database cases for renewal/replay, successor lookup, stale and
+expired fences, unissued dispatches, command validation, two-replica convergence, rollback, and
+tamper rejection.
+The repository-wide `clean verify` gate completed with 1986 tests, zero failures, zero errors, 34
 conditional skips, real-browser regression coverage, and successful Spring Boot JAR packaging.
-Scoped public `javadoc -Xdoclint:all -Werror` for the six changed authorization-bound dispatch
-production types completed with zero diagnostics; the prior recovery-session API gate remains green.
+Scoped public `javadoc -Xdoclint:all -Werror` for the five changed heartbeat-surface production types
+completed with zero diagnostics; the prior recovery-session API gate remains green.
 The optional project-wide Javadoc report still fails on 16 pre-existing HTML and
 parameter diagnostics in unrelated packages; that baseline is not represented as fixed here.
 
@@ -433,8 +481,9 @@ parameter diagnostics in unrelated packages; that baseline is not represented as
 
 - BLOGE execution lifecycle/lease, node/loop/sequential-foreach checkpoints, signal/timer/task/retry
   waits, and work-item state now execute through one aggregate `EngineStateMutation`. The internal
-  recovery session can advance one real cold signal, but the public worker poll/claim/run/heartbeat/
-  terminal-evidence flow does not yet drive it, so the primitive must not be mistaken for a complete
+  recovery session can advance one real cold signal and the persistence layer can rotate a live
+  heartbeat fence, but the public worker authentication/poll/claim/run/heartbeat/terminal-evidence
+  flow does not yet drive them, so the primitives must not be mistaken for a complete
   remote-worker product lifecycle.
 - The durable and recovery sessions remain internal resources. The public owner-claim command now
   atomically binds exact dependency authorization to a payload-free worker dispatch, but no
@@ -452,9 +501,11 @@ parameter diagnostics in unrelated packages; that baseline is not represented as
   dispatch. A cold worker must reconstruct and reproduce that receipt and still hold the live fence;
   the dispatch is not a transferable authorization token.
 - The public adapter durably binds normalized caller intent and authenticated authority to one claim
-  result. Lease heartbeat, public suspend/resume, worker crash reconciliation, terminalization,
-  signed checkpoint attestation, and an enforceable process-level deadline remain orchestration work
-  rather than properties inferred from storage CAS or internal synchronous recovery success.
+  result. Internal heartbeat storage now rejects unissued/stale/expired dispatches and rotates a
+  successor atomically. Remote-worker authentication, heartbeat scheduling, public suspend/resume,
+  crash reconciliation, terminalization, signed checkpoint attestation, and an enforceable
+  process-level deadline remain orchestration work rather than properties inferred from storage CAS
+  or internal synchronous recovery success.
 - The repository uses a local database transaction. Cross-database BLOGE stores require either
   migration onto this datasource or an outbox/recovery protocol; pretending a distributed
   transaction exists is explicitly rejected.

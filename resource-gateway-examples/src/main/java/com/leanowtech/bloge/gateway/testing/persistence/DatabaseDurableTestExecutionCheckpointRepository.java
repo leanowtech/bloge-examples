@@ -19,6 +19,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
@@ -31,8 +32,10 @@ import java.util.Set;
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.INVALID_TRANSITION;
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.IDEMPOTENCY_CONFLICT;
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.LEASE_ACTIVE;
+import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.LEASE_EXPIRED;
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.NOT_RESUMABLE;
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.STALE_FENCE;
+import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.UNRECOGNIZED_DISPATCH;
 
 /**
  * JDBC durable-test checkpoint store with transactional engine-state participation and CAS fencing.
@@ -157,6 +160,41 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS rg_test_durable_dispatch_lookup_idx
                 ON rg_test_durable_resume_commands (
+                    tenant_id, environment_id, run_id, result_checkpoint_fingerprint
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_recovery_heartbeats (
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(32) NOT NULL,
+                    client_request_id VARCHAR(255) NOT NULL,
+                    request_fingerprint VARCHAR(80) NOT NULL,
+                    run_id VARCHAR(255) NOT NULL,
+                    engine_execution_id VARCHAR(255) NOT NULL,
+                    owner_id VARCHAR(255) NOT NULL,
+                    lease_epoch BIGINT NOT NULL,
+                    expected_revision BIGINT NOT NULL,
+                    expected_lease_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    expected_checkpoint_fingerprint VARCHAR(80) NOT NULL,
+                    expected_dispatch_fingerprint VARCHAR(80) NOT NULL,
+                    authorization_fingerprint VARCHAR(80) NOT NULL,
+                    lease_duration_seconds BIGINT NOT NULL,
+                    result_revision BIGINT NOT NULL,
+                    result_lease_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    result_checkpoint_fingerprint VARCHAR(80) NOT NULL,
+                    result_dispatch_fingerprint VARCHAR(80) NOT NULL,
+                    record_fingerprint VARCHAR(80) NOT NULL,
+                    result_checkpoint_json CLOB NOT NULL,
+                    result_dispatch_json CLOB NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    PRIMARY KEY (tenant_id, environment_id, client_request_id),
+                    CONSTRAINT uq_rg_test_durable_recovery_heartbeat_dispatch
+                        UNIQUE (result_dispatch_fingerprint)
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_durable_heartbeat_dispatch_lookup_idx
+                ON rg_test_durable_recovery_heartbeats (
                     tenant_id, environment_id, run_id, result_checkpoint_fingerprint
                 )
                 """);
@@ -331,6 +369,12 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             Fence expectedFence,
             String expectedCheckpointFingerprint) {
         Objects.requireNonNull(expectedFence, "expectedFence");
+        Optional<DurableTestRecoveryDispatch> heartbeatDispatch = findHeartbeatDispatch(
+                normalized(tenantId), normalizedEnvironment(environmentId), normalized(runId),
+                expectedFence, normalized(expectedCheckpointFingerprint));
+        if (heartbeatDispatch.isPresent()) {
+            return heartbeatDispatch;
+        }
         List<StoredResumeCommand> rows = jdbc.query(resumeCommandSelect() + """
                         WHERE tenant_id = ? AND environment_id = ? AND run_id = ?
                           AND claimant_owner_id = ?
@@ -353,6 +397,390 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             return Optional.empty();
         }
         return Optional.of(dispatch);
+    }
+
+    @Override
+    public RecoveryHeartbeatResult heartbeatRecoveryLeaseIdempotently(
+            RecoveryHeartbeatCommand command) {
+        return heartbeatRecoveryLeaseIdempotently(
+                command, TestRuntimeTransactionMutation.noop());
+    }
+
+    @Override
+    public RecoveryHeartbeatResult heartbeatRecoveryLeaseIdempotently(
+            RecoveryHeartbeatCommand command,
+            TestRuntimeTransactionMutation companionMutation) {
+        RecoveryHeartbeatCommand requiredCommand = Objects.requireNonNull(command, "command");
+        requiredCommand.expectedDispatch().requireValid(objectMapper);
+        TestRuntimeTransactionMutation requiredMutation = Objects.requireNonNull(
+                companionMutation, "companionMutation");
+        try {
+            return transactions.execute(status -> {
+                requireIssuedRecoveryDispatch(requiredCommand.expectedDispatch());
+                Optional<RecoveryHeartbeatResult> existing = replayedHeartbeat(requiredCommand);
+                if (existing.isPresent()) {
+                    requiredMutation.apply(jdbc);
+                    return existing.get();
+                }
+                try {
+                    Instant observedAt = databaseNow();
+                    DurableTestExecutionCheckpoint current = liveHeartbeatCheckpoint(
+                            requiredCommand, observedAt);
+                    DurableTestExecutionCheckpoint renewed = renewedCheckpoint(
+                            current, requiredCommand.leaseDuration(), observedAt);
+                    DurableTestRecoveryDispatch successor = DurableTestRecoveryDispatch.issue(
+                            objectMapper, requiredCommand.expectedDispatch().authorization(),
+                            renewed);
+                    if (heartbeatUpdate(renewed, current, requiredCommand.expectedDispatch(),
+                            observedAt) != 1) {
+                        throw conflict(STALE_FENCE,
+                                "Durable recovery dispatch changed concurrently");
+                    }
+                    insertRecoveryHeartbeat(requiredCommand, renewed, successor, observedAt);
+                    RecoveryHeartbeatResult result = new RecoveryHeartbeatResult(
+                            renewed, successor, false);
+                    requiredMutation.apply(jdbc);
+                    return result;
+                } catch (DurableTestExecutionCheckpointConflictException contested) {
+                    if (contested.reason() != STALE_FENCE
+                            && contested.reason() != LEASE_EXPIRED) {
+                        throw contested;
+                    }
+                    Optional<RecoveryHeartbeatResult> committed =
+                            replayedHeartbeat(requiredCommand);
+                    if (committed.isPresent()) {
+                        requiredMutation.apply(jdbc);
+                        return committed.get();
+                    }
+                    throw contested;
+                }
+            });
+        } catch (DataIntegrityViolationException concurrentCommand) {
+            return transactions.execute(status -> {
+                requireIssuedRecoveryDispatch(requiredCommand.expectedDispatch());
+                RecoveryHeartbeatResult replay = replayedHeartbeat(requiredCommand)
+                        .orElseThrow(() -> concurrentCommand);
+                requiredMutation.apply(jdbc);
+                return replay;
+            });
+        }
+    }
+
+    private void requireIssuedRecoveryDispatch(DurableTestRecoveryDispatch expected) {
+        List<StoredRecoveryHeartbeat> heartbeatRows = jdbc.query(
+                recoveryHeartbeatSelect() + """
+                        WHERE tenant_id = ? AND environment_id = ? AND run_id = ?
+                          AND result_dispatch_fingerprint = ?
+                        """, this::mapRecoveryHeartbeat, expected.scope().tenantId(),
+                expected.scope().environmentId(), expected.runId(),
+                expected.dispatchFingerprint());
+        List<StoredResumeCommand> claimRows = jdbc.query(resumeCommandSelect() + """
+                        WHERE tenant_id = ? AND environment_id = ? AND run_id = ?
+                          AND result_dispatch_fingerprint = ?
+                        """, this::mapResumeCommand, expected.scope().tenantId(),
+                expected.scope().environmentId(), expected.runId(),
+                expected.dispatchFingerprint());
+        if (heartbeatRows.size() + claimRows.size() != 1) {
+            if (heartbeatRows.isEmpty() && claimRows.isEmpty()) {
+                throw conflict(UNRECOGNIZED_DISPATCH,
+                        "Durable recovery dispatch has no committed issuance record");
+            }
+            throw new IllegalStateException(
+                    "Durable recovery dispatch issuance identity is not unique");
+        }
+        DurableTestRecoveryDispatch issued;
+        if (!heartbeatRows.isEmpty()) {
+            StoredRecoveryHeartbeat stored = heartbeatRows.getFirst();
+            requireValidRecoveryHeartbeatRecord(stored);
+            issued = verifiedRecoveryHeartbeatResult(stored, true).dispatch();
+        } else {
+            StoredResumeCommand stored = claimRows.getFirst();
+            requireValidResumeCommandRecord(stored);
+            issued = verifiedCommandResult(stored, true).dispatch();
+        }
+        if (!issued.equals(expected)) {
+            throw new IllegalStateException(
+                    "Stored durable recovery dispatch issuance is corrupt");
+        }
+    }
+
+    private Optional<DurableTestRecoveryDispatch> findHeartbeatDispatch(
+            String tenantId,
+            String environmentId,
+            String runId,
+            Fence expectedFence,
+            String expectedCheckpointFingerprint) {
+        List<StoredRecoveryHeartbeat> rows = jdbc.query(recoveryHeartbeatSelect() + """
+                        WHERE tenant_id = ? AND environment_id = ? AND run_id = ?
+                          AND owner_id = ? AND result_checkpoint_fingerprint = ?
+                        """, this::mapRecoveryHeartbeat, tenantId, environmentId, runId,
+                expectedFence.ownerId(), expectedCheckpointFingerprint);
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        if (rows.size() != 1) {
+            throw new IllegalStateException(
+                    "Durable recovery heartbeat dispatch identity is not unique");
+        }
+        StoredRecoveryHeartbeat stored = rows.getFirst();
+        requireValidRecoveryHeartbeatRecord(stored);
+        DurableTestRecoveryDispatch dispatch =
+                verifiedRecoveryHeartbeatResult(stored, true).dispatch();
+        if (dispatch.leaseEpoch() != expectedFence.leaseEpoch()
+                || dispatch.revision() != expectedFence.revision()) {
+            return Optional.empty();
+        }
+        return Optional.of(dispatch);
+    }
+
+    private Optional<RecoveryHeartbeatResult> replayedHeartbeat(
+            RecoveryHeartbeatCommand command) {
+        DurableTestRecoveryDispatch dispatch = command.expectedDispatch();
+        List<StoredRecoveryHeartbeat> rows = findRecoveryHeartbeats(
+                dispatch.scope().tenantId(), dispatch.scope().environmentId(),
+                command.clientRequestId());
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        StoredRecoveryHeartbeat stored = rows.getFirst();
+        requireValidRecoveryHeartbeatRecord(stored);
+        if (!stored.matches(command)) {
+            throw conflict(IDEMPOTENCY_CONFLICT,
+                    "clientRequestId already identifies different recovery heartbeat intent");
+        }
+        return Optional.of(verifiedRecoveryHeartbeatResult(stored, true));
+    }
+
+    private List<StoredRecoveryHeartbeat> findRecoveryHeartbeats(
+            String tenantId, String environmentId, String clientRequestId) {
+        return jdbc.query(recoveryHeartbeatSelect() + """
+                        WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                        """, this::mapRecoveryHeartbeat, tenantId, environmentId, clientRequestId);
+    }
+
+    private static String recoveryHeartbeatSelect() {
+        return """
+                SELECT tenant_id, environment_id, client_request_id, request_fingerprint,
+                       run_id, engine_execution_id, owner_id, lease_epoch, expected_revision,
+                       expected_lease_expires_at, expected_checkpoint_fingerprint,
+                       expected_dispatch_fingerprint, authorization_fingerprint,
+                       lease_duration_seconds, result_revision, result_lease_expires_at,
+                       result_checkpoint_fingerprint, result_dispatch_fingerprint,
+                       record_fingerprint, result_checkpoint_json, result_dispatch_json, created_at
+                FROM rg_test_durable_recovery_heartbeats
+                """;
+    }
+
+    private DurableTestExecutionCheckpoint liveHeartbeatCheckpoint(
+            RecoveryHeartbeatCommand command, Instant observedAt) {
+        DurableTestRecoveryDispatch dispatch = command.expectedDispatch();
+        DurableTestExecutionCheckpoint current = findInternal(
+                dispatch.scope().tenantId(), dispatch.scope().environmentId(),
+                dispatch.runId()).orElseThrow(() -> conflict(
+                STALE_FENCE, "Durable recovery checkpoint no longer exists in its scope"));
+        if (!dispatch.agreesWith(current)) {
+            throw conflict(STALE_FENCE,
+                    "Durable recovery dispatch no longer matches the live checkpoint");
+        }
+        if (!current.lifecycle().leaseExpiresAt().isAfter(observedAt)) {
+            throw conflict(LEASE_EXPIRED,
+                    "Durable recovery owner lease expired before its heartbeat");
+        }
+        if (current.lifecycle().revision() == Long.MAX_VALUE) {
+            throw conflict(INVALID_TRANSITION,
+                    "Durable recovery heartbeat revision cannot advance without overflow");
+        }
+        return current;
+    }
+
+    private DurableTestExecutionCheckpoint renewedCheckpoint(
+            DurableTestExecutionCheckpoint current,
+            Duration leaseDuration,
+            Instant observedAt) {
+        var lifecycle = current.lifecycle();
+        Instant renewedUntil = observedAt.plus(leaseDuration);
+        if (observedAt.isBefore(lifecycle.updatedAt())) {
+            throw new IllegalStateException(
+                    "Test-runtime database clock moved behind the durable checkpoint");
+        }
+        if (!renewedUntil.isAfter(lifecycle.leaseExpiresAt())) {
+            throw conflict(INVALID_TRANSITION,
+                    "Recovery heartbeat must extend the current lease deadline");
+        }
+        return integrity.seal(new DurableTestExecutionCheckpoint(
+                current.schemaVersion(), current.scope(), current.runId(),
+                current.engineExecutionId(), current.dependencies(),
+                current.fixtureConsumptionState(), current.executionServiceState(),
+                current.engineState(), new DurableTestExecutionCheckpoint.Lifecycle(
+                DurableTestExecutionCheckpoint.Status.RESUMING, lifecycle.ownerId(),
+                lifecycle.leaseEpoch(), lifecycle.revision() + 1, lifecycle.createdAt(),
+                observedAt, renewedUntil), ""));
+    }
+
+    private int heartbeatUpdate(
+            DurableTestExecutionCheckpoint renewed,
+            DurableTestExecutionCheckpoint current,
+            DurableTestRecoveryDispatch expectedDispatch,
+            Instant observedAt) {
+        var lifecycle = renewed.lifecycle();
+        return jdbc.update("""
+                UPDATE rg_test_durable_execution_checkpoints
+                SET revision = ?, lease_expires_at = ?, checkpoint_fingerprint = ?,
+                    updated_at = ?, checkpoint_json = ?
+                WHERE run_id = ? AND tenant_id = ? AND environment_id = ?
+                  AND engine_execution_id = ? AND status = 'RESUMING'
+                  AND owner_id = ? AND lease_epoch = ? AND revision = ?
+                  AND lease_expires_at = ? AND lease_expires_at > ?
+                  AND checkpoint_fingerprint = ?
+                """, lifecycle.revision(), Timestamp.from(lifecycle.leaseExpiresAt()),
+                renewed.checkpointFingerprint(), Timestamp.from(lifecycle.updatedAt()),
+                write(renewed), renewed.runId(), renewed.scope().tenantId(),
+                renewed.scope().environmentId(), renewed.engineExecutionId(),
+                lifecycle.ownerId(), lifecycle.leaseEpoch(), current.lifecycle().revision(),
+                Timestamp.from(expectedDispatch.leaseExpiresAt()), Timestamp.from(observedAt),
+                expectedDispatch.checkpointFingerprint());
+    }
+
+    private void insertRecoveryHeartbeat(
+            RecoveryHeartbeatCommand command,
+            DurableTestExecutionCheckpoint result,
+            DurableTestRecoveryDispatch successor,
+            Instant createdAt) {
+        DurableTestRecoveryDispatch source = command.expectedDispatch();
+        String recordFingerprint = recoveryHeartbeatRecordFingerprint(
+                command, result, successor, createdAt);
+        jdbc.update("""
+                INSERT INTO rg_test_durable_recovery_heartbeats (
+                    tenant_id, environment_id, client_request_id, request_fingerprint,
+                    run_id, engine_execution_id, owner_id, lease_epoch, expected_revision,
+                    expected_lease_expires_at, expected_checkpoint_fingerprint,
+                    expected_dispatch_fingerprint, authorization_fingerprint,
+                    lease_duration_seconds, result_revision, result_lease_expires_at,
+                    result_checkpoint_fingerprint, result_dispatch_fingerprint,
+                    record_fingerprint, result_checkpoint_json, result_dispatch_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, source.scope().tenantId(), source.scope().environmentId(),
+                command.clientRequestId(), command.requestFingerprint(), source.runId(),
+                source.engineExecutionId(), source.ownerId(), source.leaseEpoch(), source.revision(),
+                Timestamp.from(source.leaseExpiresAt()), source.checkpointFingerprint(),
+                source.dispatchFingerprint(), source.authorization().authorizationFingerprint(),
+                command.leaseDuration().toSeconds(), result.lifecycle().revision(),
+                Timestamp.from(result.lifecycle().leaseExpiresAt()),
+                result.checkpointFingerprint(), successor.dispatchFingerprint(), recordFingerprint,
+                write(result), writeDispatch(successor), Timestamp.from(createdAt));
+    }
+
+    private RecoveryHeartbeatResult verifiedRecoveryHeartbeatResult(
+            StoredRecoveryHeartbeat stored, boolean idempotentReplay) {
+        DurableTestExecutionCheckpoint checkpoint;
+        try {
+            checkpoint = objectMapper.readValue(
+                    stored.resultCheckpointJson(), DurableTestExecutionCheckpoint.class);
+            integrity.requireValid(checkpoint);
+        } catch (JsonProcessingException | IllegalArgumentException corrupt) {
+            throw new IllegalStateException(
+                    "Stored recovery heartbeat checkpoint is corrupt", corrupt);
+        }
+        DurableTestRecoveryDispatch dispatch;
+        try {
+            dispatch = objectMapper.readValue(
+                    stored.resultDispatchJson(), DurableTestRecoveryDispatch.class);
+            dispatch.requireValid(objectMapper, checkpoint);
+        } catch (JsonProcessingException | IllegalArgumentException corrupt) {
+            throw new IllegalStateException(
+                    "Stored recovery heartbeat dispatch is corrupt", corrupt);
+        }
+        if (!stored.agreesWith(checkpoint, dispatch)) {
+            throw new IllegalStateException("Stored recovery heartbeat result is corrupt");
+        }
+        return new RecoveryHeartbeatResult(checkpoint, dispatch, idempotentReplay);
+    }
+
+    private StoredRecoveryHeartbeat mapRecoveryHeartbeat(ResultSet rs, int rowNumber)
+            throws SQLException {
+        return new StoredRecoveryHeartbeat(
+                rs.getString("tenant_id"), rs.getString("environment_id"),
+                rs.getString("client_request_id"), rs.getString("request_fingerprint"),
+                rs.getString("run_id"), rs.getString("engine_execution_id"),
+                rs.getString("owner_id"), rs.getLong("lease_epoch"),
+                rs.getLong("expected_revision"),
+                rs.getTimestamp("expected_lease_expires_at").toInstant(),
+                rs.getString("expected_checkpoint_fingerprint"),
+                rs.getString("expected_dispatch_fingerprint"),
+                rs.getString("authorization_fingerprint"),
+                rs.getLong("lease_duration_seconds"), rs.getLong("result_revision"),
+                rs.getTimestamp("result_lease_expires_at").toInstant(),
+                rs.getString("result_checkpoint_fingerprint"),
+                rs.getString("result_dispatch_fingerprint"),
+                rs.getString("record_fingerprint"), rs.getString("result_checkpoint_json"),
+                rs.getString("result_dispatch_json"), rs.getTimestamp("created_at").toInstant());
+    }
+
+    private void requireValidRecoveryHeartbeatRecord(StoredRecoveryHeartbeat stored) {
+        String actual = ProtocolFingerprint.of(objectMapper, stored.fingerprintMaterial());
+        if (!stored.recordFingerprint().equals(actual)) {
+            throw new IllegalStateException("Stored recovery heartbeat record is corrupt");
+        }
+    }
+
+    private String recoveryHeartbeatRecordFingerprint(
+            RecoveryHeartbeatCommand command,
+            DurableTestExecutionCheckpoint result,
+            DurableTestRecoveryDispatch successor,
+            Instant createdAt) {
+        DurableTestRecoveryDispatch source = command.expectedDispatch();
+        return ProtocolFingerprint.of(objectMapper, recoveryHeartbeatFingerprintMaterial(
+                source.scope().tenantId(), source.scope().environmentId(),
+                command.clientRequestId(), command.requestFingerprint(), source.runId(),
+                source.engineExecutionId(), source.ownerId(), source.leaseEpoch(), source.revision(),
+                source.leaseExpiresAt(), source.checkpointFingerprint(),
+                source.dispatchFingerprint(), source.authorization().authorizationFingerprint(),
+                command.leaseDuration().toSeconds(), result.lifecycle().revision(),
+                result.lifecycle().leaseExpiresAt(), result.checkpointFingerprint(),
+                successor.dispatchFingerprint(), createdAt));
+    }
+
+    private static Map<String, Object> recoveryHeartbeatFingerprintMaterial(
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            String requestFingerprint,
+            String runId,
+            String engineExecutionId,
+            String ownerId,
+            long leaseEpoch,
+            long expectedRevision,
+            Instant expectedLeaseExpiresAt,
+            String expectedCheckpointFingerprint,
+            String expectedDispatchFingerprint,
+            String authorizationFingerprint,
+            long leaseDurationSeconds,
+            long resultRevision,
+            Instant resultLeaseExpiresAt,
+            String resultCheckpointFingerprint,
+            String resultDispatchFingerprint,
+            Instant createdAt) {
+        return Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableRecoveryHeartbeatRecord.v1"),
+                Map.entry("tenantId", tenantId),
+                Map.entry("environmentId", environmentId),
+                Map.entry("clientRequestId", clientRequestId),
+                Map.entry("requestFingerprint", requestFingerprint),
+                Map.entry("runId", runId),
+                Map.entry("engineExecutionId", engineExecutionId),
+                Map.entry("ownerId", ownerId),
+                Map.entry("leaseEpoch", leaseEpoch),
+                Map.entry("expectedRevision", expectedRevision),
+                Map.entry("expectedLeaseExpiresAt", expectedLeaseExpiresAt),
+                Map.entry("expectedCheckpointFingerprint", expectedCheckpointFingerprint),
+                Map.entry("expectedDispatchFingerprint", expectedDispatchFingerprint),
+                Map.entry("authorizationFingerprint", authorizationFingerprint),
+                Map.entry("leaseDurationSeconds", leaseDurationSeconds),
+                Map.entry("resultRevision", resultRevision),
+                Map.entry("resultLeaseExpiresAt", resultLeaseExpiresAt),
+                Map.entry("resultCheckpointFingerprint", resultCheckpointFingerprint),
+                Map.entry("resultDispatchFingerprint", resultDispatchFingerprint),
+                Map.entry("createdAt", createdAt));
     }
 
     private DurableTestExecutionCheckpoint claimExpiredLeaseAt(LeaseClaim claim, Instant claimedAt) {
@@ -998,6 +1426,82 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     && expectedRevision == checkpoint.lifecycle().revision() - 1
                     && checkpoint.lifecycle().status()
                     == DurableTestExecutionCheckpoint.Status.RESUMING;
+        }
+    }
+
+    private record StoredRecoveryHeartbeat(
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            String requestFingerprint,
+            String runId,
+            String engineExecutionId,
+            String ownerId,
+            long leaseEpoch,
+            long expectedRevision,
+            Instant expectedLeaseExpiresAt,
+            String expectedCheckpointFingerprint,
+            String expectedDispatchFingerprint,
+            String authorizationFingerprint,
+            long leaseDurationSeconds,
+            long resultRevision,
+            Instant resultLeaseExpiresAt,
+            String resultCheckpointFingerprint,
+            String resultDispatchFingerprint,
+            String recordFingerprint,
+            String resultCheckpointJson,
+            String resultDispatchJson,
+            Instant createdAt
+    ) {
+        private Map<String, Object> fingerprintMaterial() {
+            return recoveryHeartbeatFingerprintMaterial(
+                    tenantId, environmentId, clientRequestId, requestFingerprint, runId,
+                    engineExecutionId, ownerId, leaseEpoch, expectedRevision,
+                    expectedLeaseExpiresAt, expectedCheckpointFingerprint,
+                    expectedDispatchFingerprint, authorizationFingerprint, leaseDurationSeconds,
+                    resultRevision, resultLeaseExpiresAt, resultCheckpointFingerprint,
+                    resultDispatchFingerprint, createdAt);
+        }
+
+        private boolean matches(RecoveryHeartbeatCommand command) {
+            DurableTestRecoveryDispatch source = command.expectedDispatch();
+            return tenantId.equals(source.scope().tenantId())
+                    && environmentId.equals(source.scope().environmentId())
+                    && clientRequestId.equals(command.clientRequestId())
+                    && requestFingerprint.equals(command.requestFingerprint())
+                    && runId.equals(source.runId())
+                    && engineExecutionId.equals(source.engineExecutionId())
+                    && ownerId.equals(source.ownerId())
+                    && leaseEpoch == source.leaseEpoch()
+                    && expectedRevision == source.revision()
+                    && expectedLeaseExpiresAt.equals(source.leaseExpiresAt())
+                    && expectedCheckpointFingerprint.equals(source.checkpointFingerprint())
+                    && expectedDispatchFingerprint.equals(source.dispatchFingerprint())
+                    && authorizationFingerprint.equals(
+                    source.authorization().authorizationFingerprint())
+                    && leaseDurationSeconds == command.leaseDuration().toSeconds();
+        }
+
+        private boolean agreesWith(
+                DurableTestExecutionCheckpoint checkpoint,
+                DurableTestRecoveryDispatch dispatch) {
+            DurableTestExecutionCheckpoint.Lifecycle lifecycle = checkpoint.lifecycle();
+            return tenantId.equals(checkpoint.scope().tenantId())
+                    && environmentId.equals(checkpoint.scope().environmentId())
+                    && runId.equals(checkpoint.runId())
+                    && engineExecutionId.equals(checkpoint.engineExecutionId())
+                    && ownerId.equals(lifecycle.ownerId())
+                    && leaseEpoch == lifecycle.leaseEpoch()
+                    && resultRevision == lifecycle.revision()
+                    && expectedRevision < Long.MAX_VALUE
+                    && resultRevision == expectedRevision + 1
+                    && resultLeaseExpiresAt.equals(lifecycle.leaseExpiresAt())
+                    && resultCheckpointFingerprint.equals(
+                    checkpoint.checkpointFingerprint())
+                    && resultDispatchFingerprint.equals(dispatch.dispatchFingerprint())
+                    && authorizationFingerprint.equals(
+                    dispatch.authorization().authorizationFingerprint())
+                    && lifecycle.status() == DurableTestExecutionCheckpoint.Status.RESUMING;
         }
     }
 }

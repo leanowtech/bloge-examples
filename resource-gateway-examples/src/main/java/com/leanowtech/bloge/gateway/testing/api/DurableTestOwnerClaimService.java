@@ -353,6 +353,13 @@ public final class DurableTestOwnerClaimService {
                     "The durable execution fence changed after caller selection.", true, Map.of());
             case LEASE_ACTIVE -> conflict(identity, "RG.TEST.DURABLE_LEASE_ACTIVE",
                     "The durable execution lease is still active.", true, Map.of());
+            case LEASE_EXPIRED -> conflict(identity, "RG.TEST.DURABLE_LEASE_EXPIRED",
+                    "The durable execution lease expired before the command completed.",
+                    true, Map.of());
+            case UNRECOGNIZED_DISPATCH -> conflict(identity,
+                    "RG.TEST.DURABLE_UNRECOGNIZED_DISPATCH",
+                    "The durable recovery dispatch has no committed issuance record.",
+                    false, Map.of());
             case NOT_RESUMABLE -> conflict(identity, "RG.TEST.DURABLE_NOT_RESUMABLE",
                     "The durable execution lifecycle cannot be resumed.", false, Map.of());
             case IDEMPOTENCY_CONFLICT -> conflict(identity,

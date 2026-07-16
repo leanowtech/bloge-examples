@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryAuthorization;
+import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryDispatch;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureConsumptionStateSnapshot;
@@ -449,6 +450,249 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     }
 
     @Test
+    void recoveryHeartbeatUsesDatabaseClockAndRotatesOneLiveFenceIdempotently() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(
+                        resumeCommand(expired, "resume-request-1", SHA_D, "instance-b"));
+        DurableTestExecutionCheckpointRepository.RecoveryHeartbeatCommand command =
+                heartbeatCommand(claimed.dispatch(), "heartbeat-request-1", SHA_C,
+                        Duration.ofMinutes(3));
+
+        DurableTestExecutionCheckpointRepository.RecoveryHeartbeatResult first =
+                repository.heartbeatRecoveryLeaseIdempotently(command);
+        DurableTestExecutionCheckpoint renewed = first.checkpoint();
+
+        assertThat(first.idempotentReplay()).isFalse();
+        assertThat(renewed.lifecycle().status())
+                .isEqualTo(DurableTestExecutionCheckpoint.Status.RESUMING);
+        assertThat(renewed.lifecycle().ownerId())
+                .isEqualTo(claimed.checkpoint().lifecycle().ownerId());
+        assertThat(renewed.lifecycle().leaseEpoch())
+                .isEqualTo(claimed.checkpoint().lifecycle().leaseEpoch());
+        assertThat(renewed.lifecycle().revision())
+                .isEqualTo(claimed.checkpoint().lifecycle().revision() + 1);
+        assertThat(Duration.between(renewed.lifecycle().updatedAt(),
+                renewed.lifecycle().leaseExpiresAt())).isEqualTo(Duration.ofMinutes(3));
+        assertThat(renewed.dependencies()).isEqualTo(claimed.checkpoint().dependencies());
+        assertThat(renewed.fixtureConsumptionState())
+                .isEqualTo(claimed.checkpoint().fixtureConsumptionState());
+        assertThat(renewed.executionServiceState())
+                .isEqualTo(claimed.checkpoint().executionServiceState());
+        assertThat(renewed.engineState()).isEqualTo(claimed.checkpoint().engineState());
+        assertThat(first.dispatch().authorization()).isEqualTo(claimed.dispatch().authorization());
+        assertThat(first.dispatch().dispatchFingerprint())
+                .isNotEqualTo(claimed.dispatch().dispatchFingerprint());
+        first.dispatch().requireValid(new ObjectMapper().findAndRegisterModules(), renewed);
+        assertThat(claimed.dispatch().agreesWith(renewed)).isFalse();
+        assertThat(repository.findRecoveryDispatch(
+                "tenant-a", "test", "run-a",
+                new DurableTestExecutionCheckpointRepository.Fence(
+                        renewed.lifecycle().ownerId(), renewed.lifecycle().leaseEpoch(),
+                        renewed.lifecycle().revision()), renewed.checkpointFingerprint()))
+                .contains(first.dispatch());
+
+        DurableTestExecutionCheckpointRepository.RecoveryHeartbeatResult replay =
+                repository.heartbeatRecoveryLeaseIdempotently(command);
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(replay.checkpoint()).isEqualTo(first.checkpoint());
+        assertThat(replay.dispatch()).isEqualTo(first.dispatch());
+        assertThat(repository.find("tenant-a", "test", "run-a")).contains(renewed);
+    }
+
+    @Test
+    void recoveryHeartbeatRejectsAStaleDispatchAfterTheFenceRotates() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(
+                        resumeCommand(expired, "resume-request-1", SHA_D, "instance-b"));
+        repository.heartbeatRecoveryLeaseIdempotently(heartbeatCommand(
+                claimed.dispatch(), "heartbeat-request-1", SHA_C, Duration.ofMinutes(3)));
+
+        assertThatThrownBy(() -> repository.heartbeatRecoveryLeaseIdempotently(
+                heartbeatCommand(claimed.dispatch(), "heartbeat-request-2", SHA_B,
+                        Duration.ofMinutes(3))))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.STALE_FENCE);
+    }
+
+    @Test
+    void recoveryHeartbeatRejectsAnExpiredDispatchWithoutRevivingItsOwner() throws Exception {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(resumeCommand(
+                        expired, "resume-request-1", SHA_D, "instance-b",
+                        Duration.ofSeconds(1)));
+        TimeUnit.MILLISECONDS.sleep(1100);
+
+        assertThatThrownBy(() -> repository.heartbeatRecoveryLeaseIdempotently(
+                heartbeatCommand(claimed.dispatch(), "heartbeat-request-expired", SHA_C,
+                        Duration.ofMinutes(3))))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.LEASE_EXPIRED);
+        assertThat(repository.find("tenant-a", "test", "run-a"))
+                .contains(claimed.checkpoint());
+    }
+
+    @Test
+    void recoveryHeartbeatRejectsAValidButUnissuedDispatch() {
+        DurableTestExecutionCheckpoint resuming = withLifecycle(
+                checkpoint(0, "checkpoint-0"), DurableTestExecutionCheckpoint.Status.RESUMING,
+                "instance-b", 2, 0,
+                Instant.parse("2026-01-01T00:00:00Z"),
+                Instant.parse("2026-01-01T00:00:01Z"),
+                Instant.parse("9999-01-01T00:00:00Z"));
+        repository.create(resuming, boundNoop(resuming));
+        DurableTestRecoveryDispatch unissued = DurableTestRecoveryDispatch.issue(
+                new ObjectMapper().findAndRegisterModules(), resumeCommand(
+                        resuming, "unused-resume", SHA_D, "instance-c").authorization(),
+                resuming);
+
+        assertThatThrownBy(() -> repository.heartbeatRecoveryLeaseIdempotently(
+                heartbeatCommand(unissued, "heartbeat-request-unissued", SHA_C,
+                        Duration.ofMinutes(3))))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason
+                        .UNRECOGNIZED_DISPATCH);
+        assertThat(repository.find("tenant-a", "test", "run-a")).contains(resuming);
+    }
+
+    @Test
+    void recoveryHeartbeatAndCompanionAuditRollBackAsOneTransaction() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(
+                        resumeCommand(expired, "resume-request-1", SHA_D, "instance-b"));
+        DurableTestExecutionCheckpointRepository.RecoveryHeartbeatCommand command =
+                heartbeatCommand(claimed.dispatch(), "heartbeat-request-1", SHA_C,
+                        Duration.ofMinutes(3));
+
+        assertThatThrownBy(() -> repository.heartbeatRecoveryLeaseIdempotently(command, jdbc -> {
+            jdbc.update("INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
+                    "heartbeat-audit", claimed.checkpoint().engineExecutionId(), 1);
+            throw new IllegalStateException("injected heartbeat audit failure");
+        })).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("heartbeat audit failure");
+        assertThat(repository.find("tenant-a", "test", "run-a"))
+                .contains(claimed.checkpoint());
+        assertThat(engineCandidateCount("heartbeat-audit")).isZero();
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_recovery_heartbeats", Integer.class))
+                .isZero();
+
+        assertThat(repository.heartbeatRecoveryLeaseIdempotently(command).idempotentReplay())
+                .isFalse();
+    }
+
+    @Test
+    void recoveryHeartbeatRejectsIdempotencyDriftAndStoredSuccessorTampering() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(
+                        resumeCommand(expired, "resume-request-1", SHA_D, "instance-b"));
+        DurableTestExecutionCheckpointRepository.RecoveryHeartbeatCommand command =
+                heartbeatCommand(claimed.dispatch(), "heartbeat-request-1", SHA_C,
+                        Duration.ofMinutes(3));
+        repository.heartbeatRecoveryLeaseIdempotently(command);
+
+        assertThatThrownBy(() -> repository.heartbeatRecoveryLeaseIdempotently(
+                heartbeatCommand(claimed.dispatch(), "heartbeat-request-1", SHA_C,
+                        Duration.ofMinutes(4))))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.IDEMPOTENCY_CONFLICT);
+
+        database.jdbc().update("""
+                UPDATE rg_test_durable_recovery_heartbeats
+                SET result_dispatch_json = ?
+                WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                """, "{}", "tenant-a", "test", "heartbeat-request-1");
+        assertThatThrownBy(() -> repository.heartbeatRecoveryLeaseIdempotently(command))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("recovery heartbeat dispatch is corrupt");
+    }
+
+    @Test
+    void concurrentRepositoryInstancesCommitOneHeartbeatAndReplayItsSuccessor() throws Exception {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(
+                        resumeCommand(expired, "resume-request-1", SHA_D, "instance-b"));
+        DatabaseDurableTestExecutionCheckpointRepository competing =
+                new DatabaseDurableTestExecutionCheckpointRepository(
+                        database.jdbc(), database.transactionManager(),
+                        new ObjectMapper().findAndRegisterModules(), integrity);
+        competing.init();
+        DurableTestExecutionCheckpointRepository.RecoveryHeartbeatCommand command =
+                heartbeatCommand(claimed.dispatch(), "heartbeat-request-1", SHA_C,
+                        Duration.ofMinutes(3));
+        CountDownLatch start = new CountDownLatch(1);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> idempotentHeartbeatCandidate(
+                    repository, command, start));
+            var second = executor.submit(() -> idempotentHeartbeatCandidate(
+                    competing, command, start));
+            start.countDown();
+            List<DurableTestExecutionCheckpointRepository.RecoveryHeartbeatResult> results =
+                    List.of(first.get(), second.get());
+
+            assertThat(results).extracting(
+                    DurableTestExecutionCheckpointRepository.RecoveryHeartbeatResult
+                            ::idempotentReplay)
+                    .containsExactlyInAnyOrder(false, true);
+            assertThat(results).extracting(result -> result.dispatch().dispatchFingerprint())
+                    .containsOnly(results.getFirst().dispatch().dispatchFingerprint());
+        }
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_recovery_heartbeats", Integer.class))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void validatesRecoveryHeartbeatIdentityAndDurationBeforePersistence() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestRecoveryDispatch dispatch = repository.claimExpiredLeaseIdempotently(
+                resumeCommand(expired, "resume-request-1", SHA_D, "instance-b")).dispatch();
+
+        assertThatThrownBy(() -> heartbeatCommand(
+                dispatch, "", SHA_C, Duration.ofMinutes(3)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("clientRequestId");
+        assertThatThrownBy(() -> heartbeatCommand(
+                dispatch, "heartbeat request", SHA_C, Duration.ofMinutes(3)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("clientRequestId");
+        assertThatThrownBy(() -> heartbeatCommand(
+                dispatch, "heartbeat-request-1", "not-a-fingerprint", Duration.ofMinutes(3)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("requestFingerprint");
+        assertThatThrownBy(() -> heartbeatCommand(
+                dispatch, "heartbeat-request-1", SHA_C, Duration.ofMillis(999)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("whole seconds");
+        assertThatThrownBy(() -> heartbeatCommand(
+                dispatch, "heartbeat-request-1", SHA_C,
+                Duration.ofHours(1).plusSeconds(1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("whole seconds");
+    }
+
+    @Test
     void recoveryDispatchReplayRejectsAuthorizationAndStoredDispatchDrift() {
         DurableTestExecutionCheckpoint expired = expiredCheckpoint();
         repository.create(expired, boundNoop(expired));
@@ -819,11 +1063,37 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
         }
     }
 
+    private DurableTestExecutionCheckpointRepository.RecoveryHeartbeatResult
+            idempotentHeartbeatCandidate(
+                    DatabaseDurableTestExecutionCheckpointRepository candidateRepository,
+                    DurableTestExecutionCheckpointRepository.RecoveryHeartbeatCommand command,
+                    CountDownLatch start) {
+        try {
+            if (!start.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("concurrent heartbeat did not start");
+            }
+            return candidateRepository.heartbeatRecoveryLeaseIdempotently(command);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("concurrent heartbeat interrupted", interrupted);
+        }
+    }
+
     private DurableTestExecutionCheckpointRepository.ResumeLeaseCommand resumeCommand(
             DurableTestExecutionCheckpoint checkpoint,
             String clientRequestId,
             String requestFingerprint,
             String claimant) {
+        return resumeCommand(checkpoint, clientRequestId, requestFingerprint, claimant,
+                Duration.ofMinutes(2));
+    }
+
+    private DurableTestExecutionCheckpointRepository.ResumeLeaseCommand resumeCommand(
+            DurableTestExecutionCheckpoint checkpoint,
+            String clientRequestId,
+            String requestFingerprint,
+            String claimant,
+            Duration leaseDuration) {
         return new DurableTestExecutionCheckpointRepository.ResumeLeaseCommand(
                 clientRequestId, requestFingerprint,
                 new DurableTestExecutionCheckpointRepository.LeaseClaim(
@@ -831,7 +1101,7 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                         checkpoint.runId(), new DurableTestExecutionCheckpointRepository.Fence(
                         checkpoint.lifecycle().ownerId(), checkpoint.lifecycle().leaseEpoch(),
                         checkpoint.lifecycle().revision()), checkpoint.checkpointFingerprint(),
-                        claimant, Duration.ofMinutes(2)),
+                        claimant, leaseDuration),
                 DurableTestRecoveryAuthorization.issue(
                         new ObjectMapper().findAndRegisterModules(),
                         checkpoint.checkpointFingerprint(), SHA_D,
@@ -844,6 +1114,15 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                         checkpoint.dependencies().identitySnapshot().fingerprint(),
                         checkpoint.dependencies().plan().authorizedPurpose(),
                         checkpoint.dependencies().sideEffectPolicy()));
+    }
+
+    private DurableTestExecutionCheckpointRepository.RecoveryHeartbeatCommand heartbeatCommand(
+            DurableTestRecoveryDispatch dispatch,
+            String clientRequestId,
+            String requestFingerprint,
+            Duration leaseDuration) {
+        return new DurableTestExecutionCheckpointRepository.RecoveryHeartbeatCommand(
+                clientRequestId, requestFingerprint, dispatch, leaseDuration);
     }
 
     private DurableTestExecutionCheckpoint advanceAfterClaim(

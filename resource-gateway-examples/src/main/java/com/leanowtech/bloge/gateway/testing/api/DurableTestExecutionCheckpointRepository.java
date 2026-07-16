@@ -147,6 +147,36 @@ public interface DurableTestExecutionCheckpointRepository {
             String expectedCheckpointFingerprint);
 
     /**
+     * Atomically renews one live recovery fence and rotates its payload-free worker dispatch.
+     *
+     * <p>The source dispatch is a compare-and-set value, not a bearer credential. Implementations
+     * must first prove that it came from a committed claim or predecessor heartbeat, validate it
+     * against the live {@code RESUMING} checkpoint using database time, advance exactly one control
+     * revision without changing engine or replay state, and retain the result for
+     * ambiguous-response replay.</p>
+     *
+     * @param command exact source dispatch, bounded renewal, and idempotency identity
+     * @return newly sealed checkpoint and successor dispatch, or the exact committed replay
+     */
+    RecoveryHeartbeatResult heartbeatRecoveryLeaseIdempotently(
+            RecoveryHeartbeatCommand command);
+
+    /**
+     * Renews or replays one recovery heartbeat with a transaction-bound companion mutation.
+     *
+     * <p>The companion mutation is suitable for payload-free audit or evidence indexes. Its
+     * failure rolls back the checkpoint CAS, heartbeat command record, and successor dispatch as
+     * one local transaction.</p>
+     *
+     * @param command exact source dispatch, bounded renewal, and idempotency identity
+     * @param companionMutation local audit or evidence write using the same transaction
+     * @return newly sealed checkpoint and successor dispatch, or the exact committed replay
+     */
+    RecoveryHeartbeatResult heartbeatRecoveryLeaseIdempotently(
+            RecoveryHeartbeatCommand command,
+            TestRuntimeTransactionMutation companionMutation);
+
+    /**
      * Exact compare-and-set fence held by the caller.
      *
      * @param ownerId current process owner identity
@@ -294,6 +324,79 @@ public interface DurableTestExecutionCheckpointRepository {
             if (!dispatch.agreesWith(checkpoint)) {
                 throw new IllegalArgumentException(
                         "Recovery dispatch must exactly match its claim checkpoint");
+            }
+        }
+    }
+
+    /**
+     * Idempotent transport command for one live recovery-worker heartbeat.
+     *
+     * @param clientRequestId caller-stable key scoped by dispatch tenant and environment
+     * @param requestFingerprint server-derived fingerprint of authenticated worker intent
+     * @param expectedDispatch exact current dispatch used as the compare-and-set value
+     * @param leaseDuration requested lease extension between one second and one hour
+     */
+    record RecoveryHeartbeatCommand(
+            String clientRequestId,
+            String requestFingerprint,
+            DurableTestRecoveryDispatch expectedDispatch,
+            Duration leaseDuration) {
+        private static final Pattern IDENTIFIER =
+                Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
+        private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+        private static final Duration MINIMUM_LEASE = Duration.ofSeconds(1);
+        private static final Duration MAXIMUM_LEASE = Duration.ofHours(1);
+
+        /** Rejects ambiguous heartbeat identity or unbounded lease extension. */
+        public RecoveryHeartbeatCommand {
+            clientRequestId = requiredHeartbeatValue(clientRequestId, "clientRequestId");
+            if (!IDENTIFIER.matcher(clientRequestId).matches()) {
+                throw new IllegalArgumentException(
+                        "clientRequestId must be a bounded stable identifier");
+            }
+            requestFingerprint = requiredHeartbeatValue(
+                    requestFingerprint, "requestFingerprint");
+            if (!FINGERPRINT.matcher(requestFingerprint).matches()) {
+                throw new IllegalArgumentException(
+                        "requestFingerprint must be a canonical SHA-256 fingerprint");
+            }
+            expectedDispatch = Objects.requireNonNull(expectedDispatch, "expectedDispatch");
+            leaseDuration = Objects.requireNonNull(leaseDuration, "leaseDuration");
+            if (leaseDuration.compareTo(MINIMUM_LEASE) < 0
+                    || leaseDuration.compareTo(MAXIMUM_LEASE) > 0
+                    || leaseDuration.getNano() != 0) {
+                throw new IllegalArgumentException(
+                        "leaseDuration must be whole seconds between one second and one hour");
+            }
+        }
+
+        private static String requiredHeartbeatValue(String value, String field) {
+            String normalized = value == null ? "" : value.trim();
+            if (normalized.isBlank()) {
+                throw new IllegalArgumentException(field + " is required");
+            }
+            return normalized;
+        }
+    }
+
+    /**
+     * Immutable outcome of one recovery heartbeat command.
+     *
+     * @param checkpoint one-revision successor checkpoint
+     * @param dispatch successor dispatch controlling that exact checkpoint
+     * @param idempotentReplay whether an earlier committed result was replayed
+     */
+    record RecoveryHeartbeatResult(
+            DurableTestExecutionCheckpoint checkpoint,
+            DurableTestRecoveryDispatch dispatch,
+            boolean idempotentReplay) {
+        /** Requires exact checkpoint/dispatch agreement for every new or replayed result. */
+        public RecoveryHeartbeatResult {
+            checkpoint = Objects.requireNonNull(checkpoint, "checkpoint");
+            dispatch = Objects.requireNonNull(dispatch, "dispatch");
+            if (!dispatch.agreesWith(checkpoint)) {
+                throw new IllegalArgumentException(
+                        "Recovery heartbeat dispatch must exactly match its checkpoint");
             }
         }
     }
