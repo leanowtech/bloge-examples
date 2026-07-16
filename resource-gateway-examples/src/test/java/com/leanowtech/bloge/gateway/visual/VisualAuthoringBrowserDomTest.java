@@ -3636,15 +3636,29 @@ class VisualAuthoringBrowserDomTest {
                       && nodeConnectabilityServerFacetFiltersKey(server.facetFilters || {}) === String(arguments[4] || '');
                     """, nodeId, offset, query, targetStatus, facetFiltersKey)));
         } catch (TimeoutException ex) {
-            Object serverState = ((JavascriptExecutor) driver).executeScript("""
+            Object diagnostics = ((JavascriptExecutor) driver).executeScript("""
                     try {
-                      return JSON.stringify(state.nodeConnectabilityServer || null);
+                      const resources = performance.getEntriesByType('resource')
+                        .filter((entry) => String(entry.name || '').includes('/api/visual/connections/candidates'))
+                        .map((entry) => ({
+                          name: entry.name,
+                          duration: entry.duration,
+                          responseStart: entry.responseStart,
+                          responseEnd: entry.responseEnd,
+                          transferSize: entry.transferSize,
+                          encodedBodySize: entry.encodedBodySize,
+                          decodedBodySize: entry.decodedBodySize
+                        }));
+                      return JSON.stringify({
+                        serverState: state.nodeConnectabilityServer || null,
+                        resources
+                      });
                     } catch (error) {
                       return `unavailable: ${error.message}`;
                     }
                     """);
-            throw new AssertionError("Connectability server candidates did not become ready for node '%s' at offset %d query '%s' status '%s' facets '%s'. state=%s"
-                    .formatted(nodeId, offset, query, targetStatus, facetFiltersKey, serverState), ex);
+            throw new AssertionError("Connectability server candidates did not become ready for node '%s' at offset %d query '%s' status '%s' facets '%s'. diagnostics=%s"
+                    .formatted(nodeId, offset, query, targetStatus, facetFiltersKey, diagnostics), ex);
         }
     }
 

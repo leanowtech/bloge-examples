@@ -8,6 +8,11 @@ time, random values, generated UUIDs and environment-dependent DSL function reso
 placing control data in `GraphContext`. The current increment also defines and validates the
 payload-free provider-state checkpoint needed by a later durable/suspendable adapter.
 
+The next persistence increment is documented separately in
+[Stage 4 durable checkpoint verification](resource-gateway-execution-data-control-plane-stage4-durable-checkpoint-verification.md).
+It supplies a trusted composite repository and local transaction boundary, while the actual BLOGE
+suspend/resume adapter remains pending.
+
 ## Frozen Protocol
 
 - `bloge.effectiveExecutionPlan.v3` adds `executionServiceBindings`.
@@ -89,14 +94,16 @@ provides a payload-free CI regression assertion.
 
 ## Honest Remaining Gaps
 
-- The provider-state protocol and compiler restore seam exist, but BLOGE durable/suspend checkpoints
-  do not yet persist or inject it. There is no public checkpoint/resume endpoint and no cold-start
-  resume claim in this increment.
-- Fixture-rule consumption cursors, in-flight node state, pending timers and side-effect journal
-  positions remain separate durable-state responsibilities; this snapshot covers execution services
-  only.
-- `snapshotFingerprint` is content identity, not source authentication. A durable adapter must use a
-  trusted fenced store or signed attestation before accepting a checkpoint from another process.
+- The provider-state protocol and compiler restore seam now have a trusted fenced composite
+  repository that can bind plan, fixture cursor, provider snapshot, and an engine-state closure in
+  one local transaction. BLOGE durable/suspend stores do not yet call it, and there is no public
+  checkpoint/resume endpoint or cold-start resume claim.
+- Fixture-rule and dynamic occurrence cursor protocol now exists, but `InvocationRecorder` does not
+  yet capture/restore it. Pending timers, wait records, side-effect journal positions, and stream
+  offsets remain engine adapter responsibilities.
+- `snapshotFingerprint` and the composite checkpoint fingerprint are content identities, not source
+  authentication. Trust currently comes from the isolated fenced store; cross-process export still
+  requires signed attestation.
 - Repeated concurrent calls at the exact same invocation scope still depend on occurrence
   assignment order; deterministic parallel scheduling or a stronger invocation coordinate is
   required before claiming byte-identical semantics there.

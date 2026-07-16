@@ -1154,6 +1154,119 @@
         "snapshotFingerprint": {"$ref": "#/$defs/fingerprint"}
       }
     },
+    "fixtureConsumptionStateSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "ruleUses", "siteOccurrenceCursors", "graphOccurrenceCursors", "stateFingerprint"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.fixtureConsumptionStateSnapshot.v1"},
+        "ruleUses": {
+          "type": "object",
+          "maxProperties": 10000,
+          "propertyNames": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"},
+          "additionalProperties": {"type": "integer", "minimum": 0, "maximum": 1000000000}
+        },
+        "siteOccurrenceCursors": {
+          "type": "object",
+          "maxProperties": 10000,
+          "propertyNames": {"pattern": "^sha256:[a-f0-9]{64}$"},
+          "additionalProperties": {"type": "integer", "minimum": 1, "maximum": 1000000000}
+        },
+        "graphOccurrenceCursors": {
+          "type": "object",
+          "maxProperties": 10000,
+          "propertyNames": {"pattern": "^sha256:[a-f0-9]{64}$"},
+          "additionalProperties": {"type": "integer", "minimum": 1, "maximum": 1000000000}
+        },
+        "stateFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "durableTestExecutionScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenantId", "organizationId", "projectId", "environmentId", "actorId"],
+      "properties": {
+        "tenantId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"},
+        "organizationId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"},
+        "projectId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"},
+        "environmentId": {"enum": ["test", "staging"]},
+        "actorId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"}
+      }
+    },
+    "durableExactFixtureRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixtureBundleId", "revision", "fingerprint"],
+      "properties": {
+        "fixtureBundleId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"},
+        "revision": {"type": "integer", "minimum": 1},
+        "fingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "durableAuthoritySnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "fingerprint"],
+      "properties": {
+        "mode": {"const": "FAIL_CLOSED"},
+        "fingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "durableControlDependencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan", "fixture", "sideEffectPolicy", "identitySnapshot"],
+      "properties": {
+        "plan": {"allOf": [{"$ref": "#/$defs/effectivePlan"}, {"type": "object"}]},
+        "fixture": {"$ref": "#/$defs/durableExactFixtureRef"},
+        "sideEffectPolicy": {"enum": ["DENY_REAL", "REPLAY_ONLY"]},
+        "identitySnapshot": {"$ref": "#/$defs/durableAuthoritySnapshot"}
+      }
+    },
+    "durableEngineState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checkpointRef", "nodeId", "boundaryType", "boundarySequence", "stateVersion", "closureFingerprint"],
+      "properties": {
+        "checkpointRef": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"},
+        "nodeId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"},
+        "boundaryType": {"enum": ["NODE_BOUNDARY", "SUSPEND", "TIMER", "WORK_ITEM", "STREAM_OFFSET"]},
+        "boundarySequence": {"type": "integer", "minimum": 1},
+        "stateVersion": {"type": "integer", "minimum": 0},
+        "closureFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "durableExecutionLifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "ownerId", "leaseEpoch", "revision", "createdAt", "updatedAt", "leaseExpiresAt"],
+      "properties": {
+        "status": {"enum": ["ACTIVE", "SUSPENDED", "RESUMING", "TERMINAL", "CONTROL_PLAN_UNAVAILABLE"]},
+        "ownerId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"},
+        "leaseEpoch": {"type": "integer", "minimum": 1},
+        "revision": {"type": "integer", "minimum": 0},
+        "createdAt": {"type": "string", "format": "date-time"},
+        "updatedAt": {"type": "string", "format": "date-time"},
+        "leaseExpiresAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "durableTestExecutionCheckpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "scope", "runId", "engineExecutionId", "dependencies", "fixtureConsumptionState", "executionServiceState", "engineState", "lifecycle", "checkpointFingerprint"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.durableTestExecutionCheckpoint.v1"},
+        "scope": {"$ref": "#/$defs/durableTestExecutionScope"},
+        "runId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"},
+        "engineExecutionId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"},
+        "dependencies": {"$ref": "#/$defs/durableControlDependencies"},
+        "fixtureConsumptionState": {"$ref": "#/$defs/fixtureConsumptionStateSnapshot"},
+        "executionServiceState": {"$ref": "#/$defs/executionServiceStateSnapshot"},
+        "engineState": {"$ref": "#/$defs/durableEngineState"},
+        "lifecycle": {"$ref": "#/$defs/durableExecutionLifecycle"},
+        "checkpointFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
     "testRunEvidenceV1": {
       "type": "object",
       "additionalProperties": false,

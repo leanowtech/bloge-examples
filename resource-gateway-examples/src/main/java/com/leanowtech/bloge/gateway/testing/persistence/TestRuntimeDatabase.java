@@ -3,6 +3,8 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.util.Objects;
 
@@ -10,13 +12,15 @@ import java.util.Objects;
  * Owns the test-runtime datasource without publishing it as a Spring {@code DataSource} bean.
  *
  * <p>The wrapper prevents Boot's production {@code JdbcTemplate} auto-configuration from seeing two
- * candidate datasources. Test runs, fixtures, and test security events therefore have a physically
- * separate pool and database while the rest of Resource Gateway keeps its existing datasource.</p>
+ * candidate datasources. Test runs, fixtures, durable control checkpoints, and test security events
+ * therefore have a physically separate pool and database while the rest of Resource Gateway keeps
+ * its existing datasource.</p>
  */
 public final class TestRuntimeDatabase implements AutoCloseable {
 
     private final HikariDataSource dataSource;
     private final JdbcTemplate jdbcTemplate;
+    private final DataSourceTransactionManager transactionManager;
 
     public TestRuntimeDatabase(Settings settings) {
         Settings safe = Objects.requireNonNull(settings, "settings");
@@ -30,11 +34,19 @@ public final class TestRuntimeDatabase implements AutoCloseable {
         config.setAutoCommit(true);
         this.dataSource = new HikariDataSource(config);
         this.jdbcTemplate = new JdbcTemplate(dataSource);
+        this.transactionManager = new DataSourceTransactionManager(dataSource);
     }
 
     /** @return JDBC facade backed only by the independent test-runtime pool */
     public JdbcTemplate jdbc() {
         return jdbcTemplate;
+    }
+
+    /**
+     * @return transaction manager bound to the same isolated pool as {@link #jdbc()}
+     */
+    public PlatformTransactionManager transactionManager() {
+        return transactionManager;
     }
 
     @Override

@@ -1,0 +1,463 @@
+package com.leanowtech.bloge.gateway.testing.persistence;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository;
+import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
+import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
+import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
+import jakarta.annotation.PostConstruct;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+
+import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.INVALID_TRANSITION;
+import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.STALE_FENCE;
+
+/**
+ * JDBC durable-test checkpoint store with transactional engine-state participation and CAS fencing.
+ *
+ * <p>The control row is content-addressed and redundantly indexes all authorization and fence facts.
+ * Reads verify both the nested fingerprints and agreement between indexed columns and JSON. Advance
+ * executes the engine mutation first and then performs owner/epoch/revision CAS; a losing writer is
+ * rolled back as one transaction, including its engine-state writes.</p>
+ */
+public final class DatabaseDurableTestExecutionCheckpointRepository
+        implements DurableTestExecutionCheckpointRepository {
+
+    private final JdbcTemplate jdbc;
+    private final TransactionTemplate transactions;
+    private final ObjectMapper objectMapper;
+    private final DurableTestExecutionCheckpointIntegrity integrity;
+
+    public DatabaseDurableTestExecutionCheckpointRepository(
+            JdbcTemplate jdbc,
+            PlatformTransactionManager transactionManager,
+            ObjectMapper objectMapper,
+            DurableTestExecutionCheckpointIntegrity integrity) {
+        this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
+        this.transactions = new TransactionTemplate(
+                Objects.requireNonNull(transactionManager, "transactionManager"));
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.integrity = Objects.requireNonNull(integrity, "integrity");
+    }
+
+    /** Creates the isolated durable control table and its scoped execution lookup index. */
+    @PostConstruct
+    public void init() {
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_execution_checkpoints (
+                    run_id VARCHAR(255) PRIMARY KEY,
+                    engine_execution_id VARCHAR(255) NOT NULL UNIQUE,
+                    tenant_id VARCHAR(255) NOT NULL,
+                    organization_id VARCHAR(255) NOT NULL,
+                    project_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(32) NOT NULL,
+                    actor_id VARCHAR(255) NOT NULL,
+                    status VARCHAR(64) NOT NULL,
+                    owner_id VARCHAR(255) NOT NULL,
+                    lease_epoch BIGINT NOT NULL,
+                    revision BIGINT NOT NULL,
+                    lease_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    plan_fingerprint VARCHAR(80) NOT NULL,
+                    fixture_fingerprint VARCHAR(80) NOT NULL,
+                    fixture_state_fingerprint VARCHAR(80) NOT NULL,
+                    provider_state_fingerprint VARCHAR(80) NOT NULL,
+                    engine_state_fingerprint VARCHAR(80) NOT NULL,
+                    checkpoint_fingerprint VARCHAR(80) NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    checkpoint_json CLOB NOT NULL
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_durable_execution_scope_idx
+                ON rg_test_durable_execution_checkpoints (
+                    tenant_id, environment_id, engine_execution_id
+                )
+                """);
+    }
+
+    @Override
+    public DurableTestExecutionCheckpoint create(
+            DurableTestExecutionCheckpoint checkpoint,
+            EngineStateMutation engineStateMutation) {
+        requireSealed(checkpoint);
+        Objects.requireNonNull(engineStateMutation, "engineStateMutation");
+        if (checkpoint.lifecycle().revision() != 0) {
+            throw conflict(INVALID_TRANSITION, "Initial durable checkpoint revision must be zero");
+        }
+        try {
+            return transactions.execute(status -> {
+                insert(checkpoint);
+                engineStateMutation.apply(jdbc);
+                return checkpoint;
+            });
+        } catch (DataIntegrityViolationException duplicate) {
+            Optional<DurableTestExecutionCheckpoint> byRun = find(
+                    checkpoint.scope().tenantId(), checkpoint.scope().environmentId(),
+                    checkpoint.runId());
+            if (byRun.isPresent()
+                    && byRun.get().checkpointFingerprint().equals(checkpoint.checkpointFingerprint())) {
+                return byRun.get();
+            }
+            Optional<DurableTestExecutionCheckpoint> byExecution = findByEngineExecutionId(
+                    checkpoint.scope().tenantId(), checkpoint.scope().environmentId(),
+                    checkpoint.engineExecutionId());
+            if (byRun.isPresent() || byExecution.isPresent()
+                    || durableIdentityExists(checkpoint.runId(), checkpoint.engineExecutionId())) {
+                throw new DurableTestExecutionCheckpointConflictException(
+                        DurableTestExecutionCheckpointConflictException.Reason.DUPLICATE_IDENTITY,
+                        "Durable checkpoint identity already belongs to different immutable content");
+            }
+            throw duplicate;
+        }
+    }
+
+    @Override
+    public DurableTestExecutionCheckpoint advance(
+            DurableTestExecutionCheckpoint checkpoint,
+            Fence expectedFence,
+            EngineStateMutation engineStateMutation) {
+        requireSealed(checkpoint);
+        Objects.requireNonNull(expectedFence, "expectedFence");
+        Objects.requireNonNull(engineStateMutation, "engineStateMutation");
+        return transactions.execute(status -> {
+            DurableTestExecutionCheckpoint current = findInternal(
+                    checkpoint.scope().tenantId(), checkpoint.scope().environmentId(),
+                    checkpoint.runId()).orElseThrow(() -> conflict(
+                    STALE_FENCE, "Durable checkpoint no longer exists in the expected scope"));
+            requireTransition(current, checkpoint, expectedFence);
+            engineStateMutation.apply(jdbc);
+            int changed = update(checkpoint, current, expectedFence);
+            if (changed != 1) {
+                throw conflict(STALE_FENCE,
+                        "Durable checkpoint owner, lease epoch, or revision changed concurrently");
+            }
+            return checkpoint;
+        });
+    }
+
+    @Override
+    public Optional<DurableTestExecutionCheckpoint> find(
+            String tenantId, String environmentId, String runId) {
+        return findInternal(normalized(tenantId), normalizedEnvironment(environmentId),
+                normalized(runId));
+    }
+
+    @Override
+    public Optional<DurableTestExecutionCheckpoint> findByEngineExecutionId(
+            String tenantId, String environmentId, String engineExecutionId) {
+        List<StoredRow> rows = jdbc.query(selectColumns() + """
+                        WHERE tenant_id = ? AND environment_id = ? AND engine_execution_id = ?
+                        """, this::mapRow, normalized(tenantId),
+                normalizedEnvironment(environmentId), normalized(engineExecutionId));
+        return rows.stream().findFirst().map(this::verifiedCheckpoint);
+    }
+
+    private Optional<DurableTestExecutionCheckpoint> findInternal(
+            String tenantId, String environmentId, String runId) {
+        List<StoredRow> rows = jdbc.query(selectColumns() + """
+                        WHERE tenant_id = ? AND environment_id = ? AND run_id = ?
+                        """, this::mapRow, tenantId, environmentId, runId);
+        return rows.stream().findFirst().map(this::verifiedCheckpoint);
+    }
+
+    private boolean durableIdentityExists(String runId, String engineExecutionId) {
+        Integer count = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM rg_test_durable_execution_checkpoints
+                WHERE run_id = ? OR engine_execution_id = ?
+                """, Integer.class, runId, engineExecutionId);
+        return count != null && count > 0;
+    }
+
+    private void insert(DurableTestExecutionCheckpoint checkpoint) {
+        var scope = checkpoint.scope();
+        var lifecycle = checkpoint.lifecycle();
+        jdbc.update("""
+                INSERT INTO rg_test_durable_execution_checkpoints (
+                    run_id, engine_execution_id, tenant_id, organization_id, project_id,
+                    environment_id, actor_id, status, owner_id, lease_epoch, revision,
+                    lease_expires_at, plan_fingerprint, fixture_fingerprint,
+                    fixture_state_fingerprint, provider_state_fingerprint,
+                    engine_state_fingerprint, checkpoint_fingerprint, created_at, updated_at,
+                    checkpoint_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, checkpoint.runId(), checkpoint.engineExecutionId(), scope.tenantId(),
+                scope.organizationId(), scope.projectId(), scope.environmentId(), scope.actorId(),
+                lifecycle.status().name(), lifecycle.ownerId(), lifecycle.leaseEpoch(),
+                lifecycle.revision(), Timestamp.from(lifecycle.leaseExpiresAt()),
+                checkpoint.dependencies().plan().planFingerprint(),
+                checkpoint.dependencies().fixture().fingerprint(),
+                checkpoint.fixtureConsumptionState().stateFingerprint(),
+                checkpoint.executionServiceState().snapshotFingerprint(),
+                checkpoint.engineState().closureFingerprint(), checkpoint.checkpointFingerprint(),
+                Timestamp.from(lifecycle.createdAt()), Timestamp.from(lifecycle.updatedAt()),
+                write(checkpoint));
+    }
+
+    private int update(DurableTestExecutionCheckpoint next,
+                       DurableTestExecutionCheckpoint current,
+                       Fence expected) {
+        var lifecycle = next.lifecycle();
+        return jdbc.update("""
+                UPDATE rg_test_durable_execution_checkpoints
+                SET status = ?, owner_id = ?, lease_epoch = ?, revision = ?,
+                    lease_expires_at = ?, plan_fingerprint = ?, fixture_fingerprint = ?,
+                    fixture_state_fingerprint = ?, provider_state_fingerprint = ?,
+                    engine_state_fingerprint = ?, checkpoint_fingerprint = ?, updated_at = ?,
+                    checkpoint_json = ?
+                WHERE run_id = ? AND tenant_id = ? AND environment_id = ?
+                  AND owner_id = ? AND lease_epoch = ? AND revision = ?
+                  AND checkpoint_fingerprint = ?
+                """, lifecycle.status().name(), lifecycle.ownerId(), lifecycle.leaseEpoch(),
+                lifecycle.revision(), Timestamp.from(lifecycle.leaseExpiresAt()),
+                next.dependencies().plan().planFingerprint(),
+                next.dependencies().fixture().fingerprint(),
+                next.fixtureConsumptionState().stateFingerprint(),
+                next.executionServiceState().snapshotFingerprint(),
+                next.engineState().closureFingerprint(), next.checkpointFingerprint(),
+                Timestamp.from(lifecycle.updatedAt()), write(next), next.runId(),
+                next.scope().tenantId(), next.scope().environmentId(), expected.ownerId(),
+                expected.leaseEpoch(), expected.revision(), current.checkpointFingerprint());
+    }
+
+    private void requireTransition(DurableTestExecutionCheckpoint current,
+                                   DurableTestExecutionCheckpoint next,
+                                   Fence expected) {
+        var currentLifecycle = current.lifecycle();
+        var nextLifecycle = next.lifecycle();
+        if (!currentLifecycle.ownerId().equals(expected.ownerId())
+                || currentLifecycle.leaseEpoch() != expected.leaseEpoch()
+                || currentLifecycle.revision() != expected.revision()) {
+            throw conflict(STALE_FENCE, "Durable checkpoint fence is stale");
+        }
+        if (nextLifecycle.revision() != expected.revision() + 1) {
+            throw conflict(INVALID_TRANSITION, "Durable checkpoint must advance exactly one revision");
+        }
+        if (!nextLifecycle.ownerId().equals(expected.ownerId())
+                || nextLifecycle.leaseEpoch() != expected.leaseEpoch()) {
+            throw conflict(INVALID_TRANSITION,
+                    "Owner transfer requires an explicit future lease-claim protocol");
+        }
+        if (!current.scope().equals(next.scope())
+                || !current.runId().equals(next.runId())
+                || !current.engineExecutionId().equals(next.engineExecutionId())
+                || !current.dependencies().equals(next.dependencies())
+                || !currentLifecycle.createdAt().equals(nextLifecycle.createdAt())) {
+            throw conflict(INVALID_TRANSITION,
+                    "Durable checkpoint immutable identity or dependency closure changed");
+        }
+        if (nextLifecycle.updatedAt().isBefore(currentLifecycle.updatedAt())
+                || nextLifecycle.leaseExpiresAt().isBefore(currentLifecycle.leaseExpiresAt())) {
+            throw conflict(INVALID_TRANSITION, "Durable checkpoint time or lease moved backwards");
+        }
+        if (!allowed(currentLifecycle.status(), nextLifecycle.status())) {
+            throw conflict(INVALID_TRANSITION, "Durable checkpoint status transition is not allowed");
+        }
+        if (next.engineState().stateVersion() <= current.engineState().stateVersion()
+                || next.engineState().boundarySequence() < current.engineState().boundarySequence()) {
+            throw conflict(INVALID_TRANSITION, "BLOGE engine checkpoint state moved backwards");
+        }
+        requireMonotonicCounters(current.fixtureConsumptionState().ruleUses(),
+                next.fixtureConsumptionState().ruleUses(), "fixture rule consumption");
+        requireMonotonicCounters(current.fixtureConsumptionState().siteOccurrenceCursors(),
+                next.fixtureConsumptionState().siteOccurrenceCursors(), "site occurrence");
+        requireMonotonicCounters(current.fixtureConsumptionState().graphOccurrenceCursors(),
+                next.fixtureConsumptionState().graphOccurrenceCursors(), "graph occurrence");
+        requireMonotonicProviderState(current.executionServiceState(), next.executionServiceState());
+    }
+
+    private static boolean allowed(DurableTestExecutionCheckpoint.Status current,
+                                   DurableTestExecutionCheckpoint.Status next) {
+        return switch (current) {
+            case ACTIVE -> Set.of(DurableTestExecutionCheckpoint.Status.ACTIVE,
+                    DurableTestExecutionCheckpoint.Status.SUSPENDED,
+                    DurableTestExecutionCheckpoint.Status.TERMINAL,
+                    DurableTestExecutionCheckpoint.Status.CONTROL_PLAN_UNAVAILABLE).contains(next);
+            case SUSPENDED -> Set.of(DurableTestExecutionCheckpoint.Status.SUSPENDED,
+                    DurableTestExecutionCheckpoint.Status.RESUMING,
+                    DurableTestExecutionCheckpoint.Status.TERMINAL,
+                    DurableTestExecutionCheckpoint.Status.CONTROL_PLAN_UNAVAILABLE).contains(next);
+            case RESUMING -> Set.of(DurableTestExecutionCheckpoint.Status.RESUMING,
+                    DurableTestExecutionCheckpoint.Status.ACTIVE,
+                    DurableTestExecutionCheckpoint.Status.SUSPENDED,
+                    DurableTestExecutionCheckpoint.Status.TERMINAL,
+                    DurableTestExecutionCheckpoint.Status.CONTROL_PLAN_UNAVAILABLE).contains(next);
+            case TERMINAL, CONTROL_PLAN_UNAVAILABLE -> false;
+        };
+    }
+
+    private static void requireMonotonicProviderState(ExecutionServiceStateSnapshot current,
+                                                      ExecutionServiceStateSnapshot next) {
+        if (!current.planFingerprint().equals(next.planFingerprint())
+                || !current.bindingSetFingerprint().equals(next.bindingSetFingerprint())) {
+            throw conflict(INVALID_TRANSITION, "Execution-service plan or binding set changed");
+        }
+        if (current.logicalTime() != null && (next.logicalTime() == null
+                || next.logicalTime().isBefore(current.logicalTime()))) {
+            throw conflict(INVALID_TRANSITION, "Logical time moved backwards");
+        }
+        requireMonotonicCounters(current.randomScopeCursors(), next.randomScopeCursors(),
+                "random provider cursor");
+        requireMonotonicCounters(current.uuidScopeCursors(), next.uuidScopeCursors(),
+                "UUID provider cursor");
+        Map<String, ExecutionServiceStateSnapshot.UsageState> usages = new HashMap<>();
+        next.usages().forEach(usage -> usages.put(usage.service(), usage));
+        for (ExecutionServiceStateSnapshot.UsageState previous : current.usages()) {
+            ExecutionServiceStateSnapshot.UsageState candidate = usages.get(previous.service());
+            if (candidate == null
+                    || candidate.providerCalls() < previous.providerCalls()
+                    || candidate.semanticProviderCalls() < previous.semanticProviderCalls()
+                    || candidate.functionCalls() < previous.functionCalls()
+                    || !candidate.functionCallSites().containsAll(previous.functionCallSites())
+                    || !candidate.providerScopeFingerprints()
+                    .containsAll(previous.providerScopeFingerprints())) {
+                throw conflict(INVALID_TRANSITION, "Execution-service usage moved backwards");
+            }
+        }
+    }
+
+    private static void requireMonotonicCounters(Map<String, ? extends Number> current,
+                                                 Map<String, ? extends Number> next,
+                                                 String field) {
+        current.forEach((key, previous) -> {
+            Number candidate = next.get(key);
+            if (candidate == null || candidate.longValue() < previous.longValue()) {
+                throw conflict(INVALID_TRANSITION, field + " cursor moved backwards");
+            }
+        });
+    }
+
+    private void requireSealed(DurableTestExecutionCheckpoint checkpoint) {
+        integrity.requireValid(Objects.requireNonNull(checkpoint, "checkpoint"));
+    }
+
+    private DurableTestExecutionCheckpoint verifiedCheckpoint(StoredRow row) {
+        try {
+            DurableTestExecutionCheckpoint checkpoint = objectMapper.readValue(
+                    row.checkpointJson(), DurableTestExecutionCheckpoint.class);
+            integrity.requireValid(checkpoint);
+            if (!row.agreesWith(checkpoint)) {
+                throw new IllegalStateException("Stored durable test execution checkpoint is corrupt");
+            }
+            return checkpoint;
+        } catch (JsonProcessingException | IllegalArgumentException corrupt) {
+            throw new IllegalStateException("Stored durable test execution checkpoint is corrupt", corrupt);
+        }
+    }
+
+    private StoredRow mapRow(ResultSet rs, int rowNumber) throws SQLException {
+        return new StoredRow(
+                rs.getString("run_id"), rs.getString("engine_execution_id"),
+                rs.getString("tenant_id"), rs.getString("organization_id"),
+                rs.getString("project_id"), rs.getString("environment_id"),
+                rs.getString("actor_id"), rs.getString("status"), rs.getString("owner_id"),
+                rs.getLong("lease_epoch"), rs.getLong("revision"),
+                rs.getTimestamp("lease_expires_at").toInstant(),
+                rs.getString("plan_fingerprint"), rs.getString("fixture_fingerprint"),
+                rs.getString("fixture_state_fingerprint"),
+                rs.getString("provider_state_fingerprint"),
+                rs.getString("engine_state_fingerprint"),
+                rs.getString("checkpoint_fingerprint"),
+                rs.getTimestamp("created_at").toInstant(),
+                rs.getTimestamp("updated_at").toInstant(), rs.getString("checkpoint_json"));
+    }
+
+    private static String selectColumns() {
+        return """
+                SELECT run_id, engine_execution_id, tenant_id, organization_id, project_id,
+                       environment_id, actor_id, status, owner_id, lease_epoch, revision,
+                       lease_expires_at, plan_fingerprint, fixture_fingerprint,
+                       fixture_state_fingerprint, provider_state_fingerprint,
+                       engine_state_fingerprint, checkpoint_fingerprint, created_at, updated_at,
+                       checkpoint_json
+                FROM rg_test_durable_execution_checkpoints
+                """;
+    }
+
+    private String write(DurableTestExecutionCheckpoint checkpoint) {
+        try {
+            return objectMapper.writeValueAsString(checkpoint);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException("Cannot serialize durable test execution checkpoint", failure);
+        }
+    }
+
+    private static DurableTestExecutionCheckpointConflictException conflict(
+            DurableTestExecutionCheckpointConflictException.Reason reason, String message) {
+        return new DurableTestExecutionCheckpointConflictException(reason, message);
+    }
+
+    private static String normalized(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private static String normalizedEnvironment(String value) {
+        return normalized(value).toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private record StoredRow(
+            String runId,
+            String engineExecutionId,
+            String tenantId,
+            String organizationId,
+            String projectId,
+            String environmentId,
+            String actorId,
+            String status,
+            String ownerId,
+            long leaseEpoch,
+            long revision,
+            Instant leaseExpiresAt,
+            String planFingerprint,
+            String fixtureFingerprint,
+            String fixtureStateFingerprint,
+            String providerStateFingerprint,
+            String engineStateFingerprint,
+            String checkpointFingerprint,
+            Instant createdAt,
+            Instant updatedAt,
+            String checkpointJson
+    ) {
+        private boolean agreesWith(DurableTestExecutionCheckpoint checkpoint) {
+            var scope = checkpoint.scope();
+            var lifecycle = checkpoint.lifecycle();
+            return runId.equals(checkpoint.runId())
+                    && engineExecutionId.equals(checkpoint.engineExecutionId())
+                    && tenantId.equals(scope.tenantId())
+                    && organizationId.equals(scope.organizationId())
+                    && projectId.equals(scope.projectId())
+                    && environmentId.equals(scope.environmentId())
+                    && actorId.equals(scope.actorId())
+                    && status.equals(lifecycle.status().name())
+                    && ownerId.equals(lifecycle.ownerId())
+                    && leaseEpoch == lifecycle.leaseEpoch()
+                    && revision == lifecycle.revision()
+                    && leaseExpiresAt.equals(lifecycle.leaseExpiresAt())
+                    && planFingerprint.equals(checkpoint.dependencies().plan().planFingerprint())
+                    && fixtureFingerprint.equals(checkpoint.dependencies().fixture().fingerprint())
+                    && fixtureStateFingerprint.equals(
+                    checkpoint.fixtureConsumptionState().stateFingerprint())
+                    && providerStateFingerprint.equals(
+                    checkpoint.executionServiceState().snapshotFingerprint())
+                    && engineStateFingerprint.equals(checkpoint.engineState().closureFingerprint())
+                    && checkpointFingerprint.equals(checkpoint.checkpointFingerprint())
+                    && createdAt.equals(lifecycle.createdAt())
+                    && updatedAt.equals(lifecycle.updatedAt());
+        }
+    }
+}

@@ -3,7 +3,9 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
+import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureConsumptionStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
@@ -100,6 +102,16 @@ class TestingControlProtocolSchemaTest {
         assertThat(schema.at("/$defs/executionServiceStateSnapshot/required"))
                 .extracting(JsonNode::asText)
                 .contains("restorable", "restoreGaps", "snapshotFingerprint");
+        assertThat(schema.at(
+                "/$defs/fixtureConsumptionStateSnapshot/properties/schemaVersion/const").asText())
+                .isEqualTo(FixtureConsumptionStateSnapshot.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableTestExecutionCheckpoint/properties/schemaVersion/const").asText())
+                .isEqualTo(DurableTestExecutionCheckpoint.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/durableTestExecutionCheckpoint/required"))
+                .extracting(JsonNode::asText)
+                .contains("dependencies", "fixtureConsumptionState", "executionServiceState",
+                        "engineState", "lifecycle", "checkpointFingerprint");
         assertThat(schema.at("/$defs/testRunEvidenceV2/properties/schemaVersion/const").asText())
                 .isEqualTo(TestRunEvidence.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testRunEvidenceV1/properties/schemaVersion/const").asText())

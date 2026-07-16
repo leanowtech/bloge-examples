@@ -2,7 +2,9 @@ package com.leanowtech.bloge.gateway.visual.validation;
 
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
@@ -11,6 +13,8 @@ import org.junit.jupiter.api.Test;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -18,6 +22,57 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Tests for visual graph validation.
  */
 class GraphDraftValidatorTest {
+
+    @Test
+    void resolvesRepeatedOperatorReferencesFromOneBulkCatalogView() {
+        OperatorDefinition operator = VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer"))
+                .find("risk:eligibility")
+                .orElseThrow();
+        AtomicInteger bulkLookups = new AtomicInteger();
+        AtomicInteger individualLookups = new AtomicInteger();
+        VisualOperatorCatalog catalog = new VisualOperatorCatalog() {
+            @Override
+            public List<OperatorDefinition> list(OperatorCatalogQuery query) {
+                return List.of(operator);
+            }
+
+            @Override
+            public Optional<OperatorDefinition> find(String operatorRef) {
+                individualLookups.incrementAndGet();
+                return operator.operatorRef().equals(operatorRef) ? Optional.of(operator) : Optional.empty();
+            }
+
+            @Override
+            public Map<String, OperatorDefinition> findAll(Iterable<String> operatorRefs) {
+                bulkLookups.incrementAndGet();
+                return Map.of(operator.operatorRef(), operator);
+            }
+        };
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "bulkCatalogLookup",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode("first", operator.operatorRef(), "", Map.of(), Map.of(), null),
+                        new GraphDraft.DraftNode("second", operator.operatorRef(), "", Map.of(), Map.of(), null)
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("second", "")
+        );
+
+        new GraphDraftValidator(catalog).validate(draft);
+
+        assertThat(bulkLookups).hasValue(1);
+        assertThat(individualLookups).hasValue(0);
+    }
 
     @Test
     void reportsMissingRequiredResourceInput() {

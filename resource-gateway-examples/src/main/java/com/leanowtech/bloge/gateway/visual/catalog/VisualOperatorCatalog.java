@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -93,4 +94,28 @@ public interface VisualOperatorCatalog {
      * @return operator when present
      */
     Optional<OperatorDefinition> find(String operatorRef);
+
+    /**
+     * Resolves a set of operator references against one logical catalog view.
+     *
+     * <p>The default implementation preserves compatibility for lightweight catalogs. Catalogs backed by
+     * projection, persistence, or remote calls should override this method so one bulk lookup does not rebuild
+     * the complete catalog for every reference.</p>
+     *
+     * @param operatorRefs operator references to resolve
+     * @return immutable map containing the references visible in this catalog view
+     */
+    default Map<String, OperatorDefinition> findAll(Iterable<String> operatorRefs) {
+        if (operatorRefs == null) {
+            return Map.of();
+        }
+        Map<String, OperatorDefinition> resolved = new LinkedHashMap<>();
+        for (String operatorRef : operatorRefs) {
+            if (operatorRef == null || operatorRef.isBlank() || resolved.containsKey(operatorRef)) {
+                continue;
+            }
+            find(operatorRef).ifPresent(operator -> resolved.put(operatorRef, operator));
+        }
+        return Map.copyOf(resolved);
+    }
 }

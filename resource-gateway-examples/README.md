@@ -308,6 +308,14 @@ real ANEKE N/N-1 conformance, independent witness gossip, and physical test-runt
 isolation remain in progress and are not advertised as complete. Configuration and consumer flow are
 documented in [Stage 3 evidence trust transparency verification](../docs/resource-gateway-execution-data-control-plane-stage3-evidence-trust-transparency-verification.md).
 
+Stage 4 now also provides a profile-gated, content-addressed durable-test checkpoint repository in
+the isolated test-runtime database. It binds the exact plan and fixture revision, fixture-consumption
+cursors, deterministic provider state, engine-state closure, and owner/lease/revision fence. Engine
+store writes can join the same local transaction, and a losing CAS rolls them back. BLOGE's concrete
+suspend/timer/work-item stores and a public cold-resume endpoint are not wired yet; this is a trusted
+persistence substrate, not a product claim that durable test resume is complete. See
+[Stage 4 durable checkpoint verification](../docs/resource-gateway-execution-data-control-plane-stage4-durable-checkpoint-verification.md).
+
 Create a provider-specific Java operator only when the provider behavior cannot
 be expressed cleanly as a descriptor-backed resource.
 

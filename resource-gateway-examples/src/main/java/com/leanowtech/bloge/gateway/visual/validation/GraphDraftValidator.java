@@ -177,6 +177,9 @@ public class GraphDraftValidator {
         Set<String> nodeIds = new HashSet<>();
         Map<String, GraphDraft.DraftNode> nodesById = new LinkedHashMap<>();
         Map<String, OperatorDefinition> operatorsByNodeId = new LinkedHashMap<>();
+        Map<String, OperatorDefinition> operatorsByRef = catalog.findAll(draft.nodes().stream()
+                .map(GraphDraft.DraftNode::operatorRef)
+                .toList());
         Map<String, Map<String, GraphDraft.UnionBranchSelection>> configUnionBranchesByNode =
                 configUnionBranchesByNode(draft);
         for (int i = 0; i < draft.nodes().size(); i++) {
@@ -188,22 +191,22 @@ public class GraphDraftValidator {
                         "Duplicate node id: " + node.id(), nodePath + "/id"));
             }
             nodesById.put(node.id(), node);
-            Optional<OperatorDefinition> operator = catalog.find(node.operatorRef());
-            if (operator.isEmpty()) {
+            OperatorDefinition operator = operatorsByRef.get(node.operatorRef());
+            if (operator == null) {
                 diagnostics.add(VisualDiagnostic.error("visual.operator.unknown",
                         "Unknown operatorRef: " + node.operatorRef(), nodePath + "/operatorRef"));
                 continue;
             }
-            operatorsByNodeId.put(node.id(), operator.get());
-            validateOperatorFingerprint(node, operator.get(), draft.operatorFingerprints(), nodePath, diagnostics);
-            validateOperatorPolicy(draft, node, operator.get(), nodePath, diagnostics);
-            validateOperatorRuntimeCapabilities(node, operator.get(), nodePath, diagnostics);
-            validateOperatorGovernanceWarnings(node, operator.get(), nodePath, diagnostics);
-            validateOperatorLifecycleWarnings(node, operator.get(), nodePath, diagnostics);
-            validateDuplicateInputTargets(node, operator.get(), nodePath, diagnostics);
-            validateRequiredInputs(node, operator.get(), nodePath, diagnostics);
-            validateUnknownInputs(node, operator.get(), nodePath, diagnostics);
-            validateConfig(node, operator.get(), nodePath,
+            operatorsByNodeId.put(node.id(), operator);
+            validateOperatorFingerprint(node, operator, draft.operatorFingerprints(), nodePath, diagnostics);
+            validateOperatorPolicy(draft, node, operator, nodePath, diagnostics);
+            validateOperatorRuntimeCapabilities(node, operator, nodePath, diagnostics);
+            validateOperatorGovernanceWarnings(node, operator, nodePath, diagnostics);
+            validateOperatorLifecycleWarnings(node, operator, nodePath, diagnostics);
+            validateDuplicateInputTargets(node, operator, nodePath, diagnostics);
+            validateRequiredInputs(node, operator, nodePath, diagnostics);
+            validateUnknownInputs(node, operator, nodePath, diagnostics);
+            validateConfig(node, operator, nodePath,
                     configUnionBranchesByNode.getOrDefault(node.id(), Map.of()), diagnostics);
         }
 

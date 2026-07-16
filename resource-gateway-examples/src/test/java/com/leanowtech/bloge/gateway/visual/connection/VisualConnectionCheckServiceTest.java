@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.visual.connection;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.catalog.DefaultVisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
@@ -10,11 +11,13 @@ import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 /**
  * Tests for interactive schema-aware connection checks.
@@ -291,6 +294,33 @@ class VisualConnectionCheckServiceTest {
         assertThat(result.displayedCount()).isEqualTo(1);
         assertThat(result.candidates()).hasSize(1);
         assertThat(result.truncated()).isTrue();
+    }
+
+    @Test
+    void connectionCandidatesCompleteLargeAuthoritativeWindowWithinInteractiveBudget() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(scoreReviewLargeConnectabilityLibrary()));
+        GraphDraft draft = scoreReviewLargeConnectabilityDraft(260);
+
+        byte[] payload = assertTimeoutPreemptively(Duration.ofSeconds(10), () -> {
+            VisualConnectionCandidatesResult result = service.candidates(new VisualConnectionCandidatesRequest(
+                        draft,
+                        new GraphDraft.Endpoint("riskScoreSource", "output", "score"),
+                        "data",
+                        true,
+                        250,
+                        0,
+                        "",
+                        "canvas"
+                ));
+            assertThat(result.totalCandidateCount()).isEqualTo(260);
+            assertThat(result.displayedCount()).isEqualTo(250);
+            assertThat(result.candidates()).hasSize(250);
+            assertThat(result.truncated()).isTrue();
+            return new ObjectMapper().writeValueAsBytes(result);
+        });
+
+        assertThat(payload.length).isLessThan(5 * 1024 * 1024);
     }
 
     @Test

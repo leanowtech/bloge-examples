@@ -305,6 +305,10 @@ public class VisualConnectionCheckService {
             );
         }
 
+        return snapshotService(request.draft()).resolveCandidates(request);
+    }
+
+    private VisualConnectionCandidatesResult resolveCandidates(VisualConnectionCandidatesRequest request) {
         List<ConnectionCandidateTarget> allTargets = candidateTargets(request.draft(), request);
         Map<String, String> libraryIds = operatorLibraryIdsByOperatorRef();
         CandidateTargetFilterResult filtered = filteredCandidateTargets(request, allTargets, libraryIds);
@@ -350,6 +354,33 @@ public class VisualConnectionCheckService {
                 window,
                 List.of()
         );
+    }
+
+    private VisualConnectionCheckService snapshotService(GraphDraft draft) {
+        List<String> operatorRefs = draft.nodes().stream()
+                .map(GraphDraft.DraftNode::operatorRef)
+                .distinct()
+                .toList();
+        Map<String, OperatorDefinition> operators = catalog.findAll(operatorRefs);
+        CandidateCatalogSnapshot snapshot = new CandidateCatalogSnapshot(
+                operators,
+                snapshotLibraryIds(operators)
+        );
+        return new VisualConnectionCheckService(new GraphDraftValidator(snapshot), snapshot);
+    }
+
+    private static Map<String, String> snapshotLibraryIds(Map<String, OperatorDefinition> operators) {
+        if (operators == null || operators.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> owners = new LinkedHashMap<>();
+        operators.values().forEach(operator -> {
+            String libraryId = operator.source() == null ? "" : operator.source().libraryId();
+            if (!libraryId.isBlank()) {
+                owners.putIfAbsent(operator.operatorRef(), libraryId);
+            }
+        });
+        return Map.copyOf(owners);
     }
 
     private VisualConnectionCandidatesResult pagedCandidates(VisualConnectionCandidatesRequest request,
@@ -1072,6 +1103,53 @@ public class VisualConnectionCheckService {
             Map<String, Integer> statusCounts,
             Map<String, Map<String, Integer>> facetCounts
     ) {
+    }
+
+    /**
+     * Immutable request-scoped operator view used by one candidate discovery operation.
+     *
+     * <p>Candidate rows are intentionally evaluated against the same definitions and ownership metadata even
+     * when a mutable registry changes while the server is computing a large page.</p>
+     */
+    private record CandidateCatalogSnapshot(
+            Map<String, OperatorDefinition> operators,
+            Map<String, String> libraryIds
+    ) implements VisualOperatorCatalog {
+
+        private CandidateCatalogSnapshot {
+            operators = operators == null ? Map.of() : Map.copyOf(operators);
+            libraryIds = libraryIds == null ? Map.of() : Map.copyOf(libraryIds);
+        }
+
+        @Override
+        public List<OperatorDefinition> list(com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery query) {
+            return List.copyOf(operators.values());
+        }
+
+        @Override
+        public Optional<OperatorDefinition> find(String operatorRef) {
+            return Optional.ofNullable(operators.get(operatorRef));
+        }
+
+        @Override
+        public Map<String, OperatorDefinition> findAll(Iterable<String> operatorRefs) {
+            if (operatorRefs == null) {
+                return Map.of();
+            }
+            Map<String, OperatorDefinition> resolved = new LinkedHashMap<>();
+            for (String operatorRef : operatorRefs) {
+                OperatorDefinition operator = operators.get(operatorRef);
+                if (operator != null) {
+                    resolved.putIfAbsent(operatorRef, operator);
+                }
+            }
+            return Map.copyOf(resolved);
+        }
+
+        @Override
+        public Map<String, String> operatorLibraryIdsByOperatorRef(boolean includeDeprecated) {
+            return libraryIds;
+        }
     }
 
     private static GraphDraft draftWithPreviewEdge(GraphDraft draft, GraphDraft.DraftEdge edge) {

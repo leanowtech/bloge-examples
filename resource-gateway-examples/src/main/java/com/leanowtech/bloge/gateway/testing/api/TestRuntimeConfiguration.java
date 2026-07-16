@@ -6,6 +6,8 @@ import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
 import com.leanowtech.bloge.gateway.integration.TestabilityAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableTestExecutionCheckpointRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseFixtureBundleRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseReplayPayloadRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRunRepository;
@@ -39,6 +41,24 @@ public class TestRuntimeConfiguration {
             @Value("${gateway.testing.store.maximum-pool-size:4}") int maximumPoolSize) {
         return new TestRuntimeDatabase(new TestRuntimeDatabase.Settings(
                 jdbcUrl, username, password, maximumPoolSize));
+    }
+
+    /** Computes nested content identities for composite durable-test checkpoints. */
+    @Bean
+    DurableTestExecutionCheckpointIntegrity durableTestExecutionCheckpointIntegrity(
+            ObjectMapper objectMapper) {
+        return new DurableTestExecutionCheckpointIntegrity(objectMapper);
+    }
+
+    /**
+     * Stores control closure and transaction-participating BLOGE state under one fenced revision.
+     */
+    @Bean
+    DurableTestExecutionCheckpointRepository durableTestExecutionCheckpointRepository(
+            TestRuntimeDatabase database, ObjectMapper objectMapper,
+            DurableTestExecutionCheckpointIntegrity integrity) {
+        return new DatabaseDurableTestExecutionCheckpointRepository(
+                database.jdbc(), database.transactionManager(), objectMapper, integrity);
     }
 
     @Bean

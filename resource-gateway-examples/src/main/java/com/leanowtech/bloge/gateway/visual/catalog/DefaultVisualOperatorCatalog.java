@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -284,9 +285,34 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         if (operatorRef == null || operatorRef.isBlank()) {
             return Optional.empty();
         }
-        return list(new OperatorCatalogQuery("", List.of(), false, true)).stream()
-                .filter(operator -> operator.operatorRef().equals(operatorRef))
-                .findFirst();
+        return Optional.ofNullable(findAll(List.of(operatorRef)).get(operatorRef));
+    }
+
+    /**
+     * Resolves requested references from one catalog projection so validators and candidate discovery do not
+     * repeatedly introspect Java operators or read mutable registries within the same logical operation.
+     */
+    @Override
+    public Map<String, OperatorDefinition> findAll(Iterable<String> operatorRefs) {
+        if (operatorRefs == null) {
+            return Map.of();
+        }
+        LinkedHashSet<String> requested = new LinkedHashSet<>();
+        for (String operatorRef : operatorRefs) {
+            if (operatorRef != null && !operatorRef.isBlank()) {
+                requested.add(operatorRef);
+            }
+        }
+        if (requested.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, OperatorDefinition> resolved = new LinkedHashMap<>();
+        for (OperatorDefinition operator : list(new OperatorCatalogQuery("", List.of(), false, true))) {
+            if (requested.contains(operator.operatorRef())) {
+                resolved.putIfAbsent(operator.operatorRef(), operator);
+            }
+        }
+        return Map.copyOf(resolved);
     }
 
     private static String functionKey(OperatorLibrary.BuiltInFunction function) {
