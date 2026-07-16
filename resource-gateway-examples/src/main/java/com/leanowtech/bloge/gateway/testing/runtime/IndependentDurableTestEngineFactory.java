@@ -32,6 +32,8 @@ public final class IndependentDurableTestEngineFactory {
     private final StagedBlogeDurableStateStore durableStateStore;
 
     /**
+     * Creates a factory over an isolated operator registry and composite durable-state authority.
+     *
      * @param registry frozen operator bindings shared by identity
      * @param checkpointCodec durable checkpoint payload codec
      * @param durableStateStore isolated transaction-participating BLOGE state aggregate
@@ -58,6 +60,7 @@ public final class IndependentDurableTestEngineFactory {
                 .checkpointCodec(checkpointCodec)
                 .executionStore(durableStateStore.executionStore())
                 .executionCheckpointStore(durableStateStore.checkpointStore())
+                .waitStore(durableStateStore.waitStore())
                 .checkpointFailurePolicy(CheckpointFailurePolicy.FAIL_FAST)
                 .interceptors(List.of())
                 .listeners(List.of(Objects.requireNonNull(recorder, "recorder")))
@@ -103,12 +106,18 @@ public final class IndependentDurableTestEngineFactory {
         }
     }
 
-    /** @return immutable isolation and failure-policy facts for architecture tests and probes */
+    /**
+     * Describes the isolation and checkpoint policy enforced by every engine from this factory.
+     *
+     * @return immutable isolation and failure-policy facts for architecture tests and probes
+     */
     public Configuration configuration() {
         return new Configuration(CheckpointFailurePolicy.FAIL_FAST, true, false, false);
     }
 
     /**
+     * Immutable facts exposed to architecture tests and capability probes.
+     *
      * @param checkpointFailurePolicy configured checkpoint failure policy
      * @param durableStores whether isolated durable stores are attached
      * @param productionContextCarriers whether production ambient carriers are attached
@@ -173,6 +182,12 @@ public final class IndependentDurableTestEngineFactory {
         /**
          * Freezes the engine writes for the repository's composite transaction.
          *
+         * @param checkpointRef stable control-plane checkpoint reference
+         * @param nodeId boundary node identifier
+         * @param boundaryType supported durable boundary type
+         * @param boundarySequence positive monotonic boundary sequence
+         * @param stateVersion non-negative engine state version
+         * @return idempotently replayable aggregate mutation and closure fingerprint
          * @see StagedBlogeDurableStateStore.Stage#prepare(String, String, String, long, long)
          */
         public StagedBlogeDurableStateStore.PreparedMutation prepare(

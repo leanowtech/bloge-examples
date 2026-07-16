@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.exception.DurabilityException;
 import com.leanowtech.bloge.core.runtime.checkpoint.ExecutionCheckpointStore;
 import com.leanowtech.bloge.core.runtime.execution.ExecutionStore;
+import com.leanowtech.bloge.core.runtime.wait.WaitStore;
 import com.leanowtech.bloge.core.spi.TimeSource;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
@@ -20,33 +21,35 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Execution-scoped transaction boundary for all BLOGE state required by durable tests.
  *
  * <p>The aggregate is the only object the runtime factory receives. It deliberately keeps the
- * concrete execution and checkpoint stores out of Spring's global bean registry, opens both
+ * concrete execution, checkpoint, and wait stores out of Spring's global bean registry, opens all
  * stages together, and emits one content-addressed {@link PreparedMutation}. That mutation applies
- * both store snapshots through one repository-owned JDBC transaction, so a process cannot publish
- * a control checkpoint that refers to a missing execution row or node checkpoint.</p>
+ * component snapshots through one repository-owned JDBC transaction, so a process cannot publish
+ * a control checkpoint that refers to a missing execution row, node checkpoint, signal, or timer.</p>
  *
- * <p>Wait and work-item stores will join this same aggregate as their industrial implementation is
- * added. The aggregate fingerprint schema makes that extension explicit and prevents callers from
+ * <p>The work-item store will join this same aggregate as its industrial implementation is added.
+ * The aggregate fingerprint schema makes that extension explicit and prevents callers from
  * treating independently prepared component mutations as a complete engine closure.</p>
  */
 public final class StagedBlogeDurableStateStore {
 
-    private static final String CLOSURE_SCHEMA_VERSION = "bloge.testDurableStateMutation.v1";
+    private static final String CLOSURE_SCHEMA_VERSION = "bloge.testDurableStateMutation.v2";
 
     private final ObjectMapper objectMapper;
     private final StagedBlogeExecutionStore executionStore;
     private final StagedBlogeExecutionCheckpointStore checkpointStore;
+    private final StagedBlogeWaitStore waitStore;
 
     /**
      * Creates the full durable-state aggregate over one test-runtime datasource.
      *
      * @param jdbc shared transaction-capable JDBC facade
-     * @param objectMapper canonical mapper used by both stores and aggregate fingerprints
+     * @param objectMapper canonical mapper used by all stores and aggregate fingerprints
      */
     public StagedBlogeDurableStateStore(JdbcTemplate jdbc, ObjectMapper objectMapper) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.executionStore = new StagedBlogeExecutionStore(jdbc, objectMapper);
         this.checkpointStore = new StagedBlogeExecutionCheckpointStore(jdbc, objectMapper);
+        this.waitStore = new StagedBlogeWaitStore(jdbc, objectMapper, executionStore);
     }
 
     /** Creates every table owned by the current durable-state aggregate version. */
@@ -54,16 +57,34 @@ public final class StagedBlogeDurableStateStore {
     public void init() {
         executionStore.init();
         checkpointStore.init();
+        waitStore.init();
     }
 
-    /** @return lifecycle and lease SPI attached to the isolated durable engine */
+    /**
+     * Returns the lifecycle and lease store attached to the isolated durable engine.
+     *
+     * @return lifecycle and lease SPI
+     */
     public ExecutionStore executionStore() {
         return executionStore;
     }
 
-    /** @return node and suspend checkpoint SPI attached to the isolated durable engine */
+    /**
+     * Returns the node and suspend checkpoint store attached to the isolated durable engine.
+     *
+     * @return node and suspend checkpoint SPI
+     */
     public ExecutionCheckpointStore checkpointStore() {
         return checkpointStore;
+    }
+
+    /**
+     * Returns the deferred wait store attached to the isolated durable engine.
+     *
+     * @return signal, timer, task, and retry wait SPI
+     */
+    public WaitStore waitStore() {
+        return waitStore;
     }
 
     /**
@@ -79,7 +100,13 @@ public final class StagedBlogeDurableStateStore {
         try {
             StagedBlogeExecutionCheckpointStore.Stage checkpointStage =
                     checkpointStore.begin(executionId);
-            return new Stage(executionStage, checkpointStage);
+            try {
+                StagedBlogeWaitStore.Stage waitStage = waitStore.begin(executionId, timeSource);
+                return new Stage(executionStage, checkpointStage, waitStage);
+            } catch (RuntimeException | Error failure) {
+                checkpointStage.close();
+                throw failure;
+            }
         } catch (RuntimeException | Error failure) {
             executionStage.close();
             throw failure;
@@ -90,13 +117,16 @@ public final class StagedBlogeDurableStateStore {
     public final class Stage implements AutoCloseable {
         private final StagedBlogeExecutionStore.Stage executionStage;
         private final StagedBlogeExecutionCheckpointStore.Stage checkpointStage;
+        private final StagedBlogeWaitStore.Stage waitStage;
         private final AtomicBoolean closed = new AtomicBoolean();
         private final AtomicBoolean prepared = new AtomicBoolean();
 
         private Stage(StagedBlogeExecutionStore.Stage executionStage,
-                      StagedBlogeExecutionCheckpointStore.Stage checkpointStage) {
+                      StagedBlogeExecutionCheckpointStore.Stage checkpointStage,
+                      StagedBlogeWaitStore.Stage waitStage) {
             this.executionStage = executionStage;
             this.checkpointStage = checkpointStage;
+            this.waitStage = waitStage;
         }
 
         /**
@@ -122,17 +152,20 @@ public final class StagedBlogeDurableStateStore {
                     checkpointRef, nodeId, boundaryType, boundarySequence, stateVersion);
             StagedBlogeExecutionCheckpointStore.PreparedMutation checkpoints = checkpointStage.prepare(
                     checkpointRef, nodeId, boundaryType, boundarySequence, stateVersion);
+            StagedBlogeWaitStore.PreparedMutation waits = waitStage.prepare(
+                    checkpointRef, nodeId, boundaryType, boundarySequence, stateVersion);
             Map<String, Object> material = new LinkedHashMap<>();
             material.put("schemaVersion", CLOSURE_SCHEMA_VERSION);
             material.put("engineExecutionId", execution.engineExecutionId());
             material.put("execution", execution.engineState().closureFingerprint());
             material.put("checkpoints", checkpoints.engineState().closureFingerprint());
+            material.put("waits", waits.engineState().closureFingerprint());
             String fingerprint = ProtocolFingerprint.of(objectMapper, material);
             DurableTestExecutionCheckpoint.EngineState engineState =
                     new DurableTestExecutionCheckpoint.EngineState(
                             checkpointRef, nodeId, boundaryType, boundarySequence,
                             stateVersion, fingerprint);
-            return new PreparedMutation(execution, checkpoints, engineState, closed);
+            return new PreparedMutation(execution, checkpoints, waits, engineState, closed);
         }
 
         /** Closes every component stage and discards all uncommitted state. */
@@ -140,9 +173,13 @@ public final class StagedBlogeDurableStateStore {
         public void close() {
             if (closed.compareAndSet(false, true)) {
                 try {
-                    checkpointStage.close();
+                    waitStage.close();
                 } finally {
-                    executionStage.close();
+                    try {
+                        checkpointStage.close();
+                    } finally {
+                        executionStage.close();
+                    }
                 }
             }
         }
@@ -154,24 +191,30 @@ public final class StagedBlogeDurableStateStore {
         }
     }
 
-    /** Atomic execution plus checkpoint mutation bound to one aggregate fingerprint. */
+    /** Atomic execution, checkpoint, and wait mutation bound to one aggregate fingerprint. */
     public static final class PreparedMutation
             implements DurableTestExecutionCheckpointRepository.BoundEngineStateMutation {
         private final DurableTestExecutionCheckpointRepository.BoundEngineStateMutation execution;
         private final DurableTestExecutionCheckpointRepository.BoundEngineStateMutation checkpoints;
+        private final DurableTestExecutionCheckpointRepository.BoundEngineStateMutation waits;
         private final DurableTestExecutionCheckpoint.EngineState engineState;
         private final AtomicBoolean ownerClosed;
 
         private PreparedMutation(
                 DurableTestExecutionCheckpointRepository.BoundEngineStateMutation execution,
                 DurableTestExecutionCheckpointRepository.BoundEngineStateMutation checkpoints,
+                DurableTestExecutionCheckpointRepository.BoundEngineStateMutation waits,
                 DurableTestExecutionCheckpoint.EngineState engineState,
                 AtomicBoolean ownerClosed) {
             this.execution = execution;
             this.checkpoints = checkpoints;
+            this.waits = waits;
             this.engineState = engineState;
             this.ownerClosed = ownerClosed;
             if (!Objects.equals(execution.engineExecutionId(), checkpoints.engineExecutionId())) {
+                throw new DurabilityException("Composite BLOGE state spans multiple executions");
+            }
+            if (!Objects.equals(execution.engineExecutionId(), waits.engineExecutionId())) {
                 throw new DurabilityException("Composite BLOGE state spans multiple executions");
             }
         }
@@ -195,6 +238,7 @@ public final class StagedBlogeDurableStateStore {
             }
             execution.apply(jdbc);
             checkpoints.apply(jdbc);
+            waits.apply(jdbc);
         }
     }
 }

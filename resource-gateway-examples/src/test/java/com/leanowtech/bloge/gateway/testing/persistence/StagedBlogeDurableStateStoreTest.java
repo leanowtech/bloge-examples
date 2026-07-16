@@ -5,6 +5,7 @@ import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.dsl.GraphBuilder;
 import com.leanowtech.bloge.core.engine.ExecutionOptions;
 import com.leanowtech.bloge.core.engine.ExecutionServices;
+import com.leanowtech.bloge.core.exception.DurabilityException;
 import com.leanowtech.bloge.core.exception.OptimisticLockException;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.operator.Operator;
@@ -13,6 +14,9 @@ import com.leanowtech.bloge.core.runtime.execution.ExecutionInstance;
 import com.leanowtech.bloge.core.runtime.execution.ExecutionStatus;
 import com.leanowtech.bloge.core.runtime.identity.ExecutionIdentity;
 import com.leanowtech.bloge.core.runtime.identity.ExecutionType;
+import com.leanowtech.bloge.core.runtime.wait.ExecutionWait;
+import com.leanowtech.bloge.core.runtime.wait.WaitStatus;
+import com.leanowtech.bloge.core.runtime.wait.WaitType;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.durable.codec.JacksonCheckpointCodec;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository;
@@ -102,12 +106,136 @@ class StagedBlogeDurableStateStoreTest {
     }
 
     @Test
+    void commitsWaitAsPartOfTheColdReadableEngineClosure() {
+        try (StagedBlogeDurableStateStore.Stage stage = stateStore.begin(
+                "engine-a", ExecutionServices.builder().build().timeSource())) {
+            stateStore.executionStore().create(
+                    ExecutionInstance.builder(executionIdentity())
+                            .status(ExecutionStatus.SUSPENDED)
+                            .build());
+            stateStore.waitStore().create(wait(
+                    "wait-approval", WaitType.WAIT_SIGNAL, "approval-key"));
+            assertThat(stateStore.waitStore().findByExecution("engine-a"))
+                    .singleElement()
+                    .satisfies(executionWait -> {
+                        assertThat(executionWait.waitType()).isEqualTo(WaitType.WAIT_SIGNAL);
+                        assertThat(executionWait.waitKey()).isEqualTo("approval-key");
+                        assertThat(executionWait.status()).isEqualTo(WaitStatus.WAITING);
+                    });
+            assertThat(stateStore.waitStore().findByType(
+                    WaitType.WAIT_SIGNAL, WaitStatus.WAITING, 10)).isEmpty();
+
+            var mutation = stage.prepare(
+                    "checkpoint-suspend", "approval", "SUSPEND", 1, 0);
+            repository.create(control(mutation.engineState()), mutation);
+        }
+
+        StagedBlogeDurableStateStore coldStore =
+                new StagedBlogeDurableStateStore(database.jdbc(), objectMapper);
+        coldStore.init();
+        assertThat(coldStore.waitStore().findByExecution("engine-a"))
+                .singleElement()
+                .satisfies(executionWait -> {
+                    assertThat(executionWait.waitType()).isEqualTo(WaitType.WAIT_SIGNAL);
+                    assertThat(executionWait.waitKey()).isEqualTo("approval-key");
+                    assertThat(executionWait.status()).isEqualTo(WaitStatus.WAITING);
+                });
+        assertThat(coldStore.waitStore().findByTypeAndKey(
+                WaitType.WAIT_SIGNAL, "approval-key", 10))
+                .extracting(ExecutionWait::waitId)
+                .containsExactly("wait-approval");
+        assertThat(coldStore.waitStore().findByTypeAndKey(
+                WaitType.WAIT_TIMER, "approval-key", 10)).isEmpty();
+    }
+
+    @Test
+    void rejectsWaitWritesOutsideTheAggregateOrWithIdentityDrift() {
+        assertThatThrownBy(() -> stateStore.waitStore().create(wait(
+                "wait-outside", WaitType.WAIT_SIGNAL, "outside-key")))
+                .isInstanceOf(DurabilityException.class)
+                .hasMessageContaining("active composite stage");
+
+        try (StagedBlogeDurableStateStore.Stage ignored = stateStore.begin(
+                "engine-a", ExecutionServices.builder().build().timeSource())) {
+            stateStore.executionStore().create(
+                    ExecutionInstance.builder(executionIdentity())
+                            .status(ExecutionStatus.SUSPENDED)
+                            .build());
+            ExecutionIdentity drifted = new ExecutionIdentity(
+                    "tenant-b", "test-runtime", null, "engine-a",
+                    ExecutionType.GRAPH,
+                    "controlled-durable-state", "1", SHA_A,
+                    null, null, null, "run-a");
+            ExecutionWait foreignWait = new ExecutionWait(
+                    "wait-foreign", drifted, WaitType.WAIT_SIGNAL,
+                    "approval", "foreign-key", null, "SIGNAL",
+                    null, null, WaitStatus.WAITING, 0,
+                    Instant.parse("2026-07-16T08:00:00Z"),
+                    Instant.parse("2026-07-16T08:00:00Z"), null);
+
+            assertThatThrownBy(() -> stateStore.waitStore().create(foreignWait))
+                    .isInstanceOf(DurabilityException.class)
+                    .hasMessageContaining("identity does not match");
+        }
+    }
+
+    @Test
+    void preventsACommittedWaitIdFromMovingToAnotherExecution() {
+        try (StagedBlogeDurableStateStore.Stage stage = stateStore.begin(
+                "engine-a", ExecutionServices.builder().build().timeSource())) {
+            stateStore.executionStore().create(
+                    ExecutionInstance.builder(executionIdentity())
+                            .status(ExecutionStatus.SUSPENDED)
+                            .build());
+            stateStore.waitStore().create(wait(
+                    "wait-owned", WaitType.WAIT_SIGNAL, "owned-key"));
+            var mutation = stage.prepare(
+                    "checkpoint-owned", "approval", "SUSPEND", 1, 0);
+            repository.create(control(mutation.engineState()), mutation);
+        }
+
+        StagedBlogeDurableStateStore competing =
+                new StagedBlogeDurableStateStore(database.jdbc(), objectMapper);
+        competing.init();
+        ExecutionIdentity otherIdentity = new ExecutionIdentity(
+                "tenant-a", "test-runtime", null, "engine-b",
+                ExecutionType.GRAPH,
+                "controlled-durable-state", "1", SHA_A,
+                null, null, null, "run-b");
+        try (StagedBlogeDurableStateStore.Stage ignored = competing.begin(
+                "engine-b", ExecutionServices.builder().build().timeSource())) {
+            competing.executionStore().create(
+                    ExecutionInstance.builder(otherIdentity)
+                            .status(ExecutionStatus.SUSPENDED)
+                            .build());
+            ExecutionWait conflicting = new ExecutionWait(
+                    "wait-owned", otherIdentity, WaitType.WAIT_SIGNAL,
+                    "approval", "other-key", null, "SIGNAL",
+                    null, null, WaitStatus.WAITING, 0,
+                    Instant.parse("2026-07-16T08:00:00Z"),
+                    Instant.parse("2026-07-16T08:00:00Z"), null);
+
+            assertThatThrownBy(() -> competing.waitStore().create(conflicting))
+                    .isInstanceOf(DurabilityException.class)
+                    .hasMessageContaining("already committed for execution engine-a");
+        }
+
+        assertThat(stateStore.waitStore().get("wait-owned"))
+                .get().satisfies(wait -> {
+                    assertThat(wait.identity().executionId()).isEqualTo("engine-a");
+                    assertThat(wait.waitKey()).isEqualTo("owned-key");
+                });
+    }
+
+    @Test
     void rollsBackExecutionLifecycleWhenTheCompositeCheckpointCannotCommit() {
         IndependentDurableTestEngineFactory factory = factory(stateStore);
 
         try (IndependentDurableTestEngineFactory.RunSession session = factory.openSession(
                 "engine-a", new InvocationRecorder(objectMapper), executionOptions())) {
             assertThat(session.execute(graph(), new GraphContext()).isSuccess()).isTrue();
+            stateStore.waitStore().create(wait(
+                    "wait-rollback", WaitType.WAIT_SIGNAL, "rollback-key"));
             var mutation = session.prepare(
                     "checkpoint-0", "only", "NODE_BOUNDARY", 1, 0);
 
@@ -119,7 +247,63 @@ class StagedBlogeDurableStateStoreTest {
 
         assertThat(stateStore.executionStore().get("engine-a")).isEmpty();
         assertThat(stateStore.checkpointStore().loadAll("engine-a")).isEmpty();
+        assertThat(stateStore.waitStore().findByExecution("engine-a")).isEmpty();
         assertThat(repository.find("tenant-a", "test", "run-a")).isEmpty();
+    }
+
+    @Test
+    void preservesWaitTransitionVersionsAndCommittedOnlyTimerScans() {
+        try (StagedBlogeDurableStateStore.Stage stage = stateStore.begin(
+                "engine-a", ExecutionServices.builder().build().timeSource())) {
+            stateStore.executionStore().create(
+                    ExecutionInstance.builder(executionIdentity())
+                            .status(ExecutionStatus.SUSPENDED)
+                            .build());
+            stateStore.waitStore().create(wait(
+                    "wait-timer", WaitType.WAIT_TIMER, "timer-key"));
+            var mutation = stage.prepare(
+                    "checkpoint-initial", "approval", "SUSPEND", 1, 0);
+            repository.create(control(mutation.engineState()), mutation);
+        }
+
+        try (StagedBlogeDurableStateStore.Stage stage = stateStore.begin(
+                "engine-a", ExecutionServices.builder().build().timeSource())) {
+            stateStore.waitStore().timeout("wait-timer", 0);
+
+            assertThat(stateStore.waitStore().get("wait-timer"))
+                    .get().satisfies(wait -> {
+                        assertThat(wait.status()).isEqualTo(WaitStatus.TIMED_OUT);
+                        assertThat(wait.version()).isEqualTo(1);
+                        assertThat(wait.resolvedAt()).isNotNull();
+                    });
+            assertThatThrownBy(() -> stateStore.waitStore().timeout("wait-timer", 0))
+                    .isInstanceOf(OptimisticLockException.class);
+            assertThat(stateStore.waitStore().findByType(
+                    WaitType.WAIT_TIMER, WaitStatus.WAITING, 10))
+                    .extracting(ExecutionWait::waitId)
+                    .containsExactly("wait-timer");
+            assertThat(stateStore.waitStore().findByType(
+                    WaitType.WAIT_TIMER, WaitStatus.TIMED_OUT, 10)).isEmpty();
+
+            var mutation = stage.prepare(
+                    "checkpoint-timeout", "approval", "TIMER", 2, 1);
+            repository.advance(control(1, mutation.engineState()),
+                    new DurableTestExecutionCheckpointRepository.Fence(
+                            "instance-a", 1, 0), mutation);
+        }
+
+        StagedBlogeDurableStateStore coldStore =
+                new StagedBlogeDurableStateStore(database.jdbc(), objectMapper);
+        coldStore.init();
+        assertThat(coldStore.waitStore().findByType(
+                WaitType.WAIT_TIMER, WaitStatus.WAITING, 10)).isEmpty();
+        assertThat(coldStore.waitStore().findByType(
+                WaitType.WAIT_TIMER, WaitStatus.TIMED_OUT, 10))
+                .singleElement()
+                .satisfies(wait -> {
+                    assertThat(wait.waitId()).isEqualTo("wait-timer");
+                    assertThat(wait.version()).isEqualTo(1);
+                });
     }
 
     @Test
@@ -187,6 +371,40 @@ class StagedBlogeDurableStateStoreTest {
     }
 
     @Test
+    void aggregateFingerprintChangesWhenOnlyTheWaitStateChanges() {
+        String waitingFingerprint;
+        try (StagedBlogeDurableStateStore.Stage stage = stateStore.begin(
+                "engine-a", ExecutionServices.builder().build().timeSource())) {
+            stateStore.executionStore().create(
+                    ExecutionInstance.builder(executionIdentity())
+                            .status(ExecutionStatus.SUSPENDED)
+                            .build());
+            stateStore.waitStore().create(wait(
+                    "wait-approval", WaitType.WAIT_SIGNAL, "approval-key"));
+            waitingFingerprint = stage.prepare(
+                    "checkpoint-0", "approval", "SUSPEND", 1, 0)
+                    .engineState().closureFingerprint();
+        }
+
+        String resolvedFingerprint;
+        try (StagedBlogeDurableStateStore.Stage stage = stateStore.begin(
+                "engine-a", ExecutionServices.builder().build().timeSource())) {
+            stateStore.executionStore().create(
+                    ExecutionInstance.builder(executionIdentity())
+                            .status(ExecutionStatus.SUSPENDED)
+                            .build());
+            stateStore.waitStore().create(wait(
+                    "wait-approval", WaitType.WAIT_SIGNAL, "approval-key"));
+            stateStore.waitStore().resolve("wait-approval", 0);
+            resolvedFingerprint = stage.prepare(
+                    "checkpoint-0", "approval", "SUSPEND", 1, 0)
+                    .engineState().closureFingerprint();
+        }
+
+        assertThat(resolvedFingerprint).isNotEqualTo(waitingFingerprint);
+    }
+
+    @Test
     void concurrentControlCasRollsBackTheLosingExecutionLifecycle() throws Exception {
         try (StagedBlogeDurableStateStore.Stage initialStage = stateStore.begin(
                 "engine-a", ExecutionServices.builder().build().timeSource())) {
@@ -194,6 +412,8 @@ class StagedBlogeDurableStateStoreTest {
                     ExecutionInstance.builder(executionIdentity())
                             .status(ExecutionStatus.RUNNING)
                             .build());
+            stateStore.waitStore().create(wait(
+                    "wait-race", WaitType.WAIT_SIGNAL, "race-key"));
             var initialMutation = initialStage.prepare(
                     "checkpoint-initial", "initial", "NODE_BOUNDARY", 1, 0);
             repository.create(control(0, initialMutation.engineState()), initialMutation);
@@ -216,6 +436,8 @@ class StagedBlogeDurableStateStoreTest {
                     ExecutionInstance.builder(executionIdentity())
                             .status(ExecutionStatus.COMPLETED)
                             .build());
+            stateStore.waitStore().resolve("wait-race", 0);
+            competing.waitStore().timeout("wait-race", 0);
             var firstMutation = first.prepare(
                     "checkpoint-a", "candidate-a", "SUSPEND", 2, 1);
             var secondMutation = second.prepare(
@@ -239,6 +461,10 @@ class StagedBlogeDurableStateStoreTest {
                 ? ExecutionStatus.SUSPENDED : ExecutionStatus.COMPLETED;
         assertThat(stateStore.executionStore().get("engine-a"))
                 .get().extracting(instance -> instance.status()).isEqualTo(expected);
+        WaitStatus expectedWait = "candidate-a".equals(winner)
+                ? WaitStatus.RESOLVED : WaitStatus.TIMED_OUT;
+        assertThat(stateStore.waitStore().get("wait-race"))
+                .get().extracting(ExecutionWait::status).isEqualTo(expectedWait);
         assertThat(database.jdbc().queryForObject(
                 "SELECT COUNT(*) FROM rg_test_bloge_executions", Integer.class)).isEqualTo(1);
     }
@@ -263,6 +489,17 @@ class StagedBlogeDurableStateStoreTest {
                         .idGenerator(scope -> "fixture-id")
                         .build())
                 .build();
+    }
+
+    private ExecutionWait wait(String waitId, WaitType waitType, String waitKey) {
+        Instant now = Instant.parse("2026-07-16T08:00:00Z");
+        ExecutionIdentity identity = stateStore.executionStore().get("engine-a")
+                .map(ExecutionInstance::identity)
+                .orElseGet(this::executionIdentity);
+        return new ExecutionWait(
+                waitId, identity, waitType, "approval", waitKey,
+                now.plusSeconds(300), "SIGNAL", null, null, WaitStatus.WAITING,
+                0, now, now, null);
     }
 
     private ExecutionIdentity executionIdentity() {

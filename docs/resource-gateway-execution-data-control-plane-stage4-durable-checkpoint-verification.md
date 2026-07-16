@@ -3,12 +3,13 @@
 ## Scope
 
 This increment establishes the trusted persistence substrate required before Resource Gateway can
-offer cold-start durable test execution. It now wires BLOGE's `ExecutionCheckpointStore` through a
-staged, transaction-participating adapter, adds the matching `ExecutionStore` lifecycle/lease
-adapter, and composes both behind one profile-gated, fail-closed durable test session. It does not
-expose a resume endpoint and does not yet wire BLOGE `WaitStore` or `WorkItemStore` state into that
-substrate. BLOGE timer waits are part of `WaitStore`; streaming recovery has no separate BLOGE store
-SPI and requires an explicit checkpoint/offset protocol rather than a fictitious store adapter.
+offer cold-start durable test execution. It wires BLOGE's `ExecutionCheckpointStore`,
+`ExecutionStore`, and `WaitStore` through staged, transaction-participating adapters and composes all
+three behind one profile-gated, fail-closed durable test session. Signal, timer, task, extension, and
+retry waits are therefore part of the same commit decision as lifecycle and node checkpoints. It
+does not expose a resume endpoint and does not yet wire BLOGE `WorkItemStore` state into that
+substrate. Streaming recovery has no separate BLOGE store SPI and requires an explicit
+checkpoint/offset protocol rather than a fictitious store adapter.
 
 The increment defines two versioned objects:
 
@@ -84,12 +85,25 @@ overlay while recovery and operations scans see committed rows only. Preparing p
 business/graph/shard lookup columns plus the complete immutable JSON value; cold reads reconstruct
 and tenant-filter the formal BLOGE record.
 
+`StagedBlogeWaitStore` implements the complete public `WaitStore` state machine. Opening a stage
+cold-loads every committed wait for that execution into BLOGE's proven in-memory version-transition
+implementation and uses the run's logical `TimeSource`. Exact-id and execution reads observe the
+overlay, but global type/key correlation and timer recovery scans expose committed rows only. This
+prevents another dispatcher from acting on a signal or timer whose control checkpoint may still
+roll back. `resolve` and `timeout` retain BLOGE optimistic-version semantics and persist full
+`ExecutionWait` JSON under `bloge.testWaitMutation.v1`; indexed projections support recovery and
+dispatch. A wait identity must exactly match its execution lifecycle identity, and a committed
+`waitId` cannot move to another execution. Both checks are repeated structurally by execution-bound
+updates and primary-key collision at commit.
+
 `StagedBlogeDurableStateStore` is the only aggregate handed to the engine factory. It opens and
-closes both component stages, combines their fingerprints under
-`bloge.testDurableStateMutation.v1`, and applies both prepared mutations through the repository's
+closes all three component stages, combines their fingerprints under
+`bloge.testDurableStateMutation.v2`, and applies all prepared mutations through the repository's
 single transaction callback. A control checkpoint therefore cannot commit with a missing execution
-row or node checkpoint. On concurrent revision advance, the existing execution row serializes the
-lifecycle updates and the control CAS chooses the winner; the losing lifecycle update rolls back.
+row, node checkpoint, signal, or timer. Version 2 deliberately supersedes the earlier
+execution/checkpoint-only aggregate fingerprint instead of changing its v1 material in place. On
+concurrent revision advance, concrete row updates serialize competing candidates and the control CAS
+chooses the winner; the losing lifecycle and wait updates roll back together.
 Initial control creation inserts the unique control identity before applying engine state, so two
 first writers cannot publish an orphan execution row.
 
@@ -98,7 +112,8 @@ first writers cannot publish an orphan execution row.
 interceptors, listeners, context carriers, or extension listeners, and accepts a complete frozen
 `ExecutionOptions`. The session replaces only the first root id allocation with the caller-assigned
 engine execution id; the run-scoped operator resolver and all subsequent deterministic providers
-remain unchanged. This keeps fixture control and execution identity outside business
+remain unchanged. The engine receives the aggregate's execution, checkpoint, and wait SPIs but no
+raw store is published as a Spring bean. This keeps fixture control and execution identity outside business
 `GraphContext`, permits one root execution, and requires prepare/commit before session close.
 
 ## BLOGE Fail-Closed Prerequisite
@@ -110,8 +125,8 @@ operator path preserves that exception instead of logging and continuing. `BEST_
 compatibility default.
 
 Resource Gateway now consumes this prerequisite in its test-profile durable resources: the
-transaction-participating execution/checkpoint aggregate and independent durable factory both fail
-closed. Crash recovery, waits, work items, and streaming recovery still must be completed before
+transaction-participating execution/checkpoint/wait aggregate and independent durable factory both
+fail closed. Crash recovery, work items, and streaming recovery still must be completed before
 cold-start resume can be enabled.
 
 ## Safety Invariants
@@ -148,12 +163,16 @@ cold-start resume can be enabled.
     fingerprint under another boundary/ref/version.
 14. Closing the stage invalidates its prepared mutation. A rollback may retry the same frozen
     content while the stage remains open; no mutation can escape session cleanup.
-15. Execution lifecycle and node checkpoints are component fingerprints inside one aggregate
-    fingerprint. A lifecycle-only change therefore changes the formal engine closure even when no
-    checkpoint row changes.
+15. Execution lifecycle, node checkpoints, and waits are component fingerprints inside one v2
+    aggregate fingerprint. A lifecycle-only or wait-only change therefore changes the formal engine
+    closure even when the other component rows do not change.
 16. The control row and execution row are created in one transaction. Every later revision starts
     from that paired state; a control checkpoint without its execution lifecycle is corrupt input,
     not a supported recovery state.
+17. Global wait correlation and timer scans return committed rows only. Execution-local reads remain
+    read-your-writes so the current engine can complete suspend/signal logic before prepare.
+18. A wait carries the exact lifecycle identity of its execution. A globally unique committed
+    `waitId` cannot be reassigned to another execution or tenant by an upsert.
 
 ## Automated Evidence
 
@@ -186,13 +205,17 @@ formal engine-state and engine-id binding, same-datasource transaction enforceme
 idempotent retry, closed-stage invalidation, caller-assigned execution identity, inherited operator
 fixture resolution, durable-engine checkpoint persistence, and concrete two-instance CAS loser
 rollback. `IndependentDurableTestEngineFactoryTest` proves that bypassing the session cannot silently
-run without a composite stage. `TestRuntimeProfileIsolationTest` proves that the holder exists only
-under the isolated test profile and is vetoed whenever production is active.
+run without a composite stage and that a real suspend/signal execution creates and removes a staged
+signal wait. `TestRuntimeProfileIsolationTest` proves that the holder exists only under the isolated
+test profile, that raw execution/checkpoint/wait SPIs are not beans, and that testing is vetoed
+whenever production is active.
 
-`StagedBlogeDurableStateStoreTest` proves real-engine lifecycle/checkpoint atomic commit, rollback of
-both components after a callback failure, cold reconstruction of `ExecutionInstance`, BLOGE
-optimistic-version semantics, aggregate fingerprint sensitivity to lifecycle-only changes, and
-two-instance control-CAS rollback of the losing execution status.
+`StagedBlogeDurableStateStoreTest` proves real-engine lifecycle/checkpoint atomic commit; atomic wait
+commit and rollback; cold reconstruction of `ExecutionInstance` and `ExecutionWait`; BLOGE
+optimistic-version semantics for lifecycle and wait terminal transitions; committed-only timer and
+correlation scans; aggregate fingerprint sensitivity to lifecycle-only and wait-only changes;
+identity-drift and cross-execution wait-id rejection; and two-instance control-CAS rollback of the
+losing execution and wait status.
 
 Reproduce the focused gate with:
 
@@ -201,15 +224,15 @@ mvn -f resource-gateway-examples/pom.xml \
   -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,StagedBlogeExecutionCheckpointStoreTest,StagedBlogeDurableStateStoreTest,IndependentDurableTestEngineFactoryTest,InvocationRecorderCheckpointTest,TestingControlProtocolSchemaTest,TestRuntimeProfileIsolationTest test
 ```
 
-The repository-wide `clean verify` gate completed with 1915 tests, zero failures, zero errors, two
+The focused gate completed with 49 tests, zero failures, zero errors, and zero skips.
+The repository-wide `clean verify` gate completed with 1921 tests, zero failures, zero errors, two
 conditional skips, real-browser regression coverage, and successful Spring Boot JAR packaging.
 
 ## Honest Remaining Gaps
 
-- BLOGE execution lifecycle/lease and node/loop/sequential-foreach checkpoints now execute through
-  one aggregate `EngineStateMutation`. `WaitStore` (including timer waits) and `WorkItemStore` do
-  not; a suspended or asynchronously resumed execution therefore still spans stores that cannot
-  share the composite commit.
+- BLOGE execution lifecycle/lease, node/loop/sequential-foreach checkpoints, and signal/timer/task/
+  retry waits now execute through one aggregate `EngineStateMutation`. `WorkItemStore` does not;
+  deferred timer/event/task dispatch can therefore still span a store outside the composite commit.
 - The durable session is a profile-gated internal resource; the public testing execution service has
   not yet selected it or exposed suspend/resume/owner-claim operations.
 - The fixture ledger snapshot intentionally excludes pre-checkpoint invocation and attempt evidence;

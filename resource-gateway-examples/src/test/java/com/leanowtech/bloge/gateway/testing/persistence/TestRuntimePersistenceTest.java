@@ -131,7 +131,7 @@ class TestRuntimePersistenceTest {
                 "sha256:" + "c".repeat(64), suite, Instant.now(), "runner");
         suites.create(storedSuite);
 
-        Instant now = Instant.parse("2026-07-16T08:00:00Z");
+        Instant now = suiteRuns.currentTime();
         TestSuiteExecutionRequest.SuiteRef suiteRef = new TestSuiteExecutionRequest.SuiteRef(
                 "suite-v2", 1, storedSuite.fingerprint());
         TestSuiteRunEvidenceV2 evidence = new TestSuiteRunEvidenceV2("", "suite-run-v2", "request-v2",
@@ -298,7 +298,7 @@ class TestRuntimePersistenceTest {
 
     @Test
     void unsignedSuiteCheckpointCannotCrossPersistenceBoundary() {
-        Instant now = Instant.parse("2026-07-16T08:00:00Z");
+        Instant now = suiteRuns.currentTime();
         TestSuiteRunRecord signed = suiteRunRecord("suite-run-unsigned", "request-unsigned", now,
                 TestSuiteRunEvidence.Status.RUNNING);
         TestSuiteRunRecord unsigned = new TestSuiteRunRecord(signed.suiteRunId(),
@@ -315,7 +315,7 @@ class TestRuntimePersistenceTest {
 
     @Test
     void suiteRunLeaseRenewalAndCheckpointVersionFenceAbandonedReconciliation() {
-        Instant now = Instant.parse("2026-07-16T08:00:00Z");
+        Instant now = suiteRuns.currentTime();
         TestSuiteRunRecord initial = suiteRunRecord("suite-run-lease", "request-lease", now,
                 TestSuiteRunEvidence.Status.RUNNING);
         TestSuiteRunLease initialLease = new TestSuiteRunLease("instance-a", now.plusSeconds(10));
@@ -343,7 +343,7 @@ class TestRuntimePersistenceTest {
 
     @Test
     void staleAbandonedCandidateCannotOverwriteConcurrentRunnerCheckpoint() {
-        Instant now = Instant.parse("2026-07-16T09:00:00Z");
+        Instant now = suiteRuns.currentTime();
         TestSuiteRunRecord initial = suiteRunRecord("suite-run-race", "request-race", now,
                 TestSuiteRunEvidence.Status.RUNNING);
         suiteRuns.create(initial, new TestSuiteRunLease("instance-a", now.plusSeconds(10)));
