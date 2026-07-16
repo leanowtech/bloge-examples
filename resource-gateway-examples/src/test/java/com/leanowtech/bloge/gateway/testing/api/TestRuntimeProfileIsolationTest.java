@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityServic
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
+import com.leanowtech.bloge.gateway.testing.runtime.DurableTestTerminalRecoveryRuntime;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -40,6 +41,12 @@ class TestRuntimeProfileIsolationTest {
                     DurableTestRecoveryHeartbeatController.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestRecoveryHeartbeatService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableTestTerminalRecoveryController.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableTestTerminalRecoveryService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableTestTerminalRecoveryRuntime.class)).isEmpty();
             assertThat(context.getBeansOfType(TestExecutionApiService.class)).isEmpty();
             assertThat(context.getBeansOfType(TestRunRepository.class)).isEmpty();
             assertThat(context.getBeansOfType(FixtureBundleRepository.class)).isEmpty();
@@ -65,6 +72,12 @@ class TestRuntimeProfileIsolationTest {
                     DurableTestRecoveryHeartbeatController.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableTestRecoveryHeartbeatService.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableTestTerminalRecoveryController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableTestTerminalRecoveryService.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableTestTerminalRecoveryRuntime.class)).hasSize(1);
             assertThat(context.getBeansOfType(DurableTestRecoveryAuthorizer.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestExecutionApiService.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestRunRepository.class)).hasSize(1);
@@ -106,6 +119,12 @@ class TestRuntimeProfileIsolationTest {
                     DurableTestRecoveryHeartbeatController.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestRecoveryHeartbeatService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableTestTerminalRecoveryController.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableTestTerminalRecoveryService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableTestTerminalRecoveryRuntime.class)).isEmpty();
             assertThat(context.getBeansOfType(TestExecutionApiService.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestExecutionCheckpointRepository.class)).isEmpty();
@@ -136,7 +155,8 @@ class TestRuntimeProfileIsolationTest {
                 () -> mock(IntegrationRequestAuthenticator.class));
         context.register(TestRuntimeConfiguration.class, TestExecutionController.class,
                 DurableTestOwnerClaimController.class,
-                DurableTestRecoveryHeartbeatController.class);
+                DurableTestRecoveryHeartbeatController.class,
+                DurableTestTerminalRecoveryController.class);
         context.refresh();
         return context;
     }

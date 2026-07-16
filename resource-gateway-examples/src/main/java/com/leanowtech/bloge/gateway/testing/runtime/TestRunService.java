@@ -5,9 +5,7 @@ import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.engine.GraphEngine;
 import com.leanowtech.bloge.core.engine.GraphResult;
 import com.leanowtech.bloge.core.engine.ExecutionOptions;
-import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
-import com.leanowtech.bloge.core.spi.OperatorResolutionRequest;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
@@ -18,7 +16,6 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerpri
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.ControlPlanRejectedException;
 import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
-import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -39,7 +36,7 @@ public class TestRunService {
 
     private final ObjectMapper objectMapper;
     private final ExecutionControlCompiler compiler;
-    private final TestDoubleFactory doubleFactory;
+    private final CompiledTestRuntimeOptions runtimeOptions;
     private final IndependentTestEngineFactory engineFactory;
     private final TestAssertionEvaluator assertionEvaluator;
 
@@ -63,7 +60,8 @@ public class TestRunService {
                           TestAssertionEvaluator assertionEvaluator) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.compiler = Objects.requireNonNull(compiler, "compiler");
-        this.doubleFactory = Objects.requireNonNull(doubleFactory, "doubleFactory");
+        this.runtimeOptions = new CompiledTestRuntimeOptions(
+                Objects.requireNonNull(doubleFactory, "doubleFactory"));
         this.engineFactory = Objects.requireNonNull(engineFactory, "engineFactory");
         this.assertionEvaluator = Objects.requireNonNull(assertionEvaluator, "assertionEvaluator");
     }
@@ -94,10 +92,7 @@ public class TestRunService {
         GraphEngine engine = engineFactory.create(recorder, executionServices.services().timeSource());
         GraphContext executionContext = new GraphContext(request.context().asMap());
         try {
-            ExecutionOptions options = ExecutionOptions.builder()
-                    .operatorResolver(resolution -> resolveOperator(resolution, compiled, recorder))
-                    .executionServices(executionServices.services())
-                    .build();
+            ExecutionOptions options = runtimeOptions.options(compiled, recorder);
             graphResult = engine.execute(request.graph(), executionContext, options);
         } catch (RuntimeException ex) {
             diagnostics.add(bounded("Test engine failed before producing GraphResult: " + ex.getMessage()));
@@ -141,30 +136,6 @@ public class TestRunService {
     /** @return structural engine-isolation facts used by architecture tests and probes */
     public IndependentTestEngineFactory.Configuration engineConfiguration() {
         return engineFactory.configuration();
-    }
-
-    private Object resolveOperator(OperatorResolutionRequest resolution,
-                                   CompiledExecutionControl compiled,
-                                   InvocationRecorder recorder) {
-        InvocationInventory.Entry entry = compiled.inventory().byEngineStructuralId()
-                .get(resolution.site().structuralId());
-        if (entry == null || entry.graph() != resolution.graph()) {
-            throw new TestControlException("CONTROL_PLAN_RUNTIME_SITE_UNPLANNED", "CONTROL_PLAN",
-                    "Runtime invocation was absent from the frozen inventory: "
-                            + resolution.site().structuralId());
-        }
-        CompiledExecutionControl.ResolvedControl control = compiled.controls()
-                .get(entry.site().invocationSiteId());
-        var runtimeSite = entry.site().withCorrelationKey(resolution.site().correlationKey());
-        if (control == null && !(entry.frozenOperator() instanceof Operator<?, ?>)) {
-            return entry.frozenOperator();
-        }
-        var binding = recorder.bind(runtimeSite, resolution.graphContext());
-        if (control == null) {
-            return doubleFactory.observe(entry.node(), binding, entry.frozenOperator(), recorder);
-        }
-        return doubleFactory.create(entry.node(), binding, control.rules(),
-                entry.frozenOperator(), control.implicitDeny(), recorder, compiled.replayPayloads());
     }
 
     private TestRunEvidence rejectedEvidence(String runId, TestExecutionRequest request,

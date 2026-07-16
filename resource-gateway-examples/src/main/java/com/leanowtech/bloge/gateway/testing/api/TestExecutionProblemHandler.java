@@ -12,7 +12,8 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 @RestControllerAdvice(assignableTypes = {
         TestExecutionController.class,
         DurableTestOwnerClaimController.class,
-        DurableTestRecoveryHeartbeatController.class})
+        DurableTestRecoveryHeartbeatController.class,
+        DurableTestTerminalRecoveryController.class})
 public class TestExecutionProblemHandler {
 
     @ExceptionHandler(IntegrationProblemException.class)

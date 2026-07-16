@@ -20,7 +20,10 @@ import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateS
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
+import com.leanowtech.bloge.gateway.testing.runtime.CompiledTestRuntimeOptions;
+import com.leanowtech.bloge.gateway.testing.runtime.DurableTestTerminalRecoveryRuntime;
 import com.leanowtech.bloge.gateway.testing.runtime.IndependentDurableTestEngineFactory;
+import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
 import com.leanowtech.bloge.durable.codec.JacksonCheckpointCodec;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
@@ -164,6 +167,39 @@ public class TestRuntimeConfiguration {
         return new DurableTestRecoveryHeartbeatService(
                 checkpoints, securityEvents, objectMapper,
                 Duration.ofSeconds(leaseDurationSeconds));
+    }
+
+    /** Builds the shared compiled operator and resource-fixture execution adapter. */
+    @Bean
+    CompiledTestRuntimeOptions compiledTestRuntimeOptions(
+            ObjectMapper objectMapper,
+            ResourceRegistry resourceRegistry,
+            BlgeExpressionEvaluator expressionEvaluator) {
+        return new CompiledTestRuntimeOptions(objectMapper,
+                new ResourceFixtureRuntime(
+                        resourceRegistry, expressionEvaluator, objectMapper));
+    }
+
+    /** Retains staged BLOGE recovery state until the fenced repository commit consumes it. */
+    @Bean
+    DurableTestTerminalRecoveryRuntime durableTestTerminalRecoveryRuntime(
+            DurableTestRuntimeResources resources,
+            CompiledTestRuntimeOptions runtimeOptions,
+            ObjectMapper objectMapper) {
+        return new DurableTestTerminalRecoveryRuntime(
+                resources.engineFactory(), runtimeOptions, objectMapper);
+    }
+
+    /** Assembles authenticated terminal execution over issued durable recovery dispatches. */
+    @Bean
+    DurableTestTerminalRecoveryService durableTestTerminalRecoveryService(
+            DurableTestExecutionCheckpointRepository checkpoints,
+            DurableTestRecoveryAuthorizer authorizer,
+            DurableTestTerminalRecoveryRuntime runtime,
+            TestSecurityEventRepository securityEvents,
+            ObjectMapper objectMapper) {
+        return new DurableTestTerminalRecoveryService(
+                checkpoints, authorizer, runtime, securityEvents, objectMapper);
     }
 
     /** Reuses the configured local or managed signer for independently verifiable test evidence. */

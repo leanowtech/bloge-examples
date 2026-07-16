@@ -503,9 +503,10 @@ binding, restore policy, and deterministic cursor/usage closure. Any mismatch ma
 `CONTROL_PLAN_UNAVAILABLE`; there is no fallback to latest configuration, system providers, or REAL
 execution.
 
-This remains an internal planner/runtime protocol. There is no public durable-run creation/query or
-BLOGE resume endpoint; only the narrow owner-claim and recovery-heartbeat control endpoints described
-below are exposed. The profile-gated staged BLOGE stores persist it inside
+This remains an internal planner/runtime protocol. There is no public durable-run creation/query,
+dispatcher, or general multi-boundary BLOGE resume endpoint; only the narrow owner-claim,
+recovery-heartbeat, and one-signal terminal-recovery controls described below are exposed. The
+profile-gated staged BLOGE stores persist it inside
 `bloge.durableTestExecutionCheckpoint.v2`, which also binds the immutable plan, exact fixture,
 fixture-consumption cursors, execution/wait/work-item closure, side-effect policy, authority snapshot,
 owner fence, and exact `{kind,id,fingerprint}` graph/operator locator. The locator fingerprint must
@@ -519,14 +520,15 @@ accept these objects only from the trusted fenced store or a signed checkpoint a
 resume still requires authenticated scope binding and live reauthorization of target, fixture,
 replay, authority, and side-effect policy before BLOGE state restoration.
 
-### 4.2d Claim and renew an exact durable recovery fence
+### 4.2d Claim, renew, and terminally recover an exact durable fence
 
-The two public recovery-control commands exist only under `test` or `staging` and both require
+The three public recovery-control commands exist only under `test` or `staging` and require
 `TEST_EXECUTION` or `TEST_REPLAY` purpose:
 
 ```http
 POST /api/testing/durable-executions/{runId}/owner-claims
 POST /api/testing/durable-executions/{runId}/heartbeats
+POST /api/testing/durable-executions/{runId}/terminal-recoveries
 Authorization: Bearer <workload-token>
 X-Purpose: TEST_EXECUTION
 Content-Type: application/json
@@ -582,6 +584,74 @@ payload-free failures; cross-scope lookup is hidden as not found; store or audit
 unavailable. `RG_TEST_DURABLE_HEARTBEAT_LEASE_SECONDS` owns the renewal duration (default `120`, whole
 seconds in `1..3600`). This protocol keeps an already claimed fence alive. It does not discover work,
 execute or cancel BLOGE, publish terminal evidence, or make cold-start durable resume complete.
+
+### 4.2e Execute one terminal cold recovery
+
+The terminal-recovery request consumes the latest exact fence returned by owner claim or heartbeat:
+
+```json
+{
+  "schemaVersion": "bloge.durableTestTerminalRecoveryRequest.v1",
+  "clientRequestId": "terminal-run-42-1",
+  "expectedFence": {
+    "ownerId": "server-issued-owner",
+    "leaseEpoch": 2,
+    "revision": 12
+  },
+  "expectedCheckpointFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "signal": {
+    "nodeId": "approval-wait",
+    "data": {"approved": true}
+  }
+}
+```
+
+The strict contract requires an explicit `signal.data`; use JSON `null` when the BLOGE signal has no
+value. Canonical signal JSON is limited to `256 KiB`. The service fingerprints it for idempotency but
+never writes the raw value to its audit, checkpoint, terminal receipt, or response. Unknown top-level,
+fence, or signal fields fail closed, preventing a caller from supplying terminal outcome, engine
+state, fixture/provider state, evidence status, dispatch, authorization, or lease policy.
+
+Response-loss replay is checked before dispatch lookup, reauthorization, and engine execution. On a
+first attempt, the service resolves the unique issued dispatch from the trusted store, requires exact
+tenant/organization/project/environment/fence/checkpoint agreement and principal continuity, loads
+the live `RESUMING` checkpoint, then freshly rebuilds the graph or operator micro-graph, fixture,
+replay closure, authority, side-effect policy, deterministic providers, and effective plan. The new
+authorization receipt must equal the receipt inside the dispatch.
+
+The isolated recovery session restores cumulative fixture cursors and provider state, applies the
+signal synchronously, and accepts only a BLOGE terminal lifecycle. A second suspension returns
+`RG.TEST.DURABLE_RECOVERY_NOT_TERMINAL` and closes the stage without changing committed state. For a
+terminal boundary, the exact staged BLOGE mutation, final fixture/provider closure, terminal control
+checkpoint, immutable idempotency result, transaction-bound semantic audit, and
+`bloge.durableTestRecoveryTerminalReceipt.v1` commit atomically under database-time lease fencing.
+
+```json
+{
+  "schemaVersion": "bloge.durableTestTerminalRecoveryResponse.v1",
+  "runId": "run-42",
+  "status": "TERMINAL",
+  "executionOutcome": "COMPLETED",
+  "ownerId": "server-issued-owner",
+  "leaseEpoch": 2,
+  "revision": 13,
+  "completedAt": "2026-07-17T12:01:18Z",
+  "terminalCheckpointFingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "terminalReceiptFingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "evidenceStatus": "EVIDENCE_INCOMPLETE",
+  "evidenceGapCodes": [
+    "PRE_CHECKPOINT_TRACE_UNAVAILABLE",
+    "RECOVERY_SIGNAL_PAYLOAD_OMITTED"
+  ],
+  "idempotentReplay": false
+}
+```
+
+Retry an ambiguous result with the same key, fence, node, signal, and principal. The original terminal
+checkpoint and receipt return with `idempotentReplay=true`; the engine mutation is not executed again.
+This endpoint is deliberately terminal-only and synchronous. It does not poll a queue, automatically
+renew a lease, accept multiple signals, enforce a hard process deadline, assemble complete signed
+historical evidence, or turn Resource Gateway into a general durable worker runtime.
 
 ### 4.2.2 Register an immutable test suite
 
@@ -1451,9 +1521,10 @@ Implemented now:
 - independent datasource, tables, retention, evidence sanitization, and security events;
 - immutable plan plus graph/operator/resource dependency fingerprints;
 - profile-sensitive capability probe and production control-field guard.
-- profile-gated durable v2 owner claim plus authenticated, payload-free recovery heartbeat with
-  exact hidden-dispatch lookup, principal continuity, database-time fencing, immutable replay, and
-  transaction-bound semantic audit; these controls do not execute BLOGE.
+- profile-gated durable v2 owner claim and authenticated heartbeat plus one-signal terminal recovery,
+  with exact hidden-dispatch lookup, principal and reauthorization continuity, database-time fencing,
+  immutable pre-execution replay, isolated cold execution, and atomic BLOGE/checkpoint/receipt/audit
+  commit; terminal v1 receipts remain explicitly incomplete and promotion-blocking.
 - standalone Maven test-kit with HTTP client, fail-closed fixture/suite builders, child/suite-run
   projections, JUnit 5 assertions, fail-closed CI CLI, payload-free JUnit XML, executable shaded
   artifact, typed built-in catalog materialization, and packaged canonical JSON Schema.
@@ -1504,8 +1575,9 @@ Still intentionally outside this increment:
   decision itself remains outside Resource Gateway;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
   reconciliation alert SLOs, and suite-history list/trend APIs;
-- durable/streaming checkpoint lifecycle integration, typed identity/flag/secret authorities, and
-  deterministic concurrent scheduling;
+- public durable run creation/query, dispatcher/polling, automatic heartbeat and multi-boundary
+  recovery orchestration, hard worker cancellation, typed identity/flag/secret authorities, explicit
+  streaming offset/checkpoint recovery, and deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;
 - certification of streaming foreach/loop graphs until their invocation and edge evidence is
   occurrence-addressable and built-in suites exercise it.
