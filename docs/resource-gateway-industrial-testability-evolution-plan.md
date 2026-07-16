@@ -21,7 +21,7 @@
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
 | Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（四类 case intent、内容寻址 fixture/一等 suite 发布、精确 revision 执行与 aggregate coverage/promotion 回显）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、process-owner lease/heartbeat/checkpoint fence、abandoned RUNNING fail-closed reconciliation、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其 governed catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free plan v2 谱系与认证降级，以及同步 nested/foreach/loop/compensation 控制传播、动态 attempt/occurrence selector 与 occurrence/attempt/node/edge evidence 已落地；streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3 | In progress | graph/operator `TestRunEvidence`、suite checkpoint/terminal attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、签名时刻 lifecycle policy、外部 M-of-N trust publication、bounded append-only consistency page、durable consumer checkpoint、rollback/fork/split-view/revoked-pin resurrection detection 与 test-kit independent verifier 已完成；exact-suite ANEKE semantic workbook seed、`GovernanceGateResult.v3` 可重建 basis、编译级 GraphDraft target 绑定和独立 schema consumer 已完成；真实 ANEKE N/N-1 conformance、独立 witness gossip/跨域一致性证明待完成 |
-| Stage 4 | In progress | BLOGE run-scoped `ExecutionServices`/`FunctionCallSite` 已接通；RG logical clock、seeded random/UUID、payload-free plan v3 binding、usage audit、认证降级、生产边界架构测试、`bloge.testRunEvidence.v2` semantic result fingerprint、重复运行 context 隔离、`bloge.executionServiceStateSnapshot.v1` 精确恢复，以及组合 `bloge.durableTestExecutionCheckpoint.v1`、fixture cursor snapshot、`InvocationRecorder` 静止边界 capture/原子 restore、受信同库事务参与仓库、owner/epoch/revision CAS 与并发输家回滚已落地；BLOGE durable/suspend store adapter、公共 resume、identity/flag/secret fixture authority、streaming 恢复与确定性并发待完成 |
+| Stage 4 | In progress | BLOGE run-scoped `ExecutionServices`/`FunctionCallSite` 已接通，并新增公共 `CheckpointFailurePolicy.FAIL_FAST`（node/loop/foreach checkpoint 失败闭合）；RG logical clock、seeded random/UUID、payload-free plan v3 binding、usage audit、认证降级、生产边界架构测试、`bloge.testRunEvidence.v2` semantic result fingerprint、重复运行 context 隔离、`bloge.executionServiceStateSnapshot.v1` 精确恢复，以及组合 `bloge.durableTestExecutionCheckpoint.v1`、fixture cursor snapshot、`InvocationRecorder` 静止边界 capture/原子 restore、受信同库事务参与仓库、owner/epoch/revision CAS 与并发输家回滚已落地；RG 对 FAIL_FAST 的运行时装配、BLOGE durable/suspend 事务参与 store adapter、公共 resume、identity/flag/secret fixture authority、streaming 恢复与确定性并发待完成 |
 | Stage 5 | Not started | 独立部署、network/identity/secret/store 物理隔离、规模化调度与 mutation/property testing |
 
 实现细节、行为兼容决策和可复现测试见
@@ -1145,8 +1145,15 @@ correlation value；该哈希仅用于去原值和稳定寻址，不是低熵值
 并拒绝向已产生任何运行事实的 recorder 合并状态。该能力已证明快照无擕裂且 resume 后从
 前序游标继续，但不包含断点前的 invocation/attempt evidence。
 
+第六增量先在 BLOGE durable facade 关闭“存储故障被降级为空状态”的框架缺口：源码提交
+`bcbb19694` 新增公共 `CheckpointFailurePolicy`，并由 `DurableManager.Builder`、
+`DurableGraphEngine.Builder` 贯通。`FAIL_FAST` 对 node output、loop snapshot、sequential foreach
+progress 的读、写、序列化与解码故障统一抛出 `DurabilityException`，loop operator 不再吞掉该
+严格异常；`BEST_EFFORT` 继续作为兼容默认。该策略只定义失败传播，不提供跨 store 事务，RG
+仍必须在 test runtime 显式选择 `FAIL_FAST` 并让具体 BLOGE store 参与下述本地事务边界。
+
 本增量尚未让 BLOGE checkpoint/wait/timer/work-item/stream store 通过该事务边界写入；
-公共 resume、owner claim、exact dependency 重新授权、
+RG 也尚未装配 `FAIL_FAST`；公共 resume、owner claim、exact dependency 重新授权、
 stream/event fixture、确定性并发调度、测试身份/feature flag/test-secret authority 仍未完成，
 因此不能声明 cold-start durable resume，Stage 4 仍为进行中。
 

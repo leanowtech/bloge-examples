@@ -52,6 +52,20 @@ advancement therefore have one commit decision:
 The callback must not perform network I/O or write through another datasource. Such effects cannot
 join this local transaction and are deliberately outside the contract.
 
+## BLOGE Fail-Closed Prerequisite
+
+BLOGE source commit `bcbb19694` adds the public `CheckpointFailurePolicy` to both
+`DurableManager.Builder` and `DurableGraphEngine.Builder`. `FAIL_FAST` converts node-output, loop,
+and sequential for-each checkpoint read/write/codec failures into `DurabilityException`; the loop
+operator path preserves that exception instead of logging and continuing. `BEST_EFFORT` remains the
+compatibility default.
+
+This closes one prerequisite: a correctness-sensitive runtime can prevent an unreadable checkpoint
+from being interpreted as missing state. It does not make a checkpoint store transaction
+participating. Resource Gateway must still install its BLOGE store adapter on
+`EngineStateMutation`, configure the test runtime with `FAIL_FAST`, and prove crash recovery before
+cold-start resume can be enabled.
+
 ## Safety Invariants
 
 1. Durable checkpoints are accepted only in `test` or `staging`; production scope fails before
@@ -122,7 +136,8 @@ conditional skips, real-browser regression coverage, and successful Spring Boot 
 
 - BLOGE checkpoint, wait, execution-status, timer, work-item, and stream-offset stores do not yet
   execute through `EngineStateMutation`. This increment proves the atomic boundary but has not moved
-  those engine facts into it.
+  those engine facts into it. BLOGE now exposes a fail-closed checkpoint policy, but Resource
+  Gateway has not yet wired that policy or a transaction-participating store into its test runtime.
 - The fixture ledger snapshot intentionally excludes pre-checkpoint invocation and attempt evidence;
   a resumed terminal evidence bundle cannot yet reconstruct those historical trace facts.
 - Resume does not yet re-authorize the exact fixture revision, replay retention state, identity,
