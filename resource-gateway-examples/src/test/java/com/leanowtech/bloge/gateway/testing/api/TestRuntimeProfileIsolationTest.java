@@ -37,6 +37,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(TestExecutionApiService.class)).isEmpty();
             assertThat(context.getBeansOfType(TestRunRepository.class)).isEmpty();
             assertThat(context.getBeansOfType(FixtureBundleRepository.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableTestExecutionCheckpointRepository.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestRuntimeResources.class)).isEmpty();
             assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();
@@ -54,6 +56,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(TestExecutionApiService.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestRunRepository.class)).hasSize(1);
             assertThat(context.getBeansOfType(FixtureBundleRepository.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableTestExecutionCheckpointRepository.class)).hasSize(1);
             assertThat(context.getBeansOfType(ReplayPayloadRepository.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestReplayPayloadService.class)).hasSize(1);
             assertThat(context.getBeansOfType(DurableTestRuntimeResources.class)).hasSize(1);
@@ -84,6 +88,8 @@ class TestRuntimeProfileIsolationTest {
         try (AnnotationConfigApplicationContext context = context("production", "test")) {
             assertThat(context.getBeansOfType(TestExecutionController.class)).isEmpty();
             assertThat(context.getBeansOfType(TestExecutionApiService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableTestExecutionCheckpointRepository.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestRuntimeResources.class)).isEmpty();
             assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();

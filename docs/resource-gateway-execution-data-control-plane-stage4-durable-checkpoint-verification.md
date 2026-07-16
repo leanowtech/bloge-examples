@@ -8,8 +8,10 @@ offer cold-start durable test execution. It wires BLOGE's `ExecutionCheckpointSt
 and composes all four behind one profile-gated, fail-closed durable test session. Signal, timer, task,
 extension, and retry waits plus queued, claimed, retried, failed, and dead-lettered work are therefore
 part of the same commit decision as lifecycle and node checkpoints. It does not expose a resume or
-worker lifecycle endpoint. Streaming recovery has no separate BLOGE store SPI and requires an explicit
-checkpoint/offset protocol rather than a fictitious store adapter.
+worker lifecycle endpoint. The internal checkpoint repository now provides the database-clock,
+compare-and-set ownership handoff required before either endpoint can be safe. Streaming recovery has
+no separate BLOGE store SPI and requires an explicit checkpoint/offset protocol rather than a
+fictitious store adapter.
 
 The increment defines two versioned objects:
 
@@ -59,6 +61,16 @@ advancement therefore have one commit decision:
 
 The callback must not perform network I/O or write through another datasource. Such effects cannot
 join this local transaction and are deliberately outside the contract.
+
+Expired owner recovery is a distinct control-only transition. `claimExpiredLease(...)` accepts the
+exact tenant/environment/run, old owner/epoch/revision fence, previous checkpoint fingerprint, new
+process owner, and a whole-second lease from one second through one hour. It reads time from the
+database inside the transaction; callers cannot move time forward to steal an active lease. Only an
+exact, expired `ACTIVE`, `SUSPENDED`, or `RESUMING` closure can move to `RESUMING`. Success increments
+both lease epoch and control revision, reseals the checkpoint, and leaves plan, fixture, provider,
+cursor, and engine-state closure unchanged. The SQL CAS repeats scope, old fence, previous fingerprint,
+expiry, and resumable-status checks. A cross-scope or stale claim returns the same `STALE_FENCE`
+category, while an exact caller may distinguish `LEASE_ACTIVE` and `NOT_RESUMABLE`.
 
 ## Transaction-Participating BLOGE Aggregate
 
@@ -164,8 +176,9 @@ cold-start resume can be enabled.
    engine state version, and engine boundary sequence cannot move backwards.
 7. Tenant, organization, project, environment, actor, run id, engine execution id, dependency
    closure, and creation time are immutable after revision zero.
-8. Owner transfer is not inferred from an update. Until an explicit claim protocol is added, the
-   same owner and lease epoch must advance exactly one revision.
+8. Normal engine-state advance cannot transfer ownership. An expired-lease claim is the sole owner
+   handoff: database time must prove expiry, old owner/epoch/revision/fingerprint must all match, and
+   success increments epoch and revision while preserving the complete recovery closure.
 9. Terminal and `CONTROL_PLAN_UNAVAILABLE` checkpoints cannot advance.
 10. Lifecycle timestamps are canonicalized to microsecond precision before hashing so H2 and
     common enterprise SQL stores cannot create false JSON/index drift by rounding Java nanoseconds.
@@ -197,6 +210,8 @@ cold-start resume can be enabled.
 21. Work-item claim tokens, versions, retry classifications, terminal timestamps, dead-letter
     restoration, cancellation, and logical-clock behavior come from BLOGE's reference state machine,
     not a second Resource Gateway transition implementation.
+22. Lease claims accept only whole-second durations from one second through one hour. Fence-counter
+    overflow fails as `INVALID_TRANSITION`; it can never wrap into a valid owner epoch or revision.
 
 ## Automated Evidence
 
@@ -213,7 +228,12 @@ tamper rejection, and plan/provider identity closure.
 - tenant/environment-scoped lookup;
 - idempotent duplicate create and cross-tenant global engine-id collision rejection;
 - fail-closed indexed-column/JSON drift detection;
-- cursor rewind rejection before engine mutation.
+- cursor rewind rejection before engine mutation;
+- database-clock expired-lease claim with exact recovery-closure preservation and resealing;
+- active-lease, terminal-state, stale-fingerprint, cross-tenant, duration, and counter-overflow
+  rejection; and
+- two repository instances racing one expired lease with exactly one new owner and immediate
+  fencing of the former owner.
 
 `TestingControlProtocolSchemaTest` pins both Java protocol versions to the authoritative machine
 schema. Spring application tests exercise profile-gated composition through the existing
@@ -231,8 +251,9 @@ fixture resolution, durable-engine checkpoint persistence, and concrete two-inst
 rollback. `IndependentDurableTestEngineFactoryTest` proves that bypassing the session cannot silently
 run without a composite stage and that a real suspend/signal execution creates and removes a staged
 signal wait. `TestRuntimeProfileIsolationTest` proves that the holder exists only under the isolated
-test profile, that raw execution/checkpoint/wait/work-item SPIs are not beans, and that testing is vetoed
-whenever production is active.
+test profile, that the checkpoint repository is absent whenever production is active, that raw
+execution/checkpoint/wait/work-item SPIs are not beans, and that testing is vetoed whenever production
+is active.
 
 `StagedBlogeDurableStateStoreTest` proves real-engine lifecycle/checkpoint atomic commit; atomic wait
 and work-item commit and rollback; cold reconstruction of `ExecutionInstance`, `ExecutionWait`, and
@@ -249,8 +270,8 @@ mvn -f resource-gateway-examples/pom.xml \
   -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,StagedBlogeExecutionCheckpointStoreTest,StagedBlogeDurableStateStoreTest,IndependentDurableTestEngineFactoryTest,InvocationRecorderCheckpointTest,TestingControlProtocolSchemaTest,TestRuntimeProfileIsolationTest test
 ```
 
-The focused gate completed with 57 tests, zero failures, zero errors, and zero skips.
-The repository-wide `clean verify` gate completed with 1929 tests, zero failures, zero errors, two
+The focused gate completed with 65 tests, zero failures, zero errors, and zero skips.
+The repository-wide `clean verify` gate completed with 1937 tests, zero failures, zero errors, two
 conditional skips, real-browser regression coverage, and successful Spring Boot JAR packaging.
 
 ## Honest Remaining Gaps
@@ -259,15 +280,18 @@ conditional skips, real-browser regression coverage, and successful Spring Boot 
   waits, and work-item state now execute through one aggregate `EngineStateMutation`. The public
   worker poll/claim/run/terminal flow does not yet open, fence, and advance that aggregate, so the
   storage substrate must not be mistaken for a complete remote-worker product lifecycle.
-- The durable session is a profile-gated internal resource; the public testing execution service has
-  not yet selected it or exposed suspend/resume/owner-claim operations.
+- The durable session and expired-lease claim are profile-gated internal resources; the public testing
+  execution service has not yet selected them or exposed an authenticated, audited, idempotent
+  suspend/resume/owner-claim command.
 - The fixture ledger snapshot intentionally excludes pre-checkpoint invocation and attempt evidence;
   a resumed terminal evidence bundle cannot yet reconstruct those historical trace facts.
 - Resume does not yet re-authorize the exact fixture revision, replay retention state, identity,
   side-effect policy, or caller permissions. Missing or revoked dependencies therefore cannot yet be
   surfaced through a public `CONTROL_PLAN_UNAVAILABLE` lifecycle.
-- There is no lease claim/owner transfer API, public suspend/resume endpoint, crash-driven process
-  recovery loop, or signed checkpoint attestation.
+- The internal claim has no transport-level idempotency key because no public command exists yet.
+  Ambiguous network retries, lease heartbeat, public suspend/resume, crash-driven recovery, and signed
+  checkpoint attestation must be solved at the orchestration layer rather than inferred from storage
+  CAS success.
 - The repository uses a local database transaction. Cross-database BLOGE stores require either
   migration onto this datasource or an outbox/recovery protocol; pretending a distributed
   transaction exists is explicitly rejected.

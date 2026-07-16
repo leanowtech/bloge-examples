@@ -312,16 +312,19 @@ Stage 4 now also provides a profile-gated, content-addressed durable-test checkp
 the isolated test-runtime database. It binds the exact plan and fixture revision, fixture-consumption
 cursors, deterministic provider state, engine-state closure, and owner/lease/revision fence. Engine
 store writes can join the same local transaction, and a losing CAS rolls them back. Staged BLOGE
-`ExecutionStore`, `ExecutionCheckpointStore`, `WaitStore`, and `WorkItemStore` implementations are combined under the
-`bloge.testDurableStateMutation.v3` aggregate fingerprint, so lifecycle/lease state, node/loop/sequential-foreach checkpoints,
-signal/timer/task/retry waits, and queued/claimed/retried/dead-lettered work commit or roll back
-together. Global timer/correlation and ready/expired-work scans expose committed rows only; the active
-execution retains read-your-writes. Wait identity must match the lifecycle identity, and committed
-wait/work-item ids cannot migrate to another execution. Work-item batches validate atomically, and
-claim, retry, terminal, and dead-letter transitions reuse BLOGE's reference state machine. The independent
-durable session attaches only this aggregate. The caller assigns
-the engine execution id outside business
-context and supplies the complete frozen `ExecutionOptions`, so operator fixture resolution and
+`ExecutionStore`, `ExecutionCheckpointStore`, `WaitStore`, and `WorkItemStore` implementations are
+combined under the `bloge.testDurableStateMutation.v3` aggregate fingerprint, so lifecycle/lease
+state, node/loop/sequential-foreach checkpoints, signal/timer/task/retry waits, and
+queued/claimed/retried/dead-lettered work commit or roll back together. Global timer/correlation and
+ready/expired-work scans expose committed rows only; the active execution retains read-your-writes.
+Wait identity must match the lifecycle identity, and committed wait/work-item ids cannot migrate to
+another execution. Work-item batches validate atomically, and claim, retry, terminal, and dead-letter
+transitions reuse BLOGE's reference state machine. An internal database-clock lease claim can fence an
+expired `ACTIVE`, `SUSPENDED`, or `RESUMING` owner by exact scope, old owner/epoch/revision, and
+checkpoint fingerprint. It increments epoch and revision, enters `RESUMING`, and cannot alter the
+recovery closure. The independent durable session attaches only this aggregate. The caller assigns
+the engine execution id outside business context and supplies the complete frozen `ExecutionOptions`,
+so operator fixture resolution and
 deterministic providers survive unchanged. Missing stages, cross-execution writes, engine-state/id
 mismatches, another datasource, post-close mutation, or checkpoint failures all fail closed; a
 transient transaction rollback can replay the same content-addressed mutation. The run-scoped
@@ -329,8 +332,9 @@ transient transaction rollback can replay the same content-addressed mutation. T
 only at a quiescent invocation boundary, and atomically enforces fixture `maxUses`. Cursor hashes omit
 raw correlation values but are pseudonymous identifiers, not a confidentiality boundary. BLOGE's
 streaming offset/checkpoint state, pre-checkpoint attempt evidence, public durable run selection,
-worker poll/claim/run/terminal orchestration, and a cold-resume endpoint are not wired yet; this is a trusted
-persistence substrate, not a product claim that durable test resume is complete. See
+worker poll/claim/run/terminal orchestration, and an authenticated, audited, idempotent cold-resume
+command are not wired yet; this is a trusted persistence substrate, not a product claim that durable
+test resume is complete. See
 [Stage 4 durable checkpoint verification](../docs/resource-gateway-execution-data-control-plane-stage4-durable-checkpoint-verification.md).
 
 Create a provider-specific Java operator only when the provider behavior cannot

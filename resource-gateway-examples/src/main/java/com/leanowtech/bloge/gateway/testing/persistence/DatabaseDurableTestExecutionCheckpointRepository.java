@@ -17,6 +17,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +26,8 @@ import java.util.Optional;
 import java.util.Set;
 
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.INVALID_TRANSITION;
+import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.LEASE_ACTIVE;
+import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.NOT_RESUMABLE;
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.STALE_FENCE;
 
 /**
@@ -43,6 +46,14 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
     private final ObjectMapper objectMapper;
     private final DurableTestExecutionCheckpointIntegrity integrity;
 
+    /**
+     * Creates a transactional checkpoint authority over the isolated test-runtime database.
+     *
+     * @param jdbc JDBC facade for schema, verified reads, and transaction-participating writes
+     * @param transactionManager local transaction manager shared with BLOGE staged stores
+     * @param objectMapper mapper for complete immutable checkpoint JSON
+     * @param integrity nested and aggregate checkpoint fingerprint authority
+     */
     public DatabaseDurableTestExecutionCheckpointRepository(
             JdbcTemplate jdbc,
             PlatformTransactionManager transactionManager,
@@ -168,6 +179,92 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                         """, this::mapRow, normalized(tenantId),
                 normalizedEnvironment(environmentId), normalized(engineExecutionId));
         return rows.stream().findFirst().map(this::verifiedCheckpoint);
+    }
+
+    @Override
+    public DurableTestExecutionCheckpoint claimExpiredLease(LeaseClaim claim) {
+        LeaseClaim requiredClaim = Objects.requireNonNull(claim, "claim");
+        return transactions.execute(status -> {
+            Instant claimedAt = databaseNow();
+            DurableTestExecutionCheckpoint current = findInternal(
+                    requiredClaim.tenantId(), requiredClaim.environmentId(),
+                    requiredClaim.runId()).orElseThrow(() -> conflict(
+                    STALE_FENCE, "Durable checkpoint no longer exists in the expected scope"));
+            requireClaimable(current, requiredClaim, claimedAt);
+            var lifecycle = current.lifecycle();
+            DurableTestExecutionCheckpoint claimed = integrity.seal(
+                    new DurableTestExecutionCheckpoint(
+                            current.schemaVersion(), current.scope(), current.runId(),
+                            current.engineExecutionId(), current.dependencies(),
+                            current.fixtureConsumptionState(), current.executionServiceState(),
+                            current.engineState(), new DurableTestExecutionCheckpoint.Lifecycle(
+                            DurableTestExecutionCheckpoint.Status.RESUMING,
+                            requiredClaim.claimantOwnerId(), lifecycle.leaseEpoch() + 1,
+                            lifecycle.revision() + 1, lifecycle.createdAt(), claimedAt,
+                            claimedAt.plus(requiredClaim.leaseDuration())), ""));
+            if (claimUpdate(claimed, requiredClaim, claimedAt) != 1) {
+                throw conflict(STALE_FENCE,
+                        "Durable checkpoint lease changed concurrently");
+            }
+            return claimed;
+        });
+    }
+
+    private void requireClaimable(DurableTestExecutionCheckpoint current,
+                                  LeaseClaim claim,
+                                  Instant claimedAt) {
+        Fence expected = claim.expectedFence();
+        var lifecycle = current.lifecycle();
+        if (!lifecycle.ownerId().equals(expected.ownerId())
+                || lifecycle.leaseEpoch() != expected.leaseEpoch()
+                || lifecycle.revision() != expected.revision()
+                || !current.checkpointFingerprint().equals(
+                claim.expectedCheckpointFingerprint())) {
+            throw conflict(STALE_FENCE, "Durable checkpoint fence is stale");
+        }
+        if (!lifecycle.status().resumable()) {
+            throw conflict(NOT_RESUMABLE,
+                    "Durable checkpoint lifecycle cannot be resumed");
+        }
+        if (lifecycle.leaseEpoch() == Long.MAX_VALUE
+                || lifecycle.revision() == Long.MAX_VALUE) {
+            throw conflict(INVALID_TRANSITION,
+                    "Durable checkpoint fence cannot advance without overflow");
+        }
+        if (lifecycle.leaseExpiresAt().isAfter(claimedAt)) {
+            throw conflict(LEASE_ACTIVE, "Durable checkpoint lease is still active");
+        }
+    }
+
+    private int claimUpdate(DurableTestExecutionCheckpoint claimed,
+                            LeaseClaim claim,
+                            Instant claimedAt) {
+        var lifecycle = claimed.lifecycle();
+        Fence expected = claim.expectedFence();
+        return jdbc.update("""
+                UPDATE rg_test_durable_execution_checkpoints
+                SET status = ?, owner_id = ?, lease_epoch = ?, revision = ?,
+                    lease_expires_at = ?, checkpoint_fingerprint = ?, updated_at = ?,
+                    checkpoint_json = ?
+                WHERE run_id = ? AND tenant_id = ? AND environment_id = ?
+                  AND owner_id = ? AND lease_epoch = ? AND revision = ?
+                  AND checkpoint_fingerprint = ? AND lease_expires_at <= ?
+                  AND status IN ('ACTIVE', 'SUSPENDED', 'RESUMING')
+                """, lifecycle.status().name(), lifecycle.ownerId(), lifecycle.leaseEpoch(),
+                lifecycle.revision(), Timestamp.from(lifecycle.leaseExpiresAt()),
+                claimed.checkpointFingerprint(), Timestamp.from(lifecycle.updatedAt()),
+                write(claimed), claimed.runId(), claim.tenantId(), claim.environmentId(),
+                expected.ownerId(), expected.leaseEpoch(), expected.revision(),
+                claim.expectedCheckpointFingerprint(), Timestamp.from(claimedAt));
+    }
+
+    private Instant databaseNow() {
+        Instant now = jdbc.queryForObject("SELECT CURRENT_TIMESTAMP",
+                (resultSet, rowNumber) -> resultSet.getTimestamp(1).toInstant());
+        if (now == null) {
+            throw new IllegalStateException("Test-runtime database did not provide its clock");
+        }
+        return now.truncatedTo(ChronoUnit.MICROS);
     }
 
     private Optional<DurableTestExecutionCheckpoint> findInternal(

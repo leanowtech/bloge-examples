@@ -12,8 +12,11 @@ import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -203,6 +206,197 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
         assertThat(repository.find("tenant-a", "test", "run-a")).contains(initial);
     }
 
+    @Test
+    void claimsAnExpiredLeaseWithANewFenceWithoutChangingTheRecoveryClosure() {
+        DurableTestExecutionCheckpoint initial = withLifecycle(
+                checkpoint(0, "checkpoint-0"),
+                DurableTestExecutionCheckpoint.Status.SUSPENDED,
+                "instance-a", 1, 0,
+                Instant.parse("2000-01-01T00:00:00Z"),
+                Instant.parse("2000-01-01T00:00:01Z"),
+                Instant.parse("2000-01-01T00:00:02Z"));
+        repository.create(initial, boundNoop(initial));
+
+        DurableTestExecutionCheckpoint claimed = repository.claimExpiredLease(
+                new DurableTestExecutionCheckpointRepository.LeaseClaim(
+                        "tenant-a", "TEST", "run-a",
+                        new DurableTestExecutionCheckpointRepository.Fence(
+                                "instance-a", 1, 0),
+                        initial.checkpointFingerprint(), "instance-b", Duration.ofMinutes(2)));
+
+        assertThat(claimed.lifecycle().status())
+                .isEqualTo(DurableTestExecutionCheckpoint.Status.RESUMING);
+        assertThat(claimed.lifecycle().ownerId()).isEqualTo("instance-b");
+        assertThat(claimed.lifecycle().leaseEpoch()).isEqualTo(2);
+        assertThat(claimed.lifecycle().revision()).isEqualTo(1);
+        assertThat(claimed.lifecycle().updatedAt()).isAfter(initial.lifecycle().leaseExpiresAt());
+        assertThat(Duration.between(claimed.lifecycle().updatedAt(),
+                claimed.lifecycle().leaseExpiresAt())).isEqualTo(Duration.ofMinutes(2));
+        assertThat(claimed.dependencies()).isEqualTo(initial.dependencies());
+        assertThat(claimed.fixtureConsumptionState())
+                .isEqualTo(initial.fixtureConsumptionState());
+        assertThat(claimed.executionServiceState()).isEqualTo(initial.executionServiceState());
+        assertThat(claimed.engineState()).isEqualTo(initial.engineState());
+        assertThat(claimed.checkpointFingerprint())
+                .isNotEqualTo(initial.checkpointFingerprint());
+        assertThat(repository.find("tenant-a", "test", "run-a")).contains(claimed);
+
+        assertThatThrownBy(() -> repository.advance(initial,
+                new DurableTestExecutionCheckpointRepository.Fence("instance-a", 1, 0),
+                boundNoop(initial)))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error).reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.STALE_FENCE);
+    }
+
+    @Test
+    void rejectsAnActiveLeaseUsingTheDatabaseClock() {
+        DurableTestExecutionCheckpoint active = withLifecycle(
+                checkpoint(0, "checkpoint-0"),
+                DurableTestExecutionCheckpoint.Status.SUSPENDED,
+                "instance-a", 1, 0,
+                Instant.parse("2026-01-01T00:00:00Z"),
+                Instant.parse("2026-01-01T00:00:01Z"),
+                Instant.parse("9999-01-01T00:00:00Z"));
+        repository.create(active, boundNoop(active));
+
+        assertThatThrownBy(() -> claim(active, "tenant-a", "instance-b"))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error).reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.LEASE_ACTIVE);
+        assertThat(repository.find("tenant-a", "test", "run-a")).contains(active);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = DurableTestExecutionCheckpoint.Status.class,
+            names = {"TERMINAL", "CONTROL_PLAN_UNAVAILABLE"})
+    void rejectsTerminalAndUnavailableRecoveryLifecycles(
+            DurableTestExecutionCheckpoint.Status status) {
+        DurableTestExecutionCheckpoint blocked = withLifecycle(
+                checkpoint(0, "checkpoint-0"), status,
+                "instance-a", 1, 0,
+                Instant.parse("2000-01-01T00:00:00Z"),
+                Instant.parse("2000-01-01T00:00:01Z"),
+                Instant.parse("2000-01-01T00:00:02Z"));
+        repository.create(blocked, boundNoop(blocked));
+
+        assertThatThrownBy(() -> claim(blocked, "tenant-a", "instance-b"))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.NOT_RESUMABLE);
+    }
+
+    @Test
+    void treatsCrossScopeAndStaleClaimsAsTheSameFailClosedConflict() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+
+        DurableTestExecutionCheckpointRepository.LeaseClaim crossTenant =
+                new DurableTestExecutionCheckpointRepository.LeaseClaim(
+                        "tenant-b", "test", "run-a",
+                        new DurableTestExecutionCheckpointRepository.Fence(
+                                "instance-a", 1, 0),
+                        expired.checkpointFingerprint(), "instance-b", Duration.ofMinutes(2));
+        DurableTestExecutionCheckpointRepository.LeaseClaim staleFingerprint =
+                new DurableTestExecutionCheckpointRepository.LeaseClaim(
+                        "tenant-a", "test", "run-a",
+                        new DurableTestExecutionCheckpointRepository.Fence(
+                                "instance-a", 1, 0),
+                        SHA_B, "instance-b", Duration.ofMinutes(2));
+
+        for (DurableTestExecutionCheckpointRepository.LeaseClaim claim :
+                List.of(crossTenant, staleFingerprint)) {
+            assertThatThrownBy(() -> repository.claimExpiredLease(claim))
+                    .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                    .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                            .reason())
+                    .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.STALE_FENCE);
+        }
+        assertThat(repository.find("tenant-a", "test", "run-a")).contains(expired);
+    }
+
+    @Test
+    void concurrentRepositoryInstancesGrantExactlyOneExpiredLease() throws Exception {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DatabaseDurableTestExecutionCheckpointRepository competing =
+                new DatabaseDurableTestExecutionCheckpointRepository(
+                        database.jdbc(), database.transactionManager(),
+                        new ObjectMapper().findAndRegisterModules(), integrity);
+        competing.init();
+        CountDownLatch start = new CountDownLatch(1);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> claimCandidate(
+                    repository, expired, "instance-b", start));
+            var second = executor.submit(() -> claimCandidate(
+                    competing, expired, "instance-c", start));
+            start.countDown();
+
+            assertThat((first.get() ? 1 : 0) + (second.get() ? 1 : 0)).isEqualTo(1);
+        }
+
+        DurableTestExecutionCheckpoint winner = repository.find(
+                "tenant-a", "test", "run-a").orElseThrow();
+        assertThat(winner.lifecycle().ownerId()).isIn("instance-b", "instance-c");
+        assertThat(winner.lifecycle().leaseEpoch()).isEqualTo(2);
+        assertThat(winner.lifecycle().revision()).isEqualTo(1);
+        assertThat(winner.lifecycle().status())
+                .isEqualTo(DurableTestExecutionCheckpoint.Status.RESUMING);
+    }
+
+    @Test
+    void validatesLeaseClaimScopeFingerprintAndDurationBeforePersistence() {
+        var fence = new DurableTestExecutionCheckpointRepository.Fence("instance-a", 1, 0);
+
+        assertThatThrownBy(() -> new DurableTestExecutionCheckpointRepository.LeaseClaim(
+                "tenant-a", "production", "run-a", fence, SHA_A,
+                "instance-b", Duration.ofMinutes(2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("test or staging");
+        assertThatThrownBy(() -> new DurableTestExecutionCheckpointRepository.LeaseClaim(
+                "tenant-a", "test", "run-a", fence, "not-a-fingerprint",
+                "instance-b", Duration.ofMinutes(2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("canonical SHA-256");
+        assertThatThrownBy(() -> new DurableTestExecutionCheckpointRepository.LeaseClaim(
+                "tenant-a", "test", "run-a", fence, SHA_A,
+                "instance-b", Duration.ofMillis(999)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("whole seconds");
+        assertThatThrownBy(() -> new DurableTestExecutionCheckpointRepository.LeaseClaim(
+                "tenant-a", "test", "run-a", fence, SHA_A,
+                "instance-b", Duration.ofHours(1).plusNanos(1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("whole seconds");
+        assertThatThrownBy(() -> new DurableTestExecutionCheckpointRepository.LeaseClaim(
+                "tenant-a", "test", "run-a", fence, SHA_A,
+                "instance-b", Duration.ofSeconds(1).plusNanos(1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("whole seconds");
+    }
+
+    @Test
+    void rejectsLeaseFenceCounterOverflowWithoutChangingTheCheckpoint() {
+        DurableTestExecutionCheckpoint exhausted = withLifecycle(
+                checkpoint(0, "checkpoint-0"),
+                DurableTestExecutionCheckpoint.Status.SUSPENDED,
+                "instance-a", Long.MAX_VALUE, 0,
+                Instant.parse("2000-01-01T00:00:00Z"),
+                Instant.parse("2000-01-01T00:00:01Z"),
+                Instant.parse("2000-01-01T00:00:02Z"));
+        repository.create(exhausted, boundNoop(exhausted));
+
+        assertThatThrownBy(() -> claim(exhausted, "tenant-a", "instance-b"))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(
+                        DurableTestExecutionCheckpointConflictException.Reason.INVALID_TRANSITION);
+        assertThat(repository.find("tenant-a", "test", "run-a")).contains(exhausted);
+    }
+
     private boolean advanceCandidate(String candidate, CountDownLatch entered, CountDownLatch release) {
         try {
             DurableTestExecutionCheckpoint candidateCheckpoint =
@@ -234,6 +428,47 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
         return database.jdbc().queryForObject(
                 "SELECT COUNT(*) FROM rg_test_engine_state WHERE candidate_id = ?",
                 Integer.class, candidate);
+    }
+
+    private DurableTestExecutionCheckpoint claim(
+            DurableTestExecutionCheckpoint checkpoint,
+            String tenantId,
+            String claimant) {
+        return repository.claimExpiredLease(
+                new DurableTestExecutionCheckpointRepository.LeaseClaim(
+                        tenantId, "test", checkpoint.runId(),
+                        new DurableTestExecutionCheckpointRepository.Fence(
+                                checkpoint.lifecycle().ownerId(),
+                                checkpoint.lifecycle().leaseEpoch(),
+                                checkpoint.lifecycle().revision()),
+                        checkpoint.checkpointFingerprint(), claimant, Duration.ofMinutes(2)));
+    }
+
+    private boolean claimCandidate(
+            DatabaseDurableTestExecutionCheckpointRepository candidateRepository,
+            DurableTestExecutionCheckpoint checkpoint,
+            String claimant,
+            CountDownLatch start) {
+        try {
+            if (!start.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("concurrent claim did not start");
+            }
+            candidateRepository.claimExpiredLease(
+                    new DurableTestExecutionCheckpointRepository.LeaseClaim(
+                            "tenant-a", "test", checkpoint.runId(),
+                            new DurableTestExecutionCheckpointRepository.Fence(
+                                    "instance-a", 1, 0),
+                            checkpoint.checkpointFingerprint(), claimant,
+                            Duration.ofMinutes(2)));
+            return true;
+        } catch (DurableTestExecutionCheckpointConflictException expected) {
+            assertThat(expected.reason())
+                    .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.STALE_FENCE);
+            return false;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("concurrent claim interrupted", interrupted);
+        }
     }
 
     private DurableTestExecutionCheckpointRepository.BoundEngineStateMutation boundNoop(
@@ -299,5 +534,31 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                         DurableTestExecutionCheckpoint.Status.SUSPENDED, "instance-a", 1,
                         revision, Instant.parse("2026-07-16T08:00:00Z"), now,
                         now.plusSeconds(30)), ""));
+    }
+
+    private DurableTestExecutionCheckpoint withLifecycle(
+            DurableTestExecutionCheckpoint checkpoint,
+            DurableTestExecutionCheckpoint.Status status,
+            String ownerId,
+            long leaseEpoch,
+            long revision,
+            Instant createdAt,
+            Instant updatedAt,
+            Instant leaseExpiresAt) {
+        return integrity.seal(new DurableTestExecutionCheckpoint(
+                checkpoint.schemaVersion(), checkpoint.scope(), checkpoint.runId(),
+                checkpoint.engineExecutionId(), checkpoint.dependencies(),
+                checkpoint.fixtureConsumptionState(), checkpoint.executionServiceState(),
+                checkpoint.engineState(), new DurableTestExecutionCheckpoint.Lifecycle(
+                status, ownerId, leaseEpoch, revision, createdAt, updatedAt, leaseExpiresAt), ""));
+    }
+
+    private DurableTestExecutionCheckpoint expiredCheckpoint() {
+        return withLifecycle(checkpoint(0, "checkpoint-0"),
+                DurableTestExecutionCheckpoint.Status.SUSPENDED,
+                "instance-a", 1, 0,
+                Instant.parse("2000-01-01T00:00:00Z"),
+                Instant.parse("2000-01-01T00:00:01Z"),
+                Instant.parse("2000-01-01T00:00:02Z"));
     }
 }
