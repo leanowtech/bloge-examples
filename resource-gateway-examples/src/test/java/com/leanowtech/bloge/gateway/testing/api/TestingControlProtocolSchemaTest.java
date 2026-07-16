@@ -117,6 +117,12 @@ class TestingControlProtocolSchemaTest {
         assertThat(schema.at(
                 "/$defs/durableTestOwnerClaimResponse/properties/schemaVersion/const").asText())
                 .isEqualTo(DurableTestOwnerClaimResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableTestRecoveryHeartbeatRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(DurableTestRecoveryHeartbeatRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableTestRecoveryHeartbeatResponse/properties/schemaVersion/const")
+                .asText()).isEqualTo(DurableTestRecoveryHeartbeatResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/durableTestExecutionCheckpointV2/required"))
                 .extracting(JsonNode::asText)
                 .contains("dependencies", "fixtureConsumptionState", "executionServiceState",
@@ -176,6 +182,8 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("testEvidenceIntegrity")).isTrue();
         assertThat(definitions.has("durableTestOwnerClaimRequest")).isTrue();
         assertThat(definitions.has("durableTestOwnerClaimResponse")).isTrue();
+        assertThat(definitions.has("durableTestRecoveryHeartbeatRequest")).isTrue();
+        assertThat(definitions.has("durableTestRecoveryHeartbeatResponse")).isTrue();
         assertThat(definitions.at("/durableTestOwnerClaimRequest/additionalProperties").asBoolean())
                 .isFalse();
         assertThat(definitions.at("/durableTestOwnerClaimRequest/required"))
@@ -189,6 +197,25 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo("RESUMING");
         assertThat(definitions.at(
                 "/durableTestOwnerClaimResponse/properties/target/properties/fingerprint/$ref")
+                .asText()).isEqualTo("#/$defs/fingerprint");
+        assertThat(definitions.at(
+                "/durableTestRecoveryHeartbeatRequest/additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(definitions.at("/durableTestRecoveryHeartbeatRequest/required"))
+                .extracting(JsonNode::asText)
+                .containsExactly("schemaVersion", "clientRequestId", "expectedFence",
+                        "expectedCheckpointFingerprint");
+        assertThat(definitions.at(
+                "/durableTestRecoveryHeartbeatRequest/properties/expectedFence/$ref").asText())
+                .isEqualTo("#/$defs/durableOwnerClaimFence");
+        assertThat(definitions.at(
+                "/durableTestRecoveryHeartbeatResponse/additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(definitions.at(
+                "/durableTestRecoveryHeartbeatResponse/properties/status/const").asText())
+                .isEqualTo("RESUMING");
+        assertThat(definitions.at(
+                "/durableTestRecoveryHeartbeatResponse/properties/checkpointFingerprint/$ref")
                 .asText()).isEqualTo("#/$defs/fingerprint");
         assertThat(definitions.at("/fixtureBundleRegistrationRequest/properties/target/$ref").asText())
                 .isEqualTo("#/$defs/target");

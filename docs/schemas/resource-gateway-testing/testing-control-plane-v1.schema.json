@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://leanowtech.example/schemas/resource-gateway-testing/testing-control-plane-v1.schema.json",
   "title": "Resource Gateway Testing Control Plane v1",
-  "description": "Wire contracts for target discovery, immutable fixtures and suites, controlled execution, durable ownership, plans, and sanitized evidence.",
+  "description": "Wire contracts for target discovery, immutable fixtures and suites, controlled execution, durable ownership and recovery heartbeat, plans, and sanitized evidence.",
   "$defs": {
     "fingerprint": {
       "type": "string",
@@ -73,6 +73,44 @@
             "fingerprint": {"$ref": "#/$defs/fingerprint"}
           }
         },
+        "idempotentReplay": {"type": "boolean"}
+      }
+    },
+    "durableTestRecoveryHeartbeatRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "clientRequestId", "expectedFence", "expectedCheckpointFingerprint"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.durableTestRecoveryHeartbeatRequest.v1"},
+        "clientRequestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "expectedFence": {"$ref": "#/$defs/durableOwnerClaimFence"},
+        "expectedCheckpointFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "durableTestRecoveryHeartbeatResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "runId", "status", "ownerId", "leaseEpoch", "revision",
+        "leaseExpiresAt", "checkpointFingerprint", "idempotentReplay"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.durableTestRecoveryHeartbeatResponse.v1"},
+        "runId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "status": {"const": "RESUMING"},
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "leaseEpoch": {"type": "integer", "minimum": 1},
+        "revision": {"type": "integer", "minimum": 0},
+        "leaseExpiresAt": {"type": "string", "format": "date-time"},
+        "checkpointFingerprint": {"$ref": "#/$defs/fingerprint"},
         "idempotentReplay": {"type": "boolean"}
       }
     },

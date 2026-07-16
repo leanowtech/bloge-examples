@@ -10,7 +10,9 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 
 /** Maps test-control failures to the stable machine-readable integration problem contract. */
 @RestControllerAdvice(assignableTypes = {
-        TestExecutionController.class, DurableTestOwnerClaimController.class})
+        TestExecutionController.class,
+        DurableTestOwnerClaimController.class,
+        DurableTestRecoveryHeartbeatController.class})
 public class TestExecutionProblemHandler {
 
     @ExceptionHandler(IntegrationProblemException.class)

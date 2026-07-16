@@ -153,6 +153,19 @@ public class TestRuntimeConfiguration {
                 objectMapper, owner, Duration.ofSeconds(leaseDurationSeconds));
     }
 
+    /** Assembles authenticated heartbeat adaptation over issued internal recovery dispatches. */
+    @Bean
+    DurableTestRecoveryHeartbeatService durableTestRecoveryHeartbeatService(
+            DurableTestExecutionCheckpointRepository checkpoints,
+            TestSecurityEventRepository securityEvents,
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.durable.heartbeats.lease-duration-seconds:120}")
+            long leaseDurationSeconds) {
+        return new DurableTestRecoveryHeartbeatService(
+                checkpoints, securityEvents, objectMapper,
+                Duration.ofSeconds(leaseDurationSeconds));
+    }
+
     /** Reuses the configured local or managed signer for independently verifiable test evidence. */
     @Bean
     TestEvidenceIntegrityService testEvidenceIntegrityService(ObjectMapper objectMapper,

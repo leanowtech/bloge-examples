@@ -1,8 +1,13 @@
 package com.leanowtech.bloge.gateway.testing.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryHeartbeatRequest;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryHeartbeatResponse;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryHeartbeatService;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryPrincipal;
 import com.leanowtech.bloge.gateway.testing.api.TestSecurityEvent;
 import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
@@ -25,6 +30,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -500,6 +506,53 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
         assertThat(replay.checkpoint()).isEqualTo(first.checkpoint());
         assertThat(replay.dispatch()).isEqualTo(first.dispatch());
         assertThat(repository.find("tenant-a", "test", "run-a")).contains(renewed);
+    }
+
+    @Test
+    void authenticatedHeartbeatResolvesHiddenDispatchAndCommitsSemanticAuditAtomically() {
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        IntegrationRequestContext identity = new IntegrationRequestContext(
+                "tenant-a", "org-a", "project-a", "test", "sg", "WORKLOAD",
+                "worker-a", "dispatcher-a", "TEST_EXECUTION", "correlation-a",
+                Set.of("quality"), "CONFIDENTIAL", "grant-a");
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(resumeCommand(
+                        expired, "resume-request-1", SHA_D, "instance-b",
+                        Duration.ofMinutes(2),
+                        DurableTestRecoveryPrincipal.fingerprint(mapper, identity)));
+        DurableTestRecoveryHeartbeatService service =
+                new DurableTestRecoveryHeartbeatService(
+                        repository, securityEvents, mapper, Duration.ofMinutes(3));
+        DurableTestRecoveryHeartbeatRequest request =
+                new DurableTestRecoveryHeartbeatRequest(
+                        "", "public-heartbeat-1",
+                        new DurableTestRecoveryHeartbeatRequest.Fence(
+                                claimed.checkpoint().lifecycle().ownerId(),
+                                claimed.checkpoint().lifecycle().leaseEpoch(),
+                                claimed.checkpoint().lifecycle().revision()),
+                        claimed.checkpoint().checkpointFingerprint());
+
+        DurableTestRecoveryHeartbeatResponse first =
+                service.heartbeat("run-a", request, identity);
+        DurableTestRecoveryHeartbeatResponse replay =
+                service.heartbeat("run-a", request, identity);
+
+        assertThat(first.idempotentReplay()).isFalse();
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(replay.checkpointFingerprint())
+                .isEqualTo(first.checkpointFingerprint());
+        assertThat(repository.find("tenant-a", "test", "run-a")).get()
+                .satisfies(checkpoint -> {
+                    assertThat(checkpoint.lifecycle().revision()).isEqualTo(first.revision());
+                    assertThat(checkpoint.checkpointFingerprint())
+                            .isEqualTo(first.checkpointFingerprint());
+                });
+        assertThat(securityEvents.recent(10))
+                .extracting(TestSecurityEvent::reasonCode)
+                .contains("RG.TEST.DURABLE_HEARTBEAT_AUTHORIZED",
+                        "RG.TEST.DURABLE_HEARTBEAT_IDEMPOTENT_REPLAY");
     }
 
     @Test
@@ -1401,6 +1454,17 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
             String requestFingerprint,
             String claimant,
             Duration leaseDuration) {
+        return resumeCommand(checkpoint, clientRequestId, requestFingerprint, claimant,
+                leaseDuration, SHA_D);
+    }
+
+    private DurableTestExecutionCheckpointRepository.ResumeLeaseCommand resumeCommand(
+            DurableTestExecutionCheckpoint checkpoint,
+            String clientRequestId,
+            String requestFingerprint,
+            String claimant,
+            Duration leaseDuration,
+            String principalFingerprint) {
         return new DurableTestExecutionCheckpointRepository.ResumeLeaseCommand(
                 clientRequestId, requestFingerprint,
                 new DurableTestExecutionCheckpointRepository.LeaseClaim(
@@ -1411,7 +1475,7 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                         claimant, leaseDuration),
                 DurableTestRecoveryAuthorization.issue(
                         new ObjectMapper().findAndRegisterModules(),
-                        checkpoint.checkpointFingerprint(), SHA_D,
+                        checkpoint.checkpointFingerprint(), principalFingerprint,
                         checkpoint.dependencies().target().fingerprint(),
                         checkpoint.dependencies().plan().planFingerprint(),
                         checkpoint.dependencies().fixture().fingerprint(),

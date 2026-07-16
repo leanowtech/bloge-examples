@@ -36,6 +36,10 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(TestExecutionController.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestOwnerClaimController.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestOwnerClaimService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableTestRecoveryHeartbeatController.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableTestRecoveryHeartbeatService.class)).isEmpty();
             assertThat(context.getBeansOfType(TestExecutionApiService.class)).isEmpty();
             assertThat(context.getBeansOfType(TestRunRepository.class)).isEmpty();
             assertThat(context.getBeansOfType(FixtureBundleRepository.class)).isEmpty();
@@ -57,6 +61,10 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(TestExecutionController.class)).hasSize(1);
             assertThat(context.getBeansOfType(DurableTestOwnerClaimController.class)).hasSize(1);
             assertThat(context.getBeansOfType(DurableTestOwnerClaimService.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableTestRecoveryHeartbeatController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableTestRecoveryHeartbeatService.class)).hasSize(1);
             assertThat(context.getBeansOfType(DurableTestRecoveryAuthorizer.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestExecutionApiService.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestRunRepository.class)).hasSize(1);
@@ -94,6 +102,10 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(TestExecutionController.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestOwnerClaimController.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestOwnerClaimService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableTestRecoveryHeartbeatController.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableTestRecoveryHeartbeatService.class)).isEmpty();
             assertThat(context.getBeansOfType(TestExecutionApiService.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestExecutionCheckpointRepository.class)).isEmpty();
@@ -123,7 +135,8 @@ class TestRuntimeProfileIsolationTest {
         context.registerBean(IntegrationRequestAuthenticator.class,
                 () -> mock(IntegrationRequestAuthenticator.class));
         context.register(TestRuntimeConfiguration.class, TestExecutionController.class,
-                DurableTestOwnerClaimController.class);
+                DurableTestOwnerClaimController.class,
+                DurableTestRecoveryHeartbeatController.class);
         context.refresh();
         return context;
     }

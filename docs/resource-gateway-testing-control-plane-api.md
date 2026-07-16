@@ -503,8 +503,9 @@ binding, restore policy, and deterministic cursor/usage closure. Any mismatch ma
 `CONTROL_PLAN_UNAVAILABLE`; there is no fallback to latest configuration, system providers, or REAL
 execution.
 
-This remains an internal planner/runtime protocol; no public durable-run, checkpoint, or resume
-endpoint exists. The profile-gated staged BLOGE stores now persist it inside
+This remains an internal planner/runtime protocol. There is no public durable-run creation/query or
+BLOGE resume endpoint; only the narrow owner-claim and recovery-heartbeat control endpoints described
+below are exposed. The profile-gated staged BLOGE stores persist it inside
 `bloge.durableTestExecutionCheckpoint.v2`, which also binds the immutable plan, exact fixture,
 fixture-consumption cursors, execution/wait/work-item closure, side-effect policy, authority snapshot,
 owner fence, and exact `{kind,id,fingerprint}` graph/operator locator. The locator fingerprint must
@@ -517,6 +518,70 @@ supplies one. Neither checkpoint fingerprint is an authenticity proof; cross-pro
 accept these objects only from the trusted fenced store or a signed checkpoint attestation. Public
 resume still requires authenticated scope binding and live reauthorization of target, fixture,
 replay, authority, and side-effect policy before BLOGE state restoration.
+
+### 4.2d Claim and renew an exact durable recovery fence
+
+The two public recovery-control commands exist only under `test` or `staging` and both require
+`TEST_EXECUTION` or `TEST_REPLAY` purpose:
+
+```http
+POST /api/testing/durable-executions/{runId}/owner-claims
+POST /api/testing/durable-executions/{runId}/heartbeats
+Authorization: Bearer <workload-token>
+X-Purpose: TEST_EXECUTION
+Content-Type: application/json
+```
+
+Owner claim accepts an expired v2 checkpoint fence, re-authorizes its exact target, fixture, replay,
+identity authority, side-effect policy, deterministic provider state, and effective plan, then moves
+it to `RESUMING`. The server chooses the owner and lease. Its payload-free response is the only public
+input needed for the first heartbeat.
+
+```json
+{
+  "schemaVersion": "bloge.durableTestRecoveryHeartbeatRequest.v1",
+  "clientRequestId": "heartbeat-run-42-1",
+  "expectedFence": {
+    "ownerId": "server-issued-owner",
+    "leaseEpoch": 2,
+    "revision": 11
+  },
+  "expectedCheckpointFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+}
+```
+
+The heartbeat adapter uses the exact fence to retrieve the unique committed internal dispatch. It
+does not accept a dispatch, authorization receipt, owner, expiry, or lease duration from the caller.
+The current authenticated principal must exactly match the principal authorized by owner claim:
+tenant, organization, project, environment, region, actor, delegation, purpose, clearance, and sorted
+groups are covered. Correlation id is deliberately excluded so a response-loss retry remains possible.
+
+The database clock verifies that the resolved dispatch still owns the exact live `RESUMING` fence.
+The first commit advances one revision, extends the server-owned lease, issues a hidden successor
+dispatch, stores the immutable heartbeat record, and appends the `ALLOWED` semantic audit in the same
+local transaction. The response exposes only the successor fence:
+
+```json
+{
+  "schemaVersion": "bloge.durableTestRecoveryHeartbeatResponse.v1",
+  "runId": "run-42",
+  "status": "RESUMING",
+  "ownerId": "server-issued-owner",
+  "leaseEpoch": 2,
+  "revision": 12,
+  "leaseExpiresAt": "2026-07-17T12:02:00Z",
+  "checkpointFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "idempotentReplay": false
+}
+```
+
+Use the successor fence for the next renewal and a new key for that new intent. Retry an ambiguous
+response with the original key and intent to receive the exact committed successor with
+`idempotentReplay=true`. Stale/expired/unissued fences and same-key intent drift return stable,
+payload-free failures; cross-scope lookup is hidden as not found; store or audit outage returns
+unavailable. `RG_TEST_DURABLE_HEARTBEAT_LEASE_SECONDS` owns the renewal duration (default `120`, whole
+seconds in `1..3600`). This protocol keeps an already claimed fence alive. It does not discover work,
+execute or cancel BLOGE, publish terminal evidence, or make cold-start durable resume complete.
 
 ### 4.2.2 Register an immutable test suite
 
@@ -1371,7 +1436,7 @@ Nested `controlPlan`, `requestedControls`, `fixtureBundle`, `fixtureBundleRef`, 
 `RG.PRODUCTION.CONTROL_FIELD_FORBIDDEN`. The rejection must first commit a credential-free
 `PRODUCTION_RUN_CONTROL_GUARD` audit record; audit failure returns 503 and remains fail closed.
 
-## 8. Current Stage 2/3 Boundaries
+## 8. Current Stage 2-4 Boundaries
 
 Implemented now:
 
@@ -1386,6 +1451,9 @@ Implemented now:
 - independent datasource, tables, retention, evidence sanitization, and security events;
 - immutable plan plus graph/operator/resource dependency fingerprints;
 - profile-sensitive capability probe and production control-field guard.
+- profile-gated durable v2 owner claim plus authenticated, payload-free recovery heartbeat with
+  exact hidden-dispatch lookup, principal continuity, database-time fencing, immutable replay, and
+  transaction-bound semantic audit; these controls do not execute BLOGE.
 - standalone Maven test-kit with HTTP client, fail-closed fixture/suite builders, child/suite-run
   projections, JUnit 5 assertions, fail-closed CI CLI, payload-free JUnit XML, executable shaded
   artifact, typed built-in catalog materialization, and packaged canonical JSON Schema.
@@ -1428,8 +1496,8 @@ Implemented now:
 
 Still intentionally outside this increment:
 
-- streaming/suspendable controls and evidence, and durable-store/suspend integration of the existing
-  provider-state restore protocol;
+- streaming/suspendable controls and evidence, including an explicit stream offset/checkpoint
+  recovery protocol;
 - signed certification decisions, transparency-log proof, trusted pin distribution, ANEKE
   N/N-1 release-matrix conformance, and mutation testing; semantic workbook fingerprints now enter
   `GovernanceGateResult.v3` through a reconstructable exact-evidence basis, but the ANEKE publish

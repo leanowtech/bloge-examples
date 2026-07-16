@@ -133,7 +133,7 @@ public class DurableTestRecoveryAuthorizer {
                 DurableTestRecoveryAuthorization.issue(
                         objectMapper,
                         checkpoint.checkpointFingerprint(),
-                        principalFingerprint(identity),
+                        DurableTestRecoveryPrincipal.fingerprint(objectMapper, identity),
                         target.fingerprint(),
                         rebuilt.planFingerprint(),
                         dependencies.fixture().fingerprint(),
@@ -143,23 +143,6 @@ public class DurableTestRecoveryAuthorizer {
                         rebuilt.authorizedPurpose(),
                         dependencies.sideEffectPolicy());
         return new AuthorizedRecovery(authorizedTarget.graph(), compiled, authorization);
-    }
-
-    private String principalFingerprint(IntegrationRequestContext identity) {
-        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
-                Map.entry("schemaVersion", "bloge.durableRecoveryPrincipal.v1"),
-                Map.entry("tenantId", identity.tenantId()),
-                Map.entry("organizationId", identity.organizationId()),
-                Map.entry("projectId", identity.projectId()),
-                Map.entry("environmentId", identity.environmentId()),
-                Map.entry("region", identity.region()),
-                Map.entry("actorType", identity.actorType()),
-                Map.entry("actorId", identity.actorId()),
-                Map.entry("delegatedBy", identity.delegatedBy()),
-                Map.entry("delegationGrantId", identity.delegationGrantId()),
-                Map.entry("purpose", identity.purpose()),
-                Map.entry("clearance", identity.clearance()),
-                Map.entry("groups", identity.groups().stream().sorted().toList())));
     }
 
     private void requireAuthority(

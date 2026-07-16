@@ -54,6 +54,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}` | Freeze the graph/resource target fingerprint before authoring fixtures (test/staging only) |
 | `POST http://localhost:8080/api/testing/executions` | Run an isolated inline or governed fixture plan and retain sanitized evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/owner-claims` | Re-authorize an exact expired v2 checkpoint and atomically claim its lease; this does not resume BLOGE (test/staging only) |
+| `POST http://localhost:8080/api/testing/durable-executions/{runId}/heartbeats` | Renew one exact issued recovery fence under the same authenticated authority (test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/operators/{operatorRef}` | Inspect frozen binding/schema/state fingerprints and executable testability (test/staging only) |
 | `POST http://localhost:8080/api/testing/targets/operators/{operatorRef}/executions` | Run the exact synchronous binding as a controlled one-node BLOGE graph (test/staging only) |
 | `GET http://localhost:8080/api/integration/test-suites/{suiteId}/revisions/{revision}/semantic-correctness-workbook` | Export a payload-free ANEKE seed for one exact semantic suite and its verified terminal evidence (test/staging only) |
@@ -143,6 +144,45 @@ same local test-runtime transaction. `404` hides cross-project existence, `409` 
 active lease, migration requirement, or unavailable exact dependency closure, and `503` reports an
 authority/store/audit outage. This endpoint moves the checkpoint to `RESUMING`; no recovery worker is
 wired yet, so it does not execute BLOGE or produce terminal evidence.
+
+### Renew a claimed durable recovery lease
+
+The owner-claim response supplies the exact `ownerId`, `leaseEpoch`, `revision`, and
+`checkpointFingerprint` required by the heartbeat. Keep those values as one indivisible fence and
+send a new caller-stable idempotency key for each renewal:
+
+```bash
+curl -sS -X POST \
+  http://localhost:8080/api/testing/durable-executions/run-20260716-001/heartbeats \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "schemaVersion": "bloge.durableTestRecoveryHeartbeatRequest.v1",
+    "clientRequestId": "heartbeat-run-20260716-001-1",
+    "expectedFence": {
+      "ownerId": "server-issued-owner",
+      "leaseEpoch": 4,
+      "revision": 8
+    },
+    "expectedCheckpointFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  }'
+```
+
+The service resolves the hidden, committed recovery dispatch from that exact fence; callers never
+send a dispatch, authorization receipt, owner choice, or lease duration. It requires the same
+authenticated tenant, organization, project, environment, region, actor, delegation, purpose,
+clearance, and groups that obtained the claim. Correlation id may change across a lost-response
+retry. Configure the server-owned renewal with `RG_TEST_DURABLE_HEARTBEAT_LEASE_SECONDS` (default
+`120`, valid range `1..3600`).
+
+A successful `bloge.durableTestRecoveryHeartbeatResponse.v1` returns the successor revision,
+database-authority expiry, checkpoint fingerprint, and `idempotentReplay`; use that successor fence
+for the next heartbeat. Retry an ambiguous response with the same key and identical intent. Reusing
+an old fence under a new key, changing authority, using an expired lease, or reusing a key for a
+different intent fails closed. The authorization audit and first heartbeat commit atomically. This
+endpoint renews ownership only: it does not poll work, run BLOGE, cancel execution, or produce
+terminal evidence.
 
 Batch-migrate existing `.bloge` files after the service is running:
 
@@ -386,14 +426,15 @@ open the staged aggregate, signal a real committed suspension, and prepare its n
 single-suspension boundary for the same fenced transaction. Closing without prepare restores the
 original committed wait and lifecycle; no detached recovery thread remains active. The public
 owner-claim endpoint now binds exact dependency re-authorization to its `RESUMING` fence and a
-payload-free worker dispatch. Internal heartbeat persistence proves dispatch issuance and rotates the
-live revision/lease/successor dispatch atomically. An internal terminal command consumes one still-live
+   payload-free worker dispatch. The authenticated public heartbeat resolves that hidden issued
+   dispatch from an exact predecessor fence, requires the original authorization principal, and rotates
+   the live revision/lease/successor dispatch atomically. An internal terminal command consumes one still-live
 dispatch and commits the exact final BLOGE mutation, terminal checkpoint, immutable result, and
 payload-free receipt in one transaction; retries never reapply the engine mutation. Because durable
 state still lacks complete pre-checkpoint node/edge/attempt trace, receipt v1 is always
 `EVIDENCE_INCOMPLETE`, requires explicit gap codes, and blocks promotion. BLOGE streaming
-offset/checkpoint state, complete historical evidence, public durable run selection, authenticated
-worker poll/run/heartbeat/terminal orchestration, dispatcher consumption, and a killable worker
+   offset/checkpoint state, complete historical evidence, public durable run selection, authenticated
+   worker poll/run/terminal orchestration, dispatcher consumption, automatic heartbeat scheduling, and a killable worker
 deadline are not wired yet. These internal primitives are not a product claim that durable test
 resume is complete. See
 [Stage 4 durable checkpoint verification](../docs/resource-gateway-execution-data-control-plane-stage4-durable-checkpoint-verification.md).

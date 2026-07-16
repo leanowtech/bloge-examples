@@ -6,6 +6,8 @@ import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimResponse;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryHeartbeatRequest;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryHeartbeatResponse;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
@@ -38,7 +40,8 @@ class TestabilityCapabilitiesTest {
                 "testRunEvidence",
                 "testEvidenceIntegrity",
                 "testGraphTargetDescriptor", "testOperatorExecutionRequest", "testOperatorTargetDescriptor",
-                "durableTestOwnerClaimRequest", "durableTestOwnerClaimResponse");
+                "durableTestOwnerClaimRequest", "durableTestOwnerClaimResponse",
+                "durableTestRecoveryHeartbeatRequest", "durableTestRecoveryHeartbeatResponse");
         assertThat(enabled.features()).containsEntry("operatorMicroGraphExecution", true)
                 .containsEntry("dynamicAttemptOccurrenceSelectors", true)
                 .containsEntry("immutableTestSuiteRegistry", true)
@@ -54,6 +57,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("testReplayBehavior", true)
                 .containsEntry("durableTestOwnerClaim", true)
                 .containsEntry("durableRecoveryDependencyReauthorization", true)
+                .containsEntry("authenticatedDurableRecoveryHeartbeat", true)
                 .containsEntry("signedTestRunEvidence", false)
                 .containsEntry("suiteSignedChildEvidenceGate", false)
                 .containsEntry("signedTestSuiteRunAttestation", false)
@@ -80,6 +84,10 @@ class TestabilityCapabilitiesTest {
                 .containsExactly(DurableTestOwnerClaimRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("durableTestOwnerClaimResponse"))
                 .containsExactly(DurableTestOwnerClaimResponse.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("durableTestRecoveryHeartbeatRequest"))
+                .containsExactly(DurableTestRecoveryHeartbeatRequest.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("durableTestRecoveryHeartbeatResponse"))
+                .containsExactly(DurableTestRecoveryHeartbeatResponse.SCHEMA_VERSION);
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.path().equals("/api/testing/executions"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/graphs/{graphName}"));
@@ -90,6 +98,9 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals(
                 "/api/testing/durable-executions/{runId}/owner-claims"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
+                && endpoint.path().equals(
+                "/api/testing/durable-executions/{runId}/heartbeats"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("PUT") && endpoint.path().equals("/api/testing/suites/{suiteId}"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->

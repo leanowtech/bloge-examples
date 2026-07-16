@@ -8,6 +8,8 @@ gateway:
       owner-claims:
         instance-id: ${RG_TEST_DURABLE_OWNER_INSTANCE_ID:}
         lease-duration-seconds: ${RG_TEST_DURABLE_OWNER_LEASE_SECONDS:120}
+      heartbeats:
+        lease-duration-seconds: ${RG_TEST_DURABLE_HEARTBEAT_LEASE_SECONDS:120}
     suite-runs:
       instance-id: ${RG_TEST_SUITE_RUNNER_INSTANCE_ID:}
       lease-duration-seconds: ${RG_TEST_SUITE_LEASE_SECONDS:30}
