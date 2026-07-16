@@ -503,10 +503,10 @@ binding, restore policy, and deterministic cursor/usage closure. Any mismatch ma
 `CONTROL_PLAN_UNAVAILABLE`; there is no fallback to latest configuration, system providers, or REAL
 execution.
 
-This remains an internal planner/runtime protocol. There is no public durable-run creation,
-dispatcher, or general multi-boundary BLOGE resume endpoint. A payload-free checkpoint query and the
-narrow owner-claim, recovery-heartbeat, and one-signal terminal-recovery controls described below are
-exposed. The
+This state object remains an internal planner/runtime protocol. The public surface exposes a narrow,
+authenticated durable-run creator plus a payload-free checkpoint query and the owner-claim,
+recovery-heartbeat, and one-signal terminal-recovery controls described below. It does not expose a
+dispatcher, worker poll API, or general multi-boundary BLOGE resume endpoint. The
 profile-gated staged BLOGE stores persist it inside
 `bloge.durableTestExecutionCheckpoint.v2`, which also binds the immutable plan, exact fixture,
 fixture-consumption cursors, execution/wait/work-item closure, side-effect policy, authority snapshot,
@@ -521,7 +521,113 @@ accept these objects only from the trusted fenced store or a signed checkpoint a
 resume still requires authenticated scope binding and live reauthorization of target, fixture,
 replay, authority, and side-effect policy before BLOGE state restoration.
 
-### 4.2d Query one durable execution
+### 4.2d Create one durable graph execution
+
+The profile-gated creator accepts only authenticated `TEST_EXECUTION` or `TEST_REPLAY` callers and
+only creates an exact `GRAPH_CONTRACT_TEST` from an immutable stored fixture revision:
+
+```http
+POST /api/testing/durable-executions
+Authorization: Bearer <workload-token>
+X-Purpose: TEST_EXECUTION
+Content-Type: application/json
+```
+
+```json
+{
+  "schemaVersion": "bloge.durableTestExecutionCreateRequest.v1",
+  "clientRequestId": "create-approval-flow-20260717-01",
+  "target": {
+    "kind": "GRAPH",
+    "id": "approvalFlow",
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "executionPurpose": "GRAPH_CONTRACT_TEST",
+  "context": {
+    "requestId": "REQ-20260717-42",
+    "amount": 25000,
+    "region": "SG"
+  },
+  "fixtureBundleRef": {
+    "fixtureBundleId": "approval-fixture",
+    "revision": 3,
+    "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  }
+}
+```
+
+The graph fingerprint and fixture fingerprint are mandatory; `latest`, inline fixtures, operator
+targets, caller-selected owner/lease values, control-plan fields, and control keys hidden inside
+`context` are rejected. The service re-authorizes the exact graph, fixture, replay closure,
+workload-identity authority, side-effect policy, deterministic providers, and compiled plan before it
+reserves any execution authority. Business context is bounded to 1 MiB and is used only by the staged
+engine invocation; it is never copied into the creation command, response, or semantic audit.
+
+Creation v1 succeeds only when a fresh BLOGE execution becomes durably quiescent at exactly one live
+`WAIT_SIGNAL`. The service then commits the revision-zero `SUSPENDED` checkpoint, complete staged
+execution/checkpoint/wait/work-item aggregate, immutable command result, and security audit in one
+local transaction. Terminal completion, pause, timer/task/stream waits, non-restorable provider state,
+or multiple live suspensions are persisted as an immutable payload-free rejection and return `409`;
+the service never guesses which boundary should be recoverable.
+
+The success envelope is `bloge.durableTestExecutionCreateResponse.v1`. Its nested `execution` is the
+same payload-free `bloge.durableTestExecutionView.v1` returned by the query below, initially with
+`status=SUSPENDED`, `revision=0`, `recoverable=true`, and the server-minted `runId` and
+`engineExecutionId`:
+
+```json
+{
+  "schemaVersion": "bloge.durableTestExecutionCreateResponse.v1",
+  "execution": {
+    "schemaVersion": "bloge.durableTestExecutionView.v1",
+    "runId": "4e6ea66d-1c39-4ca8-b670-11a846dfab30",
+    "engineExecutionId": "engine-43478e5c-18a8-4780-ad5b-329fab8303db",
+    "status": "SUSPENDED",
+    "fence": {"ownerId": "durable-create-a", "leaseEpoch": 1, "revision": 0},
+    "leaseExpiresAt": "2026-07-17T12:02:00Z",
+    "target": {
+      "kind": "GRAPH",
+      "id": "approvalFlow",
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "fixture": {
+      "fixtureBundleId": "approval-fixture",
+      "revision": 3,
+      "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "authorizedPurpose": "GRAPH_CONTRACT_TEST",
+    "sideEffectPolicy": "DENY_REAL",
+    "planFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "executionServiceStateFingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "fixtureConsumptionStateFingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "engineBoundary": {
+      "checkpointRef": "initial-4e6ea66d-1c39-4ca8-b670-11a846dfab30",
+      "nodeId": "approval-wait",
+      "boundaryType": "SUSPEND",
+      "boundarySequence": 1,
+      "stateVersion": 2,
+      "closureFingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    "checkpointFingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "createdAt": "2026-07-17T12:00:00Z",
+    "updatedAt": "2026-07-17T12:00:00Z",
+    "recoverable": true,
+    "migrationRequired": false
+  },
+  "idempotentReplay": false
+}
+```
+
+`clientRequestId` is scoped by tenant and environment and fingerprints the complete authenticated
+intent. A retry after a committed success or deterministic rejection replays that immutable outcome
+before mutable dependencies are read again. A concurrent retry while the database-time preparation
+lease is live returns payload-free `409 RG.TEST.DURABLE_CREATE_IN_PROGRESS` with `runId` and
+`leaseExpiresAt`. After expiry, another instance may fence the abandoned preparer, retain the same
+run/engine identities, and retry only when the caller resubmits the same request. The service does not
+currently heartbeat preparation work or forcibly cancel an uncooperative operator; deployments must
+set the server-owned preparation lease above the bounded fresh-run budget.
+
+### 4.2e Query one durable execution
 
 The profile-gated read endpoint accepts only authenticated `TEST_EXECUTION` or `TEST_REPLAY`
 purposes:
@@ -583,7 +689,7 @@ operations but has no `target`, sets `migrationRequired=true`, and is never repo
 query is an observation, not a lease reservation or bearer capability; callers must still submit the
 entire returned fence to owner claim, which rechecks live state and current authorization.
 
-### 4.2e Claim, renew, and terminally recover an exact durable fence
+### 4.2f Claim, renew, and terminally recover an exact durable fence
 
 The three public recovery-control commands exist only under `test` or `staging` and require
 `TEST_EXECUTION` or `TEST_REPLAY` purpose:
@@ -1584,8 +1690,8 @@ Implemented now:
 - independent datasource, tables, retention, evidence sanitization, and security events;
 - immutable plan plus graph/operator/resource dependency fingerprints;
 - profile-sensitive capability probe and production control-field guard.
-- profile-gated payload-free durable execution query, v2 owner claim, authenticated heartbeat, and
-  one-signal terminal recovery,
+- profile-gated authenticated durable graph creation, payload-free execution query, v2 owner claim,
+  authenticated heartbeat, and one-signal terminal recovery,
   with exact hidden-dispatch lookup, principal and reauthorization continuity, database-time fencing,
   immutable pre-execution replay, isolated cold execution, and atomic BLOGE/checkpoint/receipt/audit
   commit; terminal v1 receipts remain explicitly incomplete and promotion-blocking.
@@ -1639,8 +1745,9 @@ Still intentionally outside this increment:
   decision itself remains outside Resource Gateway;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
   reconciliation alert SLOs, and suite-history list/trend APIs;
-- public durable run creation, dispatcher/polling, automatic heartbeat and multi-boundary
-  recovery orchestration, hard worker cancellation, typed identity/flag/secret authorities, explicit
+- operator-target durable creation, dispatcher/polling, automatic creation/recovery heartbeats and
+  multi-boundary recovery orchestration, hard worker cancellation, typed identity/flag/secret
+  authorities, explicit
   streaming offset/checkpoint recovery, and deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;
 - certification of streaming foreach/loop graphs until their invocation and edge evidence is

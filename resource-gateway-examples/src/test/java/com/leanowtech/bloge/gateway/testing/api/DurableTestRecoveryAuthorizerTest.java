@@ -39,6 +39,51 @@ import static org.mockito.Mockito.when;
 class DurableTestRecoveryAuthorizerTest {
 
     @Test
+    void authorizesFreshCreationFromExactGraphFixtureAndAuthorityClosure() {
+        Scenario scenario = Scenario.graph();
+        DurableTestExecutionCreateRequest request = creationRequest(scenario);
+
+        DurableTestRecoveryAuthorizer.AuthorizedCreation authorized =
+                scenario.authorizer().authorizeCreation(
+                        request, identity("CONFIDENTIAL"));
+
+        assertThat(authorized.graph()).isSameAs(scenario.executionGraph());
+        assertThat(authorized.dependencies()).satisfies(dependencies -> {
+            assertThat(dependencies.target())
+                    .isEqualTo(scenario.checkpoint().dependencies().target());
+            assertThat(dependencies.fixture())
+                    .isEqualTo(scenario.checkpoint().dependencies().fixture());
+            assertThat(dependencies.plan().planFingerprint())
+                    .isEqualTo(scenario.checkpoint().dependencies().plan().planFingerprint());
+            assertThat(dependencies.identitySnapshot())
+                    .isEqualTo(scenario.checkpoint().dependencies().identitySnapshot());
+            assertThat(dependencies.sideEffectPolicy()).isEqualTo("DENY_REAL");
+        });
+        assertThat(authorized.authorizationFingerprint()).startsWith("sha256:");
+        assertThat(authorized.control().executionServices().snapshotState().restorable())
+                .isTrue();
+    }
+
+    @Test
+    void freshCreationFailsClosedOnExactTargetDriftAndFixtureClearance() {
+        Scenario targetDrift = Scenario.graph();
+        when(targetDrift.graphService().requireGraph("graph-a"))
+                .thenReturn(new GraphBuilder("changed-graph")
+                        .node("subject", new ReadOnlyOperator()).build());
+        assertUnavailable(() -> targetDrift.authorizer().authorizeCreation(
+                creationRequest(targetDrift), identity("CONFIDENTIAL")), "TARGET");
+
+        Scenario clearance = Scenario.graph();
+        assertThatThrownBy(() -> clearance.authorizer().authorizeCreation(
+                creationRequest(clearance), identity("PUBLIC")))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(403);
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.DURABLE_FIXTURE_CLEARANCE_FORBIDDEN");
+                });
+    }
+
+    @Test
     void reauthorizesAndRecompilesAnExactGraphClosure() {
         Scenario scenario = Scenario.graph();
 
@@ -142,6 +187,19 @@ class DurableTestRecoveryAuthorizerTest {
 
     private static IntegrationRequestContext identity(String clearance) {
         return identity("sg", "correlation-a", clearance);
+    }
+
+    private static DurableTestExecutionCreateRequest creationRequest(Scenario scenario) {
+        DurableTestExecutionCheckpoint.ControlDependencies dependencies =
+                scenario.checkpoint().dependencies();
+        return new DurableTestExecutionCreateRequest(
+                "", "create-1", new TestExecutionApiRequest.Target(
+                dependencies.target().kind(), dependencies.target().id(),
+                dependencies.target().fingerprint()), "GRAPH_CONTRACT_TEST", Map.of(),
+                new TestExecutionApiRequest.FixtureBundleRef(
+                        dependencies.fixture().fixtureBundleId(),
+                        dependencies.fixture().revision(),
+                        dependencies.fixture().fingerprint()));
     }
 
     private static IntegrationRequestContext identity(

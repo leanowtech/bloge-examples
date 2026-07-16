@@ -121,6 +121,12 @@ class TestingControlProtocolSchemaTest {
                 "/$defs/durableTestExecutionView/properties/schemaVersion/const").asText())
                 .isEqualTo(DurableTestExecutionQueryResponse.SCHEMA_VERSION);
         assertThat(schema.at(
+                "/$defs/durableTestExecutionCreateRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(DurableTestExecutionCreateRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableTestExecutionCreateResponse/properties/schemaVersion/const")
+                .asText()).isEqualTo(DurableTestExecutionCreateResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
                 "/$defs/durableTestRecoveryHeartbeatRequest/properties/schemaVersion/const")
                 .asText()).isEqualTo(DurableTestRecoveryHeartbeatRequest.SCHEMA_VERSION);
         assertThat(schema.at(
@@ -192,6 +198,8 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("durableTestOwnerClaimRequest")).isTrue();
         assertThat(definitions.has("durableTestOwnerClaimResponse")).isTrue();
         assertThat(definitions.has("durableTestExecutionView")).isTrue();
+        assertThat(definitions.has("durableTestExecutionCreateRequest")).isTrue();
+        assertThat(definitions.has("durableTestExecutionCreateResponse")).isTrue();
         assertThat(definitions.has("durableTestRecoveryHeartbeatRequest")).isTrue();
         assertThat(definitions.has("durableTestRecoveryHeartbeatResponse")).isTrue();
         assertThat(definitions.has("durableTestTerminalRecoveryRequest")).isTrue();
@@ -226,6 +234,28 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.at(
                 "/durableTestExecutionView/properties/engineBoundary/properties/closureFingerprint/$ref")
                 .asText()).isEqualTo("#/$defs/fingerprint");
+        assertThat(definitions.at(
+                "/durableTestExecutionCreateRequest/additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(definitions.at("/durableTestExecutionCreateRequest/required"))
+                .extracting(JsonNode::asText)
+                .containsExactly("schemaVersion", "clientRequestId", "target",
+                        "executionPurpose", "context", "fixtureBundleRef");
+        assertThat(definitions.at(
+                "/durableTestExecutionCreateRequest/properties/target/properties/kind/const")
+                .asText()).isEqualTo("GRAPH");
+        assertThat(definitions.at(
+                "/durableTestExecutionCreateRequest/properties/target/properties/fingerprint/$ref")
+                .asText()).isEqualTo("#/$defs/fingerprint");
+        assertThat(definitions.at(
+                "/durableTestExecutionCreateRequest/properties/fixtureBundleRef/properties/fingerprint/$ref")
+                .asText()).isEqualTo("#/$defs/fingerprint");
+        assertThat(definitions.at(
+                "/durableTestExecutionCreateResponse/additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(definitions.at(
+                "/durableTestExecutionCreateResponse/properties/execution/$ref").asText())
+                .isEqualTo("#/$defs/durableTestExecutionView");
         assertThat(definitions.at(
                 "/durableTestRecoveryHeartbeatRequest/additionalProperties").asBoolean())
                 .isFalse();

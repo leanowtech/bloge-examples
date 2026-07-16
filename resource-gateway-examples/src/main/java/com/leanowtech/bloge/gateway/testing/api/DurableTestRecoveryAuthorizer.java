@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
@@ -145,20 +146,101 @@ public class DurableTestRecoveryAuthorizer {
         return new AuthorizedRecovery(authorizedTarget.graph(), compiled, authorization);
     }
 
+    /**
+     * Freezes and authorizes every dependency required by a fresh durable graph execution.
+     *
+     * <p>The caller must already have passed transport and shape validation. This method proves the
+     * exact current graph fingerprint, immutable stored fixture, replay closure, authority snapshot,
+     * graph input contract, and effective execution plan before a creation reservation may execute.
+     * No latest alias or inline fixture is accepted.</p>
+     *
+     * @param request exact public creation request
+     * @param identity verified non-production execution identity
+     * @return frozen executable closure and payload-free checkpoint dependencies
+     */
+    public AuthorizedCreation authorizeCreation(
+            DurableTestExecutionCreateRequest request,
+            IntegrationRequestContext identity) {
+        DurableTestExecutionCreateRequest requiredRequest = Objects.requireNonNull(
+                request, "request");
+        Objects.requireNonNull(identity, "identity").requireComplete();
+        TestExecutionApiRequest.Target requestedTarget = Objects.requireNonNull(
+                requiredRequest.target(), "target");
+        DurableTestExecutionCheckpoint.ExecutionTargetRef target =
+                new DurableTestExecutionCheckpoint.ExecutionTargetRef(
+                        requestedTarget.kind(), requestedTarget.id(),
+                        requestedTarget.fingerprint());
+        if (!"GRAPH".equals(target.kind())) {
+            throw unavailable(identity, "TARGET");
+        }
+        AuthorizedTarget authorizedTarget = resolveTarget(target, identity);
+        try {
+            graphService.validateInput(target.id(), new GraphContext(requiredRequest.context()));
+        } catch (IllegalArgumentException invalidInput) {
+            throw new IntegrationProblemException(IntegrationProblem.badRequest(
+                    "RG.TEST.DURABLE_GRAPH_INPUT_INVALID",
+                    "Durable graph input does not satisfy the exact graph contract.",
+                    identity.correlationId(), Map.of()));
+        } catch (RuntimeException infrastructure) {
+            throw dependencyStoreUnavailable(identity, "TARGET");
+        }
+
+        TestExecutionApiRequest.FixtureBundleRef requestedFixture = Objects.requireNonNull(
+                requiredRequest.fixtureBundleRef(), "fixtureBundleRef");
+        DurableTestExecutionCheckpoint.ExactFixtureRef fixtureRef =
+                new DurableTestExecutionCheckpoint.ExactFixtureRef(
+                        requestedFixture.fixtureBundleId(), requestedFixture.revision(),
+                        requestedFixture.fingerprint());
+        FixtureBundle fixture = resolveFixture(fixtureRef, target.fingerprint(), identity);
+        ResolvedReplayPayloads replays = resolveReplays(fixture, identity);
+        String sideEffectPolicy = replays.references().isEmpty()
+                ? "DENY_REAL" : "REPLAY_ONLY";
+        CompiledExecutionControl compiled;
+        try {
+            compiled = compiler.compile(authorizedTarget.graph(), fixture,
+                    TestExecutionApiService.AUTHORIZED_PURPOSE,
+                    target.fingerprint(), replays);
+        } catch (IllegalArgumentException rejected) {
+            throw unavailable(identity, "PLAN");
+        } catch (RuntimeException infrastructure) {
+            throw dependencyStoreUnavailable(identity, "PLAN");
+        }
+        DurableTestExecutionCheckpoint.AuthoritySnapshot authoritySnapshot =
+                currentAuthority(identity);
+        DurableTestExecutionCheckpoint.ControlDependencies dependencies =
+                new DurableTestExecutionCheckpoint.ControlDependencies(
+                        compiled.effectivePlan(), fixtureRef, sideEffectPolicy,
+                        authoritySnapshot, target);
+        String authorizationFingerprint = ProtocolFingerprint.of(objectMapper, Map.of(
+                "schemaVersion", "bloge.durableTestCreationAuthorization.v1",
+                "principalFingerprint", DurableTestRecoveryPrincipal.fingerprint(
+                        objectMapper, identity),
+                "dependencies", dependencies,
+                "replayDependenciesFingerprint", ProtocolFingerprint.of(
+                        objectMapper, compiled.effectivePlan().replayDependencies())));
+        return new AuthorizedCreation(
+                authorizedTarget.graph(), compiled, dependencies,
+                authorizationFingerprint);
+    }
+
     private void requireAuthority(
             DurableTestExecutionCheckpoint.ControlDependencies dependencies,
             IntegrationRequestContext identity) {
-        DurableTestExecutionCheckpoint.AuthoritySnapshot current;
+        DurableTestExecutionCheckpoint.AuthoritySnapshot current = currentAuthority(identity);
+        if (!current.equals(dependencies.identitySnapshot())) {
+            throw unavailable(identity, "AUTHORITY");
+        }
+    }
+
+    private DurableTestExecutionCheckpoint.AuthoritySnapshot currentAuthority(
+            IntegrationRequestContext identity) {
         try {
-            current = authority.currentSnapshot();
+            return authority.currentSnapshot();
         } catch (RuntimeException unavailable) {
             throw new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
                     "RG.TEST.DURABLE_AUTHORITY_UNAVAILABLE",
                     "The durable recovery identity authority is unavailable.",
                     identity.correlationId(), Map.of("dependencyKind", "AUTHORITY")));
-        }
-        if (!current.equals(dependencies.identitySnapshot())) {
-            throw unavailable(identity, "AUTHORITY");
         }
     }
 
@@ -201,7 +283,14 @@ public class DurableTestRecoveryAuthorizer {
     private FixtureBundle resolveFixture(
             DurableTestExecutionCheckpoint.ControlDependencies dependencies,
             IntegrationRequestContext identity) {
-        DurableTestExecutionCheckpoint.ExactFixtureRef ref = dependencies.fixture();
+        return resolveFixture(dependencies.fixture(),
+                dependencies.plan().targetFingerprint(), identity);
+    }
+
+    private FixtureBundle resolveFixture(
+            DurableTestExecutionCheckpoint.ExactFixtureRef ref,
+            String targetFingerprint,
+            IntegrationRequestContext identity) {
         StoredFixtureBundle stored;
         try {
             stored = fixtureRepository.find(identity.tenantId(), identity.environmentId(),
@@ -226,7 +315,7 @@ public class DurableTestRecoveryAuthorizer {
                 || !FixtureBundle.SCHEMA_VERSION.equals(bundle.schemaVersion())
                 || !ref.fixtureBundleId().equals(bundle.fixtureBundleId())
                 || ref.revision() != bundle.revision()
-                || !dependencies.plan().targetFingerprint().equals(bundle.targetFingerprint())) {
+                || !targetFingerprint.equals(bundle.targetFingerprint())) {
             throw unavailable(identity, "FIXTURE");
         }
         String classification = normalized(bundle.classification()).toUpperCase(Locale.ROOT);
@@ -305,6 +394,33 @@ public class DurableTestRecoveryAuthorizer {
             graph = Objects.requireNonNull(graph, "graph");
             control = Objects.requireNonNull(control, "control");
             authorization = Objects.requireNonNull(authorization, "authorization");
+        }
+    }
+
+    /**
+     * Server-internal executable closure for one fresh durable graph execution.
+     *
+     * @param graph exact graph selected by the caller's content fingerprint
+     * @param control exact fixture, replay, operator, and execution-service controls
+     * @param dependencies payload-free immutable checkpoint dependency closure
+     * @param authorizationFingerprint complete principal and dependency authorization identity
+     */
+    public record AuthorizedCreation(
+            Graph graph,
+            CompiledExecutionControl control,
+            DurableTestExecutionCheckpoint.ControlDependencies dependencies,
+            String authorizationFingerprint) {
+        /** Requires all executable and payload-free authorization material. */
+        public AuthorizedCreation {
+            graph = Objects.requireNonNull(graph, "graph");
+            control = Objects.requireNonNull(control, "control");
+            dependencies = Objects.requireNonNull(dependencies, "dependencies");
+            authorizationFingerprint = authorizationFingerprint == null
+                    ? "" : authorizationFingerprint.trim();
+            if (!authorizationFingerprint.matches("sha256:[a-f0-9]{64}")) {
+                throw new IllegalArgumentException(
+                        "Creation authorization fingerprint must be canonical SHA-256");
+            }
         }
     }
 }

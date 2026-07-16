@@ -20,6 +20,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateS
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
+import com.leanowtech.bloge.gateway.testing.runtime.DurableTestCreationRuntime;
 import com.leanowtech.bloge.gateway.testing.runtime.CompiledTestRuntimeOptions;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestTerminalRecoveryRuntime;
 import com.leanowtech.bloge.gateway.testing.runtime.IndependentDurableTestEngineFactory;
@@ -185,6 +186,35 @@ public class TestRuntimeConfiguration {
         return new CompiledTestRuntimeOptions(objectMapper,
                 new ResourceFixtureRuntime(
                         resourceRegistry, expressionEvaluator, objectMapper));
+    }
+
+    /** Retains one fresh staged execution until its initial command transaction commits. */
+    @Bean
+    DurableTestCreationRuntime durableTestCreationRuntime(
+            DurableTestRuntimeResources resources,
+            CompiledTestRuntimeOptions runtimeOptions,
+            ObjectMapper objectMapper) {
+        return new DurableTestCreationRuntime(
+                resources.engineFactory(), runtimeOptions, objectMapper);
+    }
+
+    /** Assembles authenticated, idempotent durable graph-test creation. */
+    @Bean
+    DurableTestExecutionCreationService durableTestExecutionCreationService(
+            DurableTestExecutionCheckpointRepository checkpoints,
+            DurableTestRecoveryAuthorizer authorizer,
+            DurableTestCreationRuntime runtime,
+            DurableTestExecutionCheckpointIntegrity integrity,
+            TestSecurityEventRepository securityEvents,
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.durable.creation.instance-id:}") String instanceId,
+            @Value("${gateway.testing.durable.creation.lease-duration-seconds:120}")
+            long leaseDurationSeconds) {
+        String owner = instanceId == null || instanceId.isBlank()
+                ? "durable-creation-" + UUID.randomUUID() : instanceId.trim();
+        return new DurableTestExecutionCreationService(
+                checkpoints, authorizer, runtime, integrity, securityEvents, objectMapper,
+                owner, Duration.ofSeconds(leaseDurationSeconds));
     }
 
     /** Retains staged BLOGE recovery state until the fenced repository commit consumes it. */

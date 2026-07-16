@@ -353,11 +353,13 @@ public final class IndependentDurableTestEngineFactory {
                     .filter(wait -> wait.waitType() == WaitType.WAIT_SIGNAL)
                     .toList();
             if (execution.status() != ExecutionStatus.SUSPENDED) {
-                throw new IllegalStateException(
+                throw new InitialBoundaryRejectedException(
+                        "INITIAL_BOUNDARY_NOT_SUSPENDED",
                         "Durable creation requires an initial suspended BLOGE execution");
             }
             if (waiting.size() != 1 || signals.size() != 1) {
-                throw new IllegalStateException(
+                throw new InitialBoundaryRejectedException(
+                        "INITIAL_SIGNAL_BOUNDARY_AMBIGUOUS",
                         "Durable creation requires exactly one initial signal suspension");
             }
             return new InitialBoundary(execution.status(), signals.getFirst().nodeId(),
@@ -419,6 +421,32 @@ public final class IndependentDurableTestEngineFactory {
                 throw new IllegalArgumentException(
                         "Prepared BLOGE state does not match its initial boundary");
             }
+        }
+    }
+
+    /** Stable deterministic rejection raised when creation v1 cannot represent a fresh boundary. */
+    public static final class InitialBoundaryRejectedException extends IllegalStateException {
+        /** Payload-free category persisted as the immutable creation result. */
+        private final String reasonCode;
+
+        /**
+         * Creates a payload-free rejection suitable for immutable command recording.
+         *
+         * @param reasonCode bounded machine-stable rejection category
+         * @param message payload-free diagnostic
+         */
+        public InitialBoundaryRejectedException(String reasonCode, String message) {
+            super(message);
+            this.reasonCode = required(reasonCode, "reasonCode");
+        }
+
+        /**
+         * Returns the machine-stable command rejection category.
+         *
+         * @return payload-free rejection code
+         */
+        public String reasonCode() {
+            return reasonCode;
         }
     }
 

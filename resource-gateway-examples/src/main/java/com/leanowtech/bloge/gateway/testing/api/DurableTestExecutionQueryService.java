@@ -75,7 +75,7 @@ public final class DurableTestExecutionQueryService {
         }
     }
 
-    private static DurableTestExecutionQueryResponse project(
+    static DurableTestExecutionQueryResponse project(
             DurableTestExecutionCheckpoint checkpoint) {
         DurableTestExecutionCheckpoint.ControlDependencies dependencies =
                 checkpoint.dependencies();

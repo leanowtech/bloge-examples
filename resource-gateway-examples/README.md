@@ -53,6 +53,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `http://localhost:8080/api/gateway/graphs/contracts` | Inspect resource graph input/output contracts |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}` | Freeze the graph/resource target fingerprint before authoring fixtures (test/staging only) |
 | `POST http://localhost:8080/api/testing/executions` | Run an isolated inline or governed fixture plan and retain sanitized evidence (test/staging only) |
+| `POST http://localhost:8080/api/testing/durable-executions` | Idempotently create an exact graph test at its first unique signal suspension (test/staging only) |
 | `GET http://localhost:8080/api/testing/durable-executions/{runId}` | Inspect an integrity-verified, payload-free durable checkpoint view before recovery (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/owner-claims` | Re-authorize an exact expired v2 checkpoint and atomically claim its lease; this does not resume BLOGE (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/heartbeats` | Renew one exact issued recovery fence under the same authenticated authority (test/staging only) |
@@ -107,6 +108,49 @@ and production-isolation workflow. Java/JUnit/CI consumers can use the independe
 [Resource Gateway Test Kit](../resource-gateway-test-kit/README.md) for fixture and immutable-suite
 builders, typed catalog materialization, exact suite execution, payload-free assertions/XML, and the fail-closed CLI instead of
 hand-assembling HTTP requests or interpreting aggregate evidence ad hoc.
+
+### Create a durable graph test
+
+Freeze the target through graph discovery and publish an immutable fixture revision first. Then create
+one idempotent graph-contract test from those exact fingerprints:
+
+```bash
+curl -sS -X POST \
+  http://localhost:8080/api/testing/durable-executions \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "schemaVersion": "bloge.durableTestExecutionCreateRequest.v1",
+    "clientRequestId": "create-approval-flow-20260717-01",
+    "target": {
+      "kind": "GRAPH",
+      "id": "approvalFlow",
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "executionPurpose": "GRAPH_CONTRACT_TEST",
+    "context": {"requestId": "REQ-42", "amount": 25000},
+    "fixtureBundleRef": {
+      "fixtureBundleId": "approval-fixture",
+      "revision": 3,
+      "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  }'
+```
+
+Creation v1 accepts only exact graph targets and stored fixtures and succeeds only at one unambiguous
+persisted signal wait. The response wraps a payload-free suspended execution view containing the
+server-minted run id and recovery fence. A committed success or deterministic unsupported-boundary
+rejection is replayed for the same authenticated `clientRequestId`; a live concurrent preparation
+returns `409` with its run id and lease deadline. It does not support operator creation, inline/latest
+dependencies, timers/tasks/streams, terminal fresh runs, or multiple live suspensions.
+
+The server owns the preparation identity and lease through
+`gateway.testing.durable.creation.instance-id` and
+`gateway.testing.durable.creation.lease-duration-seconds` (default `120`, valid `1..3600`). There is no
+preparation heartbeat or forced in-process cancellation in v1, so the lease must exceed the bounded
+fresh-run budget. Complete wire semantics and failure codes are in the
+[Testing Control Plane API](../docs/resource-gateway-testing-control-plane-api.md#42d-create-one-durable-graph-execution).
 
 ### Inspect a durable test execution
 
@@ -490,13 +534,13 @@ raw correlation values but are pseudonymous identifiers, not a confidentiality b
 fresh execution-to-durable-boundary API now feeds a strict initial-boundary policy: creation v1 may
 prepare only one persisted `WAIT_SIGNAL` under a `SUSPENDED` execution. The session captures that
 boundary, the fixture cursor, and the four-store aggregate as one immutable `PreparedRun`; terminal,
-paused, timer/work-item/stream, and parallel multi-suspension outcomes discard the stage. This closes
-the runtime ambiguity but does not yet expose a public creation endpoint. A database-time
+paused, timer/work-item/stream, and parallel multi-suspension outcomes discard the stage. A database-time
 `bloge.durableTestCreationCommandRecord.v1` reservation now supplies scoped caller idempotency,
 server-minted run/engine identities, owner fencing, lease-expiry takeover, immutable rejection/result
 replay, and one atomic commit decision for the initial control checkpoint, four-store mutation, and
-local audit. It stores fingerprints and payload-free locators only. The authenticated request adapter
-and wire protocol are still pending. BLOGE's new synchronous
+local audit. It stores fingerprints and payload-free locators only. The authenticated public creator
+re-authorizes the exact graph, fixture, replay/authority/provider closure and plan, executes in that
+stage, and returns or replays only the payload-free initial suspended view. BLOGE's synchronous
 cold-start signal API is consumed by an internal `RecoverySession`: only a current
 v2 `RESUMING` checkpoint with exact target and restorable provider state can restore fixture cursors,
 open the staged aggregate, signal a real committed suspension, and prepare its next terminal or
@@ -511,8 +555,8 @@ and commits the server-derived final BLOGE mutation, terminal checkpoint, immuta
 and payload-free receipt in one transaction; retries never reapply the engine mutation. Because durable
 state still lacks complete pre-checkpoint node/edge/attempt trace, receipt v1 is always
 `EVIDENCE_INCOMPLETE`, requires explicit gap codes, and blocks promotion. BLOGE streaming
-offset/checkpoint state, complete historical evidence, public durable run creation, authenticated
-worker poll/dispatch and multi-boundary orchestration, dispatcher consumption, automatic heartbeat scheduling, and a killable worker
+offset/checkpoint state, complete historical evidence, operator-target durable creation, authenticated
+worker poll/dispatch and multi-boundary orchestration, dispatcher consumption, automatic creation/recovery heartbeat scheduling, and a killable worker
 deadline are not wired yet. These internal primitives are not a product claim that durable test
 resume is complete. See
 [Stage 4 durable checkpoint verification](../docs/resource-gateway-execution-data-control-plane-stage4-durable-checkpoint-verification.md).

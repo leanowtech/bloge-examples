@@ -7,8 +7,10 @@ primitive required before Resource Gateway can offer cold-start durable test exe
 `ExecutionStore`, `WaitStore`, and `WorkItemStore` through staged, transaction-participating adapters
 and composes all four behind one profile-gated, fail-closed durable test session. Signal, timer, task,
 extension, and retry waits plus queued, claimed, retried, failed, and dead-lettered work are therefore
-part of the same commit decision as lifecycle and node checkpoints. A public, authenticated
-payload-free query now exposes an integrity-verified lifecycle/fence/dependency/boundary view under
+part of the same commit decision as lifecycle and node checkpoints. A public authenticated creator
+now freezes one exact graph/fixture/authority/plan closure, executes it to the first unambiguous signal
+suspension, and atomically publishes the control checkpoint and four-store aggregate. A public,
+authenticated payload-free query exposes an integrity-verified lifecycle/fence/dependency/boundary view under
 tenant/environment/organization/project non-disclosure scope; it does not reserve a lease or expose
 hidden execution material. A public, authenticated
 owner-claim endpoint now performs the database-clock compare-and-set ownership handoff after exact
@@ -47,6 +49,12 @@ The increment defines the following versioned objects:
   receipt. Until the durable closure contains complete pre-checkpoint node, edge, and attempt trace,
   it is fixed to `EVIDENCE_INCOMPLETE`, requires at least one bounded gap code, and cannot satisfy a
   promotion gate.
+- `bloge.durableTestExecutionCreateRequest.v1` carries a caller-stable idempotency key, exact graph
+  and immutable fixture fingerprints, the graph-contract-test purpose, and bounded business context.
+  It cannot carry owner, lease, inline fixture, provider state, replay payload, or recovery controls.
+- `bloge.durableTestExecutionCreateResponse.v1` wraps the initial suspended
+  `bloge.durableTestExecutionView.v1` and an idempotent-replay marker. It contains no business context,
+  fixture/replay values, provider cursors, authority values, or BLOGE checkpoint body.
 - `bloge.durableTestRecoveryHeartbeatRequest.v1` and
   `bloge.durableTestRecoveryHeartbeatResponse.v1` are public payload-free recovery-control contracts.
   They carry only a caller idempotency key and exact predecessor/successor fences; the internal
@@ -76,8 +84,9 @@ repository callback can commit staged state. Closing the session drops the compl
 particular, BLOGE may reach concurrent signal suspensions, but Resource Gateway does not yet define
 their ordering, fan-in recovery, or evidence semantics; creation v1 therefore rejects them instead of
 choosing an arbitrary node. This runtime policy is now implemented and tested. Public request
-idempotency, ownership reservation, dependency freezing, and the creation endpoint remain separate
-work and are not implied by this primitive.
+idempotency, database-time ownership reservation, dependency freezing, transport authentication, and
+the creation endpoint are now composed above this primitive. The v1 public adapter deliberately
+retains the same narrow boundary policy rather than weakening it for convenience.
 
 ## Runtime Fixture Ledger
 
@@ -140,7 +149,37 @@ immutable initial checkpoint snapshot, and companion audit. Any failure rolls al
 back to `PENDING`. A deterministic unsupported-boundary result can instead transition to immutable,
 payload-free `REJECTED`; ambiguous retries replay the original terminal command result. Record and
 checkpoint fingerprints are reverified on every resolution. This is the database protocol needed by
-the public creator; transport authentication and dependency authorization remain the next adapter.
+the public creator and is now consumed by its authenticated dependency-authorizing adapter.
+
+## Public Durable Creation
+
+`POST /api/testing/durable-executions` is structurally present only in `test` and `staging` and
+authenticates through `TEST_DURABLE_EXECUTION_CREATE` for `TEST_EXECUTION` or `TEST_REPLAY`. The strict
+wire request accepts only an exact `GRAPH` target, exact stored fixture revision, explicit
+`GRAPH_CONTRACT_TEST` purpose, bounded context, and caller-stable idempotency key. Graph/fixture
+`latest`, inline fixtures, operator targets, caller-selected run/engine/owner/lease values, and control
+keys in business context fail before execution.
+
+A fresh command resolves the current graph snapshot, graph input contract, fixture, replay closure,
+identity authority, caller clearance, side-effect policy, deterministic provider closure, and compiled
+effective plan. The authenticated intent fingerprint also covers the verified principal. The service
+then obtains a database-clock preparation fence, runs an isolated staged BLOGE session to its first
+stable boundary, captures restorable provider and fixture-cursor state, seals revision zero, and
+commits the initial checkpoint, staged engine mutation, immutable command result, and semantic audit
+in one local transaction.
+
+A committed success or deterministic boundary rejection is replayed before mutable authorities are
+consulted again. A live same-intent contender receives payload-free `IN_PROGRESS`; an expired
+preparer can be fenced by a new instance without changing the server-minted run or engine identity.
+Different authenticated intent under the same key fails as an idempotency conflict. The reservation
+does not store context, fixture/replay content, provider seeds/cursors, credentials, or checkpoint
+bodies.
+
+Creation v1 intentionally has no preparation heartbeat, forced worker cancellation, worker polling,
+or general multi-boundary orchestration. A run that exceeds the server-owned preparation lease cannot
+commit under a stale fence; the caller must retry the exact request after expiry. Deployments must
+therefore keep fresh graph execution bounded and configure the lease above that budget. This is an
+explicit operational limit, not an implied in-process hard timeout.
 
 Expired owner recovery is a distinct control-only transition. `claimExpiredLease(...)` accepts the
 exact tenant/environment/run, old owner/epoch/revision fence, previous checkpoint fingerprint, new
@@ -653,9 +692,12 @@ convergence.
 The public terminal slice adds two staged-runtime lifecycle cases, five application-service cases,
 and two controller cases covering server-derived state, reauthorization continuity, pre-execution
 replay, audit outage, non-terminal rollback, signal bounds, strict parsing, and payload-free output.
-The repository-wide `clean verify` gate completed with 2023 tests, zero failures, zero errors, two
+The public creation slice adds initial-boundary runtime cases, direct database reservation/atomicity
+cases, exact dependency-authorization cases, service idempotency/rejection cases, authenticated
+controller cases, and schema/capability checks. Its composed focused gate contains 71 tests.
+The repository-wide `clean verify` gate completed with 2044 tests, zero failures, zero errors, 33
 conditional skips, real-browser regression coverage, and successful Spring Boot JAR packaging.
-Scoped public `javadoc -Xdoclint:all -Werror` for the recovery production types is also a required
+Scoped public `javadoc -Xdoclint:all -Werror` for the creation/recovery production types is also a required
 pre-commit gate.
 The optional project-wide Javadoc report still fails on 16 pre-existing HTML and
 parameter diagnostics in unrelated packages; that baseline is not represented as fixed here.
@@ -666,10 +708,11 @@ parameter diagnostics in unrelated packages; that baseline is not represented as
   waits, and work-item state now execute through one aggregate `EngineStateMutation`. The internal
   recovery session can advance one real cold signal, while public owner claim, authenticated
   heartbeat, and terminal recovery can establish, renew, and terminally consume the control fence.
-  Public run query now exposes integrity-verified operational facts. Run creation, worker
-  polling/dispatch, multi-suspension coordination, and automatic
-  heartbeat scheduling do not exist, so this must not be mistaken for a complete remote-worker
-  product lifecycle.
+  Public graph-run creation now reaches exactly one initial signal suspension, and public query
+  exposes integrity-verified operational facts. Operator-target creation, worker polling/dispatch,
+  multi-suspension coordination, automatic creation/recovery heartbeat scheduling, and hard worker
+  cancellation do not exist, so this must not be mistaken for a complete remote-worker product
+  lifecycle.
 - The durable and recovery sessions remain internal resources. Public terminal recovery consumes one
   exact handoff synchronously, but no dispatcher consumes queued work and no general suspend/resume
   or repeated-signal endpoint exists.
