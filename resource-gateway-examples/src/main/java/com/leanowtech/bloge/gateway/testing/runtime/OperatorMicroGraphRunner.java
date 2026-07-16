@@ -51,7 +51,7 @@ public class OperatorMicroGraphRunner {
                 ? ProtocolFingerprint.ofText(request.operatorRef() + "|"
                 + request.operator().getClass().getName())
                 : request.runtimeBindingFingerprint();
-        Graph graph = graph(request.operatorRef(), request.operator());
+        Graph graph = microGraph(request.operatorRef(), request.operator());
         FixtureBundle bundle = request.fixtureBundle() == null
                 ? defaultBundle(request.operator(), bindingFingerprint)
                 : request.fixtureBundle();
@@ -107,7 +107,15 @@ public class OperatorMicroGraphRunner {
                         + " but no composability port proves its effects are isolated."));
     }
 
-    private static Graph graph(String operatorRef, Operator<?, ?> operator) {
+    /**
+     * Reconstructs the canonical one-node graph used by both fresh operator tests and recovery.
+     *
+     * @param operatorRef stable registry reference
+     * @param operator exact synchronous runtime binding
+     * @return canonical operator micro graph
+     */
+    public static Graph microGraph(String operatorRef, Operator<?, ?> operator) {
+        Objects.requireNonNull(operator, "operator");
         Graph built = new GraphBuilder("operator-test:" + normalized(operatorRef))
                 .node(NODE_ID, operator)
                 .input((results, context) -> context.get("operatorInput"))

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.TestSecurityEvent;
 import com.leanowtech.bloge.gateway.testing.api.TestSecurityEventRepository;
+import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import jakarta.annotation.PostConstruct;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -47,9 +48,7 @@ public final class DatabaseTestSecurityEventRepository implements TestSecurityEv
 
     @Override
     public TestSecurityEvent append(TestSecurityEvent event) {
-        if (event == null || event.occurredAt() == null) {
-            throw new IllegalArgumentException("Security event and timestamp are required");
-        }
+        requireEvent(event);
         KeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(connection -> {
             PreparedStatement statement = connection.prepareStatement("""
@@ -77,6 +76,20 @@ public final class DatabaseTestSecurityEventRepository implements TestSecurityEv
     }
 
     @Override
+    public TestRuntimeTransactionMutation boundAppend(TestSecurityEvent event) {
+        requireEvent(event);
+        String factsJson = write(event.facts());
+        return transactionJdbc -> transactionJdbc.update("""
+                INSERT INTO rg_test_security_events (
+                    occurred_at, correlation_id, tenant_id, environment_id, actor_id,
+                    event_type, outcome, reason_code, facts_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, Timestamp.from(event.occurredAt()), event.correlationId(), event.tenantId(),
+                event.environmentId(), event.actorId(), event.eventType(), event.outcome(),
+                event.reasonCode(), factsJson);
+    }
+
+    @Override
     public List<TestSecurityEvent> recent(int limit) {
         return jdbc.query("""
                         SELECT sequence, occurred_at, correlation_id, tenant_id, environment_id,
@@ -96,6 +109,12 @@ public final class DatabaseTestSecurityEventRepository implements TestSecurityEv
             return objectMapper.writeValueAsString(facts);
         } catch (JsonProcessingException failure) {
             throw new IllegalStateException("Cannot serialize test security event", failure);
+        }
+    }
+
+    private static void requireEvent(TestSecurityEvent event) {
+        if (event == null || event.occurredAt() == null) {
+            throw new IllegalArgumentException("Security event and timestamp are required");
         }
     }
 

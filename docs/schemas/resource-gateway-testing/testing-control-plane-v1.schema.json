@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://leanowtech.example/schemas/resource-gateway-testing/testing-control-plane-v1.schema.json",
   "title": "Resource Gateway Testing Control Plane v1",
-  "description": "Wire contracts for target discovery, immutable fixtures and suites, controlled execution, plans, and sanitized evidence.",
+  "description": "Wire contracts for target discovery, immutable fixtures and suites, controlled execution, durable ownership, plans, and sanitized evidence.",
   "$defs": {
     "fingerprint": {
       "type": "string",
@@ -16,6 +16,64 @@
         "kind": {"enum": ["GRAPH", "OPERATOR"]},
         "id": {"type": "string", "minLength": 1, "maxLength": 512},
         "fingerprint": {"oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]}
+      }
+    },
+    "durableOwnerClaimFence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ownerId", "leaseEpoch", "revision"],
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "leaseEpoch": {"type": "integer", "minimum": 1},
+        "revision": {"type": "integer", "minimum": 0}
+      }
+    },
+    "durableTestOwnerClaimRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "clientRequestId", "expectedFence", "expectedCheckpointFingerprint"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.durableTestOwnerClaimRequest.v1"},
+        "clientRequestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "expectedFence": {"$ref": "#/$defs/durableOwnerClaimFence"},
+        "expectedCheckpointFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "durableTestOwnerClaimResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "runId", "status", "ownerId", "leaseEpoch", "revision",
+        "leaseExpiresAt", "checkpointFingerprint", "target", "idempotentReplay"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.durableTestOwnerClaimResponse.v1"},
+        "runId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "status": {"const": "RESUMING"},
+        "ownerId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "leaseEpoch": {"type": "integer", "minimum": 1},
+        "revision": {"type": "integer", "minimum": 0},
+        "leaseExpiresAt": {"type": "string", "format": "date-time"},
+        "checkpointFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "fingerprint"],
+          "properties": {
+            "kind": {"enum": ["GRAPH", "OPERATOR"]},
+            "id": {"type": "string", "minLength": 1, "maxLength": 255},
+            "fingerprint": {"$ref": "#/$defs/fingerprint"}
+          }
+        },
+        "idempotentReplay": {"type": "boolean"}
       }
     },
     "graphTarget": {

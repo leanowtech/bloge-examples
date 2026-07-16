@@ -53,6 +53,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `http://localhost:8080/api/gateway/graphs/contracts` | Inspect resource graph input/output contracts |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}` | Freeze the graph/resource target fingerprint before authoring fixtures (test/staging only) |
 | `POST http://localhost:8080/api/testing/executions` | Run an isolated inline or governed fixture plan and retain sanitized evidence (test/staging only) |
+| `POST http://localhost:8080/api/testing/durable-executions/{runId}/owner-claims` | Re-authorize an exact expired v2 checkpoint and atomically claim its lease; this does not resume BLOGE (test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/operators/{operatorRef}` | Inspect frozen binding/schema/state fingerprints and executable testability (test/staging only) |
 | `POST http://localhost:8080/api/testing/targets/operators/{operatorRef}/executions` | Run the exact synchronous binding as a controlled one-node BLOGE graph (test/staging only) |
 | `GET http://localhost:8080/api/integration/test-suites/{suiteId}/revisions/{revision}/semantic-correctness-workbook` | Export a payload-free ANEKE seed for one exact semantic suite and its verified terminal evidence (test/staging only) |
@@ -103,6 +104,45 @@ and production-isolation workflow. Java/JUnit/CI consumers can use the independe
 [Resource Gateway Test Kit](../resource-gateway-test-kit/README.md) for fixture and immutable-suite
 builders, typed catalog materialization, exact suite execution, payload-free assertions/XML, and the fail-closed CLI instead of
 hand-assembling HTTP requests or interpreting aggregate evidence ad hoc.
+
+### Claim an expired durable test lease
+
+The public owner-claim command is available only under `test` or `staging`. Obtain the current
+payload-free checkpoint fence from trusted control-plane storage or a future durable-run query, then
+submit that exact observation with a caller-stable idempotency key:
+
+```bash
+curl -sS -X POST \
+  http://localhost:8080/api/testing/durable-executions/run-20260716-001/owner-claims \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "schemaVersion": "bloge.durableTestOwnerClaimRequest.v1",
+    "clientRequestId": "recover-run-20260716-001-attempt-1",
+    "expectedFence": {
+      "ownerId": "expired-worker-a",
+      "leaseEpoch": 3,
+      "revision": 7
+    },
+    "expectedCheckpointFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }'
+```
+
+The server, never the caller, chooses the new owner id and lease duration. Configure them with
+`RG_TEST_DURABLE_OWNER_INSTANCE_ID` and `RG_TEST_DURABLE_OWNER_LEASE_SECONDS` (default `120`, valid
+range `1..3600`). A successful response is `bloge.durableTestOwnerClaimResponse.v1` and contains only
+the resulting fence, expiry, checkpoint fingerprint, target locator, and `idempotentReplay` flag.
+Retries must reuse the same `clientRequestId` and byte-equivalent intent; reusing the key for another
+intent fails closed.
+
+Before mutation, Resource Gateway revalidates the authenticated scope, exact graph/operator target,
+fixture revision, replay closure, current identity authority, side-effect policy, execution-service
+state, and recompiled effective plan. The authorization audit and fresh lease claim commit in the
+same local test-runtime transaction. `404` hides cross-project existence, `409` reports a stale fence,
+active lease, migration requirement, or unavailable exact dependency closure, and `503` reports an
+authority/store/audit outage. This endpoint moves the checkpoint to `RESUMING`; no recovery worker is
+wired yet, so it does not execute BLOGE or produce terminal evidence.
 
 Batch-migrate existing `.bloge` files after the service is running:
 

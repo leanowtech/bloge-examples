@@ -111,6 +111,12 @@ class TestingControlProtocolSchemaTest {
         assertThat(schema.at(
                 "/$defs/durableTestExecutionCheckpointV1/properties/schemaVersion/const").asText())
                 .isEqualTo(DurableTestExecutionCheckpoint.SCHEMA_VERSION_V1);
+        assertThat(schema.at(
+                "/$defs/durableTestOwnerClaimRequest/properties/schemaVersion/const").asText())
+                .isEqualTo(DurableTestOwnerClaimRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableTestOwnerClaimResponse/properties/schemaVersion/const").asText())
+                .isEqualTo(DurableTestOwnerClaimResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/durableTestExecutionCheckpointV2/required"))
                 .extracting(JsonNode::asText)
                 .contains("dependencies", "fixtureConsumptionState", "executionServiceState",
@@ -168,6 +174,22 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("testSuiteCatalogMaterialization")).isTrue();
         assertThat(definitions.has("testSuiteRunEvidence")).isTrue();
         assertThat(definitions.has("testEvidenceIntegrity")).isTrue();
+        assertThat(definitions.has("durableTestOwnerClaimRequest")).isTrue();
+        assertThat(definitions.has("durableTestOwnerClaimResponse")).isTrue();
+        assertThat(definitions.at("/durableTestOwnerClaimRequest/additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(definitions.at("/durableTestOwnerClaimRequest/required"))
+                .extracting(JsonNode::asText)
+                .containsExactly("schemaVersion", "clientRequestId", "expectedFence",
+                        "expectedCheckpointFingerprint");
+        assertThat(definitions.at("/durableTestOwnerClaimResponse/additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(definitions.at(
+                "/durableTestOwnerClaimResponse/properties/status/const").asText())
+                .isEqualTo("RESUMING");
+        assertThat(definitions.at(
+                "/durableTestOwnerClaimResponse/properties/target/properties/fingerprint/$ref")
+                .asText()).isEqualTo("#/$defs/fingerprint");
         assertThat(definitions.at("/fixtureBundleRegistrationRequest/properties/target/$ref").asText())
                 .isEqualTo("#/$defs/target");
         assertThat(definitions.at("/testExecutionRequest/properties/target/$ref").asText())

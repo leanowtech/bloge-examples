@@ -90,6 +90,40 @@ public interface DurableTestExecutionCheckpointRepository {
     LeaseClaimResult claimExpiredLeaseIdempotently(ResumeLeaseCommand command);
 
     /**
+     * Claims or replays one lease command and commits a companion local mutation atomically.
+     *
+     * <p>The companion mutation is applied for both a first commit and an idempotent replay. A
+     * failure rolls back a new lease claim and its immutable command record; a replay has no lease
+     * mutation to undo but still fails closed without returning the result.</p>
+     *
+     * @param command exact lease claim and caller-stable command identity
+     * @param companionMutation local audit or evidence write bound to the same database transaction
+     * @return original claim result and whether this invocation replayed it
+     */
+    LeaseClaimResult claimExpiredLeaseIdempotently(
+            ResumeLeaseCommand command, TestRuntimeTransactionMutation companionMutation);
+
+    /**
+     * Resolves the immutable outcome of an already committed lease command without consulting the
+     * live checkpoint row.
+     *
+     * <p>This read must verify the complete command intent and stored result integrity exactly as a
+     * command replay would. It is deliberately separate from dependency re-authorization: a caller
+     * retrying after a lost response is entitled to the original committed result even when the
+     * graph, fixture authority, or live checkpoint has subsequently advanced.</p>
+     *
+     * @param tenantId verified tenant authority
+     * @param environmentId verified non-production environment authority
+     * @param clientRequestId caller-stable idempotency key
+     * @param requestFingerprint server-derived authorized caller intent
+     * @return the original result marked as an idempotent replay, or empty when no key is reserved
+     */
+    Optional<LeaseClaimResult> findLeaseClaimResult(String tenantId,
+                                                    String environmentId,
+                                                    String clientRequestId,
+                                                    String requestFingerprint);
+
+    /**
      * Exact compare-and-set fence held by the caller.
      *
      * @param ownerId current process owner identity

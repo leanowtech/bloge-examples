@@ -3,6 +3,8 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository;
+import com.leanowtech.bloge.gateway.testing.api.TestSecurityEvent;
+import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
@@ -39,6 +41,7 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     private TestRuntimeDatabase database;
     private DatabaseDurableTestExecutionCheckpointRepository repository;
     private DurableTestExecutionCheckpointIntegrity integrity;
+    private DatabaseTestSecurityEventRepository securityEvents;
 
     @BeforeEach
     void setUp() {
@@ -50,6 +53,8 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
         repository = new DatabaseDurableTestExecutionCheckpointRepository(
                 database.jdbc(), database.transactionManager(), mapper, integrity);
         repository.init();
+        securityEvents = new DatabaseTestSecurityEventRepository(database.jdbc(), mapper);
+        securityEvents.init();
         database.jdbc().execute("""
                 CREATE TABLE rg_test_engine_state (
                     candidate_id VARCHAR(255) PRIMARY KEY,
@@ -404,6 +409,83 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
         assertThat(retry.checkpoint()).isEqualTo(first.checkpoint());
         assertThat(repository.find("tenant-a", "test", "run-a"))
                 .contains(advanced);
+    }
+
+    @Test
+    void durableResumeCommandCanBeLookedUpWithoutConsultingOrMutatingTheLiveCheckpoint() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.ResumeLeaseCommand command =
+                resumeCommand(expired, "resume-request-1", SHA_D, "instance-b");
+
+        assertThat(repository.findLeaseClaimResult(
+                "tenant-a", "test", "resume-request-1", SHA_D)).isEmpty();
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult first =
+                repository.claimExpiredLeaseIdempotently(command);
+        DurableTestExecutionCheckpoint advanced = advanceAfterClaim(first.checkpoint());
+
+        assertThat(repository.findLeaseClaimResult(
+                "tenant-a", "test", "resume-request-1", SHA_D)).get()
+                .satisfies(replay -> {
+                    assertThat(replay.idempotentReplay()).isTrue();
+                    assertThat(replay.checkpoint()).isEqualTo(first.checkpoint());
+                });
+        assertThat(repository.find("tenant-a", "test", "run-a")).contains(advanced);
+
+        assertThatThrownBy(() -> repository.findLeaseClaimResult(
+                "tenant-a", "test", "resume-request-1", SHA_C))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.IDEMPOTENCY_CONFLICT);
+        assertThat(repository.findLeaseClaimResult(
+                "tenant-b", "test", "resume-request-1", SHA_D)).isEmpty();
+    }
+
+    @Test
+    void ownerClaimAndSemanticAuditCommitOrRollBackAsOneTransaction() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.ResumeLeaseCommand command =
+                resumeCommand(expired, "resume-request-1", SHA_D, "instance-b");
+        TestSecurityEvent event = new TestSecurityEvent(0,
+                Instant.parse("2026-07-16T08:00:00Z"), "correlation-a", "tenant-a", "test",
+                "recovery-worker", "DURABLE_OWNER_CLAIM", "ALLOWED",
+                "RG.TEST.DURABLE_OWNER_CLAIM_AUTHORIZED", Map.of("runId", "run-a"));
+        TestRuntimeTransactionMutation boundAudit = securityEvents.boundAppend(event);
+
+        assertThatThrownBy(() -> repository.claimExpiredLeaseIdempotently(command, jdbc -> {
+            boundAudit.apply(jdbc);
+            throw new IllegalStateException("injected audit commit failure");
+        })).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("audit commit failure");
+        assertThat(repository.find("tenant-a", "test", "run-a")).contains(expired);
+        assertThat(repository.findLeaseClaimResult(
+                "tenant-a", "test", "resume-request-1", SHA_D)).isEmpty();
+        assertThat(securityEvents.recent(10)).isEmpty();
+
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult committed =
+                repository.claimExpiredLeaseIdempotently(command, boundAudit);
+
+        assertThat(committed.idempotentReplay()).isFalse();
+        assertThat(securityEvents.recent(10)).singleElement().satisfies(stored -> {
+            assertThat(stored.eventType()).isEqualTo("DURABLE_OWNER_CLAIM");
+            assertThat(stored.outcome()).isEqualTo("ALLOWED");
+            assertThat(stored.facts()).containsEntry("runId", "run-a");
+        });
+
+        TestSecurityEvent replayEvent = new TestSecurityEvent(0,
+                Instant.parse("2026-07-16T08:01:00Z"), "correlation-b", "tenant-a", "test",
+                "recovery-worker", "DURABLE_OWNER_CLAIM", "ALLOWED",
+                "RG.TEST.DURABLE_OWNER_CLAIM_REPLAY_AUTHORIZED", Map.of("runId", "run-a"));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult replay =
+                repository.claimExpiredLeaseIdempotently(
+                        command, securityEvents.boundAppend(replayEvent));
+
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(securityEvents.recent(10)).extracting(TestSecurityEvent::reasonCode)
+                .containsExactly("RG.TEST.DURABLE_OWNER_CLAIM_REPLAY_AUTHORIZED",
+                        "RG.TEST.DURABLE_OWNER_CLAIM_AUTHORIZED");
     }
 
     @Test

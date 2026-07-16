@@ -5,6 +5,7 @@ import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
 import com.leanowtech.bloge.gateway.integration.TestabilityAvailability;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableTestExecutionCheckpointRepository;
@@ -30,6 +31,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 
 import java.time.Duration;
+import java.util.UUID;
 
 /** Profile-gated composition root for the isolated test control plane. */
 @Configuration(proxyBeanMethods = false)
@@ -112,6 +114,43 @@ public class TestRuntimeConfiguration {
     TestSecurityEventRepository testSecurityEventRepository(TestRuntimeDatabase database,
                                                             ObjectMapper objectMapper) {
         return new DatabaseTestSecurityEventRepository(database.jdbc(), objectMapper);
+    }
+
+    /** Captures the stable, fail-closed identity policy used by durable recovery authorization. */
+    @Bean
+    DurableTestRecoveryAuthority durableTestRecoveryAuthority(
+            IntegrationRequestAuthenticator authenticator, ObjectMapper objectMapper) {
+        return new DurableTestRecoveryAuthority(authenticator, objectMapper);
+    }
+
+    /** Rebuilds the exact target, fixture, replay, authority, and plan closure before lease claim. */
+    @Bean
+    DurableTestRecoveryAuthorizer durableTestRecoveryAuthorizer(
+            GatewayGraphService graphService,
+            OperatorRegistry operatorRegistry,
+            ResourceRegistry resourceRegistry,
+            FixtureBundleRepository fixtureRepository,
+            TestReplayPayloadService replayPayloadService,
+            DurableTestRecoveryAuthority authority,
+            ObjectMapper objectMapper) {
+        return new DurableTestRecoveryAuthorizer(graphService, operatorRegistry, resourceRegistry,
+                fixtureRepository, replayPayloadService, authority, objectMapper);
+    }
+
+    /** Assembles the server-owned, idempotent durable lease ownership command boundary. */
+    @Bean
+    DurableTestOwnerClaimService durableTestOwnerClaimService(
+            DurableTestExecutionCheckpointRepository checkpoints,
+            DurableTestRecoveryAuthorizer authorizer,
+            TestSecurityEventRepository securityEvents,
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.durable.owner-claims.instance-id:}") String instanceId,
+            @Value("${gateway.testing.durable.owner-claims.lease-duration-seconds:120}")
+            long leaseDurationSeconds) {
+        String owner = instanceId == null || instanceId.isBlank()
+                ? "durable-recovery-" + UUID.randomUUID() : instanceId.trim();
+        return new DurableTestOwnerClaimService(checkpoints, authorizer, securityEvents,
+                objectMapper, owner, Duration.ofSeconds(leaseDurationSeconds));
     }
 
     /** Reuses the configured local or managed signer for independently verifiable test evidence. */

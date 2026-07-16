@@ -4,6 +4,8 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimRequest;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimResponse;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
@@ -35,7 +37,8 @@ class TestabilityCapabilitiesTest {
                 "fixtureBundle", "effectiveExecutionPlan", "executionServiceStateSnapshot",
                 "testRunEvidence",
                 "testEvidenceIntegrity",
-                "testGraphTargetDescriptor", "testOperatorExecutionRequest", "testOperatorTargetDescriptor");
+                "testGraphTargetDescriptor", "testOperatorExecutionRequest", "testOperatorTargetDescriptor",
+                "durableTestOwnerClaimRequest", "durableTestOwnerClaimResponse");
         assertThat(enabled.features()).containsEntry("operatorMicroGraphExecution", true)
                 .containsEntry("dynamicAttemptOccurrenceSelectors", true)
                 .containsEntry("immutableTestSuiteRegistry", true)
@@ -49,6 +52,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("abandonedSuiteRunReconciliation", true)
                 .containsEntry("governedTestReplayPayloadCapture", true)
                 .containsEntry("testReplayBehavior", true)
+                .containsEntry("durableTestOwnerClaim", true)
+                .containsEntry("durableRecoveryDependencyReauthorization", true)
                 .containsEntry("signedTestRunEvidence", false)
                 .containsEntry("suiteSignedChildEvidenceGate", false)
                 .containsEntry("signedTestSuiteRunAttestation", false)
@@ -71,6 +76,10 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.supportedObjects().get("testRunEvidence"))
                 .containsExactly(TestRunEvidence.SCHEMA_VERSION_V1,
                         TestRunEvidence.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("durableTestOwnerClaimRequest"))
+                .containsExactly(DurableTestOwnerClaimRequest.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("durableTestOwnerClaimResponse"))
+                .containsExactly(DurableTestOwnerClaimResponse.SCHEMA_VERSION);
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.path().equals("/api/testing/executions"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/graphs/{graphName}"));
@@ -78,6 +87,9 @@ class TestabilityCapabilitiesTest {
                 endpoint.path().equals("/api/testing/targets/operators/{operatorRef}"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/operators/{operatorRef}/executions"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
+                && endpoint.path().equals(
+                "/api/testing/durable-executions/{runId}/owner-claims"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("PUT") && endpoint.path().equals("/api/testing/suites/{suiteId}"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->

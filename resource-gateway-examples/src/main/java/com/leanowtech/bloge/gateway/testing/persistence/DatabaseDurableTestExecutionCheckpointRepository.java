@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository;
+import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
@@ -229,16 +230,22 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
 
     @Override
     public LeaseClaimResult claimExpiredLeaseIdempotently(ResumeLeaseCommand command) {
+        return claimExpiredLeaseIdempotently(command, TestRuntimeTransactionMutation.noop());
+    }
+
+    @Override
+    public LeaseClaimResult claimExpiredLeaseIdempotently(
+            ResumeLeaseCommand command,
+            TestRuntimeTransactionMutation companionMutation) {
         ResumeLeaseCommand requiredCommand = Objects.requireNonNull(command, "command");
-        Optional<LeaseClaimResult> existing = replayedCommand(requiredCommand);
-        if (existing.isPresent()) {
-            return existing.get();
-        }
+        TestRuntimeTransactionMutation requiredMutation = Objects.requireNonNull(
+                companionMutation, "companionMutation");
         try {
             return transactions.execute(status -> {
-                Optional<LeaseClaimResult> concurrent = replayedCommand(requiredCommand);
-                if (concurrent.isPresent()) {
-                    return concurrent.get();
+                Optional<LeaseClaimResult> existing = replayedCommand(requiredCommand);
+                if (existing.isPresent()) {
+                    requiredMutation.apply(jdbc);
+                    return existing.get();
                 }
                 Instant claimedAt = databaseNow();
                 DurableTestExecutionCheckpoint claimed;
@@ -250,16 +257,45 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     }
                     Optional<LeaseClaimResult> committed = replayedCommand(requiredCommand);
                     if (committed.isPresent()) {
+                        requiredMutation.apply(jdbc);
                         return committed.get();
                     }
                     throw stale;
                 }
                 insertResumeCommand(requiredCommand, claimed, claimedAt);
-                return new LeaseClaimResult(claimed, false);
+                LeaseClaimResult result = new LeaseClaimResult(claimed, false);
+                requiredMutation.apply(jdbc);
+                return result;
             });
         } catch (DataIntegrityViolationException concurrentCommand) {
-            return replayedCommand(requiredCommand).orElseThrow(() -> concurrentCommand);
+            return transactions.execute(status -> {
+                LeaseClaimResult replay = replayedCommand(requiredCommand)
+                        .orElseThrow(() -> concurrentCommand);
+                requiredMutation.apply(jdbc);
+                return replay;
+            });
         }
+    }
+
+    @Override
+    public Optional<LeaseClaimResult> findLeaseClaimResult(
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            String requestFingerprint) {
+        List<StoredResumeCommand> rows = findResumeCommands(
+                normalized(tenantId), normalizedEnvironment(environmentId),
+                normalized(clientRequestId));
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        StoredResumeCommand stored = rows.getFirst();
+        requireValidResumeCommandRecord(stored);
+        if (!stored.requestFingerprint().equals(normalized(requestFingerprint))) {
+            throw conflict(IDEMPOTENCY_CONFLICT,
+                    "clientRequestId already identifies different durable resume intent");
+        }
+        return Optional.of(new LeaseClaimResult(verifiedCommandResult(stored), true));
     }
 
     private DurableTestExecutionCheckpoint claimExpiredLeaseAt(LeaseClaim claim, Instant claimedAt) {
@@ -286,16 +322,8 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
 
     private Optional<LeaseClaimResult> replayedCommand(ResumeLeaseCommand command) {
         LeaseClaim claim = command.claim();
-        List<StoredResumeCommand> rows = jdbc.query("""
-                        SELECT tenant_id, environment_id, client_request_id, request_fingerprint,
-                               run_id, expected_owner_id, expected_lease_epoch, expected_revision,
-                               expected_checkpoint_fingerprint, claimant_owner_id,
-                               lease_duration_seconds, result_checkpoint_fingerprint,
-                               record_fingerprint, result_checkpoint_json, created_at
-                        FROM rg_test_durable_resume_commands
-                        WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
-                        """, this::mapResumeCommand, claim.tenantId(), claim.environmentId(),
-                command.clientRequestId());
+        List<StoredResumeCommand> rows = findResumeCommands(
+                claim.tenantId(), claim.environmentId(), command.clientRequestId());
         if (rows.isEmpty()) {
             return Optional.empty();
         }
@@ -306,6 +334,19 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     "clientRequestId already identifies different durable resume intent");
         }
         return Optional.of(new LeaseClaimResult(verifiedCommandResult(stored), true));
+    }
+
+    private List<StoredResumeCommand> findResumeCommands(
+            String tenantId, String environmentId, String clientRequestId) {
+        return jdbc.query("""
+                        SELECT tenant_id, environment_id, client_request_id, request_fingerprint,
+                               run_id, expected_owner_id, expected_lease_epoch, expected_revision,
+                               expected_checkpoint_fingerprint, claimant_owner_id,
+                               lease_duration_seconds, result_checkpoint_fingerprint,
+                               record_fingerprint, result_checkpoint_json, created_at
+                        FROM rg_test_durable_resume_commands
+                        WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                        """, this::mapResumeCommand, tenantId, environmentId, clientRequestId);
     }
 
     private void insertResumeCommand(ResumeLeaseCommand command,

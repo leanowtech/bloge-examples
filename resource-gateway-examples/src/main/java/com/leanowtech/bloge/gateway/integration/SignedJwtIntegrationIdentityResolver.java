@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.security.Signature;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -106,6 +108,8 @@ public final class SignedJwtIntegrationIdentityResolver implements IntegrationId
         properties.put("maximumTokenLifetimeSeconds", maximumLifetime.toSeconds());
         properties.put("clockSkewSeconds", clockSkew.toSeconds());
         properties.put("trustSourceType", snapshot.sourceType());
+        properties.put("issuerFingerprint", textFingerprint(issuer));
+        properties.put("audienceFingerprint", textFingerprint(audience));
         properties.put("dynamicRefreshSupported", snapshot.sourceType().equals("DYNAMIC_JWKS"));
         if (snapshot.sourceType().equals("DYNAMIC_JWKS")) {
             properties.put("refreshState", snapshot.refreshState());
@@ -125,6 +129,16 @@ public final class SignedJwtIntegrationIdentityResolver implements IntegrationId
         }
         String claimsSource = snapshot.sourceType().equals("DYNAMIC_JWKS") ? "DYNAMIC_JWKS" : "VERIFIED_TOKEN";
         return new Descriptor("SIGNED_JWT", claimsSource, snapshot.available(), false, true, properties);
+    }
+
+    private static String textFingerprint(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(
+                    value.getBytes(StandardCharsets.UTF_8));
+            return "sha256:" + java.util.HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException unavailable) {
+            throw new IllegalStateException("SHA-256 is unavailable", unavailable);
+        }
     }
 
     private Resolution verify(String credential) throws java.security.GeneralSecurityException {

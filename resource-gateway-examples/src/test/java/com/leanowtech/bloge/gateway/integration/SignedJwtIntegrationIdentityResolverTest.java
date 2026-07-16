@@ -59,7 +59,11 @@ class SignedJwtIntegrationIdentityResolverTest {
                 .containsEntry("trustedKeyCount", 1)
                 .containsEntry("tokenRevocationSupported", true)
                 .containsEntry("organizationGroupClaimsSupported", true)
-                .containsEntry("issuerAttestedDelegationGrantSupported", true);
+                .containsEntry("issuerAttestedDelegationGrantSupported", true)
+                .hasEntrySatisfying("issuerFingerprint", value ->
+                        assertThat(value).asString().matches("sha256:[a-f0-9]{64}"))
+                .hasEntrySatisfying("audienceFingerprint", value ->
+                        assertThat(value).asString().matches("sha256:[a-f0-9]{64}"));
     }
 
     @Test

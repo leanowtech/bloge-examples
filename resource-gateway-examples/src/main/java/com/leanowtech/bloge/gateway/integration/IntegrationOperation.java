@@ -1,7 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
-import java.util.Set;
 import java.util.Locale;
+import java.util.Set;
 
 /** Central operation-to-purpose policy for the Tool Studio integration surface. */
 public enum IntegrationOperation {
@@ -21,6 +21,7 @@ public enum IntegrationOperation {
     GATE_RESULT_READ(Set.of("GOVERNANCE_EVIDENCE_INGESTION", "GOVERNANCE_GATE_FEEDBACK")),
     CHANGE_SYNC(Set.of("CHANGE_SYNC")),
     TEST_EXECUTION(Set.of("TEST_EXECUTION", "TEST_REPLAY")),
+    TEST_DURABLE_OWNER_CLAIM(Set.of("TEST_EXECUTION", "TEST_REPLAY")),
     TEST_TARGET_READ(Set.of("TEST_EXECUTION", "TEST_FIXTURE_READ", "TEST_FIXTURE_WRITE",
             "TEST_SUITE_READ", "TEST_SUITE_WRITE")),
     TEST_FIXTURE_READ(Set.of("TEST_FIXTURE_READ")),

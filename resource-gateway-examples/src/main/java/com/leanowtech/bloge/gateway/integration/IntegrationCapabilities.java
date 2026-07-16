@@ -244,6 +244,10 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.TestOperatorExecutionApiRequest.SCHEMA_VERSION));
             objects.put("testOperatorTargetDescriptor", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestOperatorTargetDescriptor.SCHEMA_VERSION));
+            objects.put("durableTestOwnerClaimRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimRequest.SCHEMA_VERSION));
+            objects.put("durableTestOwnerClaimResponse", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimResponse.SCHEMA_VERSION));
         }
 
         Map<String, Boolean> features = new LinkedHashMap<>();
@@ -342,6 +346,8 @@ public record IntegrationCapabilities(
         features.put("abandonedSuiteRunReconciliation", testExecutionEndpointEnabled);
         features.put("governedTestReplayPayloadCapture", testExecutionEndpointEnabled);
         features.put("testReplayBehavior", testExecutionEndpointEnabled);
+        features.put("durableTestOwnerClaim", testExecutionEndpointEnabled);
+        features.put("durableRecoveryDependencyReauthorization", testExecutionEndpointEnabled);
         features.put("signedTestRunEvidence", testExecutionEndpointEnabled && signer.available());
         features.put("suiteSignedChildEvidenceGate", testExecutionEndpointEnabled && signer.available());
         features.put("signedTestSuiteRunAttestation",
@@ -385,6 +391,8 @@ public record IntegrationCapabilities(
             endpoints.add(new Endpoint("POST", "/api/testing/targets/operators/{operatorRef}/executions"));
             endpoints.add(new Endpoint("POST", "/api/testing/executions/batch"));
             endpoints.add(new Endpoint("GET", "/api/testing/executions/{runId}"));
+            endpoints.add(new Endpoint("POST",
+                    "/api/testing/durable-executions/{runId}/owner-claims"));
             endpoints.add(new Endpoint("PUT", "/api/testing/fixture-bundles/{fixtureBundleId}"));
             endpoints.add(new Endpoint("GET", "/api/testing/fixture-bundles/{fixtureBundleId}"));
             endpoints.add(new Endpoint("PUT", "/api/testing/replay-payloads/{replayPayloadId}"));
