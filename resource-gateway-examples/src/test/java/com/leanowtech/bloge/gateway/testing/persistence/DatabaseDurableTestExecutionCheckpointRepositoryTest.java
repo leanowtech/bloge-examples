@@ -79,6 +79,175 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     }
 
     @Test
+    void reservesOnePayloadFreeCreationIdentityAndReportsConcurrentPreparation() {
+        var first = repository.reserveInitialCreation(creationCommand(
+                "create-1", SHA_A, SHA_B, "creator-a", "run-created", "engine-created",
+                Duration.ofMinutes(2)));
+        var concurrent = repository.reserveInitialCreation(creationCommand(
+                "create-1", SHA_A, SHA_B, "creator-b", "run-discarded", "engine-discarded",
+                Duration.ofMinutes(2)));
+
+        assertThat(first.acquired()).isTrue();
+        assertThat(first.reservation().state())
+                .isEqualTo(DurableTestExecutionCheckpointRepository.InitialCreationState.PENDING);
+        assertThat(first.reservation().runId()).isEqualTo("run-created");
+        assertThat(first.reservation().engineExecutionId()).isEqualTo("engine-created");
+        assertThat(first.reservation().leaseEpoch()).isEqualTo(1);
+        assertThat(concurrent.acquired()).isFalse();
+        assertThat(concurrent.reservation()).isEqualTo(first.reservation());
+        assertThat(repository.findInitialCreationResult(
+                "tenant-a", "test", "create-1", SHA_A)).isEmpty();
+
+        Map<String, Object> stored = database.jdbc().queryForMap("""
+                SELECT request_fingerprint, authorization_fingerprint, run_id,
+                       engine_execution_id, state, result_checkpoint_json
+                FROM rg_test_durable_creation_commands WHERE client_request_id = ?
+                """, "create-1");
+        assertThat(stored).containsEntry("REQUEST_FINGERPRINT", SHA_A)
+                .containsEntry("AUTHORIZATION_FINGERPRINT", SHA_B)
+                .containsEntry("RUN_ID", "run-created")
+                .containsEntry("ENGINE_EXECUTION_ID", "engine-created")
+                .containsEntry("STATE", "PENDING")
+                .containsEntry("RESULT_CHECKPOINT_JSON", null);
+    }
+
+    @Test
+    void creationReservationRejectsScopedKeyReuseForDifferentIntent() {
+        repository.reserveInitialCreation(creationCommand(
+                "create-1", SHA_A, SHA_B, "creator-a", "run-created", "engine-created",
+                Duration.ofMinutes(2)));
+
+        assertThatThrownBy(() -> repository.reserveInitialCreation(creationCommand(
+                "create-1", SHA_C, SHA_B, "creator-b", "run-other", "engine-other",
+                Duration.ofMinutes(2))))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.IDEMPOTENCY_CONFLICT);
+        assertThatThrownBy(() -> repository.findInitialCreationResult(
+                "tenant-a", "test", "create-1", SHA_C))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.IDEMPOTENCY_CONFLICT);
+    }
+
+    @Test
+    void expiredCreationReservationIsFencedWithoutChangingAssignedIdentities()
+            throws InterruptedException {
+        var first = repository.reserveInitialCreation(creationCommand(
+                "create-1", SHA_A, SHA_B, "creator-a", "run-created", "engine-created",
+                Duration.ofSeconds(1)));
+        Thread.sleep(1_100);
+
+        var acquired = repository.reserveInitialCreation(creationCommand(
+                "create-1", SHA_A, SHA_B, "creator-b", "run-discarded", "engine-discarded",
+                Duration.ofMinutes(2)));
+
+        assertThat(acquired.acquired()).isTrue();
+        assertThat(acquired.reservation().ownerId()).isEqualTo("creator-b");
+        assertThat(acquired.reservation().leaseEpoch()).isEqualTo(2);
+        assertThat(acquired.reservation().runId()).isEqualTo(first.reservation().runId());
+        assertThat(acquired.reservation().engineExecutionId())
+                .isEqualTo(first.reservation().engineExecutionId());
+        assertThat(acquired.reservation().recordFingerprint())
+                .isNotEqualTo(first.reservation().recordFingerprint());
+    }
+
+    @Test
+    void creationCheckpointEngineAggregateAndAuditCommitOrRollBackTogether() {
+        var acquired = repository.reserveInitialCreation(creationCommand(
+                "create-1", SHA_A, SHA_B, "creator-a", "run-created", "engine-created",
+                Duration.ofMinutes(2)));
+        DurableTestExecutionCheckpoint initial = initialCheckpoint(acquired.reservation());
+        TestSecurityEvent event = new TestSecurityEvent(0, Instant.now(), "correlation-a",
+                "tenant-a", "test", "runner", "DURABLE_EXECUTION_CREATE", "ALLOWED",
+                "RG.TEST.DURABLE_CREATE_AUTHORIZED", Map.of("runId", "run-created"));
+        TestRuntimeTransactionMutation audit = securityEvents.boundAppend(event);
+
+        assertThatThrownBy(() -> repository.commitInitialCreation(
+                acquired.reservation(), initial,
+                mutation(initial, jdbc -> jdbc.update(
+                        "INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
+                        "initial-create", initial.engineExecutionId(),
+                        initial.engineState().stateVersion())), jdbc -> {
+                    audit.apply(jdbc);
+                    throw new IllegalStateException("injected creation audit failure");
+                })).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("creation audit failure");
+        assertThat(repository.find("tenant-a", "test", "run-created")).isEmpty();
+        assertThat(engineCandidateCount("initial-create")).isZero();
+        assertThat(securityEvents.recent(10)).isEmpty();
+
+        var committed = repository.commitInitialCreation(
+                acquired.reservation(), initial,
+                mutation(initial, jdbc -> jdbc.update(
+                        "INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
+                        "initial-create", initial.engineExecutionId(),
+                        initial.engineState().stateVersion())), audit);
+
+        assertThat(committed.reservation().state())
+                .isEqualTo(DurableTestExecutionCheckpointRepository.InitialCreationState.COMMITTED);
+        assertThat(committed.checkpoint()).isEqualTo(initial);
+        assertThat(committed.idempotentReplay()).isFalse();
+        assertThat(repository.find("tenant-a", "test", "run-created")).contains(initial);
+        assertThat(engineCandidateCount("initial-create")).isEqualTo(1);
+        assertThat(securityEvents.recent(10)).singleElement();
+    }
+
+    @Test
+    void committedCreationReplaysOriginalInitialCheckpointWithoutReapplyingEngineMutation() {
+        var acquired = repository.reserveInitialCreation(creationCommand(
+                "create-1", SHA_A, SHA_B, "creator-a", "run-created", "engine-created",
+                Duration.ofMinutes(2)));
+        DurableTestExecutionCheckpoint initial = initialCheckpoint(acquired.reservation());
+        repository.commitInitialCreation(acquired.reservation(), initial,
+                boundNoop(initial), TestRuntimeTransactionMutation.noop());
+        AtomicBoolean replayMutationRan = new AtomicBoolean();
+
+        var replay = repository.commitInitialCreation(
+                acquired.reservation(), initial,
+                mutation(initial, ignored -> replayMutationRan.set(true)),
+                TestRuntimeTransactionMutation.noop());
+        var lookedUp = repository.findInitialCreationResult(
+                "tenant-a", "test", "create-1", SHA_A).orElseThrow();
+
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(replay.checkpoint()).isEqualTo(initial);
+        assertThat(lookedUp.idempotentReplay()).isTrue();
+        assertThat(lookedUp.checkpoint()).isEqualTo(initial);
+        assertThat(replayMutationRan).isFalse();
+    }
+
+    @Test
+    void deterministicCreationRejectionIsImmutableAndPayloadFree() {
+        var acquired = repository.reserveInitialCreation(creationCommand(
+                "create-1", SHA_A, SHA_B, "creator-a", "run-created", "engine-created",
+                Duration.ofMinutes(2)));
+
+        var rejected = repository.rejectInitialCreation(
+                acquired.reservation(), "INITIAL_BOUNDARY_UNSUPPORTED",
+                TestRuntimeTransactionMutation.noop());
+        var replay = repository.rejectInitialCreation(
+                acquired.reservation(), "INITIAL_BOUNDARY_UNSUPPORTED",
+                TestRuntimeTransactionMutation.noop());
+
+        assertThat(rejected.reservation().state())
+                .isEqualTo(DurableTestExecutionCheckpointRepository.InitialCreationState.REJECTED);
+        assertThat(rejected.reservation().rejectionCode())
+                .isEqualTo("INITIAL_BOUNDARY_UNSUPPORTED");
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(replay.checkpoint()).isNull();
+        assertThatThrownBy(() -> repository.rejectInitialCreation(
+                acquired.reservation(), "DIFFERENT_REASON",
+                TestRuntimeTransactionMutation.noop()))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.IDEMPOTENCY_CONFLICT);
+    }
+
+    @Test
     void createsAndAdvancesControlAndEngineStateInOneTransaction() {
         DurableTestExecutionCheckpoint initial = checkpoint(0, "checkpoint-0");
         repository.create(initial, mutation(initial, jdbc -> jdbc.update(
@@ -1575,6 +1744,38 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                 action.accept(jdbc);
             }
         };
+    }
+
+    private DurableTestExecutionCheckpointRepository.InitialCreationCommand creationCommand(
+            String clientRequestId,
+            String requestFingerprint,
+            String authorizationFingerprint,
+            String ownerId,
+            String runId,
+            String engineExecutionId,
+            Duration leaseDuration) {
+        return new DurableTestExecutionCheckpointRepository.InitialCreationCommand(
+                clientRequestId, requestFingerprint, authorizationFingerprint,
+                new DurableTestExecutionCheckpoint.Scope(
+                        "tenant-a", "org-a", "project-a", "test", "runner"),
+                runId, engineExecutionId, ownerId, leaseDuration);
+    }
+
+    private DurableTestExecutionCheckpoint initialCheckpoint(
+            DurableTestExecutionCheckpointRepository.InitialCreationReservation reservation) {
+        DurableTestExecutionCheckpoint base = checkpoint(0, "checkpoint-base");
+        return integrity.seal(new DurableTestExecutionCheckpoint(
+                DurableTestExecutionCheckpoint.SCHEMA_VERSION, reservation.scope(),
+                reservation.runId(), reservation.engineExecutionId(), base.dependencies(),
+                base.fixtureConsumptionState(), base.executionServiceState(),
+                new DurableTestExecutionCheckpoint.EngineState(
+                        "checkpoint-initial", "approval", "SUSPEND", 1, 2,
+                        ProtocolFingerprint.ofText("initial-engine-closure")),
+                new DurableTestExecutionCheckpoint.Lifecycle(
+                        DurableTestExecutionCheckpoint.Status.SUSPENDED,
+                        reservation.ownerId(), reservation.leaseEpoch(), 0,
+                        reservation.createdAt(), reservation.updatedAt(),
+                        reservation.leaseExpiresAt()), ""));
     }
 
     private DurableTestExecutionCheckpoint checkpoint(long revision, String checkpointRef) {

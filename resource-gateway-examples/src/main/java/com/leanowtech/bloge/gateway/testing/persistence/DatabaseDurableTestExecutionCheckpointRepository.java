@@ -78,6 +78,31 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
     @PostConstruct
     public void init() {
         jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_creation_commands (
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(32) NOT NULL,
+                    client_request_id VARCHAR(255) NOT NULL,
+                    request_fingerprint VARCHAR(80) NOT NULL,
+                    authorization_fingerprint VARCHAR(80) NOT NULL,
+                    organization_id VARCHAR(255) NOT NULL,
+                    project_id VARCHAR(255) NOT NULL,
+                    actor_id VARCHAR(255) NOT NULL,
+                    run_id VARCHAR(255) NOT NULL UNIQUE,
+                    engine_execution_id VARCHAR(255) NOT NULL UNIQUE,
+                    owner_id VARCHAR(255) NOT NULL,
+                    lease_epoch BIGINT NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    lease_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    state VARCHAR(32) NOT NULL,
+                    rejection_code VARCHAR(128) NOT NULL,
+                    result_checkpoint_fingerprint VARCHAR(80) NOT NULL,
+                    result_checkpoint_json CLOB,
+                    record_fingerprint VARCHAR(80) NOT NULL,
+                    PRIMARY KEY (tenant_id, environment_id, client_request_id)
+                )
+                """);
+        jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS rg_test_durable_execution_checkpoints (
                     run_id VARCHAR(255) PRIMARY KEY,
                     engine_execution_id VARCHAR(255) NOT NULL UNIQUE,
@@ -237,6 +262,198 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     tenant_id, environment_id, run_id, result_checkpoint_fingerprint
                 )
                 """);
+    }
+
+    @Override
+    public InitialCreationReservationResult reserveInitialCreation(
+            InitialCreationCommand command) {
+        InitialCreationCommand requiredCommand = Objects.requireNonNull(command, "command");
+        try {
+            return transactions.execute(status -> reserveInitialCreationInTransaction(
+                    requiredCommand));
+        } catch (DataIntegrityViolationException concurrentInsert) {
+            return transactions.execute(status -> {
+                List<StoredInitialCreation> rows = findInitialCreations(
+                        requiredCommand.scope().tenantId(),
+                        requiredCommand.scope().environmentId(),
+                        requiredCommand.clientRequestId(), true);
+                if (rows.isEmpty()) {
+                    throw concurrentInsert;
+                }
+                return resolveInitialCreation(requiredCommand, rows.getFirst(), databaseNow());
+            });
+        }
+    }
+
+    @Override
+    public Optional<InitialCreationReservationResult> findInitialCreationResult(
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            String requestFingerprint) {
+        List<StoredInitialCreation> rows = findInitialCreations(
+                normalized(tenantId), normalizedEnvironment(environmentId),
+                normalized(clientRequestId), false);
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        StoredInitialCreation stored = rows.getFirst();
+        requireValidInitialCreationRecord(stored);
+        if (!stored.requestFingerprint().equals(normalized(requestFingerprint))) {
+            throw conflict(IDEMPOTENCY_CONFLICT,
+                    "clientRequestId already identifies different durable creation intent");
+        }
+        if (stored.state() == InitialCreationState.PENDING) {
+            return Optional.empty();
+        }
+        return Optional.of(initialCreationResult(stored, false, true));
+    }
+
+    @Override
+    public InitialCreationReservationResult commitInitialCreation(
+            InitialCreationReservation reservation,
+            DurableTestExecutionCheckpoint checkpoint,
+            BoundEngineStateMutation engineStateMutation,
+            TestRuntimeTransactionMutation companionMutation) {
+        InitialCreationReservation requiredReservation = Objects.requireNonNull(
+                reservation, "reservation");
+        DurableTestExecutionCheckpoint requiredCheckpoint = Objects.requireNonNull(
+                checkpoint, "checkpoint");
+        BoundEngineStateMutation requiredEngineMutation = Objects.requireNonNull(
+                engineStateMutation, "engineStateMutation");
+        TestRuntimeTransactionMutation requiredCompanion = Objects.requireNonNull(
+                companionMutation, "companionMutation");
+        requireSealed(requiredCheckpoint);
+        requireMutationBinding(requiredCheckpoint, requiredEngineMutation);
+        requireInitialCheckpointBinding(requiredReservation, requiredCheckpoint);
+        return transactions.execute(status -> {
+            StoredInitialCreation stored = requireInitialCreation(requiredReservation, true);
+            if (stored.state() == InitialCreationState.COMMITTED) {
+                requiredCompanion.apply(jdbc);
+                return initialCreationResult(stored, false, true);
+            }
+            if (stored.state() != InitialCreationState.PENDING
+                    || !stored.recordFingerprint().equals(
+                    requiredReservation.recordFingerprint())) {
+                throw conflict(STALE_FENCE,
+                        "Durable creation reservation changed before commit");
+            }
+            Instant committedAt = databaseNow();
+            requireLiveInitialCreation(stored, committedAt);
+            insert(requiredCheckpoint);
+            requiredEngineMutation.apply(jdbc);
+            StoredInitialCreation committed = stored.committed(
+                    requiredCheckpoint.checkpointFingerprint(), write(requiredCheckpoint),
+                    committedAt, initialCreationRecordFingerprint(
+                    stored.scope(), stored.clientRequestId(), stored.requestFingerprint(),
+                    stored.authorizationFingerprint(), stored.runId(),
+                    stored.engineExecutionId(), stored.ownerId(), stored.leaseEpoch(),
+                    stored.createdAt(), committedAt, stored.leaseExpiresAt(),
+                    InitialCreationState.COMMITTED, "",
+                    requiredCheckpoint.checkpointFingerprint()));
+            if (updateInitialCreation(committed, stored) != 1) {
+                throw conflict(STALE_FENCE,
+                        "Durable creation reservation changed concurrently");
+            }
+            requiredCompanion.apply(jdbc);
+            return initialCreationResult(committed, false, false);
+        });
+    }
+
+    @Override
+    public InitialCreationReservationResult rejectInitialCreation(
+            InitialCreationReservation reservation,
+            String rejectionCode,
+            TestRuntimeTransactionMutation companionMutation) {
+        InitialCreationReservation requiredReservation = Objects.requireNonNull(
+                reservation, "reservation");
+        String requiredCode = normalized(rejectionCode).toUpperCase(java.util.Locale.ROOT);
+        TestRuntimeTransactionMutation requiredCompanion = Objects.requireNonNull(
+                companionMutation, "companionMutation");
+        return transactions.execute(status -> {
+            StoredInitialCreation stored = requireInitialCreation(requiredReservation, true);
+            if (stored.state() == InitialCreationState.REJECTED) {
+                if (!stored.rejectionCode().equals(requiredCode)) {
+                    throw conflict(IDEMPOTENCY_CONFLICT,
+                            "Durable creation already records a different rejection");
+                }
+                requiredCompanion.apply(jdbc);
+                return initialCreationResult(stored, false, true);
+            }
+            if (stored.state() != InitialCreationState.PENDING
+                    || !stored.recordFingerprint().equals(
+                    requiredReservation.recordFingerprint())) {
+                throw conflict(STALE_FENCE,
+                        "Durable creation reservation changed before rejection");
+            }
+            Instant rejectedAt = databaseNow();
+            requireLiveInitialCreation(stored, rejectedAt);
+            String recordFingerprint = initialCreationRecordFingerprint(
+                    stored.scope(), stored.clientRequestId(), stored.requestFingerprint(),
+                    stored.authorizationFingerprint(), stored.runId(),
+                    stored.engineExecutionId(), stored.ownerId(), stored.leaseEpoch(),
+                    stored.createdAt(), rejectedAt, stored.leaseExpiresAt(),
+                    InitialCreationState.REJECTED, requiredCode, "");
+            StoredInitialCreation rejected = stored.rejected(
+                    requiredCode, rejectedAt, recordFingerprint);
+            toInitialCreationReservation(rejected);
+            if (updateInitialCreation(rejected, stored) != 1) {
+                throw conflict(STALE_FENCE,
+                        "Durable creation reservation changed concurrently");
+            }
+            requiredCompanion.apply(jdbc);
+            return initialCreationResult(rejected, false, false);
+        });
+    }
+
+    private InitialCreationReservationResult reserveInitialCreationInTransaction(
+            InitialCreationCommand command) {
+        List<StoredInitialCreation> rows = findInitialCreations(
+                command.scope().tenantId(), command.scope().environmentId(),
+                command.clientRequestId(), true);
+        Instant observedAt = databaseNow();
+        if (rows.isEmpty()) {
+            StoredInitialCreation created = newInitialCreation(command, observedAt);
+            insertInitialCreation(created);
+            return initialCreationResult(created, true, false);
+        }
+        return resolveInitialCreation(command, rows.getFirst(), observedAt);
+    }
+
+    private InitialCreationReservationResult resolveInitialCreation(
+            InitialCreationCommand command,
+            StoredInitialCreation stored,
+            Instant observedAt) {
+        requireValidInitialCreationRecord(stored);
+        if (!stored.matches(command)) {
+            throw conflict(IDEMPOTENCY_CONFLICT,
+                    "clientRequestId already identifies different durable creation intent");
+        }
+        if (stored.state() != InitialCreationState.PENDING) {
+            return initialCreationResult(stored, false, true);
+        }
+        if (stored.leaseExpiresAt().isAfter(observedAt)) {
+            return initialCreationResult(stored, false, false);
+        }
+        if (stored.leaseEpoch() == Long.MAX_VALUE) {
+            throw conflict(INVALID_TRANSITION,
+                    "Durable creation reservation lease epoch cannot advance");
+        }
+        Instant leaseExpiresAt = observedAt.plus(command.leaseDuration());
+        long leaseEpoch = stored.leaseEpoch() + 1;
+        String recordFingerprint = initialCreationRecordFingerprint(
+                stored.scope(), stored.clientRequestId(), stored.requestFingerprint(),
+                stored.authorizationFingerprint(), stored.runId(), stored.engineExecutionId(),
+                command.claimantOwnerId(), leaseEpoch, stored.createdAt(), observedAt,
+                leaseExpiresAt, InitialCreationState.PENDING, "", "");
+        StoredInitialCreation acquired = stored.acquired(
+                command.claimantOwnerId(), leaseEpoch, observedAt, leaseExpiresAt,
+                recordFingerprint);
+        if (updateInitialCreation(acquired, stored) != 1) {
+            throw conflict(STALE_FENCE,
+                    "Durable creation reservation changed concurrently");
+        }
+        return initialCreationResult(acquired, true, false);
     }
 
     @Override
@@ -1442,6 +1659,270 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 claim.expectedCheckpointFingerprint(), Timestamp.from(claimedAt));
     }
 
+    private StoredInitialCreation newInitialCreation(
+            InitialCreationCommand command, Instant createdAt) {
+        Instant leaseExpiresAt = createdAt.plus(command.leaseDuration());
+        String fingerprint = initialCreationRecordFingerprint(
+                command.scope(), command.clientRequestId(), command.requestFingerprint(),
+                command.authorizationFingerprint(), command.proposedRunId(),
+                command.proposedEngineExecutionId(), command.claimantOwnerId(), 1,
+                createdAt, createdAt, leaseExpiresAt, InitialCreationState.PENDING, "", "");
+        return new StoredInitialCreation(
+                command.scope().tenantId(), command.scope().environmentId(),
+                command.clientRequestId(), command.requestFingerprint(),
+                command.authorizationFingerprint(), command.scope().organizationId(),
+                command.scope().projectId(), command.scope().actorId(),
+                command.proposedRunId(), command.proposedEngineExecutionId(),
+                command.claimantOwnerId(), 1, createdAt, createdAt, leaseExpiresAt,
+                InitialCreationState.PENDING, "", "", null, fingerprint);
+    }
+
+    private void insertInitialCreation(StoredInitialCreation stored) {
+        jdbc.update("""
+                INSERT INTO rg_test_durable_creation_commands (
+                    tenant_id, environment_id, client_request_id, request_fingerprint,
+                    authorization_fingerprint, organization_id, project_id, actor_id,
+                    run_id, engine_execution_id, owner_id, lease_epoch, created_at,
+                    updated_at, lease_expires_at, state, rejection_code,
+                    result_checkpoint_fingerprint, result_checkpoint_json, record_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, stored.tenantId(), stored.environmentId(), stored.clientRequestId(),
+                stored.requestFingerprint(), stored.authorizationFingerprint(),
+                stored.organizationId(), stored.projectId(), stored.actorId(), stored.runId(),
+                stored.engineExecutionId(), stored.ownerId(), stored.leaseEpoch(),
+                Timestamp.from(stored.createdAt()), Timestamp.from(stored.updatedAt()),
+                Timestamp.from(stored.leaseExpiresAt()), stored.state().name(),
+                stored.rejectionCode(), stored.resultCheckpointFingerprint(),
+                stored.resultCheckpointJson(), stored.recordFingerprint());
+    }
+
+    private int updateInitialCreation(
+            StoredInitialCreation next, StoredInitialCreation current) {
+        return jdbc.update("""
+                UPDATE rg_test_durable_creation_commands
+                SET owner_id = ?, lease_epoch = ?, updated_at = ?, lease_expires_at = ?,
+                    state = ?, rejection_code = ?, result_checkpoint_fingerprint = ?,
+                    result_checkpoint_json = ?, record_fingerprint = ?
+                WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                  AND record_fingerprint = ? AND state = ?
+                """, next.ownerId(), next.leaseEpoch(), Timestamp.from(next.updatedAt()),
+                Timestamp.from(next.leaseExpiresAt()), next.state().name(),
+                next.rejectionCode(), next.resultCheckpointFingerprint(),
+                next.resultCheckpointJson(), next.recordFingerprint(), current.tenantId(),
+                current.environmentId(), current.clientRequestId(), current.recordFingerprint(),
+                current.state().name());
+    }
+
+    private List<StoredInitialCreation> findInitialCreations(
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            boolean lock) {
+        String suffix = lock ? " FOR UPDATE" : "";
+        return jdbc.query("""
+                        SELECT tenant_id, environment_id, client_request_id,
+                               request_fingerprint, authorization_fingerprint,
+                               organization_id, project_id, actor_id, run_id,
+                               engine_execution_id, owner_id, lease_epoch, created_at,
+                               updated_at, lease_expires_at, state, rejection_code,
+                               result_checkpoint_fingerprint, result_checkpoint_json,
+                               record_fingerprint
+                        FROM rg_test_durable_creation_commands
+                        WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                        """ + suffix, this::mapInitialCreation,
+                tenantId, environmentId, clientRequestId);
+    }
+
+    private StoredInitialCreation requireInitialCreation(
+            InitialCreationReservation reservation, boolean lock) {
+        List<StoredInitialCreation> rows = findInitialCreations(
+                reservation.scope().tenantId(), reservation.scope().environmentId(),
+                reservation.clientRequestId(), lock);
+        if (rows.isEmpty()) {
+            throw conflict(STALE_FENCE,
+                    "Durable creation reservation no longer exists");
+        }
+        StoredInitialCreation stored = rows.getFirst();
+        requireValidInitialCreationRecord(stored);
+        if (!stored.matches(reservation)) {
+            throw conflict(IDEMPOTENCY_CONFLICT,
+                    "Durable creation reservation intent does not match stored command");
+        }
+        return stored;
+    }
+
+    private void requireLiveInitialCreation(
+            StoredInitialCreation stored, Instant observedAt) {
+        if (!stored.leaseExpiresAt().isAfter(observedAt)) {
+            throw conflict(LEASE_EXPIRED,
+                    "Durable creation reservation lease expired before commit");
+        }
+        if (observedAt.isBefore(stored.updatedAt())) {
+            throw new IllegalStateException(
+                    "Test-runtime database clock moved behind the creation reservation");
+        }
+    }
+
+    private void requireInitialCheckpointBinding(
+            InitialCreationReservation reservation,
+            DurableTestExecutionCheckpoint checkpoint) {
+        var lifecycle = checkpoint.lifecycle();
+        if (!DurableTestExecutionCheckpoint.SCHEMA_VERSION.equals(
+                checkpoint.schemaVersion())
+                || !reservation.scope().equals(checkpoint.scope())
+                || !reservation.runId().equals(checkpoint.runId())
+                || !reservation.engineExecutionId().equals(
+                checkpoint.engineExecutionId())
+                || lifecycle.status() != DurableTestExecutionCheckpoint.Status.SUSPENDED
+                || !reservation.ownerId().equals(lifecycle.ownerId())
+                || reservation.leaseEpoch() != lifecycle.leaseEpoch()
+                || lifecycle.revision() != 0
+                || !reservation.createdAt().equals(lifecycle.createdAt())
+                || !reservation.updatedAt().equals(lifecycle.updatedAt())
+                || !reservation.leaseExpiresAt().equals(lifecycle.leaseExpiresAt())
+                || !"SUSPEND".equals(checkpoint.engineState().boundaryType())
+                || checkpoint.engineState().boundarySequence() != 1) {
+            throw conflict(INVALID_TRANSITION,
+                    "Initial durable checkpoint does not bind its creation reservation");
+        }
+    }
+
+    private InitialCreationReservationResult initialCreationResult(
+            StoredInitialCreation stored,
+            boolean acquired,
+            boolean idempotentReplay) {
+        InitialCreationReservation reservation = toInitialCreationReservation(stored);
+        DurableTestExecutionCheckpoint checkpoint = null;
+        if (stored.state() == InitialCreationState.COMMITTED) {
+            checkpoint = readInitialCreationCheckpoint(stored);
+        }
+        return new InitialCreationReservationResult(
+                reservation, checkpoint, acquired, idempotentReplay);
+    }
+
+    private InitialCreationReservation toInitialCreationReservation(
+            StoredInitialCreation stored) {
+        requireValidInitialCreationRecord(stored);
+        return new InitialCreationReservation(
+                InitialCreationReservation.SCHEMA_VERSION, stored.scope(),
+                stored.clientRequestId(), stored.requestFingerprint(),
+                stored.authorizationFingerprint(), stored.runId(),
+                stored.engineExecutionId(), stored.ownerId(), stored.leaseEpoch(),
+                stored.createdAt(), stored.updatedAt(), stored.leaseExpiresAt(),
+                stored.state(), stored.rejectionCode(),
+                stored.resultCheckpointFingerprint(), stored.recordFingerprint());
+    }
+
+    private DurableTestExecutionCheckpoint readInitialCreationCheckpoint(
+            StoredInitialCreation stored) {
+        try {
+            DurableTestExecutionCheckpoint checkpoint = objectMapper.readValue(
+                    stored.resultCheckpointJson(), DurableTestExecutionCheckpoint.class);
+            integrity.requireValid(checkpoint);
+            if (!stored.resultCheckpointFingerprint().equals(
+                    checkpoint.checkpointFingerprint())
+                    || !stored.runId().equals(checkpoint.runId())
+                    || !stored.engineExecutionId().equals(
+                    checkpoint.engineExecutionId())
+                    || !stored.scope().equals(checkpoint.scope())) {
+                throw new IllegalArgumentException(
+                        "Creation checkpoint does not agree with its command record");
+            }
+            return checkpoint;
+        } catch (JsonProcessingException | IllegalArgumentException corrupt) {
+            throw new IllegalStateException(
+                    "Stored durable creation checkpoint is corrupt", corrupt);
+        }
+    }
+
+    private StoredInitialCreation mapInitialCreation(ResultSet rs, int rowNumber)
+            throws SQLException {
+        return new StoredInitialCreation(
+                rs.getString("tenant_id"), rs.getString("environment_id"),
+                rs.getString("client_request_id"), rs.getString("request_fingerprint"),
+                rs.getString("authorization_fingerprint"),
+                rs.getString("organization_id"), rs.getString("project_id"),
+                rs.getString("actor_id"), rs.getString("run_id"),
+                rs.getString("engine_execution_id"), rs.getString("owner_id"),
+                rs.getLong("lease_epoch"), rs.getTimestamp("created_at").toInstant(),
+                rs.getTimestamp("updated_at").toInstant(),
+                rs.getTimestamp("lease_expires_at").toInstant(),
+                InitialCreationState.valueOf(rs.getString("state")),
+                rs.getString("rejection_code"),
+                rs.getString("result_checkpoint_fingerprint"),
+                rs.getString("result_checkpoint_json"),
+                rs.getString("record_fingerprint"));
+    }
+
+    private void requireValidInitialCreationRecord(StoredInitialCreation stored) {
+        String actual = initialCreationRecordFingerprint(
+                stored.scope(), stored.clientRequestId(), stored.requestFingerprint(),
+                stored.authorizationFingerprint(), stored.runId(),
+                stored.engineExecutionId(), stored.ownerId(), stored.leaseEpoch(),
+                stored.createdAt(), stored.updatedAt(), stored.leaseExpiresAt(), stored.state(),
+                stored.rejectionCode(), stored.resultCheckpointFingerprint());
+        if (!stored.recordFingerprint().equals(actual)) {
+            throw new IllegalStateException(
+                    "Stored durable creation command record is corrupt");
+        }
+        toInitialCreationValueForValidation(stored);
+    }
+
+    private void toInitialCreationValueForValidation(StoredInitialCreation stored) {
+        new InitialCreationReservation(
+                InitialCreationReservation.SCHEMA_VERSION, stored.scope(),
+                stored.clientRequestId(), stored.requestFingerprint(),
+                stored.authorizationFingerprint(), stored.runId(),
+                stored.engineExecutionId(), stored.ownerId(), stored.leaseEpoch(),
+                stored.createdAt(), stored.updatedAt(), stored.leaseExpiresAt(),
+                stored.state(), stored.rejectionCode(),
+                stored.resultCheckpointFingerprint(), stored.recordFingerprint());
+        if (stored.state() == InitialCreationState.COMMITTED
+                && (stored.resultCheckpointJson() == null
+                || stored.resultCheckpointJson().isBlank())) {
+            throw new IllegalStateException(
+                    "Committed durable creation result has no checkpoint snapshot");
+        }
+        if (stored.state() != InitialCreationState.COMMITTED
+                && stored.resultCheckpointJson() != null) {
+            throw new IllegalStateException(
+                    "Non-committed durable creation carries a checkpoint snapshot");
+        }
+    }
+
+    private String initialCreationRecordFingerprint(
+            DurableTestExecutionCheckpoint.Scope scope,
+            String clientRequestId,
+            String requestFingerprint,
+            String authorizationFingerprint,
+            String runId,
+            String engineExecutionId,
+            String ownerId,
+            long leaseEpoch,
+            Instant createdAt,
+            Instant updatedAt,
+            Instant leaseExpiresAt,
+            InitialCreationState state,
+            String rejectionCode,
+            String resultCheckpointFingerprint) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", InitialCreationReservation.SCHEMA_VERSION),
+                Map.entry("scope", scope),
+                Map.entry("clientRequestId", clientRequestId),
+                Map.entry("requestFingerprint", requestFingerprint),
+                Map.entry("authorizationFingerprint", authorizationFingerprint),
+                Map.entry("runId", runId),
+                Map.entry("engineExecutionId", engineExecutionId),
+                Map.entry("ownerId", ownerId),
+                Map.entry("leaseEpoch", leaseEpoch),
+                Map.entry("createdAt", createdAt),
+                Map.entry("updatedAt", updatedAt),
+                Map.entry("leaseExpiresAt", leaseExpiresAt),
+                Map.entry("state", state.name()),
+                Map.entry("rejectionCode", rejectionCode),
+                Map.entry("resultCheckpointFingerprint", resultCheckpointFingerprint)));
+    }
+
     private Instant databaseNow() {
         Instant now = jdbc.queryForObject("SELECT CURRENT_TIMESTAMP",
                 (resultSet, rowNumber) -> resultSet.getTimestamp(1).toInstant());
@@ -1789,6 +2270,91 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             return target.kind().equals(targetKind)
                     && target.id().equals(targetId)
                     && target.fingerprint().equals(targetFingerprint);
+        }
+    }
+
+    private record StoredInitialCreation(
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            String requestFingerprint,
+            String authorizationFingerprint,
+            String organizationId,
+            String projectId,
+            String actorId,
+            String runId,
+            String engineExecutionId,
+            String ownerId,
+            long leaseEpoch,
+            Instant createdAt,
+            Instant updatedAt,
+            Instant leaseExpiresAt,
+            InitialCreationState state,
+            String rejectionCode,
+            String resultCheckpointFingerprint,
+            String resultCheckpointJson,
+            String recordFingerprint) {
+
+        private DurableTestExecutionCheckpoint.Scope scope() {
+            return new DurableTestExecutionCheckpoint.Scope(
+                    tenantId, organizationId, projectId, environmentId, actorId);
+        }
+
+        private boolean matches(InitialCreationCommand command) {
+            return scope().equals(command.scope())
+                    && clientRequestId.equals(command.clientRequestId())
+                    && requestFingerprint.equals(command.requestFingerprint())
+                    && authorizationFingerprint.equals(
+                    command.authorizationFingerprint());
+        }
+
+        private boolean matches(InitialCreationReservation reservation) {
+            return scope().equals(reservation.scope())
+                    && clientRequestId.equals(reservation.clientRequestId())
+                    && requestFingerprint.equals(reservation.requestFingerprint())
+                    && authorizationFingerprint.equals(
+                    reservation.authorizationFingerprint())
+                    && runId.equals(reservation.runId())
+                    && engineExecutionId.equals(reservation.engineExecutionId());
+        }
+
+        private StoredInitialCreation acquired(
+                String nextOwnerId,
+                long nextLeaseEpoch,
+                Instant nextUpdatedAt,
+                Instant nextLeaseExpiresAt,
+                String nextRecordFingerprint) {
+            return new StoredInitialCreation(
+                    tenantId, environmentId, clientRequestId, requestFingerprint,
+                    authorizationFingerprint, organizationId, projectId, actorId, runId,
+                    engineExecutionId, nextOwnerId, nextLeaseEpoch, createdAt,
+                    nextUpdatedAt, nextLeaseExpiresAt, InitialCreationState.PENDING,
+                    "", "", null, nextRecordFingerprint);
+        }
+
+        private StoredInitialCreation committed(
+                String checkpointFingerprint,
+                String checkpointJson,
+                Instant nextUpdatedAt,
+                String nextRecordFingerprint) {
+            return new StoredInitialCreation(
+                    tenantId, environmentId, clientRequestId, requestFingerprint,
+                    authorizationFingerprint, organizationId, projectId, actorId, runId,
+                    engineExecutionId, ownerId, leaseEpoch, createdAt, nextUpdatedAt,
+                    leaseExpiresAt, InitialCreationState.COMMITTED, "",
+                    checkpointFingerprint, checkpointJson, nextRecordFingerprint);
+        }
+
+        private StoredInitialCreation rejected(
+                String nextRejectionCode,
+                Instant nextUpdatedAt,
+                String nextRecordFingerprint) {
+            return new StoredInitialCreation(
+                    tenantId, environmentId, clientRequestId, requestFingerprint,
+                    authorizationFingerprint, organizationId, projectId, actorId, runId,
+                    engineExecutionId, ownerId, leaseEpoch, createdAt, nextUpdatedAt,
+                    leaseExpiresAt, InitialCreationState.REJECTED, nextRejectionCode,
+                    "", null, nextRecordFingerprint);
         }
     }
 

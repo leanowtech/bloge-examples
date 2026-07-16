@@ -491,7 +491,12 @@ fresh execution-to-durable-boundary API now feeds a strict initial-boundary poli
 prepare only one persisted `WAIT_SIGNAL` under a `SUSPENDED` execution. The session captures that
 boundary, the fixture cursor, and the four-store aggregate as one immutable `PreparedRun`; terminal,
 paused, timer/work-item/stream, and parallel multi-suspension outcomes discard the stage. This closes
-the runtime ambiguity but does not yet expose a public creation endpoint. BLOGE's new synchronous
+the runtime ambiguity but does not yet expose a public creation endpoint. A database-time
+`bloge.durableTestCreationCommandRecord.v1` reservation now supplies scoped caller idempotency,
+server-minted run/engine identities, owner fencing, lease-expiry takeover, immutable rejection/result
+replay, and one atomic commit decision for the initial control checkpoint, four-store mutation, and
+local audit. It stores fingerprints and payload-free locators only. The authenticated request adapter
+and wire protocol are still pending. BLOGE's new synchronous
 cold-start signal API is consumed by an internal `RecoverySession`: only a current
 v2 `RESUMING` checkpoint with exact target and restorable provider state can restore fixture cursors,
 open the staged aggregate, signal a real committed suspension, and prepare its next terminal or

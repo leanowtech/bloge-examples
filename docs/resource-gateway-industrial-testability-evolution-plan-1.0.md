@@ -15,7 +15,9 @@
 Stage 4 最新增量：fresh `RunSession` 的 initial-boundary policy 只接受唯一持久化 signal wait，
 并把 fixture cursor 与四 store closure 在同一静止点冻结；终态、pause、timer/work-item/stream
 以及多 suspension 在进入 repository 前 fail closed。它关闭了公开创建所需的运行时边界歧义，
-但尚不等于公开 run 创建协议。
+数据库侧 creation command reservation 也已提供 scoped idempotency、数据库时钟 lease、过期
+fencing 接管、不可变 rejection/result replay，以及 initial checkpoint + 四 store mutation + audit
+原子提交。公开鉴权、依赖授权与 wire adapter 尚未完成，因此仍不等于公开 run 创建协议。
 
 Stage 0 验证基线：Resource Gateway `clean verify` 共 1624 tests、0 failures、33 个既有条件跳过；AuthorCanvas 聚焦回归 36 tests、0 failures。后续阶段必须继续维持该基线并增加对应反面用例。
 

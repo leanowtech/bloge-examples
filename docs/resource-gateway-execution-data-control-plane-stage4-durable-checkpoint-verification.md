@@ -122,6 +122,26 @@ requires one.
 The callback must not perform network I/O or write through another datasource. Such effects cannot
 join this local transaction and are deliberately outside the contract.
 
+Initial creation now has a separate payload-free command reservation in
+`rg_test_durable_creation_commands`. Its scoped key is `(tenant, environment, clientRequestId)` and
+its content identity covers the authenticated request fingerprint, exact authorization-closure
+fingerprint, complete organization/project/actor scope, server-minted run and engine identities,
+database-time owner/epoch/lease fence, state, rejection code, and original checkpoint result identity.
+The row never stores graph context, fixture/replay values, provider seeds/cursors, credentials, or a
+BLOGE checkpoint body. The request fingerprint commits to caller input without making that input a
+control-plane payload.
+
+The first contender inserts `PENDING`; a same-intent contender sees the same assigned identities but
+does not acquire execution authority. A live lease cannot be stolen. After database-time expiry, a
+new owner increments the epoch while retaining run and engine identities. Same-key different request,
+scope, or authorization closure fails as an idempotency conflict. A winning owner may atomically
+commit the sealed revision-zero `SUSPENDED` control checkpoint, staged four-store BLOGE aggregate,
+immutable initial checkpoint snapshot, and companion audit. Any failure rolls all four decisions
+back to `PENDING`. A deterministic unsupported-boundary result can instead transition to immutable,
+payload-free `REJECTED`; ambiguous retries replay the original terminal command result. Record and
+checkpoint fingerprints are reverified on every resolution. This is the database protocol needed by
+the public creator; transport authentication and dependency authorization remain the next adapter.
+
 Expired owner recovery is a distinct control-only transition. `claimExpiredLease(...)` accepts the
 exact tenant/environment/run, old owner/epoch/revision fence, previous checkpoint fingerprint, new
 process owner, and a whole-second lease from one second through one hour. It reads time from the

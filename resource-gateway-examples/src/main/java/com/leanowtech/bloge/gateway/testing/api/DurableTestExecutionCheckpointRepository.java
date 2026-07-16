@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureConsumptionStateSnapsh
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -24,6 +25,63 @@ import java.util.regex.Pattern;
  * this local transaction.</p>
  */
 public interface DurableTestExecutionCheckpointRepository {
+
+    /**
+     * Reserves or resolves one caller-idempotent initial durable execution.
+     *
+     * <p>The reservation contains no business context or fixture payload. A live reservation is
+     * never stolen; an expired reservation may be fenced by a new server owner, while committed or
+     * rejected results remain immutable.</p>
+     *
+     * @param command exact authenticated creation intent and proposed server identities
+     * @return acquired, in-progress, committed, or rejected reservation result
+     */
+    InitialCreationReservationResult reserveInitialCreation(
+            InitialCreationCommand command);
+
+    /**
+     * Resolves an immutable creation result before mutable dependencies are re-authorized.
+     *
+     * @param tenantId verified tenant authority
+     * @param environmentId verified test or staging environment
+     * @param clientRequestId caller-stable idempotency key
+     * @param requestFingerprint canonical authenticated caller intent
+     * @return committed or rejected result, or empty for absent/pending commands
+     */
+    Optional<InitialCreationReservationResult> findInitialCreationResult(
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            String requestFingerprint);
+
+    /**
+     * Atomically commits one acquired creation reservation, initial control checkpoint, complete
+     * BLOGE aggregate, and local companion audit/evidence mutation.
+     *
+     * @param reservation exact acquired database fence
+     * @param checkpoint sealed revision-zero suspended checkpoint
+     * @param engineStateMutation exact staged BLOGE aggregate mutation
+     * @param companionMutation local payload-free audit/evidence write
+     * @return immutable committed result or its exact idempotent replay
+     */
+    InitialCreationReservationResult commitInitialCreation(
+            InitialCreationReservation reservation,
+            DurableTestExecutionCheckpoint checkpoint,
+            BoundEngineStateMutation engineStateMutation,
+            TestRuntimeTransactionMutation companionMutation);
+
+    /**
+     * Atomically records a deterministic, payload-free creation rejection.
+     *
+     * @param reservation exact acquired database fence
+     * @param rejectionCode bounded machine-stable reason
+     * @param companionMutation local payload-free audit write
+     * @return immutable rejected result or its exact replay
+     */
+    InitialCreationReservationResult rejectInitialCreation(
+            InitialCreationReservation reservation,
+            String rejectionCode,
+            TestRuntimeTransactionMutation companionMutation);
 
     /**
      * Creates revision zero and atomically writes the associated engine-state closure.
@@ -222,6 +280,231 @@ public interface DurableTestExecutionCheckpointRepository {
             String environmentId,
             String clientRequestId,
             String requestFingerprint);
+
+    /**
+     * Authenticated payload-free intent used to reserve an initial durable execution.
+     *
+     * @param clientRequestId caller-stable idempotency key scoped by tenant/environment
+     * @param requestFingerprint canonical authenticated request, including business-input digest
+     * @param authorizationFingerprint exact target/fixture/replay/plan/authority closure identity
+     * @param scope verified tenant, organization, project, environment, and actor scope
+     * @param proposedRunId server-minted run id used only when this command wins insertion
+     * @param proposedEngineExecutionId server-minted BLOGE id used only on first insertion
+     * @param claimantOwnerId current server attempt owner
+     * @param leaseDuration bounded preparation lease
+     */
+    record InitialCreationCommand(
+            String clientRequestId,
+            String requestFingerprint,
+            String authorizationFingerprint,
+            DurableTestExecutionCheckpoint.Scope scope,
+            String proposedRunId,
+            String proposedEngineExecutionId,
+            String claimantOwnerId,
+            Duration leaseDuration) {
+        private static final Pattern IDENTIFIER =
+                Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
+        private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+        private static final Duration MINIMUM_LEASE = Duration.ofSeconds(1);
+        private static final Duration MAXIMUM_LEASE = Duration.ofHours(1);
+
+        /** Rejects ambiguous identities and unbounded preparation leases. */
+        public InitialCreationCommand {
+            clientRequestId = identifier(clientRequestId, "clientRequestId");
+            requestFingerprint = fingerprint(requestFingerprint, "requestFingerprint");
+            authorizationFingerprint = fingerprint(
+                    authorizationFingerprint, "authorizationFingerprint");
+            scope = Objects.requireNonNull(scope, "scope");
+            proposedRunId = identifier(proposedRunId, "proposedRunId");
+            proposedEngineExecutionId = identifier(
+                    proposedEngineExecutionId, "proposedEngineExecutionId");
+            claimantOwnerId = identifier(claimantOwnerId, "claimantOwnerId");
+            leaseDuration = Objects.requireNonNull(leaseDuration, "leaseDuration");
+            if (leaseDuration.compareTo(MINIMUM_LEASE) < 0
+                    || leaseDuration.compareTo(MAXIMUM_LEASE) > 0
+                    || leaseDuration.getNano() != 0) {
+                throw new IllegalArgumentException(
+                        "leaseDuration must be whole seconds between one second and one hour");
+            }
+        }
+
+        private static String identifier(String value, String field) {
+            String normalized = requiredCreationValue(value, field);
+            if (!IDENTIFIER.matcher(normalized).matches()) {
+                throw new IllegalArgumentException(
+                        field + " must be a bounded stable identifier");
+            }
+            return normalized;
+        }
+
+        private static String fingerprint(String value, String field) {
+            String normalized = requiredCreationValue(value, field);
+            if (!FINGERPRINT.matcher(normalized).matches()) {
+                throw new IllegalArgumentException(
+                        field + " must be a canonical SHA-256 fingerprint");
+            }
+            return normalized;
+        }
+    }
+
+    /** Lifecycle of one immutable caller creation command. */
+    enum InitialCreationState {
+        /** One server owner may prepare a staged execution under the current fence. */
+        PENDING,
+        /** Initial checkpoint and engine aggregate committed atomically. */
+        COMMITTED,
+        /** Exact request deterministically reached an unsupported or invalid runtime boundary. */
+        REJECTED
+    }
+
+    /**
+     * Content-addressed payload-free creation command state.
+     *
+     * @param schemaVersion internal command-record version
+     * @param scope verified caller scope
+     * @param clientRequestId caller idempotency key
+     * @param requestFingerprint authenticated request identity
+     * @param authorizationFingerprint exact executable dependency closure identity
+     * @param runId server-minted durable run identity
+     * @param engineExecutionId server-minted BLOGE execution identity
+     * @param ownerId current preparation owner
+     * @param leaseEpoch positive preparation fence generation
+     * @param createdAt database-authority creation time
+     * @param updatedAt database-authority latest transition time
+     * @param leaseExpiresAt database-authority preparation deadline
+     * @param state command lifecycle
+     * @param rejectionCode machine-stable rejection, only for {@code REJECTED}
+     * @param resultCheckpointFingerprint initial checkpoint identity, only for {@code COMMITTED}
+     * @param recordFingerprint canonical identity of all preceding fields
+     */
+    record InitialCreationReservation(
+            String schemaVersion,
+            DurableTestExecutionCheckpoint.Scope scope,
+            String clientRequestId,
+            String requestFingerprint,
+            String authorizationFingerprint,
+            String runId,
+            String engineExecutionId,
+            String ownerId,
+            long leaseEpoch,
+            Instant createdAt,
+            Instant updatedAt,
+            Instant leaseExpiresAt,
+            InitialCreationState state,
+            String rejectionCode,
+            String resultCheckpointFingerprint,
+            String recordFingerprint) {
+        /** Current internal creation command-record version. */
+        public static final String SCHEMA_VERSION = "bloge.durableTestCreationCommandRecord.v1";
+        private static final Pattern IDENTIFIER =
+                Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
+        private static final Pattern CODE = Pattern.compile("[A-Z][A-Z0-9_.-]{0,127}");
+        private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+
+        /** Rejects incomplete fences, timestamps, or state-dependent result fields. */
+        public InitialCreationReservation {
+            schemaVersion = requiredCreationValue(schemaVersion, "schemaVersion");
+            if (!SCHEMA_VERSION.equals(schemaVersion)) {
+                throw new IllegalArgumentException(
+                        "Unsupported durable creation command-record version");
+            }
+            scope = Objects.requireNonNull(scope, "scope");
+            clientRequestId = identifier(clientRequestId, "clientRequestId");
+            requestFingerprint = fingerprint(requestFingerprint, "requestFingerprint");
+            authorizationFingerprint = fingerprint(
+                    authorizationFingerprint, "authorizationFingerprint");
+            runId = identifier(runId, "runId");
+            engineExecutionId = identifier(engineExecutionId, "engineExecutionId");
+            ownerId = identifier(ownerId, "ownerId");
+            createdAt = Objects.requireNonNull(createdAt, "createdAt");
+            updatedAt = Objects.requireNonNull(updatedAt, "updatedAt");
+            leaseExpiresAt = Objects.requireNonNull(leaseExpiresAt, "leaseExpiresAt");
+            state = Objects.requireNonNull(state, "state");
+            rejectionCode = rejectionCode == null ? "" : rejectionCode.trim().toUpperCase(
+                    java.util.Locale.ROOT);
+            resultCheckpointFingerprint = resultCheckpointFingerprint == null
+                    ? "" : resultCheckpointFingerprint.trim();
+            recordFingerprint = fingerprint(recordFingerprint, "recordFingerprint");
+            if (leaseEpoch <= 0 || updatedAt.isBefore(createdAt)
+                    || leaseExpiresAt.isBefore(updatedAt)) {
+                throw new IllegalArgumentException(
+                        "Durable creation reservation fence or timestamps are invalid");
+            }
+            if (state == InitialCreationState.REJECTED) {
+                if (!CODE.matcher(rejectionCode).matches()
+                        || !resultCheckpointFingerprint.isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "Rejected creation requires only a bounded rejection code");
+                }
+            } else if (!rejectionCode.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Only rejected creation may carry a rejection code");
+            }
+            if (state == InitialCreationState.COMMITTED) {
+                fingerprint(resultCheckpointFingerprint, "resultCheckpointFingerprint");
+            } else if (!resultCheckpointFingerprint.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Only committed creation may carry a checkpoint result");
+            }
+        }
+
+        private static String identifier(String value, String field) {
+            String normalized = requiredCreationValue(value, field);
+            if (!IDENTIFIER.matcher(normalized).matches()) {
+                throw new IllegalArgumentException(
+                        field + " must be a bounded stable identifier");
+            }
+            return normalized;
+        }
+
+        private static String fingerprint(String value, String field) {
+            String normalized = requiredCreationValue(value, field);
+            if (!FINGERPRINT.matcher(normalized).matches()) {
+                throw new IllegalArgumentException(
+                        field + " must be a canonical SHA-256 fingerprint");
+            }
+            return normalized;
+        }
+    }
+
+    /**
+     * Reservation resolution returned to the creation orchestrator.
+     *
+     * @param reservation immutable command state
+     * @param checkpoint original initial checkpoint only when committed
+     * @param acquired whether this caller owns the pending preparation fence
+     * @param idempotentReplay whether a prior terminal command result was replayed
+     */
+    record InitialCreationReservationResult(
+            InitialCreationReservation reservation,
+            DurableTestExecutionCheckpoint checkpoint,
+            boolean acquired,
+            boolean idempotentReplay) {
+        /** Enforces state-specific ownership and result invariants. */
+        public InitialCreationReservationResult {
+            reservation = Objects.requireNonNull(reservation, "reservation");
+            if (reservation.state() == InitialCreationState.COMMITTED) {
+                checkpoint = Objects.requireNonNull(checkpoint, "checkpoint");
+                if (!reservation.resultCheckpointFingerprint().equals(
+                        checkpoint.checkpointFingerprint()) || acquired) {
+                    throw new IllegalArgumentException(
+                            "Committed creation result must bind its initial checkpoint");
+                }
+            } else if (checkpoint != null) {
+                throw new IllegalArgumentException(
+                        "Only committed creation may expose an initial checkpoint");
+            }
+            if (acquired && reservation.state() != InitialCreationState.PENDING) {
+                throw new IllegalArgumentException(
+                        "Only a pending creation reservation can be acquired");
+            }
+            if (idempotentReplay
+                    && reservation.state() == InitialCreationState.PENDING) {
+                throw new IllegalArgumentException(
+                        "A pending creation is not an immutable replay result");
+            }
+        }
+    }
 
     /**
      * Exact compare-and-set fence held by the caller.
@@ -589,5 +872,13 @@ public interface DurableTestExecutionCheckpointRepository {
          * @param jdbc JDBC facade bound to the repository transaction
          */
         void apply(JdbcTemplate jdbc);
+    }
+
+    private static String requiredCreationValue(String value, String field) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+        return normalized;
     }
 }

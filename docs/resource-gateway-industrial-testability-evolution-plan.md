@@ -26,7 +26,9 @@
 
 Stage 4 最新增量把 fresh initial boundary 收敛为唯一持久化 signal wait，并在该静止点同时
 冻结 fixture cursor 与四 store closure；终态、pause、timer/work-item/stream 及多 suspension 在
-repository commit 前 fail closed。该增量只关闭公开创建的运行时边界歧义，尚未开放 run 创建 API。
+repository commit 前 fail closed。数据库 creation command reservation 已补齐 scoped idempotency、
+数据库时钟 lease、过期 fencing 接管、不可变 rejection/result replay，以及 initial checkpoint、
+四 store mutation 与 audit 的原子提交；公开鉴权、依赖授权和 wire adapter 尚未开放。
 
 实现细节、行为兼容决策和可复现测试见
 [v1 实施蓝图](resource-gateway-industrial-testability-evolution-plan-1.0.md) 与
