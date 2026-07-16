@@ -9,7 +9,7 @@ import com.leanowtech.bloge.core.engine.GraphResult;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.core.spi.TimeSource;
-import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeExecutionCheckpointStore;
+import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
 import com.leanowtech.bloge.runtime.engine.DurableGraphEngine;
 
 import java.util.List;
@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <p>This factory is separate from {@link IndependentTestEngineFactory}: normal synchronous tests
  * remain short-lived and store-free, while a future suspend/resume path must explicitly select this
- * factory and open a transaction-participating checkpoint stage before execution. Production
+ * factory and open a transaction-participating durable-state stage before execution. Production
  * interceptors, listeners, context carriers, extension listeners, and durable stores are never
  * copied from the application engine.</p>
  */
@@ -29,20 +29,20 @@ public final class IndependentDurableTestEngineFactory {
 
     private final OperatorRegistry registry;
     private final CheckpointCodec checkpointCodec;
-    private final StagedBlogeExecutionCheckpointStore checkpointStore;
+    private final StagedBlogeDurableStateStore durableStateStore;
 
     /**
      * @param registry frozen operator bindings shared by identity
      * @param checkpointCodec durable checkpoint payload codec
-     * @param checkpointStore isolated transaction-participating test checkpoint store
+     * @param durableStateStore isolated transaction-participating BLOGE state aggregate
      */
     public IndependentDurableTestEngineFactory(
             OperatorRegistry registry,
             CheckpointCodec checkpointCodec,
-            StagedBlogeExecutionCheckpointStore checkpointStore) {
+            StagedBlogeDurableStateStore durableStateStore) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.checkpointCodec = Objects.requireNonNull(checkpointCodec, "checkpointCodec");
-        this.checkpointStore = Objects.requireNonNull(checkpointStore, "checkpointStore");
+        this.durableStateStore = Objects.requireNonNull(durableStateStore, "durableStateStore");
     }
 
     /**
@@ -56,7 +56,8 @@ public final class IndependentDurableTestEngineFactory {
         DurableGraphEngine.Builder builder = DurableGraphEngine.builder()
                 .registry(registry)
                 .checkpointCodec(checkpointCodec)
-                .executionCheckpointStore(checkpointStore)
+                .executionStore(durableStateStore.executionStore())
+                .executionCheckpointStore(durableStateStore.checkpointStore())
                 .checkpointFailurePolicy(CheckpointFailurePolicy.FAIL_FAST)
                 .interceptors(List.of())
                 .listeners(List.of(Objects.requireNonNull(recorder, "recorder")))
@@ -71,7 +72,7 @@ public final class IndependentDurableTestEngineFactory {
     /**
      * Opens one fail-closed durable execution session with a caller-assigned engine identity.
      *
-     * <p>The session owns the local checkpoint stage and engine lifecycle. The supplied options
+     * <p>The session owns the local durable-state stage and engine lifecycle. The supplied options
      * remain authoritative for operator fixture resolution, logical time, random values, built-in
      * UUIDs, identity, flags, secrets, and environment functions; only the first root execution ID
      * allocation is replaced with {@code executionId}. Subsequent ID requests still use the
@@ -91,7 +92,8 @@ public final class IndependentDurableTestEngineFactory {
                 executionOptions, "executionOptions");
         ExecutionServices requiredServices = Objects.requireNonNull(
                 requiredOptions.executionServices(), "executionOptions.executionServices");
-        StagedBlogeExecutionCheckpointStore.Stage stage = checkpointStore.begin(requiredExecutionId);
+        StagedBlogeDurableStateStore.Stage stage = durableStateStore.begin(
+                requiredExecutionId, requiredServices.timeSource());
         try {
             DurableGraphEngine engine = create(recorder, requiredServices.timeSource());
             return new RunSession(requiredExecutionId, requiredOptions, engine, stage);
@@ -118,11 +120,11 @@ public final class IndependentDurableTestEngineFactory {
                                 boolean productionExtensionListeners) {
     }
 
-    /** One caller-controlled BLOGE execution and its uncommitted checkpoint overlay. */
+    /** One caller-controlled BLOGE execution and its uncommitted durable-state overlay. */
     public static final class RunSession implements AutoCloseable {
         private final String executionId;
         private final DurableGraphEngine engine;
-        private final StagedBlogeExecutionCheckpointStore.Stage stage;
+        private final StagedBlogeDurableStateStore.Stage stage;
         private final ExecutionOptions options;
         private final AtomicBoolean executed = new AtomicBoolean();
         private final AtomicBoolean closed = new AtomicBoolean();
@@ -130,7 +132,7 @@ public final class IndependentDurableTestEngineFactory {
         private RunSession(String executionId,
                            ExecutionOptions sourceOptions,
                            DurableGraphEngine engine,
-                           StagedBlogeExecutionCheckpointStore.Stage stage) {
+                           StagedBlogeDurableStateStore.Stage stage) {
             this.executionId = executionId;
             this.engine = engine;
             this.stage = stage;
@@ -171,9 +173,9 @@ public final class IndependentDurableTestEngineFactory {
         /**
          * Freezes the engine writes for the repository's composite transaction.
          *
-         * @see StagedBlogeExecutionCheckpointStore.Stage#prepare(String, String, String, long, long)
+         * @see StagedBlogeDurableStateStore.Stage#prepare(String, String, String, long, long)
          */
-        public StagedBlogeExecutionCheckpointStore.PreparedMutation prepare(
+        public StagedBlogeDurableStateStore.PreparedMutation prepare(
                 String checkpointRef,
                 String nodeId,
                 String boundaryType,

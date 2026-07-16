@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.testing.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
+import com.leanowtech.bloge.core.runtime.checkpoint.ExecutionCheckpointStore;
+import com.leanowtech.bloge.core.runtime.execution.ExecutionStore;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
@@ -10,6 +12,7 @@ import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
+import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import org.junit.jupiter.api.Test;
@@ -33,6 +36,9 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(TestRunRepository.class)).isEmpty();
             assertThat(context.getBeansOfType(FixtureBundleRepository.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestRuntimeResources.class)).isEmpty();
+            assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
+            assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();
+            assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();
             assertThat(context.getBeansOfType(TestabilityAvailability.class)).isEmpty();
         }
     }
@@ -47,6 +53,9 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(ReplayPayloadRepository.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestReplayPayloadService.class)).hasSize(1);
             assertThat(context.getBeansOfType(DurableTestRuntimeResources.class)).hasSize(1);
+            assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
+            assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();
+            assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();
             assertThat(context.getBean(DurableTestRuntimeResources.class)
                     .engineFactory().configuration().durableStores()).isTrue();
             assertThat(context.getBean(TestabilityAvailability.class).executionEndpointEnabled()).isTrue();
@@ -70,6 +79,9 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(TestExecutionController.class)).isEmpty();
             assertThat(context.getBeansOfType(TestExecutionApiService.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestRuntimeResources.class)).isEmpty();
+            assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
+            assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();
+            assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();
             assertThat(context.getBeansOfType(TestabilityAvailability.class)).isEmpty();
         }
     }

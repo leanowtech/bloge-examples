@@ -21,7 +21,7 @@
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
 | Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（四类 case intent、内容寻址 fixture/一等 suite 发布、精确 revision 执行与 aggregate coverage/promotion 回显）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、process-owner lease/heartbeat/checkpoint fence、abandoned RUNNING fail-closed reconciliation、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其 governed catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free plan v2 谱系与认证降级，以及同步 nested/foreach/loop/compensation 控制传播、动态 attempt/occurrence selector 与 occurrence/attempt/node/edge evidence 已落地；streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3 | In progress | graph/operator `TestRunEvidence`、suite checkpoint/terminal attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、签名时刻 lifecycle policy、外部 M-of-N trust publication、bounded append-only consistency page、durable consumer checkpoint、rollback/fork/split-view/revoked-pin resurrection detection 与 test-kit independent verifier 已完成；exact-suite ANEKE semantic workbook seed、`GovernanceGateResult.v3` 可重建 basis、编译级 GraphDraft target 绑定和独立 schema consumer 已完成；真实 ANEKE N/N-1 conformance、独立 witness gossip/跨域一致性证明待完成 |
-| Stage 4 | In progress | BLOGE run-scoped `ExecutionServices`/`FunctionCallSite` 已接通，并新增公共 `CheckpointFailurePolicy.FAIL_FAST`（node/loop/foreach checkpoint 失败闭合）；RG logical clock、seeded random/UUID、payload-free plan v3 binding、usage audit、认证降级、生产边界架构测试、`bloge.testRunEvidence.v2` semantic result fingerprint、重复运行 context 隔离、`bloge.executionServiceStateSnapshot.v1` 精确恢复，以及组合 `bloge.durableTestExecutionCheckpoint.v1`、fixture cursor snapshot、`InvocationRecorder` 静止边界 capture/原子 restore、受信同库事务参与仓库、owner/epoch/revision CAS 与并发输家回滚已落地；test-profile staged `ExecutionCheckpointStore` 与 durable session 已强制 FAIL_FAST、caller-assigned execution id、完整 `ExecutionOptions` 继承、mutation identity/state 强绑定、幂等事务重试和 concrete store CAS 输家回滚；execution/wait/timer/work-item/stream store、公共 resume/owner claim、identity/flag/secret fixture authority、streaming 恢复与确定性并发待完成 |
+| Stage 4 | In progress | BLOGE run-scoped `ExecutionServices`/`FunctionCallSite` 已接通，并新增公共 `CheckpointFailurePolicy.FAIL_FAST`（node/loop/foreach checkpoint 失败闭合）；RG logical clock、seeded random/UUID、payload-free plan v3 binding、usage audit、认证降级、生产边界架构测试、`bloge.testRunEvidence.v2` semantic result fingerprint、重复运行 context 隔离、`bloge.executionServiceStateSnapshot.v1` 精确恢复，以及组合 `bloge.durableTestExecutionCheckpoint.v1`、fixture cursor snapshot、`InvocationRecorder` 静止边界 capture/原子 restore、受信同库事务参与仓库、owner/epoch/revision CAS 与并发输家回滚已落地；test-profile staged `ExecutionStore + ExecutionCheckpointStore` aggregate 与 durable session 已强制 FAIL_FAST、caller-assigned execution id、完整 `ExecutionOptions` 继承、mutation identity/state 强绑定、幂等事务重试、冷读 lifecycle 重建和 concrete store CAS 输家回滚；`WaitStore`（含 timer wait）、`WorkItemStore`、stream offset/checkpoint 协议、公共 resume/owner claim、identity/flag/secret fixture authority、streaming 恢复与确定性并发待完成 |
 | Stage 5 | Not started | 独立部署、network/identity/secret/store 物理隔离、规模化调度与 mutation/property testing |
 
 实现细节、行为兼容决策和可复现测试见
@@ -60,7 +60,7 @@ Exact semantic suite 到 ANEKE payload-free workbook seed 的投影、失败边�
 Semantic workbook 到 ANEKE gate decision 的 exact evidence 重建、GraphDraft 编译 target 绑定与 v2 兼容证明见
 [Stage 3 semantic gate basis verification](resource-gateway-execution-data-control-plane-stage3-semantic-gate-basis-verification.md)。
 
-当前严格验收基线：Resource Gateway `clean verify` 共 1910 tests、0 failures、0 errors、
+当前严格验收基线：Resource Gateway `clean verify` 共 1915 tests、0 failures、0 errors、
 2 个条件跳过，真实浏览器回归与 Spring Boot JAR 打包成功；Canvas suite 聚焦 68 tests、
 前端全量 150 tests，并在桌面与 390 x 844 真实浏览器中完成两行一等 suite 发布；Canvas 对完整
 stored suite value、child evidence、coverage、promotion 与 aggregate 一致性 fail closed；immutable TestSuite
@@ -68,7 +68,8 @@ runner/attestation/protocol 增量聚焦 49 tests；key lifecycle 增量聚焦 4
 `clean verify` 62 tests，均为 0 failures、0 errors，library/CLI JAR 均打包成功；semantic gate/projector/target/schema
 增量聚焦 23 tests，integration package 138 tests 全绿；完整 suite/catalog/semantic workbook/gate v3 wire value 按打包的
 Draft 2020-12 schema 校验并回绑 request identity，`RUNNING` 在无 polling CLI 中退出 2，
-未知参数值与 validator 细节不进入日志，public JavaDoc 零告警且由 `verify` 门禁强制。
+未知参数值与 validator 细节不进入日志，public JavaDoc 零告警且由 `verify` 门禁强制；Stage 4
+durable checkpoint/aggregate 聚焦 43 tests 全绿。
 
 ## 1. 结论先行
 
@@ -1152,18 +1153,22 @@ progress 的读、写、序列化与解码故障统一抛出 `DurabilityExceptio
 严格异常；`BEST_EFFORT` 继续作为兼容默认。该策略只定义失败传播，不提供跨 store 事务，RG
 仍必须在 test runtime 显式选择 `FAIL_FAST` 并让具体 BLOGE store 参与下述本地事务边界。
 
-第七增量在 Resource Gateway test profile 中新增 staged `ExecutionCheckpointStore` 和独立 durable
-session：调用方在业务 context 外指定 engine execution id，session 继承冻结后的完整
+第七增量在 Resource Gateway test profile 中新增 staged `ExecutionCheckpointStore`、
+`ExecutionStore` 和独立 durable session：调用方在业务 context 外指定 engine execution id，session 继承冻结后的完整
 `ExecutionOptions`（包括 operator fixture resolver 与全部 provider），并强制 `FAIL_FAST`。BLOGE 的
 node/loop/sequential-foreach checkpoint 先进入 execution-scoped read-your-writes overlay，`prepare`
 后按稳定顺序生成 `bloge.testCheckpointMutation.v1` closure；mutation 同时绑定 engine id 和完整
 `EngineState`，只能在同 datasource 的活动事务中执行，可在事务回滚后幂等重试，stage 关闭后失效。
-两个具体 store 实例争抢同一 fence 的测试证明只有 control CAS 胜者的 BLOGE 行可提交。
+`ExecutionStore` 从已提交 JSON 冷读完整 `ExecutionInstance`，并复用 BLOGE 已验证的 optimistic version、
+lease、signal idempotency 与 recovery-attempt 语义；生命周期变更先进入同一 run stage。
+`bloge.testExecutionMutation.v1` 与 checkpoint component fingerprint 最终由
+`bloge.testDurableStateMutation.v1` 聚合，repository 在一个事务回调中应用两者。两个具体 aggregate
+实例争抢同一 fence 的测试证明只有 control CAS 胜者的 execution 状态可提交，输家整体回滚。
 
-Stage 4 仍未让 execution-status/wait/timer/work-item/stream store 参与该事务；公共 durable run
-选择/resume/owner claim、exact dependency 重新授权、stream/event fixture、确定性并发调度、测试
+Stage 4 仍未让 `WaitStore`（BLOGE timer wait 也由它承载）和 `WorkItemStore` 参与该事务，也尚无
+明确的 stream offset/checkpoint 恢复协议；公共 durable run 选择/resume/owner claim、exact dependency 重新授权、stream/event fixture、确定性并发调度、测试
 身份/feature flag/test-secret authority 与历史 evidence 恢复也尚未完成。因此同步 execution
-checkpoint adapter 已完成，但仍不能声明 cold-start durable resume，Stage 4 继续保持进行中。
+execution/checkpoint aggregate 已完成，但仍不能声明 cold-start durable resume，Stage 4 继续保持进行中。
 
 交付：
 

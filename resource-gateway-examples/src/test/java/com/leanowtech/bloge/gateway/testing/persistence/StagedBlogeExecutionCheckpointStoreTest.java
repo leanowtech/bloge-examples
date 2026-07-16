@@ -250,8 +250,12 @@ class StagedBlogeExecutionCheckpointStoreTest {
 
     @Test
     void runsWithCallerAssignedExecutionIdAndCommitsTheEngineClosure() {
+        StagedBlogeDurableStateStore durableStateStore =
+                new StagedBlogeDurableStateStore(database.jdbc(), objectMapper);
+        durableStateStore.init();
         IndependentDurableTestEngineFactory factory = new IndependentDurableTestEngineFactory(
-                new DefaultOperatorRegistry(), new JacksonCheckpointCodec(objectMapper), store);
+                new DefaultOperatorRegistry(), new JacksonCheckpointCodec(objectMapper),
+                durableStateStore);
         Operator<Void, String> operator = (ignored, context) -> "real";
         var graph = new GraphBuilder("controlled-durable-test")
                 .node("only", operator)
@@ -270,15 +274,17 @@ class StagedBlogeExecutionCheckpointStoreTest {
             assertThat(result.isSuccess()).isTrue();
             assertThat(result.executionId()).isEqualTo("engine-a");
             assertThat(result.results().get("only", String.class)).isEqualTo("fixture");
-            assertThat(store.load("engine-a", CheckpointType.NODE_OUTPUT, "only")).isPresent();
+            assertThat(durableStateStore.checkpointStore().load(
+                    "engine-a", CheckpointType.NODE_OUTPUT, "only")).isPresent();
 
-            StagedBlogeExecutionCheckpointStore.PreparedMutation mutation = session.prepare(
+            StagedBlogeDurableStateStore.PreparedMutation mutation = session.prepare(
                     "checkpoint-0", "only", "NODE_BOUNDARY", 1, 0);
             repository.create(control(0, mutation.engineState()), mutation);
         }
 
         assertThat(repository.find("tenant-a", "test", "run-a")).isPresent();
-        assertThat(store.load("engine-a", CheckpointType.NODE_OUTPUT, "only")).isPresent();
+        assertThat(durableStateStore.checkpointStore().load(
+                "engine-a", CheckpointType.NODE_OUTPUT, "only")).isPresent();
     }
 
     @Test

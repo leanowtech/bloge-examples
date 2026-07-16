@@ -5,8 +5,9 @@ import java.util.Objects;
 /**
  * Profile-gated holder for the isolated durable test engine entry point.
  *
- * <p>The staged {@code ExecutionCheckpointStore} remains encapsulated by the factory so it cannot
- * become a global Spring autowire candidate or be mutated outside a controlled run session.</p>
+ * <p>The staged execution lifecycle and checkpoint stores remain encapsulated by the factory so
+ * they cannot become global Spring autowire candidates or be mutated outside a controlled run
+ * session.</p>
  *
  * @param engineFactory factory that always configures checkpoint failures as fail-fast
  */

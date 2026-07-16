@@ -1,0 +1,381 @@
+package com.leanowtech.bloge.gateway.testing.persistence;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.core.context.GraphContext;
+import com.leanowtech.bloge.core.dsl.GraphBuilder;
+import com.leanowtech.bloge.core.engine.ExecutionOptions;
+import com.leanowtech.bloge.core.engine.ExecutionServices;
+import com.leanowtech.bloge.core.exception.OptimisticLockException;
+import com.leanowtech.bloge.core.model.Graph;
+import com.leanowtech.bloge.core.operator.Operator;
+import com.leanowtech.bloge.core.runtime.checkpoint.CheckpointType;
+import com.leanowtech.bloge.core.runtime.execution.ExecutionInstance;
+import com.leanowtech.bloge.core.runtime.execution.ExecutionStatus;
+import com.leanowtech.bloge.core.runtime.identity.ExecutionIdentity;
+import com.leanowtech.bloge.core.runtime.identity.ExecutionType;
+import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
+import com.leanowtech.bloge.durable.codec.JacksonCheckpointCodec;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository;
+import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
+import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
+import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
+import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureConsumptionStateSnapshot;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.runtime.IndependentDurableTestEngineFactory;
+import com.leanowtech.bloge.gateway.testing.runtime.InvocationRecorder;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class StagedBlogeDurableStateStoreTest {
+
+    private static final String SHA_A = "sha256:" + "a".repeat(64);
+    private static final String SHA_B = "sha256:" + "b".repeat(64);
+    private static final String SHA_C = "sha256:" + "c".repeat(64);
+    private static final String SHA_D = "sha256:" + "d".repeat(64);
+
+    private ObjectMapper objectMapper;
+    private TestRuntimeDatabase database;
+    private DurableTestExecutionCheckpointIntegrity integrity;
+    private DatabaseDurableTestExecutionCheckpointRepository repository;
+    private StagedBlogeDurableStateStore stateStore;
+
+    @BeforeEach
+    void setUp() {
+        objectMapper = new ObjectMapper().findAndRegisterModules();
+        database = new TestRuntimeDatabase(new TestRuntimeDatabase.Settings(
+                "jdbc:h2:mem:staged-bloge-state-" + System.nanoTime() + ";DB_CLOSE_DELAY=-1",
+                "sa", "", 6));
+        integrity = new DurableTestExecutionCheckpointIntegrity(objectMapper);
+        repository = new DatabaseDurableTestExecutionCheckpointRepository(
+                database.jdbc(), database.transactionManager(), objectMapper, integrity);
+        repository.init();
+        stateStore = new StagedBlogeDurableStateStore(database.jdbc(), objectMapper);
+        stateStore.init();
+    }
+
+    @AfterEach
+    void tearDown() {
+        database.close();
+    }
+
+    @Test
+    void commitsExecutionLifecycleAndNodeCheckpointAsOneColdReadableClosure() {
+        IndependentDurableTestEngineFactory factory = factory(stateStore);
+
+        try (IndependentDurableTestEngineFactory.RunSession session = factory.openSession(
+                "engine-a", new InvocationRecorder(objectMapper), executionOptions())) {
+            var result = session.execute(graph(), new GraphContext());
+
+            assertThat(result.isSuccess()).isTrue();
+            assertThat(stateStore.executionStore().get("engine-a"))
+                    .get().extracting(instance -> instance.status())
+                    .isEqualTo(ExecutionStatus.COMPLETED);
+            assertThat(stateStore.checkpointStore().load(
+                    "engine-a", CheckpointType.NODE_OUTPUT, "only")).isPresent();
+
+            var mutation = session.prepare(
+                    "checkpoint-0", "only", "NODE_BOUNDARY", 1, 0);
+            repository.create(control(mutation.engineState()), mutation);
+        }
+
+        StagedBlogeDurableStateStore coldStore =
+                new StagedBlogeDurableStateStore(database.jdbc(), objectMapper);
+        coldStore.init();
+        assertThat(coldStore.executionStore().get("engine-a"))
+                .get().extracting(instance -> instance.status())
+                .isEqualTo(ExecutionStatus.COMPLETED);
+        assertThat(coldStore.checkpointStore().load(
+                "engine-a", CheckpointType.NODE_OUTPUT, "only")).isPresent();
+    }
+
+    @Test
+    void rollsBackExecutionLifecycleWhenTheCompositeCheckpointCannotCommit() {
+        IndependentDurableTestEngineFactory factory = factory(stateStore);
+
+        try (IndependentDurableTestEngineFactory.RunSession session = factory.openSession(
+                "engine-a", new InvocationRecorder(objectMapper), executionOptions())) {
+            assertThat(session.execute(graph(), new GraphContext()).isSuccess()).isTrue();
+            var mutation = session.prepare(
+                    "checkpoint-0", "only", "NODE_BOUNDARY", 1, 0);
+
+            assertThatThrownBy(() -> repository.create(control(mutation.engineState()),
+                    failingAfterApply(mutation)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("after complete BLOGE state");
+        }
+
+        assertThat(stateStore.executionStore().get("engine-a")).isEmpty();
+        assertThat(stateStore.checkpointStore().loadAll("engine-a")).isEmpty();
+        assertThat(repository.find("tenant-a", "test", "run-a")).isEmpty();
+    }
+
+    @Test
+    void executionLifecycleMutationsRemainStagedAndEnforceBlogeVersionRules() {
+        try (StagedBlogeDurableStateStore.Stage stage =
+                     stateStore.begin("engine-a",
+                             ExecutionServices.builder().build().timeSource())) {
+            stateStore.executionStore().create(
+                    ExecutionInstance.builder(executionIdentity())
+                            .status(ExecutionStatus.RUNNING)
+                            .version(0)
+                            .build());
+            stateStore.executionStore().updateStatus("engine-a", ExecutionStatus.SUSPENDED, 0);
+
+            assertThat(stateStore.executionStore().get("engine-a"))
+                    .get().satisfies(instance -> {
+                        assertThat(instance.status()).isEqualTo(ExecutionStatus.SUSPENDED);
+                        assertThat(instance.version()).isEqualTo(1);
+                    });
+            assertThatThrownBy(() -> stateStore.executionStore().updateStatus(
+                    "engine-a", ExecutionStatus.COMPLETED, 0))
+                    .isInstanceOf(OptimisticLockException.class);
+
+            var mutation = stage.prepare(
+                    "checkpoint-0", "only", "SUSPEND", 1, 1);
+            repository.create(control(mutation.engineState()), mutation);
+        }
+
+        assertThat(stateStore.executionStore().get("engine-a"))
+                .get().satisfies(instance -> {
+                    assertThat(instance.status()).isEqualTo(ExecutionStatus.SUSPENDED);
+                    assertThat(instance.version()).isEqualTo(1);
+                });
+    }
+
+    @Test
+    void aggregateFingerprintChangesWhenOnlyTheExecutionLifecycleChanges() {
+        String runningFingerprint;
+        try (StagedBlogeDurableStateStore.Stage stage =
+                     stateStore.begin("engine-a",
+                             ExecutionServices.builder().build().timeSource())) {
+            stateStore.executionStore().create(
+                    ExecutionInstance.builder(executionIdentity())
+                            .status(ExecutionStatus.RUNNING)
+                            .build());
+            runningFingerprint = stage.prepare(
+                    "checkpoint-0", "only", "NODE_BOUNDARY", 1, 0)
+                    .engineState().closureFingerprint();
+        }
+
+        String suspendedFingerprint;
+        try (StagedBlogeDurableStateStore.Stage stage =
+                     stateStore.begin("engine-a",
+                             ExecutionServices.builder().build().timeSource())) {
+            stateStore.executionStore().create(
+                    ExecutionInstance.builder(executionIdentity())
+                            .status(ExecutionStatus.SUSPENDED)
+                            .build());
+            suspendedFingerprint = stage.prepare(
+                    "checkpoint-0", "only", "NODE_BOUNDARY", 1, 0)
+                    .engineState().closureFingerprint();
+        }
+
+        assertThat(suspendedFingerprint).isNotEqualTo(runningFingerprint);
+    }
+
+    @Test
+    void concurrentControlCasRollsBackTheLosingExecutionLifecycle() throws Exception {
+        try (StagedBlogeDurableStateStore.Stage initialStage = stateStore.begin(
+                "engine-a", ExecutionServices.builder().build().timeSource())) {
+            stateStore.executionStore().create(
+                    ExecutionInstance.builder(executionIdentity())
+                            .status(ExecutionStatus.RUNNING)
+                            .build());
+            var initialMutation = initialStage.prepare(
+                    "checkpoint-initial", "initial", "NODE_BOUNDARY", 1, 0);
+            repository.create(control(0, initialMutation.engineState()), initialMutation);
+        }
+        StagedBlogeDurableStateStore competing =
+                new StagedBlogeDurableStateStore(database.jdbc(), objectMapper);
+        competing.init();
+        CountDownLatch bothApplied = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+
+        try (StagedBlogeDurableStateStore.Stage first = stateStore.begin(
+                "engine-a", ExecutionServices.builder().build().timeSource());
+             StagedBlogeDurableStateStore.Stage second = competing.begin(
+                     "engine-a", ExecutionServices.builder().build().timeSource())) {
+            stateStore.executionStore().create(
+                    ExecutionInstance.builder(executionIdentity())
+                            .status(ExecutionStatus.SUSPENDED)
+                            .build());
+            competing.executionStore().create(
+                    ExecutionInstance.builder(executionIdentity())
+                            .status(ExecutionStatus.COMPLETED)
+                            .build());
+            var firstMutation = first.prepare(
+                    "checkpoint-a", "candidate-a", "SUSPEND", 2, 1);
+            var secondMutation = second.prepare(
+                    "checkpoint-b", "candidate-b", "NODE_BOUNDARY", 2, 1);
+
+            try (var executor = Executors.newFixedThreadPool(2)) {
+                var firstResult = executor.submit(() -> advanceCandidate(
+                        firstMutation, bothApplied, release));
+                var secondResult = executor.submit(() -> advanceCandidate(
+                        secondMutation, bothApplied, release));
+                assertThat(bothApplied.await(5, TimeUnit.SECONDS)).isTrue();
+                release.countDown();
+                assertThat((firstResult.get() ? 1 : 0) + (secondResult.get() ? 1 : 0))
+                        .isEqualTo(1);
+            }
+        }
+
+        String winner = repository.find("tenant-a", "test", "run-a")
+                .orElseThrow().engineState().nodeId();
+        ExecutionStatus expected = "candidate-a".equals(winner)
+                ? ExecutionStatus.SUSPENDED : ExecutionStatus.COMPLETED;
+        assertThat(stateStore.executionStore().get("engine-a"))
+                .get().extracting(instance -> instance.status()).isEqualTo(expected);
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_bloge_executions", Integer.class)).isEqualTo(1);
+    }
+
+    private IndependentDurableTestEngineFactory factory(StagedBlogeDurableStateStore store) {
+        return new IndependentDurableTestEngineFactory(
+                new DefaultOperatorRegistry(), new JacksonCheckpointCodec(objectMapper), store);
+    }
+
+    private Graph graph() {
+        Operator<Void, String> operator = (ignored, context) -> "real";
+        return new GraphBuilder("controlled-durable-state")
+                .node("only", operator)
+                .build();
+    }
+
+    private ExecutionOptions executionOptions() {
+        return ExecutionOptions.builder()
+                .operatorResolver(request ->
+                        (Operator<Void, String>) (ignored, context) -> "fixture")
+                .executionServices(ExecutionServices.builder()
+                        .idGenerator(scope -> "fixture-id")
+                        .build())
+                .build();
+    }
+
+    private ExecutionIdentity executionIdentity() {
+        return new ExecutionIdentity(
+                "tenant-a", "test-runtime", null, "engine-a",
+                ExecutionType.GRAPH,
+                "controlled-durable-state", "1", SHA_A,
+                null, null, null, "run-a");
+    }
+
+    private DurableTestExecutionCheckpointRepository.BoundEngineStateMutation failingAfterApply(
+            DurableTestExecutionCheckpointRepository.BoundEngineStateMutation delegate) {
+        return new DurableTestExecutionCheckpointRepository.BoundEngineStateMutation() {
+            @Override
+            public String engineExecutionId() {
+                return delegate.engineExecutionId();
+            }
+
+            @Override
+            public DurableTestExecutionCheckpoint.EngineState engineState() {
+                return delegate.engineState();
+            }
+
+            @Override
+            public void apply(JdbcTemplate jdbc) {
+                delegate.apply(jdbc);
+                throw new IllegalStateException("failure after complete BLOGE state");
+            }
+        };
+    }
+
+    private boolean advanceCandidate(
+            DurableTestExecutionCheckpointRepository.BoundEngineStateMutation mutation,
+            CountDownLatch entered,
+            CountDownLatch release) {
+        DurableTestExecutionCheckpointRepository.BoundEngineStateMutation coordinated =
+                new DurableTestExecutionCheckpointRepository.BoundEngineStateMutation() {
+                    @Override
+                    public String engineExecutionId() {
+                        return mutation.engineExecutionId();
+                    }
+
+                    @Override
+                    public DurableTestExecutionCheckpoint.EngineState engineState() {
+                        return mutation.engineState();
+                    }
+
+                    @Override
+                    public void apply(JdbcTemplate jdbc) {
+                        entered.countDown();
+                        try {
+                            if (!release.await(5, TimeUnit.SECONDS)) {
+                                throw new IllegalStateException("concurrency test did not release");
+                            }
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                            throw new IllegalStateException(
+                                    "concurrency test was interrupted", interrupted);
+                        }
+                        mutation.apply(jdbc);
+                    }
+                };
+        try {
+            repository.advance(control(1, mutation.engineState()),
+                    new DurableTestExecutionCheckpointRepository.Fence(
+                            "instance-a", 1, 0), coordinated);
+            return true;
+        } catch (com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException
+                 expected) {
+            return false;
+        }
+    }
+
+    private DurableTestExecutionCheckpoint control(
+            DurableTestExecutionCheckpoint.EngineState engineState) {
+        return control(0, engineState);
+    }
+
+    private DurableTestExecutionCheckpoint control(
+            long revision, DurableTestExecutionCheckpoint.EngineState engineState) {
+        Instant now = Instant.parse("2026-07-16T08:00:00Z").plusSeconds(revision);
+        EffectiveExecutionPlan plan = new EffectiveExecutionPlan(
+                EffectiveExecutionPlan.SCHEMA_VERSION, "plan-a", SHA_A,
+                "GRAPH_CONTRACT_TEST", SHA_B, SHA_C, List.of(), List.of(), List.of(),
+                Map.of("unmatchedExternalEffect", "DENY"), List.of());
+        ExecutionServiceStateSnapshot unsealedProvider = new ExecutionServiceStateSnapshot(
+                ExecutionServiceStateSnapshot.SCHEMA_VERSION, SHA_A, SHA_B, now,
+                Map.of(SHA_C, revision + 1), Map.of(), List.of(), true, List.of(), SHA_D);
+        ExecutionServiceStateSnapshot provider = new ExecutionServiceStateSnapshot(
+                unsealedProvider.schemaVersion(), unsealedProvider.planFingerprint(),
+                unsealedProvider.bindingSetFingerprint(), unsealedProvider.logicalTime(),
+                unsealedProvider.randomScopeCursors(), unsealedProvider.uuidScopeCursors(),
+                unsealedProvider.usages(), unsealedProvider.restorable(),
+                unsealedProvider.restoreGaps(), ProtocolFingerprint.of(
+                objectMapper, unsealedProvider.fingerprintMaterial()));
+        return integrity.seal(new DurableTestExecutionCheckpoint(
+                DurableTestExecutionCheckpoint.SCHEMA_VERSION,
+                new DurableTestExecutionCheckpoint.Scope(
+                        "tenant-a", "org-a", "project-a", "test", "runner"),
+                "run-a", "engine-a",
+                new DurableTestExecutionCheckpoint.ControlDependencies(
+                        plan, new DurableTestExecutionCheckpoint.ExactFixtureRef(
+                        "fixture-a", 3, SHA_C), "DENY_REAL",
+                        new DurableTestExecutionCheckpoint.AuthoritySnapshot("FAIL_CLOSED", SHA_D)),
+                new FixtureConsumptionStateSnapshot(
+                        FixtureConsumptionStateSnapshot.SCHEMA_VERSION,
+                        Map.of("rule-a", revision + 1), Map.of(SHA_A, revision + 1),
+                        Map.of(SHA_B, revision + 1), ""),
+                provider,
+                engineState,
+                new DurableTestExecutionCheckpoint.Lifecycle(
+                        DurableTestExecutionCheckpoint.Status.SUSPENDED, "instance-a", 1,
+                        revision, Instant.parse("2026-07-16T08:00:00Z"), now,
+                        now.plusSeconds(30)), ""));
+    }
+}

@@ -15,7 +15,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecurityEven
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
-import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeExecutionCheckpointStore;
+import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
@@ -71,12 +71,12 @@ public class TestRuntimeConfiguration {
     @Bean
     DurableTestRuntimeResources durableTestRuntimeResources(
             TestRuntimeDatabase database, ObjectMapper objectMapper, OperatorRegistry operatorRegistry) {
-        StagedBlogeExecutionCheckpointStore checkpointStore =
-                new StagedBlogeExecutionCheckpointStore(database.jdbc(), objectMapper);
-        checkpointStore.init();
+        StagedBlogeDurableStateStore durableStateStore =
+                new StagedBlogeDurableStateStore(database.jdbc(), objectMapper);
+        durableStateStore.init();
         IndependentDurableTestEngineFactory engineFactory =
                 new IndependentDurableTestEngineFactory(operatorRegistry,
-                        new JacksonCheckpointCodec(objectMapper), checkpointStore);
+                        new JacksonCheckpointCodec(objectMapper), durableStateStore);
         return new DurableTestRuntimeResources(engineFactory);
     }
 
