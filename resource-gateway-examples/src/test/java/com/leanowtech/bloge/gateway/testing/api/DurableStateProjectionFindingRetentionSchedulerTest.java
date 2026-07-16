@@ -17,6 +17,7 @@ class DurableStateProjectionFindingRetentionSchedulerTest {
     void delegatesBoundedRetentionAndSurvivesBusyAndFailedTicks() {
         DatabaseDurableStateProjectionControlPlane controlPlane =
                 mock(DatabaseDurableStateProjectionControlPlane.class);
+        DurableStateProjectionTelemetry telemetry = mock(DurableStateProjectionTelemetry.class);
         when(controlPlane.retainFindings(
                 Duration.ofDays(30), Duration.ofDays(365), 1000))
                 .thenReturn(DatabaseDurableStateProjectionControlPlane.RetentionAttempt.busy())
@@ -26,7 +27,8 @@ class DurableStateProjectionFindingRetentionSchedulerTest {
                                 2, 1, java.time.Instant.parse("2026-07-17T06:00:00Z"))));
         DurableStateProjectionFindingRetentionScheduler scheduler =
                 new DurableStateProjectionFindingRetentionScheduler(
-                        controlPlane, Duration.ofDays(30), Duration.ofDays(365), 5000);
+                        controlPlane, Duration.ofDays(30), Duration.ofDays(365), 5000,
+                        telemetry);
 
         scheduler.retain();
         scheduler.retain();
@@ -34,6 +36,11 @@ class DurableStateProjectionFindingRetentionSchedulerTest {
 
         verify(controlPlane, times(3)).retainFindings(
                 Duration.ofDays(30), Duration.ofDays(365), 1000);
+        verify(telemetry, times(2)).recordRetention(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(Duration.class));
+        verify(telemetry).recordRetentionFailure(
+                org.mockito.ArgumentMatchers.any(Duration.class));
     }
 
     @Test

@@ -77,6 +77,14 @@ Independent-store settings:
 | `gateway.testing.replay-payloads.sweep-batch-size` | `RG_TEST_REPLAY_SWEEP_BATCH_SIZE` | `100` |
 | `gateway.testing.durable.projection-findings.required-group` | `RG_TEST_PROJECTION_FINDING_REQUIRED_GROUP` | `resource-gateway-test-runtime-operators` |
 | `gateway.testing.durable.projection-findings.required-clearance` | `RG_TEST_PROJECTION_FINDING_REQUIRED_CLEARANCE` | `RESTRICTED` |
+| `gateway.testing.durable.projection-slo.observation-interval-ms` | `RG_TEST_PROJECTION_SLO_OBSERVATION_INTERVAL_MS` | `30000` |
+| `gateway.testing.durable.projection-slo.startup-grace-seconds` | `RG_TEST_PROJECTION_SLO_STARTUP_GRACE_SECONDS` | `180` |
+| `gateway.testing.durable.projection-slo.max-reconciliation-staleness-seconds` | `RG_TEST_PROJECTION_SLO_MAX_RECONCILIATION_STALENESS_SECONDS` | `180` |
+| `gateway.testing.durable.projection-slo.max-retention-staleness-seconds` | `RG_TEST_PROJECTION_SLO_MAX_RETENTION_STALENESS_SECONDS` | `10800` |
+| `gateway.testing.durable.projection-slo.max-unresolved-findings` | `RG_TEST_PROJECTION_SLO_MAX_UNRESOLVED_FINDINGS` | `0` |
+| `gateway.testing.durable.projection-slo.max-unresolved-age-seconds` | `RG_TEST_PROJECTION_SLO_MAX_UNRESOLVED_AGE_SECONDS` | `3600` |
+| `gateway.testing.durable.projection-slo.max-overdue-resolved-findings` | `RG_TEST_PROJECTION_SLO_MAX_OVERDUE_RESOLVED_FINDINGS` | `0` |
+| `gateway.testing.durable.projection-slo.max-overdue-archive-records` | `RG_TEST_PROJECTION_SLO_MAX_OVERDUE_ARCHIVE_RECORDS` | `0` |
 
 ## 3. Authentication
 
@@ -944,6 +952,24 @@ Environment variables for the packaged test/staging profiles are:
 The loop reuses `gateway.testing.durable.projection-reconciliation.instance-id` and
 `gateway.testing.durable.projection-reconciliation.lease-duration-seconds`, but has its own durable lease row; retention work
 cannot advance or hold the anti-entropy keyset cursor.
+
+The same profile installs `durableStateProjectionSloMonitor` as an Actuator health component. Its
+source is one database transaction and one database timestamp, not replica wall clocks or logs. The
+stable violation codes are:
+
+- `RECONCILIATION_NEVER_SUCCEEDED` / `RECONCILIATION_STALE`;
+- `RETENTION_NEVER_SUCCEEDED` / `RETENTION_STALE`;
+- `UNRESOLVED_FINDING_LIMIT_EXCEEDED` / `UNRESOLVED_FINDING_AGE_EXCEEDED`;
+- `RESOLVED_RETENTION_BACKLOG_EXCEEDED` / `ARCHIVE_PURGE_BACKLOG_EXCEEDED`;
+- `PROJECTION_STORE_UNAVAILABLE`.
+
+Safety/backlog violations override startup initialization. Store failures return `DOWN` with only
+the stable code; exception messages are discarded. Micrometer records attempt counters and timers,
+finding-state gauges, active/archive backlog, last-success age, and numeric health under
+`resource.gateway.test.projection.*`. The only tag keys are the closed vocabularies `result`,
+`state`, `tier`, and `loop`; tenant, row, operator, token, error, and payload labels are forbidden.
+Only Actuator health is web-exposed by default. A deployment must explicitly secure and configure a
+registry/exporter before exporting metrics, and should keep detailed health output authorized.
 
 ### 4.2.2 Register an immutable test suite
 
@@ -1867,7 +1893,8 @@ Still intentionally outside this increment:
   `GovernanceGateResult.v3` through a reconstructable exact-evidence basis, but the ANEKE publish
   decision itself remains outside Resource Gateway;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
-  reconciliation alert SLOs, and suite-history list/trend APIs;
+  execution/suite/capacity SLOs, alert routing, and suite-history list/trend APIs; the projection
+  control loops now have a first aggregate-only health and metrics slice;
 - operator-target durable creation, dispatcher/polling, cross-process recovery supervision and
   multi-boundary recovery orchestration, hard worker cancellation, typed identity/flag/secret
   authorities, explicit

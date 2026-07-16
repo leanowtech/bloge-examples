@@ -30,6 +30,8 @@ import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
 import com.leanowtech.bloge.durable.codec.JacksonCheckpointCodec;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
@@ -108,6 +110,14 @@ public class TestRuntimeConfiguration {
                 Duration.ofSeconds(leaseDurationSeconds));
     }
 
+    /** Registers projection metrics with fixed tag vocabularies and aggregate-only values. */
+    @Bean
+    DurableStateProjectionTelemetry durableStateProjectionTelemetry(
+            ObjectProvider<MeterRegistry> meterRegistry) {
+        return new DurableStateProjectionTelemetry(
+                meterRegistry.getIfAvailable(SimpleMeterRegistry::new));
+    }
+
     /** Assembles the globally authorized, action-audited projection finding owner queue. */
     @Bean
     DurableStateProjectionFindingService durableStateProjectionFindingService(
@@ -126,13 +136,14 @@ public class TestRuntimeConfiguration {
     @Bean
     DurableStateProjectionReconciliationScheduler durableStateProjectionReconciliationScheduler(
             DatabaseDurableStateProjectionControlPlane controlPlane,
+            DurableStateProjectionTelemetry telemetry,
             @Value("${gateway.testing.durable.projection-reconciliation-page-size:100}")
             int pageSize,
             @Value("${gateway.testing.durable.projection-reconciliation-mode:REPAIR_DERIVED}")
             String repairMode) {
         return new DurableStateProjectionReconciliationScheduler(
                 controlPlane, pageSize,
-                DurableStateProjectionReconciler.RepairMode.parse(repairMode));
+                DurableStateProjectionReconciler.RepairMode.parse(repairMode), telemetry);
     }
 
     /** Archives and purges resolved projection findings in bounded database-leased pages. */
@@ -140,6 +151,7 @@ public class TestRuntimeConfiguration {
     DurableStateProjectionFindingRetentionScheduler
             durableStateProjectionFindingRetentionScheduler(
                     DatabaseDurableStateProjectionControlPlane controlPlane,
+                    DurableStateProjectionTelemetry telemetry,
                     @Value("${gateway.testing.durable.projection-findings.resolved-retention-days:30}")
                     long resolvedRetentionDays,
                     @Value("${gateway.testing.durable.projection-findings.archive-retention-days:365}")
@@ -148,7 +160,43 @@ public class TestRuntimeConfiguration {
                     int pageSize) {
         return new DurableStateProjectionFindingRetentionScheduler(
                 controlPlane, Duration.ofDays(resolvedRetentionDays),
-                Duration.ofDays(archiveRetentionDays), pageSize);
+                Duration.ofDays(archiveRetentionDays), pageSize, telemetry);
+    }
+
+    /** Assesses durable projection freshness and backlog policy from the database clock. */
+    @Bean
+    DurableStateProjectionSloMonitor durableStateProjectionSloMonitor(
+            DatabaseDurableStateProjectionControlPlane controlPlane,
+            DurableStateProjectionTelemetry telemetry,
+            @Value("${gateway.testing.durable.projection-findings.resolved-retention-days:30}")
+            long resolvedRetentionDays,
+            @Value("${gateway.testing.durable.projection-findings.archive-retention-days:365}")
+            long archiveRetentionDays,
+            @Value("${gateway.testing.durable.projection-slo.startup-grace-seconds:180}")
+            long startupGraceSeconds,
+            @Value("${gateway.testing.durable.projection-slo.max-reconciliation-staleness-seconds:180}")
+            long reconciliationStalenessSeconds,
+            @Value("${gateway.testing.durable.projection-slo.max-retention-staleness-seconds:10800}")
+            long retentionStalenessSeconds,
+            @Value("${gateway.testing.durable.projection-slo.max-unresolved-findings:0}")
+            long maxUnresolvedFindings,
+            @Value("${gateway.testing.durable.projection-slo.max-unresolved-age-seconds:3600}")
+            long maxUnresolvedAgeSeconds,
+            @Value("${gateway.testing.durable.projection-slo.max-overdue-resolved-findings:0}")
+            long maxOverdueResolvedFindings,
+            @Value("${gateway.testing.durable.projection-slo.max-overdue-archive-records:0}")
+            long maxOverdueArchiveRecords) {
+        return new DurableStateProjectionSloMonitor(controlPlane, telemetry,
+                new DurableStateProjectionSloMonitor.Policy(
+                        Duration.ofDays(resolvedRetentionDays),
+                        Duration.ofDays(archiveRetentionDays),
+                        Duration.ofSeconds(startupGraceSeconds),
+                        Duration.ofSeconds(reconciliationStalenessSeconds),
+                        Duration.ofSeconds(retentionStalenessSeconds),
+                        maxUnresolvedFindings,
+                        Duration.ofSeconds(maxUnresolvedAgeSeconds),
+                        maxOverdueResolvedFindings,
+                        maxOverdueArchiveRecords));
     }
 
     @Bean

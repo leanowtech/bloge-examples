@@ -62,6 +62,8 @@ class TestRuntimeProfileIsolationTest {
                     DurableStateProjectionReconciliationScheduler.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableStateProjectionFindingRetentionScheduler.class)).isEmpty();
+            assertThat(context.getBeansOfType(DurableStateProjectionSloMonitor.class)).isEmpty();
+            assertThat(context.getBeansOfType(DurableStateProjectionTelemetry.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DatabaseDurableStateProjectionControlPlane.class)).isEmpty();
             assertThat(context.getBeansOfType(
@@ -123,6 +125,8 @@ class TestRuntimeProfileIsolationTest {
                     DurableStateProjectionReconciliationScheduler.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableStateProjectionFindingRetentionScheduler.class)).hasSize(1);
+            assertThat(context.getBeansOfType(DurableStateProjectionSloMonitor.class)).hasSize(1);
+            assertThat(context.getBeansOfType(DurableStateProjectionTelemetry.class)).hasSize(1);
             assertThat(context.getBean(TestabilityAvailability.class).executionEndpointEnabled()).isTrue();
             ObjectMapper mapper = context.getBean(ObjectMapper.class);
             TestRunEvidence evidence = TestSemanticResultFingerprint.attach(mapper,
@@ -166,6 +170,8 @@ class TestRuntimeProfileIsolationTest {
                     DurableStateProjectionReconciliationScheduler.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableStateProjectionFindingRetentionScheduler.class)).isEmpty();
+            assertThat(context.getBeansOfType(DurableStateProjectionSloMonitor.class)).isEmpty();
+            assertThat(context.getBeansOfType(DurableStateProjectionTelemetry.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DatabaseDurableStateProjectionControlPlane.class)).isEmpty();
             assertThat(context.getBeansOfType(

@@ -4,10 +4,12 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProj
 import com.leanowtech.bloge.gateway.testing.persistence.DurableStateProjectionReconciler;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -17,6 +19,7 @@ class DurableStateProjectionReconciliationSchedulerTest {
     void delegatesDurableCursorOwnershipAndSurvivesBusyAndFailedTicks() {
         DatabaseDurableStateProjectionControlPlane controlPlane =
                 mock(DatabaseDurableStateProjectionControlPlane.class);
+        DurableStateProjectionTelemetry telemetry = mock(DurableStateProjectionTelemetry.class);
         DurableStateProjectionReconciler.ScanCursor next =
                 new DurableStateProjectionReconciler.ScanCursor("engine-10", "item-10");
         when(controlPlane.reconcilePage(1000,
@@ -29,7 +32,7 @@ class DurableStateProjectionReconciliationSchedulerTest {
         DurableStateProjectionReconciliationScheduler scheduler =
                 new DurableStateProjectionReconciliationScheduler(
                         controlPlane, 5000,
-                        DurableStateProjectionReconciler.RepairMode.REPAIR_DERIVED);
+                        DurableStateProjectionReconciler.RepairMode.REPAIR_DERIVED, telemetry);
 
         scheduler.reconcile();
         scheduler.reconcile();
@@ -37,6 +40,11 @@ class DurableStateProjectionReconciliationSchedulerTest {
 
         verify(controlPlane, org.mockito.Mockito.times(3)).reconcilePage(1000,
                 DurableStateProjectionReconciler.RepairMode.REPAIR_DERIVED);
+        verify(telemetry, times(2)).recordReconciliation(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(Duration.class));
+        verify(telemetry).recordReconciliationFailure(
+                org.mockito.ArgumentMatchers.any(Duration.class));
     }
 
     @Test

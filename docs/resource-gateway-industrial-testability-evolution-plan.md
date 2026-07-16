@@ -63,7 +63,10 @@ actor。claim/resolve 以 caller-stable key + canonical intent receipt 实现精
 和 replay 也追加事件，claim token 只出现在成功 claim response。日志仍只有聚合计数。resolved finding
 现由第二条 database-leased retention loop 处理：active/archive 两级保留期和每阶段页大小均有界；
 token-free archive insert、exact source delete、archive purge 与 counter checkpoint 同事务，跨副本单
-owner，失败整体回滚；archive read 复算 canonical whole-record fingerprint。当前剩余 SLO/metrics、外部
+owner，失败整体回滚；archive read 复算 canonical whole-record fingerprint。第十八增量已用同一数据库
+事务和数据库时钟形成 payload-free operational snapshot，以稳定 violation code 提供 Actuator health，
+并以固定 `result/state/tier/loop` 标签提供 reconciliation/retention attempt、duration、finding state、
+backlog、last-success age 与 health 指标。当前剩余全局 execution/suite/capacity SLO 与 alert routing、外部
 WORM/tamper-evident audit/archive anchoring、非 H2 方言与生产负载认证。
 
 实现细节、行为兼容决策和可复现测试见
@@ -137,7 +140,7 @@ Exact semantic suite 到 ANEKE payload-free workbook seed 的投影、失败边�
 Semantic workbook 到 ANEKE gate decision 的 exact evidence 重建、GraphDraft 编译 target 绑定与 v2 兼容证明见
 [Stage 3 semantic gate basis verification](resource-gateway-execution-data-control-plane-stage3-semantic-gate-basis-verification.md)。
 
-当前严格验收基线：Resource Gateway `-Pfrontend clean verify` 共 2092 tests、0 failures、0 errors、
+当前严格验收基线：Resource Gateway `-Pfrontend clean verify` 共 2096 tests、0 failures、0 errors、
 0 skips，真实浏览器回归与 Spring Boot JAR 打包成功；Canvas suite 聚焦 68 tests、
 前端全量 150 tests，并在桌面与 390 x 844 真实浏览器中完成两行一等 suite 发布；Canvas 对完整
 stored suite value、child evidence、coverage、promotion 与 aggregate 一致性 fail closed；immutable TestSuite
@@ -146,7 +149,7 @@ runner/attestation/protocol 增量聚焦 49 tests；key lifecycle 增量聚焦 4
 增量聚焦 23 tests，integration package 138 tests 全绿；完整 suite/catalog/semantic workbook/gate v3 wire value 按打包的
 Draft 2020-12 schema 校验并回绑 request identity，`RUNNING` 在无 polling CLI 中退出 2，
 未知参数值与 validator 细节不进入日志，public JavaDoc 零告警且由 `verify` 门禁强制；Stage 4
-durable checkpoint/aggregate/public payload-free query/owner-claim/internal recovery/authorization-bound dispatch/authenticated live-fence heartbeat/terminal commit/automatic terminal heartbeat/worker SQL scan/projection anti-entropy 聚焦 190 tests 全绿；其中 worker scan 的 3 个数据库测试证明 SQL 前置过滤、稳定排序、有界分页与候选投影漂移拒绝，7 个 scanner/scheduler 测试覆盖安全自愈、审计模式、安全域拒修、坏行隔离、双游标推进、authority CAS 竞态和调度器容错，新增 5 个 durable control-plane 测试覆盖跨副本持久游标、单 owner/过期接管/旧 fence 拒绝、repair+finding+cursor 原子回滚、finding claim/resolve fencing 与一致性复查关闭；authenticated finding operations/audit 的 persistence/service/controller/profile/capability/schema/application 组合聚焦 24 tests；finding retention/archive 的 database lease、两级有界生命周期、原子 rollback、whole-record fingerprint、profile/capability 组合聚焦 18 tests；authenticated durable GRAPH creation 的 runtime/repository/authorizer/service/controller/schema/capability 组合聚焦 71 tests；creation preparation heartbeat 的 repository/coordinator/service/capability 组合聚焦 65 tests；本轮 automatic terminal-recovery heartbeat 的 coordinator/heartbeat-service/terminal-service/capability/Spring wiring 组合聚焦 33 tests，均全绿。
+durable checkpoint/aggregate/public payload-free query/owner-claim/internal recovery/authorization-bound dispatch/authenticated live-fence heartbeat/terminal commit/automatic terminal heartbeat/worker SQL scan/projection anti-entropy 聚焦 190 tests 全绿；其中 worker scan 的 3 个数据库测试证明 SQL 前置过滤、稳定排序、有界分页与候选投影漂移拒绝，7 个 scanner/scheduler 测试覆盖安全自愈、审计模式、安全域拒修、坏行隔离、双游标推进、authority CAS 竞态和调度器容错，新增 5 个 durable control-plane 测试覆盖跨副本持久游标、单 owner/过期接管/旧 fence 拒绝、repair+finding+cursor 原子回滚、finding claim/resolve fencing 与一致性复查关闭；authenticated finding operations/audit 的 persistence/service/controller/profile/capability/schema/application 组合聚焦 24 tests；finding retention/archive 的 database lease、两级有界生命周期、原子 rollback、whole-record fingerprint、profile/capability 组合聚焦 18 tests；projection SLO snapshot/health/telemetry/scheduler/profile/capability 聚焦 24 tests；authenticated durable GRAPH creation 的 runtime/repository/authorizer/service/controller/schema/capability 组合聚焦 71 tests；creation preparation heartbeat 的 repository/coordinator/service/capability 组合聚焦 65 tests；本轮 automatic terminal-recovery heartbeat 的 coordinator/heartbeat-service/terminal-service/capability/Spring wiring 组合聚焦 33 tests，均全绿。
 
 ## 1. 结论先行
 
@@ -1277,7 +1280,10 @@ version fence 与稳定 409 语义已协议化。首次 claim/resolve 和 token-
 lease/state 与 token-free archive：active 及 archive retention 都按 database clock 和稳定顺序有界处理，
 archive insert、exact source delete、purge 与累计 counter 同事务；archive read 复算 whole-record fingerprint。
 应用层审计与同库 archive 均无 update/delete API，
-但仍缺外部 WORM/tamper-evident anchoring、SLO/metrics、非 H2 方言与生产负载认证，且仍无公开 worker poll、
+第十八增量再以 database-clock operational snapshot、稳定 SLO violation code、Actuator health 和低基数
+Micrometer 指标关闭 projection loop 的基础运维观测缺口；store exception、row/token/payload 均不进入
+health detail 或 label。但仍缺外部 WORM/tamper-evident anchoring、全局 execution/suite/capacity SLO 与
+alert routing、非 H2 方言与生产负载认证，且仍无公开 worker poll、
 原子远程 acquisition 或生产级跨进程 supervisor。
 `bloge.testWorkItemMutation.v1` 由 `bloge.testDurableStateMutation.v3` 纳入聚合，不修改 v1/v2
 历史 fingerprint。冷读、回滚、retry/dead-letter、tenant、异步可见性、过期 claim、跨实例 CAS

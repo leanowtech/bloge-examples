@@ -599,9 +599,22 @@ operator-facing policy to whole days. Retention uses the same stable
 anti-entropy, but owns an independent lease row and cannot block the scan cursor. After active retention elapses, the ordinary finding endpoint
 no longer returns that historical lifecycle; the archive is currently an internal persistence and
 readiness surface, not a public evidence API. Its unkeyed fingerprint catches ordinary row drift but
-does not prove external immutability. Metrics/SLO alerts, non-H2 dialect certification,
-tamper-evident external audit/archive anchoring, and production load certification remain future
-work.
+does not prove external immutability.
+
+The test/staging profile also installs a database-clock SLO health indicator and fixed-cardinality
+Micrometer meters for these two control loops. One transactionally consistent snapshot measures
+open/live-claimed/expired-claim/resolved findings, overdue active/archive retention, and both durable
+last-success timestamps without exporting row IDs, tokens, exception text, or payloads. Health is
+`UP`, `UNKNOWN`, `OUT_OF_SERVICE`, or `DOWN` for `HEALTHY`, startup `INITIALIZING`, stable SLO
+violations, or store unavailability. Defaults allow 180 seconds for startup and reconciliation,
+three hours for retention, one hour for the oldest unresolved finding, and zero unresolved or
+overdue rows. Configure these under `gateway.testing.durable.projection-slo.*` or the corresponding
+`RG_TEST_PROJECTION_SLO_*` variables. `/actuator/health` is the only default Actuator web exposure;
+metric export remains a deployment-owned registry/exporter decision, and health details stay hidden
+unless management security explicitly permits them. Execution/suite/capacity SLOs, non-H2 dialect
+certification, tamper-evident external audit/archive anchoring, and production load certification
+remain future work.
+
 Wait identity must match the lifecycle identity, and committed wait/work-item ids cannot migrate to
 another execution. Work-item batches validate atomically, and claim, retry, terminal, and dead-letter
 transitions reuse BLOGE's reference state machine. An internal database-clock lease claim can fence an

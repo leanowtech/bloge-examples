@@ -387,6 +387,9 @@ public record IntegrationCapabilities(
                 testExecutionEndpointEnabled);
         features.put("boundedDurableStateProjectionFindingRetention",
                 testExecutionEndpointEnabled);
+        features.put("durableStateProjectionSloHealth", testExecutionEndpointEnabled);
+        features.put("boundedCardinalityDurableStateProjectionMetrics",
+                testExecutionEndpointEnabled);
         features.put("signedTestRunEvidence", testExecutionEndpointEnabled && signer.available());
         features.put("suiteSignedChildEvidenceGate", testExecutionEndpointEnabled && signer.available());
         features.put("signedTestSuiteRunAttestation",

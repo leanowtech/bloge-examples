@@ -19,6 +19,15 @@ gateway:
         archive-retention-days: ${RG_TEST_PROJECTION_FINDING_ARCHIVE_RETENTION_DAYS:365}
         retention-page-size: ${RG_TEST_PROJECTION_FINDING_RETENTION_PAGE_SIZE:100}
         retention-interval-ms: ${RG_TEST_PROJECTION_FINDING_RETENTION_INTERVAL_MS:3600000}
+      projection-slo:
+        observation-interval-ms: ${RG_TEST_PROJECTION_SLO_OBSERVATION_INTERVAL_MS:30000}
+        startup-grace-seconds: ${RG_TEST_PROJECTION_SLO_STARTUP_GRACE_SECONDS:180}
+        max-reconciliation-staleness-seconds: ${RG_TEST_PROJECTION_SLO_MAX_RECONCILIATION_STALENESS_SECONDS:180}
+        max-retention-staleness-seconds: ${RG_TEST_PROJECTION_SLO_MAX_RETENTION_STALENESS_SECONDS:10800}
+        max-unresolved-findings: ${RG_TEST_PROJECTION_SLO_MAX_UNRESOLVED_FINDINGS:0}
+        max-unresolved-age-seconds: ${RG_TEST_PROJECTION_SLO_MAX_UNRESOLVED_AGE_SECONDS:3600}
+        max-overdue-resolved-findings: ${RG_TEST_PROJECTION_SLO_MAX_OVERDUE_RESOLVED_FINDINGS:0}
+        max-overdue-archive-records: ${RG_TEST_PROJECTION_SLO_MAX_OVERDUE_ARCHIVE_RECORDS:0}
     suite-runs:
       instance-id: ${RG_TEST_SUITE_RUNNER_INSTANCE_ID:}
       lease-duration-seconds: ${RG_TEST_SUITE_LEASE_SECONDS:30}

@@ -40,7 +40,9 @@ class TestabilityCapabilitiesTest {
         assertThat(disabled.features())
                 .containsEntry("authenticatedDurableStateProjectionOperations", false)
                 .containsEntry("immutableDurableStateProjectionActionAudit", false)
-                .containsEntry("boundedDurableStateProjectionFindingRetention", false);
+                .containsEntry("boundedDurableStateProjectionFindingRetention", false)
+                .containsEntry("durableStateProjectionSloHealth", false)
+                .containsEntry("boundedCardinalityDurableStateProjectionMetrics", false);
         assertThat(enabled.testability().executionEndpointEnabled()).isTrue();
         assertThat(enabled.supportedObjects()).containsKeys("testExecutionRequest", "testExecutionResponse",
                 "testExecutionBatchRequest", "testExecutionBatchResponse", "fixtureBundleRegistrationRequest",
@@ -91,6 +93,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("authenticatedDurableStateProjectionOperations", true)
                 .containsEntry("immutableDurableStateProjectionActionAudit", true)
                 .containsEntry("boundedDurableStateProjectionFindingRetention", true)
+                .containsEntry("durableStateProjectionSloHealth", true)
+                .containsEntry("boundedCardinalityDurableStateProjectionMetrics", true)
                 .containsEntry("signedTestRunEvidence", false)
                 .containsEntry("suiteSignedChildEvidenceGate", false)
                 .containsEntry("signedTestSuiteRunAttestation", false)

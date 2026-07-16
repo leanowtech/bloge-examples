@@ -56,6 +56,7 @@ public final class DatabaseDurableStateProjectionControlPlane {
     private final ObjectMapper objectMapper;
     private final DurableStateProjectionReconciler reconciler;
     private final TransactionTemplate transactions;
+    private final TransactionTemplate observations;
     private final String ownerId;
     private final Duration sweepLeaseDuration;
 
@@ -77,9 +78,13 @@ public final class DatabaseDurableStateProjectionControlPlane {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.reconciler = new DurableStateProjectionReconciler(jdbc, objectMapper);
-        this.transactions = new TransactionTemplate(
-                Objects.requireNonNull(transactionManager, "transactionManager"));
+        PlatformTransactionManager safeTransactionManager =
+                Objects.requireNonNull(transactionManager, "transactionManager");
+        this.transactions = new TransactionTemplate(safeTransactionManager);
         this.transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.observations = new TransactionTemplate(safeTransactionManager);
+        this.observations.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.observations.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         this.ownerId = required(ownerId, "Projection reconciliation owner ID", 255);
         this.sweepLeaseDuration = boundedLease(
                 sweepLeaseDuration, "Projection sweep lease duration");
@@ -291,7 +296,7 @@ public final class DatabaseDurableStateProjectionControlPlane {
      * @return current retention ownership, cumulative counters, and oldest retained timestamps
      */
     public RetentionSnapshot retentionSnapshot() {
-        RetentionSnapshot result = transactions.execute(status -> {
+        RetentionSnapshot result = observations.execute(status -> {
             RetentionState state = requireRetentionState(false);
             Long archiveSize = jdbc.queryForObject("""
                     SELECT COUNT(*) FROM rg_test_bloge_projection_finding_archive
@@ -309,6 +314,87 @@ public final class DatabaseDurableStateProjectionControlPlane {
                     oldestArchived == null ? null : oldestArchived.toInstant());
         });
         return requiredTransactionResult(result, "finding retention snapshot");
+    }
+
+    /**
+     * Returns one database-clock, transactionally consistent operational SLO snapshot.
+     *
+     * <p>The aggregate contains queue states, retention backlogs, and control-loop timestamps only.
+     * It deliberately excludes row identities, claim tokens, request IDs, and authority payloads.
+     * The supplied retention windows are validated with the same safety bounds as retention.</p>
+     *
+     * @param resolvedRetention active resolved-finding retention policy
+     * @param archiveRetention archived-finding retention policy
+     * @return payload-free control-loop and backlog observations from one database transaction
+     */
+    public OperationalSnapshot operationalSnapshot(
+            Duration resolvedRetention,
+            Duration archiveRetention) {
+        Duration safeResolvedRetention = boundedRetention(
+                resolvedRetention, MIN_RESOLVED_RETENTION, "Resolved finding retention");
+        Duration safeArchiveRetention = boundedRetention(
+                archiveRetention, MIN_ARCHIVE_RETENTION, "Finding archive retention");
+        OperationalSnapshot result = observations.execute(status -> {
+            Instant observedAt = databaseNow();
+            SweepState sweepState = requireSweepState(false);
+            RetentionState retentionState = requireRetentionState(false);
+            Instant resolvedCutoff = observedAt.minus(safeResolvedRetention);
+            Instant archiveCutoff = observedAt.minus(safeArchiveRetention);
+            FindingOperationalCounts findings = jdbc.queryForObject("""
+                    SELECT
+                      SUM(CASE WHEN finding_status = 'OPEN' THEN 1 ELSE 0 END) AS open_count,
+                      SUM(CASE WHEN finding_status = 'CLAIMED' AND claim_until > ?
+                               THEN 1 ELSE 0 END) AS live_claim_count,
+                      SUM(CASE WHEN finding_status = 'CLAIMED' AND claim_until <= ?
+                               THEN 1 ELSE 0 END) AS expired_claim_count,
+                      SUM(CASE WHEN finding_status = 'RESOLVED' THEN 1 ELSE 0 END)
+                               AS resolved_count,
+                      SUM(CASE WHEN finding_status = 'RESOLVED' AND resolved_at <= ?
+                               THEN 1 ELSE 0 END) AS overdue_resolved_count,
+                      MIN(CASE WHEN finding_status <> 'RESOLVED' THEN first_seen_at END)
+                               AS oldest_unresolved_at,
+                      MIN(CASE WHEN finding_status = 'RESOLVED' THEN resolved_at END)
+                               AS oldest_resolved_at
+                    FROM rg_test_bloge_projection_findings
+                    """, (rs, rowNum) -> new FindingOperationalCounts(
+                            rs.getLong("open_count"),
+                            rs.getLong("live_claim_count"),
+                            rs.getLong("expired_claim_count"),
+                            rs.getLong("resolved_count"),
+                            rs.getLong("overdue_resolved_count"),
+                            nullableInstant(rs, "oldest_unresolved_at"),
+                            nullableInstant(rs, "oldest_resolved_at")),
+                    Timestamp.from(observedAt), Timestamp.from(observedAt),
+                    Timestamp.from(resolvedCutoff));
+            ArchiveOperationalCounts archives = jdbc.queryForObject("""
+                    SELECT COUNT(*) AS archive_count,
+                           SUM(CASE WHEN archived_at <= ? THEN 1 ELSE 0 END)
+                               AS overdue_archive_count,
+                           MIN(archived_at) AS oldest_archived_at
+                    FROM rg_test_bloge_projection_finding_archive
+                    """, (rs, rowNum) -> new ArchiveOperationalCounts(
+                            rs.getLong("archive_count"),
+                            rs.getLong("overdue_archive_count"),
+                            nullableInstant(rs, "oldest_archived_at")),
+                    Timestamp.from(archiveCutoff));
+            FindingOperationalCounts findingCounts = Objects.requireNonNull(findings);
+            ArchiveOperationalCounts archiveCounts = Objects.requireNonNull(archives);
+            return new OperationalSnapshot(
+                    observedAt,
+                    sweepState.snapshot(),
+                    retentionState.snapshot(
+                            archiveCounts.archiveSize(),
+                            findingCounts.oldestResolvedAt(),
+                            archiveCounts.oldestArchivedAt()),
+                    findingCounts.open(),
+                    findingCounts.liveClaimed(),
+                    findingCounts.expiredClaim(),
+                    findingCounts.resolved(),
+                    findingCounts.overdueResolved(),
+                    archiveCounts.overdue(),
+                    findingCounts.oldestUnresolvedAt());
+        });
+        return requiredTransactionResult(result, "projection operational snapshot");
     }
 
     /**
@@ -1596,6 +1682,54 @@ public final class DatabaseDurableStateProjectionControlPlane {
     }
 
     /**
+     * Payload-free, database-clock observation used by projection SLO and metrics adapters.
+     *
+     * @param observedAt database timestamp at which all aggregates were evaluated
+     * @param controlSnapshot reconciliation-loop state
+     * @param retentionSnapshot retention-loop state and current archive size
+     * @param openFindings unclaimed unresolved findings
+     * @param liveClaimedFindings unresolved findings with a live claim
+     * @param expiredClaimFindings unresolved findings whose claim has expired
+     * @param resolvedFindings resolved findings retained in the active queue
+     * @param overdueResolvedFindings resolved findings beyond active retention
+     * @param overdueArchiveRecords archive rows beyond archive retention
+     * @param oldestUnresolvedAt earliest unresolved finding observation, or {@code null}
+     */
+    public record OperationalSnapshot(
+            Instant observedAt,
+            ControlSnapshot controlSnapshot,
+            RetentionSnapshot retentionSnapshot,
+            long openFindings,
+            long liveClaimedFindings,
+            long expiredClaimFindings,
+            long resolvedFindings,
+            long overdueResolvedFindings,
+            long overdueArchiveRecords,
+            Instant oldestUnresolvedAt) {
+        /** Validates aggregate-only state and nested snapshots. */
+        public OperationalSnapshot {
+            observedAt = Objects.requireNonNull(observedAt, "observedAt");
+            controlSnapshot = Objects.requireNonNull(controlSnapshot, "controlSnapshot");
+            retentionSnapshot = Objects.requireNonNull(retentionSnapshot, "retentionSnapshot");
+            if (openFindings < 0 || liveClaimedFindings < 0 || expiredClaimFindings < 0
+                    || resolvedFindings < 0 || overdueResolvedFindings < 0
+                    || overdueArchiveRecords < 0) {
+                throw new IllegalArgumentException("Operational snapshot counters are invalid");
+            }
+        }
+
+        /**
+         * Sums all unresolved claim states.
+         *
+         * @return all unresolved owner-queue findings across claim states
+         */
+        public long unresolvedFindings() {
+            return Math.addExact(openFindings,
+                    Math.addExact(liveClaimedFindings, expiredClaimFindings));
+        }
+    }
+
+    /**
      * Payload-free owner-queue row. Claim tokens are intentionally omitted.
      *
      * @param key internal authority row identity
@@ -1770,6 +1904,22 @@ public final class DatabaseDurableStateProjectionControlPlane {
                     leaseOwner, leaseEpoch, leaseUntil, revision, totalArchived, totalPurged,
                     archiveSize, oldestResolvedAt, oldestArchivedAt, lastSuccessAt);
         }
+    }
+
+    private record FindingOperationalCounts(
+            long open,
+            long liveClaimed,
+            long expiredClaim,
+            long resolved,
+            long overdueResolved,
+            Instant oldestUnresolvedAt,
+            Instant oldestResolvedAt) {
+    }
+
+    private record ArchiveOperationalCounts(
+            long archiveSize,
+            long overdue,
+            Instant oldestArchivedAt) {
     }
 
     private record FindingRow(

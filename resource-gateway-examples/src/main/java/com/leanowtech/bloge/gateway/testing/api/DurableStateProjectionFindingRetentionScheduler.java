@@ -27,6 +27,7 @@ public final class DurableStateProjectionFindingRetentionScheduler {
     private final Duration resolvedRetention;
     private final Duration archiveRetention;
     private final int pageSize;
+    private final DurableStateProjectionTelemetry telemetry;
 
     /**
      * Creates the profile-gated retention loop and fails fast on unsafe lifecycle policy.
@@ -41,22 +42,44 @@ public final class DurableStateProjectionFindingRetentionScheduler {
             Duration resolvedRetention,
             Duration archiveRetention,
             int pageSize) {
+        this(controlPlane, resolvedRetention, archiveRetention, pageSize,
+                DurableStateProjectionTelemetry.noop());
+    }
+
+    /**
+     * Creates the retention loop with a bounded-cardinality metrics adapter.
+     *
+     * @param controlPlane durable retention lease, archive, and counter authority
+     * @param resolvedRetention active-queue retention from one hour through ten years
+     * @param archiveRetention archive retention from one day through ten years
+     * @param pageSize source archive and archive purge bounds
+     * @param telemetry aggregate attempt and duration recorder
+     */
+    public DurableStateProjectionFindingRetentionScheduler(
+            DatabaseDurableStateProjectionControlPlane controlPlane,
+            Duration resolvedRetention,
+            Duration archiveRetention,
+            int pageSize,
+            DurableStateProjectionTelemetry telemetry) {
         this.controlPlane = Objects.requireNonNull(controlPlane, "controlPlane");
         this.resolvedRetention = bounded(
                 resolvedRetention, MIN_RESOLVED_RETENTION, "resolvedRetention");
         this.archiveRetention = bounded(
                 archiveRetention, MIN_ARCHIVE_RETENTION, "archiveRetention");
         this.pageSize = Math.max(1, Math.min(pageSize, 1000));
+        this.telemetry = Objects.requireNonNull(telemetry, "telemetry");
     }
 
     /** Performs one leased retention page; a failed page remains fully retryable. */
     @Scheduled(fixedDelayString =
             "${gateway.testing.durable.projection-findings.retention-interval-ms:3600000}")
     public void retain() {
+        long startedAt = System.nanoTime();
         try {
             DatabaseDurableStateProjectionControlPlane.RetentionAttempt attempt =
                     controlPlane.retainFindings(
                             resolvedRetention, archiveRetention, pageSize);
+            telemetry.recordRetention(attempt, elapsed(startedAt));
             if (attempt.status()
                     == DatabaseDurableStateProjectionControlPlane.RetentionStatus.LEASE_BUSY) {
                 return;
@@ -67,9 +90,14 @@ public final class DurableStateProjectionFindingRetentionScheduler {
                         result.archived(), result.purged());
             }
         } catch (RuntimeException unavailable) {
+            telemetry.recordRetentionFailure(elapsed(startedAt));
             log.warn("Durable-state projection finding retention failed; "
                     + "the active queue and archive counters remain at the last committed page");
         }
+    }
+
+    private static Duration elapsed(long startedAt) {
+        return Duration.ofNanos(Math.max(0, System.nanoTime() - startedAt));
     }
 
     private static Duration bounded(Duration value, Duration minimum, String name) {

@@ -55,15 +55,19 @@ replay 也留下事件。claim token 只进入成功 claim response。resolved l
 database-clock lease 控制的 retention loop 处理：默认 active 30 天、archive 365 天，每阶段单次最多
 100 行；token-free archive insert、exact source delete、archive purge 与累计 counter 同事务，跨副本
 单 owner，失败整体回滚，archive read 复算 whole-record fingerprint 并在漂移时 fail closed。归档不复制
-claim/owner/request receipt/authority value。仍缺 metrics/SLO、外部 WORM/tamper-evident audit/archive
-anchoring、非 H2 方言和生产负载认证，因此不能宣称完整运维产品化。
+claim/owner/request receipt/authority value。第十八增量已增加 transactionally consistent、database-clock
+operational snapshot；Actuator health 以稳定 violation code 区分初始化、陈旧、积压和存储不可用，
+Micrometer 仅使用 `result/state/tier/loop` 固定标签并覆盖两条 loop 的 attempt/duration、finding state、
+retention backlog 与 last-success age，且仅在 test/staging 装配。仍缺全局 execution/suite/capacity SLO、
+alert routing、外部 WORM/tamper-evident audit/archive anchoring、非 H2 方言和生产负载认证，因此不能
+宣称完整运维产品化。
 
 Stage 0 验证基线：Resource Gateway `clean verify` 共 1624 tests、0 failures、33 个既有条件跳过；AuthorCanvas 聚焦回归 36 tests、0 failures。后续阶段必须继续维持该基线并增加对应反面用例。
 
 Stage 1 实现证据与复现命令见
 [Execution Data Control Plane Stage 1 verification](resource-gateway-execution-data-control-plane-stage1-verification.md)。
 Stage 1 全量验收：Resource Gateway `clean verify` 共 1653 tests、0 failures、0 errors、34 个条件跳过，JAR 打包成功。
-当前严格验收：Resource Gateway `-Pfrontend clean verify` 共 2092 tests、0 failures、0 errors、0 skips，
+当前严格验收：Resource Gateway `-Pfrontend clean verify` 共 2096 tests、0 failures、0 errors、0 skips，
 真实浏览器回归与 JAR 打包成功；Stage 4 durable checkpoint/aggregate/public payload-free query/
 owner-claim/recovery/authorization-bound dispatch/live-fence heartbeat/terminal commit/automatic
 terminal heartbeat/worker SQL scan/projection anti-entropy 聚焦 190 tests 全绿，其中 worker scan 的
@@ -72,7 +76,8 @@ terminal heartbeat/worker SQL scan/projection anti-entropy 聚焦 190 tests 全�
 游标、单 owner/过期接管/旧 fence 拒绝、repair+finding+cursor 原子回滚、payload-free claim/resolve
 fence 与一致性复查关闭。authenticated finding operations/audit 的 persistence/service/controller/profile/
 capability/schema/application 组合聚焦 24 tests；finding retention/archive 的 database lease、两级有界
-生命周期、原子 rollback、whole-record fingerprint、profile/capability 组合聚焦 18 tests；authenticated durable GRAPH creation 的 runtime/repository/
+生命周期、原子 rollback、whole-record fingerprint、profile/capability 组合聚焦 18 tests；projection
+SLO snapshot/health/telemetry/scheduler/profile/capability 聚焦 24 tests；authenticated durable GRAPH creation 的 runtime/repository/
 authorizer/service/controller/schema/capability 组合聚焦 71 tests；creation preparation heartbeat 的
 repository/coordinator/service/capability 组合聚焦 65 tests；本轮 automatic terminal-recovery
 heartbeat 的 coordinator/heartbeat-service/terminal-service/capability/Spring wiring 组合聚焦 33
@@ -408,7 +413,7 @@ flowchart LR
 
    BLOGE 源码提交 `bcbb19694` 提供公共 `CheckpointFailurePolicy.FAIL_FAST`；后续提交 `cb758c1af` 提供返回 `GraphResult` 的同步 `resumeSuspended`，不再为 cold signal 强制派生不可控后台线程。RG 的 test-profile durable session 强制 fail-fast，以调用方指定 execution id 开启单执行 stage，继承完整 `ExecutionOptions` 的 operator resolver/provider，并把 BLOGE `ExecutionStore` lifecycle/lease、node/loop/sequential-foreach `ExecutionCheckpointStore`、signal/timer/task/retry `WaitStore` 与完整 v5 `WorkItemStore` 分别冻结后，再以 `bloge.testDurableStateMutation.v3` 聚合为一个可幂等重试、与 engine id/完整 `EngineState` 强绑定的 mutation。wait 的 execution-local 读看到 overlay，timer/correlation 全局扫描只读 committed rows；wait identity 与 lifecycle identity 必须一致，waitId 不可跨 execution 迁移。work item 的 claim/renew/retry/failed/dead-letter/restore/discard/cancel 复用 BLOGE reference state machine；ready/expired-claim 全局扫描只读 committed rows，仅 BLOGE graph-execution scope 内的异步引擎线程可进入受信 stage 入队，无 stage 的读者看不到 speculative item；批量写入完整预校验，itemId 不可跨 execution 迁移。`bloge.testWorkItemMutation.v1` 通过 v3 aggregate 新增，未改写 v1/v2 历史指纹。跨实例竞态证明只有 control CAS 胜者的 execution/wait/work-item 状态可提交，关闭 stage 后 mutation 失效；冷读可重建完整 `ExecutionInstance`、`ExecutionWait` 与 `WorkItem`。
 
-   worker 扫描持久化面进一步关闭全表 payload 解码缺口：ready work、过期 work-item claim 与过期 execution lease 的 type/status、tenant/namespace、可选 shard、到期时间、稳定顺序和有界 limit 先通过全局/tenant-scoped 复合索引在 SQL 中筛选，候选行再解码并逐字段回验调度投影与权威 JSON；默认 100、硬上限 10,000。独立 system-level keyset 反熵循环不使用这些调度谓词，按 execution/work-item 主键各自轮转，因而能发现隐藏候选；默认每表 100 行、60 秒、`REPAIR_DERIVED`，并以 row identity、tenant/namespace、work-item execution ownership 和原始 authority JSON 做 CAS，只修复安全边界一致的派生列。主键/归属/scope 漂移和不可读 authority 只报告，单行失败隔离，数据库失败整体回滚 repair、finding 与 cursor；`AUDIT_ONLY` 可用于观察期。双游标、跨副本 database-clock sweep lease 与 payload-free finding owner queue 已持久化，claim/resolve 使用 token/version/owner/expiry 精确 fencing。profile-gated operations adapter 进一步以专用 purpose、global group、clearance 和 server-derived actor 隔离 system queue；caller-stable receipt、exact replay、同键异意图冲突及 claim/resolve + token-free audit 原子提交已经闭环，capability/schema/手册同步。第十七增量再以独立 lease 和 database clock 实现两级 retention：resolved active row 与 archive 各自有界扫描，archive insert + exact source delete + archive purge + counter checkpoint 原子提交；archive schema 排除 token/owner/request receipt/authority value，读取复算 whole-record fingerprint 并在漂移时 fail closed。该能力仍不等于公开 worker poll/dispatch；metrics/SLO、外部 WORM anchoring、远程 acquisition、backpressure、非 H2 方言、容量认证与跨进程 supervisor 仍待实现。
+   worker 扫描持久化面进一步关闭全表 payload 解码缺口：ready work、过期 work-item claim 与过期 execution lease 的 type/status、tenant/namespace、可选 shard、到期时间、稳定顺序和有界 limit 先通过全局/tenant-scoped 复合索引在 SQL 中筛选，候选行再解码并逐字段回验调度投影与权威 JSON；默认 100、硬上限 10,000。独立 system-level keyset 反熵循环不使用这些调度谓词，按 execution/work-item 主键各自轮转，因而能发现隐藏候选；默认每表 100 行、60 秒、`REPAIR_DERIVED`，并以 row identity、tenant/namespace、work-item execution ownership 和原始 authority JSON 做 CAS，只修复安全边界一致的派生列。主键/归属/scope 漂移和不可读 authority 只报告，单行失败隔离，数据库失败整体回滚 repair、finding 与 cursor；`AUDIT_ONLY` 可用于观察期。双游标、跨副本 database-clock sweep lease 与 payload-free finding owner queue 已持久化，claim/resolve 使用 token/version/owner/expiry 精确 fencing。profile-gated operations adapter 进一步以专用 purpose、global group、clearance 和 server-derived actor 隔离 system queue；caller-stable receipt、exact replay、同键异意图冲突及 claim/resolve + token-free audit 原子提交已经闭环，capability/schema/手册同步。第十七增量再以独立 lease 和 database clock 实现两级 retention：resolved active row 与 archive 各自有界扫描，archive insert + exact source delete + archive purge + counter checkpoint 原子提交；archive schema 排除 token/owner/request receipt/authority value，读取复算 whole-record fingerprint 并在漂移时 fail closed。第十八增量以同一数据库事务和数据库时钟形成 aggregate operational snapshot，以稳定 violation code 的 Actuator health 与固定 `result/state/tier/loop` 标签的 Micrometer 指标观测两条 loop，且 store exception、row/token/payload 不进入 detail 或 label。该能力仍不等于公开 worker poll/dispatch；全局 execution/suite/capacity SLO、alert routing、外部 WORM anchoring、远程 acquisition、backpressure、非 H2 方言、容量认证与跨进程 supervisor 仍待实现。
 
    内部 `openRecoverySession` 只接受完整性已验证、带 exact target、provider state 可恢复且 lifecycle 为 `RESUMING` 的 v2 checkpoint。它恢复累计 fixture cursor，要求 committed BLOGE lifecycle 为 `SUSPENDED` 且存在唯一目标 signal wait，然后同步 signal 到下一 terminal 或唯一新 suspension。`prepare` 把实际 BLOGE execution version、递增 boundary sequence、累计 fixture cursor 与四类 store mutation 冻结为同一原子 advance；未 prepare、CAS 失败或关闭 session 都回滚已删除 wait 与后续节点结果。该进程内 API 不提供虚假的 hard timeout；不可协作算子的墙钟 deadline 必须由可取消 worker 进程、lease 与 fencing 共同实现。
 

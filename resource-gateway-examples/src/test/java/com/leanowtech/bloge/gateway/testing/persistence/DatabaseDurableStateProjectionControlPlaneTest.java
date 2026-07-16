@@ -588,6 +588,36 @@ class DatabaseDurableStateProjectionControlPlaneTest {
         });
     }
 
+    @Test
+    void reportsPayloadFreeOperationalBacklogFromTheDatabaseClock() {
+        DatabaseDurableStateProjectionControlPlane controlPlane = controlPlane(
+                database.jdbc(), "replica-a");
+        insertRawExecution("engine-slo-open", "not-json");
+        insertRawExecution("engine-slo-resolved", "not-json");
+        controlPlane.reconcilePage(100,
+                DurableStateProjectionReconciler.RepairMode.REPAIR_DERIVED);
+        resolveExistingFinding(controlPlane, "engine-slo-resolved");
+        database.jdbc().update("""
+                UPDATE rg_test_bloge_projection_findings
+                SET resolved_at = DATEADD('DAY', -31, CURRENT_TIMESTAMP)
+                WHERE row_id = 'engine-slo-resolved'
+                """);
+
+        DatabaseDurableStateProjectionControlPlane.OperationalSnapshot snapshot =
+                controlPlane.operationalSnapshot(
+                        Duration.ofDays(30), Duration.ofDays(365));
+
+        assertThat(snapshot.openFindings()).isEqualTo(1);
+        assertThat(snapshot.liveClaimedFindings()).isZero();
+        assertThat(snapshot.expiredClaimFindings()).isZero();
+        assertThat(snapshot.resolvedFindings()).isEqualTo(1);
+        assertThat(snapshot.unresolvedFindings()).isEqualTo(1);
+        assertThat(snapshot.overdueResolvedFindings()).isEqualTo(1);
+        assertThat(snapshot.overdueArchiveRecords()).isZero();
+        assertThat(snapshot.oldestUnresolvedAt()).isNotNull();
+        assertThat(snapshot.toString()).doesNotContain("not-json", "claimToken", "payload");
+    }
+
     private DatabaseDurableStateProjectionControlPlane controlPlane(
             JdbcTemplate jdbc, String ownerId) {
         DatabaseDurableStateProjectionControlPlane controlPlane =

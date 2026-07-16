@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 
+import java.time.Duration;
 import java.util.Objects;
 
 /**
@@ -22,6 +23,7 @@ public final class DurableStateProjectionReconciliationScheduler {
     private final DatabaseDurableStateProjectionControlPlane controlPlane;
     private final int pageSizePerEntity;
     private final DurableStateProjectionReconciler.RepairMode repairMode;
+    private final DurableStateProjectionTelemetry telemetry;
 
     /**
      * Creates the profile-gated anti-entropy scheduler.
@@ -34,18 +36,38 @@ public final class DurableStateProjectionReconciliationScheduler {
             DatabaseDurableStateProjectionControlPlane controlPlane,
             int pageSizePerEntity,
             DurableStateProjectionReconciler.RepairMode repairMode) {
+        this(controlPlane, pageSizePerEntity, repairMode,
+                DurableStateProjectionTelemetry.noop());
+    }
+
+    /**
+     * Creates the scheduler with a bounded-cardinality metrics adapter.
+     *
+     * @param controlPlane database-leased scanner, finding queue, and cursor authority
+     * @param pageSizePerEntity rows inspected from each authority table per tick
+     * @param repairMode safe derived repair or audit-only operation
+     * @param telemetry aggregate attempt and duration recorder
+     */
+    public DurableStateProjectionReconciliationScheduler(
+            DatabaseDurableStateProjectionControlPlane controlPlane,
+            int pageSizePerEntity,
+            DurableStateProjectionReconciler.RepairMode repairMode,
+            DurableStateProjectionTelemetry telemetry) {
         this.controlPlane = Objects.requireNonNull(controlPlane, "controlPlane");
         this.pageSizePerEntity = Math.max(1, Math.min(pageSizePerEntity, 1000));
         this.repairMode = Objects.requireNonNull(repairMode, "repairMode");
+        this.telemetry = Objects.requireNonNull(telemetry, "telemetry");
     }
 
     /** Performs one leased sweep; storage failure retains the durable cursor for a later retry. */
     @Scheduled(fixedDelayString =
             "${gateway.testing.durable.projection-reconciliation-interval-ms:60000}")
     public void reconcile() {
+        long startedAt = System.nanoTime();
         try {
             DatabaseDurableStateProjectionControlPlane.SweepAttempt attempt =
                     controlPlane.reconcilePage(pageSizePerEntity, repairMode);
+            telemetry.recordReconciliation(attempt, elapsed(startedAt));
             if (attempt.status()
                     == DatabaseDurableStateProjectionControlPlane.SweepStatus.LEASE_BUSY) {
                 return;
@@ -58,8 +80,13 @@ public final class DurableStateProjectionReconciliationScheduler {
                         result.repaired(), result.raced());
             }
         } catch (RuntimeException unavailable) {
+            telemetry.recordReconciliationFailure(elapsed(startedAt));
             log.warn("Durable-state projection reconciliation failed; "
                     + "the durable cursor remains at the previous committed page");
         }
+    }
+
+    private static Duration elapsed(long startedAt) {
+        return Duration.ofNanos(Math.max(0, System.nanoTime() - startedAt));
     }
 }
