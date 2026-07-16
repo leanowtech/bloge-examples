@@ -64,6 +64,8 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(context.getBeansOfType(TestSuiteRunLeaseCoordinator.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestSuiteRunReconciliationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestSuiteRunReconciliationScheduler.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                DurableStateProjectionReconciliationScheduler.class)).hasSize(1);
         assertThat(context.getBeansOfType(ReplayPayloadRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestReplayPayloadService.class)).hasSize(1);
         assertThat(context.getBeansOfType(ReplayPayloadRetentionScheduler.class)).hasSize(1);
@@ -85,7 +87,8 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("builtInGraphSuiteCatalogMaterialization", true);
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("suiteRunOwnerLease", true)
-                .containsEntry("abandonedSuiteRunReconciliation", true);
+                .containsEntry("abandonedSuiteRunReconciliation", true)
+                .containsEntry("durableStateProjectionAntiEntropy", true);
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("governedTestReplayPayloadCapture", true)
                 .containsEntry("testReplayBehavior", true)

@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRunRepositor
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecurityEventRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepository;
+import com.leanowtech.bloge.gateway.testing.persistence.DurableStateProjectionReconciler;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
@@ -83,7 +84,21 @@ public class TestRuntimeConfiguration {
         IndependentDurableTestEngineFactory engineFactory =
                 new IndependentDurableTestEngineFactory(operatorRegistry,
                         new JacksonCheckpointCodec(objectMapper), durableStateStore);
-        return new DurableTestRuntimeResources(engineFactory);
+        return new DurableTestRuntimeResources(
+                engineFactory, durableStateStore.projectionReconciler());
+    }
+
+    /** Runs bounded projection anti-entropy only inside the isolated test/staging control plane. */
+    @Bean
+    DurableStateProjectionReconciliationScheduler durableStateProjectionReconciliationScheduler(
+            DurableTestRuntimeResources resources,
+            @Value("${gateway.testing.durable.projection-reconciliation-page-size:100}")
+            int pageSize,
+            @Value("${gateway.testing.durable.projection-reconciliation-mode:REPAIR_DERIVED}")
+            String repairMode) {
+        return new DurableStateProjectionReconciliationScheduler(
+                resources.projectionReconciler(), pageSize,
+                DurableStateProjectionReconciler.RepairMode.parse(repairMode));
     }
 
     @Bean

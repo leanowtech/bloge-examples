@@ -57,6 +57,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     DurableTestExecutionCheckpointRepository.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestRuntimeResources.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableStateProjectionReconciliationScheduler.class)).isEmpty();
             assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();
@@ -102,6 +104,10 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(WorkItemStore.class)).isEmpty();
             assertThat(context.getBean(DurableTestRuntimeResources.class)
                     .engineFactory().configuration().durableStores()).isTrue();
+            assertThat(context.getBean(DurableTestRuntimeResources.class)
+                    .projectionReconciler()).isNotNull();
+            assertThat(context.getBeansOfType(
+                    DurableStateProjectionReconciliationScheduler.class)).hasSize(1);
             assertThat(context.getBean(TestabilityAvailability.class).executionEndpointEnabled()).isTrue();
             ObjectMapper mapper = context.getBean(ObjectMapper.class);
             TestRunEvidence evidence = TestSemanticResultFingerprint.attach(mapper,
@@ -141,6 +147,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     DurableTestExecutionCheckpointRepository.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestRuntimeResources.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableStateProjectionReconciliationScheduler.class)).isEmpty();
             assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();

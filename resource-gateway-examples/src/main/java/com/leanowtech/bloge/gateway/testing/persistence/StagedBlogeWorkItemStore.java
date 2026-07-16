@@ -569,21 +569,10 @@ public final class StagedBlogeWorkItemStore implements WorkItemStore {
 
     private WorkItem mapVerifiedSchedulingProjection(ResultSet resultSet, int rowNumber)
             throws SQLException {
-        WorkItem item = read(resultSet.getString("payload_json"));
-        if (!Objects.equals(resultSet.getString("item_id"), item.itemId())
-                || !Objects.equals(resultSet.getString("execution_id"),
-                        item.identity().executionId())
-                || !Objects.equals(resultSet.getString("tenant_id"), item.identity().tenantId())
-                || !Objects.equals(resultSet.getString("namespace_id"),
-                        item.identity().namespace())
-                || !Objects.equals(resultSet.getString("item_type"), item.itemType().name())
-                || !Objects.equals(resultSet.getString("shard_id"), item.identity().shardId())
-                || resultSet.getInt("priority") != item.priority()
-                || !Objects.equals(resultSet.getString("item_status"), item.status().name())
-                || !Objects.equals(resultSet.getString("claim_owner"), item.claimOwner())
-                || !Objects.equals(instant(resultSet, "claim_until"), item.claimUntil())
-                || !Objects.equals(instant(resultSet, "next_attempt_at"), item.nextAttemptAt())
-                || !Objects.equals(instant(resultSet, "created_at"), item.createdAt())) {
+        BlogeSchedulingProjection.WorkItemProjection projection =
+                BlogeSchedulingProjection.workItem(resultSet);
+        WorkItem item = read(projection.payloadJson());
+        if (!projection.drift(item).isEmpty()) {
             throw durability("Stored BLOGE work-item scheduling projection is corrupt");
         }
         return item;
@@ -665,11 +654,6 @@ public final class StagedBlogeWorkItemStore implements WorkItemStore {
 
     private static Timestamp timestamp(Instant instant) {
         return instant == null ? null : Timestamp.from(instant);
-    }
-
-    private static Instant instant(ResultSet resultSet, String column) throws SQLException {
-        Timestamp value = resultSet.getTimestamp(column);
-        return value == null ? null : value.toInstant();
     }
 
     private static int normalizeLimit(int limit) {

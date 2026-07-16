@@ -339,24 +339,10 @@ public final class StagedBlogeExecutionStore implements ExecutionStore {
 
     private ExecutionInstance mapVerifiedRecoveryProjection(ResultSet resultSet, int rowNumber)
             throws SQLException {
-        ExecutionInstance execution = read(resultSet.getString("payload_json"));
-        if (!Objects.equals(resultSet.getString("execution_id"),
-                    execution.identity().executionId())
-                || !Objects.equals(resultSet.getString("tenant_id"),
-                        execution.identity().tenantId())
-                || !Objects.equals(resultSet.getString("namespace"),
-                        execution.identity().namespace())
-                || !Objects.equals(resultSet.getString("business_key"),
-                        execution.identity().businessKey())
-                || !Objects.equals(resultSet.getString("graph_name"),
-                        execution.identity().graphName())
-                || !Objects.equals(resultSet.getString("shard_id"),
-                        execution.identity().shardId())
-                || !Objects.equals(resultSet.getString("execution_status"),
-                        execution.status().name())
-                || resultSet.getLong("execution_version") != execution.version()
-                || !Objects.equals(instant(resultSet, "lease_until"), execution.leaseUntil())
-                || !Objects.equals(instant(resultSet, "updated_at"), execution.updatedAt())
+        BlogeSchedulingProjection.ExecutionProjection projection =
+                BlogeSchedulingProjection.execution(resultSet);
+        ExecutionInstance execution = read(projection.payloadJson());
+        if (!projection.drift(execution).isEmpty()
                 || execution.leaseToken() == null) {
             throw durability("Stored BLOGE execution recovery projection is corrupt");
         }
@@ -598,11 +584,6 @@ public final class StagedBlogeExecutionStore implements ExecutionStore {
 
     private static int normalizeLimit(int limit) {
         return Math.min(limit <= 0 ? 100 : limit, 10_000);
-    }
-
-    private static Instant instant(ResultSet resultSet, String column) throws SQLException {
-        Timestamp value = resultSet.getTimestamp(column);
-        return value == null ? null : value.toInstant();
     }
 
     private static String normalized(String value) {

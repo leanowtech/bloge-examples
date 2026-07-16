@@ -45,8 +45,16 @@ cancellation。
 worker 扫描持久化面已将 ready work、过期 work-item claim 与过期 execution lease 的
 tenant/namespace、状态、可选 shard、时间、排序和有界 limit 下推到 SQL，并对每个候选的调度投影
 与权威 JSON 做 fail-closed 回验。默认页 100、硬上限 10,000；全局和 tenant-scoped 复合索引均已
-建立。它消除了热路径全表 payload 解码，但尚未提供独立反熵扫描、公开 polling/acquisition、
-backpressure、容量 SLO 或跨进程 worker supervisor。
+建立。它消除了热路径全表 payload 解码，但热路径自身无法发现被错误投影隐藏的候选；该问题由
+下述独立反熵循环处理。公开 polling/acquisition、backpressure、容量 SLO 与跨进程 worker
+supervisor 仍未提供。
+
+隐藏候选型投影漂移现已由独立 system-level keyset 反熵循环覆盖。它不使用待审计的调度谓词，而按
+execution/work-item 主键各自有界轮转；默认每表 100 行、60 秒一轮、`REPAIR_DERIVED`。JSON 仍是
+authority，修复以 row identity + tenant/namespace + work-item execution ownership + 原始 payload
+做 CAS；只有上述安全边界一致的派生列可自动重建，主键/归属/scope 漂移和不可读 authority 只报告。
+单行坏数据不会阻断后续页，存储失败保留旧游标；日志只有聚合计数。当前游标仍在进程内，finding
+尚未持久化为 owner queue，也未建立跨副本 sweep lease、SLO/metrics 或数据库方言认证。
 
 实现细节、行为兼容决策和可复现测试见
 [v1 实施蓝图](resource-gateway-industrial-testability-evolution-plan-1.0.md) 与
@@ -119,7 +127,7 @@ Exact semantic suite 到 ANEKE payload-free workbook seed 的投影、失败边�
 Semantic workbook 到 ANEKE gate decision 的 exact evidence 重建、GraphDraft 编译 target 绑定与 v2 兼容证明见
 [Stage 3 semantic gate basis verification](resource-gateway-execution-data-control-plane-stage3-semantic-gate-basis-verification.md)。
 
-当前严格验收基线：Resource Gateway `-Pfrontend clean verify` 共 2064 tests、0 failures、0 errors、
+当前严格验收基线：Resource Gateway `-Pfrontend clean verify` 共 2071 tests、0 failures、0 errors、
 0 skips，真实浏览器回归与 Spring Boot JAR 打包成功；Canvas suite 聚焦 68 tests、
 前端全量 150 tests，并在桌面与 390 x 844 真实浏览器中完成两行一等 suite 发布；Canvas 对完整
 stored suite value、child evidence、coverage、promotion 与 aggregate 一致性 fail closed；immutable TestSuite
@@ -128,7 +136,7 @@ runner/attestation/protocol 增量聚焦 49 tests；key lifecycle 增量聚焦 4
 增量聚焦 23 tests，integration package 138 tests 全绿；完整 suite/catalog/semantic workbook/gate v3 wire value 按打包的
 Draft 2020-12 schema 校验并回绑 request identity，`RUNNING` 在无 polling CLI 中退出 2，
 未知参数值与 validator 细节不进入日志，public JavaDoc 零告警且由 `verify` 门禁强制；Stage 4
-durable checkpoint/aggregate/public payload-free query/owner-claim/internal recovery/authorization-bound dispatch/authenticated live-fence heartbeat/terminal commit/automatic terminal heartbeat/worker SQL scan 聚焦 178 tests 全绿；其中 worker scan 的 3 个数据库测试证明 SQL 前置过滤、稳定排序、有界分页与候选投影漂移拒绝；authenticated durable GRAPH creation 的 runtime/repository/authorizer/service/controller/schema/capability 组合聚焦 71 tests；creation preparation heartbeat 的 repository/coordinator/service/capability 组合聚焦 65 tests；本轮 automatic terminal-recovery heartbeat 的 coordinator/heartbeat-service/terminal-service/capability/Spring wiring 组合聚焦 33 tests，均全绿。
+durable checkpoint/aggregate/public payload-free query/owner-claim/internal recovery/authorization-bound dispatch/authenticated live-fence heartbeat/terminal commit/automatic terminal heartbeat/worker SQL scan/projection anti-entropy 聚焦 185 tests 全绿；其中 worker scan 的 3 个数据库测试证明 SQL 前置过滤、稳定排序、有界分页与候选投影漂移拒绝，反熵的 7 个测试覆盖安全自愈、审计模式、安全域拒修、坏行隔离、双游标推进、authority CAS 竞态和调度器重试/配置拒绝；authenticated durable GRAPH creation 的 runtime/repository/authorizer/service/controller/schema/capability 组合聚焦 71 tests；creation preparation heartbeat 的 repository/coordinator/service/capability 组合聚焦 65 tests；本轮 automatic terminal-recovery heartbeat 的 coordinator/heartbeat-service/terminal-service/capability/Spring wiring 组合聚焦 33 tests，均全绿。
 
 ## 1. 结论先行
 
@@ -1246,8 +1254,11 @@ scope 的异步引擎线程可按受信 execution id 入队，无 scope/stage �
 ready work、过期 work-item claim 与过期 execution lease 的 tenant/namespace、type/status、可选 shard、
 到期时间、稳定排序和有界 limit 已下推到 SQL，并有全局与 tenant-scoped 复合索引；只有候选行才解码
 权威 JSON，且返回前逐字段回验查询所依赖的调度投影。默认页为 100，硬上限 10,000，防止错误配置
-形成无界 poll。被篡改为“隐藏候选”的投影仍需独立反熵扫描发现，当前也尚无公开 worker poll、
-原子远程 acquisition 或生产负载容量认证。
+形成无界 poll。独立 system-level keyset 反熵循环不依赖这些调度谓词，因而能发现隐藏候选；默认
+`REPAIR_DERIVED` 以 row identity、tenant/namespace、work-item execution ownership 和 authority
+快照做 CAS，仅重建安全边界一致的派生列。主键/归属/scope 漂移及不可读 JSON 不自动修复；单行
+失败隔离，存储失败保留游标。当前游标仍为进程内状态，finding 尚无持久 owner queue、跨副本 lease
+与 SLO/metrics，且仍无公开 worker poll、原子远程 acquisition 或生产负载容量认证。
 `bloge.testWorkItemMutation.v1` 由 `bloge.testDurableStateMutation.v3` 纳入聚合，不修改 v1/v2
 历史 fingerprint。冷读、回滚、retry/dead-letter、tenant、异步可见性、过期 claim、跨实例 CAS
 输家和 work-item-only fingerprint 均已有反例测试。

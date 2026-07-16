@@ -533,6 +533,17 @@ returned candidate's tenant, namespace, type/status, shard, priority, lease time
 projection is then compared with that JSON; drift fails closed. A scan defaults to 100 rows and is
 capped at 10,000, preventing an accidental unbounded worker poll. This is a persistence primitive,
 not a public dispatcher or cross-process worker supervisor.
+An independent profile-gated anti-entropy loop walks both authority tables by primary-key cursor,
+so status, shard, time, or even tenant projection corruption cannot hide a row from inspection. It
+defaults to 100 rows per table every 60 seconds and `REPAIR_DERIVED`: safe derived columns are rebuilt
+from the authoritative JSON with an identity/scope/payload compare-and-set. Primary key, work-item
+execution ownership, tenant, and namespace drift and unreadable JSON are reported but never moved or
+guessed. Configure
+`gateway.testing.durable.projection-reconciliation-mode=AUDIT_ONLY` for observation-only rollout,
+`gateway.testing.durable.projection-reconciliation-page-size` for a `1..1000` page, and
+`gateway.testing.durable.projection-reconciliation-interval-ms` for the fixed delay. Logs contain
+aggregate counts only. The cursor is currently process-local and findings are not yet a durable owner
+queue, so this loop is self-repair for derived indexes, not a complete maintenance control plane.
 Wait identity must match the lifecycle identity, and committed wait/work-item ids cannot migrate to
 another execution. Work-item batches validate atomically, and claim, retry, terminal, and dead-letter
 transitions reuse BLOGE's reference state machine. An internal database-clock lease claim can fence an

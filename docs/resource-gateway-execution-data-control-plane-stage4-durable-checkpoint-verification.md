@@ -426,6 +426,13 @@ projection used by the query is compared with the authoritative `WorkItem` or `E
 a forged candidate fails closed. Non-positive limits default to 100 and dispatch/recovery scans cap
 at 10,000 rows. This removes full-table payload decoding from the hot scan without treating relational
 projections as authority.
+An independent test/staging anti-entropy scheduler now walks execution and work-item rows by separate
+primary-key cursors rather than by those projections. The default `REPAIR_DERIVED` mode rebuilds only
+derived columns when row identity, tenant/namespace, work-item execution ownership, and the original
+authority snapshot still match; the update is a compare-and-set. Identity/scope drift and unreadable
+authority are payload-free findings and are never auto-moved. One bad row is isolated, a database
+failure retains the previous cursor, and `AUDIT_ONLY` supports an observation-only rollout. Defaults
+are 100 rows per table and a 60-second fixed delay.
 Claim and terminal transitions require the caller thread to re-enter the execution stage. Batches
 reject duplicate ids and cross-execution membership before mutation. Item identity must retain the
 execution tenant, namespace, graph, route, lineage, and source; BLOGE's worker-topic shard is the sole
@@ -698,10 +705,10 @@ Reproduce the focused gate with:
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,StagedBlogeExecutionCheckpointStoreTest,StagedBlogeDurableStateStoreTest,IndependentDurableTestEngineFactoryTest,IndependentDurableTestRecoverySessionTest,InvocationRecorderCheckpointTest,DurableTestRecoveryAuthorityTest,DurableTestRecoveryAuthorizerTest,DurableTestExecutionQueryServiceTest,DurableTestExecutionQueryControllerTest,DurableTestOwnerClaimServiceTest,DurableTestOwnerClaimControllerTest,DurableTestRecoveryPrincipalTest,DurableTestRecoveryHeartbeatServiceTest,DurableTestRecoveryHeartbeatControllerTest,DurableTestRecoveryLeaseCoordinatorTest,DurableTestTerminalRecoveryRuntimeTest,DurableTestTerminalRecoveryServiceTest,DurableTestTerminalRecoveryControllerTest,TestingControlProtocolSchemaTest,TestabilityCapabilitiesTest,TestRuntimeProfileIsolationTest test
+  -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,StagedBlogeExecutionCheckpointStoreTest,StagedBlogeDurableStateStoreTest,DurableStateProjectionReconcilerTest,DurableStateProjectionReconciliationSchedulerTest,IndependentDurableTestEngineFactoryTest,IndependentDurableTestRecoverySessionTest,InvocationRecorderCheckpointTest,DurableTestRecoveryAuthorityTest,DurableTestRecoveryAuthorizerTest,DurableTestExecutionQueryServiceTest,DurableTestExecutionQueryControllerTest,DurableTestOwnerClaimServiceTest,DurableTestOwnerClaimControllerTest,DurableTestRecoveryPrincipalTest,DurableTestRecoveryHeartbeatServiceTest,DurableTestRecoveryHeartbeatControllerTest,DurableTestRecoveryLeaseCoordinatorTest,DurableTestTerminalRecoveryRuntimeTest,DurableTestTerminalRecoveryServiceTest,DurableTestTerminalRecoveryControllerTest,TestingControlProtocolSchemaTest,TestabilityCapabilitiesTest,TestRuntimeProfileIsolationTest test
 ```
 
-The combined focused gate completed with 178 tests, zero failures, zero errors, and zero skips. The
+The combined focused gate completed with 185 tests, zero failures, zero errors, and zero skips. The
 recovery-session slice contributes six database-level tests; authorization-bound dispatch adds two
 database-level claim/replay, exact-lookup, and tamper cases plus two regional-authority cases. The
 public query slice adds six service cases, including a real-database projection-tamper case, and two
@@ -731,8 +738,11 @@ tests, with zero failures, errors, or skips. The automatic terminal-recovery hea
 coordinator, heartbeat-service, terminal-service, capability, and Spring wiring gates contain 33
 tests with zero failures, errors, or skips. Three database tests additionally prove that worker-ready
 and expired-lease scans apply tenant/shard/status/order/limit predicates before JSON decoding and
-reject selected scheduling-projection drift. The repository-wide `-Pfrontend clean verify` gate
-completed with 2064 tests, zero failures, zero errors, zero skips, real-browser regression coverage,
+reject selected scheduling-projection drift. Seven anti-entropy tests prove derived repair,
+audit-only behavior, security-boundary refusal, unreadable-row isolation, independent keyset
+progress, authority-snapshot race rejection, scheduler cursor retry, and strict mode parsing. The
+repository-wide `-Pfrontend clean verify` gate completed with 2071 tests, zero failures, zero errors,
+zero skips, real-browser regression coverage,
 and successful Spring Boot JAR packaging.
 Scoped public `javadoc -Xdoclint:all -Werror` for the creation/recovery production types is also a required
 pre-commit gate.
@@ -784,7 +794,9 @@ parameter diagnostics in unrelated packages; that baseline is not represented as
   test-runtime deployment remain Stage 4/5 work.
 - Ready/expired work-item and execution-lease scans now use indexed, tenant-aware SQL predicates,
   stable ordering, bounded pages, and fail-closed verification of every returned projection against
-  authoritative JSON. Independent anti-entropy scanning is still required to detect a corrupted
-  projection that hides a row from the candidate query, and no production load/latency/cardinality
-  envelope has been certified. Public polling, atomic remote-worker acquisition, backpressure, and
-  capacity admission therefore remain gates before high-volume worker deployment.
+  authoritative JSON. A projection-independent keyset loop detects hidden candidates and safely
+  CAS-repairs derived drift. Its cursor is still process-local, findings are aggregate logs rather
+  than a durable owner queue, replicas have no sweep lease, and no production load/latency/cardinality
+  envelope or database-dialect matrix has been certified. Public polling, atomic remote-worker
+  acquisition, backpressure, and capacity admission therefore remain gates before high-volume worker
+  deployment.

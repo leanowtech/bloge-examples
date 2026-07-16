@@ -39,6 +39,7 @@ public final class StagedBlogeDurableStateStore {
     private final StagedBlogeExecutionCheckpointStore checkpointStore;
     private final StagedBlogeWaitStore waitStore;
     private final StagedBlogeWorkItemStore workItemStore;
+    private final DurableStateProjectionReconciler projectionReconciler;
 
     /**
      * Creates the full durable-state aggregate over one test-runtime datasource.
@@ -52,6 +53,7 @@ public final class StagedBlogeDurableStateStore {
         this.checkpointStore = new StagedBlogeExecutionCheckpointStore(jdbc, objectMapper);
         this.waitStore = new StagedBlogeWaitStore(jdbc, objectMapper, executionStore);
         this.workItemStore = new StagedBlogeWorkItemStore(jdbc, objectMapper, executionStore);
+        this.projectionReconciler = new DurableStateProjectionReconciler(jdbc, objectMapper);
     }
 
     /** Creates every table owned by the current durable-state aggregate version. */
@@ -97,6 +99,15 @@ public final class StagedBlogeDurableStateStore {
      */
     public WorkItemStore workItemStore() {
         return workItemStore;
+    }
+
+    /**
+     * Returns the system-level anti-entropy boundary without exposing mutable component stores.
+     *
+     * @return bounded projection scanner and safe derived-column repair service
+     */
+    public DurableStateProjectionReconciler projectionReconciler() {
+        return projectionReconciler;
     }
 
     /**
