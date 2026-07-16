@@ -13,7 +13,7 @@ import java.util.Map;
  * @param targetFingerprint required target artifact fingerprint
  * @param classification payload-governance classification
  * @param logicalClock optional run-scoped logical clock used by deterministic time controls
- * @param randomSeed deterministic random seed, reserved until engine execution services are available
+ * @param randomSeed optional deterministic seed shared by random and UUID execution services
  * @param rules invocation control rules
  * @param assertions post-run assertions
  * @param metadata bounded ownership and provenance metadata

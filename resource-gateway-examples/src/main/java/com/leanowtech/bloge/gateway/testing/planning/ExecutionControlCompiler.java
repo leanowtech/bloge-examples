@@ -17,6 +17,7 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
+import com.leanowtech.bloge.gateway.testing.runtime.GovernedExecutionServices;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -92,6 +93,8 @@ public class ExecutionControlCompiler {
         safetyPreflight.validate(fixtureBundle, authorizedPurpose, targetFingerprint, resolvedReplays);
 
         InvocationInventory inventory = inventoryBuilder.build(graph, targetFingerprint);
+        GovernedExecutionServices executionServices = GovernedExecutionServices.prepare(
+                objectMapper, fixtureBundle, inventory);
         Map<String, CompiledExecutionControl.ResolvedControl> controls = new LinkedHashMap<>(
                 selectorResolver.resolve(inventory, fixtureBundle.rules()));
 
@@ -137,6 +140,7 @@ public class ExecutionControlCompiler {
                         "bindingFingerprint", entry.site().runtimeBindingFingerprint())).toList(),
                 "sites", sites,
                 "replayDependencies", resolvedReplays.planDependencies(),
+                "executionServiceBindings", executionServices.bindings(),
                 "defaults", defaults);
         String planFingerprint = ProtocolFingerprint.of(objectMapper, fingerprintMaterial);
         EffectiveExecutionPlan effectivePlan = new EffectiveExecutionPlan(
@@ -148,10 +152,11 @@ public class ExecutionControlCompiler {
                 fixtureFingerprint,
                 sites,
                 resolvedReplays.planDependencies(),
+                executionServices.bindings(),
                 defaults,
                 List.of());
         return new CompiledExecutionControl(effectivePlan, controls, fixtureBundle.rules(), inventory,
-                resolvedReplays);
+                resolvedReplays, executionServices);
     }
 
     private boolean externalEffect(InvocationInventory.Entry entry) {

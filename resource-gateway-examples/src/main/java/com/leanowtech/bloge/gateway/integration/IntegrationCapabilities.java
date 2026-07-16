@@ -229,6 +229,7 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.domain.FixtureBundle.SCHEMA_VERSION));
             objects.put("effectiveExecutionPlan", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan.SCHEMA_VERSION_V1,
+                    com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan.SCHEMA_VERSION_V2,
                     com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan.SCHEMA_VERSION));
             objects.put("testRunEvidence", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence.SCHEMA_VERSION));

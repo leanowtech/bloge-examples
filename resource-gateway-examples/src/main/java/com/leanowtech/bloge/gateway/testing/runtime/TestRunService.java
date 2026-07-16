@@ -88,12 +88,12 @@ public class TestRunService {
         InvocationRecorder recorder = new InvocationRecorder();
         GraphResult graphResult = null;
         List<String> diagnostics = new ArrayList<>();
-        AdvancingLogicalTimeSource logicalTime = request.fixtureBundle().logicalClock() == null
-                ? null : new AdvancingLogicalTimeSource(request.fixtureBundle().logicalClock());
-        GraphEngine engine = engineFactory.create(recorder, logicalTime);
+        GovernedExecutionServices executionServices = compiled.executionServices();
+        GraphEngine engine = engineFactory.create(recorder, executionServices.services().timeSource());
         try {
             ExecutionOptions options = ExecutionOptions.builder()
                     .operatorResolver(resolution -> resolveOperator(resolution, compiled, recorder))
+                    .executionServices(executionServices.services())
                     .build();
             graphResult = engine.execute(request.graph(), request.context(), options);
         } catch (RuntimeException ex) {
@@ -130,7 +130,7 @@ public class TestRunService {
                 consumptions,
                 assertions,
                 diagnostics,
-                evidenceMetadata(request, recorder, logicalTime));
+                evidenceMetadata(request, recorder, executionServices));
         return new TestExecutionResult(compiled.effectivePlan(), graphResult, evidence);
     }
 
@@ -214,6 +214,9 @@ public class TestRunService {
         if (!request.replayPayloads().certificationEligible()) {
             return TestRunEvidence.EvidenceClass.EXPLORATORY;
         }
+        if (!compiled.executionServices().certificationGaps().isEmpty()) {
+            return TestRunEvidence.EvidenceClass.EXPLORATORY;
+        }
         if (compiled.rules().stream().anyMatch(rule -> rule.schemaCheck().mode()
                 == FixtureRule.SchemaCheckMode.WAIVED)) {
             return TestRunEvidence.EvidenceClass.EXPLORATORY;
@@ -230,7 +233,7 @@ public class TestRunService {
 
     private Map<String, Object> evidenceMetadata(TestExecutionRequest request,
                                                  InvocationRecorder recorder,
-                                                 AdvancingLogicalTimeSource logicalTime) {
+                                                 GovernedExecutionServices executionServices) {
         Map<String, Object> metadata = new LinkedHashMap<>(request.metadata());
         metadata.put("fixtureSource", request.fixtureSource().name());
         metadata.put("engineIsolation", engineFactory.configuration());
@@ -242,6 +245,14 @@ public class TestRunService {
             metadata.put("nodeControlModes", recorder.controlModes());
             metadata.put("sideEffectIntents", request.context().sideEffectJournal().snapshots());
         }
+        if (executionServices != null) {
+            metadata.put("executionServiceBindings", executionServices.bindings());
+            metadata.put("executionServiceUsages", executionServices.usageSnapshot());
+            metadata.put("executionServiceStateFingerprint", executionServices.stateFingerprint());
+            metadata.put("executionServiceCertificationGaps", executionServices.certificationGaps());
+        }
+        AdvancingLogicalTimeSource logicalTime = executionServices == null
+                ? null : executionServices.logicalTime();
         if (logicalTime != null) {
             metadata.put("logicalTime", Map.of(
                     "mode", "ADVANCING_ZERO_WALL_CLOCK",

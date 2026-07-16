@@ -61,6 +61,7 @@ class TestabilityCapabilitiesTest {
                         TestSuiteExecutionResponse.SCHEMA_VERSION_V3);
         assertThat(enabled.supportedObjects().get("effectiveExecutionPlan"))
                 .containsExactly(EffectiveExecutionPlan.SCHEMA_VERSION_V1,
+                        EffectiveExecutionPlan.SCHEMA_VERSION_V2,
                         EffectiveExecutionPlan.SCHEMA_VERSION);
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.path().equals("/api/testing/executions"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->

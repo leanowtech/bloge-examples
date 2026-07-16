@@ -1078,9 +1078,9 @@
     "effectivePlan": {
       "type": ["object", "null"],
       "additionalProperties": false,
-      "required": ["schemaVersion", "planId", "planFingerprint", "authorizedPurpose", "targetFingerprint", "fixtureBundleFingerprint", "resolvedSites", "replayDependencies", "defaultPolicies", "diagnostics"],
+      "required": ["schemaVersion", "planId", "planFingerprint", "authorizedPurpose", "targetFingerprint", "fixtureBundleFingerprint", "resolvedSites", "replayDependencies", "executionServiceBindings", "defaultPolicies", "diagnostics"],
       "properties": {
-        "schemaVersion": {"const": "bloge.effectiveExecutionPlan.v2"},
+        "schemaVersion": {"const": "bloge.effectiveExecutionPlan.v3"},
         "planId": {"type": "string"},
         "planFingerprint": {"$ref": "#/$defs/fingerprint"},
         "authorizedPurpose": {"enum": ["GRAPH_CONTRACT_TEST", "OPERATOR_UNIT_TEST"]},
@@ -1088,8 +1088,23 @@
         "fixtureBundleFingerprint": {"$ref": "#/$defs/fingerprint"},
         "resolvedSites": {"type": "array"},
         "replayDependencies": {"type": "array", "maxItems": 1000, "items": {"$ref": "#/$defs/replayDependency"}},
+        "executionServiceBindings": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/executionServiceBinding"}},
         "defaultPolicies": {"type": "object"},
         "diagnostics": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "executionServiceBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["service", "mode", "available", "deterministic", "configurationFingerprint", "consumers", "certificationGaps"],
+      "properties": {
+        "service": {"enum": ["TIME", "RANDOM", "UUID", "IDENTITY", "FEATURE_FLAG", "SECRET"]},
+        "mode": {"enum": ["LOGICAL_ADVANCING", "SYSTEM_WALL_CLOCK", "SEEDED_SHA256_SEQUENCE", "SYSTEM_RANDOM", "SEEDED_SHA256_UUID", "SYSTEM_UUID_V4", "FAIL_CLOSED"]},
+        "available": {"type": "boolean"},
+        "deterministic": {"type": "boolean"},
+        "configurationFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "consumers": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 2048}},
+        "certificationGaps": {"type": "array", "maxItems": 100, "items": {"type": "string", "maxLength": 300}}
       }
     },
     "testRunEvidence": {
@@ -1193,7 +1208,7 @@
         "executionServices": {
           "type": "array",
           "uniqueItems": true,
-          "items": {"enum": ["TIME", "RANDOM", "UUID", "IDENTITY", "FEATURE_FLAG"]}
+          "items": {"enum": ["TIME", "RANDOM", "UUID", "IDENTITY", "FEATURE_FLAG", "SECRET"]}
         },
         "globalStateFree": {"type": "boolean"},
         "conformanceSuiteRef": {"type": "string", "maxLength": 1024},

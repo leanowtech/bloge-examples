@@ -74,6 +74,42 @@ class TestRunServiceTest {
     }
 
     @Test
+    void compiledLogicalClockReachesOperatorContextAndControlsCertification() {
+        Instant origin = Instant.parse("2026-07-15T09:00:00Z");
+        Graph graph = single(new LogicalClockOperator());
+        FixtureBundle governed = logicalBundle(origin);
+        TestExecutionRequest stored = new TestExecutionRequest(graph,
+                new GraphContext(Map.of("input", "hello")), governed,
+                "GRAPH_CONTRACT_TEST", TARGET, TestExecutionRequest.FixtureSource.STORED,
+                Map.of(), true, ResolvedReplayPayloads.empty());
+
+        TestExecutionResult deterministic = service.execute(stored);
+
+        assertThat(deterministic.passed()).isTrue();
+        assertThat(deterministic.graphResult().getOutput("subject", Instant.class)).isEqualTo(origin);
+        assertThat(deterministic.plan().executionServiceBindings())
+                .filteredOn(binding -> binding.service().equals("TIME"))
+                .singleElement().satisfies(binding -> {
+                    assertThat(binding.mode()).isEqualTo("LOGICAL_ADVANCING");
+                    assertThat(binding.consumers()).containsExactly("/root/subject#PRIMARY");
+                });
+        assertThat(deterministic.evidence().evidenceClass())
+                .isEqualTo(TestRunEvidence.EvidenceClass.CERTIFIABLE);
+
+        TestExecutionRequest uncontrolled = new TestExecutionRequest(graph,
+                new GraphContext(Map.of("input", "hello")), bundle(),
+                "GRAPH_CONTRACT_TEST", TARGET, TestExecutionRequest.FixtureSource.STORED,
+                Map.of(), true, ResolvedReplayPayloads.empty());
+        TestExecutionResult exploratory = service.execute(uncontrolled);
+        assertThat(exploratory.passed()).isTrue();
+        assertThat(exploratory.evidence().evidenceClass())
+                .isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
+        assertThat(exploratory.evidence().metadata().get(
+                "executionServiceCertificationGaps").toString())
+                .contains("logicalClock");
+    }
+
+    @Test
     void returnDoubleIsSchemaGatedConsumedAndMarkedOutputLevel() {
         Graph graph = single(new PureOperator());
         FixtureRule rule = rule("fixed", FixtureRule.Selector.node("subject"),
@@ -1041,6 +1077,27 @@ class TestRunServiceTest {
         @Override
         public SideEffectType sideEffectType() {
             return SideEffectType.READ_ONLY;
+        }
+    }
+
+    private static final class LogicalClockOperator implements Operator<Object, Object>,
+            OperatorComposabilityManifestProvider {
+        @Override
+        public Object execute(Object input, OperatorContext context) {
+            return context.timeSource().now();
+        }
+
+        @Override
+        public SideEffectType sideEffectType() {
+            return SideEffectType.READ_ONLY;
+        }
+
+        @Override
+        public OperatorComposabilityManifest operatorComposabilityManifest() {
+            return new OperatorComposabilityManifest(OperatorComposabilityManifest.SCHEMA_VERSION,
+                    OperatorComposabilityManifest.DependencyMode.NONE, List.of(),
+                    List.of(OperatorComposabilityManifest.ExecutionService.TIME), true,
+                    "test:logical-clock", "sha256:" + "c".repeat(64));
         }
     }
 

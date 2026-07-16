@@ -12,7 +12,9 @@ import java.util.Map;
  * <p>The manifest is an input to server-side testability classification, never a caller-controlled
  * certification switch. Resource Gateway v1 can certify only a self-contained synchronous binding
  * whose declaration is tied to a fingerprinted conformance suite. Declared dependency ports and
- * execution services remain visible inventory until the runtime can control those boundaries.</p>
+ * unsupported execution services remain visible inventory until the runtime can control those
+ * boundaries. Time, random, and UUID services are conditionally certifiable when the run fixture
+ * supplies their required logical clock or seed.</p>
  *
  * @param schemaVersion manifest schema version
  * @param dependencyMode whether external dependencies are absent, declared, or opaque
@@ -96,13 +98,14 @@ public record OperatorComposabilityManifest(
         OPAQUE
     }
 
-    /** Nondeterministic service that must eventually be supplied through execution scope. */
+    /** Ambient authority or nondeterminism source that must be supplied through execution scope. */
     public enum ExecutionService {
         TIME,
         RANDOM,
         UUID,
         IDENTITY,
-        FEATURE_FLAG
+        FEATURE_FLAG,
+        SECRET
     }
 
     /** Supported external dependency categories. */

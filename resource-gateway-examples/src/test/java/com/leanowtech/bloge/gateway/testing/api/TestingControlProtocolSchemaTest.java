@@ -154,7 +154,7 @@ class TestingControlProtocolSchemaTest {
                 .containsExactly("NONE", "DECLARED", "OPAQUE");
         assertThat(definitions.at("/operatorComposabilityManifest/properties/executionServices/items/enum"))
                 .extracting(JsonNode::asText)
-                .contains("TIME", "RANDOM", "UUID", "IDENTITY", "FEATURE_FLAG");
+                .contains("TIME", "RANDOM", "UUID", "IDENTITY", "FEATURE_FLAG", "SECRET");
         assertThat(definitions.at("/testExecutionBatchRequest/properties/executions/maxItems").asInt())
                 .isEqualTo(TestExecutionBatchRequest.MAX_EXECUTIONS);
         assertThat(definitions.at("/testExecutionBatchResponse/properties/executions/items/$ref").asText())
@@ -220,13 +220,21 @@ class TestingControlProtocolSchemaTest {
                 .containsExactly("NOT_EVALUATED", "ELIGIBLE", "BLOCKED");
         assertThat(definitions.at("/effectivePlan/additionalProperties").asBoolean()).isFalse();
         assertThat(definitions.at("/effectivePlan/required")).extracting(JsonNode::asText)
-                .contains("replayDependencies");
+                .contains("replayDependencies", "executionServiceBindings");
         assertThat(definitions.at(
                 "/effectivePlan/properties/replayDependencies/items/$ref").asText())
                 .isEqualTo("#/$defs/replayDependency");
         assertThat(definitions.at("/replayDependency/additionalProperties").asBoolean()).isFalse();
         assertThat(definitions.at("/replayDependency/properties/replayRef/pattern").asText())
                 .contains("bloge-replay:");
+        assertThat(definitions.at(
+                "/effectivePlan/properties/executionServiceBindings/items/$ref").asText())
+                .isEqualTo("#/$defs/executionServiceBinding");
+        assertThat(definitions.at("/executionServiceBinding/additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(definitions.at("/executionServiceBinding/properties/service/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly("TIME", "RANDOM", "UUID", "IDENTITY", "FEATURE_FLAG", "SECRET");
         assertThat(definitions.at("/testRunEvidence/additionalProperties").asBoolean()).isFalse();
         assertThat(definitions.at("/testExecutionResponse/oneOf")).hasSize(2);
         assertThat(definitions.at("/testExecutionResponseV2/required"))

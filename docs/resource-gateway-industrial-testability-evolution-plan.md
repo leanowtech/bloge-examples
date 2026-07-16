@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0/1 已落地，Stage 2 主路径持续收口，Stage 3 已完成 child + suite aggregate + pinned key lifecycle + typed semantic coverage + ANEKE semantic seed 完整性链 |
+| 状态 | Accepted / In implementation；Stage 0/1 已落地，Stage 2 主路径持续收口，Stage 3 证据链已闭环，Stage 4 确定性执行服务首增量已落地 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、operator 开发团队、QA、平台安全、SRE、ANEKE Tool Studio |
 | 设计目标 | 让调用方在测试运行中确定性控制 DAG 的外部数据、故障和非确定性来源，并产出可验证的测试证据 |
 | 非目标 | 不把 Resource Gateway 变成通用代码覆盖率平台；不允许普通生产请求携带测试替换指令；不替代 operator 代码仓库中的白盒单元测试 |
@@ -21,7 +21,8 @@
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
 | Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（四类 case intent、内容寻址 fixture/一等 suite 发布、精确 revision 执行与 aggregate coverage/promotion 回显）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、process-owner lease/heartbeat/checkpoint fence、abandoned RUNNING fail-closed reconciliation、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其 governed catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free plan v2 谱系与认证降级，以及同步 nested/foreach/loop/compensation 控制传播、动态 attempt/occurrence selector 与 occurrence/attempt/node/edge evidence 已落地；streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3 | In progress | graph/operator `TestRunEvidence`、suite checkpoint/terminal attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、签名时刻 lifecycle policy、外部 M-of-N trust publication、bounded append-only consistency page、durable consumer checkpoint、rollback/fork/split-view/revoked-pin resurrection detection 与 test-kit independent verifier 已完成；exact-suite ANEKE semantic workbook seed、`GovernanceGateResult.v3` 可重建 basis、编译级 GraphDraft target 绑定和独立 schema consumer 已完成；真实 ANEKE N/N-1 conformance、独立 witness gossip/跨域一致性证明待完成 |
-| Stage 4-5 | Not started | 剩余 deterministic random/UUID/function services、durable/streaming、独立部署与规模化治理 |
+| Stage 4 | In progress | BLOGE run-scoped `ExecutionServices`/`FunctionCallSite` 已接通；RG logical clock、seeded random/UUID、payload-free plan v3 binding、usage audit、认证降级与生产边界架构测试已落地；identity/flag/secret fixture authority、semantic result fingerprint、durable/streaming 恢复待完成 |
+| Stage 5 | Not started | 独立部署、network/identity/secret/store 物理隔离、规模化调度与 mutation/property testing |
 
 实现细节、行为兼容决策和可复现测试见
 [v1 实施蓝图](resource-gateway-industrial-testability-evolution-plan-1.0.md) 与
@@ -511,7 +512,7 @@ assertions:
 
 ```json
 {
-  "schemaVersion": "bloge.effectiveExecutionPlan.v2",
+  "schemaVersion": "bloge.effectiveExecutionPlan.v3",
   "planId": "plan-...",
   "planFingerprint": "sha256:...",
   "authorizedPurpose": "GRAPH_CONTRACT_TEST",
@@ -1098,6 +1099,18 @@ certification package，因为它不含 replay payload attachment、独立 witne
 验收：publish gate 能回答“哪个不可变版本，被哪组 fixture，以何种 REAL/MOCK 组合，覆盖了哪些业务路径”。
 
 ### Stage 4：确定性依赖与 durable test，3-6 周
+
+**实现状态**：进行中。BLOGE 已提供 run-scoped `ExecutionServices`、typed service kind、
+`FunctionCallSite` 和环境依赖 built-in 的运行期 resolver；Resource Gateway planner 在调度前冻结
+同一服务对象及 `bloge.effectiveExecutionPlan.v3` 的 payload-free binding，并将它同时传给 BLOGE
+scheduler、operator context 和 DSL function。`logicalClock` 控制 TIME，`randomSeed` 以域隔离
+SHA-256 序列控制 RANDOM/UUID；调用事实进入 evidence metadata，缺少必要控制会把 run 降为
+EXPLORATORY。IDENTITY/FEATURE_FLAG/SECRET 当前没有 fixture authority，调用即 fail closed。
+生产包路径不得引用 governed provider，由架构测试持续证明。验证见
+[Stage 4 execution services verification](resource-gateway-execution-data-control-plane-stage4-execution-services-verification.md)。
+
+本增量尚未完成 `semanticResultFingerprint`、durable cursor/provider-state resume、stream/event
+fixture、确定性并发调度、测试身份/feature flag/test-secret authority，因此 Stage 4 仍为进行中。
 
 交付：
 

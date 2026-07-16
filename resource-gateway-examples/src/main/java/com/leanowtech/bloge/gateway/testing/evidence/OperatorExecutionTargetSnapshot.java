@@ -329,7 +329,8 @@ public record OperatorExecutionTargetSnapshot(
             }
             Map<String, Object> protocol = manifest.toProtocolMap();
             List<String> gaps = composabilityGaps(manifest);
-            return boundedComposability(mapper, protocol, gaps.isEmpty(), List.of(), gaps);
+            return boundedComposability(mapper, protocol, gaps.isEmpty(),
+                    composabilityRequirements(manifest), gaps);
         } catch (RuntimeException failure) {
             return invalidComposability("Operator composability provider failed: "
                     + failure.getClass().getSimpleName() + ".");
@@ -363,9 +364,15 @@ public record OperatorExecutionTargetSnapshot(
             gaps.add("testing-control-plane v1 cannot certify generic declared dependency ports; "
                     + "only self-contained bindings or the built-in HTTP transport boundary are supported.");
         }
-        if (!manifest.executionServices().isEmpty()) {
-            gaps.add("Operator consumes execution services that v1 cannot yet inject: "
-                    + manifest.executionServices().stream().map(Enum::name).toList() + ".");
+        List<String> unsupportedServices = manifest.executionServices().stream()
+                .filter(service -> service != OperatorComposabilityManifest.ExecutionService.TIME)
+                .filter(service -> service != OperatorComposabilityManifest.ExecutionService.RANDOM)
+                .filter(service -> service != OperatorComposabilityManifest.ExecutionService.UUID)
+                .map(Enum::name)
+                .toList();
+        if (!unsupportedServices.isEmpty()) {
+            gaps.add("Operator consumes execution services without a governed test authority: "
+                    + unsupportedServices + ".");
         }
         if (!manifest.globalStateFree()) {
             gaps.add("Operator does not attest that undeclared mutable global state is absent.");
@@ -377,6 +384,20 @@ public record OperatorExecutionTargetSnapshot(
             gaps.add("Operator composability manifest has no valid conformance suite fingerprint.");
         }
         return List.copyOf(gaps);
+    }
+
+    private static List<String> composabilityRequirements(OperatorComposabilityManifest manifest) {
+        List<String> requirements = new ArrayList<>();
+        if (manifest.executionServices().contains(
+                OperatorComposabilityManifest.ExecutionService.TIME)) {
+            requirements.add("Fixture bundle must define logicalClock when the operator uses TIME.");
+        }
+        if (manifest.executionServices().stream().anyMatch(service ->
+                service == OperatorComposabilityManifest.ExecutionService.RANDOM
+                        || service == OperatorComposabilityManifest.ExecutionService.UUID)) {
+            requirements.add("Fixture bundle must define randomSeed when the operator uses RANDOM or UUID.");
+        }
+        return List.copyOf(requirements);
     }
 
     private static ComposabilitySnapshot invalidComposability(String gap) {

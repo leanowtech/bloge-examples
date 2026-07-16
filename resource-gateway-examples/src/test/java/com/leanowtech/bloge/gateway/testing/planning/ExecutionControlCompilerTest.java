@@ -218,7 +218,7 @@ class ExecutionControlCompilerTest {
     }
 
     @Test
-    void invalidTimePayloadsAndReservedRandomSeedRemainFailClosed() {
+    void invalidTimePayloadsFailClosedAndRandomSeedFreezesServiceBindings() {
         FixtureRule misplacedAfter = rule("bad-after", FixtureRule.Selector.node("subject"),
                 new FixtureRule.Behavior(FixtureRule.BehaviorKind.RETURN,
                         FixtureRule.DoubleBoundary.NODE, "value", "", null, Map.of(), "", "", "",
@@ -231,10 +231,18 @@ class ExecutionControlCompilerTest {
         FixtureBundle seeded = new FixtureBundle(FixtureBundle.SCHEMA_VERSION, "fixture", 1,
                 TARGET, "INTERNAL", Instant.parse("2026-07-15T00:00:00Z"), 42L,
                 List.of(), List.of(), Map.of());
-        assertThatThrownBy(() -> compiler.compile(graph(new ReadOnlyOperator()), seeded,
-                "GRAPH_CONTRACT_TEST", TARGET))
-                .isInstanceOfSatisfying(ControlPlanRejectedException.class, ex ->
-                        assertThat(ex.diagnostics()).anyMatch(item -> item.contains("randomSeed")));
+        CompiledExecutionControl compiled = compiler.compile(graph(new ReadOnlyOperator()), seeded,
+                "GRAPH_CONTRACT_TEST", TARGET);
+        assertThat(compiled.effectivePlan().schemaVersion())
+                .isEqualTo(EffectiveExecutionPlan.SCHEMA_VERSION);
+        assertThat(compiled.effectivePlan().executionServiceBindings())
+                .filteredOn(binding -> List.of("RANDOM", "UUID").contains(binding.service()))
+                .allSatisfy(binding -> {
+                    assertThat(binding.available()).isTrue();
+                    assertThat(binding.deterministic()).isTrue();
+                    assertThat(binding.configurationFingerprint()).startsWith("sha256:");
+                    assertThat(binding.certificationGaps()).isEmpty();
+                });
     }
 
     @Test

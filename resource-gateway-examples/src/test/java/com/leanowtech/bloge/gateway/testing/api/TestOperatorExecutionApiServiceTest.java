@@ -188,15 +188,16 @@ class TestOperatorExecutionApiServiceTest {
     }
 
     @Test
-    void declaredButUncontrolledExecutionServiceFailsCertificationClosed() {
+    void declaredControllableExecutionServiceBecomesAFixtureRequirement() {
         TestOperatorTargetDescriptor target = service.describeOperatorTarget("clock.read", identity());
 
         assertThat(target.composabilityFingerprint()).startsWith("sha256:");
         assertThat(target.composabilityManifest()).containsEntry("executionServices", List.of("TIME"));
-        assertThat(target.testabilityClass()).isEqualTo(OperatorExecutionTargetSnapshot.OPAQUE_RUNTIME);
-        assertThat(target.certificationEligible()).isFalse();
-        assertThat(target.certificationGaps())
-                .anyMatch(gap -> gap.contains("execution services") && gap.contains("TIME"));
+        assertThat(target.testabilityClass()).isEqualTo(OperatorExecutionTargetSnapshot.EXECUTABLE_UNIT);
+        assertThat(target.certificationEligible()).isTrue();
+        assertThat(target.certificationRequirements())
+                .contains("Fixture bundle must define logicalClock when the operator uses TIME.");
+        assertThat(target.certificationGaps()).isEmpty();
     }
 
     @Test

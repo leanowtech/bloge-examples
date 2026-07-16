@@ -456,19 +456,32 @@ canonical JSON is frozen into a run-scoped internal object. The planner and runt
 repository handle, and a missing, expired, purged, changed, oversized, or unauthorized dependency
 fails before any graph node is scheduled.
 
-`bloge.effectiveExecutionPlan.v2` binds payload-free replay identity and source lineage in
+`bloge.effectiveExecutionPlan.v3` retains the v2 payload-free replay identity and source lineage in
 `replayDependencies`; the payload itself is never embedded in the plan or plan fingerprint
-material. Runtime materializes a fresh value per invocation, validates it with BLOGE's declared
+material. V3 also freezes all run-scoped ambient-authority bindings in
+`executionServiceBindings`: service kind, effective provider mode, availability, determinism,
+configuration fingerprint, declared consumers, and certification gaps. The binding never exports
+the raw clock or seed; evidence may separately expose governed logical timestamps as execution
+facts. Runtime materializes a fresh replay value per invocation, validates it with BLOGE's declared
 operator output schema, returns it without invoking the real operator, and emits node/attempt
 status `MOCKED`, fidelity `REPLAYED`, and control mode `REPLAY`. There is no fallback-to-real path.
+
+When a fixture supplies `logicalClock`, BLOGE scheduler time, operator `timeSource()` and
+environment-dependent time functions share one advancing zero-wall-clock provider. `randomSeed`
+drives domain-separated SHA-256 sequences for RANDOM and UUID. Calls with the same stable scope
+and occurrence sequence reproduce across runs; different scopes do not consume a global shared
+cursor. Missing TIME/RANDOM/UUID controls are allowed for exploratory runs but downgrade evidence
+when a declared or observed semantic consumer uses them. IDENTITY, FEATURE_FLAG and SECRET have
+no fixture authority in this increment and always fail closed. Evidence metadata records only
+payload-free usage counts, function call sites and hashed provider scopes.
 
 One run may resolve at most 1,000 distinct replay refs and 16 MiB of canonical frozen payloads.
 A replay captured from a non-executable draft or otherwise non-certifiable source makes the whole
 run `EXPLORATORY`; it cannot be upgraded by storing the fixture. A signed immutable executable
 publication source may remain certification-eligible when every other certification gate passes.
 
-Capability probe now reports both `governedTestReplayPayloadCapture=true` and
-`testReplayBehavior=true`. It advertises effective-plan v1 for readers and v2 as the current
+Capability probe reports both `governedTestReplayPayloadCapture=true` and
+`testReplayBehavior=true`. It advertises effective-plan v1/v2 for readers and v3 as the current
 producer contract.
 
 ### 4.2.2 Register an immutable test suite

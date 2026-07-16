@@ -17,7 +17,7 @@ import java.util.Set;
  * <p>Logical DELAY/TIMEOUT controls are accepted only with an explicit run clock. REPLAY is
  * accepted only when every exact reference was governed and frozen before compilation. Dynamic
  * attempt/occurrence selectors are bounded and canonical; stream, sequence, and deterministic
- * random fields remain fail-closed reservations.</p>
+ * random fields are accepted only as run-scoped provider configuration.</p>
  */
 public class SafetyPreflight {
 
@@ -71,10 +71,6 @@ public class SafetyPreflight {
         } else if (authorizedPurpose.toUpperCase(java.util.Locale.ROOT).contains("PRODUCTION")) {
             diagnostics.add("Production execution purpose cannot carry a test control plan.");
         }
-        if (bundle.randomSeed() != null) {
-            diagnostics.add("randomSeed is reserved until a deterministic random service exists.");
-        }
-
         Set<String> ruleIds = new HashSet<>();
         Set<String> replayRefs = new HashSet<>();
         for (int i = 0; i < bundle.rules().size(); i++) {
