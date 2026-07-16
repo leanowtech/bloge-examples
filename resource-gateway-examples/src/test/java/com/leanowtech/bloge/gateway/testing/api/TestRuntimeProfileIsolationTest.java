@@ -62,6 +62,10 @@ class TestRuntimeProfileIsolationTest {
                     DurableStateProjectionReconciliationScheduler.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DatabaseDurableStateProjectionControlPlane.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableStateProjectionFindingController.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableStateProjectionFindingService.class)).isEmpty();
             assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();
@@ -110,6 +114,10 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     DatabaseDurableStateProjectionControlPlane.class)).hasSize(1);
             assertThat(context.getBeansOfType(
+                    DurableStateProjectionFindingController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableStateProjectionFindingService.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
                     DurableStateProjectionReconciliationScheduler.class)).hasSize(1);
             assertThat(context.getBean(TestabilityAvailability.class).executionEndpointEnabled()).isTrue();
             ObjectMapper mapper = context.getBean(ObjectMapper.class);
@@ -154,6 +162,10 @@ class TestRuntimeProfileIsolationTest {
                     DurableStateProjectionReconciliationScheduler.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DatabaseDurableStateProjectionControlPlane.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableStateProjectionFindingController.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableStateProjectionFindingService.class)).isEmpty();
             assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();
@@ -181,6 +193,7 @@ class TestRuntimeProfileIsolationTest {
         context.register(TestRuntimeConfiguration.class, TestExecutionController.class,
                 DurableTestExecutionQueryController.class,
                 DurableTestOwnerClaimController.class,
+                DurableStateProjectionFindingController.class,
                 DurableTestRecoveryHeartbeatController.class,
                 DurableTestTerminalRecoveryController.class);
         context.refresh();

@@ -75,6 +75,8 @@ Independent-store settings:
 | `gateway.testing.replay-payloads.maximum-retention-days` | `RG_TEST_REPLAY_MAX_RETENTION_DAYS` | `30` |
 | `gateway.testing.replay-payloads.sweep-interval-ms` | `RG_TEST_REPLAY_SWEEP_INTERVAL_MS` | `60000` |
 | `gateway.testing.replay-payloads.sweep-batch-size` | `RG_TEST_REPLAY_SWEEP_BATCH_SIZE` | `100` |
+| `gateway.testing.durable.projection-findings.required-group` | `RG_TEST_PROJECTION_FINDING_REQUIRED_GROUP` | `resource-gateway-test-runtime-operators` |
+| `gateway.testing.durable.projection-findings.required-clearance` | `RG_TEST_PROJECTION_FINDING_REQUIRED_CLEARANCE` | `RESTRICTED` |
 
 ## 3. Authentication
 
@@ -82,7 +84,7 @@ Testing endpoints require a verified bearer and the least-privilege purpose for 
 
 ```text
 Authorization: Bearer <verified workload credential>
-X-Purpose: TEST_EXECUTION | TEST_FIXTURE_READ | TEST_FIXTURE_WRITE | TEST_REPLAY | TEST_SUITE_READ | TEST_SUITE_WRITE
+X-Purpose: TEST_EXECUTION | TEST_FIXTURE_READ | TEST_FIXTURE_WRITE | TEST_REPLAY | TEST_SUITE_READ | TEST_SUITE_WRITE | TEST_RUNTIME_MAINTENANCE
 ```
 
 The local test-profile defaults are:
@@ -98,6 +100,7 @@ The local test-profile defaults are:
 | test-suite revision query | `TEST_SUITE_READ` |
 | immutable test-suite registration | `TEST_SUITE_WRITE` |
 | built-in graph catalog materialization | `TEST_SUITE_WRITE` |
+| global durable projection finding read/claim/resolve | `TEST_RUNTIME_MAINTENANCE` plus configured global group and clearance |
 
 The local demo bearer is `bloge-aneke-demo-token` and is granted all six testing purposes.
 Production credentials should keep fixture authors, suite authors, readers, and runners separate.
@@ -842,6 +845,73 @@ checkpoint and receipt return with `idempotentReplay=true`; the engine mutation 
 This endpoint is deliberately terminal-only and synchronous. It does not poll a queue, supervise a
 separate worker process, accept multiple signals, enforce a hard process deadline, assemble complete
 signed historical evidence, or turn Resource Gateway into a general durable worker runtime.
+
+### 4.2g Operate the durable projection finding queue
+
+The anti-entropy finding table cannot reliably prove tenant ownership, so these endpoints are not
+ordinary tenant APIs. They require all of the following: `test` or `staging`, the exact
+`TEST_RUNTIME_MAINTENANCE` purpose, the deployment-owned global operator group, and the configured
+minimum clearance. A tenant-scoped identity without that explicit global role is rejected even if it
+can run tests. For the local demo, opt in deliberately:
+
+```bash
+RG_INTEGRATION_GROUPS=resource-gateway-test-runtime-operators \
+RG_INTEGRATION_CLEARANCE=RESTRICTED \
+./scripts/start-visual-canvas-demo.sh --profile test
+```
+
+List payload-free actionable findings:
+
+```bash
+curl -sS 'http://localhost:8080/api/testing/durable-state/projection-findings?actionableOnly=true&limit=100' \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_RUNTIME_MAINTENANCE'
+```
+
+Claim one exact finding. The request deliberately has no owner field; the service uses the verified
+`actorId`. Save the returned `claimToken`, `version`, and `claimUntil` as one opaque fence:
+
+```http
+POST /api/testing/durable-state/projection-findings/claims
+Authorization: Bearer <global-operator-token>
+X-Purpose: TEST_RUNTIME_MAINTENANCE
+Content-Type: application/json
+
+{
+  "schemaVersion": "bloge.durableStateProjectionFindingClaimRequest.v1",
+  "clientRequestId": "claim-execution-a-1",
+  "key": {"entityType": "EXECUTION", "rowId": "execution-a"},
+  "claimDurationSeconds": 120
+}
+```
+
+After repairing or quarantining the affected row, resolve with that exact fence:
+
+```http
+POST /api/testing/durable-state/projection-findings/resolutions
+Authorization: Bearer <global-operator-token>
+X-Purpose: TEST_RUNTIME_MAINTENANCE
+Content-Type: application/json
+
+{
+  "schemaVersion": "bloge.durableStateProjectionFindingResolutionRequest.v1",
+  "clientRequestId": "resolve-execution-a-1",
+  "key": {"entityType": "EXECUTION", "rowId": "execution-a"},
+  "claimToken": "<server-issued-token>",
+  "claimVersion": 4,
+  "claimUntil": "2026-07-17T12:02:00Z",
+  "resolution": "QUARANTINED"
+}
+```
+
+Exact retries return the original receipt with `idempotentReplay=true`; request-ID fact drift,
+another live owner, and stale/forged/expired fences return stable 409 problems. Only a successful
+claim response contains the token. Finding pages, resolution receipts, semantic action events,
+integration access audits, logs, and problem responses omit it. On the first state transition, the
+fenced finding update and append-only action event use the same local transaction; audit failure
+rolls the state change back. Rejected and replay attempts receive separate append-only events.
+Application code has no update/delete API for these events; external WORM anchoring remains a later
+hardening item, so this is an application-level immutable audit rather than a storage certification.
 
 ### 4.2.2 Register an immutable test suite
 

@@ -108,6 +108,20 @@ public class TestRuntimeConfiguration {
                 Duration.ofSeconds(leaseDurationSeconds));
     }
 
+    /** Assembles the globally authorized, action-audited projection finding owner queue. */
+    @Bean
+    DurableStateProjectionFindingService durableStateProjectionFindingService(
+            DatabaseDurableStateProjectionControlPlane controlPlane,
+            TestSecurityEventRepository securityEvents,
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.durable.projection-findings.required-group:resource-gateway-test-runtime-operators}")
+            String requiredGroup,
+            @Value("${gateway.testing.durable.projection-findings.required-clearance:RESTRICTED}")
+            String requiredClearance) {
+        return new DurableStateProjectionFindingService(
+                controlPlane, securityEvents, objectMapper, requiredGroup, requiredClearance);
+    }
+
     /** Runs bounded projection anti-entropy only inside the isolated test/staging control plane. */
     @Bean
     DurableStateProjectionReconciliationScheduler durableStateProjectionReconciliationScheduler(

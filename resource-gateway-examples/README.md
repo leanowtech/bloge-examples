@@ -554,10 +554,31 @@ while the separately committed lease eventually expires for takeover. Unrepairab
 enter an internal owner queue. Claims use a server-minted token, version, owner, and database-clock
 lease; manual resolution rejects stale, forged, and expired fences. Stored findings contain internal
 row IDs, column names, classifications, and counters, never authority JSON or business values. Logs
-still contain aggregate counts only. An authenticated operations endpoint, immutable action audit,
-queue retention/archival, metrics/SLO alerts, non-H2 dialect certification, and production load
-certification remain future work; the control plane is profile-gated to `test`/`staging` and vetoed
-by `production`.
+still contain aggregate counts only.
+
+The owner queue now has a profile-gated authenticated operations protocol:
+
+```bash
+RG_INTEGRATION_GROUPS=resource-gateway-test-runtime-operators \
+RG_INTEGRATION_CLEARANCE=RESTRICTED \
+./scripts/start-visual-canvas-demo.sh --profile test
+
+curl -sS 'http://localhost:8080/api/testing/durable-state/projection-findings?actionableOnly=true&limit=100' \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_RUNTIME_MAINTENANCE'
+```
+
+`POST .../claims` derives owner from verified identity and returns the server-minted token only in
+the successful claim response. `POST .../resolutions` accepts the exact key/token/version/deadline
+fence and only `MANUALLY_REPAIRED` or `QUARANTINED`. Both commands require a caller-stable
+`clientRequestId`; an exact retry returns the original receipt, while same-key fact drift returns
+409. First claim/resolution state and its token-free semantic action event commit in one
+test-runtime transaction. Rejected and replay attempts are appended separately. Configure the
+deployment-owned role with `RG_TEST_PROJECTION_FINDING_REQUIRED_GROUP` and minimum clearance with
+`RG_TEST_PROJECTION_FINDING_REQUIRED_CLEARANCE`; defaults are
+`resource-gateway-test-runtime-operators` and `RESTRICTED`. The endpoint is vetoed by `production`.
+Queue retention/archival, metrics/SLO alerts, non-H2 dialect certification, tamper-evident external
+audit anchoring, and production load certification remain future work.
 Wait identity must match the lifecycle identity, and committed wait/work-item ids cannot migrate to
 another execution. Work-item batches validate atomically, and claim, retry, terminal, and dead-letter
 transitions reuse BLOGE's reference state machine. An internal database-clock lease claim can fence an

@@ -3,6 +3,8 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -22,6 +24,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 
 /**
  * Durable multi-replica control plane for BLOGE scheduling-projection anti-entropy.
@@ -112,10 +115,17 @@ public final class DatabaseDurableStateProjectionControlPlane {
                     claim_owner VARCHAR(255) NOT NULL,
                     claim_token VARCHAR(255) NOT NULL,
                     claim_until TIMESTAMP WITH TIME ZONE NOT NULL,
+                    claim_request_id VARCHAR(255) NOT NULL DEFAULT '',
+                    claim_request_fingerprint VARCHAR(128) NOT NULL DEFAULT '',
+                    resolution_request_id VARCHAR(255) NOT NULL DEFAULT '',
+                    resolution_request_fingerprint VARCHAR(128) NOT NULL DEFAULT '',
+                    resolution_owner VARCHAR(255) NOT NULL DEFAULT '',
+                    resolution_claim_version BIGINT NOT NULL DEFAULT 0,
                     finding_version BIGINT NOT NULL,
                     PRIMARY KEY (entity_type, row_id)
                 )
                 """);
+        migrateFindingActionReceipts();
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS idx_rg_test_projection_finding_queue
                 ON rg_test_bloge_projection_findings
@@ -170,7 +180,9 @@ public final class DatabaseDurableStateProjectionControlPlane {
                         SELECT entity_type, row_id, finding_kind, columns_json, repairable,
                                last_outcome, finding_status, occurrence_count, first_seen_at,
                                last_seen_at, resolution, resolved_at, claim_owner, claim_token,
-                               claim_until, finding_version
+                               claim_until, claim_request_id, claim_request_fingerprint,
+                               resolution_request_id, resolution_request_fingerprint,
+                               resolution_owner, resolution_claim_version, finding_version
                         FROM rg_test_bloge_projection_findings
                         ORDER BY last_seen_at DESC, entity_type, row_id
                         LIMIT ?
@@ -188,7 +200,9 @@ public final class DatabaseDurableStateProjectionControlPlane {
                         SELECT entity_type, row_id, finding_kind, columns_json, repairable,
                                last_outcome, finding_status, occurrence_count, first_seen_at,
                                last_seen_at, resolution, resolved_at, claim_owner, claim_token,
-                               claim_until, finding_version
+                               claim_until, claim_request_id, claim_request_fingerprint,
+                               resolution_request_id, resolution_request_fingerprint,
+                               resolution_owner, resolution_claim_version, finding_version
                         FROM rg_test_bloge_projection_findings
                         WHERE finding_status = 'OPEN'
                            OR (finding_status = 'CLAIMED' AND claim_until <= CURRENT_TIMESTAMP)
@@ -209,18 +223,61 @@ public final class DatabaseDurableStateProjectionControlPlane {
             DurableStateProjectionReconciler.EntityKey key,
             String claimOwner,
             Duration claimDuration) {
+        FindingClaimResult result = claimFinding(key, claimOwner, UUID.randomUUID().toString(),
+                claimDuration, ignored -> TestRuntimeTransactionMutation.noop());
+        return Optional.ofNullable(result.claim());
+    }
+
+    /**
+     * Idempotently claims one actionable finding and commits its companion audit mutation.
+     *
+     * <p>The request ID and canonical fingerprint are retained with the claim. An exact retry
+     * receives the original server-minted fence without another audit write; reuse of the request
+     * ID with changed facts is rejected. The supplied audit mutation executes after the fenced
+     * state update on the same transaction-bound JDBC connection.</p>
+     *
+     * @param key payload-free row identity
+     * @param claimOwner verified operational identity, never a client-selected owner
+     * @param clientRequestId caller-generated idempotency key
+     * @param claimDuration requested database-clock lease, from one second through one hour
+     * @param committedAudit creates the append-only mutation for a newly committed claim
+     * @return explicit claim, replay, conflict, or non-actionable disposition
+     */
+    public FindingClaimResult claimFinding(
+            DurableStateProjectionReconciler.EntityKey key,
+            String claimOwner,
+            String clientRequestId,
+            Duration claimDuration,
+            Function<FindingClaim, TestRuntimeTransactionMutation> committedAudit) {
         DurableStateProjectionReconciler.EntityKey safeKey = Objects.requireNonNull(key, "key");
         String safeOwner = required(claimOwner, "Finding claim owner", 255);
+        String safeRequestId = required(clientRequestId, "Finding claim request ID", 255);
         Duration safeDuration = boundedLease(claimDuration, "Finding claim duration");
-        Optional<FindingClaim> result = transactions.execute(status -> {
+        Function<FindingClaim, TestRuntimeTransactionMutation> safeAudit =
+                Objects.requireNonNull(committedAudit, "committedAudit");
+        String fingerprint = ProtocolFingerprint.of(objectMapper, Map.of(
+                "entityType", safeKey.entityType().name(),
+                "rowId", safeKey.rowId(),
+                "claimOwner", safeOwner,
+                "claimDurationMillis", safeDuration.toMillis()));
+        FindingClaimResult result = transactions.execute(status -> {
             FindingRow current = findFinding(safeKey, true).orElse(null);
             if (current == null || current.status() == FindingStatus.RESOLVED) {
-                return Optional.empty();
+                return FindingClaimResult.notActionable();
             }
             Instant now = databaseNow();
+            if (current.claimRequestId().equals(safeRequestId)) {
+                if (!current.claimRequestFingerprint().equals(fingerprint)) {
+                    return FindingClaimResult.conflict();
+                }
+                if (current.status() == FindingStatus.CLAIMED
+                        && current.claimOwner().equals(safeOwner)) {
+                    return FindingClaimResult.replay(current.claim());
+                }
+            }
             if (current.status() == FindingStatus.CLAIMED
                     && current.claimUntil().isAfter(now)) {
-                return Optional.empty();
+                return FindingClaimResult.notActionable();
             }
             String token = UUID.randomUUID().toString();
             Instant claimUntil = now.plus(safeDuration);
@@ -228,15 +285,21 @@ public final class DatabaseDurableStateProjectionControlPlane {
             int updated = jdbc.update("""
                     UPDATE rg_test_bloge_projection_findings
                     SET finding_status = 'CLAIMED', claim_owner = ?, claim_token = ?,
-                        claim_until = ?, finding_version = ?
+                        claim_until = ?, claim_request_id = ?, claim_request_fingerprint = ?,
+                        resolution_request_id = '', resolution_request_fingerprint = '',
+                        resolution_owner = '', resolution_claim_version = 0,
+                        finding_version = ?
                     WHERE entity_type = ? AND row_id = ? AND finding_version = ?
-                    """, safeOwner, token, Timestamp.from(claimUntil), version,
+                    """, safeOwner, token, Timestamp.from(claimUntil), safeRequestId, fingerprint,
+                    version,
                     safeKey.entityType().name(), safeKey.rowId(), current.version());
             if (updated != 1) {
                 throw new IllegalStateException("Projection finding claim fence was rejected");
             }
-            return Optional.of(new FindingClaim(
-                    safeKey, safeOwner, token, version, claimUntil));
+            FindingClaim claim = new FindingClaim(
+                    safeKey, safeOwner, token, version, claimUntil);
+            Objects.requireNonNull(safeAudit.apply(claim), "committedAudit result").apply(jdbc);
+            return FindingClaimResult.claimed(claim);
         });
         return requiredTransactionResult(result, "finding claim");
     }
@@ -249,37 +312,93 @@ public final class DatabaseDurableStateProjectionControlPlane {
      * @return true when resolved; false for stale, forged, expired, or already-consumed fences
      */
     public boolean resolveFinding(FindingClaim claim, Resolution resolution) {
+        FindingResolutionResult result = resolveFinding(claim, UUID.randomUUID().toString(),
+                resolution, ignored -> TestRuntimeTransactionMutation.noop());
+        return result.disposition() == ResolutionDisposition.RESOLVED;
+    }
+
+    /**
+     * Idempotently resolves an exact live claim and commits its companion audit mutation.
+     *
+     * <p>An exact retry returns the persisted resolution receipt. A reused request ID with changed
+     * claim or resolution facts is rejected independently of fencing. Claim tokens are consumed by
+     * the comparison but only a canonical fingerprint is retained as the idempotency receipt.</p>
+     *
+     * @param claim exact server-issued owner, token, version, and lease fence
+     * @param clientRequestId caller-generated idempotency key
+     * @param resolution manual operational resolution
+     * @param committedAudit creates the append-only mutation for a newly committed resolution
+     * @return explicit resolved, replay, conflict, or fence-rejected disposition
+     */
+    public FindingResolutionResult resolveFinding(
+            FindingClaim claim,
+            String clientRequestId,
+            Resolution resolution,
+            Function<FindingResolution, TestRuntimeTransactionMutation> committedAudit) {
         FindingClaim safeClaim = Objects.requireNonNull(claim, "claim");
+        String safeRequestId = required(clientRequestId, "Finding resolution request ID", 255);
         Resolution safeResolution = Objects.requireNonNull(resolution, "resolution");
+        Function<FindingResolution, TestRuntimeTransactionMutation> safeAudit =
+                Objects.requireNonNull(committedAudit, "committedAudit");
         if (!safeResolution.manual()) {
             throw new IllegalArgumentException("A manual finding resolution is required");
         }
-        Boolean result = transactions.execute(status -> {
+        String fingerprint = ProtocolFingerprint.of(objectMapper, Map.of(
+                "entityType", safeClaim.key().entityType().name(),
+                "rowId", safeClaim.key().rowId(),
+                "ownerId", safeClaim.ownerId(),
+                "claimToken", safeClaim.claimToken(),
+                "claimVersion", safeClaim.version(),
+                "claimUntil", safeClaim.claimUntil(),
+                "resolution", safeResolution.name()));
+        FindingResolutionResult result = transactions.execute(status -> {
             FindingRow current = findFinding(safeClaim.key(), true).orElse(null);
             Instant now = databaseNow();
+            if (current != null && current.resolutionRequestId().equals(safeRequestId)) {
+                if (!current.resolutionRequestFingerprint().equals(fingerprint)) {
+                    return FindingResolutionResult.conflict();
+                }
+                if (current.status() == FindingStatus.RESOLVED
+                        && current.resolutionOwner().equals(safeClaim.ownerId())
+                        && current.resolutionClaimVersion() == safeClaim.version()
+                        && current.resolution() == safeResolution) {
+                    return FindingResolutionResult.replay(current.findingResolution());
+                }
+            }
             if (current == null
                     || current.status() != FindingStatus.CLAIMED
                     || !current.claimOwner().equals(safeClaim.ownerId())
                     || !current.claimToken().equals(safeClaim.claimToken())
                     || current.version() != safeClaim.version()
+                    || !current.claimUntil().equals(safeClaim.claimUntil())
                     || !current.claimUntil().isAfter(now)) {
-                return false;
+                return FindingResolutionResult.fenceRejected();
             }
+            long version = Math.addExact(current.version(), 1);
             int updated = jdbc.update("""
                     UPDATE rg_test_bloge_projection_findings
                     SET finding_status = 'RESOLVED', resolution = ?, resolved_at = ?,
                         claim_owner = '', claim_token = '', claim_until = ?,
+                        resolution_request_id = ?, resolution_request_fingerprint = ?,
+                        resolution_owner = ?, resolution_claim_version = ?,
                         finding_version = ?
                     WHERE entity_type = ? AND row_id = ? AND finding_status = 'CLAIMED'
                       AND claim_owner = ? AND claim_token = ? AND finding_version = ?
                       AND claim_until > CURRENT_TIMESTAMP
                     """, safeResolution.name(), Timestamp.from(now), Timestamp.from(Instant.EPOCH),
-                    Math.addExact(current.version(), 1), safeClaim.key().entityType().name(),
+                    safeRequestId, fingerprint, safeClaim.ownerId(), safeClaim.version(), version,
+                    safeClaim.key().entityType().name(),
                     safeClaim.key().rowId(), safeClaim.ownerId(), safeClaim.claimToken(),
                     safeClaim.version());
-            return updated == 1;
+            if (updated != 1) {
+                return FindingResolutionResult.fenceRejected();
+            }
+            FindingResolution committed = new FindingResolution(safeClaim.key(),
+                    safeClaim.ownerId(), safeResolution, version, now);
+            Objects.requireNonNull(safeAudit.apply(committed), "committedAudit result").apply(jdbc);
+            return FindingResolutionResult.resolved(committed);
         });
-        return Boolean.TRUE.equals(requiredTransactionResult(result, "finding resolution"));
+        return requiredTransactionResult(result, "finding resolution");
     }
 
     Optional<SweepLease> acquireSweepLease() {
@@ -389,8 +508,11 @@ public final class DatabaseDurableStateProjectionControlPlane {
                             entity_type, row_id, finding_kind, columns_json, repairable,
                             last_outcome, finding_status, occurrence_count, first_seen_at,
                             last_seen_at, resolution, resolved_at, claim_owner, claim_token,
-                            claim_until, finding_version
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, 0)
+                            claim_until, claim_request_id, claim_request_fingerprint,
+                            resolution_request_id, resolution_request_fingerprint,
+                            resolution_owner, resolution_claim_version, finding_version
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, '', '',
+                                  '', '', '', 0, 0)
                         """, key.entityType().name(), key.rowId(), finding.kind().name(),
                         writeColumns(finding.columns()), finding.repairable(),
                         finding.outcome().name(), repaired ? FindingStatus.RESOLVED.name()
@@ -411,6 +533,12 @@ public final class DatabaseDurableStateProjectionControlPlane {
         String claimOwner = current.claimOwner();
         String claimToken = current.claimToken();
         Instant claimUntil = current.claimUntil();
+        String claimRequestId = current.claimRequestId();
+        String claimRequestFingerprint = current.claimRequestFingerprint();
+        String resolutionRequestId = current.resolutionRequestId();
+        String resolutionRequestFingerprint = current.resolutionRequestFingerprint();
+        String resolutionOwner = current.resolutionOwner();
+        long resolutionClaimVersion = current.resolutionClaimVersion();
         long version = current.version();
         boolean findingChanged = current.kind() != finding.kind()
                 || !current.columns().equals(finding.columns())
@@ -423,6 +551,12 @@ public final class DatabaseDurableStateProjectionControlPlane {
             claimOwner = "";
             claimToken = "";
             claimUntil = Instant.EPOCH;
+            claimRequestId = "";
+            claimRequestFingerprint = "";
+            resolutionRequestId = "";
+            resolutionRequestFingerprint = "";
+            resolutionOwner = "";
+            resolutionClaimVersion = 0;
             version = Math.addExact(version, 1);
         } else if (current.status() == FindingStatus.RESOLVED
                 || current.status() == FindingStatus.CLAIMED
@@ -433,6 +567,12 @@ public final class DatabaseDurableStateProjectionControlPlane {
             claimOwner = "";
             claimToken = "";
             claimUntil = Instant.EPOCH;
+            claimRequestId = "";
+            claimRequestFingerprint = "";
+            resolutionRequestId = "";
+            resolutionRequestFingerprint = "";
+            resolutionOwner = "";
+            resolutionClaimVersion = 0;
             version = Math.addExact(version, 1);
         }
         int updated = jdbc.update("""
@@ -440,13 +580,18 @@ public final class DatabaseDurableStateProjectionControlPlane {
                 SET finding_kind = ?, columns_json = ?, repairable = ?, last_outcome = ?,
                     finding_status = ?, occurrence_count = ?, last_seen_at = ?, resolution = ?,
                     resolved_at = ?, claim_owner = ?, claim_token = ?, claim_until = ?,
+                    claim_request_id = ?, claim_request_fingerprint = ?,
+                    resolution_request_id = ?, resolution_request_fingerprint = ?,
+                    resolution_owner = ?, resolution_claim_version = ?,
                     finding_version = ?
                 WHERE entity_type = ? AND row_id = ? AND finding_version = ?
                 """, finding.kind().name(), writeColumns(finding.columns()), finding.repairable(),
                 finding.outcome().name(), nextStatus.name(),
                 Math.addExact(current.occurrences(), 1), Timestamp.from(now),
                 resolution == Resolution.NONE ? "" : resolution.name(),
-                timestamp(resolvedAt), claimOwner, claimToken, Timestamp.from(claimUntil), version,
+                timestamp(resolvedAt), claimOwner, claimToken, Timestamp.from(claimUntil),
+                claimRequestId, claimRequestFingerprint, resolutionRequestId,
+                resolutionRequestFingerprint, resolutionOwner, resolutionClaimVersion, version,
                 key.entityType().name(), key.rowId(), current.version());
         if (updated != 1) {
             throw new IllegalStateException("Projection finding update fence was rejected");
@@ -463,7 +608,10 @@ public final class DatabaseDurableStateProjectionControlPlane {
         int updated = jdbc.update("""
                 UPDATE rg_test_bloge_projection_findings
                 SET finding_status = 'RESOLVED', resolution = ?, resolved_at = ?,
-                    claim_owner = '', claim_token = '', claim_until = ?, finding_version = ?
+                    claim_owner = '', claim_token = '', claim_until = ?,
+                    claim_request_id = '', claim_request_fingerprint = '',
+                    resolution_request_id = '', resolution_request_fingerprint = '',
+                    resolution_owner = '', resolution_claim_version = 0, finding_version = ?
                 WHERE entity_type = ? AND row_id = ? AND finding_version = ?
                 """, Resolution.CONSISTENT_ON_RECHECK.name(), Timestamp.from(now),
                 Timestamp.from(Instant.EPOCH), Math.addExact(current.version(), 1),
@@ -511,6 +659,34 @@ public final class DatabaseDurableStateProjectionControlPlane {
         }
     }
 
+    private void migrateFindingActionReceipts() {
+        jdbc.execute("""
+                ALTER TABLE rg_test_bloge_projection_findings
+                ADD COLUMN IF NOT EXISTS claim_request_id VARCHAR(255) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_bloge_projection_findings
+                ADD COLUMN IF NOT EXISTS claim_request_fingerprint VARCHAR(128) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_bloge_projection_findings
+                ADD COLUMN IF NOT EXISTS resolution_request_id VARCHAR(255) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_bloge_projection_findings
+                ADD COLUMN IF NOT EXISTS resolution_request_fingerprint VARCHAR(128)
+                    NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_bloge_projection_findings
+                ADD COLUMN IF NOT EXISTS resolution_owner VARCHAR(255) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_bloge_projection_findings
+                ADD COLUMN IF NOT EXISTS resolution_claim_version BIGINT NOT NULL DEFAULT 0
+                """);
+    }
+
     private SweepState requireSweepState(boolean lock) {
         String suffix = lock ? " FOR UPDATE" : "";
         return jdbc.query("""
@@ -541,7 +717,9 @@ public final class DatabaseDurableStateProjectionControlPlane {
                         SELECT entity_type, row_id, finding_kind, columns_json, repairable,
                                last_outcome, finding_status, occurrence_count, first_seen_at,
                                last_seen_at, resolution, resolved_at, claim_owner, claim_token,
-                               claim_until, finding_version
+                               claim_until, claim_request_id, claim_request_fingerprint,
+                               resolution_request_id, resolution_request_fingerprint,
+                               resolution_owner, resolution_claim_version, finding_version
                         FROM rg_test_bloge_projection_findings
                         WHERE entity_type = ? AND row_id = ?
                         """ + suffix, this::mapFindingRow,
@@ -572,6 +750,12 @@ public final class DatabaseDurableStateProjectionControlPlane {
                         ? Resolution.NONE : Resolution.valueOf(resolution),
                 nullableInstant(resultSet, "resolved_at"), resultSet.getString("claim_owner"),
                 resultSet.getString("claim_token"), instant(resultSet, "claim_until"),
+                resultSet.getString("claim_request_id"),
+                resultSet.getString("claim_request_fingerprint"),
+                resultSet.getString("resolution_request_id"),
+                resultSet.getString("resolution_request_fingerprint"),
+                resultSet.getString("resolution_owner"),
+                resultSet.getLong("resolution_claim_version"),
                 resultSet.getLong("finding_version"));
     }
 
@@ -683,6 +867,134 @@ public final class DatabaseDurableStateProjectionControlPlane {
 
         private boolean manual() {
             return manual;
+        }
+    }
+
+    /** Stable outcome of an idempotent owner-queue claim command. */
+    public enum ClaimDisposition {
+        /** A new claim and its bound audit mutation committed atomically. */
+        CLAIMED,
+        /** The original claim was returned without another state or audit write. */
+        IDEMPOTENT_REPLAY,
+        /** The finding is resolved or has another live owner. */
+        NOT_ACTIONABLE,
+        /** The request ID was reused with changed command facts. */
+        IDEMPOTENCY_CONFLICT
+    }
+
+    /** Stable outcome of an idempotent owner-queue resolution command. */
+    public enum ResolutionDisposition {
+        /** A new resolution and its bound audit mutation committed atomically. */
+        RESOLVED,
+        /** The original resolution receipt was returned without another write. */
+        IDEMPOTENT_REPLAY,
+        /** The owner, token, version, or database-clock lease fence was rejected. */
+        FENCE_REJECTED,
+        /** The request ID was reused with changed command facts. */
+        IDEMPOTENCY_CONFLICT
+    }
+
+    /**
+     * Result of one idempotent finding claim.
+     *
+     * @param disposition claim command outcome
+     * @param claim exact fence for claimed and replayed outcomes, otherwise {@code null}
+     */
+    public record FindingClaimResult(ClaimDisposition disposition, FindingClaim claim) {
+        /** Enforces that only successful and replayed outcomes expose a claim fence. */
+        public FindingClaimResult {
+            disposition = Objects.requireNonNull(disposition, "disposition");
+            boolean carriesClaim = disposition == ClaimDisposition.CLAIMED
+                    || disposition == ClaimDisposition.IDEMPOTENT_REPLAY;
+            if (carriesClaim != (claim != null)) {
+                throw new IllegalArgumentException(
+                        "Claimed and replayed outcomes require exactly one claim");
+            }
+        }
+
+        private static FindingClaimResult claimed(FindingClaim claim) {
+            return new FindingClaimResult(ClaimDisposition.CLAIMED,
+                    Objects.requireNonNull(claim, "claim"));
+        }
+
+        private static FindingClaimResult replay(FindingClaim claim) {
+            return new FindingClaimResult(ClaimDisposition.IDEMPOTENT_REPLAY,
+                    Objects.requireNonNull(claim, "claim"));
+        }
+
+        private static FindingClaimResult notActionable() {
+            return new FindingClaimResult(ClaimDisposition.NOT_ACTIONABLE, null);
+        }
+
+        private static FindingClaimResult conflict() {
+            return new FindingClaimResult(ClaimDisposition.IDEMPOTENCY_CONFLICT, null);
+        }
+    }
+
+    /**
+     * Durable payload-free receipt for a committed manual resolution.
+     *
+     * @param key resolved authority row identity
+     * @param ownerId verified operational owner
+     * @param resolution committed manual classification
+     * @param version resulting finding revision
+     * @param resolvedAt database-clock commit time
+     */
+    public record FindingResolution(
+            DurableStateProjectionReconciler.EntityKey key,
+            String ownerId,
+            Resolution resolution,
+            long version,
+            Instant resolvedAt) {
+        /** Validates the complete manual resolution receipt. */
+        public FindingResolution {
+            key = Objects.requireNonNull(key, "key");
+            ownerId = required(ownerId, "Finding resolution owner", 255);
+            resolution = Objects.requireNonNull(resolution, "resolution");
+            resolvedAt = Objects.requireNonNull(resolvedAt, "resolvedAt");
+            if (!resolution.manual() || version <= 0) {
+                throw new IllegalArgumentException("Manual resolution receipt is invalid");
+            }
+        }
+    }
+
+    /**
+     * Result of one idempotent finding resolution.
+     *
+     * @param disposition resolution command outcome
+     * @param resolution durable receipt for resolved and replayed outcomes, otherwise {@code null}
+     */
+    public record FindingResolutionResult(
+            ResolutionDisposition disposition,
+            FindingResolution resolution) {
+        /** Enforces that only successful and replayed outcomes expose a resolution receipt. */
+        public FindingResolutionResult {
+            disposition = Objects.requireNonNull(disposition, "disposition");
+            boolean carriesResolution = disposition == ResolutionDisposition.RESOLVED
+                    || disposition == ResolutionDisposition.IDEMPOTENT_REPLAY;
+            if (carriesResolution != (resolution != null)) {
+                throw new IllegalArgumentException(
+                        "Resolved and replayed outcomes require exactly one resolution receipt");
+            }
+        }
+
+        private static FindingResolutionResult resolved(FindingResolution resolution) {
+            return new FindingResolutionResult(ResolutionDisposition.RESOLVED,
+                    Objects.requireNonNull(resolution, "resolution"));
+        }
+
+        private static FindingResolutionResult replay(FindingResolution resolution) {
+            return new FindingResolutionResult(ResolutionDisposition.IDEMPOTENT_REPLAY,
+                    Objects.requireNonNull(resolution, "resolution"));
+        }
+
+        private static FindingResolutionResult fenceRejected() {
+            return new FindingResolutionResult(ResolutionDisposition.FENCE_REJECTED, null);
+        }
+
+        private static FindingResolutionResult conflict() {
+            return new FindingResolutionResult(
+                    ResolutionDisposition.IDEMPOTENCY_CONFLICT, null);
         }
     }
 
@@ -850,7 +1162,22 @@ public final class DatabaseDurableStateProjectionControlPlane {
             String claimOwner,
             String claimToken,
             Instant claimUntil,
+            String claimRequestId,
+            String claimRequestFingerprint,
+            String resolutionRequestId,
+            String resolutionRequestFingerprint,
+            String resolutionOwner,
+            long resolutionClaimVersion,
             long version) {
+        private FindingClaim claim() {
+            return new FindingClaim(key, claimOwner, claimToken, version, claimUntil);
+        }
+
+        private FindingResolution findingResolution() {
+            return new FindingResolution(
+                    key, resolutionOwner, resolution, version, resolvedAt);
+        }
+
         private FindingRecord external() {
             return new FindingRecord(key, kind, columns, repairable, outcome, status,
                     occurrences, firstSeenAt, lastSeenAt, resolution, resolvedAt,

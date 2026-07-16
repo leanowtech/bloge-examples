@@ -262,6 +262,16 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.DurableTestTerminalRecoveryRequest.SCHEMA_VERSION));
             objects.put("durableTestTerminalRecoveryResponse", List.of(
                     com.leanowtech.bloge.gateway.testing.api.DurableTestTerminalRecoveryResponse.SCHEMA_VERSION));
+            objects.put("durableStateProjectionFindingsResponse", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableStateProjectionFindingsResponse.SCHEMA_VERSION));
+            objects.put("durableStateProjectionFindingClaimRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableStateProjectionFindingClaimRequest.SCHEMA_VERSION));
+            objects.put("durableStateProjectionFindingClaimResponse", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableStateProjectionFindingClaimResponse.SCHEMA_VERSION));
+            objects.put("durableStateProjectionFindingResolutionRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableStateProjectionFindingResolutionRequest.SCHEMA_VERSION));
+            objects.put("durableStateProjectionFindingResolutionResponse", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableStateProjectionFindingResolutionResponse.SCHEMA_VERSION));
         }
 
         Map<String, Boolean> features = new LinkedHashMap<>();
@@ -371,6 +381,10 @@ public record IntegrationCapabilities(
         features.put("durableStateProjectionAntiEntropy", testExecutionEndpointEnabled);
         features.put("durableStateProjectionSweepLease", testExecutionEndpointEnabled);
         features.put("durableStateProjectionFindingQueue", testExecutionEndpointEnabled);
+        features.put("authenticatedDurableStateProjectionOperations",
+                testExecutionEndpointEnabled);
+        features.put("immutableDurableStateProjectionActionAudit",
+                testExecutionEndpointEnabled);
         features.put("signedTestRunEvidence", testExecutionEndpointEnabled && signer.available());
         features.put("suiteSignedChildEvidenceGate", testExecutionEndpointEnabled && signer.available());
         features.put("signedTestSuiteRunAttestation",
@@ -424,6 +438,12 @@ public record IntegrationCapabilities(
                     "/api/testing/durable-executions/{runId}/heartbeats"));
             endpoints.add(new Endpoint("POST",
                     "/api/testing/durable-executions/{runId}/terminal-recoveries"));
+            endpoints.add(new Endpoint("GET",
+                    "/api/testing/durable-state/projection-findings"));
+            endpoints.add(new Endpoint("POST",
+                    "/api/testing/durable-state/projection-findings/claims"));
+            endpoints.add(new Endpoint("POST",
+                    "/api/testing/durable-state/projection-findings/resolutions"));
             endpoints.add(new Endpoint("PUT", "/api/testing/fixture-bundles/{fixtureBundleId}"));
             endpoints.add(new Endpoint("GET", "/api/testing/fixture-bundles/{fixtureBundleId}"));
             endpoints.add(new Endpoint("PUT", "/api/testing/replay-payloads/{replayPayloadId}"));

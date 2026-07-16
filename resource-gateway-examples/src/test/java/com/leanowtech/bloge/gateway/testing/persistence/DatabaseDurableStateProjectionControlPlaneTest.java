@@ -5,6 +5,7 @@ import com.leanowtech.bloge.core.runtime.execution.ExecutionInstance;
 import com.leanowtech.bloge.core.runtime.execution.ExecutionStatus;
 import com.leanowtech.bloge.core.runtime.identity.ExecutionIdentity;
 import com.leanowtech.bloge.core.runtime.identity.ExecutionType;
+import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,6 +35,12 @@ class DatabaseDurableStateProjectionControlPlaneTest {
         StagedBlogeDurableStateStore stateStore =
                 new StagedBlogeDurableStateStore(database.jdbc(), objectMapper);
         stateStore.init();
+        database.jdbc().execute("""
+                CREATE TABLE projection_action_audit (
+                    action_type VARCHAR(32) NOT NULL,
+                    finding_version BIGINT NOT NULL
+                )
+                """);
     }
 
     @AfterEach
@@ -113,26 +120,43 @@ class DatabaseDurableStateProjectionControlPlaneTest {
             assertThat(finding.columns()).isEmpty();
             assertThat(finding.toString()).doesNotContain("not-json", "payload");
         });
-        DatabaseDurableStateProjectionControlPlane.FindingClaim claim = controlPlane
-                .claimFinding(key, "operator-a", Duration.ofMinutes(2))
-                .orElseThrow();
+        DatabaseDurableStateProjectionControlPlane.FindingClaimResult firstClaim = controlPlane
+                .claimFinding(key, "operator-a", "claim-1", Duration.ofMinutes(2),
+                        claim -> audit("CLAIM", claim.version()));
+        assertThat(firstClaim.disposition()).isEqualTo(
+                DatabaseDurableStateProjectionControlPlane.ClaimDisposition.CLAIMED);
+        DatabaseDurableStateProjectionControlPlane.FindingClaim claim = firstClaim.claim();
         assertThat(controlPlane.findings(10).getFirst().toString())
                 .doesNotContain(claim.claimToken());
+        DatabaseDurableStateProjectionControlPlane.FindingClaimResult replay = controlPlane
+                .claimFinding(key, "operator-a", "claim-1", Duration.ofMinutes(2),
+                        ignored -> audit("CLAIM", 999));
+        assertThat(replay.disposition()).isEqualTo(
+                DatabaseDurableStateProjectionControlPlane.ClaimDisposition.IDEMPOTENT_REPLAY);
+        assertThat(replay.claim()).isEqualTo(claim);
+        assertThat(auditCount()).isEqualTo(1);
+        assertThat(controlPlane.claimFinding(
+                key, "operator-a", "claim-1", Duration.ofMinutes(1),
+                ignored -> audit("CLAIM", 999)).disposition()).isEqualTo(
+                DatabaseDurableStateProjectionControlPlane.ClaimDisposition.IDEMPOTENCY_CONFLICT);
 
-        assertThat(controlPlane.claimFinding(key, "operator-b", Duration.ofMinutes(2)))
-                .isEmpty();
+        assertThat(controlPlane.claimFinding(
+                key, "operator-b", "claim-2", Duration.ofMinutes(2),
+                ignored -> audit("CLAIM", 999)).disposition()).isEqualTo(
+                DatabaseDurableStateProjectionControlPlane.ClaimDisposition.NOT_ACTIONABLE);
         database.jdbc().update("""
                 UPDATE rg_test_bloge_projection_findings
                 SET claim_until = DATEADD('SECOND', -1, CURRENT_TIMESTAMP)
                 WHERE entity_type = 'EXECUTION' AND row_id = 'engine-poison'
                 """);
         DatabaseDurableStateProjectionControlPlane.FindingClaim successor = controlPlane
-                .claimFinding(key, "operator-b", Duration.ofMinutes(2))
-                .orElseThrow();
+                .claimFinding(key, "operator-b", "claim-2", Duration.ofMinutes(2),
+                        next -> audit("CLAIM", next.version())).claim();
         assertThat(successor.version()).isGreaterThan(claim.version());
-        assertThat(controlPlane.resolveFinding(claim,
-                DatabaseDurableStateProjectionControlPlane.Resolution.MANUALLY_REPAIRED))
-                .isFalse();
+        assertThat(controlPlane.resolveFinding(claim, "resolve-stale",
+                DatabaseDurableStateProjectionControlPlane.Resolution.MANUALLY_REPAIRED,
+                ignored -> audit("RESOLVE", 999)).disposition()).isEqualTo(
+                DatabaseDurableStateProjectionControlPlane.ResolutionDisposition.FENCE_REJECTED);
         ExecutionInstance changedAuthority = execution(
                 "engine-poison", Instant.parse("2026-07-17T01:00:00Z"));
         database.jdbc().update("""
@@ -142,9 +166,10 @@ class DatabaseDurableStateProjectionControlPlaneTest {
                 "engine-poison");
         controlPlane.reconcilePage(10,
                 DurableStateProjectionReconciler.RepairMode.REPAIR_DERIVED);
-        assertThat(controlPlane.resolveFinding(successor,
-                DatabaseDurableStateProjectionControlPlane.Resolution.MANUALLY_REPAIRED))
-                .isFalse();
+        assertThat(controlPlane.resolveFinding(successor, "resolve-superseded",
+                DatabaseDurableStateProjectionControlPlane.Resolution.MANUALLY_REPAIRED,
+                ignored -> audit("RESOLVE", 999)).disposition()).isEqualTo(
+                DatabaseDurableStateProjectionControlPlane.ResolutionDisposition.FENCE_REJECTED);
         assertThat(controlPlane.actionableFindings(10)).singleElement().satisfies(finding -> {
             assertThat(finding.kind()).isEqualTo(
                     DurableStateProjectionReconciler.FindingKind.PROJECTION_DRIFT);
@@ -152,22 +177,146 @@ class DatabaseDurableStateProjectionControlPlaneTest {
             assertThat(finding.version()).isGreaterThan(successor.version());
         });
         DatabaseDurableStateProjectionControlPlane.FindingClaim current = controlPlane
-                .claimFinding(key, "operator-c", Duration.ofMinutes(2))
-                .orElseThrow();
+                .claimFinding(key, "operator-c", "claim-3", Duration.ofMinutes(2),
+                        next -> audit("CLAIM", next.version())).claim();
         DatabaseDurableStateProjectionControlPlane.FindingClaim forged =
                 new DatabaseDurableStateProjectionControlPlane.FindingClaim(
                         current.key(), current.ownerId(), "wrong-token", current.version(),
                         current.claimUntil());
-        assertThat(controlPlane.resolveFinding(forged,
-                DatabaseDurableStateProjectionControlPlane.Resolution.MANUALLY_REPAIRED))
-                .isFalse();
-        assertThat(controlPlane.resolveFinding(current,
-                DatabaseDurableStateProjectionControlPlane.Resolution.MANUALLY_REPAIRED))
-                .isTrue();
-        assertThat(controlPlane.resolveFinding(current,
-                DatabaseDurableStateProjectionControlPlane.Resolution.MANUALLY_REPAIRED))
-                .isFalse();
+        assertThat(controlPlane.resolveFinding(forged, "resolve-forged",
+                DatabaseDurableStateProjectionControlPlane.Resolution.MANUALLY_REPAIRED,
+                ignored -> audit("RESOLVE", 999)).disposition()).isEqualTo(
+                DatabaseDurableStateProjectionControlPlane.ResolutionDisposition.FENCE_REJECTED);
+        DatabaseDurableStateProjectionControlPlane.FindingResolutionResult resolved = controlPlane
+                .resolveFinding(current, "resolve-1",
+                        DatabaseDurableStateProjectionControlPlane.Resolution.MANUALLY_REPAIRED,
+                        resolution -> audit("RESOLVE", resolution.version()));
+        assertThat(resolved.disposition()).isEqualTo(
+                DatabaseDurableStateProjectionControlPlane.ResolutionDisposition.RESOLVED);
+        assertThat(resolved.resolution().version()).isGreaterThan(current.version());
+        DatabaseDurableStateProjectionControlPlane.FindingResolutionResult resolutionReplay =
+                controlPlane.resolveFinding(current, "resolve-1",
+                        DatabaseDurableStateProjectionControlPlane.Resolution.MANUALLY_REPAIRED,
+                        ignored -> audit("RESOLVE", 999));
+        assertThat(resolutionReplay.disposition()).isEqualTo(
+                DatabaseDurableStateProjectionControlPlane.ResolutionDisposition.IDEMPOTENT_REPLAY);
+        assertThat(resolutionReplay.resolution()).isEqualTo(resolved.resolution());
+        assertThat(auditCount()).isEqualTo(4);
+        assertThat(controlPlane.resolveFinding(current, "resolve-1",
+                DatabaseDurableStateProjectionControlPlane.Resolution.QUARANTINED,
+                ignored -> audit("RESOLVE", 999)).disposition()).isEqualTo(
+                DatabaseDurableStateProjectionControlPlane.ResolutionDisposition.IDEMPOTENCY_CONFLICT);
         assertThat(controlPlane.actionableFindings(10)).isEmpty();
+    }
+
+    @Test
+    void rollsBackClaimAndResolutionWhenTheBoundActionAuditCannotCommit() {
+        insertRawExecution("engine-audit-rollback", "not-json");
+        DatabaseDurableStateProjectionControlPlane controlPlane = controlPlane(
+                database.jdbc(), "replica-a");
+        controlPlane.reconcilePage(10,
+                DurableStateProjectionReconciler.RepairMode.REPAIR_DERIVED);
+        DurableStateProjectionReconciler.EntityKey key =
+                new DurableStateProjectionReconciler.EntityKey(
+                        DurableStateProjectionReconciler.EntityType.EXECUTION,
+                        "engine-audit-rollback");
+
+        assertThatThrownBy(() -> controlPlane.claimFinding(
+                key, "operator-a", "claim-fails", Duration.ofMinutes(2),
+                ignored -> failingAudit("CLAIM")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("injected action audit failure");
+        assertThat(controlPlane.actionableFindings(10)).singleElement().satisfies(finding ->
+                assertThat(finding.status()).isEqualTo(
+                        DatabaseDurableStateProjectionControlPlane.FindingStatus.OPEN));
+        assertThat(auditCount()).isZero();
+
+        DatabaseDurableStateProjectionControlPlane.FindingClaim claim = controlPlane.claimFinding(
+                key, "operator-a", "claim-works", Duration.ofMinutes(2),
+                next -> audit("CLAIM", next.version())).claim();
+        assertThatThrownBy(() -> controlPlane.resolveFinding(
+                claim, "resolve-fails",
+                DatabaseDurableStateProjectionControlPlane.Resolution.MANUALLY_REPAIRED,
+                ignored -> failingAudit("RESOLVE")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("injected action audit failure");
+        assertThat(controlPlane.findings(10)).singleElement().satisfies(finding ->
+                assertThat(finding.status()).isEqualTo(
+                        DatabaseDurableStateProjectionControlPlane.FindingStatus.CLAIMED));
+        assertThat(auditCount()).isEqualTo(1);
+    }
+
+    @Test
+    void migratesAnExistingFindingQueueBeforeWritingIdempotencyReceipts() {
+        database.jdbc().execute("""
+                CREATE TABLE rg_test_bloge_projection_findings (
+                    entity_type VARCHAR(32) NOT NULL,
+                    row_id VARCHAR(512) NOT NULL,
+                    finding_kind VARCHAR(64) NOT NULL,
+                    columns_json CLOB NOT NULL,
+                    repairable BOOLEAN NOT NULL,
+                    last_outcome VARCHAR(32) NOT NULL,
+                    finding_status VARCHAR(32) NOT NULL,
+                    occurrence_count BIGINT NOT NULL,
+                    first_seen_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    last_seen_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    resolution VARCHAR(64) NOT NULL,
+                    resolved_at TIMESTAMP WITH TIME ZONE,
+                    claim_owner VARCHAR(255) NOT NULL,
+                    claim_token VARCHAR(255) NOT NULL,
+                    claim_until TIMESTAMP WITH TIME ZONE NOT NULL,
+                    finding_version BIGINT NOT NULL,
+                    PRIMARY KEY (entity_type, row_id)
+                )
+                """);
+        insertRawExecution("engine-migrated", "not-json");
+
+        DatabaseDurableStateProjectionControlPlane controlPlane = controlPlane(
+                database.jdbc(), "replica-a");
+        controlPlane.reconcilePage(10,
+                DurableStateProjectionReconciler.RepairMode.REPAIR_DERIVED);
+        DatabaseDurableStateProjectionControlPlane.FindingClaimResult claimed =
+                controlPlane.claimFinding(new DurableStateProjectionReconciler.EntityKey(
+                                DurableStateProjectionReconciler.EntityType.EXECUTION,
+                                "engine-migrated"),
+                        "operator-a", "claim-after-migration", Duration.ofMinutes(2),
+                        claim -> audit("CLAIM", claim.version()));
+
+        assertThat(claimed.disposition()).isEqualTo(
+                DatabaseDurableStateProjectionControlPlane.ClaimDisposition.CLAIMED);
+        assertThat(database.jdbc().queryForObject("""
+                SELECT claim_request_id FROM rg_test_bloge_projection_findings
+                WHERE entity_type = 'EXECUTION' AND row_id = 'engine-migrated'
+                """, String.class)).isEqualTo("claim-after-migration");
+        assertThat(auditCount()).isEqualTo(1);
+    }
+
+    @Test
+    void keepsFreshReceiptColumnsCompatibleWithOldReplicaInserts() {
+        controlPlane(database.jdbc(), "replica-a");
+        Instant now = Instant.parse("2026-07-17T05:00:00Z");
+
+        database.jdbc().update("""
+                INSERT INTO rg_test_bloge_projection_findings (
+                    entity_type, row_id, finding_kind, columns_json, repairable,
+                    last_outcome, finding_status, occurrence_count, first_seen_at,
+                    last_seen_at, resolution, resolved_at, claim_owner, claim_token,
+                    claim_until, finding_version
+                ) VALUES ('EXECUTION', 'old-replica-row', 'AUTHORITY_UNREADABLE', '[]', FALSE,
+                          'DETECTED', 'OPEN', 1, ?, ?, '', NULL, '', '', ?, 0)
+                """, Timestamp.from(now), Timestamp.from(now), Timestamp.from(Instant.EPOCH));
+
+        assertThat(database.jdbc().queryForMap("""
+                SELECT claim_request_id, claim_request_fingerprint, resolution_request_id,
+                       resolution_request_fingerprint, resolution_owner, resolution_claim_version
+                FROM rg_test_bloge_projection_findings
+                WHERE entity_type = 'EXECUTION' AND row_id = 'old-replica-row'
+                """)).containsEntry("CLAIM_REQUEST_ID", "")
+                .containsEntry("CLAIM_REQUEST_FINGERPRINT", "")
+                .containsEntry("RESOLUTION_REQUEST_ID", "")
+                .containsEntry("RESOLUTION_REQUEST_FINGERPRINT", "")
+                .containsEntry("RESOLUTION_OWNER", "")
+                .containsEntry("RESOLUTION_CLAIM_VERSION", 0L);
     }
 
     @Test
@@ -270,6 +419,27 @@ class DatabaseDurableStateProjectionControlPlaneTest {
                         Duration.ofMinutes(2));
         controlPlane.init();
         return controlPlane;
+    }
+
+    private TestRuntimeTransactionMutation audit(String action, long version) {
+        return transactionJdbc -> transactionJdbc.update(
+                "INSERT INTO projection_action_audit (action_type, finding_version) VALUES (?, ?)",
+                action, version);
+    }
+
+    private TestRuntimeTransactionMutation failingAudit(String action) {
+        return transactionJdbc -> {
+            transactionJdbc.update(
+                    "INSERT INTO projection_action_audit (action_type, finding_version) VALUES (?, ?)",
+                    action, 999L);
+            throw new IllegalStateException("injected action audit failure");
+        };
+    }
+
+    private int auditCount() {
+        Integer count = database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM projection_action_audit", Integer.class);
+        return count == null ? 0 : count;
     }
 
     private ExecutionInstance execution(String executionId, Instant now) {

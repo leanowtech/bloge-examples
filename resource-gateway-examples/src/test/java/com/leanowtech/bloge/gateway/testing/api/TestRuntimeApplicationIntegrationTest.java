@@ -69,6 +69,8 @@ class TestRuntimeApplicationIntegrationTest {
                 DurableStateProjectionReconciliationScheduler.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 DatabaseDurableStateProjectionControlPlane.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                DurableStateProjectionFindingService.class)).hasSize(1);
         assertThat(context.getBeansOfType(ReplayPayloadRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestReplayPayloadService.class)).hasSize(1);
         assertThat(context.getBeansOfType(ReplayPayloadRetentionScheduler.class)).hasSize(1);
@@ -93,7 +95,16 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("abandonedSuiteRunReconciliation", true)
                 .containsEntry("durableStateProjectionAntiEntropy", true)
                 .containsEntry("durableStateProjectionSweepLease", true)
-                .containsEntry("durableStateProjectionFindingQueue", true);
+                .containsEntry("durableStateProjectionFindingQueue", true)
+                .containsEntry("authenticatedDurableStateProjectionOperations", true)
+                .containsEntry("immutableDurableStateProjectionActionAudit", true);
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.path().equals("/api/testing/durable-state/projection-findings"));
+        assertThat(capabilities.getBody().payload().supportedObjects())
+                .containsEntry("durableStateProjectionFindingClaimRequest",
+                        List.of(DurableStateProjectionFindingClaimRequest.SCHEMA_VERSION))
+                .containsEntry("durableStateProjectionFindingResolutionResponse",
+                        List.of(DurableStateProjectionFindingResolutionResponse.SCHEMA_VERSION));
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("governedTestReplayPayloadCapture", true)
                 .containsEntry("testReplayBehavior", true)

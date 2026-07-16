@@ -118,6 +118,26 @@ class TestingControlProtocolSchemaTest {
                 "/$defs/durableTestOwnerClaimResponse/properties/schemaVersion/const").asText())
                 .isEqualTo(DurableTestOwnerClaimResponse.SCHEMA_VERSION);
         assertThat(schema.at(
+                "/$defs/durableStateProjectionFindingsResponse/properties/schemaVersion/const")
+                .asText()).isEqualTo(DurableStateProjectionFindingsResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableStateProjectionFindingClaimRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(DurableStateProjectionFindingClaimRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableStateProjectionFindingClaimResponse/properties/schemaVersion/const")
+                .asText()).isEqualTo(DurableStateProjectionFindingClaimResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableStateProjectionFindingResolutionRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                DurableStateProjectionFindingResolutionRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableStateProjectionFindingResolutionResponse/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                DurableStateProjectionFindingResolutionResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableStateProjectionFindingResolutionResponse/properties")
+                .has("claimToken")).isFalse();
+        assertThat(schema.at(
                 "/$defs/durableTestExecutionView/properties/schemaVersion/const").asText())
                 .isEqualTo(DurableTestExecutionQueryResponse.SCHEMA_VERSION);
         assertThat(schema.at(
