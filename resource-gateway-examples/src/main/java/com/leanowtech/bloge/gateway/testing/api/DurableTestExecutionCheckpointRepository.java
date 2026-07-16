@@ -17,12 +17,12 @@ public interface DurableTestExecutionCheckpointRepository {
 
     /** Creates revision zero and atomically writes the associated engine-state closure. */
     DurableTestExecutionCheckpoint create(DurableTestExecutionCheckpoint checkpoint,
-                                            EngineStateMutation engineStateMutation);
+                                            BoundEngineStateMutation engineStateMutation);
 
     /** Advances exactly one revision under the expected owner/epoch/revision fence. */
     DurableTestExecutionCheckpoint advance(DurableTestExecutionCheckpoint checkpoint,
                                              Fence expectedFence,
-                                             EngineStateMutation engineStateMutation);
+                                             BoundEngineStateMutation engineStateMutation);
 
     /** Resolves a run only within the verified tenant and environment scope. */
     Optional<DurableTestExecutionCheckpoint> find(String tenantId, String environmentId,
@@ -43,15 +43,21 @@ public interface DurableTestExecutionCheckpointRepository {
         }
     }
 
-    /** Engine-store work that joins the repository's test-runtime transaction. */
-    @FunctionalInterface
-    interface EngineStateMutation {
+    /**
+     * Engine mutation that declares the exact formal engine-state value covered by its writes.
+     *
+     * <p>Repositories validate this binding before opening a transaction. This prevents a caller
+     * from committing one frozen BLOGE closure under another checkpoint reference, boundary, or
+     * state version even when both values are individually well formed.</p>
+     */
+    interface BoundEngineStateMutation {
+        /** @return exact BLOGE execution identity whose rows are mutated */
+        String engineExecutionId();
+
+        /** @return exact control-plane engine state represented by this mutation */
+        DurableTestExecutionCheckpoint.EngineState engineState();
+
         /** Applies one idempotent engine-state transition through the transaction-bound JDBC facade. */
         void apply(JdbcTemplate jdbc);
-
-        /** @return a no-op mutation for checkpoints whose engine state is already represented */
-        static EngineStateMutation none() {
-            return ignored -> { };
-        }
     }
 }

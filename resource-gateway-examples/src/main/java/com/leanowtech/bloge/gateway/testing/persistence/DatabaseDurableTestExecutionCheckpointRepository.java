@@ -94,9 +94,10 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
     @Override
     public DurableTestExecutionCheckpoint create(
             DurableTestExecutionCheckpoint checkpoint,
-            EngineStateMutation engineStateMutation) {
+            BoundEngineStateMutation engineStateMutation) {
         requireSealed(checkpoint);
         Objects.requireNonNull(engineStateMutation, "engineStateMutation");
+        requireMutationBinding(checkpoint, engineStateMutation);
         if (checkpoint.lifecycle().revision() != 0) {
             throw conflict(INVALID_TRANSITION, "Initial durable checkpoint revision must be zero");
         }
@@ -131,10 +132,11 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
     public DurableTestExecutionCheckpoint advance(
             DurableTestExecutionCheckpoint checkpoint,
             Fence expectedFence,
-            EngineStateMutation engineStateMutation) {
+            BoundEngineStateMutation engineStateMutation) {
         requireSealed(checkpoint);
         Objects.requireNonNull(expectedFence, "expectedFence");
         Objects.requireNonNull(engineStateMutation, "engineStateMutation");
+        requireMutationBinding(checkpoint, engineStateMutation);
         return transactions.execute(status -> {
             DurableTestExecutionCheckpoint current = findInternal(
                     checkpoint.scope().tenantId(), checkpoint.scope().environmentId(),
@@ -344,6 +346,16 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
 
     private void requireSealed(DurableTestExecutionCheckpoint checkpoint) {
         integrity.requireValid(Objects.requireNonNull(checkpoint, "checkpoint"));
+    }
+
+    private static void requireMutationBinding(
+            DurableTestExecutionCheckpoint checkpoint,
+            BoundEngineStateMutation mutation) {
+        if (!checkpoint.engineExecutionId().equals(mutation.engineExecutionId())
+                || !checkpoint.engineState().equals(mutation.engineState())) {
+            throw conflict(INVALID_TRANSITION,
+                    "Durable checkpoint identity or engine state does not match its engine-state mutation");
+        }
     }
 
     private DurableTestExecutionCheckpoint verifiedCheckpoint(StoredRow row) {

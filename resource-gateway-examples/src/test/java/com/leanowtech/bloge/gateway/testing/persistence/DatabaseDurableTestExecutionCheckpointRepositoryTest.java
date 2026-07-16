@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
 import java.util.List;
@@ -20,6 +21,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -62,15 +64,16 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     @Test
     void createsAndAdvancesControlAndEngineStateInOneTransaction() {
         DurableTestExecutionCheckpoint initial = checkpoint(0, "checkpoint-0");
-        repository.create(initial, jdbc -> jdbc.update(
+        repository.create(initial, mutation(initial, jdbc -> jdbc.update(
                 "INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
-                "initial", initial.engineExecutionId(), 0));
+                "initial", initial.engineExecutionId(), 0)));
 
         DurableTestExecutionCheckpoint next = checkpoint(1, "checkpoint-1");
         repository.advance(next, new DurableTestExecutionCheckpointRepository.Fence(
                         "instance-a", 1, 0),
-                jdbc -> jdbc.update("UPDATE rg_test_engine_state SET state_version = ? WHERE candidate_id = ?",
-                        1, "initial"));
+                mutation(next, jdbc -> jdbc.update(
+                        "UPDATE rg_test_engine_state SET state_version = ? WHERE candidate_id = ?",
+                        1, "initial")));
 
         assertThat(repository.find("tenant-a", "test", "run-a")).contains(next);
         assertThat(repository.findByEngineExecutionId("tenant-a", "test", "engine-a"))
@@ -85,10 +88,11 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     @Test
     void equivalentCreateIsIdempotentAndGlobalEngineIdentityCannotCrossTenant() {
         DurableTestExecutionCheckpoint initial = checkpoint(0, "checkpoint-0");
-        repository.create(initial, DurableTestExecutionCheckpointRepository.EngineStateMutation.none());
+        repository.create(initial, boundNoop(initial));
         AtomicBoolean duplicateMutationRan = new AtomicBoolean();
 
-        assertThat(repository.create(initial, ignored -> duplicateMutationRan.set(true)))
+        assertThat(repository.create(initial,
+                mutation(initial, ignored -> duplicateMutationRan.set(true))))
                 .isEqualTo(initial);
         assertThat(duplicateMutationRan).isFalse();
 
@@ -102,8 +106,7 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                         initial.lifecycle().status(), "instance-b", 1, 0,
                         initial.lifecycle().createdAt(), initial.lifecycle().updatedAt(),
                         initial.lifecycle().leaseExpiresAt()), ""));
-        assertThatThrownBy(() -> repository.create(crossTenant,
-                DurableTestExecutionCheckpointRepository.EngineStateMutation.none()))
+        assertThatThrownBy(() -> repository.create(crossTenant, boundNoop(crossTenant)))
                 .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
                 .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error).reason())
                 .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.DUPLICATE_IDENTITY);
@@ -115,22 +118,23 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     @Test
     void rollsBackBothSidesWhenEngineMutationOrCheckpointCasFails() {
         DurableTestExecutionCheckpoint failedCreate = checkpoint(0, "checkpoint-create-failure");
-        assertThatThrownBy(() -> repository.create(failedCreate, jdbc -> {
+        assertThatThrownBy(() -> repository.create(failedCreate, mutation(failedCreate, jdbc -> {
             jdbc.update("INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
                     "failed-create", failedCreate.engineExecutionId(), 0);
             throw new IllegalStateException("injected engine-store failure");
-        })).isInstanceOf(IllegalStateException.class)
+        }))).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("injected engine-store failure");
         assertThat(repository.find("tenant-a", "test", "run-a")).isEmpty();
         assertThat(engineCandidateCount("failed-create")).isZero();
 
         DurableTestExecutionCheckpoint initial = checkpoint(0, "checkpoint-0");
-        repository.create(initial, DurableTestExecutionCheckpointRepository.EngineStateMutation.none());
+        repository.create(initial, boundNoop(initial));
         DurableTestExecutionCheckpoint next = checkpoint(1, "checkpoint-1");
         assertThatThrownBy(() -> repository.advance(next,
                 new DurableTestExecutionCheckpointRepository.Fence("stale-owner", 1, 0),
-                jdbc -> jdbc.update("INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
-                        "stale", next.engineExecutionId(), 1)))
+                mutation(next, jdbc -> jdbc.update(
+                        "INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
+                        "stale", next.engineExecutionId(), 1))))
                 .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
                 .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error).reason())
                 .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.STALE_FENCE);
@@ -141,7 +145,7 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     @Test
     void concurrentCheckpointCasCommitsExactlyOneEngineMutation() throws Exception {
         DurableTestExecutionCheckpoint initial = checkpoint(0, "checkpoint-0");
-        repository.create(initial, DurableTestExecutionCheckpointRepository.EngineStateMutation.none());
+        repository.create(initial, boundNoop(initial));
         CountDownLatch bothMutationsEntered = new CountDownLatch(2);
         CountDownLatch release = new CountDownLatch(1);
 
@@ -165,7 +169,7 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     @Test
     void failsClosedWhenStoredJsonAndIndexedIdentityDiverge() {
         DurableTestExecutionCheckpoint initial = checkpoint(0, "checkpoint-0");
-        repository.create(initial, DurableTestExecutionCheckpointRepository.EngineStateMutation.none());
+        repository.create(initial, boundNoop(initial));
         database.jdbc().update("""
                 UPDATE rg_test_durable_execution_checkpoints
                 SET plan_fingerprint = ? WHERE run_id = ?
@@ -179,7 +183,7 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     @Test
     void rejectsCursorRewindBeforeAnyEngineMutation() {
         DurableTestExecutionCheckpoint initial = checkpoint(0, "checkpoint-0");
-        repository.create(initial, DurableTestExecutionCheckpointRepository.EngineStateMutation.none());
+        repository.create(initial, boundNoop(initial));
         DurableTestExecutionCheckpoint validNext = checkpoint(1, "checkpoint-1");
         DurableTestExecutionCheckpoint rewound = integrity.seal(
                 validNext.withFixtureConsumptionState(new FixtureConsumptionStateSnapshot(
@@ -189,8 +193,9 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
 
         assertThatThrownBy(() -> repository.advance(rewound,
                 new DurableTestExecutionCheckpointRepository.Fence("instance-a", 1, 0),
-                jdbc -> jdbc.update("INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
-                        "rewound", rewound.engineExecutionId(), 1)))
+                mutation(rewound, jdbc -> jdbc.update(
+                        "INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
+                        "rewound", rewound.engineExecutionId(), 1))))
                 .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
                 .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error).reason())
                 .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.INVALID_TRANSITION);
@@ -200,8 +205,11 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
 
     private boolean advanceCandidate(String candidate, CountDownLatch entered, CountDownLatch release) {
         try {
-            repository.advance(checkpoint(1, "checkpoint-" + candidate),
-                    new DurableTestExecutionCheckpointRepository.Fence("instance-a", 1, 0), jdbc -> {
+            DurableTestExecutionCheckpoint candidateCheckpoint =
+                    checkpoint(1, "checkpoint-" + candidate);
+            repository.advance(candidateCheckpoint,
+                    new DurableTestExecutionCheckpointRepository.Fence("instance-a", 1, 0),
+                    mutation(candidateCheckpoint, jdbc -> {
                         jdbc.update("INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
                                 candidate, "engine-a", 1);
                         entered.countDown();
@@ -213,7 +221,7 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                             Thread.currentThread().interrupt();
                             throw new IllegalStateException("concurrency test interrupted", interrupted);
                         }
-                    });
+                    }));
             return true;
         } catch (DurableTestExecutionCheckpointConflictException expected) {
             assertThat(expected.reason())
@@ -226,6 +234,32 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
         return database.jdbc().queryForObject(
                 "SELECT COUNT(*) FROM rg_test_engine_state WHERE candidate_id = ?",
                 Integer.class, candidate);
+    }
+
+    private DurableTestExecutionCheckpointRepository.BoundEngineStateMutation boundNoop(
+            DurableTestExecutionCheckpoint checkpoint) {
+        return mutation(checkpoint, ignored -> { });
+    }
+
+    private DurableTestExecutionCheckpointRepository.BoundEngineStateMutation mutation(
+            DurableTestExecutionCheckpoint checkpoint,
+            Consumer<JdbcTemplate> action) {
+        return new DurableTestExecutionCheckpointRepository.BoundEngineStateMutation() {
+            @Override
+            public String engineExecutionId() {
+                return checkpoint.engineExecutionId();
+            }
+
+            @Override
+            public DurableTestExecutionCheckpoint.EngineState engineState() {
+                return checkpoint.engineState();
+            }
+
+            @Override
+            public void apply(JdbcTemplate jdbc) {
+                action.accept(jdbc);
+            }
+        };
     }
 
     private DurableTestExecutionCheckpoint checkpoint(long revision, String checkpointRef) {

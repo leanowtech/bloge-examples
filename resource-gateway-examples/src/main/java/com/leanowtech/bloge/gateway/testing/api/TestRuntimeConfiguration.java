@@ -15,8 +15,12 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecurityEven
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
+import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeExecutionCheckpointStore;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
+import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
+import com.leanowtech.bloge.gateway.testing.runtime.IndependentDurableTestEngineFactory;
+import com.leanowtech.bloge.durable.codec.JacksonCheckpointCodec;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -59,6 +63,21 @@ public class TestRuntimeConfiguration {
             DurableTestExecutionCheckpointIntegrity integrity) {
         return new DatabaseDurableTestExecutionCheckpointRepository(
                 database.jdbc(), database.transactionManager(), objectMapper, integrity);
+    }
+
+    /**
+     * Creates durable test resources without exposing the BLOGE store as a global autowire target.
+     */
+    @Bean
+    DurableTestRuntimeResources durableTestRuntimeResources(
+            TestRuntimeDatabase database, ObjectMapper objectMapper, OperatorRegistry operatorRegistry) {
+        StagedBlogeExecutionCheckpointStore checkpointStore =
+                new StagedBlogeExecutionCheckpointStore(database.jdbc(), objectMapper);
+        checkpointStore.init();
+        IndependentDurableTestEngineFactory engineFactory =
+                new IndependentDurableTestEngineFactory(operatorRegistry,
+                        new JacksonCheckpointCodec(objectMapper), checkpointStore);
+        return new DurableTestRuntimeResources(engineFactory);
     }
 
     @Bean

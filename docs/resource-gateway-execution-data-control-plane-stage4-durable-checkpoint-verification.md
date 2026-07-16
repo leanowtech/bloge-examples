@@ -3,8 +3,10 @@
 ## Scope
 
 This increment establishes the trusted persistence substrate required before Resource Gateway can
-offer cold-start durable test execution. It does not expose a resume endpoint and does not yet wire
-BLOGE suspend, timer, work-item, or streaming stores into that substrate.
+offer cold-start durable test execution. It now wires BLOGE's `ExecutionCheckpointStore` through a
+staged, transaction-participating adapter and provides a profile-gated, fail-closed durable test
+session. It does not expose a resume endpoint and does not yet wire BLOGE execution-status, wait,
+timer, work-item, or streaming stores into that substrate.
 
 The increment defines two versioned objects:
 
@@ -38,7 +40,10 @@ fingerprint and accepts only an otherwise empty recorder; locked reads cannot ob
 
 ## Persistence Contract
 
-`DurableTestExecutionCheckpointRepository` accepts an `EngineStateMutation` callback. The callback
+`DurableTestExecutionCheckpointRepository` accepts only a `BoundEngineStateMutation`, which declares
+the exact engine execution id and formal `EngineState` represented by its writes. The repository
+rejects any identity, checkpoint-ref, boundary, sequence, version, or closure-fingerprint mismatch
+before opening a transaction. The callback
 receives the transaction-bound `JdbcTemplate` for the isolated test-runtime datasource. Creation and
 advancement therefore have one commit decision:
 
@@ -52,6 +57,30 @@ advancement therefore have one commit decision:
 The callback must not perform network I/O or write through another datasource. Such effects cannot
 join this local transaction and are deliberately outside the contract.
 
+## Transaction-Participating BLOGE Adapter
+
+`StagedBlogeExecutionCheckpointStore` implements BLOGE's public `ExecutionCheckpointStore` over the
+isolated test-runtime datasource. An execution must open the only local stage for its trusted engine
+execution id before BLOGE can write. Node, loop, and sequential foreach checkpoint upserts, payload
+rewrites, and deletes remain in a process-local read-your-writes overlay. Writes without a stage,
+cross-execution batches, late writes after prepare, use of another datasource, and use outside an
+active Spring transaction all fail closed.
+
+`Stage.prepare(...)` sorts and freezes the exact delete/upsert set and computes a canonical
+`bloge.testCheckpointMutation.v1` fingerprint. The prepared mutation is idempotent so the same
+content can be retried after a transient transaction rollback, but it becomes unusable when its
+owning stage closes. Global maintenance pagination sees committed rows only. Two service instances
+may stage the same execution independently; the control repository's owner/epoch/revision CAS is
+the distributed winner election, and the losing instance's concrete BLOGE rows roll back.
+
+`IndependentDurableTestEngineFactory.openSession(...)` owns the stage and a short-lived
+`DurableGraphEngine`. It always selects `CheckpointFailurePolicy.FAIL_FAST`, installs no production
+interceptors, listeners, context carriers, or extension listeners, and accepts a complete frozen
+`ExecutionOptions`. The session replaces only the first root id allocation with the caller-assigned
+engine execution id; the run-scoped operator resolver and all subsequent deterministic providers
+remain unchanged. This keeps fixture control and execution identity outside business
+`GraphContext`, permits one root execution, and requires prepare/commit before session close.
+
 ## BLOGE Fail-Closed Prerequisite
 
 BLOGE source commit `bcbb19694` adds the public `CheckpointFailurePolicy` to both
@@ -60,11 +89,10 @@ and sequential for-each checkpoint read/write/codec failures into `DurabilityExc
 operator path preserves that exception instead of logging and continuing. `BEST_EFFORT` remains the
 compatibility default.
 
-This closes one prerequisite: a correctness-sensitive runtime can prevent an unreadable checkpoint
-from being interpreted as missing state. It does not make a checkpoint store transaction
-participating. Resource Gateway must still install its BLOGE store adapter on
-`EngineStateMutation`, configure the test runtime with `FAIL_FAST`, and prove crash recovery before
-cold-start resume can be enabled.
+Resource Gateway now consumes this prerequisite in its test-profile durable resources: the
+transaction-participating execution-checkpoint adapter and independent durable factory both fail
+closed. This still covers only BLOGE execution checkpoints. Crash recovery and the remaining durable
+stores must be completed before cold-start resume can be enabled.
 
 ## Safety Invariants
 
@@ -95,6 +123,11 @@ cold-start resume can be enabled.
    trusted state.
 12. Concurrent writers may both enter their engine-state callbacks, but only one CAS can commit;
     the losing callback is rolled back in the same transaction.
+13. A prepared BLOGE mutation is bound to both the exact engine execution id and the complete formal
+    engine-state value. A caller cannot attach execution A's rows to execution B or reuse a closure
+    fingerprint under another boundary/ref/version.
+14. Closing the stage invalidates its prepared mutation. A rollback may retry the same frozen
+    content while the stage remains open; no mutation can escape session cleanup.
 
 ## Automated Evidence
 
@@ -122,22 +155,31 @@ payload-free hashed cursor storage, tamper rejection without partial mutation, r
 into an active recorder, fail-closed non-quiescent capture, non-torn concurrent allocation and
 consumption, bounded `maxUses` under contention, and finite test deadlines.
 
+`StagedBlogeExecutionCheckpointStoreTest` proves stage-only writes, read-your-writes and discard,
+formal engine-state and engine-id binding, same-datasource transaction enforcement, rollback and
+idempotent retry, closed-stage invalidation, caller-assigned execution identity, inherited operator
+fixture resolution, durable-engine checkpoint persistence, and concrete two-instance CAS loser
+rollback. `IndependentDurableTestEngineFactoryTest` proves that bypassing the session cannot silently
+run without a composite stage. `TestRuntimeProfileIsolationTest` proves that the holder exists only
+under the isolated test profile and is vetoed whenever production is active.
+
 Reproduce the focused gate with:
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,InvocationRecorderCheckpointTest,TestingControlProtocolSchemaTest test
+  -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,StagedBlogeExecutionCheckpointStoreTest,IndependentDurableTestEngineFactoryTest,InvocationRecorderCheckpointTest,TestingControlProtocolSchemaTest,TestRuntimeProfileIsolationTest test
 ```
 
-The repository-wide `clean verify` gate completed with 1898 tests, zero failures, zero errors, two
+The repository-wide `clean verify` gate completed with 1910 tests, zero failures, zero errors, two
 conditional skips, real-browser regression coverage, and successful Spring Boot JAR packaging.
 
 ## Honest Remaining Gaps
 
-- BLOGE checkpoint, wait, execution-status, timer, work-item, and stream-offset stores do not yet
-  execute through `EngineStateMutation`. This increment proves the atomic boundary but has not moved
-  those engine facts into it. BLOGE now exposes a fail-closed checkpoint policy, but Resource
-  Gateway has not yet wired that policy or a transaction-participating store into its test runtime.
+- BLOGE execution-status, wait, timer, work-item, and stream-offset stores do not yet execute through
+  `EngineStateMutation`. Node/loop/sequential-foreach execution checkpoints now participate, but a
+  suspended execution still spans stores that cannot share the composite commit.
+- The durable session is a profile-gated internal resource; the public testing execution service has
+  not yet selected it or exposed suspend/resume/owner-claim operations.
 - The fixture ledger snapshot intentionally excludes pre-checkpoint invocation and attempt evidence;
   a resumed terminal evidence bundle cannot yet reconstruct those historical trace facts.
 - Resume does not yet re-authorize the exact fixture revision, replay retention state, identity,

@@ -311,11 +311,18 @@ documented in [Stage 3 evidence trust transparency verification](../docs/resourc
 Stage 4 now also provides a profile-gated, content-addressed durable-test checkpoint repository in
 the isolated test-runtime database. It binds the exact plan and fixture revision, fixture-consumption
 cursors, deterministic provider state, engine-state closure, and owner/lease/revision fence. Engine
-store writes can join the same local transaction, and a losing CAS rolls them back. The run-scoped
+store writes can join the same local transaction, and a losing CAS rolls them back. A staged BLOGE
+`ExecutionCheckpointStore` and independent durable session now apply that boundary to node, loop,
+and sequential foreach checkpoints. The caller assigns the engine execution id outside business
+context and supplies the complete frozen `ExecutionOptions`, so operator fixture resolution and
+deterministic providers survive unchanged. Missing stages, cross-execution writes, engine-state/id
+mismatches, another datasource, post-close mutation, or checkpoint failures all fail closed; a
+transient transaction rollback can replay the same content-addressed mutation. The run-scoped
 `InvocationRecorder` now captures and restores rule-use and hashed site/graph occurrence cursors
 only at a quiescent invocation boundary, and atomically enforces fixture `maxUses`. Cursor hashes omit
-raw correlation values but are pseudonymous identifiers, not a confidentiality boundary. BLOGE's concrete suspend/timer/work-item stores,
-pre-checkpoint attempt evidence, and a public cold-resume endpoint are not wired yet; this is a trusted
+raw correlation values but are pseudonymous identifiers, not a confidentiality boundary. BLOGE's
+execution-status/wait/timer/work-item/stream stores, pre-checkpoint attempt evidence, public durable
+run selection, and a cold-resume endpoint are not wired yet; this is a trusted
 persistence substrate, not a product claim that durable test resume is complete. See
 [Stage 4 durable checkpoint verification](../docs/resource-gateway-execution-data-control-plane-stage4-durable-checkpoint-verification.md).
 
