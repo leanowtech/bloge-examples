@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRe
 import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
+import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryDispatch;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import jakarta.annotation.PostConstruct;
@@ -131,11 +132,32 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     expected_checkpoint_fingerprint VARCHAR(80) NOT NULL,
                     claimant_owner_id VARCHAR(255) NOT NULL,
                     lease_duration_seconds BIGINT NOT NULL,
+                    authorization_fingerprint VARCHAR(80) NOT NULL,
                     result_checkpoint_fingerprint VARCHAR(80) NOT NULL,
+                    result_dispatch_fingerprint VARCHAR(80) NOT NULL,
                     record_fingerprint VARCHAR(80) NOT NULL,
                     result_checkpoint_json CLOB NOT NULL,
+                    result_dispatch_json CLOB NOT NULL,
                     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     PRIMARY KEY (tenant_id, environment_id, client_request_id)
+                )
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_resume_commands
+                ADD COLUMN IF NOT EXISTS authorization_fingerprint VARCHAR(80)
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_resume_commands
+                ADD COLUMN IF NOT EXISTS result_dispatch_fingerprint VARCHAR(80)
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_resume_commands
+                ADD COLUMN IF NOT EXISTS result_dispatch_json CLOB
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_durable_dispatch_lookup_idx
+                ON rg_test_durable_resume_commands (
+                    tenant_id, environment_id, run_id, result_checkpoint_fingerprint
                 )
                 """);
     }
@@ -238,6 +260,7 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             ResumeLeaseCommand command,
             TestRuntimeTransactionMutation companionMutation) {
         ResumeLeaseCommand requiredCommand = Objects.requireNonNull(command, "command");
+        requiredCommand.authorization().requireValid(objectMapper);
         TestRuntimeTransactionMutation requiredMutation = Objects.requireNonNull(
                 companionMutation, "companionMutation");
         try {
@@ -262,8 +285,10 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     }
                     throw stale;
                 }
-                insertResumeCommand(requiredCommand, claimed, claimedAt);
-                LeaseClaimResult result = new LeaseClaimResult(claimed, false);
+                DurableTestRecoveryDispatch dispatch = DurableTestRecoveryDispatch.issue(
+                        objectMapper, requiredCommand.authorization(), claimed);
+                insertResumeCommand(requiredCommand, claimed, dispatch, claimedAt);
+                LeaseClaimResult result = new LeaseClaimResult(claimed, dispatch, false);
                 requiredMutation.apply(jdbc);
                 return result;
             });
@@ -295,7 +320,39 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             throw conflict(IDEMPOTENCY_CONFLICT,
                     "clientRequestId already identifies different durable resume intent");
         }
-        return Optional.of(new LeaseClaimResult(verifiedCommandResult(stored), true));
+        return Optional.of(verifiedCommandResult(stored, true));
+    }
+
+    @Override
+    public Optional<DurableTestRecoveryDispatch> findRecoveryDispatch(
+            String tenantId,
+            String environmentId,
+            String runId,
+            Fence expectedFence,
+            String expectedCheckpointFingerprint) {
+        Objects.requireNonNull(expectedFence, "expectedFence");
+        List<StoredResumeCommand> rows = jdbc.query(resumeCommandSelect() + """
+                        WHERE tenant_id = ? AND environment_id = ? AND run_id = ?
+                          AND claimant_owner_id = ?
+                          AND result_checkpoint_fingerprint = ?
+                        """, this::mapResumeCommand, normalized(tenantId),
+                normalizedEnvironment(environmentId), normalized(runId),
+                expectedFence.ownerId(), normalized(expectedCheckpointFingerprint));
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        if (rows.size() != 1) {
+            throw new IllegalStateException("Durable recovery dispatch identity is not unique");
+        }
+        StoredResumeCommand stored = rows.getFirst();
+        requireValidResumeCommandRecord(stored);
+        LeaseClaimResult result = verifiedCommandResult(stored, true);
+        DurableTestRecoveryDispatch dispatch = result.dispatch();
+        if (dispatch.leaseEpoch() != expectedFence.leaseEpoch()
+                || dispatch.revision() != expectedFence.revision()) {
+            return Optional.empty();
+        }
+        return Optional.of(dispatch);
     }
 
     private DurableTestExecutionCheckpoint claimExpiredLeaseAt(LeaseClaim claim, Instant claimedAt) {
@@ -333,56 +390,76 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             throw conflict(IDEMPOTENCY_CONFLICT,
                     "clientRequestId already identifies different durable resume intent");
         }
-        return Optional.of(new LeaseClaimResult(verifiedCommandResult(stored), true));
+        return Optional.of(verifiedCommandResult(stored, true));
     }
 
     private List<StoredResumeCommand> findResumeCommands(
             String tenantId, String environmentId, String clientRequestId) {
-        return jdbc.query("""
-                        SELECT tenant_id, environment_id, client_request_id, request_fingerprint,
-                               run_id, expected_owner_id, expected_lease_epoch, expected_revision,
-                               expected_checkpoint_fingerprint, claimant_owner_id,
-                               lease_duration_seconds, result_checkpoint_fingerprint,
-                               record_fingerprint, result_checkpoint_json, created_at
-                        FROM rg_test_durable_resume_commands
+        return jdbc.query(resumeCommandSelect() + """
                         WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
                         """, this::mapResumeCommand, tenantId, environmentId, clientRequestId);
     }
 
+    private static String resumeCommandSelect() {
+        return """
+                SELECT tenant_id, environment_id, client_request_id, request_fingerprint,
+                       run_id, expected_owner_id, expected_lease_epoch, expected_revision,
+                       expected_checkpoint_fingerprint, claimant_owner_id,
+                       lease_duration_seconds, authorization_fingerprint,
+                       result_checkpoint_fingerprint, result_dispatch_fingerprint,
+                       record_fingerprint, result_checkpoint_json, result_dispatch_json, created_at
+                FROM rg_test_durable_resume_commands
+                """;
+    }
+
     private void insertResumeCommand(ResumeLeaseCommand command,
                                      DurableTestExecutionCheckpoint result,
+                                     DurableTestRecoveryDispatch dispatch,
                                      Instant createdAt) {
         LeaseClaim claim = command.claim();
         Fence fence = claim.expectedFence();
         String recordFingerprint = resumeCommandRecordFingerprint(
-                command, result.checkpointFingerprint(), createdAt);
+                command, result.checkpointFingerprint(), dispatch.dispatchFingerprint(), createdAt);
         jdbc.update("""
                 INSERT INTO rg_test_durable_resume_commands (
                     tenant_id, environment_id, client_request_id, request_fingerprint, run_id,
                     expected_owner_id, expected_lease_epoch, expected_revision,
                     expected_checkpoint_fingerprint, claimant_owner_id, lease_duration_seconds,
-                    result_checkpoint_fingerprint, record_fingerprint, result_checkpoint_json,
-                    created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    authorization_fingerprint, result_checkpoint_fingerprint,
+                    result_dispatch_fingerprint, record_fingerprint, result_checkpoint_json,
+                    result_dispatch_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, claim.tenantId(), claim.environmentId(), command.clientRequestId(),
                 command.requestFingerprint(), claim.runId(), fence.ownerId(), fence.leaseEpoch(),
                 fence.revision(), claim.expectedCheckpointFingerprint(), claim.claimantOwnerId(),
-                claim.leaseDuration().toSeconds(), result.checkpointFingerprint(),
-                recordFingerprint, write(result), Timestamp.from(createdAt));
+                claim.leaseDuration().toSeconds(), command.authorization().authorizationFingerprint(),
+                result.checkpointFingerprint(), dispatch.dispatchFingerprint(), recordFingerprint,
+                write(result), writeDispatch(dispatch), Timestamp.from(createdAt));
     }
 
-    private DurableTestExecutionCheckpoint verifiedCommandResult(StoredResumeCommand stored) {
+    private LeaseClaimResult verifiedCommandResult(
+            StoredResumeCommand stored, boolean idempotentReplay) {
+        DurableTestExecutionCheckpoint checkpoint;
         try {
-            DurableTestExecutionCheckpoint checkpoint = objectMapper.readValue(
+            checkpoint = objectMapper.readValue(
                     stored.resultCheckpointJson(), DurableTestExecutionCheckpoint.class);
             integrity.requireValid(checkpoint);
-            if (!stored.agreesWith(checkpoint)) {
-                throw new IllegalStateException("Stored durable resume command result is corrupt");
-            }
-            return checkpoint;
         } catch (JsonProcessingException | IllegalArgumentException corrupt) {
             throw new IllegalStateException("Stored durable resume command result is corrupt", corrupt);
         }
+        DurableTestRecoveryDispatch dispatch;
+        try {
+            dispatch = objectMapper.readValue(
+                    stored.resultDispatchJson(), DurableTestRecoveryDispatch.class);
+            dispatch.requireValid(objectMapper, checkpoint);
+        } catch (JsonProcessingException | IllegalArgumentException corrupt) {
+            throw new IllegalStateException(
+                    "Stored durable recovery dispatch result is corrupt", corrupt);
+        }
+        if (!stored.agreesWith(checkpoint, dispatch)) {
+            throw new IllegalStateException("Stored durable resume command result is corrupt");
+        }
+        return new LeaseClaimResult(checkpoint, dispatch, idempotentReplay);
     }
 
     private StoredResumeCommand mapResumeCommand(ResultSet rs, int rowNumber) throws SQLException {
@@ -393,13 +470,22 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 rs.getLong("expected_lease_epoch"), rs.getLong("expected_revision"),
                 rs.getString("expected_checkpoint_fingerprint"),
                 rs.getString("claimant_owner_id"), rs.getLong("lease_duration_seconds"),
+                rs.getString("authorization_fingerprint"),
                 rs.getString("result_checkpoint_fingerprint"),
+                rs.getString("result_dispatch_fingerprint"),
                 rs.getString("record_fingerprint"),
                 rs.getString("result_checkpoint_json"),
+                rs.getString("result_dispatch_json"),
                 rs.getTimestamp("created_at").toInstant());
     }
 
     private void requireValidResumeCommandRecord(StoredResumeCommand stored) {
+        if (stored.authorizationFingerprint() == null
+                || stored.resultDispatchFingerprint() == null
+                || stored.resultDispatchJson() == null) {
+            throw new IllegalStateException(
+                    "Stored durable resume command predates authorization-bound dispatch");
+        }
         String actual = ProtocolFingerprint.of(objectMapper, stored.fingerprintMaterial());
         if (!stored.recordFingerprint().equals(actual)) {
             throw new IllegalStateException("Stored durable resume command record is corrupt");
@@ -408,6 +494,7 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
 
     private String resumeCommandRecordFingerprint(ResumeLeaseCommand command,
                                                   String resultCheckpointFingerprint,
+                                                  String resultDispatchFingerprint,
                                                   Instant createdAt) {
         LeaseClaim claim = command.claim();
         Fence fence = claim.expectedFence();
@@ -415,7 +502,9 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 claim.tenantId(), claim.environmentId(), command.clientRequestId(),
                 command.requestFingerprint(), claim.runId(), fence.ownerId(), fence.leaseEpoch(),
                 fence.revision(), claim.expectedCheckpointFingerprint(), claim.claimantOwnerId(),
-                claim.leaseDuration().toSeconds(), resultCheckpointFingerprint, createdAt));
+                claim.leaseDuration().toSeconds(),
+                command.authorization().authorizationFingerprint(),
+                resultCheckpointFingerprint, resultDispatchFingerprint, createdAt));
     }
 
     private static Map<String, Object> resumeCommandRecordFingerprintMaterial(
@@ -430,10 +519,12 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             String expectedCheckpointFingerprint,
             String claimantOwnerId,
             long leaseDurationSeconds,
+            String authorizationFingerprint,
             String resultCheckpointFingerprint,
+            String resultDispatchFingerprint,
             Instant createdAt) {
         return Map.ofEntries(
-                Map.entry("schemaVersion", "bloge.durableResumeCommandRecord.v1"),
+                Map.entry("schemaVersion", "bloge.durableResumeCommandRecord.v2"),
                 Map.entry("tenantId", tenantId),
                 Map.entry("environmentId", environmentId),
                 Map.entry("clientRequestId", clientRequestId),
@@ -445,7 +536,9 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 Map.entry("expectedCheckpointFingerprint", expectedCheckpointFingerprint),
                 Map.entry("claimantOwnerId", claimantOwnerId),
                 Map.entry("leaseDurationSeconds", leaseDurationSeconds),
+                Map.entry("authorizationFingerprint", authorizationFingerprint),
                 Map.entry("resultCheckpointFingerprint", resultCheckpointFingerprint),
+                Map.entry("resultDispatchFingerprint", resultDispatchFingerprint),
                 Map.entry("createdAt", createdAt));
     }
 
@@ -752,6 +845,14 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         }
     }
 
+    private String writeDispatch(DurableTestRecoveryDispatch dispatch) {
+        try {
+            return objectMapper.writeValueAsString(dispatch);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException("Cannot serialize durable recovery dispatch", failure);
+        }
+    }
+
     private static DurableTestExecutionCheckpointConflictException conflict(
             DurableTestExecutionCheckpointConflictException.Reason reason, String message) {
         return new DurableTestExecutionCheckpointConflictException(reason, message);
@@ -842,9 +943,12 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             String expectedCheckpointFingerprint,
             String claimantOwnerId,
             long leaseDurationSeconds,
+            String authorizationFingerprint,
             String resultCheckpointFingerprint,
+            String resultDispatchFingerprint,
             String recordFingerprint,
             String resultCheckpointJson,
+            String resultDispatchJson,
             Instant createdAt
     ) {
         private Map<String, Object> fingerprintMaterial() {
@@ -852,7 +956,8 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     tenantId, environmentId, clientRequestId, requestFingerprint, runId,
                     expectedOwnerId, expectedLeaseEpoch, expectedRevision,
                     expectedCheckpointFingerprint, claimantOwnerId, leaseDurationSeconds,
-                    resultCheckpointFingerprint, createdAt);
+                    authorizationFingerprint, resultCheckpointFingerprint,
+                    resultDispatchFingerprint, createdAt);
         }
 
         private boolean matches(ResumeLeaseCommand command) {
@@ -869,11 +974,20 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     && expectedCheckpointFingerprint.equals(
                     claim.expectedCheckpointFingerprint())
                     && claimantOwnerId.equals(claim.claimantOwnerId())
-                    && leaseDurationSeconds == claim.leaseDuration().toSeconds();
+                    && leaseDurationSeconds == claim.leaseDuration().toSeconds()
+                    && authorizationFingerprint.equals(
+                    command.authorization().authorizationFingerprint());
         }
 
-        private boolean agreesWith(DurableTestExecutionCheckpoint checkpoint) {
+        private boolean agreesWith(
+                DurableTestExecutionCheckpoint checkpoint,
+                DurableTestRecoveryDispatch dispatch) {
             return resultCheckpointFingerprint.equals(checkpoint.checkpointFingerprint())
+                    && resultDispatchFingerprint.equals(dispatch.dispatchFingerprint())
+                    && authorizationFingerprint.equals(
+                    dispatch.authorization().authorizationFingerprint())
+                    && expectedCheckpointFingerprint.equals(
+                    dispatch.authorization().sourceCheckpointFingerprint())
                     && tenantId.equals(checkpoint.scope().tenantId())
                     && environmentId.equals(checkpoint.scope().environmentId())
                     && runId.equals(checkpoint.runId())

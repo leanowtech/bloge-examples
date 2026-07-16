@@ -97,8 +97,8 @@ commit in the same local transaction. Retrying the same intent returns that orig
 if the live checkpoint later advances; changing the run, old fence, previous fingerprint, claimant,
 lease, or request fingerprint under the same key fails as `IDEMPOTENCY_CONFLICT`. Stored results are
 re-verified against their aggregate fingerprint before replay. A separate
-`bloge.durableResumeCommandRecord.v1` fingerprint covers scope, caller key, request fingerprint,
-complete fence/claim intent, result fingerprint, and database creation time, so indexed intent drift
+`bloge.durableResumeCommandRecord.v2` fingerprint covers scope, caller key, request fingerprint,
+complete fence/claim intent, authorization/checkpoint/dispatch fingerprints, and database creation time, so indexed intent drift
 is reported as storage corruption rather than misclassified as caller conflict. This is an
 internal persistence protocol. Its public adapter adds transport authentication, authorization,
 security audit, exact dependency re-authorization, and server-owned claimant policy.
@@ -119,17 +119,27 @@ clearance and purpose, side-effect mode, deterministic provider snapshot, and re
 plan. Missing, revoked, drifted, stale, or unavailable authorities fail closed; no dependency falls
 back to `latest` or REAL behavior.
 
-The canonical command fingerprint binds caller intent to verified scope, actor, delegation, purpose,
-clearance, and sorted groups. It excludes the server-selected owner and lease so the same caller
+The v2 canonical command fingerprint binds caller intent to verified scope and region, actor,
+delegation, purpose, clearance, and sorted groups. It excludes correlation ID, the server-selected owner,
+and lease so the same caller
 intent remains replayable after process restart. A fresh claim and its `ALLOWED` semantic security
 event share the repository transaction; if audit cannot commit, the lease cannot move. A response-loss
 retry reads the immutable command result before consulting mutable dependencies and independently
 audits that replay. A concurrent loser looks up and returns the winner's exact result. The response
 contains no fixture, replay payload, engine state, credential, or authority value.
 
-This command only establishes a fenced `RESUMING` owner. No public worker currently polls the claim,
-binds its authorization decision to dispatch, runs the internal recovery session, renews the lease,
-or emits terminal evidence, so owner claim must not be described as cold-start resume.
+Authorization now returns the exact graph or canonical operator micro-graph, frozen
+`CompiledExecutionControl`, and a payload-free `bloge.durableTestRecoveryAuthorization.v1` receipt.
+The receipt binds the source checkpoint and authenticated principal to exact target, plan, fixture,
+replay, provider-state, authority, purpose, and side-effect fingerprints. In the claim transaction,
+the repository issues `bloge.durableTestRecoveryDispatch.v1`, binding that receipt to result scope,
+engine execution, owner/epoch/revision/expiry, and claimed checkpoint. Command replay verifies both
+JSON values, every nested fingerprint, indexed projections, and the source-to-result chain. Exact
+internal lookup returns this historical dispatch only for the same scope, run, fence, and checkpoint.
+
+The dispatch is not a bearer token and does not make the claim a cold-start resume. No worker
+currently polls or consumes it, reconstructs and compares the executable closure after restart,
+runs the internal recovery session, renews the lease, or emits terminal evidence.
 
 ## Transaction-Participating BLOGE Aggregate
 
@@ -242,9 +252,11 @@ unit tests with Checkstyle, suppression audit, SpotBugs, source, Javadoc, and in
 Resource Gateway now consumes this prerequisite in its test-profile durable resources: the
 transaction-participating execution/checkpoint/wait/work-item aggregate and independent durable
 factory both fail closed. Public owner claim now establishes a re-authorized fence and the internal
-session can advance one real cold signal; claim polling, dispatch authorization binding, lease
-heartbeat, terminal evidence, enforceable worker cancellation, and streaming recovery still must be
-completed before cold-start resume can be enabled as a product surface.
+session can advance one real cold signal. Owner claim atomically issues a payload-free,
+authorization-bound dispatch and supports exact scoped historical lookup. Worker acquisition with a
+live-fence comparison, lease heartbeat, terminal evidence, enforceable worker cancellation, and
+streaming recovery still must be completed before cold-start resume can be enabled as a product
+surface.
 
 ## Safety Invariants
 
@@ -407,12 +419,13 @@ mvn -f resource-gateway-examples/pom.xml \
   -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,StagedBlogeExecutionCheckpointStoreTest,StagedBlogeDurableStateStoreTest,IndependentDurableTestEngineFactoryTest,IndependentDurableTestRecoverySessionTest,InvocationRecorderCheckpointTest,DurableTestRecoveryAuthorityTest,DurableTestRecoveryAuthorizerTest,DurableTestOwnerClaimServiceTest,DurableTestOwnerClaimControllerTest,TestingControlProtocolSchemaTest,TestabilityCapabilitiesTest,TestRuntimeProfileIsolationTest test
 ```
 
-The combined focused gate completed with 103 tests, zero failures, zero errors, and zero skips. The
-new recovery-session slice contributes six database-level tests.
-The repository-wide `clean verify` gate completed with 1974 tests, zero failures, zero errors, 34
+The combined focused gate completed with 107 tests, zero failures, zero errors, and zero skips. The
+recovery-session slice contributes six database-level tests; authorization-bound dispatch adds two
+database-level claim/replay, exact-lookup, and tamper cases plus two regional-authority cases.
+The repository-wide `clean verify` gate completed with 1978 tests, zero failures, zero errors, 34
 conditional skips, real-browser regression coverage, and successful Spring Boot JAR packaging.
-Scoped public `javadoc -Xdoclint:all -Werror` for the seven owner-claim production types and the
-durable engine factory's new recovery API completed with zero diagnostics.
+Scoped public `javadoc -Xdoclint:all -Werror` for the six changed authorization-bound dispatch
+production types completed with zero diagnostics; the prior recovery-session API gate remains green.
 The optional project-wide Javadoc report still fails on 16 pre-existing HTML and
 parameter diagnostics in unrelated packages; that baseline is not represented as fixed here.
 
@@ -423,9 +436,9 @@ parameter diagnostics in unrelated packages; that baseline is not represented as
   recovery session can advance one real cold signal, but the public worker poll/claim/run/heartbeat/
   terminal-evidence flow does not yet drive it, so the primitive must not be mistaken for a complete
   remote-worker product lifecycle.
-- The durable and recovery sessions remain internal resources. The public owner-claim command can
-  only acquire an expired fence after exact dependency re-authorization; no dispatcher binds that
-  authorization decision to a worker command, and public suspend/resume endpoints do not exist.
+- The durable and recovery sessions remain internal resources. The public owner-claim command now
+  atomically binds exact dependency authorization to a payload-free worker dispatch, but no
+  dispatcher consumes that handoff and public suspend/resume endpoints do not exist.
 - Legacy v1 checkpoint rows remain readable but have no graph/operator locator. They must be
   terminalized or migrated through an independently verified target mapping before any future public
   recovery service may consider them; guessing a target from fingerprint or plan diagnostics is
@@ -435,9 +448,9 @@ parameter diagnostics in unrelated packages; that baseline is not represented as
   a resumed terminal evidence bundle cannot yet reconstruct those historical trace facts.
 - Owner claim now re-authorizes the v2 target locator/fingerprint, exact fixture revision, replay
   closure, current identity authority, side-effect policy, deterministic provider snapshot, effective
-  plan, and caller scope/purpose/clearance. A future resume worker must reuse this authorization proof
-  or bind an equivalent immutable decision to worker dispatch; the claim is not a transferable
-  authorization token.
+  plan, and caller scope/purpose/clearance, then persists their content-addressed receipt in the exact
+  dispatch. A cold worker must reconstruct and reproduce that receipt and still hold the live fence;
+  the dispatch is not a transferable authorization token.
 - The public adapter durably binds normalized caller intent and authenticated authority to one claim
   result. Lease heartbeat, public suspend/resume, worker crash reconciliation, terminalization,
   signed checkpoint attestation, and an enforceable process-level deadline remain orchestration work

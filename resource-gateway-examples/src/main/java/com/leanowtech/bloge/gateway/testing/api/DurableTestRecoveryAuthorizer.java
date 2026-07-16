@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
+import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryAuthorization;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
@@ -81,8 +82,9 @@ public class DurableTestRecoveryAuthorizer {
      *
      * @param checkpoint integrity-verified v2 checkpoint
      * @param identity freshly verified recovery caller
+     * @return exact executable closure and its payload-free authorization receipt
      */
-    public void authorize(
+    public AuthorizedRecovery authorize(
             DurableTestExecutionCheckpoint checkpoint, IntegrationRequestContext identity) {
         Objects.requireNonNull(checkpoint, "checkpoint");
         Objects.requireNonNull(identity, "identity").requireComplete();
@@ -127,6 +129,37 @@ public class DurableTestRecoveryAuthorizer {
                 || !rebuilt.defaultPolicies().equals(dependencies.plan().defaultPolicies())) {
             throw unavailable(identity, "PLAN");
         }
+        DurableTestRecoveryAuthorization authorization =
+                DurableTestRecoveryAuthorization.issue(
+                        objectMapper,
+                        checkpoint.checkpointFingerprint(),
+                        principalFingerprint(identity),
+                        target.fingerprint(),
+                        rebuilt.planFingerprint(),
+                        dependencies.fixture().fingerprint(),
+                        ProtocolFingerprint.of(objectMapper, rebuilt.replayDependencies()),
+                        checkpoint.executionServiceState().snapshotFingerprint(),
+                        dependencies.identitySnapshot().fingerprint(),
+                        rebuilt.authorizedPurpose(),
+                        dependencies.sideEffectPolicy());
+        return new AuthorizedRecovery(authorizedTarget.graph(), compiled, authorization);
+    }
+
+    private String principalFingerprint(IntegrationRequestContext identity) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableRecoveryPrincipal.v1"),
+                Map.entry("tenantId", identity.tenantId()),
+                Map.entry("organizationId", identity.organizationId()),
+                Map.entry("projectId", identity.projectId()),
+                Map.entry("environmentId", identity.environmentId()),
+                Map.entry("region", identity.region()),
+                Map.entry("actorType", identity.actorType()),
+                Map.entry("actorId", identity.actorId()),
+                Map.entry("delegatedBy", identity.delegatedBy()),
+                Map.entry("delegationGrantId", identity.delegationGrantId()),
+                Map.entry("purpose", identity.purpose()),
+                Map.entry("clearance", identity.clearance()),
+                Map.entry("groups", identity.groups().stream().sorted().toList())));
     }
 
     private void requireAuthority(
@@ -266,6 +299,29 @@ public class DurableTestRecoveryAuthorizer {
     private record AuthorizedTarget(Graph graph) {
         private AuthorizedTarget {
             Objects.requireNonNull(graph, "graph");
+        }
+    }
+
+    /**
+     * Server-internal executable closure paired with its payload-free durable authorization proof.
+     *
+     * <p>The graph and compiled controls may be handed directly to an in-process worker. Only the
+     * authorization receipt is persistence-safe; a cold worker must reconstruct the executable
+     * objects and reproduce the same receipt before execution.</p>
+     *
+     * @param graph exact graph or canonical operator micro-graph
+     * @param control exact fixture, replay, and execution-service controls
+     * @param authorization payload-free content-addressed authorization receipt
+     */
+    public record AuthorizedRecovery(
+            Graph graph,
+            CompiledExecutionControl control,
+            DurableTestRecoveryAuthorization authorization) {
+        /** Requires all executable and auditable parts of the authorization decision. */
+        public AuthorizedRecovery {
+            graph = Objects.requireNonNull(graph, "graph");
+            control = Objects.requireNonNull(control, "control");
+            authorization = Objects.requireNonNull(authorization, "authorization");
         }
     }
 }

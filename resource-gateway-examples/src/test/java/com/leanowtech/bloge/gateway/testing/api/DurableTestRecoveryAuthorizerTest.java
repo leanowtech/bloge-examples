@@ -42,7 +42,24 @@ class DurableTestRecoveryAuthorizerTest {
     void reauthorizesAndRecompilesAnExactGraphClosure() {
         Scenario scenario = Scenario.graph();
 
-        scenario.authorizer().authorize(scenario.checkpoint(), identity("CONFIDENTIAL"));
+        DurableTestRecoveryAuthorizer.AuthorizedRecovery authorized =
+                scenario.authorizer().authorize(
+                        scenario.checkpoint(), identity("CONFIDENTIAL"));
+
+        assertThat(authorized.graph()).isSameAs(scenario.executionGraph());
+        assertThat(authorized.control().effectivePlan().planFingerprint())
+                .isEqualTo(scenario.checkpoint().dependencies().plan().planFingerprint());
+        assertThat(authorized.authorization()).satisfies(receipt -> {
+            assertThat(receipt.sourceCheckpointFingerprint())
+                    .isEqualTo(scenario.checkpoint().checkpointFingerprint());
+            assertThat(receipt.targetFingerprint())
+                    .isEqualTo(scenario.checkpoint().dependencies().target().fingerprint());
+            assertThat(receipt.planFingerprint())
+                    .isEqualTo(scenario.checkpoint().dependencies().plan().planFingerprint());
+            assertThat(receipt.principalFingerprint()).startsWith("sha256:");
+            assertThat(receipt.authorizationFingerprint()).startsWith("sha256:");
+            receipt.requireValid(scenario.mapper());
+        });
     }
 
     @Test
@@ -50,6 +67,27 @@ class DurableTestRecoveryAuthorizerTest {
         Scenario scenario = Scenario.operator();
 
         scenario.authorizer().authorize(scenario.checkpoint(), identity("CONFIDENTIAL"));
+    }
+
+    @Test
+    void bindsRegionalAuthorityWithoutBindingTheRetryCorrelationId() {
+        Scenario scenario = Scenario.graph();
+        IntegrationRequestContext singapore = identity(
+                "sg", "correlation-a", "CONFIDENTIAL");
+        IntegrationRequestContext virginia = identity(
+                "us-east", "correlation-a", "CONFIDENTIAL");
+        IntegrationRequestContext retried = identity(
+                "sg", "correlation-retry", "CONFIDENTIAL");
+
+        String singaporePrincipal = scenario.authorizer().authorize(
+                scenario.checkpoint(), singapore).authorization().principalFingerprint();
+        String virginiaPrincipal = scenario.authorizer().authorize(
+                scenario.checkpoint(), virginia).authorization().principalFingerprint();
+        String retriedPrincipal = scenario.authorizer().authorize(
+                scenario.checkpoint(), retried).authorization().principalFingerprint();
+
+        assertThat(singaporePrincipal).isNotEqualTo(virginiaPrincipal);
+        assertThat(retriedPrincipal).isEqualTo(singaporePrincipal);
     }
 
     @Test
@@ -103,8 +141,13 @@ class DurableTestRecoveryAuthorizerTest {
     }
 
     private static IntegrationRequestContext identity(String clearance) {
+        return identity("sg", "correlation-a", clearance);
+    }
+
+    private static IntegrationRequestContext identity(
+            String region, String correlationId, String clearance) {
         return new IntegrationRequestContext("tenant-a", "org-a", "project-a", "test",
-                "sg", "WORKLOAD", "recovery-worker", "", "TEST_EXECUTION", "correlation-a",
+                region, "WORKLOAD", "recovery-worker", "", "TEST_EXECUTION", correlationId,
                 Set.of("test-operators"), clearance, "");
     }
 
@@ -121,6 +164,8 @@ class DurableTestRecoveryAuthorizerTest {
     private record Scenario(
             DurableTestRecoveryAuthorizer authorizer,
             DurableTestExecutionCheckpoint checkpoint,
+            Graph executionGraph,
+            ObjectMapper mapper,
             GatewayGraphService graphService,
             FixtureBundleRepository fixtures,
             StoredFixtureBundle storedFixture,
@@ -206,7 +251,11 @@ class DurableTestRecoveryAuthorizerTest {
                     compiled.executionServices().snapshotState());
             DurableTestRecoveryAuthorizer authorizer = new DurableTestRecoveryAuthorizer(
                     graphService, operators, resources, fixtures, replay, authority, mapper);
-            return new Scenario(authorizer, checkpoint, graphService, fixtures, stored, authenticator);
+            when(checkpoint.runId()).thenReturn("run-a");
+            when(checkpoint.checkpointFingerprint()).thenReturn(
+                    ProtocolFingerprint.ofText("checkpoint-a"));
+            return new Scenario(authorizer, checkpoint, executionGraph, mapper, graphService,
+                    fixtures, stored, authenticator);
         }
     }
 

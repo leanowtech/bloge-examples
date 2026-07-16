@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSecurityEvent;
 import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
+import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryAuthorization;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureConsumptionStateSnapshot;
@@ -412,6 +413,74 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     }
 
     @Test
+    void ownerClaimAtomicallyIssuesAnAuthorizationBoundWorkerDispatch() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.ResumeLeaseCommand command =
+                resumeCommand(expired, "resume-request-1", SHA_D, "instance-b");
+
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult result =
+                repository.claimExpiredLeaseIdempotently(command);
+        DurableTestExecutionCheckpoint claimed = result.checkpoint();
+
+        assertThat(result.dispatch().authorization()).isEqualTo(command.authorization());
+        assertThat(result.dispatch()).satisfies(dispatch -> {
+            assertThat(dispatch.runId()).isEqualTo(claimed.runId());
+            assertThat(dispatch.engineExecutionId()).isEqualTo(claimed.engineExecutionId());
+            assertThat(dispatch.ownerId()).isEqualTo(claimed.lifecycle().ownerId());
+            assertThat(dispatch.leaseEpoch()).isEqualTo(claimed.lifecycle().leaseEpoch());
+            assertThat(dispatch.revision()).isEqualTo(claimed.lifecycle().revision());
+            assertThat(dispatch.checkpointFingerprint())
+                    .isEqualTo(claimed.checkpointFingerprint());
+            dispatch.requireValid(new ObjectMapper().findAndRegisterModules());
+        });
+        assertThat(repository.findRecoveryDispatch(
+                "tenant-a", "test", "run-a",
+                new DurableTestExecutionCheckpointRepository.Fence(
+                        claimed.lifecycle().ownerId(), claimed.lifecycle().leaseEpoch(),
+                        claimed.lifecycle().revision()), claimed.checkpointFingerprint()))
+                .contains(result.dispatch());
+        assertThat(repository.findRecoveryDispatch(
+                "tenant-b", "test", "run-a",
+                new DurableTestExecutionCheckpointRepository.Fence(
+                        claimed.lifecycle().ownerId(), claimed.lifecycle().leaseEpoch(),
+                        claimed.lifecycle().revision()), claimed.checkpointFingerprint()))
+                .isEmpty();
+    }
+
+    @Test
+    void recoveryDispatchReplayRejectsAuthorizationAndStoredDispatchDrift() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.ResumeLeaseCommand command =
+                resumeCommand(expired, "resume-request-1", SHA_D, "instance-b");
+        repository.claimExpiredLeaseIdempotently(command);
+
+        DurableTestRecoveryAuthorization changedAuthorization =
+                DurableTestRecoveryAuthorization.issue(
+                        new ObjectMapper().findAndRegisterModules(),
+                        expired.checkpointFingerprint(), SHA_A, SHA_B, SHA_A, SHA_C,
+                        SHA_D, SHA_A, SHA_B, "GRAPH_CONTRACT_TEST", "DENY_REAL");
+        assertThatThrownBy(() -> repository.claimExpiredLeaseIdempotently(
+                new DurableTestExecutionCheckpointRepository.ResumeLeaseCommand(
+                        command.clientRequestId(), command.requestFingerprint(), command.claim(),
+                        changedAuthorization)))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.IDEMPOTENCY_CONFLICT);
+
+        database.jdbc().update("""
+                UPDATE rg_test_durable_resume_commands
+                SET result_dispatch_json = ?
+                WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                """, "{}", "tenant-a", "test", "resume-request-1");
+        assertThatThrownBy(() -> repository.claimExpiredLeaseIdempotently(command))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("recovery dispatch result is corrupt");
+    }
+
+    @Test
     void durableResumeCommandCanBeLookedUpWithoutConsultingOrMutatingTheLiveCheckpoint() {
         DurableTestExecutionCheckpoint expired = expiredCheckpoint();
         repository.create(expired, boundNoop(expired));
@@ -551,7 +620,8 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                         expired.checkpointFingerprint(), "instance-b", Duration.ofMinutes(2));
         assertThatThrownBy(() -> repository.claimExpiredLeaseIdempotently(
                 new DurableTestExecutionCheckpointRepository.ResumeLeaseCommand(
-                        "resume-request-1", SHA_D, crossTenantClaim)))
+                        "resume-request-1", SHA_D, crossTenantClaim,
+                        command.authorization())))
                 .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
                 .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
                         .reason())
@@ -593,15 +663,18 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                 resumeCommand(expired, "resume-request-1", SHA_D, "instance-b").claim();
 
         assertThatThrownBy(() -> new DurableTestExecutionCheckpointRepository.ResumeLeaseCommand(
-                "", SHA_D, claim))
+                "", SHA_D, claim, resumeCommand(
+                        expired, "valid", SHA_D, "instance-b").authorization()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("clientRequestId");
         assertThatThrownBy(() -> new DurableTestExecutionCheckpointRepository.ResumeLeaseCommand(
-                "resume request with spaces", SHA_D, claim))
+                "resume request with spaces", SHA_D, claim, resumeCommand(
+                        expired, "valid", SHA_D, "instance-b").authorization()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("clientRequestId");
         assertThatThrownBy(() -> new DurableTestExecutionCheckpointRepository.ResumeLeaseCommand(
-                "resume-request-1", "not-a-fingerprint", claim))
+                "resume-request-1", "not-a-fingerprint", claim, resumeCommand(
+                        expired, "valid", SHA_D, "instance-b").authorization()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("requestFingerprint");
     }
@@ -758,7 +831,19 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                         checkpoint.runId(), new DurableTestExecutionCheckpointRepository.Fence(
                         checkpoint.lifecycle().ownerId(), checkpoint.lifecycle().leaseEpoch(),
                         checkpoint.lifecycle().revision()), checkpoint.checkpointFingerprint(),
-                        claimant, Duration.ofMinutes(2)));
+                        claimant, Duration.ofMinutes(2)),
+                DurableTestRecoveryAuthorization.issue(
+                        new ObjectMapper().findAndRegisterModules(),
+                        checkpoint.checkpointFingerprint(), SHA_D,
+                        checkpoint.dependencies().target().fingerprint(),
+                        checkpoint.dependencies().plan().planFingerprint(),
+                        checkpoint.dependencies().fixture().fingerprint(),
+                        ProtocolFingerprint.of(new ObjectMapper().findAndRegisterModules(),
+                                checkpoint.dependencies().plan().replayDependencies()),
+                        checkpoint.executionServiceState().snapshotFingerprint(),
+                        checkpoint.dependencies().identitySnapshot().fingerprint(),
+                        checkpoint.dependencies().plan().authorizedPurpose(),
+                        checkpoint.dependencies().sideEffectPolicy()));
     }
 
     private DurableTestExecutionCheckpoint advanceAfterClaim(

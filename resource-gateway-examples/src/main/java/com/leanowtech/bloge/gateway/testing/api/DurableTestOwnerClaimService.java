@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
+import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryAuthorization;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 
 import java.time.Duration;
@@ -103,8 +104,9 @@ public final class DurableTestOwnerClaimService {
                     false, Map.of());
         }
         requireExpectedState(current, request, identity);
+        DurableTestRecoveryAuthorizer.AuthorizedRecovery authorized;
         try {
-            authorizer.authorize(current, identity);
+            authorized = authorizer.authorize(current, identity);
         } catch (IntegrationProblemException rejected) {
             rejected(identity, normalizedRunId, rejected.problem().code());
             throw rejected;
@@ -115,7 +117,8 @@ public final class DurableTestOwnerClaimService {
         }
 
         DurableTestExecutionCheckpointRepository.ResumeLeaseCommand command = command(
-                normalizedRunId, request, requestFingerprint, identity);
+                normalizedRunId, request, requestFingerprint, identity,
+                authorized.authorization());
         TestRuntimeTransactionMutation boundAudit = boundAllowedAudit(
                 identity, normalizedRunId, request.clientRequestId(), false);
         try {
@@ -202,7 +205,8 @@ public final class DurableTestOwnerClaimService {
             String runId,
             DurableTestOwnerClaimRequest request,
             String requestFingerprint,
-            IntegrationRequestContext identity) {
+            IntegrationRequestContext identity,
+            DurableTestRecoveryAuthorization authorization) {
         DurableTestOwnerClaimRequest.Fence fence = request.expectedFence();
         return new DurableTestExecutionCheckpointRepository.ResumeLeaseCommand(
                 request.clientRequestId(), requestFingerprint,
@@ -210,7 +214,8 @@ public final class DurableTestOwnerClaimService {
                         identity.tenantId(), identity.environmentId(), runId,
                         new DurableTestExecutionCheckpointRepository.Fence(
                                 fence.ownerId(), fence.leaseEpoch(), fence.revision()),
-                        request.expectedCheckpointFingerprint(), ownerId, leaseDuration));
+                        request.expectedCheckpointFingerprint(), ownerId, leaseDuration),
+                authorization);
     }
 
     private String requestFingerprint(
@@ -218,7 +223,7 @@ public final class DurableTestOwnerClaimService {
             DurableTestOwnerClaimRequest request,
             IntegrationRequestContext identity) {
         return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
-                Map.entry("schemaVersion", "bloge.durableOwnerClaimAuthorizedIntent.v1"),
+                Map.entry("schemaVersion", "bloge.durableOwnerClaimAuthorizedIntent.v2"),
                 Map.entry("runId", runId),
                 Map.entry("clientRequestId", request.clientRequestId()),
                 Map.entry("expectedFence", request.expectedFence()),
@@ -228,6 +233,7 @@ public final class DurableTestOwnerClaimService {
                 Map.entry("organizationId", identity.organizationId()),
                 Map.entry("projectId", identity.projectId()),
                 Map.entry("environmentId", identity.environmentId()),
+                Map.entry("region", identity.region()),
                 Map.entry("actorType", identity.actorType()),
                 Map.entry("actorId", identity.actorId()),
                 Map.entry("delegatedBy", identity.delegatedBy()),

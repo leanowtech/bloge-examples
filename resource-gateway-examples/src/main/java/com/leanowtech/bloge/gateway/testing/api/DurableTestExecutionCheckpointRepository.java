@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
+import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryAuthorization;
+import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryDispatch;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Duration;
@@ -124,6 +126,27 @@ public interface DurableTestExecutionCheckpointRepository {
                                                     String requestFingerprint);
 
     /**
+     * Resolves the immutable worker handoff for one exact claimed owner fence.
+     *
+     * <p>This lookup reads historical command state rather than treating it as live authority. A
+     * worker must separately compare the returned dispatch with the live checkpoint immediately
+     * before execution.</p>
+     *
+     * @param tenantId verified tenant authority
+     * @param environmentId verified non-production environment authority
+     * @param runId governed durable run identity
+     * @param expectedFence exact owner, epoch, and revision issued by the claim
+     * @param expectedCheckpointFingerprint exact claimed checkpoint identity
+     * @return verified payload-free dispatch when that exact claim exists
+     */
+    Optional<DurableTestRecoveryDispatch> findRecoveryDispatch(
+            String tenantId,
+            String environmentId,
+            String runId,
+            Fence expectedFence,
+            String expectedCheckpointFingerprint);
+
+    /**
      * Exact compare-and-set fence held by the caller.
      *
      * @param ownerId current process owner identity
@@ -214,10 +237,12 @@ public interface DurableTestExecutionCheckpointRepository {
      * @param clientRequestId caller-stable idempotency key scoped by tenant and environment
      * @param requestFingerprint canonical fingerprint of the complete authorized command intent
      * @param claim exact fenced lease claim
+     * @param authorization payload-free authorization receipt bound to the source checkpoint
      */
     record ResumeLeaseCommand(String clientRequestId,
                               String requestFingerprint,
-                              LeaseClaim claim) {
+                              LeaseClaim claim,
+                              DurableTestRecoveryAuthorization authorization) {
         private static final Pattern IDENTIFIER =
                 Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
         private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
@@ -235,6 +260,12 @@ public interface DurableTestExecutionCheckpointRepository {
                         "requestFingerprint must be a canonical SHA-256 fingerprint");
             }
             claim = Objects.requireNonNull(claim, "claim");
+            authorization = Objects.requireNonNull(authorization, "authorization");
+            if (!authorization.sourceCheckpointFingerprint().equals(
+                    claim.expectedCheckpointFingerprint())) {
+                throw new IllegalArgumentException(
+                        "Recovery authorization must bind the expected source checkpoint");
+            }
         }
 
         private static String required(String value, String field) {
@@ -250,13 +281,20 @@ public interface DurableTestExecutionCheckpointRepository {
      * Immutable outcome of one durable resume lease command.
      *
      * @param checkpoint checkpoint produced by the original successful command
+     * @param dispatch immutable authorization-bound worker handoff issued by the command
      * @param idempotentReplay whether an earlier committed result was replayed
      */
     record LeaseClaimResult(DurableTestExecutionCheckpoint checkpoint,
+                            DurableTestRecoveryDispatch dispatch,
                             boolean idempotentReplay) {
         /** Requires a complete immutable command result. */
         public LeaseClaimResult {
             checkpoint = Objects.requireNonNull(checkpoint, "checkpoint");
+            dispatch = Objects.requireNonNull(dispatch, "dispatch");
+            if (!dispatch.agreesWith(checkpoint)) {
+                throw new IllegalArgumentException(
+                        "Recovery dispatch must exactly match its claim checkpoint");
+            }
         }
     }
 

@@ -3,7 +3,11 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryAuthorization;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
+import com.leanowtech.bloge.core.model.Graph;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,7 +28,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -44,11 +50,19 @@ class DurableTestOwnerClaimServiceTest {
     private ObjectMapper objectMapper;
     private DurableTestOwnerClaimService service;
     private TestRuntimeTransactionMutation auditMutation;
+    private DurableTestRecoveryAuthorization authorization;
 
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper().findAndRegisterModules();
         auditMutation = jdbc -> { };
+        authorization = DurableTestRecoveryAuthorization.issue(objectMapper, SHA_A,
+                ProtocolFingerprint.of(objectMapper, Map.of("principal", "recovery-worker")),
+                SHA_A, SHA_A, SHA_A, SHA_A, SHA_A, SHA_A,
+                "GRAPH_CONTRACT_TEST", "DENY_REAL");
+        lenient().when(authorizer.authorize(any(), any())).thenReturn(
+                new DurableTestRecoveryAuthorizer.AuthorizedRecovery(
+                        mock(Graph.class), mock(CompiledExecutionControl.class), authorization));
         service = new DurableTestOwnerClaimService(checkpoints, authorizer, securityEvents,
                 objectMapper, "recovery-instance-a", Duration.ofMinutes(2));
     }
@@ -62,13 +76,14 @@ class DurableTestOwnerClaimServiceTest {
                 DurableTestExecutionCheckpoint.SCHEMA_VERSION,
                 "org-a", "project-a", "recovery-instance-a", 4, 8, SHA_B);
         DurableTestOwnerClaimRequest request = request("request-1", current);
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimResult =
+                claimResult(claimed, false);
         when(checkpoints.find("tenant-a", "test", "run-a")).thenReturn(Optional.of(current));
         when(checkpoints.findLeaseClaimResult(eq("tenant-a"), eq("test"), eq("request-1"), any()))
                 .thenReturn(Optional.empty());
         when(securityEvents.boundAppend(any())).thenReturn(auditMutation);
         when(checkpoints.claimExpiredLeaseIdempotently(any(), eq(auditMutation)))
-                .thenReturn(new DurableTestExecutionCheckpointRepository.LeaseClaimResult(
-                        claimed, false));
+                .thenReturn(claimResult);
 
         DurableTestOwnerClaimResponse response = service.claim("run-a", request, identity());
 
@@ -94,6 +109,7 @@ class DurableTestOwnerClaimServiceTest {
         assertThat(command.getValue().claim().leaseDuration()).isEqualTo(Duration.ofMinutes(2));
         assertThat(command.getValue().claim().expectedFence())
                 .isEqualTo(new DurableTestExecutionCheckpointRepository.Fence("old-owner", 3, 7));
+        assertThat(command.getValue().authorization()).isEqualTo(authorization);
 
         InOrder order = inOrder(authorizer, securityEvents, checkpoints);
         order.verify(authorizer).authorize(current, identity());
@@ -111,10 +127,11 @@ class DurableTestOwnerClaimServiceTest {
                 "org-a", "project-a", "former-instance", 4, 8, SHA_A);
         DurableTestOwnerClaimRequest request = new DurableTestOwnerClaimRequest("", "request-1",
                 new DurableTestOwnerClaimRequest.Fence("old-owner", 3, 7), SHA_A);
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult replay =
+                claimResult(original, true);
         when(checkpoints.find("tenant-a", "test", "run-a")).thenReturn(Optional.of(current));
         when(checkpoints.findLeaseClaimResult(eq("tenant-a"), eq("test"), eq("request-1"), any()))
-                .thenReturn(Optional.of(
-                        new DurableTestExecutionCheckpointRepository.LeaseClaimResult(original, true)));
+                .thenReturn(Optional.of(replay));
         when(securityEvents.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         DurableTestOwnerClaimResponse response = service.claim("run-a", request, identity());
@@ -134,11 +151,12 @@ class DurableTestOwnerClaimServiceTest {
         DurableTestExecutionCheckpoint winner = checkpoint(
                 DurableTestExecutionCheckpoint.SCHEMA_VERSION,
                 "org-a", "project-a", "other-instance", 4, 8, SHA_B);
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult replay =
+                claimResult(winner, true);
         when(checkpoints.find("tenant-a", "test", "run-a")).thenReturn(Optional.of(current));
         when(checkpoints.findLeaseClaimResult(eq("tenant-a"), eq("test"), eq("request-1"), any()))
                 .thenReturn(Optional.empty())
-                .thenReturn(Optional.of(
-                        new DurableTestExecutionCheckpointRepository.LeaseClaimResult(winner, true)));
+                .thenReturn(Optional.of(replay));
         when(securityEvents.boundAppend(any())).thenReturn(auditMutation);
         when(checkpoints.claimExpiredLeaseIdempotently(any(), eq(auditMutation)))
                 .thenThrow(new DurableTestExecutionCheckpointConflictException(
@@ -160,13 +178,14 @@ class DurableTestOwnerClaimServiceTest {
         DurableTestExecutionCheckpoint winner = checkpoint(
                 DurableTestExecutionCheckpoint.SCHEMA_VERSION,
                 "org-a", "project-a", "other-instance", 4, 8, SHA_B);
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult replay =
+                claimResult(winner, true);
         when(checkpoints.find("tenant-a", "test", "run-a")).thenReturn(Optional.of(current));
         when(checkpoints.findLeaseClaimResult(eq("tenant-a"), eq("test"), eq("request-1"), any()))
                 .thenReturn(Optional.empty());
         when(securityEvents.boundAppend(any())).thenReturn(auditMutation);
         when(checkpoints.claimExpiredLeaseIdempotently(any(), eq(auditMutation)))
-                .thenReturn(new DurableTestExecutionCheckpointRepository.LeaseClaimResult(
-                        winner, true));
+                .thenReturn(replay);
         when(securityEvents.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         DurableTestOwnerClaimResponse response = service.claim(
@@ -178,6 +197,36 @@ class DurableTestOwnerClaimServiceTest {
         verify(securityEvents).append(replayAudit.capture());
         assertThat(replayAudit.getValue().reasonCode())
                 .isEqualTo("RG.TEST.DURABLE_OWNER_CLAIM_IDEMPOTENT_REPLAY");
+    }
+
+    @Test
+    void regionalAuthorityProducesDifferentAuthorizedCommandIntent() {
+        DurableTestExecutionCheckpoint current = checkpoint(
+                DurableTestExecutionCheckpoint.SCHEMA_VERSION,
+                "org-a", "project-a", "old-owner", 3, 7, SHA_A);
+        DurableTestExecutionCheckpoint claimed = checkpoint(
+                DurableTestExecutionCheckpoint.SCHEMA_VERSION,
+                "org-a", "project-a", "recovery-instance-a", 4, 8, SHA_B);
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult result =
+                claimResult(claimed, false);
+        when(checkpoints.find("tenant-a", "test", "run-a")).thenReturn(Optional.of(current));
+        when(checkpoints.findLeaseClaimResult(eq("tenant-a"), eq("test"),
+                eq("request-1"), any())).thenReturn(Optional.empty());
+        when(securityEvents.boundAppend(any())).thenReturn(auditMutation);
+        when(checkpoints.claimExpiredLeaseIdempotently(any(), eq(auditMutation)))
+                .thenReturn(result);
+
+        service.claim("run-a", request("request-1", current), identity("test", "sg"));
+        service.claim("run-a", request("request-1", current), identity("test", "us-east"));
+
+        ArgumentCaptor<DurableTestExecutionCheckpointRepository.ResumeLeaseCommand> commands =
+                ArgumentCaptor.forClass(
+                        DurableTestExecutionCheckpointRepository.ResumeLeaseCommand.class);
+        verify(checkpoints, times(2)).claimExpiredLeaseIdempotently(
+                commands.capture(), eq(auditMutation));
+        assertThat(commands.getAllValues())
+                .extracting(DurableTestExecutionCheckpointRepository.ResumeLeaseCommand::requestFingerprint)
+                .doesNotHaveDuplicates();
     }
 
     @Test
@@ -266,6 +315,15 @@ class DurableTestOwnerClaimServiceTest {
                         checkpoint.lifecycle().revision()), checkpoint.checkpointFingerprint());
     }
 
+    private static DurableTestExecutionCheckpointRepository.LeaseClaimResult claimResult(
+            DurableTestExecutionCheckpoint checkpoint, boolean replay) {
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult result =
+                mock(DurableTestExecutionCheckpointRepository.LeaseClaimResult.class);
+        lenient().when(result.checkpoint()).thenReturn(checkpoint);
+        lenient().when(result.idempotentReplay()).thenReturn(replay);
+        return result;
+    }
+
     private static DurableTestExecutionCheckpoint checkpoint(
             String schemaVersion, String organizationId, String projectId, String ownerId,
             long leaseEpoch, long revision, String checkpointFingerprint) {
@@ -294,8 +352,12 @@ class DurableTestOwnerClaimServiceTest {
     }
 
     private static IntegrationRequestContext identity(String environment) {
+        return identity(environment, "sg");
+    }
+
+    private static IntegrationRequestContext identity(String environment, String region) {
         return new IntegrationRequestContext("tenant-a", "org-a", "project-a", environment,
-                "sg", "WORKLOAD", "recovery-worker", "", "TEST_EXECUTION", "correlation-a",
+                region, "WORKLOAD", "recovery-worker", "", "TEST_EXECUTION", "correlation-a",
                 Set.of("test-operators"), "CONFIDENTIAL", "");
     }
 
