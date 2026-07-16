@@ -106,12 +106,23 @@ class TestingControlProtocolSchemaTest {
                 "/$defs/fixtureConsumptionStateSnapshot/properties/schemaVersion/const").asText())
                 .isEqualTo(FixtureConsumptionStateSnapshot.SCHEMA_VERSION);
         assertThat(schema.at(
-                "/$defs/durableTestExecutionCheckpoint/properties/schemaVersion/const").asText())
+                "/$defs/durableTestExecutionCheckpointV2/properties/schemaVersion/const").asText())
                 .isEqualTo(DurableTestExecutionCheckpoint.SCHEMA_VERSION);
-        assertThat(schema.at("/$defs/durableTestExecutionCheckpoint/required"))
+        assertThat(schema.at(
+                "/$defs/durableTestExecutionCheckpointV1/properties/schemaVersion/const").asText())
+                .isEqualTo(DurableTestExecutionCheckpoint.SCHEMA_VERSION_V1);
+        assertThat(schema.at("/$defs/durableTestExecutionCheckpointV2/required"))
                 .extracting(JsonNode::asText)
                 .contains("dependencies", "fixtureConsumptionState", "executionServiceState",
                         "engineState", "lifecycle", "checkpointFingerprint");
+        assertThat(schema.at("/$defs/durableControlDependenciesV2/required"))
+                .extracting(JsonNode::asText)
+                .contains("target");
+        assertThat(schema.at("/$defs/durableControlDependenciesV1/properties").has("target"))
+                .isFalse();
+        assertThat(schema.at("/$defs/durableExecutionTargetRef/properties/kind/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactlyInAnyOrder("GRAPH", "OPERATOR");
         assertThat(schema.at("/$defs/testRunEvidenceV2/properties/schemaVersion/const").asText())
                 .isEqualTo(TestRunEvidence.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testRunEvidenceV1/properties/schemaVersion/const").asText())

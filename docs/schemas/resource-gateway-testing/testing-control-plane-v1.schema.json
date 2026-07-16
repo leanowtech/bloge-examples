@@ -1203,6 +1203,16 @@
         "fingerprint": {"$ref": "#/$defs/fingerprint"}
       }
     },
+    "durableExecutionTargetRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "fingerprint"],
+      "properties": {
+        "kind": {"enum": ["GRAPH", "OPERATOR"]},
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"},
+        "fingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
     "durableAuthoritySnapshot": {
       "type": "object",
       "additionalProperties": false,
@@ -1212,7 +1222,7 @@
         "fingerprint": {"$ref": "#/$defs/fingerprint"}
       }
     },
-    "durableControlDependencies": {
+    "durableControlDependenciesV1": {
       "type": "object",
       "additionalProperties": false,
       "required": ["plan", "fixture", "sideEffectPolicy", "identitySnapshot"],
@@ -1221,6 +1231,18 @@
         "fixture": {"$ref": "#/$defs/durableExactFixtureRef"},
         "sideEffectPolicy": {"enum": ["DENY_REAL", "REPLAY_ONLY"]},
         "identitySnapshot": {"$ref": "#/$defs/durableAuthoritySnapshot"}
+      }
+    },
+    "durableControlDependenciesV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan", "fixture", "sideEffectPolicy", "identitySnapshot", "target"],
+      "properties": {
+        "plan": {"allOf": [{"$ref": "#/$defs/effectivePlan"}, {"type": "object"}]},
+        "fixture": {"$ref": "#/$defs/durableExactFixtureRef"},
+        "sideEffectPolicy": {"enum": ["DENY_REAL", "REPLAY_ONLY"]},
+        "identitySnapshot": {"$ref": "#/$defs/durableAuthoritySnapshot"},
+        "target": {"$ref": "#/$defs/durableExecutionTargetRef"}
       }
     },
     "durableEngineState": {
@@ -1250,7 +1272,7 @@
         "leaseExpiresAt": {"type": "string", "format": "date-time"}
       }
     },
-    "durableTestExecutionCheckpoint": {
+    "durableTestExecutionCheckpointV1": {
       "type": "object",
       "additionalProperties": false,
       "required": ["schemaVersion", "scope", "runId", "engineExecutionId", "dependencies", "fixtureConsumptionState", "executionServiceState", "engineState", "lifecycle", "checkpointFingerprint"],
@@ -1259,13 +1281,36 @@
         "scope": {"$ref": "#/$defs/durableTestExecutionScope"},
         "runId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"},
         "engineExecutionId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"},
-        "dependencies": {"$ref": "#/$defs/durableControlDependencies"},
+        "dependencies": {"$ref": "#/$defs/durableControlDependenciesV1"},
         "fixtureConsumptionState": {"$ref": "#/$defs/fixtureConsumptionStateSnapshot"},
         "executionServiceState": {"$ref": "#/$defs/executionServiceStateSnapshot"},
         "engineState": {"$ref": "#/$defs/durableEngineState"},
         "lifecycle": {"$ref": "#/$defs/durableExecutionLifecycle"},
         "checkpointFingerprint": {"$ref": "#/$defs/fingerprint"}
       }
+    },
+    "durableTestExecutionCheckpointV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "scope", "runId", "engineExecutionId", "dependencies", "fixtureConsumptionState", "executionServiceState", "engineState", "lifecycle", "checkpointFingerprint"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.durableTestExecutionCheckpoint.v2"},
+        "scope": {"$ref": "#/$defs/durableTestExecutionScope"},
+        "runId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"},
+        "engineExecutionId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"},
+        "dependencies": {"$ref": "#/$defs/durableControlDependenciesV2"},
+        "fixtureConsumptionState": {"$ref": "#/$defs/fixtureConsumptionStateSnapshot"},
+        "executionServiceState": {"$ref": "#/$defs/executionServiceStateSnapshot"},
+        "engineState": {"$ref": "#/$defs/durableEngineState"},
+        "lifecycle": {"$ref": "#/$defs/durableExecutionLifecycle"},
+        "checkpointFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "durableTestExecutionCheckpoint": {
+      "oneOf": [
+        {"$ref": "#/$defs/durableTestExecutionCheckpointV1"},
+        {"$ref": "#/$defs/durableTestExecutionCheckpointV2"}
+      ]
     },
     "testRunEvidenceV1": {
       "type": "object",

@@ -43,6 +43,80 @@ class DurableTestExecutionCheckpointTest {
     }
 
     @Test
+    void currentProtocolRequiresAnExactTargetLocatorBoundToThePlan() {
+        DurableTestExecutionCheckpoint checkpoint = checkpoint("test", 0);
+        DurableTestExecutionCheckpoint.ControlDependencies dependencies = checkpoint.dependencies();
+
+        assertThatThrownBy(() -> new DurableTestExecutionCheckpoint(
+                DurableTestExecutionCheckpoint.SCHEMA_VERSION,
+                checkpoint.scope(), checkpoint.runId(), checkpoint.engineExecutionId(),
+                new DurableTestExecutionCheckpoint.ControlDependencies(
+                        dependencies.plan(), dependencies.fixture(), dependencies.sideEffectPolicy(),
+                        dependencies.identitySnapshot(), null),
+                checkpoint.fixtureConsumptionState(), checkpoint.executionServiceState(),
+                checkpoint.engineState(), checkpoint.lifecycle(), ""))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("target locator");
+
+        assertThatThrownBy(() -> new DurableTestExecutionCheckpoint.ControlDependencies(
+                dependencies.plan(), dependencies.fixture(), dependencies.sideEffectPolicy(),
+                dependencies.identitySnapshot(),
+                new DurableTestExecutionCheckpoint.ExecutionTargetRef("GRAPH", "credit-score", SHA_A)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("target fingerprint");
+    }
+
+    @Test
+    void targetKindMustMatchTheServerAuthorizedExecutionPurpose() {
+        DurableTestExecutionCheckpoint checkpoint = checkpoint("test", 0);
+        DurableTestExecutionCheckpoint.ControlDependencies dependencies = checkpoint.dependencies();
+
+        assertThatThrownBy(() -> new DurableTestExecutionCheckpoint.ControlDependencies(
+                dependencies.plan(), dependencies.fixture(), dependencies.sideEffectPolicy(),
+                dependencies.identitySnapshot(),
+                new DurableTestExecutionCheckpoint.ExecutionTargetRef(
+                        "OPERATOR", "credit-score", dependencies.plan().targetFingerprint())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("execution purpose");
+    }
+
+    @Test
+    void legacyV1WithoutTargetLocatorRemainsCanonicallyReadable() throws Exception {
+        DurableTestExecutionCheckpoint current = checkpoint("test", 0);
+        DurableTestExecutionCheckpoint legacy = integrity.seal(new DurableTestExecutionCheckpoint(
+                DurableTestExecutionCheckpoint.SCHEMA_VERSION_V1,
+                current.scope(), current.runId(), current.engineExecutionId(),
+                new DurableTestExecutionCheckpoint.ControlDependencies(
+                        current.dependencies().plan(), current.dependencies().fixture(),
+                        current.dependencies().sideEffectPolicy(),
+                        current.dependencies().identitySnapshot()),
+                current.fixtureConsumptionState(), current.executionServiceState(),
+                current.engineState(), current.lifecycle(), ""));
+
+        String json = mapper.writeValueAsString(legacy);
+        DurableTestExecutionCheckpoint decoded = mapper.readValue(
+                json, DurableTestExecutionCheckpoint.class);
+
+        assertThat(mapper.readTree(json).path("dependencies").has("target")).isFalse();
+        assertThat(decoded.dependencies().target()).isNull();
+        assertThat(decoded.checkpointFingerprint()).isEqualTo(legacy.checkpointFingerprint());
+        integrity.requireValid(decoded);
+    }
+
+    @Test
+    void legacyVersionCannotSmuggleTheV2TargetShape() {
+        DurableTestExecutionCheckpoint current = checkpoint("test", 0);
+
+        assertThatThrownBy(() -> new DurableTestExecutionCheckpoint(
+                DurableTestExecutionCheckpoint.SCHEMA_VERSION_V1,
+                current.scope(), current.runId(), current.engineExecutionId(),
+                current.dependencies(), current.fixtureConsumptionState(),
+                current.executionServiceState(), current.engineState(), current.lifecycle(), ""))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("v1 checkpoint cannot contain");
+    }
+
+    @Test
     void rejectsTamperingInNestedFixtureOrProviderState() {
         DurableTestExecutionCheckpoint sealed = integrity.seal(checkpoint("test", 0));
         FixtureConsumptionStateSnapshot tamperedConsumption = new FixtureConsumptionStateSnapshot(
@@ -138,7 +212,9 @@ class DurableTestExecutionCheckpointTest {
                 new DurableTestExecutionCheckpoint.ControlDependencies(
                         plan, new DurableTestExecutionCheckpoint.ExactFixtureRef(
                         "fixture-a", 3, SHA_C), "DENY_REAL",
-                        new DurableTestExecutionCheckpoint.AuthoritySnapshot("FAIL_CLOSED", SHA_D)),
+                        new DurableTestExecutionCheckpoint.AuthoritySnapshot("FAIL_CLOSED", SHA_D),
+                        new DurableTestExecutionCheckpoint.ExecutionTargetRef(
+                                "GRAPH", "credit-score", SHA_B)),
                 consumption, provider,
                 new DurableTestExecutionCheckpoint.EngineState(
                         "checkpoint-a-" + revision, "fetch", "NODE_BOUNDARY",

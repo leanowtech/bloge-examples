@@ -503,12 +503,20 @@ binding, restore policy, and deterministic cursor/usage closure. Any mismatch ma
 `CONTROL_PLAN_UNAVAILABLE`; there is no fallback to latest configuration, system providers, or REAL
 execution.
 
-This is currently an internal planner/runtime protocol. No public checkpoint or resume endpoint
-exists, and BLOGE durable/suspend storage does not yet persist or inject it. A complete durable
-checkpoint must additionally bind the immutable plan and fixture, fixture-consumption cursors,
-in-flight node/timer state, and side-effect journal position in one fenced lifecycle.
-`snapshotFingerprint` is a content-integrity identifier, not an authenticity proof; a cross-process
-adapter must accept snapshots only from a trusted fenced store or signed checkpoint attestation.
+This remains an internal planner/runtime protocol; no public durable-run, checkpoint, or resume
+endpoint exists. The profile-gated staged BLOGE stores now persist it inside
+`bloge.durableTestExecutionCheckpoint.v2`, which also binds the immutable plan, exact fixture,
+fixture-consumption cursors, execution/wait/work-item closure, side-effect policy, authority snapshot,
+owner fence, and exact `{kind,id,fingerprint}` graph/operator locator. The locator fingerprint must
+equal the plan target fingerprint and its kind must agree with the server-authorized execution
+purpose. Database reads independently compare its projected columns with the sealed JSON.
+
+Legacy `bloge.durableTestExecutionCheckpoint.v1` remains canonically readable but has no target
+locator and cannot enter a future public recovery path until an independently verified migration
+supplies one. Neither checkpoint fingerprint is an authenticity proof; cross-process adapters must
+accept these objects only from the trusted fenced store or a signed checkpoint attestation. Public
+resume still requires authenticated scope binding and live reauthorization of target, fixture,
+replay, authority, and side-effect policy before BLOGE state restoration.
 
 ### 4.2.2 Register an immutable test suite
 

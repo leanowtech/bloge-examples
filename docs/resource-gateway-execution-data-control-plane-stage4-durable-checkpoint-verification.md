@@ -13,14 +13,20 @@ compare-and-set ownership handoff required before either endpoint can be safe. S
 no separate BLOGE store SPI and requires an explicit checkpoint/offset protocol rather than a
 fictitious store adapter.
 
-The increment defines two versioned objects:
+The increment defines the following versioned objects:
 
 - `bloge.fixtureConsumptionStateSnapshot.v1` freezes cumulative rule use plus hashed invocation-site
   and containing-graph occurrence cursors.
-- `bloge.durableTestExecutionCheckpoint.v1` binds the complete effective plan, exact fixture
+- `bloge.durableTestExecutionCheckpoint.v1` is the readable legacy closure. It binds the complete
+  effective plan, exact fixture
   revision, replay dependencies already frozen in that plan, side-effect policy, identity-authority
   snapshot, fixture state, execution-service state, BLOGE engine-state closure, caller scope, and
-  owner/lease/revision fence under one canonical fingerprint.
+  owner/lease/revision fence under one canonical fingerprint, but it does not contain a graph/operator
+  locator and therefore cannot independently re-resolve its target for public recovery.
+- `bloge.durableTestExecutionCheckpoint.v2` is the current write protocol. It adds an exact
+  `target = {kind,id,fingerprint}` locator, requires the locator fingerprint to equal the effective
+  plan target fingerprint, and binds `GRAPH` to `GRAPH_CONTRACT_TEST` and `OPERATOR` to
+  `OPERATOR_UNIT_TEST`.
 
 Both definitions are included in
 [testing-control-plane-v1.schema.json](schemas/resource-gateway-testing/testing-control-plane-v1.schema.json).
@@ -58,6 +64,13 @@ advancement therefore have one commit decision:
 4. apply the BLOGE engine-state mutation through the same datasource;
 5. compare-and-set the checkpoint row by owner, epoch, revision, and previous fingerprint;
 6. commit both writes, or roll back both writes when any step fails.
+
+The database redundantly projects v2 target kind, id, and fingerprint into nullable index columns.
+Reads compare all three columns with the sealed JSON. Nullable columns preserve v1 rows exactly;
+repository initialization adds them idempotently to an existing v1 table. A v1 JSON round trip omits
+the absent target rather than inventing a null property, so its historical canonical fingerprint does
+not drift. A v1 outer checkpoint rejects a v2 locator, while every newly written v2 checkpoint
+requires one.
 
 The callback must not perform network I/O or write through another datasource. Such effects cannot
 join this local transaction and are deliberately outside the contract.
@@ -177,55 +190,58 @@ cold-start resume can be enabled.
 2. The embedded `EffectiveExecutionPlan.v3` retains full exact replay references. The fixture id,
    positive revision, and fingerprint must agree with the plan's fixture fingerprint; `latest` does
    not exist.
-3. The execution-service snapshot must bind the same plan fingerprint. Resumable states reject a
+3. Current v2 checkpoints require a `GRAPH` or `OPERATOR` stable id whose fingerprint equals the
+   plan target fingerprint and whose kind agrees with the server-authorized execution purpose. Legacy
+   v1 checkpoints remain readable but are not eligible for future public target reauthorization.
+4. The execution-service snapshot must bind the same plan fingerprint. Resumable states reject a
    provider snapshot that reports restore gaps.
-4. v1 accepts only `DENY_REAL`/`REPLAY_ONLY` side-effect policy and a `FAIL_CLOSED` identity
+5. Both versions accept only `DENY_REAL`/`REPLAY_ONLY` side-effect policy and a `FAIL_CLOSED` identity
    authority. Sandbox REAL effects or fixture identity require a future protocol after their
    authorities and conformance proofs exist.
-5. Runtime correlation values are not persisted. Site and graph occurrence maps accept only
+6. Runtime correlation values are not persisted. Site and graph occurrence maps accept only
    canonical SHA-256 keys; provider snapshots already follow the same rule for RANDOM/UUID scopes.
    Hashing is pseudonymization, so storage access control remains mandatory.
-6. Rule use, dynamic occurrence, logical time, deterministic sequence cursor, provider usage,
+7. Rule use, dynamic occurrence, logical time, deterministic sequence cursor, provider usage,
    engine state version, and engine boundary sequence cannot move backwards.
-7. Tenant, organization, project, environment, actor, run id, engine execution id, dependency
+8. Tenant, organization, project, environment, actor, run id, engine execution id, dependency
    closure, and creation time are immutable after revision zero.
-8. Normal engine-state advance cannot transfer ownership. An expired-lease claim is the sole owner
+9. Normal engine-state advance cannot transfer ownership. An expired-lease claim is the sole owner
    handoff: database time must prove expiry, old owner/epoch/revision/fingerprint must all match, and
    success increments epoch and revision while preserving the complete recovery closure.
-9. Terminal and `CONTROL_PLAN_UNAVAILABLE` checkpoints cannot advance.
-10. Lifecycle timestamps are canonicalized to microsecond precision before hashing so H2 and
+10. Terminal and `CONTROL_PLAN_UNAVAILABLE` checkpoints cannot advance.
+11. Lifecycle timestamps are canonicalized to microsecond precision before hashing so H2 and
     common enterprise SQL stores cannot create false JSON/index drift by rounding Java nanoseconds.
-11. Database reads recompute nested and aggregate fingerprints and compare every authorization,
+12. Database reads recompute nested and aggregate fingerprints and compare every authorization,
    dependency, fence, and state index with the JSON value. Index/JSON drift is treated as corrupt
    trusted state.
-12. Concurrent writers may both enter their engine-state callbacks, but only one CAS can commit;
+13. Concurrent writers may both enter their engine-state callbacks, but only one CAS can commit;
     the losing callback is rolled back in the same transaction.
-13. A prepared BLOGE mutation is bound to both the exact engine execution id and the complete formal
+14. A prepared BLOGE mutation is bound to both the exact engine execution id and the complete formal
     engine-state value. A caller cannot attach execution A's rows to execution B or reuse a closure
     fingerprint under another boundary/ref/version.
-14. Closing the stage invalidates its prepared mutation. A rollback may retry the same frozen
+15. Closing the stage invalidates its prepared mutation. A rollback may retry the same frozen
     content while the stage remains open; no mutation can escape session cleanup.
-15. Execution lifecycle, node checkpoints, waits, and work items are component fingerprints inside
+16. Execution lifecycle, node checkpoints, waits, and work items are component fingerprints inside
     one v3 aggregate fingerprint. A lifecycle-only, wait-only, or work-item-only change therefore
     changes the formal engine closure even when the other component rows do not change.
-16. The control row and execution row are created in one transaction. Every later revision starts
+17. The control row and execution row are created in one transaction. Every later revision starts
     from that paired state; a control checkpoint without its execution lifecycle is corrupt input,
     not a supported recovery state.
-17. Global wait correlation and timer scans return committed rows only. Execution-local reads remain
+18. Global wait correlation and timer scans return committed rows only. Execution-local reads remain
     read-your-writes so the current engine can complete suspend/signal logic before prepare.
-18. A wait carries the exact lifecycle identity of its execution. A globally unique committed
+19. A wait carries the exact lifecycle identity of its execution. A globally unique committed
     `waitId` cannot be reassigned to another execution or tenant by an upsert.
-19. Global work-item ready and expired-claim scans expose committed rows only. BLOGE-scoped async
+20. Global work-item ready and expired-claim scans expose committed rows only. BLOGE-scoped async
     threads may enqueue into their trusted active execution, but unscoped exact-id reads cannot see
     the overlay; claim and terminal transitions require an execution stage on the caller thread.
-20. Work-item batches validate the complete set before mutation. A duplicate id, cross-execution
+21. Work-item batches validate the complete set before mutation. A duplicate id, cross-execution
     member, lifecycle identity drift, or attempted committed `itemId` migration rejects the batch.
-21. Work-item claim tokens, versions, retry classifications, terminal timestamps, dead-letter
+22. Work-item claim tokens, versions, retry classifications, terminal timestamps, dead-letter
     restoration, cancellation, and logical-clock behavior come from BLOGE's reference state machine,
     not a second Resource Gateway transition implementation.
-22. Lease claims accept only whole-second durations from one second through one hour. Fence-counter
+23. Lease claims accept only whole-second durations from one second through one hour. Fence-counter
     overflow fails as `INVALID_TRANSITION`; it can never wrap into a valid owner epoch or revision.
-23. A scoped durable resume command reserves its idempotency key and claims the lease in one
+24. A scoped durable resume command reserves its idempotency key and claims the lease in one
     transaction. An ambiguous retry returns the immutable original result; same-key different intent,
     cross-scope lookup, result corruption, and malformed keys fail closed.
 
@@ -233,7 +249,8 @@ cold-start resume can be enabled.
 
 `DurableTestExecutionCheckpointTest` proves complete closure sealing, replay-reference retention,
 production rejection, hashed cursor enforcement, nested fixture tamper rejection, provider-state
-tamper rejection, and plan/provider identity closure.
+tamper rejection, plan/provider identity closure, mandatory v2 target locator and purpose binding,
+and canonical v1 JSON round-trip compatibility without an invented target field.
 
 `DatabaseDurableTestExecutionCheckpointRepositoryTest` proves:
 
@@ -243,7 +260,8 @@ tamper rejection, and plan/provider identity closure.
 - two-writer CAS with exactly one committed engine mutation;
 - tenant/environment-scoped lookup;
 - idempotent duplicate create and cross-tenant global engine-id collision rejection;
-- fail-closed indexed-column/JSON drift detection;
+- fail-closed indexed-column/JSON drift detection, including target locator drift;
+- upgraded-table storage and exact readback of legacy v1 rows with nullable target projections;
 - cursor rewind rejection before engine mutation;
 - database-clock expired-lease claim with exact recovery-closure preservation and resealing;
 - active-lease, terminal-state, stale-fingerprint, cross-tenant, duration, and counter-overflow
@@ -290,11 +308,11 @@ mvn -f resource-gateway-examples/pom.xml \
   -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,StagedBlogeExecutionCheckpointStoreTest,StagedBlogeDurableStateStoreTest,IndependentDurableTestEngineFactoryTest,InvocationRecorderCheckpointTest,TestingControlProtocolSchemaTest,TestRuntimeProfileIsolationTest test
 ```
 
-The focused gate completed with 71 tests, zero failures, zero errors, and zero skips.
-The repository-wide `clean verify` gate completed with 1943 tests, zero failures, zero errors, two
+The focused gate completed with 77 tests, zero failures, zero errors, and zero skips.
+The repository-wide `clean verify` gate completed with 1949 tests, zero failures, zero errors, two
 conditional skips, real-browser regression coverage, and successful Spring Boot JAR packaging.
-Scoped `javadoc -Xdoclint:all` for the three changed public/implementation types completed with zero
-diagnostics. The optional project-wide Javadoc report still fails on 16 pre-existing HTML and
+Scoped `javadoc -Xdoclint:all` for the two changed production types completed with zero diagnostics.
+The optional project-wide Javadoc report still fails on 16 pre-existing HTML and
 parameter diagnostics in unrelated packages; that baseline is not represented as fixed here.
 
 ## Honest Remaining Gaps
@@ -306,11 +324,16 @@ parameter diagnostics in unrelated packages; that baseline is not represented as
 - The durable session, expired-lease claim, and persistent idempotency reservation are profile-gated
   internal resources. The public testing execution service has not yet selected them or exposed an
   authenticated, authorized, audited suspend/resume/owner-claim command.
+- Legacy v1 checkpoint rows remain readable but have no graph/operator locator. They must be
+  terminalized or migrated through an independently verified target mapping before any future public
+  recovery service may consider them; guessing a target from fingerprint or plan diagnostics is
+  forbidden. Current v2 rows close this locator gap but do not themselves perform authorization.
 - The fixture ledger snapshot intentionally excludes pre-checkpoint invocation and attempt evidence;
   a resumed terminal evidence bundle cannot yet reconstruct those historical trace facts.
-- Resume does not yet re-authorize the exact fixture revision, replay retention state, identity,
-  side-effect policy, or caller permissions. Missing or revoked dependencies therefore cannot yet be
-  surfaced through a public `CONTROL_PLAN_UNAVAILABLE` lifecycle.
+- Resume does not yet re-authorize the v2 target locator/fingerprint, exact fixture revision, replay
+  retention state, identity, side-effect policy, or caller permissions. Missing or revoked
+  dependencies therefore cannot yet be surfaced through a public `CONTROL_PLAN_UNAVAILABLE`
+  lifecycle.
 - The repository can durably bind a caller-stable key to one claim result, but no public adapter yet
   computes the command fingerprint from authenticated authority and normalized request fields.
   Lease heartbeat, public suspend/resume, crash-driven recovery, and signed checkpoint attestation

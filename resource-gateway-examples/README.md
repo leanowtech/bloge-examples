@@ -310,7 +310,12 @@ documented in [Stage 3 evidence trust transparency verification](../docs/resourc
 
 Stage 4 now also provides a profile-gated, content-addressed durable-test checkpoint repository in
 the isolated test-runtime database. It binds the exact plan and fixture revision, fixture-consumption
-cursors, deterministic provider state, engine-state closure, and owner/lease/revision fence. Engine
+cursors, deterministic provider state, engine-state closure, and owner/lease/revision fence. Current
+`bloge.durableTestExecutionCheckpoint.v2` additionally binds the exact graph/operator kind, stable id,
+and target fingerprint needed for recovery-time target resolution. Its database projections are
+cross-checked against the sealed JSON. Historical v1 rows remain canonically readable with nullable
+target columns but are not eligible for future public recovery until an independently verified target
+mapping is migrated; the runtime never guesses from a fingerprint. Engine
 store writes can join the same local transaction, and a losing CAS rolls them back. Staged BLOGE
 `ExecutionStore`, `ExecutionCheckpointStore`, `WaitStore`, and `WorkItemStore` implementations are
 combined under the `bloge.testDurableStateMutation.v3` aggregate fingerprint, so lifecycle/lease

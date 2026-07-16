@@ -1062,7 +1062,9 @@ class StagedBlogeDurableStateStoreTest {
                 new DurableTestExecutionCheckpoint.ControlDependencies(
                         plan, new DurableTestExecutionCheckpoint.ExactFixtureRef(
                         "fixture-a", 3, SHA_C), "DENY_REAL",
-                        new DurableTestExecutionCheckpoint.AuthoritySnapshot("FAIL_CLOSED", SHA_D)),
+                        new DurableTestExecutionCheckpoint.AuthoritySnapshot("FAIL_CLOSED", SHA_D),
+                        new DurableTestExecutionCheckpoint.ExecutionTargetRef(
+                                "GRAPH", "credit-score", SHA_B)),
                 new FixtureConsumptionStateSnapshot(
                         FixtureConsumptionStateSnapshot.SCHEMA_VERSION,
                         Map.of("rule-a", revision + 1), Map.of(SHA_A, revision + 1),

@@ -86,6 +86,9 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     revision BIGINT NOT NULL,
                     lease_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     plan_fingerprint VARCHAR(80) NOT NULL,
+                    target_kind VARCHAR(16),
+                    target_id VARCHAR(255),
+                    target_fingerprint VARCHAR(80),
                     fixture_fingerprint VARCHAR(80) NOT NULL,
                     fixture_state_fingerprint VARCHAR(80) NOT NULL,
                     provider_state_fingerprint VARCHAR(80) NOT NULL,
@@ -95,6 +98,18 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     checkpoint_json CLOB NOT NULL
                 )
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_execution_checkpoints
+                ADD COLUMN IF NOT EXISTS target_kind VARCHAR(16)
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_execution_checkpoints
+                ADD COLUMN IF NOT EXISTS target_id VARCHAR(255)
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_execution_checkpoints
+                ADD COLUMN IF NOT EXISTS target_fingerprint VARCHAR(80)
                 """);
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS rg_test_durable_execution_scope_idx
@@ -469,20 +484,24 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
     private void insert(DurableTestExecutionCheckpoint checkpoint) {
         var scope = checkpoint.scope();
         var lifecycle = checkpoint.lifecycle();
+        var target = checkpoint.dependencies().target();
         jdbc.update("""
                 INSERT INTO rg_test_durable_execution_checkpoints (
                     run_id, engine_execution_id, tenant_id, organization_id, project_id,
                     environment_id, actor_id, status, owner_id, lease_epoch, revision,
-                    lease_expires_at, plan_fingerprint, fixture_fingerprint,
+                    lease_expires_at, plan_fingerprint, target_kind, target_id,
+                    target_fingerprint, fixture_fingerprint,
                     fixture_state_fingerprint, provider_state_fingerprint,
                     engine_state_fingerprint, checkpoint_fingerprint, created_at, updated_at,
                     checkpoint_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, checkpoint.runId(), checkpoint.engineExecutionId(), scope.tenantId(),
                 scope.organizationId(), scope.projectId(), scope.environmentId(), scope.actorId(),
                 lifecycle.status().name(), lifecycle.ownerId(), lifecycle.leaseEpoch(),
                 lifecycle.revision(), Timestamp.from(lifecycle.leaseExpiresAt()),
                 checkpoint.dependencies().plan().planFingerprint(),
+                target == null ? null : target.kind(), target == null ? null : target.id(),
+                target == null ? null : target.fingerprint(),
                 checkpoint.dependencies().fixture().fingerprint(),
                 checkpoint.fixtureConsumptionState().stateFingerprint(),
                 checkpoint.executionServiceState().snapshotFingerprint(),
@@ -660,7 +679,9 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 rs.getString("actor_id"), rs.getString("status"), rs.getString("owner_id"),
                 rs.getLong("lease_epoch"), rs.getLong("revision"),
                 rs.getTimestamp("lease_expires_at").toInstant(),
-                rs.getString("plan_fingerprint"), rs.getString("fixture_fingerprint"),
+                rs.getString("plan_fingerprint"), rs.getString("target_kind"),
+                rs.getString("target_id"), rs.getString("target_fingerprint"),
+                rs.getString("fixture_fingerprint"),
                 rs.getString("fixture_state_fingerprint"),
                 rs.getString("provider_state_fingerprint"),
                 rs.getString("engine_state_fingerprint"),
@@ -673,7 +694,8 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         return """
                 SELECT run_id, engine_execution_id, tenant_id, organization_id, project_id,
                        environment_id, actor_id, status, owner_id, lease_epoch, revision,
-                       lease_expires_at, plan_fingerprint, fixture_fingerprint,
+                       lease_expires_at, plan_fingerprint, target_kind, target_id,
+                       target_fingerprint, fixture_fingerprint,
                        fixture_state_fingerprint, provider_state_fingerprint,
                        engine_state_fingerprint, checkpoint_fingerprint, created_at, updated_at,
                        checkpoint_json
@@ -716,6 +738,9 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             long revision,
             Instant leaseExpiresAt,
             String planFingerprint,
+            String targetKind,
+            String targetId,
+            String targetFingerprint,
             String fixtureFingerprint,
             String fixtureStateFingerprint,
             String providerStateFingerprint,
@@ -741,6 +766,7 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     && revision == lifecycle.revision()
                     && leaseExpiresAt.equals(lifecycle.leaseExpiresAt())
                     && planFingerprint.equals(checkpoint.dependencies().plan().planFingerprint())
+                    && targetAgreesWith(checkpoint)
                     && fixtureFingerprint.equals(checkpoint.dependencies().fixture().fingerprint())
                     && fixtureStateFingerprint.equals(
                     checkpoint.fixtureConsumptionState().stateFingerprint())
@@ -750,6 +776,16 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     && checkpointFingerprint.equals(checkpoint.checkpointFingerprint())
                     && createdAt.equals(lifecycle.createdAt())
                     && updatedAt.equals(lifecycle.updatedAt());
+        }
+
+        private boolean targetAgreesWith(DurableTestExecutionCheckpoint checkpoint) {
+            var target = checkpoint.dependencies().target();
+            if (target == null) {
+                return targetKind == null && targetId == null && targetFingerprint == null;
+            }
+            return target.kind().equals(targetKind)
+                    && target.id().equals(targetId)
+                    && target.fingerprint().equals(targetFingerprint);
         }
     }
 

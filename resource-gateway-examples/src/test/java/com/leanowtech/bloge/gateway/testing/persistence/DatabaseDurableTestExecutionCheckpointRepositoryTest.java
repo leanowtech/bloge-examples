@@ -89,6 +89,32 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     }
 
     @Test
+    void upgradedRepositoryPreservesAndReadsLegacyV1RowsWithoutInventingATarget() {
+        DurableTestExecutionCheckpoint current = checkpoint(0, "checkpoint-0");
+        DurableTestExecutionCheckpoint legacy = integrity.seal(new DurableTestExecutionCheckpoint(
+                DurableTestExecutionCheckpoint.SCHEMA_VERSION_V1,
+                current.scope(), current.runId(), current.engineExecutionId(),
+                new DurableTestExecutionCheckpoint.ControlDependencies(
+                        current.dependencies().plan(), current.dependencies().fixture(),
+                        current.dependencies().sideEffectPolicy(),
+                        current.dependencies().identitySnapshot()),
+                current.fixtureConsumptionState(), current.executionServiceState(),
+                current.engineState(), current.lifecycle(), ""));
+
+        repository.create(legacy, boundNoop(legacy));
+
+        assertThat(repository.find("tenant-a", "test", "run-a")).contains(legacy);
+        Map<String, Object> indexedTarget = database.jdbc().queryForMap("""
+                SELECT target_kind, target_id, target_fingerprint
+                FROM rg_test_durable_execution_checkpoints WHERE run_id = ?
+                """, legacy.runId());
+        assertThat(indexedTarget).containsOnly(
+                org.assertj.core.data.MapEntry.entry("TARGET_KIND", null),
+                org.assertj.core.data.MapEntry.entry("TARGET_ID", null),
+                org.assertj.core.data.MapEntry.entry("TARGET_FINGERPRINT", null));
+    }
+
+    @Test
     void equivalentCreateIsIdempotentAndGlobalEngineIdentityCannotCrossTenant() {
         DurableTestExecutionCheckpoint initial = checkpoint(0, "checkpoint-0");
         repository.create(initial, boundNoop(initial));
@@ -177,6 +203,20 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                 UPDATE rg_test_durable_execution_checkpoints
                 SET plan_fingerprint = ? WHERE run_id = ?
                 """, SHA_D, initial.runId());
+
+        assertThatThrownBy(() -> repository.find("tenant-a", "test", "run-a"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("corrupt");
+    }
+
+    @Test
+    void failsClosedWhenIndexedTargetLocatorDivergesFromTheSealedClosure() {
+        DurableTestExecutionCheckpoint initial = checkpoint(0, "checkpoint-0");
+        repository.create(initial, boundNoop(initial));
+        database.jdbc().update("""
+                UPDATE rg_test_durable_execution_checkpoints
+                SET target_id = ? WHERE run_id = ?
+                """, "other-graph", initial.runId());
 
         assertThatThrownBy(() -> repository.find("tenant-a", "test", "run-a"))
                 .isInstanceOf(IllegalStateException.class)
@@ -715,7 +755,9 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                 new DurableTestExecutionCheckpoint.ControlDependencies(
                         plan, new DurableTestExecutionCheckpoint.ExactFixtureRef(
                         "fixture-a", 3, SHA_C), "DENY_REAL",
-                        new DurableTestExecutionCheckpoint.AuthoritySnapshot("FAIL_CLOSED", SHA_D)),
+                        new DurableTestExecutionCheckpoint.AuthoritySnapshot("FAIL_CLOSED", SHA_D),
+                        new DurableTestExecutionCheckpoint.ExecutionTargetRef(
+                                "GRAPH", "credit-score", SHA_B)),
                 new FixtureConsumptionStateSnapshot(
                         FixtureConsumptionStateSnapshot.SCHEMA_VERSION,
                         Map.of("rule-a", revision + 1), Map.of(SHA_A, revision + 1),
