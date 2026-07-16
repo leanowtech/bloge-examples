@@ -79,22 +79,51 @@ public final class DurableTestRecoveryHeartbeatService {
         String normalizedRunId = runId.trim();
         DurableTestRecoveryDispatch source = dispatch(
                 normalizedRunId, request, identity);
-        requirePrincipal(source, normalizedRunId, identity);
+        DurableTestExecutionCheckpointRepository.RecoveryHeartbeatResult result =
+                renewIssuedDispatch(source, request.clientRequestId(), identity);
+        return DurableTestRecoveryHeartbeatResponse.from(result);
+    }
+
+    Duration leaseDuration() {
+        return leaseDuration;
+    }
+
+    /**
+     * Renews one already resolved issued dispatch for a server-owned worker session.
+     *
+     * <p>This package boundary deliberately reuses the public heartbeat's principal continuity,
+     * canonical intent, transaction-bound audit, conflict mapping, and immutable replay semantics.
+     * It omits only the redundant public fence lookup because the caller already resolved and
+     * verified that exact dispatch.</p>
+     */
+    DurableTestExecutionCheckpointRepository.RecoveryHeartbeatResult renewIssuedDispatch(
+            DurableTestRecoveryDispatch source,
+            String clientRequestId,
+            IntegrationRequestContext identity) {
+        requireIdentity(identity);
+        DurableTestRecoveryDispatch requiredSource = Objects.requireNonNull(source, "source");
+        String requiredKey = normalized(clientRequestId);
+        if (!IDENTIFIER.matcher(requiredKey).matches()) {
+            throw new IllegalArgumentException(
+                    "clientRequestId must be a bounded stable identifier");
+        }
+        requireDispatchScope(requiredSource, identity);
+        requirePrincipal(requiredSource, requiredSource.runId(), identity);
         String requestFingerprint = requestFingerprint(
-                normalizedRunId, request, source, identity);
+                requiredSource.runId(), requiredKey, requiredSource, identity);
         TestRuntimeTransactionMutation boundAudit = boundAllowedAudit(
-                identity, normalizedRunId, request.clientRequestId());
+                identity, requiredSource.runId(), requiredKey);
         DurableTestExecutionCheckpointRepository.RecoveryHeartbeatCommand command =
                 new DurableTestExecutionCheckpointRepository.RecoveryHeartbeatCommand(
-                        request.clientRequestId(), requestFingerprint, source, leaseDuration);
+                        requiredKey, requestFingerprint, requiredSource, leaseDuration);
         try {
             DurableTestExecutionCheckpointRepository.RecoveryHeartbeatResult result =
                     checkpoints.heartbeatRecoveryLeaseIdempotently(command, boundAudit);
-            requireResultScope(result.checkpoint(), normalizedRunId, identity);
+            requireResultScope(result.checkpoint(), requiredSource.runId(), identity);
             if (result.idempotentReplay()) {
-                appendReplayAudit(identity, normalizedRunId, request.clientRequestId());
+                appendReplayAudit(identity, requiredSource.runId(), requiredKey);
             }
-            return DurableTestRecoveryHeartbeatResponse.from(result);
+            return result;
         } catch (DurableTestExecutionCheckpointConflictException conflict) {
             throw mapConflict(conflict.reason(), identity);
         } catch (IntegrationProblemException expected) {
@@ -166,17 +195,29 @@ public final class DurableTestRecoveryHeartbeatService {
 
     private String requestFingerprint(
             String runId,
-            DurableTestRecoveryHeartbeatRequest request,
+            String clientRequestId,
             DurableTestRecoveryDispatch source,
             IntegrationRequestContext identity) {
         return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
                 Map.entry("schemaVersion", "bloge.durableRecoveryHeartbeatAuthorizedIntent.v1"),
                 Map.entry("runId", runId),
-                Map.entry("clientRequestId", request.clientRequestId()),
+                Map.entry("clientRequestId", clientRequestId),
                 Map.entry("sourceDispatchFingerprint", source.dispatchFingerprint()),
                 Map.entry("principalFingerprint",
                         DurableTestRecoveryPrincipal.fingerprint(objectMapper, identity)),
                 Map.entry("leaseDurationSeconds", leaseDuration.toSeconds())));
+    }
+
+    private static void requireDispatchScope(
+            DurableTestRecoveryDispatch source,
+            IntegrationRequestContext identity) {
+        DurableTestExecutionCheckpoint.Scope scope = source.scope();
+        if (!identity.tenantId().equals(scope.tenantId())
+                || !identity.organizationId().equals(scope.organizationId())
+                || !identity.projectId().equals(scope.projectId())
+                || !identity.environmentId().equals(scope.environmentId())) {
+            throw notFound(identity);
+        }
     }
 
     private TestRuntimeTransactionMutation boundAllowedAudit(

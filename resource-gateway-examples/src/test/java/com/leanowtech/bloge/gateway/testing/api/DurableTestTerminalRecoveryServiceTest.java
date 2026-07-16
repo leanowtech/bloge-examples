@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot
 import com.leanowtech.bloge.gateway.testing.domain.FixtureConsumptionStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestTerminalRecoveryRuntime;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -52,13 +53,20 @@ class DurableTestTerminalRecoveryServiceTest {
     private ObjectMapper mapper;
     private DurableTestTerminalRecoveryService service;
     private TestRuntimeTransactionMutation audit;
+    private DurableTestRecoveryLeaseCoordinator leases;
 
     @BeforeEach
     void setUp() {
         mapper = new ObjectMapper().findAndRegisterModules();
         audit = jdbc -> { };
+        leases = DurableTestRecoveryLeaseCoordinator.passive();
         service = new DurableTestTerminalRecoveryService(
-                checkpoints, authorizer, runtime, securityEvents, mapper);
+                checkpoints, authorizer, runtime, securityEvents, mapper, leases);
+    }
+
+    @AfterEach
+    void tearDown() {
+        leases.close();
     }
 
     @Test
@@ -152,6 +160,126 @@ class DurableTestTerminalRecoveryServiceTest {
     }
 
     @Test
+    void startsFromAFreshHeartbeatAndCommitsTheLatestSuccessorDispatch() {
+        IntegrationRequestContext identity = identity();
+        DurableTestExecutionCheckpoint current = checkpoint(
+                DurableTestExecutionCheckpoint.Status.RESUMING, 4, 8, SHA_A);
+        DurableTestRecoveryDispatch source = dispatch(identity, current);
+        DurableTestRecoveryAuthorizer.AuthorizedRecovery authorized = authorized(source);
+        DurableTestExecutionCheckpoint executionCheckpoint = checkpoint(
+                DurableTestExecutionCheckpoint.Status.RESUMING, 4, 9, SHA_C);
+        DurableTestExecutionCheckpoint latestCheckpoint = checkpoint(
+                DurableTestExecutionCheckpoint.Status.RESUMING, 4, 10, SHA_B);
+        DurableTestRecoveryDispatch latestDispatch = dispatch(identity, latestCheckpoint);
+        DurableTestExecutionCheckpointRepository.RecoveryHeartbeatResult latest =
+                new DurableTestExecutionCheckpointRepository.RecoveryHeartbeatResult(
+                        latestCheckpoint, latestDispatch, false);
+        DurableTestRecoveryLeaseCoordinator.LeaseGuard guard =
+                mock(DurableTestRecoveryLeaseCoordinator.LeaseGuard.class);
+        DurableTestTerminalRecoveryRuntime.PreparedTerminalRecovery prepared = prepared();
+        DurableTestExecutionCheckpoint terminal = checkpoint(
+                DurableTestExecutionCheckpoint.Status.TERMINAL, 4, 11, SHA_C);
+        DurableTestExecutionCheckpointRepository.RecoveryTerminalResult result =
+                new DurableTestExecutionCheckpointRepository.RecoveryTerminalResult(
+                        terminal, receipt(latestDispatch, terminal), false);
+        useLeases(mock(DurableTestRecoveryLeaseCoordinator.class));
+
+        when(checkpoints.findRecoveryTerminalResult(any(), any(), any(), any()))
+                .thenReturn(Optional.empty());
+        when(checkpoints.findRecoveryDispatch(any(), any(), any(), any(), any()))
+                .thenReturn(Optional.of(source));
+        when(checkpoints.find("tenant-a", "test", "run-a"))
+                .thenReturn(Optional.of(current));
+        when(authorizer.authorize(current, identity)).thenReturn(authorized);
+        org.mockito.Mockito.doReturn(audit).when(securityEvents).boundAppend(any());
+        when(leases.monitor(eq(source), eq(current), any(), eq(identity))).thenReturn(guard);
+        when(guard.executionCheckpoint()).thenReturn(executionCheckpoint);
+        when(runtime.prepare(eq(executionCheckpoint), eq(authorized), eq("wait"), any(), any()))
+                .thenReturn(prepared);
+        when(guard.freeze()).thenReturn(latest);
+        when(checkpoints.terminalizeRecoveryIdempotently(any(), any(), eq(audit)))
+                .thenReturn(result);
+
+        service.recover("run-a", request("terminal-auto", source), identity);
+
+        ArgumentCaptor<DurableTestExecutionCheckpointRepository.RecoveryTerminalCommand> command =
+                ArgumentCaptor.forClass(
+                        DurableTestExecutionCheckpointRepository.RecoveryTerminalCommand.class);
+        verify(runtime).prepare(
+                eq(executionCheckpoint), eq(authorized), eq("wait"), any(), any());
+        verify(checkpoints).terminalizeRecoveryIdempotently(
+                command.capture(), any(), eq(audit));
+        assertThat(command.getValue().expectedDispatch()).isSameAs(latestDispatch);
+        verify(guard).freeze();
+        verify(prepared).close();
+    }
+
+    @Test
+    void leaseLossPreventsRuntimeAndTerminalMutation() {
+        IntegrationRequestContext identity = identity();
+        DurableTestExecutionCheckpoint current = checkpoint(
+                DurableTestExecutionCheckpoint.Status.RESUMING, 4, 8, SHA_A);
+        DurableTestRecoveryDispatch source = dispatch(identity, current);
+        useLeases(mock(DurableTestRecoveryLeaseCoordinator.class));
+        when(checkpoints.findRecoveryTerminalResult(any(), any(), any(), any()))
+                .thenReturn(Optional.empty());
+        when(checkpoints.findRecoveryDispatch(any(), any(), any(), any(), any()))
+                .thenReturn(Optional.of(source));
+        when(checkpoints.find("tenant-a", "test", "run-a"))
+                .thenReturn(Optional.of(current));
+        when(authorizer.authorize(current, identity)).thenReturn(authorized(source));
+        org.mockito.Mockito.doReturn(audit).when(securityEvents).boundAppend(any());
+        when(leases.monitor(eq(source), eq(current), any(), eq(identity))).thenThrow(
+                new DurableTestRecoveryLeaseCoordinator.LeaseLostException(
+                        "lost", new IllegalStateException("stale")));
+
+        assertProblem(() -> service.recover(
+                        "run-a", request("terminal-lost", source), identity()),
+                409, "RG.TEST.DURABLE_RECOVERY_LEASE_LOST");
+
+        verifyNoInteractions(runtime);
+        verify(checkpoints, never()).terminalizeRecoveryIdempotently(any(), any(), any());
+    }
+
+    @Test
+    void leaseLossAfterRuntimePreparationClosesTheStageWithoutTerminalMutation() {
+        IntegrationRequestContext identity = identity();
+        DurableTestExecutionCheckpoint current = checkpoint(
+                DurableTestExecutionCheckpoint.Status.RESUMING, 4, 8, SHA_A);
+        DurableTestRecoveryDispatch source = dispatch(identity, current);
+        DurableTestRecoveryAuthorizer.AuthorizedRecovery authorized = authorized(source);
+        DurableTestRecoveryLeaseCoordinator.LeaseGuard guard =
+                mock(DurableTestRecoveryLeaseCoordinator.LeaseGuard.class);
+        DurableTestTerminalRecoveryRuntime.PreparedTerminalRecovery prepared =
+                mock(DurableTestTerminalRecoveryRuntime.PreparedTerminalRecovery.class);
+        useLeases(mock(DurableTestRecoveryLeaseCoordinator.class));
+
+        when(checkpoints.findRecoveryTerminalResult(any(), any(), any(), any()))
+                .thenReturn(Optional.empty());
+        when(checkpoints.findRecoveryDispatch(any(), any(), any(), any(), any()))
+                .thenReturn(Optional.of(source));
+        when(checkpoints.find("tenant-a", "test", "run-a"))
+                .thenReturn(Optional.of(current));
+        when(authorizer.authorize(current, identity)).thenReturn(authorized);
+        org.mockito.Mockito.doReturn(audit).when(securityEvents).boundAppend(any());
+        when(leases.monitor(eq(source), eq(current), any(), eq(identity))).thenReturn(guard);
+        when(guard.executionCheckpoint()).thenReturn(current);
+        when(runtime.prepare(eq(current), eq(authorized), eq("wait"), any(), any()))
+                .thenReturn(prepared);
+        when(guard.freeze()).thenThrow(
+                new DurableTestRecoveryLeaseCoordinator.LeaseLostException(
+                        "lost", new IllegalStateException("heartbeat unavailable")));
+
+        assertProblem(() -> service.recover(
+                        "run-a", request("terminal-lost-after-prepare", source), identity),
+                409, "RG.TEST.DURABLE_RECOVERY_LEASE_LOST");
+
+        verify(guard).freeze();
+        verify(prepared).close();
+        verify(checkpoints, never()).terminalizeRecoveryIdempotently(any(), any(), any());
+    }
+
+    @Test
     void rejectsPrincipalOrReauthorizationDriftBeforeEngineExecution() {
         DurableTestExecutionCheckpoint current = checkpoint(
                 DurableTestExecutionCheckpoint.Status.RESUMING, 4, 8, SHA_A);
@@ -242,6 +370,13 @@ class DurableTestTerminalRecoveryServiceTest {
                         "wait", mapper.valueToTree("approved")));
     }
 
+    private void useLeases(DurableTestRecoveryLeaseCoordinator replacement) {
+        leases.close();
+        leases = replacement;
+        service = new DurableTestTerminalRecoveryService(
+                checkpoints, authorizer, runtime, securityEvents, mapper, leases);
+    }
+
     private DurableTestRecoveryDispatch dispatch(
             IntegrationRequestContext identity, DurableTestExecutionCheckpoint checkpoint) {
         DurableTestExecutionCheckpoint.Scope scope = checkpoint.scope();
@@ -251,15 +386,19 @@ class DurableTestTerminalRecoveryServiceTest {
                 DurableTestRecoveryPrincipal.fingerprint(mapper, identity));
         org.mockito.Mockito.lenient().when(authorization.planFingerprint()).thenReturn(SHA_A);
         DurableTestRecoveryDispatch dispatch = mock(DurableTestRecoveryDispatch.class);
+        DurableTestExecutionCheckpoint.Lifecycle lifecycle = checkpoint.lifecycle();
+        String checkpointFingerprint = checkpoint.checkpointFingerprint();
         org.mockito.Mockito.lenient().when(dispatch.scope()).thenReturn(scope);
         org.mockito.Mockito.lenient().when(dispatch.runId()).thenReturn("run-a");
         org.mockito.Mockito.lenient().when(dispatch.engineExecutionId()).thenReturn("engine-a");
         org.mockito.Mockito.lenient().when(dispatch.ownerId()).thenReturn("recovery-a");
-        org.mockito.Mockito.lenient().when(dispatch.leaseEpoch()).thenReturn(4L);
-        org.mockito.Mockito.lenient().when(dispatch.revision()).thenReturn(8L);
+        org.mockito.Mockito.lenient().when(dispatch.leaseEpoch()).thenReturn(
+                lifecycle.leaseEpoch());
+        org.mockito.Mockito.lenient().when(dispatch.revision()).thenReturn(lifecycle.revision());
         org.mockito.Mockito.lenient().when(dispatch.leaseExpiresAt()).thenReturn(
-                Instant.parse("2026-07-17T01:00:00Z"));
-        org.mockito.Mockito.lenient().when(dispatch.checkpointFingerprint()).thenReturn(SHA_A);
+                lifecycle.leaseExpiresAt());
+        org.mockito.Mockito.lenient().when(dispatch.checkpointFingerprint()).thenReturn(
+                checkpointFingerprint);
         org.mockito.Mockito.lenient().when(dispatch.dispatchFingerprint()).thenReturn(SHA_B);
         org.mockito.Mockito.lenient().when(dispatch.authorization()).thenReturn(authorization);
         org.mockito.Mockito.lenient().when(dispatch.agreesWith(checkpoint)).thenReturn(true);

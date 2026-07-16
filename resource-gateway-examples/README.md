@@ -251,7 +251,10 @@ send a dispatch, authorization receipt, owner choice, or lease duration. It requ
 authenticated tenant, organization, project, environment, region, actor, delegation, purpose,
 clearance, and groups that obtained the claim. Correlation id may change across a lost-response
 retry. Configure the server-owned renewal with `RG_TEST_DURABLE_HEARTBEAT_LEASE_SECONDS` (default
-`120`, valid range `1..3600`).
+`120`, valid range `3..3600` while synchronous terminal recovery is enabled). The terminal-recovery
+worker derives a one-third heartbeat interval by default. Override it with
+`RG_TEST_DURABLE_RECOVERY_HEARTBEAT_INTERVAL_SECONDS`; it must be at least one second and no greater
+than one third of the lease.
 
 A successful `bloge.durableTestRecoveryHeartbeatResponse.v1` returns the successor revision,
 database-authority expiry, checkpoint fingerprint, and `idempotentReplay`; use that successor fence
@@ -289,8 +292,13 @@ curl -sS -X POST \
 The signal is canonicalized under a `256 KiB` limit and exists only in the isolated in-memory
 invocation. It is not copied into audit, response, checkpoint, or terminal receipt. Before execution,
 the service re-resolves the hidden issued dispatch, requires the original authenticated principal,
-loads its exact live `RESUMING` checkpoint, and reproduces the complete authorization receipt. It
-then restores the same fixture cursor and deterministic provider state and signals one cold recovery.
+loads its exact live `RESUMING` checkpoint, and reproduces the complete authorization receipt. The
+process-local recovery coordinator synchronously rotates that dispatch before BLOGE starts, keeps
+rotating exact successors while the staged recovery runs, then freezes renewal and supplies the
+latest successor to the terminal CAS. Any heartbeat conflict, store failure, or coordinator shutdown
+closes the stage without committing and returns payload-free
+`RG.TEST.DURABLE_RECOVERY_LEASE_LOST`. The runtime restores the same fixture cursor and deterministic
+provider state and signals one cold recovery.
 
 Success requires BLOGE to reach `COMPLETED`, `FAILED`, `FAILED_RECOVERY`, `CANCELLED`, or
 `TERMINATED`. The staged BLOGE mutation, terminal checkpoint, payload-free receipt, idempotency
@@ -562,8 +570,8 @@ and payload-free receipt in one transaction; retries never reapply the engine mu
 state still lacks complete pre-checkpoint node/edge/attempt trace, receipt v1 is always
 `EVIDENCE_INCOMPLETE`, requires explicit gap codes, and blocks promotion. BLOGE streaming
 offset/checkpoint state, complete historical evidence, operator-target durable creation, authenticated
-worker poll/dispatch and multi-boundary orchestration, dispatcher consumption, automatic recovery
-heartbeat scheduling, and a killable worker deadline are not wired yet. These internal primitives are
+worker poll/dispatch and multi-boundary orchestration, dispatcher consumption, cross-process worker
+supervision, and a killable worker deadline are not wired yet. These internal primitives are
 not a product claim that durable test
 resume is complete. See
 [Stage 4 durable checkpoint verification](../docs/resource-gateway-execution-data-control-plane-stage4-durable-checkpoint-verification.md).

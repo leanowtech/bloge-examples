@@ -762,8 +762,11 @@ response with the original key and intent to receive the exact committed success
 `idempotentReplay=true`. Stale/expired/unissued fences and same-key intent drift return stable,
 payload-free failures; cross-scope lookup is hidden as not found; store or audit outage returns
 unavailable. `RG_TEST_DURABLE_HEARTBEAT_LEASE_SECONDS` owns the renewal duration (default `120`, whole
-seconds in `1..3600`). This protocol keeps an already claimed fence alive. It does not discover work,
-execute or cancel BLOGE, publish terminal evidence, or make cold-start durable resume complete.
+seconds in `3..3600` for the assembled synchronous terminal worker). The process-local worker derives
+an interval of one third of that lease; `RG_TEST_DURABLE_RECOVERY_HEARTBEAT_INTERVAL_SECONDS` may
+override it with a whole-second value from `1` through one third of the lease. This protocol keeps an
+already claimed fence alive. It does not discover work, execute or cancel BLOGE, publish terminal
+evidence, or make cold-start durable resume complete.
 
 ### 4.2f Execute one terminal cold recovery
 
@@ -802,7 +805,14 @@ authorization receipt must equal the receipt inside the dispatch.
 The isolated recovery session restores cumulative fixture cursors and provider state, applies the
 signal synchronously, and accepts only a BLOGE terminal lifecycle. A second suspension returns
 `RG.TEST.DURABLE_RECOVERY_NOT_TERMINAL` and closes the stage without changing committed state. For a
-terminal boundary, the exact staged BLOGE mutation, final fixture/provider closure, terminal control
+first attempt, a process-local lease guard synchronously renews the issued dispatch before opening
+the runtime, then periodically rotates exact successors while BLOGE executes. It validates every
+successor against the immutable authorization, target, fixture, provider, engine, owner, and epoch
+closure. Before terminal commit it stops and joins renewal, then gives the newest successor dispatch
+to the repository CAS. A conflict, store failure, malformed successor, or coordinator shutdown at
+either boundary closes the staged runtime and returns retryable, payload-free
+`RG.TEST.DURABLE_RECOVERY_LEASE_LOST`; no terminal mutation is attempted. For a terminal boundary,
+the exact staged BLOGE mutation, final fixture/provider closure, terminal control
 checkpoint, immutable idempotency result, transaction-bound semantic audit, and
 `bloge.durableTestRecoveryTerminalReceipt.v1` commit atomically under database-time lease fencing.
 
@@ -829,9 +839,9 @@ checkpoint, immutable idempotency result, transaction-bound semantic audit, and
 
 Retry an ambiguous result with the same key, fence, node, signal, and principal. The original terminal
 checkpoint and receipt return with `idempotentReplay=true`; the engine mutation is not executed again.
-This endpoint is deliberately terminal-only and synchronous. It does not poll a queue, automatically
-renew a lease, accept multiple signals, enforce a hard process deadline, assemble complete signed
-historical evidence, or turn Resource Gateway into a general durable worker runtime.
+This endpoint is deliberately terminal-only and synchronous. It does not poll a queue, supervise a
+separate worker process, accept multiple signals, enforce a hard process deadline, assemble complete
+signed historical evidence, or turn Resource Gateway into a general durable worker runtime.
 
 ### 4.2.2 Register an immutable test suite
 
@@ -1756,7 +1766,7 @@ Still intentionally outside this increment:
   decision itself remains outside Resource Gateway;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
   reconciliation alert SLOs, and suite-history list/trend APIs;
-- operator-target durable creation, dispatcher/polling, automatic recovery heartbeats and
+- operator-target durable creation, dispatcher/polling, cross-process recovery supervision and
   multi-boundary recovery orchestration, hard worker cancellation, typed identity/flag/secret
   authorities, explicit
   streaming offset/checkpoint recovery, and deterministic concurrent scheduling;

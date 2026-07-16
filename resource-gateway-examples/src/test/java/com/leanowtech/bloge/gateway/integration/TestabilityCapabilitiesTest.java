@@ -68,6 +68,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("durableTestOwnerClaim", true)
                 .containsEntry("durableRecoveryDependencyReauthorization", true)
                 .containsEntry("authenticatedDurableRecoveryHeartbeat", true)
+                .containsEntry("automaticDurableRecoveryHeartbeat", true)
                 .containsEntry("authenticatedDurableTerminalRecovery", true)
                 .containsEntry("signedTestRunEvidence", false)
                 .containsEntry("suiteSignedChildEvidenceGate", false)

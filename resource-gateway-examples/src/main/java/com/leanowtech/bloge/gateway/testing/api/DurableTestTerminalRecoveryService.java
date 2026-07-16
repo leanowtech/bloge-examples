@@ -43,6 +43,7 @@ public final class DurableTestTerminalRecoveryService {
     private final DurableTestTerminalRecoveryRuntime runtime;
     private final TestSecurityEventRepository securityEvents;
     private final ObjectMapper objectMapper;
+    private final DurableTestRecoveryLeaseCoordinator leases;
 
     /**
      * Creates a fail-closed terminal recovery boundary.
@@ -52,18 +53,21 @@ public final class DurableTestTerminalRecoveryService {
      * @param runtime isolated staged BLOGE recovery runtime
      * @param securityEvents transaction-capable semantic security-event sink
      * @param objectMapper canonical protocol and signal mapper
+     * @param leases automatic authenticated recovery-dispatch heartbeat coordinator
      */
     public DurableTestTerminalRecoveryService(
             DurableTestExecutionCheckpointRepository checkpoints,
             DurableTestRecoveryAuthorizer authorizer,
             DurableTestTerminalRecoveryRuntime runtime,
             TestSecurityEventRepository securityEvents,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            DurableTestRecoveryLeaseCoordinator leases) {
         this.checkpoints = Objects.requireNonNull(checkpoints, "checkpoints");
         this.authorizer = Objects.requireNonNull(authorizer, "authorizer");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.securityEvents = Objects.requireNonNull(securityEvents, "securityEvents");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.leases = Objects.requireNonNull(leases, "leases");
     }
 
     /**
@@ -108,24 +112,32 @@ public final class DurableTestTerminalRecoveryService {
 
         Object signal = signalValue(request.signal().data(), identity);
         String checkpointRef = "terminal:" + requestFingerprint.substring("sha256:".length());
-        try (DurableTestTerminalRecoveryRuntime.PreparedTerminalRecovery prepared =
-                     runtime.prepare(current, authorized, request.signal().nodeId(), signal,
-                             checkpointRef)) {
-            DurableTestExecutionCheckpointRepository.RecoveryTerminalCommand command =
-                    new DurableTestExecutionCheckpointRepository.RecoveryTerminalCommand(
-                            request.clientRequestId(), requestFingerprint, dispatch,
-                            prepared.executionOutcome(),
-                            prepared.engineStateMutation().engineState(),
-                            prepared.fixtureConsumptionState(),
-                            prepared.executionServiceState(), EVIDENCE_GAPS);
-            return commit(command, prepared, normalizedRunId, request.clientRequestId(),
-                    requestFingerprint, boundAudit, identity);
+        try (DurableTestRecoveryLeaseCoordinator.LeaseGuard guard = leases.monitor(
+                dispatch, current, requestFingerprint, identity)) {
+            try (DurableTestTerminalRecoveryRuntime.PreparedTerminalRecovery prepared =
+                         runtime.prepare(guard.executionCheckpoint(), authorized,
+                                 request.signal().nodeId(), signal, checkpointRef)) {
+                DurableTestExecutionCheckpointRepository.RecoveryHeartbeatResult latest =
+                        guard.freeze();
+                DurableTestExecutionCheckpointRepository.RecoveryTerminalCommand command =
+                        new DurableTestExecutionCheckpointRepository.RecoveryTerminalCommand(
+                                request.clientRequestId(), requestFingerprint,
+                                latest.dispatch(), prepared.executionOutcome(),
+                                prepared.engineStateMutation().engineState(),
+                                prepared.fixtureConsumptionState(),
+                                prepared.executionServiceState(), EVIDENCE_GAPS);
+                return commit(command, prepared, normalizedRunId, request.clientRequestId(),
+                        requestFingerprint, boundAudit, identity);
+            }
         } catch (DurableTestTerminalRecoveryRuntime.NonTerminalBoundaryException nonTerminal) {
             rejected(identity, normalizedRunId,
                     "RG.TEST.DURABLE_RECOVERY_NOT_TERMINAL");
             throw conflict(identity, "RG.TEST.DURABLE_RECOVERY_NOT_TERMINAL",
                     "The recovery signal reached another suspension instead of a terminal state.",
                     false);
+        } catch (DurableTestRecoveryLeaseCoordinator.LeaseLostException lost) {
+            throw conflict(identity, "RG.TEST.DURABLE_RECOVERY_LEASE_LOST",
+                    "Durable recovery ownership became uncertain during execution.", true);
         } catch (IntegrationProblemException expected) {
             throw expected;
         } catch (RuntimeException executionFailure) {

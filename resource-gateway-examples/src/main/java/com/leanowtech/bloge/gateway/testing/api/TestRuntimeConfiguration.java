@@ -177,6 +177,19 @@ public class TestRuntimeConfiguration {
                 Duration.ofSeconds(leaseDurationSeconds));
     }
 
+    /** Maintains a fresh issued dispatch while synchronous terminal recovery executes. */
+    @Bean(destroyMethod = "close")
+    DurableTestRecoveryLeaseCoordinator durableTestRecoveryLeaseCoordinator(
+            DurableTestRecoveryHeartbeatService heartbeats,
+            @Value("${gateway.testing.durable.recovery-worker.heartbeat-interval-seconds:0}")
+            long heartbeatIntervalSeconds) {
+        long leaseSeconds = heartbeats.leaseDuration().toSeconds();
+        long heartbeatSeconds = heartbeatIntervalSeconds == 0
+                ? Math.max(1, leaseSeconds / 3) : heartbeatIntervalSeconds;
+        return new DurableTestRecoveryLeaseCoordinator(
+                heartbeats, Duration.ofSeconds(heartbeatSeconds));
+    }
+
     /** Builds the shared compiled operator and resource-fixture execution adapter. */
     @Bean
     CompiledTestRuntimeOptions compiledTestRuntimeOptions(
@@ -246,9 +259,10 @@ public class TestRuntimeConfiguration {
             DurableTestRecoveryAuthorizer authorizer,
             DurableTestTerminalRecoveryRuntime runtime,
             TestSecurityEventRepository securityEvents,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            DurableTestRecoveryLeaseCoordinator leases) {
         return new DurableTestTerminalRecoveryService(
-                checkpoints, authorizer, runtime, securityEvents, objectMapper);
+                checkpoints, authorizer, runtime, securityEvents, objectMapper, leases);
     }
 
     /** Reuses the configured local or managed signer for independently verifiable test evidence. */

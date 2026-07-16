@@ -111,6 +111,32 @@ class DurableTestRecoveryHeartbeatServiceTest {
     }
 
     @Test
+    void renewsAnAlreadyResolvedDispatchWithoutASecondHistoricalLookup() {
+        IntegrationRequestContext identity = identity();
+        DurableTestRecoveryDispatch source = dispatch(
+                identity, "org-a", "project-a", 4, 8, SHA_A);
+        DurableTestExecutionCheckpoint renewed = checkpoint(
+                "org-a", "project-a", 4, 9, SHA_B);
+        DurableTestExecutionCheckpointRepository.RecoveryHeartbeatResult result =
+                result(renewed, false);
+        when(securityEvents.boundAppend(any())).thenReturn(auditMutation);
+        when(checkpoints.heartbeatRecoveryLeaseIdempotently(any(), eq(auditMutation)))
+                .thenReturn(result);
+
+        assertThat(service.renewIssuedDispatch(
+                source, "auto-recovery-key-8", identity())).isSameAs(result);
+
+        verify(checkpoints, never()).findRecoveryDispatch(any(), any(), any(), any(), any());
+        ArgumentCaptor<DurableTestExecutionCheckpointRepository.RecoveryHeartbeatCommand> command =
+                ArgumentCaptor.forClass(
+                        DurableTestExecutionCheckpointRepository.RecoveryHeartbeatCommand.class);
+        verify(checkpoints).heartbeatRecoveryLeaseIdempotently(
+                command.capture(), eq(auditMutation));
+        assertThat(command.getValue().clientRequestId()).isEqualTo("auto-recovery-key-8");
+        assertThat(command.getValue().expectedDispatch()).isSameAs(source);
+    }
+
+    @Test
     void responseLossReplayReturnsTheOriginalFenceAndAddsAReplayAudit() {
         IntegrationRequestContext identity = identity();
         DurableTestRecoveryDispatch source = dispatch(identity, "org-a", "project-a", 4, 8, SHA_A);

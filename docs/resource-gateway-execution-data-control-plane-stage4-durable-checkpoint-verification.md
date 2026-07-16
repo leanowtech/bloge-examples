@@ -20,7 +20,10 @@ predecessor fence, preserves the original authorization principal, compares it w
 `RESUMING` fence, and atomically rotates the lease and successor dispatch. A public terminal-only
 adapter now resolves one still-live issued dispatch, reproduces its complete executable authorization,
 applies one bounded signal through the internal `RecoverySession`, and accepts only a BLOGE terminal
-boundary. It atomically commits the server-derived BLOGE mutation, terminal checkpoint, immutable
+boundary. A process-local guard synchronously renews the issued dispatch before runtime access,
+periodically rotates exact successors while the staged recovery runs, and freezes the newest
+successor before terminal CAS. Lease uncertainty closes the stage without mutation. The adapter
+atomically commits the server-derived BLOGE mutation, terminal checkpoint, immutable
 command result, semantic audit, and a promotion-blocking evidence-gap receipt. The endpoint is one
 synchronous orchestration step, not a dispatcher or general multi-boundary worker lifecycle.
 Streaming recovery has
@@ -683,10 +686,10 @@ Reproduce the focused gate with:
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,StagedBlogeExecutionCheckpointStoreTest,StagedBlogeDurableStateStoreTest,IndependentDurableTestEngineFactoryTest,IndependentDurableTestRecoverySessionTest,InvocationRecorderCheckpointTest,DurableTestRecoveryAuthorityTest,DurableTestRecoveryAuthorizerTest,DurableTestExecutionQueryServiceTest,DurableTestExecutionQueryControllerTest,DurableTestOwnerClaimServiceTest,DurableTestOwnerClaimControllerTest,DurableTestRecoveryPrincipalTest,DurableTestRecoveryHeartbeatServiceTest,DurableTestRecoveryHeartbeatControllerTest,DurableTestTerminalRecoveryRuntimeTest,DurableTestTerminalRecoveryServiceTest,DurableTestTerminalRecoveryControllerTest,TestingControlProtocolSchemaTest,TestabilityCapabilitiesTest,TestRuntimeProfileIsolationTest test
+  -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,StagedBlogeExecutionCheckpointStoreTest,StagedBlogeDurableStateStoreTest,IndependentDurableTestEngineFactoryTest,IndependentDurableTestRecoverySessionTest,InvocationRecorderCheckpointTest,DurableTestRecoveryAuthorityTest,DurableTestRecoveryAuthorizerTest,DurableTestExecutionQueryServiceTest,DurableTestExecutionQueryControllerTest,DurableTestOwnerClaimServiceTest,DurableTestOwnerClaimControllerTest,DurableTestRecoveryPrincipalTest,DurableTestRecoveryHeartbeatServiceTest,DurableTestRecoveryHeartbeatControllerTest,DurableTestRecoveryLeaseCoordinatorTest,DurableTestTerminalRecoveryRuntimeTest,DurableTestTerminalRecoveryServiceTest,DurableTestTerminalRecoveryControllerTest,TestingControlProtocolSchemaTest,TestabilityCapabilitiesTest,TestRuntimeProfileIsolationTest test
 ```
 
-The combined focused gate completed with 152 tests, zero failures, zero errors, and zero skips. The
+The combined focused gate completed with 175 tests, zero failures, zero errors, and zero skips. The
 recovery-session slice contributes six database-level tests; authorization-bound dispatch adds two
 database-level claim/replay, exact-lookup, and tamper cases plus two regional-authority cases. The
 public query slice adds six service cases, including a real-database projection-tamper case, and two
@@ -701,15 +704,21 @@ continuity, lease-policy validation, replay, atomic audit, and stable payload-fr
 The terminal-commit slice adds eight database cases for atomic commit/replay, companion rollback,
 intent drift, mandatory gaps, receipt tampering, stale/expired/unissued dispatches, and two-replica
 convergence.
-The public terminal slice adds two staged-runtime lifecycle cases, five application-service cases,
+The public terminal slice adds two staged-runtime lifecycle cases, eight application-service cases,
 and two controller cases covering server-derived state, reauthorization continuity, pre-execution
-replay, audit outage, non-terminal rollback, signal bounds, strict parsing, and payload-free output.
+replay, audit outage, non-terminal rollback, signal bounds, automatic renewal, latest-successor
+commit, lease-loss cleanup, strict parsing, and payload-free output. Five coordinator cases prove
+synchronous first renewal, periodic successor rotation, immutable closure validation, failure
+propagation, shutdown invalidation, and interval-policy rejection; the heartbeat service also proves
+issued-dispatch renewal without a second historical lookup.
 The public creation slice adds initial-boundary runtime cases, direct database reservation/atomicity
 cases, exact dependency-authorization cases, service idempotency/rejection cases, authenticated
 controller cases, and schema/capability checks. Its composed focused gate contains 71 tests.
 The creation-heartbeat increment's repository, coordinator, service, and capability gate contains 65
-tests, with zero failures, errors, or skips. The repository-wide `clean verify` gate completed with
-2052 tests, zero failures, zero errors, 34
+tests, with zero failures, errors, or skips. The automatic terminal-recovery heartbeat increment's
+coordinator, heartbeat-service, terminal-service, capability, and Spring wiring gates contain 33
+tests with zero failures, errors, or skips. The repository-wide `clean verify` gate completed with
+2061 tests, zero failures, zero errors, 2
 conditional skips, real-browser regression coverage, and successful Spring Boot JAR packaging.
 Scoped public `javadoc -Xdoclint:all -Werror` for the creation/recovery production types is also a required
 pre-commit gate.
@@ -723,8 +732,9 @@ parameter diagnostics in unrelated packages; that baseline is not represented as
   recovery session can advance one real cold signal, while public owner claim, authenticated
   heartbeat, and terminal recovery can establish, renew, and terminally consume the control fence.
   Public graph-run creation now reaches exactly one initial signal suspension, and public query
-  exposes integrity-verified operational facts. Operator-target creation, worker polling/dispatch,
-  multi-suspension coordination, automatic recovery heartbeat scheduling, and hard worker
+  exposes integrity-verified operational facts. Synchronous terminal recovery now keeps its exact
+  dispatch alive and commits only the newest successor. Operator-target creation, worker
+  polling/dispatch, cross-process recovery supervision, multi-suspension coordination, and hard worker
   cancellation do not exist, so this must not be mistaken for a complete remote-worker product
   lifecycle.
 - The durable and recovery sessions remain internal resources. Public terminal recovery consumes one
@@ -747,7 +757,7 @@ parameter diagnostics in unrelated packages; that baseline is not represented as
   each exact heartbeat successor, and one terminal signal. Heartbeat storage rejects
   unissued/stale/expired dispatches and rotates a successor atomically; terminal execution rechecks
   authorization and prevents duplicate engine mutation or partial local commit. Worker discovery,
-  polling/dispatch, recovery heartbeat scheduling, general suspend/resume, crash reconciliation, multi-boundary
+  polling/dispatch, cross-process worker supervision, general suspend/resume, crash reconciliation, multi-boundary
   orchestration, complete signed evidence assembly,
   signed checkpoint attestation, and an enforceable
   process-level deadline remain orchestration work rather than properties inferred from storage CAS

@@ -366,6 +366,7 @@ public record IntegrationCapabilities(
         features.put("durableTestOwnerClaim", testExecutionEndpointEnabled);
         features.put("durableRecoveryDependencyReauthorization", testExecutionEndpointEnabled);
         features.put("authenticatedDurableRecoveryHeartbeat", testExecutionEndpointEnabled);
+        features.put("automaticDurableRecoveryHeartbeat", testExecutionEndpointEnabled);
         features.put("authenticatedDurableTerminalRecovery", testExecutionEndpointEnabled);
         features.put("signedTestRunEvidence", testExecutionEndpointEnabled && signer.available());
         features.put("suiteSignedChildEvidenceGate", testExecutionEndpointEnabled && signer.available());

@@ -10,6 +10,8 @@ gateway:
         lease-duration-seconds: ${RG_TEST_DURABLE_OWNER_LEASE_SECONDS:120}
       heartbeats:
         lease-duration-seconds: ${RG_TEST_DURABLE_HEARTBEAT_LEASE_SECONDS:120}
+      recovery-worker:
+        heartbeat-interval-seconds: ${RG_TEST_DURABLE_RECOVERY_HEARTBEAT_INTERVAL_SECONDS:0}
     suite-runs:
       instance-id: ${RG_TEST_SUITE_RUNNER_INSTANCE_ID:}
       lease-duration-seconds: ${RG_TEST_SUITE_LEASE_SECONDS:30}
