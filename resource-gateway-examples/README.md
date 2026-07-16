@@ -611,9 +611,24 @@ three hours for retention, one hour for the oldest unresolved finding, and zero 
 overdue rows. Configure these under `gateway.testing.durable.projection-slo.*` or the corresponding
 `RG_TEST_PROJECTION_SLO_*` variables. `/actuator/health` is the only default Actuator web exposure;
 metric export remains a deployment-owned registry/exporter decision, and health details stay hidden
-unless management security explicitly permits them. Execution/suite/capacity SLOs, non-H2 dialect
-certification, tamper-evident external audit/archive anchoring, and production load certification
-remain future work.
+unless management security explicitly permits them.
+
+The same isolated profile now installs a second, global `testRuntimeSloMonitor`. In one read-only,
+repeatable-read transaction it uses the database clock to observe recent child/suite evidence
+completeness, running suite ownership, pending durable creation, resumable durable execution,
+dispatchable/expired-claim work, and expired or terminal storage backlog. Business assertion,
+negative-case, and product-under-test failures remain outcome metrics and never make the runtime
+unhealthy. Only incomplete evidence, excessive/old queues, expired ownership, retention backlog, or
+store unavailability produce stable SLO violations. Fixed-vocabulary meters live under
+`resource.gateway.test.runtime.*`; tags are limited to closed `status`, `queue`, `scope`, and `kind`
+values. Configure thresholds through `gateway.testing.runtime-slo.*` / `RG_TEST_RUNTIME_SLO_*`; the
+full table is in the testing control-plane guide. Lifecycle/time indexes support these aggregate
+reads, and the outcome lookback is hard-capped at 365 days.
+
+This closes the aggregate execution/suite/capacity observation gap, not capacity enforcement.
+Tenant/suite/operator/dependency quotas, admission control, backpressure, cancellation, wall-clock
+worker deadlines, external alert routing, non-H2 dialect certification, tamper-evident external
+anchoring, and production-load certification remain future work.
 
 Wait identity must match the lifecycle identity, and committed wait/work-item ids cannot migrate to
 another execution. Work-item batches validate atomically, and claim, retry, terminal, and dead-letter

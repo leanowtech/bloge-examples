@@ -85,6 +85,28 @@ Independent-store settings:
 | `gateway.testing.durable.projection-slo.max-unresolved-age-seconds` | `RG_TEST_PROJECTION_SLO_MAX_UNRESOLVED_AGE_SECONDS` | `3600` |
 | `gateway.testing.durable.projection-slo.max-overdue-resolved-findings` | `RG_TEST_PROJECTION_SLO_MAX_OVERDUE_RESOLVED_FINDINGS` | `0` |
 | `gateway.testing.durable.projection-slo.max-overdue-archive-records` | `RG_TEST_PROJECTION_SLO_MAX_OVERDUE_ARCHIVE_RECORDS` | `0` |
+| `gateway.testing.runtime-slo.observation-interval-ms` | `RG_TEST_RUNTIME_SLO_OBSERVATION_INTERVAL_MS` | `30000` |
+| `gateway.testing.runtime-slo.outcome-lookback-seconds` | `RG_TEST_RUNTIME_SLO_OUTCOME_LOOKBACK_SECONDS` | `900` |
+| `gateway.testing.runtime-slo.execution-minimum-samples` | `RG_TEST_RUNTIME_SLO_EXECUTION_MINIMUM_SAMPLES` | `20` |
+| `gateway.testing.runtime-slo.execution-max-incomplete-basis-points` | `RG_TEST_RUNTIME_SLO_EXECUTION_MAX_INCOMPLETE_BASIS_POINTS` | `0` |
+| `gateway.testing.runtime-slo.suite-minimum-samples` | `RG_TEST_RUNTIME_SLO_SUITE_MINIMUM_SAMPLES` | `5` |
+| `gateway.testing.runtime-slo.suite-max-incomplete-basis-points` | `RG_TEST_RUNTIME_SLO_SUITE_MAX_INCOMPLETE_BASIS_POINTS` | `0` |
+| `gateway.testing.runtime-slo.suite-max-depth` | `RG_TEST_RUNTIME_SLO_SUITE_MAX_DEPTH` | `100` |
+| `gateway.testing.runtime-slo.suite-max-expired-leases` | `RG_TEST_RUNTIME_SLO_SUITE_MAX_EXPIRED_LEASES` | `0` |
+| `gateway.testing.runtime-slo.suite-max-oldest-age-seconds` | `RG_TEST_RUNTIME_SLO_SUITE_MAX_OLDEST_AGE_SECONDS` | `120` |
+| `gateway.testing.runtime-slo.creation-max-depth` | `RG_TEST_RUNTIME_SLO_CREATION_MAX_DEPTH` | `100` |
+| `gateway.testing.runtime-slo.creation-max-expired-leases` | `RG_TEST_RUNTIME_SLO_CREATION_MAX_EXPIRED_LEASES` | `0` |
+| `gateway.testing.runtime-slo.creation-max-oldest-age-seconds` | `RG_TEST_RUNTIME_SLO_CREATION_MAX_OLDEST_AGE_SECONDS` | `180` |
+| `gateway.testing.runtime-slo.durable-max-depth` | `RG_TEST_RUNTIME_SLO_DURABLE_MAX_DEPTH` | `1000` |
+| `gateway.testing.runtime-slo.durable-max-expired-leases` | `RG_TEST_RUNTIME_SLO_DURABLE_MAX_EXPIRED_LEASES` | `0` |
+| `gateway.testing.runtime-slo.durable-max-oldest-age-seconds` | `RG_TEST_RUNTIME_SLO_DURABLE_MAX_OLDEST_AGE_SECONDS` | `180` |
+| `gateway.testing.runtime-slo.work-max-depth` | `RG_TEST_RUNTIME_SLO_WORK_MAX_DEPTH` | `10000` |
+| `gateway.testing.runtime-slo.work-max-expired-claims` | `RG_TEST_RUNTIME_SLO_WORK_MAX_EXPIRED_CLAIMS` | `0` |
+| `gateway.testing.runtime-slo.work-max-oldest-age-seconds` | `RG_TEST_RUNTIME_SLO_WORK_MAX_OLDEST_AGE_SECONDS` | `300` |
+| `gateway.testing.runtime-slo.max-expired-execution-records` | `RG_TEST_RUNTIME_SLO_MAX_EXPIRED_EXECUTION_RECORDS` | `0` |
+| `gateway.testing.runtime-slo.max-expired-suite-records` | `RG_TEST_RUNTIME_SLO_MAX_EXPIRED_SUITE_RECORDS` | `0` |
+| `gateway.testing.runtime-slo.max-terminal-durable-executions` | `RG_TEST_RUNTIME_SLO_MAX_TERMINAL_DURABLE_EXECUTIONS` | `10000` |
+| `gateway.testing.runtime-slo.max-terminal-work-items` | `RG_TEST_RUNTIME_SLO_MAX_TERMINAL_WORK_ITEMS` | `100000` |
 
 ## 3. Authentication
 
@@ -970,6 +992,81 @@ finding-state gauges, active/archive backlog, last-success age, and numeric heal
 `state`, `tier`, and `loop`; tenant, row, operator, token, error, and payload labels are forbidden.
 Only Actuator health is web-exposed by default. A deployment must explicitly secure and configure a
 registry/exporter before exporting metrics, and should keep detailed health output authorized.
+
+### 4.2.1.1 Global test-runtime SLO and capacity observation
+
+`testRuntimeSloMonitor` is a separate Actuator health component for the whole isolated testing
+runtime. It reads the child-run, suite-run, durable-creation, durable-checkpoint, BLOGE execution,
+and BLOGE work-item projections in one read-only `REPEATABLE_READ` transaction. The observation time
+comes from the database; no replica wall clock participates in lease expiry or queue-age decisions.
+The outcome window defaults to 15 minutes and cannot exceed 365 days. Dedicated lifecycle/time
+indexes keep the periodic aggregate read off payload columns; no `record_json`, `checkpoint_json`,
+`payload_json`, fixture, replay, context, identity value, or credential is deserialized.
+
+The health model distinguishes correctness outcomes from runtime correctness:
+
+- `ASSERTION_FAILED`, `EXECUTION_FAILED`, `FIXTURE_UNMATCHED`, negative cases, and other expected
+  product-under-test outcomes are counted by status but do **not** make the service unhealthy;
+- child `EVIDENCE_INCOMPLETE` / `CONTROL_PLAN_UNAVAILABLE` and suite `PARTIAL` /
+  `EVIDENCE_INCOMPLETE` contribute to the incomplete-evidence ratio;
+- a ratio is enforced only after its configured minimum sample count, preventing one startup sample
+  from creating a false platform outage;
+- suite `RUNNING`, durable-creation `PENDING`, resumable durable checkpoints, and dispatchable or
+  expired-claim work each have independent depth, expired-ownership, and oldest-age policies;
+- suspended durable executions count toward capacity, but an expired suspension lease is not an
+  ownership failure until the execution is `ACTIVE` or `RESUMING`;
+- expired child/suite records and terminal durable/work-item rows have explicit cleanup-backlog
+  limits. Observation does not silently delete them.
+
+Stable violation codes are:
+
+```text
+EXECUTION_EVIDENCE_INCOMPLETE_RATE_EXCEEDED
+SUITE_EVIDENCE_INCOMPLETE_RATE_EXCEEDED
+SUITE_RUN_CAPACITY_EXCEEDED
+SUITE_RUN_LEASE_BACKLOG
+SUITE_RUN_STALE
+DURABLE_CREATION_CAPACITY_EXCEEDED
+DURABLE_CREATION_LEASE_BACKLOG
+DURABLE_CREATION_STALE
+DURABLE_EXECUTION_CAPACITY_EXCEEDED
+DURABLE_EXECUTION_LEASE_BACKLOG
+DURABLE_EXECUTION_STALE
+WORK_ITEM_CAPACITY_EXCEEDED
+WORK_ITEM_CLAIM_BACKLOG
+WORK_ITEM_DISPATCH_STALE
+EXECUTION_RETENTION_BACKLOG_EXCEEDED
+SUITE_RETENTION_BACKLOG_EXCEEDED
+DURABLE_TERMINAL_RETENTION_BACKLOG_EXCEEDED
+WORK_ITEM_TERMINAL_RETENTION_BACKLOG_EXCEEDED
+TEST_RUNTIME_STORE_UNAVAILABLE
+```
+
+Satisfying policy reports `UP`; any stable violation reports `OUT_OF_SERVICE`; an unreadable store
+reports `DOWN`. Health details include only aggregate counts, basis points, queue ages, and the codes
+above. Store exception messages are discarded. Micrometer gauges are rooted at
+`resource.gateway.test.runtime.*`:
+
+| Metric family | Closed tag vocabulary | Meaning |
+|---|---|---|
+| `execution.outcomes` | `status` | recent child outcomes |
+| `suite.outcomes` | `status` | recent terminal suite outcomes |
+| `durable.executions` | `status` | durable control checkpoint states |
+| `engine.executions` | `status` | BLOGE execution states |
+| `work.items` | `status` | BLOGE work-item states |
+| `queue.depth`, `lease.expired`, `queue.oldest.age` | `queue` | suite, creation, durable, and work pressure |
+| `evidence.incomplete.basis_points` | `scope` | execution/suite incomplete ratio |
+| `storage.records`, `storage.backlog` | `kind` | retained and cleanup-pressure rows |
+| `health` | none | `1` healthy, `-1` violated, `-2` store unavailable |
+
+Tenant, suite, run, operator, owner, item, token, error, and payload labels are forbidden. Capability
+discovery advertises `testRuntimeSloHealth` and `boundedCardinalityTestRuntimeMetrics` only when the
+profile-owned testing runtime exists.
+
+This component is an observation and readiness gate, not a scheduler or capacity controller. It
+does not implement tenant/suite/operator/dependency quotas, admission control, backpressure,
+cancellation, hard worker deadlines, retention deletion, or external alert delivery. Those require
+separate fenced command paths and remain explicit follow-up work.
 
 ### 4.2.2 Register an immutable test suite
 
@@ -1893,8 +1990,9 @@ Still intentionally outside this increment:
   `GovernanceGateResult.v3` through a reconstructable exact-evidence basis, but the ANEKE publish
   decision itself remains outside Resource Gateway;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
-  execution/suite/capacity SLOs, alert routing, and suite-history list/trend APIs; the projection
-  control loops now have a first aggregate-only health and metrics slice;
+  quota/admission/backpressure enforcement, external alert routing, and suite-history list/trend
+  APIs; projection loops and the global execution/suite/capacity surface now have aggregate-only
+  health and metrics, but observation must not be confused with capacity control;
 - operator-target durable creation, dispatcher/polling, cross-process recovery supervision and
   multi-boundary recovery orchestration, hard worker cancellation, typed identity/flag/secret
   authorities, explicit

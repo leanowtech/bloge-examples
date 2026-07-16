@@ -149,6 +149,18 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 )
                 """);
         jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_durable_execution_operations_idx
+                ON rg_test_durable_execution_checkpoints (
+                    status, lease_expires_at, updated_at
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_durable_creation_operations_idx
+                ON rg_test_durable_creation_commands (
+                    state, lease_expires_at, updated_at
+                )
+                """);
+        jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS rg_test_durable_resume_commands (
                     tenant_id VARCHAR(255) NOT NULL,
                     environment_id VARCHAR(32) NOT NULL,

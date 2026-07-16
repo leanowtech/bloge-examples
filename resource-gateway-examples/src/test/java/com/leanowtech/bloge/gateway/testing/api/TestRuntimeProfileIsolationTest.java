@@ -15,11 +15,13 @@ import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestTerminalRecoveryRuntime;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.actuate.health.Status;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.env.MapPropertySource;
 
@@ -64,6 +66,10 @@ class TestRuntimeProfileIsolationTest {
                     DurableStateProjectionFindingRetentionScheduler.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableStateProjectionSloMonitor.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableStateProjectionTelemetry.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestRuntimeSloMonitor.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestRuntimeSloTelemetry.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DatabaseTestRuntimeSloControlPlane.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DatabaseDurableStateProjectionControlPlane.class)).isEmpty();
             assertThat(context.getBeansOfType(
@@ -127,6 +133,13 @@ class TestRuntimeProfileIsolationTest {
                     DurableStateProjectionFindingRetentionScheduler.class)).hasSize(1);
             assertThat(context.getBeansOfType(DurableStateProjectionSloMonitor.class)).hasSize(1);
             assertThat(context.getBeansOfType(DurableStateProjectionTelemetry.class)).hasSize(1);
+            assertThat(context.getBeansOfType(TestRuntimeSloMonitor.class)).hasSize(1);
+            assertThat(context.getBeansOfType(TestRuntimeSloTelemetry.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DatabaseTestRuntimeSloControlPlane.class)).hasSize(1);
+            TestRuntimeSloMonitor runtimeSlo = context.getBean(TestRuntimeSloMonitor.class);
+            runtimeSlo.refresh();
+            assertThat(runtimeSlo.health().getStatus()).isEqualTo(Status.UP);
             assertThat(context.getBean(TestabilityAvailability.class).executionEndpointEnabled()).isTrue();
             ObjectMapper mapper = context.getBean(ObjectMapper.class);
             TestRunEvidence evidence = TestSemanticResultFingerprint.attach(mapper,
@@ -172,6 +185,10 @@ class TestRuntimeProfileIsolationTest {
                     DurableStateProjectionFindingRetentionScheduler.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableStateProjectionSloMonitor.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableStateProjectionTelemetry.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestRuntimeSloMonitor.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestRuntimeSloTelemetry.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DatabaseTestRuntimeSloControlPlane.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DatabaseDurableStateProjectionControlPlane.class)).isEmpty();
             assertThat(context.getBeansOfType(

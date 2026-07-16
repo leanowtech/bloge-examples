@@ -43,6 +43,14 @@ public final class DatabaseTestRunRepository implements TestRunRepository {
                 CREATE INDEX IF NOT EXISTS idx_rg_test_run_scope_time
                 ON rg_test_run_records (tenant_id, environment_id, created_at)
                 """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_rg_test_run_operations_time
+                ON rg_test_run_records (created_at, status)
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_rg_test_run_retention
+                ON rg_test_run_records (expires_at)
+                """);
     }
 
     @Override

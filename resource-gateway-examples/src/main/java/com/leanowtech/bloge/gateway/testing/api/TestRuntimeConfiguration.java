@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRunRepositor
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecurityEventRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepository;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DurableStateProjectionReconciler;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
@@ -199,6 +200,14 @@ public class TestRuntimeConfiguration {
                         maxOverdueArchiveRecords));
     }
 
+    /** Registers global test-runtime metrics with closed status and queue vocabularies. */
+    @Bean
+    TestRuntimeSloTelemetry testRuntimeSloTelemetry(
+            ObjectProvider<MeterRegistry> meterRegistry) {
+        return new TestRuntimeSloTelemetry(
+                meterRegistry.getIfAvailable(SimpleMeterRegistry::new));
+    }
+
     @Bean
     FixtureBundleRepository fixtureBundleRepository(TestRuntimeDatabase database, ObjectMapper objectMapper) {
         return new DatabaseFixtureBundleRepository(database.jdbc(), objectMapper);
@@ -231,6 +240,97 @@ public class TestRuntimeConfiguration {
     TestSecurityEventRepository testSecurityEventRepository(TestRuntimeDatabase database,
                                                             ObjectMapper objectMapper) {
         return new DatabaseTestSecurityEventRepository(database.jdbc(), objectMapper);
+    }
+
+    /**
+     * Builds the aggregate SLO read model after every table-owning runtime component is ready.
+     */
+    @Bean
+    DatabaseTestRuntimeSloControlPlane testRuntimeSloControlPlane(
+            TestRuntimeDatabase database,
+            TestRunRepository runRepository,
+            TestSuiteRunRepository suiteRunRepository,
+            DurableTestExecutionCheckpointRepository checkpointRepository,
+            DurableTestRuntimeResources runtimeResources) {
+        java.util.Objects.requireNonNull(runRepository, "runRepository");
+        java.util.Objects.requireNonNull(suiteRunRepository, "suiteRunRepository");
+        java.util.Objects.requireNonNull(checkpointRepository, "checkpointRepository");
+        java.util.Objects.requireNonNull(runtimeResources, "runtimeResources");
+        return new DatabaseTestRuntimeSloControlPlane(
+                database.jdbc(), database.transactionManager());
+    }
+
+    /** Assesses evidence completeness, ownership queues, and retained-record capacity. */
+    @Bean
+    TestRuntimeSloMonitor testRuntimeSloMonitor(
+            DatabaseTestRuntimeSloControlPlane controlPlane,
+            TestRuntimeSloTelemetry telemetry,
+            @Value("${gateway.testing.runtime-slo.outcome-lookback-seconds:900}")
+            long outcomeLookbackSeconds,
+            @Value("${gateway.testing.runtime-slo.execution-minimum-samples:20}")
+            long executionMinimumSamples,
+            @Value("${gateway.testing.runtime-slo.execution-max-incomplete-basis-points:0}")
+            int executionMaxIncompleteBasisPoints,
+            @Value("${gateway.testing.runtime-slo.suite-minimum-samples:5}")
+            long suiteMinimumSamples,
+            @Value("${gateway.testing.runtime-slo.suite-max-incomplete-basis-points:0}")
+            int suiteMaxIncompleteBasisPoints,
+            @Value("${gateway.testing.runtime-slo.suite-max-depth:100}")
+            long suiteMaxDepth,
+            @Value("${gateway.testing.runtime-slo.suite-max-expired-leases:0}")
+            long suiteMaxExpiredLeases,
+            @Value("${gateway.testing.runtime-slo.suite-max-oldest-age-seconds:120}")
+            long suiteMaxOldestAgeSeconds,
+            @Value("${gateway.testing.runtime-slo.creation-max-depth:100}")
+            long creationMaxDepth,
+            @Value("${gateway.testing.runtime-slo.creation-max-expired-leases:0}")
+            long creationMaxExpiredLeases,
+            @Value("${gateway.testing.runtime-slo.creation-max-oldest-age-seconds:180}")
+            long creationMaxOldestAgeSeconds,
+            @Value("${gateway.testing.runtime-slo.durable-max-depth:1000}")
+            long durableMaxDepth,
+            @Value("${gateway.testing.runtime-slo.durable-max-expired-leases:0}")
+            long durableMaxExpiredLeases,
+            @Value("${gateway.testing.runtime-slo.durable-max-oldest-age-seconds:180}")
+            long durableMaxOldestAgeSeconds,
+            @Value("${gateway.testing.runtime-slo.work-max-depth:10000}")
+            long workMaxDepth,
+            @Value("${gateway.testing.runtime-slo.work-max-expired-claims:0}")
+            long workMaxExpiredClaims,
+            @Value("${gateway.testing.runtime-slo.work-max-oldest-age-seconds:300}")
+            long workMaxOldestAgeSeconds,
+            @Value("${gateway.testing.runtime-slo.max-expired-execution-records:0}")
+            long maxExpiredExecutionRecords,
+            @Value("${gateway.testing.runtime-slo.max-expired-suite-records:0}")
+            long maxExpiredSuiteRecords,
+            @Value("${gateway.testing.runtime-slo.max-terminal-durable-executions:10000}")
+            long maxTerminalDurableExecutions,
+            @Value("${gateway.testing.runtime-slo.max-terminal-work-items:100000}")
+            long maxTerminalWorkItems) {
+        return new TestRuntimeSloMonitor(controlPlane, telemetry,
+                new TestRuntimeSloMonitor.Policy(
+                        Duration.ofSeconds(outcomeLookbackSeconds),
+                        new TestRuntimeSloMonitor.EvidencePolicy(
+                                executionMinimumSamples, executionMaxIncompleteBasisPoints),
+                        new TestRuntimeSloMonitor.EvidencePolicy(
+                                suiteMinimumSamples, suiteMaxIncompleteBasisPoints),
+                        new TestRuntimeSloMonitor.QueuePolicy(
+                                suiteMaxDepth, suiteMaxExpiredLeases,
+                                Duration.ofSeconds(suiteMaxOldestAgeSeconds)),
+                        new TestRuntimeSloMonitor.QueuePolicy(
+                                creationMaxDepth, creationMaxExpiredLeases,
+                                Duration.ofSeconds(creationMaxOldestAgeSeconds)),
+                        new TestRuntimeSloMonitor.QueuePolicy(
+                                durableMaxDepth, durableMaxExpiredLeases,
+                                Duration.ofSeconds(durableMaxOldestAgeSeconds)),
+                        new TestRuntimeSloMonitor.QueuePolicy(
+                                workMaxDepth, workMaxExpiredClaims,
+                                Duration.ofSeconds(workMaxOldestAgeSeconds)),
+                        new TestRuntimeSloMonitor.StoragePolicy(
+                                maxExpiredExecutionRecords,
+                                maxExpiredSuiteRecords,
+                                maxTerminalDurableExecutions,
+                                maxTerminalWorkItems)));
     }
 
     /** Captures the stable, fail-closed identity policy used by durable recovery authorization. */

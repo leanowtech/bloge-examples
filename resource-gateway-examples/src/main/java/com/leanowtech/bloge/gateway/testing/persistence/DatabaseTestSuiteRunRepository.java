@@ -93,6 +93,16 @@ public final class DatabaseTestSuiteRunRepository implements TestSuiteRunReposit
                     tenant_id, environment_id, suite_id, suite_revision, created_at
                 )
                 """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_rg_test_suite_run_operations
+                ON rg_test_suite_run_records (
+                    status, last_checkpoint_at, lease_expires_at, expires_at
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_rg_test_suite_run_retention
+                ON rg_test_suite_run_records (expires_at)
+                """);
     }
 
     @Override

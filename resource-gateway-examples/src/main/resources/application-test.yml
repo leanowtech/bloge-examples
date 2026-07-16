@@ -38,6 +38,29 @@ gateway:
       maximum-retention-days: ${RG_TEST_REPLAY_MAX_RETENTION_DAYS:30}
       sweep-interval-ms: ${RG_TEST_REPLAY_SWEEP_INTERVAL_MS:60000}
       sweep-batch-size: ${RG_TEST_REPLAY_SWEEP_BATCH_SIZE:100}
+    runtime-slo:
+      observation-interval-ms: ${RG_TEST_RUNTIME_SLO_OBSERVATION_INTERVAL_MS:30000}
+      outcome-lookback-seconds: ${RG_TEST_RUNTIME_SLO_OUTCOME_LOOKBACK_SECONDS:900}
+      execution-minimum-samples: ${RG_TEST_RUNTIME_SLO_EXECUTION_MINIMUM_SAMPLES:20}
+      execution-max-incomplete-basis-points: ${RG_TEST_RUNTIME_SLO_EXECUTION_MAX_INCOMPLETE_BASIS_POINTS:0}
+      suite-minimum-samples: ${RG_TEST_RUNTIME_SLO_SUITE_MINIMUM_SAMPLES:5}
+      suite-max-incomplete-basis-points: ${RG_TEST_RUNTIME_SLO_SUITE_MAX_INCOMPLETE_BASIS_POINTS:0}
+      suite-max-depth: ${RG_TEST_RUNTIME_SLO_SUITE_MAX_DEPTH:100}
+      suite-max-expired-leases: ${RG_TEST_RUNTIME_SLO_SUITE_MAX_EXPIRED_LEASES:0}
+      suite-max-oldest-age-seconds: ${RG_TEST_RUNTIME_SLO_SUITE_MAX_OLDEST_AGE_SECONDS:120}
+      creation-max-depth: ${RG_TEST_RUNTIME_SLO_CREATION_MAX_DEPTH:100}
+      creation-max-expired-leases: ${RG_TEST_RUNTIME_SLO_CREATION_MAX_EXPIRED_LEASES:0}
+      creation-max-oldest-age-seconds: ${RG_TEST_RUNTIME_SLO_CREATION_MAX_OLDEST_AGE_SECONDS:180}
+      durable-max-depth: ${RG_TEST_RUNTIME_SLO_DURABLE_MAX_DEPTH:1000}
+      durable-max-expired-leases: ${RG_TEST_RUNTIME_SLO_DURABLE_MAX_EXPIRED_LEASES:0}
+      durable-max-oldest-age-seconds: ${RG_TEST_RUNTIME_SLO_DURABLE_MAX_OLDEST_AGE_SECONDS:180}
+      work-max-depth: ${RG_TEST_RUNTIME_SLO_WORK_MAX_DEPTH:10000}
+      work-max-expired-claims: ${RG_TEST_RUNTIME_SLO_WORK_MAX_EXPIRED_CLAIMS:0}
+      work-max-oldest-age-seconds: ${RG_TEST_RUNTIME_SLO_WORK_MAX_OLDEST_AGE_SECONDS:300}
+      max-expired-execution-records: ${RG_TEST_RUNTIME_SLO_MAX_EXPIRED_EXECUTION_RECORDS:0}
+      max-expired-suite-records: ${RG_TEST_RUNTIME_SLO_MAX_EXPIRED_SUITE_RECORDS:0}
+      max-terminal-durable-executions: ${RG_TEST_RUNTIME_SLO_MAX_TERMINAL_DURABLE_EXECUTIONS:10000}
+      max-terminal-work-items: ${RG_TEST_RUNTIME_SLO_MAX_TERMINAL_WORK_ITEMS:100000}
     store:
       jdbc-url: ${RG_TEST_STORE_JDBC_URL:jdbc:h2:file:./data/resource-gateway-test-runtime;AUTO_SERVER=TRUE}
       username: ${RG_TEST_STORE_USERNAME:sa}
