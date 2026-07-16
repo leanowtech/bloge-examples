@@ -84,6 +84,9 @@ public final class TestingProtocol {
     /** Payload-free ANEKE workbook projection for semantic suite and evidence v2. */
     public static final String SEMANTIC_CORRECTNESS_WORKBOOK_V1 =
             "toolStudio.resourceGateway.semanticCorrectnessWorkbookBundle.v1";
+    /** Governance gate generation with reconstructable semantic workbook decision basis. */
+    public static final String GOVERNANCE_GATE_RESULT_V3 =
+            "toolStudio.resourceGateway.gateResult.v3";
 
     /** Classpath location of the authoritative JSON Schema packaged in the test-kit JAR. */
     public static final String SCHEMA_RESOURCE =
@@ -91,6 +94,9 @@ public final class TestingProtocol {
     /** Classpath location of the semantic correctness workbook JSON Schema. */
     public static final String SEMANTIC_WORKBOOK_SCHEMA_RESOURCE =
             "/schemas/tool-studio-resource-gateway/semantic-correctness-workbook-bundle-v1.schema.json";
+    /** Classpath location of the semantic governance gate JSON Schema. */
+    public static final String GOVERNANCE_GATE_V3_SCHEMA_RESOURCE =
+            "/schemas/tool-studio-resource-gateway/governance-gate-result-v3.schema.json";
 
     private TestingProtocol() {
     }

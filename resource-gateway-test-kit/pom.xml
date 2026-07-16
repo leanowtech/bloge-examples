@@ -84,6 +84,7 @@
                 <filtering>false</filtering>
                 <includes>
                     <include>semantic-correctness-workbook-bundle-v1.schema.json</include>
+                    <include>governance-gate-result-v3.schema.json</include>
                 </includes>
             </resource>
         </resources>

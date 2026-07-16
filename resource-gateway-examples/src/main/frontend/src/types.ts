@@ -443,7 +443,7 @@ export interface GovernanceGateView {
   draftId: string;
   currentRevision: number;
   currentDraftFingerprint: string;
-  freshness: 'CURRENT' | 'STALE' | 'EXPIRED' | 'MISSING' | string;
+  freshness: 'CURRENT' | 'STALE' | 'UNVERIFIABLE' | 'EXPIRED' | 'MISSING' | string;
   result?: GovernanceGateResult | null;
 }
 

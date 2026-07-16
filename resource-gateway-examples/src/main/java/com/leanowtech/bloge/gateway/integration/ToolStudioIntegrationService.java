@@ -47,6 +47,7 @@ public class ToolStudioIntegrationService {
     private final GraphDraftDependencySnapshotService dependencySnapshots;
     private final CorrectnessWorkbookProjectionService workbookProjection;
     private SemanticCorrectnessWorkbookProjectionService semanticWorkbookProjection;
+    private SemanticGateTargetVerifier semanticGateTargetVerifier;
     private final ObjectMapper objectMapper;
     private boolean testExecutionEndpointEnabled;
 
@@ -90,6 +91,13 @@ public class ToolStudioIntegrationService {
     void configureSemanticWorkbookProjection(
             SemanticCorrectnessWorkbookProjectionService semanticWorkbookProjection) {
         this.semanticWorkbookProjection = semanticWorkbookProjection;
+    }
+
+    /** Receives the compiler-backed semantic target verifier with the isolated test runtime. */
+    @Autowired(required = false)
+    void configureSemanticGateTargetVerifier(
+            SemanticGateTargetVerifier semanticGateTargetVerifier) {
+        this.semanticGateTargetVerifier = semanticGateTargetVerifier;
     }
 
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -473,11 +481,14 @@ public class ToolStudioIntegrationService {
             ));
         }
         GraphDraftDependencySnapshotService.Snapshot gateSnapshot =
-                GovernanceGateResult.SCHEMA_VERSION.equals(result.schemaVersion())
+                !GovernanceGateResult.SCHEMA_VERSION_V1.equals(result.schemaVersion())
                         ? dependencySnapshots.capture(targetDraft) : null;
         validateGateDecisionBasis(result, targetDraft, actualFingerprint, gateSnapshot, context);
         if (gateSnapshot != null) {
             verifySnapshotStable(targetDraft, targetDraft.revision(), gateSnapshot, context);
+        }
+        if (GovernanceGateResult.SCHEMA_VERSION.equals(result.schemaVersion())) {
+            verifySemanticTargetsStable(result.decisionBasis().semanticWorkbooks(), targetDraft, context);
         }
         GovernanceGateResult stored;
         try {
@@ -526,6 +537,9 @@ public class ToolStudioIntegrationService {
                     && !latest.decisionBasis().dependencySnapshotFingerprint()
                     .equals(dependencySnapshots.capture(draft).fingerprint())) {
                 freshness = "STALE";
+            } else if (GovernanceGateResult.SCHEMA_VERSION.equals(latest.schemaVersion())
+                    && !latest.decisionBasis().semanticWorkbooks().isEmpty()) {
+                freshness = semanticGateFreshness(latest, draft);
             } else {
                 freshness = "CURRENT";
             }
@@ -533,14 +547,48 @@ public class ToolStudioIntegrationService {
         return new GovernanceGateView("", draft.draftId(), draft.revision(), currentFingerprint, freshness, latest);
     }
 
+    private String semanticGateFreshness(GovernanceGateResult result, GraphDraft draft) {
+        if (semanticWorkbookProjection == null || semanticGateTargetVerifier == null) {
+            return "UNVERIFIABLE";
+        }
+        IntegrationRequestContext internal = internalGateVerificationContext(draft);
+        try {
+            for (GovernanceGateResult.SemanticWorkbookRef reference
+                    : result.decisionBasis().semanticWorkbooks()) {
+                semanticWorkbookProjection.verifyDecisionBasis(reference, internal);
+                if (!semanticGateTargetVerifier.verify(draft, reference.target()).matched()) {
+                    return "STALE";
+                }
+            }
+            return "CURRENT";
+        } catch (SemanticCorrectnessWorkbookProjectionService.StoreUnavailableException unavailable) {
+            return "UNVERIFIABLE";
+        } catch (IntegrationProblemException sourceFailure) {
+            return sourceFailure.problem().status() >= 500 ? "UNVERIFIABLE" : "STALE";
+        } catch (SemanticCorrectnessWorkbookProjectionService.ProjectionException stale) {
+            return "STALE";
+        } catch (RuntimeException unavailable) {
+            return "UNVERIFIABLE";
+        }
+    }
+
+    private static IntegrationRequestContext internalGateVerificationContext(GraphDraft draft) {
+        return new IntegrationRequestContext(draft.tenantId(), "resource-gateway",
+                draft.namespace(), draft.environment(), "local", "SERVICE",
+                "resource-gateway-gate-verifier", "", "WORKBOOK_SYNC",
+                "gate-freshness-" + draft.draftId(), Set.of(), "RESTRICTED", "");
+    }
+
     private static void validateGateResult(GovernanceGateResult result, IntegrationRequestContext context) {
         Map<String, Object> invalid = new LinkedHashMap<>();
         if (result == null) {
             invalid.put("result", "required");
         } else {
-            if (!Set.of(GovernanceGateResult.SCHEMA_VERSION_V1, GovernanceGateResult.SCHEMA_VERSION)
+            if (!Set.of(GovernanceGateResult.SCHEMA_VERSION_V1,
+                    GovernanceGateResult.SCHEMA_VERSION_V2, GovernanceGateResult.SCHEMA_VERSION)
                     .contains(result.schemaVersion())) {
                 invalid.put("schemaVersion", GovernanceGateResult.SCHEMA_VERSION_V1 + "|"
+                        + GovernanceGateResult.SCHEMA_VERSION_V2 + "|"
                         + GovernanceGateResult.SCHEMA_VERSION);
             }
             if (result.gateResultId().isBlank()) invalid.put("gateResultId", "required");
@@ -551,15 +599,20 @@ public class ToolStudioIntegrationService {
             if (!Set.of("PASSED", "BLOCKED", "WARNING", "UNKNOWN").contains(result.status())) {
                 invalid.put("status", "PASSED|BLOCKED|WARNING|UNKNOWN");
             }
-            if (GovernanceGateResult.SCHEMA_VERSION.equals(result.schemaVersion())) {
+            if (!GovernanceGateResult.SCHEMA_VERSION_V1.equals(result.schemaVersion())) {
                 if (result.target().tenantId().isBlank()) invalid.put("target.tenantId", "required");
                 if (result.target().namespace().isBlank()) invalid.put("target.namespace", "required");
                 if (result.target().environment().isBlank()) invalid.put("target.environment", "required");
             }
+            if (GovernanceGateResult.SCHEMA_VERSION.equals(result.schemaVersion())) {
+                validateSemanticReferenceShapes(result.decisionBasis().semanticWorkbooks(), invalid);
+            } else if (!result.decisionBasis().semanticWorkbooks().isEmpty()) {
+                invalid.put("decisionBasis.semanticWorkbooks", "gateResult.v3 required");
+            }
             if (!result.fingerprintVerified()) invalid.put("resultFingerprint", "does not match content");
             if (GovernanceGateResult.SCHEMA_VERSION_V1.equals(result.schemaVersion())
                     && "PASSED".equals(result.status())) {
-                invalid.put("decisionBasis", "gateResult.v2 is required for PASSED decisions");
+                invalid.put("decisionBasis", "gateResult.v2 or later is required for PASSED decisions");
             }
         }
         if (!invalid.isEmpty()) {
@@ -567,6 +620,56 @@ public class ToolStudioIntegrationService {
                     "RG.INTEGRATION.GATE_RESULT_INVALID", "Governance gate result is invalid.",
                     context.correlationId(), invalid));
         }
+    }
+
+    private static void validateSemanticReferenceShapes(
+            List<GovernanceGateResult.SemanticWorkbookRef> references,
+            Map<String, Object> invalid) {
+        if (references.size() > 100) {
+            invalid.put("decisionBasis.semanticWorkbooks", "maximum 100");
+            return;
+        }
+        for (int index = 0; index < references.size(); index++) {
+            GovernanceGateResult.SemanticWorkbookRef reference = references.get(index);
+            String path = "decisionBasis.semanticWorkbooks[" + index + "]";
+            if (reference == null) {
+                invalid.put(path, "required");
+                continue;
+            }
+            if (reference.suite() == null || reference.suite().suiteId().isBlank()
+                    || reference.suite().revision() <= 0
+                    || !validSha256(reference.suite().fingerprint())) {
+                invalid.put(path + ".suite", "exact suite id, revision and fingerprint required");
+            }
+            if (reference.target() == null
+                    || !Set.of("GRAPH", "OPERATOR").contains(reference.target().kind())
+                    || reference.target().id().isBlank()
+                    || !validSha256(reference.target().fingerprint())) {
+                invalid.put(path + ".target", "exact GRAPH or OPERATOR target required");
+            }
+            if (!validSha256(reference.bundleFingerprint())) {
+                invalid.put(path + ".bundleFingerprint", "sha256 fingerprint required");
+            }
+            if (!Set.of("READY", "NO_TERMINAL_EVIDENCE", "VERIFICATION_UNAVAILABLE",
+                    "NO_ELIGIBLE_EVIDENCE").contains(reference.projectionStatus())) {
+                invalid.put(path + ".projectionStatus", "unsupported");
+            }
+            if (reference.evidence().size() > 100) {
+                invalid.put(path + ".evidence", "maximum 100");
+            }
+            for (int evidenceIndex = 0; evidenceIndex < reference.evidence().size(); evidenceIndex++) {
+                GovernanceGateResult.SemanticEvidenceRef evidence = reference.evidence().get(evidenceIndex);
+                if (evidence == null || evidence.suiteRunId().isBlank()
+                        || !validSha256(evidence.evidenceFingerprint())) {
+                    invalid.put(path + ".evidence[" + evidenceIndex + "]",
+                            "suiteRunId and exact evidence fingerprint required");
+                }
+            }
+        }
+    }
+
+    private static boolean validSha256(String value) {
+        return value != null && value.matches("sha256:[0-9a-f]{64}");
     }
 
     private void validateGateDecisionBasis(GovernanceGateResult result,
@@ -621,6 +724,9 @@ public class ToolStudioIntegrationService {
                     .verify(run.evidenceSeal(), run.evidenceMaterialFingerprint()).valid();
             if (!sameDraft || !verified) throw gateBasisConflict(context, "EVIDENCE_REF_INVALID");
         }
+        SemanticBasisSummary semantic = GovernanceGateResult.SCHEMA_VERSION.equals(result.schemaVersion())
+                ? validateSemanticDecisionBasis(basis.semanticWorkbooks(), draft, context)
+                : SemanticBasisSummary.empty();
         if (!passed) return;
         Map<String, Object> incomplete = new LinkedHashMap<>();
         if (!basis.workbook().complete()) incomplete.put("workbook", "complete ref required");
@@ -639,11 +745,116 @@ public class ToolStudioIntegrationService {
         if (workbook == null || !workbook.fingerprintVerified()) {
             incomplete.put("workbookSource", "unverified");
         }
+        if (GovernanceGateResult.SCHEMA_VERSION.equals(result.schemaVersion())) {
+            if (basis.semanticWorkbooks().isEmpty()) {
+                incomplete.put("semanticWorkbooks", "at least one exact semantic workbook required");
+            }
+            if (semantic.graphTargetCount() == 0) {
+                incomplete.put("semanticGraphTarget", "an exact graph-level semantic suite is required");
+            }
+            if (!semantic.allGateReady()) {
+                incomplete.put("semanticEvidence", "every semantic workbook must be gate-ready");
+            }
+            if (!basis.policy().requiredChecks().contains("SEMANTIC_CORRECTNESS")) {
+                incomplete.put("semanticPolicy", "SEMANTIC_CORRECTNESS must be a required check");
+            }
+            Set<String> semanticCheckRefs = basis.checks().stream()
+                    .filter(check -> "SEMANTIC_CORRECTNESS".equals(check.kind()))
+                    .flatMap(check -> check.refs().stream())
+                    .collect(java.util.stream.Collectors.toSet());
+            if (!semanticCheckRefs.equals(semantic.bundleFingerprints())) {
+                incomplete.put("semanticCheckRefs",
+                        "SEMANTIC_CORRECTNESS must reference every exact workbook bundle fingerprint");
+            }
+        }
         if (!incomplete.isEmpty()) {
             throw new IntegrationProblemException(IntegrationProblem.conflict(
                     "RG.INTEGRATION.GATE_BASIS_INCOMPLETE",
                     "A PASSED gate result must carry a complete, verified decision basis.",
                     context.correlationId(), incomplete));
+        }
+    }
+
+    private SemanticBasisSummary validateSemanticDecisionBasis(
+            List<GovernanceGateResult.SemanticWorkbookRef> references,
+            GraphDraft draft,
+            IntegrationRequestContext context) {
+        if (references.isEmpty()) return SemanticBasisSummary.empty();
+        if (semanticWorkbookProjection == null || semanticGateTargetVerifier == null) {
+            throw semanticBasisUnavailable(context, "Semantic gate verification is unavailable.");
+        }
+        Set<String> suiteKeys = new HashSet<>();
+        Set<String> bundleFingerprints = new HashSet<>();
+        int graphTargets = 0;
+        boolean allGateReady = true;
+        for (GovernanceGateResult.SemanticWorkbookRef reference : references) {
+            if (!suiteKeys.add(reference.key())
+                    || !bundleFingerprints.add(reference.bundleFingerprint())) {
+                throw gateBasisConflict(context, "SEMANTIC_WORKBOOK_REF_DUPLICATE");
+            }
+            SemanticCorrectnessWorkbookBundle bundle;
+            try {
+                bundle = semanticWorkbookProjection.verifyDecisionBasis(reference, context);
+            } catch (SemanticCorrectnessWorkbookProjectionService.StoreUnavailableException unavailable) {
+                throw semanticBasisUnavailable(context, "Semantic evidence verification is unavailable.");
+            } catch (SemanticCorrectnessWorkbookProjectionService.ProjectionException stale) {
+                throw gateBasisConflict(context, stale.code());
+            } catch (IntegrationProblemException sourceFailure) {
+                if (sourceFailure.problem().status() >= 500) {
+                    throw semanticBasisUnavailable(context, "Semantic evidence stores are unavailable.");
+                }
+                throw gateBasisConflict(context, "SEMANTIC_SOURCE_REF_INVALID");
+            } catch (RuntimeException unavailable) {
+                throw semanticBasisUnavailable(context, "Semantic evidence verification is unavailable.");
+            }
+            SemanticGateTargetVerifier.Verification binding;
+            try {
+                binding = semanticGateTargetVerifier.verify(draft, reference.target());
+            } catch (RuntimeException unavailable) {
+                throw semanticBasisUnavailable(context, "Semantic target verification is unavailable.");
+            }
+            if (!binding.matched()) {
+                throw gateBasisConflict(context, binding.reason());
+            }
+            if ("GRAPH".equals(reference.target().kind())) graphTargets++;
+            allGateReady &= bundle.manifest().gateReady();
+        }
+        return new SemanticBasisSummary(graphTargets, Set.copyOf(bundleFingerprints), allGateReady);
+    }
+
+    private void verifySemanticTargetsStable(
+            List<GovernanceGateResult.SemanticWorkbookRef> references,
+            GraphDraft draft,
+            IntegrationRequestContext context) {
+        if (references.isEmpty()) return;
+        if (semanticGateTargetVerifier == null) {
+            throw semanticBasisUnavailable(context, "Semantic target verification is unavailable.");
+        }
+        for (GovernanceGateResult.SemanticWorkbookRef reference : references) {
+            SemanticGateTargetVerifier.Verification binding;
+            try {
+                binding = semanticGateTargetVerifier.verify(draft, reference.target());
+            } catch (RuntimeException unavailable) {
+                throw semanticBasisUnavailable(context, "Semantic target verification is unavailable.");
+            }
+            if (!binding.matched()) {
+                throw gateBasisConflict(context, binding.reason());
+            }
+        }
+    }
+
+    private static IntegrationProblemException semanticBasisUnavailable(
+            IntegrationRequestContext context, String title) {
+        return new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
+                "RG.INTEGRATION.SEMANTIC_GATE_VERIFICATION_UNAVAILABLE", title,
+                context.correlationId(), Map.of()));
+    }
+
+    private record SemanticBasisSummary(int graphTargetCount,
+                                        Set<String> bundleFingerprints,
+                                        boolean allGateReady) {
+        private static SemanticBasisSummary empty() {
+            return new SemanticBasisSummary(0, Set.of(), false);
         }
     }
 

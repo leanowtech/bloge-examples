@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestSui
 import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestSuiteRequest;
 import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestSuiteRepository;
 import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorTestAssertion;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,9 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class CorrectnessWorkbookGateIntegrationTest {
     private InMemoryGraphDraftRepository drafts;
@@ -169,6 +173,95 @@ class CorrectnessWorkbookGateIntegrationTest {
                 "RG.INTEGRATION.GATE_BASIS_STALE");
     }
 
+    @Test
+    void gateV3RequiresReconstructableGateReadyGraphSemanticBasisAndExactCheckRefs() {
+        CorrectnessWorkbookBundle workbook = service.correctnessWorkbook(
+                draft.draftId(), draft.revision(), workbookContext()).payload();
+        GovernanceGateResult.SemanticWorkbookRef semantic = semanticReference("GRAPH");
+        SemanticCorrectnessWorkbookProjectionService projector =
+                mock(SemanticCorrectnessWorkbookProjectionService.class);
+        SemanticCorrectnessWorkbookBundle bundle = mock(SemanticCorrectnessWorkbookBundle.class);
+        SemanticCorrectnessWorkbookBundle.Manifest manifest =
+                mock(SemanticCorrectnessWorkbookBundle.Manifest.class);
+        when(manifest.gateReady()).thenReturn(true);
+        when(bundle.manifest()).thenReturn(manifest);
+        when(projector.verifyDecisionBasis(any(), any())).thenReturn(bundle);
+        service.configureSemanticWorkbookProjection(projector);
+        service.configureSemanticGateTargetVerifier((ignoredDraft, ignoredTarget) ->
+                SemanticGateTargetVerifier.Verification.accepted());
+
+        GovernanceGateResult passed = semanticPassedGate("gate-semantic", workbook, List.of(semantic));
+        GovernanceGateResult stored = service.submitGateResult(passed, gateContext()).payload();
+
+        assertThat(stored.schemaVersion()).isEqualTo(GovernanceGateResult.SCHEMA_VERSION);
+        assertThat(stored.decisionBasis().semanticWorkbooks()).containsExactly(semantic);
+        assertThat(service.governanceGate(draft.draftId(), readContext()).payload().freshness())
+                .isEqualTo("CURRENT");
+
+        GovernanceGateResult operatorOnly = semanticPassedGate(
+                "gate-operator-only", workbook, List.of(semanticReference("OPERATOR")));
+        assertProblem(() -> service.submitGateResult(operatorOnly, gateContext()),
+                "RG.INTEGRATION.GATE_BASIS_INCOMPLETE");
+
+        GovernanceGateResult.DecisionBasis wrongRefs = passed.decisionBasis();
+        GovernanceGateResult missingCheckRef = withBasisV3("gate-wrong-check-ref",
+                new GovernanceGateResult.DecisionBasis(wrongRefs.workbook(),
+                        wrongRefs.dependencySnapshotFingerprint(), wrongRefs.contractSuites(),
+                        wrongRefs.evidence(), wrongRefs.policy(), wrongRefs.checks().stream()
+                        .map(check -> "SEMANTIC_CORRECTNESS".equals(check.kind())
+                                ? new GovernanceGateResult.Check(check.kind(), check.status(), check.reason(),
+                                List.of(sha("wrong-bundle"))) : check).toList(),
+                        wrongRefs.semanticWorkbooks()));
+        assertProblem(() -> service.submitGateResult(missingCheckRef, gateContext()),
+                "RG.INTEGRATION.GATE_BASIS_INCOMPLETE");
+
+        service.configureSemanticWorkbookProjection(null);
+        assertThat(service.governanceGate(draft.draftId(), readContext()).payload().freshness())
+                .isEqualTo("UNVERIFIABLE");
+    }
+
+    @Test
+    void gateV3MapsSemanticProjectionDriftAndVerifierOutageWithoutPersistingDecision() {
+        CorrectnessWorkbookBundle workbook = service.correctnessWorkbook(
+                draft.draftId(), draft.revision(), workbookContext()).payload();
+        GovernanceGateResult passed = semanticPassedGate(
+                "gate-semantic-stale", workbook, List.of(semanticReference("GRAPH")));
+        SemanticCorrectnessWorkbookProjectionService projector =
+                mock(SemanticCorrectnessWorkbookProjectionService.class);
+        when(projector.verifyDecisionBasis(any(), any())).thenThrow(
+                new SemanticCorrectnessWorkbookProjectionService.ProjectionException(
+                        "SEMANTIC_WORKBOOK_FINGERPRINT_STALE", "stale"));
+        service.configureSemanticWorkbookProjection(projector);
+        service.configureSemanticGateTargetVerifier((ignoredDraft, ignoredTarget) ->
+                SemanticGateTargetVerifier.Verification.accepted());
+
+        assertProblem(() -> service.submitGateResult(passed, gateContext()),
+                "RG.INTEGRATION.GATE_BASIS_STALE");
+
+        service.configureSemanticWorkbookProjection(null);
+        assertProblem(() -> service.submitGateResult(passed, gateContext()),
+                "RG.INTEGRATION.SEMANTIC_GATE_VERIFICATION_UNAVAILABLE");
+
+        org.mockito.Mockito.reset(projector);
+        when(projector.verifyDecisionBasis(any(), any())).thenThrow(new IllegalStateException("store offline"));
+        service.configureSemanticWorkbookProjection(projector);
+        assertProblem(() -> service.submitGateResult(passed, gateContext()),
+                "RG.INTEGRATION.SEMANTIC_GATE_VERIFICATION_UNAVAILABLE");
+
+        SemanticCorrectnessWorkbookBundle bundle = mock(SemanticCorrectnessWorkbookBundle.class);
+        SemanticCorrectnessWorkbookBundle.Manifest manifest =
+                mock(SemanticCorrectnessWorkbookBundle.Manifest.class);
+        when(manifest.gateReady()).thenReturn(true);
+        when(bundle.manifest()).thenReturn(manifest);
+        org.mockito.Mockito.reset(projector);
+        when(projector.verifyDecisionBasis(any(), any())).thenReturn(bundle);
+        service.configureSemanticGateTargetVerifier((ignoredDraft, ignoredTarget) -> {
+            throw new IllegalStateException("compiler offline");
+        });
+        assertProblem(() -> service.submitGateResult(passed, gateContext()),
+                "RG.INTEGRATION.SEMANTIC_GATE_VERIFICATION_UNAVAILABLE");
+    }
+
     private GovernanceGateResult passedGate(String id, CorrectnessWorkbookBundle workbook) {
         List<GovernanceGateResult.SuiteRef> suiteRefs = workbook.suites().stream()
                 .map(suite -> new GovernanceGateResult.SuiteRef(
@@ -188,11 +281,47 @@ class CorrectnessWorkbookGateIntegrationTest {
     }
 
     private GovernanceGateResult withBasis(String id, GovernanceGateResult.DecisionBasis basis) {
-        return new GovernanceGateResult("", id,
+        return new GovernanceGateResult(GovernanceGateResult.SCHEMA_VERSION_V2, id,
                 new GovernanceGateResult.Target("GRAPH_DRAFT", draft.draftId(), draft.revision(),
                         ToolStudioIntegrationService.draftFingerprint(draft), draft.tenantId(), draft.namespace(),
                         draft.environment()), "PASSED", List.of(), Instant.parse("2026-07-13T00:00:00Z"),
                 Instant.parse("2026-07-20T00:00:00Z"), "", basis);
+    }
+
+    private GovernanceGateResult semanticPassedGate(
+            String id, CorrectnessWorkbookBundle workbook,
+            List<GovernanceGateResult.SemanticWorkbookRef> semanticWorkbooks) {
+        GovernanceGateResult.DecisionBasis v2 = passedGate("basis-source", workbook).decisionBasis();
+        List<String> required = new java.util.ArrayList<>(v2.policy().requiredChecks());
+        required.add("SEMANTIC_CORRECTNESS");
+        List<GovernanceGateResult.Check> checks = new java.util.ArrayList<>(v2.checks());
+        checks.add(new GovernanceGateResult.Check("SEMANTIC_CORRECTNESS", "PASSED", "verified",
+                semanticWorkbooks.stream().map(GovernanceGateResult.SemanticWorkbookRef::bundleFingerprint)
+                        .toList()));
+        return withBasisV3(id, new GovernanceGateResult.DecisionBasis(v2.workbook(),
+                v2.dependencySnapshotFingerprint(), v2.contractSuites(), v2.evidence(),
+                new GovernanceGateResult.PolicyRef(v2.policy().policyId(), v2.policy().version(), required),
+                checks, semanticWorkbooks));
+    }
+
+    private GovernanceGateResult withBasisV3(String id, GovernanceGateResult.DecisionBasis basis) {
+        return new GovernanceGateResult(GovernanceGateResult.SCHEMA_VERSION, id,
+                new GovernanceGateResult.Target("GRAPH_DRAFT", draft.draftId(), draft.revision(),
+                        ToolStudioIntegrationService.draftFingerprint(draft), draft.tenantId(), draft.namespace(),
+                        draft.environment()), "PASSED", List.of(), Instant.parse("2026-07-13T00:00:00Z"),
+                Instant.parse("2026-07-20T00:00:00Z"), "", basis);
+    }
+
+    private GovernanceGateResult.SemanticWorkbookRef semanticReference(String targetKind) {
+        String targetId = "GRAPH".equals(targetKind) ? draft.graphName() : "risk:score";
+        String bundleFingerprint = sha("semantic-bundle-" + targetKind);
+        return new GovernanceGateResult.SemanticWorkbookRef(
+                new GovernanceGateResult.SuiteRef("semantic-" + targetKind.toLowerCase(), 2,
+                        sha("semantic-suite-" + targetKind)),
+                new TestSuite.Target(targetKind, targetId, sha("semantic-target-" + targetKind)),
+                bundleFingerprint, "READY", 1, 0, false,
+                List.of(new GovernanceGateResult.SemanticEvidenceRef(
+                        "suite-run-" + targetKind.toLowerCase(), sha("semantic-evidence-" + targetKind))));
     }
 
     private static GovernanceGateResult.DecisionBasis basisWithWorkbook(

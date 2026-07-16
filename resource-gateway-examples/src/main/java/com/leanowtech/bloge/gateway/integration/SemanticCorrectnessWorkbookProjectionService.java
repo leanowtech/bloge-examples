@@ -20,9 +20,11 @@ import org.springframework.web.util.UriUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Projects exact semantic suite generations and verified terminal evidence for ANEKE.
@@ -69,17 +71,9 @@ public final class SemanticCorrectnessWorkbookProjectionService {
      */
     public SemanticCorrectnessWorkbookBundle project(
             String suiteId, long revision, IntegrationRequestContext identity) {
-        StoredTestSuite stored = suites.find(suiteId, revision, identity);
-        if (!(stored.suite() instanceof TestSuiteV2 suite)
-                || !TestSuiteV2.SCHEMA_VERSION.equals(suite.schemaVersion())) {
-            throw new ProjectionException("SEMANTIC_SUITE_GENERATION_REQUIRED",
-                    "Semantic workbook projection requires an exact bloge.testSuite.v2 revision.");
-        }
-        String actualSuiteFingerprint = suiteCodec.fingerprint(suite);
-        if (!actualSuiteFingerprint.equals(stored.fingerprint())) {
-            throw new ProjectionException("SUITE_FINGERPRINT_MISMATCH",
-                    "Stored suite content no longer matches its immutable fingerprint.");
-        }
+        ResolvedSuite resolved = resolveSuite(suiteId, revision, identity);
+        StoredTestSuite stored = resolved.stored();
+        TestSuiteV2 suite = resolved.suite();
 
         List<TestSuiteRunRecord> candidates;
         try {
@@ -120,6 +114,129 @@ public final class SemanticCorrectnessWorkbookProjectionService {
                         "OMITTED", projectedSuite, evidence, candidates.size(), unavailable, truncated);
         return new SemanticCorrectnessWorkbookBundle("", "OMITTED", projectedSuite,
                 evidence, manifest);
+    }
+
+    /**
+     * Reconstructs and verifies the exact semantic workbook consumed by a gate decision.
+     *
+     * <p>Unlike {@link #project(String, long, IntegrationRequestContext)}, this method follows the
+     * complete ordered evidence closure recorded by ANEKE. Newer runs therefore do not make an old
+     * decision unverifiable, while missing, altered, cross-generation, or no-longer-verifiable
+     * evidence still fails closed.</p>
+     *
+     * @param reference reconstructable gate decision-basis reference
+     * @param identity verified tenant/environment and clearance scope
+     * @return the exact source bundle after canonical fingerprint reconstruction
+     */
+    public SemanticCorrectnessWorkbookBundle verifyDecisionBasis(
+            GovernanceGateResult.SemanticWorkbookRef reference,
+            IntegrationRequestContext identity) {
+        if (reference == null || reference.suite() == null || reference.target() == null) {
+            throw new ProjectionException("SEMANTIC_WORKBOOK_REF_INVALID",
+                    "A semantic workbook reference, exact suite identity, and target are required.");
+        }
+        validateManifestReference(reference);
+        ResolvedSuite resolved = resolveSuite(reference.suite().suiteId(),
+                reference.suite().revision(), identity);
+        StoredTestSuite stored = resolved.stored();
+        TestSuiteV2 suite = resolved.suite();
+        if (!stored.fingerprint().equals(reference.suite().fingerprint())
+                || !Objects.equals(suite.target(), reference.target())) {
+            throw new ProjectionException("SEMANTIC_SUITE_FINGERPRINT_STALE",
+                    "The semantic workbook suite identity or target no longer matches the immutable revision.");
+        }
+
+        List<SemanticCorrectnessWorkbookBundle.Evidence> evidence = new ArrayList<>();
+        Set<String> runIds = new HashSet<>();
+        for (GovernanceGateResult.SemanticEvidenceRef evidenceRef : reference.evidence()) {
+            if (evidenceRef == null || evidenceRef.suiteRunId().isBlank()
+                    || evidenceRef.evidenceFingerprint().isBlank()
+                    || !runIds.add(evidenceRef.suiteRunId())) {
+                throw new ProjectionException("SEMANTIC_EVIDENCE_REF_INVALID",
+                        "Semantic workbook evidence references must be complete and unique.");
+            }
+            TestSuiteRunRecord record;
+            try {
+                record = runs.find(identity.tenantId(), identity.environmentId(),
+                                evidenceRef.suiteRunId())
+                        .orElseThrow(() -> new ProjectionException(
+                                "SEMANTIC_EVIDENCE_NOT_RETAINED",
+                                "Referenced semantic evidence is not retained in the authorized scope."));
+            } catch (ProjectionException expected) {
+                throw expected;
+            } catch (RuntimeException unavailable) {
+                throw new StoreUnavailableException(
+                        "Semantic suite-run evidence is unavailable.", unavailable);
+            }
+            TestSuiteRunEvidenceV2 aggregate = requireMatchingGeneration(stored, suite, record);
+            if (!evidenceRef.evidenceFingerprint().equals(record.evidenceFingerprint())) {
+                throw new ProjectionException("SEMANTIC_EVIDENCE_FINGERPRINT_STALE",
+                        "Referenced semantic evidence fingerprint no longer matches the retained aggregate.");
+            }
+            TestSuiteRunAttestationService.Verification verification =
+                    attestations.verify(aggregate, record.attestation());
+            if (verification == TestSuiteRunAttestationService.Verification.UNAVAILABLE) {
+                throw new StoreUnavailableException(
+                        "Semantic evidence verification authority is unavailable.", null);
+            }
+            if (verification != TestSuiteRunAttestationService.Verification.VERIFIED) {
+                throw new ProjectionException("TERMINAL_EVIDENCE_INVALID",
+                        "Referenced semantic evidence failed integrity verification.");
+            }
+            evidence.add(projectEvidence(record, aggregate));
+        }
+
+        SemanticCorrectnessWorkbookBundle.Suite projectedSuite = projectSuite(stored, suite);
+        SemanticCorrectnessWorkbookBundle.Manifest manifest =
+                SemanticCorrectnessWorkbookBundle.Manifest.from(
+                        "OMITTED", projectedSuite, evidence, reference.candidateEvidenceCount(),
+                        reference.unavailableEvidenceCount(), reference.evidenceTruncated());
+        SemanticCorrectnessWorkbookBundle reconstructed = new SemanticCorrectnessWorkbookBundle(
+                "", "OMITTED", projectedSuite, evidence, manifest);
+        if (!reference.projectionStatus().equals(manifest.projectionStatus())
+                || !reference.bundleFingerprint().equals(manifest.bundleFingerprint())
+                || !reconstructed.fingerprintVerified()) {
+            throw new ProjectionException("SEMANTIC_WORKBOOK_FINGERPRINT_STALE",
+                    "Semantic workbook reference does not reconstruct the consumed source bundle.");
+        }
+        return reconstructed;
+    }
+
+    private ResolvedSuite resolveSuite(String suiteId, long revision,
+                                       IntegrationRequestContext identity) {
+        StoredTestSuite stored = suites.find(suiteId, revision, identity);
+        if (!(stored.suite() instanceof TestSuiteV2 suite)
+                || !TestSuiteV2.SCHEMA_VERSION.equals(suite.schemaVersion())) {
+            throw new ProjectionException("SEMANTIC_SUITE_GENERATION_REQUIRED",
+                    "Semantic workbook projection requires an exact bloge.testSuite.v2 revision.");
+        }
+        String actualSuiteFingerprint = suiteCodec.fingerprint(suite);
+        if (!actualSuiteFingerprint.equals(stored.fingerprint())) {
+            throw new ProjectionException("SUITE_FINGERPRINT_MISMATCH",
+                    "Stored suite content no longer matches its immutable fingerprint.");
+        }
+        return new ResolvedSuite(stored, suite);
+    }
+
+    private static void validateManifestReference(
+            GovernanceGateResult.SemanticWorkbookRef reference) {
+        int projected = reference.evidence().size();
+        int candidates = reference.candidateEvidenceCount();
+        int unavailable = reference.unavailableEvidenceCount();
+        boolean bounded = projected <= MAX_EVIDENCE
+                && candidates <= MAX_EVIDENCE + 1
+                && unavailable <= candidates
+                && candidates >= projected + unavailable;
+        boolean cardinalityMatches = reference.evidenceTruncated()
+                ? candidates == MAX_EVIDENCE + 1
+                && projected + unavailable >= MAX_EVIDENCE
+                : candidates == projected + unavailable;
+        if (reference.bundleFingerprint().isBlank()
+                || reference.projectionStatus().isBlank()
+                || !bounded || !cardinalityMatches) {
+            throw new ProjectionException("SEMANTIC_WORKBOOK_REF_INVALID",
+                    "Semantic workbook manifest facts violate the bounded projection contract.");
+        }
     }
 
     private static SemanticCorrectnessWorkbookBundle.Suite projectSuite(
@@ -202,5 +319,8 @@ public final class SemanticCorrectnessWorkbookProjectionService {
         StoreUnavailableException(String message, Throwable cause) {
             super(message, cause);
         }
+    }
+
+    private record ResolvedSuite(StoredTestSuite stored, TestSuiteV2 suite) {
     }
 }

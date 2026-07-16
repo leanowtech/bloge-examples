@@ -138,7 +138,8 @@ public record IntegrationCapabilities(
         objects.put("managedEvidenceSignResponse", List.of(
                 ManagedEvidenceSigningProvider.SignatureResult.SCHEMA_VERSION));
         objects.put("governanceGateResult", List.of(
-                GovernanceGateResult.SCHEMA_VERSION_V1, GovernanceGateResult.SCHEMA_VERSION));
+                GovernanceGateResult.SCHEMA_VERSION_V1, GovernanceGateResult.SCHEMA_VERSION_V2,
+                GovernanceGateResult.SCHEMA_VERSION));
         objects.put("correctnessWorkbookBundle", List.of(CorrectnessWorkbookBundle.SCHEMA_VERSION));
         objects.put("integrationEvent", List.of(IntegrationChangeEvent.SCHEMA_VERSION));
         objects.put("eventCursor", List.of(IntegrationEventCursorCodec.SCHEMA_VERSION));

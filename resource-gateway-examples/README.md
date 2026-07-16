@@ -214,13 +214,18 @@ terminal `bloge.testSuiteRunEvidence.v2` refs without case input, fixture payloa
 is rejected instead of being presented as empty semantic coverage; verification-authority outage is distinct from no
 retained evidence. ANEKE must fetch each referenced portable bundle and verify it against an independently pinned key set.
 
-ANEKE remains the workbook and publish-gate authority, but a `PASSED` result must use
-`GovernanceGateResult.v2` and include a verifiable decision basis for workbook source, dependency snapshot, suite/evidence
-refs, policy version, and every required check. Stale or incomplete bases fail closed; accepted gate results and their
-change events commit atomically. See the [evidence loop](../docs/assets/resource-gateway-workbook-gate-evidence-loop.svg),
+ANEKE remains the workbook and publish-gate authority. Historical `GovernanceGateResult.v2` stays readable, while a
+semantic `PASSED` decision uses `GovernanceGateResult.v3`: it records the exact suite target, reconstructable ordered
+evidence closure, semantic bundle manifest facts, policy version, and every required check. Resource Gateway rebuilds the
+original bundle from exact run ids, recompiles the exact GraphDraft to bind graph target fingerprints, and requires at least
+one gate-ready graph suite. Stale or incomplete bases fail closed; a temporarily unavailable verification authority is shown
+as `UNVERIFIABLE`; accepted gate results and their change events commit atomically. See the
+[gate v3 schema](../docs/schemas/tool-studio-resource-gateway/governance-gate-result-v3.schema.json),
+[evidence loop](../docs/assets/resource-gateway-workbook-gate-evidence-loop.svg),
 [workbook schema](../docs/schemas/tool-studio-resource-gateway/correctness-workbook-bundle-v1.schema.json),
 [semantic workbook schema](../docs/schemas/tool-studio-resource-gateway/semantic-correctness-workbook-bundle-v1.schema.json),
-[semantic workbook verification](../docs/resource-gateway-execution-data-control-plane-stage3-aneke-semantic-workbook-verification.md), and
+[semantic workbook verification](../docs/resource-gateway-execution-data-control-plane-stage3-aneke-semantic-workbook-verification.md),
+[semantic gate verification](../docs/resource-gateway-execution-data-control-plane-stage3-semantic-gate-basis-verification.md), and
 [usage guide](../docs/bloge-visual-canvas-product-and-system-guide.md#351-把-contract-suite-和-run-evidence-交给-aneke-workbook).
 
 ## Extend It

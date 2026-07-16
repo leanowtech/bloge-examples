@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/governance-gate-result-v3.schema.json",
+  "title": "Tool Studio Resource Gateway Governance Gate Result v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "gateResultId", "target", "status", "issues", "producedAt", "expiresAt", "resultFingerprint", "decisionBasis"],
+  "properties": {
+    "schemaVersion": { "const": "toolStudio.resourceGateway.gateResult.v3" },
+    "gateResultId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "target": { "$ref": "#/$defs/target" },
+    "status": { "type": "string", "enum": ["PASSED", "BLOCKED", "WARNING", "UNKNOWN"] },
+    "issues": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/issue" } },
+    "producedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": ["string", "null"], "format": "date-time" },
+    "resultFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "decisionBasis": { "$ref": "#/$defs/basis" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "PASSED" } }, "required": ["status"] },
+      "then": {
+        "properties": {
+          "decisionBasis": {
+            "properties": { "semanticWorkbooks": { "minItems": 1 } }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "draftId", "revision", "draftFingerprint", "tenantId", "namespace", "environment"],
+      "properties": {
+        "kind": { "const": "GRAPH_DRAFT" },
+        "draftId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "draftFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "tenantId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "namespace": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "environment": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "issue": {
+      "type": "object", "additionalProperties": false,
+      "required": ["issueId", "severity", "code", "message", "targetPath", "recommendedAction", "deepLink"],
+      "properties": {
+        "issueId": { "type": "string", "maxLength": 256 },
+        "severity": { "type": "string", "enum": ["BLOCKING", "WARNING", "INFO"] },
+        "code": { "type": "string", "maxLength": 256 },
+        "message": { "type": "string", "maxLength": 4096 },
+        "targetPath": { "type": "string", "maxLength": 2048 },
+        "recommendedAction": { "type": "string", "maxLength": 4096 },
+        "deepLink": { "type": "string", "maxLength": 2048 }
+      }
+    },
+    "basis": {
+      "type": "object", "additionalProperties": false,
+      "required": ["workbook", "dependencySnapshotFingerprint", "contractSuites", "evidence", "policy", "checks", "semanticWorkbooks"],
+      "properties": {
+        "workbook": { "$ref": "#/$defs/workbook" },
+        "dependencySnapshotFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "contractSuites": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/suiteRef" } },
+        "evidence": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/evidenceRef" } },
+        "policy": { "$ref": "#/$defs/policy" },
+        "checks": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/check" } },
+        "semanticWorkbooks": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/semanticWorkbookRef" } }
+      }
+    },
+    "workbook": {
+      "type": "object", "additionalProperties": false,
+      "required": ["workbookId", "revision", "workbookFingerprint", "sourceBundleFingerprint"],
+      "properties": {
+        "workbookId": { "type": "string", "maxLength": 256 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "workbookFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "sourceBundleFingerprint": { "$ref": "#/$defs/optionalFingerprint" }
+      }
+    },
+    "suiteRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["suiteId", "revision", "fingerprint"],
+      "properties": {
+        "suiteId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "semanticTarget": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "id", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["GRAPH", "OPERATOR"] },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "semanticWorkbookRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["suite", "target", "bundleFingerprint", "projectionStatus", "candidateEvidenceCount", "unavailableEvidenceCount", "evidenceTruncated", "evidence"],
+      "properties": {
+        "suite": { "$ref": "#/$defs/suiteRef" },
+        "target": { "$ref": "#/$defs/semanticTarget" },
+        "bundleFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "projectionStatus": { "type": "string", "enum": ["READY", "NO_TERMINAL_EVIDENCE", "VERIFICATION_UNAVAILABLE", "NO_ELIGIBLE_EVIDENCE"] },
+        "candidateEvidenceCount": { "type": "integer", "minimum": 0, "maximum": 101 },
+        "unavailableEvidenceCount": { "type": "integer", "minimum": 0, "maximum": 101 },
+        "evidenceTruncated": { "type": "boolean" },
+        "evidence": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/semanticEvidenceRef" } }
+      }
+    },
+    "evidenceRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["runId", "evidenceFingerprint"],
+      "properties": {
+        "runId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "evidenceFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "semanticEvidenceRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["suiteRunId", "evidenceFingerprint"],
+      "properties": {
+        "suiteRunId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "evidenceFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["policyId", "version", "requiredChecks"],
+      "properties": {
+        "policyId": { "type": "string", "maxLength": 256 },
+        "version": { "type": "string", "maxLength": 128 },
+        "requiredChecks": { "type": "array", "uniqueItems": true, "maxItems": 1000, "items": { "type": "string", "maxLength": 128 } }
+      }
+    },
+    "check": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "status", "reason", "refs"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "status": { "type": "string", "enum": ["PASSED", "BLOCKED", "FAILED", "WARNING", "NOT_APPLICABLE"] },
+        "reason": { "type": "string", "maxLength": 4096 },
+        "refs": { "type": "array", "uniqueItems": true, "maxItems": 10000, "items": { "type": "string", "maxLength": 1024 } }
+      }
+    },
+    "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "optionalFingerprint": { "type": "string", "pattern": "^(|sha256:[0-9a-f]{64})$" }
+  }
+}

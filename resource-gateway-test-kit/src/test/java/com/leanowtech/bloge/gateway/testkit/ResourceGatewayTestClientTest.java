@@ -243,6 +243,35 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void submitsSchemaValidatedSemanticGateV3WithExactAcknowledgement() {
+        ResourceGatewayTestClient client = client();
+        ObjectNode gate = governanceGateRequest();
+
+        GovernanceGateReceipt receipt = client.submitGovernanceGateResult(gate);
+
+        assertThat(receipt.gateResultId()).isEqualTo("gate-semantic-1");
+        assertThat(receipt.status()).isEqualTo("BLOCKED");
+        assertThat(receipt.resultFingerprint()).isEqualTo(FINGERPRINT);
+        assertThat(requests).singleElement().satisfies(request -> {
+            assertThat(request.method()).isEqualTo("POST");
+            assertThat(request.rawPath()).isEqualTo("/api/integration/gate-results");
+            assertThat(request.purpose()).isEqualTo("GOVERNANCE_GATE_FEEDBACK");
+        });
+    }
+
+    @Test
+    void rejectsInvalidGateV3BeforeSendingGovernanceFeedback() {
+        ObjectNode gate = governanceGateRequest();
+        ((ObjectNode) gate.path("decisionBasis")).remove("semanticWorkbooks");
+
+        assertThatThrownBy(() -> client().submitGovernanceGateResult(gate))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("schema validation")
+                .hasMessageNotContaining("gate-semantic-1");
+        assertThat(requests).isEmpty();
+    }
+
+    @Test
     void rejectsSemanticWorkbookWhenRequiredVerdictIsRemoved() throws Exception {
         ObjectNode envelope = (ObjectNode) JSON.readTree(semanticWorkbookResponse());
         ((ObjectNode) envelope.at("/payload/evidence/0")).remove("semanticCoverage");
@@ -465,6 +494,8 @@ class ResourceGatewayTestClientTest {
             respond(exchange, 200, semanticSuiteRunResponse());
         } else if (path.endsWith("/evidence-bundle")) {
             respond(exchange, 200, suiteEvidenceBundleResponse());
+        } else if (path.endsWith("/gate-results")) {
+            respond(exchange, 200, governanceGateResponse(body));
         } else if (path.endsWith("/semantic-correctness-workbook")) {
             respond(exchange, 200, semanticWorkbookResponse());
         } else if (path.endsWith("/evidence-keys")) {
@@ -695,6 +726,69 @@ class ResourceGatewayTestClientTest {
                      "verifiedEvidenceCount":1,"unavailableEvidenceCount":0,
                      "eligibleEvidenceCount":1,"evidenceTruncated":false,"gateReady":true}}}
                 """.formatted(FINGERPRINT);
+    }
+
+    private static ObjectNode governanceGateRequest() {
+        ObjectNode gate = JSON.createObjectNode();
+        gate.put("schemaVersion", TestingProtocol.GOVERNANCE_GATE_RESULT_V3);
+        gate.put("gateResultId", "gate-semantic-1");
+        ObjectNode target = gate.putObject("target");
+        target.put("kind", "GRAPH_DRAFT");
+        target.put("draftId", "draft-risk");
+        target.put("revision", 3);
+        target.put("draftFingerprint", FINGERPRINT);
+        target.put("tenantId", "tenant");
+        target.put("namespace", "knowledge");
+        target.put("environment", "test");
+        gate.put("status", "BLOCKED");
+        gate.putArray("issues");
+        gate.put("producedAt", "2026-07-16T01:00:05Z");
+        gate.putNull("expiresAt");
+        gate.put("resultFingerprint", FINGERPRINT);
+        ObjectNode basis = gate.putObject("decisionBasis");
+        ObjectNode workbook = basis.putObject("workbook");
+        workbook.put("workbookId", "");
+        workbook.put("revision", 0);
+        workbook.put("workbookFingerprint", "");
+        workbook.put("sourceBundleFingerprint", "");
+        basis.put("dependencySnapshotFingerprint", FINGERPRINT);
+        basis.putArray("contractSuites");
+        basis.putArray("evidence");
+        ObjectNode policy = basis.putObject("policy");
+        policy.put("policyId", "gate-policy");
+        policy.put("version", "3");
+        policy.putArray("requiredChecks");
+        basis.putArray("checks");
+        ObjectNode semantic = basis.putArray("semanticWorkbooks").addObject();
+        ObjectNode suite = semantic.putObject("suite");
+        suite.put("suiteId", "suite-semantic");
+        suite.put("revision", 2);
+        suite.put("fingerprint", FINGERPRINT);
+        ObjectNode semanticTarget = semantic.putObject("target");
+        semanticTarget.put("kind", "GRAPH");
+        semanticTarget.put("id", "riskGraph");
+        semanticTarget.put("fingerprint", FINGERPRINT);
+        semantic.put("bundleFingerprint", FINGERPRINT);
+        semantic.put("projectionStatus", "NO_TERMINAL_EVIDENCE");
+        semantic.put("candidateEvidenceCount", 0);
+        semantic.put("unavailableEvidenceCount", 0);
+        semantic.put("evidenceTruncated", false);
+        semantic.putArray("evidence");
+        return gate;
+    }
+
+    private static String governanceGateResponse(JsonNode payload) {
+        return """
+                {"protocol":"ToolStudioResourceGatewayProtocol","protocolVersion":"1.0",
+                 "resourceGatewayVersion":"1.0.0",
+                 "schemaVersion":"toolStudio.resourceGateway.envelope.v1",
+                 "producedAt":"2026-07-16T01:00:05Z",
+                 "compatibility":{"minConsumerVersion":"1.0","backwardCompatible":true,
+                   "breakingChanges":[]},
+                 "payloadKind":"GOVERNANCE_GATE_RESULT",
+                 "payloadSchemaVersion":"toolStudio.resourceGateway.gateResult.v3",
+                 "payloadFingerprint":"%s","payload":%s}
+                """.formatted(FINGERPRINT, payload);
     }
 
     private static String evidenceKeyResponse() {

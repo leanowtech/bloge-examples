@@ -1111,6 +1111,32 @@ The independent Java consumer uses `findSemanticCorrectnessWorkbook(...)` and
 `SemanticCorrectnessWorkbook.requireGateReady()`; the verification and negative matrix are recorded in
 [Stage 3 ANEKE semantic workbook verification](resource-gateway-execution-data-control-plane-stage3-aneke-semantic-workbook-verification.md).
 
+### 4.3.6 Bind semantic workbooks into a governance gate decision
+
+ANEKE submits `toolStudio.resourceGateway.gateResult.v3` to
+`POST /api/integration/gate-results` with purpose `GOVERNANCE_GATE_FEEDBACK`. v3 retains the v2
+draft workbook/snapshot/policy basis and adds `decisionBasis.semanticWorkbooks`. Each entry contains
+the exact suite and target, source bundle fingerprint and status, bounded manifest counts/truncation,
+and the complete ordered list of projected `suiteRunId + evidenceFingerprint` values.
+
+Resource Gateway resolves exact runs rather than latest history, verifies terminal semantic aggregate
+and attestation generations, rebuilds the source bundle, and compares its fingerprint. A later run
+therefore does not invalidate the decision. Missing retained evidence, target/suite drift, or invalid
+signatures fail closed; verification-store or authority outage yields 503 on write and
+`UNVERIFIABLE` freshness on an already accepted decision.
+
+For `PASSED`, all semantic workbooks must be gate-ready, at least one must target `GRAPH`, policy must
+require `SEMANTIC_CORRECTNESS`, and that check's refs must equal all source bundle fingerprints. The
+graph target must equal the composite target obtained by lowering and compiling the exact GraphDraft;
+an operator target must occur in the draft and match its current runtime closure. v2 remains supported
+for structural workbook compatibility but cannot carry semantic refs.
+
+The machine contract is
+[governance-gate-result-v3.schema.json](schemas/tool-studio-resource-gateway/governance-gate-result-v3.schema.json).
+The independent client validates both request and acknowledgement with
+`submitGovernanceGateResult(...)`. Full negative and compatibility evidence is recorded in
+[Stage 3 semantic gate basis verification](resource-gateway-execution-data-control-plane-stage3-semantic-gate-basis-verification.md).
+
 ### 4.4 Query a run or run a batch
 
 ```bash
@@ -1336,7 +1362,9 @@ Still intentionally outside this increment:
 
 - streaming/suspendable controls and evidence, and durable-resume plan restoration;
 - signed certification decisions, transparency-log proof, trusted pin distribution, ANEKE
-  `GovernanceGateResult` binding to the semantic workbook fingerprint, and mutation testing;
+  N/N-1 release-matrix conformance, and mutation testing; semantic workbook fingerprints now enter
+  `GovernanceGateResult.v3` through a reconstructable exact-evidence basis, but the ANEKE publish
+  decision itself remains outside Resource Gateway;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
   reconciliation alert SLOs, and suite-history list/trend APIs;
 - deterministic random/UUID/function execution services and deterministic concurrent scheduling;

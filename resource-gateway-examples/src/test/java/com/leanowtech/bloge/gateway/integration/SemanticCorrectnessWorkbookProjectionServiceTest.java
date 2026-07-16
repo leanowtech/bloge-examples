@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -209,6 +210,56 @@ class SemanticCorrectnessWorkbookProjectionServiceTest {
                 .hasMessageContaining("bounded query contract");
     }
 
+    @Test
+    void reconstructsExactDecisionBundleFromOrderedEvidenceInsteadOfLatestHistory() {
+        TestSuiteV2 suite = semanticSuite();
+        StoredTestSuite stored = stored(suite);
+        TestSuiteRunAttestationService attestations = new TestSuiteRunAttestationService(
+                mapper, new InMemoryVisualEvidenceSigner());
+        TestSuiteRunRecord record = record(semanticEvidence(stored, true), attestations);
+        SemanticCorrectnessWorkbookProjectionService service = service(
+                stored, List.of(record), attestations);
+        SemanticCorrectnessWorkbookBundle projected = service.project("suite-risk", 2, identity);
+
+        SemanticCorrectnessWorkbookBundle reconstructed =
+                service.verifyDecisionBasis(reference(projected), identity);
+
+        assertThat(reconstructed).isEqualTo(projected);
+        assertThat(reconstructed.manifest().gateReady()).isTrue();
+    }
+
+    @Test
+    void exactDecisionReconstructionRejectsAlteredEvidenceAndImpossibleManifestCounts() {
+        TestSuiteV2 suite = semanticSuite();
+        StoredTestSuite stored = stored(suite);
+        TestSuiteRunAttestationService attestations = new TestSuiteRunAttestationService(
+                mapper, new InMemoryVisualEvidenceSigner());
+        TestSuiteRunRecord record = record(semanticEvidence(stored, true), attestations);
+        SemanticCorrectnessWorkbookProjectionService service = service(
+                stored, List.of(record), attestations);
+        GovernanceGateResult.SemanticWorkbookRef valid = reference(
+                service.project("suite-risk", 2, identity));
+        GovernanceGateResult.SemanticWorkbookRef altered = new GovernanceGateResult.SemanticWorkbookRef(
+                valid.suite(), valid.target(), valid.bundleFingerprint(), valid.projectionStatus(),
+                valid.candidateEvidenceCount(), valid.unavailableEvidenceCount(),
+                valid.evidenceTruncated(), List.of(new GovernanceGateResult.SemanticEvidenceRef(
+                valid.evidence().getFirst().suiteRunId(), "sha256:" + "f".repeat(64))));
+        GovernanceGateResult.SemanticWorkbookRef impossible = new GovernanceGateResult.SemanticWorkbookRef(
+                valid.suite(), valid.target(), valid.bundleFingerprint(), valid.projectionStatus(),
+                0, 0, false, valid.evidence());
+
+        assertThatThrownBy(() -> service.verifyDecisionBasis(altered, identity))
+                .isInstanceOfSatisfying(
+                        SemanticCorrectnessWorkbookProjectionService.ProjectionException.class,
+                        failure -> assertThat(failure.code())
+                                .isEqualTo("SEMANTIC_EVIDENCE_FINGERPRINT_STALE"));
+        assertThatThrownBy(() -> service.verifyDecisionBasis(impossible, identity))
+                .isInstanceOfSatisfying(
+                        SemanticCorrectnessWorkbookProjectionService.ProjectionException.class,
+                        failure -> assertThat(failure.code())
+                                .isEqualTo("SEMANTIC_WORKBOOK_REF_INVALID"));
+    }
+
     private SemanticCorrectnessWorkbookProjectionService service(
             StoredTestSuite stored, List<TestSuiteRunRecord> records,
             TestSuiteRunAttestationService attestations) {
@@ -218,7 +269,23 @@ class SemanticCorrectnessWorkbookProjectionServiceTest {
         TestSuiteRunRepository runs = mock(TestSuiteRunRepository.class);
         when(runs.findTerminalBySuite(eq(stored.tenantId()), eq(stored.environmentId()),
                 eq(stored.suiteId()), eq(stored.revision()), eq(101))).thenReturn(records);
+        records.stream().distinct().forEach(record -> when(runs.find(
+                eq(stored.tenantId()), eq(stored.environmentId()), eq(record.suiteRunId())))
+                .thenReturn(Optional.of(record)));
         return new SemanticCorrectnessWorkbookProjectionService(registry, runs, attestations, mapper);
+    }
+
+    private static GovernanceGateResult.SemanticWorkbookRef reference(
+            SemanticCorrectnessWorkbookBundle workbook) {
+        SemanticCorrectnessWorkbookBundle.Manifest manifest = workbook.manifest();
+        return new GovernanceGateResult.SemanticWorkbookRef(
+                new GovernanceGateResult.SuiteRef(workbook.suite().suiteId(),
+                        workbook.suite().revision(), workbook.suite().suiteFingerprint()),
+                workbook.suite().target(), manifest.bundleFingerprint(), manifest.projectionStatus(),
+                manifest.candidateEvidenceCount(), manifest.unavailableEvidenceCount(),
+                manifest.evidenceTruncated(), workbook.evidence().stream()
+                .map(evidence -> new GovernanceGateResult.SemanticEvidenceRef(
+                        evidence.suiteRunId(), evidence.evidenceFingerprint())).toList());
     }
 
     private StoredTestSuite stored(com.leanowtech.bloge.gateway.testing.domain.TestSuiteProtocol suite) {

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualPayloadRedactionManifest;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 
 import org.junit.jupiter.api.Test;
 
@@ -42,7 +43,7 @@ class CorrectnessWorkbookProtocolSchemaTest {
     }
 
     @Test
-    void capabilitiesAdvertiseWorkbookAndGateV2WithoutDroppingV1() {
+    void capabilitiesAdvertiseWorkbookAndGateV3WithoutDroppingOlderGenerations() {
         IntegrationCapabilities capabilities = IntegrationCapabilities.current(
                 new InMemoryVisualEvidenceSigner().descriptor(),
                 IntegrationIdentityResolver.unavailable().descriptor(),
@@ -51,12 +52,57 @@ class CorrectnessWorkbookProtocolSchemaTest {
         assertThat(capabilities.supportedObjects().get("correctnessWorkbookBundle"))
                 .containsExactly(CorrectnessWorkbookBundle.SCHEMA_VERSION);
         assertThat(capabilities.supportedObjects().get("governanceGateResult"))
-                .containsExactly(GovernanceGateResult.SCHEMA_VERSION_V1, GovernanceGateResult.SCHEMA_VERSION);
+                .containsExactly(GovernanceGateResult.SCHEMA_VERSION_V1,
+                        GovernanceGateResult.SCHEMA_VERSION_V2, GovernanceGateResult.SCHEMA_VERSION);
         assertThat(capabilities.features()).containsEntry("correctnessWorkbookProjection", true)
                 .containsEntry("workbookEvidenceReferences", true);
         assertThat(capabilities.endpoints()).contains(
                 new IntegrationCapabilities.Endpoint("GET",
                         "/api/integration/drafts/{draftId}/correctness-workbook"));
+    }
+
+    @Test
+    void gateV2GoldenFingerprintAndJsonShapeRemainStableAfterV3Evolution() {
+        GovernanceGateResult.DecisionBasis basis = new GovernanceGateResult.DecisionBasis(
+                new GovernanceGateResult.WorkbookRef("workbook-1", 2, sha("workbook"), sha("source")),
+                sha("snapshot"), List.of(), List.of(),
+                new GovernanceGateResult.PolicyRef("gate-policy", "2", List.of("WORKBOOK")),
+                List.of(new GovernanceGateResult.Check("WORKBOOK", "PASSED", "verified", List.of())));
+        GovernanceGateResult gate = new GovernanceGateResult(
+                GovernanceGateResult.SCHEMA_VERSION_V2, "gate-1",
+                new GovernanceGateResult.Target("GRAPH_DRAFT", "draft-1", 3, sha("draft"),
+                        "tenant-a", "knowledge", "prod"),
+                "PASSED", List.of(), Instant.parse("2026-07-13T00:00:00Z"), null, "", basis);
+
+        assertThat(gate.resultFingerprint())
+                .isEqualTo("sha256:dde9ff6ea32baa0a9510c789efa01e01ad987d812bf5477e8909d3101a007735");
+        assertThat(mapper.valueToTree(gate.decisionBasis()).has("semanticWorkbooks")).isFalse();
+        assertThat(gate.fingerprintVerified()).isTrue();
+    }
+
+    @Test
+    void serializedGateV3FieldsExactlyMatchSemanticDecisionBasisSchema() throws Exception {
+        GovernanceGateResult.SemanticWorkbookRef semantic =
+                new GovernanceGateResult.SemanticWorkbookRef(
+                        new GovernanceGateResult.SuiteRef("suite-semantic", 4, sha("suite")),
+                        new TestSuite.Target("GRAPH", "riskGraph", sha("target")),
+                        sha("semantic-workbook"), "NO_TERMINAL_EVIDENCE", 0, 0, false, List.of());
+        GovernanceGateResult.DecisionBasis basis = new GovernanceGateResult.DecisionBasis(
+                new GovernanceGateResult.WorkbookRef("", 0, "", ""), sha("snapshot"),
+                List.of(), List.of(), new GovernanceGateResult.PolicyRef("", "", List.of()),
+                List.of(), List.of(semantic));
+        GovernanceGateResult gate = new GovernanceGateResult(
+                GovernanceGateResult.SCHEMA_VERSION, "gate-v3",
+                new GovernanceGateResult.Target("GRAPH_DRAFT", "draft-1", 3, sha("draft"),
+                        "tenant-a", "knowledge", "test"),
+                "BLOCKED", List.of(), Instant.parse("2026-07-13T00:00:00Z"), null, "", basis);
+        JsonNode schema = schema("governance-gate-result-v3.schema.json");
+
+        assertFields(mapper.valueToTree(gate), schema.path("properties"));
+        assertFields(mapper.valueToTree(gate.decisionBasis()), schema.at("/$defs/basis/properties"));
+        assertFields(mapper.valueToTree(semantic), schema.at("/$defs/semanticWorkbookRef/properties"));
+        assertFields(mapper.valueToTree(semantic.target()), schema.at("/$defs/semanticTarget/properties"));
+        assertThat(gate.fingerprintVerified()).isTrue();
     }
 
     private CorrectnessWorkbookBundle workbook() {
@@ -73,7 +119,7 @@ class CorrectnessWorkbookProtocolSchemaTest {
                 List.of(), List.of(),
                 new GovernanceGateResult.PolicyRef("gate-policy", "2", List.of("WORKBOOK")),
                 List.of(new GovernanceGateResult.Check("WORKBOOK", "PASSED", "verified", List.of())));
-        return new GovernanceGateResult("", "gate-1",
+        return new GovernanceGateResult(GovernanceGateResult.SCHEMA_VERSION_V2, "gate-1",
                 new GovernanceGateResult.Target("GRAPH_DRAFT", "draft-1", 3, sha("draft"),
                         "tenant-a", "knowledge", "prod"), "PASSED", List.of(),
                 Instant.parse("2026-07-13T00:00:00Z"), null, "", basis);

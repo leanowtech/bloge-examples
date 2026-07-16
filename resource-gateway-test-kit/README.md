@@ -177,6 +177,10 @@ TestSuiteRun.SemanticCoverage semanticCoverage = semanticRun.requireSemanticCove
 SemanticCorrectnessWorkbook workbook = client.findSemanticCorrectnessWorkbook(
         storedSemanticSuite.suiteId(), storedSemanticSuite.revision());
 workbook.requireGateReady();
+
+// Build this value from the exact workbook manifest/evidence projection plus ANEKE's policy result.
+JsonNode gateV3 = objectMapper.readTree(gateResultJson);
+GovernanceGateReceipt receipt = client.submitGovernanceGateResult(gateV3);
 ```
 
 The semantic workbook call uses `WORKBOOK_SYNC` and validates the independent Tool Studio schema
@@ -185,6 +189,11 @@ payload-free case identities, typed requirements, signed verdict references, tru
 and portable evidence endpoints. `READY` is a producer-side seed status, not a publish decision:
 retrieve every evidence bundle used by the gate and verify it with the independently distributed
 key-set pin shown below. Structural v1 is rejected rather than interpreted as empty semantic coverage.
+`submitGovernanceGateResult` validates `governance-gate-result-v3.schema.json` before sending and
+validates the acknowledged payload again, using the least-privilege `GOVERNANCE_GATE_FEEDBACK`
+purpose. It also rejects an acknowledgement whose immutable gate id or result fingerprint differs
+from the submitted decision. This is an independent protocol consumer, not a substitute for the
+real ANEKE N/N-1 release matrix.
 
 Migrate the seven built-in graph suites into the same immutable registry without parsing raw maps:
 

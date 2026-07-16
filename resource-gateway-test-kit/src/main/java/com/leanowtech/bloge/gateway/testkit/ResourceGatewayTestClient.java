@@ -319,6 +319,38 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Submits one schema-complete v3 governance decision with semantic workbook basis.
+     *
+     * <p>The independent schema is applied before the request leaves the process and again to the
+     * acknowledged payload. The response must preserve both immutable decision id and fingerprint.</p>
+     *
+     * @param gateResult complete {@code toolStudio.resourceGateway.gateResult.v3} value
+     * @return schema-validated immutable acknowledgement
+     */
+    public GovernanceGateReceipt submitGovernanceGateResult(JsonNode gateResult) {
+        JsonNode request = requiredObject(gateResult, "gateResult");
+        TestingProtocolSchemaValidator.requireRoot(request,
+                TestingProtocol.GOVERNANCE_GATE_V3_SCHEMA_RESOURCE);
+        String expectedId = request.path("gateResultId").asText();
+        String expectedFingerprint = request.path("resultFingerprint").asText();
+        JsonNode response = exchange("POST", "/api/integration/gate-results", "",
+                "GOVERNANCE_GATE_FEEDBACK", request);
+        GovernanceGateReceipt receipt;
+        try {
+            receipt = GovernanceGateReceipt.fromEnvelope(response);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned an invalid governance gate acknowledgement.");
+        }
+        if (!expectedId.equals(receipt.gateResultId())
+                || !expectedFingerprint.equals(receipt.resultFingerprint())) {
+            throw responseContractInvalid(
+                    "The server acknowledged a different governance gate decision.");
+        }
+        return receipt;
+    }
+
+    /**
      * Resolves one public evidence verification key from the integration protocol.
      *
      * @param keyId attestation verification key id

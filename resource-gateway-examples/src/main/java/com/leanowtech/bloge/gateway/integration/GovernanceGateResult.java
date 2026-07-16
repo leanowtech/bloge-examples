@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
 import java.time.Instant;
@@ -22,7 +24,8 @@ public record GovernanceGateResult(
         DecisionBasis decisionBasis
 ) {
     public static final String SCHEMA_VERSION_V1 = "toolStudio.resourceGateway.gateResult.v1";
-    public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.gateResult.v2";
+    public static final String SCHEMA_VERSION_V2 = "toolStudio.resourceGateway.gateResult.v2";
+    public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.gateResult.v3";
 
     public GovernanceGateResult {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
@@ -77,7 +80,9 @@ public record GovernanceGateResult(
         material.put("issues", issues);
         material.put("producedAt", producedAt);
         material.put("expiresAt", expiresAt == null ? "" : expiresAt);
-        if (!SCHEMA_VERSION_V1.equals(schemaVersion)) {
+        if (SCHEMA_VERSION_V2.equals(schemaVersion)) {
+            material.put("decisionBasis", decisionBasis == null ? DecisionBasis.empty() : decisionBasis);
+        } else if (!SCHEMA_VERSION_V1.equals(schemaVersion)) {
             material.put("decisionBasis", decisionBasis == null ? DecisionBasis.empty() : decisionBasis);
         }
         return VisualBundleFingerprint.fromMaterial(material);
@@ -131,7 +136,9 @@ public record GovernanceGateResult(
                                 List<SuiteRef> contractSuites,
                                 List<EvidenceRef> evidence,
                                 PolicyRef policy,
-                                List<Check> checks) {
+                                List<Check> checks,
+                                @JsonInclude(JsonInclude.Include.NON_EMPTY)
+                                List<SemanticWorkbookRef> semanticWorkbooks) {
         public DecisionBasis {
             workbook = workbook == null ? WorkbookRef.empty() : workbook;
             dependencySnapshotFingerprint = normalize(dependencySnapshotFingerprint);
@@ -139,16 +146,27 @@ public record GovernanceGateResult(
             evidence = evidence == null ? List.of() : List.copyOf(evidence);
             policy = policy == null ? PolicyRef.empty() : policy;
             checks = checks == null ? List.of() : List.copyOf(checks);
+            semanticWorkbooks = semanticWorkbooks == null ? List.of() : List.copyOf(semanticWorkbooks);
+        }
+
+        /** Backward-compatible constructor retaining the exact gate-result v2 JSON shape. */
+        public DecisionBasis(WorkbookRef workbook,
+                             String dependencySnapshotFingerprint,
+                             List<SuiteRef> contractSuites,
+                             List<EvidenceRef> evidence,
+                             PolicyRef policy,
+                             List<Check> checks) {
+            this(workbook, dependencySnapshotFingerprint, contractSuites, evidence, policy, checks, null);
         }
 
         static DecisionBasis empty() {
-            return new DecisionBasis(null, "", null, null, null, null);
+            return new DecisionBasis(null, "", null, null, null, null, null);
         }
 
         public boolean emptyBasis() {
             return workbook.workbookId().isBlank() && dependencySnapshotFingerprint.isBlank()
                     && contractSuites.isEmpty() && evidence.isEmpty() && policy.policyId().isBlank()
-                    && checks.isEmpty();
+                    && checks.isEmpty() && semanticWorkbooks.isEmpty();
         }
 
         public List<String> failedRequiredChecks() {
@@ -195,6 +213,47 @@ public record GovernanceGateResult(
     public record EvidenceRef(String runId, String evidenceFingerprint) {
         public EvidenceRef {
             runId = normalize(runId);
+            evidenceFingerprint = normalize(evidenceFingerprint);
+        }
+    }
+
+    /**
+     * Reconstructable reference to one exact semantic workbook seed consumed by ANEKE.
+     *
+     * <p>The evidence list is the complete ordered, verified projection from the source bundle,
+     * not a caller-selected subset. Candidate and unavailable counts preserve the bounded
+     * projection manifest so Resource Gateway can reproduce the original bundle fingerprint after
+     * newer suite runs arrive.</p>
+     */
+    public record SemanticWorkbookRef(
+            SuiteRef suite,
+            TestSuite.Target target,
+            String bundleFingerprint,
+            String projectionStatus,
+            int candidateEvidenceCount,
+            int unavailableEvidenceCount,
+            boolean evidenceTruncated,
+            List<SemanticEvidenceRef> evidence
+    ) {
+        public SemanticWorkbookRef {
+            suite = suite == null ? new SuiteRef("", 0, "") : suite;
+            bundleFingerprint = normalize(bundleFingerprint);
+            projectionStatus = normalize(projectionStatus).toUpperCase();
+            candidateEvidenceCount = Math.max(0, candidateEvidenceCount);
+            unavailableEvidenceCount = Math.max(0, unavailableEvidenceCount);
+            evidence = evidence == null ? List.of() : List.copyOf(evidence);
+        }
+
+        /** @return stable exact-suite identity used for duplicate detection */
+        public String key() {
+            return suite.key();
+        }
+    }
+
+    /** Exact terminal semantic aggregate identity needed to reconstruct a workbook seed. */
+    public record SemanticEvidenceRef(String suiteRunId, String evidenceFingerprint) {
+        public SemanticEvidenceRef {
+            suiteRunId = normalize(suiteRunId);
             evidenceFingerprint = normalize(evidenceFingerprint);
         }
     }

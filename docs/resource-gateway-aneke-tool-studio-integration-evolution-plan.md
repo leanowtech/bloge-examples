@@ -504,6 +504,9 @@ policy。正式链路把 suite 定义、运行证据和治理结论拆成三个�
    最小披露 404。
 6. 合法 gate result 与 `GOVERNANCE_GATE_RESULT_RECEIVED` 进入同一事务；并发实例由数据库唯一键裁决，相同内容
    幂等，异内容冲突。Author view 除 draft revision 外还比较 dependency snapshot，suite/readiness 漂移会自动 stale。
+7. Round 22 的 `GovernanceGateResult.v3` 在 v2 basis 之上加入可重建 semantic workbook refs。完整 evidence closure 与
+   manifest facts 进入 gate fingerprint；exact GraphDraft 编译 target 和当前 operator runtime target 负责证明“测的是
+   这张图”，而不是依赖 graphName/operatorRef 猜测。
 
 workbook seed 的核心形状：
 
@@ -590,9 +593,14 @@ semantic suite seed 由
 - 最多投影最新 100 条，candidate/unavailable/truncated 一同进入 bundle fingerprint；历史趋势另走分页协议；
 - ANEKE 必须跟随每条 evidence endpoint，使用带外 pin 独立验证 portable bundle，不能只相信 producer 的 READY。
 
-当前 `GovernanceGateResult.v2` 仍以 draft workbook basis 为主，尚未把 semantic workbook fingerprint 设为一等
-decision-basis ref。因此本轮完成的是“语义事实可确定性进入 ANEKE adapter”，不是 semantic publish gate 的最终闭环；
-下一协议代际必须显式绑定该 fingerprint，禁止把这段缺口藏在 `requiredChecks` 文本里。
+`GovernanceGateResult.v3` 已把 semantic workbook 变成一等 decision-basis ref。每条 ref 固化 exact suite/target、
+bundle fingerprint、projection status、candidate/unavailable/truncated manifest 事实和完整有序 verified evidence closure。
+Resource Gateway 不查询“最新 workbook”来判断旧结论，而是逐个 exact suiteRunId 重新验签并重建原 bundle；后续新增 run
+不会让旧结论误 stale，evidence 过期、篡改或失去验签能力则分别进入 `STALE/UNVERIFIABLE`。graph suite 不能靠同名
+关联：服务端会把 exact GraphDraft 重新 lowering/compile，并比较 testing-control-plane composite target fingerprint；
+operator suite 必须真实出现在 draft 且当前 runtime target 未漂移。`PASSED` 至少需要一个 gate-ready graph suite，
+policy 必须要求 `SEMANTIC_CORRECTNESS`，对应 check refs 必须精确等于全部 bundle fingerprints。v2 保留兼容，但不具备
+上述 semantic closure；真实 ANEKE N/N-1 发布矩阵和最终 publish decision 仍在 ANEKE 边界。
 
 ## 8. Deep Link 设计
 
@@ -684,7 +692,7 @@ POST /api/integration/gate-results
 |---|---|---|
 | Deep link | draft/node/operator/run/gate issue URL | ANEKE 点击可直接定位到画布上下文 |
 | Correctness workbook projection | Round 17 draft `CorrectnessWorkbookBundle.v1` + exact semantic-suite `SemanticCorrectnessWorkbookBundle.v1` + independent test-kit consumer | ANEKE 可确定性区分历史表格 seed 与 typed semantic seed；v1 不伪装语义覆盖；evidence 可回到便携验签 bundle |
-| Gate result ingestion | `GovernanceGateResult.v2` decision basis + Author UI panel | PASSED 必须可回指 workbook/snapshot/suite/evidence/policy；漂移自动 stale |
+| Gate result ingestion | v2 兼容 + `GovernanceGateResult.v3` semantic decision basis + Author UI panel | PASSED 必须可重建 workbook/snapshot/suite/evidence/policy，graph target 与 exact draft 编译指纹一致；漂移 stale、验签权威不可用显示 unverifiable |
 | Operator runtime readiness profile | owner、risk、secret policy、idempotency、SLA、runtime binding、artifact provenance/SBOM | ANEKE 能判断工具可发布/可执行性 |
 | Evidence to workbook mapping | verified runId/evidence fingerprint -> workbook rows | run evidence 能成为 correctness workbook 证据且防跨 scope/伪造引用 |
 
@@ -711,7 +719,7 @@ POST /api/integration/gate-results
 | P0 | Timeout/partial failure 语义 | Round 12 已补 `WRITE_EXTERNAL` contract、binding/activation conformance、descriptor-backed HTTP mutation、底层 unsafe `httpRequest` 防绕过和可视化 readiness；仍缺 detach policy、错误 effect 分类检测、非 HTTP 私有写边界和客户 provider adapter 覆盖 | `VisualNodeExecutionFact` + durable control + evidence v6 + `ExecutionBudget` + `SideEffectReconciliationRecord.v1` + `bloge.sideEffectProtocol.v1`；下一步 effect-classification/egress conformance 与 disconnect/detach |
 | P1 | Deep Link | 当前不是 integration API | 前端 route + resolver API |
 | P1 | Health/Capability Probe | 已有协议/端点/feature flags；Round 13 增加动态身份 refresh state、成功/失败计数、active/revoked 数量和撤销传播 SLO | `/api/integration/capabilities` + identity authority SLO/alert/runbook |
-| P1 | Contract Test Suite 对齐 workbook | Round 17 已实现 deterministic/sanitized workbook seed、stable case/assertion ID、exact suite/evidence refs、gate v2 decision basis、required-check fail closed 和事务 event；残余是客户 ANEKE consumer conformance 与图级 suite/golden case 的统一投影 | correctness workbook v1 + governance gate result v2 |
+| P1 | Contract Test Suite 对齐 workbook | Round 17 已实现 structural seed/gate v2；Round 21-22 已实现 typed semantic seed、exact evidence 重建、graph/operator target 绑定、gate v3 required-check fail closed、独立 test-kit 双向 schema 校验；残余是真实 ANEKE N/N-1 consumer matrix 与 visual golden case 的统一资产入口 | correctness workbook v1 + semantic workbook v1 + governance gate result v3 |
 | P1 | UI 展示治理反馈 | gate result ingestion、freshness 和 Author panel 已实现 | 下一步把 dependency readiness/suite revision 变成可点击 gate issue |
 | P1 | Operator runtime readiness 元数据 | Round 15 已导出 library/binding/activation/suite readiness，SLA 仍无权威来源 | runtime readiness profile + SLA registry/observation |
 | P2 | Change Event/Webhook | transactional outbox、signed cursor 和 reconciliation 已实现；webhook 仍后置 | polling cursor 为正确性主链，signed webhook 仅作低延迟提示 |
@@ -1765,13 +1773,14 @@ HA DB、删除 backlog SLO、residency/subject-request 执行器与客户 policy
 
 退出门槛：默认 replay 无外部副作用；所有示例 suite 可运行；旧 gate result 自动 stale；ANEKE workbook 可追溯到 evidenceId/runId/snapshot fingerprint。
 
-当前落地状态（Round 17）：recorded replay、parent lineage、四类 case、path/schema/error/governance assertion、
+当前落地状态（Round 17-22）：recorded replay、parent lineage、四类 case、path/schema/error/governance assertion、
 `DENY + externalInvocationCount=0`、detached payload v2 已实现；两个数据库实例并发处理相同 replay request 时由
 确定性 runId/唯一键裁决并返回同一结果，请求键按 tenant/environment 隔离。`CorrectnessWorkbookBundle.v1` 已把 exact
-suite revision、脱敏 case/assertion 和 signed evidence refs 投影给 ANEKE；`GovernanceGateResult.v2` 的 decision basis
-会对 workbook source、snapshot、suite、evidence 和 required checks fail closed 校验，写入与 change event 同事务。
-Stage 3 仓库内主链已退出；部署侧仍需真实 ANEKE consumer conformance，shadow/live replay 仍明确关闭，不能把
-recorded replay 的通过等价为生产副作用路径已验证。
+suite revision、脱敏 case/assertion 和 signed evidence refs 投影给 ANEKE；semantic v2 suite 可投影 typed payload-free
+workbook seed。`GovernanceGateResult.v3` 会按 exact evidence 重建 semantic bundle、编译绑定 GraphDraft graph target、
+验证 operator runtime target，并要求 graph-level gate-ready evidence 与精确 check refs；写入仍与 change event 同事务。
+Stage 3 仓库内 semantic gate 主链已退出；部署侧仍需真实 ANEKE N/N-1 consumer conformance，shadow/live replay 仍明确
+关闭，不能把 recorded replay 的通过等价为生产副作用路径已验证。
 
 ### Stage 4 - 持续同步和运维闭环（2-4 周）
 

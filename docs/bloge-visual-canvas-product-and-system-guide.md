@@ -704,17 +704,18 @@ diagnostic。structural `bloge.testSuite.v1` 会被明确拒绝，不会伪装�
 key-set fingerprint pin 验证 portable bundle；不能把 producer 状态当作信任根。投影最多包含最新 100 条，
 `candidateEvidenceCount` 与 `evidenceTruncated` 必须随 workbook 一起保存。
 
-当前 `GovernanceGateResult.v2` 仍以 draft workbook decision basis 为主，尚不能一等引用 semantic seed fingerprint。
-因此 semantic seed 可用于正确性工作簿导入和 adapter 联调，但在新 gate 协议落地前不得宣称完成 semantic publish
-decision 闭环。
+ANEKE 必须把实际消费的 semantic seed 固化到 `GovernanceGateResult.v3`：保存 exact suite target、bundle
+fingerprint、完整有序 evidence closure、candidate/unavailable/truncation manifest 事实。Resource Gateway 收到后会按
+exact suite run 重建原 bundle，并把 graph target 与 exact GraphDraft 编译结果绑定；后续新增 run 不会误伤旧决定，
+但 evidence 被删除、验签失败、target 漂移或 bundle 无法重建都会 fail closed。
 
 **第二步：ANEKE 运行自己的 workbook 和 publish-gate policy。** 它生成不可变
-`GovernanceGateResult.v2`，`decisionBasis` 必须带回 workbook ref、source bundle fingerprint、dependency snapshot、
-suite refs、evidence refs、policy id/version、required checks 和每项结果。例如：
+`GovernanceGateResult.v3`，`decisionBasis` 必须带回 workbook ref、source bundle fingerprint、dependency snapshot、
+suite refs、evidence refs、semantic workbook refs、policy id/version、required checks 和每项结果。例如：
 
 ```json
 {
-  "schemaVersion": "toolStudio.resourceGateway.gateResult.v2",
+  "schemaVersion": "toolStudio.resourceGateway.gateResult.v3",
   "gateResultId": "gate-knowledge-tool-2026-07-13-01",
   "target": {
     "kind": "GRAPH_DRAFT",
@@ -739,15 +740,26 @@ suite refs、evidence refs、policy id/version、required checks 和每项结果
     "dependencySnapshotFingerprint": "sha256:...",
     "contractSuites": [{"suiteId":"suite-risk","revision":3,"fingerprint":"sha256:..."}],
     "evidence": [{"runId":"run-...","evidenceFingerprint":"sha256:..."}],
+    "semanticWorkbooks": [{
+      "suite": {"suiteId":"suite-risk-semantic","revision":4,"fingerprint":"sha256:..."},
+      "target": {"kind":"GRAPH","id":"knowledge-tool","fingerprint":"sha256:..."},
+      "bundleFingerprint": "sha256:...",
+      "projectionStatus": "READY",
+      "candidateEvidenceCount": 1,
+      "unavailableEvidenceCount": 0,
+      "evidenceTruncated": false,
+      "evidence": [{"suiteRunId":"suite-run-...","evidenceFingerprint":"sha256:..."}]
+    }],
     "policy": {
       "policyId": "enterprise-publish-gate",
       "version": "2026-07",
-      "requiredChecks": ["WORKBOOK","CONTRACT_COVERAGE","EVIDENCE","RUNTIME_READINESS","OWNER_APPROVAL","BREAKING_MIGRATION"]
+      "requiredChecks": ["WORKBOOK","CONTRACT_COVERAGE","EVIDENCE","SEMANTIC_CORRECTNESS","RUNTIME_READINESS","OWNER_APPROVAL","BREAKING_MIGRATION"]
     },
     "checks": [
       {"kind":"WORKBOOK","status":"PASSED","reason":"verified","refs":["wb-knowledge-tool@12"]},
       {"kind":"CONTRACT_COVERAGE","status":"PASSED","reason":"coverage met","refs":["suite-risk@3"]},
       {"kind":"EVIDENCE","status":"PASSED","reason":"signed run verified","refs":["run-..."]},
+      {"kind":"SEMANTIC_CORRECTNESS","status":"PASSED","reason":"exact semantic bundle verified","refs":["sha256:..."]},
       {"kind":"RUNTIME_READINESS","status":"PASSED","reason":"binding ready","refs":[]},
       {"kind":"OWNER_APPROVAL","status":"PASSED","reason":"approved","refs":[]},
       {"kind":"BREAKING_MIGRATION","status":"PASSED","reason":"no breaking change","refs":[]}
@@ -759,15 +771,21 @@ suite refs、evidence refs、policy id/version、required checks 和每项结果
 
 提交到 `POST /api/integration/gate-results` 时使用 `X-Purpose: GOVERNANCE_GATE_FEEDBACK`。Resource Gateway 不重跑
 ANEKE policy，但会 fail closed 地验证 basis：target scope、draft/snapshot/suite fingerprint、source bundle fingerprint、
-run evidence 签名以及所有 `policy.requiredChecks`。通过结论缺依据返回
+run evidence 签名、semantic bundle 精确重建、GraphDraft 编译 target binding 以及所有 `policy.requiredChecks`。v3 的
+`PASSED` 至少需要一个 gate-ready `GRAPH` semantic workbook，并要求 `SEMANTIC_CORRECTNESS` check 精确引用全部 bundle
+fingerprint。通过结论缺依据返回
 `409 RG.INTEGRATION.GATE_BASIS_INCOMPLETE`；依据已漂移返回 `409 RG.INTEGRATION.GATE_BASIS_STALE`；跨租户 run ref
-按 scope-safe `404` 处理。合法结果和 `GOVERNANCE_GATE_RESULT_RECEIVED` event 同事务提交；suite 或 dependency
-变更后 Author 侧 freshness 自动变为 `STALE`。
+按 scope-safe `404` 处理；验签权威、证据存储或编译 target verifier 暂不可用返回稳定
+`503 RG.INTEGRATION.SEMANTIC_GATE_VERIFICATION_UNAVAILABLE`。合法结果和
+`GOVERNANCE_GATE_RESULT_RECEIVED` event 同事务提交；source/target 漂移后 Author 侧 freshness 变为 `STALE`，验证权威
+不可用时变为 `UNVERIFIABLE`，不会被误显示成当前有效。
 
-v1 gate result 继续可用于 `BLOCKED/WARNING` 兼容反馈，但 v1 `PASSED` 会被拒绝，因为它无法证明 decision basis。
+v1 gate result 继续可用于 `BLOCKED/WARNING` 兼容反馈；v2 保留原 wire shape 与 fingerprint 兼容。v1 `PASSED` 会被
+拒绝，因为它无法证明 decision basis；新的 semantic `PASSED` 使用 v3。
 机器合同：[correctness workbook bundle v1](schemas/tool-studio-resource-gateway/correctness-workbook-bundle-v1.schema.json)、
-[semantic correctness workbook bundle v1](schemas/tool-studio-resource-gateway/semantic-correctness-workbook-bundle-v1.schema.json) 和
-[governance gate result v2](schemas/tool-studio-resource-gateway/governance-gate-result-v2.schema.json)。
+[semantic correctness workbook bundle v1](schemas/tool-studio-resource-gateway/semantic-correctness-workbook-bundle-v1.schema.json)、
+[governance gate result v2](schemas/tool-studio-resource-gateway/governance-gate-result-v2.schema.json) 和
+[governance gate result v3](schemas/tool-studio-resource-gateway/governance-gate-result-v3.schema.json)。
 
 ### 3.6 读取 timeout、fallback 与 partial failure 证据
 
