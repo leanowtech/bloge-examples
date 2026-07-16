@@ -541,9 +541,23 @@ execution ownership, tenant, and namespace drift and unreadable JSON are reporte
 guessed. Configure
 `gateway.testing.durable.projection-reconciliation-mode=AUDIT_ONLY` for observation-only rollout,
 `gateway.testing.durable.projection-reconciliation-page-size` for a `1..1000` page, and
-`gateway.testing.durable.projection-reconciliation-interval-ms` for the fixed delay. Logs contain
-aggregate counts only. The cursor is currently process-local and findings are not yet a durable owner
-queue, so this loop is self-repair for derived indexes, not a complete maintenance control plane.
+`gateway.testing.durable.projection-reconciliation-interval-ms` for the fixed delay. Set
+`gateway.testing.durable.projection-reconciliation.instance-id` to a stable replica identity and
+`gateway.testing.durable.projection-reconciliation.lease-duration-seconds` to the database-clock
+sweep lease (`1..3600`, default `120`). A generated process identity is used when no instance ID is
+configured.
+
+The two keyset cursors, sweep lease/epoch/token, and payload-free finding lifecycle are durable.
+Only one replica may sweep a page. Projection repair, finding upsert/consistent-recheck resolution,
+and cursor checkpointing commit together in one test-runtime database transaction. A crash rolls that page back,
+while the separately committed lease eventually expires for takeover. Unrepairable or raced findings
+enter an internal owner queue. Claims use a server-minted token, version, owner, and database-clock
+lease; manual resolution rejects stale, forged, and expired fences. Stored findings contain internal
+row IDs, column names, classifications, and counters, never authority JSON or business values. Logs
+still contain aggregate counts only. An authenticated operations endpoint, immutable action audit,
+queue retention/archival, metrics/SLO alerts, non-H2 dialect certification, and production load
+certification remain future work; the control plane is profile-gated to `test`/`staging` and vetoed
+by `production`.
 Wait identity must match the lifecycle identity, and committed wait/work-item ids cannot migrate to
 another execution. Work-item batches validate atomically, and claim, retry, terminal, and dead-letter
 transitions reuse BLOGE's reference state machine. An internal database-clock lease claim can fence an

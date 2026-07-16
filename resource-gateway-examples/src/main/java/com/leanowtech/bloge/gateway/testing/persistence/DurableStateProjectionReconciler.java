@@ -118,6 +118,8 @@ public final class DurableStateProjectionReconciler {
                                   RepairMode mode,
                                   Accumulator accumulator) {
         accumulator.scanned++;
+        accumulator.inspectedRows.add(new EntityKey(
+                EntityType.EXECUTION, projection.executionId()));
         ExecutionInstance authority;
         try {
             authority = objectMapper.readValue(projection.payloadJson(), ExecutionInstance.class);
@@ -153,6 +155,8 @@ public final class DurableStateProjectionReconciler {
                                  RepairMode mode,
                                  Accumulator accumulator) {
         accumulator.scanned++;
+        accumulator.inspectedRows.add(new EntityKey(
+                EntityType.WORK_ITEM, projection.itemId()));
         WorkItem authority;
         try {
             authority = objectMapper.readValue(projection.payloadJson(), WorkItem.class);
@@ -278,6 +282,23 @@ public final class DurableStateProjectionReconciler {
     }
 
     /**
+     * Payload-free identity of one committed authority row inspected by a sweep.
+     *
+     * @param entityType execution or work-item authority table
+     * @param rowId committed primary key, never a business payload
+     */
+    public record EntityKey(EntityType entityType, String rowId) {
+        /** Requires a complete, non-blank internal row identity. */
+        public EntityKey {
+            entityType = Objects.requireNonNull(entityType, "entityType");
+            rowId = Objects.requireNonNull(rowId, "rowId").trim();
+            if (rowId.isBlank()) {
+                throw new IllegalArgumentException("Projection entity row ID is required");
+            }
+        }
+    }
+
+    /**
      * Independent keyset positions for the two authority tables.
      *
      * @param afterExecutionId last execution primary key from the previous partial page
@@ -347,6 +368,8 @@ public final class DurableStateProjectionReconciler {
      * @param repaired drifted rows repaired by compare-and-set
      * @param raced repair attempts rejected after concurrent state change
      * @param findings payload-free discrepancies in deterministic table/key order
+     * @param inspectedRows payload-free row identities inspected by this page, including rows that
+     *                      are now consistent
      */
     public record SweepResult(
             ScanCursor nextCursor,
@@ -356,11 +379,13 @@ public final class DurableStateProjectionReconciler {
             int unreadable,
             int repaired,
             int raced,
-            List<Finding> findings) {
-        /** Copies the finding page and requires a concrete continuation cursor. */
+            List<Finding> findings,
+            List<EntityKey> inspectedRows) {
+        /** Copies result collections and requires a concrete continuation cursor. */
         public SweepResult {
             nextCursor = Objects.requireNonNull(nextCursor, "nextCursor");
             findings = findings == null ? List.of() : List.copyOf(findings);
+            inspectedRows = inspectedRows == null ? List.of() : List.copyOf(inspectedRows);
         }
     }
 
@@ -375,10 +400,11 @@ public final class DurableStateProjectionReconciler {
         private int repaired;
         private int raced;
         private final List<Finding> findings = new ArrayList<>();
+        private final List<EntityKey> inspectedRows = new ArrayList<>();
 
         private SweepResult result(ScanCursor cursor) {
             return new SweepResult(cursor, scanned, consistent, drifted, unreadable,
-                    repaired, raced, findings);
+                    repaired, raced, findings, inspectedRows);
         }
     }
 }

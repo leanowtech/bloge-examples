@@ -61,6 +61,9 @@ class DurableStateProjectionReconcilerTest {
         assertThat(result.drifted()).isEqualTo(2);
         assertThat(result.repaired()).isEqualTo(2);
         assertThat(result.unreadable()).isZero();
+        assertThat(result.inspectedRows())
+                .extracting(DurableStateProjectionReconciler.EntityKey::rowId)
+                .containsExactly("engine-repair", "item-repair");
         assertThat(result.findings())
                 .allSatisfy(finding -> {
                     assertThat(finding.repairable()).isTrue();

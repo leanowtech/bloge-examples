@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -66,6 +67,8 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(context.getBeansOfType(TestSuiteRunReconciliationScheduler.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 DurableStateProjectionReconciliationScheduler.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                DatabaseDurableStateProjectionControlPlane.class)).hasSize(1);
         assertThat(context.getBeansOfType(ReplayPayloadRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestReplayPayloadService.class)).hasSize(1);
         assertThat(context.getBeansOfType(ReplayPayloadRetentionScheduler.class)).hasSize(1);
@@ -88,7 +91,9 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("suiteRunOwnerLease", true)
                 .containsEntry("abandonedSuiteRunReconciliation", true)
-                .containsEntry("durableStateProjectionAntiEntropy", true);
+                .containsEntry("durableStateProjectionAntiEntropy", true)
+                .containsEntry("durableStateProjectionSweepLease", true)
+                .containsEntry("durableStateProjectionFindingQueue", true);
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("governedTestReplayPayloadCapture", true)
                 .containsEntry("testReplayBehavior", true)

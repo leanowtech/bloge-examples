@@ -33,6 +33,8 @@ class TestabilityCapabilitiesTest {
         assertThat(disabled.endpoints()).noneMatch(endpoint -> endpoint.path().startsWith("/api/testing/"));
         assertThat(disabled.features()).containsEntry("dynamicAttemptOccurrenceSelectors", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionAntiEntropy", false);
+        assertThat(disabled.features()).containsEntry("durableStateProjectionSweepLease", false);
+        assertThat(disabled.features()).containsEntry("durableStateProjectionFindingQueue", false);
         assertThat(enabled.testability().executionEndpointEnabled()).isTrue();
         assertThat(enabled.supportedObjects()).containsKeys("testExecutionRequest", "testExecutionResponse",
                 "testExecutionBatchRequest", "testExecutionBatchResponse", "fixtureBundleRegistrationRequest",
@@ -72,6 +74,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("automaticDurableRecoveryHeartbeat", true)
                 .containsEntry("authenticatedDurableTerminalRecovery", true)
                 .containsEntry("durableStateProjectionAntiEntropy", true)
+                .containsEntry("durableStateProjectionSweepLease", true)
+                .containsEntry("durableStateProjectionFindingQueue", true)
                 .containsEntry("signedTestRunEvidence", false)
                 .containsEntry("suiteSignedChildEvidenceGate", false)
                 .containsEntry("signedTestSuiteRunAttestation", false)

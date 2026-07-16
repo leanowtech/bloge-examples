@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableTestExecutionCheckpointRepository;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseFixtureBundleRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseReplayPayloadRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRunRepository;
@@ -42,6 +43,10 @@ import java.util.UUID;
 @Configuration(proxyBeanMethods = false)
 @Profile("!production & (test | staging)")
 public class TestRuntimeConfiguration {
+
+    /** Creates the profile-gated Spring composition root. */
+    public TestRuntimeConfiguration() {
+    }
 
     @Bean(destroyMethod = "close")
     TestRuntimeDatabase testRuntimeDatabase(
@@ -84,20 +89,35 @@ public class TestRuntimeConfiguration {
         IndependentDurableTestEngineFactory engineFactory =
                 new IndependentDurableTestEngineFactory(operatorRegistry,
                         new JacksonCheckpointCodec(objectMapper), durableStateStore);
-        return new DurableTestRuntimeResources(
-                engineFactory, durableStateStore.projectionReconciler());
+        return new DurableTestRuntimeResources(engineFactory);
+    }
+
+    /** Creates the database-leased cursor and finding authority for projection anti-entropy. */
+    @Bean
+    DatabaseDurableStateProjectionControlPlane durableStateProjectionControlPlane(
+            TestRuntimeDatabase database,
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.durable.projection-reconciliation.instance-id:}")
+            String instanceId,
+            @Value("${gateway.testing.durable.projection-reconciliation.lease-duration-seconds:120}")
+            long leaseDurationSeconds) {
+        String owner = instanceId == null || instanceId.isBlank()
+                ? "projection-reconciler-" + UUID.randomUUID() : instanceId.trim();
+        return new DatabaseDurableStateProjectionControlPlane(
+                database.jdbc(), database.transactionManager(), objectMapper, owner,
+                Duration.ofSeconds(leaseDurationSeconds));
     }
 
     /** Runs bounded projection anti-entropy only inside the isolated test/staging control plane. */
     @Bean
     DurableStateProjectionReconciliationScheduler durableStateProjectionReconciliationScheduler(
-            DurableTestRuntimeResources resources,
+            DatabaseDurableStateProjectionControlPlane controlPlane,
             @Value("${gateway.testing.durable.projection-reconciliation-page-size:100}")
             int pageSize,
             @Value("${gateway.testing.durable.projection-reconciliation-mode:REPAIR_DERIVED}")
             String repairMode) {
         return new DurableStateProjectionReconciliationScheduler(
-                resources.projectionReconciler(), pageSize,
+                controlPlane, pageSize,
                 DurableStateProjectionReconciler.RepairMode.parse(repairMode));
     }
 

@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestTerminalRecoveryRuntime;
@@ -59,6 +60,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(DurableTestRuntimeResources.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableStateProjectionReconciliationScheduler.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DatabaseDurableStateProjectionControlPlane.class)).isEmpty();
             assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();
@@ -104,8 +107,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(WorkItemStore.class)).isEmpty();
             assertThat(context.getBean(DurableTestRuntimeResources.class)
                     .engineFactory().configuration().durableStores()).isTrue();
-            assertThat(context.getBean(DurableTestRuntimeResources.class)
-                    .projectionReconciler()).isNotNull();
+            assertThat(context.getBeansOfType(
+                    DatabaseDurableStateProjectionControlPlane.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableStateProjectionReconciliationScheduler.class)).hasSize(1);
             assertThat(context.getBean(TestabilityAvailability.class).executionEndpointEnabled()).isTrue();
@@ -149,6 +152,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(DurableTestRuntimeResources.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableStateProjectionReconciliationScheduler.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DatabaseDurableStateProjectionControlPlane.class)).isEmpty();
             assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();
