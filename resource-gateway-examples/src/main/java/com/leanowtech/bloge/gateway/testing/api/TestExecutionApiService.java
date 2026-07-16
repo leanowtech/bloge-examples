@@ -11,6 +11,9 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionIntent;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.Kind;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
@@ -20,6 +23,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceSanitizer;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
+import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorInputCoercer;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorMicroGraphRunner;
 import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
@@ -37,6 +41,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
+import java.util.UUID;
 
 /**
  * Authorized public adapter over the execution data-control kernel.
@@ -69,6 +75,7 @@ public final class TestExecutionApiService {
     private final TestReplayPayloadService replayPayloads;
     private final TestEvidenceIntegrityService evidenceIntegrity;
     private final TestEvidenceSanitizer sanitizer;
+    private final TestRuntimeAdmissionGate admissions;
     private final Duration retention;
 
     public TestExecutionApiService(GatewayGraphService graphService,
@@ -111,7 +118,8 @@ public final class TestExecutionApiService {
                                    TestReplayPayloadService replayPayloads) {
         this(graphService, operatorRegistry, resourceRegistry, expressionEvaluator, objectMapper,
                 fixtureRepository, runRepository, securityEvents, retention, replayPayloads,
-                new TestEvidenceIntegrityService(objectMapper, VisualEvidenceSigner.unavailable()));
+                new TestEvidenceIntegrityService(objectMapper, VisualEvidenceSigner.unavailable()),
+                TestRuntimeAdmissionGate.unbounded());
     }
 
     /**
@@ -140,6 +148,39 @@ public final class TestExecutionApiService {
                                    Duration retention,
                                    TestReplayPayloadService replayPayloads,
                                    TestEvidenceIntegrityService evidenceIntegrity) {
+        this(graphService, operatorRegistry, resourceRegistry, expressionEvaluator, objectMapper,
+                fixtureRepository, runRepository, securityEvents, retention, replayPayloads,
+                evidenceIntegrity, TestRuntimeAdmissionGate.unbounded());
+    }
+
+    /**
+     * Creates the complete adapter with distributed multi-dimensional admission control.
+     *
+     * @param graphService graph target registry
+     * @param operatorRegistry frozen operator registry
+     * @param resourceRegistry frozen resource registry
+     * @param expressionEvaluator resource expression evaluator
+     * @param objectMapper protocol mapper
+     * @param fixtureRepository immutable fixture registry
+     * @param runRepository isolated test-run store
+     * @param securityEvents required security audit sink
+     * @param retention test-run evidence retention
+     * @param replayPayloads governed replay resolver
+     * @param evidenceIntegrity detached evidence signing boundary
+     * @param admissions database-authoritative capacity gate
+     */
+    public TestExecutionApiService(GatewayGraphService graphService,
+                                   OperatorRegistry operatorRegistry,
+                                   ResourceRegistry resourceRegistry,
+                                   BlgeExpressionEvaluator expressionEvaluator,
+                                   ObjectMapper objectMapper,
+                                   FixtureBundleRepository fixtureRepository,
+                                   TestRunRepository runRepository,
+                                   TestSecurityEventRepository securityEvents,
+                                   Duration retention,
+                                   TestReplayPayloadService replayPayloads,
+                                   TestEvidenceIntegrityService evidenceIntegrity,
+                                   TestRuntimeAdmissionGate admissions) {
         this.graphService = Objects.requireNonNull(graphService, "graphService");
         this.operatorRegistry = Objects.requireNonNull(operatorRegistry, "operatorRegistry");
         this.resourceRegistry = Objects.requireNonNull(resourceRegistry, "resourceRegistry");
@@ -150,6 +191,7 @@ public final class TestExecutionApiService {
         this.securityEvents = Objects.requireNonNull(securityEvents, "securityEvents");
         this.replayPayloads = replayPayloads;
         this.evidenceIntegrity = Objects.requireNonNull(evidenceIntegrity, "evidenceIntegrity");
+        this.admissions = Objects.requireNonNull(admissions, "admissions");
         this.sanitizer = new TestEvidenceSanitizer(objectMapper);
         this.retention = retention == null || retention.isNegative() || retention.isZero()
                 ? Duration.ofDays(30) : retention;
@@ -179,7 +221,9 @@ public final class TestExecutionApiService {
         TestExecutionResult result = kernel.execute(new TestExecutionRequest(
                 target.graph(), new GraphContext(request.context()), fixture.bundle(), AUTHORIZED_PURPOSE,
                 target.fingerprint(), fixture.source(), metadata, target.certificationEligible(),
-                resolvedReplays));
+                resolvedReplays), compiled -> admissions.admit(identity,
+                admissionIntent(Kind.GRAPH, request, target.fingerprint(),
+                        compiled, target.dependencyFingerprints().keySet())));
         SecuredEvidence secured = secureEvidence(sanitizer.sanitize(result.evidence()));
         TestRunRecord record = new TestRunRecord(secured.evidence().runId(), identity.tenantId(),
                 identity.organizationId(), identity.projectId(), identity.environmentId(), identity.actorId(),
@@ -265,7 +309,11 @@ public final class TestExecutionApiService {
                 new OperatorMicroGraphRunner.Request(target.operatorRef(), target.synchronousOperator(),
                         target.fingerprint(), typedInput, fixture.bundle(), AUTHORIZED_OPERATOR_PURPOSE,
                         fixture.source(), target.certificationEligible(),
-                        operatorExecutionMetadata(request, identity, target), resolvedReplays));
+                        operatorExecutionMetadata(request, identity, target), resolvedReplays),
+                compiled -> admissions.admit(identity,
+                        admissionIntent(Kind.OPERATOR, request,
+                                target.fingerprint(), compiled,
+                                target.resourceDependencyFingerprints().keySet())));
         SecuredEvidence secured = secureEvidence(sanitizer.sanitize(result.execution().evidence()));
         TestRunRecord record = new TestRunRecord(secured.evidence().runId(), identity.tenantId(),
                 identity.organizationId(), identity.projectId(), identity.environmentId(), identity.actorId(),
@@ -618,6 +666,31 @@ public final class TestExecutionApiService {
         metadata.put("targetCertificationRequirements", target.certificationRequirements());
         metadata.put("targetCertificationGaps", target.certificationGaps());
         return Map.copyOf(metadata);
+    }
+
+    private AdmissionIntent admissionIntent(
+            Kind kind,
+            Object request,
+            String targetFingerprint,
+            CompiledExecutionControl compiled,
+            Set<String> targetDependencyRefs) {
+        Set<String> operatorRefs = new TreeSet<>();
+        Set<String> dependencyRefs = new TreeSet<>(targetDependencyRefs);
+        compiled.inventory().entries().forEach(entry -> {
+            if (!entry.site().operatorRef().isBlank()) {
+                operatorRefs.add(entry.site().operatorRef());
+            }
+            if (!entry.site().resourceRef().isBlank()) {
+                dependencyRefs.add(entry.site().resourceRef());
+            }
+        });
+        String intentFingerprint = ProtocolFingerprint.of(objectMapper, Map.of(
+                "schemaVersion", "bloge.testRuntimeAdmissionWorkIntent.v1",
+                "request", request,
+                "targetFingerprint", targetFingerprint,
+                "planFingerprint", compiled.effectivePlan().planFingerprint()));
+        return new AdmissionIntent(kind, UUID.randomUUID().toString(), intentFingerprint, "",
+                operatorRefs, dependencyRefs);
     }
 
     private TestExecutionApiResponse response(TestRunRecord record,

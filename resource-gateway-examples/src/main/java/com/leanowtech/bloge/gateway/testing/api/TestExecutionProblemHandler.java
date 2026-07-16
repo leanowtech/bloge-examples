@@ -26,6 +26,13 @@ public class TestExecutionProblemHandler {
         if (problem.status() == 401) {
             response.header(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"resource-gateway-testing\"");
         }
+        if (problem.status() == 429) {
+            Object value = problem.details().get("retryAfterSeconds");
+            if (value instanceof Number number) {
+                long seconds = Math.max(1, Math.min(3600, number.longValue()));
+                response.header(HttpHeaders.RETRY_AFTER, Long.toString(seconds));
+            }
+        }
         return response.body(problem);
     }
 

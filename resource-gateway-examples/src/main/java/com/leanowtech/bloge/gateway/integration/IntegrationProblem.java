@@ -83,6 +83,21 @@ public record IntegrationProblem(
                 410, code, false, correlationId, details);
     }
 
+    /**
+     * Creates a retryable capacity/backpressure response.
+     *
+     * <p>Callers should include a positive {@code retryAfterSeconds} detail. The HTTP adapter maps
+     * that bounded aggregate value to {@code Retry-After}; resource identities must not be placed
+     * in details.</p>
+     */
+    public static IntegrationProblem tooManyRequests(String code,
+                                                     String title,
+                                                     String correlationId,
+                                                     Map<String, Object> details) {
+        return new IntegrationProblem("", "urn:bloge:problem:integration-capacity", title,
+                429, code, true, correlationId, details);
+    }
+
     public static IntegrationProblem serviceUnavailable(String code,
                                                          String title,
                                                          String correlationId,

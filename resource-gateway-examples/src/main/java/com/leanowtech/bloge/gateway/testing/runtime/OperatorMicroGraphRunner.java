@@ -7,6 +7,7 @@ import com.leanowtech.bloge.core.model.NodeSpec;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionGuard;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
@@ -46,7 +47,31 @@ public class OperatorMicroGraphRunner {
      * @return classification and unified test execution result
      */
     public Result execute(Request request) {
+        return execute(request, compiled -> new AdmissionGuard() {
+            @Override
+            public void checkpoint() {
+                // Compatibility path for focused runner tests.
+            }
+
+            @Override
+            public void close() {
+                // No distributed permit exists.
+            }
+        });
+    }
+
+    /**
+     * Runs one operator after compiled-plan admission and before terminal evidence publication.
+     *
+     * @param request frozen binding, formal input, fixtures, and provenance
+     * @param admissionFactory permit factory over the one-node compiled inventory
+     * @return classification and unified test execution result
+     */
+    public Result execute(
+            Request request,
+            TestRunService.AdmissionFactory admissionFactory) {
         Objects.requireNonNull(request, "request");
+        Objects.requireNonNull(admissionFactory, "admissionFactory");
         String bindingFingerprint = request.runtimeBindingFingerprint().isBlank()
                 ? ProtocolFingerprint.ofText(request.operatorRef() + "|"
                 + request.operator().getClass().getName())
@@ -77,7 +102,7 @@ public class OperatorMicroGraphRunner {
                 Map.copyOf(metadata),
                 request.certificationEligible()
                         && assessment.classification() == Classification.EXECUTABLE_UNIT,
-                request.replayPayloads()));
+                request.replayPayloads()), admissionFactory);
         return new Result(assessment.classification(), bindingFingerprint,
                 assessment.reasons(), execution);
     }

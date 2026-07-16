@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionGuard;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestAssertionEvaluator;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
@@ -73,7 +74,35 @@ public class TestRunService {
      * @return plan, optional graph result, and terminal evidence
      */
     public TestExecutionResult execute(TestExecutionRequest request) {
+        return execute(request, compiled -> new AdmissionGuard() {
+            @Override
+            public void checkpoint() {
+                // Focused in-process callers do not install a distributed admission gate.
+            }
+
+            @Override
+            public void close() {
+                // No permit exists for the compatibility path.
+            }
+        });
+    }
+
+    /**
+     * Compiles first, acquires capacity from the exact recursive invocation closure, then executes.
+     *
+     * <p>Control-plan rejection never consumes capacity. Once compilation succeeds, the supplied
+     * factory must acquire every required quota claim before an engine is created. The permit is
+     * checked after execution and before terminal evidence leaves the kernel.</p>
+     *
+     * @param request frozen target, context, fixture, purpose, and provenance
+     * @param admissionFactory permit factory over the exact compiled invocation inventory
+     * @return plan, optional graph result, and terminal evidence
+     */
+    public TestExecutionResult execute(
+            TestExecutionRequest request,
+            AdmissionFactory admissionFactory) {
         Objects.requireNonNull(request, "request");
+        Objects.requireNonNull(admissionFactory, "admissionFactory");
         String runId = "test-run-" + UUID.randomUUID();
         Instant startedAt = Instant.now();
         CompiledExecutionControl compiled;
@@ -85,6 +114,18 @@ public class TestRunService {
             return new TestExecutionResult(null, null, evidence);
         }
 
+        try (AdmissionGuard admission = Objects.requireNonNull(
+                admissionFactory.admit(compiled), "admission guard")) {
+            return executeCompiled(request, runId, startedAt, compiled, admission);
+        }
+    }
+
+    private TestExecutionResult executeCompiled(
+            TestExecutionRequest request,
+            String runId,
+            Instant startedAt,
+            CompiledExecutionControl compiled,
+            AdmissionGuard admission) {
         InvocationRecorder recorder = new InvocationRecorder(objectMapper);
         GraphResult graphResult = null;
         List<String> diagnostics = new ArrayList<>();
@@ -112,6 +153,8 @@ public class TestRunService {
         consumptionDiagnostics(consumptions, diagnostics);
         assertionDiagnostics(assertions, diagnostics);
 
+        admission.checkpoint();
+
         TestRunEvidence evidence = TestSemanticResultFingerprint.attach(objectMapper,
                 new TestRunEvidence(
                 TestRunEvidence.SCHEMA_VERSION,
@@ -131,6 +174,16 @@ public class TestRunService {
                 diagnostics,
                 evidenceMetadata(request, recorder, executionServices, executionContext)));
         return new TestExecutionResult(compiled.effectivePlan(), graphResult, evidence);
+    }
+
+    /** Creates a permit from the already validated, recursively frozen control plan. */
+    @FunctionalInterface
+    public interface AdmissionFactory {
+        /**
+         * @param compiled exact control plan and recursive invocation inventory
+         * @return live all-dimension guard
+         */
+        AdmissionGuard admit(CompiledExecutionControl compiled);
     }
 
     /** @return structural engine-isolation facts used by architecture tests and probes */
