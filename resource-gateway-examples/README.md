@@ -380,10 +380,15 @@ transient transaction rollback can replay the same content-addressed mutation. T
 `InvocationRecorder` now captures and restores rule-use and hashed site/graph occurrence cursors
 only at a quiescent invocation boundary, and atomically enforces fixture `maxUses`. Cursor hashes omit
 raw correlation values but are pseudonymous identifiers, not a confidentiality boundary. BLOGE's
-streaming offset/checkpoint state, pre-checkpoint attempt evidence, public durable run selection,
-worker poll/claim/run/terminal orchestration, and the authenticated, authorized, audited adapter that
-revalidates dependencies and drives cold resume are not wired yet; this is a trusted persistence
-substrate, not a product claim that durable test resume is complete. See
+new synchronous cold-start signal API is consumed by an internal `RecoverySession`: only a current
+v2 `RESUMING` checkpoint with exact target and restorable provider state can restore fixture cursors,
+open the staged aggregate, signal a real committed suspension, and prepare its next terminal or
+single-suspension boundary for the same fenced transaction. Closing without prepare restores the
+original committed wait and lifecycle; no detached recovery thread remains active. BLOGE streaming
+offset/checkpoint state, pre-checkpoint attempt evidence, public durable run selection, worker poll/
+claim/run/heartbeat/terminal-evidence orchestration, authorization-to-dispatch binding, and a
+killable worker deadline are not wired yet. The public owner-claim endpoint still only establishes
+`RESUMING`; the internal primitive is not a product claim that durable test resume is complete. See
 [Stage 4 durable checkpoint verification](../docs/resource-gateway-execution-data-control-plane-stage4-durable-checkpoint-verification.md).
 
 Create a provider-specific Java operator only when the provider behavior cannot

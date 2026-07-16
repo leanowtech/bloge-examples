@@ -2,14 +2,17 @@
 
 ## Scope
 
-This increment establishes the trusted persistence substrate required before Resource Gateway can
-offer cold-start durable test execution. It wires BLOGE's `ExecutionCheckpointStore`,
+This increment establishes the trusted persistence substrate and internal synchronous recovery
+primitive required before Resource Gateway can offer cold-start durable test execution. It wires BLOGE's `ExecutionCheckpointStore`,
 `ExecutionStore`, `WaitStore`, and `WorkItemStore` through staged, transaction-participating adapters
 and composes all four behind one profile-gated, fail-closed durable test session. Signal, timer, task,
 extension, and retry waits plus queued, claimed, retried, failed, and dead-lettered work are therefore
 part of the same commit decision as lifecycle and node checkpoints. A public, authenticated
 owner-claim endpoint now performs the database-clock compare-and-set ownership handoff after exact
-dependency re-authorization; it deliberately does not resume BLOGE or expose a worker lifecycle.
+dependency re-authorization; it deliberately does not itself resume BLOGE or expose a worker
+lifecycle. An internal `RecoverySession` can consume that re-authorized `RESUMING` closure, signal a
+real persisted suspension synchronously, and atomically advance the staged aggregate at its next
+stable boundary. It is an orchestration building block, not a public recovery endpoint.
 Streaming recovery has
 no separate BLOGE store SPI and requires an explicit checkpoint/offset protocol rather than a
 fictitious store adapter.
@@ -124,9 +127,9 @@ retry reads the immutable command result before consulting mutable dependencies 
 audits that replay. A concurrent loser looks up and returns the winner's exact result. The response
 contains no fixture, replay payload, engine state, credential, or authority value.
 
-This command only establishes a fenced `RESUMING` owner. No worker currently polls, restores the
-staged BLOGE aggregate, advances checkpoints, or emits terminal evidence, so owner claim must not be
-described as cold-start resume.
+This command only establishes a fenced `RESUMING` owner. No public worker currently polls the claim,
+binds its authorization decision to dispatch, runs the internal recovery session, renews the lease,
+or emits terminal evidence, so owner claim must not be described as cold-start resume.
 
 ## Transaction-Participating BLOGE Aggregate
 
@@ -199,6 +202,27 @@ SPIs, but no
 raw store is published as a Spring bean. This keeps fixture control and execution identity outside business
 `GraphContext`, permits one root execution, and requires prepare/commit before session close.
 
+`IndependentDurableTestEngineFactory.openRecoverySession(...)` is the corresponding one-use recovery
+entry point. It accepts only a current v2 checkpoint whose lifecycle is `RESUMING`, whose exact target
+exists, and whose execution-service state is restorable. It restores the cumulative fixture cursor
+into an empty recorder, opens all four staged stores for the trusted engine execution id, and requires
+the committed BLOGE lifecycle to be `SUSPENDED`.
+
+`RecoverySession.signalAndAwait(...)` first verifies that exactly one waiting signal exists for the
+requested node, then invokes BLOGE's synchronous `DurableGraphEngine.resumeSuspended(...)`. Control
+returns only after the engine reaches a terminal lifecycle or one unambiguous new signal suspension.
+The session checks the recovered execution identity and monotonic engine version before exposing a
+`RecoveryBoundary`. `prepare(...)` increments the control boundary sequence and freezes the actual
+engine version, cumulative fixture cursor, and complete v3 aggregate mutation for the repository's
+owner/epoch/revision CAS. Closing without prepare, losing the CAS, or a later transaction failure
+discards the deleted wait and every downstream write together.
+
+The in-process API intentionally has no hard wall-clock timeout parameter. A detached future can make
+the caller time out without stopping an operator that ignores interruption, which would let execution
+continue after its transaction owner discards the stage. Enforceable deadlines require a killable
+worker process or container plus lease fencing, orphan reconciliation, and idempotent side-effect
+protocols. Until that worker boundary exists, the implementation makes no cancellation claim.
+
 ## BLOGE Fail-Closed Prerequisite
 
 BLOGE source commit `bcbb19694` adds the public `CheckpointFailurePolicy` to both
@@ -207,11 +231,20 @@ and sequential for-each checkpoint read/write/codec failures into `DurabilityExc
 operator path preserves that exception instead of logging and continuing. `BEST_EFFORT` remains the
 compatibility default.
 
+BLOGE source commit `cb758c1af` adds synchronous `resumeSuspended(...)` overloads to `GraphEngine`
+and `DurableGraphEngine`. The runtime restores the persisted suspension, exact `ExecutionOptions`,
+caller context, and artifact binding on the caller thread and returns its `GraphResult`. Existing
+asynchronous `signal(...)` behavior remains compatible and shares the same cold-signal preparation
+and execution kernel. The focused BLOGE gate passed all 15 suspend/signal tests and 17 durable-facade
+tests; the module gate passed 1950 Core unit tests, 17 Core integration tests, and 159 Runtime SPI
+unit tests with Checkstyle, suppression audit, SpotBugs, source, Javadoc, and install packaging.
+
 Resource Gateway now consumes this prerequisite in its test-profile durable resources: the
 transaction-participating execution/checkpoint/wait/work-item aggregate and independent durable
-factory both fail closed. Public owner claim now establishes a re-authorized fence; crash recovery,
-worker execution orchestration, and streaming recovery still must be completed before
-cold-start resume can be enabled.
+factory both fail closed. Public owner claim now establishes a re-authorized fence and the internal
+session can advance one real cold signal; claim polling, dispatch authorization binding, lease
+heartbeat, terminal evidence, enforceable worker cancellation, and streaming recovery still must be
+completed before cold-start resume can be enabled as a product surface.
 
 ## Safety Invariants
 
@@ -280,6 +313,15 @@ cold-start resume can be enabled.
 26. Idempotent response replay reads its immutable committed result before re-evaluating mutable
     dependencies, but records a new replay audit. This preserves command history without silently
     authorizing a new recovery action under stale policy.
+27. An internal recovery session accepts only a current v2 `RESUMING` checkpoint with an exact target
+    and restorable provider state, and only when the paired BLOGE execution is committed as
+    `SUSPENDED`.
+28. Cold signal recovery must execute synchronously inside the stage owner. Closing a session cannot
+    leave a detached engine thread mutating discarded state.
+29. The requested node must have exactly one waiting signal. The next accepted boundary is terminal
+    or exactly one new signal suspension, and the BLOGE execution version must advance monotonically.
+30. The next control boundary sequence, actual engine version, cumulative fixture cursor, and four
+    store mutations are one prepared recovery value. Publishing any subset is forbidden.
 
 ## Automated Evidence
 
@@ -337,6 +379,14 @@ aggregate fingerprint sensitivity to lifecycle-only, wait-only, and work-item-on
 batch validation, tenant isolation, async enqueue visibility, identity-drift and cross-execution id
 rejection; and two-instance control-CAS rollback of the losing execution, wait, and work-item status.
 
+`IndependentDurableTestRecoverySessionTest` creates and commits a real BLOGE suspension, opens a v2
+`RESUMING` recovery session, restores through the synchronous cold-signal API, and proves that the
+terminal lifecycle, deleted wait, fixture cursor, actual engine version, and control checkpoint
+advance publish atomically. Its rollback case completes the same synchronous recovery but closes
+without prepare, proving the committed suspension and waiting signal remain unchanged. Four negative
+cases reject control state that has not entered `RESUMING`, engine-version drift, a non-suspend
+boundary, and a signal node that differs from the claimed boundary.
+
 `DurableTestRecoveryAuthorityTest` proves that volatile refresh telemetry cannot invalidate a
 checkpoint while issuer/audience and authorization policy drift does, and that unavailable or stale
 identity authority fails closed. `DurableTestRecoveryAuthorizerTest` rebuilds real graph and operator
@@ -354,26 +404,28 @@ Reproduce the focused gate with:
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,StagedBlogeExecutionCheckpointStoreTest,StagedBlogeDurableStateStoreTest,IndependentDurableTestEngineFactoryTest,InvocationRecorderCheckpointTest,DurableTestRecoveryAuthorityTest,DurableTestRecoveryAuthorizerTest,DurableTestOwnerClaimServiceTest,DurableTestOwnerClaimControllerTest,TestingControlProtocolSchemaTest,TestabilityCapabilitiesTest,TestRuntimeProfileIsolationTest test
+  -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,StagedBlogeExecutionCheckpointStoreTest,StagedBlogeDurableStateStoreTest,IndependentDurableTestEngineFactoryTest,IndependentDurableTestRecoverySessionTest,InvocationRecorderCheckpointTest,DurableTestRecoveryAuthorityTest,DurableTestRecoveryAuthorizerTest,DurableTestOwnerClaimServiceTest,DurableTestOwnerClaimControllerTest,TestingControlProtocolSchemaTest,TestabilityCapabilitiesTest,TestRuntimeProfileIsolationTest test
 ```
 
-The focused gate completed with 97 tests, zero failures, zero errors, and zero skips.
-The repository-wide `clean verify` gate completed with 1968 tests, zero failures, zero errors, 34
+The combined focused gate completed with 103 tests, zero failures, zero errors, and zero skips. The
+new recovery-session slice contributes six database-level tests.
+The repository-wide `clean verify` gate completed with 1974 tests, zero failures, zero errors, 34
 conditional skips, real-browser regression coverage, and successful Spring Boot JAR packaging.
-Scoped public `javadoc -Xdoclint:all -Werror` for the seven new owner-claim production types completed
-with zero diagnostics.
+Scoped public `javadoc -Xdoclint:all -Werror` for the seven owner-claim production types and the
+durable engine factory's new recovery API completed with zero diagnostics.
 The optional project-wide Javadoc report still fails on 16 pre-existing HTML and
 parameter diagnostics in unrelated packages; that baseline is not represented as fixed here.
 
 ## Honest Remaining Gaps
 
 - BLOGE execution lifecycle/lease, node/loop/sequential-foreach checkpoints, signal/timer/task/retry
-  waits, and work-item state now execute through one aggregate `EngineStateMutation`. The public
-  worker poll/claim/run/terminal flow does not yet open, fence, and advance that aggregate, so the
-  storage substrate must not be mistaken for a complete remote-worker product lifecycle.
-- The durable session remains an internal resource. The public owner-claim command can only acquire
-  an expired fence after exact dependency re-authorization; no worker yet restores or advances the
-  BLOGE aggregate, and public suspend/resume endpoints do not exist.
+  waits, and work-item state now execute through one aggregate `EngineStateMutation`. The internal
+  recovery session can advance one real cold signal, but the public worker poll/claim/run/heartbeat/
+  terminal-evidence flow does not yet drive it, so the primitive must not be mistaken for a complete
+  remote-worker product lifecycle.
+- The durable and recovery sessions remain internal resources. The public owner-claim command can
+  only acquire an expired fence after exact dependency re-authorization; no dispatcher binds that
+  authorization decision to a worker command, and public suspend/resume endpoints do not exist.
 - Legacy v1 checkpoint rows remain readable but have no graph/operator locator. They must be
   terminalized or migrated through an independently verified target mapping before any future public
   recovery service may consider them; guessing a target from fingerprint or plan diagnostics is
@@ -387,9 +439,9 @@ parameter diagnostics in unrelated packages; that baseline is not represented as
   or bind an equivalent immutable decision to worker dispatch; the claim is not a transferable
   authorization token.
 - The public adapter durably binds normalized caller intent and authenticated authority to one claim
-  result. Lease heartbeat, public suspend/resume, crash-driven aggregate restore, terminalization,
-  and signed checkpoint attestation remain orchestration work rather than properties inferred from
-  storage CAS success.
+  result. Lease heartbeat, public suspend/resume, worker crash reconciliation, terminalization,
+  signed checkpoint attestation, and an enforceable process-level deadline remain orchestration work
+  rather than properties inferred from storage CAS or internal synchronous recovery success.
 - The repository uses a local database transaction. Cross-database BLOGE stores require either
   migration onto this datasource or an outbox/recovery protocol; pretending a distributed
   transaction exists is explicitly rejected.

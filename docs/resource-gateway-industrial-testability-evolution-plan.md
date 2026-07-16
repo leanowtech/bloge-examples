@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0/1 已落地，Stage 2 主路径持续收口，Stage 3 证据链已闭环，Stage 4 确定性执行服务首增量已落地 |
+| 状态 | Accepted / In implementation；Stage 0/1 已落地，Stage 2 主路径持续收口，Stage 3 证据链已闭环，Stage 4 已进入同步 cold-signal recovery 增量 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、operator 开发团队、QA、平台安全、SRE、ANEKE Tool Studio |
 | 设计目标 | 让调用方在测试运行中确定性控制 DAG 的外部数据、故障和非确定性来源，并产出可验证的测试证据 |
 | 非目标 | 不把 Resource Gateway 变成通用代码覆盖率平台；不允许普通生产请求携带测试替换指令；不替代 operator 代码仓库中的白盒单元测试 |
@@ -21,7 +21,7 @@
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
 | Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（四类 case intent、内容寻址 fixture/一等 suite 发布、精确 revision 执行与 aggregate coverage/promotion 回显）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、process-owner lease/heartbeat/checkpoint fence、abandoned RUNNING fail-closed reconciliation、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其 governed catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free plan v2 谱系与认证降级，以及同步 nested/foreach/loop/compensation 控制传播、动态 attempt/occurrence selector 与 occurrence/attempt/node/edge evidence 已落地；streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3 | In progress | graph/operator `TestRunEvidence`、suite checkpoint/terminal attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、签名时刻 lifecycle policy、外部 M-of-N trust publication、bounded append-only consistency page、durable consumer checkpoint、rollback/fork/split-view/revoked-pin resurrection detection 与 test-kit independent verifier 已完成；exact-suite ANEKE semantic workbook seed、`GovernanceGateResult.v3` 可重建 basis、编译级 GraphDraft target 绑定和独立 schema consumer 已完成；真实 ANEKE N/N-1 conformance、独立 witness gossip/跨域一致性证明待完成 |
-| Stage 4 | In progress | BLOGE run-scoped `ExecutionServices`/`FunctionCallSite` 与公共 `CheckpointFailurePolicy.FAIL_FAST` 已接通；RG logical clock、seeded random/UUID、plan v3/provider-state、semantic result fingerprint、组合 `bloge.durableTestExecutionCheckpoint.v2`、fixture cursor、静止边界 recorder snapshot、同库事务、数据库时钟租约 CAS、持久化幂等命令，以及 staged `ExecutionStore + ExecutionCheckpointStore + WaitStore + WorkItemStore` aggregate 已落地；`test`/`staging` 已公开版本化、鉴权、scope 隔离、精确 target/fixture/replay/identity/plan 重授权、原子语义审计和 server-owned owner/lease 的 owner-claim endpoint；该 endpoint 仅把过期 closure 接管为 `RESUMING`，不执行 BLOGE。worker poll/run/terminal、真正 cold-start resume、stream offset/checkpoint、identity/flag/secret fixture authority、streaming 恢复与确定性并发待完成 |
+| Stage 4 | In progress | BLOGE run-scoped `ExecutionServices`/`FunctionCallSite`、公共 `CheckpointFailurePolicy.FAIL_FAST` 与同步 `resumeSuspended` 已接通；RG logical clock、seeded random/UUID、plan v3/provider-state、semantic result fingerprint、组合 `bloge.durableTestExecutionCheckpoint.v2`、fixture cursor、静止边界 recorder snapshot、同库事务、数据库时钟租约 CAS、持久化幂等命令、staged 四 store aggregate 和内部 `RecoverySession` 已落地。内部会话能把真实 suspension 恢复到下一静止边界并原子 advance 或回滚；公开 owner-claim endpoint 仍只把过期 closure 接管为 `RESUMING`。worker poll/run/heartbeat/terminal evidence、stream offset/checkpoint、identity/flag/secret fixture authority、streaming 恢复与确定性并发待完成 |
 | Stage 5 | Not started | 独立部署、network/identity/secret/store 物理隔离、规模化调度与 mutation/property testing |
 
 实现细节、行为兼容决策和可复现测试见
@@ -57,8 +57,8 @@ Stage 4 的 run-scoped provider、语义结果身份、脱敏后重算和 v1/v2 
 身份。响应丢失后的同意图重试优先返回原始 checkpoint，不因当前依赖漂移改变已经提交的结果；
 同键异意图、跨 scope 探测、双实例并发、索引投影漂移与结果 JSON/指纹篡改均 fail closed。
 公开 adapter 只在 `test`/`staging` 存在，按认证身份计算指纹，并重新授权 exact
-target/fixture/replay/identity/side-effect/provider/plan 闭包。它只建立 `RESUMING` fence；实际 BLOGE
-resume、worker lifecycle 与 terminal evidence 尚未接线。
+target/fixture/replay/identity/side-effect/provider/plan 闭包。它只建立 `RESUMING` fence；内部同步
+cold-signal primitive 已可验证，但 worker dispatch、heartbeat、terminal evidence 与公开 resume 尚未接线。
 
 动态 attempt/occurrence selector 的一基坐标、优先级、失败边界和真实 retry/nested re-entry
 证明见 [Stage 2 dynamic selector verification](resource-gateway-execution-data-control-plane-stage2-dynamic-selector-verification.md)。
@@ -69,7 +69,7 @@ Exact semantic suite 到 ANEKE payload-free workbook seed 的投影、失败边�
 Semantic workbook 到 ANEKE gate decision 的 exact evidence 重建、GraphDraft 编译 target 绑定与 v2 兼容证明见
 [Stage 3 semantic gate basis verification](resource-gateway-execution-data-control-plane-stage3-semantic-gate-basis-verification.md)。
 
-当前严格验收基线：Resource Gateway `clean verify` 共 1968 tests、0 failures、0 errors、
+当前严格验收基线：Resource Gateway `clean verify` 共 1974 tests、0 failures、0 errors、
 34 个条件跳过，真实浏览器回归与 Spring Boot JAR 打包成功；Canvas suite 聚焦 68 tests、
 前端全量 150 tests，并在桌面与 390 x 844 真实浏览器中完成两行一等 suite 发布；Canvas 对完整
 stored suite value、child evidence、coverage、promotion 与 aggregate 一致性 fail closed；immutable TestSuite
@@ -78,7 +78,7 @@ runner/attestation/protocol 增量聚焦 49 tests；key lifecycle 增量聚焦 4
 增量聚焦 23 tests，integration package 138 tests 全绿；完整 suite/catalog/semantic workbook/gate v3 wire value 按打包的
 Draft 2020-12 schema 校验并回绑 request identity，`RUNNING` 在无 polling CLI 中退出 2，
 未知参数值与 validator 细节不进入日志，public JavaDoc 零告警且由 `verify` 门禁强制；Stage 4
-durable checkpoint/aggregate/public owner-claim 聚焦 97 tests 全绿。
+durable checkpoint/aggregate/public owner-claim/internal recovery 聚焦 103 tests 全绿。
 
 ## 1. 结论先行
 
@@ -593,7 +593,7 @@ record ExecutionOptions(
 
 ### 9.2 统一 OperatorResolverChain
 
-主节点、streaming、suspendable、compensation、nested graph 必须共享。当前同步主节点、compensation 与内置 nested graph 已通过 `ExecutionOptions.operatorResolver` 共享同一链；streaming/suspendable 和 durable resume 仍是未完成项：
+主节点、streaming、suspendable、compensation、nested graph 必须共享。当前同步主节点、compensation、内置 nested graph 与内部 cold-start signal 已通过 `ExecutionOptions.operatorResolver` 共享同一链；streaming/suspendable 证据和公开 durable worker 仍是未完成项：
 
 ```text
 InvocationSite
@@ -1221,10 +1221,30 @@ plan。任一 authority 缺失、撤销、漂移或不可用均 fail closed，�
 只有结果 fence、expiry、checkpoint/target fingerprint 和 replay 标志，不泄漏 fixture/replay payload/
 engine state/authority。legacy v1 没有 target locator，明确返回 migration-required。
 
+第十二增量补上真实但仍内部化的 cold-signal recovery primitive。BLOGE 提交 `cb758c1af` 新增同步
+`GraphEngine`/`DurableGraphEngine.resumeSuspended(...)`：它只接受无 active execution 的持久化
+suspension，在调用线程内恢复 context、run-scoped resolver/provider 与 caller context，执行到 terminal
+或下一 suspension 后返回 `GraphResult`，因此事务 owner 不需要轮询一个无法取消的 detached thread。
+原有异步 `signal(...)` 兼容行为保留并复用同一准备/执行内核。
+
+RG `IndependentDurableTestEngineFactory.openRecoverySession(...)` 只接受完整性已验证、exact target
+存在、provider snapshot 可恢复且 lifecycle 为 `RESUMING` 的 v2 checkpoint；恢复 fixture cursor 后，
+它冷加载 staged 四 store aggregate，并要求 BLOGE committed lifecycle 为 `SUSPENDED`、目标 signal wait
+唯一存在。`signalAndAwait(...)` 同步运行到 terminal 或唯一新 suspension，校验 engine execution id 与
+单调 version；`prepare(...)` 冻结下一 boundary sequence、实际 engine version、累计 fixture cursor 与
+完整 aggregate mutation，再由 repository fence CAS 原子提交。数据库级用例证明 terminal advance
+提交后 wait 被删除，也证明同步执行完成但未 prepare 时关闭 stage 会完整保留旧 suspension。
+
+该 API 没有伪造 in-process hard timeout。若 operator 忽略 interrupt，单纯 future timeout 只能让调用方
+先返回，不能阻止后台线程继续改变 staged state。工业级 wall-clock deadline 必须落在可终止 worker
+进程/容器边界，并结合 lease expiry、fencing token、幂等副作用协议和 orphan reconciliation；这仍属于
+公开 worker lifecycle 增量。
+
 Stage 4 仍无 stream offset/checkpoint 恢复协议；durable checkpoint 创建/查询、worker poll/run/
-terminal、真正恢复 staged BLOGE aggregate、lease heartbeat、stream/event fixture、确定性并发调度、
+heartbeat/terminal evidence、授权决策到 worker dispatch 的不可变绑定、stream/event fixture、确定性并发调度、
 identity/feature-flag/test-secret authority 与断点前历史 evidence 恢复尚未完成。因此当前已公开的是
-“依赖重授权后的 ownership fence”，不是 cold-start durable resume；Stage 4 继续保持进行中。
+“依赖重授权后的 ownership fence”；内部恢复原语不等于公开 cold-start durable resume 产品，Stage 4
+继续保持进行中。
 
 交付：
 
