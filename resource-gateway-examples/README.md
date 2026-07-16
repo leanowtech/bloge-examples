@@ -527,6 +527,12 @@ combined under the `bloge.testDurableStateMutation.v3` aggregate fingerprint, so
 state, node/loop/sequential-foreach checkpoints, signal/timer/task/retry waits, and
 queued/claimed/retried/dead-lettered work commit or roll back together. Global timer/correlation and
 ready/expired-work scans expose committed rows only; the active execution retains read-your-writes.
+Ready work, expired work-item claims, and expired execution leases are selected, ordered, and bounded
+in SQL through global and tenant-scoped recovery indexes before authoritative JSON is decoded. Each
+returned candidate's tenant, namespace, type/status, shard, priority, lease times, and stable identity
+projection is then compared with that JSON; drift fails closed. A scan defaults to 100 rows and is
+capped at 10,000, preventing an accidental unbounded worker poll. This is a persistence primitive,
+not a public dispatcher or cross-process worker supervisor.
 Wait identity must match the lifecycle identity, and committed wait/work-item ids cannot migrate to
 another execution. Work-item batches validate atomically, and claim, retry, terminal, and dead-letter
 transitions reuse BLOGE's reference state machine. An internal database-clock lease claim can fence an

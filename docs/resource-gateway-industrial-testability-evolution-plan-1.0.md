@@ -32,15 +32,22 @@ fixture、provider、engine、owner 和 epoch 闭包逐值不变。终态提交�
 均返回 payload-free `RG.TEST.DURABLE_RECOVERY_LEASE_LOST`，关闭 staged runtime 且不提交终态。
 这是同步进程内执行的活性保护，不是队列消费、跨进程监督或 hard cancellation。
 
+worker 扫描持久化面已把 ready work、过期 work-item claim 与过期 execution lease 的
+tenant/namespace、状态、可选 shard、时间、稳定顺序与有界 limit 下推到 SQL，并在返回前逐字段
+回验候选投影与权威 JSON。默认页 100、硬上限 10,000，全局及 tenant-scoped 复合索引已落地。
+该增量仍不是公开 poll/dispatch：隐藏候选型漂移的反熵监控、原子远程 acquisition、backpressure、
+容量 SLO 与跨进程 supervisor 仍待实现。
+
 Stage 0 验证基线：Resource Gateway `clean verify` 共 1624 tests、0 failures、33 个既有条件跳过；AuthorCanvas 聚焦回归 36 tests、0 failures。后续阶段必须继续维持该基线并增加对应反面用例。
 
 Stage 1 实现证据与复现命令见
 [Execution Data Control Plane Stage 1 verification](resource-gateway-execution-data-control-plane-stage1-verification.md)。
 Stage 1 全量验收：Resource Gateway `clean verify` 共 1653 tests、0 failures、0 errors、34 个条件跳过，JAR 打包成功。
-当前严格验收：Resource Gateway `clean verify` 共 2061 tests、0 failures、0 errors、2 个条件跳过，
+当前严格验收：Resource Gateway `-Pfrontend clean verify` 共 2064 tests、0 failures、0 errors、0 skips，
 真实浏览器回归与 JAR 打包成功；Stage 4 durable checkpoint/aggregate/public payload-free query/
 owner-claim/recovery/authorization-bound dispatch/live-fence heartbeat/terminal commit/automatic
-terminal heartbeat 聚焦 175 tests 全绿；authenticated durable GRAPH creation 的 runtime/repository/
+terminal heartbeat/worker SQL scan 聚焦 178 tests 全绿，其中 worker scan 的 3 个数据库测试覆盖
+SQL 前置过滤、稳定排序、有界分页与候选投影漂移拒绝；authenticated durable GRAPH creation 的 runtime/repository/
 authorizer/service/controller/schema/capability 组合聚焦 71 tests；creation preparation heartbeat 的
 repository/coordinator/service/capability 组合聚焦 65 tests；本轮 automatic terminal-recovery
 heartbeat 的 coordinator/heartbeat-service/terminal-service/capability/Spring wiring 组合聚焦 33
@@ -375,6 +382,8 @@ flowchart LR
    首次调用以数据库时钟获得 preparation fence，在隔离 stage 执行到唯一 live `WAIT_SIGNAL` 后，把 revision-zero `SUSPENDED` checkpoint、四 store mutation、immutable command result 与 semantic audit 同事务提交；response 只包 payload-free durable view。终态、pause、timer/task/stream、多 suspension 或 provider state 不可恢复会成为不可变、payload-free 409 rejection。同一 authenticated intent 的成功/拒绝在 dependency reread 前 replay，live contender 返回 runId + lease expiry，过期 contender保持 run/engine identity 并递增 epoch 后接管。进程内 coordinator 以 exact `PENDING + owner + epoch + record fingerprint` 和数据库时钟 CAS 自动续租，保持 scope/intent/run/engine/owner/epoch 不变，只轮转 update time、expiry 与 successor fingerprint；commit/reject 先等待在途心跳并冻结到最新 successor。续租冲突、存储异常或服务关停统一使 ownership 不确定，staged 状态被丢弃并返回 payload-free `RG.TEST.DURABLE_CREATE_LEASE_LOST`。creation lease 为 3..3600 秒，心跳不大于三分之一 lease。v1 仍无不可协作 operator 的进程内强制取消或自动 worker 调度；fencing 只能阻止陈旧执行提交，真实 hard deadline 仍需可终止的进程/容器 worker。
 
    BLOGE 源码提交 `bcbb19694` 提供公共 `CheckpointFailurePolicy.FAIL_FAST`；后续提交 `cb758c1af` 提供返回 `GraphResult` 的同步 `resumeSuspended`，不再为 cold signal 强制派生不可控后台线程。RG 的 test-profile durable session 强制 fail-fast，以调用方指定 execution id 开启单执行 stage，继承完整 `ExecutionOptions` 的 operator resolver/provider，并把 BLOGE `ExecutionStore` lifecycle/lease、node/loop/sequential-foreach `ExecutionCheckpointStore`、signal/timer/task/retry `WaitStore` 与完整 v5 `WorkItemStore` 分别冻结后，再以 `bloge.testDurableStateMutation.v3` 聚合为一个可幂等重试、与 engine id/完整 `EngineState` 强绑定的 mutation。wait 的 execution-local 读看到 overlay，timer/correlation 全局扫描只读 committed rows；wait identity 与 lifecycle identity 必须一致，waitId 不可跨 execution 迁移。work item 的 claim/renew/retry/failed/dead-letter/restore/discard/cancel 复用 BLOGE reference state machine；ready/expired-claim 全局扫描只读 committed rows，仅 BLOGE graph-execution scope 内的异步引擎线程可进入受信 stage 入队，无 stage 的读者看不到 speculative item；批量写入完整预校验，itemId 不可跨 execution 迁移。`bloge.testWorkItemMutation.v1` 通过 v3 aggregate 新增，未改写 v1/v2 历史指纹。跨实例竞态证明只有 control CAS 胜者的 execution/wait/work-item 状态可提交，关闭 stage 后 mutation 失效；冷读可重建完整 `ExecutionInstance`、`ExecutionWait` 与 `WorkItem`。
+
+   worker 扫描持久化面进一步关闭全表 payload 解码缺口：ready work、过期 work-item claim 与过期 execution lease 的 type/status、tenant/namespace、可选 shard、到期时间、稳定顺序和有界 limit 先通过全局/tenant-scoped 复合索引在 SQL 中筛选，候选行再解码并逐字段回验调度投影与权威 JSON；默认 100、硬上限 10,000。该增量不等于公开 worker poll/dispatch：隐藏候选型投影漂移仍需独立反熵扫描，远程 acquisition、backpressure、容量 SLO 与跨进程 supervisor 仍待实现。
 
    内部 `openRecoverySession` 只接受完整性已验证、带 exact target、provider state 可恢复且 lifecycle 为 `RESUMING` 的 v2 checkpoint。它恢复累计 fixture cursor，要求 committed BLOGE lifecycle 为 `SUSPENDED` 且存在唯一目标 signal wait，然后同步 signal 到下一 terminal 或唯一新 suspension。`prepare` 把实际 BLOGE execution version、递增 boundary sequence、累计 fixture cursor 与四类 store mutation 冻结为同一原子 advance；未 prepare、CAS 失败或关闭 session 都回滚已删除 wait 与后续节点结果。该进程内 API 不提供虚假的 hard timeout；不可协作算子的墙钟 deadline 必须由可取消 worker 进程、lease 与 fencing 共同实现。
 

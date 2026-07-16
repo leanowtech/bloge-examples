@@ -18,8 +18,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import javax.sql.DataSource;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
@@ -50,6 +54,11 @@ public final class StagedBlogeExecutionStore implements ExecutionStore {
 
     private static final String CLOSURE_SCHEMA_VERSION = "bloge.testExecutionMutation.v1";
     private static final String HOT_ARCHIVE_STATE = "HOT";
+    private static final String RECOVERY_PROJECTION_SELECT = """
+            SELECT execution_id, tenant_id, namespace, business_key, graph_name, shard_id,
+                   execution_status, execution_version, lease_until, updated_at, payload_json
+            FROM rg_test_bloge_executions
+            """;
 
     private final JdbcTemplate jdbc;
     private final DataSource dataSource;
@@ -57,6 +66,8 @@ public final class StagedBlogeExecutionStore implements ExecutionStore {
     private final ConcurrentHashMap<String, StagingArea> activeStages = new ConcurrentHashMap<>();
 
     /**
+     * Creates an execution store backed by the test-runtime transaction datasource.
+     *
      * @param jdbc transaction-capable test-runtime JDBC facade
      * @param objectMapper mapper used for immutable execution rows and closure fingerprints
      */
@@ -91,6 +102,12 @@ public final class StagedBlogeExecutionStore implements ExecutionStore {
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS rg_test_bloge_execution_scope_idx
                 ON rg_test_bloge_executions (tenant_id, namespace, updated_at)
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_bloge_execution_tenant_recovery_idx
+                ON rg_test_bloge_executions (
+                    tenant_id, namespace, execution_status, lease_until, shard_id, execution_id
+                )
                 """);
     }
 
@@ -190,20 +207,40 @@ public final class StagedBlogeExecutionStore implements ExecutionStore {
         return findExpiredClaims(cutoff, limit, null);
     }
 
+    /**
+     * Returns a bounded, deterministic page of committed running executions with expired leases.
+     *
+     * <p>Tenant scope, optional shard, lifecycle status, cutoff, order, and limit are pushed into
+     * SQL. Every selected recovery projection is then compared with authoritative JSON, including
+     * proof that the execution still carries a lease token.</p>
+     *
+     * @param cutoff inclusive lease-expiry cutoff
+     * @param limit requested page size; non-positive means 100 and values above 10,000 are capped
+     * @param shardId optional worker shard; blank values mean all shards
+     * @return verified expired executions ordered by lease time and execution id
+     */
     @Override
     public List<ExecutionInstance> findExpiredClaims(Instant cutoff, int limit, String shardId) {
+        Instant requiredCutoff = Objects.requireNonNull(cutoff, "cutoff");
         String normalizedShard = normalized(shardId);
-        return committedRows().stream()
-                .filter(execution -> TenantStoreSupport.matchesCurrentTenant(execution.identity()))
-                .filter(execution -> execution.status() == ExecutionStatus.RUNNING)
-                .filter(execution -> execution.leaseToken() != null)
-                .filter(execution -> execution.leaseUntil() != null
-                        && !execution.leaseUntil().isAfter(cutoff))
-                .filter(execution -> normalizedShard == null
-                        || Objects.equals(normalizedShard, execution.identity().shardId()))
-                .sorted(Comparator.comparing(ExecutionInstance::leaseUntil))
-                .limit(normalizeLimit(limit))
-                .toList();
+        StringBuilder sql = new StringBuilder(RECOVERY_PROJECTION_SELECT)
+                .append(" WHERE execution_status = 'RUNNING'")
+                .append(" AND lease_until IS NOT NULL AND lease_until <= ?");
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(Timestamp.from(requiredCutoff));
+        TenantStoreSupport.currentTenant().ifPresent(tenant -> {
+            sql.append(" AND tenant_id = ? AND namespace = ?");
+            parameters.add(tenant.tenantId());
+            parameters.add(tenant.namespace());
+        });
+        if (normalizedShard != null) {
+            sql.append(" AND shard_id = ?");
+            parameters.add(normalizedShard);
+        }
+        sql.append(" ORDER BY lease_until, execution_id LIMIT ?");
+        parameters.add(normalizeLimit(limit));
+        return jdbc.query(sql.toString(), this::mapVerifiedRecoveryProjection,
+                parameters.toArray());
     }
 
     @Override
@@ -300,6 +337,32 @@ public final class StagedBlogeExecutionStore implements ExecutionStore {
                 (resultSet, rowNumber) -> read(resultSet.getString("payload_json")));
     }
 
+    private ExecutionInstance mapVerifiedRecoveryProjection(ResultSet resultSet, int rowNumber)
+            throws SQLException {
+        ExecutionInstance execution = read(resultSet.getString("payload_json"));
+        if (!Objects.equals(resultSet.getString("execution_id"),
+                    execution.identity().executionId())
+                || !Objects.equals(resultSet.getString("tenant_id"),
+                        execution.identity().tenantId())
+                || !Objects.equals(resultSet.getString("namespace"),
+                        execution.identity().namespace())
+                || !Objects.equals(resultSet.getString("business_key"),
+                        execution.identity().businessKey())
+                || !Objects.equals(resultSet.getString("graph_name"),
+                        execution.identity().graphName())
+                || !Objects.equals(resultSet.getString("shard_id"),
+                        execution.identity().shardId())
+                || !Objects.equals(resultSet.getString("execution_status"),
+                        execution.status().name())
+                || resultSet.getLong("execution_version") != execution.version()
+                || !Objects.equals(instant(resultSet, "lease_until"), execution.leaseUntil())
+                || !Objects.equals(instant(resultSet, "updated_at"), execution.updatedAt())
+                || execution.leaseToken() == null) {
+            throw durability("Stored BLOGE execution recovery projection is corrupt");
+        }
+        return execution;
+    }
+
     private ExecutionInstance read(String json) {
         try {
             return objectMapper.readValue(json, ExecutionInstance.class);
@@ -384,7 +447,16 @@ public final class StagedBlogeExecutionStore implements ExecutionStore {
             this.area = area;
         }
 
-        /** Freezes the lifecycle row and binds it to one formal engine boundary. */
+        /**
+         * Freezes the lifecycle row and binds it to one formal engine boundary.
+         *
+         * @param checkpointRef durable checkpoint reference associated with the engine boundary
+         * @param nodeId graph node whose completion established the boundary
+         * @param boundaryType formal engine boundary classification
+         * @param boundarySequence monotonic boundary sequence within the execution
+         * @param stateVersion engine state version captured by the checkpoint
+         * @return immutable prepared mutation awaiting transactional commit or rollback
+         */
         public PreparedMutation prepare(String checkpointRef,
                                         String nodeId,
                                         String boundaryType,
@@ -526,6 +598,11 @@ public final class StagedBlogeExecutionStore implements ExecutionStore {
 
     private static int normalizeLimit(int limit) {
         return Math.min(limit <= 0 ? 100 : limit, 10_000);
+    }
+
+    private static Instant instant(ResultSet resultSet, String column) throws SQLException {
+        Timestamp value = resultSet.getTimestamp(column);
+        return value == null ? null : value.toInstant();
     }
 
     private static String normalized(String value) {

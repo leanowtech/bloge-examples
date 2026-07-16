@@ -42,6 +42,12 @@ authorization、target、fixture、provider、engine、owner/epoch 闭包不漂�
 执行窗口的 ownership 活性，不等于 worker 队列、跨进程监督、multi-boundary orchestration 或 hard
 cancellation。
 
+worker 扫描持久化面已将 ready work、过期 work-item claim 与过期 execution lease 的
+tenant/namespace、状态、可选 shard、时间、排序和有界 limit 下推到 SQL，并对每个候选的调度投影
+与权威 JSON 做 fail-closed 回验。默认页 100、硬上限 10,000；全局和 tenant-scoped 复合索引均已
+建立。它消除了热路径全表 payload 解码，但尚未提供独立反熵扫描、公开 polling/acquisition、
+backpressure、容量 SLO 或跨进程 worker supervisor。
+
 实现细节、行为兼容决策和可复现测试见
 [v1 实施蓝图](resource-gateway-industrial-testability-evolution-plan-1.0.md) 与
 [Stage 1 verification](resource-gateway-execution-data-control-plane-stage1-verification.md) 与
@@ -113,8 +119,8 @@ Exact semantic suite 到 ANEKE payload-free workbook seed 的投影、失败边�
 Semantic workbook 到 ANEKE gate decision 的 exact evidence 重建、GraphDraft 编译 target 绑定与 v2 兼容证明见
 [Stage 3 semantic gate basis verification](resource-gateway-execution-data-control-plane-stage3-semantic-gate-basis-verification.md)。
 
-当前严格验收基线：Resource Gateway `clean verify` 共 2061 tests、0 failures、0 errors、
-2 个条件跳过，真实浏览器回归与 Spring Boot JAR 打包成功；Canvas suite 聚焦 68 tests、
+当前严格验收基线：Resource Gateway `-Pfrontend clean verify` 共 2064 tests、0 failures、0 errors、
+0 skips，真实浏览器回归与 Spring Boot JAR 打包成功；Canvas suite 聚焦 68 tests、
 前端全量 150 tests，并在桌面与 390 x 844 真实浏览器中完成两行一等 suite 发布；Canvas 对完整
 stored suite value、child evidence、coverage、promotion 与 aggregate 一致性 fail closed；immutable TestSuite
 runner/attestation/protocol 增量聚焦 49 tests；key lifecycle 增量聚焦 41 tests；动态 selector/capability/schema 增量聚焦 51 tests；typed semantic coverage/codec/registry/persistence/schema/capability 增量聚焦 52 tests；suite-run lease/reconciliation/profile 聚焦 22 tests；built-in catalog materialization 增量聚焦 34 tests；suite consumer adapter 聚焦 21 tests、独立 test-kit
@@ -122,7 +128,7 @@ runner/attestation/protocol 增量聚焦 49 tests；key lifecycle 增量聚焦 4
 增量聚焦 23 tests，integration package 138 tests 全绿；完整 suite/catalog/semantic workbook/gate v3 wire value 按打包的
 Draft 2020-12 schema 校验并回绑 request identity，`RUNNING` 在无 polling CLI 中退出 2，
 未知参数值与 validator 细节不进入日志，public JavaDoc 零告警且由 `verify` 门禁强制；Stage 4
-durable checkpoint/aggregate/public payload-free query/owner-claim/internal recovery/authorization-bound dispatch/authenticated live-fence heartbeat/terminal commit/automatic terminal heartbeat 聚焦 175 tests 全绿；authenticated durable GRAPH creation 的 runtime/repository/authorizer/service/controller/schema/capability 组合聚焦 71 tests；creation preparation heartbeat 的 repository/coordinator/service/capability 组合聚焦 65 tests；本轮 automatic terminal-recovery heartbeat 的 coordinator/heartbeat-service/terminal-service/capability/Spring wiring 组合聚焦 33 tests，均全绿。
+durable checkpoint/aggregate/public payload-free query/owner-claim/internal recovery/authorization-bound dispatch/authenticated live-fence heartbeat/terminal commit/automatic terminal heartbeat/worker SQL scan 聚焦 178 tests 全绿；其中 worker scan 的 3 个数据库测试证明 SQL 前置过滤、稳定排序、有界分页与候选投影漂移拒绝；authenticated durable GRAPH creation 的 runtime/repository/authorizer/service/controller/schema/capability 组合聚焦 71 tests；creation preparation heartbeat 的 repository/coordinator/service/capability 组合聚焦 65 tests；本轮 automatic terminal-recovery heartbeat 的 coordinator/heartbeat-service/terminal-service/capability/Spring wiring 组合聚焦 33 tests，均全绿。
 
 ## 1. 结论先行
 
@@ -1237,6 +1243,11 @@ read-your-writes，global ready/expired-claim scan 只读 committed rows；只�
 scope 的异步引擎线程可按受信 execution id 入队，无 scope/stage 的读者看不到 speculative item，claim 与终态迁移必须由调用线程
 重新进入 stage。批量写入先完整校验 duplicate/cross-execution/identity/id ownership，已提交 itemId
 不可迁移。除 BLOGE 用作 worker topic 的 dispatch shard 外，item identity 必须绑定 lifecycle。
+ready work、过期 work-item claim 与过期 execution lease 的 tenant/namespace、type/status、可选 shard、
+到期时间、稳定排序和有界 limit 已下推到 SQL，并有全局与 tenant-scoped 复合索引；只有候选行才解码
+权威 JSON，且返回前逐字段回验查询所依赖的调度投影。默认页为 100，硬上限 10,000，防止错误配置
+形成无界 poll。被篡改为“隐藏候选”的投影仍需独立反熵扫描发现，当前也尚无公开 worker poll、
+原子远程 acquisition 或生产负载容量认证。
 `bloge.testWorkItemMutation.v1` 由 `bloge.testDurableStateMutation.v3` 纳入聚合，不修改 v1/v2
 历史 fingerprint。冷读、回滚、retry/dead-letter、tenant、异步可见性、过期 claim、跨实例 CAS
 输家和 work-item-only fingerprint 均已有反例测试。

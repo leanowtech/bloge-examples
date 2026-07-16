@@ -24,6 +24,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import javax.sql.DataSource;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -54,6 +56,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class StagedBlogeWorkItemStore implements WorkItemStore {
 
     private static final String CLOSURE_SCHEMA_VERSION = "bloge.testWorkItemMutation.v1";
+    private static final String SCHEDULING_PROJECTION_SELECT = """
+            SELECT item_id, execution_id, tenant_id, namespace_id, item_type, shard_id,
+                   priority, item_status, claim_owner, claim_until, next_attempt_at,
+                   created_at, payload_json
+            FROM rg_test_bloge_work_items
+            """;
+    private static final int MAX_DISPATCH_SCAN_LIMIT = 10_000;
     private static final Comparator<WorkItem> DISPATCH_ORDER =
             Comparator.comparingInt(WorkItem::priority).reversed()
                     .thenComparing(WorkItem::createdAt)
@@ -112,6 +121,19 @@ public final class StagedBlogeWorkItemStore implements WorkItemStore {
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS rg_test_bloge_work_claim_idx
                 ON rg_test_bloge_work_items (item_status, claim_until, created_at)
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_bloge_work_tenant_dispatch_idx
+                ON rg_test_bloge_work_items (
+                    tenant_id, namespace_id, item_type, item_status, shard_id,
+                    priority, next_attempt_at, created_at, item_id
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_bloge_work_tenant_claim_idx
+                ON rg_test_bloge_work_items (
+                    tenant_id, namespace_id, item_status, claim_until, item_id
+                )
                 """);
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS rg_test_bloge_work_execution_idx
@@ -206,19 +228,47 @@ public final class StagedBlogeWorkItemStore implements WorkItemStore {
                 : loadCommittedById(normalized);
     }
 
-    /** Returns committed jobs only, excluding speculative jobs in active execution stages. */
+    /**
+     * Returns a bounded, priority-ordered page of committed claimable jobs.
+     *
+     * <p>Type, tenant, shard, readiness, ordering, and limit are evaluated by the database before
+     * payload decoding. Every returned scheduling projection is then compared with the authoritative
+     * {@link WorkItem} JSON; projection drift fails closed instead of dispatching the wrong item.</p>
+     *
+     * @param workItemType required worker item type
+     * @param shardId optional exact worker shard; {@code null} selects all shards
+     * @param limit requested page size; non-positive means 100 and values above 10,000 are capped
+     * @return verified candidates in priority, creation-time, and item-id order
+     */
     @Override
     public List<WorkItem> pollReady(WorkItemType workItemType, String shardId, int limit) {
         WorkItemType requiredType = Objects.requireNonNull(workItemType, "workItemType");
         Instant now = SystemTimeSource.INSTANCE.now();
-        return committedRows().stream()
-                .filter(item -> TenantStoreSupport.matchesCurrentTenant(item.identity()))
-                .filter(item -> item.itemType() == requiredType)
-                .filter(item -> shardId == null || Objects.equals(shardId, item.identity().shardId()))
-                .filter(item -> isClaimable(item, now))
-                .sorted(DISPATCH_ORDER)
-                .limit(normalizeLimit(limit))
-                .toList();
+        StringBuilder sql = new StringBuilder(SCHEDULING_PROJECTION_SELECT)
+                .append(" WHERE item_type = ?");
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(requiredType.name());
+        appendTenantPredicate(sql, parameters);
+        if (shardId != null) {
+            sql.append(" AND shard_id = ?");
+            parameters.add(shardId);
+        }
+        sql.append("""
+                 AND (
+                       item_status = 'READY'
+                    OR (item_status = 'RETRY_WAIT'
+                        AND (next_attempt_at IS NULL OR next_attempt_at <= ?))
+                    OR (item_status = 'CLAIMED'
+                        AND (claim_until IS NULL OR claim_until <= ?))
+                 )
+                 ORDER BY priority DESC, created_at, item_id
+                 LIMIT ?
+                """);
+        parameters.add(Timestamp.from(now));
+        parameters.add(Timestamp.from(now));
+        parameters.add(normalizeLimit(limit));
+        return jdbc.query(sql.toString(), this::mapVerifiedSchedulingProjection,
+                parameters.toArray());
     }
 
     @Override
@@ -288,18 +338,29 @@ public final class StagedBlogeWorkItemStore implements WorkItemStore {
         return creationArea(executionId).cancelByExecution(executionId, reason);
     }
 
+    /**
+     * Returns a bounded, expiry-ordered page of committed claims due for reconciliation.
+     *
+     * <p>The database applies tenant scope, claimed status, cutoff, ordering, and limit before JSON
+     * decoding. Returned scheduling columns must agree with the authoritative item.</p>
+     *
+     * @param cutoff inclusive claim-expiry cutoff
+     * @param limit requested page size; non-positive means 100 and values above 10,000 are capped
+     * @return verified expired claims in deterministic expiry and item-id order
+     */
     @Override
     public List<WorkItem> findExpiredClaims(Instant cutoff, int limit) {
         Instant requiredCutoff = Objects.requireNonNull(cutoff, "cutoff");
-        return committedRows().stream()
-                .filter(item -> TenantStoreSupport.matchesCurrentTenant(item.identity()))
-                .filter(item -> item.status() == WorkItemStatus.CLAIMED)
-                .filter(item -> item.claimUntil() != null
-                        && !item.claimUntil().isAfter(requiredCutoff))
-                .sorted(Comparator.comparing(WorkItem::claimUntil)
-                        .thenComparing(WorkItem::itemId))
-                .limit(normalizeLimit(limit))
-                .toList();
+        StringBuilder sql = new StringBuilder(SCHEDULING_PROJECTION_SELECT)
+                .append(" WHERE item_status = 'CLAIMED'")
+                .append(" AND claim_until IS NOT NULL AND claim_until <= ?");
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(Timestamp.from(requiredCutoff));
+        appendTenantPredicate(sql, parameters);
+        sql.append(" ORDER BY claim_until, item_id LIMIT ?");
+        parameters.add(normalizeLimit(limit));
+        return jdbc.query(sql.toString(), this::mapVerifiedSchedulingProjection,
+                parameters.toArray());
     }
 
     @Override
@@ -498,6 +559,36 @@ public final class StagedBlogeWorkItemStore implements WorkItemStore {
                 (resultSet, rowNumber) -> read(resultSet.getString("payload_json")));
     }
 
+    private void appendTenantPredicate(StringBuilder sql, List<Object> parameters) {
+        TenantStoreSupport.currentTenant().ifPresent(tenant -> {
+            sql.append(" AND tenant_id = ? AND namespace_id = ?");
+            parameters.add(tenant.tenantId());
+            parameters.add(tenant.namespace());
+        });
+    }
+
+    private WorkItem mapVerifiedSchedulingProjection(ResultSet resultSet, int rowNumber)
+            throws SQLException {
+        WorkItem item = read(resultSet.getString("payload_json"));
+        if (!Objects.equals(resultSet.getString("item_id"), item.itemId())
+                || !Objects.equals(resultSet.getString("execution_id"),
+                        item.identity().executionId())
+                || !Objects.equals(resultSet.getString("tenant_id"), item.identity().tenantId())
+                || !Objects.equals(resultSet.getString("namespace_id"),
+                        item.identity().namespace())
+                || !Objects.equals(resultSet.getString("item_type"), item.itemType().name())
+                || !Objects.equals(resultSet.getString("shard_id"), item.identity().shardId())
+                || resultSet.getInt("priority") != item.priority()
+                || !Objects.equals(resultSet.getString("item_status"), item.status().name())
+                || !Objects.equals(resultSet.getString("claim_owner"), item.claimOwner())
+                || !Objects.equals(instant(resultSet, "claim_until"), item.claimUntil())
+                || !Objects.equals(instant(resultSet, "next_attempt_at"), item.nextAttemptAt())
+                || !Objects.equals(instant(resultSet, "created_at"), item.createdAt())) {
+            throw durability("Stored BLOGE work-item scheduling projection is corrupt");
+        }
+        return item;
+    }
+
     private WorkItem read(String json) {
         try {
             return objectMapper.readValue(json, WorkItem.class);
@@ -565,14 +656,6 @@ public final class StagedBlogeWorkItemStore implements WorkItemStore {
         }
     }
 
-    private static boolean isClaimable(WorkItem item, Instant now) {
-        return item.status() == WorkItemStatus.READY
-                || item.status() == WorkItemStatus.RETRY_WAIT
-                && (item.nextAttemptAt() == null || !item.nextAttemptAt().isAfter(now))
-                || item.status() == WorkItemStatus.CLAIMED
-                && (item.claimUntil() == null || !item.claimUntil().isAfter(now));
-    }
-
     private static boolean sameLifecycleIdentity(ExecutionIdentity lifecycle,
                                                  ExecutionIdentity workItem) {
         ExecutionIdentity normalizedWorkItem = workItem.withRouting(
@@ -584,8 +667,13 @@ public final class StagedBlogeWorkItemStore implements WorkItemStore {
         return instant == null ? null : Timestamp.from(instant);
     }
 
-    private static long normalizeLimit(int limit) {
-        return limit <= 0 ? 100L : limit;
+    private static Instant instant(ResultSet resultSet, String column) throws SQLException {
+        Timestamp value = resultSet.getTimestamp(column);
+        return value == null ? null : value.toInstant();
+    }
+
+    private static int normalizeLimit(int limit) {
+        return Math.min(limit <= 0 ? 100 : limit, MAX_DISPATCH_SCAN_LIMIT);
     }
 
     private static String required(String value, String field) {

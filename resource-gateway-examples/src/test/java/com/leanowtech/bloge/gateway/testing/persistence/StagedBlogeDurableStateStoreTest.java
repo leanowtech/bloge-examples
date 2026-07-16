@@ -42,6 +42,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -495,6 +496,126 @@ class StagedBlogeDurableStateStoreTest {
                 WorkItemType.EXECUTION_RETRY, null, 10))
                 .extracting(WorkItem::itemId)
                 .containsExactly("item-simple-retry");
+    }
+
+    @Test
+    void pushesWorkItemDispatchFiltersAndLimitBeforePayloadDecoding() throws Exception {
+        ExecutionIdentity shardA = executionIdentity().withRouting(
+                executionIdentity().routeKey(), "shard-a");
+        WorkItem ready = workItem("item-ready-indexed", WorkItemType.TIMER_DUE, shardA);
+        WorkItem readyLater = ready.toBuilder()
+                .itemId("item-ready-indexed-later")
+                .createdAt(ready.createdAt().plusSeconds(1))
+                .updatedAt(ready.updatedAt().plusSeconds(1))
+                .build();
+        insertWorkItemRow(ready, objectMapper.writeValueAsString(ready));
+        insertWorkItemRow(readyLater, objectMapper.writeValueAsString(readyLater));
+        insertRawWorkItemRow(
+                "item-hidden-status", "engine-hidden-status", "tenant-a", "test-runtime",
+                WorkItemType.TIMER_DUE, "shard-a", 100, WorkItemStatus.DONE,
+                null, null, null, ready.createdAt(), "not-json");
+        insertRawWorkItemRow(
+                "item-below-limit", "engine-below-limit", "tenant-a", "test-runtime",
+                WorkItemType.TIMER_DUE, "shard-a", 1, WorkItemStatus.READY,
+                null, null, null, ready.createdAt().plusSeconds(1), "not-json");
+        insertRawWorkItemRow(
+                "item-other-tenant", "engine-other-tenant", "tenant-b", "test-runtime",
+                WorkItemType.TIMER_DUE, "shard-a", 200, WorkItemStatus.READY,
+                null, null, null, ready.createdAt(), "not-json");
+        insertRawWorkItemRow(
+                "item-other-shard", "engine-other-shard", "tenant-a", "test-runtime",
+                WorkItemType.TIMER_DUE, "shard-b", 200, WorkItemStatus.READY,
+                null, null, null, ready.createdAt(), "not-json");
+
+        List<WorkItem> selected = TenantContextHolder.callWith(
+                new TenantContext("tenant-a", "test-runtime"),
+                () -> stateStore.workItemStore().pollReady(
+                        WorkItemType.TIMER_DUE, "shard-a", 2));
+
+        assertThat(selected).extracting(WorkItem::itemId)
+                .containsExactly("item-ready-indexed", "item-ready-indexed-later");
+    }
+
+    @Test
+    void pushesExpiredWorkItemFilterBeforePayloadDecodingAndRejectsProjectionDrift()
+            throws Exception {
+        Instant cutoff = Instant.parse("2026-07-16T08:10:00Z");
+        WorkItem expired = workItem("item-expired-indexed", WorkItemType.TIMER_DUE)
+                .toBuilder()
+                .status(WorkItemStatus.CLAIMED)
+                .claimOwner("worker-a")
+                .claimToken("claim-token-a")
+                .claimUntil(cutoff.minusSeconds(1))
+                .build();
+        insertWorkItemRow(expired, objectMapper.writeValueAsString(expired));
+        insertRawWorkItemRow(
+                "item-not-claimed", "engine-not-claimed", "tenant-a", "test-runtime",
+                WorkItemType.TIMER_DUE, null, 100, WorkItemStatus.DONE,
+                null, cutoff.minusSeconds(2), null, expired.createdAt(), "not-json");
+        insertRawWorkItemRow(
+                "item-other-tenant-claim", "engine-other-tenant", "tenant-b", "test-runtime",
+                WorkItemType.TIMER_DUE, null, 100, WorkItemStatus.CLAIMED,
+                "worker-b", cutoff.minusSeconds(2), null, expired.createdAt(), "not-json");
+
+        assertThat(TenantContextHolder.callWith(
+                new TenantContext("tenant-a", "test-runtime"),
+                () -> stateStore.workItemStore().findExpiredClaims(cutoff, 10)))
+                .extracting(WorkItem::itemId)
+                .containsExactly("item-expired-indexed");
+
+        database.jdbc().update("""
+                UPDATE rg_test_bloge_work_items SET claim_owner = ? WHERE item_id = ?
+                """, "tampered-worker", expired.itemId());
+        assertThatThrownBy(() -> TenantContextHolder.callWith(
+                new TenantContext("tenant-a", "test-runtime"),
+                () -> stateStore.workItemStore().findExpiredClaims(cutoff, 10)))
+                .isInstanceOf(DurabilityException.class)
+                .hasMessageContaining("scheduling projection is corrupt");
+    }
+
+    @Test
+    void pushesExecutionRecoveryFilterBeforePayloadDecodingAndRejectsProjectionDrift()
+            throws Exception {
+        Instant cutoff = Instant.parse("2026-07-16T08:10:00Z");
+        ExecutionIdentity shardA = executionIdentity().withRouting(
+                executionIdentity().routeKey(), "shard-a");
+        ExecutionInstance expired = ExecutionInstance.builder(shardA)
+                .status(ExecutionStatus.RUNNING)
+                .leaseOwner("worker-a")
+                .leaseToken("execution-lease-a")
+                .leaseUntil(cutoff.minusSeconds(1))
+                .version(1)
+                .createdAt(cutoff.minusSeconds(60))
+                .updatedAt(cutoff.minusSeconds(1))
+                .build();
+        insertExecutionRow(expired, objectMapper.writeValueAsString(expired));
+        insertRawExecutionRow(
+                "engine-completed", "tenant-a", "test-runtime", null,
+                "controlled-durable-state", "shard-a", ExecutionStatus.COMPLETED, 1,
+                cutoff.minusSeconds(2), cutoff.minusSeconds(2), "not-json");
+        insertRawExecutionRow(
+                "engine-other-tenant", "tenant-b", "test-runtime", null,
+                "controlled-durable-state", "shard-a", ExecutionStatus.RUNNING, 1,
+                cutoff.minusSeconds(2), cutoff.minusSeconds(2), "not-json");
+        insertRawExecutionRow(
+                "engine-other-shard", "tenant-a", "test-runtime", null,
+                "controlled-durable-state", "shard-b", ExecutionStatus.RUNNING, 1,
+                cutoff.minusSeconds(2), cutoff.minusSeconds(2), "not-json");
+
+        assertThat(TenantContextHolder.callWith(
+                new TenantContext("tenant-a", "test-runtime"),
+                () -> stateStore.executionStore().findExpiredClaims(cutoff, 10, "shard-a")))
+                .extracting(execution -> execution.identity().executionId())
+                .containsExactly("engine-a");
+
+        database.jdbc().update("""
+                UPDATE rg_test_bloge_executions SET execution_version = ? WHERE execution_id = ?
+                """, 99, expired.identity().executionId());
+        assertThatThrownBy(() -> TenantContextHolder.callWith(
+                new TenantContext("tenant-a", "test-runtime"),
+                () -> stateStore.executionStore().findExpiredClaims(cutoff, 10, "shard-a")))
+                .isInstanceOf(DurabilityException.class)
+                .hasMessageContaining("recovery projection is corrupt");
     }
 
     @Test
@@ -959,6 +1080,73 @@ class StagedBlogeDurableStateStoreTest {
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
+    }
+
+    private void insertWorkItemRow(WorkItem item, String payloadJson) {
+        insertRawWorkItemRow(
+                item.itemId(), item.identity().executionId(), item.identity().tenantId(),
+                item.identity().namespace(), item.itemType(), item.identity().shardId(),
+                item.priority(), item.status(), item.claimOwner(), item.claimUntil(),
+                item.nextAttemptAt(), item.createdAt(), payloadJson);
+    }
+
+    private void insertRawWorkItemRow(
+            String itemId,
+            String executionId,
+            String tenantId,
+            String namespace,
+            WorkItemType itemType,
+            String shardId,
+            int priority,
+            WorkItemStatus status,
+            String claimOwner,
+            Instant claimUntil,
+            Instant nextAttemptAt,
+            Instant createdAt,
+            String payloadJson) {
+        database.jdbc().update("""
+                INSERT INTO rg_test_bloge_work_items (
+                    item_id, execution_id, tenant_id, namespace_id, item_type, shard_id,
+                    priority, item_status, claim_owner, claim_until, next_attempt_at,
+                    created_at, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, itemId, executionId, tenantId, namespace, itemType.name(), shardId,
+                priority, status.name(), claimOwner, timestamp(claimUntil),
+                timestamp(nextAttemptAt), Timestamp.from(createdAt), payloadJson);
+    }
+
+    private void insertExecutionRow(ExecutionInstance execution, String payloadJson) {
+        insertRawExecutionRow(
+                execution.identity().executionId(), execution.identity().tenantId(),
+                execution.identity().namespace(), execution.identity().businessKey(),
+                execution.identity().graphName(), execution.identity().shardId(),
+                execution.status(), execution.version(), execution.leaseUntil(),
+                execution.updatedAt(), payloadJson);
+    }
+
+    private void insertRawExecutionRow(
+            String executionId,
+            String tenantId,
+            String namespace,
+            String businessKey,
+            String graphName,
+            String shardId,
+            ExecutionStatus status,
+            long version,
+            Instant leaseUntil,
+            Instant updatedAt,
+            String payloadJson) {
+        database.jdbc().update("""
+                INSERT INTO rg_test_bloge_executions (
+                    execution_id, tenant_id, namespace, business_key, graph_name, shard_id,
+                    execution_status, execution_version, lease_until, updated_at, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, executionId, tenantId, namespace, businessKey, graphName, shardId,
+                status.name(), version, timestamp(leaseUntil), Timestamp.from(updatedAt), payloadJson);
+    }
+
+    private static Timestamp timestamp(Instant instant) {
+        return instant == null ? null : Timestamp.from(instant);
     }
 
     private ExecutionIdentity executionIdentity() {

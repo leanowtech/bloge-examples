@@ -419,6 +419,13 @@ are scheduling projections. Execution-scoped reads see the local overlay, while 
 expired-claim scans deliberately read committed rows only. An asynchronous thread may enqueue only
 while BLOGE's graph-execution scope is bound and the trusted execution stage is active; an unscoped
 reader still cannot see that speculative item.
+Ready polling and expired work-item/execution-lease recovery now push type/status, tenant/namespace,
+optional shard, due-time, stable ordering, and bounded `LIMIT` into SQL. Global and tenant-scoped
+compound indexes support those predicates. Only selected rows are decoded, then every scheduling
+projection used by the query is compared with the authoritative `WorkItem` or `ExecutionInstance`;
+a forged candidate fails closed. Non-positive limits default to 100 and dispatch/recovery scans cap
+at 10,000 rows. This removes full-table payload decoding from the hot scan without treating relational
+projections as authority.
 Claim and terminal transitions require the caller thread to re-enter the execution stage. Batches
 reject duplicate ids and cross-execution membership before mutation. Item identity must retain the
 execution tenant, namespace, graph, route, lineage, and source; BLOGE's worker-topic shard is the sole
@@ -544,6 +551,9 @@ surface.
 20. Global work-item ready and expired-claim scans expose committed rows only. BLOGE-scoped async
     threads may enqueue into their trusted active execution, but unscoped exact-id reads cannot see
     the overlay; claim and terminal transitions require an execution stage on the caller thread.
+    Work-item and execution recovery scans apply tenant/shard/status/time predicates, deterministic
+    order, and a maximum 10,000-row limit in SQL before decoding. Every selected scheduling projection
+    must agree with the authoritative JSON before the candidate is returned.
 21. Work-item batches validate the complete set before mutation. A duplicate id, cross-execution
     member, lifecycle identity drift, or attempted committed `itemId` migration rejects the batch.
 22. Work-item claim tokens, versions, retry classifications, terminal timestamps, dead-letter
@@ -650,6 +660,8 @@ is active.
 and work-item commit and rollback; cold reconstruction of `ExecutionInstance`, `ExecutionWait`, and
 `WorkItem`; BLOGE optimistic-version semantics for lifecycle, wait, claim, retry, failed, and
 dead-letter transitions; committed-only timer, correlation, ready-work, and expired-claim scans;
+indexed SQL pushdown before payload decoding, deterministic bounded dispatch order, tenant/shard
+isolation, and fail-closed candidate projection tamper detection;
 aggregate fingerprint sensitivity to lifecycle-only, wait-only, and work-item-only changes; atomic
 batch validation, tenant isolation, async enqueue visibility, identity-drift and cross-execution id
 rejection; and two-instance control-CAS rollback of the losing execution, wait, and work-item status.
@@ -689,7 +701,7 @@ mvn -f resource-gateway-examples/pom.xml \
   -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,StagedBlogeExecutionCheckpointStoreTest,StagedBlogeDurableStateStoreTest,IndependentDurableTestEngineFactoryTest,IndependentDurableTestRecoverySessionTest,InvocationRecorderCheckpointTest,DurableTestRecoveryAuthorityTest,DurableTestRecoveryAuthorizerTest,DurableTestExecutionQueryServiceTest,DurableTestExecutionQueryControllerTest,DurableTestOwnerClaimServiceTest,DurableTestOwnerClaimControllerTest,DurableTestRecoveryPrincipalTest,DurableTestRecoveryHeartbeatServiceTest,DurableTestRecoveryHeartbeatControllerTest,DurableTestRecoveryLeaseCoordinatorTest,DurableTestTerminalRecoveryRuntimeTest,DurableTestTerminalRecoveryServiceTest,DurableTestTerminalRecoveryControllerTest,TestingControlProtocolSchemaTest,TestabilityCapabilitiesTest,TestRuntimeProfileIsolationTest test
 ```
 
-The combined focused gate completed with 175 tests, zero failures, zero errors, and zero skips. The
+The combined focused gate completed with 178 tests, zero failures, zero errors, and zero skips. The
 recovery-session slice contributes six database-level tests; authorization-bound dispatch adds two
 database-level claim/replay, exact-lookup, and tamper cases plus two regional-authority cases. The
 public query slice adds six service cases, including a real-database projection-tamper case, and two
@@ -717,9 +729,11 @@ controller cases, and schema/capability checks. Its composed focused gate contai
 The creation-heartbeat increment's repository, coordinator, service, and capability gate contains 65
 tests, with zero failures, errors, or skips. The automatic terminal-recovery heartbeat increment's
 coordinator, heartbeat-service, terminal-service, capability, and Spring wiring gates contain 33
-tests with zero failures, errors, or skips. The repository-wide `clean verify` gate completed with
-2061 tests, zero failures, zero errors, 2
-conditional skips, real-browser regression coverage, and successful Spring Boot JAR packaging.
+tests with zero failures, errors, or skips. Three database tests additionally prove that worker-ready
+and expired-lease scans apply tenant/shard/status/order/limit predicates before JSON decoding and
+reject selected scheduling-projection drift. The repository-wide `-Pfrontend clean verify` gate
+completed with 2064 tests, zero failures, zero errors, zero skips, real-browser regression coverage,
+and successful Spring Boot JAR packaging.
 Scoped public `javadoc -Xdoclint:all -Werror` for the creation/recovery production types is also a required
 pre-commit gate.
 The optional project-wide Javadoc report still fails on 16 pre-existing HTML and
@@ -768,6 +782,9 @@ parameter diagnostics in unrelated packages; that baseline is not represented as
 - Stream/event fixture state, an explicit streaming offset/checkpoint protocol, typed
   identity/feature-flag/secret authorities, deterministic parallel scheduling, and physical
   test-runtime deployment remain Stage 4/5 work.
-- Ready/expired work scans currently deserialize the authoritative rows before filtering. Indexed
-  SQL pushdown plus projection-integrity monitoring is a throughput gate before high-volume worker
-  deployment; correctness currently takes precedence over claiming unmeasured dispatch scale.
+- Ready/expired work-item and execution-lease scans now use indexed, tenant-aware SQL predicates,
+  stable ordering, bounded pages, and fail-closed verification of every returned projection against
+  authoritative JSON. Independent anti-entropy scanning is still required to detect a corrupted
+  projection that hides a row from the candidate query, and no production load/latency/cardinality
+  envelope has been certified. Public polling, atomic remote-worker acquisition, backpressure, and
+  capacity admission therefore remain gates before high-volume worker deployment.
