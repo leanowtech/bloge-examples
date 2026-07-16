@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoin
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryAuthorization;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryDispatch;
+import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryTerminalReceipt;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureConsumptionStateSnapshot;
@@ -693,6 +694,288 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     }
 
     @Test
+    void recoveryTerminalCommandAtomicallyCommitsEngineStateAndBlockingEvidenceReceipt() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(
+                        resumeCommand(expired, "resume-request-1", SHA_D, "instance-b"));
+        DurableTestExecutionCheckpoint.EngineState terminalEngine =
+                terminalEngineState(claimed.checkpoint());
+        DurableTestExecutionCheckpointRepository.RecoveryTerminalCommand command =
+                terminalCommand(claimed, "terminal-request-1", SHA_B, terminalEngine);
+        AtomicBoolean mutationRan = new AtomicBoolean();
+
+        DurableTestExecutionCheckpointRepository.RecoveryTerminalResult first =
+                repository.terminalizeRecoveryIdempotently(command,
+                        mutation(claimed.checkpoint().engineExecutionId(), terminalEngine, jdbc -> {
+                            mutationRan.set(true);
+                            jdbc.update("INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
+                                    "terminal", claimed.checkpoint().engineExecutionId(),
+                                    terminalEngine.stateVersion());
+                        }));
+
+        assertThat(mutationRan).isTrue();
+        assertThat(first.idempotentReplay()).isFalse();
+        assertThat(first.checkpoint().lifecycle().status())
+                .isEqualTo(DurableTestExecutionCheckpoint.Status.TERMINAL);
+        assertThat(first.checkpoint().lifecycle().revision())
+                .isEqualTo(claimed.checkpoint().lifecycle().revision() + 1);
+        assertThat(first.checkpoint().engineState()).isEqualTo(terminalEngine);
+        assertThat(first.checkpoint().dependencies()).isEqualTo(claimed.checkpoint().dependencies());
+        assertThat(first.receipt()).satisfies(receipt -> {
+            assertThat(receipt.executionOutcome())
+                    .isEqualTo(DurableTestRecoveryTerminalReceipt.ExecutionOutcome.COMPLETED);
+            assertThat(receipt.evidenceStatus()).isEqualTo("EVIDENCE_INCOMPLETE");
+            assertThat(receipt.evidenceGapCodes())
+                    .containsExactly("PRE_CHECKPOINT_TRACE_UNAVAILABLE");
+            receipt.requireValid(new ObjectMapper().findAndRegisterModules(),
+                    claimed.dispatch(), first.checkpoint());
+        });
+        assertThat(repository.findRecoveryTerminalResult(
+                "tenant-a", "test", "terminal-request-1", SHA_B)).get()
+                .satisfies(replay -> {
+                    assertThat(replay.idempotentReplay()).isTrue();
+                    assertThat(replay.checkpoint()).isEqualTo(first.checkpoint());
+                    assertThat(replay.receipt()).isEqualTo(first.receipt());
+                });
+
+        mutationRan.set(false);
+        DurableTestExecutionCheckpointRepository.RecoveryTerminalResult replay =
+                repository.terminalizeRecoveryIdempotently(command,
+                        mutation(claimed.checkpoint().engineExecutionId(), terminalEngine,
+                                ignored -> mutationRan.set(true)));
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(mutationRan).isFalse();
+        assertThat(engineCandidateCount("terminal")).isEqualTo(1);
+    }
+
+    @Test
+    void recoveryTerminalCommandAndCompanionEvidenceRollBackAsOneTransaction() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(
+                        resumeCommand(expired, "resume-request-1", SHA_D, "instance-b"));
+        DurableTestExecutionCheckpoint.EngineState terminalEngine =
+                terminalEngineState(claimed.checkpoint());
+        DurableTestExecutionCheckpointRepository.RecoveryTerminalCommand command =
+                terminalCommand(claimed, "terminal-request-1", SHA_B, terminalEngine);
+
+        assertThatThrownBy(() -> repository.terminalizeRecoveryIdempotently(
+                command,
+                mutation(claimed.checkpoint().engineExecutionId(), terminalEngine,
+                        jdbc -> jdbc.update("INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
+                                "terminal", claimed.checkpoint().engineExecutionId(),
+                                terminalEngine.stateVersion())),
+                ignored -> {
+                    throw new IllegalStateException("injected terminal evidence failure");
+                })).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("terminal evidence failure");
+
+        assertThat(repository.find("tenant-a", "test", "run-a"))
+                .contains(claimed.checkpoint());
+        assertThat(engineCandidateCount("terminal")).isZero();
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_recovery_terminals", Integer.class))
+                .isZero();
+    }
+
+    @Test
+    void recoveryTerminalCommandRejectsIntentDriftAndStoredReceiptTampering() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(
+                        resumeCommand(expired, "resume-request-1", SHA_D, "instance-b"));
+        DurableTestExecutionCheckpoint.EngineState terminalEngine =
+                terminalEngineState(claimed.checkpoint());
+        DurableTestExecutionCheckpointRepository.RecoveryTerminalCommand command =
+                terminalCommand(claimed, "terminal-request-1", SHA_B, terminalEngine);
+        repository.terminalizeRecoveryIdempotently(command,
+                mutation(claimed.checkpoint().engineExecutionId(), terminalEngine,
+                        ignored -> { }));
+
+        DurableTestExecutionCheckpointRepository.RecoveryTerminalCommand changed =
+                new DurableTestExecutionCheckpointRepository.RecoveryTerminalCommand(
+                        command.clientRequestId(), command.requestFingerprint(),
+                        command.expectedDispatch(),
+                        DurableTestRecoveryTerminalReceipt.ExecutionOutcome.FAILED,
+                        command.terminalEngineState(), command.fixtureConsumptionState(),
+                        command.executionServiceState(), command.evidenceGapCodes());
+        assertThatThrownBy(() -> repository.terminalizeRecoveryIdempotently(
+                changed, mutation(claimed.checkpoint().engineExecutionId(), terminalEngine,
+                        ignored -> { })))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.IDEMPOTENCY_CONFLICT);
+
+        database.jdbc().update("""
+                UPDATE rg_test_durable_recovery_terminals
+                SET result_receipt_json = ?
+                WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                """, "{}", "tenant-a", "test", "terminal-request-1");
+        assertThatThrownBy(() -> repository.findRecoveryTerminalResult(
+                "tenant-a", "test", "terminal-request-1", SHA_B))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("terminal receipt is corrupt");
+    }
+
+    @Test
+    void recoveryTerminalCommandRequiresExplicitEvidenceGaps() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                new DurableTestExecutionCheckpointRepository.LeaseClaimResult(
+                        withLifecycle(expired, DurableTestExecutionCheckpoint.Status.RESUMING,
+                                "instance-b", 2, 1,
+                                expired.lifecycle().createdAt(),
+                                expired.lifecycle().updatedAt().plusSeconds(1),
+                                Instant.parse("9999-01-01T00:00:00Z")),
+                        DurableTestRecoveryDispatch.issue(
+                                new ObjectMapper().findAndRegisterModules(),
+                                resumeCommand(expired, "resume-request-1", SHA_D,
+                                        "instance-b").authorization(),
+                                withLifecycle(expired,
+                                        DurableTestExecutionCheckpoint.Status.RESUMING,
+                                        "instance-b", 2, 1,
+                                        expired.lifecycle().createdAt(),
+                                        expired.lifecycle().updatedAt().plusSeconds(1),
+                                        Instant.parse("9999-01-01T00:00:00Z"))), false);
+        DurableTestExecutionCheckpoint.EngineState terminalEngine =
+                terminalEngineState(claimed.checkpoint());
+
+        assertThatThrownBy(() -> new DurableTestExecutionCheckpointRepository
+                .RecoveryTerminalCommand("terminal-request-1", SHA_B, claimed.dispatch(),
+                DurableTestRecoveryTerminalReceipt.ExecutionOutcome.COMPLETED,
+                terminalEngine, claimed.checkpoint().fixtureConsumptionState(),
+                claimed.checkpoint().executionServiceState(), List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("evidence gap");
+    }
+
+    @Test
+    void recoveryTerminalCommandRejectsAStaleDispatchAfterHeartbeatRotation() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(
+                        resumeCommand(expired, "resume-request-1", SHA_D, "instance-b"));
+        repository.heartbeatRecoveryLeaseIdempotently(heartbeatCommand(
+                claimed.dispatch(), "heartbeat-request-1", SHA_C, Duration.ofMinutes(3)));
+        DurableTestExecutionCheckpoint.EngineState terminalEngine =
+                terminalEngineState(claimed.checkpoint());
+
+        assertThatThrownBy(() -> repository.terminalizeRecoveryIdempotently(
+                terminalCommand(claimed, "terminal-request-stale", SHA_B, terminalEngine),
+                mutation(claimed.checkpoint().engineExecutionId(), terminalEngine,
+                        jdbc -> jdbc.update("INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
+                                "terminal-stale", claimed.checkpoint().engineExecutionId(),
+                                terminalEngine.stateVersion()))))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.STALE_FENCE);
+        assertThat(engineCandidateCount("terminal-stale")).isZero();
+    }
+
+    @Test
+    void recoveryTerminalCommandRejectsAnExpiredDispatchBeforeEngineMutation() throws Exception {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(resumeCommand(
+                        expired, "resume-request-1", SHA_D, "instance-b",
+                        Duration.ofSeconds(1)));
+        DurableTestExecutionCheckpoint.EngineState terminalEngine =
+                terminalEngineState(claimed.checkpoint());
+        TimeUnit.MILLISECONDS.sleep(1100);
+
+        assertThatThrownBy(() -> repository.terminalizeRecoveryIdempotently(
+                terminalCommand(claimed, "terminal-request-expired", SHA_B, terminalEngine),
+                mutation(claimed.checkpoint().engineExecutionId(), terminalEngine,
+                        jdbc -> jdbc.update("INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
+                                "terminal-expired", claimed.checkpoint().engineExecutionId(),
+                                terminalEngine.stateVersion()))))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.LEASE_EXPIRED);
+        assertThat(engineCandidateCount("terminal-expired")).isZero();
+    }
+
+    @Test
+    void recoveryTerminalCommandRejectsAValidButUnissuedDispatch() {
+        DurableTestExecutionCheckpoint resuming = withLifecycle(
+                checkpoint(0, "checkpoint-0"), DurableTestExecutionCheckpoint.Status.RESUMING,
+                "instance-b", 2, 0,
+                Instant.parse("2026-01-01T00:00:00Z"),
+                Instant.parse("2026-01-01T00:00:01Z"),
+                Instant.parse("9999-01-01T00:00:00Z"));
+        repository.create(resuming, boundNoop(resuming));
+        DurableTestRecoveryDispatch unissued = DurableTestRecoveryDispatch.issue(
+                new ObjectMapper().findAndRegisterModules(), resumeCommand(
+                        resuming, "unused-resume", SHA_D, "instance-c").authorization(),
+                resuming);
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult syntheticClaim =
+                new DurableTestExecutionCheckpointRepository.LeaseClaimResult(
+                        resuming, unissued, false);
+        DurableTestExecutionCheckpoint.EngineState terminalEngine = terminalEngineState(resuming);
+
+        assertThatThrownBy(() -> repository.terminalizeRecoveryIdempotently(
+                terminalCommand(syntheticClaim, "terminal-request-unissued", SHA_B,
+                        terminalEngine),
+                mutation(resuming.engineExecutionId(), terminalEngine, ignored -> { })))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason
+                        .UNRECOGNIZED_DISPATCH);
+        assertThat(repository.find("tenant-a", "test", "run-a")).contains(resuming);
+    }
+
+    @Test
+    void concurrentRepositoryInstancesCommitOneTerminalMutationAndReplayItsReceipt()
+            throws Exception {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(
+                        resumeCommand(expired, "resume-request-1", SHA_D, "instance-b"));
+        DatabaseDurableTestExecutionCheckpointRepository competing =
+                new DatabaseDurableTestExecutionCheckpointRepository(
+                        database.jdbc(), database.transactionManager(),
+                        new ObjectMapper().findAndRegisterModules(), integrity);
+        competing.init();
+        DurableTestExecutionCheckpoint.EngineState terminalEngine =
+                terminalEngineState(claimed.checkpoint());
+        DurableTestExecutionCheckpointRepository.RecoveryTerminalCommand command =
+                terminalCommand(claimed, "terminal-request-1", SHA_B, terminalEngine);
+        CountDownLatch start = new CountDownLatch(1);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> idempotentTerminalCandidate(
+                    repository, command, terminalEngine, start));
+            var second = executor.submit(() -> idempotentTerminalCandidate(
+                    competing, command, terminalEngine, start));
+            start.countDown();
+            List<DurableTestExecutionCheckpointRepository.RecoveryTerminalResult> results =
+                    List.of(first.get(), second.get());
+
+            assertThat(results).extracting(
+                    DurableTestExecutionCheckpointRepository.RecoveryTerminalResult
+                            ::idempotentReplay)
+                    .containsExactlyInAnyOrder(false, true);
+            assertThat(results).extracting(result -> result.receipt().receiptFingerprint())
+                    .containsOnly(results.getFirst().receipt().receiptFingerprint());
+        }
+        assertThat(engineCandidateCount("terminal-concurrent")).isEqualTo(1);
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_recovery_terminals", Integer.class))
+                .isEqualTo(1);
+    }
+
+    @Test
     void recoveryDispatchReplayRejectsAuthorizationAndStoredDispatchDrift() {
         DurableTestExecutionCheckpoint expired = expiredCheckpoint();
         repository.create(expired, boundNoop(expired));
@@ -1079,6 +1362,30 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
         }
     }
 
+    private DurableTestExecutionCheckpointRepository.RecoveryTerminalResult
+            idempotentTerminalCandidate(
+                    DatabaseDurableTestExecutionCheckpointRepository candidateRepository,
+                    DurableTestExecutionCheckpointRepository.RecoveryTerminalCommand command,
+                    DurableTestExecutionCheckpoint.EngineState terminalEngine,
+                    CountDownLatch start) {
+        try {
+            if (!start.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("concurrent terminal command did not start");
+            }
+            return candidateRepository.terminalizeRecoveryIdempotently(command,
+                    mutation(command.expectedDispatch().engineExecutionId(), terminalEngine,
+                            jdbc -> jdbc.update(
+                                    "INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
+                                    "terminal-concurrent",
+                                    command.expectedDispatch().engineExecutionId(),
+                                    terminalEngine.stateVersion())));
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "concurrent terminal command interrupted", interrupted);
+        }
+    }
+
     private DurableTestExecutionCheckpointRepository.ResumeLeaseCommand resumeCommand(
             DurableTestExecutionCheckpoint checkpoint,
             String clientRequestId,
@@ -1125,6 +1432,28 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                 clientRequestId, requestFingerprint, dispatch, leaseDuration);
     }
 
+    private DurableTestExecutionCheckpointRepository.RecoveryTerminalCommand terminalCommand(
+            DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed,
+            String clientRequestId,
+            String requestFingerprint,
+            DurableTestExecutionCheckpoint.EngineState terminalEngine) {
+        return new DurableTestExecutionCheckpointRepository.RecoveryTerminalCommand(
+                clientRequestId, requestFingerprint, claimed.dispatch(),
+                DurableTestRecoveryTerminalReceipt.ExecutionOutcome.COMPLETED,
+                terminalEngine, claimed.checkpoint().fixtureConsumptionState(),
+                claimed.checkpoint().executionServiceState(),
+                List.of("PRE_CHECKPOINT_TRACE_UNAVAILABLE"));
+    }
+
+    private DurableTestExecutionCheckpoint.EngineState terminalEngineState(
+            DurableTestExecutionCheckpoint checkpoint) {
+        DurableTestExecutionCheckpoint.EngineState current = checkpoint.engineState();
+        return new DurableTestExecutionCheckpoint.EngineState(
+                "checkpoint-terminal", current.nodeId(), "NODE_BOUNDARY",
+                current.boundarySequence() + 1, current.stateVersion() + 1,
+                ProtocolFingerprint.ofText("terminal-engine-state"));
+    }
+
     private DurableTestExecutionCheckpoint advanceAfterClaim(
             DurableTestExecutionCheckpoint claimed) {
         var lifecycle = claimed.lifecycle();
@@ -1159,15 +1488,22 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     private DurableTestExecutionCheckpointRepository.BoundEngineStateMutation mutation(
             DurableTestExecutionCheckpoint checkpoint,
             Consumer<JdbcTemplate> action) {
+        return mutation(checkpoint.engineExecutionId(), checkpoint.engineState(), action);
+    }
+
+    private DurableTestExecutionCheckpointRepository.BoundEngineStateMutation mutation(
+            String engineExecutionId,
+            DurableTestExecutionCheckpoint.EngineState engineState,
+            Consumer<JdbcTemplate> action) {
         return new DurableTestExecutionCheckpointRepository.BoundEngineStateMutation() {
             @Override
             public String engineExecutionId() {
-                return checkpoint.engineExecutionId();
+                return engineExecutionId;
             }
 
             @Override
             public DurableTestExecutionCheckpoint.EngineState engineState() {
-                return checkpoint.engineState();
+                return engineState;
             }
 
             @Override

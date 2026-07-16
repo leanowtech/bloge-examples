@@ -12,6 +12,9 @@ owner-claim endpoint now performs the database-clock compare-and-set ownership h
 dependency re-authorization; it deliberately does not itself resume BLOGE or expose a worker
 lifecycle. An internal heartbeat protocol proves dispatch issuance, compares it with the live
 `RESUMING` fence, and atomically rotates the lease and successor dispatch. An internal
+terminal protocol consumes one still-live issued dispatch and atomically commits the final BLOGE
+mutation, terminal checkpoint, immutable command result, and a promotion-blocking evidence-gap
+receipt. An internal
 `RecoverySession` can consume that re-authorized closure, signal a
 real persisted suspension synchronously, and atomically advance the staged aggregate at its next
 stable boundary. It is an orchestration building block, not a public recovery endpoint.
@@ -33,6 +36,10 @@ The increment defines the following versioned objects:
   `target = {kind,id,fingerprint}` locator, requires the locator fingerprint to equal the effective
   plan target fingerprint, and binds `GRAPH` to `GRAPH_CONTRACT_TEST` and `OPERATOR` to
   `OPERATOR_UNIT_TEST`.
+- `bloge.durableTestRecoveryTerminalReceipt.v1` is an internal, payload-free terminal control
+  receipt. Until the durable closure contains complete pre-checkpoint node, edge, and attempt trace,
+  it is fixed to `EVIDENCE_INCOMPLETE`, requires at least one bounded gap code, and cannot satisfy a
+  promotion gate.
 
 Both definitions are included in
 [testing-control-plane-v1.schema.json](schemas/resource-gateway-testing/testing-control-plane-v1.schema.json).
@@ -169,6 +176,33 @@ dispatch sees `STALE_FENCE`; an expired owner sees `LEASE_EXPIRED`; a valid but 
 and companion-mutation failure all fail closed. This is still an internal persistence protocol. It
 does not authenticate a remote worker, schedule heartbeats, execute BLOGE, cancel a process, or
 produce terminal evidence.
+
+## Internal Recovery Terminal Commit
+
+`terminalizeRecoveryIdempotently(...)` closes the local commit and ambiguous-response windows at a
+recovery terminal boundary. `RecoveryTerminalCommand` binds a caller-stable scoped key, a
+server-derived intent fingerprint, the exact source dispatch, normalized outcome, final fixture and
+deterministic-provider snapshots, final BLOGE `EngineState`, and one or more stable evidence-gap
+codes. The engine mutation independently declares the same execution id and exact state; disagreement
+is rejected before a transaction starts.
+
+Inside one test-runtime transaction, the repository proves that the source dispatch came from a
+committed owner claim or heartbeat, reads database time, and verifies that the complete dispatch
+still controls the live, unexpired `RESUMING` checkpoint. It validates monotonic fixture, provider,
+engine, and revision movement, applies the BLOGE mutation, and repeats scope, execution, owner,
+epoch, revision, expiry, status, and source-checkpoint fingerprint in the terminal SQL CAS. It then
+writes the sealed terminal checkpoint, `bloge.durableTestRecoveryTerminalReceipt.v1`, and
+content-addressed `bloge.durableRecoveryTerminalCommandRecord.v1`; an optional local audit/evidence
+mutation joins the same commit decision.
+
+The original key replays the exact checkpoint and receipt without running the engine mutation again.
+Same-key intent drift, stale or expired fences, self-consistent but unissued dispatches, replica races,
+stored checkpoint/receipt/index corruption, and companion failure all fail closed or roll back the
+whole first attempt. The receipt carries no fixture, provider seed, request/response, credential, or
+engine checkpoint payload. It deliberately proves only the atomic terminal control fact: because the
+current checkpoint omits complete trace history before its boundary, v1 always records
+`EVIDENCE_INCOMPLETE` with explicit gaps and is promotion-blocking. A future historical-trace closure
+and signed evidence assembler must close that gap; changing this receipt's label would be dishonest.
 
 ## Transaction-Participating BLOGE Aggregate
 
@@ -374,6 +408,14 @@ surface.
 34. The checkpoint CAS, immutable heartbeat result, successor dispatch, and companion audit/evidence
     mutation have one commit decision. The source key replays that result; another key cannot reuse
     the consumed dispatch.
+35. A terminal source dispatch must be both provably issued and still control the exact live,
+    unexpired `RESUMING` fence at database time.
+36. The final engine mutation, monotonic fixture/provider state, terminal checkpoint, immutable
+    command result, receipt, and companion mutation have one local commit decision.
+37. Idempotent terminal replay never executes the engine mutation again; same-key outcome, state, or
+    evidence-gap drift is an `IDEMPOTENCY_CONFLICT`.
+38. Terminal receipt v1 always has non-empty explicit gaps and `EVIDENCE_INCOMPLETE`; without complete
+    historical trace, no code path may mark it certifiable or promotion-eligible.
 
 ## Automated Evidence
 
@@ -403,6 +445,11 @@ and canonical v1 JSON round-trip compatibility without an invented target field.
 - stale, expired, self-consistent-but-unissued dispatch, malformed command, and same-key intent-drift
   rejection;
 - heartbeat checkpoint/dispatch/record tamper detection and atomic companion-audit rollback;
+- atomic terminal engine/checkpoint/receipt commit and exact immutable replay without a second engine
+  mutation;
+- stale, expired, and valid-but-unissued terminal dispatch rejection before engine mutation;
+- terminal command intent drift, mandatory evidence gaps, stored-receipt tamper detection, companion
+  rollback, and two-replica convergence on one committed terminal result;
 - durable command replay after an ambiguous response, same-key intent conflict, and strict command
   identity validation; and
 - two repository instances issuing the same command with one original result and one exact replay,
@@ -464,15 +511,18 @@ mvn -f resource-gateway-examples/pom.xml \
   -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,StagedBlogeExecutionCheckpointStoreTest,StagedBlogeDurableStateStoreTest,IndependentDurableTestEngineFactoryTest,IndependentDurableTestRecoverySessionTest,InvocationRecorderCheckpointTest,DurableTestRecoveryAuthorityTest,DurableTestRecoveryAuthorizerTest,DurableTestOwnerClaimServiceTest,DurableTestOwnerClaimControllerTest,TestingControlProtocolSchemaTest,TestabilityCapabilitiesTest,TestRuntimeProfileIsolationTest test
 ```
 
-The combined focused gate completed with 115 tests, zero failures, zero errors, and zero skips. The
+The combined focused gate completed with 123 tests, zero failures, zero errors, and zero skips. The
 recovery-session slice contributes six database-level tests; authorization-bound dispatch adds two
 database-level claim/replay, exact-lookup, and tamper cases plus two regional-authority cases. The
 live-fence heartbeat slice adds eight database cases for renewal/replay, successor lookup, stale and
 expired fences, unissued dispatches, command validation, two-replica convergence, rollback, and
 tamper rejection.
-The repository-wide `clean verify` gate completed with 1986 tests, zero failures, zero errors, 34
+The terminal-commit slice adds eight database cases for atomic commit/replay, companion rollback,
+intent drift, mandatory gaps, receipt tampering, stale/expired/unissued dispatches, and two-replica
+convergence.
+The repository-wide `clean verify` gate completed with 1994 tests, zero failures, zero errors, 34
 conditional skips, real-browser regression coverage, and successful Spring Boot JAR packaging.
-Scoped public `javadoc -Xdoclint:all -Werror` for the five changed heartbeat-surface production types
+Scoped public `javadoc -Xdoclint:all -Werror` for the three terminal-surface production types
 completed with zero diagnostics; the prior recovery-session API gate remains green.
 The optional project-wide Javadoc report still fails on 16 pre-existing HTML and
 parameter diagnostics in unrelated packages; that baseline is not represented as fixed here.
@@ -482,7 +532,8 @@ parameter diagnostics in unrelated packages; that baseline is not represented as
 - BLOGE execution lifecycle/lease, node/loop/sequential-foreach checkpoints, signal/timer/task/retry
   waits, and work-item state now execute through one aggregate `EngineStateMutation`. The internal
   recovery session can advance one real cold signal and the persistence layer can rotate a live
-  heartbeat fence, but the public worker authentication/poll/claim/run/heartbeat/terminal-evidence
+  heartbeat fence and atomically terminalize its local state, but the public worker
+  authentication/poll/claim/run/heartbeat/terminal
   flow does not yet drive them, so the primitives must not be mistaken for a complete
   remote-worker product lifecycle.
 - The durable and recovery sessions remain internal resources. The public owner-claim command now
@@ -493,8 +544,9 @@ parameter diagnostics in unrelated packages; that baseline is not represented as
   recovery service may consider them; guessing a target from fingerprint or plan diagnostics is
   forbidden. Current v2 rows close this locator gap, and the public owner claim authorizes them
   before mutation.
-- The fixture ledger snapshot intentionally excludes pre-checkpoint invocation and attempt evidence;
-  a resumed terminal evidence bundle cannot yet reconstruct those historical trace facts.
+- The fixture ledger snapshot intentionally excludes pre-checkpoint invocation and attempt evidence.
+  The new terminal receipt exposes that fact as mandatory `EVIDENCE_INCOMPLETE` gaps, so a resumed
+  terminal evidence bundle still cannot reconstruct or certify those historical trace facts.
 - Owner claim now re-authorizes the v2 target locator/fingerprint, exact fixture revision, replay
   closure, current identity authority, side-effect policy, deterministic provider snapshot, effective
   plan, and caller scope/purpose/clearance, then persists their content-addressed receipt in the exact
@@ -502,8 +554,10 @@ parameter diagnostics in unrelated packages; that baseline is not represented as
   the dispatch is not a transferable authorization token.
 - The public adapter durably binds normalized caller intent and authenticated authority to one claim
   result. Internal heartbeat storage now rejects unissued/stale/expired dispatches and rotates a
-  successor atomically. Remote-worker authentication, heartbeat scheduling, public suspend/resume,
-  crash reconciliation, terminalization, signed checkpoint attestation, and an enforceable
+  successor atomically; internal terminal persistence now prevents duplicate engine mutation and
+  partial local terminal commit. Remote-worker authentication, heartbeat scheduling, public
+  suspend/resume, crash reconciliation, terminal orchestration, complete signed evidence assembly,
+  signed checkpoint attestation, and an enforceable
   process-level deadline remain orchestration work rather than properties inferred from storage CAS
   or internal synchronous recovery success.
 - The repository uses a local database transaction. Cross-database BLOGE stores require either

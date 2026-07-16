@@ -384,11 +384,18 @@ new synchronous cold-start signal API is consumed by an internal `RecoverySessio
 v2 `RESUMING` checkpoint with exact target and restorable provider state can restore fixture cursors,
 open the staged aggregate, signal a real committed suspension, and prepare its next terminal or
 single-suspension boundary for the same fenced transaction. Closing without prepare restores the
-original committed wait and lifecycle; no detached recovery thread remains active. BLOGE streaming
-offset/checkpoint state, pre-checkpoint attempt evidence, public durable run selection, worker poll/
-claim/run/heartbeat/terminal-evidence orchestration, authorization-to-dispatch binding, and a
-killable worker deadline are not wired yet. The public owner-claim endpoint still only establishes
-`RESUMING`; the internal primitive is not a product claim that durable test resume is complete. See
+original committed wait and lifecycle; no detached recovery thread remains active. The public
+owner-claim endpoint now binds exact dependency re-authorization to its `RESUMING` fence and a
+payload-free worker dispatch. Internal heartbeat persistence proves dispatch issuance and rotates the
+live revision/lease/successor dispatch atomically. An internal terminal command consumes one still-live
+dispatch and commits the exact final BLOGE mutation, terminal checkpoint, immutable result, and
+payload-free receipt in one transaction; retries never reapply the engine mutation. Because durable
+state still lacks complete pre-checkpoint node/edge/attempt trace, receipt v1 is always
+`EVIDENCE_INCOMPLETE`, requires explicit gap codes, and blocks promotion. BLOGE streaming
+offset/checkpoint state, complete historical evidence, public durable run selection, authenticated
+worker poll/run/heartbeat/terminal orchestration, dispatcher consumption, and a killable worker
+deadline are not wired yet. These internal primitives are not a product claim that durable test
+resume is complete. See
 [Stage 4 durable checkpoint verification](../docs/resource-gateway-execution-data-control-plane-stage4-durable-checkpoint-verification.md).
 
 Create a provider-specific Java operator only when the provider behavior cannot

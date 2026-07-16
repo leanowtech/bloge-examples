@@ -3,9 +3,13 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryAuthorization;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryDispatch;
+import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryTerminalReceipt;
+import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureConsumptionStateSnapshot;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -175,6 +179,49 @@ public interface DurableTestExecutionCheckpointRepository {
     RecoveryHeartbeatResult heartbeatRecoveryLeaseIdempotently(
             RecoveryHeartbeatCommand command,
             TestRuntimeTransactionMutation companionMutation);
+
+    /**
+     * Atomically commits one terminal BLOGE mutation, terminal checkpoint, and blocking receipt.
+     *
+     * <p>The source dispatch must still be issued, live, and unexpired. A first commit applies the
+     * exact engine mutation; an idempotent replay returns the immutable original result without
+     * applying the mutation again.</p>
+     *
+     * @param command exact terminal intent and final payload-free state closure
+     * @param engineStateMutation exact BLOGE aggregate mutation represented by the command
+     * @return terminal checkpoint and promotion-blocking receipt
+     */
+    RecoveryTerminalResult terminalizeRecoveryIdempotently(
+            RecoveryTerminalCommand command,
+            BoundEngineStateMutation engineStateMutation);
+
+    /**
+     * Commits or replays one recovery terminal command with a local companion mutation.
+     *
+     * @param command exact terminal intent and final payload-free state closure
+     * @param engineStateMutation exact BLOGE aggregate mutation represented by the command
+     * @param companionMutation local evidence index or semantic audit write
+     * @return terminal checkpoint and promotion-blocking receipt
+     */
+    RecoveryTerminalResult terminalizeRecoveryIdempotently(
+            RecoveryTerminalCommand command,
+            BoundEngineStateMutation engineStateMutation,
+            TestRuntimeTransactionMutation companionMutation);
+
+    /**
+     * Resolves an immutable terminal command result without consulting the live checkpoint.
+     *
+     * @param tenantId verified tenant authority
+     * @param environmentId verified non-production environment
+     * @param clientRequestId caller-stable terminal idempotency key
+     * @param requestFingerprint server-derived authenticated terminal intent
+     * @return exact committed terminal result marked as a replay, or empty
+     */
+    Optional<RecoveryTerminalResult> findRecoveryTerminalResult(
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            String requestFingerprint);
 
     /**
      * Exact compare-and-set fence held by the caller.
@@ -397,6 +444,119 @@ public interface DurableTestExecutionCheckpointRepository {
             if (!dispatch.agreesWith(checkpoint)) {
                 throw new IllegalArgumentException(
                         "Recovery heartbeat dispatch must exactly match its checkpoint");
+            }
+        }
+    }
+
+    /**
+     * Idempotent command for one terminal recovery transition.
+     *
+     * <p>Version 1 requires explicit evidence gaps because pre-checkpoint node/edge/attempt trace is
+     * not yet part of the durable closure. The resulting receipt is therefore always
+     * promotion-blocking.</p>
+     *
+     * @param clientRequestId caller-stable key scoped by dispatch tenant and environment
+     * @param requestFingerprint server-derived fingerprint of authenticated terminal intent
+     * @param expectedDispatch exact current dispatch consumed by the terminal CAS
+     * @param executionOutcome normalized terminal BLOGE outcome
+     * @param terminalEngineState exact final BLOGE aggregate identity
+     * @param fixtureConsumptionState final cumulative fixture cursor
+     * @param executionServiceState final deterministic-provider state
+     * @param evidenceGapCodes explicit bounded reasons complete evidence is unavailable
+     */
+    record RecoveryTerminalCommand(
+            String clientRequestId,
+            String requestFingerprint,
+            DurableTestRecoveryDispatch expectedDispatch,
+            DurableTestRecoveryTerminalReceipt.ExecutionOutcome executionOutcome,
+            DurableTestExecutionCheckpoint.EngineState terminalEngineState,
+            FixtureConsumptionStateSnapshot fixtureConsumptionState,
+            ExecutionServiceStateSnapshot executionServiceState,
+            List<String> evidenceGapCodes) {
+        private static final Pattern IDENTIFIER =
+                Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
+        private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+        private static final Pattern GAP_CODE = Pattern.compile("[A-Z][A-Z0-9_.-]{0,127}");
+
+        /** Rejects ambiguous terminal identity and implicit evidence completeness. */
+        public RecoveryTerminalCommand {
+            clientRequestId = requiredTerminalValue(clientRequestId, "clientRequestId");
+            if (!IDENTIFIER.matcher(clientRequestId).matches()) {
+                throw new IllegalArgumentException(
+                        "clientRequestId must be a bounded stable identifier");
+            }
+            requestFingerprint = requiredTerminalValue(
+                    requestFingerprint, "requestFingerprint");
+            if (!FINGERPRINT.matcher(requestFingerprint).matches()) {
+                throw new IllegalArgumentException(
+                        "requestFingerprint must be a canonical SHA-256 fingerprint");
+            }
+            expectedDispatch = Objects.requireNonNull(expectedDispatch, "expectedDispatch");
+            executionOutcome = Objects.requireNonNull(executionOutcome, "executionOutcome");
+            terminalEngineState = Objects.requireNonNull(
+                    terminalEngineState, "terminalEngineState");
+            fixtureConsumptionState = Objects.requireNonNull(
+                    fixtureConsumptionState, "fixtureConsumptionState");
+            executionServiceState = Objects.requireNonNull(
+                    executionServiceState, "executionServiceState");
+            if (!expectedDispatch.authorization().planFingerprint().equals(
+                    executionServiceState.planFingerprint())) {
+                throw new IllegalArgumentException(
+                        "Terminal provider state must bind the authorized plan");
+            }
+            if (evidenceGapCodes == null || evidenceGapCodes.isEmpty()
+                    || evidenceGapCodes.size() > 32) {
+                throw new IllegalArgumentException(
+                        "At least one bounded evidence gap is required");
+            }
+            List<String> normalizedGaps = evidenceGapCodes.stream()
+                    .map(value -> requiredTerminalValue(value, "evidence gap")
+                            .toUpperCase(java.util.Locale.ROOT))
+                    .peek(value -> {
+                        if (!GAP_CODE.matcher(value).matches()) {
+                            throw new IllegalArgumentException(
+                                    "Evidence gap must be a bounded stable code");
+                        }
+                    })
+                    .distinct()
+                    .sorted()
+                    .toList();
+            if (normalizedGaps.size() != evidenceGapCodes.size()) {
+                throw new IllegalArgumentException("Evidence gaps must be unique");
+            }
+            evidenceGapCodes = normalizedGaps;
+        }
+
+        private static String requiredTerminalValue(String value, String field) {
+            String normalized = value == null ? "" : value.trim();
+            if (normalized.isBlank()) {
+                throw new IllegalArgumentException(field + " is required");
+            }
+            return normalized;
+        }
+    }
+
+    /**
+     * Immutable result of one recovery terminal command.
+     *
+     * @param checkpoint exact terminal checkpoint
+     * @param receipt payload-free promotion-blocking terminal receipt
+     * @param idempotentReplay whether an earlier committed result was replayed
+     */
+    record RecoveryTerminalResult(
+            DurableTestExecutionCheckpoint checkpoint,
+            DurableTestRecoveryTerminalReceipt receipt,
+            boolean idempotentReplay) {
+        /** Requires exact terminal receipt and checkpoint agreement. */
+        public RecoveryTerminalResult {
+            checkpoint = Objects.requireNonNull(checkpoint, "checkpoint");
+            receipt = Objects.requireNonNull(receipt, "receipt");
+            if (!receipt.terminalCheckpointFingerprint().equals(
+                    checkpoint.checkpointFingerprint())
+                    || checkpoint.lifecycle().status()
+                    != DurableTestExecutionCheckpoint.Status.TERMINAL) {
+                throw new IllegalArgumentException(
+                        "Recovery terminal receipt must bind its terminal checkpoint");
             }
         }
     }
