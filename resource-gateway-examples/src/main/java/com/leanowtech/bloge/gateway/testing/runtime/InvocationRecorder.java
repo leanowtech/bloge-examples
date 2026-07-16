@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.testing.runtime;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.engine.GraphResult;
 import com.leanowtech.bloge.core.exception.OperatorTimeoutException;
@@ -12,22 +13,28 @@ import com.leanowtech.bloge.core.model.NodeSpec;
 import com.leanowtech.bloge.core.model.StreamEdge;
 import com.leanowtech.bloge.core.spi.ExecutionListener;
 import com.leanowtech.bloge.core.spi.event.NodeEvent;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureConsumptionStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * Per-run engine listener and fixture-consumption ledger.
@@ -37,20 +44,40 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class InvocationRecorder implements ExecutionListener {
 
+    private static final String CURSOR_IDENTITY_VERSION = "bloge.fixtureCursorIdentity.v1";
+    private final ObjectMapper objectMapper;
+    private final ReentrantReadWriteLock fixtureStateLock = new ReentrantReadWriteLock(true);
     private final Map<String, StartFact> starts = new ConcurrentHashMap<>();
     private final Map<String, TestRunEvidence.NodeTrace> traces = new ConcurrentHashMap<>();
     private final Map<RuntimeSiteKey, String> fidelityByRuntimeSite = new ConcurrentHashMap<>();
     private final Map<String, String> controlModeBySite = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> usesByRule = new ConcurrentHashMap<>();
-    private final Map<RuntimeSiteKey, AtomicInteger> occurrences = new ConcurrentHashMap<>();
+    private final Map<String, AtomicInteger> occurrences = new ConcurrentHashMap<>();
     private final Map<InvocationBinding, InvocationFact> invocationFacts = new ConcurrentHashMap<>();
-    private final Map<RuntimeGraphKey, AtomicInteger> graphOccurrences = new ConcurrentHashMap<>();
-    private final IdentityHashMap<GraphContext, Map<RuntimeGraphKey, Integer>> graphOccurrencesByContext =
+    private final Set<InvocationBinding> pendingInvocations = ConcurrentHashMap.newKeySet();
+    private final Set<InvocationBinding> inFlightAttempts = ConcurrentHashMap.newKeySet();
+    private final Map<String, AtomicInteger> graphOccurrences = new ConcurrentHashMap<>();
+    private final IdentityHashMap<GraphContext, Map<String, Integer>> graphOccurrencesByContext =
             new IdentityHashMap<>();
+
+    /**
+     * Creates one run-scoped ledger using the application mapper as the canonical protocol baseline.
+     *
+     * @param objectMapper mapper used to seal and validate fixture-state checkpoints
+     */
+    public InvocationRecorder(ObjectMapper objectMapper) {
+        this.objectMapper = java.util.Objects.requireNonNull(objectMapper, "objectMapper");
+    }
 
     /** Marks the effective fidelity before a controlled invocation returns or fails. */
     public void markFidelity(InvocationSite site, String fidelity) {
-        fidelityByRuntimeSite.put(RuntimeSiteKey.from(site), fidelity);
+        var lock = fixtureStateLock.readLock();
+        lock.lock();
+        try {
+            fidelityByRuntimeSite.put(RuntimeSiteKey.from(site), fidelity);
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -63,36 +90,64 @@ public class InvocationRecorder implements ExecutionListener {
      * @return immutable site and containing-graph occurrence binding
      */
     public InvocationBinding bind(InvocationSite site, GraphContext graphContext) {
-        RuntimeSiteKey key = RuntimeSiteKey.from(site);
-        int occurrence = occurrences.computeIfAbsent(key, ignored -> new AtomicInteger())
-                .incrementAndGet();
-        int graphOccurrence = bindGraphOccurrence(site, graphContext);
-        InvocationBinding binding = new InvocationBinding(site, occurrence, graphOccurrence);
-        invocationFacts.put(binding, new InvocationFact(binding));
-        return binding;
+        if (graphContext == null) {
+            throw new IllegalArgumentException("graphContext must not be null");
+        }
+        var lock = fixtureStateLock.readLock();
+        lock.lock();
+        try {
+            String key = siteCursorKey(site);
+            int occurrence = occurrences.computeIfAbsent(key, ignored -> new AtomicInteger())
+                    .incrementAndGet();
+            int graphOccurrence = bindGraphOccurrence(site, graphContext);
+            InvocationBinding binding = new InvocationBinding(site, occurrence, graphOccurrence);
+            invocationFacts.put(binding, new InvocationFact(binding));
+            pendingInvocations.add(binding);
+            return binding;
+        } finally {
+            lock.unlock();
+        }
     }
 
     /** Records one successful delegate attempt under its stable occurrence binding. */
     public void recordSuccess(InvocationBinding binding, NodeSpec node, Object input, Object output,
                               int attempt, long durationMs) {
-        String fidelity = fidelity(binding);
-        fact(binding).record(new TestRunEvidence.AttemptTrace(attempt,
-                "REAL".equals(fidelity) ? "SUCCESS" : "MOCKED",
-                fidelity, input, output, "", durationMs), node);
+        var lock = fixtureStateLock.readLock();
+        lock.lock();
+        try {
+            String fidelity = fidelity(binding);
+            fact(binding).record(new TestRunEvidence.AttemptTrace(attempt,
+                    "REAL".equals(fidelity) ? "SUCCESS" : "MOCKED",
+                    fidelity, input, output, "", durationMs), node);
+        } finally {
+            lock.unlock();
+        }
     }
 
     /** Records one failed delegate attempt without flattening retry history into the node outcome. */
     public void recordFailure(InvocationBinding binding, NodeSpec node, Object input,
                               Exception failure, int attempt, long durationMs) {
-        String fidelity = fidelity(binding);
-        fact(binding).record(new TestRunEvidence.AttemptTrace(attempt,
-                containsTimeout(failure) ? "TIMEOUT" : "FAILED", fidelity,
-                input, null, errorCode(failure), durationMs), node);
+        var lock = fixtureStateLock.readLock();
+        lock.lock();
+        try {
+            String fidelity = fidelity(binding);
+            fact(binding).record(new TestRunEvidence.AttemptTrace(attempt,
+                    containsTimeout(failure) ? "TIMEOUT" : "FAILED", fidelity,
+                    input, null, errorCode(failure), durationMs), node);
+        } finally {
+            lock.unlock();
+        }
     }
 
     /** Records the effective REAL/RETURN/THROW/DENY/SPY mode by structural invocation site. */
     public void markControlMode(InvocationSite site, String controlMode) {
-        controlModeBySite.put(site.invocationSiteId(), controlMode);
+        var lock = fixtureStateLock.readLock();
+        lock.lock();
+        try {
+            controlModeBySite.put(site.invocationSiteId(), controlMode);
+        } finally {
+            lock.unlock();
+        }
     }
 
     /** @return immutable site-to-control-mode facts in stable structural-id order */
@@ -100,46 +155,201 @@ public class InvocationRecorder implements ExecutionListener {
         return Map.copyOf(new TreeMap<>(controlModeBySite));
     }
 
-    /** Records one fixture use atomically. */
+    /** Records one unbounded fixture use atomically. */
     public int consume(String ruleId) {
-        return usesByRule.computeIfAbsent(ruleId, ignored -> new AtomicInteger()).incrementAndGet();
+        return consumeIfAvailable(ruleId, 0);
+    }
+
+    /**
+     * Atomically reserves one fixture use without exceeding its configured upper bound.
+     *
+     * @param ruleId stable fixture-rule identity
+     * @param maxUses maximum uses, or zero for unbounded
+     * @return one-based use number, or {@code -1} when the bound was already exhausted
+     */
+    int consumeIfAvailable(String ruleId, int maxUses) {
+        java.util.Objects.requireNonNull(ruleId, "ruleId");
+        if (maxUses < 0) {
+            throw new IllegalArgumentException("maxUses must be >= 0");
+        }
+        var lock = fixtureStateLock.readLock();
+        lock.lock();
+        try {
+            AtomicInteger counter = usesByRule.computeIfAbsent(ruleId,
+                    ignored -> new AtomicInteger());
+            while (true) {
+                int current = counter.get();
+                if (maxUses > 0 && current >= maxUses) {
+                    return -1;
+                }
+                if (current == Integer.MAX_VALUE) {
+                    throw new IllegalStateException("Fixture use counter overflow");
+                }
+                if (counter.compareAndSet(current, current + 1)) {
+                    return current + 1;
+                }
+            }
+        } finally {
+            lock.unlock();
+        }
     }
 
     /** @return current use count for a rule */
     public int uses(String ruleId) {
-        AtomicInteger value = usesByRule.get(ruleId);
-        return value == null ? 0 : value.get();
+        var lock = fixtureStateLock.readLock();
+        lock.lock();
+        try {
+            AtomicInteger value = usesByRule.get(ruleId);
+            return value == null ? 0 : value.get();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Opens the attempt boundary that excludes concurrent checkpoint capture. */
+    void beginAttempt(InvocationBinding binding) {
+        var lock = fixtureStateLock.readLock();
+        lock.lock();
+        try {
+            fact(binding);
+            if (!inFlightAttempts.add(binding)) {
+                throw new IllegalStateException("Invocation attempt is already in flight");
+            }
+            pendingInvocations.remove(binding);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Closes an attempt boundary after its success or failure fact has been recorded. */
+    void endAttempt(InvocationBinding binding) {
+        var lock = fixtureStateLock.readLock();
+        lock.lock();
+        try {
+            if (!inFlightAttempts.remove(binding)) {
+                throw new IllegalStateException("Invocation attempt is not in flight");
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Atomically captures payload-free fixture use and occurrence cursors for durable recovery.
+     *
+     * <p>Capture is permitted only when no invocation is pending its first attempt and no attempt is
+     * in flight. Runtime structural and correlation coordinates are reduced to versioned SHA-256
+     * keys before they enter the ledger, so neither the in-memory cursor maps nor the persisted
+     * snapshot retain their raw values. The hashes are pseudonymous identifiers, not a secrecy
+     * boundary for low-entropy source values.</p>
+     *
+     * @return sealed immutable fixture-consumption state
+     */
+    public FixtureConsumptionStateSnapshot captureFixtureState() {
+        var lock = fixtureStateLock.writeLock();
+        lock.lock();
+        try {
+            if (!pendingInvocations.isEmpty() || !inFlightAttempts.isEmpty()) {
+                throw new IllegalStateException(
+                        "Fixture state requires a quiescent invocation boundary");
+            }
+            FixtureConsumptionStateSnapshot material = new FixtureConsumptionStateSnapshot(
+                    FixtureConsumptionStateSnapshot.SCHEMA_VERSION,
+                    counterSnapshot(usesByRule), counterSnapshot(occurrences),
+                    counterSnapshot(graphOccurrences), "");
+            String fingerprint = ProtocolFingerprint.ofBounded(objectMapper,
+                    material.fingerprintMaterial(),
+                    FixtureConsumptionStateSnapshot.MAX_CANONICAL_BYTES);
+            return material.withStateFingerprint(fingerprint);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Restores a verified fixture ledger before a resumed engine can allocate another occurrence.
+     *
+     * <p>Restore is deliberately replacement-only. Merging into an active recorder would make it
+     * impossible to prove whether local or persisted counters won and could re-consume a fixture.</p>
+     *
+     * @param snapshot sealed fixture-consumption state from the trusted checkpoint closure
+     */
+    public void restoreFixtureState(FixtureConsumptionStateSnapshot snapshot) {
+        java.util.Objects.requireNonNull(snapshot, "snapshot");
+        var lock = fixtureStateLock.writeLock();
+        lock.lock();
+        try {
+            String fingerprint = ProtocolFingerprint.ofBounded(objectMapper,
+                    snapshot.fingerprintMaterial(),
+                    FixtureConsumptionStateSnapshot.MAX_CANONICAL_BYTES);
+            if (!fingerprint.equals(snapshot.stateFingerprint())) {
+                throw new IllegalArgumentException("Invalid fixture-consumption state fingerprint");
+            }
+            if (hasRuntimeState()) {
+                throw new IllegalStateException(
+                        "Fixture state can only be restored into an empty recorder");
+            }
+            restoreCounters(snapshot.ruleUses(), usesByRule);
+            restoreCounters(snapshot.siteOccurrenceCursors(), occurrences);
+            restoreCounters(snapshot.graphOccurrenceCursors(), graphOccurrences);
+        } finally {
+            lock.unlock();
+        }
     }
 
     @Override
     public void onNodeStart(NodeEvent.NodeStartEvent event) {
-        starts.put(event.nodeId(), new StartFact(event.nodeSpec().operatorRef(), event.input()));
+        var lock = fixtureStateLock.readLock();
+        lock.lock();
+        try {
+            starts.put(event.nodeId(), new StartFact(event.nodeSpec().operatorRef(), event.input()));
+        } finally {
+            lock.unlock();
+        }
     }
 
     @Override
     public void onNodeComplete(NodeEvent.NodeCompleteEvent event) {
-        StartFact start = starts.getOrDefault(event.nodeId(),
-                new StartFact(event.nodeSpec().operatorRef(), null));
-        String fidelity = "REAL";
-        traces.put(event.nodeId(), new TestRunEvidence.NodeTrace(
-                event.nodeId(), start.operatorRef(), "REAL".equals(fidelity) ? "SUCCESS" : "MOCKED",
-                fidelity, start.input(), event.output(), "", millis(event.nodeDuration())));
+        var lock = fixtureStateLock.readLock();
+        lock.lock();
+        try {
+            StartFact start = starts.getOrDefault(event.nodeId(),
+                    new StartFact(event.nodeSpec().operatorRef(), null));
+            String fidelity = "REAL";
+            traces.put(event.nodeId(), new TestRunEvidence.NodeTrace(
+                    event.nodeId(), start.operatorRef(), "REAL".equals(fidelity) ? "SUCCESS" : "MOCKED",
+                    fidelity, start.input(), event.output(), "", millis(event.nodeDuration())));
+        } finally {
+            lock.unlock();
+        }
     }
 
     @Override
     public void onNodeFailed(NodeEvent.NodeFailedEvent event) {
-        StartFact start = starts.getOrDefault(event.nodeId(),
-                new StartFact(event.nodeSpec().operatorRef(), null));
-        traces.put(event.nodeId(), new TestRunEvidence.NodeTrace(
-                event.nodeId(), start.operatorRef(), containsTimeout(event.error()) ? "TIMEOUT" : "FAILED",
-                "REAL",
-                start.input(), null, errorCode(event.error()), 0));
+        var lock = fixtureStateLock.readLock();
+        lock.lock();
+        try {
+            StartFact start = starts.getOrDefault(event.nodeId(),
+                    new StartFact(event.nodeSpec().operatorRef(), null));
+            traces.put(event.nodeId(), new TestRunEvidence.NodeTrace(
+                    event.nodeId(), start.operatorRef(),
+                    containsTimeout(event.error()) ? "TIMEOUT" : "FAILED", "REAL",
+                    start.input(), null, errorCode(event.error()), 0));
+        } finally {
+            lock.unlock();
+        }
     }
 
     @Override
     public void onNodeSkipped(NodeEvent.NodeSkippedEvent event) {
-        traces.put(event.nodeId(), new TestRunEvidence.NodeTrace(
-                event.nodeId(), "", "SKIPPED", "REAL", null, null, "", 0));
+        var lock = fixtureStateLock.readLock();
+        lock.lock();
+        try {
+            traces.put(event.nodeId(), new TestRunEvidence.NodeTrace(
+                    event.nodeId(), "", "SKIPPED", "REAL", null, null, "", 0));
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -345,11 +555,8 @@ public class InvocationRecorder implements ExecutionListener {
     }
 
     private synchronized int bindGraphOccurrence(InvocationSite site, GraphContext graphContext) {
-        if (graphContext == null) {
-            throw new IllegalArgumentException("graphContext must not be null");
-        }
-        RuntimeGraphKey graphKey = RuntimeGraphKey.from(site);
-        Map<RuntimeGraphKey, Integer> contextBindings = graphOccurrencesByContext
+        String graphKey = graphCursorKey(site);
+        Map<String, Integer> contextBindings = graphOccurrencesByContext
                 .computeIfAbsent(graphContext, ignored -> new LinkedHashMap<>());
         return contextBindings.computeIfAbsent(graphKey, ignored -> graphOccurrences
                 .computeIfAbsent(graphKey, key -> new AtomicInteger()).incrementAndGet());
@@ -461,10 +668,44 @@ public class InvocationRecorder implements ExecutionListener {
         }
     }
 
-    private record RuntimeGraphKey(String graphPath, String correlationKey) {
-        private static RuntimeGraphKey from(InvocationSite site) {
-            return new RuntimeGraphKey(site.graphPath(), site.correlationKey());
-        }
+    private String siteCursorKey(InvocationSite site) {
+        return cursorKey("SITE", site.invocationSiteId(), site.correlationKey());
+    }
+
+    private String graphCursorKey(InvocationSite site) {
+        return cursorKey("GRAPH", site.graphPath(), site.correlationKey());
+    }
+
+    private static String cursorKey(String kind, String structuralCoordinate,
+                                    String correlationKey) {
+        String material = CURSOR_IDENTITY_VERSION + "|" + kind + "|"
+                + encoded(structuralCoordinate) + "|" + encoded(correlationKey);
+        return ProtocolFingerprint.ofText(material);
+    }
+
+    private static String encoded(String value) {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(
+                (value == null ? "" : value).getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static Map<String, Long> counterSnapshot(Map<String, AtomicInteger> counters) {
+        Map<String, Long> values = new TreeMap<>();
+        counters.forEach((key, value) -> values.put(key, (long) value.get()));
+        return Map.copyOf(values);
+    }
+
+    private static void restoreCounters(Map<String, Long> source,
+                                        Map<String, AtomicInteger> target) {
+        source.forEach((key, value) -> target.put(key,
+                new AtomicInteger(Math.toIntExact(value))));
+    }
+
+    private boolean hasRuntimeState() {
+        return !usesByRule.isEmpty() || !occurrences.isEmpty() || !graphOccurrences.isEmpty()
+                || !graphOccurrencesByContext.isEmpty() || !invocationFacts.isEmpty()
+                || !pendingInvocations.isEmpty() || !inFlightAttempts.isEmpty()
+                || !starts.isEmpty() || !traces.isEmpty() || !fidelityByRuntimeSite.isEmpty()
+                || !controlModeBySite.isEmpty();
     }
 
     private record GraphOccurrenceKey(String graphPath, String correlationKey, int graphOccurrence)

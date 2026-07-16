@@ -98,9 +98,11 @@ provides a payload-free CI regression assertion.
   repository that can bind plan, fixture cursor, provider snapshot, and an engine-state closure in
   one local transaction. BLOGE durable/suspend stores do not yet call it, and there is no public
   checkpoint/resume endpoint or cold-start resume claim.
-- Fixture-rule and dynamic occurrence cursor protocol now exists, but `InvocationRecorder` does not
-  yet capture/restore it. Pending timers, wait records, side-effect journal positions, and stream
-  offsets remain engine adapter responsibilities.
+- `InvocationRecorder` now captures fixture-rule and dynamic occurrence cursors only at a quiescent
+  invocation boundary, restores them atomically, and prevents concurrent `maxUses` over-consumption.
+  Hashed cursor identities omit raw coordinates but remain pseudonymous. Pre-checkpoint invocation/attempt trace facts, pending
+  timers, wait records, side-effect journal positions, and stream offsets remain engine adapter
+  responsibilities.
 - `snapshotFingerprint` and the composite checkpoint fingerprint are content identities, not source
   authentication. Trust currently comes from the isolated fenced store; cross-process export still
   requires signed attestation.

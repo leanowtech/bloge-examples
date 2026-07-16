@@ -19,6 +19,23 @@ Both definitions are included in
 [testing-control-plane-v1.schema.json](schemas/resource-gateway-testing/testing-control-plane-v1.schema.json).
 They are supported internal durable objects, not public request payloads in this increment.
 
+## Runtime Fixture Ledger
+
+`InvocationRecorder.captureFixtureState()` now freezes rule-use, invocation-site occurrence, and
+containing-graph occurrence counters behind a fair write lock. Normal `consume` and `bind` calls hold
+the corresponding read lock, so a checkpoint cannot observe the site counter after allocation but
+the graph counter before allocation. A bound invocation is pending until its first attempt begins,
+and every executing attempt is tracked explicitly; capture at either point fails closed. Fixture
+`maxUses` validation and reservation use one CAS operation, so parallel calls cannot over-consume a
+bounded rule.
+
+Cursor maps use SHA-256 identities from the first allocation. The hashed material is domain-separated
+by `bloge.fixtureCursorIdentity.v1`, distinguishes `SITE` from `GRAPH`, and base64url-encodes the
+structural coordinate and correlation value before hashing. Persisted state therefore contains no raw
+graph path, invocation-site id, or runtime correlation value. These hashes provide stable pseudonymous
+addressing, not confidentiality for low-entropy source values. Restore recomputes the snapshot content
+fingerprint and accepts only an otherwise empty recorder; locked reads cannot observe a partial restore.
+
 ## Persistence Contract
 
 `DurableTestExecutionCheckpointRepository` accepts an `EngineStateMutation` callback. The callback
@@ -49,6 +66,7 @@ join this local transaction and are deliberately outside the contract.
    authorities and conformance proofs exist.
 5. Runtime correlation values are not persisted. Site and graph occurrence maps accept only
    canonical SHA-256 keys; provider snapshots already follow the same rule for RANDOM/UUID scopes.
+   Hashing is pseudonymization, so storage access control remains mandatory.
 6. Rule use, dynamic occurrence, logical time, deterministic sequence cursor, provider usage,
    engine state version, and engine boundary sequence cannot move backwards.
 7. Tenant, organization, project, environment, actor, run id, engine execution id, dependency
@@ -85,14 +103,19 @@ tamper rejection, and plan/provider identity closure.
 schema. Spring application tests exercise profile-gated composition through the existing
 `TestRuntimeConfiguration`.
 
+`InvocationRecorderCheckpointTest` proves monotonic rule/site/graph continuation after restore,
+payload-free hashed cursor storage, tamper rejection without partial mutation, rejection of restore
+into an active recorder, fail-closed non-quiescent capture, non-torn concurrent allocation and
+consumption, bounded `maxUses` under contention, and finite test deadlines.
+
 Reproduce the focused gate with:
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,TestingControlProtocolSchemaTest test
+  -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,InvocationRecorderCheckpointTest,TestingControlProtocolSchemaTest test
 ```
 
-The repository-wide `clean verify` gate completed with 1889 tests, zero failures, zero errors, two
+The repository-wide `clean verify` gate completed with 1898 tests, zero failures, zero errors, two
 conditional skips, real-browser regression coverage, and successful Spring Boot JAR packaging.
 
 ## Honest Remaining Gaps
@@ -100,7 +123,8 @@ conditional skips, real-browser regression coverage, and successful Spring Boot 
 - BLOGE checkpoint, wait, execution-status, timer, work-item, and stream-offset stores do not yet
   execute through `EngineStateMutation`. This increment proves the atomic boundary but has not moved
   those engine facts into it.
-- `InvocationRecorder` does not yet export and restore the new fixture-consumption snapshot.
+- The fixture ledger snapshot intentionally excludes pre-checkpoint invocation and attempt evidence;
+  a resumed terminal evidence bundle cannot yet reconstruct those historical trace facts.
 - Resume does not yet re-authorize the exact fixture revision, replay retention state, identity,
   side-effect policy, or caller permissions. Missing or revoked dependencies therefore cannot yet be
   surfaced through a public `CONTROL_PLAN_UNAVAILABLE` lifecycle.

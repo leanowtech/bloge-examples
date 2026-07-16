@@ -8,7 +8,6 @@ import java.util.Objects;
 /** Computes and verifies nested content identities for durable test checkpoints. */
 public final class DurableTestExecutionCheckpointIntegrity {
 
-    private static final int MAX_FIXTURE_STATE_BYTES = 2 * 1024 * 1024;
     private static final int MAX_CHECKPOINT_BYTES = 4 * 1024 * 1024;
     private final ObjectMapper objectMapper;
 
@@ -28,7 +27,8 @@ public final class DurableTestExecutionCheckpointIntegrity {
         requireValidExecutionServiceState(checkpoint.executionServiceState());
         FixtureConsumptionStateSnapshot fixtureState = checkpoint.fixtureConsumptionState();
         String fixtureFingerprint = ProtocolFingerprint.ofBounded(
-                objectMapper, fixtureState.fingerprintMaterial(), MAX_FIXTURE_STATE_BYTES);
+                objectMapper, fixtureState.fingerprintMaterial(),
+                FixtureConsumptionStateSnapshot.MAX_CANONICAL_BYTES);
         if (!fixtureState.stateFingerprint().isEmpty()
                 && !fixtureState.stateFingerprint().equals(fixtureFingerprint)) {
             throw new IllegalArgumentException("Invalid fixture-consumption state fingerprint");
@@ -56,7 +56,8 @@ public final class DurableTestExecutionCheckpointIntegrity {
         Objects.requireNonNull(checkpoint, "checkpoint");
         requireValidExecutionServiceState(checkpoint.executionServiceState());
         String fixtureFingerprint = ProtocolFingerprint.ofBounded(objectMapper,
-                checkpoint.fixtureConsumptionState().fingerprintMaterial(), MAX_FIXTURE_STATE_BYTES);
+                checkpoint.fixtureConsumptionState().fingerprintMaterial(),
+                FixtureConsumptionStateSnapshot.MAX_CANONICAL_BYTES);
         if (!fixtureFingerprint.equals(checkpoint.fixtureConsumptionState().stateFingerprint())) {
             throw new IllegalArgumentException("Invalid fixture-consumption state fingerprint");
         }
@@ -69,7 +70,8 @@ public final class DurableTestExecutionCheckpointIntegrity {
 
     private void requireValidExecutionServiceState(ExecutionServiceStateSnapshot snapshot) {
         String fingerprint = ProtocolFingerprint.ofBounded(
-                objectMapper, snapshot.fingerprintMaterial(), MAX_FIXTURE_STATE_BYTES);
+                objectMapper, snapshot.fingerprintMaterial(),
+                FixtureConsumptionStateSnapshot.MAX_CANONICAL_BYTES);
         if (!fingerprint.equals(snapshot.snapshotFingerprint())) {
             throw new IllegalArgumentException("Invalid execution-service state fingerprint");
         }

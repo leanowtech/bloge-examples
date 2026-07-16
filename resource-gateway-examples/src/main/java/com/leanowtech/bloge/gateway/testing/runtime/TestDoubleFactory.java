@@ -173,8 +173,7 @@ public class TestDoubleFactory {
                                 + site.invocationSiteId() + ".");
             }
             FixtureRule rule = winning.getFirst();
-            int currentUses = recorder.uses(rule.ruleId());
-            if (rule.consumption().maxUses() > 0 && currentUses >= rule.consumption().maxUses()) {
+            if (recorder.consumeIfAvailable(rule.ruleId(), rule.consumption().maxUses()) < 0) {
                 if (rule.consumption().onExhausted() == FixtureRule.ExhaustedAction.FALLBACK_TO_REAL) {
                     recorder.markFidelity(site, "REAL");
                     recorder.markControlMode(site, "REAL");
@@ -183,7 +182,6 @@ public class TestDoubleFactory {
                 throw new TestControlException("FIXTURE_EXHAUSTED", "FIXTURE_CONSUMPTION",
                         "Fixture rule '" + rule.ruleId() + "' exceeded maxUses.");
             }
-            recorder.consume(rule.ruleId());
             return apply(rule, input, context);
         }
 
@@ -309,17 +307,22 @@ public class TestDoubleFactory {
 
         @Override
         public Object execute(Object input, OperatorContext context) throws Exception {
-            Instant logicalStart = context.timeSource().now();
-            long wallStart = System.nanoTime();
+            recorder.beginAttempt(binding);
             try {
-                Object output = delegate.execute(input, context);
-                recorder.recordSuccess(binding, node, input, output, context.retryAttempt() + 1,
-                        elapsedMillis(logicalStart, context.timeSource().now(), wallStart));
-                return output;
-            } catch (Exception failure) {
-                recorder.recordFailure(binding, node, input, failure, context.retryAttempt() + 1,
-                        elapsedMillis(logicalStart, context.timeSource().now(), wallStart));
-                throw failure;
+                Instant logicalStart = context.timeSource().now();
+                long wallStart = System.nanoTime();
+                try {
+                    Object output = delegate.execute(input, context);
+                    recorder.recordSuccess(binding, node, input, output, context.retryAttempt() + 1,
+                            elapsedMillis(logicalStart, context.timeSource().now(), wallStart));
+                    return output;
+                } catch (Exception failure) {
+                    recorder.recordFailure(binding, node, input, failure, context.retryAttempt() + 1,
+                            elapsedMillis(logicalStart, context.timeSource().now(), wallStart));
+                    throw failure;
+                }
+            } finally {
+                recorder.endAttempt(binding);
             }
         }
 

@@ -29,6 +29,8 @@ public record FixtureConsumptionStateSnapshot(
 ) {
     /** Current fixture-consumption checkpoint protocol. */
     public static final String SCHEMA_VERSION = "bloge.fixtureConsumptionStateSnapshot.v1";
+    /** Maximum canonical snapshot size accepted at capture and trusted restore boundaries. */
+    public static final int MAX_CANONICAL_BYTES = 2 * 1024 * 1024;
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
     private static final Pattern RULE_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
     private static final int MAX_ENTRIES = 10_000;

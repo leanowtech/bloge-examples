@@ -87,7 +87,7 @@ public class TestRunService {
             return new TestExecutionResult(null, null, evidence);
         }
 
-        InvocationRecorder recorder = new InvocationRecorder();
+        InvocationRecorder recorder = new InvocationRecorder(objectMapper);
         GraphResult graphResult = null;
         List<String> diagnostics = new ArrayList<>();
         GovernedExecutionServices executionServices = compiled.executionServices();
