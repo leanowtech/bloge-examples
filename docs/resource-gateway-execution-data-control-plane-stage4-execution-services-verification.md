@@ -5,7 +5,8 @@
 This increment connects Resource Gateway's governed fixture controls to BLOGE's run-scoped
 `ExecutionServices` and gives deterministic outcomes a stable semantic identity. It controls logical
 time, random values, generated UUIDs and environment-dependent DSL function resolution without
-placing control data in `GraphContext`.
+placing control data in `GraphContext`. The current increment also defines and validates the
+payload-free provider-state checkpoint needed by a later durable/suspendable adapter.
 
 ## Frozen Protocol
 
@@ -16,6 +17,12 @@ placing control data in `GraphContext`.
   credentials or secret values. Evidence may expose governed logical timestamps and records only
   provider-scope fingerprints and structural function call sites.
 - Capability discovery retains v1/v2 reader versions and advertises v3 as the producer version.
+- `bloge.executionServiceStateSnapshot.v1` binds logical time, hashed RANDOM/UUID scope cursors and
+  cumulative provider/function usage to the exact plan and execution-service binding-set
+  fingerprints. `restorable` is derived from declared and observed semantic provider use;
+  `restoreGaps` explains fail-closed non-restorability.
+- The snapshot excludes the random seed, raw scope, identity/flag/secret values and fixture
+  payloads. Capability discovery advertises it as a supported object, not as a public endpoint.
 - `bloge.testRunEvidence.v2` adds `semanticResultFingerprint`; the schema retains explicit v1 and v2
   definitions and a dual-read union. Execution response v1 references evidence v1, while current
   signed execution response v2 requires evidence v2.
@@ -57,23 +64,39 @@ oracle. The full evidence fingerprint remains different across run id, timing an
 9. `STANDARD` and `SUMMARY` retain the full-evidence semantic fingerprint as signed lineage but omit
    values needed for independent recomputation. `FULL` is the conformance input for independent
    implementations.
+10. Provider calls and checkpoint capture share a fair read/write coordination boundary; a snapshot
+    cannot split a sequence cursor from its cumulative usage count.
+11. Restore independently recomputes plan and binding fingerprints, restore eligibility, and
+    RANDOM/UUID cursor closure. A self-fingerprinted but policy-inconsistent snapshot is rejected.
+12. `ExecutionControlCompiler` runs normal preflight and recompiles the plan before restore. Any
+    snapshot/plan/configuration mismatch becomes generic `CONTROL_PLAN_UNAVAILABLE`; it never falls
+    back to current providers or REAL execution.
 
 ## Automated Evidence
 
 `GovernedExecutionServicesTest` verifies reproducibility, seed isolation, payload-free plan
-projection, logical-clock advancement, usage audit and fail-closed ambient authorities.
+projection, logical-clock advancement, usage audit, atomic concurrent capture, exact continuation,
+tamper/policy/cursor rejection, and fail-closed ambient authorities.
 `TestRunServiceTest.compiledLogicalClockReachesOperatorContextAndControlsCertification` executes a
 real BLOGE graph and proves the compiled clock reaches the operator and controls evidence class.
 `ExecutionServicesBoundaryTest` is the production-path architecture guard. Planner, target
 classification, capability and JSON Schema tests freeze the wire and certification semantics.
 `TestSemanticResultFingerprintTest` proves stable ordering and the included/excluded material;
 `TestEvidenceSanitizerTest` proves redaction-time recomputation; integrity tests reject stale semantic
-identity before signing and on verification. Test-kit protocol tests prove v1/v2 schema compatibility,
-and `TestRunAssertions.assertSameSemanticResult` provides a payload-free CI regression assertion.
+identity before signing and on verification. Main capability tests and test-kit protocol tests prove
+v1/v2 compatibility plus the checkpoint schema/version. `TestRunAssertions.assertSameSemanticResult`
+provides a payload-free CI regression assertion.
 
 ## Honest Remaining Gaps
 
-- Durable checkpoint/resume does not persist provider counters or logical-clock state.
+- The provider-state protocol and compiler restore seam exist, but BLOGE durable/suspend checkpoints
+  do not yet persist or inject it. There is no public checkpoint/resume endpoint and no cold-start
+  resume claim in this increment.
+- Fixture-rule consumption cursors, in-flight node state, pending timers and side-effect journal
+  positions remain separate durable-state responsibilities; this snapshot covers execution services
+  only.
+- `snapshotFingerprint` is content identity, not source authentication. A durable adapter must use a
+  trusted fenced store or signed attestation before accepting a checkpoint from another process.
 - Repeated concurrent calls at the exact same invocation scope still depend on occurrence
   assignment order; deterministic parallel scheduling or a stronger invocation coordinate is
   required before claiming byte-identical semantics there.
@@ -85,7 +108,7 @@ and `TestRunAssertions.assertSameSemanticResult` provides a payload-free CI regr
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=GovernedExecutionServicesTest,TestRunServiceTest,TestSemanticResultFingerprintTest,TestEvidenceSanitizerTest,TestEvidenceIntegrityServiceTest,TestingControlProtocolSchemaTest test
+  -Dtest=GovernedExecutionServicesTest,ExecutionControlCompilerTest,TestRunServiceTest,TestSemanticResultFingerprintTest,TestEvidenceSanitizerTest,TestEvidenceIntegrityServiceTest,TestingControlProtocolSchemaTest test
 
 mvn -f resource-gateway-test-kit/pom.xml \
   -Dtest=ResourceGatewayTestClientTest,TestRunAssertionsTest,TestingProtocolTest test

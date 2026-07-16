@@ -14,6 +14,7 @@ import com.leanowtech.bloge.core.spi.SecretProvider;
 import com.leanowtech.bloge.core.spi.SystemTimeSource;
 import com.leanowtech.bloge.core.spi.TimeSource;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
+import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
@@ -35,6 +36,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Supplier;
 
 /**
  * Frozen test-run execution services and their payload-free usage audit.
@@ -42,29 +45,43 @@ import java.util.concurrent.atomic.LongAdder;
  * <p>The instance is created during plan compilation and is carried by
  * {@link com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl}; runtime code
  * never rebuilds it from a mutable fixture. A configured seed drives independent SHA-256 streams
- * for random values and identifiers. Identity, feature flags, and secrets remain fail closed until
- * corresponding governed fixture authorities exist.</p>
+ * for random values and identifiers. Its provider-state checkpoint is bound to one effective plan,
+ * contains no seed or raw scope, and can be restored only against the same binding set. Identity,
+ * feature flags, and secrets remain fail closed until corresponding governed authorities exist.</p>
  */
 public final class GovernedExecutionServices {
 
     private static final String BINDING_SCHEMA = "bloge.executionServiceBinding.v1";
     private static final String USAGE_SCHEMA = "bloge.executionServiceUsage.v1";
+    private static final int MAX_PROVIDER_SCOPES = 10_000;
 
     private final ObjectMapper objectMapper;
     private final ExecutionServices services;
     private final List<EffectiveExecutionPlan.ExecutionServiceBinding> bindings;
     private final UsageTracker usageTracker;
     private final AdvancingLogicalTimeSource logicalTime;
+    private final ScopedDigestSequence randomSequence;
+    private final ScopedDigestSequence idSequence;
+    private final StateCoordinator stateCoordinator;
+    private final String bindingSetFingerprint;
+    private volatile String planFingerprint = "";
 
     private GovernedExecutionServices(ObjectMapper objectMapper, ExecutionServices services,
                                       List<EffectiveExecutionPlan.ExecutionServiceBinding> bindings,
                                       UsageTracker usageTracker,
-                                      AdvancingLogicalTimeSource logicalTime) {
+                                      AdvancingLogicalTimeSource logicalTime,
+                                      ScopedDigestSequence randomSequence,
+                                      ScopedDigestSequence idSequence,
+                                      StateCoordinator stateCoordinator) {
         this.objectMapper = objectMapper;
         this.services = services;
         this.bindings = List.copyOf(bindings);
         this.usageTracker = usageTracker;
         this.logicalTime = logicalTime;
+        this.randomSequence = randomSequence;
+        this.idSequence = idSequence;
+        this.stateCoordinator = stateCoordinator;
+        this.bindingSetFingerprint = bindingSetFingerprint(objectMapper, bindings);
     }
 
     /**
@@ -81,10 +98,13 @@ public final class GovernedExecutionServices {
         Objects.requireNonNull(objectMapper, "objectMapper");
         Objects.requireNonNull(fixtureBundle, "fixtureBundle");
         Objects.requireNonNull(inventory, "inventory");
+        StateCoordinator stateCoordinator = new StateCoordinator();
         UsageTracker tracker = new UsageTracker();
         AdvancingLogicalTimeSource logicalTime = fixtureBundle.logicalClock() == null
                 ? null : new AdvancingLogicalTimeSource(fixtureBundle.logicalClock());
-        TimeSource timeSource = logicalTime == null ? SystemTimeSource.INSTANCE : logicalTime;
+        TimeSource timeSource = guardedTimeSource(
+                logicalTime == null ? SystemTimeSource.INSTANCE : logicalTime,
+                tracker, stateCoordinator);
         Long seed = fixtureBundle.randomSeed();
         ScopedDigestSequence randomSequence = seed == null
                 ? null : new ScopedDigestSequence(seed, "random");
@@ -92,28 +112,32 @@ public final class GovernedExecutionServices {
                 ? null : new ScopedDigestSequence(seed, "uuid");
 
         RandomSource randomSource = scope -> {
-            tracker.recordProvider(ExecutionServiceKind.RANDOM, scope, true);
-            return randomSequence == null
-                    ? RandomSource.SYSTEM.nextLong(scope) : randomSequence.nextLong(scope);
+            return stateCoordinator.mutate(() -> {
+                tracker.recordProvider(ExecutionServiceKind.RANDOM, scope, true);
+                return randomSequence == null
+                        ? RandomSource.SYSTEM.nextLong(scope) : randomSequence.nextLong(scope);
+            });
         };
         IdGenerator idGenerator = scope -> {
-            tracker.recordProvider(ExecutionServiceKind.UUID, scope,
-                    !isInfrastructureIdScope(scope));
-            return idSequence == null
-                    ? IdGenerator.UUID_V4.nextId(scope) : idSequence.nextUuid(scope);
+            return stateCoordinator.mutate(() -> {
+                tracker.recordProvider(ExecutionServiceKind.UUID, scope,
+                        !isInfrastructureIdScope(scope));
+                return idSequence == null
+                        ? IdGenerator.UUID_V4.nextId(scope) : idSequence.nextUuid(scope);
+            });
         };
-        IdentityProvider identityProvider = attribute -> {
+        IdentityProvider identityProvider = attribute -> stateCoordinator.mutate(() -> {
             tracker.recordProvider(ExecutionServiceKind.IDENTITY, attribute, true);
             return IdentityProvider.NONE.resolve(attribute);
-        };
-        FeatureFlagProvider featureFlags = flag -> {
+        });
+        FeatureFlagProvider featureFlags = flag -> stateCoordinator.mutate(() -> {
             tracker.recordProvider(ExecutionServiceKind.FEATURE_FLAG, flag, true);
             return FeatureFlagProvider.NONE.enabled(flag);
-        };
-        SecretProvider secrets = name -> {
+        });
+        SecretProvider secrets = name -> stateCoordinator.mutate(() -> {
             tracker.recordProvider(ExecutionServiceKind.SECRET, name, true);
             return SecretProvider.NONE.resolve(name);
-        };
+        });
 
         ExecutionServices services = ExecutionServices.builder()
                 .timeSource(timeSource)
@@ -122,14 +146,37 @@ public final class GovernedExecutionServices {
                 .identityProvider(identityProvider)
                 .featureFlagProvider(featureFlags)
                 .secretProvider(secrets)
-                .expressionFunctionResolver((site, function) -> audited(site, function, tracker))
+                .expressionFunctionResolver((site, function) -> audited(
+                        site, function, tracker, stateCoordinator))
                 .build();
         Map<ExecutionServiceKind, List<String>> consumers = declaredConsumers(inventory);
         List<EffectiveExecutionPlan.ExecutionServiceBinding> bindings = Arrays.stream(
                         ExecutionServiceKind.values())
                 .map(kind -> binding(objectMapper, kind, fixtureBundle, consumers.getOrDefault(kind, List.of())))
                 .toList();
-        return new GovernedExecutionServices(objectMapper, services, bindings, tracker, logicalTime);
+        return new GovernedExecutionServices(objectMapper, services, bindings, tracker, logicalTime,
+                randomSequence, idSequence, stateCoordinator);
+    }
+
+    /**
+     * Restores one exact provider-state checkpoint against freshly frozen configuration.
+     *
+     * @param objectMapper canonical protocol mapper
+     * @param fixtureBundle immutable fixture used by the original plan
+     * @param inventory frozen invocation inventory
+     * @param planFingerprint recomputed effective-plan fingerprint
+     * @param snapshot persisted provider-state checkpoint
+     * @return run-scoped services continuing at the checkpointed cursors
+     * @throws IllegalArgumentException when state integrity, plan, binding or clock checks fail
+     */
+    public static GovernedExecutionServices restore(ObjectMapper objectMapper,
+                                                     FixtureBundle fixtureBundle,
+                                                     InvocationInventory inventory,
+                                                     String planFingerprint,
+                                                     ExecutionServiceStateSnapshot snapshot) {
+        GovernedExecutionServices restored = prepare(objectMapper, fixtureBundle, inventory);
+        restored.restoreState(planFingerprint, Objects.requireNonNull(snapshot, "snapshot"));
+        return restored;
     }
 
     /** @return exact service object that must be passed to BLOGE {@code ExecutionOptions} */
@@ -142,9 +189,34 @@ public final class GovernedExecutionServices {
         return bindings;
     }
 
-    /** @return run logical clock, or {@code null} when system time is active */
-    public AdvancingLogicalTimeSource logicalTime() {
-        return logicalTime;
+    /** @return immutable logical-clock observation, or {@code null} when system time is active */
+    public LogicalTimeObservation logicalTimeObservation() {
+        return stateCoordinator.observe(() -> {
+            if (logicalTime == null) {
+                return null;
+            }
+            java.time.Instant current = logicalTime.now();
+            return new LogicalTimeObservation(logicalTime.origin(), current,
+                    java.time.Duration.between(logicalTime.origin(), current));
+        });
+    }
+
+    /**
+     * Binds fresh provider state to the exact plan that owns all future checkpoints.
+     *
+     * @param fingerprint canonical effective-plan fingerprint
+     * @return this run-scoped service set
+     */
+    public GovernedExecutionServices bindToPlan(String fingerprint) {
+        String value = canonicalFingerprint(fingerprint, "plan fingerprint");
+        stateCoordinator.checkpoint(() -> {
+            if (!planFingerprint.isBlank() && !planFingerprint.equals(value)) {
+                throw new IllegalStateException("Execution services are already bound to another plan");
+            }
+            planFingerprint = value;
+            return null;
+        });
+        return this;
     }
 
     /**
@@ -153,20 +225,55 @@ public final class GovernedExecutionServices {
      * @return ordered usages for services that were actually invoked
      */
     public List<ExecutionServiceUsage> usageSnapshot() {
+        return stateCoordinator.observe(this::usageSnapshotUnsafe);
+    }
+
+    private List<ExecutionServiceUsage> usageSnapshotUnsafe() {
+        return projectUsages(usageTracker.stateSnapshot());
+    }
+
+    private List<ExecutionServiceUsage> projectUsages(
+            List<ExecutionServiceStateSnapshot.UsageState> states) {
         Map<String, String> modes = bindings.stream().collect(java.util.stream.Collectors.toMap(
                 EffectiveExecutionPlan.ExecutionServiceBinding::service,
                 EffectiveExecutionPlan.ExecutionServiceBinding::mode));
-        return usageTracker.snapshot().stream().map(usage -> new ExecutionServiceUsage(
-                usage.schemaVersion(), usage.service(), modes.getOrDefault(usage.service(), "UNKNOWN"),
+        return states.stream().map(usage -> new ExecutionServiceUsage(
+                USAGE_SCHEMA, usage.service(), modes.getOrDefault(usage.service(), "UNKNOWN"),
                 usage.providerCalls(), usage.semanticProviderCalls(), usage.functionCalls(),
                 usage.functionCallSites(), usage.providerScopeFingerprints())).toList();
     }
 
-    /** @return canonical digest of the current provider-use state */
+    /**
+     * Captures a content-addressed provider-state checkpoint while excluding concurrent mutations.
+     *
+     * @return payload-free state bound to the effective plan
+     */
+    public ExecutionServiceStateSnapshot snapshotState() {
+        return stateCoordinator.checkpoint(() -> {
+            if (planFingerprint.isBlank()) {
+                throw new IllegalStateException(
+                        "Execution services must be bound to an effective plan before checkpointing");
+            }
+            Map<String, Long> randomCursors = randomSequence == null
+                    ? Map.of() : randomSequence.snapshot();
+            Map<String, Long> uuidCursors = idSequence == null
+                    ? Map.of() : idSequence.snapshot();
+            List<ExecutionServiceStateSnapshot.UsageState> usages = usageTracker.stateSnapshot();
+            List<String> restoreGaps = restoreGaps(usageSnapshotUnsafe());
+            java.time.Instant currentLogicalTime = logicalTime == null ? null : logicalTime.now();
+            Map<String, Object> material = stateMaterial(planFingerprint, bindingSetFingerprint,
+                    currentLogicalTime, randomCursors, uuidCursors, usages, restoreGaps);
+            String fingerprint = ProtocolFingerprint.of(objectMapper, material);
+            return new ExecutionServiceStateSnapshot(ExecutionServiceStateSnapshot.SCHEMA_VERSION,
+                    planFingerprint, bindingSetFingerprint, currentLogicalTime,
+                    randomCursors, uuidCursors,
+                    usages, restoreGaps.isEmpty(), restoreGaps, fingerprint);
+        });
+    }
+
+    /** @return canonical digest of the complete current provider-state checkpoint */
     public String stateFingerprint() {
-        return ProtocolFingerprint.of(objectMapper, Map.of(
-                "schemaVersion", USAGE_SCHEMA,
-                "usages", usageSnapshot()));
+        return snapshotState().snapshotFingerprint();
     }
 
     /**
@@ -179,6 +286,10 @@ public final class GovernedExecutionServices {
      * @return ordered, duplicate-free certification gaps
      */
     public List<String> certificationGaps() {
+        return certificationGaps(usageSnapshot());
+    }
+
+    private List<String> certificationGaps(List<ExecutionServiceUsage> usages) {
         Map<String, EffectiveExecutionPlan.ExecutionServiceBinding> byService = bindings.stream()
                 .collect(java.util.stream.Collectors.toMap(
                         EffectiveExecutionPlan.ExecutionServiceBinding::service, binding -> binding));
@@ -187,7 +298,7 @@ public final class GovernedExecutionServices {
                 .filter(binding -> !binding.certificationEligibleWhenUsed())
                 .flatMap(binding -> binding.certificationGaps().stream())
                 .forEach(gaps::add);
-        for (ExecutionServiceUsage usage : usageSnapshot()) {
+        for (ExecutionServiceUsage usage : usages) {
             if (usage.functionCalls() == 0 && usage.semanticProviderCalls() == 0) {
                 continue;
             }
@@ -199,8 +310,30 @@ public final class GovernedExecutionServices {
         return List.copyOf(gaps);
     }
 
+    private List<String> restoreGaps(List<ExecutionServiceUsage> usages) {
+        Map<String, EffectiveExecutionPlan.ExecutionServiceBinding> byService = bindings.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        EffectiveExecutionPlan.ExecutionServiceBinding::service, binding -> binding));
+        Set<String> gaps = new java.util.LinkedHashSet<>();
+        bindings.stream().filter(EffectiveExecutionPlan.ExecutionServiceBinding::required)
+                .filter(binding -> !binding.deterministic())
+                .flatMap(binding -> binding.certificationGaps().stream())
+                .forEach(gaps::add);
+        for (ExecutionServiceUsage usage : usages) {
+            if (usage.semanticProviderCalls() == 0 && usage.functionCalls() == 0) {
+                continue;
+            }
+            EffectiveExecutionPlan.ExecutionServiceBinding binding = byService.get(usage.service());
+            if (binding != null && !binding.deterministic()) {
+                gaps.addAll(binding.certificationGaps());
+            }
+        }
+        return List.copyOf(gaps);
+    }
+
     private static ExpressionFunction audited(FunctionCallSite site, ExpressionFunction function,
-                                               UsageTracker tracker) {
+                                               UsageTracker tracker,
+                                               StateCoordinator stateCoordinator) {
         Objects.requireNonNull(site, "site");
         Objects.requireNonNull(function, "function");
         return new ExpressionFunction() {
@@ -211,14 +344,18 @@ public final class GovernedExecutionServices {
 
             @Override
             public Object apply(Object... args) {
-                tracker.recordFunction(site, function.requiredExecutionServices());
-                return function.apply(args);
+                return stateCoordinator.mutate(() -> {
+                    tracker.recordFunction(site, function.requiredExecutionServices());
+                    return function.apply(args);
+                });
             }
 
             @Override
             public Object apply(FunctionInvocationContext context, Object... args) {
-                tracker.recordFunction(site, function.requiredExecutionServices());
-                return function.apply(context, args);
+                return stateCoordinator.mutate(() -> {
+                    tracker.recordFunction(site, function.requiredExecutionServices());
+                    return function.apply(context, args);
+                });
             }
 
             @Override
@@ -236,6 +373,151 @@ public final class GovernedExecutionServices {
                 return function.requiredExecutionServices();
             }
         };
+    }
+
+    private void restoreState(String expectedPlanFingerprint,
+                              ExecutionServiceStateSnapshot snapshot) {
+        String expectedPlan = canonicalFingerprint(expectedPlanFingerprint, "plan fingerprint");
+        stateCoordinator.checkpoint(() -> {
+            String actualFingerprint = ProtocolFingerprint.of(objectMapper,
+                    snapshot.fingerprintMaterial());
+            if (!actualFingerprint.equals(snapshot.snapshotFingerprint())) {
+                throw new IllegalArgumentException(
+                        "Execution-service state snapshot fingerprint is invalid");
+            }
+            if (!expectedPlan.equals(snapshot.planFingerprint())) {
+                throw new IllegalArgumentException(
+                        "Execution-service state snapshot belongs to another plan");
+            }
+            if (!bindingSetFingerprint.equals(snapshot.bindingSetFingerprint())) {
+                throw new IllegalArgumentException(
+                        "Execution-service state snapshot binding set has drifted");
+            }
+            List<String> expectedGaps = restoreGaps(projectUsages(snapshot.usages()));
+            if (!expectedGaps.equals(snapshot.restoreGaps())
+                    || snapshot.restorable() != expectedGaps.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Execution-service state snapshot restore policy is invalid");
+            }
+            if (!snapshot.restorable()) {
+                throw new IllegalArgumentException(
+                        "Execution-service state snapshot contains non-restorable providers");
+            }
+            if (randomSequence != null) {
+                validateSequenceState("RANDOM", snapshot.randomScopeCursors(), snapshot.usages());
+            }
+            if (idSequence != null) {
+                validateSequenceState("UUID", snapshot.uuidScopeCursors(), snapshot.usages());
+            }
+            restoreLogicalTime(snapshot.logicalTime());
+            restoreSequence("RANDOM", randomSequence, snapshot.randomScopeCursors());
+            restoreSequence("UUID", idSequence, snapshot.uuidScopeCursors());
+            usageTracker.restore(snapshot.usages());
+            planFingerprint = expectedPlan;
+            return null;
+        });
+    }
+
+    private void restoreLogicalTime(java.time.Instant restored) {
+        if (logicalTime == null) {
+            if (restored != null) {
+                throw new IllegalArgumentException(
+                        "Execution-service state has logical time for a wall-clock binding");
+            }
+            return;
+        }
+        if (restored == null) {
+            throw new IllegalArgumentException(
+                    "Execution-service state is missing its logical clock");
+        }
+        logicalTime.restore(restored);
+    }
+
+    private static void restoreSequence(String service, ScopedDigestSequence sequence,
+                                        Map<String, Long> cursors) {
+        if (sequence == null) {
+            if (!cursors.isEmpty()) {
+                throw new IllegalArgumentException(
+                        service + " cursors cannot be restored without a deterministic binding");
+            }
+            return;
+        }
+        sequence.restore(cursors);
+    }
+
+    private static void validateSequenceState(
+            String service, Map<String, Long> cursors,
+            List<ExecutionServiceStateSnapshot.UsageState> usages) {
+        ExecutionServiceStateSnapshot.UsageState usage = usages.stream()
+                .filter(state -> state.service().equals(service))
+                .findFirst()
+                .orElse(null);
+        long cursorCalls;
+        try {
+            cursorCalls = cursors.values().stream().reduce(0L, Math::addExact);
+        } catch (ArithmeticException overflow) {
+            throw new IllegalArgumentException(
+                    service + " execution-service cursor count overflow", overflow);
+        }
+        long providerCalls = usage == null ? 0 : usage.providerCalls();
+        Set<String> observedScopes = usage == null
+                ? Set.of() : Set.copyOf(usage.providerScopeFingerprints());
+        if (cursorCalls != providerCalls || !cursors.keySet().equals(observedScopes)) {
+            throw new IllegalArgumentException(
+                    service + " execution-service cursors do not match cumulative usage");
+        }
+    }
+
+    private static TimeSource guardedTimeSource(TimeSource delegate, UsageTracker tracker,
+                                                StateCoordinator stateCoordinator) {
+        return new TimeSource() {
+            @Override
+            public java.time.Instant now() {
+                return stateCoordinator.mutate(() -> {
+                    tracker.recordProvider(ExecutionServiceKind.TIME, "now", false);
+                    return delegate.now();
+                });
+            }
+
+            @Override
+            public void sleep(java.time.Duration duration) throws InterruptedException {
+                stateCoordinator.mutateInterruptibly(() -> {
+                    tracker.recordProvider(ExecutionServiceKind.TIME, "sleep", false);
+                    delegate.sleep(duration);
+                });
+            }
+        };
+    }
+
+    private static String bindingSetFingerprint(ObjectMapper mapper,
+                                                List<EffectiveExecutionPlan.ExecutionServiceBinding> bindings) {
+        return ProtocolFingerprint.of(mapper, Map.of(
+                "schemaVersion", "bloge.executionServiceBindingSet.v1",
+                "bindings", bindings));
+    }
+
+    private static Map<String, Object> stateMaterial(
+            String planFingerprint, String bindingSetFingerprint, java.time.Instant logicalTime,
+            Map<String, Long> randomScopeCursors, Map<String, Long> uuidScopeCursors,
+            List<ExecutionServiceStateSnapshot.UsageState> usages, List<String> restoreGaps) {
+        return Map.of(
+                "schemaVersion", ExecutionServiceStateSnapshot.SCHEMA_VERSION,
+                "planFingerprint", planFingerprint,
+                "bindingSetFingerprint", bindingSetFingerprint,
+                "logicalTime", logicalTime == null ? "" : logicalTime.toString(),
+                "randomScopeCursors", randomScopeCursors,
+                "uuidScopeCursors", uuidScopeCursors,
+                "usages", usages,
+                "restorable", restoreGaps.isEmpty(),
+                "restoreGaps", restoreGaps);
+    }
+
+    private static String canonicalFingerprint(String value, String field) {
+        String normalized = value == null ? "" : value.trim();
+        if (!normalized.matches("sha256:[a-f0-9]{64}")) {
+            throw new IllegalArgumentException(field + " must be a canonical SHA-256 fingerprint");
+        }
+        return normalized;
     }
 
     private static Map<ExecutionServiceKind, List<String>> declaredConsumers(
@@ -356,6 +638,23 @@ public final class GovernedExecutionServices {
         }
     }
 
+    /** Immutable evidence-facing observation of the governed logical clock. */
+    public record LogicalTimeObservation(
+            java.time.Instant origin,
+            java.time.Instant current,
+            java.time.Duration elapsed
+    ) {
+        /** Rejects incomplete or internally inconsistent observations. */
+        public LogicalTimeObservation {
+            Objects.requireNonNull(origin, "origin");
+            Objects.requireNonNull(current, "current");
+            Objects.requireNonNull(elapsed, "elapsed");
+            if (current.isBefore(origin) || !elapsed.equals(java.time.Duration.between(origin, current))) {
+                throw new IllegalArgumentException("Logical-time observation is inconsistent");
+            }
+        }
+    }
+
     private static final class UsageTracker {
         private final Map<ExecutionServiceKind, UsageCounter> counters =
                 new EnumMap<>(ExecutionServiceKind.class);
@@ -368,25 +667,49 @@ public final class GovernedExecutionServices {
 
         private void recordProvider(ExecutionServiceKind kind, String scope, boolean semantic) {
             UsageCounter counter = counters.get(kind);
+            addBounded(counter.providerScopeFingerprints, digest(scope), "provider scopes");
             counter.providerCalls.increment();
             if (semantic) counter.semanticProviderCalls.increment();
-            counter.providerScopeFingerprints.add(digest(scope));
         }
 
         private void recordFunction(FunctionCallSite site, Set<ExecutionServiceKind> kinds) {
             for (ExecutionServiceKind kind : kinds) {
                 UsageCounter counter = counters.get(kind);
+                addBounded(counter.functionCallSites, site.structuralId(), "function call sites");
                 counter.functionCalls.increment();
-                counter.functionCallSites.add(site.structuralId());
             }
         }
 
-        private List<ExecutionServiceUsage> snapshot() {
+        private static void addBounded(Set<String> values, String value, String label) {
+            synchronized (values) {
+                if (!values.contains(value) && values.size() >= MAX_PROVIDER_SCOPES) {
+                    throw new IllegalStateException(
+                            "Execution-service " + label + " exceed " + MAX_PROVIDER_SCOPES);
+                }
+                values.add(value);
+            }
+        }
+
+        private List<ExecutionServiceStateSnapshot.UsageState> stateSnapshot() {
             return counters.entrySet().stream()
                     .filter(entry -> entry.getValue().used())
                     .sorted(Comparator.comparing(entry -> entry.getKey().name()))
-                    .map(entry -> entry.getValue().snapshot(entry.getKey()))
+                    .map(entry -> entry.getValue().stateSnapshot(entry.getKey()))
                     .toList();
+        }
+
+        private void restore(List<ExecutionServiceStateSnapshot.UsageState> states) {
+            counters.values().forEach(UsageCounter::clear);
+            for (ExecutionServiceStateSnapshot.UsageState state : states) {
+                ExecutionServiceKind kind;
+                try {
+                    kind = ExecutionServiceKind.valueOf(state.service());
+                } catch (IllegalArgumentException unsupported) {
+                    throw new IllegalArgumentException(
+                            "Execution-service state contains an unsupported usage service", unsupported);
+                }
+                counters.get(kind).restore(state);
+            }
         }
     }
 
@@ -401,10 +724,27 @@ public final class GovernedExecutionServices {
             return providerCalls.sum() > 0 || functionCalls.sum() > 0;
         }
 
-        private ExecutionServiceUsage snapshot(ExecutionServiceKind kind) {
-            return new ExecutionServiceUsage(USAGE_SCHEMA, kind.name(), "OBSERVED",
-                    providerCalls.sum(), semanticProviderCalls.sum(), functionCalls.sum(),
-                    List.copyOf(functionCallSites), List.copyOf(providerScopeFingerprints));
+        private ExecutionServiceStateSnapshot.UsageState stateSnapshot(ExecutionServiceKind kind) {
+            return new ExecutionServiceStateSnapshot.UsageState(kind.name(), providerCalls.sum(),
+                    semanticProviderCalls.sum(), functionCalls.sum(), List.copyOf(functionCallSites),
+                    List.copyOf(providerScopeFingerprints));
+        }
+
+        private void clear() {
+            providerCalls.reset();
+            semanticProviderCalls.reset();
+            functionCalls.reset();
+            functionCallSites.clear();
+            providerScopeFingerprints.clear();
+        }
+
+        private void restore(ExecutionServiceStateSnapshot.UsageState state) {
+            clear();
+            providerCalls.add(state.providerCalls());
+            semanticProviderCalls.add(state.semanticProviderCalls());
+            functionCalls.add(state.functionCalls());
+            functionCallSites.addAll(state.functionCallSites());
+            providerScopeFingerprints.addAll(state.providerScopeFingerprints());
         }
     }
 
@@ -432,8 +772,19 @@ public final class GovernedExecutionServices {
 
         private byte[] next(String scope) {
             String normalized = scope == null ? "" : scope;
-            long occurrence = counters.computeIfAbsent(normalized, ignored -> new AtomicLong())
-                    .getAndIncrement();
+            String scopeFingerprint = digest(normalized);
+            AtomicLong cursor = counters.get(scopeFingerprint);
+            if (cursor == null) {
+                AtomicLong candidate = new AtomicLong();
+                AtomicLong existing = counters.putIfAbsent(scopeFingerprint, candidate);
+                cursor = existing == null ? candidate : existing;
+                if (existing == null && counters.size() > MAX_PROVIDER_SCOPES) {
+                    counters.remove(scopeFingerprint, candidate);
+                    throw new IllegalStateException(
+                            "Execution-service sequence scopes exceed " + MAX_PROVIDER_SCOPES);
+                }
+            }
+            long occurrence = cursor.getAndIncrement();
             ByteBuffer material = ByteBuffer.allocate(domain.length + seed.length
                     + normalized.getBytes(StandardCharsets.UTF_8).length + Long.BYTES + 3);
             material.put(domain).put((byte) 0).put(seed).put((byte) 0)
@@ -441,5 +792,61 @@ public final class GovernedExecutionServices {
                     .putLong(occurrence);
             return sha256(material.array());
         }
+
+        private Map<String, Long> snapshot() {
+            Map<String, Long> state = new java.util.TreeMap<>();
+            counters.forEach((scope, cursor) -> {
+                long value = cursor.get();
+                if (value > 0) {
+                    state.put(scope, value);
+                }
+            });
+            return Map.copyOf(state);
+        }
+
+        private void restore(Map<String, Long> restored) {
+            counters.clear();
+            restored.forEach((scope, cursor) -> counters.put(scope, new AtomicLong(cursor)));
+        }
+    }
+
+    private static final class StateCoordinator {
+        private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock(true);
+
+        private <T> T mutate(Supplier<T> action) {
+            lock.readLock().lock();
+            try {
+                return action.get();
+            } finally {
+                lock.readLock().unlock();
+            }
+        }
+
+        private void mutateInterruptibly(InterruptibleAction action) throws InterruptedException {
+            lock.readLock().lockInterruptibly();
+            try {
+                action.run();
+            } finally {
+                lock.readLock().unlock();
+            }
+        }
+
+        private <T> T observe(Supplier<T> action) {
+            return mutate(action);
+        }
+
+        private <T> T checkpoint(Supplier<T> action) {
+            lock.writeLock().lock();
+            try {
+                return action.get();
+            } finally {
+                lock.writeLock().unlock();
+            }
+        }
+    }
+
+    @FunctionalInterface
+    private interface InterruptibleAction {
+        void run() throws InterruptedException;
     }
 }

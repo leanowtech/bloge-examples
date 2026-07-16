@@ -35,6 +35,9 @@ public final class TestingProtocol {
     public static final String TEST_RUN_EVIDENCE_V1 = "bloge.testRunEvidence.v1";
     /** Current test-run evidence wire version with semantic identity. */
     public static final String TEST_RUN_EVIDENCE_V2 = "bloge.testRunEvidence.v2";
+    /** Payload-free provider-state checkpoint used by deterministic durable resume. */
+    public static final String EXECUTION_SERVICE_STATE_SNAPSHOT_V1 =
+            "bloge.executionServiceStateSnapshot.v1";
     /** Detached test-evidence integrity manifest wire version. */
     public static final String TEST_EVIDENCE_INTEGRITY_V1 = "bloge.testEvidenceIntegrity.v1";
     /** Immutable test-suite wire version. */

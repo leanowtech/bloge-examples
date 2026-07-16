@@ -8,6 +8,7 @@ import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
+import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
@@ -242,6 +243,41 @@ class ExecutionControlCompilerTest {
                     assertThat(binding.deterministic()).isTrue();
                     assertThat(binding.configurationFingerprint()).startsWith("sha256:");
                     assertThat(binding.certificationGaps()).isEmpty();
+                });
+    }
+
+    @Test
+    void restoredProviderStateContinuesOnlyTheExactRecompiledPlan() throws Exception {
+        Graph graph = graph(new ReadOnlyOperator());
+        FixtureBundle fixture = new FixtureBundle(FixtureBundle.SCHEMA_VERSION, "fixture", 1,
+                TARGET, "INTERNAL", Instant.parse("2026-07-15T00:00:00Z"), 42L,
+                List.of(), List.of(), Map.of());
+        CompiledExecutionControl running = compiler.compile(
+                graph, fixture, "GRAPH_CONTRACT_TEST", TARGET);
+        running.executionServices().services().timeSource().sleep(Duration.ofSeconds(3));
+        running.executionServices().services().randomSource().nextLong("decision-scope");
+        ExecutionServiceStateSnapshot snapshot = running.executionServices().snapshotState();
+
+        CompiledExecutionControl resumed = compiler.compile(graph, fixture,
+                "GRAPH_CONTRACT_TEST", TARGET, ResolvedReplayPayloads.empty(), snapshot);
+
+        assertThat(resumed.effectivePlan().planFingerprint())
+                .isEqualTo(running.effectivePlan().planFingerprint());
+        assertThat(resumed.executionServices().services().timeSource().now())
+                .isEqualTo(Instant.parse("2026-07-15T00:00:03Z"));
+        assertThat(resumed.executionServices().services().randomSource().nextLong("decision-scope"))
+                .isEqualTo(running.executionServices().services().randomSource()
+                        .nextLong("decision-scope"));
+
+        FixtureBundle drifted = new FixtureBundle(FixtureBundle.SCHEMA_VERSION, "fixture", 1,
+                TARGET, "INTERNAL", Instant.parse("2026-07-15T00:00:00Z"), 43L,
+                List.of(), List.of(), Map.of());
+        assertThatThrownBy(() -> compiler.compile(graph, drifted,
+                "GRAPH_CONTRACT_TEST", TARGET, ResolvedReplayPayloads.empty(), snapshot))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, failure -> {
+                    assertThat(failure.code()).isEqualTo("CONTROL_PLAN_UNAVAILABLE");
+                    assertThat(failure.diagnostics()).containsExactly(
+                            "Checkpointed execution-service state does not match the frozen plan.");
                 });
     }
 

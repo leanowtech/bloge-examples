@@ -102,6 +102,10 @@ class TestRunServiceTest {
                 .isEqualTo(deterministic.plan().planFingerprint());
         assertThat(repeated.evidence().metadata().get("logicalTime"))
                 .isEqualTo(deterministic.evidence().metadata().get("logicalTime"));
+        assertThat(repeated.evidence().metadata().get("executionServiceStateFingerprint"))
+                .isEqualTo(deterministic.evidence().metadata().get(
+                        "executionServiceStateFingerprint"))
+                .asString().startsWith("sha256:");
         assertThat(TestSemanticResultFingerprint.projection(
                 new ObjectMapper().findAndRegisterModules(), repeated.evidence()))
                 .isEqualTo(TestSemanticResultFingerprint.projection(

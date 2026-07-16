@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import java.io.InputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TestingProtocolTest {
 
@@ -44,6 +46,8 @@ class TestingProtocolTest {
                     .isEqualTo("bloge.testOperatorTargetDescriptor.v1");
             assertConstant(definitions, "testRunEvidenceV1", TestingProtocol.TEST_RUN_EVIDENCE_V1);
             assertConstant(definitions, "testRunEvidenceV2", TestingProtocol.TEST_RUN_EVIDENCE_V2);
+            assertConstant(definitions, "executionServiceStateSnapshot",
+                    TestingProtocol.EXECUTION_SERVICE_STATE_SNAPSHOT_V1);
             assertThat(definitions.at("/testRunEvidence/oneOf")).hasSize(2);
             assertConstant(definitions, "testSuite", TestingProtocol.TEST_SUITE_V1);
             assertConstant(definitions, "testSuiteV2", TestingProtocol.TEST_SUITE_V2);
@@ -87,6 +91,37 @@ class TestingProtocolTest {
                     .isEqualTo(TestingProtocol.EVIDENCE_KEY_SET_TRUST_PUBLICATION_V1);
             assertThat(schema.at("/properties/publications/maxItems").asInt()).isEqualTo(256);
         }
+    }
+
+    @Test
+    void packagedSchemaEnforcesExecutionServiceRestoreEligibilityInvariant() throws Exception {
+        String value = """
+                {
+                  "schemaVersion":"bloge.executionServiceStateSnapshot.v1",
+                  "planFingerprint":"sha256:%s",
+                  "bindingSetFingerprint":"sha256:%s",
+                  "logicalTime":null,
+                  "randomScopeCursors":{},
+                  "uuidScopeCursors":{},
+                  "usages":[],
+                  "restorable":true,
+                  "restoreGaps":[],
+                  "snapshotFingerprint":"sha256:%s"
+                }
+                """.formatted("a".repeat(64), "b".repeat(64), "c".repeat(64));
+        ObjectMapper mapper = new ObjectMapper();
+
+        assertThatNoException().isThrownBy(() -> TestingProtocolSchemaValidator.require(
+                mapper.readTree(value), "executionServiceStateSnapshot"));
+
+        JsonNode invalid = mapper.readTree(value);
+        ((com.fasterxml.jackson.databind.node.ObjectNode) invalid)
+                .putArray("restoreGaps").add("RANDOM requires a seed.");
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                invalid, "executionServiceStateSnapshot"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("executionServiceStateSnapshot")
+                .hasMessageNotContaining("RANDOM requires");
     }
 
     private static void assertConstant(JsonNode definitions, String definition, String expected) {

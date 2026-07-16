@@ -31,4 +31,18 @@ class AdvancingLogicalTimeSourceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("negative");
     }
+
+    @Test
+    void restoreAdvancesButNeverRewindsTheCurrentLogicalTime() {
+        Instant origin = Instant.parse("2026-07-15T00:00:00Z");
+        AdvancingLogicalTimeSource time = new AdvancingLogicalTimeSource(origin);
+
+        time.restore(origin.plusSeconds(10));
+
+        assertThat(time.now()).isEqualTo(origin.plusSeconds(10));
+        assertThatThrownBy(() -> time.restore(origin.plusSeconds(9)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("backwards");
+        assertThat(time.now()).isEqualTo(origin.plusSeconds(10));
+    }
 }

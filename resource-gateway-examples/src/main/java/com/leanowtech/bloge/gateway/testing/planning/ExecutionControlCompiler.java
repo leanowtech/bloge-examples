@@ -12,6 +12,7 @@ import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
+import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
@@ -87,6 +88,30 @@ public class ExecutionControlCompiler {
     public CompiledExecutionControl compile(Graph graph, FixtureBundle fixtureBundle,
                                             String authorizedPurpose, String targetFingerprint,
                                             ResolvedReplayPayloads replayPayloads) {
+        return compile(graph, fixtureBundle, authorizedPurpose, targetFingerprint, replayPayloads,
+                null);
+    }
+
+    /**
+     * Recompiles an exact plan and restores its content-addressed execution-service checkpoint.
+     *
+     * <p>Normal preflight always runs before restore. A checkpoint never supplies a plan, fixture or
+     * provider configuration; it can only continue state after the independently rebuilt plan has
+     * the same fingerprint and binding set.</p>
+     *
+     * @param graph frozen graph artifact
+     * @param fixtureBundle exact immutable fixture used before suspension
+     * @param authorizedPurpose server-minted purpose
+     * @param targetFingerprint selected artifact fingerprint
+     * @param replayPayloads exact run-scoped replay values
+     * @param providerState payload-free execution-service checkpoint, or {@code null} for a fresh run
+     * @return executable plan with fresh or restored run-scoped services
+     * @throws ControlPlanRejectedException with {@code CONTROL_PLAN_UNAVAILABLE} when restore fails
+     */
+    public CompiledExecutionControl compile(Graph graph, FixtureBundle fixtureBundle,
+                                            String authorizedPurpose, String targetFingerprint,
+                                            ResolvedReplayPayloads replayPayloads,
+                                            ExecutionServiceStateSnapshot providerState) {
         Objects.requireNonNull(graph, "graph");
         ResolvedReplayPayloads resolvedReplays = replayPayloads == null
                 ? ResolvedReplayPayloads.empty() : replayPayloads;
@@ -143,6 +168,17 @@ public class ExecutionControlCompiler {
                 "executionServiceBindings", executionServices.bindings(),
                 "defaults", defaults);
         String planFingerprint = ProtocolFingerprint.of(objectMapper, fingerprintMaterial);
+        if (providerState == null) {
+            executionServices.bindToPlan(planFingerprint);
+        } else {
+            try {
+                executionServices = GovernedExecutionServices.restore(objectMapper, fixtureBundle,
+                        inventory, planFingerprint, providerState);
+            } catch (IllegalArgumentException unavailable) {
+                throw new ControlPlanRejectedException("CONTROL_PLAN_UNAVAILABLE", List.of(
+                        "Checkpointed execution-service state does not match the frozen plan."));
+            }
+        }
         EffectiveExecutionPlan effectivePlan = new EffectiveExecutionPlan(
                 EffectiveExecutionPlan.SCHEMA_VERSION,
                 "plan-" + UUID.randomUUID(),

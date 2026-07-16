@@ -1107,6 +1107,53 @@
         "certificationGaps": {"type": "array", "maxItems": 100, "items": {"type": "string", "maxLength": 300}}
       }
     },
+    "executionServiceStateUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["service", "providerCalls", "semanticProviderCalls", "functionCalls", "functionCallSites", "providerScopeFingerprints"],
+      "properties": {
+        "service": {"enum": ["TIME", "RANDOM", "UUID", "IDENTITY", "FEATURE_FLAG", "SECRET"]},
+        "providerCalls": {"type": "integer", "minimum": 0},
+        "semanticProviderCalls": {"type": "integer", "minimum": 0},
+        "functionCalls": {"type": "integer", "minimum": 0},
+        "functionCallSites": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 2048}},
+        "providerScopeFingerprints": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/fingerprint"}}
+      }
+    },
+    "executionServiceStateSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "planFingerprint", "bindingSetFingerprint", "logicalTime", "randomScopeCursors", "uuidScopeCursors", "usages", "restorable", "restoreGaps", "snapshotFingerprint"],
+      "allOf": [
+        {
+          "if": {"properties": {"restorable": {"const": true}}},
+          "then": {"properties": {"restoreGaps": {"maxItems": 0}}},
+          "else": {"properties": {"restoreGaps": {"minItems": 1}}}
+        }
+      ],
+      "properties": {
+        "schemaVersion": {"const": "bloge.executionServiceStateSnapshot.v1"},
+        "planFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "bindingSetFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "logicalTime": {"type": ["string", "null"], "format": "date-time"},
+        "randomScopeCursors": {
+          "type": "object",
+          "maxProperties": 10000,
+          "propertyNames": {"pattern": "^sha256:[a-f0-9]{64}$"},
+          "additionalProperties": {"type": "integer", "minimum": 1}
+        },
+        "uuidScopeCursors": {
+          "type": "object",
+          "maxProperties": 10000,
+          "propertyNames": {"pattern": "^sha256:[a-f0-9]{64}$"},
+          "additionalProperties": {"type": "integer", "minimum": 1}
+        },
+        "usages": {"type": "array", "maxItems": 6, "items": {"$ref": "#/$defs/executionServiceStateUsage"}},
+        "restorable": {"type": "boolean"},
+        "restoreGaps": {"type": "array", "maxItems": 100, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 300}},
+        "snapshotFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
     "testRunEvidenceV1": {
       "type": "object",
       "additionalProperties": false,

@@ -231,6 +231,8 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan.SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan.SCHEMA_VERSION_V2,
                     com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan.SCHEMA_VERSION));
+            objects.put("executionServiceStateSnapshot", List.of(
+                    com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot.SCHEMA_VERSION));
             objects.put("testRunEvidence", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence.SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence.SCHEMA_VERSION));

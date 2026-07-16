@@ -257,13 +257,13 @@ public class TestRunService {
             metadata.put("executionServiceStateFingerprint", executionServices.stateFingerprint());
             metadata.put("executionServiceCertificationGaps", executionServices.certificationGaps());
         }
-        AdvancingLogicalTimeSource logicalTime = executionServices == null
-                ? null : executionServices.logicalTime();
+        GovernedExecutionServices.LogicalTimeObservation logicalTime = executionServices == null
+                ? null : executionServices.logicalTimeObservation();
         if (logicalTime != null) {
             metadata.put("logicalTime", Map.of(
                     "mode", "ADVANCING_ZERO_WALL_CLOCK",
                     "origin", logicalTime.origin().toString(),
-                    "current", logicalTime.now().toString(),
+                    "current", logicalTime.current().toString(),
                     "elapsedMs", logicalTime.elapsed().toMillis()));
         }
         return Map.copyOf(metadata);

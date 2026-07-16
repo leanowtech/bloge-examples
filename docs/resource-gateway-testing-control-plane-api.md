@@ -484,6 +484,32 @@ Capability probe reports both `governedTestReplayPayloadCapture=true` and
 `testReplayBehavior=true`. It advertises effective-plan v1/v2 for readers and v3 as the current
 producer contract.
 
+### 4.2c Execution-service state checkpoint protocol
+
+Capability discovery advertises `executionServiceStateSnapshot` version
+`bloge.executionServiceStateSnapshot.v1`. The content-addressed object carries:
+
+- exact `planFingerprint` and `bindingSetFingerprint`;
+- current governed logical time;
+- next RANDOM/UUID occurrence per hashed scope;
+- cumulative provider/function usage;
+- derived `restorable` and bounded `restoreGaps`;
+- `snapshotFingerprint` over all preceding fields.
+
+It never carries a random seed, raw provider scope, fixture payload, identity/flag/secret value, or
+runtime repository handle. Capture excludes concurrent provider mutation. Restore first performs
+normal preflight and independently recompiles the effective plan, then recomputes fingerprint,
+binding, restore policy, and deterministic cursor/usage closure. Any mismatch maps to
+`CONTROL_PLAN_UNAVAILABLE`; there is no fallback to latest configuration, system providers, or REAL
+execution.
+
+This is currently an internal planner/runtime protocol. No public checkpoint or resume endpoint
+exists, and BLOGE durable/suspend storage does not yet persist or inject it. A complete durable
+checkpoint must additionally bind the immutable plan and fixture, fixture-consumption cursors,
+in-flight node/timer state, and side-effect journal position in one fenced lifecycle.
+`snapshotFingerprint` is a content-integrity identifier, not an authenticity proof; a cross-process
+adapter must accept snapshots only from a trusted fenced store or signed checkpoint attestation.
+
 ### 4.2.2 Register an immutable test suite
 
 A suite is a reviewed execution manifest, not an inline list of mutable fixtures. Every case carries
@@ -1315,7 +1341,7 @@ The public evidence status is exactly one of:
 | `CONTROL_PLAN_REJECTED` | selector, fingerprint, behavior, or safety preflight rejected the plan |
 | `FIXTURE_UNMATCHED` | an external invocation had no approved matching fixture |
 | `FIXTURE_UNUSED` | a required fixture rule was not consumed |
-| `CONTROL_PLAN_UNAVAILABLE` | reserved for durable resume without the original immutable plan |
+| `CONTROL_PLAN_UNAVAILABLE` | checkpointed plan/provider state cannot be validated or restored exactly |
 | `EVIDENCE_INCOMPLETE` | execution ended but sanitized evidence could not be durably committed |
 | `CANCELLED` | controlled cancellation |
 | `TIMED_OUT` | an injected or run-level timeout was not recovered |
@@ -1394,14 +1420,15 @@ Implemented now:
 
 Still intentionally outside this increment:
 
-- streaming/suspendable controls and evidence, and durable-resume plan restoration;
+- streaming/suspendable controls and evidence, and durable-store/suspend integration of the existing
+  provider-state restore protocol;
 - signed certification decisions, transparency-log proof, trusted pin distribution, ANEKE
   N/N-1 release-matrix conformance, and mutation testing; semantic workbook fingerprints now enter
   `GovernanceGateResult.v3` through a reconstructable exact-evidence basis, but the ANEKE publish
   decision itself remains outside Resource Gateway;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
   reconciliation alert SLOs, and suite-history list/trend APIs;
-- durable/streaming execution-service state recovery, typed identity/flag/secret authorities, and
+- durable/streaming checkpoint lifecycle integration, typed identity/flag/secret authorities, and
   deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;
 - certification of streaming foreach/loop graphs until their invocation and edge evidence is

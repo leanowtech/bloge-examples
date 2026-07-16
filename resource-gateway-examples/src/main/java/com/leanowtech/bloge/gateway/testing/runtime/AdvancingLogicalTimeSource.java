@@ -52,4 +52,15 @@ public final class AdvancingLogicalTimeSource implements TimeSource {
     public Duration elapsed() {
         return Duration.between(origin, now());
     }
+
+    /** Restores a checkpointed instant on a fresh run-scoped clock without permitting rewind. */
+    void restore(Instant restored) {
+        Instant value = Objects.requireNonNull(restored, "restored");
+        current.updateAndGet(existing -> {
+            if (value.isBefore(existing)) {
+                throw new IllegalArgumentException("Restored logical time cannot move backwards");
+            }
+            return value;
+        });
+    }
 }

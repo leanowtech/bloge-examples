@@ -12,6 +12,8 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 - a dependency-closed `TestSuiteBuilder` with exact target/fixture references and typed semantic
   branch, decision, retry, fallback, timeout, and compensation requirements;
 - runtime validation against the packaged Draft 2020-12 schema plus request/response identity binding;
+- packaged validation and version constants for the payload-free
+  `bloge.executionServiceStateSnapshot.v1` durable-resume building block;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
 - typed v2 child-evidence integrity manifests with v1 migration compatibility;
 - signed suite checkpoint/terminal attestations, payload-free evidence-bundle export, verification
@@ -32,6 +34,10 @@ mvn -f resource-gateway-test-kit/pom.xml install
 The module is intentionally independent of `resource-gateway-examples`. The
 server and client can therefore build and release separately against the
 versioned wire schema.
+
+The checkpoint object is schema support only in this release. The client exposes no checkpoint or
+resume call because Resource Gateway has not yet connected the protocol to BLOGE durable/suspend
+storage or a public endpoint.
 
 ## Use
 

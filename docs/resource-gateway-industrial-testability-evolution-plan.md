@@ -21,7 +21,7 @@
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
 | Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（四类 case intent、内容寻址 fixture/一等 suite 发布、精确 revision 执行与 aggregate coverage/promotion 回显）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、process-owner lease/heartbeat/checkpoint fence、abandoned RUNNING fail-closed reconciliation、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其 governed catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free plan v2 谱系与认证降级，以及同步 nested/foreach/loop/compensation 控制传播、动态 attempt/occurrence selector 与 occurrence/attempt/node/edge evidence 已落地；streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3 | In progress | graph/operator `TestRunEvidence`、suite checkpoint/terminal attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、签名时刻 lifecycle policy、外部 M-of-N trust publication、bounded append-only consistency page、durable consumer checkpoint、rollback/fork/split-view/revoked-pin resurrection detection 与 test-kit independent verifier 已完成；exact-suite ANEKE semantic workbook seed、`GovernanceGateResult.v3` 可重建 basis、编译级 GraphDraft target 绑定和独立 schema consumer 已完成；真实 ANEKE N/N-1 conformance、独立 witness gossip/跨域一致性证明待完成 |
-| Stage 4 | In progress | BLOGE run-scoped `ExecutionServices`/`FunctionCallSite` 已接通；RG logical clock、seeded random/UUID、payload-free plan v3 binding、usage audit、认证降级、生产边界架构测试、`bloge.testRunEvidence.v2` semantic result fingerprint、重复运行 context 隔离和 test-kit 语义回归断言已落地；identity/flag/secret fixture authority、durable/streaming 恢复与确定性并发待完成 |
+| Stage 4 | In progress | BLOGE run-scoped `ExecutionServices`/`FunctionCallSite` 已接通；RG logical clock、seeded random/UUID、payload-free plan v3 binding、usage audit、认证降级、生产边界架构测试、`bloge.testRunEvidence.v2` semantic result fingerprint、重复运行 context 隔离，以及绑定 plan/config 的 `bloge.executionServiceStateSnapshot.v1` 原子快照、精确恢复与 fail-closed compiler seam 已落地；identity/flag/secret fixture authority、BLOGE durable/suspend store 接线、streaming 恢复与确定性并发待完成 |
 | Stage 5 | Not started | 独立部署、network/identity/secret/store 物理隔离、规模化调度与 mutation/property testing |
 
 实现细节、行为兼容决策和可复现测试见
@@ -58,12 +58,12 @@ Exact semantic suite 到 ANEKE payload-free workbook seed 的投影、失败边�
 Semantic workbook 到 ANEKE gate decision 的 exact evidence 重建、GraphDraft 编译 target 绑定与 v2 兼容证明见
 [Stage 3 semantic gate basis verification](resource-gateway-execution-data-control-plane-stage3-semantic-gate-basis-verification.md)。
 
-当前严格验收基线：Resource Gateway `clean verify` 共 1868 tests、0 failures、0 errors、
+当前严格验收基线：Resource Gateway `clean verify` 共 1877 tests、0 failures、0 errors、
 2 个条件跳过，真实浏览器回归与 Spring Boot JAR 打包成功；Canvas suite 聚焦 68 tests、
 前端全量 150 tests，并在桌面与 390 x 844 真实浏览器中完成两行一等 suite 发布；Canvas 对完整
 stored suite value、child evidence、coverage、promotion 与 aggregate 一致性 fail closed；immutable TestSuite
 runner/attestation/protocol 增量聚焦 49 tests；key lifecycle 增量聚焦 41 tests；动态 selector/capability/schema 增量聚焦 51 tests；typed semantic coverage/codec/registry/persistence/schema/capability 增量聚焦 52 tests；suite-run lease/reconciliation/profile 聚焦 22 tests；built-in catalog materialization 增量聚焦 34 tests；suite consumer adapter 聚焦 21 tests、独立 test-kit
-`clean verify` 61 tests，均为 0 failures、0 errors，library/CLI JAR 均打包成功；semantic gate/projector/target/schema
+`clean verify` 62 tests，均为 0 failures、0 errors，library/CLI JAR 均打包成功；semantic gate/projector/target/schema
 增量聚焦 23 tests，integration package 138 tests 全绿；完整 suite/catalog/semantic workbook/gate v3 wire value 按打包的
 Draft 2020-12 schema 校验并回绑 request identity，`RUNNING` 在无 polling CLI 中退出 2，
 未知参数值与 validator 细节不进入日志，public JavaDoc 零告警且由 `verify` 门禁强制。
@@ -165,7 +165,8 @@ BLOGE 当前 API 为测试提供了重要基础，但它有明显边界：
 - nested graph、foreach body、durable resume 是否继承同一替换计划没有一等合同；
 - operator map 无法描述第几次调用、哪次 retry、何种输入匹配和故障序列；
 - built-in function 在 DSL 编译时被捕获为函数闭包，运行期 operator map 无法控制；
-- durable checkpoint 没有冻结测试控制计划，重启后无法证明仍按同一 fixture 运行。
+- durable store 尚未持久化测试控制计划与 provider-state；当前 compiler 已能对独立重建的
+  plan/config 精确校验并恢复 `ExecutionServiceStateSnapshot`，但重启链路尚未接线。
 
 结论是：保留 `executeWithOperators` 作为兼容 API，但新增一等 `ExecutionControlPlan`，不能继续扩大裸 `Map` 的职责。
 
@@ -869,7 +870,7 @@ evidence class and signature
 | node id 重构导致 fixture 失效 | 运行时报错 | fixture 未绑定 artifact fingerprint | plan phase 冻结 target；提供 selector rebase/diff |
 | operator 同名多版本误测 | 只记录 operatorRef | runtime binding 未入测试合同 | 固化 implementation fingerprint |
 | 并发调用消费错 sequence | 给 list 加锁 | 依赖非确定调用顺序 | correlation key/attempt lineage 定位 |
-| resume 后改用真实 operator | 重启后重新解析 latest | control plan 未持久化 | checkpoint plan fingerprint 和 consumption cursor |
+| resume 后改用真实 operator | 重启后重新解析 latest | control plan 未持久化 | provider snapshot 已绑定 plan/binding fingerprint 并 fail closed；继续把 plan、provider state 与 consumption cursor 原子接入 durable store |
 | built-in function 无法 mock | 在 ctx 放测试值 | function 在编译时闭包捕获 | FunctionCallSite + ExecutionServices |
 | 测试通过但生产写错数据 | 加更多 golden case | hidden side effect 未声明 | Composability Contract + side-effect conformance |
 | 测试数据泄密 | 日志打码 | fixture 生命周期无治理 | 分类、ABAC、脱敏、retention、legal hold |
@@ -1118,8 +1119,15 @@ domain-separated canonical hash，排除 runId、墙钟、耗时、签名、治�
 `assertSameSemanticResult`。验证见
 [Stage 4 execution services verification](resource-gateway-execution-data-control-plane-stage4-execution-services-verification.md)。
 
-本增量尚未完成 durable cursor/provider-state resume、stream/event fixture、确定性并发调度、
-测试身份/feature flag/test-secret authority，因此 Stage 4 仍为进行中。
+第三增量新增 `bloge.executionServiceStateSnapshot.v1`：在排斥并发 provider mutation 的原子边界
+冻结逻辑时间、按哈希 scope 的 RANDOM/UUID cursor 与累计 usage，并绑定精确 plan/binding-set
+fingerprint。恢复端重新编译计划、重算资格与 cursor/usage 闭合；篡改、配置漂移和不可恢复的
+system random/UUID 语义使用统一 fail closed 为 `CONTROL_PLAN_UNAVAILABLE`。快照不携带 seed、原始
+scope、fixture payload 或 authority value。
+
+本增量尚未完成 BLOGE durable/suspend store 对 plan、fixture consumption cursor 与 provider-state
+snapshot 的原子持久化/注入，也未完成 stream/event fixture、确定性并发调度、测试身份/feature
+flag/test-secret authority，因此 Stage 4 仍为进行中。
 
 交付：
 

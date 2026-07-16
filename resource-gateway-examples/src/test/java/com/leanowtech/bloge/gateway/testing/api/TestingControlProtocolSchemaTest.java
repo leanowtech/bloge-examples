@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
+import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
@@ -93,6 +94,12 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(FixtureBundle.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/effectivePlan/properties/schemaVersion/const").asText())
                 .isEqualTo(EffectiveExecutionPlan.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/executionServiceStateSnapshot/properties/schemaVersion/const").asText())
+                .isEqualTo(ExecutionServiceStateSnapshot.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/executionServiceStateSnapshot/required"))
+                .extracting(JsonNode::asText)
+                .contains("restorable", "restoreGaps", "snapshotFingerprint");
         assertThat(schema.at("/$defs/testRunEvidenceV2/properties/schemaVersion/const").asText())
                 .isEqualTo(TestRunEvidence.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testRunEvidenceV1/properties/schemaVersion/const").asText())
@@ -237,6 +244,18 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.at("/executionServiceBinding/properties/service/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactly("TIME", "RANDOM", "UUID", "IDENTITY", "FEATURE_FLAG", "SECRET");
+        assertThat(definitions.at("/executionServiceStateSnapshot/additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(definitions.at("/executionServiceStateSnapshot/required"))
+                .extracting(JsonNode::asText)
+                .contains("planFingerprint", "bindingSetFingerprint", "randomScopeCursors",
+                        "uuidScopeCursors", "usages", "snapshotFingerprint");
+        assertThat(definitions.at(
+                "/executionServiceStateSnapshot/properties/randomScopeCursors/propertyNames/pattern")
+                .asText()).contains("sha256:");
+        assertThat(definitions.at(
+                "/executionServiceStateSnapshot/properties/usages/items/$ref").asText())
+                .isEqualTo("#/$defs/executionServiceStateUsage");
         assertThat(definitions.at("/testRunEvidenceV2/additionalProperties").asBoolean()).isFalse();
         assertThat(definitions.at("/testRunEvidenceV2/required")).extracting(JsonNode::asText)
                 .contains("semanticResultFingerprint");

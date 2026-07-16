@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
+import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import org.junit.jupiter.api.Test;
 
@@ -31,7 +32,8 @@ class TestabilityCapabilitiesTest {
                 "testSuiteRunAttestation", "testSuiteEvidenceBundle", "testSuiteRunReconciliation",
                 "semanticCorrectnessWorkbookBundle",
                 "testSuiteCatalogMaterialization",
-                "fixtureBundle", "effectiveExecutionPlan", "testRunEvidence",
+                "fixtureBundle", "effectiveExecutionPlan", "executionServiceStateSnapshot",
+                "testRunEvidence",
                 "testEvidenceIntegrity",
                 "testGraphTargetDescriptor", "testOperatorExecutionRequest", "testOperatorTargetDescriptor");
         assertThat(enabled.features()).containsEntry("operatorMicroGraphExecution", true)
@@ -64,6 +66,8 @@ class TestabilityCapabilitiesTest {
                 .containsExactly(EffectiveExecutionPlan.SCHEMA_VERSION_V1,
                         EffectiveExecutionPlan.SCHEMA_VERSION_V2,
                         EffectiveExecutionPlan.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("executionServiceStateSnapshot"))
+                .containsExactly(ExecutionServiceStateSnapshot.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testRunEvidence"))
                 .containsExactly(TestRunEvidence.SCHEMA_VERSION_V1,
                         TestRunEvidence.SCHEMA_VERSION);

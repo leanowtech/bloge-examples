@@ -125,6 +125,44 @@ class TestingDomainProtocolTest {
     }
 
     @Test
+    void executionServiceStateSnapshotIsPayloadFreeBoundedAndStrictlyVersioned() throws Exception {
+        String plan = "sha256:" + "a".repeat(64);
+        String bindings = "sha256:" + "b".repeat(64);
+        String scope = "sha256:" + "c".repeat(64);
+        String fingerprint = "sha256:" + "d".repeat(64);
+        ExecutionServiceStateSnapshot snapshot = new ExecutionServiceStateSnapshot(
+                ExecutionServiceStateSnapshot.SCHEMA_VERSION, plan, bindings,
+                Instant.parse("2026-07-15T09:00:03Z"), Map.of(scope, 2L), Map.of(),
+                List.of(new ExecutionServiceStateSnapshot.UsageState(
+                        "RANDOM", 2, 2, 0, List.of(), List.of(scope))),
+                true, List.of(), fingerprint);
+
+        ExecutionServiceStateSnapshot restored = mapper.readValue(
+                mapper.writeValueAsBytes(snapshot), ExecutionServiceStateSnapshot.class);
+
+        assertThat(restored).isEqualTo(snapshot);
+        assertThat(restored.fingerprintMaterial())
+                .containsEntry("planFingerprint", plan)
+                .doesNotContainKey("snapshotFingerprint");
+        assertThat(mapper.writeValueAsString(restored))
+                .doesNotContain("randomSeed", "customer-1001", "secretValue");
+        assertThatThrownBy(() -> new ExecutionServiceStateSnapshot(
+                "bloge.executionServiceStateSnapshot.v0", plan, bindings, null, Map.of(),
+                Map.of(), List.of(), true, List.of(), fingerprint))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unsupported");
+        assertThatThrownBy(() -> new ExecutionServiceStateSnapshot(
+                ExecutionServiceStateSnapshot.SCHEMA_VERSION, plan, bindings, null, Map.of(),
+                Map.of(), List.of(), true, List.of("RANDOM requires a seed."), fingerprint))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("restorable");
+        assertThatThrownBy(() -> new ExecutionServiceStateSnapshot.UsageState(
+                "RANDOM", 1, 2, 0, List.of(), List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("counters");
+    }
+
+    @Test
     void executionPlanAndEvidenceFreezeFingerprintChainAndObservedFacts() throws Exception {
         EffectiveExecutionPlan plan = new EffectiveExecutionPlan(
                 "",
