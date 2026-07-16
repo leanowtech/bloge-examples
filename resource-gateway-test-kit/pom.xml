@@ -85,6 +85,9 @@
                 <includes>
                     <include>semantic-correctness-workbook-bundle-v1.schema.json</include>
                     <include>governance-gate-result-v3.schema.json</include>
+                    <include>evidence-verification-key-set-v1.schema.json</include>
+                    <include>evidence-key-set-trust-publication-v1.schema.json</include>
+                    <include>evidence-key-set-trust-bundle-v1.schema.json</include>
                 </includes>
             </resource>
         </resources>

@@ -5,8 +5,10 @@
 > Scope: atomic evidence verification-key snapshots, lifecycle history, external fingerprint pinning,
 > time-aware retirement/revocation, managed-provider v1/v2 compatibility, and independent test-kit verification.
 >
-> Result: implemented and fail-closed. Transparency-log proof, trusted pin distribution automation,
-> independent timestamp authority, and ANEKE workbook projection remain outside this increment.
+> Result: implemented and fail-closed. The follow-on
+> [evidence trust transparency increment](resource-gateway-execution-data-control-plane-stage3-evidence-trust-transparency-verification.md)
+> now supplies externally authorized pin distribution and bounded consistency checkpoints.
+> Independent timestamp authority and real ANEKE conformance remain outside this increment.
 
 ## 1. Closed risk
 
@@ -63,10 +65,11 @@ publishing the snapshot. This detects provider/Gateway assembly errors and trans
 mutation. It does **not** bootstrap trust by itself because the signing public key is embedded in the
 same material.
 
-A release consumer must obtain the exact `snapshotFingerprint` through an independent channel, for
-example an ANEKE registry revision, protected CI variable, signed deployment manifest, or a
-security-owned trust bundle. Fetching the fingerprint and keys from the same HTTP response and then
-accepting its self-signature is explicitly insufficient.
+A release consumer must independently authorize the exact `snapshotFingerprint`. The original
+compatibility path reads it from an ANEKE registry revision, protected CI variable, or signed
+deployment manifest. The current path verifies an externally M-of-N signed trust publication and a
+durable consistency checkpoint. Fetching the fingerprint and keys from the same unsigned HTTP
+response and then accepting its self-signature remains explicitly insufficient.
 
 Pin rotation is an organizational transaction:
 
@@ -75,8 +78,9 @@ Pin rotation is an organizational transaction:
 3. verify old evidence while the old key remains `VERIFY_ONLY` and its lifecycle history is retained;
 4. remove an old pin only after evidence retention and rollback windows close.
 
-The repository implements exact single-pin verification. Multi-pin rollout policy and pin distribution
-ownership belong to the governance system, not to an untrusted Resource Gateway response.
+The exact single-pin verifier remains available for compatibility. The follow-on trust-publication
+protocol models `ACTIVE/OVERLAP/REVOKED` rollout policy, while signing authority and approval
+ownership remain in the governance system rather than Resource Gateway.
 
 ## 4. Key and event invariants
 
@@ -184,7 +188,10 @@ The integration endpoint distinguishes authority unavailability from snapshot at
 - managed key schemas v1 and v2;
 - endpoint `GET /api/integration/evidence-keys`;
 - `evidenceVerificationKeySet=true` when an atomic source is available;
-- `timeAwareEvidenceKeyRevocation=true` only for a currently available complete policy.
+- `timeAwareEvidenceKeyRevocation=true` only for a currently available complete policy;
+- trust publication/bundle/descriptor objects and endpoints;
+- trust distribution, authority quorum, consistency log, and rollback/fork detection only while a
+  currently usable external authority quorum is configured.
 
 The local in-memory signer has a complete one-key creation/activation history. The demo database
 signer downgrades to `CURRENT_STATE_ONLY` if historical keys exist without persisted transition times;
@@ -227,9 +234,10 @@ tests with zero failures or errors and 34 conditional skips, then packages the S
 
 ## 10. Explicit non-claims and next work
 
-This increment makes key policy portable and independently enforceable. It does not provide:
+This increment makes key policy portable and independently enforceable. By itself it does not
+provide:
 
-- a transparency log, inclusion/consistency proof, witness quorum, or split-view detection;
+- a trust publication log, consistency checkpoint, or split-view detection;
 - automatic trusted pin publication, multi-party approval, or compromised-pin recovery;
 - independent trusted timestamps for evidence or key events;
 - customer KMS/HSM conformance, cross-region retention, restore, or disaster-recovery evidence;
@@ -237,6 +245,8 @@ This increment makes key policy portable and independently enforceable. It does 
 - encrypted payload attachments or replay authorization;
 - semantic branch/rule/fallback/compensation coverage.
 
-The next trust-chain increment should add append-only transparency and independently witnessed key-set
-publication. The next correctness increment should make semantic coverage part of the signed suite
-evidence. Neither concern should be folded into the key-set response as an unversioned field.
+The follow-on trust-chain increment has now added a bounded linear hash chain, external M-of-N
+publication, durable anti-rollback checkpoint, and compromised-pin recovery without changing the
+key-set response. It intentionally does not claim a Merkle public transparency log, independent
+witness gossip, or cross-region split-view comparison; those remain future deployment/conformance
+work.

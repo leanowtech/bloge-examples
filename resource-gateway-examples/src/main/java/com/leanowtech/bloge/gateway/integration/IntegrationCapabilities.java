@@ -100,8 +100,22 @@ public record IntegrationCapabilities(
                                                   boolean sideEffectReconcilerAdapters,
                                                   VisualPayloadGovernancePolicy.Descriptor payloadGovernance,
                                                   boolean testExecutionEndpointEnabled) {
+        return current(evidenceSigner, identityProvider, sideEffectReconcilerAdapters,
+                payloadGovernance, testExecutionEndpointEnabled,
+                EvidenceKeySetTrustStore.unavailable().descriptor());
+    }
+
+    /** Builds the capability probe with independent evidence-trust publication readiness. */
+    public static IntegrationCapabilities current(VisualEvidenceSigner.Descriptor evidenceSigner,
+                                                  IntegrationIdentityResolver.Descriptor identityProvider,
+                                                  boolean sideEffectReconcilerAdapters,
+                                                  VisualPayloadGovernancePolicy.Descriptor payloadGovernance,
+                                                  boolean testExecutionEndpointEnabled,
+                                                  EvidenceKeySetTrustStore.Descriptor evidenceTrust) {
         VisualEvidenceSigner.Descriptor signer = evidenceSigner == null
                 ? VisualEvidenceSigner.unavailable().descriptor() : evidenceSigner;
+        EvidenceKeySetTrustStore.Descriptor trust = evidenceTrust == null
+                ? EvidenceKeySetTrustStore.unavailable().descriptor() : evidenceTrust;
         Map<String, List<String>> objects = new LinkedHashMap<>();
         objects.put("graphDraft", List.of(GraphDraft.SCHEMA_VERSION));
         objects.put("operatorLibrary", List.of("bloge.visualOperatorLibrary.v1"));
@@ -129,6 +143,11 @@ public record IntegrationCapabilities(
                 com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner.VerificationKey.SCHEMA_VERSION));
         objects.put("evidenceVerificationKeySet", List.of(
                 com.leanowtech.bloge.gateway.visual.runtime.EvidenceVerificationKeySet.SCHEMA_VERSION));
+        objects.put("evidenceKeySetTrustPublication", List.of(
+                EvidenceKeySetTrustPublication.SCHEMA_VERSION));
+        objects.put("evidenceKeySetTrustBundle", List.of(EvidenceKeySetTrustBundle.SCHEMA_VERSION));
+        objects.put("evidenceTrustStoreDescriptor", List.of(
+                EvidenceKeySetTrustStore.Descriptor.SCHEMA_VERSION));
         objects.put("evidenceSignerDescriptor", List.of(VisualEvidenceSigner.Descriptor.SCHEMA_VERSION));
         objects.put("managedEvidenceSigningKeys", List.of(
                 ManagedEvidenceSigningProvider.KeySet.SCHEMA_VERSION_V1,
@@ -279,6 +298,11 @@ public record IntegrationCapabilities(
                 && Boolean.TRUE.equals(signer.properties().get("keySetPolicyAvailable")));
         features.put("timeAwareEvidenceKeyRevocation", signer.available()
                 && "COMPLETE".equals(signer.properties().get("keySetPolicyCompleteness")));
+        features.put("trustedEvidenceKeySetPinDistribution", trust.available());
+        features.put("evidenceKeySetTransparencyLog", trust.available());
+        features.put("evidenceTrustAuthorityQuorum", trust.available()
+                && trust.signatureThreshold() > 0);
+        features.put("evidenceTrustRollbackAndForkDetection", trust.available());
         features.put("evidenceSigningFailClosed", signer.managedKeyCustody()
                 && Boolean.TRUE.equals(signer.properties().get("failClosedAfterSnapshotExpiry")));
         features.put("deepLinks", true);
@@ -339,6 +363,8 @@ public record IntegrationCapabilities(
                 new Endpoint("POST", "/api/integration/payload-retention/purge-expired"),
                 new Endpoint("GET", "/api/integration/evidence-keys/{keyId}"),
                 new Endpoint("GET", "/api/integration/evidence-keys"),
+                new Endpoint("POST", "/api/integration/evidence-keys/trust-publications"),
+                new Endpoint("GET", "/api/integration/evidence-keys/trust-bundle"),
                 new Endpoint("POST", "/api/integration/gate-results"),
                 new Endpoint("GET", "/api/integration/drafts/{draftId}/gate-result"),
                 new Endpoint("GET", "/api/integration/events"),

@@ -201,7 +201,19 @@ public record EvidenceVerificationKeySet(
                 || !envelope.path("payload").isObject()) {
             throw new IllegalArgumentException("Evidence verification key-set envelope is invalid");
         }
-        JsonNode value = envelope.path("payload");
+        return fromPayload(envelope.path("payload"));
+    }
+
+    /**
+     * Decodes one schema-validated key-set payload embedded in a larger trust protocol value.
+     *
+     * @param value exact evidence key-set payload
+     * @return typed defensive key-set snapshot
+     */
+    public static EvidenceVerificationKeySet fromPayload(JsonNode value) {
+        if (value == null || !value.isObject()) {
+            throw new IllegalArgumentException("Evidence verification key-set payload is invalid");
+        }
         TestingProtocolSchemaValidator.require(value, "evidenceVerificationKeySet");
         List<KeyPolicy> keys = new ArrayList<>();
         value.path("keys").forEach(key -> keys.add(new KeyPolicy(key.path("keyId").asText(),

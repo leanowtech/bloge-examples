@@ -191,6 +191,8 @@ class ToolStudioIntegrationServiceTest {
                         "POST /api/integration/payload-retention/purge-expired",
                         "GET /api/integration/evidence-keys/{keyId}",
                         "GET /api/integration/evidence-keys",
+                        "POST /api/integration/evidence-keys/trust-publications",
+                        "GET /api/integration/evidence-keys/trust-bundle",
                         "POST /api/integration/gate-results",
                         "GET /api/integration/drafts/{draftId}/gate-result",
                         "GET /api/integration/events",

@@ -28,6 +28,8 @@ class ResourceGatewayTestClientTest {
 
     private HttpServer server;
     private final List<CapturedRequest> requests = new ArrayList<>();
+    private EvidenceTrustTestFixtures.Fixture trustFixture;
+    private ObjectNode trustPublication;
 
     @BeforeEach
     void startServer() throws IOException {
@@ -188,6 +190,28 @@ class ResourceGatewayTestClientTest {
                         "/api/integration/evidence-keys");
         assertThat(requests).extracting(CapturedRequest::purpose)
                 .containsExactly("TEST_EXECUTION", "TEST_EXECUTION", "TEST_EXECUTION");
+    }
+
+    @Test
+    void retrievesSchemaValidatedBoundedEvidenceTrustPage() {
+        trustFixture = EvidenceTrustTestFixtures.fixture();
+        trustPublication = EvidenceTrustTestFixtures.publication(1, "", 0,
+                EvidenceTrustTestFixtures.NOW.minusSeconds(60),
+                List.of(EvidenceTrustTestFixtures.active(trustFixture.keySetFingerprint())),
+                List.of(trustFixture.security(), trustFixture.release()));
+        ResourceGatewayTestClient client = client();
+
+        EvidenceKeySetTrustBundle bundle = client.findEvidenceKeySetTrustBundle(0, 32);
+
+        assertThat(bundle.highWaterSequence()).isEqualTo(1);
+        assertThat(bundle.headPublication().publicationFingerprint())
+                .isEqualTo(trustPublication.path("publicationFingerprint").asText());
+        assertThat(bundle.keySet().snapshotFingerprint()).isEqualTo(trustFixture.keySetFingerprint());
+        assertThat(requests).singleElement().satisfies(request -> {
+            assertThat(request.rawPath()).isEqualTo("/api/integration/evidence-keys/trust-bundle");
+            assertThat(request.rawQuery()).isEqualTo("afterSequence=0&limit=32");
+            assertThat(request.purpose()).isEqualTo("TEST_EXECUTION");
+        });
     }
 
     @Test
@@ -498,6 +522,8 @@ class ResourceGatewayTestClientTest {
             respond(exchange, 200, governanceGateResponse(body));
         } else if (path.endsWith("/semantic-correctness-workbook")) {
             respond(exchange, 200, semanticWorkbookResponse());
+        } else if (path.endsWith("/evidence-keys/trust-bundle")) {
+            respond(exchange, 200, evidenceTrustBundleResponse());
         } else if (path.endsWith("/evidence-keys")) {
             respond(exchange, 200, evidenceKeySetResponse());
         } else if (path.contains("/evidence-keys/")) {
@@ -520,6 +546,29 @@ class ResourceGatewayTestClientTest {
         } else {
             respond(exchange, 200, runResponse());
         }
+    }
+
+    private String evidenceTrustBundleResponse() {
+        if (trustFixture == null || trustPublication == null) {
+            throw new IllegalStateException("Evidence trust fixture is unavailable");
+        }
+        EvidenceKeySetTrustBundle bundle = EvidenceTrustTestFixtures.bundle(
+                0, 1, false, List.of(trustPublication), trustPublication, trustFixture.keySet());
+        ObjectNode envelope = JSON.createObjectNode();
+        envelope.put("protocol", "ToolStudioResourceGatewayProtocol");
+        envelope.put("protocolVersion", "1.0");
+        envelope.put("resourceGatewayVersion", "1.0.0");
+        envelope.put("schemaVersion", "toolStudio.resourceGateway.envelope.v1");
+        envelope.put("producedAt", EvidenceTrustTestFixtures.NOW.toString());
+        ObjectNode compatibility = envelope.putObject("compatibility");
+        compatibility.put("minConsumerVersion", "1.0");
+        compatibility.put("backwardCompatible", true);
+        compatibility.putArray("breakingChanges");
+        envelope.put("payloadKind", "EVIDENCE_KEY_SET_TRUST_BUNDLE");
+        envelope.put("payloadSchemaVersion", TestingProtocol.EVIDENCE_KEY_SET_TRUST_BUNDLE_V1);
+        envelope.put("payloadFingerprint", FINGERPRINT);
+        envelope.set("payload", bundle.rawBundle());
+        return envelope.toString();
     }
 
     private static String targetResponse() {

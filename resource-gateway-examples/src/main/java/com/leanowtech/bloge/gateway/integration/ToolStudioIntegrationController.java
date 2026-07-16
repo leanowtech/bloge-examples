@@ -160,6 +160,23 @@ public class ToolStudioIntegrationController {
         return service.evidenceKeySet();
     }
 
+    /** Appends one independently signed M-of-N evidence key-set pin publication. */
+    @PostMapping("/evidence-keys/trust-publications")
+    public IntegrationEnvelope<EvidenceKeySetTrustPublication> publishEvidenceKeySetTrust(
+            @RequestBody EvidenceKeySetTrustPublication publication,
+            @RequestHeader HttpHeaders headers) {
+        return service.publishEvidenceKeySetTrust(publication,
+                requestContext(headers, IntegrationOperation.EVIDENCE_TRUST_PUBLISH));
+    }
+
+    /** Returns one bounded append-only consistency page and the current signed key set. */
+    @GetMapping("/evidence-keys/trust-bundle")
+    public IntegrationEnvelope<EvidenceKeySetTrustBundle> evidenceKeySetTrustBundle(
+            @RequestParam(defaultValue = "0") long afterSequence,
+            @RequestParam(defaultValue = "64") int limit) {
+        return service.evidenceKeySetTrustBundle(afterSequence, limit);
+    }
+
     @PostMapping("/gate-results")
     public IntegrationEnvelope<GovernanceGateResult> submitGateResult(
             @RequestBody GovernanceGateResult result,

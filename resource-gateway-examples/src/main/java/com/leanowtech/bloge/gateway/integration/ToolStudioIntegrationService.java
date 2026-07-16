@@ -48,6 +48,8 @@ public class ToolStudioIntegrationService {
     private final CorrectnessWorkbookProjectionService workbookProjection;
     private SemanticCorrectnessWorkbookProjectionService semanticWorkbookProjection;
     private SemanticGateTargetVerifier semanticGateTargetVerifier;
+    private EvidenceKeySetTrustStore evidenceTrustStore = EvidenceKeySetTrustStore.unavailable();
+    private EvidenceKeySetTrustPublicationRepository evidenceTrustPublications;
     private final ObjectMapper objectMapper;
     private boolean testExecutionEndpointEnabled;
 
@@ -98,6 +100,16 @@ public class ToolStudioIntegrationService {
     void configureSemanticGateTargetVerifier(
             SemanticGateTargetVerifier semanticGateTargetVerifier) {
         this.semanticGateTargetVerifier = semanticGateTargetVerifier;
+    }
+
+    /** Receives independently configured governance trust anchors and the durable transparency log. */
+    @Autowired(required = false)
+    void configureEvidenceTrust(
+            EvidenceKeySetTrustStore trustStore,
+            EvidenceKeySetTrustPublicationRepository publications) {
+        this.evidenceTrustStore = trustStore == null
+                ? EvidenceKeySetTrustStore.unavailable() : trustStore;
+        this.evidenceTrustPublications = publications;
     }
 
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -169,7 +181,7 @@ public class ToolStudioIntegrationService {
         return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
                 IntegrationCapabilities.current(signer.descriptor(), identityResolver.descriptor(),
                         sideEffectReconcilers.available(), payloads == null ? null : payloads.policyDescriptor(),
-                        testExecutionEndpointEnabled));
+                        testExecutionEndpointEnabled, evidenceTrustStore.descriptor()));
     }
 
     public IntegrationEnvelope<GraphDraftIntegrationBundle> exportDraft(String draftId,
@@ -426,6 +438,116 @@ public class ToolStudioIntegrationService {
      * @return signed public key policy without private material
      */
     public IntegrationEnvelope<EvidenceVerificationKeySet> evidenceKeySet() {
+        EvidenceVerificationKeySet keySet = currentEvidenceKeySet();
+        return IntegrationEnvelope.of("EVIDENCE_VERIFICATION_KEY_SET",
+                EvidenceVerificationKeySet.SCHEMA_VERSION, keySet);
+    }
+
+    /**
+     * Appends one externally signed pin policy after quorum, key-set binding, and chain validation.
+     *
+     * @param publication untrusted governance publication candidate
+     * @param context authenticated evidence-trust administration context
+     * @return durable publication, idempotently reused when fingerprint-identical
+     */
+    public IntegrationEnvelope<EvidenceKeySetTrustPublication> publishEvidenceKeySetTrust(
+            EvidenceKeySetTrustPublication publication,
+            IntegrationRequestContext context) {
+        context.requireComplete();
+        requirePurpose(context, "EVIDENCE_TRUST_ADMIN");
+        requireEvidenceTrustAvailable(context.correlationId());
+        EvidenceKeySetTrustStore.Verification verification = evidenceTrustStore.verify(
+                publication, Instant.now());
+        if (verification.status() == EvidenceKeySetTrustStore.VerificationStatus.UNAVAILABLE) {
+            throw evidenceTrustUnavailable(context.correlationId(), verification.reasonCode());
+        }
+        if (!verification.verified()) {
+            throw new IntegrationProblemException(IntegrationProblem.badRequest(
+                    "RG.INTEGRATION.EVIDENCE_TRUST_PUBLICATION_REJECTED",
+                    "Evidence trust publication failed independent policy verification.",
+                    context.correlationId(), Map.of("reasonCode", verification.reasonCode(),
+                            "validSignatureCount", verification.validSignatureCount(),
+                            "requiredSignatureCount", verification.requiredSignatureCount())));
+        }
+        EvidenceVerificationKeySet keySet = currentEvidenceKeySet();
+        EvidenceKeySetTrustPublication.SnapshotPin activePin = publication.pins().stream()
+                .filter(pin -> pin.state() == EvidenceKeySetTrustPublication.PinState.ACTIVE)
+                .findFirst().orElseThrow();
+        if (!activePin.snapshotFingerprint().equals(keySet.snapshotFingerprint())) {
+            throw new IntegrationProblemException(IntegrationProblem.conflict(
+                    "RG.INTEGRATION.EVIDENCE_TRUST_KEY_SET_STALE",
+                    "Evidence trust publication does not authorize the current key-set snapshot.",
+                    context.correlationId(), Map.of("publicationSequence", publication.sequence())));
+        }
+        try {
+            EvidenceKeySetTrustPublication stored = evidenceTrustPublications.append(publication);
+            return IntegrationEnvelope.of("EVIDENCE_KEY_SET_TRUST_PUBLICATION",
+                    EvidenceKeySetTrustPublication.SCHEMA_VERSION, stored);
+        } catch (EvidenceKeySetTrustChain.ChainViolation violation) {
+            throw new IntegrationProblemException(IntegrationProblem.conflict(
+                    "RG.INTEGRATION.EVIDENCE_TRUST_CHAIN_CONFLICT",
+                    "Evidence trust publication is not the unique successor of the durable head.",
+                    context.correlationId(), Map.of("reasonCode", violation.reason().name(),
+                            "publicationSequence", publication.sequence())));
+        }
+    }
+
+    /**
+     * Returns a bounded consistency page and current key-set snapshot at one observed log head.
+     *
+     * @param afterSequence caller's durable checkpoint sequence
+     * @param limit maximum publications returned in this page
+     * @return key set plus append-only consistency proof page
+     */
+    public IntegrationEnvelope<EvidenceKeySetTrustBundle> evidenceKeySetTrustBundle(
+            long afterSequence, int limit) {
+        requireEvidenceTrustAvailable("");
+        if (afterSequence < 0 || limit < 1 || limit > EvidenceKeySetTrustBundle.MAX_PUBLICATIONS) {
+            throw new IntegrationProblemException(IntegrationProblem.badRequest(
+                    "RG.INTEGRATION.EVIDENCE_TRUST_CURSOR_INVALID",
+                    "Evidence trust cursor or page limit is invalid.", "",
+                    Map.of("maximumLimit", EvidenceKeySetTrustBundle.MAX_PUBLICATIONS)));
+        }
+        EvidenceKeySetTrustStore.Descriptor descriptor = evidenceTrustStore.descriptor();
+        EvidenceKeySetTrustPublication head = evidenceTrustPublications.latest(descriptor.logId())
+                .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
+                        "RG.INTEGRATION.EVIDENCE_TRUST_PUBLICATION_UNAVAILABLE",
+                        "No authorized evidence trust publication is available.", "", Map.of())));
+        if (afterSequence > head.sequence()) {
+            throw new IntegrationProblemException(IntegrationProblem.conflict(
+                    "RG.INTEGRATION.EVIDENCE_TRUST_CURSOR_AHEAD",
+                    "Evidence trust cursor is ahead of the observed log head.", "",
+                    Map.of("highWaterSequence", head.sequence())));
+        }
+        EvidenceKeySetTrustStore.Verification headVerification = evidenceTrustStore.verify(
+                head, Instant.now());
+        if (!headVerification.verified()) {
+            throw evidenceTrustUnavailable("", headVerification.reasonCode());
+        }
+        EvidenceVerificationKeySet keySet = currentEvidenceKeySet();
+        EvidenceKeySetTrustPublication.SnapshotPin activePin = head.pins().stream()
+                .filter(pin -> pin.state() == EvidenceKeySetTrustPublication.PinState.ACTIVE)
+                .findFirst().orElseThrow();
+        if (!activePin.snapshotFingerprint().equals(keySet.snapshotFingerprint())
+                || !activePin.acceptedAt(Instant.now())) {
+            throw new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
+                    "RG.INTEGRATION.EVIDENCE_TRUST_KEY_SET_STALE",
+                    "The authorized trust head does not bind the current key-set snapshot.", "",
+                    Map.of("highWaterSequence", head.sequence())));
+        }
+        List<EvidenceKeySetTrustPublication> page = evidenceTrustPublications.readAfter(
+                        descriptor.logId(), afterSequence, limit).stream()
+                .takeWhile(publication -> publication.sequence() <= head.sequence()).toList();
+        long throughSequence = page.isEmpty() ? afterSequence : page.getLast().sequence();
+        EvidenceKeySetTrustBundle bundle = new EvidenceKeySetTrustBundle("", Instant.now(),
+                descriptor.trustDomain(), descriptor.logId(), afterSequence, throughSequence,
+                head.sequence(), head.publicationFingerprint(), head, throughSequence < head.sequence(),
+                page, keySet);
+        return IntegrationEnvelope.of("EVIDENCE_KEY_SET_TRUST_BUNDLE",
+                EvidenceKeySetTrustBundle.SCHEMA_VERSION, bundle);
+    }
+
+    private EvidenceVerificationKeySet currentEvidenceKeySet() {
         VisualEvidenceSigner signer = runRepository == null
                 ? VisualEvidenceSigner.unavailable()
                 : runRepository.evidenceSigner();
@@ -441,8 +563,7 @@ public class ToolStudioIntegrationService {
         try {
             EvidenceVerificationKeySet keySet = EvidenceVerificationKeySet.publish(
                     objectMapper, signer, resolution.keySet());
-            return IntegrationEnvelope.of("EVIDENCE_VERIFICATION_KEY_SET",
-                    EvidenceVerificationKeySet.SCHEMA_VERSION, keySet);
+            return keySet;
         } catch (RuntimeException failure) {
             throw new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
                     "RG.INTEGRATION.EVIDENCE_KEY_SET_ATTESTATION_UNAVAILABLE",
@@ -450,6 +571,21 @@ public class ToolStudioIntegrationService {
                     Map.of("reason", failure.getClass().getSimpleName())
             ));
         }
+    }
+
+    private void requireEvidenceTrustAvailable(String correlationId) {
+        if (!evidenceTrustStore.descriptor().available() || evidenceTrustPublications == null
+                || !evidenceTrustPublications.available()) {
+            throw evidenceTrustUnavailable(correlationId, "TRUST_STORE_UNAVAILABLE");
+        }
+    }
+
+    private static IntegrationProblemException evidenceTrustUnavailable(
+            String correlationId, String reasonCode) {
+        return new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
+                "RG.INTEGRATION.EVIDENCE_TRUST_UNAVAILABLE",
+                "Independent evidence trust verification is unavailable.", correlationId,
+                Map.of("reasonCode", reasonCode == null ? "UNAVAILABLE" : reasonCode)));
     }
 
     public IntegrationEnvelope<GovernanceGateResult> submitGateResult(GovernanceGateResult result,

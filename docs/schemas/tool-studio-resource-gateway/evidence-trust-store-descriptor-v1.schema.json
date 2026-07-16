@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/evidence-trust-store-descriptor-v1.schema.json",
+  "title": "Resource Gateway Evidence Trust Store Descriptor v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "available", "trustDomain", "logId", "authorityCount",
+    "signatureThreshold", "properties"],
+  "properties": {
+    "schemaVersion": {"const": "toolStudio.resourceGateway.evidenceTrustStoreDescriptor.v1"},
+    "available": {"type": "boolean"},
+    "trustDomain": {"type": "string", "maxLength": 255},
+    "logId": {"type": "string", "maxLength": 255},
+    "authorityCount": {"type": "integer", "minimum": 0, "maximum": 32},
+    "signatureThreshold": {"type": "integer", "minimum": 0, "maximum": 32},
+    "properties": {
+      "type": "object",
+      "additionalProperties": {"type": ["string", "number", "integer", "boolean", "null"]},
+      "maxProperties": 32
+    }
+  }
+}

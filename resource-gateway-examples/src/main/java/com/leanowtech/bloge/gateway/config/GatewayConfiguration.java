@@ -15,12 +15,16 @@ import com.leanowtech.bloge.gateway.carrier.TenantMdcCarrier;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.interceptor.QuotaConfigProvider;
 import com.leanowtech.bloge.gateway.integration.DatabaseGovernanceGateResultRepository;
+import com.leanowtech.bloge.gateway.integration.DatabaseEvidenceKeySetTrustPublicationRepository;
 import com.leanowtech.bloge.gateway.integration.DatabaseIntegrationAccessAuditRepository;
 import com.leanowtech.bloge.gateway.integration.DatabaseIntegrationChangeEventOutbox;
 import com.leanowtech.bloge.gateway.integration.DatabaseSideEffectReconciliationRepository;
 import com.leanowtech.bloge.gateway.integration.ConfiguredIntegrationJwtTrustStore;
+import com.leanowtech.bloge.gateway.integration.ConfiguredEvidenceKeySetTrustStore;
 import com.leanowtech.bloge.gateway.integration.DynamicJwksIntegrationJwtTrustStore;
 import com.leanowtech.bloge.gateway.integration.GovernanceGateResultRepository;
+import com.leanowtech.bloge.gateway.integration.EvidenceKeySetTrustPublicationRepository;
+import com.leanowtech.bloge.gateway.integration.EvidenceKeySetTrustStore;
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository;
 import com.leanowtech.bloge.gateway.integration.IntegrationChangeEventOutbox;
 import com.leanowtech.bloge.gateway.integration.IntegrationIdentityResolver;
@@ -566,6 +570,38 @@ public class GatewayConfiguration {
             matchIfMissing = true)
     public VisualEvidenceSigner visualEvidenceSigner(JdbcTemplate jdbc) {
         return new DatabaseVisualEvidenceSigner(jdbc);
+    }
+
+    /**
+     * Independent governance trust anchors used to authorize key-set pin publications.
+     *
+     * <p>Only public Ed25519 material is accepted. The unavailable implementation keeps trust
+     * publication fail-closed until a security-owned M-of-N policy is explicitly configured.</p>
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public EvidenceKeySetTrustStore evidenceKeySetTrustStore(
+            ObjectMapper objectMapper,
+            @Value("${gateway.integration.evidence-trust.enabled:false}") boolean enabled,
+            @Value("${gateway.integration.evidence-trust.trust-domain:}") String trustDomain,
+            @Value("${gateway.integration.evidence-trust.log-id:}") String logId,
+            @Value("${gateway.integration.evidence-trust.signature-threshold:1}") int signatureThreshold,
+            @Value("${gateway.integration.evidence-trust.trusted-authorities-json:}") String authoritiesJson) {
+        if (!enabled) {
+            return EvidenceKeySetTrustStore.unavailable();
+        }
+        return ConfiguredEvidenceKeySetTrustStore.fromJson(objectMapper, trustDomain, logId,
+                signatureThreshold, authoritiesJson);
+    }
+
+    /** Durable, transactionally fenced append-only governance trust publication log. */
+    @Bean
+    @ConditionalOnMissingBean
+    public EvidenceKeySetTrustPublicationRepository evidenceKeySetTrustPublicationRepository(
+            JdbcTemplate jdbc, ObjectMapper objectMapper,
+            PlatformTransactionManager transactionManager) {
+        return new DatabaseEvidenceKeySetTrustPublicationRepository(
+                jdbc, objectMapper, transactionManager);
     }
 
     /** Immutable ANEKE governance feedback store. */

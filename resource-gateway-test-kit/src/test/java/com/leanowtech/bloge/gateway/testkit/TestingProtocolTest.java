@@ -75,6 +75,16 @@ class TestingProtocolTest {
             assertConstant(definitions, "testSuiteCatalogMaterialization",
                     TestingProtocol.TEST_SUITE_CATALOG_MATERIALIZATION_V1);
         }
+        try (InputStream input = TestingProtocolTest.class.getResourceAsStream(
+                TestingProtocol.EVIDENCE_TRUST_BUNDLE_SCHEMA_RESOURCE)) {
+            assertThat(input).isNotNull();
+            JsonNode schema = new ObjectMapper().readTree(input);
+            assertThat(schema.at("/properties/schemaVersion/const").asText())
+                    .isEqualTo(TestingProtocol.EVIDENCE_KEY_SET_TRUST_BUNDLE_V1);
+            assertThat(schema.at("/$defs/publication/properties/schemaVersion/const").asText())
+                    .isEqualTo(TestingProtocol.EVIDENCE_KEY_SET_TRUST_PUBLICATION_V1);
+            assertThat(schema.at("/properties/publications/maxItems").asInt()).isEqualTo(256);
+        }
     }
 
     private static void assertConstant(JsonNode definitions, String definition, String expected) {

@@ -388,6 +388,104 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Retrieves one bounded externally authorized key-set trust consistency page.
+     *
+     * <p>The response is schema-validated but remains untrusted until
+     * {@link EvidenceKeySetTrustVerifier#verify} succeeds against caller-owned anchors and a durable
+     * checkpoint.</p>
+     *
+     * @param afterSequence caller's last durable trust-log sequence, zero for genesis
+     * @param limit bounded page size from 1 through 256
+     * @return typed trust page and current evidence key set
+     */
+    public EvidenceKeySetTrustBundle findEvidenceKeySetTrustBundle(long afterSequence, int limit) {
+        if (afterSequence < 0 || limit < 1 || limit > 256) {
+            throw new IllegalArgumentException("Evidence trust cursor and limit are invalid");
+        }
+        JsonNode response = exchange("GET", "/api/integration/evidence-keys/trust-bundle",
+                "afterSequence=" + afterSequence + "&limit=" + limit,
+                "TEST_EXECUTION", null);
+        try {
+            return EvidenceKeySetTrustBundle.fromEnvelope(response);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned an invalid evidence key-set trust bundle.");
+        }
+    }
+
+    /**
+     * Fetches and independently verifies one bounded trust-log page.
+     *
+     * @param policy caller-owned external authority policy
+     * @param checkpoint caller's durable prior state, null only for genesis bootstrap
+     * @param limit bounded page size
+     * @return trust decision and next checkpoint
+     */
+    public EvidenceKeySetTrustVerifier.VerificationResult verifyEvidenceKeySetTrust(
+            EvidenceTrustPolicy policy, EvidenceTrustCheckpoint checkpoint, int limit) {
+        long afterSequence = checkpoint == null ? 0 : checkpoint.sequence();
+        EvidenceKeySetTrustBundle bundle = findEvidenceKeySetTrustBundle(afterSequence, limit);
+        return new EvidenceKeySetTrustVerifier().verify(bundle, policy, checkpoint);
+    }
+
+    /**
+     * Combined trust-log and suite-evidence decision for one terminal trust page.
+     *
+     * @param trust trust-log verification result
+     * @param evidence suite evidence verification result; null until trust is terminally verified
+     */
+    public record TrustAnchoredSuiteVerification(
+            EvidenceKeySetTrustVerifier.VerificationResult trust,
+            TestSuiteEvidenceVerifier.VerificationResult evidence
+    ) {
+        /** Requires a trust decision and keeps evidence absent until the trust root passed. */
+        public TrustAnchoredSuiteVerification {
+            Objects.requireNonNull(trust, "trust verification is required");
+            if (!trust.verified() && evidence != null) {
+                throw new IllegalArgumentException("Untrusted key material cannot produce evidence verification");
+            }
+        }
+
+        /**
+         * Tests whether trust and suite evidence independently passed.
+         *
+         * @return true only when both decisions are verified
+         */
+        public boolean verified() {
+            return trust.verified() && evidence != null && evidence.verified();
+        }
+    }
+
+    /**
+     * Verifies one suite only after a terminal transparency page selects its exact key-set pin.
+     *
+     * <p>When the result requests catch-up, persist its checkpoint and call again before making a
+     * release decision. This method intentionally performs one bounded page per invocation.</p>
+     *
+     * @param suiteRunId durable aggregate run id
+     * @param policy caller-owned external authority policy
+     * @param checkpoint caller's durable prior state, null only for genesis
+     * @param limit bounded trust page size
+     * @return composed trust and evidence decision
+     */
+    public TrustAnchoredSuiteVerification verifySuiteEvidence(
+            String suiteRunId, EvidenceTrustPolicy policy,
+            EvidenceTrustCheckpoint checkpoint, int limit) {
+        long afterSequence = checkpoint == null ? 0 : checkpoint.sequence();
+        EvidenceKeySetTrustBundle trustBundle = findEvidenceKeySetTrustBundle(afterSequence, limit);
+        EvidenceKeySetTrustVerifier.VerificationResult trust =
+                new EvidenceKeySetTrustVerifier().verify(trustBundle, policy, checkpoint);
+        if (!trust.verified()) {
+            return new TrustAnchoredSuiteVerification(trust, null);
+        }
+        TestSuiteEvidenceBundle evidenceBundle = findSuiteEvidenceBundle(suiteRunId);
+        TestSuiteEvidenceVerifier.VerificationResult evidence =
+                new TestSuiteEvidenceVerifier().verify(evidenceBundle, trustBundle.keySet(),
+                        trust.trustedSnapshotFingerprint());
+        return new TrustAnchoredSuiteVerification(trust, evidence);
+    }
+
+    /**
      * Fetches and independently verifies one terminal suite evidence bundle.
      *
      * @param suiteRunId durable aggregate run id

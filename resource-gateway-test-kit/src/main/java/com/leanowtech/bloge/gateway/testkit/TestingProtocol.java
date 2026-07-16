@@ -78,6 +78,12 @@ public final class TestingProtocol {
     /** Signed, externally pinnable multi-key lifecycle snapshot wire version. */
     public static final String EVIDENCE_VERIFICATION_KEY_SET_V1 =
             "toolStudio.resourceGateway.evidenceVerificationKeySet.v1";
+    /** Externally authorized append-only key-set pin publication. */
+    public static final String EVIDENCE_KEY_SET_TRUST_PUBLICATION_V1 =
+            "toolStudio.resourceGateway.evidenceKeySetTrustPublication.v1";
+    /** Bounded transparency proof page joined to the current evidence key set. */
+    public static final String EVIDENCE_KEY_SET_TRUST_BUNDLE_V1 =
+            "toolStudio.resourceGateway.evidenceKeySetTrustBundle.v1";
     /** Built-in graph catalog materialization response wire version. */
     public static final String TEST_SUITE_CATALOG_MATERIALIZATION_V1 =
             "bloge.testSuiteCatalogMaterialization.v1";
@@ -97,6 +103,9 @@ public final class TestingProtocol {
     /** Classpath location of the semantic governance gate JSON Schema. */
     public static final String GOVERNANCE_GATE_V3_SCHEMA_RESOURCE =
             "/schemas/tool-studio-resource-gateway/governance-gate-result-v3.schema.json";
+    /** Classpath location of the evidence key-set trust bundle JSON Schema. */
+    public static final String EVIDENCE_TRUST_BUNDLE_SCHEMA_RESOURCE =
+            "/schemas/tool-studio-resource-gateway/evidence-key-set-trust-bundle-v1.schema.json";
 
     private TestingProtocol() {
     }

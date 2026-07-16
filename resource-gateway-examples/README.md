@@ -301,9 +301,12 @@ promotion eligibility, signed child-run evidence, and signed suite
 checkpoint/terminal attestations at `POST /api/testing/suites/{suiteId}/executions`. Terminal runs
 can be exported as payload-free generation-matched `bloge.testSuiteEvidenceBundle.v1/v2` values and independently verified
 with the Java test-kit against a signed, externally pinned Ed25519 key-set. Governed exact-reference
-REPLAY and dynamic attempt/occurrence selectors are available; streaming/suspendable control,
-ANEKE semantic projection, transparency/pin distribution, and physical
-test-runtime deployment isolation remain in progress and are not advertised as complete.
+REPLAY and dynamic attempt/occurrence selectors are available. Evidence key-set trust publications
+now provide externally authorized M-of-N pin distribution, bounded append-only consistency pages,
+durable consumer checkpoints, and rollback/fork/revoked-pin detection. Streaming/suspendable control,
+real ANEKE N/N-1 conformance, independent witness gossip, and physical test-runtime deployment
+isolation remain in progress and are not advertised as complete. Configuration and consumer flow are
+documented in [Stage 3 evidence trust transparency verification](../docs/resource-gateway-execution-data-control-plane-stage3-evidence-trust-transparency-verification.md).
 
 Create a provider-specific Java operator only when the provider behavior cannot
 be expressed cleanly as a descriptor-backed resource.
