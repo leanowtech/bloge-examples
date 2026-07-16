@@ -21,7 +21,7 @@
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
 | Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（四类 case intent、内容寻址 fixture/一等 suite 发布、精确 revision 执行与 aggregate coverage/promotion 回显）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、process-owner lease/heartbeat/checkpoint fence、abandoned RUNNING fail-closed reconciliation、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其 governed catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free plan v2 谱系与认证降级，以及同步 nested/foreach/loop/compensation 控制传播、动态 attempt/occurrence selector 与 occurrence/attempt/node/edge evidence 已落地；streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3 | In progress | graph/operator `TestRunEvidence`、suite checkpoint/terminal attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、签名时刻 lifecycle policy、外部 M-of-N trust publication、bounded append-only consistency page、durable consumer checkpoint、rollback/fork/split-view/revoked-pin resurrection detection 与 test-kit independent verifier 已完成；exact-suite ANEKE semantic workbook seed、`GovernanceGateResult.v3` 可重建 basis、编译级 GraphDraft target 绑定和独立 schema consumer 已完成；真实 ANEKE N/N-1 conformance、独立 witness gossip/跨域一致性证明待完成 |
-| Stage 4 | In progress | BLOGE run-scoped `ExecutionServices`/`FunctionCallSite` 已接通，并新增公共 `CheckpointFailurePolicy.FAIL_FAST`（node/loop/foreach checkpoint 失败闭合）；RG logical clock、seeded random/UUID、payload-free plan v3 binding、usage audit、认证降级、生产边界架构测试、`bloge.testRunEvidence.v2` semantic result fingerprint、重复运行 context 隔离、`bloge.executionServiceStateSnapshot.v1` 精确恢复，以及组合 `bloge.durableTestExecutionCheckpoint.v1`、fixture cursor snapshot、`InvocationRecorder` 静止边界 capture/原子 restore、受信同库事务参与仓库、owner/epoch/revision CAS、数据库时钟过期租约接管与并发输家回滚已落地；test-profile staged `ExecutionStore + ExecutionCheckpointStore + WaitStore + WorkItemStore` aggregate 与 durable session 已强制 FAIL_FAST、caller-assigned execution id、完整 `ExecutionOptions` 继承、mutation identity/state 强绑定、幂等事务重试、冷读 lifecycle/wait/work-item 重建、committed-only timer/correlation/work scan 和 concrete store CAS 输家回滚；stream offset/checkpoint 协议、公共幂等 worker/resume/owner-claim command、identity/flag/secret fixture authority、streaming 恢复与确定性并发待完成 |
+| Stage 4 | In progress | BLOGE run-scoped `ExecutionServices`/`FunctionCallSite` 已接通，并新增公共 `CheckpointFailurePolicy.FAIL_FAST`（node/loop/foreach checkpoint 失败闭合）；RG logical clock、seeded random/UUID、payload-free plan v3 binding、usage audit、认证降级、生产边界架构测试、`bloge.testRunEvidence.v2` semantic result fingerprint、重复运行 context 隔离、`bloge.executionServiceStateSnapshot.v1` 精确恢复，以及组合 `bloge.durableTestExecutionCheckpoint.v1`、fixture cursor snapshot、`InvocationRecorder` 静止边界 capture/原子 restore、受信同库事务参与仓库、owner/epoch/revision CAS、数据库时钟过期租约接管、持久化命令幂等结果与并发输家回滚已落地；test-profile staged `ExecutionStore + ExecutionCheckpointStore + WaitStore + WorkItemStore` aggregate 与 durable session 已强制 FAIL_FAST、caller-assigned execution id、完整 `ExecutionOptions` 继承、mutation identity/state 强绑定、幂等事务重试、冷读 lifecycle/wait/work-item 重建、committed-only timer/correlation/work scan 和 concrete store CAS 输家回滚；stream offset/checkpoint 协议、公开且鉴权/审计/依赖重授权的 worker/resume/owner-claim command、identity/flag/secret fixture authority、streaming 恢复与确定性并发待完成 |
 | Stage 5 | Not started | 独立部署、network/identity/secret/store 物理隔离、规模化调度与 mutation/property testing |
 
 实现细节、行为兼容决策和可复现测试见
@@ -51,6 +51,14 @@ Stage 4 的 run-scoped provider、语义结果身份、脱敏后重算和 v1/v2 
 组合检查点、同库事务参与、CAS 围栏和故障回滚证明见
 [Stage 4 durable checkpoint verification](resource-gateway-execution-data-control-plane-stage4-durable-checkpoint-verification.md)。
 
+恢复存储面进一步补齐了持久化命令幂等：tenant/environment-scoped `clientRequestId`、规范化命令
+指纹、精确旧 fence、claimant 与 lease 意图、lease CAS 和不可变结果快照共享一个本地事务；独立的
+`bloge.durableResumeCommandRecord.v1` 指纹覆盖命令投影与结果身份。响应丢失后的同意图重试返回
+原始 checkpoint，而不是根据当前可变状态猜测；同键异意图、跨 scope 探测、双实例并发、索引
+投影漂移与结果 JSON/指纹篡改均 fail closed。该能力仍是内部 repository 协议；公开
+adapter 尚需从认证身份与请求计算指纹，重新授权 target/fixture/replay/identity/side-effect 闭包，
+写安全审计，并实际驱动 BLOGE resume。
+
 动态 attempt/occurrence selector 的一基坐标、优先级、失败边界和真实 retry/nested re-entry
 证明见 [Stage 2 dynamic selector verification](resource-gateway-execution-data-control-plane-stage2-dynamic-selector-verification.md)。
 Semantic coverage 不修改已签名 v1 canonical shape，而通过 suite/evidence v2 双读演进，见
@@ -60,7 +68,7 @@ Exact semantic suite 到 ANEKE payload-free workbook seed 的投影、失败边�
 Semantic workbook 到 ANEKE gate decision 的 exact evidence 重建、GraphDraft 编译 target 绑定与 v2 兼容证明见
 [Stage 3 semantic gate basis verification](resource-gateway-execution-data-control-plane-stage3-semantic-gate-basis-verification.md)。
 
-当前严格验收基线：Resource Gateway `clean verify` 共 1937 tests、0 failures、0 errors、
+当前严格验收基线：Resource Gateway `clean verify` 共 1943 tests、0 failures、0 errors、
 2 个条件跳过，真实浏览器回归与 Spring Boot JAR 打包成功；Canvas suite 聚焦 68 tests、
 前端全量 150 tests，并在桌面与 390 x 844 真实浏览器中完成两行一等 suite 发布；Canvas 对完整
 stored suite value、child evidence、coverage、promotion 与 aggregate 一致性 fail closed；immutable TestSuite
@@ -69,7 +77,7 @@ runner/attestation/protocol 增量聚焦 49 tests；key lifecycle 增量聚焦 4
 增量聚焦 23 tests，integration package 138 tests 全绿；完整 suite/catalog/semantic workbook/gate v3 wire value 按打包的
 Draft 2020-12 schema 校验并回绑 request identity，`RUNNING` 在无 polling CLI 中退出 2，
 未知参数值与 validator 细节不进入日志，public JavaDoc 零告警且由 `verify` 门禁强制；Stage 4
-durable checkpoint/aggregate 聚焦 65 tests 全绿。
+durable checkpoint/aggregate 聚焦 71 tests 全绿。
 
 ## 1. 结论先行
 

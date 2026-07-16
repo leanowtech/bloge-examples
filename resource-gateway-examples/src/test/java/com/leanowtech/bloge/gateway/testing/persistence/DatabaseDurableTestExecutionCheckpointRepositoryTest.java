@@ -347,6 +347,144 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     }
 
     @Test
+    void durableResumeCommandReturnsTheOriginalClaimOnAnAmbiguousRetry() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.ResumeLeaseCommand command =
+                resumeCommand(expired, "resume-request-1", SHA_D, "instance-b");
+
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult first =
+                repository.claimExpiredLeaseIdempotently(command);
+        DurableTestExecutionCheckpoint advanced = advanceAfterClaim(first.checkpoint());
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult retry =
+                repository.claimExpiredLeaseIdempotently(command);
+
+        assertThat(first.idempotentReplay()).isFalse();
+        assertThat(retry.idempotentReplay()).isTrue();
+        assertThat(retry.checkpoint()).isEqualTo(first.checkpoint());
+        assertThat(repository.find("tenant-a", "test", "run-a"))
+                .contains(advanced);
+    }
+
+    @Test
+    void durableResumeCommandRejectsIdempotencyKeyReuseForDifferentIntent() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        repository.claimExpiredLeaseIdempotently(
+                resumeCommand(expired, "resume-request-1", SHA_D, "instance-b"));
+
+        assertThatThrownBy(() -> repository.claimExpiredLeaseIdempotently(
+                resumeCommand(expired, "resume-request-1", SHA_C, "instance-b")))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.IDEMPOTENCY_CONFLICT);
+        assertThatThrownBy(() -> repository.claimExpiredLeaseIdempotently(
+                resumeCommand(expired, "resume-request-1", SHA_D, "instance-c")))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.IDEMPOTENCY_CONFLICT);
+    }
+
+    @Test
+    void concurrentRepositoryInstancesReplayOneDurableResumeCommand() throws Exception {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DatabaseDurableTestExecutionCheckpointRepository competing =
+                new DatabaseDurableTestExecutionCheckpointRepository(
+                        database.jdbc(), database.transactionManager(),
+                        new ObjectMapper().findAndRegisterModules(), integrity);
+        competing.init();
+        DurableTestExecutionCheckpointRepository.ResumeLeaseCommand command =
+                resumeCommand(expired, "resume-request-1", SHA_D, "instance-b");
+        CountDownLatch start = new CountDownLatch(1);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> idempotentClaimCandidate(repository, command, start));
+            var second = executor.submit(() -> idempotentClaimCandidate(competing, command, start));
+            start.countDown();
+            List<DurableTestExecutionCheckpointRepository.LeaseClaimResult> results =
+                    List.of(first.get(), second.get());
+
+            assertThat(results).extracting(
+                    DurableTestExecutionCheckpointRepository.LeaseClaimResult::idempotentReplay)
+                    .containsExactlyInAnyOrder(false, true);
+            assertThat(results).extracting(result -> result.checkpoint().checkpointFingerprint())
+                    .containsOnly(results.getFirst().checkpoint().checkpointFingerprint());
+        }
+    }
+
+    @Test
+    void durableResumeCommandIsScopeIsolatedAndVerifiesStoredResultIntegrity() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.ResumeLeaseCommand command =
+                resumeCommand(expired, "resume-request-1", SHA_D, "instance-b");
+        repository.claimExpiredLeaseIdempotently(command);
+
+        DurableTestExecutionCheckpointRepository.LeaseClaim crossTenantClaim =
+                new DurableTestExecutionCheckpointRepository.LeaseClaim(
+                        "tenant-b", "test", expired.runId(), command.claim().expectedFence(),
+                        expired.checkpointFingerprint(), "instance-b", Duration.ofMinutes(2));
+        assertThatThrownBy(() -> repository.claimExpiredLeaseIdempotently(
+                new DurableTestExecutionCheckpointRepository.ResumeLeaseCommand(
+                        "resume-request-1", SHA_D, crossTenantClaim)))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.STALE_FENCE);
+
+        database.jdbc().update("""
+                UPDATE rg_test_durable_resume_commands
+                SET result_checkpoint_json = ?
+                WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                """, "{}", "tenant-a", "test", "resume-request-1");
+        assertThatThrownBy(() -> repository.claimExpiredLeaseIdempotently(command))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("resume command result is corrupt");
+    }
+
+    @Test
+    void durableResumeCommandRejectsIndexedIntentDriftAsStorageCorruption() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.ResumeLeaseCommand command =
+                resumeCommand(expired, "resume-request-1", SHA_D, "instance-b");
+        repository.claimExpiredLeaseIdempotently(command);
+
+        database.jdbc().update("""
+                UPDATE rg_test_durable_resume_commands
+                SET claimant_owner_id = ?
+                WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                """, "instance-z", "tenant-a", "test", "resume-request-1");
+
+        assertThatThrownBy(() -> repository.claimExpiredLeaseIdempotently(command))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("resume command record is corrupt");
+    }
+
+    @Test
+    void validatesDurableResumeCommandIdentityBeforePersistence() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        DurableTestExecutionCheckpointRepository.LeaseClaim claim =
+                resumeCommand(expired, "resume-request-1", SHA_D, "instance-b").claim();
+
+        assertThatThrownBy(() -> new DurableTestExecutionCheckpointRepository.ResumeLeaseCommand(
+                "", SHA_D, claim))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("clientRequestId");
+        assertThatThrownBy(() -> new DurableTestExecutionCheckpointRepository.ResumeLeaseCommand(
+                "resume request with spaces", SHA_D, claim))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("clientRequestId");
+        assertThatThrownBy(() -> new DurableTestExecutionCheckpointRepository.ResumeLeaseCommand(
+                "resume-request-1", "not-a-fingerprint", claim))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("requestFingerprint");
+    }
+
+    @Test
     void validatesLeaseClaimScopeFingerprintAndDurationBeforePersistence() {
         var fence = new DurableTestExecutionCheckpointRepository.Fence("instance-a", 1, 0);
 
@@ -469,6 +607,62 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("concurrent claim interrupted", interrupted);
         }
+    }
+
+    private DurableTestExecutionCheckpointRepository.LeaseClaimResult idempotentClaimCandidate(
+            DatabaseDurableTestExecutionCheckpointRepository candidateRepository,
+            DurableTestExecutionCheckpointRepository.ResumeLeaseCommand command,
+            CountDownLatch start) {
+        try {
+            if (!start.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("concurrent command did not start");
+            }
+            return candidateRepository.claimExpiredLeaseIdempotently(command);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("concurrent command interrupted", interrupted);
+        }
+    }
+
+    private DurableTestExecutionCheckpointRepository.ResumeLeaseCommand resumeCommand(
+            DurableTestExecutionCheckpoint checkpoint,
+            String clientRequestId,
+            String requestFingerprint,
+            String claimant) {
+        return new DurableTestExecutionCheckpointRepository.ResumeLeaseCommand(
+                clientRequestId, requestFingerprint,
+                new DurableTestExecutionCheckpointRepository.LeaseClaim(
+                        checkpoint.scope().tenantId(), checkpoint.scope().environmentId(),
+                        checkpoint.runId(), new DurableTestExecutionCheckpointRepository.Fence(
+                        checkpoint.lifecycle().ownerId(), checkpoint.lifecycle().leaseEpoch(),
+                        checkpoint.lifecycle().revision()), checkpoint.checkpointFingerprint(),
+                        claimant, Duration.ofMinutes(2)));
+    }
+
+    private DurableTestExecutionCheckpoint advanceAfterClaim(
+            DurableTestExecutionCheckpoint claimed) {
+        var lifecycle = claimed.lifecycle();
+        var engineState = claimed.engineState();
+        DurableTestExecutionCheckpoint advanced = integrity.seal(
+                new DurableTestExecutionCheckpoint(
+                        claimed.schemaVersion(), claimed.scope(), claimed.runId(),
+                        claimed.engineExecutionId(), claimed.dependencies(),
+                        claimed.fixtureConsumptionState(), claimed.executionServiceState(),
+                        new DurableTestExecutionCheckpoint.EngineState(
+                                "checkpoint-after-resume", engineState.nodeId(),
+                                engineState.boundaryType(), engineState.boundarySequence() + 1,
+                                engineState.stateVersion() + 1,
+                                ProtocolFingerprint.ofText("engine-after-resume")),
+                        new DurableTestExecutionCheckpoint.Lifecycle(
+                                DurableTestExecutionCheckpoint.Status.ACTIVE,
+                                lifecycle.ownerId(), lifecycle.leaseEpoch(),
+                                lifecycle.revision() + 1, lifecycle.createdAt(),
+                                lifecycle.updatedAt().plusSeconds(1),
+                                lifecycle.leaseExpiresAt().plusSeconds(1)), ""));
+        return repository.advance(advanced,
+                new DurableTestExecutionCheckpointRepository.Fence(
+                        lifecycle.ownerId(), lifecycle.leaseEpoch(), lifecycle.revision()),
+                boundNoop(advanced));
     }
 
     private DurableTestExecutionCheckpointRepository.BoundEngineStateMutation boundNoop(

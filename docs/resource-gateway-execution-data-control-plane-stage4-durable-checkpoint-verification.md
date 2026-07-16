@@ -72,6 +72,19 @@ cursor, and engine-state closure unchanged. The SQL CAS repeats scope, old fence
 expiry, and resumable-status checks. A cross-scope or stale claim returns the same `STALE_FENCE`
 category, while an exact caller may distinguish `LEASE_ACTIVE` and `NOT_RESUMABLE`.
 
+`claimExpiredLeaseIdempotently(...)` closes the next storage-level ambiguity window. A trusted
+orchestrator supplies a tenant/environment-scoped `clientRequestId` and a canonical fingerprint of
+the complete authorized command. The command reservation, lease CAS, and immutable result snapshot
+commit in the same local transaction. Retrying the same intent returns that original snapshot even
+if the live checkpoint later advances; changing the run, old fence, previous fingerprint, claimant,
+lease, or request fingerprint under the same key fails as `IDEMPOTENCY_CONFLICT`. Stored results are
+re-verified against their aggregate fingerprint before replay. A separate
+`bloge.durableResumeCommandRecord.v1` fingerprint covers scope, caller key, request fingerprint,
+complete fence/claim intent, result fingerprint, and database creation time, so indexed intent drift
+is reported as storage corruption rather than misclassified as caller conflict. This is an
+internal persistence protocol: no HTTP caller can yet invoke it, and the repository does not replace
+transport authentication, authorization, security audit, or dependency re-authorization.
+
 ## Transaction-Participating BLOGE Aggregate
 
 `StagedBlogeExecutionCheckpointStore` implements BLOGE's public `ExecutionCheckpointStore` over the
@@ -212,6 +225,9 @@ cold-start resume can be enabled.
     not a second Resource Gateway transition implementation.
 22. Lease claims accept only whole-second durations from one second through one hour. Fence-counter
     overflow fails as `INVALID_TRANSITION`; it can never wrap into a valid owner epoch or revision.
+23. A scoped durable resume command reserves its idempotency key and claims the lease in one
+    transaction. An ambiguous retry returns the immutable original result; same-key different intent,
+    cross-scope lookup, result corruption, and malformed keys fail closed.
 
 ## Automated Evidence
 
@@ -233,7 +249,11 @@ tamper rejection, and plan/provider identity closure.
 - active-lease, terminal-state, stale-fingerprint, cross-tenant, duration, and counter-overflow
   rejection; and
 - two repository instances racing one expired lease with exactly one new owner and immediate
-  fencing of the former owner.
+  fencing of the former owner;
+- durable command replay after an ambiguous response, same-key intent conflict, and strict command
+  identity validation; and
+- two repository instances issuing the same command with one original result and one exact replay,
+  plus cross-scope non-disclosure, indexed-intent drift detection, and stored-result tamper rejection.
 
 `TestingControlProtocolSchemaTest` pins both Java protocol versions to the authoritative machine
 schema. Spring application tests exercise profile-gated composition through the existing
@@ -270,9 +290,12 @@ mvn -f resource-gateway-examples/pom.xml \
   -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,StagedBlogeExecutionCheckpointStoreTest,StagedBlogeDurableStateStoreTest,IndependentDurableTestEngineFactoryTest,InvocationRecorderCheckpointTest,TestingControlProtocolSchemaTest,TestRuntimeProfileIsolationTest test
 ```
 
-The focused gate completed with 65 tests, zero failures, zero errors, and zero skips.
-The repository-wide `clean verify` gate completed with 1937 tests, zero failures, zero errors, two
+The focused gate completed with 71 tests, zero failures, zero errors, and zero skips.
+The repository-wide `clean verify` gate completed with 1943 tests, zero failures, zero errors, two
 conditional skips, real-browser regression coverage, and successful Spring Boot JAR packaging.
+Scoped `javadoc -Xdoclint:all` for the three changed public/implementation types completed with zero
+diagnostics. The optional project-wide Javadoc report still fails on 16 pre-existing HTML and
+parameter diagnostics in unrelated packages; that baseline is not represented as fixed here.
 
 ## Honest Remaining Gaps
 
@@ -280,18 +303,18 @@ conditional skips, real-browser regression coverage, and successful Spring Boot 
   waits, and work-item state now execute through one aggregate `EngineStateMutation`. The public
   worker poll/claim/run/terminal flow does not yet open, fence, and advance that aggregate, so the
   storage substrate must not be mistaken for a complete remote-worker product lifecycle.
-- The durable session and expired-lease claim are profile-gated internal resources; the public testing
-  execution service has not yet selected them or exposed an authenticated, audited, idempotent
-  suspend/resume/owner-claim command.
+- The durable session, expired-lease claim, and persistent idempotency reservation are profile-gated
+  internal resources. The public testing execution service has not yet selected them or exposed an
+  authenticated, authorized, audited suspend/resume/owner-claim command.
 - The fixture ledger snapshot intentionally excludes pre-checkpoint invocation and attempt evidence;
   a resumed terminal evidence bundle cannot yet reconstruct those historical trace facts.
 - Resume does not yet re-authorize the exact fixture revision, replay retention state, identity,
   side-effect policy, or caller permissions. Missing or revoked dependencies therefore cannot yet be
   surfaced through a public `CONTROL_PLAN_UNAVAILABLE` lifecycle.
-- The internal claim has no transport-level idempotency key because no public command exists yet.
-  Ambiguous network retries, lease heartbeat, public suspend/resume, crash-driven recovery, and signed
-  checkpoint attestation must be solved at the orchestration layer rather than inferred from storage
-  CAS success.
+- The repository can durably bind a caller-stable key to one claim result, but no public adapter yet
+  computes the command fingerprint from authenticated authority and normalized request fields.
+  Lease heartbeat, public suspend/resume, crash-driven recovery, and signed checkpoint attestation
+  remain orchestration work rather than properties inferred from storage CAS success.
 - The repository uses a local database transaction. Cross-database BLOGE stores require either
   migration onto this datasource or an outbox/recovery protocol; pretending a distributed
   transaction exists is explicitly rejected.

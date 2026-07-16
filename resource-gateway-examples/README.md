@@ -322,7 +322,11 @@ another execution. Work-item batches validate atomically, and claim, retry, term
 transitions reuse BLOGE's reference state machine. An internal database-clock lease claim can fence an
 expired `ACTIVE`, `SUSPENDED`, or `RESUMING` owner by exact scope, old owner/epoch/revision, and
 checkpoint fingerprint. It increments epoch and revision, enters `RESUMING`, and cannot alter the
-recovery closure. The independent durable session attaches only this aggregate. The caller assigns
+recovery closure. A profile-gated durable command repository atomically binds a scoped caller key and
+complete claim intent to that lease CAS and an immutable result snapshot, so an ambiguous retry returns
+the original result while same-key different intent and stored-result tampering fail closed. A separate
+command-record fingerprint detects indexed intent drift before classifying caller conflict. The
+independent durable session attaches only this aggregate. The caller assigns
 the engine execution id outside business context and supplies the complete frozen `ExecutionOptions`,
 so operator fixture resolution and
 deterministic providers survive unchanged. Missing stages, cross-execution writes, engine-state/id
@@ -332,9 +336,9 @@ transient transaction rollback can replay the same content-addressed mutation. T
 only at a quiescent invocation boundary, and atomically enforces fixture `maxUses`. Cursor hashes omit
 raw correlation values but are pseudonymous identifiers, not a confidentiality boundary. BLOGE's
 streaming offset/checkpoint state, pre-checkpoint attempt evidence, public durable run selection,
-worker poll/claim/run/terminal orchestration, and an authenticated, audited, idempotent cold-resume
-command are not wired yet; this is a trusted persistence substrate, not a product claim that durable
-test resume is complete. See
+worker poll/claim/run/terminal orchestration, and the authenticated, authorized, audited adapter that
+revalidates dependencies and drives cold resume are not wired yet; this is a trusted persistence
+substrate, not a product claim that durable test resume is complete. See
 [Stage 4 durable checkpoint verification](../docs/resource-gateway-execution-data-control-plane-stage4-durable-checkpoint-verification.md).
 
 Create a provider-specific Java operator only when the provider behavior cannot

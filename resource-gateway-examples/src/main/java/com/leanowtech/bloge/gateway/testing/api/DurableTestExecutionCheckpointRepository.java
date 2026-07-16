@@ -77,6 +77,19 @@ public interface DurableTestExecutionCheckpointRepository {
     DurableTestExecutionCheckpoint claimExpiredLease(LeaseClaim claim);
 
     /**
+     * Atomically reserves a caller idempotency key and claims one expired execution lease.
+     *
+     * <p>The immutable command result is retained independently from the mutable checkpoint row.
+     * Consequently, a retry after the claim committed but its response was lost returns the exact
+     * original result even when the live checkpoint has since advanced. Reusing the scoped key for
+     * different command intent must fail closed.</p>
+     *
+     * @param command exact lease claim and caller-stable command identity
+     * @return original claim result and whether this invocation replayed it
+     */
+    LeaseClaimResult claimExpiredLeaseIdempotently(ResumeLeaseCommand command);
+
+    /**
      * Exact compare-and-set fence held by the caller.
      *
      * @param ownerId current process owner identity
@@ -158,6 +171,58 @@ public interface DurableTestExecutionCheckpointRepository {
                 throw new IllegalArgumentException(field + " must be a bounded stable identifier");
             }
             return normalized;
+        }
+    }
+
+    /**
+     * Durable transport command for an expired-lease claim.
+     *
+     * @param clientRequestId caller-stable idempotency key scoped by tenant and environment
+     * @param requestFingerprint canonical fingerprint of the complete authorized command intent
+     * @param claim exact fenced lease claim
+     */
+    record ResumeLeaseCommand(String clientRequestId,
+                              String requestFingerprint,
+                              LeaseClaim claim) {
+        private static final Pattern IDENTIFIER =
+                Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
+        private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+
+        /** Rejects ambiguous command identities before any durable mutation can occur. */
+        public ResumeLeaseCommand {
+            clientRequestId = required(clientRequestId, "clientRequestId");
+            if (!IDENTIFIER.matcher(clientRequestId).matches()) {
+                throw new IllegalArgumentException(
+                        "clientRequestId must be a bounded stable identifier");
+            }
+            requestFingerprint = required(requestFingerprint, "requestFingerprint");
+            if (!FINGERPRINT.matcher(requestFingerprint).matches()) {
+                throw new IllegalArgumentException(
+                        "requestFingerprint must be a canonical SHA-256 fingerprint");
+            }
+            claim = Objects.requireNonNull(claim, "claim");
+        }
+
+        private static String required(String value, String field) {
+            String normalized = value == null ? "" : value.trim();
+            if (normalized.isBlank()) {
+                throw new IllegalArgumentException(field + " is required");
+            }
+            return normalized;
+        }
+    }
+
+    /**
+     * Immutable outcome of one durable resume lease command.
+     *
+     * @param checkpoint checkpoint produced by the original successful command
+     * @param idempotentReplay whether an earlier committed result was replayed
+     */
+    record LeaseClaimResult(DurableTestExecutionCheckpoint checkpoint,
+                            boolean idempotentReplay) {
+        /** Requires a complete immutable command result. */
+        public LeaseClaimResult {
+            checkpoint = Objects.requireNonNull(checkpoint, "checkpoint");
         }
     }
 

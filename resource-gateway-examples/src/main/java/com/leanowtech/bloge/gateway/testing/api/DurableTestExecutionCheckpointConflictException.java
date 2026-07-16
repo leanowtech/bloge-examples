@@ -36,6 +36,8 @@ public final class DurableTestExecutionCheckpointConflictException extends Runti
         LEASE_ACTIVE,
         /** The exact known checkpoint is terminal or permanently unavailable. */
         NOT_RESUMABLE,
+        /** A scoped client request key already identifies different resume intent. */
+        IDEMPOTENCY_CONFLICT,
         /** The requested lifecycle or monotonic state transition violates the protocol. */
         INVALID_TRANSITION
     }

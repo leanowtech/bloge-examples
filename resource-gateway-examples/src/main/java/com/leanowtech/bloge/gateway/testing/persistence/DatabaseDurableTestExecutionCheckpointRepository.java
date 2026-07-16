@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRe
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -26,6 +27,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.INVALID_TRANSITION;
+import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.IDEMPOTENCY_CONFLICT;
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.LEASE_ACTIVE;
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.NOT_RESUMABLE;
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.STALE_FENCE;
@@ -98,6 +100,26 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 CREATE INDEX IF NOT EXISTS rg_test_durable_execution_scope_idx
                 ON rg_test_durable_execution_checkpoints (
                     tenant_id, environment_id, engine_execution_id
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_resume_commands (
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(32) NOT NULL,
+                    client_request_id VARCHAR(255) NOT NULL,
+                    request_fingerprint VARCHAR(80) NOT NULL,
+                    run_id VARCHAR(255) NOT NULL,
+                    expected_owner_id VARCHAR(255) NOT NULL,
+                    expected_lease_epoch BIGINT NOT NULL,
+                    expected_revision BIGINT NOT NULL,
+                    expected_checkpoint_fingerprint VARCHAR(80) NOT NULL,
+                    claimant_owner_id VARCHAR(255) NOT NULL,
+                    lease_duration_seconds BIGINT NOT NULL,
+                    result_checkpoint_fingerprint VARCHAR(80) NOT NULL,
+                    record_fingerprint VARCHAR(80) NOT NULL,
+                    result_checkpoint_json CLOB NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    PRIMARY KEY (tenant_id, environment_id, client_request_id)
                 )
                 """);
     }
@@ -186,28 +208,189 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         LeaseClaim requiredClaim = Objects.requireNonNull(claim, "claim");
         return transactions.execute(status -> {
             Instant claimedAt = databaseNow();
-            DurableTestExecutionCheckpoint current = findInternal(
-                    requiredClaim.tenantId(), requiredClaim.environmentId(),
-                    requiredClaim.runId()).orElseThrow(() -> conflict(
-                    STALE_FENCE, "Durable checkpoint no longer exists in the expected scope"));
-            requireClaimable(current, requiredClaim, claimedAt);
-            var lifecycle = current.lifecycle();
-            DurableTestExecutionCheckpoint claimed = integrity.seal(
-                    new DurableTestExecutionCheckpoint(
-                            current.schemaVersion(), current.scope(), current.runId(),
-                            current.engineExecutionId(), current.dependencies(),
-                            current.fixtureConsumptionState(), current.executionServiceState(),
-                            current.engineState(), new DurableTestExecutionCheckpoint.Lifecycle(
-                            DurableTestExecutionCheckpoint.Status.RESUMING,
-                            requiredClaim.claimantOwnerId(), lifecycle.leaseEpoch() + 1,
-                            lifecycle.revision() + 1, lifecycle.createdAt(), claimedAt,
-                            claimedAt.plus(requiredClaim.leaseDuration())), ""));
-            if (claimUpdate(claimed, requiredClaim, claimedAt) != 1) {
-                throw conflict(STALE_FENCE,
-                        "Durable checkpoint lease changed concurrently");
-            }
-            return claimed;
+            return claimExpiredLeaseAt(requiredClaim, claimedAt);
         });
+    }
+
+    @Override
+    public LeaseClaimResult claimExpiredLeaseIdempotently(ResumeLeaseCommand command) {
+        ResumeLeaseCommand requiredCommand = Objects.requireNonNull(command, "command");
+        Optional<LeaseClaimResult> existing = replayedCommand(requiredCommand);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        try {
+            return transactions.execute(status -> {
+                Optional<LeaseClaimResult> concurrent = replayedCommand(requiredCommand);
+                if (concurrent.isPresent()) {
+                    return concurrent.get();
+                }
+                Instant claimedAt = databaseNow();
+                DurableTestExecutionCheckpoint claimed;
+                try {
+                    claimed = claimExpiredLeaseAt(requiredCommand.claim(), claimedAt);
+                } catch (DurableTestExecutionCheckpointConflictException stale) {
+                    if (stale.reason() != STALE_FENCE) {
+                        throw stale;
+                    }
+                    Optional<LeaseClaimResult> committed = replayedCommand(requiredCommand);
+                    if (committed.isPresent()) {
+                        return committed.get();
+                    }
+                    throw stale;
+                }
+                insertResumeCommand(requiredCommand, claimed, claimedAt);
+                return new LeaseClaimResult(claimed, false);
+            });
+        } catch (DataIntegrityViolationException concurrentCommand) {
+            return replayedCommand(requiredCommand).orElseThrow(() -> concurrentCommand);
+        }
+    }
+
+    private DurableTestExecutionCheckpoint claimExpiredLeaseAt(LeaseClaim claim, Instant claimedAt) {
+        DurableTestExecutionCheckpoint current = findInternal(
+                claim.tenantId(), claim.environmentId(), claim.runId()).orElseThrow(() -> conflict(
+                STALE_FENCE, "Durable checkpoint no longer exists in the expected scope"));
+        requireClaimable(current, claim, claimedAt);
+        var lifecycle = current.lifecycle();
+        DurableTestExecutionCheckpoint claimed = integrity.seal(
+                new DurableTestExecutionCheckpoint(
+                        current.schemaVersion(), current.scope(), current.runId(),
+                        current.engineExecutionId(), current.dependencies(),
+                        current.fixtureConsumptionState(), current.executionServiceState(),
+                        current.engineState(), new DurableTestExecutionCheckpoint.Lifecycle(
+                        DurableTestExecutionCheckpoint.Status.RESUMING,
+                        claim.claimantOwnerId(), lifecycle.leaseEpoch() + 1,
+                        lifecycle.revision() + 1, lifecycle.createdAt(), claimedAt,
+                        claimedAt.plus(claim.leaseDuration())), ""));
+        if (claimUpdate(claimed, claim, claimedAt) != 1) {
+            throw conflict(STALE_FENCE, "Durable checkpoint lease changed concurrently");
+        }
+        return claimed;
+    }
+
+    private Optional<LeaseClaimResult> replayedCommand(ResumeLeaseCommand command) {
+        LeaseClaim claim = command.claim();
+        List<StoredResumeCommand> rows = jdbc.query("""
+                        SELECT tenant_id, environment_id, client_request_id, request_fingerprint,
+                               run_id, expected_owner_id, expected_lease_epoch, expected_revision,
+                               expected_checkpoint_fingerprint, claimant_owner_id,
+                               lease_duration_seconds, result_checkpoint_fingerprint,
+                               record_fingerprint, result_checkpoint_json, created_at
+                        FROM rg_test_durable_resume_commands
+                        WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                        """, this::mapResumeCommand, claim.tenantId(), claim.environmentId(),
+                command.clientRequestId());
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        StoredResumeCommand stored = rows.getFirst();
+        requireValidResumeCommandRecord(stored);
+        if (!stored.matches(command)) {
+            throw conflict(IDEMPOTENCY_CONFLICT,
+                    "clientRequestId already identifies different durable resume intent");
+        }
+        return Optional.of(new LeaseClaimResult(verifiedCommandResult(stored), true));
+    }
+
+    private void insertResumeCommand(ResumeLeaseCommand command,
+                                     DurableTestExecutionCheckpoint result,
+                                     Instant createdAt) {
+        LeaseClaim claim = command.claim();
+        Fence fence = claim.expectedFence();
+        String recordFingerprint = resumeCommandRecordFingerprint(
+                command, result.checkpointFingerprint(), createdAt);
+        jdbc.update("""
+                INSERT INTO rg_test_durable_resume_commands (
+                    tenant_id, environment_id, client_request_id, request_fingerprint, run_id,
+                    expected_owner_id, expected_lease_epoch, expected_revision,
+                    expected_checkpoint_fingerprint, claimant_owner_id, lease_duration_seconds,
+                    result_checkpoint_fingerprint, record_fingerprint, result_checkpoint_json,
+                    created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, claim.tenantId(), claim.environmentId(), command.clientRequestId(),
+                command.requestFingerprint(), claim.runId(), fence.ownerId(), fence.leaseEpoch(),
+                fence.revision(), claim.expectedCheckpointFingerprint(), claim.claimantOwnerId(),
+                claim.leaseDuration().toSeconds(), result.checkpointFingerprint(),
+                recordFingerprint, write(result), Timestamp.from(createdAt));
+    }
+
+    private DurableTestExecutionCheckpoint verifiedCommandResult(StoredResumeCommand stored) {
+        try {
+            DurableTestExecutionCheckpoint checkpoint = objectMapper.readValue(
+                    stored.resultCheckpointJson(), DurableTestExecutionCheckpoint.class);
+            integrity.requireValid(checkpoint);
+            if (!stored.agreesWith(checkpoint)) {
+                throw new IllegalStateException("Stored durable resume command result is corrupt");
+            }
+            return checkpoint;
+        } catch (JsonProcessingException | IllegalArgumentException corrupt) {
+            throw new IllegalStateException("Stored durable resume command result is corrupt", corrupt);
+        }
+    }
+
+    private StoredResumeCommand mapResumeCommand(ResultSet rs, int rowNumber) throws SQLException {
+        return new StoredResumeCommand(
+                rs.getString("tenant_id"), rs.getString("environment_id"),
+                rs.getString("client_request_id"), rs.getString("request_fingerprint"),
+                rs.getString("run_id"), rs.getString("expected_owner_id"),
+                rs.getLong("expected_lease_epoch"), rs.getLong("expected_revision"),
+                rs.getString("expected_checkpoint_fingerprint"),
+                rs.getString("claimant_owner_id"), rs.getLong("lease_duration_seconds"),
+                rs.getString("result_checkpoint_fingerprint"),
+                rs.getString("record_fingerprint"),
+                rs.getString("result_checkpoint_json"),
+                rs.getTimestamp("created_at").toInstant());
+    }
+
+    private void requireValidResumeCommandRecord(StoredResumeCommand stored) {
+        String actual = ProtocolFingerprint.of(objectMapper, stored.fingerprintMaterial());
+        if (!stored.recordFingerprint().equals(actual)) {
+            throw new IllegalStateException("Stored durable resume command record is corrupt");
+        }
+    }
+
+    private String resumeCommandRecordFingerprint(ResumeLeaseCommand command,
+                                                  String resultCheckpointFingerprint,
+                                                  Instant createdAt) {
+        LeaseClaim claim = command.claim();
+        Fence fence = claim.expectedFence();
+        return ProtocolFingerprint.of(objectMapper, resumeCommandRecordFingerprintMaterial(
+                claim.tenantId(), claim.environmentId(), command.clientRequestId(),
+                command.requestFingerprint(), claim.runId(), fence.ownerId(), fence.leaseEpoch(),
+                fence.revision(), claim.expectedCheckpointFingerprint(), claim.claimantOwnerId(),
+                claim.leaseDuration().toSeconds(), resultCheckpointFingerprint, createdAt));
+    }
+
+    private static Map<String, Object> resumeCommandRecordFingerprintMaterial(
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            String requestFingerprint,
+            String runId,
+            String expectedOwnerId,
+            long expectedLeaseEpoch,
+            long expectedRevision,
+            String expectedCheckpointFingerprint,
+            String claimantOwnerId,
+            long leaseDurationSeconds,
+            String resultCheckpointFingerprint,
+            Instant createdAt) {
+        return Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableResumeCommandRecord.v1"),
+                Map.entry("tenantId", tenantId),
+                Map.entry("environmentId", environmentId),
+                Map.entry("clientRequestId", clientRequestId),
+                Map.entry("requestFingerprint", requestFingerprint),
+                Map.entry("runId", runId),
+                Map.entry("expectedOwnerId", expectedOwnerId),
+                Map.entry("expectedLeaseEpoch", expectedLeaseEpoch),
+                Map.entry("expectedRevision", expectedRevision),
+                Map.entry("expectedCheckpointFingerprint", expectedCheckpointFingerprint),
+                Map.entry("claimantOwnerId", claimantOwnerId),
+                Map.entry("leaseDurationSeconds", leaseDurationSeconds),
+                Map.entry("resultCheckpointFingerprint", resultCheckpointFingerprint),
+                Map.entry("createdAt", createdAt));
     }
 
     private void requireClaimable(DurableTestExecutionCheckpoint current,
@@ -567,6 +750,63 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     && checkpointFingerprint.equals(checkpoint.checkpointFingerprint())
                     && createdAt.equals(lifecycle.createdAt())
                     && updatedAt.equals(lifecycle.updatedAt());
+        }
+    }
+
+    private record StoredResumeCommand(
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            String requestFingerprint,
+            String runId,
+            String expectedOwnerId,
+            long expectedLeaseEpoch,
+            long expectedRevision,
+            String expectedCheckpointFingerprint,
+            String claimantOwnerId,
+            long leaseDurationSeconds,
+            String resultCheckpointFingerprint,
+            String recordFingerprint,
+            String resultCheckpointJson,
+            Instant createdAt
+    ) {
+        private Map<String, Object> fingerprintMaterial() {
+            return resumeCommandRecordFingerprintMaterial(
+                    tenantId, environmentId, clientRequestId, requestFingerprint, runId,
+                    expectedOwnerId, expectedLeaseEpoch, expectedRevision,
+                    expectedCheckpointFingerprint, claimantOwnerId, leaseDurationSeconds,
+                    resultCheckpointFingerprint, createdAt);
+        }
+
+        private boolean matches(ResumeLeaseCommand command) {
+            LeaseClaim claim = command.claim();
+            Fence fence = claim.expectedFence();
+            return tenantId.equals(claim.tenantId())
+                    && environmentId.equals(claim.environmentId())
+                    && clientRequestId.equals(command.clientRequestId())
+                    && requestFingerprint.equals(command.requestFingerprint())
+                    && runId.equals(claim.runId())
+                    && expectedOwnerId.equals(fence.ownerId())
+                    && expectedLeaseEpoch == fence.leaseEpoch()
+                    && expectedRevision == fence.revision()
+                    && expectedCheckpointFingerprint.equals(
+                    claim.expectedCheckpointFingerprint())
+                    && claimantOwnerId.equals(claim.claimantOwnerId())
+                    && leaseDurationSeconds == claim.leaseDuration().toSeconds();
+        }
+
+        private boolean agreesWith(DurableTestExecutionCheckpoint checkpoint) {
+            return resultCheckpointFingerprint.equals(checkpoint.checkpointFingerprint())
+                    && tenantId.equals(checkpoint.scope().tenantId())
+                    && environmentId.equals(checkpoint.scope().environmentId())
+                    && runId.equals(checkpoint.runId())
+                    && claimantOwnerId.equals(checkpoint.lifecycle().ownerId())
+                    && checkpoint.lifecycle().leaseEpoch() > 1
+                    && expectedLeaseEpoch == checkpoint.lifecycle().leaseEpoch() - 1
+                    && checkpoint.lifecycle().revision() > 0
+                    && expectedRevision == checkpoint.lifecycle().revision() - 1
+                    && checkpoint.lifecycle().status()
+                    == DurableTestExecutionCheckpoint.Status.RESUMING;
         }
     }
 }
