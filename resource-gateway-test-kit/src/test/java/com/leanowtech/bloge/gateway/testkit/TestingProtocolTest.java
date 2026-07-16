@@ -42,7 +42,9 @@ class TestingProtocolTest {
                     TestingProtocol.OPERATOR_TARGET_DESCRIPTOR_V2);
             assertThat(TestingProtocol.OPERATOR_TARGET_DESCRIPTOR_V1)
                     .isEqualTo("bloge.testOperatorTargetDescriptor.v1");
-            assertConstant(definitions, "testRunEvidence", TestingProtocol.TEST_RUN_EVIDENCE_V1);
+            assertConstant(definitions, "testRunEvidenceV1", TestingProtocol.TEST_RUN_EVIDENCE_V1);
+            assertConstant(definitions, "testRunEvidenceV2", TestingProtocol.TEST_RUN_EVIDENCE_V2);
+            assertThat(definitions.at("/testRunEvidence/oneOf")).hasSize(2);
             assertConstant(definitions, "testSuite", TestingProtocol.TEST_SUITE_V1);
             assertConstant(definitions, "testSuiteV2", TestingProtocol.TEST_SUITE_V2);
             assertConstant(definitions, "testSuiteRegistrationRequest",

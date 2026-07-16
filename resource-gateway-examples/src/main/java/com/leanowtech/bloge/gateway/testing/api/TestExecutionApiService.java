@@ -19,6 +19,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.OperatorExecutionTargetSnap
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceSanitizer;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorInputCoercer;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorMicroGraphRunner;
 import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
@@ -698,33 +699,36 @@ public final class TestExecutionApiService {
                                 edge.fromInvocationSiteId(), edge.toInvocationSiteId())).toList();
         return new TestRunEvidence(evidence.schemaVersion(), evidence.runId(), evidence.status(),
                 evidence.evidenceClass(), evidence.executionPurpose(), evidence.targetFingerprint(),
-                evidence.fixtureBundleFingerprint(), evidence.planFingerprint(), evidence.startedAt(),
-                evidence.completedAt(), nodes, edges, evidence.fixtureConsumptions(), assertions,
-                evidence.diagnostics(), evidence.metadata());
+                evidence.fixtureBundleFingerprint(), evidence.planFingerprint(),
+                evidence.semanticResultFingerprint(), evidence.startedAt(), evidence.completedAt(),
+                nodes, edges, evidence.fixtureConsumptions(), assertions, evidence.diagnostics(),
+                evidence.metadata());
     }
 
-    private static TestRunEvidence evidenceIncomplete(TestRunEvidence evidence, RuntimeException failure) {
+    private TestRunEvidence evidenceIncomplete(TestRunEvidence evidence, RuntimeException failure) {
         List<String> diagnostics = new java.util.ArrayList<>(evidence.diagnostics());
         diagnostics.add("Sanitized test evidence could not be persisted: "
                 + failure.getClass().getSimpleName());
-        return new TestRunEvidence(evidence.schemaVersion(), evidence.runId(),
+        TestRunEvidence incomplete = new TestRunEvidence(evidence.schemaVersion(), evidence.runId(),
                 TestRunEvidence.Status.EVIDENCE_INCOMPLETE, TestRunEvidence.EvidenceClass.EXPLORATORY,
                 evidence.executionPurpose(), evidence.targetFingerprint(), evidence.fixtureBundleFingerprint(),
                 evidence.planFingerprint(), evidence.startedAt(), evidence.completedAt(), evidence.nodeTrace(),
                 evidence.edgeTrace(), evidence.fixtureConsumptions(), evidence.assertionResults(), diagnostics,
                 evidence.metadata());
+        return TestSemanticResultFingerprint.attach(objectMapper, incomplete);
     }
 
-    private static TestRunEvidence evidenceIntegrityIncomplete(TestRunEvidence evidence, String failureCode) {
+    private TestRunEvidence evidenceIntegrityIncomplete(TestRunEvidence evidence, String failureCode) {
         List<String> diagnostics = new java.util.ArrayList<>(evidence.diagnostics());
         diagnostics.add("Test evidence integrity could not be established: "
                 + normalized(failureCode));
-        return new TestRunEvidence(evidence.schemaVersion(), evidence.runId(),
+        TestRunEvidence incomplete = new TestRunEvidence(evidence.schemaVersion(), evidence.runId(),
                 TestRunEvidence.Status.EVIDENCE_INCOMPLETE, TestRunEvidence.EvidenceClass.EXPLORATORY,
                 evidence.executionPurpose(), evidence.targetFingerprint(), evidence.fixtureBundleFingerprint(),
                 evidence.planFingerprint(), evidence.startedAt(), evidence.completedAt(), evidence.nodeTrace(),
                 evidence.edgeTrace(), evidence.fixtureConsumptions(), evidence.assertionResults(), diagnostics,
                 evidence.metadata());
+        return TestSemanticResultFingerprint.attach(objectMapper, incomplete);
     }
 
     private void requireBounded(Object value, int maximumBytes, String field,

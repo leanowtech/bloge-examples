@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.opentest4j.AssertionFailedError;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -27,6 +29,7 @@ class TestRunAssertionsTest {
             assertThat(node.attempts()).isEmpty();
         });
         assertThat(run.edgeTraces()).isEmpty();
+        assertThat(run.semanticResultFingerprint()).isEmpty();
     }
 
     @Test
@@ -83,10 +86,35 @@ class TestRunAssertionsTest {
         assertThat(projected.integrity().projection()).isEqualTo(TestRun.Projection.FULL);
     }
 
+    @Test
+    void comparesDeterministicSemanticResultsWithoutUsingRunIdentity() {
+        String firstFingerprint = "sha256:" + "a".repeat(64);
+        String changedFingerprint = "sha256:" + "b".repeat(64);
+        TestRun baseline = testRun("run-a", firstFingerprint);
+        TestRun repeated = testRun("run-b", firstFingerprint);
+        TestRun changed = testRun("run-c", changedFingerprint);
+
+        assertThatCode(() -> TestRunAssertions.assertSameSemanticResult(baseline, repeated))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> TestRunAssertions.assertSameSemanticResult(baseline, changed))
+                .isInstanceOf(AssertionFailedError.class)
+                .hasMessageContaining("different semantic results")
+                .hasMessageNotContaining("run-a")
+                .hasMessageNotContaining("run-c");
+    }
+
+    private static TestRun testRun(String runId, String semanticFingerprint) {
+        return new TestRun(runId, TestRun.Status.PASSED, TestRun.EvidenceClass.CERTIFIABLE,
+                "sha256:" + "1".repeat(64), "sha256:" + "2".repeat(64),
+                "sha256:" + "3".repeat(64), semanticFingerprint, List.of(), List.of(), List.of(),
+                List.of(), List.of(), TestRun.Integrity.legacyUnsigned(), null);
+    }
+
     private static String run(String status, String evidenceClass, String nodeStatus, boolean fixturePassed) {
         return """
                 {"schemaVersion":"bloge.testExecutionResponse.v1","runId":"run-7",
-                 "evidence":{"status":"%s","evidenceClass":"%s","targetFingerprint":"sha256:target",
+                 "evidence":{"schemaVersion":"bloge.testRunEvidence.v1",
+                   "status":"%s","evidenceClass":"%s","targetFingerprint":"sha256:target",
                    "fixtureBundleFingerprint":"sha256:fixture","planFingerprint":"sha256:plan",
                    "nodeTrace":[{"nodeId":"node-a","operatorRef":"operator-a","status":"%s",
                    "fidelity":"%s","input":"private-payload","output":"private-payload"}],

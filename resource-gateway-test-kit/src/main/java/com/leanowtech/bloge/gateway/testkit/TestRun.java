@@ -18,6 +18,7 @@ import java.util.List;
  * @param targetFingerprint frozen graph/dependency fingerprint
  * @param fixtureBundleFingerprint resolved fixture fingerprint
  * @param planFingerprint compiled control-plan fingerprint
+ * @param semanticResultFingerprint deterministic business-result fingerprint across equivalent runs
  * @param nodeTraces payload-free node summaries
  * @param edgeTraces payload-free edge transfer summaries
  * @param fixtureConsumptions fixture-use summaries
@@ -33,6 +34,7 @@ public record TestRun(
         String targetFingerprint,
         String fixtureBundleFingerprint,
         String planFingerprint,
+        String semanticResultFingerprint,
         List<NodeTrace> nodeTraces,
         List<EdgeTrace> edgeTraces,
         List<FixtureConsumption> fixtureConsumptions,
@@ -262,6 +264,7 @@ public record TestRun(
     /** Normalizes collections and protects the stored response from caller mutation. */
     public TestRun {
         runId = normalized(runId);
+        semanticResultFingerprint = normalized(semanticResultFingerprint);
         nodeTraces = nodeTraces == null ? List.of() : List.copyOf(nodeTraces);
         edgeTraces = edgeTraces == null ? List.of() : List.copyOf(edgeTraces);
         fixtureConsumptions = fixtureConsumptions == null ? List.of() : List.copyOf(fixtureConsumptions);
@@ -293,7 +296,7 @@ public record TestRun(
                    List<AssertionResult> assertionResults, List<String> diagnostics,
                    JsonNode rawResponse) {
         this(runId, status, evidenceClass, targetFingerprint, fixtureBundleFingerprint,
-                planFingerprint, nodeTraces, List.of(), fixtureConsumptions,
+                planFingerprint, "", nodeTraces, List.of(), fixtureConsumptions,
                 assertionResults, diagnostics, Integrity.legacyUnsigned(), rawResponse);
     }
 
@@ -324,6 +327,11 @@ public record TestRun(
             throw new IllegalArgumentException("Unsupported test execution response version");
         }
         JsonNode evidence = response.path("evidence");
+        String evidenceVersion = evidence.path("schemaVersion").asText();
+        if (!TestingProtocol.TEST_RUN_EVIDENCE_V1.equals(evidenceVersion)
+                && !TestingProtocol.TEST_RUN_EVIDENCE_V2.equals(evidenceVersion)) {
+            throw new IllegalArgumentException("Unsupported test run evidence version");
+        }
         String runId = response.path("runId").asText(evidence.path("runId").asText());
         Status status = enumValue(Status.class, evidence.path("status").asText(), "status");
         EvidenceClass evidenceClass = enumValue(EvidenceClass.class,
@@ -366,10 +374,13 @@ public record TestRun(
                 && integrity.signatureStatus() != SignatureStatus.VERIFIED) {
             throw new IllegalArgumentException("Certifiable v2 evidence must carry a verified signature");
         }
+        String semanticResultFingerprint = TestingProtocol.TEST_RUN_EVIDENCE_V2.equals(evidenceVersion)
+                ? requiredFingerprint(evidence.path("semanticResultFingerprint").asText(),
+                "semanticResultFingerprint") : "";
         return new TestRun(runId, status, evidenceClass, evidence.path("targetFingerprint").asText(),
                 evidence.path("fixtureBundleFingerprint").asText(),
-                evidence.path("planFingerprint").asText(), nodes, edges, fixtures, assertions,
-                diagnostics, integrity, response);
+                evidence.path("planFingerprint").asText(), semanticResultFingerprint,
+                nodes, edges, fixtures, assertions, diagnostics, integrity, response);
     }
 
     /**

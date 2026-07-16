@@ -47,12 +47,14 @@ public final class TestEvidenceSanitizer {
             map.forEach((key, value) -> metadata.put(String.valueOf(key), value));
         }
         metadata.put("payloadSanitized", true);
-        return new TestRunEvidence(evidence.schemaVersion(), evidence.runId(), evidence.status(),
+        TestRunEvidence sanitized = new TestRunEvidence(evidence.schemaVersion(), evidence.runId(),
+                evidence.status(),
                 evidence.evidenceClass(), evidence.executionPurpose(), evidence.targetFingerprint(),
                 evidence.fixtureBundleFingerprint(), evidence.planFingerprint(), evidence.startedAt(),
                 evidence.completedAt(), nodes, edges, evidence.fixtureConsumptions(), assertions,
                 evidence.diagnostics().stream().map(item -> String.valueOf(sanitizeValue(item))).toList(),
                 metadata);
+        return TestSemanticResultFingerprint.attach(objectMapper, sanitized);
     }
 
     private Object sanitizeValue(Object value) {

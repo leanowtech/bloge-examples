@@ -52,9 +52,10 @@ class TestEvidenceIntegrityServiceTest {
         TestEvidenceIntegrity integrity = service.seal(full).integrity();
         TestRunEvidence summary = new TestRunEvidence(full.schemaVersion(), full.runId(), full.status(),
                 full.evidenceClass(), full.executionPurpose(), full.targetFingerprint(),
-                full.fixtureBundleFingerprint(), full.planFingerprint(), full.startedAt(), full.completedAt(),
-                List.of(), List.of(), full.fixtureConsumptions(), full.assertionResults(),
-                full.diagnostics(), full.metadata());
+                full.fixtureBundleFingerprint(), full.planFingerprint(),
+                full.semanticResultFingerprint(), full.startedAt(), full.completedAt(), List.of(),
+                List.of(), full.fixtureConsumptions(), full.assertionResults(), full.diagnostics(),
+                full.metadata());
 
         TestEvidenceIntegrity projected = service.project(integrity, summary,
                 TestEvidenceIntegrity.Projection.SUMMARY);
@@ -107,14 +108,35 @@ class TestEvidenceIntegrityServiceTest {
                 .isEqualTo(TestEvidenceIntegrityService.Verification.INVALID);
     }
 
+    @Test
+    void refusesToSealCurrentEvidenceWithAStaleSemanticFingerprint() {
+        TestRunEvidence original = evidence("run-1", TestRunEvidence.Status.PASSED);
+        TestRunEvidence stale = new TestRunEvidence(original.schemaVersion(), original.runId(),
+                TestRunEvidence.Status.EXECUTION_FAILED, original.evidenceClass(),
+                original.executionPurpose(), original.targetFingerprint(),
+                original.fixtureBundleFingerprint(), original.planFingerprint(),
+                original.semanticResultFingerprint(), original.startedAt(), original.completedAt(),
+                original.nodeTrace(), original.edgeTrace(), original.fixtureConsumptions(),
+                original.assertionResults(), original.diagnostics(), original.metadata());
+
+        TestEvidenceIntegrityService.SealResult result = service.seal(stale);
+
+        assertThat(result.verified()).isFalse();
+        assertThat(result.failureCode())
+                .isEqualTo(TestEvidenceIntegrityService.SEMANTIC_FINGERPRINT_INVALID);
+    }
+
     private static TestRunEvidence evidence(String runId, TestRunEvidence.Status status) {
         Instant started = Instant.parse("2026-07-16T00:00:00Z");
-        return new TestRunEvidence("", runId, status, TestRunEvidence.EvidenceClass.CERTIFIABLE,
+        TestRunEvidence evidence = new TestRunEvidence("", runId, status,
+                TestRunEvidence.EvidenceClass.CERTIFIABLE,
                 "GRAPH_CONTRACT_TEST", "sha256:" + "1".repeat(64),
                 "sha256:" + "2".repeat(64), "sha256:" + "3".repeat(64),
                 started, started.plusSeconds(1),
                 List.of(new TestRunEvidence.NodeTrace("node-a", "operator-a", "SUCCESS", "REAL",
                         Map.of("id", "42"), Map.of("ok", true), "", 4)),
                 List.of(), List.of(), List.of(), List.of(), Map.of("caseId", "case-a"));
+        return TestSemanticResultFingerprint.attach(JsonMapper.builder()
+                .addModule(new JavaTimeModule()).build(), evidence);
     }
 }

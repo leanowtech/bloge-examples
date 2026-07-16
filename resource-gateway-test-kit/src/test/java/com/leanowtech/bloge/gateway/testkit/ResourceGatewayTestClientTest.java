@@ -74,6 +74,7 @@ class ResourceGatewayTestClientTest {
         assertThat(executed.runId()).isEqualTo("run-42");
         assertThat(operatorRun.runId()).isEqualTo("run-42");
         assertThat(executed.status()).isEqualTo(TestRun.Status.PASSED);
+        assertThat(executed.semanticResultFingerprint()).isEqualTo(FINGERPRINT);
         assertThat(executed.integrity().signed()).isTrue();
         assertThat(executed.integrity().independentlyVerifiable()).isTrue();
         assertThat(executed.integrity().projection()).isEqualTo(TestRun.Projection.FULL);
@@ -917,10 +918,11 @@ class ResourceGatewayTestClientTest {
                    "signedAt":"2026-07-15T10:15:30Z","signature":"detached-signature",
                    "projection":"FULL","projectionFingerprint":"%1$s",
                    "independentlyVerifiable":true},
-                 "evidence":{"schemaVersion":"bloge.testRunEvidence.v1","runId":"run-42",
+                 "evidence":{"schemaVersion":"bloge.testRunEvidence.v2","runId":"run-42",
                    "status":"PASSED","evidenceClass":"CERTIFIABLE",
                    "targetFingerprint":"%1$s","fixtureBundleFingerprint":"%1$s",
-                   "planFingerprint":"%1$s","nodeTrace":[{"nodeId":"credit","operatorRef":"httpResource",
+                   "planFingerprint":"%1$s","semanticResultFingerprint":"%1$s",
+                   "nodeTrace":[{"nodeId":"credit","operatorRef":"httpResource",
                      "status":"MOCKED","fidelity":"TRANSPORT_LEVEL","input":"private-input",
                      "output":"private-output","errorCode":"","durationMs":2,
                      "invocationSiteId":"/root/credit#primary","graphPath":"/root",

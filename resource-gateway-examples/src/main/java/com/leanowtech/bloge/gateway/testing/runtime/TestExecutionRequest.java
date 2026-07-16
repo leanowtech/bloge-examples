@@ -6,7 +6,13 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 
 import java.util.Map;
 
-/** Immutable internal request submitted by graph, operator, suite, and future HTTP adapters. */
+/**
+ * Immutable internal request submitted by graph, operator, suite, and future HTTP adapters.
+ *
+ * <p>The constructor snapshots business context values. Each execution creates another fresh
+ * {@link GraphContext}, so engine-owned services, budgets, node outputs, and side-effect journals
+ * cannot leak between repeated or concurrent runs of the same request.</p>
+ */
 public record TestExecutionRequest(
         Graph graph,
         GraphContext context,
@@ -24,9 +30,9 @@ public record TestExecutionRequest(
         STORED
     }
 
-    /** Normalizes nullable context and metadata without reading controls from business context. */
+    /** Normalizes nullable values and freezes caller-owned business context data. */
     public TestExecutionRequest {
-        context = context == null ? new GraphContext() : context;
+        context = context == null ? new GraphContext() : new GraphContext(context.asMap());
         authorizedPurpose = authorizedPurpose == null ? "" : authorizedPurpose.trim();
         targetFingerprint = targetFingerprint == null ? "" : targetFingerprint.trim();
         fixtureSource = fixtureSource == null ? FixtureSource.INLINE : fixtureSource;

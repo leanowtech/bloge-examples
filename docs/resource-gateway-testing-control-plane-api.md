@@ -929,9 +929,10 @@ The focused protocol, UI, negative-test, and real-browser evidence is recorded i
 
 ### 4.3.3 Signed child-run evidence
 
-Every new graph or operator execution sanitizes the complete `bloge.testRunEvidence.v1`, computes a
-canonical SHA-256 fingerprint, and signs a domain-separated canonical envelope containing that
-fingerprint and the signing time with the shared Resource Gateway evidence signer. It immediately
+Every new graph or operator execution sanitizes the complete `bloge.testRunEvidence.v2`, computes its
+semantic-result and complete-evidence SHA-256 fingerprints, and signs a domain-separated canonical
+envelope containing the latter fingerprint and the signing time with the shared Resource Gateway
+evidence signer. It immediately
 verifies the detached signature before persistence. The current response is:
 
 ```json
@@ -941,7 +942,7 @@ verifies the detached signature before persistence. The current response is:
   "target": {"kind": "GRAPH", "id": "loanDecisionPolicy", "fingerprint": "sha256:<target>"},
   "fixtureBundleRef": {"source": "STORED", "fixtureBundleId": "loan-prime-v1",
     "revision": 1, "fingerprint": "sha256:<fixture>"},
-  "plan": {"schemaVersion": "bloge.effectiveExecutionPlan.v2", "planFingerprint": "sha256:<plan>"},
+  "plan": {"schemaVersion": "bloge.effectiveExecutionPlan.v3", "planFingerprint": "sha256:<plan>"},
   "integrity": {
     "schemaVersion": "bloge.testEvidenceIntegrity.v1",
     "evidenceFingerprint": "sha256:<complete-sanitized-evidence>",
@@ -954,9 +955,27 @@ verifies the detached signature before persistence. The current response is:
     "projectionFingerprint": "sha256:<evidence-in-this-response>",
     "independentlyVerifiable": true
   },
-  "evidence": {"schemaVersion": "bloge.testRunEvidence.v1", "runId": "<run-id>"}
+  "evidence": {
+    "schemaVersion": "bloge.testRunEvidence.v2",
+    "runId": "<run-id>",
+    "semanticResultFingerprint": "sha256:<stable-business-result>"
+  }
 }
 ```
+
+`semanticResultFingerprint` answers whether two runs produced the same deterministic business
+result. Its versioned material includes status, execution purpose, target/fixture/plan identity,
+stable node/edge coordinates and values, attempts, fixture use, assertions, sorted diagnostics,
+semantic execution-service use, logical time, and stable side-effect intents. It excludes run id,
+evidence class, timestamps, durations, signatures, response projection, broad governance metadata,
+parallel completion order, engine-only provider calls, and volatile side-effect ids. It is recomputed
+after redaction, so persisted fingerprints cannot distinguish two values hidden as `[REDACTED]`.
+
+The complete `integrity.evidenceFingerprint` answers whether this exact persisted evidence record,
+including run identity and timing, is unchanged. Integrity sealing and reads reject current evidence
+whose semantic fingerprint is stale. Explicit evidence v1 remains a dual-read historical shape with
+no semantic fingerprint; current response v2 requires evidence v2. `STANDARD` and `SUMMARY` carry the
+semantic fingerprint as signed full-evidence lineage but omit values required to recompute it.
 
 The fingerprint canonicalization sorts object properties and map entries, serializes time values as
 ISO-8601 text, then hashes the exact UTF-8 JSON bytes. The Ed25519 signature covers a second canonical
@@ -1181,7 +1200,9 @@ rejected before any network call. The exact packaged Draft 2020-12 schema valida
 registration and execution values at runtime, and every returned suite/run identity is rebound to the
 originating request before it can reach assertions or reporters. It accepts suite execution response
 v1 as an explicitly unsigned migration shape, structural v2, and semantic v3. `TestRun.integrity()`
-validates and exposes the child v2 signature/projection manifest. `TestSuiteRun.attestation()`
+validates and exposes the child v2 signature/projection manifest, while
+`TestRun.semanticResultFingerprint()` and `TestRunAssertions.assertSameSemanticResult` support
+payload-free deterministic regression comparisons. `TestSuiteRun.attestation()`
 exposes the aggregate checkpoint/terminal signature, while `findSuiteEvidenceBundle`,
 `findEvidenceVerificationKeySet`, and the pinned `verifySuiteEvidence` overload provide the
 release-grade consumer-verification path. The exact-key overload remains available for migration.
@@ -1380,7 +1401,8 @@ Still intentionally outside this increment:
   decision itself remains outside Resource Gateway;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
   reconciliation alert SLOs, and suite-history list/trend APIs;
-- deterministic random/UUID/function execution services and deterministic concurrent scheduling;
+- durable/streaming execution-service state recovery, typed identity/flag/secret authorities, and
+  deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;
 - certification of streaming foreach/loop graphs until their invocation and edge evidence is
   occurrence-addressable and built-in suites exercise it.

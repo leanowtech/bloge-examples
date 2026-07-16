@@ -1107,7 +1107,7 @@
         "certificationGaps": {"type": "array", "maxItems": 100, "items": {"type": "string", "maxLength": 300}}
       }
     },
-    "testRunEvidence": {
+    "testRunEvidenceV1": {
       "type": "object",
       "additionalProperties": false,
       "required": ["schemaVersion", "runId", "status", "evidenceClass", "executionPurpose", "targetFingerprint", "fixtureBundleFingerprint", "planFingerprint", "startedAt", "completedAt", "nodeTrace", "edgeTrace", "fixtureConsumptions", "assertionResults", "diagnostics", "metadata"],
@@ -1129,6 +1129,36 @@
         "diagnostics": {"type": "array", "items": {"type": "string"}},
         "metadata": {"type": "object"}
       }
+    },
+    "testRunEvidenceV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "runId", "status", "evidenceClass", "executionPurpose", "targetFingerprint", "fixtureBundleFingerprint", "planFingerprint", "semanticResultFingerprint", "startedAt", "completedAt", "nodeTrace", "edgeTrace", "fixtureConsumptions", "assertionResults", "diagnostics", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testRunEvidence.v2"},
+        "runId": {"type": "string"},
+        "status": {"$ref": "#/$defs/runStatus"},
+        "evidenceClass": {"enum": ["EXPLORATORY", "CERTIFIABLE"]},
+        "executionPurpose": {"enum": ["GRAPH_CONTRACT_TEST", "OPERATOR_UNIT_TEST"]},
+        "targetFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "fixtureBundleFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "planFingerprint": {"type": "string"},
+        "semanticResultFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "startedAt": {"type": "string", "format": "date-time"},
+        "completedAt": {"type": "string", "format": "date-time"},
+        "nodeTrace": {"type": "array", "items": {"$ref": "#/$defs/nodeTrace"}},
+        "edgeTrace": {"type": "array", "items": {"$ref": "#/$defs/edgeTrace"}},
+        "fixtureConsumptions": {"type": "array"},
+        "assertionResults": {"type": "array"},
+        "diagnostics": {"type": "array", "items": {"type": "string"}},
+        "metadata": {"type": "object"}
+      }
+    },
+    "testRunEvidence": {
+      "oneOf": [
+        {"$ref": "#/$defs/testRunEvidenceV1"},
+        {"$ref": "#/$defs/testRunEvidenceV2"}
+      ]
     },
     "testEvidenceIntegrity": {
       "type": "object",
@@ -1159,7 +1189,7 @@
         "target": {"$ref": "#/$defs/target"},
         "fixtureBundleRef": {"$ref": "#/$defs/resolvedFixtureBundleRef"},
         "plan": {"$ref": "#/$defs/effectivePlan"},
-        "evidence": {"$ref": "#/$defs/testRunEvidence"}
+        "evidence": {"$ref": "#/$defs/testRunEvidenceV1"}
       }
     },
     "testExecutionResponseV2": {
@@ -1174,7 +1204,7 @@
         "fixtureBundleRef": {"$ref": "#/$defs/resolvedFixtureBundleRef"},
         "plan": {"$ref": "#/$defs/effectivePlan"},
         "integrity": {"$ref": "#/$defs/testEvidenceIntegrity"},
-        "evidence": {"$ref": "#/$defs/testRunEvidence"}
+        "evidence": {"$ref": "#/$defs/testRunEvidenceV2"}
       }
     },
     "testExecutionResponse": {

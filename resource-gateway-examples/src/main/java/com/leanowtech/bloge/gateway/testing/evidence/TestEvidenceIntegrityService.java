@@ -22,6 +22,9 @@ public final class TestEvidenceIntegrityService {
     public static final String SIGNER_UNAVAILABLE = "TEST_EVIDENCE_SIGNER_UNAVAILABLE";
     /** Stable diagnostic emitted when a newly produced signature cannot be verified. */
     public static final String SIGNATURE_INVALID = "TEST_EVIDENCE_SIGNATURE_INVALID";
+    /** Stable diagnostic emitted when current evidence carries inconsistent semantic identity. */
+    public static final String SEMANTIC_FINGERPRINT_INVALID =
+            "TEST_EVIDENCE_SEMANTIC_FINGERPRINT_INVALID";
 
     private final ObjectMapper objectMapper;
     private final VisualEvidenceSigner signer;
@@ -46,6 +49,10 @@ public final class TestEvidenceIntegrityService {
     public SealResult seal(TestRunEvidence evidence) {
         Objects.requireNonNull(evidence, "evidence");
         String fingerprint = ProtocolFingerprint.of(objectMapper, evidence);
+        if (!TestSemanticResultFingerprint.matches(objectMapper, evidence)) {
+            return SealResult.failed(TestEvidenceIntegrity.unavailable(fingerprint),
+                    SEMANTIC_FINGERPRINT_INVALID);
+        }
         if (!signer.available()) {
             return SealResult.failed(TestEvidenceIntegrity.unavailable(fingerprint), SIGNER_UNAVAILABLE);
         }
@@ -114,7 +121,8 @@ public final class TestEvidenceIntegrityService {
         }
         if (!TestEvidenceIntegrity.SCHEMA_VERSION.equals(integrity.schemaVersion())
                 || integrity.projection() != TestEvidenceIntegrity.Projection.FULL
-                || !integrity.independentlyVerifiable()) {
+                || !integrity.independentlyVerifiable()
+                || !TestSemanticResultFingerprint.matches(objectMapper, evidence)) {
             return Verification.INVALID;
         }
         String actualFingerprint;

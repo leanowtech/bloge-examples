@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.engine.GraphEngine;
 import com.leanowtech.bloge.core.engine.GraphResult;
 import com.leanowtech.bloge.core.engine.ExecutionOptions;
@@ -13,6 +14,7 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestAssertionEvaluator;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.ControlPlanRejectedException;
 import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
@@ -90,12 +92,13 @@ public class TestRunService {
         List<String> diagnostics = new ArrayList<>();
         GovernedExecutionServices executionServices = compiled.executionServices();
         GraphEngine engine = engineFactory.create(recorder, executionServices.services().timeSource());
+        GraphContext executionContext = new GraphContext(request.context().asMap());
         try {
             ExecutionOptions options = ExecutionOptions.builder()
                     .operatorResolver(resolution -> resolveOperator(resolution, compiled, recorder))
                     .executionServices(executionServices.services())
                     .build();
-            graphResult = engine.execute(request.graph(), request.context(), options);
+            graphResult = engine.execute(request.graph(), executionContext, options);
         } catch (RuntimeException ex) {
             diagnostics.add(bounded("Test engine failed before producing GraphResult: " + ex.getMessage()));
         } finally {
@@ -114,7 +117,8 @@ public class TestRunService {
         consumptionDiagnostics(consumptions, diagnostics);
         assertionDiagnostics(assertions, diagnostics);
 
-        TestRunEvidence evidence = new TestRunEvidence(
+        TestRunEvidence evidence = TestSemanticResultFingerprint.attach(objectMapper,
+                new TestRunEvidence(
                 TestRunEvidence.SCHEMA_VERSION,
                 runId,
                 status,
@@ -130,7 +134,7 @@ public class TestRunService {
                 consumptions,
                 assertions,
                 diagnostics,
-                evidenceMetadata(request, recorder, executionServices));
+                evidenceMetadata(request, recorder, executionServices, executionContext)));
         return new TestExecutionResult(compiled.effectivePlan(), graphResult, evidence);
     }
 
@@ -171,12 +175,13 @@ public class TestRunService {
         } catch (RuntimeException ignored) {
             fixtureFingerprint = "";
         }
-        return new TestRunEvidence(TestRunEvidence.SCHEMA_VERSION, runId,
+        return TestSemanticResultFingerprint.attach(objectMapper,
+                new TestRunEvidence(TestRunEvidence.SCHEMA_VERSION, runId,
                 TestRunEvidence.Status.CONTROL_PLAN_REJECTED,
                 TestRunEvidence.EvidenceClass.EXPLORATORY,
                 request.authorizedPurpose(), request.targetFingerprint(), fixtureFingerprint, "",
                 startedAt, Instant.now(), List.of(), List.of(), List.of(), List.of(),
-                ex.diagnostics(), evidenceMetadata(request, null, null));
+                ex.diagnostics(), evidenceMetadata(request, null, null, null)));
     }
 
     private static TestRunEvidence.Status terminalStatus(
@@ -233,7 +238,8 @@ public class TestRunService {
 
     private Map<String, Object> evidenceMetadata(TestExecutionRequest request,
                                                  InvocationRecorder recorder,
-                                                 GovernedExecutionServices executionServices) {
+                                                 GovernedExecutionServices executionServices,
+                                                 GraphContext executionContext) {
         Map<String, Object> metadata = new LinkedHashMap<>(request.metadata());
         metadata.put("fixtureSource", request.fixtureSource().name());
         metadata.put("engineIsolation", engineFactory.configuration());
@@ -243,7 +249,7 @@ public class TestRunService {
         }
         if (recorder != null) {
             metadata.put("nodeControlModes", recorder.controlModes());
-            metadata.put("sideEffectIntents", request.context().sideEffectJournal().snapshots());
+            metadata.put("sideEffectIntents", executionContext.sideEffectJournal().snapshots());
         }
         if (executionServices != null) {
             metadata.put("executionServiceBindings", executionServices.bindings());

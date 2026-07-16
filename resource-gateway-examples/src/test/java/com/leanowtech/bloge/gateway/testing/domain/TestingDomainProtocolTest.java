@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.testing.domain;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 
 import org.junit.jupiter.api.Test;
 
@@ -147,7 +148,8 @@ class TestingDomainProtocolTest {
                         Instant.parse("2026-08-15T09:00:00Z"), true, List.of())),
                 Map.of("externalRead", "DENY_UNMATCHED"),
                 List.of());
-        TestRunEvidence evidence = new TestRunEvidence(
+        TestRunEvidence evidence = TestSemanticResultFingerprint.attach(mapper,
+                new TestRunEvidence(
                 "",
                 "test-run-1",
                 TestRunEvidence.Status.PASSED,
@@ -167,7 +169,7 @@ class TestingDomainProtocolTest {
                 List.of(new TestRunEvidence.AssertionResult("OUTPUT_PATH", "/decision", true,
                         "REVIEW", "REVIEW", "")),
                 List.of(),
-                Map.of("suiteId", "order-risk"));
+                Map.of("suiteId", "order-risk")));
 
         TestRunEvidence restored = mapper.readValue(mapper.writeValueAsBytes(evidence), TestRunEvidence.class);
         EffectiveExecutionPlan restoredPlan = mapper.readValue(
@@ -179,6 +181,9 @@ class TestingDomainProtocolTest {
         assertThat(restoredPlan.replayDependencies()).singleElement().satisfies(dependency ->
                 assertThat(dependency.replayPayloadId()).isEqualTo("policy-response"));
         assertThat(restored.planFingerprint()).isEqualTo(plan.planFingerprint());
+        assertThat(restored.schemaVersion()).isEqualTo(TestRunEvidence.SCHEMA_VERSION);
+        assertThat(restored.semanticResultFingerprint()).startsWith("sha256:");
+        assertThat(TestSemanticResultFingerprint.matches(mapper, restored)).isTrue();
         assertThat(restored.nodeTrace()).singleElement()
                 .satisfies(trace -> {
                     assertThat(trace.fidelity()).isEqualTo("PROTOCOL_DERIVED");

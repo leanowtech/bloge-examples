@@ -110,7 +110,8 @@ class JUnitXmlReportWriterTest {
     private static String run(String runId, String status, String evidenceClass, String diagnostic) {
         return """
                 {"schemaVersion":"bloge.testExecutionResponse.v1","runId":"%s",
-                 "evidence":{"status":"%s","evidenceClass":"%s","targetFingerprint":"sha256:target",
+                 "evidence":{"schemaVersion":"bloge.testRunEvidence.v1",
+                   "status":"%s","evidenceClass":"%s","targetFingerprint":"sha256:target",
                    "fixtureBundleFingerprint":"sha256:fixture","planFingerprint":"sha256:plan",
                    "nodeTrace":[{"nodeId":"node","input":"private-payload","output":"private-payload"}],
                    "fixtureConsumptions":[],"assertionResults":[],"diagnostics":["%s"]}}

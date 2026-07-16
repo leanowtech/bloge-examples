@@ -25,6 +25,8 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -84,6 +86,7 @@ class TestRunServiceTest {
                 Map.of(), true, ResolvedReplayPayloads.empty());
 
         TestExecutionResult deterministic = service.execute(stored);
+        TestExecutionResult repeated = service.execute(stored);
 
         assertThat(deterministic.passed()).isTrue();
         assertThat(deterministic.graphResult().getOutput("subject", Instant.class)).isEqualTo(origin);
@@ -95,6 +98,20 @@ class TestRunServiceTest {
                 });
         assertThat(deterministic.evidence().evidenceClass())
                 .isEqualTo(TestRunEvidence.EvidenceClass.CERTIFIABLE);
+        assertThat(repeated.plan().planFingerprint())
+                .isEqualTo(deterministic.plan().planFingerprint());
+        assertThat(repeated.evidence().metadata().get("logicalTime"))
+                .isEqualTo(deterministic.evidence().metadata().get("logicalTime"));
+        assertThat(TestSemanticResultFingerprint.projection(
+                new ObjectMapper().findAndRegisterModules(), repeated.evidence()))
+                .isEqualTo(TestSemanticResultFingerprint.projection(
+                        new ObjectMapper().findAndRegisterModules(), deterministic.evidence()));
+        assertThat(repeated.evidence().semanticResultFingerprint())
+                .isEqualTo(deterministic.evidence().semanticResultFingerprint());
+        assertThat(repeated.evidence().runId()).isNotEqualTo(deterministic.evidence().runId());
+        assertThat(ProtocolFingerprint.of(new ObjectMapper().findAndRegisterModules(),
+                repeated.evidence())).isNotEqualTo(ProtocolFingerprint.of(
+                new ObjectMapper().findAndRegisterModules(), deterministic.evidence()));
 
         TestExecutionRequest uncontrolled = new TestExecutionRequest(graph,
                 new GraphContext(Map.of("input", "hello")), bundle(),

@@ -93,8 +93,10 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(FixtureBundle.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/effectivePlan/properties/schemaVersion/const").asText())
                 .isEqualTo(EffectiveExecutionPlan.SCHEMA_VERSION);
-        assertThat(schema.at("/$defs/testRunEvidence/properties/schemaVersion/const").asText())
+        assertThat(schema.at("/$defs/testRunEvidenceV2/properties/schemaVersion/const").asText())
                 .isEqualTo(TestRunEvidence.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testRunEvidenceV1/properties/schemaVersion/const").asText())
+                .isEqualTo(TestRunEvidence.SCHEMA_VERSION_V1);
         assertThat(schema.at("/$defs/runStatus/enum")).extracting(JsonNode::asText)
                 .containsExactlyInAnyOrder(Arrays.stream(TestRunEvidence.Status.values())
                         .map(Enum::name).toArray(String[]::new));
@@ -235,7 +237,13 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.at("/executionServiceBinding/properties/service/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactly("TIME", "RANDOM", "UUID", "IDENTITY", "FEATURE_FLAG", "SECRET");
-        assertThat(definitions.at("/testRunEvidence/additionalProperties").asBoolean()).isFalse();
+        assertThat(definitions.at("/testRunEvidenceV2/additionalProperties").asBoolean()).isFalse();
+        assertThat(definitions.at("/testRunEvidenceV2/required")).extracting(JsonNode::asText)
+                .contains("semanticResultFingerprint");
+        assertThat(definitions.at(
+                "/testRunEvidenceV2/properties/semanticResultFingerprint/$ref").asText())
+                .isEqualTo("#/$defs/fingerprint");
+        assertThat(definitions.at("/testRunEvidence/oneOf")).hasSize(2);
         assertThat(definitions.at("/testExecutionResponse/oneOf")).hasSize(2);
         assertThat(definitions.at("/testExecutionResponseV2/required"))
                 .extracting(JsonNode::asText).contains("integrity", "evidence");
@@ -251,9 +259,9 @@ class TestingControlProtocolSchemaTest {
         JsonNode definitions = new ObjectMapper().readTree(Files.readString(Path.of("..", "docs", "schemas",
                 "resource-gateway-testing", "testing-control-plane-v1.schema.json"))).path("$defs");
 
-        assertThat(definitions.at("/testRunEvidence/properties/nodeTrace/items/$ref").asText())
+        assertThat(definitions.at("/testRunEvidenceV2/properties/nodeTrace/items/$ref").asText())
                 .isEqualTo("#/$defs/nodeTrace");
-        assertThat(definitions.at("/testRunEvidence/properties/edgeTrace/items/$ref").asText())
+        assertThat(definitions.at("/testRunEvidenceV2/properties/edgeTrace/items/$ref").asText())
                 .isEqualTo("#/$defs/edgeTrace");
         assertThat(definitions.at("/nodeTrace/required")).extracting(JsonNode::asText)
                 .contains("invocationSiteId", "graphPath", "correlationKey", "occurrence",

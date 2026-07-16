@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
+import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -63,6 +64,9 @@ class TestabilityCapabilitiesTest {
                 .containsExactly(EffectiveExecutionPlan.SCHEMA_VERSION_V1,
                         EffectiveExecutionPlan.SCHEMA_VERSION_V2,
                         EffectiveExecutionPlan.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testRunEvidence"))
+                .containsExactly(TestRunEvidence.SCHEMA_VERSION_V1,
+                        TestRunEvidence.SCHEMA_VERSION);
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.path().equals("/api/testing/executions"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/graphs/{graphName}"));

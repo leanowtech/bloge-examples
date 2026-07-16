@@ -21,7 +21,7 @@
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
 | Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（四类 case intent、内容寻址 fixture/一等 suite 发布、精确 revision 执行与 aggregate coverage/promotion 回显）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、process-owner lease/heartbeat/checkpoint fence、abandoned RUNNING fail-closed reconciliation、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其 governed catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free plan v2 谱系与认证降级，以及同步 nested/foreach/loop/compensation 控制传播、动态 attempt/occurrence selector 与 occurrence/attempt/node/edge evidence 已落地；streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3 | In progress | graph/operator `TestRunEvidence`、suite checkpoint/terminal attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、签名时刻 lifecycle policy、外部 M-of-N trust publication、bounded append-only consistency page、durable consumer checkpoint、rollback/fork/split-view/revoked-pin resurrection detection 与 test-kit independent verifier 已完成；exact-suite ANEKE semantic workbook seed、`GovernanceGateResult.v3` 可重建 basis、编译级 GraphDraft target 绑定和独立 schema consumer 已完成；真实 ANEKE N/N-1 conformance、独立 witness gossip/跨域一致性证明待完成 |
-| Stage 4 | In progress | BLOGE run-scoped `ExecutionServices`/`FunctionCallSite` 已接通；RG logical clock、seeded random/UUID、payload-free plan v3 binding、usage audit、认证降级与生产边界架构测试已落地；identity/flag/secret fixture authority、semantic result fingerprint、durable/streaming 恢复待完成 |
+| Stage 4 | In progress | BLOGE run-scoped `ExecutionServices`/`FunctionCallSite` 已接通；RG logical clock、seeded random/UUID、payload-free plan v3 binding、usage audit、认证降级、生产边界架构测试、`bloge.testRunEvidence.v2` semantic result fingerprint、重复运行 context 隔离和 test-kit 语义回归断言已落地；identity/flag/secret fixture authority、durable/streaming 恢复与确定性并发待完成 |
 | Stage 5 | Not started | 独立部署、network/identity/secret/store 物理隔离、规模化调度与 mutation/property testing |
 
 实现细节、行为兼容决策和可复现测试见
@@ -46,6 +46,9 @@
 [Stage 3 semantic gate basis verification](resource-gateway-execution-data-control-plane-stage3-semantic-gate-basis-verification.md)。北极星中的目标态能力未出现在上述
 Done 行时，均不得从文档推断为产品已开放。
 
+Stage 4 的 run-scoped provider、语义结果身份、脱敏后重算和 v1/v2 兼容证明见
+[Stage 4 execution services verification](resource-gateway-execution-data-control-plane-stage4-execution-services-verification.md)。
+
 动态 attempt/occurrence selector 的一基坐标、优先级、失败边界和真实 retry/nested re-entry
 证明见 [Stage 2 dynamic selector verification](resource-gateway-execution-data-control-plane-stage2-dynamic-selector-verification.md)。
 Semantic coverage 不修改已签名 v1 canonical shape，而通过 suite/evidence v2 双读演进，见
@@ -55,12 +58,12 @@ Exact semantic suite 到 ANEKE payload-free workbook seed 的投影、失败边�
 Semantic workbook 到 ANEKE gate decision 的 exact evidence 重建、GraphDraft 编译 target 绑定与 v2 兼容证明见
 [Stage 3 semantic gate basis verification](resource-gateway-execution-data-control-plane-stage3-semantic-gate-basis-verification.md)。
 
-当前严格验收基线：Resource Gateway `clean verify` 共 1857 tests、0 failures、0 errors、
-34 个条件跳过，真实浏览器回归与 Spring Boot JAR 打包成功；Canvas suite 聚焦 68 tests、
+当前严格验收基线：Resource Gateway `clean verify` 共 1868 tests、0 failures、0 errors、
+2 个条件跳过，真实浏览器回归与 Spring Boot JAR 打包成功；Canvas suite 聚焦 68 tests、
 前端全量 150 tests，并在桌面与 390 x 844 真实浏览器中完成两行一等 suite 发布；Canvas 对完整
 stored suite value、child evidence、coverage、promotion 与 aggregate 一致性 fail closed；immutable TestSuite
 runner/attestation/protocol 增量聚焦 49 tests；key lifecycle 增量聚焦 41 tests；动态 selector/capability/schema 增量聚焦 51 tests；typed semantic coverage/codec/registry/persistence/schema/capability 增量聚焦 52 tests；suite-run lease/reconciliation/profile 聚焦 22 tests；built-in catalog materialization 增量聚焦 34 tests；suite consumer adapter 聚焦 21 tests、独立 test-kit
-`clean verify` 60 tests，均为 0 failures、0 errors，library/CLI JAR 均打包成功；semantic gate/projector/target/schema
+`clean verify` 61 tests，均为 0 failures、0 errors，library/CLI JAR 均打包成功；semantic gate/projector/target/schema
 增量聚焦 23 tests，integration package 138 tests 全绿；完整 suite/catalog/semantic workbook/gate v3 wire value 按打包的
 Draft 2020-12 schema 校验并回绑 request identity，`RUNNING` 在无 polling CLI 中退出 2，
 未知参数值与 validator 细节不进入日志，public JavaDoc 零告警且由 `verify` 门禁强制。
@@ -1106,11 +1109,17 @@ certification package，因为它不含 replay payload attachment、独立 witne
 scheduler、operator context 和 DSL function。`logicalClock` 控制 TIME，`randomSeed` 以域隔离
 SHA-256 序列控制 RANDOM/UUID；调用事实进入 evidence metadata，缺少必要控制会把 run 降为
 EXPLORATORY。IDENTITY/FEATURE_FLAG/SECRET 当前没有 fixture authority，调用即 fail closed。
-生产包路径不得引用 governed provider，由架构测试持续证明。验证见
+生产包路径不得引用 governed provider，由架构测试持续证明。第二增量新增
+`bloge.testRunEvidence.v2.semanticResultFingerprint`：它对 target + fixture + plan 下的稳定业务结果做
+domain-separated canonical hash，排除 runId、墙钟、耗时、签名、治理 provenance、并行完成顺序和
+引擎内部 UUID 调用；保留稳定 node/edge 坐标、值、状态、attempt、fixture/assertion、语义 provider 使用
+和副作用意图。脱敏后重新计算，签名前和读取验签时均校验一致性；同一 request 每次执行使用全新
+`GraphContext`，防止 provider、budget、node output 与 side-effect journal 串运行。test-kit 同时提供
+`assertSameSemanticResult`。验证见
 [Stage 4 execution services verification](resource-gateway-execution-data-control-plane-stage4-execution-services-verification.md)。
 
-本增量尚未完成 `semanticResultFingerprint`、durable cursor/provider-state resume、stream/event
-fixture、确定性并发调度、测试身份/feature flag/test-secret authority，因此 Stage 4 仍为进行中。
+本增量尚未完成 durable cursor/provider-state resume、stream/event fixture、确定性并发调度、
+测试身份/feature flag/test-secret authority，因此 Stage 4 仍为进行中。
 
 交付：
 

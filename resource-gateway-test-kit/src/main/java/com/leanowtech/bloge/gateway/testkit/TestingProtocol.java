@@ -31,8 +31,10 @@ public final class TestingProtocol {
     public static final String OPERATOR_TARGET_DESCRIPTOR_V1 = "bloge.testOperatorTargetDescriptor.v1";
     /** Current operator target descriptor with fail-closed composability facts. */
     public static final String OPERATOR_TARGET_DESCRIPTOR_V2 = "bloge.testOperatorTargetDescriptor.v2";
-    /** Test-run evidence wire version. */
+    /** Historical test-run evidence wire version without semantic identity. */
     public static final String TEST_RUN_EVIDENCE_V1 = "bloge.testRunEvidence.v1";
+    /** Current test-run evidence wire version with semantic identity. */
+    public static final String TEST_RUN_EVIDENCE_V2 = "bloge.testRunEvidence.v2";
     /** Detached test-evidence integrity manifest wire version. */
     public static final String TEST_EVIDENCE_INTEGRITY_V1 = "bloge.testEvidenceIntegrity.v1";
     /** Immutable test-suite wire version. */

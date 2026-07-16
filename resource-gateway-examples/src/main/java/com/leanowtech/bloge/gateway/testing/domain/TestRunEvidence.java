@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.domain;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Fingerprinted test-run evidence skeleton. It deliberately distinguishes execution failure,
@@ -17,6 +18,8 @@ import java.util.Map;
  * @param targetFingerprint frozen target fingerprint
  * @param fixtureBundleFingerprint frozen fixture fingerprint
  * @param planFingerprint effective execution-plan fingerprint
+ * @param semanticResultFingerprint canonical business-result fingerprint excluding run identity,
+ *                                  wall-clock timestamps, durations, signatures, and completion order
  * @param startedAt run start
  * @param completedAt terminal time
  * @param nodeTrace observed node facts
@@ -35,6 +38,7 @@ public record TestRunEvidence(
         String targetFingerprint,
         String fixtureBundleFingerprint,
         String planFingerprint,
+        String semanticResultFingerprint,
         Instant startedAt,
         Instant completedAt,
         List<NodeTrace> nodeTrace,
@@ -44,8 +48,11 @@ public record TestRunEvidence(
         List<String> diagnostics,
         Map<String, Object> metadata
 ) {
-    /** Current test-run evidence protocol version. */
-    public static final String SCHEMA_VERSION = "bloge.testRunEvidence.v1";
+    /** Historical evidence version without a semantic result fingerprint. */
+    public static final String SCHEMA_VERSION_V1 = "bloge.testRunEvidence.v1";
+    /** Current version adds a canonical semantic result fingerprint. */
+    public static final String SCHEMA_VERSION = "bloge.testRunEvidence.v2";
+    private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
     /** Normalized test-run lifecycle and terminal states. */
     public enum Status {
@@ -77,12 +84,51 @@ public record TestRunEvidence(
         targetFingerprint = trimmed(targetFingerprint);
         fixtureBundleFingerprint = trimmed(fixtureBundleFingerprint);
         planFingerprint = trimmed(planFingerprint);
+        semanticResultFingerprint = trimmed(semanticResultFingerprint);
+        if (!semanticResultFingerprint.isBlank()
+                && !FINGERPRINT.matcher(semanticResultFingerprint).matches()) {
+            throw new IllegalArgumentException(
+                    "semanticResultFingerprint must be a canonical SHA-256 fingerprint");
+        }
         nodeTrace = immutableList(nodeTrace);
         edgeTrace = immutableList(edgeTrace);
         fixtureConsumptions = immutableList(fixtureConsumptions);
         assertionResults = immutableList(assertionResults);
         diagnostics = immutableList(diagnostics);
         metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
+    }
+
+    /**
+     * Backward-compatible constructor for v1 evidence without a semantic result fingerprint.
+     */
+    public TestRunEvidence(String schemaVersion, String runId, Status status,
+                           EvidenceClass evidenceClass, String executionPurpose,
+                           String targetFingerprint, String fixtureBundleFingerprint,
+                           String planFingerprint, Instant startedAt, Instant completedAt,
+                           List<NodeTrace> nodeTrace, List<EdgeTrace> edgeTrace,
+                           List<FixtureConsumption> fixtureConsumptions,
+                           List<AssertionResult> assertionResults, List<String> diagnostics,
+                           Map<String, Object> metadata) {
+        this(legacySchemaVersion(schemaVersion), runId, status, evidenceClass, executionPurpose, targetFingerprint,
+                fixtureBundleFingerprint, planFingerprint, "", startedAt, completedAt, nodeTrace,
+                edgeTrace, fixtureConsumptions, assertionResults, diagnostics, metadata);
+    }
+
+    private static String legacySchemaVersion(String schemaVersion) {
+        return schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION_V1 : schemaVersion;
+    }
+
+    /**
+     * Returns this evidence upgraded to the current protocol with the supplied semantic identity.
+     *
+     * @param fingerprint canonical fingerprint computed from semantic result material
+     * @return immutable current-version evidence
+     */
+    public TestRunEvidence withSemanticResultFingerprint(String fingerprint) {
+        return new TestRunEvidence(SCHEMA_VERSION, runId, status, evidenceClass,
+                executionPurpose, targetFingerprint, fixtureBundleFingerprint, planFingerprint,
+                fingerprint, startedAt, completedAt, nodeTrace, edgeTrace, fixtureConsumptions,
+                assertionResults, diagnostics, metadata);
     }
 
     /**

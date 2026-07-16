@@ -67,6 +67,25 @@ public final class TestRunAssertions {
         }
     }
 
+    /**
+     * Requires two runs to carry the same non-empty deterministic business-result identity.
+     *
+     * @param expected baseline run
+     * @param actual repeated or comparison run
+     */
+    public static void assertSameSemanticResult(TestRun expected, TestRun actual) {
+        required(expected);
+        required(actual);
+        if (expected.semanticResultFingerprint().isBlank()) {
+            throw new AssertionFailedError("Baseline Resource Gateway run has no semantic result fingerprint",
+                    "non-empty semantic result fingerprint", "");
+        }
+        if (!expected.semanticResultFingerprint().equals(actual.semanticResultFingerprint())) {
+            throw new AssertionFailedError("Resource Gateway runs have different semantic results",
+                    expected.semanticResultFingerprint(), actual.semanticResultFingerprint());
+        }
+    }
+
     private static void required(TestRun run) {
         if (run == null) {
             throw new AssertionFailedError("A Resource Gateway test run is required", "non-null", null);

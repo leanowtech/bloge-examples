@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.integration.TestabilityAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -44,13 +45,15 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(ReplayPayloadRepository.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestReplayPayloadService.class)).hasSize(1);
             assertThat(context.getBean(TestabilityAvailability.class).executionEndpointEnabled()).isTrue();
-            TestEvidenceIntegrityService.SealResult seal = context
-                    .getBean(TestEvidenceIntegrityService.class)
-                    .seal(new TestRunEvidence("", "profile-run",
+            ObjectMapper mapper = context.getBean(ObjectMapper.class);
+            TestRunEvidence evidence = TestSemanticResultFingerprint.attach(mapper,
+                    new TestRunEvidence("", "profile-run",
                             TestRunEvidence.Status.EVIDENCE_INCOMPLETE,
                             TestRunEvidence.EvidenceClass.EXPLORATORY,
                             "TEST", "", "", "", Instant.EPOCH, Instant.EPOCH,
                             List.of(), List.of(), List.of(), List.of(), List.of(), Map.of()));
+            TestEvidenceIntegrityService.SealResult seal = context
+                    .getBean(TestEvidenceIntegrityService.class).seal(evidence);
             assertThat(seal.verified()).isFalse();
             assertThat(seal.failureCode()).isEqualTo(TestEvidenceIntegrityService.SIGNER_UNAVAILABLE);
         }

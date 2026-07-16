@@ -22,6 +22,7 @@ import com.leanowtech.bloge.gateway.testing.domain.SemanticCoverageVerdict;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
@@ -189,10 +190,11 @@ class TestRuntimePersistenceTest {
     @Test
     void terminalEvidenceRoundTripsAndLookupAlwaysAppliesScope() {
         Instant now = Instant.now();
-        TestRunEvidence evidence = new TestRunEvidence("", "run-1", TestRunEvidence.Status.PASSED,
+        TestRunEvidence evidence = TestSemanticResultFingerprint.attach(mapper,
+                new TestRunEvidence("", "run-1", TestRunEvidence.Status.PASSED,
                 TestRunEvidence.EvidenceClass.CERTIFIABLE, "GRAPH_CONTRACT_TEST", "sha256:target",
                 "sha256:fixture", "sha256:plan", now, now, List.of(), List.of(), List.of(), List.of(),
-                List.of(), Map.of("payloadSanitized", true));
+                List.of(), Map.of("payloadSanitized", true)));
         var integrity = new TestEvidenceIntegrityService(mapper, new InMemoryVisualEvidenceSigner())
                 .seal(evidence).integrity();
         TestRunRecord record = new TestRunRecord("run-1", "tenant-a", "org-a", "project-a", "test",

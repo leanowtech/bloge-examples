@@ -63,16 +63,22 @@ FixtureBundleBuilder fixture = FixtureBundleBuilder
 FixtureBundleRevision stored = client.registerFixture(
         "loan-approved", fixture.registrationRequest());
 
-TestRun run = client.execute(fixture.storedExecution(
+var execution = fixture.storedExecution(
         stored.fingerprint(),
         Map.of("applicantId", "app-42", "amount", 100_000),
         ResourceGatewayTestClient.Verbosity.STANDARD,
-        Map.of("suiteRef", "loan-policy", "caseRef", "approved")));
+        Map.of("suiteRef", "loan-policy", "caseRef", "approved"));
+TestRun baselineRun = client.execute(execution);
+TestRun run = client.execute(execution);
 
 TestRunAssertions.assertPassed(run);
 TestRunAssertions.assertCertifiable(run);
 TestRunAssertions.assertFixturesSatisfied(run);
 TestRunAssertions.assertNoRealInvocations(run);
+
+// Compare a repeated run with a frozen baseline without coupling to run ids or durations.
+TestRunAssertions.assertSameSemanticResult(baselineRun, run);
+String semanticResult = run.semanticResultFingerprint();
 
 TestRun.NodeTrace occurrence = run.nodeTraces().getFirst();
 String site = occurrence.invocationSiteId();
@@ -306,6 +312,12 @@ endpoints. They intentionally omit node/attempt/edge payload values; use
 `rawResponse()` only in an explicitly authorized diagnostic path when sanitized
 payload inspection is required. Producers that predate occurrence coordinates
 remain readable and project zero coordinates plus empty attempt/edge lists.
+
+Current `bloge.testRunEvidence.v2` also carries `semanticResultFingerprint`. It identifies stable
+business outcomes across equivalent deterministic runs while complete evidence fingerprints remain
+unique. Historical evidence v1 remains readable but has no semantic identity;
+`assertSameSemanticResult` fails closed when the baseline fingerprint is absent. `STANDARD` and
+`SUMMARY` expose this value as signed full-evidence lineage, not as independently recomputable proof.
 
 For timeout, retry, fallback, or time-dependent business rules, declare one
 run-scoped logical clock and use `delay` or `timeout`:
