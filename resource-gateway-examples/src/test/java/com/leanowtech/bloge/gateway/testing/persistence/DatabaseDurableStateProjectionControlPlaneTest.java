@@ -15,6 +15,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -411,6 +412,182 @@ class DatabaseDurableStateProjectionControlPlaneTest {
         });
     }
 
+    @Test
+    void archivesOnlyExpiredResolvedFindingsWithoutOperationalSecrets() {
+        DatabaseDurableStateProjectionControlPlane controlPlane = controlPlane(
+                database.jdbc(), "replica-a");
+        insertRawExecution("engine-old", "not-json");
+        insertRawExecution("engine-fresh", "not-json");
+        insertRawExecution("engine-open", "not-json");
+        controlPlane.reconcilePage(100,
+                DurableStateProjectionReconciler.RepairMode.REPAIR_DERIVED);
+        resolveExistingFinding(controlPlane, "engine-old");
+        resolveExistingFinding(controlPlane, "engine-fresh");
+        database.jdbc().update("""
+                UPDATE rg_test_bloge_projection_findings
+                SET resolved_at = DATEADD('DAY', -31, CURRENT_TIMESTAMP)
+                WHERE entity_type = 'EXECUTION' AND row_id = 'engine-old'
+                """);
+
+        DatabaseDurableStateProjectionControlPlane.RetentionAttempt attempt =
+                controlPlane.retainFindings(
+                        Duration.ofDays(30), Duration.ofDays(365), 100);
+
+        assertThat(attempt.status()).isEqualTo(
+                DatabaseDurableStateProjectionControlPlane.RetentionStatus.COMPLETED);
+        assertThat(attempt.result().archived()).isEqualTo(1);
+        assertThat(attempt.result().purged()).isZero();
+        assertThat(controlPlane.findings(100)).extracting(
+                        finding -> finding.key().rowId())
+                .containsExactlyInAnyOrder("engine-fresh", "engine-open");
+        assertThat(controlPlane.archivedFindings(100)).singleElement().satisfies(archive -> {
+            assertThat(archive.key().rowId()).isEqualTo("engine-old");
+            assertThat(archive.resolution()).isEqualTo(
+                    DatabaseDurableStateProjectionControlPlane.Resolution.MANUALLY_REPAIRED);
+            assertThat(archive.recordFingerprint()).startsWith("sha256:");
+            assertThat(archive.toString()).doesNotContain("claim-", "resolve-", "operator-a");
+        });
+        List<String> archiveColumns = database.jdbc().queryForList("""
+                SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_NAME = 'RG_TEST_BLOGE_PROJECTION_FINDING_ARCHIVE'
+                """, String.class);
+        assertThat(archiveColumns).doesNotContain(
+                "CLAIM_TOKEN", "CLAIM_OWNER", "CLAIM_REQUEST_ID",
+                "CLAIM_REQUEST_FINGERPRINT", "RESOLUTION_REQUEST_ID",
+                "RESOLUTION_REQUEST_FINGERPRINT", "RESOLUTION_OWNER");
+        database.jdbc().update("""
+                UPDATE rg_test_bloge_projection_finding_archive
+                SET columns_json = '["tampered"]'
+                """);
+        assertThatThrownBy(() -> controlPlane.archivedFindings(100))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("fingerprint verification failed");
+        database.jdbc().update("""
+                UPDATE rg_test_bloge_projection_finding_archive
+                SET archived_at = DATEADD('DAY', -366, CURRENT_TIMESTAMP)
+                """);
+        assertThatThrownBy(() -> controlPlane.retainFindings(
+                Duration.ofDays(30), Duration.ofDays(365), 100))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("fingerprint verification failed");
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*) FROM rg_test_bloge_projection_finding_archive
+                """, Integer.class)).isEqualTo(1);
+        assertThat(controlPlane.retentionSnapshot().totalPurged()).isZero();
+    }
+
+    @Test
+    void retentionLeaseIsSingleOwnerAndExpiredOwnershipCanBeTakenOver() {
+        DatabaseDurableStateProjectionControlPlane first = controlPlane(
+                database.jdbc(), "replica-a");
+        DatabaseDurableStateProjectionControlPlane second = controlPlane(
+                database.jdbc(), "replica-b");
+        DatabaseDurableStateProjectionControlPlane.RetentionLease stale =
+                first.acquireRetentionLease().orElseThrow();
+
+        assertThat(second.retainFindings(
+                Duration.ofDays(30), Duration.ofDays(365), 100).status()).isEqualTo(
+                DatabaseDurableStateProjectionControlPlane.RetentionStatus.LEASE_BUSY);
+        database.jdbc().update("""
+                UPDATE rg_test_bloge_projection_retention
+                SET lease_until = DATEADD('SECOND', -1, CURRENT_TIMESTAMP)
+                WHERE job_name = 'bloge-projection-finding-retention'
+                """);
+
+        DatabaseDurableStateProjectionControlPlane.RetentionLease winner =
+                second.acquireRetentionLease().orElseThrow();
+
+        assertThat(winner.epoch()).isGreaterThan(stale.epoch());
+        assertThatThrownBy(() -> first.retainClaimedFindings(
+                stale, Duration.ofDays(30), Duration.ofDays(365), 100))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("fence");
+    }
+
+    @Test
+    void archiveFailureRollsBackFindingDeletionAndRetentionCounters() {
+        DatabaseDurableStateProjectionControlPlane healthy = controlPlane(
+                database.jdbc(), "replica-a");
+        insertRawExecution("engine-retention-rollback", "not-json");
+        healthy.reconcilePage(100,
+                DurableStateProjectionReconciler.RepairMode.REPAIR_DERIVED);
+        resolveExistingFinding(healthy, "engine-retention-rollback");
+        database.jdbc().update("""
+                UPDATE rg_test_bloge_projection_findings
+                SET resolved_at = DATEADD('DAY', -31, CURRENT_TIMESTAMP)
+                WHERE entity_type = 'EXECUTION' AND row_id = 'engine-retention-rollback'
+                """);
+        AtomicBoolean failArchive = new AtomicBoolean(true);
+        JdbcTemplate failingJdbc = new JdbcTemplate(database.jdbc().getDataSource()) {
+            @Override
+            public int update(String sql, Object... args) {
+                if (sql.contains("INSERT INTO rg_test_bloge_projection_finding_archive")
+                        && failArchive.getAndSet(false)) {
+                    throw new IllegalStateException("injected archive failure");
+                }
+                return super.update(sql, args);
+            }
+        };
+        DatabaseDurableStateProjectionControlPlane failing = controlPlane(
+                failingJdbc, "replica-b");
+
+        assertThatThrownBy(() -> failing.retainFindings(
+                Duration.ofDays(30), Duration.ofDays(365), 100))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("injected archive failure");
+
+        assertThat(healthy.findings(100)).extracting(finding -> finding.key().rowId())
+                .contains("engine-retention-rollback");
+        assertThat(healthy.archivedFindings(100)).isEmpty();
+        assertThat(healthy.retentionSnapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.totalArchived()).isZero();
+            assertThat(snapshot.totalPurged()).isZero();
+            assertThat(snapshot.archiveSize()).isZero();
+            assertThat(snapshot.leaseOwner()).isBlank();
+        });
+    }
+
+    @Test
+    void purgesArchivedHistoryInBoundedDatabaseClockPages() {
+        DatabaseDurableStateProjectionControlPlane controlPlane = controlPlane(
+                database.jdbc(), "replica-a");
+        insertRawExecution("engine-archive-a", "not-json");
+        insertRawExecution("engine-archive-b", "not-json");
+        controlPlane.reconcilePage(100,
+                DurableStateProjectionReconciler.RepairMode.REPAIR_DERIVED);
+        resolveExistingFinding(controlPlane, "engine-archive-a");
+        resolveExistingFinding(controlPlane, "engine-archive-b");
+        database.jdbc().update("""
+                UPDATE rg_test_bloge_projection_findings
+                SET resolved_at = DATEADD('DAY', -31, CURRENT_TIMESTAMP)
+                WHERE row_id IN ('engine-archive-a', 'engine-archive-b')
+                """);
+        assertThat(controlPlane.retainFindings(
+                Duration.ofDays(30), Duration.ofDays(365), 100).result().archived())
+                .isEqualTo(2);
+        for (DatabaseDurableStateProjectionControlPlane.ArchivedFindingRecord archive
+                : controlPlane.archivedFindings(100)) {
+            ageArchive(controlPlane, archive, Duration.ofDays(366));
+        }
+
+        DatabaseDurableStateProjectionControlPlane.RetentionAttempt firstPurge =
+                controlPlane.retainFindings(
+                        Duration.ofDays(30), Duration.ofDays(365), 1);
+        DatabaseDurableStateProjectionControlPlane.RetentionAttempt secondPurge =
+                controlPlane.retainFindings(
+                        Duration.ofDays(30), Duration.ofDays(365), 1);
+
+        assertThat(firstPurge.result().purged()).isEqualTo(1);
+        assertThat(secondPurge.result().purged()).isEqualTo(1);
+        assertThat(controlPlane.archivedFindings(100)).isEmpty();
+        assertThat(controlPlane.retentionSnapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.totalArchived()).isEqualTo(2);
+            assertThat(snapshot.totalPurged()).isEqualTo(2);
+            assertThat(snapshot.archiveSize()).isZero();
+            assertThat(snapshot.lastSuccessAt()).isNotNull();
+        });
+    }
+
     private DatabaseDurableStateProjectionControlPlane controlPlane(
             JdbcTemplate jdbc, String ownerId) {
         DatabaseDurableStateProjectionControlPlane controlPlane =
@@ -440,6 +617,43 @@ class DatabaseDurableStateProjectionControlPlaneTest {
         Integer count = database.jdbc().queryForObject(
                 "SELECT COUNT(*) FROM projection_action_audit", Integer.class);
         return count == null ? 0 : count;
+    }
+
+    private void resolveExistingFinding(
+            DatabaseDurableStateProjectionControlPlane controlPlane,
+            String rowId) {
+        DurableStateProjectionReconciler.EntityKey key =
+                new DurableStateProjectionReconciler.EntityKey(
+                        DurableStateProjectionReconciler.EntityType.EXECUTION, rowId);
+        DatabaseDurableStateProjectionControlPlane.FindingClaim claim =
+                controlPlane.claimFinding(
+                        key, "operator-a", "claim-" + rowId, Duration.ofMinutes(2),
+                        ignored -> TestRuntimeTransactionMutation.noop()).claim();
+        assertThat(controlPlane.resolveFinding(
+                claim, "resolve-" + rowId,
+                DatabaseDurableStateProjectionControlPlane.Resolution.MANUALLY_REPAIRED,
+                ignored -> TestRuntimeTransactionMutation.noop()).disposition()).isEqualTo(
+                DatabaseDurableStateProjectionControlPlane.ResolutionDisposition.RESOLVED);
+    }
+
+    private void ageArchive(
+            DatabaseDurableStateProjectionControlPlane controlPlane,
+            DatabaseDurableStateProjectionControlPlane.ArchivedFindingRecord archive,
+            Duration age) {
+        Instant archivedAt = archive.archivedAt().minus(age);
+        DatabaseDurableStateProjectionControlPlane.ArchivedFindingRecord aged =
+                new DatabaseDurableStateProjectionControlPlane.ArchivedFindingRecord(
+                        archive.archiveId(), archive.key(), archive.kind(), archive.columns(),
+                        archive.repairable(), archive.outcome(), archive.occurrences(),
+                        archive.firstSeenAt(), archive.lastSeenAt(), archive.resolution(),
+                        archive.resolvedAt(), archive.sourceVersion(),
+                        archive.recordFingerprint(), archivedAt);
+        database.jdbc().update("""
+                UPDATE rg_test_bloge_projection_finding_archive
+                SET archived_at = ?, record_fingerprint = ?
+                WHERE archive_id = ?
+                """, Timestamp.from(archivedAt), controlPlane.archiveRecordFingerprint(aged),
+                archive.archiveId());
     }
 
     private ExecutionInstance execution(String executionId, Instant now) {

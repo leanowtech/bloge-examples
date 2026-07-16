@@ -385,6 +385,8 @@ public record IntegrationCapabilities(
                 testExecutionEndpointEnabled);
         features.put("immutableDurableStateProjectionActionAudit",
                 testExecutionEndpointEnabled);
+        features.put("boundedDurableStateProjectionFindingRetention",
+                testExecutionEndpointEnabled);
         features.put("signedTestRunEvidence", testExecutionEndpointEnabled && signer.available());
         features.put("suiteSignedChildEvidenceGate", testExecutionEndpointEnabled && signer.available());
         features.put("signedTestSuiteRunAttestation",

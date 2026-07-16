@@ -135,6 +135,22 @@ public class TestRuntimeConfiguration {
                 DurableStateProjectionReconciler.RepairMode.parse(repairMode));
     }
 
+    /** Archives and purges resolved projection findings in bounded database-leased pages. */
+    @Bean
+    DurableStateProjectionFindingRetentionScheduler
+            durableStateProjectionFindingRetentionScheduler(
+                    DatabaseDurableStateProjectionControlPlane controlPlane,
+                    @Value("${gateway.testing.durable.projection-findings.resolved-retention-days:30}")
+                    long resolvedRetentionDays,
+                    @Value("${gateway.testing.durable.projection-findings.archive-retention-days:365}")
+                    long archiveRetentionDays,
+                    @Value("${gateway.testing.durable.projection-findings.retention-page-size:100}")
+                    int pageSize) {
+        return new DurableStateProjectionFindingRetentionScheduler(
+                controlPlane, Duration.ofDays(resolvedRetentionDays),
+                Duration.ofDays(archiveRetentionDays), pageSize);
+    }
+
     @Bean
     FixtureBundleRepository fixtureBundleRepository(TestRuntimeDatabase database, ObjectMapper objectMapper) {
         return new DatabaseFixtureBundleRepository(database.jdbc(), objectMapper);

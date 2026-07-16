@@ -42,10 +42,14 @@ import java.util.function.Function;
 public final class DatabaseDurableStateProjectionControlPlane {
 
     private static final String JOB_NAME = "bloge-scheduling-projection";
+    private static final String RETENTION_JOB_NAME = "bloge-projection-finding-retention";
     private static final int MAX_PAGE_SIZE = 1000;
     private static final int MAX_FINDING_PAGE_SIZE = 1000;
     private static final Duration MIN_LEASE = Duration.ofSeconds(1);
     private static final Duration MAX_LEASE = Duration.ofHours(1);
+    private static final Duration MIN_RESOLVED_RETENTION = Duration.ofHours(1);
+    private static final Duration MIN_ARCHIVE_RETENTION = Duration.ofDays(1);
+    private static final Duration MAX_RETENTION = Duration.ofDays(3650);
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() { };
 
     private final JdbcTemplate jdbc;
@@ -131,7 +135,55 @@ public final class DatabaseDurableStateProjectionControlPlane {
                 ON rg_test_bloge_projection_findings
                     (finding_status, claim_until, last_seen_at, entity_type, row_id)
                 """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_rg_test_projection_finding_retention
+                ON rg_test_bloge_projection_findings
+                    (finding_status, resolved_at, entity_type, row_id)
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_bloge_projection_finding_archive (
+                    archive_id VARCHAR(36) PRIMARY KEY,
+                    entity_type VARCHAR(32) NOT NULL,
+                    row_id VARCHAR(512) NOT NULL,
+                    finding_kind VARCHAR(64) NOT NULL,
+                    columns_json CLOB NOT NULL,
+                    repairable BOOLEAN NOT NULL,
+                    last_outcome VARCHAR(32) NOT NULL,
+                    occurrence_count BIGINT NOT NULL,
+                    first_seen_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    last_seen_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    resolution VARCHAR(64) NOT NULL,
+                    resolved_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    source_version BIGINT NOT NULL,
+                    record_fingerprint VARCHAR(128) NOT NULL,
+                    archived_at TIMESTAMP WITH TIME ZONE NOT NULL
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_rg_test_projection_finding_archive_retention
+                ON rg_test_bloge_projection_finding_archive (archived_at, archive_id)
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_rg_test_projection_finding_archive_key
+                ON rg_test_bloge_projection_finding_archive
+                    (entity_type, row_id, archived_at)
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_bloge_projection_retention (
+                    job_name VARCHAR(128) PRIMARY KEY,
+                    lease_owner VARCHAR(255) NOT NULL,
+                    lease_token VARCHAR(255) NOT NULL,
+                    lease_epoch BIGINT NOT NULL,
+                    lease_until TIMESTAMP WITH TIME ZONE NOT NULL,
+                    revision BIGINT NOT NULL,
+                    total_archived BIGINT NOT NULL,
+                    total_purged BIGINT NOT NULL,
+                    last_success_at TIMESTAMP WITH TIME ZONE,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+                )
+                """);
         initializeSweepState();
+        initializeRetentionState();
     }
 
     /**
@@ -209,6 +261,93 @@ public final class DatabaseDurableStateProjectionControlPlane {
                         ORDER BY last_seen_at, entity_type, row_id
                         LIMIT ?
                         """, this::mapFinding, bounded(limit, MAX_FINDING_PAGE_SIZE));
+    }
+
+    /**
+     * Lists payload-free archived finding lifecycles without operational claim or request secrets.
+     *
+     * @param limit requested result bound, normalized to 1..1000
+     * @return newest archive snapshots first
+     */
+    public List<ArchivedFindingRecord> archivedFindings(int limit) {
+        return jdbc.query("""
+                        SELECT archive_id, entity_type, row_id, finding_kind, columns_json,
+                               repairable, last_outcome, occurrence_count, first_seen_at,
+                               last_seen_at, resolution, resolved_at, source_version,
+                               record_fingerprint, archived_at
+                        FROM rg_test_bloge_projection_finding_archive
+                        ORDER BY archived_at DESC, archive_id
+                        LIMIT ?
+                        """, this::mapArchivedFinding,
+                bounded(limit, MAX_FINDING_PAGE_SIZE));
+    }
+
+    /**
+     * Returns one transactionally consistent retention-control and archive-size snapshot.
+     *
+     * <p>The snapshot is payload-free and suitable for a later metrics adapter. It does not expose
+     * retention lease tokens, finding claim tokens, caller request IDs, or authority values.</p>
+     *
+     * @return current retention ownership, cumulative counters, and oldest retained timestamps
+     */
+    public RetentionSnapshot retentionSnapshot() {
+        RetentionSnapshot result = transactions.execute(status -> {
+            RetentionState state = requireRetentionState(false);
+            Long archiveSize = jdbc.queryForObject("""
+                    SELECT COUNT(*) FROM rg_test_bloge_projection_finding_archive
+                    """, Long.class);
+            Timestamp oldestResolved = jdbc.queryForObject("""
+                    SELECT MIN(resolved_at) FROM rg_test_bloge_projection_findings
+                    WHERE finding_status = 'RESOLVED'
+                    """, Timestamp.class);
+            Timestamp oldestArchived = jdbc.queryForObject("""
+                    SELECT MIN(archived_at) FROM rg_test_bloge_projection_finding_archive
+                    """, Timestamp.class);
+            return state.snapshot(
+                    archiveSize == null ? 0L : archiveSize,
+                    oldestResolved == null ? null : oldestResolved.toInstant(),
+                    oldestArchived == null ? null : oldestArchived.toInstant());
+        });
+        return requiredTransactionResult(result, "finding retention snapshot");
+    }
+
+    /**
+     * Claims and applies one bounded resolved-finding archive and archive-purge page.
+     *
+     * <p>Eligibility uses the database clock. Each source snapshot insert and exact source-row
+     * delete share one transaction with archive purges and cumulative counters. A failed archive
+     * write therefore leaves the source finding and all counters unchanged. Another replica may
+     * take over only after the committed retention lease expires.</p>
+     *
+     * @param resolvedRetention time a resolved finding remains in the active owner queue
+     * @param archiveRetention time an archived snapshot remains before bounded deletion
+     * @param pageSize maximum source archives and maximum archive purges in this attempt
+     * @return completed aggregate or lease-busy result
+     */
+    public RetentionAttempt retainFindings(
+            Duration resolvedRetention,
+            Duration archiveRetention,
+            int pageSize) {
+        Duration safeResolvedRetention = boundedRetention(
+                resolvedRetention, MIN_RESOLVED_RETENTION, "Resolved finding retention");
+        Duration safeArchiveRetention = boundedRetention(
+                archiveRetention, MIN_ARCHIVE_RETENTION, "Finding archive retention");
+        int safePageSize = bounded(pageSize, MAX_FINDING_PAGE_SIZE);
+        Optional<RetentionLease> lease = acquireRetentionLease();
+        if (lease.isEmpty()) {
+            return RetentionAttempt.busy();
+        }
+        try {
+            return retainClaimedFindings(lease.orElseThrow(), safeResolvedRetention,
+                    safeArchiveRetention, safePageSize);
+        } catch (RuntimeException failure) {
+            try {
+                releaseRetentionLease(lease.orElseThrow());
+            } catch (RuntimeException releaseFailure) {
+                failure.addSuppressed(releaseFailure);
+            }
+            throw failure;
+        }
     }
 
     /**
@@ -399,6 +538,206 @@ public final class DatabaseDurableStateProjectionControlPlane {
             return FindingResolutionResult.resolved(committed);
         });
         return requiredTransactionResult(result, "finding resolution");
+    }
+
+    Optional<RetentionLease> acquireRetentionLease() {
+        Optional<RetentionLease> result = transactions.execute(status -> {
+            RetentionState current = requireRetentionState(true);
+            Instant now = databaseNow();
+            if (current.leaseUntil().isAfter(now)) {
+                return Optional.empty();
+            }
+            long epoch = Math.addExact(current.leaseEpoch(), 1);
+            long revision = Math.addExact(current.revision(), 1);
+            String token = UUID.randomUUID().toString();
+            Instant leaseUntil = now.plus(sweepLeaseDuration);
+            int updated = jdbc.update("""
+                    UPDATE rg_test_bloge_projection_retention
+                    SET lease_owner = ?, lease_token = ?, lease_epoch = ?, lease_until = ?,
+                        revision = ?, updated_at = ?
+                    WHERE job_name = ? AND revision = ?
+                    """, ownerId, token, epoch, Timestamp.from(leaseUntil), revision,
+                    Timestamp.from(now), RETENTION_JOB_NAME, current.revision());
+            if (updated != 1) {
+                throw new IllegalStateException("Projection retention lease fence was rejected");
+            }
+            return Optional.of(new RetentionLease(ownerId, token, epoch, leaseUntil));
+        });
+        return requiredTransactionResult(result, "finding retention lease acquisition");
+    }
+
+    RetentionAttempt retainClaimedFindings(
+            RetentionLease lease,
+            Duration resolvedRetention,
+            Duration archiveRetention,
+            int pageSize) {
+        RetentionLease safeLease = Objects.requireNonNull(lease, "lease");
+        Duration safeResolvedRetention = boundedRetention(
+                resolvedRetention, MIN_RESOLVED_RETENTION, "Resolved finding retention");
+        Duration safeArchiveRetention = boundedRetention(
+                archiveRetention, MIN_ARCHIVE_RETENTION, "Finding archive retention");
+        int safePageSize = bounded(pageSize, MAX_FINDING_PAGE_SIZE);
+        RetentionAttempt result = transactions.execute(status -> {
+            RetentionState state = requireRetentionState(true);
+            Instant startedAt = databaseNow();
+            requireLiveRetentionFence(state, safeLease, startedAt);
+            Instant resolvedCutoff = startedAt.minus(safeResolvedRetention);
+            Instant archiveCutoff = startedAt.minus(safeArchiveRetention);
+            List<FindingRow> eligible = jdbc.query("""
+                            SELECT entity_type, row_id, finding_kind, columns_json, repairable,
+                                   last_outcome, finding_status, occurrence_count, first_seen_at,
+                                   last_seen_at, resolution, resolved_at, claim_owner, claim_token,
+                                   claim_until, claim_request_id, claim_request_fingerprint,
+                                   resolution_request_id, resolution_request_fingerprint,
+                                   resolution_owner, resolution_claim_version, finding_version
+                            FROM rg_test_bloge_projection_findings
+                            WHERE finding_status = 'RESOLVED' AND resolved_at IS NOT NULL
+                              AND resolved_at <= ?
+                            ORDER BY resolved_at, entity_type, row_id
+                            LIMIT ? FOR UPDATE
+                            """, this::mapFindingRow,
+                    Timestamp.from(resolvedCutoff), safePageSize);
+            int archived = 0;
+            for (FindingRow finding : eligible) {
+                archiveFinding(finding, startedAt);
+                archived = Math.addExact(archived, 1);
+            }
+            List<ArchivedFindingRecord> expiredArchives = jdbc.query("""
+                    SELECT archive_id, entity_type, row_id, finding_kind, columns_json,
+                           repairable, last_outcome, occurrence_count, first_seen_at,
+                           last_seen_at, resolution, resolved_at, source_version,
+                           record_fingerprint, archived_at
+                    FROM rg_test_bloge_projection_finding_archive
+                    WHERE archived_at <= ?
+                    ORDER BY archived_at, archive_id
+                    LIMIT ? FOR UPDATE
+                    """, this::mapArchivedFinding,
+                    Timestamp.from(archiveCutoff), safePageSize);
+            int purged = 0;
+            for (ArchivedFindingRecord archive : expiredArchives) {
+                int deleted = jdbc.update("""
+                        DELETE FROM rg_test_bloge_projection_finding_archive
+                        WHERE archive_id = ? AND archived_at = ? AND record_fingerprint = ?
+                          AND archived_at <= ?
+                        """, archive.archiveId(), Timestamp.from(archive.archivedAt()),
+                        archive.recordFingerprint(), Timestamp.from(archiveCutoff));
+                if (deleted != 1) {
+                    throw new IllegalStateException(
+                            "Projection finding archive purge fence was rejected");
+                }
+                purged = Math.addExact(purged, 1);
+            }
+            Instant completedAt = databaseNow();
+            requireLiveRetentionFence(state, safeLease, completedAt);
+            long revision = Math.addExact(state.revision(), 1);
+            long totalArchived = Math.addExact(state.totalArchived(), archived);
+            long totalPurged = Math.addExact(state.totalPurged(), purged);
+            int updated = jdbc.update("""
+                    UPDATE rg_test_bloge_projection_retention
+                    SET lease_owner = '', lease_token = '', lease_until = ?, revision = ?,
+                        total_archived = ?, total_purged = ?, last_success_at = ?, updated_at = ?
+                    WHERE job_name = ? AND lease_owner = ? AND lease_token = ?
+                      AND lease_epoch = ? AND revision = ?
+                    """, Timestamp.from(Instant.EPOCH), revision, totalArchived, totalPurged,
+                    Timestamp.from(completedAt), Timestamp.from(completedAt), RETENTION_JOB_NAME,
+                    safeLease.ownerId(), safeLease.token(), safeLease.epoch(), state.revision());
+            if (updated != 1) {
+                throw new IllegalStateException(
+                        "Projection finding retention checkpoint fence was rejected");
+            }
+            return RetentionAttempt.completed(
+                    new RetentionResult(archived, purged, completedAt));
+        });
+        return requiredTransactionResult(result, "claimed finding retention");
+    }
+
+    private void archiveFinding(FindingRow finding, Instant archivedAt) {
+        if (finding.status() != FindingStatus.RESOLVED
+                || finding.resolvedAt() == null
+                || finding.resolution() == Resolution.NONE
+                || !finding.claimOwner().isBlank()
+                || !finding.claimToken().isBlank()) {
+            throw new IllegalStateException(
+                    "Only token-free resolved projection findings may be archived");
+        }
+        String archiveId = UUID.randomUUID().toString();
+        String recordFingerprint = ProtocolFingerprint.of(
+                objectMapper, archiveFingerprintMaterial(finding, archiveId, archivedAt));
+        int inserted = jdbc.update("""
+                INSERT INTO rg_test_bloge_projection_finding_archive (
+                    archive_id, entity_type, row_id, finding_kind, columns_json, repairable,
+                    last_outcome, occurrence_count, first_seen_at, last_seen_at, resolution,
+                    resolved_at, source_version, record_fingerprint, archived_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, archiveId, finding.key().entityType().name(), finding.key().rowId(),
+                finding.kind().name(), writeColumns(finding.columns()), finding.repairable(),
+                finding.outcome().name(), finding.occurrences(),
+                Timestamp.from(finding.firstSeenAt()), Timestamp.from(finding.lastSeenAt()),
+                finding.resolution().name(), Timestamp.from(finding.resolvedAt()),
+                finding.version(), recordFingerprint, Timestamp.from(archivedAt));
+        if (inserted != 1) {
+            throw new IllegalStateException(
+                    "Projection finding archive insert was not acknowledged");
+        }
+        int deleted = jdbc.update("""
+                DELETE FROM rg_test_bloge_projection_findings
+                WHERE entity_type = ? AND row_id = ? AND finding_status = 'RESOLVED'
+                  AND resolved_at = ? AND finding_version = ?
+                """, finding.key().entityType().name(), finding.key().rowId(),
+                Timestamp.from(finding.resolvedAt()), finding.version());
+        if (deleted != 1) {
+            throw new IllegalStateException(
+                    "Projection finding archive source fence was rejected");
+        }
+    }
+
+    private Map<String, Object> archiveFingerprintMaterial(
+            FindingRow finding,
+            String archiveId,
+            Instant archivedAt) {
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("schemaVersion", "bloge.projectionFindingArchive.v1");
+        material.put("archiveId", archiveId);
+        material.put("entityType", finding.key().entityType().name());
+        material.put("rowId", finding.key().rowId());
+        material.put("findingKind", finding.kind().name());
+        material.put("columns", finding.columns());
+        material.put("repairable", finding.repairable());
+        material.put("lastOutcome", finding.outcome().name());
+        material.put("occurrenceCount", finding.occurrences());
+        material.put("firstSeenAt", finding.firstSeenAt());
+        material.put("lastSeenAt", finding.lastSeenAt());
+        material.put("resolution", finding.resolution().name());
+        material.put("resolvedAt", finding.resolvedAt());
+        material.put("sourceVersion", finding.version());
+        material.put("archivedAt", archivedAt);
+        return material;
+    }
+
+    private Map<String, Object> archiveFingerprintMaterial(ArchivedFindingRecord finding) {
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("schemaVersion", "bloge.projectionFindingArchive.v1");
+        material.put("archiveId", finding.archiveId());
+        material.put("entityType", finding.key().entityType().name());
+        material.put("rowId", finding.key().rowId());
+        material.put("findingKind", finding.kind().name());
+        material.put("columns", finding.columns());
+        material.put("repairable", finding.repairable());
+        material.put("lastOutcome", finding.outcome().name());
+        material.put("occurrenceCount", finding.occurrences());
+        material.put("firstSeenAt", finding.firstSeenAt());
+        material.put("lastSeenAt", finding.lastSeenAt());
+        material.put("resolution", finding.resolution().name());
+        material.put("resolvedAt", finding.resolvedAt());
+        material.put("sourceVersion", finding.sourceVersion());
+        material.put("archivedAt", finding.archivedAt());
+        return material;
+    }
+
+    String archiveRecordFingerprint(ArchivedFindingRecord finding) {
+        return ProtocolFingerprint.of(
+                objectMapper,
+                archiveFingerprintMaterial(Objects.requireNonNull(finding, "finding")));
     }
 
     Optional<SweepLease> acquireSweepLease() {
@@ -636,12 +975,41 @@ public final class DatabaseDurableStateProjectionControlPlane {
         return Boolean.TRUE.equals(requiredTransactionResult(result, "sweep lease release"));
     }
 
+    private boolean releaseRetentionLease(RetentionLease lease) {
+        Boolean result = transactions.execute(status -> {
+            Instant now = databaseNow();
+            int updated = jdbc.update("""
+                    UPDATE rg_test_bloge_projection_retention
+                    SET lease_owner = '', lease_token = '', lease_until = ?,
+                        revision = revision + 1, updated_at = ?
+                    WHERE job_name = ? AND lease_owner = ? AND lease_token = ? AND lease_epoch = ?
+                    """, Timestamp.from(Instant.EPOCH), Timestamp.from(now), RETENTION_JOB_NAME,
+                    lease.ownerId(), lease.token(), lease.epoch());
+            return updated == 1;
+        });
+        return Boolean.TRUE.equals(requiredTransactionResult(
+                result, "finding retention lease release"));
+    }
+
     private void requireLiveFence(SweepState state, SweepLease lease, Instant now) {
         if (!state.leaseOwner().equals(lease.ownerId())
                 || !state.leaseToken().equals(lease.token())
                 || state.leaseEpoch() != lease.epoch()
                 || !state.leaseUntil().isAfter(now)) {
             throw new IllegalStateException("Projection sweep fence is stale or expired");
+        }
+    }
+
+    private void requireLiveRetentionFence(
+            RetentionState state,
+            RetentionLease lease,
+            Instant now) {
+        if (!state.leaseOwner().equals(lease.ownerId())
+                || !state.leaseToken().equals(lease.token())
+                || state.leaseEpoch() != lease.epoch()
+                || !state.leaseUntil().isAfter(now)) {
+            throw new IllegalStateException(
+                    "Projection finding retention fence is stale or expired");
         }
     }
 
@@ -654,6 +1022,20 @@ public final class DatabaseDurableStateProjectionControlPlane {
                         lease_token, lease_epoch, lease_until, revision, last_success_at, updated_at
                     ) VALUES (?, '', '', '', '', 0, ?, 0, NULL, ?)
                     """, JOB_NAME, Timestamp.from(Instant.EPOCH), Timestamp.from(now));
+        } catch (DuplicateKeyException alreadyInitialized) {
+            // Another replica created the singleton row first.
+        }
+    }
+
+    private void initializeRetentionState() {
+        try {
+            Instant now = databaseNow();
+            jdbc.update("""
+                    INSERT INTO rg_test_bloge_projection_retention (
+                        job_name, lease_owner, lease_token, lease_epoch, lease_until, revision,
+                        total_archived, total_purged, last_success_at, updated_at
+                    ) VALUES (?, '', '', 0, ?, 0, 0, 0, NULL, ?)
+                    """, RETENTION_JOB_NAME, Timestamp.from(Instant.EPOCH), Timestamp.from(now));
         } catch (DuplicateKeyException alreadyInitialized) {
             // Another replica created the singleton row first.
         }
@@ -698,6 +1080,18 @@ public final class DatabaseDurableStateProjectionControlPlane {
                         "Projection sweep state is not initialized"));
     }
 
+    private RetentionState requireRetentionState(boolean lock) {
+        String suffix = lock ? " FOR UPDATE" : "";
+        return jdbc.query("""
+                        SELECT lease_owner, lease_token, lease_epoch, lease_until, revision,
+                               total_archived, total_purged, last_success_at, updated_at
+                        FROM rg_test_bloge_projection_retention WHERE job_name = ?
+                        """ + suffix, this::mapRetentionState, RETENTION_JOB_NAME).stream()
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "Projection finding retention state is not initialized"));
+    }
+
     private SweepState mapSweepState(ResultSet resultSet, int rowNumber) throws SQLException {
         return new SweepState(
                 new DurableStateProjectionReconciler.ScanCursor(
@@ -706,6 +1100,18 @@ public final class DatabaseDurableStateProjectionControlPlane {
                 resultSet.getString("lease_owner"), resultSet.getString("lease_token"),
                 resultSet.getLong("lease_epoch"), instant(resultSet, "lease_until"),
                 resultSet.getLong("revision"), nullableInstant(resultSet, "last_success_at"),
+                instant(resultSet, "updated_at"));
+    }
+
+    private RetentionState mapRetentionState(
+            ResultSet resultSet,
+            int rowNumber) throws SQLException {
+        return new RetentionState(
+                resultSet.getString("lease_owner"), resultSet.getString("lease_token"),
+                resultSet.getLong("lease_epoch"), instant(resultSet, "lease_until"),
+                resultSet.getLong("revision"), resultSet.getLong("total_archived"),
+                resultSet.getLong("total_purged"),
+                nullableInstant(resultSet, "last_success_at"),
                 instant(resultSet, "updated_at"));
     }
 
@@ -728,6 +1134,34 @@ public final class DatabaseDurableStateProjectionControlPlane {
 
     private FindingRecord mapFinding(ResultSet resultSet, int rowNumber) throws SQLException {
         return mapFindingRow(resultSet, rowNumber).external();
+    }
+
+    private ArchivedFindingRecord mapArchivedFinding(
+            ResultSet resultSet,
+            int rowNumber) throws SQLException {
+        ArchivedFindingRecord archive = new ArchivedFindingRecord(
+                resultSet.getString("archive_id"),
+                new DurableStateProjectionReconciler.EntityKey(
+                        DurableStateProjectionReconciler.EntityType.valueOf(
+                                resultSet.getString("entity_type")),
+                        resultSet.getString("row_id")),
+                DurableStateProjectionReconciler.FindingKind.valueOf(
+                        resultSet.getString("finding_kind")),
+                readColumns(resultSet.getString("columns_json")),
+                resultSet.getBoolean("repairable"),
+                DurableStateProjectionReconciler.Outcome.valueOf(
+                        resultSet.getString("last_outcome")),
+                resultSet.getLong("occurrence_count"),
+                instant(resultSet, "first_seen_at"), instant(resultSet, "last_seen_at"),
+                Resolution.valueOf(resultSet.getString("resolution")),
+                instant(resultSet, "resolved_at"), resultSet.getLong("source_version"),
+                resultSet.getString("record_fingerprint"), instant(resultSet, "archived_at"));
+        String expected = archiveRecordFingerprint(archive);
+        if (!expected.equals(archive.recordFingerprint())) {
+            throw new IllegalStateException(
+                    "Projection finding archive fingerprint verification failed");
+        }
+        return archive;
     }
 
     private FindingRow mapFindingRow(ResultSet resultSet, int rowNumber) throws SQLException {
@@ -812,6 +1246,18 @@ public final class DatabaseDurableStateProjectionControlPlane {
         return safe;
     }
 
+    private static Duration boundedRetention(
+            Duration value,
+            Duration minimum,
+            String name) {
+        Duration safe = Objects.requireNonNull(value, name);
+        if (safe.compareTo(minimum) < 0 || safe.compareTo(MAX_RETENTION) > 0) {
+            throw new IllegalArgumentException(name + " must be between " + minimum
+                    + " and " + MAX_RETENTION);
+        }
+        return safe;
+    }
+
     private static String required(String value, String name, int maximumLength) {
         String safe = value == null ? "" : value.trim();
         if (safe.isBlank() || safe.length() > maximumLength) {
@@ -833,6 +1279,14 @@ public final class DatabaseDurableStateProjectionControlPlane {
         /** The replica acquired the lease and atomically committed one page. */
         COMPLETED,
         /** Another live replica owns the database-clock sweep lease. */
+        LEASE_BUSY
+    }
+
+    /** Result status for one scheduled finding-retention attempt. */
+    public enum RetentionStatus {
+        /** The replica archived and purged one bounded page atomically. */
+        COMPLETED,
+        /** Another live replica owns the database-clock retention lease. */
         LEASE_BUSY
     }
 
@@ -1033,6 +1487,60 @@ public final class DatabaseDurableStateProjectionControlPlane {
     }
 
     /**
+     * Aggregate of one committed finding-retention page.
+     *
+     * @param archived resolved source rows copied to the payload-free archive and deleted
+     * @param purged archive rows deleted after their independent archive retention elapsed
+     * @param completedAt database-clock transaction completion time
+     */
+    public record RetentionResult(int archived, int purged, Instant completedAt) {
+        /** Validates non-negative bounded-page counters and a database-clock completion time. */
+        public RetentionResult {
+            completedAt = Objects.requireNonNull(completedAt, "completedAt");
+            if (archived < 0 || purged < 0) {
+                throw new IllegalArgumentException("Retention counters cannot be negative");
+            }
+        }
+    }
+
+    /**
+     * Result of one scheduled finding-retention attempt.
+     *
+     * @param status completed or lease-busy
+     * @param result retention aggregate when completed, otherwise {@code null}
+     */
+    public record RetentionAttempt(RetentionStatus status, RetentionResult result) {
+        /** Requires a result exactly for completed attempts. */
+        public RetentionAttempt {
+            status = Objects.requireNonNull(status, "status");
+            if ((status == RetentionStatus.COMPLETED) != (result != null)) {
+                throw new IllegalArgumentException(
+                        "Completed retention attempts require exactly one result");
+            }
+        }
+
+        /**
+         * Creates a committed retention attempt.
+         *
+         * @param result committed bounded-page aggregate
+         * @return completed attempt
+         */
+        public static RetentionAttempt completed(RetentionResult result) {
+            return new RetentionAttempt(
+                    RetentionStatus.COMPLETED, Objects.requireNonNull(result, "result"));
+        }
+
+        /**
+         * Creates an attempt indicating that another replica owns the live retention lease.
+         *
+         * @return lease-busy attempt without a result
+         */
+        public static RetentionAttempt busy() {
+            return new RetentionAttempt(RetentionStatus.LEASE_BUSY, null);
+        }
+    }
+
+    /**
      * Payload-free durable sweep state.
      *
      * @param cursor independent execution and work-item keyset positions
@@ -1049,6 +1557,42 @@ public final class DatabaseDurableStateProjectionControlPlane {
             Instant leaseUntil,
             long revision,
             Instant lastSuccessAt) {
+    }
+
+    /**
+     * Payload-free retention-control snapshot for metrics and operational readiness adapters.
+     *
+     * @param leaseOwner current replica owner, blank when idle
+     * @param leaseEpoch monotonically increasing fencing generation
+     * @param leaseUntil database-clock lease deadline
+     * @param revision optimistic state revision
+     * @param totalArchived cumulative source lifecycles archived
+     * @param totalPurged cumulative archive snapshots purged
+     * @param archiveSize current archive row count
+     * @param oldestResolvedAt oldest active resolved finding, or {@code null}
+     * @param oldestArchivedAt oldest retained archive snapshot, or {@code null}
+     * @param lastSuccessAt last atomic retention page commit, or {@code null}
+     */
+    public record RetentionSnapshot(
+            String leaseOwner,
+            long leaseEpoch,
+            Instant leaseUntil,
+            long revision,
+            long totalArchived,
+            long totalPurged,
+            long archiveSize,
+            Instant oldestResolvedAt,
+            Instant oldestArchivedAt,
+            Instant lastSuccessAt) {
+        /** Validates payload-free ownership and monotonic counters. */
+        public RetentionSnapshot {
+            leaseOwner = leaseOwner == null ? "" : leaseOwner;
+            leaseUntil = Objects.requireNonNull(leaseUntil, "leaseUntil");
+            if (leaseEpoch < 0 || revision < 0 || totalArchived < 0
+                    || totalPurged < 0 || archiveSize < 0) {
+                throw new IllegalArgumentException("Retention snapshot counters are invalid");
+            }
+        }
     }
 
     /**
@@ -1103,6 +1647,64 @@ public final class DatabaseDurableStateProjectionControlPlane {
     }
 
     /**
+     * Immutable payload-free archive snapshot of one resolved finding lifecycle.
+     *
+     * <p>Operational owner, claim token, idempotency request IDs, request fingerprints, and
+     * authority JSON are deliberately absent. The record fingerprint binds the retained
+     * classification, lifecycle, archive identity, and archive time but is not an external WORM
+     * attestation.</p>
+     *
+     * @param archiveId opaque archive-row identity
+     * @param key internal authority row identity
+     * @param kind stable discrepancy classification
+     * @param columns mismatched column names, never field values
+     * @param repairable whether automatic repair was structurally possible
+     * @param outcome last scanner outcome before resolution
+     * @param occurrences number of discrepant scans in the archived lifecycle
+     * @param firstSeenAt first database observation
+     * @param lastSeenAt latest discrepant database observation
+     * @param resolution committed non-empty resolution classification
+     * @param resolvedAt database-clock resolution time
+     * @param sourceVersion exact finding revision removed from the active queue
+     * @param recordFingerprint canonical fingerprint of retained source and archive facts
+     * @param archivedAt database-clock archive transaction time
+     */
+    public record ArchivedFindingRecord(
+            String archiveId,
+            DurableStateProjectionReconciler.EntityKey key,
+            DurableStateProjectionReconciler.FindingKind kind,
+            List<String> columns,
+            boolean repairable,
+            DurableStateProjectionReconciler.Outcome outcome,
+            long occurrences,
+            Instant firstSeenAt,
+            Instant lastSeenAt,
+            Resolution resolution,
+            Instant resolvedAt,
+            long sourceVersion,
+            String recordFingerprint,
+            Instant archivedAt) {
+        /** Copies collection state and validates the complete token-free archive snapshot. */
+        public ArchivedFindingRecord {
+            archiveId = required(archiveId, "Projection finding archive ID", 36);
+            key = Objects.requireNonNull(key, "key");
+            kind = Objects.requireNonNull(kind, "kind");
+            columns = columns == null ? List.of() : List.copyOf(columns);
+            outcome = Objects.requireNonNull(outcome, "outcome");
+            firstSeenAt = Objects.requireNonNull(firstSeenAt, "firstSeenAt");
+            lastSeenAt = Objects.requireNonNull(lastSeenAt, "lastSeenAt");
+            resolution = Objects.requireNonNull(resolution, "resolution");
+            resolvedAt = Objects.requireNonNull(resolvedAt, "resolvedAt");
+            recordFingerprint = required(
+                    recordFingerprint, "Projection finding archive record fingerprint", 128);
+            archivedAt = Objects.requireNonNull(archivedAt, "archivedAt");
+            if (resolution == Resolution.NONE || occurrences <= 0 || sourceVersion < 0) {
+                throw new IllegalArgumentException("Archived finding lifecycle is invalid");
+            }
+        }
+    }
+
+    /**
      * Exact server-issued fence required to resolve one finding.
      *
      * @param key claimed row identity
@@ -1132,6 +1734,9 @@ public final class DatabaseDurableStateProjectionControlPlane {
     record SweepLease(String ownerId, String token, long epoch, Instant leaseUntil) {
     }
 
+    record RetentionLease(String ownerId, String token, long epoch, Instant leaseUntil) {
+    }
+
     private record SweepState(
             DurableStateProjectionReconciler.ScanCursor cursor,
             String leaseOwner,
@@ -1144,6 +1749,26 @@ public final class DatabaseDurableStateProjectionControlPlane {
         private ControlSnapshot snapshot() {
             return new ControlSnapshot(
                     cursor, leaseOwner, leaseEpoch, leaseUntil, revision, lastSuccessAt);
+        }
+    }
+
+    private record RetentionState(
+            String leaseOwner,
+            String leaseToken,
+            long leaseEpoch,
+            Instant leaseUntil,
+            long revision,
+            long totalArchived,
+            long totalPurged,
+            Instant lastSuccessAt,
+            Instant updatedAt) {
+        private RetentionSnapshot snapshot(
+                long archiveSize,
+                Instant oldestResolvedAt,
+                Instant oldestArchivedAt) {
+            return new RetentionSnapshot(
+                    leaseOwner, leaseEpoch, leaseUntil, revision, totalArchived, totalPurged,
+                    archiveSize, oldestResolvedAt, oldestArchivedAt, lastSuccessAt);
         }
     }
 

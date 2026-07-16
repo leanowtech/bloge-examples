@@ -577,8 +577,31 @@ test-runtime transaction. Rejected and replay attempts are appended separately. 
 deployment-owned role with `RG_TEST_PROJECTION_FINDING_REQUIRED_GROUP` and minimum clearance with
 `RG_TEST_PROJECTION_FINDING_REQUIRED_CLEARANCE`; defaults are
 `resource-gateway-test-runtime-operators` and `RESTRICTED`. The endpoint is vetoed by `production`.
-Queue retention/archival, metrics/SLO alerts, non-H2 dialect certification, tamper-evident external
-audit anchoring, and production load certification remain future work.
+
+Resolved finding lifecycles now move through a second database-leased control loop. The active queue
+retains a resolved row for 30 days by default; one bounded transaction then copies its token-free
+classification, timestamps, counters, resolution, source revision, and canonical fingerprint into
+`rg_test_bloge_projection_finding_archive` and deletes the exact source row. Claim owner/token,
+idempotency request IDs/fingerprints, resolution owner, authority JSON, and field values are never
+copied. Archive reads recompute the whole-record fingerprint and fail closed on drift. An independent
+365-day archive retention deletes at most one configured page per tick. Archive insert, exact source
+delete, archive purge, and cumulative counters commit or roll back together; a database-clock lease
+prevents multiple replicas from applying the page concurrently.
+
+Configure `RG_TEST_PROJECTION_FINDING_RESOLVED_RETENTION_DAYS` (`1` to `3650`, default `30`),
+`RG_TEST_PROJECTION_FINDING_ARCHIVE_RETENTION_DAYS` (`1` to `3650`, default `365`),
+`RG_TEST_PROJECTION_FINDING_RETENTION_PAGE_SIZE` (`1..1000`, default `100`), and
+`RG_TEST_PROJECTION_FINDING_RETENTION_INTERVAL_MS` (default one hour). The resolved retention API
+also supports a one-hour lower bound, while day-based Spring configuration deliberately rounds the
+operator-facing policy to whole days. Retention uses the same stable
+`gateway.testing.durable.projection-reconciliation.instance-id` identity and
+`gateway.testing.durable.projection-reconciliation.lease-duration-seconds` database-clock lease as projection
+anti-entropy, but owns an independent lease row and cannot block the scan cursor. After active retention elapses, the ordinary finding endpoint
+no longer returns that historical lifecycle; the archive is currently an internal persistence and
+readiness surface, not a public evidence API. Its unkeyed fingerprint catches ordinary row drift but
+does not prove external immutability. Metrics/SLO alerts, non-H2 dialect certification,
+tamper-evident external audit/archive anchoring, and production load certification remain future
+work.
 Wait identity must match the lifecycle identity, and committed wait/work-item ids cannot migrate to
 another execution. Work-item batches validate atomically, and claim, retry, terminal, and dead-letter
 transitions reuse BLOGE's reference state machine. An internal database-clock lease claim can fence an

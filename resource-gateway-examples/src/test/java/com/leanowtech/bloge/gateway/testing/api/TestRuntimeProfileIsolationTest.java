@@ -61,6 +61,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     DurableStateProjectionReconciliationScheduler.class)).isEmpty();
             assertThat(context.getBeansOfType(
+                    DurableStateProjectionFindingRetentionScheduler.class)).isEmpty();
+            assertThat(context.getBeansOfType(
                     DatabaseDurableStateProjectionControlPlane.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableStateProjectionFindingController.class)).isEmpty();
@@ -119,6 +121,8 @@ class TestRuntimeProfileIsolationTest {
                     DurableStateProjectionFindingService.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableStateProjectionReconciliationScheduler.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableStateProjectionFindingRetentionScheduler.class)).hasSize(1);
             assertThat(context.getBean(TestabilityAvailability.class).executionEndpointEnabled()).isTrue();
             ObjectMapper mapper = context.getBean(ObjectMapper.class);
             TestRunEvidence evidence = TestSemanticResultFingerprint.attach(mapper,
@@ -160,6 +164,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(DurableTestRuntimeResources.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableStateProjectionReconciliationScheduler.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableStateProjectionFindingRetentionScheduler.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DatabaseDurableStateProjectionControlPlane.class)).isEmpty();
             assertThat(context.getBeansOfType(

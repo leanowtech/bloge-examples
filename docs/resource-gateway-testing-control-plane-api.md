@@ -913,6 +913,38 @@ rolls the state change back. Rejected and replay attempts receive separate appen
 Application code has no update/delete API for these events; external WORM anchoring remains a later
 hardening item, so this is an application-level immutable audit rather than a storage certification.
 
+Resolved rows do not remain in the owner queue forever. A separate profile-gated, database-leased
+retention loop uses the database clock and two bounded pages per tick:
+
+1. After `resolved-retention-days` (default `30`), it copies the resolved lifecycle to the internal
+   projection-finding archive and deletes the exact source row in the same transaction.
+2. After `archive-retention-days` from `archivedAt` (default `365`), it purges at most one archive
+   page. Source archival and archive purge each use `retention-page-size` (default `100`, maximum
+   `1000`), and the loop defaults to a one-hour fixed delay.
+
+The archive carries only entity type/internal row ID, discrepancy kind, column names, repairability,
+last outcome, counters, lifecycle timestamps, resolution, source revision, and a canonical record
+fingerprint binding the archive identity and database-clock archive time. It never carries claim
+owner/token, caller request IDs/fingerprints, resolution owner,
+authority JSON, business values, or credentials. Reads recompute the fingerprint and fail closed on
+drift. The fingerprint is not keyed and the archive remains in the same database, so this is bounded
+operational history rather than tamper-evident external evidence. Once active retention elapses, the
+ordinary finding endpoint no longer returns that lifecycle; no public archive endpoint is exposed in
+v1.
+
+Environment variables for the packaged test/staging profiles are:
+
+| Variable | Default | Constraint |
+|---|---:|---:|
+| `RG_TEST_PROJECTION_FINDING_RESOLVED_RETENTION_DAYS` | `30` | `1..3650` days |
+| `RG_TEST_PROJECTION_FINDING_ARCHIVE_RETENTION_DAYS` | `365` | `1..3650` days |
+| `RG_TEST_PROJECTION_FINDING_RETENTION_PAGE_SIZE` | `100` | normalized to `1..1000` per phase |
+| `RG_TEST_PROJECTION_FINDING_RETENTION_INTERVAL_MS` | `3600000` | positive scheduler fixed delay |
+
+The loop reuses `gateway.testing.durable.projection-reconciliation.instance-id` and
+`gateway.testing.durable.projection-reconciliation.lease-duration-seconds`, but has its own durable lease row; retention work
+cannot advance or hold the anti-entropy keyset cursor.
+
 ### 4.2.2 Register an immutable test suite
 
 A suite is a reviewed execution manifest, not an inline list of mutable fixtures. Every case carries
