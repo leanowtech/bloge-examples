@@ -107,7 +107,8 @@ public final class IndependentDurableTestEngineFactory {
                 requiredExecutionId, requiredServices.timeSource());
         try {
             DurableGraphEngine engine = create(recorder, requiredServices.timeSource());
-            return new RunSession(requiredExecutionId, requiredOptions, engine, stage);
+            return new RunSession(requiredExecutionId, recorder, requiredOptions,
+                    engine, stage, durableStateStore);
         } catch (RuntimeException | Error failure) {
             stage.close();
             throw failure;
@@ -208,19 +209,26 @@ public final class IndependentDurableTestEngineFactory {
     /** One caller-controlled BLOGE execution and its uncommitted durable-state overlay. */
     public static final class RunSession implements AutoCloseable {
         private final String executionId;
+        private final InvocationRecorder recorder;
         private final DurableGraphEngine engine;
         private final StagedBlogeDurableStateStore.Stage stage;
+        private final StagedBlogeDurableStateStore store;
         private final ExecutionOptions options;
         private final AtomicBoolean executed = new AtomicBoolean();
+        private final AtomicBoolean prepared = new AtomicBoolean();
         private final AtomicBoolean closed = new AtomicBoolean();
 
         private RunSession(String executionId,
+                           InvocationRecorder recorder,
                            ExecutionOptions sourceOptions,
                            DurableGraphEngine engine,
-                           StagedBlogeDurableStateStore.Stage stage) {
+                           StagedBlogeDurableStateStore.Stage stage,
+                           StagedBlogeDurableStateStore store) {
             this.executionId = executionId;
+            this.recorder = recorder;
             this.engine = engine;
             this.stage = stage;
+            this.store = store;
             ExecutionServices services = sourceOptions.executionServices();
             AtomicBoolean rootIdentityAllocated = new AtomicBoolean();
             ExecutionServices controlledServices = new ExecutionServices(
@@ -258,6 +266,36 @@ public final class IndependentDurableTestEngineFactory {
                 throw new IllegalStateException("BLOGE returned an unexpected execution identity");
             }
             return result;
+        }
+
+        /**
+         * Verifies and freezes the only initial boundary supported by the public durable-create
+         * protocol: exactly one persisted signal suspension.
+         *
+         * <p>The fixture cursor and complete BLOGE aggregate are captured only after the persisted
+         * execution and wait rows prove an unambiguous restorable boundary. Terminal, paused,
+         * timer, work-item, stream, and fan-out suspension outcomes fail before a repository can
+         * commit any staged row.</p>
+         *
+         * @param checkpointRef stable control-plane checkpoint reference
+         * @return transaction-participating engine mutation, fixture cursor, and verified boundary
+         */
+        public PreparedRun prepareInitialSuspension(String checkpointRef) {
+            requireOpen();
+            if (!executed.get()) {
+                throw new IllegalStateException(
+                        "A durable test session must execute before its suspension is prepared");
+            }
+            if (!prepared.compareAndSet(false, true)) {
+                throw new IllegalStateException(
+                        "A durable test session suspension is already prepared");
+            }
+            InitialBoundary boundary = initialSignalBoundary();
+            FixtureConsumptionStateSnapshot fixtureState = recorder.captureFixtureState();
+            StagedBlogeDurableStateStore.PreparedMutation mutation = stage.prepare(
+                    required(checkpointRef, "checkpointRef"), boundary.nodeId(),
+                    boundary.boundaryType(), 1, boundary.stateVersion());
+            return new PreparedRun(mutation, fixtureState, boundary);
         }
 
         /**
@@ -301,6 +339,85 @@ public final class IndependentDurableTestEngineFactory {
         private void requireOpen() {
             if (closed.get()) {
                 throw new IllegalStateException("Durable test session is closed");
+            }
+        }
+
+        private InitialBoundary initialSignalBoundary() {
+            ExecutionInstance execution = store.executionStore().get(executionId)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Initial BLOGE execution state disappeared"));
+            List<ExecutionWait> waiting = store.waitStore().findByExecution(executionId).stream()
+                    .filter(wait -> wait.status() == WaitStatus.WAITING)
+                    .toList();
+            List<ExecutionWait> signals = waiting.stream()
+                    .filter(wait -> wait.waitType() == WaitType.WAIT_SIGNAL)
+                    .toList();
+            if (execution.status() != ExecutionStatus.SUSPENDED) {
+                throw new IllegalStateException(
+                        "Durable creation requires an initial suspended BLOGE execution");
+            }
+            if (waiting.size() != 1 || signals.size() != 1) {
+                throw new IllegalStateException(
+                        "Durable creation requires exactly one initial signal suspension");
+            }
+            return new InitialBoundary(execution.status(), signals.getFirst().nodeId(),
+                    "SUSPEND", execution.version());
+        }
+    }
+
+    /**
+     * Unambiguous initial durable boundary accepted by creation protocol v1.
+     *
+     * @param executionStatus persisted BLOGE lifecycle at the boundary
+     * @param nodeId sole signal-suspended node
+     * @param boundaryType control boundary type; always {@code SUSPEND} in v1
+     * @param stateVersion persisted BLOGE execution version
+     */
+    public record InitialBoundary(
+            ExecutionStatus executionStatus,
+            String nodeId,
+            String boundaryType,
+            long stateVersion) {
+        /** Rejects non-suspended or non-restorable initial boundaries. */
+        public InitialBoundary {
+            executionStatus = Objects.requireNonNull(executionStatus, "executionStatus");
+            nodeId = required(nodeId, "nodeId");
+            boundaryType = required(boundaryType, "boundaryType");
+            if (executionStatus != ExecutionStatus.SUSPENDED
+                    || !"SUSPEND".equals(boundaryType)
+                    || stateVersion < 0) {
+                throw new IllegalArgumentException(
+                        "Initial durable boundary must be a versioned signal suspension");
+            }
+        }
+    }
+
+    /**
+     * Frozen fresh-run state captured at one verified initial signal suspension.
+     *
+     * @param engineStateMutation complete BLOGE aggregate mutation
+     * @param fixtureConsumptionState fixture-use cursors captured at the same boundary
+     * @param boundary verified initial signal boundary
+     */
+    public record PreparedRun(
+            StagedBlogeDurableStateStore.PreparedMutation engineStateMutation,
+            FixtureConsumptionStateSnapshot fixtureConsumptionState,
+            InitialBoundary boundary) {
+        /** Requires complete and mutually consistent frozen state. */
+        public PreparedRun {
+            engineStateMutation = Objects.requireNonNull(
+                    engineStateMutation, "engineStateMutation");
+            fixtureConsumptionState = Objects.requireNonNull(
+                    fixtureConsumptionState, "fixtureConsumptionState");
+            boundary = Objects.requireNonNull(boundary, "boundary");
+            DurableTestExecutionCheckpoint.EngineState state =
+                    engineStateMutation.engineState();
+            if (!state.nodeId().equals(boundary.nodeId())
+                    || !state.boundaryType().equals(boundary.boundaryType())
+                    || state.stateVersion() != boundary.stateVersion()
+                    || state.boundarySequence() != 1) {
+                throw new IllegalArgumentException(
+                        "Prepared BLOGE state does not match its initial boundary");
             }
         }
     }

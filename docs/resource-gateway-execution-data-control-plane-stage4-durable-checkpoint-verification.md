@@ -60,6 +60,25 @@ These definitions are included in
 The same schema also defines the public, payload-free `bloge.durableTestOwnerClaimRequest.v1` and
 `bloge.durableTestOwnerClaimResponse.v1` wire contracts. The full checkpoint values remain internal.
 
+## Initial Stable Boundary
+
+`RunSession.execute(...)` uses BLOGE's synchronous execution-to-durable-boundary API, so a fresh run
+returns after terminal completion or after all admitted work is durably quiescent. A separate
+`prepareInitialSuspension(...)` policy admits only the creation-v1 shape that Resource Gateway can
+currently recover without guessing: the persisted execution must be `SUSPENDED`, and the wait store
+must contain exactly one live `WAIT_SIGNAL`. The session then captures the quiescent fixture cursor
+and prepares the execution/checkpoint/wait/work-item aggregate with boundary sequence one. The
+returned `PreparedRun` cross-checks node, boundary type, state version, and sequence against the
+formal engine-state closure.
+
+Terminal completion, pause, timer, work item, stream offset, or multiple live waits fail before a
+repository callback can commit staged state. Closing the session drops the complete overlay. In
+particular, BLOGE may reach concurrent signal suspensions, but Resource Gateway does not yet define
+their ordering, fan-in recovery, or evidence semantics; creation v1 therefore rejects them instead of
+choosing an arbitrary node. This runtime policy is now implemented and tested. Public request
+idempotency, ownership reservation, dependency freezing, and the creation endpoint remain separate
+work and are not implied by this primitive.
+
 ## Runtime Fixture Ledger
 
 `InvocationRecorder.captureFixtureState()` now freezes rule-use, invocation-site occurrence, and

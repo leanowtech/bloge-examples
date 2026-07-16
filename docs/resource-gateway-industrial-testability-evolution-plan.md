@@ -24,6 +24,10 @@
 | Stage 4 | In progress | BLOGE run-scoped `ExecutionServices`/`FunctionCallSite`、公共 `CheckpointFailurePolicy.FAIL_FAST`、fresh execution-to-durable-boundary 与同步 `resumeSuspended` 已接通；RG logical clock、seeded random/UUID、plan v3/provider-state、semantic result fingerprint、组合 `bloge.durableTestExecutionCheckpoint.v2`、fixture cursor、静止边界 recorder snapshot、同库事务、数据库时钟租约 CAS、持久化幂等命令和 staged 四 store aggregate 已落地。fresh `RunSession` 无需驻留或中断执行线程即可同步返回首个终态或持久化 suspension，内部 `RecoverySession` 能把真实 suspension 恢复到下一静止边界并原子 advance 或回滚；公开 payload-free query 已按 tenant/environment/org/project non-disclosure scope 投影完整性验证后的 fence、依赖与边界指纹；公开 owner claim 已把 authorization receipt、结果 fence 与 worker dispatch 原子绑定；公开 authenticated heartbeat 以 exact predecessor fence 隐式解析已签发 dispatch，保持授权 principal 连续性，并原子旋转 revision/lease/successor dispatch；公开 terminal recovery 已按同 principal/authorization 执行一个有界 signal，并把 server-derived BLOGE mutation、terminal checkpoint、不可变结果、审计与显式 evidence gap receipt 原子提交。公开 durable run 创建、dispatcher、worker poll/dispatch、多 suspension 编排、自动 heartbeat 调度、完整历史 trace evidence、stream offset/checkpoint、identity/flag/secret fixture authority、streaming 恢复与确定性并发待完成 |
 | Stage 5 | Not started | 独立部署、network/identity/secret/store 物理隔离、规模化调度与 mutation/property testing |
 
+Stage 4 最新增量把 fresh initial boundary 收敛为唯一持久化 signal wait，并在该静止点同时
+冻结 fixture cursor 与四 store closure；终态、pause、timer/work-item/stream 及多 suspension 在
+repository commit 前 fail closed。该增量只关闭公开创建的运行时边界歧义，尚未开放 run 创建 API。
+
 实现细节、行为兼容决策和可复现测试见
 [v1 实施蓝图](resource-gateway-industrial-testability-evolution-plan-1.0.md) 与
 [Stage 1 verification](resource-gateway-execution-data-control-plane-stage1-verification.md) 与

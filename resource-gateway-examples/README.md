@@ -487,7 +487,12 @@ transient transaction rollback can replay the same content-addressed mutation. T
 `InvocationRecorder` now captures and restores rule-use and hashed site/graph occurrence cursors
 only at a quiescent invocation boundary, and atomically enforces fixture `maxUses`. Cursor hashes omit
 raw correlation values but are pseudonymous identifiers, not a confidentiality boundary. BLOGE's
-new synchronous cold-start signal API is consumed by an internal `RecoverySession`: only a current
+fresh execution-to-durable-boundary API now feeds a strict initial-boundary policy: creation v1 may
+prepare only one persisted `WAIT_SIGNAL` under a `SUSPENDED` execution. The session captures that
+boundary, the fixture cursor, and the four-store aggregate as one immutable `PreparedRun`; terminal,
+paused, timer/work-item/stream, and parallel multi-suspension outcomes discard the stage. This closes
+the runtime ambiguity but does not yet expose a public creation endpoint. BLOGE's new synchronous
+cold-start signal API is consumed by an internal `RecoverySession`: only a current
 v2 `RESUMING` checkpoint with exact target and restorable provider state can restore fixture cursors,
 open the staged aggregate, signal a real committed suspension, and prepare its next terminal or
 single-suspension boundary for the same fenced transaction. Closing without prepare restores the

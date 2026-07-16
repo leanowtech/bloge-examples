@@ -12,6 +12,11 @@
 | Stage 3 evidence chain | 进行中 | graph/operator child signature、suite checkpoint/terminal aggregate attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、签名时刻 lifecycle policy、外部 M-of-N trust publication、bounded append-only consistency page、durable consumer checkpoint、rollback/fork/split-view/revoked-pin resurrection detection 与 test-kit independent verifier 已完成；exact-suite ANEKE semantic workbook seed、`GovernanceGateResult.v3` 可重建 basis、编译级 GraphDraft target 绑定与独立 schema consumer 已完成；真实 ANEKE N/N-1 conformance、独立 witness gossip/跨域一致性证明待完成 |
 | Stage 4 deterministic runtime | 进行中 | run-scoped TIME/RANDOM/UUID、environment-dependent built-in resolver、effective plan v3/provider state、semantic result fingerprint、组合 durable checkpoint/fixture cursor、静止边界 recorder snapshot、同库事务、数据库时钟 lease CAS、幂等命令与 staged `ExecutionStore + ExecutionCheckpointStore + WaitStore + WorkItemStore` aggregate 已完成；BLOGE 公共 `CheckpointFailurePolicy.FAIL_FAST`、fresh execution-to-durable-boundary 与同步 cold-start signal recovery 已装配。RG fresh `RunSession` 已能在无驻留线程的情况下同步返回首个终态或持久化 suspension，内部 `RecoverySession` 已能从 v2 `RESUMING` fence 恢复真实 suspension、延续 fixture cursor，并把下一静止边界与 control checkpoint 原子提交或整体回滚。公开 payload-free query 已按 tenant/environment/org/project non-disclosure scope 投影完整性验证后的 fence、依赖与边界指纹；`test`/`staging` owner claim 已把 authorization receipt、结果 fence 与 worker dispatch 原子绑定；公开 authenticated heartbeat 已按 exact predecessor fence 隐式解析已签发 dispatch、保持 principal 连续性，并用 live fence + 数据库时钟原子旋转 revision/lease/successor dispatch；公开 terminal recovery 已在同身份与同授权下执行一个有界 signal，并原子提交 server-derived BLOGE mutation、terminal checkpoint、审计与显式 evidence-gap receipt。public run 创建、worker poll/dispatch、多 suspension 编排、自动 heartbeat 调度、完整历史 trace evidence、stream offset/checkpoint、identity/flag/secret authority 和确定性并发待完成 |
 
+Stage 4 最新增量：fresh `RunSession` 的 initial-boundary policy 只接受唯一持久化 signal wait，
+并把 fixture cursor 与四 store closure 在同一静止点冻结；终态、pause、timer/work-item/stream
+以及多 suspension 在进入 repository 前 fail closed。它关闭了公开创建所需的运行时边界歧义，
+但尚不等于公开 run 创建协议。
+
 Stage 0 验证基线：Resource Gateway `clean verify` 共 1624 tests、0 failures、33 个既有条件跳过；AuthorCanvas 聚焦回归 36 tests、0 failures。后续阶段必须继续维持该基线并增加对应反面用例。
 
 Stage 1 实现证据与复现命令见
