@@ -29,9 +29,7 @@ import org.junit.jupiter.api.Timeout;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -290,17 +288,13 @@ class IndependentDurableTestRecoverySessionTest {
                 .executionServices(services)
                 .build();
         InvocationRecorder recorder = new InvocationRecorder(fixture.mapper());
-        AtomicReference<Throwable> executionFailure = new AtomicReference<>();
         try (IndependentDurableTestEngineFactory.RunSession session =
                      fixture.factory().openSession("engine-a", recorder, options)) {
-            Thread execution = Thread.ofVirtual().start(() -> {
-                try {
-                    session.execute(graph, new GraphContext(Map.of("requestId", "request-a")));
-                } catch (Throwable failure) {
-                    executionFailure.set(failure);
-                }
-            });
-            awaitSuspension(fixture.store());
+            var result = session.execute(
+                    graph, new GraphContext(Map.of("requestId", "request-a")));
+            assertThat(result.isSuspended()).isTrue();
+            assertThat(result.suspendedNodes()).containsExactlyEntriesOf(
+                    Map.of("wait", "approval-key"));
             long stateVersion = fixture.store().executionStore().get("engine-a")
                     .orElseThrow().version();
             var mutation = session.prepare(
@@ -309,29 +303,8 @@ class IndependentDurableTestRecoverySessionTest {
                     fixture.integrity(), DurableTestExecutionCheckpoint.Status.RESUMING,
                     mutation.engineState());
             fixture.repository().create(control, mutation);
-            execution.interrupt();
-            execution.join(TimeUnit.SECONDS.toMillis(2));
-            assertThat(execution.isAlive()).isFalse();
-            assertThat(executionFailure.get()).isNotNull();
             return control;
         }
-    }
-
-    private static void awaitSuspension(StagedBlogeDurableStateStore store)
-            throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (System.nanoTime() < deadline) {
-            boolean waiting = store.waitStore().findByExecution("engine-a").stream()
-                    .anyMatch(wait -> wait.status() == WaitStatus.WAITING
-                            && "wait".equals(wait.nodeId()));
-            if (waiting && store.executionStore().get("engine-a")
-                    .map(execution -> execution.status() == ExecutionStatus.SUSPENDED)
-                    .orElse(false)) {
-                return;
-            }
-            Thread.sleep(10);
-        }
-        throw new AssertionError("BLOGE execution did not reach a suspended boundary");
     }
 
     private static DurableTestExecutionCheckpoint terminal(

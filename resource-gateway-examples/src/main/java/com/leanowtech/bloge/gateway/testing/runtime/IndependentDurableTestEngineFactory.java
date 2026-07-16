@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Constructs an isolated durable test engine with mandatory fail-closed checkpoint semantics.
  *
  * <p>This factory is separate from {@link IndependentTestEngineFactory}: normal synchronous tests
- * remain short-lived and store-free, while a future suspend/resume path must explicitly select this
+ * remain short-lived and store-free, while a suspend/resume path must explicitly select this
  * factory and open a transaction-participating durable-state stage before execution. Production
  * interceptors, listeners, context carriers, extension listeners, and durable stores are never
  * copied from the application engine.</p>
@@ -236,7 +236,12 @@ public final class IndependentDurableTestEngineFactory {
         }
 
         /**
-         * Executes exactly one root graph under the session's trusted execution identity.
+         * Executes exactly one root graph to its first stable durable boundary.
+         *
+         * <p>The call returns synchronously when the graph is terminal or all admitted work has
+         * quiesced at a persisted suspension. A suspended result has no live in-memory waiter, so
+         * the caller can freeze and atomically commit the staged aggregate before any later
+         * cold-start signal.</p>
          *
          * @param graph graph selected by the frozen effective plan
          * @param initialContext fresh business context for this attempt
@@ -247,7 +252,7 @@ public final class IndependentDurableTestEngineFactory {
             if (!executed.compareAndSet(false, true)) {
                 throw new IllegalStateException("A durable test session can execute only once");
             }
-            GraphResult result = engine.execute(
+            GraphResult result = engine.executeUntilDurableBoundary(
                     Objects.requireNonNull(graph, "graph"), initialContext, options);
             if (!executionId.equals(result.executionId())) {
                 throw new IllegalStateException("BLOGE returned an unexpected execution identity");
