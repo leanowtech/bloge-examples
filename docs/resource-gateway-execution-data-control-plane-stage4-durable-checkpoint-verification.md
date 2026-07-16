@@ -8,6 +8,9 @@ primitive required before Resource Gateway can offer cold-start durable test exe
 and composes all four behind one profile-gated, fail-closed durable test session. Signal, timer, task,
 extension, and retry waits plus queued, claimed, retried, failed, and dead-lettered work are therefore
 part of the same commit decision as lifecycle and node checkpoints. A public, authenticated
+payload-free query now exposes an integrity-verified lifecycle/fence/dependency/boundary view under
+tenant/environment/organization/project non-disclosure scope; it does not reserve a lease or expose
+hidden execution material. A public, authenticated
 owner-claim endpoint now performs the database-clock compare-and-set ownership handoff after exact
 dependency re-authorization; it deliberately does not itself resume BLOGE or expose a worker
 lifecycle. A public authenticated heartbeat resolves the hidden issued dispatch from the exact
@@ -36,6 +39,10 @@ The increment defines the following versioned objects:
   `target = {kind,id,fingerprint}` locator, requires the locator fingerprint to equal the effective
   plan target fingerprint, and binds `GRAPH` to `GRAPH_CONTRACT_TEST` and `OPERATOR` to
   `OPERATOR_UNIT_TEST`.
+- `bloge.durableTestExecutionView.v1` is the public payload-free query projection. It exposes only
+  lifecycle, fence, exact target/fixture references, content fingerprints, and the engine-boundary
+  identity. Legacy v1 checkpoints omit target and are explicitly migration-required and
+  non-recoverable.
 - `bloge.durableTestRecoveryTerminalReceipt.v1` is an internal, payload-free terminal control
   receipt. Until the durable closure contains complete pre-checkpoint node, edge, and attempt trace,
   it is fixed to `EVIDENCE_INCOMPLETE`, requires at least one bounded gap code, and cannot satisfy a
@@ -48,7 +55,7 @@ The increment defines the following versioned objects:
   bounded signal. `bloge.durableTestTerminalRecoveryResponse.v1` is payload-free and exposes only the
   server-derived terminal control result, receipt identity, and mandatory evidence gaps.
 
-Both definitions are included in
+These definitions are included in
 [testing-control-plane-v1.schema.json](schemas/resource-gateway-testing/testing-control-plane-v1.schema.json).
 The same schema also defines the public, payload-free `bloge.durableTestOwnerClaimRequest.v1` and
 `bloge.durableTestOwnerClaimResponse.v1` wire contracts. The full checkpoint values remain internal.
@@ -118,6 +125,25 @@ complete fence/claim intent, authorization/checkpoint/dispatch fingerprints, and
 is reported as storage corruption rather than misclassified as caller conflict. This is an
 internal persistence protocol. Its public adapter adds transport authentication, authorization,
 security audit, exact dependency re-authorization, and server-owned claimant policy.
+
+## Public Durable Execution Query
+
+`GET /api/testing/durable-executions/{runId}` is structurally available only in `test` and `staging`
+and authenticates through `TEST_DURABLE_EXECUTION_READ` for `TEST_EXECUTION` or `TEST_REPLAY`.
+Malformed run identities fail before repository access. The repository scopes its read by verified
+tenant/environment and verifies the sealed JSON, nested content identities, and every indexed
+projection; the application service then requires exact organization/project scope. Missing and
+cross-scope executions share one not-found result, while store failure or integrity drift produces a
+payload-free unavailable result.
+
+`bloge.durableTestExecutionView.v1` returns status, current owner/epoch/revision and lease deadline,
+exact graph/operator and immutable fixture references, plan/provider/fixture-ledger fingerprints, a
+payload-free BLOGE boundary, aggregate checkpoint fingerprint, timestamps, and derived
+`recoverable`/`migrationRequired` facts. It omits context, fixture and replay values, provider
+cursors, identity authority, credentials, dispatches, and BLOGE checkpoint bodies. A v1 checkpoint
+remains observable for migration and incident handling, but has no target and is never marked
+recoverable. The response is an observation that can become stale immediately; only owner claim can
+recheck a complete fence, re-authorize dependencies, and issue a recovery dispatch.
 
 ## Public Owner Claim
 
@@ -567,12 +593,15 @@ Reproduce the focused gate with:
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,StagedBlogeExecutionCheckpointStoreTest,StagedBlogeDurableStateStoreTest,IndependentDurableTestEngineFactoryTest,IndependentDurableTestRecoverySessionTest,InvocationRecorderCheckpointTest,DurableTestRecoveryAuthorityTest,DurableTestRecoveryAuthorizerTest,DurableTestOwnerClaimServiceTest,DurableTestOwnerClaimControllerTest,DurableTestRecoveryPrincipalTest,DurableTestRecoveryHeartbeatServiceTest,DurableTestRecoveryHeartbeatControllerTest,DurableTestTerminalRecoveryRuntimeTest,DurableTestTerminalRecoveryServiceTest,DurableTestTerminalRecoveryControllerTest,TestingControlProtocolSchemaTest,TestabilityCapabilitiesTest,TestRuntimeProfileIsolationTest test
+  -Dtest=DurableTestExecutionCheckpointTest,DatabaseDurableTestExecutionCheckpointRepositoryTest,StagedBlogeExecutionCheckpointStoreTest,StagedBlogeDurableStateStoreTest,IndependentDurableTestEngineFactoryTest,IndependentDurableTestRecoverySessionTest,InvocationRecorderCheckpointTest,DurableTestRecoveryAuthorityTest,DurableTestRecoveryAuthorizerTest,DurableTestExecutionQueryServiceTest,DurableTestExecutionQueryControllerTest,DurableTestOwnerClaimServiceTest,DurableTestOwnerClaimControllerTest,DurableTestRecoveryPrincipalTest,DurableTestRecoveryHeartbeatServiceTest,DurableTestRecoveryHeartbeatControllerTest,DurableTestTerminalRecoveryRuntimeTest,DurableTestTerminalRecoveryServiceTest,DurableTestTerminalRecoveryControllerTest,TestingControlProtocolSchemaTest,TestabilityCapabilitiesTest,TestRuntimeProfileIsolationTest test
 ```
 
-The combined focused gate completed with 144 tests, zero failures, zero errors, and zero skips. The
+The combined focused gate completed with 152 tests, zero failures, zero errors, and zero skips. The
 recovery-session slice contributes six database-level tests; authorization-bound dispatch adds two
 database-level claim/replay, exact-lookup, and tamper cases plus two regional-authority cases. The
+public query slice adds six service cases, including a real-database projection-tamper case, and two
+controller cases covering dedicated authentication, non-disclosure scope, legacy migration facts,
+payload omission, invalid identifiers, and stable unavailable mapping.
 live-fence heartbeat slice adds eight database cases for renewal/replay, successor lookup, stale and
 expired fences, unissued dispatches, command validation, two-replica convergence, rollback, and
 tamper rejection.
@@ -585,7 +614,7 @@ convergence.
 The public terminal slice adds two staged-runtime lifecycle cases, five application-service cases,
 and two controller cases covering server-derived state, reauthorization continuity, pre-execution
 replay, audit outage, non-terminal rollback, signal bounds, strict parsing, and payload-free output.
-The repository-wide `clean verify` gate completed with 2015 tests, zero failures, zero errors, 34
+The repository-wide `clean verify` gate completed with 2023 tests, zero failures, zero errors, two
 conditional skips, real-browser regression coverage, and successful Spring Boot JAR packaging.
 Scoped public `javadoc -Xdoclint:all -Werror` for the recovery production types is also a required
 pre-commit gate.
@@ -598,7 +627,8 @@ parameter diagnostics in unrelated packages; that baseline is not represented as
   waits, and work-item state now execute through one aggregate `EngineStateMutation`. The internal
   recovery session can advance one real cold signal, while public owner claim, authenticated
   heartbeat, and terminal recovery can establish, renew, and terminally consume the control fence.
-  Public run creation/query, worker polling/dispatch, multi-suspension coordination, and automatic
+  Public run query now exposes integrity-verified operational facts. Run creation, worker
+  polling/dispatch, multi-suspension coordination, and automatic
   heartbeat scheduling do not exist, so this must not be mistaken for a complete remote-worker
   product lifecycle.
 - The durable and recovery sessions remain internal resources. Public terminal recovery consumes one

@@ -35,6 +35,10 @@ class TestRuntimeProfileIsolationTest {
     void productionProfileHasNoTestingControllerStoreOrCapabilityMarker() {
         try (AnnotationConfigApplicationContext context = context("production")) {
             assertThat(context.getBeansOfType(TestExecutionController.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableTestExecutionQueryController.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableTestExecutionQueryService.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestOwnerClaimController.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestOwnerClaimService.class)).isEmpty();
             assertThat(context.getBeansOfType(
@@ -66,6 +70,10 @@ class TestRuntimeProfileIsolationTest {
     void testProfileAssemblesIndependentStoreControllerAndCapabilityMarker() {
         try (AnnotationConfigApplicationContext context = context("test")) {
             assertThat(context.getBeansOfType(TestExecutionController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableTestExecutionQueryController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableTestExecutionQueryService.class)).hasSize(1);
             assertThat(context.getBeansOfType(DurableTestOwnerClaimController.class)).hasSize(1);
             assertThat(context.getBeansOfType(DurableTestOwnerClaimService.class)).hasSize(1);
             assertThat(context.getBeansOfType(
@@ -113,6 +121,10 @@ class TestRuntimeProfileIsolationTest {
     void productionProfileVetoesTestingBeansEvenWhenTestIsAlsoActive() {
         try (AnnotationConfigApplicationContext context = context("production", "test")) {
             assertThat(context.getBeansOfType(TestExecutionController.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableTestExecutionQueryController.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableTestExecutionQueryService.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestOwnerClaimController.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestOwnerClaimService.class)).isEmpty();
             assertThat(context.getBeansOfType(
@@ -154,6 +166,7 @@ class TestRuntimeProfileIsolationTest {
         context.registerBean(IntegrationRequestAuthenticator.class,
                 () -> mock(IntegrationRequestAuthenticator.class));
         context.register(TestRuntimeConfiguration.class, TestExecutionController.class,
+                DurableTestExecutionQueryController.class,
                 DurableTestOwnerClaimController.class,
                 DurableTestRecoveryHeartbeatController.class,
                 DurableTestTerminalRecoveryController.class);

@@ -126,6 +126,13 @@ public class TestRuntimeConfiguration {
         return new DurableTestRecoveryAuthority(authenticator, objectMapper);
     }
 
+    /** Projects integrity-verified durable checkpoints without exposing their hidden payloads. */
+    @Bean
+    DurableTestExecutionQueryService durableTestExecutionQueryService(
+            DurableTestExecutionCheckpointRepository checkpoints) {
+        return new DurableTestExecutionQueryService(checkpoints);
+    }
+
     /** Rebuilds the exact target, fixture, replay, authority, and plan closure before lease claim. */
     @Bean
     DurableTestRecoveryAuthorizer durableTestRecoveryAuthorizer(

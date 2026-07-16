@@ -53,6 +53,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `http://localhost:8080/api/gateway/graphs/contracts` | Inspect resource graph input/output contracts |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}` | Freeze the graph/resource target fingerprint before authoring fixtures (test/staging only) |
 | `POST http://localhost:8080/api/testing/executions` | Run an isolated inline or governed fixture plan and retain sanitized evidence (test/staging only) |
+| `GET http://localhost:8080/api/testing/durable-executions/{runId}` | Inspect an integrity-verified, payload-free durable checkpoint view before recovery (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/owner-claims` | Re-authorize an exact expired v2 checkpoint and atomically claim its lease; this does not resume BLOGE (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/heartbeats` | Renew one exact issued recovery fence under the same authenticated authority (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/terminal-recoveries` | Signal one exact claimed suspension and atomically commit only a server-derived terminal result (test/staging only) |
@@ -107,10 +108,34 @@ and production-isolation workflow. Java/JUnit/CI consumers can use the independe
 builders, typed catalog materialization, exact suite execution, payload-free assertions/XML, and the fail-closed CLI instead of
 hand-assembling HTTP requests or interpreting aggregate evidence ad hoc.
 
+### Inspect a durable test execution
+
+Read the latest integrity-verified control fence before deciding whether to claim or diagnose a
+durable run:
+
+```bash
+curl -sS \
+  http://localhost:8080/api/testing/durable-executions/run-20260716-001 \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION'
+```
+
+The `bloge.durableTestExecutionView.v1` response contains the current status, exact owner/epoch/
+revision fence, lease deadline, graph/operator and fixture references, plan/provider/fixture-ledger
+fingerprints, payload-free engine boundary, and aggregate checkpoint fingerprint. It never contains
+business context, fixture values, replay payloads, provider cursors, credentials, or BLOGE checkpoint
+bodies. `recoverable` is true only for a current v2 resumable state with restorable providers;
+historical v1 rows remain visible as operational facts but return no target and set
+`migrationRequired=true`. The view is not a dispatch, authorization token, or proof that the lease
+is still live after the response was produced.
+
+Missing and cross-organization/project runs both return `404`; malformed run ids return `400`; a
+store outage or any sealed-JSON/index/fingerprint inconsistency returns a payload-free `503`.
+
 ### Claim an expired durable test lease
 
 The public owner-claim command is available only under `test` or `staging`. Obtain the current
-payload-free checkpoint fence from trusted control-plane storage or a future durable-run query, then
+payload-free checkpoint fence from the durable-run query above, then
 submit that exact observation with a caller-stable idempotency key:
 
 ```bash
@@ -476,7 +501,7 @@ and commits the server-derived final BLOGE mutation, terminal checkpoint, immuta
 and payload-free receipt in one transaction; retries never reapply the engine mutation. Because durable
 state still lacks complete pre-checkpoint node/edge/attempt trace, receipt v1 is always
 `EVIDENCE_INCOMPLETE`, requires explicit gap codes, and blocks promotion. BLOGE streaming
-offset/checkpoint state, complete historical evidence, public durable run selection, authenticated
+offset/checkpoint state, complete historical evidence, public durable run creation, authenticated
 worker poll/dispatch and multi-boundary orchestration, dispatcher consumption, automatic heartbeat scheduling, and a killable worker
 deadline are not wired yet. These internal primitives are not a product claim that durable test
 resume is complete. See

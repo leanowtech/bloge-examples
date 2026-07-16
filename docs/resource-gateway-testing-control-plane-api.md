@@ -503,9 +503,10 @@ binding, restore policy, and deterministic cursor/usage closure. Any mismatch ma
 `CONTROL_PLAN_UNAVAILABLE`; there is no fallback to latest configuration, system providers, or REAL
 execution.
 
-This remains an internal planner/runtime protocol. There is no public durable-run creation/query,
-dispatcher, or general multi-boundary BLOGE resume endpoint; only the narrow owner-claim,
-recovery-heartbeat, and one-signal terminal-recovery controls described below are exposed. The
+This remains an internal planner/runtime protocol. There is no public durable-run creation,
+dispatcher, or general multi-boundary BLOGE resume endpoint. A payload-free checkpoint query and the
+narrow owner-claim, recovery-heartbeat, and one-signal terminal-recovery controls described below are
+exposed. The
 profile-gated staged BLOGE stores persist it inside
 `bloge.durableTestExecutionCheckpoint.v2`, which also binds the immutable plan, exact fixture,
 fixture-consumption cursors, execution/wait/work-item closure, side-effect policy, authority snapshot,
@@ -520,7 +521,69 @@ accept these objects only from the trusted fenced store or a signed checkpoint a
 resume still requires authenticated scope binding and live reauthorization of target, fixture,
 replay, authority, and side-effect policy before BLOGE state restoration.
 
-### 4.2d Claim, renew, and terminally recover an exact durable fence
+### 4.2d Query one durable execution
+
+The profile-gated read endpoint accepts only authenticated `TEST_EXECUTION` or `TEST_REPLAY`
+purposes:
+
+```http
+GET /api/testing/durable-executions/{runId}
+Authorization: Bearer <workload-token>
+X-Purpose: TEST_EXECUTION
+```
+
+It resolves the checkpoint by verified tenant/environment, then independently requires the caller's
+organization and project to match. Missing and cross-scope values both return the same `404`. The
+repository verifies the sealed checkpoint, every nested fingerprint, and indexed projections before
+the service constructs `bloge.durableTestExecutionView.v1`; corruption or store failure returns a
+payload-free `503`.
+
+```json
+{
+  "schemaVersion": "bloge.durableTestExecutionView.v1",
+  "runId": "run-42",
+  "engineExecutionId": "engine-42",
+  "status": "SUSPENDED",
+  "fence": {"ownerId": "worker-a", "leaseEpoch": 1, "revision": 7},
+  "leaseExpiresAt": "2026-07-17T12:02:00Z",
+  "target": {
+    "kind": "GRAPH",
+    "id": "approvalFlow",
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "fixture": {
+    "fixtureBundleId": "approval-fixture",
+    "revision": 3,
+    "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "authorizedPurpose": "GRAPH_CONTRACT_TEST",
+  "sideEffectPolicy": "DENY_REAL",
+  "planFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "executionServiceStateFingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "fixtureConsumptionStateFingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "engineBoundary": {
+    "checkpointRef": "checkpoint-7",
+    "nodeId": "approval-wait",
+    "boundaryType": "SUSPEND",
+    "boundarySequence": 2,
+    "stateVersion": 7,
+    "closureFingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "checkpointFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "createdAt": "2026-07-17T12:00:00Z",
+  "updatedAt": "2026-07-17T12:01:00Z",
+  "recoverable": true,
+  "migrationRequired": false
+}
+```
+
+The response omits context, fixture values, replay content, provider cursors, authority values,
+credentials, hidden dispatches, and engine checkpoint bodies. A legacy v1 checkpoint is readable for
+operations but has no `target`, sets `migrationRequired=true`, and is never reported recoverable. The
+query is an observation, not a lease reservation or bearer capability; callers must still submit the
+entire returned fence to owner claim, which rechecks live state and current authorization.
+
+### 4.2e Claim, renew, and terminally recover an exact durable fence
 
 The three public recovery-control commands exist only under `test` or `staging` and require
 `TEST_EXECUTION` or `TEST_REPLAY` purpose:
@@ -585,7 +648,7 @@ unavailable. `RG_TEST_DURABLE_HEARTBEAT_LEASE_SECONDS` owns the renewal duration
 seconds in `1..3600`). This protocol keeps an already claimed fence alive. It does not discover work,
 execute or cancel BLOGE, publish terminal evidence, or make cold-start durable resume complete.
 
-### 4.2e Execute one terminal cold recovery
+### 4.2f Execute one terminal cold recovery
 
 The terminal-recovery request consumes the latest exact fence returned by owner claim or heartbeat:
 
@@ -1521,7 +1584,8 @@ Implemented now:
 - independent datasource, tables, retention, evidence sanitization, and security events;
 - immutable plan plus graph/operator/resource dependency fingerprints;
 - profile-sensitive capability probe and production control-field guard.
-- profile-gated durable v2 owner claim and authenticated heartbeat plus one-signal terminal recovery,
+- profile-gated payload-free durable execution query, v2 owner claim, authenticated heartbeat, and
+  one-signal terminal recovery,
   with exact hidden-dispatch lookup, principal and reauthorization continuity, database-time fencing,
   immutable pre-execution replay, isolated cold execution, and atomic BLOGE/checkpoint/receipt/audit
   commit; terminal v1 receipts remain explicitly incomplete and promotion-blocking.
@@ -1575,7 +1639,7 @@ Still intentionally outside this increment:
   decision itself remains outside Resource Gateway;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
   reconciliation alert SLOs, and suite-history list/trend APIs;
-- public durable run creation/query, dispatcher/polling, automatic heartbeat and multi-boundary
+- public durable run creation, dispatcher/polling, automatic heartbeat and multi-boundary
   recovery orchestration, hard worker cancellation, typed identity/flag/secret authorities, explicit
   streaming offset/checkpoint recovery, and deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;

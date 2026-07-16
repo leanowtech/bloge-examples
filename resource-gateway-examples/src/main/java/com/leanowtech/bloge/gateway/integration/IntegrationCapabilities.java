@@ -248,6 +248,8 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimRequest.SCHEMA_VERSION));
             objects.put("durableTestOwnerClaimResponse", List.of(
                     com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimResponse.SCHEMA_VERSION));
+            objects.put("durableTestExecutionView", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionQueryResponse.SCHEMA_VERSION));
             objects.put("durableTestRecoveryHeartbeatRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryHeartbeatRequest.SCHEMA_VERSION));
             objects.put("durableTestRecoveryHeartbeatResponse", List.of(
@@ -354,6 +356,7 @@ public record IntegrationCapabilities(
         features.put("abandonedSuiteRunReconciliation", testExecutionEndpointEnabled);
         features.put("governedTestReplayPayloadCapture", testExecutionEndpointEnabled);
         features.put("testReplayBehavior", testExecutionEndpointEnabled);
+        features.put("durableTestExecutionQuery", testExecutionEndpointEnabled);
         features.put("durableTestOwnerClaim", testExecutionEndpointEnabled);
         features.put("durableRecoveryDependencyReauthorization", testExecutionEndpointEnabled);
         features.put("authenticatedDurableRecoveryHeartbeat", testExecutionEndpointEnabled);
@@ -401,6 +404,8 @@ public record IntegrationCapabilities(
             endpoints.add(new Endpoint("POST", "/api/testing/targets/operators/{operatorRef}/executions"));
             endpoints.add(new Endpoint("POST", "/api/testing/executions/batch"));
             endpoints.add(new Endpoint("GET", "/api/testing/executions/{runId}"));
+            endpoints.add(new Endpoint("GET",
+                    "/api/testing/durable-executions/{runId}"));
             endpoints.add(new Endpoint("POST",
                     "/api/testing/durable-executions/{runId}/owner-claims"));
             endpoints.add(new Endpoint("POST",

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://leanowtech.example/schemas/resource-gateway-testing/testing-control-plane-v1.schema.json",
   "title": "Resource Gateway Testing Control Plane v1",
-  "description": "Wire contracts for target discovery, immutable fixtures and suites, controlled execution, durable ownership, recovery heartbeat and terminal recovery, plans, and sanitized evidence.",
+  "description": "Wire contracts for target discovery, immutable fixtures and suites, controlled execution, durable execution query and ownership, recovery heartbeat and terminal recovery, plans, and sanitized evidence.",
   "$defs": {
     "fingerprint": {
       "type": "string",
@@ -31,6 +31,80 @@
         },
         "leaseEpoch": {"type": "integer", "minimum": 1},
         "revision": {"type": "integer", "minimum": 0}
+      }
+    },
+    "durableTestExecutionView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "runId", "engineExecutionId", "status", "fence",
+        "leaseExpiresAt", "fixture", "authorizedPurpose", "sideEffectPolicy", "planFingerprint",
+        "executionServiceStateFingerprint", "fixtureConsumptionStateFingerprint", "engineBoundary",
+        "checkpointFingerprint", "createdAt", "updatedAt", "recoverable", "migrationRequired"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.durableTestExecutionView.v1"},
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "engineExecutionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "status": {
+          "enum": ["ACTIVE", "SUSPENDED", "RESUMING", "TERMINAL", "CONTROL_PLAN_UNAVAILABLE"]
+        },
+        "fence": {"$ref": "#/$defs/durableOwnerClaimFence"},
+        "leaseExpiresAt": {"type": "string", "format": "date-time"},
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "fingerprint"],
+          "properties": {
+            "kind": {"enum": ["GRAPH", "OPERATOR"]},
+            "id": {"type": "string", "minLength": 1, "maxLength": 255},
+            "fingerprint": {"$ref": "#/$defs/fingerprint"}
+          }
+        },
+        "fixture": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["fixtureBundleId", "revision", "fingerprint"],
+          "properties": {
+            "fixtureBundleId": {"type": "string", "minLength": 1, "maxLength": 255},
+            "revision": {"type": "integer", "minimum": 1},
+            "fingerprint": {"$ref": "#/$defs/fingerprint"}
+          }
+        },
+        "authorizedPurpose": {"enum": ["GRAPH_CONTRACT_TEST", "OPERATOR_UNIT_TEST"]},
+        "sideEffectPolicy": {"enum": ["DENY_REAL", "REPLAY_ONLY"]},
+        "planFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "executionServiceStateFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "fixtureConsumptionStateFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "engineBoundary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["checkpointRef", "nodeId", "boundaryType", "boundarySequence",
+            "stateVersion", "closureFingerprint"],
+          "properties": {
+            "checkpointRef": {"type": "string", "minLength": 1, "maxLength": 255},
+            "nodeId": {"type": "string", "minLength": 1, "maxLength": 255},
+            "boundaryType": {
+              "enum": ["NODE_BOUNDARY", "SUSPEND", "TIMER", "WORK_ITEM", "STREAM_OFFSET"]
+            },
+            "boundarySequence": {"type": "integer", "minimum": 1},
+            "stateVersion": {"type": "integer", "minimum": 0},
+            "closureFingerprint": {"$ref": "#/$defs/fingerprint"}
+          }
+        },
+        "checkpointFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "createdAt": {"type": "string", "format": "date-time"},
+        "updatedAt": {"type": "string", "format": "date-time"},
+        "recoverable": {"type": "boolean"},
+        "migrationRequired": {"type": "boolean"}
       }
     },
     "durableTestOwnerClaimRequest": {

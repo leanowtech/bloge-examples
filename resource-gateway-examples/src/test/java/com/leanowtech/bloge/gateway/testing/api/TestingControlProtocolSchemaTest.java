@@ -118,6 +118,9 @@ class TestingControlProtocolSchemaTest {
                 "/$defs/durableTestOwnerClaimResponse/properties/schemaVersion/const").asText())
                 .isEqualTo(DurableTestOwnerClaimResponse.SCHEMA_VERSION);
         assertThat(schema.at(
+                "/$defs/durableTestExecutionView/properties/schemaVersion/const").asText())
+                .isEqualTo(DurableTestExecutionQueryResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
                 "/$defs/durableTestRecoveryHeartbeatRequest/properties/schemaVersion/const")
                 .asText()).isEqualTo(DurableTestRecoveryHeartbeatRequest.SCHEMA_VERSION);
         assertThat(schema.at(
@@ -188,6 +191,7 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("testEvidenceIntegrity")).isTrue();
         assertThat(definitions.has("durableTestOwnerClaimRequest")).isTrue();
         assertThat(definitions.has("durableTestOwnerClaimResponse")).isTrue();
+        assertThat(definitions.has("durableTestExecutionView")).isTrue();
         assertThat(definitions.has("durableTestRecoveryHeartbeatRequest")).isTrue();
         assertThat(definitions.has("durableTestRecoveryHeartbeatResponse")).isTrue();
         assertThat(definitions.has("durableTestTerminalRecoveryRequest")).isTrue();
@@ -205,6 +209,22 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo("RESUMING");
         assertThat(definitions.at(
                 "/durableTestOwnerClaimResponse/properties/target/properties/fingerprint/$ref")
+                .asText()).isEqualTo("#/$defs/fingerprint");
+        assertThat(definitions.at(
+                "/durableTestExecutionView/additionalProperties").asBoolean()).isFalse();
+        assertThat(definitions.at("/durableTestExecutionView/required"))
+                .extracting(JsonNode::asText)
+                .contains("runId", "engineExecutionId", "status", "fence", "fixture",
+                        "engineBoundary", "checkpointFingerprint", "recoverable",
+                        "migrationRequired")
+                .doesNotContain("target");
+        assertThat(definitions.at(
+                "/durableTestExecutionView/properties/status/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly("ACTIVE", "SUSPENDED", "RESUMING", "TERMINAL",
+                        "CONTROL_PLAN_UNAVAILABLE");
+        assertThat(definitions.at(
+                "/durableTestExecutionView/properties/engineBoundary/properties/closureFingerprint/$ref")
                 .asText()).isEqualTo("#/$defs/fingerprint");
         assertThat(definitions.at(
                 "/durableTestRecoveryHeartbeatRequest/additionalProperties").asBoolean())
