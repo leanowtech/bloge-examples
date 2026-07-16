@@ -61,6 +61,7 @@ public final class IndependentDurableTestEngineFactory {
                 .executionStore(durableStateStore.executionStore())
                 .executionCheckpointStore(durableStateStore.checkpointStore())
                 .waitStore(durableStateStore.waitStore())
+                .workItemStore(durableStateStore.workItemStore())
                 .checkpointFailurePolicy(CheckpointFailurePolicy.FAIL_FAST)
                 .interceptors(List.of())
                 .listeners(List.of(Objects.requireNonNull(recorder, "recorder")))

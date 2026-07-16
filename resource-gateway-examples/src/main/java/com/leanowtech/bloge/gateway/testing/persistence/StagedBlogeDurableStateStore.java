@@ -5,6 +5,7 @@ import com.leanowtech.bloge.core.exception.DurabilityException;
 import com.leanowtech.bloge.core.runtime.checkpoint.ExecutionCheckpointStore;
 import com.leanowtech.bloge.core.runtime.execution.ExecutionStore;
 import com.leanowtech.bloge.core.runtime.wait.WaitStore;
+import com.leanowtech.bloge.core.runtime.work.WorkItemStore;
 import com.leanowtech.bloge.core.spi.TimeSource;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
@@ -21,23 +22,23 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Execution-scoped transaction boundary for all BLOGE state required by durable tests.
  *
  * <p>The aggregate is the only object the runtime factory receives. It deliberately keeps the
- * concrete execution, checkpoint, and wait stores out of Spring's global bean registry, opens all
+ * concrete execution, checkpoint, wait, and work-item stores out of Spring's global bean registry, opens all
  * stages together, and emits one content-addressed {@link PreparedMutation}. That mutation applies
  * component snapshots through one repository-owned JDBC transaction, so a process cannot publish
- * a control checkpoint that refers to a missing execution row, node checkpoint, signal, or timer.</p>
+ * a control checkpoint that refers to missing lifecycle, checkpoint, wait, or dispatch state.</p>
  *
- * <p>The work-item store will join this same aggregate as its industrial implementation is added.
- * The aggregate fingerprint schema makes that extension explicit and prevents callers from
+ * <p>The aggregate fingerprint schema prevents callers from
  * treating independently prepared component mutations as a complete engine closure.</p>
  */
 public final class StagedBlogeDurableStateStore {
 
-    private static final String CLOSURE_SCHEMA_VERSION = "bloge.testDurableStateMutation.v2";
+    private static final String CLOSURE_SCHEMA_VERSION = "bloge.testDurableStateMutation.v3";
 
     private final ObjectMapper objectMapper;
     private final StagedBlogeExecutionStore executionStore;
     private final StagedBlogeExecutionCheckpointStore checkpointStore;
     private final StagedBlogeWaitStore waitStore;
+    private final StagedBlogeWorkItemStore workItemStore;
 
     /**
      * Creates the full durable-state aggregate over one test-runtime datasource.
@@ -50,6 +51,7 @@ public final class StagedBlogeDurableStateStore {
         this.executionStore = new StagedBlogeExecutionStore(jdbc, objectMapper);
         this.checkpointStore = new StagedBlogeExecutionCheckpointStore(jdbc, objectMapper);
         this.waitStore = new StagedBlogeWaitStore(jdbc, objectMapper, executionStore);
+        this.workItemStore = new StagedBlogeWorkItemStore(jdbc, objectMapper, executionStore);
     }
 
     /** Creates every table owned by the current durable-state aggregate version. */
@@ -58,6 +60,7 @@ public final class StagedBlogeDurableStateStore {
         executionStore.init();
         checkpointStore.init();
         waitStore.init();
+        workItemStore.init();
     }
 
     /**
@@ -88,6 +91,15 @@ public final class StagedBlogeDurableStateStore {
     }
 
     /**
+     * Returns the worker dispatch state attached to the isolated durable engine.
+     *
+     * @return enqueue, claim, retry, and dead-letter work-item SPI
+     */
+    public WorkItemStore workItemStore() {
+        return workItemStore;
+    }
+
+    /**
      * Opens all component stages for one execution as a single lifecycle scope.
      *
      * @param executionId trusted BLOGE execution identity
@@ -102,7 +114,14 @@ public final class StagedBlogeDurableStateStore {
                     checkpointStore.begin(executionId);
             try {
                 StagedBlogeWaitStore.Stage waitStage = waitStore.begin(executionId, timeSource);
-                return new Stage(executionStage, checkpointStage, waitStage);
+                try {
+                    StagedBlogeWorkItemStore.Stage workItemStage =
+                            workItemStore.begin(executionId, timeSource);
+                    return new Stage(executionStage, checkpointStage, waitStage, workItemStage);
+                } catch (RuntimeException | Error failure) {
+                    waitStage.close();
+                    throw failure;
+                }
             } catch (RuntimeException | Error failure) {
                 checkpointStage.close();
                 throw failure;
@@ -118,15 +137,18 @@ public final class StagedBlogeDurableStateStore {
         private final StagedBlogeExecutionStore.Stage executionStage;
         private final StagedBlogeExecutionCheckpointStore.Stage checkpointStage;
         private final StagedBlogeWaitStore.Stage waitStage;
+        private final StagedBlogeWorkItemStore.Stage workItemStage;
         private final AtomicBoolean closed = new AtomicBoolean();
         private final AtomicBoolean prepared = new AtomicBoolean();
 
         private Stage(StagedBlogeExecutionStore.Stage executionStage,
                       StagedBlogeExecutionCheckpointStore.Stage checkpointStage,
-                      StagedBlogeWaitStore.Stage waitStage) {
+                      StagedBlogeWaitStore.Stage waitStage,
+                      StagedBlogeWorkItemStore.Stage workItemStage) {
             this.executionStage = executionStage;
             this.checkpointStage = checkpointStage;
             this.waitStage = waitStage;
+            this.workItemStage = workItemStage;
         }
 
         /**
@@ -154,18 +176,22 @@ public final class StagedBlogeDurableStateStore {
                     checkpointRef, nodeId, boundaryType, boundarySequence, stateVersion);
             StagedBlogeWaitStore.PreparedMutation waits = waitStage.prepare(
                     checkpointRef, nodeId, boundaryType, boundarySequence, stateVersion);
+            StagedBlogeWorkItemStore.PreparedMutation workItems = workItemStage.prepare(
+                    checkpointRef, nodeId, boundaryType, boundarySequence, stateVersion);
             Map<String, Object> material = new LinkedHashMap<>();
             material.put("schemaVersion", CLOSURE_SCHEMA_VERSION);
             material.put("engineExecutionId", execution.engineExecutionId());
             material.put("execution", execution.engineState().closureFingerprint());
             material.put("checkpoints", checkpoints.engineState().closureFingerprint());
             material.put("waits", waits.engineState().closureFingerprint());
+            material.put("workItems", workItems.engineState().closureFingerprint());
             String fingerprint = ProtocolFingerprint.of(objectMapper, material);
             DurableTestExecutionCheckpoint.EngineState engineState =
                     new DurableTestExecutionCheckpoint.EngineState(
                             checkpointRef, nodeId, boundaryType, boundarySequence,
                             stateVersion, fingerprint);
-            return new PreparedMutation(execution, checkpoints, waits, engineState, closed);
+            return new PreparedMutation(
+                    execution, checkpoints, waits, workItems, engineState, closed);
         }
 
         /** Closes every component stage and discards all uncommitted state. */
@@ -173,12 +199,16 @@ public final class StagedBlogeDurableStateStore {
         public void close() {
             if (closed.compareAndSet(false, true)) {
                 try {
-                    waitStage.close();
+                    workItemStage.close();
                 } finally {
                     try {
-                        checkpointStage.close();
+                        waitStage.close();
                     } finally {
-                        executionStage.close();
+                        try {
+                            checkpointStage.close();
+                        } finally {
+                            executionStage.close();
+                        }
                     }
                 }
             }
@@ -191,12 +221,13 @@ public final class StagedBlogeDurableStateStore {
         }
     }
 
-    /** Atomic execution, checkpoint, and wait mutation bound to one aggregate fingerprint. */
+    /** Atomic lifecycle, checkpoint, wait, and work-item mutation bound to one fingerprint. */
     public static final class PreparedMutation
             implements DurableTestExecutionCheckpointRepository.BoundEngineStateMutation {
         private final DurableTestExecutionCheckpointRepository.BoundEngineStateMutation execution;
         private final DurableTestExecutionCheckpointRepository.BoundEngineStateMutation checkpoints;
         private final DurableTestExecutionCheckpointRepository.BoundEngineStateMutation waits;
+        private final DurableTestExecutionCheckpointRepository.BoundEngineStateMutation workItems;
         private final DurableTestExecutionCheckpoint.EngineState engineState;
         private final AtomicBoolean ownerClosed;
 
@@ -204,17 +235,22 @@ public final class StagedBlogeDurableStateStore {
                 DurableTestExecutionCheckpointRepository.BoundEngineStateMutation execution,
                 DurableTestExecutionCheckpointRepository.BoundEngineStateMutation checkpoints,
                 DurableTestExecutionCheckpointRepository.BoundEngineStateMutation waits,
+                DurableTestExecutionCheckpointRepository.BoundEngineStateMutation workItems,
                 DurableTestExecutionCheckpoint.EngineState engineState,
                 AtomicBoolean ownerClosed) {
             this.execution = execution;
             this.checkpoints = checkpoints;
             this.waits = waits;
+            this.workItems = workItems;
             this.engineState = engineState;
             this.ownerClosed = ownerClosed;
             if (!Objects.equals(execution.engineExecutionId(), checkpoints.engineExecutionId())) {
                 throw new DurabilityException("Composite BLOGE state spans multiple executions");
             }
             if (!Objects.equals(execution.engineExecutionId(), waits.engineExecutionId())) {
+                throw new DurabilityException("Composite BLOGE state spans multiple executions");
+            }
+            if (!Objects.equals(execution.engineExecutionId(), workItems.engineExecutionId())) {
                 throw new DurabilityException("Composite BLOGE state spans multiple executions");
             }
         }
@@ -239,6 +275,7 @@ public final class StagedBlogeDurableStateStore {
             execution.apply(jdbc);
             checkpoints.apply(jdbc);
             waits.apply(jdbc);
+            workItems.apply(jdbc);
         }
     }
 }

@@ -5,6 +5,7 @@ import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.core.runtime.checkpoint.ExecutionCheckpointStore;
 import com.leanowtech.bloge.core.runtime.execution.ExecutionStore;
 import com.leanowtech.bloge.core.runtime.wait.WaitStore;
+import com.leanowtech.bloge.core.runtime.work.WorkItemStore;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
@@ -41,6 +42,7 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();
             assertThat(context.getBeansOfType(WaitStore.class)).isEmpty();
+            assertThat(context.getBeansOfType(WorkItemStore.class)).isEmpty();
             assertThat(context.getBeansOfType(TestabilityAvailability.class)).isEmpty();
         }
     }
@@ -59,6 +61,7 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();
             assertThat(context.getBeansOfType(WaitStore.class)).isEmpty();
+            assertThat(context.getBeansOfType(WorkItemStore.class)).isEmpty();
             assertThat(context.getBean(DurableTestRuntimeResources.class)
                     .engineFactory().configuration().durableStores()).isTrue();
             assertThat(context.getBean(TestabilityAvailability.class).executionEndpointEnabled()).isTrue();
@@ -86,6 +89,7 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();
             assertThat(context.getBeansOfType(WaitStore.class)).isEmpty();
+            assertThat(context.getBeansOfType(WorkItemStore.class)).isEmpty();
             assertThat(context.getBeansOfType(TestabilityAvailability.class)).isEmpty();
         }
     }
