@@ -151,6 +151,13 @@ payload-free `REJECTED`; ambiguous retries replay the original terminal command 
 checkpoint fingerprints are reverified on every resolution. This is the database protocol needed by
 the public creator and is now consumed by its authenticated dependency-authorizing adapter.
 
+`heartbeatInitialCreation(...)` now keeps a healthy preparation alive without weakening takeover
+fencing. It accepts only the exact live `PENDING` owner, epoch, and current record fingerprint, reads
+time from the database, preserves scope/intent/run/engine/owner/epoch, advances update time and lease
+deadline, and issues a successor record fingerprint through SQL CAS. The stale predecessor can no
+longer commit or reject. Expired, terminal, foreign-owner, stale-fingerprint, non-advancing-clock, and
+non-extending renewals fail closed.
+
 ## Public Durable Creation
 
 `POST /api/testing/durable-executions` is structurally present only in `test` and `staging` and
@@ -175,11 +182,16 @@ Different authenticated intent under the same key fails as an idempotency confli
 does not store context, fixture/replay content, provider seeds/cursors, credentials, or checkpoint
 bodies.
 
-Creation v1 intentionally has no preparation heartbeat, forced worker cancellation, worker polling,
-or general multi-boundary orchestration. A run that exceeds the server-owned preparation lease cannot
-commit under a stale fence; the caller must retry the exact request after expiry. Deployments must
-therefore keep fresh graph execution bounded and configure the lease above that budget. This is an
-explicit operational limit, not an implied in-process hard timeout.
+Creation v1 now automatically renews the exact preparation fence from one process-local daemon
+scheduler. Commit and deterministic rejection first freeze the guard, wait for an in-flight renewal,
+and use only the latest repository-issued successor. Renewal conflict, store failure, or coordinator
+shutdown makes ownership uncertain; the staged BLOGE aggregate is discarded and the public adapter
+returns `RG.TEST.DURABLE_CREATE_LEASE_LOST`. The lease is a whole-second server setting from 3 seconds
+through one hour; the heartbeat defaults to one third of that lease and cannot exceed it. This closes
+healthy long-preparation expiry, but still does not provide forced worker cancellation, worker
+polling, or general multi-boundary orchestration. An uncooperative in-process operator can continue
+running until its own call returns, while fencing prevents it from publishing stale state. A real
+hard deadline therefore still requires a killable worker process or container.
 
 Expired owner recovery is a distinct control-only transition. `claimExpiredLease(...)` accepts the
 exact tenant/environment/run, old owner/epoch/revision fence, previous checkpoint fingerprint, new
@@ -695,7 +707,9 @@ replay, audit outage, non-terminal rollback, signal bounds, strict parsing, and 
 The public creation slice adds initial-boundary runtime cases, direct database reservation/atomicity
 cases, exact dependency-authorization cases, service idempotency/rejection cases, authenticated
 controller cases, and schema/capability checks. Its composed focused gate contains 71 tests.
-The repository-wide `clean verify` gate completed with 2044 tests, zero failures, zero errors, 33
+The creation-heartbeat increment's repository, coordinator, service, and capability gate contains 65
+tests, with zero failures, errors, or skips. The repository-wide `clean verify` gate completed with
+2052 tests, zero failures, zero errors, 34
 conditional skips, real-browser regression coverage, and successful Spring Boot JAR packaging.
 Scoped public `javadoc -Xdoclint:all -Werror` for the creation/recovery production types is also a required
 pre-commit gate.
@@ -710,7 +724,7 @@ parameter diagnostics in unrelated packages; that baseline is not represented as
   heartbeat, and terminal recovery can establish, renew, and terminally consume the control fence.
   Public graph-run creation now reaches exactly one initial signal suspension, and public query
   exposes integrity-verified operational facts. Operator-target creation, worker polling/dispatch,
-  multi-suspension coordination, automatic creation/recovery heartbeat scheduling, and hard worker
+  multi-suspension coordination, automatic recovery heartbeat scheduling, and hard worker
   cancellation do not exist, so this must not be mistaken for a complete remote-worker product
   lifecycle.
 - The durable and recovery sessions remain internal resources. Public terminal recovery consumes one
@@ -733,7 +747,7 @@ parameter diagnostics in unrelated packages; that baseline is not represented as
   each exact heartbeat successor, and one terminal signal. Heartbeat storage rejects
   unissued/stale/expired dispatches and rotates a successor atomically; terminal execution rechecks
   authorization and prevents duplicate engine mutation or partial local commit. Worker discovery,
-  polling/dispatch, heartbeat scheduling, general suspend/resume, crash reconciliation, multi-boundary
+  polling/dispatch, recovery heartbeat scheduling, general suspend/resume, crash reconciliation, multi-boundary
   orchestration, complete signed evidence assembly,
   signed checkpoint attestation, and an enforceable
   process-level deadline remain orchestration work rather than properties inferred from storage CAS

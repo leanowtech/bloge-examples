@@ -623,9 +623,20 @@ intent. A retry after a committed success or deterministic rejection replays tha
 before mutable dependencies are read again. A concurrent retry while the database-time preparation
 lease is live returns payload-free `409 RG.TEST.DURABLE_CREATE_IN_PROGRESS` with `runId` and
 `leaseExpiresAt`. After expiry, another instance may fence the abandoned preparer, retain the same
-run/engine identities, and retry only when the caller resubmits the same request. The service does not
-currently heartbeat preparation work or forcibly cancel an uncooperative operator; deployments must
-set the server-owned preparation lease above the bounded fresh-run budget.
+run/engine identities, and retry only when the caller resubmits the same request.
+
+The service automatically heartbeats each acquired preparation reservation while the isolated graph
+run is in progress. Renewal is an internal server protocol, not a caller endpoint: it requires the
+exact live `PENDING` owner, epoch, and record fingerprint; reads database time; preserves scope,
+authorization, run, engine, owner, and epoch; and rotates only update time, lease deadline, and the
+successor record fingerprint. Commit or deterministic rejection first freezes renewal and waits for
+any in-flight heartbeat, then uses only that latest successor. A failed heartbeat or service shutdown
+makes ownership uncertain, discards staged BLOGE state, and returns payload-free
+`409 RG.TEST.DURABLE_CREATE_LEASE_LOST` with `runId`. The server-owned lease defaults to 120 seconds
+and accepts whole seconds from 3 through 3600. The heartbeat interval defaults to `0`, meaning derive
+one third of the lease, and an explicit value must be a whole second no greater than one third of the
+lease. This does not forcibly cancel an uncooperative in-process operator; hard wall-clock deadlines
+still require a killable worker process or container plus lease fencing.
 
 ### 4.2e Query one durable execution
 
@@ -1745,7 +1756,7 @@ Still intentionally outside this increment:
   decision itself remains outside Resource Gateway;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
   reconciliation alert SLOs, and suite-history list/trend APIs;
-- operator-target durable creation, dispatcher/polling, automatic creation/recovery heartbeats and
+- operator-target durable creation, dispatcher/polling, automatic recovery heartbeats and
   multi-boundary recovery orchestration, hard worker cancellation, typed identity/flag/secret
   authorities, explicit
   streaming offset/checkpoint recovery, and deterministic concurrent scheduling;

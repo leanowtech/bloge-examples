@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.testing.runtime.DurableTestCreationRuntime;
 import com.leanowtech.bloge.gateway.testing.runtime.GovernedExecutionServices;
 import com.leanowtech.bloge.gateway.testing.runtime.IndependentDurableTestEngineFactory;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -25,6 +26,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -47,6 +50,7 @@ class DurableTestExecutionCreationServiceTest {
     private DurableTestRecoveryAuthorizer authorizer;
     private DurableTestCreationRuntime runtime;
     private TestSecurityEventRepository securityEvents;
+    private DurableTestCreationLeaseCoordinator leases;
     private DurableTestExecutionCreationService service;
     private TestValues values;
 
@@ -58,11 +62,18 @@ class DurableTestExecutionCreationServiceTest {
         runtime = mock(DurableTestCreationRuntime.class);
         securityEvents = mock(TestSecurityEventRepository.class);
         when(securityEvents.boundAppend(any())).thenReturn(TestRuntimeTransactionMutation.noop());
+        leases = DurableTestCreationLeaseCoordinator.passive(
+                "creator-instance", Duration.ofMinutes(2));
         service = new DurableTestExecutionCreationService(
                 checkpoints, authorizer, runtime,
                 new DurableTestExecutionCheckpointIntegrity(mapper), securityEvents, mapper,
-                "creator-instance", Duration.ofMinutes(2));
+                leases);
         values = new TestValues(mapper);
+    }
+
+    @AfterEach
+    void tearDown() {
+        leases.close();
     }
 
     @Test
@@ -117,6 +128,82 @@ class DurableTestExecutionCreationServiceTest {
             assertThat(value.engineState().boundaryType()).isEqualTo("SUSPEND");
         });
         verify(securityEvents).boundAppend(any());
+    }
+
+    @Test
+    void commitsTheLatestHeartbeatFenceInsteadOfTheOriginalReservation() throws Exception {
+        activateHeartbeats();
+        DurableTestExecutionCreateRequest request = values.request(Map.of());
+        CountDownLatch heartbeat = new CountDownLatch(1);
+        when(checkpoints.findInitialCreationResult(any(), any(), any(), any()))
+                .thenReturn(Optional.empty());
+        when(authorizer.authorizeCreation(request, identity()))
+                .thenReturn(values.authorized());
+        when(checkpoints.reserveInitialCreation(any()))
+                .thenReturn(values.pendingResult(true));
+        when(checkpoints.heartbeatInitialCreation(any(), any())).thenAnswer(invocation -> {
+            heartbeat.countDown();
+            return values.renewed(invocation.getArgument(0));
+        });
+        when(runtime.prepare(any(), any(), any(), any())).thenAnswer(invocation -> {
+            assertThat(heartbeat.await(2, TimeUnit.SECONDS)).isTrue();
+            return values.prepared();
+        });
+        when(checkpoints.commitInitialCreation(any(), any(), any(), any()))
+                .thenAnswer(invocation -> values.committedResult(
+                        invocation.getArgument(1), false));
+
+        service.create(request, identity());
+
+        ArgumentCaptor<DurableTestExecutionCheckpointRepository.InitialCreationReservation>
+                committedFence = ArgumentCaptor.forClass(
+                DurableTestExecutionCheckpointRepository.InitialCreationReservation.class);
+        ArgumentCaptor<DurableTestExecutionCheckpoint> checkpoint =
+                ArgumentCaptor.forClass(DurableTestExecutionCheckpoint.class);
+        verify(checkpoints).commitInitialCreation(
+                committedFence.capture(), checkpoint.capture(), any(), any());
+        assertThat(committedFence.getValue().recordFingerprint())
+                .isNotEqualTo(values.pending.recordFingerprint());
+        assertThat(checkpoint.getValue().lifecycle().updatedAt())
+                .isEqualTo(committedFence.getValue().updatedAt());
+        assertThat(checkpoint.getValue().lifecycle().leaseExpiresAt())
+                .isEqualTo(committedFence.getValue().leaseExpiresAt());
+    }
+
+    @Test
+    void discardsPreparedStateWhenHeartbeatMakesOwnershipUncertain() throws Exception {
+        activateHeartbeats();
+        DurableTestExecutionCreateRequest request = values.request(Map.of());
+        CountDownLatch heartbeat = new CountDownLatch(1);
+        when(checkpoints.findInitialCreationResult(any(), any(), any(), any()))
+                .thenReturn(Optional.empty());
+        when(authorizer.authorizeCreation(request, identity()))
+                .thenReturn(values.authorized());
+        when(checkpoints.reserveInitialCreation(any()))
+                .thenReturn(values.pendingResult(true));
+        when(checkpoints.heartbeatInitialCreation(any(), any())).thenAnswer(invocation -> {
+            heartbeat.countDown();
+            throw new DurableTestExecutionCheckpointConflictException(
+                    DurableTestExecutionCheckpointConflictException.Reason.STALE_FENCE,
+                    "lost");
+        });
+        when(runtime.prepare(any(), any(), any(), any())).thenAnswer(invocation -> {
+            assertThat(heartbeat.await(2, TimeUnit.SECONDS)).isTrue();
+            return values.prepared();
+        });
+
+        assertThatThrownBy(() -> service.create(request, identity()))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(409);
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.DURABLE_CREATE_LEASE_LOST");
+                    assertThat(failure.problem().details())
+                            .containsEntry("runId", "run-created")
+                            .hasSize(1);
+                });
+        verify(checkpoints, never()).commitInitialCreation(any(), any(), any(), any());
+        verify(checkpoints, never()).rejectInitialCreation(any(), any(), any());
+        verify(securityEvents, never()).boundAppend(any());
     }
 
     @Test
@@ -218,6 +305,17 @@ class DurableTestExecutionCreationServiceTest {
                 Set.of("test-operators"), "CONFIDENTIAL", "");
     }
 
+    private void activateHeartbeats() {
+        leases.close();
+        leases = new DurableTestCreationLeaseCoordinator(
+                checkpoints, "creator-instance", Duration.ofSeconds(3),
+                Duration.ofMillis(10));
+        service = new DurableTestExecutionCreationService(
+                checkpoints, authorizer, runtime,
+                new DurableTestExecutionCheckpointIntegrity(mapper), securityEvents, mapper,
+                leases);
+    }
+
     private static final class TestValues {
         private final ObjectMapper mapper;
         private final DurableTestExecutionCheckpointIntegrity integrity;
@@ -317,6 +415,17 @@ class DurableTestExecutionCreationServiceTest {
                 pendingResult(boolean acquired) {
             return new DurableTestExecutionCheckpointRepository.InitialCreationReservationResult(
                     pending, null, acquired, false);
+        }
+
+        private DurableTestExecutionCheckpointRepository.InitialCreationReservation renewed(
+                DurableTestExecutionCheckpointRepository.InitialCreationReservation current) {
+            return new DurableTestExecutionCheckpointRepository.InitialCreationReservation(
+                    current.schemaVersion(), current.scope(), current.clientRequestId(),
+                    current.requestFingerprint(), current.authorizationFingerprint(),
+                    current.runId(), current.engineExecutionId(), current.ownerId(),
+                    current.leaseEpoch(), current.createdAt(), current.updatedAt().plusSeconds(1),
+                    current.leaseExpiresAt().plusSeconds(1), current.state(), "", "",
+                    ProtocolFingerprint.ofText("renewed-creation"));
         }
 
         private DurableTestExecutionCheckpointRepository.InitialCreationReservationResult

@@ -198,6 +198,22 @@ public class TestRuntimeConfiguration {
                 resources.engineFactory(), runtimeOptions, objectMapper);
     }
 
+    /** Maintains database-fenced preparation ownership for fresh durable graph tests. */
+    @Bean
+    DurableTestCreationLeaseCoordinator durableTestCreationLeaseCoordinator(
+            DurableTestExecutionCheckpointRepository checkpoints,
+            @Value("${gateway.testing.durable.creation.instance-id:}") String instanceId,
+            @Value("${gateway.testing.durable.creation.lease-duration-seconds:120}")
+            long leaseDurationSeconds,
+            @Value("${gateway.testing.durable.creation.heartbeat-interval-seconds:0}")
+            long heartbeatIntervalSeconds) {
+        long heartbeatSeconds = heartbeatIntervalSeconds == 0
+                ? Math.max(1, leaseDurationSeconds / 3) : heartbeatIntervalSeconds;
+        return new DurableTestCreationLeaseCoordinator(
+                checkpoints, instanceId, Duration.ofSeconds(leaseDurationSeconds),
+                Duration.ofSeconds(heartbeatSeconds));
+    }
+
     /** Assembles authenticated, idempotent durable graph-test creation. */
     @Bean
     DurableTestExecutionCreationService durableTestExecutionCreationService(
@@ -207,14 +223,10 @@ public class TestRuntimeConfiguration {
             DurableTestExecutionCheckpointIntegrity integrity,
             TestSecurityEventRepository securityEvents,
             ObjectMapper objectMapper,
-            @Value("${gateway.testing.durable.creation.instance-id:}") String instanceId,
-            @Value("${gateway.testing.durable.creation.lease-duration-seconds:120}")
-            long leaseDurationSeconds) {
-        String owner = instanceId == null || instanceId.isBlank()
-                ? "durable-creation-" + UUID.randomUUID() : instanceId.trim();
+            DurableTestCreationLeaseCoordinator leases) {
         return new DurableTestExecutionCreationService(
                 checkpoints, authorizer, runtime, integrity, securityEvents, objectMapper,
-                owner, Duration.ofSeconds(leaseDurationSeconds));
+                leases);
     }
 
     /** Retains staged BLOGE recovery state until the fenced repository commit consumes it. */

@@ -64,6 +64,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("governedTestReplayPayloadCapture", true)
                 .containsEntry("testReplayBehavior", true)
                 .containsEntry("durableTestExecutionCreation", true)
+                .containsEntry("durableTestCreationLeaseHeartbeat", true)
                 .containsEntry("durableTestOwnerClaim", true)
                 .containsEntry("durableRecoveryDependencyReauthorization", true)
                 .containsEntry("authenticatedDurableRecoveryHeartbeat", true)

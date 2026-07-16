@@ -147,9 +147,15 @@ dependencies, timers/tasks/streams, terminal fresh runs, or multiple live suspen
 
 The server owns the preparation identity and lease through
 `gateway.testing.durable.creation.instance-id` and
-`gateway.testing.durable.creation.lease-duration-seconds` (default `120`, valid `1..3600`). There is no
-preparation heartbeat or forced in-process cancellation in v1, so the lease must exceed the bounded
-fresh-run budget. Complete wire semantics and failure codes are in the
+`gateway.testing.durable.creation.lease-duration-seconds` (default `120`, valid `3..3600`). A
+process-local coordinator renews the exact database-fenced `PENDING` reservation while the staged
+fresh run is preparing. Set `gateway.testing.durable.creation.heartbeat-interval-seconds` to `0`
+(default) to derive one third of the lease, or to a whole-second value from `1` through
+`floor(lease / 3)`. Commit and deterministic rejection freeze renewal and use the latest successor
+fingerprint; heartbeat failure or service shutdown returns
+`409 RG.TEST.DURABLE_CREATE_LEASE_LOST` and discards staged state. This is lease liveness, not forced
+in-process cancellation: an uncooperative operator still requires a killable worker boundary.
+Complete wire semantics and failure codes are in the
 [Testing Control Plane API](../docs/resource-gateway-testing-control-plane-api.md#42d-create-one-durable-graph-execution).
 
 ### Inspect a durable test execution
@@ -556,8 +562,9 @@ and payload-free receipt in one transaction; retries never reapply the engine mu
 state still lacks complete pre-checkpoint node/edge/attempt trace, receipt v1 is always
 `EVIDENCE_INCOMPLETE`, requires explicit gap codes, and blocks promotion. BLOGE streaming
 offset/checkpoint state, complete historical evidence, operator-target durable creation, authenticated
-worker poll/dispatch and multi-boundary orchestration, dispatcher consumption, automatic creation/recovery heartbeat scheduling, and a killable worker
-deadline are not wired yet. These internal primitives are not a product claim that durable test
+worker poll/dispatch and multi-boundary orchestration, dispatcher consumption, automatic recovery
+heartbeat scheduling, and a killable worker deadline are not wired yet. These internal primitives are
+not a product claim that durable test
 resume is complete. See
 [Stage 4 durable checkpoint verification](../docs/resource-gateway-execution-data-control-plane-stage4-durable-checkpoint-verification.md).
 

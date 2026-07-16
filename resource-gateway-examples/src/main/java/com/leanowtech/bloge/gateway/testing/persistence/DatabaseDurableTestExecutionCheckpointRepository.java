@@ -310,6 +310,50 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
     }
 
     @Override
+    public InitialCreationReservation heartbeatInitialCreation(
+            InitialCreationReservation reservation,
+            Duration leaseDuration) {
+        InitialCreationReservation requiredReservation = Objects.requireNonNull(
+                reservation, "reservation");
+        Duration requiredLease = requireCreationLeaseDuration(leaseDuration);
+        return transactions.execute(status -> {
+            StoredInitialCreation stored = requireInitialCreation(requiredReservation, true);
+            if (stored.state() != InitialCreationState.PENDING
+                    || !stored.ownerId().equals(requiredReservation.ownerId())
+                    || stored.leaseEpoch() != requiredReservation.leaseEpoch()
+                    || !stored.recordFingerprint().equals(
+                    requiredReservation.recordFingerprint())) {
+                throw conflict(STALE_FENCE,
+                        "Durable creation reservation changed before heartbeat");
+            }
+            Instant observedAt = databaseNow();
+            requireLiveInitialCreation(stored, observedAt);
+            if (!observedAt.isAfter(stored.updatedAt())) {
+                throw new IllegalStateException(
+                        "Test-runtime database clock did not advance for creation heartbeat");
+            }
+            Instant leaseExpiresAt = observedAt.plus(requiredLease);
+            if (!leaseExpiresAt.isAfter(stored.leaseExpiresAt())) {
+                throw conflict(INVALID_TRANSITION,
+                        "Durable creation heartbeat must extend the live lease");
+            }
+            String recordFingerprint = initialCreationRecordFingerprint(
+                    stored.scope(), stored.clientRequestId(), stored.requestFingerprint(),
+                    stored.authorizationFingerprint(), stored.runId(),
+                    stored.engineExecutionId(), stored.ownerId(), stored.leaseEpoch(),
+                    stored.createdAt(), observedAt, leaseExpiresAt,
+                    InitialCreationState.PENDING, "", "");
+            StoredInitialCreation renewed = stored.renewed(
+                    observedAt, leaseExpiresAt, recordFingerprint);
+            if (updateInitialCreation(renewed, stored) != 1) {
+                throw conflict(STALE_FENCE,
+                        "Durable creation reservation changed concurrently");
+            }
+            return toInitialCreationReservation(renewed);
+        });
+    }
+
+    @Override
     public InitialCreationReservationResult commitInitialCreation(
             InitialCreationReservation reservation,
             DurableTestExecutionCheckpoint checkpoint,
@@ -1763,6 +1807,17 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         }
     }
 
+    private static Duration requireCreationLeaseDuration(Duration leaseDuration) {
+        Duration required = Objects.requireNonNull(leaseDuration, "leaseDuration");
+        if (required.compareTo(Duration.ofSeconds(1)) < 0
+                || required.compareTo(Duration.ofHours(1)) > 0
+                || required.getNano() != 0) {
+            throw new IllegalArgumentException(
+                    "leaseDuration must be whole seconds between one second and one hour");
+        }
+        return required;
+    }
+
     private void requireInitialCheckpointBinding(
             InitialCreationReservation reservation,
             DurableTestExecutionCheckpoint checkpoint) {
@@ -2329,6 +2384,18 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     authorizationFingerprint, organizationId, projectId, actorId, runId,
                     engineExecutionId, nextOwnerId, nextLeaseEpoch, createdAt,
                     nextUpdatedAt, nextLeaseExpiresAt, InitialCreationState.PENDING,
+                    "", "", null, nextRecordFingerprint);
+        }
+
+        private StoredInitialCreation renewed(
+                Instant nextUpdatedAt,
+                Instant nextLeaseExpiresAt,
+                String nextRecordFingerprint) {
+            return new StoredInitialCreation(
+                    tenantId, environmentId, clientRequestId, requestFingerprint,
+                    authorizationFingerprint, organizationId, projectId, actorId, runId,
+                    engineExecutionId, ownerId, leaseEpoch, createdAt, nextUpdatedAt,
+                    nextLeaseExpiresAt, InitialCreationState.PENDING,
                     "", "", null, nextRecordFingerprint);
         }
 

@@ -11,7 +11,6 @@ import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestCreationRuntime;
 import com.leanowtech.bloge.gateway.testing.runtime.IndependentDurableTestEngineFactory;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Map;
@@ -45,8 +44,7 @@ public final class DurableTestExecutionCreationService {
     private final DurableTestExecutionCheckpointIntegrity integrity;
     private final TestSecurityEventRepository securityEvents;
     private final ObjectMapper objectMapper;
-    private final String ownerId;
-    private final Duration preparationLease;
+    private final DurableTestCreationLeaseCoordinator leases;
 
     /**
      * Creates the public durable creation application boundary.
@@ -57,8 +55,7 @@ public final class DurableTestExecutionCreationService {
      * @param integrity durable checkpoint sealing authority
      * @param securityEvents mandatory transaction-bound semantic audit sink
      * @param objectMapper canonical request fingerprint mapper
-     * @param ownerId stable current service-instance owner identity
-     * @param preparationLease initial execution lease between one second and one hour
+     * @param leases database-fenced preparation heartbeat coordinator
      */
     public DurableTestExecutionCreationService(
             DurableTestExecutionCheckpointRepository checkpoints,
@@ -67,22 +64,14 @@ public final class DurableTestExecutionCreationService {
             DurableTestExecutionCheckpointIntegrity integrity,
             TestSecurityEventRepository securityEvents,
             ObjectMapper objectMapper,
-            String ownerId,
-            Duration preparationLease) {
+            DurableTestCreationLeaseCoordinator leases) {
         this.checkpoints = Objects.requireNonNull(checkpoints, "checkpoints");
         this.authorizer = Objects.requireNonNull(authorizer, "authorizer");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.integrity = Objects.requireNonNull(integrity, "integrity");
         this.securityEvents = Objects.requireNonNull(securityEvents, "securityEvents");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
-        this.ownerId = requiredIdentifier(ownerId, "ownerId");
-        this.preparationLease = Objects.requireNonNull(preparationLease, "preparationLease");
-        if (preparationLease.compareTo(Duration.ofSeconds(1)) < 0
-                || preparationLease.compareTo(Duration.ofHours(1)) > 0
-                || preparationLease.getNano() != 0) {
-            throw new IllegalArgumentException(
-                    "preparationLease must be whole seconds between one second and one hour");
-        }
+        this.leases = Objects.requireNonNull(leases, "leases");
     }
 
     /**
@@ -110,7 +99,7 @@ public final class DurableTestExecutionCreationService {
                 request.clientRequestId(), requestFingerprint,
                 authorized.authorizationFingerprint(), scope(identity),
                 UUID.randomUUID().toString(), "engine-" + UUID.randomUUID(),
-                ownerId, preparationLease);
+                leases.ownerId(), leases.leaseDuration());
         DurableTestExecutionCheckpointRepository.InitialCreationReservationResult reserved =
                 reserve(command, identity);
         if (reserved.reservation().state()
@@ -131,31 +120,40 @@ public final class DurableTestExecutionCreationService {
             DurableTestRecoveryAuthorizer.AuthorizedCreation authorized,
             DurableTestExecutionCheckpointRepository.InitialCreationReservation reservation,
             IntegrationRequestContext identity) {
-        try (DurableTestCreationRuntime.PreparedCreation prepared = runtime.prepare(
-                reservation.engineExecutionId(), authorized, request.context(),
-                "initial-" + reservation.runId())) {
-            if (!prepared.executionServiceState().restorable()) {
-                return reject(reservation, "INITIAL_PROVIDER_STATE_NOT_RESTORABLE", identity);
+        try (DurableTestCreationLeaseCoordinator.LeaseGuard guard = leases.monitor(reservation)) {
+            try (DurableTestCreationRuntime.PreparedCreation prepared = runtime.prepare(
+                    reservation.engineExecutionId(), authorized, request.context(),
+                    "initial-" + reservation.runId())) {
+                if (!prepared.executionServiceState().restorable()) {
+                    return reject(guard.freeze(),
+                            "INITIAL_PROVIDER_STATE_NOT_RESTORABLE", identity);
+                }
+                DurableTestExecutionCheckpointRepository.InitialCreationReservation current =
+                        guard.freeze();
+                DurableTestExecutionCheckpoint checkpoint = integrity.seal(
+                        new DurableTestExecutionCheckpoint(
+                                DurableTestExecutionCheckpoint.SCHEMA_VERSION, current.scope(),
+                                current.runId(), current.engineExecutionId(),
+                                authorized.dependencies(), prepared.fixtureConsumptionState(),
+                                prepared.executionServiceState(),
+                                prepared.engineStateMutation().engineState(),
+                                new DurableTestExecutionCheckpoint.Lifecycle(
+                                        DurableTestExecutionCheckpoint.Status.SUSPENDED,
+                                        current.ownerId(), current.leaseEpoch(), 0,
+                                        current.createdAt(), current.updatedAt(),
+                                        current.leaseExpiresAt()), ""));
+                TestRuntimeTransactionMutation audit = boundAudit(identity, current,
+                        "ALLOWED", "RG.TEST.DURABLE_CREATE_AUTHORIZED");
+                var committed = checkpoints.commitInitialCreation(
+                        current, checkpoint, prepared.engineStateMutation(), audit);
+                return terminalResponse(committed, identity);
+            } catch (IndependentDurableTestEngineFactory.InitialBoundaryRejectedException rejected) {
+                return reject(guard.freeze(), rejected.reasonCode(), identity);
             }
-            DurableTestExecutionCheckpoint checkpoint = integrity.seal(
-                    new DurableTestExecutionCheckpoint(
-                            DurableTestExecutionCheckpoint.SCHEMA_VERSION, reservation.scope(),
-                            reservation.runId(), reservation.engineExecutionId(),
-                            authorized.dependencies(), prepared.fixtureConsumptionState(),
-                            prepared.executionServiceState(),
-                            prepared.engineStateMutation().engineState(),
-                            new DurableTestExecutionCheckpoint.Lifecycle(
-                                    DurableTestExecutionCheckpoint.Status.SUSPENDED,
-                                    reservation.ownerId(), reservation.leaseEpoch(), 0,
-                                    reservation.createdAt(), reservation.updatedAt(),
-                                    reservation.leaseExpiresAt()), ""));
-            TestRuntimeTransactionMutation audit = boundAudit(identity, reservation,
-                    "ALLOWED", "RG.TEST.DURABLE_CREATE_AUTHORIZED");
-            var committed = checkpoints.commitInitialCreation(
-                    reservation, checkpoint, prepared.engineStateMutation(), audit);
-            return terminalResponse(committed, identity);
-        } catch (IndependentDurableTestEngineFactory.InitialBoundaryRejectedException rejected) {
-            return reject(reservation, rejected.reasonCode(), identity);
+        } catch (DurableTestCreationLeaseCoordinator.LeaseLostException lost) {
+            throw conflict(identity, "RG.TEST.DURABLE_CREATE_LEASE_LOST",
+                    "Durable creation preparation ownership became uncertain.",
+                    Map.of("runId", reservation.runId()));
         } catch (IntegrationProblemException expected) {
             throw expected;
         } catch (DurableTestExecutionCheckpointConflictException conflict) {
@@ -377,15 +375,6 @@ public final class DurableTestExecutionCreationService {
             String title) {
         return new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
                 code, title, identity.correlationId(), Map.of()));
-    }
-
-    private static String requiredIdentifier(String value, String field) {
-        String normalized = value == null ? "" : value.trim();
-        if (!IDENTIFIER.matcher(normalized).matches()) {
-            throw new IllegalArgumentException(
-                    field + " must be a bounded stable identifier");
-        }
-        return normalized;
     }
 
     private static String compactKey(String value) {

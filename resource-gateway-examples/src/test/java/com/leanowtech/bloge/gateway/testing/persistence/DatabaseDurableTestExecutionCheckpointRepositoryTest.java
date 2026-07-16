@@ -155,6 +155,75 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     }
 
     @Test
+    void creationHeartbeatExtendsDatabaseFenceAndOnlySuccessorCanCommit()
+            throws InterruptedException {
+        var acquired = repository.reserveInitialCreation(creationCommand(
+                "create-1", SHA_A, SHA_B, "creator-a", "run-created", "engine-created",
+                Duration.ofSeconds(3)));
+        Thread.sleep(25);
+
+        var renewed = repository.heartbeatInitialCreation(
+                acquired.reservation(), Duration.ofSeconds(3));
+
+        assertThat(renewed.ownerId()).isEqualTo(acquired.reservation().ownerId());
+        assertThat(renewed.leaseEpoch()).isEqualTo(acquired.reservation().leaseEpoch());
+        assertThat(renewed.runId()).isEqualTo(acquired.reservation().runId());
+        assertThat(renewed.engineExecutionId())
+                .isEqualTo(acquired.reservation().engineExecutionId());
+        assertThat(renewed.updatedAt()).isAfter(acquired.reservation().updatedAt());
+        assertThat(renewed.leaseExpiresAt())
+                .isAfter(acquired.reservation().leaseExpiresAt());
+        assertThat(renewed.recordFingerprint())
+                .isNotEqualTo(acquired.reservation().recordFingerprint());
+
+        DurableTestExecutionCheckpoint staleCheckpoint =
+                initialCheckpoint(acquired.reservation());
+        assertThatThrownBy(() -> repository.commitInitialCreation(
+                acquired.reservation(), staleCheckpoint, boundNoop(staleCheckpoint),
+                TestRuntimeTransactionMutation.noop()))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.STALE_FENCE);
+
+        DurableTestExecutionCheckpoint currentCheckpoint = initialCheckpoint(renewed);
+        assertThat(repository.commitInitialCreation(
+                renewed, currentCheckpoint, boundNoop(currentCheckpoint),
+                TestRuntimeTransactionMutation.noop()).checkpoint())
+                .isEqualTo(currentCheckpoint);
+    }
+
+    @Test
+    void creationHeartbeatCannotReviveExpiredOrTerminalReservation()
+            throws InterruptedException {
+        var expiring = repository.reserveInitialCreation(creationCommand(
+                "create-expired", SHA_A, SHA_B, "creator-a", "run-expired",
+                "engine-expired", Duration.ofSeconds(1)));
+        Thread.sleep(1_100);
+
+        assertThatThrownBy(() -> repository.heartbeatInitialCreation(
+                expiring.reservation(), Duration.ofSeconds(3)))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.LEASE_EXPIRED);
+
+        var pending = repository.reserveInitialCreation(creationCommand(
+                "create-rejected", SHA_A, SHA_B, "creator-a", "run-rejected",
+                "engine-rejected", Duration.ofSeconds(3)));
+        repository.rejectInitialCreation(
+                pending.reservation(), "INITIAL_BOUNDARY_UNSUPPORTED",
+                TestRuntimeTransactionMutation.noop());
+
+        assertThatThrownBy(() -> repository.heartbeatInitialCreation(
+                pending.reservation(), Duration.ofSeconds(3)))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.STALE_FENCE);
+    }
+
+    @Test
     void creationCheckpointEngineAggregateAndAuditCommitOrRollBackTogether() {
         var acquired = repository.reserveInitialCreation(creationCommand(
                 "create-1", SHA_A, SHA_B, "creator-a", "run-created", "engine-created",

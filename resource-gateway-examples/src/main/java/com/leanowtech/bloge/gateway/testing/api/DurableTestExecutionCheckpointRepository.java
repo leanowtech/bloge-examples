@@ -55,6 +55,22 @@ public interface DurableTestExecutionCheckpointRepository {
             String requestFingerprint);
 
     /**
+     * Renews one exact live creation-preparation fence using the persistence-authority clock.
+     *
+     * <p>The transition leaves scope, authenticated intent, run and engine identities, owner, and
+     * lease epoch unchanged. It advances only the database-authority update time, lease deadline,
+     * and aggregate record fingerprint. A stale, expired, terminal, or differently owned
+     * reservation fails closed.</p>
+     *
+     * @param reservation exact locally held pending reservation
+     * @param leaseDuration bounded server-owned renewal duration
+     * @return renewed pending reservation carrying the successor record fingerprint
+     */
+    InitialCreationReservation heartbeatInitialCreation(
+            InitialCreationReservation reservation,
+            Duration leaseDuration);
+
+    /**
      * Atomically commits one acquired creation reservation, initial control checkpoint, complete
      * BLOGE aggregate, and local companion audit/evidence mutation.
      *
