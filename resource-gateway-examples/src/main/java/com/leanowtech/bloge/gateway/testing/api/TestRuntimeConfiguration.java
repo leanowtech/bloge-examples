@@ -187,6 +187,30 @@ public class TestRuntimeConfiguration {
                 requiredApproverGroup, requiredClearance);
     }
 
+    /** Assembles the signed, challenge-bound per-replica request-index rollout proof boundary. */
+    @Bean
+    WorkerQuarantineRequestIndexRolloutService workerQuarantineRequestIndexRolloutService(
+            DatabaseDurableWorkerQuarantineControlPlane controlPlane,
+            TestSecurityEventRepository securityEvents,
+            VisualEvidenceSigner signer,
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.durable.worker-quarantines.request-index-rollout.instance-id}")
+            String instanceId,
+            @Value("${gateway.testing.durable.worker-quarantines.request-index-rollout.artifact-fingerprint}")
+            String artifactFingerprint,
+            @Value("${gateway.testing.durable.worker-quarantines.request-index-rollout.proof-ttl-seconds:120}")
+            long proofTtlSeconds,
+            @Value("${gateway.testing.durable.worker-quarantines.required-group:resource-gateway-test-runtime-operators}")
+            String requiredGroup,
+            @Value("${gateway.testing.durable.worker-quarantines.required-clearance:RESTRICTED}")
+            String requiredClearance) {
+        return new WorkerQuarantineRequestIndexRolloutService(
+                controlPlane, securityEvents, signer, objectMapper,
+                new WorkerQuarantineRequestIndexRolloutService.Settings(
+                        instanceId, UUID.randomUUID().toString(), artifactFingerprint,
+                        Duration.ofSeconds(proofTtlSeconds), requiredGroup, requiredClearance));
+    }
+
     /**
      * Creates durable test resources without exposing the BLOGE store as a global autowire target.
      */

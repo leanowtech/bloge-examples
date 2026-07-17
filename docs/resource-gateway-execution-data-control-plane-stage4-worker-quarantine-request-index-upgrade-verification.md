@@ -33,10 +33,10 @@ start through the packaged launcher without an explicit canonical value.
 
 1. Deploy binary N to every new replica with `LEGACY_READ_WRITE`. Binary N and N-1 both continue
    writing and finding v1 tombstones.
-2. Poll `/api/integration/capabilities` for every deployment-platform instance. Require
-   `durableWorkerQuarantineRequestIndexLegacyReadWrite=true` everywhere and require the other two
-   mode flags to be false. An N-1 process does not
-   publish this field and must not remain in the platform inventory.
+2. Address every deployment-platform instance directly and request a challenge-bound signed
+   replica proof targeting `DUAL_READ_KEYED_WRITE`. Require the expected instance, process-start,
+   artifact, scope, protocol, legacy mode, empty blocker set, and live inventory. An N-1 process
+   cannot publish this proof and must not remain in the platform inventory.
 3. Only after the deployment authority proves that every serving instance is binary N, roll the
    fleet to `DUAL_READ_KEYED_WRITE`. From the first v2 write onward, rollback to N-1 is prohibited.
    Binary-N replicas still running the legacy mode can read v2 rows created during this configuration
@@ -83,6 +83,9 @@ the exact mode and every serving instance, not one load-balanced response.
 | `gateway.testing.durable.worker-quarantines.request-key-protection.write-mode` | `RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE` | defaults to `DUAL_READ_KEYED_WRITE` in local `test`; required and closed-valued in `staging` |
 | `gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id` | `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID` | local demonstration key in `test`; required in `staging` |
 | `gateway.testing.durable.worker-quarantines.request-key-protection.key-ring` | `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING` | local demonstration ring in `test`; required in `staging` |
+| `gateway.testing.durable.worker-quarantines.request-index-rollout.instance-id` | `RG_RESOURCE_GATEWAY_INSTANCE_ID` | deployment inventory identity; required in `staging` |
+| `gateway.testing.durable.worker-quarantines.request-index-rollout.artifact-fingerprint` | `RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT` | immutable artifact/image SHA-256; required in `staging` |
+| `gateway.testing.durable.worker-quarantines.request-index-rollout.proof-ttl-seconds` | `RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_PROOF_TTL_SECONDS` | `120`, bounded to `5..300` seconds |
 
 The write mode is not a secret. It belongs in deployment policy, while both request-index roots
 belong in the secret manager. A direct Spring Boot launch and the packaged launcher enforce the same
@@ -124,16 +127,33 @@ failures, 0 errors, and 0 skips, including public Javadoc and shaded-JAR verific
 the staging launcher's missing/invalid-mode checks, and packaged-JAR inspection also passed; the JAR
 contains the mode enum plus both `application-test.yml` and `application-staging.yml`.
 
+## Signed Per-Replica Proof
+
+`POST /api/testing/durable-state/worker-quarantines/request-index/replica-proofs` issues one
+short-lived Ed25519 proof for an immediate transition to `DUAL_READ_KEYED_WRITE` or `KEYED_ONLY`.
+The signed material binds the deployment challenge, identity-derived scope fingerprint, stable
+instance id, process-start UUID, immutable artifact fingerprint, Resource Gateway protocol version,
+current and target modes, DB-clock live generation inventory, closed blockers, and expiry. The
+endpoint requires `test` or `staging`, exact purpose `TEST_RUNTIME_MAINTENANCE`, the configured
+operator group and clearance, and complete project/region identity.
+
+The proof remains signed when a transition is blocked. `CURRENT_MODE_NOT_PREDECESSOR`,
+`LIVE_KEYED_ROWS_PRESENT`, and `LIVE_LEGACY_ROWS_PRESENT` are closed policy facts, not transport
+errors. Inventory contains counts, expiries, and non-secret key-generation ids only; it excludes
+request ids, tenants, scopes, and payloads. Full protocol and counterexamples are in the
+[replica-proof verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-replica-proof-verification.md).
+
 ## Honest Boundary
 
-The mode is enforced by each binary and observed per replica. It is not a database-coordinated fleet
-barrier, signed deployment attestation, or service-discovery inventory. Resource Gateway cannot
-prove that an unmanaged, unregistered, partitioned, or stale N-1 process no longer exists. The
-deployment platform must enumerate every serving instance and gate step 3; polling one load-balanced
-capability response is insufficient.
+The mode is enforced and signed by each new binary, but the proof is not a database-coordinated
+fleet barrier or service-discovery inventory. Resource Gateway cannot prove that an unmanaged,
+unregistered, partitioned, or stale N-1 process no longer exists. The deployment platform must
+enumerate every serving instance and gate step 3; one load-balanced proof is insufficient.
 
 Likewise, a misconfigured N replica can start in dual mode while N-1 still serves. The protocol makes
 that configuration observable and gives the orchestrator a safe sequence; it cannot force an old
-binary that predates the protocol to honor a new database flag. Automatic fleet attestation,
-multi-region propagation proof, non-H2 dialect qualification, and rollback-drill certification
-remain later industrialization work.
+binary that predates the protocol to honor a new database flag. The configured artifact fingerprint
+is also a deployment assertion rather than a self-measured image digest, so the gate must bind it to
+its independently trusted artifact inventory. Exact inventory aggregation and offline fleet
+verification, multi-region propagation proof, non-H2 dialect qualification, and rollback-drill
+certification remain later industrialization work.

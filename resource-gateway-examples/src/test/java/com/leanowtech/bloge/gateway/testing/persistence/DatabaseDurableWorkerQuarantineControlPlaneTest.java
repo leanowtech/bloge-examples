@@ -202,6 +202,81 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
     }
 
     @Test
+    void requestIndexInventoryUsesDatabaseTimeAndProjectsLegacyRowsWithoutIdentity()
+            throws Exception {
+        controlPlane = newControlPlane(WorkerQuarantineRequestIndexMode.LEGACY_READ_WRITE);
+        controlPlane.init();
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        controlPlane.claim(workerScope(), key, "operator-a", "claim-inventory-legacy",
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop());
+        Thread.sleep(1_100);
+        controlPlane.retainClaimedPage(controlPlane.acquireRetentionLease().orElseThrow(),
+                Duration.ZERO, Duration.ZERO, Duration.ofDays(1), 10);
+
+        var inventory = controlPlane.requestIndexInventory();
+
+        assertThat(inventory.liveLegacyRows()).isOne();
+        assertThat(inventory.liveKeyedRows()).isZero();
+        assertThat(inventory.totalLiveRows()).isOne();
+        assertThat(inventory.latestLegacyExpiry()).isAfter(inventory.observedAt());
+        assertThat(inventory.latestKeyedExpiry()).isEqualTo(Instant.EPOCH);
+        assertThat(inventory.keyedGenerations()).isEmpty();
+        assertThat(objectMapper.writeValueAsString(inventory))
+                .doesNotContain("claim-inventory-legacy")
+                .doesNotContain("tenant-a")
+                .doesNotContain("scopeKey");
+    }
+
+    @Test
+    void requestIndexInventoryProjectsEveryConfiguredKeyedGeneration()
+            throws Exception {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        controlPlane.claim(workerScope(), key, "operator-a", "claim-inventory-keyed",
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop());
+        Thread.sleep(1_100);
+        controlPlane.retainClaimedPage(controlPlane.acquireRetentionLease().orElseThrow(),
+                Duration.ZERO, Duration.ZERO, Duration.ofDays(1), 10);
+
+        var inventory = controlPlane.requestIndexInventory();
+
+        assertThat(inventory.liveLegacyRows()).isZero();
+        assertThat(inventory.liveKeyedRows()).isOne();
+        assertThat(inventory.latestLegacyExpiry()).isEqualTo(Instant.EPOCH);
+        assertThat(inventory.latestKeyedExpiry()).isAfter(inventory.observedAt());
+        assertThat(inventory.keyedGenerations()).singleElement().satisfies(generation -> {
+            assertThat(generation.keyId()).isEqualTo("request-key-v1");
+            assertThat(generation.liveRows()).isOne();
+            assertThat(generation.latestExpiry()).isEqualTo(inventory.latestKeyedExpiry());
+        });
+    }
+
+    @Test
+    void requestIndexInventoryFailsClosedForAnUnavailableLiveGeneration()
+            throws Exception {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        controlPlane.claim(workerScope(), key, "operator-a", "claim-inventory-unknown-key",
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop());
+        Thread.sleep(1_100);
+        controlPlane.retainClaimedPage(controlPlane.acquireRetentionLease().orElseThrow(),
+                Duration.ZERO, Duration.ZERO, Duration.ofDays(1), 10);
+        database.jdbc().update("""
+                UPDATE rg_test_durable_worker_quarantine_request_tombstones
+                SET request_key_id = 'retired-and-unavailable'
+                """);
+
+        assertThatThrownBy(controlPlane::requestIndexInventory)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("key generation is unavailable")
+                .hasMessageNotContaining("claim-inventory-unknown-key");
+    }
+
+    @Test
     void legacyModeRejectsStartupAfterKeyedWritesHaveBegun() throws Exception {
         DurableTestExecutionCheckpoint checkpoint = createQuarantine();
         var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(

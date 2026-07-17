@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -39,12 +40,17 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "gateway.seed-descriptors=true",
                 "gateway.base-url=http://127.0.0.1:1",
                 "gateway.integration.identity.environment-id=test",
+                "gateway.integration.identity.region=region-a",
+                "gateway.integration.identity.groups=resource-gateway-test-runtime-operators",
+                "gateway.integration.identity.clearance=RESTRICTED",
                 "gateway.integration.identity.allowed-purposes=TEST_EXECUTION,TEST_FIXTURE_READ,TEST_FIXTURE_WRITE,TEST_REPLAY,TEST_SUITE_READ,TEST_SUITE_WRITE,TEST_RUNTIME_MAINTENANCE",
                 "gateway.testing.durable.worker-quarantines.claim-token-protection.active-key-id=integration-test-v1",
                 "gateway.testing.durable.worker-quarantines.claim-token-protection.key-ring=integration-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
                 "gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id=integration-request-index-v1",
                 "gateway.testing.durable.worker-quarantines.request-key-protection.key-ring=integration-request-index-v1=HyAdHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA=",
                 "gateway.testing.durable.worker-quarantines.request-key-protection.write-mode=KEYED_ONLY",
+                "gateway.testing.durable.worker-quarantines.request-index-rollout.instance-id=integration-replica-a",
+                "gateway.testing.durable.worker-quarantines.request-index-rollout.artifact-fingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 "spring.datasource.url=jdbc:h2:mem:testing-app-main;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false",
                 "gateway.testing.store.jdbc-url=jdbc:h2:mem:testing-app-control;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
         }
@@ -62,6 +68,9 @@ class TestRuntimeApplicationIntegrationTest {
 
     @Autowired
     private FixtureBundleRepository fixtureRepository;
+
+    @Autowired
+    private VisualEvidenceSigner evidenceSigner;
 
     @Test
     void realApplicationAdvertisesAndServesTheProfileGatedTargetProtocol() throws Exception {
@@ -81,6 +90,10 @@ class TestRuntimeApplicationIntegrationTest {
                 DatabaseDurableWorkerQuarantineControlPlane.class)).hasSize(1);
         assertThat(context.getBeansOfType(DurableWorkerQuarantineService.class)).hasSize(1);
         assertThat(context.getBeansOfType(DurableWorkerQuarantineController.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                WorkerQuarantineRequestIndexRolloutService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                WorkerQuarantineRequestIndexRolloutController.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 DurableWorkerQuarantineRetentionScheduler.class)).hasSize(1);
         assertThat(context.getBeansOfType(
@@ -122,6 +135,7 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("hashedDurableWorkerQuarantineActiveFence", true)
                 .containsEntry("keyedDurableWorkerQuarantineRequestIndex", true)
                 .containsEntry("stagedDurableWorkerQuarantineRequestIndexUpgrade", true)
+                .containsEntry("signedWorkerQuarantineRequestIndexReplicaProof", true)
                 .containsEntry("durableWorkerQuarantineRequestIndexLegacyReadWrite", false)
                 .containsEntry("durableWorkerQuarantineRequestIndexDualReadKeyedWrite", false)
                 .containsEntry("durableWorkerQuarantineRequestIndexKeyedOnly", true)
@@ -140,7 +154,11 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("durableWorkerQuarantineDiscardApprovalRequest",
                         List.of(DurableWorkerQuarantineDiscardApprovalRequest.SCHEMA_VERSION))
                 .containsEntry("durableWorkerQuarantineApprovedDiscardResponse",
-                        List.of(DurableWorkerQuarantineApprovedDiscardResponse.SCHEMA_VERSION));
+                        List.of(DurableWorkerQuarantineApprovedDiscardResponse.SCHEMA_VERSION))
+                .containsEntry("workerQuarantineRequestIndexReplicaProofRequest",
+                        List.of(WorkerQuarantineRequestIndexReplicaProofRequest.SCHEMA_VERSION))
+                .containsEntry("workerQuarantineRequestIndexReplicaProof",
+                        List.of(WorkerQuarantineRequestIndexReplicaProof.SCHEMA_VERSION));
         assertThat(capabilities.getBody().payload().endpoints())
                 .anyMatch(endpoint -> endpoint.method().equals("GET")
                         && endpoint.path().equals(
@@ -162,7 +180,35 @@ class TestRuntimeApplicationIntegrationTest {
                         "/api/testing/durable-state/worker-quarantines/approved-discards"))
                 .anyMatch(endpoint -> endpoint.method().equals("GET")
                         && endpoint.path().equals(
-                        "/api/testing/durable-state/worker-quarantines/approved-discards/history"));
+                        "/api/testing/durable-state/worker-quarantines/approved-discards/history"))
+                .anyMatch(endpoint -> endpoint.method().equals("POST")
+                        && endpoint.path().equals(
+                        "/api/testing/durable-state/worker-quarantines/request-index/replica-proofs"));
+
+        HttpHeaders rolloutHeaders = new HttpHeaders();
+        rolloutHeaders.setBearerAuth("bloge-aneke-demo-token");
+        rolloutHeaders.set("X-Purpose", "TEST_RUNTIME_MAINTENANCE");
+        var rolloutProof = restTemplate.exchange(
+                "/api/testing/durable-state/worker-quarantines/request-index/replica-proofs",
+                HttpMethod.POST,
+                new HttpEntity<>(new WorkerQuarantineRequestIndexReplicaProofRequest(
+                        WorkerQuarantineRequestIndexReplicaProofRequest.SCHEMA_VERSION,
+                        "integration_rollout_challenge_0001",
+                        com.leanowtech.bloge.gateway.testing.domain
+                                .WorkerQuarantineRequestIndexMode.DUAL_READ_KEYED_WRITE),
+                        rolloutHeaders),
+                WorkerQuarantineRequestIndexReplicaProof.class);
+        assertThat(rolloutProof.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(rolloutProof.getBody()).isNotNull();
+        assertThat(rolloutProof.getBody().material().instanceId())
+                .isEqualTo("integration-replica-a");
+        assertThat(rolloutProof.getBody().material().currentMode().name())
+                .isEqualTo("KEYED_ONLY");
+        assertThat(rolloutProof.getBody().material().transitionAllowed()).isFalse();
+        assertThat(rolloutProof.getBody().material().blockers())
+                .contains("CURRENT_MODE_NOT_PREDECESSOR");
+        assertThat(evidenceSigner.verify(rolloutProof.getBody().seal(),
+                rolloutProof.getBody().materialFingerprint()).valid()).isTrue();
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("governedTestReplayPayloadCapture", true)
                 .containsEntry("testReplayBehavior", true)

@@ -58,6 +58,8 @@ Environment:
   RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID  required for staging
   RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING       required for staging; keyId=base64Key[,..]
   RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE  required for staging; staged rollout mode
+  RG_RESOURCE_GATEWAY_INSTANCE_ID                  required for staging; exact serving replica id
+  RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT         required for staging; sha256 image/JAR identity
   RG_TEST_WORKER_QUARANTINE_COMMAND_RETENTION_DAYS    default: 30
   RG_TEST_WORKER_QUARANTINE_HISTORY_RETENTION_DAYS    default: 365
   RG_TEST_WORKER_QUARANTINE_TOMBSTONE_RETENTION_DAYS  default: 365
@@ -89,9 +91,11 @@ validate_profile_secrets() {
         [ -z "${RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING:-}" ] ||
         [ -z "${RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID:-}" ] ||
         [ -z "${RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING:-}" ] ||
-        [ -z "${RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE:-}" ]; then
-        echo "Staging requires both worker-quarantine key rings and an index write mode." >&2
-        echo "Inject all five values from deployment policy before startup." >&2
+        [ -z "${RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE:-}" ] ||
+        [ -z "${RG_RESOURCE_GATEWAY_INSTANCE_ID:-}" ] ||
+        [ -z "${RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT:-}" ]; then
+        echo "Staging requires both worker-quarantine key rings, rollout mode, instance, and artifact identity." >&2
+        echo "Inject all seven values from deployment policy before startup." >&2
         return 1
     fi
     case "${RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE}" in
@@ -102,6 +106,23 @@ validate_profile_secrets() {
             return 1
             ;;
     esac
+    case "${RG_RESOURCE_GATEWAY_INSTANCE_ID}" in
+        [A-Za-z0-9]*) ;;
+        *)
+            echo "Invalid Resource Gateway instance id." >&2
+            return 1
+            ;;
+    esac
+    if ! printf '%s' "${RG_RESOURCE_GATEWAY_INSTANCE_ID}" |
+        grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$'; then
+        echo "Invalid Resource Gateway instance id." >&2
+        return 1
+    fi
+    if ! printf '%s' "${RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT}" |
+        grep -Eq '^sha256:[a-f0-9]{64}$'; then
+        echo "Invalid Resource Gateway artifact fingerprint; use canonical sha256:<lowercase-hex>." >&2
+        return 1
+    fi
 }
 
 pid_file() {

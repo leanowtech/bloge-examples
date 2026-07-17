@@ -29,6 +29,8 @@ import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineRequestK
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestTerminalRecoveryRuntime;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.actuate.health.Status;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -106,6 +108,10 @@ class TestRuntimeProfileIsolationTest {
                     DurableWorkerQuarantineRetentionTelemetry.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableWorkerQuarantineController.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableWorkerQuarantineService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    WorkerQuarantineRequestIndexRolloutService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    WorkerQuarantineRequestIndexRolloutController.class)).isEmpty();
             assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();
@@ -172,6 +178,10 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(DurableWorkerQuarantineController.class)).hasSize(1);
             assertThat(context.getBeansOfType(DurableWorkerQuarantineService.class)).hasSize(1);
             assertThat(context.getBeansOfType(
+                    WorkerQuarantineRequestIndexRolloutService.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    WorkerQuarantineRequestIndexRolloutController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
                     DurableStateProjectionReconciliationScheduler.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableStateProjectionFindingRetentionScheduler.class)).hasSize(1);
@@ -205,8 +215,8 @@ class TestRuntimeProfileIsolationTest {
                             List.of(), List.of(), List.of(), List.of(), List.of(), Map.of()));
             TestEvidenceIntegrityService.SealResult seal = context
                     .getBean(TestEvidenceIntegrityService.class).seal(evidence);
-            assertThat(seal.verified()).isFalse();
-            assertThat(seal.failureCode()).isEqualTo(TestEvidenceIntegrityService.SIGNER_UNAVAILABLE);
+            assertThat(seal.verified()).isTrue();
+            assertThat(seal.failureCode()).isEmpty();
         }
     }
 
@@ -267,6 +277,10 @@ class TestRuntimeProfileIsolationTest {
                     DurableWorkerQuarantineRetentionTelemetry.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableWorkerQuarantineController.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableWorkerQuarantineService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    WorkerQuarantineRequestIndexRolloutService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    WorkerQuarantineRequestIndexRolloutController.class)).isEmpty();
             assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();
@@ -294,7 +308,11 @@ class TestRuntimeProfileIsolationTest {
                 "gateway.testing.durable.worker-quarantines.request-key-protection.key-ring",
                 "profile-request-index-v1=HyAdHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA=",
                 "gateway.testing.durable.worker-quarantines.request-key-protection.write-mode",
-                "KEYED_ONLY")));
+                "KEYED_ONLY",
+                "gateway.testing.durable.worker-quarantines.request-index-rollout.instance-id",
+                "profile-replica-a",
+                "gateway.testing.durable.worker-quarantines.request-index-rollout.artifact-fingerprint",
+                "sha256:" + "f".repeat(64))));
         context.registerBean(ObjectMapper.class, () -> new ObjectMapper().findAndRegisterModules());
         context.registerBean(GatewayGraphService.class, () -> mock(GatewayGraphService.class));
         context.registerBean(OperatorRegistry.class, () -> mock(OperatorRegistry.class));
@@ -303,12 +321,14 @@ class TestRuntimeProfileIsolationTest {
         context.registerBean(BlgeExpressionEvaluator.class, () -> new BlgeExpressionEvaluator());
         context.registerBean(IntegrationRequestAuthenticator.class,
                 () -> mock(IntegrationRequestAuthenticator.class));
+        context.registerBean(VisualEvidenceSigner.class, InMemoryVisualEvidenceSigner::new);
         context.register(TestRuntimeConfiguration.class, TestExecutionController.class,
                 DurableTestExecutionQueryController.class,
                 DurableTestOwnerClaimController.class,
                 DurableTestWorkerAcquisitionController.class,
                 DurableStateProjectionFindingController.class,
                 DurableWorkerQuarantineController.class,
+                WorkerQuarantineRequestIndexRolloutController.class,
                 DurableTestRecoveryHeartbeatController.class,
                 DurableTestTerminalRecoveryController.class);
         context.refresh();

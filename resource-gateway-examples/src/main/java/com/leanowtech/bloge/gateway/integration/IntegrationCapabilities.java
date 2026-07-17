@@ -330,6 +330,10 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineApprovedDiscardResponse.SCHEMA_VERSION));
             objects.put("durableWorkerQuarantineApprovedDiscardHistoryResponse", List.of(
                     com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineApprovedDiscardHistoryResponse.SCHEMA_VERSION));
+            objects.put("workerQuarantineRequestIndexReplicaProofRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineRequestIndexReplicaProofRequest.SCHEMA_VERSION));
+            objects.put("workerQuarantineRequestIndexReplicaProof", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineRequestIndexReplicaProof.SCHEMA_VERSION));
         }
 
         Map<String, Boolean> features = new LinkedHashMap<>();
@@ -450,6 +454,8 @@ public record IntegrationCapabilities(
                 testExecutionEndpointEnabled);
         features.put("stagedDurableWorkerQuarantineRequestIndexUpgrade",
                 testExecutionEndpointEnabled);
+        features.put("signedWorkerQuarantineRequestIndexReplicaProof",
+                testExecutionEndpointEnabled);
         features.put("durableWorkerQuarantineRequestIndexLegacyReadWrite",
                 effectiveRequestIndexMode
                         == WorkerQuarantineRequestIndexMode.LEGACY_READ_WRITE);
@@ -561,6 +567,8 @@ public record IntegrationCapabilities(
                     "/api/testing/durable-state/worker-quarantines/approved-discards"));
             endpoints.add(new Endpoint("GET",
                     "/api/testing/durable-state/worker-quarantines/approved-discards/history"));
+            endpoints.add(new Endpoint("POST",
+                    "/api/testing/durable-state/worker-quarantines/request-index/replica-proofs"));
             endpoints.add(new Endpoint("PUT", "/api/testing/fixture-bundles/{fixtureBundleId}"));
             endpoints.add(new Endpoint("GET", "/api/testing/fixture-bundles/{fixtureBundleId}"));
             endpoints.add(new Endpoint("PUT", "/api/testing/replay-payloads/{replayPayloadId}"));

@@ -188,6 +188,27 @@ class TestingControlProtocolSchemaTest {
                 .asText()).isEqualTo(
                 DurableWorkerQuarantineApprovedDiscardHistoryResponse.SCHEMA_VERSION);
         assertThat(schema.at(
+                "/$defs/workerQuarantineRequestIndexReplicaProofRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                WorkerQuarantineRequestIndexReplicaProofRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/workerQuarantineRequestIndexReplicaProof/properties/schemaVersion/const")
+                .asText()).isEqualTo(WorkerQuarantineRequestIndexReplicaProof.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/workerQuarantineRequestIndexReplicaProofMaterial/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                WorkerQuarantineRequestIndexReplicaProof.MATERIAL_SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/workerQuarantineRequestIndexReplicaProofRequest/additionalProperties")
+                .asBoolean()).isFalse();
+        assertThat(schema.at(
+                "/$defs/workerQuarantineRequestIndexReplicaProofMaterial/properties/inventory/$ref")
+                .asText()).isEqualTo(
+                "#/$defs/workerQuarantineRequestIndexInventory");
+        assertThat(schema.at(
+                "/$defs/workerQuarantineRequestIndexReplicaProof/properties/seal/properties/algorithm/const")
+                .asText()).isEqualTo("Ed25519");
+        assertThat(schema.at(
                 "/$defs/durableWorkerQuarantineDiscardApprovalRequest/additionalProperties")
                 .asBoolean()).isFalse();
         assertThat(schema.at(

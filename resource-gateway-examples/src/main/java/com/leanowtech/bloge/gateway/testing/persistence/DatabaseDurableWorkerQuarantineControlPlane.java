@@ -4,12 +4,13 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository.ActiveWorkerCandidateQuarantine;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository.WorkerAcquisitionScope;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason;
 import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
+import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexInventory;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
-import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository.WorkerAcquisitionScope;
-import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DuplicateKeyException;
@@ -177,6 +178,55 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
     /** @return exact request-index migration mode enforced by this replica */
     public WorkerQuarantineRequestIndexMode requestIndexMode() {
         return requestIndexMode;
+    }
+
+    /**
+     * Reads an exact database-clock inventory of every live request-index generation.
+     *
+     * <p>The query runs in the independent repeatable-read observation transaction. Unknown row
+     * shapes and unavailable HMAC generations fail closed instead of being omitted from a rollout
+     * proof. The returned projection contains no request or tenant identity.</p>
+     *
+     * @return payload-free live request-index generation inventory
+     */
+    public WorkerQuarantineRequestIndexInventory requestIndexInventory() {
+        WorkerQuarantineRequestIndexInventory inventory = observations.execute(status -> {
+            Instant observedAt = databaseNow();
+            List<TombstoneKeyGenerationCount> generations = jdbc.query("""
+                            SELECT record_version, request_key_id, COUNT(*) AS live_rows,
+                                   MAX(expires_at) AS latest_expiry
+                            FROM rg_test_durable_worker_quarantine_request_tombstones
+                            WHERE expires_at > ?
+                            GROUP BY record_version, request_key_id
+                            ORDER BY record_version, request_key_id
+                            """, (rs, rowNumber) -> new TombstoneKeyGenerationCount(
+                            rs.getInt("record_version"), rs.getString("request_key_id"),
+                            rs.getLong("live_rows"), rs.getTimestamp("latest_expiry").toInstant()),
+                    Timestamp.from(observedAt));
+            long legacyRows = 0;
+            long keyedRows = 0;
+            Instant latestLegacyExpiry = Instant.EPOCH;
+            Instant latestKeyedExpiry = Instant.EPOCH;
+            List<WorkerQuarantineRequestIndexInventory.KeyGeneration> keyed = new ArrayList<>();
+            for (TombstoneKeyGenerationCount generation : generations) {
+                validateRequestTombstoneKeyGeneration(generation.generation(), false);
+                if (generation.recordVersion() == 1) {
+                    legacyRows = Math.addExact(legacyRows, generation.liveRows());
+                    latestLegacyExpiry = later(latestLegacyExpiry, generation.latestExpiry());
+                } else {
+                    keyedRows = Math.addExact(keyedRows, generation.liveRows());
+                    latestKeyedExpiry = later(latestKeyedExpiry, generation.latestExpiry());
+                    keyed.add(new WorkerQuarantineRequestIndexInventory.KeyGeneration(
+                            generation.keyId(), generation.liveRows(), generation.latestExpiry()));
+                }
+            }
+            return new WorkerQuarantineRequestIndexInventory(observedAt, legacyRows, keyedRows,
+                    latestLegacyExpiry, latestKeyedExpiry, keyed);
+        });
+        if (inventory == null) {
+            throw new IllegalStateException("Request-index inventory transaction returned no result");
+        }
+        return inventory;
     }
 
     /** Creates maintenance ownership state without modifying automatic quarantine facts. */
@@ -1072,26 +1122,35 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                         """, (rs, rowNumber) -> new TombstoneKeyGeneration(
                         rs.getInt("record_version"), rs.getString("request_key_id")));
         for (TombstoneKeyGeneration generation : generations) {
-            boolean legacy = generation.recordVersion() == 1
-                    && generation.keyId().isBlank();
-            boolean keyedShape = generation.recordVersion() == TOMBSTONE_RECORD_VERSION
-                    && !generation.keyId().isBlank();
-            if (legacy && !requestIndexMode.permitsLiveLegacyRows()) {
-                throw new IllegalStateException(
-                        "Worker quarantine request-index mode KEYED_ONLY requires zero live "
-                                + "legacy tombstones");
-            }
-            if (keyedShape && !requestIndexMode.permitsLiveKeyedRows()) {
-                throw new IllegalStateException(
-                        "Worker quarantine request-index mode LEGACY_READ_WRITE requires zero "
-                                + "live keyed tombstones");
-            }
-            boolean keyed = keyedShape && requestKeyProtector.containsKey(generation.keyId());
-            if (!legacy && !keyed) {
-                throw new IllegalStateException(
-                        "Worker quarantine request tombstone key generation is unavailable");
-            }
+            validateRequestTombstoneKeyGeneration(generation, true);
         }
+    }
+
+    private void validateRequestTombstoneKeyGeneration(
+            TombstoneKeyGeneration generation, boolean enforceMode) {
+        boolean legacy = generation.recordVersion() == 1
+                && generation.keyId().isBlank();
+        boolean keyedShape = generation.recordVersion() == TOMBSTONE_RECORD_VERSION
+                && !generation.keyId().isBlank();
+        if (enforceMode && legacy && !requestIndexMode.permitsLiveLegacyRows()) {
+            throw new IllegalStateException(
+                    "Worker quarantine request-index mode KEYED_ONLY requires zero live "
+                            + "legacy tombstones");
+        }
+        if (enforceMode && keyedShape && !requestIndexMode.permitsLiveKeyedRows()) {
+            throw new IllegalStateException(
+                    "Worker quarantine request-index mode LEGACY_READ_WRITE requires zero "
+                            + "live keyed tombstones");
+        }
+        boolean keyed = keyedShape && requestKeyProtector.containsKey(generation.keyId());
+        if (!legacy && !keyed) {
+            throw new IllegalStateException(
+                    "Worker quarantine request tombstone key generation is unavailable");
+        }
+    }
+
+    private static Instant later(Instant left, Instant right) {
+        return left.isAfter(right) ? left : right;
     }
 
     /**
@@ -4125,6 +4184,13 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
     }
 
     private record TombstoneKeyGeneration(int recordVersion, String keyId) {
+    }
+
+    private record TombstoneKeyGenerationCount(
+            int recordVersion, String keyId, long liveRows, Instant latestExpiry) {
+        private TombstoneKeyGeneration generation() {
+            return new TombstoneKeyGeneration(recordVersion, keyId == null ? "" : keyId);
+        }
     }
 
     private record StoredQuarantine(

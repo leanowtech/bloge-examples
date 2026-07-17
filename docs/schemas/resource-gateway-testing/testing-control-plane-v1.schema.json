@@ -2,11 +2,138 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://leanowtech.example/schemas/resource-gateway-testing/testing-control-plane-v1.schema.json",
   "title": "Resource Gateway Testing Control Plane v1",
-  "description": "Wire contracts for target discovery, immutable fixtures and suites, controlled execution, durable graph and operator execution creation, query, ownership and worker acquisition, recovery heartbeat, terminal recovery, durable projection finding operations, exact-checkpoint worker quarantine maintenance, plans, and sanitized evidence.",
+  "description": "Wire contracts for target discovery, immutable fixtures and suites, controlled execution, durable graph and operator execution creation, query, ownership and worker acquisition, recovery heartbeat, terminal recovery, durable projection finding operations, exact-checkpoint worker quarantine maintenance, signed request-index rollout proofs, plans, and sanitized evidence.",
   "$defs": {
     "fingerprint": {
       "type": "string",
       "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "workerQuarantineRequestIndexReplicaProofRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "challenge", "targetMode"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.workerQuarantineRequestIndexReplicaProofRequest.v1"
+        },
+        "challenge": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]{32,128}$"
+        },
+        "targetMode": {"enum": ["DUAL_READ_KEYED_WRITE", "KEYED_ONLY"]}
+      }
+    },
+    "workerQuarantineRequestIndexInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observedAt", "liveLegacyRows", "liveKeyedRows",
+        "latestLegacyExpiry", "latestKeyedExpiry", "keyedGenerations"],
+      "properties": {
+        "observedAt": {"type": "string", "format": "date-time"},
+        "liveLegacyRows": {"type": "integer", "minimum": 0},
+        "liveKeyedRows": {"type": "integer", "minimum": 0},
+        "latestLegacyExpiry": {"type": "string", "format": "date-time"},
+        "latestKeyedExpiry": {"type": "string", "format": "date-time"},
+        "keyedGenerations": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["keyId", "liveRows", "latestExpiry"],
+            "properties": {
+              "keyId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,127}$"
+              },
+              "liveRows": {"type": "integer", "minimum": 1},
+              "latestExpiry": {"type": "string", "format": "date-time"}
+            }
+          }
+        }
+      }
+    },
+    "workerQuarantineRequestIndexReplicaProofMaterial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "challenge", "deploymentScopeFingerprint",
+        "instanceId", "startupId", "artifactFingerprint", "protocolVersion",
+        "currentMode", "targetMode", "inventory", "transitionAllowed", "blockers",
+        "expiresAt"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.workerQuarantineRequestIndexReplicaProofMaterial.v1"
+        },
+        "challenge": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]{32,128}$"
+        },
+        "deploymentScopeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "instanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "startupId": {"type": "string", "format": "uuid"},
+        "artifactFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "protocolVersion": {"type": "string", "minLength": 1, "maxLength": 64},
+        "currentMode": {
+          "enum": ["LEGACY_READ_WRITE", "DUAL_READ_KEYED_WRITE", "KEYED_ONLY"]
+        },
+        "targetMode": {"enum": ["DUAL_READ_KEYED_WRITE", "KEYED_ONLY"]},
+        "inventory": {"$ref": "#/$defs/workerQuarantineRequestIndexInventory"},
+        "transitionAllowed": {"type": "boolean"},
+        "blockers": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["CURRENT_MODE_NOT_PREDECESSOR", "LIVE_KEYED_ROWS_PRESENT",
+              "LIVE_LEGACY_ROWS_PRESENT"]
+          }
+        },
+        "expiresAt": {"type": "string", "format": "date-time"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"transitionAllowed": {"const": true}}},
+          "then": {"properties": {"blockers": {"maxItems": 0}}},
+          "else": {"properties": {"blockers": {"minItems": 1}}}
+        }
+      ]
+    },
+    "workerQuarantineRequestIndexReplicaProof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "material", "materialFingerprint", "seal"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.workerQuarantineRequestIndexReplicaProof.v1"},
+        "material": {
+          "$ref": "#/$defs/workerQuarantineRequestIndexReplicaProofMaterial"
+        },
+        "materialFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "seal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "materialFingerprint", "algorithm", "keyId",
+            "signedAt", "signature"],
+          "properties": {
+            "schemaVersion": {"const": "bloge.visualRunEvidenceSeal.v1"},
+            "materialFingerprint": {"$ref": "#/$defs/fingerprint"},
+            "algorithm": {"const": "Ed25519"},
+            "keyId": {"type": "string", "minLength": 1, "maxLength": 255},
+            "signedAt": {"type": "string", "format": "date-time"},
+            "signature": {"type": "string", "minLength": 1, "maxLength": 4096}
+          }
+        }
+      }
     },
     "target": {
       "type": "object",

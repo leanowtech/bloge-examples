@@ -62,6 +62,8 @@ export RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING='staging-2026-07=<base64-encoded
 export RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID='request-index-2026-07'
 export RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING='request-index-2026-07=<different-base64-encoded-32-byte-key>'
 export RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE='DUAL_READ_KEYED_WRITE'
+export RG_RESOURCE_GATEWAY_INSTANCE_ID='rg-staging-0'
+export RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT='sha256:<64-lowercase-hex-digest>'
 ./scripts/start-visual-canvas-demo.sh --profile staging
 ```
 
@@ -136,6 +138,9 @@ Independent-store settings:
 | `gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id` | `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID` | local key in `test`; required in `staging` |
 | `gateway.testing.durable.worker-quarantines.request-key-protection.key-ring` | `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING` | local key in `test`; required in `staging` |
 | `gateway.testing.durable.worker-quarantines.request-key-protection.write-mode` | `RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE` | `DUAL_READ_KEYED_WRITE` in local `test`; required in `staging` |
+| `gateway.testing.durable.worker-quarantines.request-index-rollout.instance-id` | `RG_RESOURCE_GATEWAY_INSTANCE_ID` | local id in `test`; deployment-inventory id required in `staging` |
+| `gateway.testing.durable.worker-quarantines.request-index-rollout.artifact-fingerprint` | `RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT` | demo fingerprint in `test`; immutable artifact/image SHA-256 required in `staging` |
+| `gateway.testing.durable.worker-quarantines.request-index-rollout.proof-ttl-seconds` | `RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_PROOF_TTL_SECONDS` | `120`; allowed range `5..300` |
 | `gateway.testing.runtime-slo.observation-interval-ms` | `RG_TEST_RUNTIME_SLO_OBSERVATION_INTERVAL_MS` | `30000` |
 | `gateway.testing.runtime-slo.outcome-lookback-seconds` | `RG_TEST_RUNTIME_SLO_OUTCOME_LOOKBACK_SECONDS` | `900` |
 | `gateway.testing.runtime-slo.execution-minimum-samples` | `RG_TEST_RUNTIME_SLO_EXECUTION_MINIMUM_SAMPLES` | `20` |
@@ -191,6 +196,7 @@ The local test-profile defaults are:
 | built-in graph catalog materialization | `TEST_SUITE_WRITE` |
 | global durable projection finding read/claim/resolve | `TEST_RUNTIME_MAINTENANCE` plus configured global group and clearance |
 | scoped durable worker quarantine list/claim/release/approved-discard/history | `TEST_RUNTIME_MAINTENANCE` plus configured operator group and clearance |
+| issue a signed request-index replica rollout proof | `TEST_RUNTIME_MAINTENANCE` plus configured operator group and clearance; complete project and region identity required |
 | approve a scoped durable worker quarantine discard | `TEST_RUNTIME_MAINTENANCE` plus the distinct configured approver group and clearance |
 
 The local demo bearer is `bloge-aneke-demo-token` and is granted all listed testing purposes.
@@ -1386,6 +1392,40 @@ remain hardening work.
 The exact request-index format, online rotation order, legacy migration limit, and failure matrix are
 defined in the
 [request-index protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-protection-verification.md).
+
+### 4.2k Prove one replica's request-index rollout state
+
+Before moving from legacy writes to keyed writes, or from dual read to keyed-only, the deployment
+gate can challenge each exact serving process:
+
+```http
+POST /api/testing/durable-state/worker-quarantines/request-index/replica-proofs
+Authorization: Bearer <maintenance-operator-token>
+X-Purpose: TEST_RUNTIME_MAINTENANCE
+Content-Type: application/json
+
+{
+  "schemaVersion": "bloge.workerQuarantineRequestIndexReplicaProofRequest.v1",
+  "challenge": "release_2026_07_17_gate_01_abcdef",
+  "targetMode": "DUAL_READ_KEYED_WRITE"
+}
+```
+
+The returned `bloge.workerQuarantineRequestIndexReplicaProof.v1` envelope signs a canonical material
+fingerprint with Ed25519. Its material binds the caller challenge, identity-derived deployment
+scope, deployment-supplied `instanceId`, process-start `startupId`, immutable artifact fingerprint,
+protocol version, current and target modes, a DB-clock live-generation inventory, closed blockers,
+and a short expiry. A valid signature can deliberately carry `transitionAllowed=false`; this proves
+which local invariant blocked the transition rather than turning a policy failure into an
+unexplained endpoint outage.
+
+One proof is never a fleet gate. The deployment platform remains authoritative for the exact
+serving-instance inventory and artifact digest. It must address each instance directly, reject
+missing, duplicate, unexpected, stale, cross-scope, or mixed-artifact proofs, and verify every seal
+against independently trusted keys. A load-balanced sample cannot prove that an unregistered,
+partitioned, or previous-binary process is absent. The local database signer is demonstration-only;
+release gates require a managed signer and externally pinned verification key policy. See the
+[replica-proof verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-replica-proof-verification.md).
 
 ### 4.2.1.1 Global test-runtime SLO and capacity observation
 

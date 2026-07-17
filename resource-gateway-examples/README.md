@@ -306,7 +306,11 @@ whose key is unavailable block readiness, old-key/legacy rows lazily re-key on e
 expired rows remain purgeable. A three-stage legacy/dual/keyed-only write-mode protocol now keeps
 mixed N/N-1 deployment on old-readable rows until the deployment authority proves every serving
 instance is N; each replica publishes its exact mode and rejects incompatible live generations at
-readiness. The loop independently purges token-free history and permits request-ID
+readiness. An authenticated rollout endpoint also issues a short-lived Ed25519 proof binding an
+external challenge to this process start, deployment-supplied instance and artifact identities,
+exact mode, protocol version, and DB-clock live-generation inventory. This is a per-process fact,
+not service discovery: the deployment platform must still supply and exhaustively verify the exact
+serving inventory. The loop independently purges token-free history and permits request-ID
 reuse only after the tombstone window. Exact semantics are documented in
 [Stage 4 worker candidate backoff verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-candidate-backoff-verification.md),
 the [worker quarantine maintenance verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-maintenance-verification.md),
@@ -314,7 +318,8 @@ the [two-person discard verification](../docs/resource-gateway-execution-data-co
 the [claim-token protection verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md),
 the [bounded retention verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-retention-verification.md),
 the [request-index protection verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-protection-verification.md),
-and the [request-index rolling-upgrade verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-upgrade-verification.md).
+the [request-index rolling-upgrade verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-upgrade-verification.md),
+and the [signed replica-proof verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-replica-proof-verification.md).
 
 ### Claim an expired durable test lease
 

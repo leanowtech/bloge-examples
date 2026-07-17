@@ -56,6 +56,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("hashedDurableWorkerQuarantineActiveFence", false)
                 .containsEntry("keyedDurableWorkerQuarantineRequestIndex", false)
                 .containsEntry("stagedDurableWorkerQuarantineRequestIndexUpgrade", false)
+                .containsEntry("signedWorkerQuarantineRequestIndexReplicaProof", false)
                 .containsEntry("durableWorkerQuarantineRequestIndexLegacyReadWrite", false)
                 .containsEntry("durableWorkerQuarantineRequestIndexDualReadKeyedWrite", false)
                 .containsEntry("durableWorkerQuarantineRequestIndexKeyedOnly", false)
@@ -107,7 +108,9 @@ class TestabilityCapabilitiesTest {
                 "durableWorkerQuarantineDiscardApprovalResponse",
                 "durableWorkerQuarantineApprovedDiscardRequest",
                 "durableWorkerQuarantineApprovedDiscardResponse",
-                "durableWorkerQuarantineApprovedDiscardHistoryResponse");
+                "durableWorkerQuarantineApprovedDiscardHistoryResponse",
+                "workerQuarantineRequestIndexReplicaProofRequest",
+                "workerQuarantineRequestIndexReplicaProof");
         assertThat(enabled.features()).containsEntry("operatorMicroGraphExecution", true)
                 .containsEntry("dynamicAttemptOccurrenceSelectors", true)
                 .containsEntry("immutableTestSuiteRegistry", true)
@@ -137,6 +140,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("hashedDurableWorkerQuarantineActiveFence", true)
                 .containsEntry("keyedDurableWorkerQuarantineRequestIndex", true)
                 .containsEntry("stagedDurableWorkerQuarantineRequestIndexUpgrade", true)
+                .containsEntry("signedWorkerQuarantineRequestIndexReplicaProof", true)
                 .containsEntry("durableWorkerQuarantineRequestIndexLegacyReadWrite", false)
                 .containsEntry("durableWorkerQuarantineRequestIndexDualReadKeyedWrite", true)
                 .containsEntry("durableWorkerQuarantineRequestIndexKeyedOnly", false)
