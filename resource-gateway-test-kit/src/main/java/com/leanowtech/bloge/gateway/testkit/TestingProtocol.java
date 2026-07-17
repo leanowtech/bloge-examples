@@ -44,6 +44,15 @@ public final class TestingProtocol {
     /** Payload-free acquired/no-work worker result wire version. */
     public static final String DURABLE_WORKER_ACQUISITION_RESPONSE_V1 =
             "bloge.durableTestWorkerAcquisitionResponse.v1";
+    /** Per-replica request-index rollout challenge wire version. */
+    public static final String WORKER_QUARANTINE_REQUEST_INDEX_REPLICA_PROOF_REQUEST_V1 =
+            "bloge.workerQuarantineRequestIndexReplicaProofRequest.v1";
+    /** Canonical material signed by one request-index rollout replica proof. */
+    public static final String WORKER_QUARANTINE_REQUEST_INDEX_REPLICA_PROOF_MATERIAL_V1 =
+            "bloge.workerQuarantineRequestIndexReplicaProofMaterial.v1";
+    /** Signed per-replica request-index rollout proof wire version. */
+    public static final String WORKER_QUARANTINE_REQUEST_INDEX_REPLICA_PROOF_V1 =
+            "bloge.workerQuarantineRequestIndexReplicaProof.v1";
     /** Detached test-evidence integrity manifest wire version. */
     public static final String TEST_EVIDENCE_INTEGRITY_V1 = "bloge.testEvidenceIntegrity.v1";
     /** Immutable test-suite wire version. */

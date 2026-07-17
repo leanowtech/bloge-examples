@@ -46,3 +46,22 @@ payload differences through the persisted run API. Synchronous nested/foreach/lo
 addressing, temporal `DELAY/TIMEOUT`, and seven-graph dogfooding are now implemented server-side.
 The client rejects the historical `bloge.testOperatorTargetDescriptor.v1`: required composability
 facts were added as a deliberate v2 protocol boundary instead of silently changing the v1 shape.
+
+## Later Exact-Inventory Rollout Extension
+
+On 2026-07-17 the same independent library added strict parsing and collection for
+`bloge.workerQuarantineRequestIndexReplicaProof.v1`, plus
+`WorkerQuarantineRequestIndexFleetGateVerifier`. The caller, not Resource Gateway, supplies the
+complete serving-instance set, deployment scope, artifact digest, protocol/target, cohort window,
+and externally distributed evidence key-set pin. The verifier requires exact instance-set equality,
+unique process-start UUIDs, target-compatible DB inventory, bounded freshness, canonical material,
+current active-key policy, and valid Ed25519 signatures. Missing, duplicate, unexpected, stale,
+mixed, blocked, or cryptographically invalid proofs fail closed with bounded payload-free reasons.
+The 2026-07-17 extension gate passed 31 focused client/verifier tests and the full independent
+test-kit passed 74 tests with no failures, errors, or skips, including authoritative-schema,
+shaded-CLI, and public-JavaDoc verification.
+
+This extension does not turn the test-kit into service discovery. Completeness of the serving
+inventory, direct instance routing, immutable artifact identity, and absence of an unregistered or
+partitioned N-1 process remain deployment-platform facts. See the
+[request-index replica-proof verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-replica-proof-verification.md).

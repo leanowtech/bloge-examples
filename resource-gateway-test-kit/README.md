@@ -18,6 +18,9 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 - typed v2 child-evidence integrity manifests with v1 migration compatibility;
 - signed suite checkpoint/terminal attestations, payload-free evidence-bundle export, verification
   key lookup, and dependency-light offline Ed25519 verification;
+- challenge-bound request-index replica proof collection plus an offline exact-inventory rollout
+  gate that rejects missing, duplicate, unexpected, stale, mixed-scope/artifact/protocol/mode, or
+  cryptographically invalid cohorts against an externally pinned key set;
 - occurrence-addressable node, retry-attempt, and edge summaries without payload fields;
 - payload-free JUnit XML with deterministic CI exit codes;
 - an executable `-cli.jar` that fails closed on suite, coverage, or promotion-policy failure.
@@ -263,6 +266,52 @@ server storage. It is not a replay payload package, publish decision, or complet
 the semantic workbook projection contains references and verdicts, while this bundle supplies the
 portable material that must be independently verified. See the
 [key lifecycle verification record](../docs/resource-gateway-execution-data-control-plane-stage3-key-lifecycle-verification.md).
+
+Gate a request-index format transition without trusting one load-balanced sample. The deployment
+platform must provide a directly routable URI for every exact serving instance and independently
+trusted policy values:
+
+```java
+Map<String, URI> servingInventory = deploymentPlatform.exactServingInstances();
+String challenge = deploymentPlatform.newGateChallenge();
+
+List<WorkerQuarantineRequestIndexReplicaProof> proofs = new ArrayList<>();
+for (Map.Entry<String, URI> instance : servingInventory.entrySet()) {
+    ResourceGatewayTestClient instanceClient = ResourceGatewayTestClient
+            .builder(instance.getValue())
+            .bearerToken(() -> System.getenv("RESOURCE_GATEWAY_MAINTENANCE_TOKEN"))
+            .build();
+    proofs.add(instanceClient.requestWorkerQuarantineRequestIndexReplicaProof(
+            challenge,
+            WorkerQuarantineRequestIndexReplicaProof.Mode.DUAL_READ_KEYED_WRITE));
+}
+
+EvidenceVerificationKeySet keySet = controlClient.findEvidenceVerificationKeySet();
+WorkerQuarantineRequestIndexFleetPolicy policy =
+        WorkerQuarantineRequestIndexFleetPolicy.strict(
+                challenge,
+                deploymentPlatform.deploymentScopeFingerprint(),
+                WorkerQuarantineRequestIndexReplicaProof.Mode.DUAL_READ_KEYED_WRITE,
+                deploymentPlatform.artifactFingerprint(),
+                deploymentPlatform.resourceGatewayProtocolVersion(),
+                servingInventory.keySet(),
+                independentlyPinnedKeySetFingerprint);
+
+WorkerQuarantineRequestIndexFleetGateVerifier.VerificationResult gate =
+        new WorkerQuarantineRequestIndexFleetGateVerifier().verify(proofs, policy, keySet);
+if (!gate.verified()) {
+    throw new IllegalStateException(gate.reasonCode());
+}
+```
+
+The verifier first requires exact set equality for `instanceId` and unique process-start UUIDs,
+then validates cohort observation spread, challenge, scope, artifact, protocol, immediate predecessor
+mode, DB-clock inventory, exclusive expiry, canonical material fingerprint, current active-key policy,
+and every Ed25519 signature. It never discovers fleet membership. An omitted, unregistered,
+partitioned, shadow, or N-1 process remains the deployment platform's responsibility; the test-kit
+only proves that the complete independently supplied inventory produced one coherent valid cohort.
+Run one gate per identity-derived region scope. Cross-region simultaneity remains a higher-level
+release policy.
 
 ## CI Command
 

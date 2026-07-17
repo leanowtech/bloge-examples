@@ -31,7 +31,7 @@ contains only these deployment and rollout facts:
 | expiry | DB observation time plus a bounded `5..300` second TTL |
 
 The material fingerprint and seal fingerprint must be identical. Seal time must not predate DB time
-by more than five minutes and cannot exceed proof expiry. Signing or audit failure returns a
+by more than five minutes and must be strictly before the exclusive proof expiry. Signing or audit failure returns a
 payload-free `503`; no unsigned fallback proof escapes.
 
 ## DB Inventory
@@ -67,6 +67,31 @@ for demonstration.
 | any non-predecessor | either target | any | `CURRENT_MODE_NOT_PREDECESSOR` plus applicable inventory blocker |
 | any | `LEGACY_READ_WRITE` or unknown | any | request rejected with `400` |
 
+## Offline Exact-Inventory Gate
+
+The independent `resource-gateway-test-kit` now supplies three public protocol types:
+
+- `WorkerQuarantineRequestIndexReplicaProof` strictly parses the packaged authoritative schema and
+  retains exact signed JSON material for canonical fingerprint verification;
+- `WorkerQuarantineRequestIndexFleetPolicy` carries the deployment authority's challenge, scope,
+  target, artifact, protocol, exact serving-instance set, external key-set pin, and maximum cohort
+  observation spread;
+- `WorkerQuarantineRequestIndexFleetGateVerifier` verifies the complete cohort offline without any
+  Resource Gateway server implementation dependency.
+
+The fleet gate first requires exact set equality: missing, unexpected, duplicate instance ids and
+duplicate process-start UUIDs all fail before any partial success can be reported. It then verifies
+one bounded cohort window, every immutable policy binding, the immediate predecessor mode, target-
+compatible inventory, DB-clock freshness, `5..300` second TTL, exclusive expiry, canonical material
+fingerprint, the externally pinned complete evidence key set, current active-key policy, and every
+Ed25519 signature. Its result contains only a bounded reason, counts, and optional deployment
+instance/key ids; no business payload is accepted or emitted.
+
+`ResourceGatewayTestClient.requestWorkerQuarantineRequestIndexReplicaProof` uses exact purpose
+`TEST_RUNTIME_MAINTENANCE`, validates the request and response with the packaged schema, and binds the
+response to the requested challenge and target. The caller must construct one client per directly
+routable instance endpoint. Using one load balancer repeatedly cannot establish exact inventory.
+
 ## Failure Matrix
 
 | Counterexample | Required result |
@@ -79,7 +104,11 @@ for demonstration.
 | transition invariant fails | valid signed proof with closed blocker, never a false transport outage |
 | proof replayed for another rollout | challenge mismatch at the external gate |
 | cached proof survives restart | startup-id mismatch or stale expiry at the external gate |
-| one replica is omitted | external exact-inventory gate must reject the missing instance |
+| one replica is omitted, repeated, or replaced by an unknown instance | test-kit exact-set gate rejects the cohort |
+| two instance ids return one process-start UUID | test-kit rejects duplicate process identity |
+| proofs span more than the policy cohort window | test-kit rejects a non-coherent fleet observation |
+| scope, artifact, protocol, target, or predecessor mode drifts | test-kit rejects the exact proof |
+| material fingerprint, key-set pin, key policy, or signature is invalid | offline gate fails closed |
 
 ## Verification Gate
 
@@ -95,6 +124,19 @@ profile isolation, Spring application assembly, and DB inventory invariants:
 The release gate remains Resource Gateway `clean verify`, independent test-kit `clean verify`,
 `bash -n`, staging launcher negative checks, and executable-JAR inspection.
 
+The test-kit focused gate is:
+
+```bash
+/opt/apache-maven-3.9.16/bin/mvn -f resource-gateway-test-kit/pom.xml \
+  -Dtest=WorkerQuarantineRequestIndexFleetGateVerifierTest,ResourceGatewayTestClientTest test
+```
+
+Verified on 2026-07-17: the test-kit focused gate passed 31 tests; the server rollout-service gate
+passed 6 tests; the catalog startup regression passed 2 tests. Independent test-kit `clean verify`
+passed 74 tests with no failures, errors, or skips, including authoritative-schema, shaded-CLI, and
+public-JavaDoc gates. Resource Gateway `clean verify` passed 2257 tests with no failures or errors,
+2 conditional skips, and a packaged executable JAR.
+
 ## Honest Boundary
 
 A proof establishes what one reachable, new-binary process signed about one DB snapshot. It does not
@@ -103,7 +145,10 @@ unregistered, partitioned, shadow, stale, or N-1 instances. The deployment platf
 authority for exact serving inventory, direct instance routing, immutable artifact identity, and
 verification-key trust.
 
-This increment provides the signed per-replica primitive only. An offline verifier that enforces an
-independently supplied exact instance set, rejects duplicate/unexpected/missing proofs, and validates
-every material fingerprint and seal is the next increment. Until then, operators must perform those
-checks in their deployment gate and must never treat one load-balanced response as fleet evidence.
+The offline verifier closes cohort aggregation only for the inventory it is given. It cannot prove
+that the deployment inventory itself is complete, that direct routing did not silently traverse a
+load balancer, or that an unmanaged/partitioned process is absent. Artifact fingerprint is still a
+deployment assertion, not a self-measured image digest. The deployment platform must bind instance
+ids to direct endpoints and immutable image digests, distribute the key-set pin independently, and
+run one gate per identity-derived region scope. Multi-region simultaneity, old-binary conformance,
+artifact transparency, and rollback-drill certification remain higher-level release controls.

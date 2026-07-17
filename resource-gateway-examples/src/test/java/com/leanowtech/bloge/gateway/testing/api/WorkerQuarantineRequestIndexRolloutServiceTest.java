@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -149,6 +150,14 @@ class WorkerQuarantineRequestIndexRolloutServiceTest {
                 .thenThrow(new IllegalStateException("private provider detail"));
         WorkerQuarantineRequestIndexRolloutService signingFailure =
                 service(failedSigner, repository(events));
+        VisualEvidenceSigner expiryBoundarySigner = mock(VisualEvidenceSigner.class);
+        when(expiryBoundarySigner.available()).thenReturn(true);
+        when(expiryBoundarySigner.seal(org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(invocation -> new VisualRunEvidenceSeal(
+                        VisualRunEvidenceSeal.SCHEMA_VERSION, invocation.getArgument(0),
+                        "Ed25519", "test-key", observedAt.plusSeconds(60), "AA=="));
+        WorkerQuarantineRequestIndexRolloutService expiryBoundaryFailure =
+                service(expiryBoundarySigner, repository(events));
         TestSecurityEventRepository failedAudit = new TestSecurityEventRepository() {
             @Override
             public TestSecurityEvent append(TestSecurityEvent event) {
@@ -163,6 +172,7 @@ class WorkerQuarantineRequestIndexRolloutServiceTest {
         WorkerQuarantineRequestIndexRolloutService auditFailure = service(signer, failedAudit);
 
         assertUnavailable(signingFailure);
+        assertUnavailable(expiryBoundaryFailure);
         assertUnavailable(auditFailure);
     }
 

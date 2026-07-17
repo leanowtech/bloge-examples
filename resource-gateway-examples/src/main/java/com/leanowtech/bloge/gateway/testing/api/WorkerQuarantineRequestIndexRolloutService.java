@@ -199,7 +199,7 @@ public final class WorkerQuarantineRequestIndexRolloutService {
             VisualRunEvidenceSeal seal, Instant observedAt, Instant expiresAt) {
         Duration skew = Duration.ofMinutes(5);
         if (seal == null || seal.signedAt().isBefore(observedAt.minus(skew))
-                || seal.signedAt().isAfter(expiresAt)) {
+                || !seal.signedAt().isBefore(expiresAt)) {
             throw new IllegalStateException(
                     "Request-index rollout proof signing time is outside its validity window");
         }

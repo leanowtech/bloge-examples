@@ -388,6 +388,52 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Challenges one directly addressed Resource Gateway process for signed rollout facts.
+     *
+     * <p>This call validates request/response shape and binds the response to the exact challenge
+     * and target. It does not establish signature or fleet trust. Collect one proof from every
+     * independently inventoried serving instance, then use
+     * {@link WorkerQuarantineRequestIndexFleetGateVerifier#verify}.</p>
+     *
+     * @param challenge fresh deployment-gate nonce shared by the intended fleet cohort
+     * @param targetMode immediate keyed rollout target
+     * @return strict typed signed proof from the addressed process
+     */
+    public WorkerQuarantineRequestIndexReplicaProof
+            requestWorkerQuarantineRequestIndexReplicaProof(
+            String challenge, WorkerQuarantineRequestIndexReplicaProof.Mode targetMode) {
+        String exactChallenge = normalized(challenge);
+        if (targetMode == null
+                || targetMode == WorkerQuarantineRequestIndexReplicaProof.Mode.LEGACY_READ_WRITE) {
+            throw new IllegalArgumentException("An immediate keyed request-index target is required");
+        }
+        ObjectNode request = JSON.createObjectNode();
+        request.put("schemaVersion",
+                TestingProtocol.WORKER_QUARANTINE_REQUEST_INDEX_REPLICA_PROOF_REQUEST_V1);
+        request.put("challenge", exactChallenge);
+        request.put("targetMode", targetMode.name());
+        TestingProtocolSchemaValidator.require(
+                request, "workerQuarantineRequestIndexReplicaProofRequest");
+        JsonNode response = exchange("POST",
+                "/api/testing/durable-state/worker-quarantines/request-index/replica-proofs",
+                "", "TEST_RUNTIME_MAINTENANCE", request);
+        requireVersion(response,
+                TestingProtocol.WORKER_QUARANTINE_REQUEST_INDEX_REPLICA_PROOF_V1);
+        try {
+            WorkerQuarantineRequestIndexReplicaProof proof =
+                    WorkerQuarantineRequestIndexReplicaProof.from(response);
+            if (!exactChallenge.equals(proof.material().challenge())
+                    || targetMode != proof.material().targetMode()) {
+                throw new IllegalArgumentException("Replica proof request identity is inconsistent");
+            }
+            return proof;
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned an invalid request-index replica proof.");
+        }
+    }
+
+    /**
      * Retrieves one bounded externally authorized key-set trust consistency page.
      *
      * <p>The response is schema-validated but remains untrusted until

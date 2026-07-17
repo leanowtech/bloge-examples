@@ -143,6 +143,11 @@ errors. Inventory contains counts, expiries, and non-secret key-generation ids o
 request ids, tenants, scopes, and payloads. Full protocol and counterexamples are in the
 [replica-proof verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-replica-proof-verification.md).
 
+The independent test-kit now consumes those proofs with a caller-owned exact instance set, expected
+scope/artifact/protocol/target, maximum cohort spread, and externally pinned complete key set. It
+rejects missing, duplicate, unexpected, stale, mixed-mode, blocked, malformed, or badly signed
+cohorts. This closes deterministic aggregation; it does not manufacture serving inventory.
+
 ## Honest Boundary
 
 The mode is enforced and signed by each new binary, but the proof is not a database-coordinated
@@ -154,6 +159,6 @@ Likewise, a misconfigured N replica can start in dual mode while N-1 still serve
 that configuration observable and gives the orchestrator a safe sequence; it cannot force an old
 binary that predates the protocol to honor a new database flag. The configured artifact fingerprint
 is also a deployment assertion rather than a self-measured image digest, so the gate must bind it to
-its independently trusted artifact inventory. Exact inventory aggregation and offline fleet
-verification, multi-region propagation proof, non-H2 dialect qualification, and rollback-drill
-certification remain later industrialization work.
+its independently trusted artifact inventory. Serving-inventory completeness, direct-routing proof,
+multi-region propagation proof, non-H2 dialect qualification, and rollback-drill certification
+remain later industrialization work.

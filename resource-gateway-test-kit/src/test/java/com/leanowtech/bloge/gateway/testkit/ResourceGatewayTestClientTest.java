@@ -194,6 +194,30 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void requestsChallengeBoundReplicaProofWithMaintenancePurpose() {
+        ResourceGatewayTestClient client = client();
+        String challenge = "deployment_gate_challenge_000001";
+
+        WorkerQuarantineRequestIndexReplicaProof proof =
+                client.requestWorkerQuarantineRequestIndexReplicaProof(challenge,
+                        WorkerQuarantineRequestIndexReplicaProof.Mode.DUAL_READ_KEYED_WRITE);
+
+        assertThat(proof.material().challenge()).isEqualTo(challenge);
+        assertThat(proof.material().instanceId()).isEqualTo("rg-staging-0");
+        assertThat(proof.material().currentMode())
+                .isEqualTo(WorkerQuarantineRequestIndexReplicaProof.Mode.LEGACY_READ_WRITE);
+        assertThat(requests).singleElement().satisfies(request -> {
+            assertThat(request.method()).isEqualTo("POST");
+            assertThat(request.rawPath()).endsWith(
+                    "/durable-state/worker-quarantines/request-index/replica-proofs");
+            assertThat(request.purpose()).isEqualTo("TEST_RUNTIME_MAINTENANCE");
+            assertThat(request.body().path("challenge").asText()).isEqualTo(challenge);
+            assertThat(request.body().path("targetMode").asText())
+                    .isEqualTo("DUAL_READ_KEYED_WRITE");
+        });
+    }
+
+    @Test
     void retrievesSchemaValidatedBoundedEvidenceTrustPage() {
         trustFixture = EvidenceTrustTestFixtures.fixture();
         trustPublication = EvidenceTrustTestFixtures.publication(1, "", 0,
@@ -517,6 +541,9 @@ class ResourceGatewayTestClientTest {
             respond(exchange, 200, semanticSuiteEvidenceBundleResponse());
         } else if (path.endsWith("suite-run%2Fsemantic")) {
             respond(exchange, 200, semanticSuiteRunResponse());
+        } else if (path.endsWith(
+                "/durable-state/worker-quarantines/request-index/replica-proofs")) {
+            respond(exchange, 200, requestIndexReplicaProofResponse(body));
         } else if (path.endsWith("/evidence-bundle")) {
             respond(exchange, 200, suiteEvidenceBundleResponse());
         } else if (path.endsWith("/gate-results")) {
@@ -580,6 +607,30 @@ class ResourceGatewayTestClientTest {
                  "dependencyPolicy":"CONSERVATIVE_ALL_REGISTERED",
                  "certificationEligible":true,"certificationGaps":[]}
                 """.formatted(FINGERPRINT);
+    }
+
+    private static String requestIndexReplicaProofResponse(JsonNode request) {
+        return """
+                {"schemaVersion":"bloge.workerQuarantineRequestIndexReplicaProof.v1",
+                 "material":{
+                   "schemaVersion":"bloge.workerQuarantineRequestIndexReplicaProofMaterial.v1",
+                   "challenge":"%1$s","deploymentScopeFingerprint":"%2$s",
+                   "instanceId":"rg-staging-0",
+                   "startupId":"11111111-1111-1111-1111-111111111111",
+                   "artifactFingerprint":"%2$s","protocolVersion":"1.0",
+                   "currentMode":"LEGACY_READ_WRITE","targetMode":"%3$s",
+                   "inventory":{"observedAt":"2026-07-15T10:15:30Z",
+                     "liveLegacyRows":0,"liveKeyedRows":0,
+                     "latestLegacyExpiry":"1970-01-01T00:00:00Z",
+                     "latestKeyedExpiry":"1970-01-01T00:00:00Z","keyedGenerations":[]},
+                   "transitionAllowed":true,"blockers":[],
+                   "expiresAt":"2026-07-15T10:17:30Z"},
+                 "materialFingerprint":"%2$s",
+                 "seal":{"schemaVersion":"bloge.visualRunEvidenceSeal.v1",
+                   "materialFingerprint":"%2$s","algorithm":"Ed25519","keyId":"test-key-1",
+                   "signedAt":"2026-07-15T10:15:31Z","signature":"AA=="}}
+                """.formatted(request.path("challenge").asText(), FINGERPRINT,
+                request.path("targetMode").asText());
     }
 
     private static String operatorTargetResponse() {

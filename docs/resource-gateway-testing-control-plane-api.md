@@ -1427,6 +1427,15 @@ partitioned, or previous-binary process is absent. The local database signer is 
 release gates require a managed signer and externally pinned verification key policy. See the
 [replica-proof verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-replica-proof-verification.md).
 
+The standalone test-kit provides `requestWorkerQuarantineRequestIndexReplicaProof` and
+`WorkerQuarantineRequestIndexFleetGateVerifier`. Build an independently trusted map of
+`instanceId -> direct URI`, call the proof endpoint once through each exact URI with one challenge,
+and pass the resulting cohort to a `WorkerQuarantineRequestIndexFleetPolicy` containing that exact
+instance set, expected scope/artifact/protocol/target, a key-set pin obtained outside this response,
+and the permitted cohort observation spread. The verifier rejects a missing, duplicate, unexpected,
+stale, mixed, blocked, badly fingerprinted, or badly signed proof. It does not discover fleet
+membership or convert repeated load-balanced calls into fleet evidence.
+
 ### 4.2.1.1 Global test-runtime SLO and capacity observation
 
 `testRuntimeSloMonitor` is a separate Actuator health component for the whole isolated testing
@@ -2280,7 +2289,11 @@ mvn -f resource-gateway-test-kit/pom.xml clean install
 
 The client exposes immutable suite register/find/execute/query operations, terminal evidence-bundle
 export, exact-key and atomic key-set lookup, pinned lifecycle-aware Ed25519 verification, and a typed
-`materializeBuiltInGraphContractCatalog()` operation. Execution requires an
+`materializeBuiltInGraphContractCatalog()` operation. It also exposes challenge-bound request-index
+replica-proof collection and `WorkerQuarantineRequestIndexFleetGateVerifier`: callers provide the
+exact deployment instance set, expected scope/artifact/protocol/target, cohort window, complete key
+set, and independently distributed key-set pin; the offline gate rejects partial or mixed fleets.
+Execution requires an
 exact revision, full SHA-256 fingerprint, and explicit `clientRequestId`; malformed identities are
 rejected before any network call. The exact packaged Draft 2020-12 schema validates complete suite
 registration and execution values at runtime, and every returned suite/run identity is rebound to the
@@ -2314,7 +2327,7 @@ retry-attempt, and edge endpoint facts without carrying payload values; legacy v
 readable as zero-coordinate summaries. Unknown CLI argument values are never echoed, and test-kit
 `clean verify` fails on public JavaDoc warnings. See the
 [test-kit guide](../resource-gateway-test-kit/README.md) for a complete discover, register, execute,
-assert, and report example.
+assert, report, and exact-inventory rollout-gate example.
 
 ### 4.6 Run the built-in graph dogfooding catalog
 
