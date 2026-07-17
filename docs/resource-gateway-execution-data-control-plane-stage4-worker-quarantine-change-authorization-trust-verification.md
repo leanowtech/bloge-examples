@@ -29,6 +29,8 @@ signatures. The material binds:
 
 No ticket description, tenant value, actor value, claim token, credential, or business payload is
 part of the envelope. Each authority signs the canonical material fingerprint with Ed25519.
+Protocol timestamps use microsecond precision so canonical signatures survive PostgreSQL/H2
+timestamp persistence without lossy normalization.
 
 ## Independent Trust Policy
 
@@ -58,13 +60,36 @@ Ed25519 key pairs and cover exact quorum success, unavailable trust, binding and
 boundaries, material tampering, bad trusted signatures, unknown/revoked authority keys, strict
 configuration parsing, and protocol-model invariants.
 
+## Durable Reservation And Consumption
+
+The database control plane now has a separate
+`rg_test_durable_worker_quarantine_change_authorizations` authority table. A verified reference is
+bound to the local checker approval and reserved under both `(trustDomain, authorizationId)` and a
+globally unique material fingerprint. Database time independently enforces `notBefore <= now <
+expiresAt`, and the local approval deadline is capped by the external deadline.
+
+An approved discard locks and integrity-verifies the reservation, requires the exact scope,
+approval request, approval ID, policy, and material fingerprint, and changes `RESERVED` to
+`CONSUMED` in the same transaction that consumes the checker approval, deletes the quarantine,
+writes the command/history evidence, and appends audit. External references are included in v2
+approval, receipt, command, and history fingerprints. Legacy v1 rows remain readable with their
+original fingerprint material.
+
+Focused database verification now executes 50 tests. New counterexamples prove that one external
+authorization cannot back two checker commands, premature and expired windows are rejected by
+database time, approval-audit failure rolls back both approval and reservation, and successful
+discard retains the exact external reference in its token-free receipt and immutable history.
+Resource Gateway `clean verify` executes 2,267 tests with zero failures, zero errors, and two
+existing conditional skips, then packages the executable Spring Boot JAR.
+
 ## Honest Boundary
 
-This increment freezes and verifies an external authorization object; it does not yet activate that
-object in the discard API. Checker approval, database-time revalidation, authorization-ID uniqueness,
-one-way consumption, immutable discard history, capability/configuration wiring, and JSON Schema are
-the next implementation stage. Until that stage lands, the existing maker/checker endpoint remains
-an in-process two-person control and must not be represented as enterprise work-order binding.
+This increment freezes and verifies an external authorization object and completes its durable
+reservation/consumption substrate. It does not yet require the signed envelope in the checker HTTP
+API. Scope/subject derivation, verifier invocation, strict JSON Schema, configuration/readiness,
+capability disclosure, API projections, and API-level negative tests remain the next stage. Until
+that stage lands, the existing endpoint still creates legacy in-process approvals and must not be
+represented as enterprise work-order enforcement.
 
 Even after enforcement is wired, Resource Gateway will verify only the signed authority decision. It
 will not become the system of record for ticket lifecycle, device/session assurance, approval-policy

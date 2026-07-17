@@ -328,6 +328,16 @@ public final class DurableWorkerQuarantineService {
                         "RG.TEST.WORKER_QUARANTINE_STALE_CHECKPOINT",
                         "The run no longer has the exact quarantined checkpoint.",
                         key, request.clientRequestId());
+                case EXTERNAL_AUTHORIZATION_REUSED -> throw conflict(identity,
+                        "DISCARD_APPROVE",
+                        "RG.TEST.WORKER_QUARANTINE_EXTERNAL_AUTHORIZATION_REUSED",
+                        "The external change authorization was already reserved.",
+                        key, request.clientRequestId());
+                case EXTERNAL_AUTHORIZATION_TIME_INVALID -> throw conflict(identity,
+                        "DISCARD_APPROVE",
+                        "RG.TEST.WORKER_QUARANTINE_EXTERNAL_AUTHORIZATION_TIME_INVALID",
+                        "Database time rejected the external change authorization window.",
+                        key, request.clientRequestId());
             };
         } catch (IntegrationProblemException expected) {
             throw expected;

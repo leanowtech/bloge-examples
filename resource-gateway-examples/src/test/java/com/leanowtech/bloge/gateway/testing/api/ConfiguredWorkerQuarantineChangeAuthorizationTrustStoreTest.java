@@ -231,6 +231,10 @@ class ConfiguredWorkerQuarantineChangeAuthorizationTrustStoreTest {
                 Base64.getEncoder().encodeToString(new byte[63])))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("signature is invalid");
+        assertThatThrownBy(() -> material(
+                NOW.minusSeconds(1).plusNanos(1), NOW.minusSeconds(1), NOW.plusSeconds(60)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("material is invalid");
     }
 
     private void assertTimeRejected(

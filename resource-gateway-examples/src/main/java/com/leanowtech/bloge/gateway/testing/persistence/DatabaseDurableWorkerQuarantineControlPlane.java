@@ -56,6 +56,7 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
     private static final Duration MAX_RETENTION = Duration.ofDays(3_650);
     private static final Pattern REASON_CODE =
             Pattern.compile("[A-Z][A-Z0-9_.-]{0,127}");
+    private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
@@ -375,6 +376,12 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     reason_code VARCHAR(128) NOT NULL,
                     approved_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     approval_until TIMESTAMP WITH TIME ZONE NOT NULL,
+                    external_trust_domain VARCHAR(255) NOT NULL DEFAULT '',
+                    external_authorization_id VARCHAR(255) NOT NULL DEFAULT '',
+                    external_authorization_fingerprint VARCHAR(80) NOT NULL DEFAULT '',
+                    external_policy_fingerprint VARCHAR(80) NOT NULL DEFAULT '',
+                    external_authorization_not_before TIMESTAMP WITH TIME ZONE,
+                    external_authorization_expires_at TIMESTAMP WITH TIME ZONE,
                     approval_state VARCHAR(32) NOT NULL,
                     consumed_by_request_id VARCHAR(255) NOT NULL,
                     consumed_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -385,9 +392,65 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 )
                 """);
         jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discard_approvals
+                ADD COLUMN IF NOT EXISTS external_trust_domain VARCHAR(255) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discard_approvals
+                ADD COLUMN IF NOT EXISTS external_authorization_id VARCHAR(255) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discard_approvals
+                ADD COLUMN IF NOT EXISTS external_authorization_fingerprint
+                    VARCHAR(80) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discard_approvals
+                ADD COLUMN IF NOT EXISTS external_policy_fingerprint VARCHAR(80) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discard_approvals
+                ADD COLUMN IF NOT EXISTS external_authorization_not_before
+                    TIMESTAMP WITH TIME ZONE
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discard_approvals
+                ADD COLUMN IF NOT EXISTS external_authorization_expires_at
+                    TIMESTAMP WITH TIME ZONE
+                """);
+        jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS rg_test_worker_quarantine_discard_approval_idx
                 ON rg_test_durable_worker_quarantine_discard_approvals
                     (scope_key, approval_state, approval_until, approval_id)
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_worker_quarantine_change_authorizations (
+                    trust_domain VARCHAR(255) NOT NULL,
+                    authorization_id VARCHAR(255) NOT NULL,
+                    authorization_fingerprint VARCHAR(80) NOT NULL UNIQUE,
+                    policy_fingerprint VARCHAR(80) NOT NULL,
+                    authorization_not_before TIMESTAMP WITH TIME ZONE NOT NULL,
+                    authorization_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    scope_key VARCHAR(80) NOT NULL,
+                    approval_request_id VARCHAR(255) NOT NULL,
+                    approval_id VARCHAR(36) NOT NULL UNIQUE,
+                    authorization_state VARCHAR(32) NOT NULL,
+                    reserved_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    consumed_by_request_id VARCHAR(255) NOT NULL,
+                    consumed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(80) NOT NULL,
+                    PRIMARY KEY (trust_domain, authorization_id),
+                    CONSTRAINT fk_rg_test_worker_quarantine_change_authorization
+                        FOREIGN KEY (scope_key, approval_request_id)
+                        REFERENCES rg_test_durable_worker_quarantine_discard_approvals
+                            (scope_key, client_request_id)
+                        ON DELETE CASCADE
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_worker_quarantine_change_authorization_state_idx
+                ON rg_test_durable_worker_quarantine_change_authorizations
+                    (authorization_state, authorization_expires_at, trust_domain, authorization_id)
                 """);
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS rg_test_durable_worker_quarantine_discards (
@@ -409,10 +472,43 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     result_version BIGINT NOT NULL,
                     result_acted_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     result_approval_fingerprint VARCHAR(80) NOT NULL,
+                    external_trust_domain VARCHAR(255) NOT NULL DEFAULT '',
+                    external_authorization_id VARCHAR(255) NOT NULL DEFAULT '',
+                    external_authorization_fingerprint VARCHAR(80) NOT NULL DEFAULT '',
+                    external_policy_fingerprint VARCHAR(80) NOT NULL DEFAULT '',
+                    external_authorization_not_before TIMESTAMP WITH TIME ZONE,
+                    external_authorization_expires_at TIMESTAMP WITH TIME ZONE,
                     result_receipt_fingerprint VARCHAR(80) NOT NULL UNIQUE,
                     record_fingerprint VARCHAR(80) NOT NULL,
                     PRIMARY KEY (scope_key, client_request_id)
                 )
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discards
+                ADD COLUMN IF NOT EXISTS external_authorization_not_before
+                    TIMESTAMP WITH TIME ZONE
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discards
+                ADD COLUMN IF NOT EXISTS external_trust_domain VARCHAR(255) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discards
+                ADD COLUMN IF NOT EXISTS external_authorization_id VARCHAR(255) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discards
+                ADD COLUMN IF NOT EXISTS external_authorization_fingerprint
+                    VARCHAR(80) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discards
+                ADD COLUMN IF NOT EXISTS external_policy_fingerprint VARCHAR(80) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discards
+                ADD COLUMN IF NOT EXISTS external_authorization_expires_at
+                    TIMESTAMP WITH TIME ZONE
                 """);
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS rg_test_durable_worker_quarantine_discard_history (
@@ -434,11 +530,44 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     approval_id VARCHAR(36) NOT NULL,
                     approver_id VARCHAR(255) NOT NULL,
                     approval_fingerprint VARCHAR(80) NOT NULL,
+                    external_trust_domain VARCHAR(255) NOT NULL DEFAULT '',
+                    external_authorization_id VARCHAR(255) NOT NULL DEFAULT '',
+                    external_authorization_fingerprint VARCHAR(80) NOT NULL DEFAULT '',
+                    external_policy_fingerprint VARCHAR(80) NOT NULL DEFAULT '',
+                    external_authorization_not_before TIMESTAMP WITH TIME ZONE,
+                    external_authorization_expires_at TIMESTAMP WITH TIME ZONE,
                     result_version BIGINT NOT NULL,
                     acted_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     receipt_fingerprint VARCHAR(80) NOT NULL UNIQUE,
                     record_fingerprint VARCHAR(80) NOT NULL
                 )
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discard_history
+                ADD COLUMN IF NOT EXISTS external_authorization_not_before
+                    TIMESTAMP WITH TIME ZONE
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discard_history
+                ADD COLUMN IF NOT EXISTS external_trust_domain VARCHAR(255) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discard_history
+                ADD COLUMN IF NOT EXISTS external_authorization_id VARCHAR(255) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discard_history
+                ADD COLUMN IF NOT EXISTS external_authorization_fingerprint
+                    VARCHAR(80) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discard_history
+                ADD COLUMN IF NOT EXISTS external_policy_fingerprint VARCHAR(80) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_discard_history
+                ADD COLUMN IF NOT EXISTS external_authorization_expires_at
+                    TIMESTAMP WITH TIME ZONE
                 """);
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS rg_test_worker_quarantine_discard_history_scope_idx
@@ -787,6 +916,10 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                                resolution_owner, claim_version, claim_until, approval_id,
                                approver_id, reason_code, request_fingerprint, result_version,
                                result_acted_at, result_approval_fingerprint,
+                               external_trust_domain, external_authorization_id,
+                               external_authorization_fingerprint, external_policy_fingerprint,
+                               external_authorization_not_before,
+                               external_authorization_expires_at,
                                result_receipt_fingerprint, record_fingerprint
                         FROM rg_test_durable_worker_quarantine_discards
                         WHERE result_acted_at <= ?
@@ -840,7 +973,15 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                                organization_id, project_id, run_id, checkpoint_fingerprint,
                                quarantine_reason, consecutive_failures, quarantine_threshold,
                                first_observed_at, quarantined_at, reason_code, resolution_owner,
-                               approval_id, approver_id, approval_fingerprint, result_version,
+                               approval_id, approver_id, approval_fingerprint,
+                               external_trust_domain, external_authorization_id,
+                               external_authorization_fingerprint, external_policy_fingerprint,
+                               external_authorization_not_before,
+                               external_authorization_expires_at, result_version,
+                               external_trust_domain, external_authorization_id,
+                               external_authorization_fingerprint, external_policy_fingerprint,
+                               external_authorization_not_before,
+                               external_authorization_expires_at,
                                acted_at, receipt_fingerprint, record_fingerprint
                         FROM rg_test_durable_worker_quarantine_discard_history
                         WHERE acted_at <= ?
@@ -1468,6 +1609,60 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             String reasonCode,
             Duration approvalDuration,
             Function<DiscardApproval, TestRuntimeTransactionMutation> committedAudit) {
+        return approveDiscardInternal(scope, key, claimOwner, claimVersion, claimUntil,
+                approverId, clientRequestId, reasonCode, approvalDuration, null, committedAudit);
+    }
+
+    /**
+     * Approves one exact claim with an independently verified external change authorization.
+     *
+     * <p>Database time revalidates the external activation and exclusive expiry window. The
+     * authorization id is reserved exactly once and the local approval lifetime is capped by the
+     * claim, requested duration, and external authorization expiry.</p>
+     *
+     * @param scope verified worker scope
+     * @param key exact quarantine identity
+     * @param claimOwner observed maker identity
+     * @param claimVersion observed exact maintenance generation
+     * @param claimUntil observed claim deadline
+     * @param approverId distinct verified checker identity
+     * @param clientRequestId caller-stable checker idempotency key
+     * @param reasonCode bounded mutation rationale
+     * @param approvalDuration requested local approval lifetime
+     * @param externalAuthorization verified external governance authorization
+     * @param committedAudit transaction-bound checker audit mutation
+     * @return stable checker approval outcome
+     */
+    public DiscardApprovalResult approveDiscard(
+            WorkerAcquisitionScope scope,
+            QuarantineKey key,
+            String claimOwner,
+            long claimVersion,
+            Instant claimUntil,
+            String approverId,
+            String clientRequestId,
+            String reasonCode,
+            Duration approvalDuration,
+            ExternalChangeAuthorizationReference externalAuthorization,
+            Function<DiscardApproval, TestRuntimeTransactionMutation> committedAudit) {
+        return approveDiscardInternal(scope, key, claimOwner, claimVersion, claimUntil,
+                approverId, clientRequestId, reasonCode, approvalDuration,
+                Objects.requireNonNull(externalAuthorization, "externalAuthorization"),
+                committedAudit);
+    }
+
+    private DiscardApprovalResult approveDiscardInternal(
+            WorkerAcquisitionScope scope,
+            QuarantineKey key,
+            String claimOwner,
+            long claimVersion,
+            Instant claimUntil,
+            String approverId,
+            String clientRequestId,
+            String reasonCode,
+            Duration approvalDuration,
+            ExternalChangeAuthorizationReference externalAuthorization,
+            Function<DiscardApproval, TestRuntimeTransactionMutation> committedAudit) {
         WorkerAcquisitionScope safeScope = Objects.requireNonNull(scope, "scope");
         QuarantineKey safeKey = Objects.requireNonNull(key, "key");
         String safeClaimOwner = required(claimOwner, "claimOwner", 255);
@@ -1484,16 +1679,31 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         if (safeApprover.equals(safeClaimOwner)) {
             return DiscardApprovalResult.selfApproval();
         }
-        String requestFingerprint = ProtocolFingerprint.of(objectMapper, Map.ofEntries(
-                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineDiscardApprovalIntent.v1"),
+        String requestFingerprint = externalAuthorization == null
+                ? ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion",
+                        "bloge.durableWorkerQuarantineDiscardApprovalIntent.v1"),
                 Map.entry("scope", safeScope), Map.entry("key", safeKey),
                 Map.entry("claimOwner", safeClaimOwner),
                 Map.entry("claimVersion", claimVersion),
                 Map.entry("claimUntil", safeClaimUntil),
                 Map.entry("approverId", safeApprover),
                 Map.entry("reasonCode", safeReason),
-                Map.entry("approvalDurationSeconds", safeDuration.toSeconds())));
-        DiscardApprovalResult result = transactions.execute(status -> {
+                Map.entry("approvalDurationSeconds", safeDuration.toSeconds())))
+                : ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion",
+                        "bloge.durableWorkerQuarantineDiscardApprovalIntent.v2"),
+                Map.entry("scope", safeScope), Map.entry("key", safeKey),
+                Map.entry("claimOwner", safeClaimOwner),
+                Map.entry("claimVersion", claimVersion),
+                Map.entry("claimUntil", safeClaimUntil),
+                Map.entry("approverId", safeApprover),
+                Map.entry("reasonCode", safeReason),
+                Map.entry("approvalDurationSeconds", safeDuration.toSeconds()),
+                Map.entry("externalAuthorization", externalAuthorization)));
+        DiscardApprovalResult result;
+        try {
+            result = transactions.execute(status -> {
             Optional<StoredDiscardApproval> replay = findDiscardApprovalCommand(
                     safeScope, safeRequestId, true);
             if (replay.isPresent()) {
@@ -1539,19 +1749,43 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     || !control.claimUntil().isAfter(now)) {
                 return DiscardApprovalResult.fenceRejected();
             }
+            if (externalAuthorization != null
+                    && (now.isBefore(externalAuthorization.notBefore())
+                    || !now.isBefore(externalAuthorization.expiresAt()))) {
+                return DiscardApprovalResult.externalAuthorizationTimeInvalid();
+            }
+            if (externalAuthorization != null && findExternalAuthorization(
+                    externalAuthorization.trustDomain(),
+                    externalAuthorization.authorizationId(), true).isPresent()) {
+                return DiscardApprovalResult.externalAuthorizationReused();
+            }
             Instant approvalUntil = earlierOf(now.plus(safeDuration), safeClaimUntil);
+            if (externalAuthorization != null) {
+                approvalUntil = earlierOf(approvalUntil, externalAuthorization.expiresAt());
+            }
             if (!approvalUntil.isAfter(now)) {
                 return DiscardApprovalResult.fenceRejected();
             }
             StoredDiscardApproval stored = storedDiscardApproval(
                     safeScope, safeRequestId, safeKey, safeClaimOwner, claimVersion,
                     safeClaimUntil, safeApprover, safeReason, now, approvalUntil,
-                    requestFingerprint);
+                    externalAuthorization, requestFingerprint);
             insertDiscardApproval(stored);
+            if (externalAuthorization != null) {
+                insertExternalAuthorization(stored, externalAuthorization, now);
+            }
             DiscardApproval approval = stored.external();
             Objects.requireNonNull(safeAudit.apply(approval), "committedAudit result").apply(jdbc);
             return DiscardApprovalResult.approved(approval);
-        });
+            });
+        } catch (DuplicateKeyException duplicateAuthorization) {
+            if (externalAuthorization == null || findExternalAuthorization(
+                    externalAuthorization.trustDomain(),
+                    externalAuthorization.authorizationId(), false).isEmpty()) {
+                throw duplicateAuthorization;
+            }
+            result = DiscardApprovalResult.externalAuthorizationReused();
+        }
         if (result == null) {
             throw new IllegalStateException("Worker quarantine discard approval returned no result");
         }
@@ -1657,6 +1891,26 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     || !approval.approvalUntil().isAfter(now)) {
                 return ApprovedDiscardResult.approvalRejected();
             }
+            StoredExternalChangeAuthorization externalAuthorization = null;
+            if (approval.externalAuthorization() != null) {
+                ExternalChangeAuthorizationReference external = approval.externalAuthorization();
+                externalAuthorization = findExternalAuthorization(
+                        external.trustDomain(), external.authorizationId(), true).orElse(null);
+                if (externalAuthorization == null) {
+                    return ApprovedDiscardResult.approvalRejected();
+                }
+                requireValid(externalAuthorization);
+                if (!externalAuthorization.authorizationState().equals("RESERVED")
+                        || !externalAuthorization.external().equals(external)
+                        || !externalAuthorization.scopeKey().equals(approval.scopeKey())
+                        || !externalAuthorization.approvalRequestId().equals(
+                                approval.clientRequestId())
+                        || !externalAuthorization.approvalId().equals(approval.approvalId())
+                        || now.isBefore(external.notBefore())
+                        || !now.isBefore(external.expiresAt())) {
+                    return ApprovedDiscardResult.approvalRejected();
+                }
+            }
             long nextVersion = Math.addExact(control.version(), 1);
             ApprovedDiscardReceipt receipt = approvedDiscardReceipt(
                     safeScope, safeClaim.key(), safeClaim.ownerId(), approval,
@@ -1668,6 +1922,9 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     safeScope, quarantine, receipt);
             deleteQuarantine(quarantine);
             consumeDiscardApproval(approval, safeRequestId, now);
+            if (externalAuthorization != null) {
+                consumeExternalAuthorization(externalAuthorization, safeRequestId, now);
+            }
             insertApprovedDiscardCommand(command);
             insertApprovedDiscardHistory(history);
             Objects.requireNonNull(safeAudit.apply(receipt), "committedAudit result").apply(jdbc);
@@ -1694,7 +1951,11 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                                organization_id, project_id, run_id, checkpoint_fingerprint,
                                quarantine_reason, consecutive_failures, quarantine_threshold,
                                first_observed_at, quarantined_at, reason_code, resolution_owner,
-                               approval_id, approver_id, approval_fingerprint, result_version,
+                               approval_id, approver_id, approval_fingerprint,
+                               external_trust_domain, external_authorization_id,
+                               external_authorization_fingerprint, external_policy_fingerprint,
+                               external_authorization_not_before,
+                               external_authorization_expires_at, result_version,
                                acted_at, receipt_fingerprint, record_fingerprint
                         FROM rg_test_durable_worker_quarantine_discard_history
                         WHERE scope_key = ? AND tenant_id = ? AND environment_id = ?
@@ -1740,8 +2001,11 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 SELECT scope_key, client_request_id, approval_id, tenant_id, environment_id,
                        organization_id, project_id, run_id, checkpoint_fingerprint,
                        claim_owner, claim_version, claim_until, approver_id, reason_code,
-                       approved_at, approval_until, approval_state, consumed_by_request_id,
-                       consumed_at, request_fingerprint, approval_fingerprint,
+                       approved_at, approval_until, external_trust_domain,
+                       external_authorization_id, external_authorization_fingerprint,
+                       external_policy_fingerprint, external_authorization_not_before,
+                       external_authorization_expires_at, approval_state,
+                       consumed_by_request_id, consumed_at, request_fingerprint, approval_fingerprint,
                        record_fingerprint
                 FROM rg_test_durable_worker_quarantine_discard_approvals
                 """;
@@ -1758,6 +2022,12 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 rs.getTimestamp("claim_until").toInstant(), rs.getString("approver_id"),
                 rs.getString("reason_code"), rs.getTimestamp("approved_at").toInstant(),
                 rs.getTimestamp("approval_until").toInstant(),
+                rs.getString("external_trust_domain"),
+                rs.getString("external_authorization_id"),
+                rs.getString("external_authorization_fingerprint"),
+                rs.getString("external_policy_fingerprint"),
+                nullableInstant(rs, "external_authorization_not_before"),
+                nullableInstant(rs, "external_authorization_expires_at"),
                 rs.getString("approval_state"), rs.getString("consumed_by_request_id"),
                 rs.getTimestamp("consumed_at").toInstant(),
                 rs.getString("request_fingerprint"), rs.getString("approval_fingerprint"),
@@ -1775,12 +2045,28 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             String reasonCode,
             Instant approvedAt,
             Instant approvalUntil,
+            ExternalChangeAuthorizationReference externalAuthorization,
             String requestFingerprint) {
+        String externalTrustDomain = externalAuthorization == null
+                ? "" : externalAuthorization.trustDomain();
+        String externalAuthorizationId = externalAuthorization == null
+                ? "" : externalAuthorization.authorizationId();
+        String externalAuthorizationFingerprint = externalAuthorization == null
+                ? "" : externalAuthorization.authorizationFingerprint();
+        String externalPolicyFingerprint = externalAuthorization == null
+                ? "" : externalAuthorization.policyFingerprint();
+        Instant externalNotBefore = externalAuthorization == null
+                ? null : externalAuthorization.notBefore();
+        Instant externalExpiresAt = externalAuthorization == null
+                ? null : externalAuthorization.expiresAt();
         StoredDiscardApproval unsealed = new StoredDiscardApproval(scopeKey(scope), requestId,
                 UUID.randomUUID().toString(), scope.tenantId(), scope.organizationId(),
                 scope.projectId(), scope.environmentId(), key.runId(),
                 key.checkpointFingerprint(), claimOwner, claimVersion, claimUntil, approverId,
-                reasonCode, approvedAt, approvalUntil, DiscardApprovalState.APPROVED.name(),
+                reasonCode, approvedAt, approvalUntil, externalTrustDomain,
+                externalAuthorizationId, externalAuthorizationFingerprint,
+                externalPolicyFingerprint, externalNotBefore, externalExpiresAt,
+                DiscardApprovalState.APPROVED.name(),
                 "", Instant.EPOCH, requestFingerprint, "", "");
         StoredDiscardApproval approved = unsealed.withApprovalFingerprint(
                 discardApprovalFingerprint(unsealed));
@@ -1793,16 +2079,22 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     scope_key, client_request_id, approval_id, tenant_id, environment_id,
                     organization_id, project_id, run_id, checkpoint_fingerprint,
                     claim_owner, claim_version, claim_until, approver_id, reason_code,
-                    approved_at, approval_until, approval_state, consumed_by_request_id,
+                    approved_at, approval_until, external_trust_domain,
+                    external_authorization_id, external_authorization_fingerprint,
+                    external_policy_fingerprint, external_authorization_not_before,
+                    external_authorization_expires_at, approval_state, consumed_by_request_id,
                     consumed_at, request_fingerprint, approval_fingerprint, record_fingerprint
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, approval.scopeKey(), approval.clientRequestId(), approval.approvalId(),
                 approval.tenantId(), approval.environmentId(), approval.organizationId(),
                 approval.projectId(), approval.runId(), approval.checkpointFingerprint(),
                 approval.claimOwner(), approval.claimVersion(),
                 Timestamp.from(approval.claimUntil()), approval.approverId(),
                 approval.reasonCode(), Timestamp.from(approval.approvedAt()),
-                Timestamp.from(approval.approvalUntil()), approval.state().name(),
+                Timestamp.from(approval.approvalUntil()), approval.externalTrustDomain(),
+                approval.externalAuthorizationId(), approval.externalAuthorizationFingerprint(),
+                approval.externalPolicyFingerprint(), timestamp(approval.externalAuthorizationNotBefore()),
+                timestamp(approval.externalAuthorizationExpiresAt()), approval.state().name(),
                 approval.consumedByRequestId(), Timestamp.from(approval.consumedAt()),
                 approval.requestFingerprint(), approval.approvalFingerprint(),
                 approval.recordFingerprint());
@@ -1845,10 +2137,20 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 && approval.consumedAt().equals(Instant.EPOCH)
                 : !approval.consumedByRequestId().isBlank()
                 && !approval.consumedAt().isBefore(approval.approvedAt());
+        boolean externalShape = approval.externalAuthorization() == null
+                ? approval.externalTrustDomain().isBlank()
+                && approval.externalAuthorizationId().isBlank()
+                && approval.externalAuthorizationFingerprint().isBlank()
+                && approval.externalPolicyFingerprint().isBlank()
+                && approval.externalAuthorizationNotBefore() == null
+                && approval.externalAuthorizationExpiresAt() == null
+                : approval.approvalUntil().compareTo(
+                        approval.externalAuthorizationExpiresAt()) <= 0;
         if (!scopeKey(scope).equals(approval.scopeKey())
                 || external.claimOwner().equals(external.approverId())
                 || external.approvedAt().isAfter(external.approvalUntil())
                 || external.approvalUntil().isAfter(external.claimUntil())
+                || !externalShape
                 || !stateShape
                 || !discardApprovalFingerprint(approval).equals(
                         approval.approvalFingerprint())
@@ -1859,7 +2161,8 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
     }
 
     private String discardApprovalFingerprint(StoredDiscardApproval approval) {
-        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+        if (approval.externalAuthorization() == null) {
+            return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
                 Map.entry("schemaVersion", "bloge.durableWorkerQuarantineDiscardApproval.v1"),
                 Map.entry("approvalId", approval.approvalId()),
                 Map.entry("scope", approval.scope()), Map.entry("key", approval.key()),
@@ -1870,17 +2173,158 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 Map.entry("reasonCode", approval.reasonCode()),
                 Map.entry("approvedAt", approval.approvedAt()),
                 Map.entry("approvalUntil", approval.approvalUntil())));
+        }
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineDiscardApproval.v2"),
+                Map.entry("approvalId", approval.approvalId()),
+                Map.entry("scope", approval.scope()), Map.entry("key", approval.key()),
+                Map.entry("claimOwner", approval.claimOwner()),
+                Map.entry("claimVersion", approval.claimVersion()),
+                Map.entry("claimUntil", approval.claimUntil()),
+                Map.entry("approverId", approval.approverId()),
+                Map.entry("reasonCode", approval.reasonCode()),
+                Map.entry("approvedAt", approval.approvedAt()),
+                Map.entry("approvalUntil", approval.approvalUntil()),
+                Map.entry("externalAuthorization", approval.externalAuthorization())));
     }
 
     private String discardApprovalRecordFingerprint(StoredDiscardApproval approval) {
         return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
-                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineDiscardApprovalRecord.v1"),
+                Map.entry("schemaVersion", approval.externalAuthorization() == null
+                        ? "bloge.durableWorkerQuarantineDiscardApprovalRecord.v1"
+                        : "bloge.durableWorkerQuarantineDiscardApprovalRecord.v2"),
                 Map.entry("clientRequestId", approval.clientRequestId()),
                 Map.entry("approvalFingerprint", approval.approvalFingerprint()),
                 Map.entry("state", approval.state().name()),
                 Map.entry("consumedByRequestId", approval.consumedByRequestId()),
                 Map.entry("consumedAt", approval.consumedAt()),
                 Map.entry("requestFingerprint", approval.requestFingerprint())));
+    }
+
+    private Optional<StoredExternalChangeAuthorization> findExternalAuthorization(
+            String trustDomain, String authorizationId, boolean forUpdate) {
+        List<StoredExternalChangeAuthorization> rows = jdbc.query("""
+                        SELECT trust_domain, authorization_id, authorization_fingerprint,
+                               policy_fingerprint, authorization_not_before,
+                               authorization_expires_at, scope_key, approval_request_id,
+                               approval_id, authorization_state, reserved_at,
+                               consumed_by_request_id, consumed_at, record_fingerprint
+                        FROM rg_test_durable_worker_quarantine_change_authorizations
+                        WHERE trust_domain = ? AND authorization_id = ?
+                        """ + (forUpdate ? " FOR UPDATE" : ""),
+                this::mapExternalAuthorization, trustDomain, authorizationId);
+        if (rows.size() > 1) {
+            throw new IllegalStateException("External quarantine authorization is not unique");
+        }
+        return rows.stream().findFirst();
+    }
+
+    private StoredExternalChangeAuthorization mapExternalAuthorization(
+            ResultSet rs, int rowNumber) throws SQLException {
+        return new StoredExternalChangeAuthorization(rs.getString("trust_domain"),
+                rs.getString("authorization_id"),
+                rs.getString("authorization_fingerprint"),
+                rs.getString("policy_fingerprint"),
+                rs.getTimestamp("authorization_not_before").toInstant(),
+                rs.getTimestamp("authorization_expires_at").toInstant(),
+                rs.getString("scope_key"), rs.getString("approval_request_id"),
+                rs.getString("approval_id"), rs.getString("authorization_state"),
+                rs.getTimestamp("reserved_at").toInstant(),
+                rs.getString("consumed_by_request_id"),
+                rs.getTimestamp("consumed_at").toInstant(),
+                rs.getString("record_fingerprint"));
+    }
+
+    private void insertExternalAuthorization(
+            StoredDiscardApproval approval,
+            ExternalChangeAuthorizationReference external,
+            Instant reservedAt) {
+        StoredExternalChangeAuthorization unsealed = new StoredExternalChangeAuthorization(
+                external.trustDomain(), external.authorizationId(),
+                external.authorizationFingerprint(), external.policyFingerprint(),
+                external.notBefore(), external.expiresAt(), approval.scopeKey(),
+                approval.clientRequestId(), approval.approvalId(), "RESERVED", reservedAt,
+                "", Instant.EPOCH, "");
+        StoredExternalChangeAuthorization stored = unsealed.withRecordFingerprint(
+                externalAuthorizationRecordFingerprint(unsealed));
+        int inserted = jdbc.update("""
+                INSERT INTO rg_test_durable_worker_quarantine_change_authorizations (
+                    trust_domain, authorization_id, authorization_fingerprint,
+                    policy_fingerprint, authorization_not_before, authorization_expires_at,
+                    scope_key, approval_request_id, approval_id, authorization_state,
+                    reserved_at, consumed_by_request_id, consumed_at, record_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, stored.trustDomain(), stored.authorizationId(),
+                stored.authorizationFingerprint(), stored.policyFingerprint(),
+                Timestamp.from(stored.authorizationNotBefore()),
+                Timestamp.from(stored.authorizationExpiresAt()), stored.scopeKey(),
+                stored.approvalRequestId(), stored.approvalId(), stored.authorizationState(),
+                Timestamp.from(stored.reservedAt()), stored.consumedByRequestId(),
+                Timestamp.from(stored.consumedAt()), stored.recordFingerprint());
+        if (inserted != 1) {
+            throw new IllegalStateException("External quarantine authorization was not reserved");
+        }
+    }
+
+    private void consumeExternalAuthorization(
+            StoredExternalChangeAuthorization current,
+            String discardRequestId,
+            Instant consumedAt) {
+        StoredExternalChangeAuthorization consumed = current.consumed(
+                discardRequestId, consumedAt);
+        consumed = consumed.withRecordFingerprint(
+                externalAuthorizationRecordFingerprint(consumed));
+        int changed = jdbc.update("""
+                UPDATE rg_test_durable_worker_quarantine_change_authorizations
+                SET authorization_state = ?, consumed_by_request_id = ?, consumed_at = ?,
+                    record_fingerprint = ?
+                WHERE trust_domain = ? AND authorization_id = ?
+                  AND authorization_state = 'RESERVED' AND record_fingerprint = ?
+                """, consumed.authorizationState(), consumed.consumedByRequestId(),
+                Timestamp.from(consumed.consumedAt()), consumed.recordFingerprint(),
+                current.trustDomain(), current.authorizationId(), current.recordFingerprint());
+        if (changed != 1) {
+            throw new IllegalStateException("External quarantine authorization fence was rejected");
+        }
+    }
+
+    private void requireValid(StoredExternalChangeAuthorization authorization) {
+        ExternalChangeAuthorizationReference external;
+        try {
+            external = authorization.external();
+        } catch (RuntimeException invalid) {
+            throw new IllegalStateException("Stored external quarantine authorization is corrupt",
+                    invalid);
+        }
+        boolean reserved = authorization.authorizationState().equals("RESERVED");
+        boolean stateShape = reserved
+                ? authorization.consumedByRequestId().isBlank()
+                && authorization.consumedAt().equals(Instant.EPOCH)
+                : authorization.authorizationState().equals("CONSUMED")
+                && !authorization.consumedByRequestId().isBlank()
+                && !authorization.consumedAt().isBefore(authorization.reservedAt());
+        if (!external.expiresAt().isAfter(authorization.reservedAt())
+                || authorization.reservedAt().isBefore(external.notBefore())
+                || !stateShape
+                || !externalAuthorizationRecordFingerprint(authorization).equals(
+                        authorization.recordFingerprint())) {
+            throw new IllegalStateException("Stored external quarantine authorization is corrupt");
+        }
+    }
+
+    private String externalAuthorizationRecordFingerprint(
+            StoredExternalChangeAuthorization authorization) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion",
+                        "bloge.durableWorkerQuarantineChangeAuthorizationRecord.v1"),
+                Map.entry("externalAuthorization", authorization.external()),
+                Map.entry("scopeKey", authorization.scopeKey()),
+                Map.entry("approvalRequestId", authorization.approvalRequestId()),
+                Map.entry("approvalId", authorization.approvalId()),
+                Map.entry("state", authorization.authorizationState()),
+                Map.entry("reservedAt", authorization.reservedAt()),
+                Map.entry("consumedByRequestId", authorization.consumedByRequestId()),
+                Map.entry("consumedAt", authorization.consumedAt())));
     }
 
     private Optional<StoredApprovedDiscardCommand> findApprovedDiscardCommand(
@@ -1891,6 +2335,10 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                                resolution_owner, claim_version, claim_until, approval_id,
                                approver_id, reason_code, request_fingerprint, result_version,
                                result_acted_at, result_approval_fingerprint,
+                               external_trust_domain, external_authorization_id,
+                               external_authorization_fingerprint, external_policy_fingerprint,
+                               external_authorization_not_before,
+                               external_authorization_expires_at,
                                result_receipt_fingerprint, record_fingerprint
                         FROM rg_test_durable_worker_quarantine_discards
                         WHERE scope_key = ? AND client_request_id = ?
@@ -1914,6 +2362,12 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 rs.getString("reason_code"), rs.getString("request_fingerprint"),
                 rs.getLong("result_version"), rs.getTimestamp("result_acted_at").toInstant(),
                 rs.getString("result_approval_fingerprint"),
+                rs.getString("external_trust_domain"),
+                rs.getString("external_authorization_id"),
+                rs.getString("external_authorization_fingerprint"),
+                rs.getString("external_policy_fingerprint"),
+                nullableInstant(rs, "external_authorization_not_before"),
+                nullableInstant(rs, "external_authorization_expires_at"),
                 rs.getString("result_receipt_fingerprint"),
                 rs.getString("record_fingerprint"));
     }
@@ -1926,13 +2380,20 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             String reasonCode,
             String requestFingerprint,
             ApprovedDiscardReceipt receipt) {
+        ExternalChangeAuthorizationReference external = receipt.externalAuthorization();
         StoredApprovedDiscardCommand unsealed = new StoredApprovedDiscardCommand(
                 scopeKey(scope), requestId, scope.tenantId(), scope.organizationId(),
                 scope.projectId(), scope.environmentId(), claim.key().runId(),
                 claim.key().checkpointFingerprint(), claim.ownerId(), claim.version(),
                 claim.claimUntil(), approval.approvalId(), approval.approverId(), reasonCode,
                 requestFingerprint, receipt.version(), receipt.actedAt(),
-                receipt.approvalFingerprint(), receipt.receiptFingerprint(), "");
+                receipt.approvalFingerprint(), external == null ? "" : external.trustDomain(),
+                external == null ? "" : external.authorizationId(),
+                external == null ? "" : external.authorizationFingerprint(),
+                external == null ? "" : external.policyFingerprint(),
+                external == null ? null : external.notBefore(),
+                external == null ? null : external.expiresAt(),
+                receipt.receiptFingerprint(), "");
         return unsealed.withRecordFingerprint(approvedDiscardCommandFingerprint(unsealed));
     }
 
@@ -1944,8 +2405,11 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     resolution_owner, claim_version, claim_until, approval_id,
                     approver_id, reason_code, request_fingerprint, result_version,
                     result_acted_at, result_approval_fingerprint,
+                    external_trust_domain, external_authorization_id,
+                    external_authorization_fingerprint, external_policy_fingerprint,
+                    external_authorization_not_before, external_authorization_expires_at,
                     result_receipt_fingerprint, record_fingerprint
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, command.scopeKey(), command.clientRequestId(), command.tenantId(),
                 command.environmentId(), command.organizationId(), command.projectId(),
                 command.runId(), command.checkpointFingerprint(), command.resolutionOwner(),
@@ -1953,6 +2417,10 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 command.approvalId(), command.approverId(), command.reasonCode(),
                 command.requestFingerprint(), command.resultVersion(),
                 Timestamp.from(command.resultActedAt()), command.resultApprovalFingerprint(),
+                command.externalTrustDomain(), command.externalAuthorizationId(),
+                command.externalAuthorizationFingerprint(), command.externalPolicyFingerprint(),
+                timestamp(command.externalAuthorizationNotBefore()),
+                timestamp(command.externalAuthorizationExpiresAt()),
                 command.resultReceiptFingerprint(), command.recordFingerprint());
         if (inserted != 1) {
             throw new IllegalStateException("Approved worker quarantine discard was not inserted");
@@ -1970,8 +2438,8 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         }
         String expectedReceipt = approvedDiscardReceiptFingerprint(scope, receipt.key(),
                 receipt.ownerId(), receipt.approvalId(), receipt.approverId(),
-                receipt.approvalFingerprint(), receipt.reasonCode(), receipt.version(),
-                receipt.actedAt());
+                receipt.approvalFingerprint(), receipt.externalAuthorization(),
+                receipt.reasonCode(), receipt.version(), receipt.actedAt());
         if (!scopeKey(scope).equals(command.scopeKey())
                 || command.resolutionOwner().equals(command.approverId())
                 || !expectedReceipt.equals(receipt.receiptFingerprint())
@@ -1982,8 +2450,30 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
     }
 
     private String approvedDiscardCommandFingerprint(StoredApprovedDiscardCommand command) {
+        if (command.externalAuthorization() == null) {
+            return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                    Map.entry("schemaVersion",
+                            "bloge.durableWorkerQuarantineApprovedDiscardCommand.v1"),
+                    Map.entry("scope", command.scope()),
+                    Map.entry("clientRequestId", command.clientRequestId()),
+                    Map.entry("key", command.key()),
+                    Map.entry("ownerId", command.resolutionOwner()),
+                    Map.entry("claimVersion", command.claimVersion()),
+                    Map.entry("claimUntil", command.claimUntil()),
+                    Map.entry("approvalId", command.approvalId()),
+                    Map.entry("approverId", command.approverId()),
+                    Map.entry("reasonCode", command.reasonCode()),
+                    Map.entry("requestFingerprint", command.requestFingerprint()),
+                    Map.entry("resultVersion", command.resultVersion()),
+                    Map.entry("resultActedAt", command.resultActedAt()),
+                    Map.entry("resultApprovalFingerprint",
+                            command.resultApprovalFingerprint()),
+                    Map.entry("resultReceiptFingerprint",
+                            command.resultReceiptFingerprint())));
+        }
         return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
-                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineApprovedDiscardCommand.v1"),
+                Map.entry("schemaVersion",
+                        "bloge.durableWorkerQuarantineApprovedDiscardCommand.v2"),
                 Map.entry("scope", command.scope()),
                 Map.entry("clientRequestId", command.clientRequestId()),
                 Map.entry("key", command.key()),
@@ -1997,6 +2487,7 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 Map.entry("resultVersion", command.resultVersion()),
                 Map.entry("resultActedAt", command.resultActedAt()),
                 Map.entry("resultApprovalFingerprint", command.resultApprovalFingerprint()),
+                Map.entry("externalAuthorization", command.externalAuthorization()),
                 Map.entry("resultReceiptFingerprint", command.resultReceiptFingerprint())));
     }
 
@@ -2010,10 +2501,10 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             Instant actedAt) {
         String fingerprint = approvedDiscardReceiptFingerprint(scope, key, ownerId,
                 approval.approvalId(), approval.approverId(), approval.approvalFingerprint(),
-                reasonCode, version, actedAt);
+                approval.externalAuthorization(), reasonCode, version, actedAt);
         return new ApprovedDiscardReceipt(key, ownerId, approval.approvalId(),
-                approval.approverId(), approval.approvalFingerprint(), reasonCode,
-                version, actedAt, fingerprint);
+                approval.approverId(), approval.approvalFingerprint(),
+                approval.externalAuthorization(), reasonCode, version, actedAt, fingerprint);
     }
 
     private String approvedDiscardReceiptFingerprint(
@@ -2023,15 +2514,29 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             String approvalId,
             String approverId,
             String approvalFingerprint,
+            ExternalChangeAuthorizationReference externalAuthorization,
             String reasonCode,
             long version,
             Instant actedAt) {
+        if (externalAuthorization == null) {
+            return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                    Map.entry("schemaVersion",
+                            "bloge.durableWorkerQuarantineApprovedDiscardReceipt.v1"),
+                    Map.entry("scope", scope), Map.entry("key", key),
+                    Map.entry("ownerId", ownerId), Map.entry("approvalId", approvalId),
+                    Map.entry("approverId", approverId),
+                    Map.entry("approvalFingerprint", approvalFingerprint),
+                    Map.entry("reasonCode", reasonCode), Map.entry("version", version),
+                    Map.entry("actedAt", actedAt)));
+        }
         return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
-                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineApprovedDiscardReceipt.v1"),
+                Map.entry("schemaVersion",
+                        "bloge.durableWorkerQuarantineApprovedDiscardReceipt.v2"),
                 Map.entry("scope", scope), Map.entry("key", key),
                 Map.entry("ownerId", ownerId), Map.entry("approvalId", approvalId),
                 Map.entry("approverId", approverId),
                 Map.entry("approvalFingerprint", approvalFingerprint),
+                Map.entry("externalAuthorization", externalAuthorization),
                 Map.entry("reasonCode", reasonCode), Map.entry("version", version),
                 Map.entry("actedAt", actedAt)));
     }
@@ -2041,6 +2546,7 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             StoredQuarantine quarantine,
             ApprovedDiscardReceipt receipt) {
         ActiveWorkerCandidateQuarantine active = quarantine.quarantine();
+        ExternalChangeAuthorizationReference external = receipt.externalAuthorization();
         StoredApprovedDiscardHistory unsealed = new StoredApprovedDiscardHistory(
                 UUID.randomUUID().toString(), scopeKey(scope), scope.tenantId(),
                 scope.organizationId(), scope.projectId(), scope.environmentId(),
@@ -2048,7 +2554,13 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 active.consecutiveFailures(), active.quarantineThreshold(),
                 active.firstObservedAt(), active.quarantinedAt(), receipt.reasonCode(),
                 receipt.ownerId(), receipt.approvalId(), receipt.approverId(),
-                receipt.approvalFingerprint(), receipt.version(), receipt.actedAt(),
+                receipt.approvalFingerprint(), external == null ? "" : external.trustDomain(),
+                external == null ? "" : external.authorizationId(),
+                external == null ? "" : external.authorizationFingerprint(),
+                external == null ? "" : external.policyFingerprint(),
+                external == null ? null : external.notBefore(),
+                external == null ? null : external.expiresAt(),
+                receipt.version(), receipt.actedAt(),
                 receipt.receiptFingerprint(), "");
         return unsealed.withRecordFingerprint(approvedDiscardHistoryFingerprint(unsealed));
     }
@@ -2060,16 +2572,23 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     project_id, run_id, checkpoint_fingerprint, quarantine_reason,
                     consecutive_failures, quarantine_threshold, first_observed_at,
                     quarantined_at, reason_code, resolution_owner, approval_id, approver_id,
-                    approval_fingerprint, result_version, acted_at, receipt_fingerprint,
+                    approval_fingerprint, external_trust_domain, external_authorization_id,
+                    external_authorization_fingerprint, external_policy_fingerprint,
+                    external_authorization_not_before, external_authorization_expires_at,
+                    result_version, acted_at, receipt_fingerprint,
                     record_fingerprint
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, history.historyId(), history.scopeKey(), history.tenantId(),
                 history.environmentId(), history.organizationId(), history.projectId(),
                 history.runId(), history.checkpointFingerprint(), history.quarantineReason(),
                 history.consecutiveFailures(), history.quarantineThreshold(),
                 Timestamp.from(history.firstObservedAt()), Timestamp.from(history.quarantinedAt()),
                 history.reasonCode(), history.resolutionOwner(), history.approvalId(),
-                history.approverId(), history.approvalFingerprint(), history.resultVersion(),
+                history.approverId(), history.approvalFingerprint(),
+                history.externalTrustDomain(), history.externalAuthorizationId(),
+                history.externalAuthorizationFingerprint(), history.externalPolicyFingerprint(),
+                timestamp(history.externalAuthorizationNotBefore()),
+                timestamp(history.externalAuthorizationExpiresAt()), history.resultVersion(),
                 Timestamp.from(history.actedAt()), history.receiptFingerprint(),
                 history.recordFingerprint());
         if (inserted != 1) {
@@ -2090,6 +2609,12 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 rs.getTimestamp("quarantined_at").toInstant(), rs.getString("reason_code"),
                 rs.getString("resolution_owner"), rs.getString("approval_id"),
                 rs.getString("approver_id"), rs.getString("approval_fingerprint"),
+                rs.getString("external_trust_domain"),
+                rs.getString("external_authorization_id"),
+                rs.getString("external_authorization_fingerprint"),
+                rs.getString("external_policy_fingerprint"),
+                nullableInstant(rs, "external_authorization_not_before"),
+                nullableInstant(rs, "external_authorization_expires_at"),
                 rs.getLong("result_version"), rs.getTimestamp("acted_at").toInstant(),
                 rs.getString("receipt_fingerprint"), rs.getString("record_fingerprint"));
         requireValid(stored);
@@ -2108,8 +2633,8 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         }
         String expectedReceipt = approvedDiscardReceiptFingerprint(scope, external.key(),
                 external.ownerId(), external.approvalId(), external.approverId(),
-                external.approvalFingerprint(), external.reasonCode(), external.version(),
-                external.actedAt());
+                external.approvalFingerprint(), external.externalAuthorization(),
+                external.reasonCode(), external.version(), external.actedAt());
         if (!scopeKey(scope).equals(history.scopeKey())
                 || external.ownerId().equals(external.approverId())
                 || !expectedReceipt.equals(external.receiptFingerprint())
@@ -2120,8 +2645,29 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
     }
 
     private String approvedDiscardHistoryFingerprint(StoredApprovedDiscardHistory history) {
+        if (history.externalAuthorization() == null) {
+            return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                    Map.entry("schemaVersion",
+                            "bloge.durableWorkerQuarantineApprovedDiscardHistory.v1"),
+                    Map.entry("historyId", history.historyId()),
+                    Map.entry("scope", history.scope()), Map.entry("key", history.key()),
+                    Map.entry("quarantineReason", history.quarantineReason()),
+                    Map.entry("consecutiveFailures", history.consecutiveFailures()),
+                    Map.entry("quarantineThreshold", history.quarantineThreshold()),
+                    Map.entry("firstObservedAt", history.firstObservedAt()),
+                    Map.entry("quarantinedAt", history.quarantinedAt()),
+                    Map.entry("reasonCode", history.reasonCode()),
+                    Map.entry("ownerId", history.resolutionOwner()),
+                    Map.entry("approvalId", history.approvalId()),
+                    Map.entry("approverId", history.approverId()),
+                    Map.entry("approvalFingerprint", history.approvalFingerprint()),
+                    Map.entry("version", history.resultVersion()),
+                    Map.entry("actedAt", history.actedAt()),
+                    Map.entry("receiptFingerprint", history.receiptFingerprint())));
+        }
         return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
-                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineApprovedDiscardHistory.v1"),
+                Map.entry("schemaVersion",
+                        "bloge.durableWorkerQuarantineApprovedDiscardHistory.v2"),
                 Map.entry("historyId", history.historyId()),
                 Map.entry("scope", history.scope()), Map.entry("key", history.key()),
                 Map.entry("quarantineReason", history.quarantineReason()),
@@ -2134,6 +2680,7 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 Map.entry("approvalId", history.approvalId()),
                 Map.entry("approverId", history.approverId()),
                 Map.entry("approvalFingerprint", history.approvalFingerprint()),
+                Map.entry("externalAuthorization", history.externalAuthorization()),
                 Map.entry("version", history.resultVersion()),
                 Map.entry("actedAt", history.actedAt()),
                 Map.entry("receiptFingerprint", history.receiptFingerprint())));
@@ -3199,6 +3746,15 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         return now.truncatedTo(ChronoUnit.MICROS);
     }
 
+    private static Instant nullableInstant(ResultSet rs, String column) throws SQLException {
+        Timestamp timestamp = rs.getTimestamp(column);
+        return timestamp == null ? null : timestamp.toInstant();
+    }
+
+    private static Timestamp timestamp(Instant instant) {
+        return instant == null ? null : Timestamp.from(instant);
+    }
+
     private static int bounded(int limit) {
         if (limit < 1 || limit > MAX_PAGE_SIZE) {
             throw new IllegalArgumentException(
@@ -3579,6 +4135,44 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         }
     }
 
+    /**
+     * Verified external governance authorization bound to one local checker approval.
+     *
+     * @param trustDomain independently configured governance trust domain
+     * @param authorizationId immutable external work-order or approval identity
+     * @param authorizationFingerprint exact signed material fingerprint
+     * @param policyFingerprint exact accepted external policy revision
+     * @param notBefore inclusive external authorization activation time
+     * @param expiresAt exclusive external authorization deadline
+     */
+    public record ExternalChangeAuthorizationReference(
+            String trustDomain,
+            String authorizationId,
+            String authorizationFingerprint,
+            String policyFingerprint,
+            Instant notBefore,
+            Instant expiresAt) {
+
+        /** Validates the bounded payload-free external authorization identity. */
+        public ExternalChangeAuthorizationReference {
+            trustDomain = required(trustDomain, "trustDomain", 255);
+            authorizationId = required(authorizationId, "authorizationId", 255);
+            authorizationFingerprint = required(
+                    authorizationFingerprint, "authorizationFingerprint", 80);
+            policyFingerprint = required(policyFingerprint, "policyFingerprint", 80);
+            notBefore = Objects.requireNonNull(notBefore, "notBefore");
+            expiresAt = Objects.requireNonNull(expiresAt, "expiresAt");
+            if (!FINGERPRINT.matcher(authorizationFingerprint).matches()
+                    || !FINGERPRINT.matcher(policyFingerprint).matches()
+                    || notBefore.getNano() % 1_000 != 0
+                    || expiresAt.getNano() % 1_000 != 0
+                    || !expiresAt.isAfter(notBefore)) {
+                throw new IllegalArgumentException(
+                        "Invalid external quarantine change authorization");
+            }
+        }
+    }
+
     /** Durable state of a checker decision for one exact discard claim. */
     public enum DiscardApprovalState {
         /** The independent checker decision is live and has not authorized a mutation yet. */
@@ -3602,7 +4196,11 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         /** Exact replay material expired, but its tombstone still forbids request-ID reuse. */
         REPLAY_WINDOW_EXPIRED,
         /** The run no longer has the exact checkpoint closure. */
-        STALE_CHECKPOINT
+        STALE_CHECKPOINT,
+        /** The same external authorization already belongs to another checker command. */
+        EXTERNAL_AUTHORIZATION_REUSED,
+        /** Database time rejected a premature or expired external authorization. */
+        EXTERNAL_AUTHORIZATION_TIME_INVALID
     }
 
     /**
@@ -3617,6 +4215,7 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
      * @param reasonCode rationale that a discard must repeat exactly
      * @param approvedAt database-clock decision time
      * @param approvalUntil database-clock deadline no later than the claim deadline
+     * @param externalAuthorization verified external governance authorization, absent on legacy rows
      * @param approvalFingerprint canonical immutable checker-decision fingerprint
      */
     public record DiscardApproval(
@@ -3629,7 +4228,24 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             String reasonCode,
             Instant approvedAt,
             Instant approvalUntil,
+            ExternalChangeAuthorizationReference externalAuthorization,
             String approvalFingerprint) {
+        /** Creates a readable legacy approval that has no external governance binding. */
+        public DiscardApproval(
+                String approvalId,
+                QuarantineKey key,
+                String claimOwner,
+                long claimVersion,
+                Instant claimUntil,
+                String approverId,
+                String reasonCode,
+                Instant approvedAt,
+                Instant approvalUntil,
+                String approvalFingerprint) {
+            this(approvalId, key, claimOwner, claimVersion, claimUntil, approverId,
+                    reasonCode, approvedAt, approvalUntil, null, approvalFingerprint);
+        }
+
         /** Validates a complete token-free checker decision. */
         public DiscardApproval {
             approvalId = required(approvalId, "approvalId", 36);
@@ -3694,6 +4310,16 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             return new DiscardApprovalResult(
                     DiscardApprovalDisposition.STALE_CHECKPOINT, null);
         }
+
+        private static DiscardApprovalResult externalAuthorizationReused() {
+            return new DiscardApprovalResult(
+                    DiscardApprovalDisposition.EXTERNAL_AUTHORIZATION_REUSED, null);
+        }
+
+        private static DiscardApprovalResult externalAuthorizationTimeInvalid() {
+            return new DiscardApprovalResult(
+                    DiscardApprovalDisposition.EXTERNAL_AUTHORIZATION_TIME_INVALID, null);
+        }
     }
 
     /** Stable result vocabulary for an approved discard command. */
@@ -3722,6 +4348,7 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
      * @param approvalId consumed checker approval identity
      * @param approverId distinct verified checker
      * @param approvalFingerprint immutable checker-decision fingerprint
+     * @param externalAuthorization consumed external governance authorization
      * @param reasonCode exact shared rationale
      * @param version resulting maintenance generation
      * @param actedAt database-clock discard time
@@ -3733,10 +4360,26 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             String approvalId,
             String approverId,
             String approvalFingerprint,
+            ExternalChangeAuthorizationReference externalAuthorization,
             String reasonCode,
             long version,
             Instant actedAt,
             String receiptFingerprint) {
+        /** Creates a readable legacy receipt that has no external governance binding. */
+        public ApprovedDiscardReceipt(
+                QuarantineKey key,
+                String ownerId,
+                String approvalId,
+                String approverId,
+                String approvalFingerprint,
+                String reasonCode,
+                long version,
+                Instant actedAt,
+                String receiptFingerprint) {
+            this(key, ownerId, approvalId, approverId, approvalFingerprint, null,
+                    reasonCode, version, actedAt, receiptFingerprint);
+        }
+
         /** Validates complete two-person evidence without exposing the claim token. */
         public ApprovedDiscardReceipt {
             key = Objects.requireNonNull(key, "key");
@@ -3817,6 +4460,7 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
      * @param approvalId consumed approval identity
      * @param approverId distinct verified checker identity
      * @param approvalFingerprint immutable checker-decision fingerprint
+     * @param externalAuthorization consumed external governance authorization
      * @param version resulting maintenance generation
      * @param actedAt database-clock discard time
      * @param receiptFingerprint immutable two-person receipt fingerprint
@@ -3835,10 +4479,35 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             String approvalId,
             String approverId,
             String approvalFingerprint,
+            ExternalChangeAuthorizationReference externalAuthorization,
             long version,
             Instant actedAt,
             String receiptFingerprint,
             String recordFingerprint) {
+        /** Creates readable legacy history that has no external governance binding. */
+        public ApprovedDiscardHistoryRecord(
+                String historyId,
+                QuarantineKey key,
+                WorkerCandidateDeferralReason quarantineReason,
+                long consecutiveFailures,
+                int quarantineThreshold,
+                Instant firstObservedAt,
+                Instant quarantinedAt,
+                String reasonCode,
+                String ownerId,
+                String approvalId,
+                String approverId,
+                String approvalFingerprint,
+                long version,
+                Instant actedAt,
+                String receiptFingerprint,
+                String recordFingerprint) {
+            this(historyId, key, quarantineReason, consecutiveFailures, quarantineThreshold,
+                    firstObservedAt, quarantinedAt, reasonCode, ownerId, approvalId, approverId,
+                    approvalFingerprint, null, version, actedAt, receiptFingerprint,
+                    recordFingerprint);
+        }
+
         /** Validates complete token-free two-person history. */
         public ApprovedDiscardHistoryRecord {
             historyId = required(historyId, "historyId", 36);
@@ -3985,6 +4654,12 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             String reasonCode,
             Instant approvedAt,
             Instant approvalUntil,
+            String externalTrustDomain,
+            String externalAuthorizationId,
+            String externalAuthorizationFingerprint,
+            String externalPolicyFingerprint,
+            Instant externalAuthorizationNotBefore,
+            Instant externalAuthorizationExpiresAt,
             String approvalState,
             String consumedByRequestId,
             Instant consumedAt,
@@ -4006,14 +4681,28 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
 
         private DiscardApproval external() {
             return new DiscardApproval(approvalId, key(), claimOwner, claimVersion, claimUntil,
-                    approverId, reasonCode, approvedAt, approvalUntil, approvalFingerprint);
+                    approverId, reasonCode, approvedAt, approvalUntil,
+                    externalAuthorization(), approvalFingerprint);
+        }
+
+        private ExternalChangeAuthorizationReference externalAuthorization() {
+            if (externalAuthorizationId.isBlank()) {
+                return null;
+            }
+            return new ExternalChangeAuthorizationReference(externalTrustDomain,
+                    externalAuthorizationId, externalAuthorizationFingerprint,
+                    externalPolicyFingerprint, externalAuthorizationNotBefore,
+                    externalAuthorizationExpiresAt);
         }
 
         private StoredDiscardApproval withApprovalFingerprint(String fingerprint) {
             return new StoredDiscardApproval(scopeKey, clientRequestId, approvalId, tenantId,
                     organizationId, projectId, environmentId, runId, checkpointFingerprint,
                     claimOwner, claimVersion, claimUntil, approverId, reasonCode, approvedAt,
-                    approvalUntil, approvalState, consumedByRequestId, consumedAt,
+                    approvalUntil, externalTrustDomain, externalAuthorizationId,
+                    externalAuthorizationFingerprint, externalPolicyFingerprint,
+                    externalAuthorizationNotBefore, externalAuthorizationExpiresAt,
+                    approvalState, consumedByRequestId, consumedAt,
                     requestFingerprint, fingerprint, recordFingerprint);
         }
 
@@ -4021,7 +4710,10 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             return new StoredDiscardApproval(scopeKey, clientRequestId, approvalId, tenantId,
                     organizationId, projectId, environmentId, runId, checkpointFingerprint,
                     claimOwner, claimVersion, claimUntil, approverId, reasonCode, approvedAt,
-                    approvalUntil, approvalState, consumedByRequestId, consumedAt,
+                    approvalUntil, externalTrustDomain, externalAuthorizationId,
+                    externalAuthorizationFingerprint, externalPolicyFingerprint,
+                    externalAuthorizationNotBefore, externalAuthorizationExpiresAt,
+                    approvalState, consumedByRequestId, consumedAt,
                     requestFingerprint, approvalFingerprint, fingerprint);
         }
 
@@ -4029,8 +4721,11 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             return new StoredDiscardApproval(scopeKey, clientRequestId, approvalId, tenantId,
                     organizationId, projectId, environmentId, runId, checkpointFingerprint,
                     claimOwner, claimVersion, claimUntil, approverId, reasonCode, approvedAt,
-                    approvalUntil, DiscardApprovalState.CONSUMED.name(), requestId, at,
-                    requestFingerprint, approvalFingerprint, "");
+                    approvalUntil, externalTrustDomain, externalAuthorizationId,
+                    externalAuthorizationFingerprint, externalPolicyFingerprint,
+                    externalAuthorizationNotBefore, externalAuthorizationExpiresAt,
+                    DiscardApprovalState.CONSUMED.name(),
+                    requestId, at, requestFingerprint, approvalFingerprint, "");
         }
     }
 
@@ -4053,6 +4748,12 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             long resultVersion,
             Instant resultActedAt,
             String resultApprovalFingerprint,
+            String externalTrustDomain,
+            String externalAuthorizationId,
+            String externalAuthorizationFingerprint,
+            String externalPolicyFingerprint,
+            Instant externalAuthorizationNotBefore,
+            Instant externalAuthorizationExpiresAt,
             String resultReceiptFingerprint,
             String recordFingerprint) {
         private WorkerAcquisitionScope scope() {
@@ -4066,8 +4767,18 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
 
         private ApprovedDiscardReceipt receipt() {
             return new ApprovedDiscardReceipt(key(), resolutionOwner, approvalId, approverId,
-                    resultApprovalFingerprint, reasonCode, resultVersion, resultActedAt,
-                    resultReceiptFingerprint);
+                    resultApprovalFingerprint, externalAuthorization(), reasonCode, resultVersion,
+                    resultActedAt, resultReceiptFingerprint);
+        }
+
+        private ExternalChangeAuthorizationReference externalAuthorization() {
+            if (externalAuthorizationId.isBlank()) {
+                return null;
+            }
+            return new ExternalChangeAuthorizationReference(externalTrustDomain,
+                    externalAuthorizationId, externalAuthorizationFingerprint,
+                    externalPolicyFingerprint, externalAuthorizationNotBefore,
+                    externalAuthorizationExpiresAt);
         }
 
         private StoredApprovedDiscardCommand withRecordFingerprint(String fingerprint) {
@@ -4075,7 +4786,10 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     organizationId, projectId, environmentId, runId, checkpointFingerprint,
                     resolutionOwner, claimVersion, claimUntil, approvalId, approverId,
                     reasonCode, requestFingerprint, resultVersion, resultActedAt,
-                    resultApprovalFingerprint, resultReceiptFingerprint, fingerprint);
+                    resultApprovalFingerprint, externalTrustDomain, externalAuthorizationId,
+                    externalAuthorizationFingerprint, externalPolicyFingerprint,
+                    externalAuthorizationNotBefore, externalAuthorizationExpiresAt,
+                    resultReceiptFingerprint, fingerprint);
         }
     }
 
@@ -4098,6 +4812,12 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             String approvalId,
             String approverId,
             String approvalFingerprint,
+            String externalTrustDomain,
+            String externalAuthorizationId,
+            String externalAuthorizationFingerprint,
+            String externalPolicyFingerprint,
+            Instant externalAuthorizationNotBefore,
+            Instant externalAuthorizationExpiresAt,
             long resultVersion,
             Instant actedAt,
             String receiptFingerprint,
@@ -4116,7 +4836,18 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     WorkerCandidateDeferralReason.valueOf(quarantineReason),
                     consecutiveFailures, quarantineThreshold, firstObservedAt, quarantinedAt,
                     reasonCode, resolutionOwner, approvalId, approverId, approvalFingerprint,
-                    resultVersion, actedAt, receiptFingerprint, recordFingerprint);
+                    externalAuthorization(), resultVersion, actedAt, receiptFingerprint,
+                    recordFingerprint);
+        }
+
+        private ExternalChangeAuthorizationReference externalAuthorization() {
+            if (externalAuthorizationId.isBlank()) {
+                return null;
+            }
+            return new ExternalChangeAuthorizationReference(externalTrustDomain,
+                    externalAuthorizationId, externalAuthorizationFingerprint,
+                    externalPolicyFingerprint, externalAuthorizationNotBefore,
+                    externalAuthorizationExpiresAt);
         }
 
         private StoredApprovedDiscardHistory withRecordFingerprint(String fingerprint) {
@@ -4124,8 +4855,49 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     organizationId, projectId, environmentId, runId, checkpointFingerprint,
                     quarantineReason, consecutiveFailures, quarantineThreshold, firstObservedAt,
                     quarantinedAt, reasonCode, resolutionOwner, approvalId, approverId,
-                    approvalFingerprint, resultVersion, actedAt, receiptFingerprint,
-                    fingerprint);
+                    approvalFingerprint, externalTrustDomain, externalAuthorizationId,
+                    externalAuthorizationFingerprint, externalPolicyFingerprint,
+                    externalAuthorizationNotBefore, externalAuthorizationExpiresAt,
+                    resultVersion, actedAt,
+                    receiptFingerprint, fingerprint);
+        }
+    }
+
+    private record StoredExternalChangeAuthorization(
+            String trustDomain,
+            String authorizationId,
+            String authorizationFingerprint,
+            String policyFingerprint,
+            Instant authorizationNotBefore,
+            Instant authorizationExpiresAt,
+            String scopeKey,
+            String approvalRequestId,
+            String approvalId,
+            String authorizationState,
+            Instant reservedAt,
+            String consumedByRequestId,
+            Instant consumedAt,
+            String recordFingerprint) {
+        private ExternalChangeAuthorizationReference external() {
+            return new ExternalChangeAuthorizationReference(trustDomain, authorizationId,
+                    authorizationFingerprint, policyFingerprint, authorizationNotBefore,
+                    authorizationExpiresAt);
+        }
+
+        private StoredExternalChangeAuthorization consumed(String requestId, Instant at) {
+            return new StoredExternalChangeAuthorization(trustDomain, authorizationId,
+                    authorizationFingerprint, policyFingerprint, authorizationNotBefore,
+                    authorizationExpiresAt, scopeKey, approvalRequestId, approvalId,
+                    "CONSUMED", reservedAt,
+                    requestId, at, "");
+        }
+
+        private StoredExternalChangeAuthorization withRecordFingerprint(String fingerprint) {
+            return new StoredExternalChangeAuthorization(trustDomain, authorizationId,
+                    authorizationFingerprint, policyFingerprint, authorizationNotBefore,
+                    authorizationExpiresAt, scopeKey, approvalRequestId, approvalId,
+                    authorizationState, reservedAt,
+                    consumedByRequestId, consumedAt, fingerprint);
         }
     }
 

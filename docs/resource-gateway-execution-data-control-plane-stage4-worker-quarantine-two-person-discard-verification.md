@@ -160,6 +160,9 @@ resource.gateway.test.runtime.worker.candidate.quarantines.discards.approved.his
 | approval row is changed out of band | discard fails closed before mutation |
 | history row is changed out of band | history read fails closed |
 | checker or maker audit append fails | complete authority transaction rolls back |
+| one external authorization is submitted for a second checker command | second reservation is rejected |
+| external authorization is premature or expired by database time | approval and reservation are absent |
+| external approval audit append fails | approval and authorization reservation both roll back |
 | metrics and health are scraped | only aggregate counts are exposed |
 
 ## Verification Gate
@@ -187,9 +190,11 @@ This is an in-process two-person database protocol, not a complete enterprise ap
 Actor separation is only as trustworthy as the configured identity provider and group lifecycle.
 The independent signed
 [change-authorization trust foundation](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-change-authorization-trust-verification.md)
-now verifies exact external policy, scope, and mutation bindings, but is not yet enforced by this API
-or atomically consumed by this database protocol. This flow therefore does not yet bind an external
-ticket, approval policy revision, device/session assurance, time-bound
+now verifies exact external policy, scope, and mutation bindings. Its database substrate uniquely
+reserves the authorization and atomically consumes it with discard while retaining the reference in
+v2 fingerprints, receipts, and history. The HTTP checker API does not yet require or verify that
+signed envelope, so callers still reach the legacy in-process path. This flow therefore does not yet
+enforce an external ticket, approval policy revision, device/session assurance, time-bound
 privileged access grant, or governance callback. Same-database fingerprints detect accidental or
 unsophisticated mutation but are not external WORM evidence.
 

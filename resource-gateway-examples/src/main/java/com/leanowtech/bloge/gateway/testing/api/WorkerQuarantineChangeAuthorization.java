@@ -126,10 +126,17 @@ public record WorkerQuarantineChangeAuthorization(
                     || !FINGERPRINT.matcher(scopeFingerprint).matches()
                     || !FINGERPRINT.matcher(subjectFingerprint).matches()
                     || !FINGERPRINT.matcher(policyFingerprint).matches()
+                    || !hasDatabasePrecision(issuedAt)
+                    || !hasDatabasePrecision(notBefore)
+                    || !hasDatabasePrecision(expiresAt)
                     || !expiresAt.isAfter(issuedAt) || !expiresAt.isAfter(notBefore)) {
                 throw new IllegalArgumentException(
                         "Worker quarantine change-authorization material is invalid");
             }
+        }
+
+        private static boolean hasDatabasePrecision(Instant instant) {
+            return instant.getNano() % 1_000 == 0;
         }
     }
 

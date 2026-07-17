@@ -20,6 +20,7 @@ import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -1080,6 +1081,111 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
     }
 
     @Test
+    void externalChangeAuthorizationIsReservedOnceConsumedAndRetainedAsEvidence() {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-external-auth",
+                Duration.ofMinutes(2), ignored -> TestRuntimeTransactionMutation.noop()).claim();
+        var external = externalAuthorization("change-auth-1", Instant.now());
+
+        var approved = controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
+                claim.version(), claim.claimUntil(), "checker-a", "approval-external-auth",
+                "AUTHORIZED_RETRY", Duration.ofMinutes(1), external,
+                ignored -> TestRuntimeTransactionMutation.noop());
+        var replayed = controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
+                claim.version(), claim.claimUntil(), "checker-a", "approval-external-auth",
+                "AUTHORIZED_RETRY", Duration.ofMinutes(1), external,
+                ignored -> TestRuntimeTransactionMutation.noop());
+        var reused = controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
+                claim.version(), claim.claimUntil(), "checker-b", "approval-external-auth-2",
+                "AUTHORIZED_RETRY", Duration.ofMinutes(1), external,
+                ignored -> TestRuntimeTransactionMutation.noop());
+
+        assertThat(approved.disposition()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.DiscardApprovalDisposition.APPROVED);
+        assertThat(approved.approval().externalAuthorization()).isEqualTo(external);
+        assertThat(replayed.approval()).isEqualTo(approved.approval());
+        assertThat(reused.disposition()).isEqualTo(DatabaseDurableWorkerQuarantineControlPlane
+                .DiscardApprovalDisposition.EXTERNAL_AUTHORIZATION_REUSED);
+        assertThat(database.jdbc().queryForObject("""
+                SELECT authorization_state
+                FROM rg_test_durable_worker_quarantine_change_authorizations
+                WHERE trust_domain = ? AND authorization_id = ?
+                """, String.class, external.trustDomain(), external.authorizationId()))
+                .isEqualTo("RESERVED");
+
+        var discarded = controlPlane.discard(workerScope(), claim,
+                approved.approval().approvalId(), "discard-external-auth", "AUTHORIZED_RETRY",
+                ignored -> TestRuntimeTransactionMutation.noop());
+
+        assertThat(discarded.disposition()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.ApprovedDiscardDisposition.DISCARDED);
+        assertThat(discarded.receipt().externalAuthorization()).isEqualTo(external);
+        assertThat(database.jdbc().queryForObject("""
+                SELECT authorization_state
+                FROM rg_test_durable_worker_quarantine_change_authorizations
+                WHERE trust_domain = ? AND authorization_id = ?
+                """, String.class, external.trustDomain(), external.authorizationId()))
+                .isEqualTo("CONSUMED");
+        assertThat(controlPlane.discardHistory(workerScope(), 10)).singleElement()
+                .satisfies(history -> assertThat(history.externalAuthorization())
+                        .isEqualTo(external));
+    }
+
+    @Test
+    void databaseTimeRejectsInvalidAuthorizationWindowsAndAuditRollbackReleasesReservation() {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claim = controlPlane.claim(workerScope(), key, "operator-a",
+                "claim-external-auth-window", Duration.ofMinutes(2),
+                ignored -> TestRuntimeTransactionMutation.noop()).claim();
+        Instant now = Instant.now();
+        var expired = new DatabaseDurableWorkerQuarantineControlPlane
+                .ExternalChangeAuthorizationReference("governance.example",
+                "change-auth-expired", SHA_A, SHA_B, now.minusSeconds(10),
+                now.minusSeconds(5));
+        var premature = new DatabaseDurableWorkerQuarantineControlPlane
+                .ExternalChangeAuthorizationReference("governance.example",
+                "change-auth-premature", SHA_A, SHA_B, now.plusSeconds(30),
+                now.plusSeconds(60));
+
+        assertThat(controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
+                claim.version(), claim.claimUntil(), "checker-a", "approval-expired-auth",
+                "AUTHORIZED_RETRY", Duration.ofMinutes(1), expired,
+                ignored -> TestRuntimeTransactionMutation.noop()).disposition())
+                .isEqualTo(DatabaseDurableWorkerQuarantineControlPlane
+                        .DiscardApprovalDisposition.EXTERNAL_AUTHORIZATION_TIME_INVALID);
+        assertThat(controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
+                claim.version(), claim.claimUntil(), "checker-a", "approval-premature-auth",
+                "AUTHORIZED_RETRY", Duration.ofMinutes(1), premature,
+                ignored -> TestRuntimeTransactionMutation.noop()).disposition())
+                .isEqualTo(DatabaseDurableWorkerQuarantineControlPlane
+                        .DiscardApprovalDisposition.EXTERNAL_AUTHORIZATION_TIME_INVALID);
+
+        var valid = externalAuthorization("change-auth-rollback", now);
+        assertThatThrownBy(() -> controlPlane.approveDiscard(workerScope(), key,
+                claim.ownerId(), claim.version(), claim.claimUntil(), "checker-a",
+                "approval-external-rollback", "AUTHORIZED_RETRY", Duration.ofMinutes(1),
+                valid, ignored -> jdbc -> {
+                    throw new IllegalStateException("external approval audit unavailable");
+                })).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("external approval audit unavailable");
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_durable_worker_quarantine_change_authorizations
+                """, Integer.class)).isZero();
+
+        assertThat(controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
+                claim.version(), claim.claimUntil(), "checker-a",
+                "approval-external-rollback", "AUTHORIZED_RETRY", Duration.ofMinutes(1),
+                valid, ignored -> TestRuntimeTransactionMutation.noop()).disposition())
+                .isEqualTo(DatabaseDurableWorkerQuarantineControlPlane
+                        .DiscardApprovalDisposition.APPROVED);
+    }
+
+    @Test
     void expiredApprovalCannotAuthorizeDiscardEvenWhileTheMakerClaimRemainsLive()
             throws Exception {
         DurableTestExecutionCheckpoint checkpoint = createQuarantine();
@@ -1897,6 +2003,15 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
                 claim.version(), claim.claimUntil(), approver, requestId,
                 "AUTHORIZED_RETRY", Duration.ofMinutes(1),
                 ignored -> TestRuntimeTransactionMutation.noop()).approval();
+    }
+
+    private static DatabaseDurableWorkerQuarantineControlPlane
+            .ExternalChangeAuthorizationReference externalAuthorization(
+            String authorizationId, Instant observedAt) {
+        Instant normalized = observedAt.truncatedTo(ChronoUnit.MICROS);
+        return new DatabaseDurableWorkerQuarantineControlPlane
+                .ExternalChangeAuthorizationReference("governance.example", authorizationId,
+                SHA_A, SHA_B, normalized.minusSeconds(5), normalized.plusSeconds(60));
     }
 
     private static WorkerQuarantineClaimTokenProtector tokenProtector(

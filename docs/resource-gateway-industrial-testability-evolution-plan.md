@@ -219,8 +219,12 @@ Schema、shaded CLI 与 public JavaDoc；Resource Gateway `clean verify` 执行 
 opaque authorization id、identity-derived scope fingerprint、精确 mutation subject fingerprint 与时间窗，
 不包含 ticket 文本、scope/actor 原值、claim token、credential 或业务 payload。模型和 verifier 已以
 8 个真实签名测试覆盖 quorum、binding/policy/time/material/signature/key lifecycle/config 反例。当前仅
-完成 trust foundation，尚未接入 checker API、数据库时钟、唯一占用和一次性消费，因此外部工单绑定
-仍不得宣称关闭。验证见
+完成 trust foundation；第二阶段已新增独立授权 authority table，以数据库时钟复核窗口、authorization
+id/material fingerprint 双重唯一预留，并在销毁事务中连同 checker approval 原子消费，同时将外部引用
+写入 v2 approval/receipt/command/history 指纹与证据。旧 v1 行保持原指纹可读。当前尚未把签名信封、
+scope/subject 推导和 verifier 接入 checker HTTP API，也未完成 Schema/config/readiness/capability，因此
+外部工单强制绑定仍不得宣称关闭。持久化控制面 50 tests 已覆盖重复占用、窗口、审计回滚和证据保留。
+验证见
 [Stage 4 worker-quarantine change-authorization trust verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-change-authorization-trust-verification.md)。
 
 同步 terminal recovery 的进程内 coordinator 现在先用原 dispatch 完成一次认证 heartbeat，确保
