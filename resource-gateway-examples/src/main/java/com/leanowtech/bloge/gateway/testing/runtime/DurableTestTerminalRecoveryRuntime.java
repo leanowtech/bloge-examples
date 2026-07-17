@@ -12,7 +12,7 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureConsumptionStateSnapsh
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Prepares one server-owned cold-signal recovery that must reach a terminal BLOGE boundary. */
+/** Prepares one server-owned cold-signal recovery at a stable suspended or terminal boundary. */
 public class DurableTestTerminalRecoveryRuntime {
 
     private final IndependentDurableTestEngineFactory engineFactory;
@@ -51,6 +51,38 @@ public class DurableTestTerminalRecoveryRuntime {
             String signalNodeId,
             Object signalData,
             String checkpointRef) {
+        PreparedRecoveryStep step = prepareStep(
+                checkpoint, authorized, signalNodeId, signalData, checkpointRef);
+        if (!step.outcome().terminal()) {
+            step.close();
+            throw new NonTerminalBoundaryException();
+        }
+        return new PreparedTerminalRecovery(
+                step.engineStateMutation(), step.fixtureConsumptionState(),
+                step.executionServiceState(), step.outcome().terminalOutcome(), step);
+    }
+
+    /**
+     * Runs one signal synchronously and accepts either one new signal suspension or a terminal
+     * BLOGE lifecycle.
+     *
+     * <p>The returned object owns the staged engine session. Its mutation must be applied in the
+     * same transaction as the next fenced control checkpoint; closing it first discards the entire
+     * speculative recovery step.</p>
+     *
+     * @param checkpoint exact live checkpoint owned by the source dispatch
+     * @param authorized freshly reconstructed executable authorization closure
+     * @param signalNodeId exact currently suspended signal node
+     * @param signalData caller signal value retained only by the in-memory invocation
+     * @param checkpointRef server-derived next checkpoint reference
+     * @return prepared suspended or terminal recovery step
+     */
+    public PreparedRecoveryStep prepareStep(
+            DurableTestExecutionCheckpoint checkpoint,
+            DurableTestRecoveryAuthorizer.AuthorizedRecovery authorized,
+            String signalNodeId,
+            Object signalData,
+            String checkpointRef) {
         Objects.requireNonNull(checkpoint, "checkpoint");
         DurableTestRecoveryAuthorizer.AuthorizedRecovery requiredAuthorization =
                 Objects.requireNonNull(authorized, "authorized");
@@ -61,16 +93,17 @@ public class DurableTestTerminalRecoveryRuntime {
         try {
             IndependentDurableTestEngineFactory.RecoveryBoundary boundary =
                     session.signalAndAwait(requiredAuthorization.graph(), signalNodeId, signalData);
-            DurableTestRecoveryTerminalReceipt.ExecutionOutcome outcome = outcome(
+            DurableTestExecutionCheckpointRepository.RecoveryStepOutcome outcome = stepOutcome(
                     boundary.executionStatus());
             if (outcome == null) {
-                throw new NonTerminalBoundaryException();
+                throw new IllegalStateException(
+                        "Recovery did not reach a supported stable lifecycle boundary");
             }
             IndependentDurableTestEngineFactory.PreparedRecovery prepared =
                     session.prepare(checkpointRef);
             ExecutionServiceStateSnapshot providerState =
                     requiredAuthorization.control().executionServices().snapshotState();
-            return new PreparedTerminalRecovery(
+            return new PreparedRecoveryStep(
                     prepared.engineStateMutation(), prepared.fixtureConsumptionState(),
                     providerState, outcome, session);
         } catch (RuntimeException | Error failure) {
@@ -79,15 +112,20 @@ public class DurableTestTerminalRecoveryRuntime {
         }
     }
 
-    private static DurableTestRecoveryTerminalReceipt.ExecutionOutcome outcome(
+    private static DurableTestExecutionCheckpointRepository.RecoveryStepOutcome stepOutcome(
             ExecutionStatus status) {
         return switch (status) {
-            case COMPLETED -> DurableTestRecoveryTerminalReceipt.ExecutionOutcome.COMPLETED;
-            case FAILED -> DurableTestRecoveryTerminalReceipt.ExecutionOutcome.FAILED;
+            case SUSPENDED ->
+                    DurableTestExecutionCheckpointRepository.RecoveryStepOutcome.SUSPENDED;
+            case COMPLETED ->
+                    DurableTestExecutionCheckpointRepository.RecoveryStepOutcome.COMPLETED;
+            case FAILED -> DurableTestExecutionCheckpointRepository.RecoveryStepOutcome.FAILED;
             case FAILED_RECOVERY ->
-                    DurableTestRecoveryTerminalReceipt.ExecutionOutcome.FAILED_RECOVERY;
-            case CANCELLED -> DurableTestRecoveryTerminalReceipt.ExecutionOutcome.CANCELLED;
-            case TERMINATED -> DurableTestRecoveryTerminalReceipt.ExecutionOutcome.TERMINATED;
+                    DurableTestExecutionCheckpointRepository.RecoveryStepOutcome.FAILED_RECOVERY;
+            case CANCELLED ->
+                    DurableTestExecutionCheckpointRepository.RecoveryStepOutcome.CANCELLED;
+            case TERMINATED ->
+                    DurableTestExecutionCheckpointRepository.RecoveryStepOutcome.TERMINATED;
             default -> null;
         };
     }
@@ -97,6 +135,79 @@ public class DurableTestTerminalRecoveryRuntime {
         /** Creates the stable terminal-policy failure without embedding business state. */
         public NonTerminalBoundaryException() {
             super("Recovery reached a non-terminal boundary");
+        }
+    }
+
+    /**
+     * Server-derived suspended or terminal closure retained with its staged engine session.
+     *
+     * <p>This is a transaction handoff, not a serializable worker payload. Closing it invalidates
+     * the uncommitted four-store mutation.</p>
+     */
+    public static class PreparedRecoveryStep implements AutoCloseable {
+        private final DurableTestExecutionCheckpointRepository.BoundEngineStateMutation mutation;
+        private final FixtureConsumptionStateSnapshot fixtureState;
+        private final ExecutionServiceStateSnapshot serviceState;
+        private final DurableTestExecutionCheckpointRepository.RecoveryStepOutcome outcome;
+        private final AutoCloseable session;
+        private final AtomicBoolean closed = new AtomicBoolean();
+
+        /**
+         * Creates one complete prepared recovery-step value.
+         *
+         * @param mutation exact staged BLOGE aggregate mutation
+         * @param fixtureState cumulative fixture cursor at the stable boundary
+         * @param serviceState deterministic provider state at the stable boundary
+         * @param outcome suspended or terminal boundary outcome
+         * @param session open staged session owning the mutation
+         */
+        public PreparedRecoveryStep(
+                DurableTestExecutionCheckpointRepository.BoundEngineStateMutation mutation,
+                FixtureConsumptionStateSnapshot fixtureState,
+                ExecutionServiceStateSnapshot serviceState,
+                DurableTestExecutionCheckpointRepository.RecoveryStepOutcome outcome,
+                AutoCloseable session) {
+            this.mutation = Objects.requireNonNull(mutation, "mutation");
+            this.fixtureState = Objects.requireNonNull(fixtureState, "fixtureState");
+            this.serviceState = Objects.requireNonNull(serviceState, "serviceState");
+            this.outcome = Objects.requireNonNull(outcome, "outcome");
+            this.session = Objects.requireNonNull(session, "session");
+        }
+
+        /** @return exact staged BLOGE aggregate mutation */
+        public DurableTestExecutionCheckpointRepository.BoundEngineStateMutation
+                engineStateMutation() {
+            return mutation;
+        }
+
+        /** @return cumulative payload-free fixture cursor */
+        public FixtureConsumptionStateSnapshot fixtureConsumptionState() {
+            return fixtureState;
+        }
+
+        /** @return deterministic provider state at the next boundary */
+        public ExecutionServiceStateSnapshot executionServiceState() {
+            return serviceState;
+        }
+
+        /** @return suspended or terminal recovery-step outcome */
+        public DurableTestExecutionCheckpointRepository.RecoveryStepOutcome outcome() {
+            return outcome;
+        }
+
+        /** Releases the isolated engine and invalidates any uncommitted staged mutation. */
+        @Override
+        public void close() {
+            if (closed.compareAndSet(false, true)) {
+                try {
+                    session.close();
+                } catch (RuntimeException runtime) {
+                    throw runtime;
+                } catch (Exception checked) {
+                    throw new IllegalStateException(
+                            "Durable recovery-step session could not close", checked);
+                }
+            }
         }
     }
 

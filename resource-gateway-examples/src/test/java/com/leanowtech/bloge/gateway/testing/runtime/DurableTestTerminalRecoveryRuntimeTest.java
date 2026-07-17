@@ -85,6 +85,24 @@ class DurableTestTerminalRecoveryRuntimeTest {
         when(session.signalAndAwait(authorized.graph(), "wait", "approved")).thenReturn(
                 new IndependentDurableTestEngineFactory.RecoveryBoundary(
                         ExecutionStatus.SUSPENDED, "wait-again", "SUSPEND", 4));
+        FixtureConsumptionStateSnapshot fixture = mock(FixtureConsumptionStateSnapshot.class);
+        com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore
+                .PreparedMutation mutation = mock(
+                com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore
+                        .PreparedMutation.class);
+        DurableTestExecutionCheckpoint.EngineState engineState =
+                new DurableTestExecutionCheckpoint.EngineState(
+                        "step:checkpoint", "wait-again", "SUSPEND", 4, 4,
+                        "sha256:" + "b".repeat(64));
+        when(mutation.engineState()).thenReturn(engineState);
+        IndependentDurableTestEngineFactory.PreparedRecovery prepared =
+                new IndependentDurableTestEngineFactory.PreparedRecovery(
+                        mutation, fixture,
+                        new IndependentDurableTestEngineFactory.RecoveryBoundary(
+                                ExecutionStatus.SUSPENDED, "wait-again", "SUSPEND", 4));
+        when(session.prepare(any())).thenReturn(prepared);
+        when(authorized.control().executionServices().snapshotState())
+                .thenReturn(mock(ExecutionServiceStateSnapshot.class));
         DurableTestTerminalRecoveryRuntime runtime = new DurableTestTerminalRecoveryRuntime(
                 factory, runtimeOptions, new ObjectMapper().findAndRegisterModules());
 
@@ -92,6 +110,54 @@ class DurableTestTerminalRecoveryRuntimeTest {
                 checkpoint, authorized, "wait", "approved", "terminal:checkpoint"))
                 .isInstanceOf(DurableTestTerminalRecoveryRuntime
                         .NonTerminalBoundaryException.class);
+        verify(session).close();
+    }
+
+    @Test
+    void retainsPreparedSuspensionForAtomicRecoveryStepCommit() {
+        IndependentDurableTestEngineFactory factory = mock(
+                IndependentDurableTestEngineFactory.class);
+        CompiledTestRuntimeOptions runtimeOptions = mock(CompiledTestRuntimeOptions.class);
+        IndependentDurableTestEngineFactory.RecoverySession session = mock(
+                IndependentDurableTestEngineFactory.RecoverySession.class);
+        DurableTestExecutionCheckpoint checkpoint = mock(DurableTestExecutionCheckpoint.class);
+        DurableTestRecoveryAuthorizer.AuthorizedRecovery authorized = authorized();
+        ExecutionOptions options = ExecutionOptions.builder().build();
+        when(runtimeOptions.options(eq(authorized.control()), any())).thenReturn(options);
+        when(factory.openRecoverySession(eq(checkpoint), any(), eq(options))).thenReturn(session);
+        IndependentDurableTestEngineFactory.RecoveryBoundary boundary =
+                new IndependentDurableTestEngineFactory.RecoveryBoundary(
+                        ExecutionStatus.SUSPENDED, "wait-next", "SUSPEND", 7);
+        when(session.signalAndAwait(authorized.graph(), "wait", "approved"))
+                .thenReturn(boundary);
+        FixtureConsumptionStateSnapshot fixture = mock(FixtureConsumptionStateSnapshot.class);
+        com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore
+                .PreparedMutation mutation = mock(
+                com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore
+                        .PreparedMutation.class);
+        DurableTestExecutionCheckpoint.EngineState engineState =
+                new DurableTestExecutionCheckpoint.EngineState(
+                        "step:checkpoint", "wait-next", "SUSPEND", 5, 7,
+                        "sha256:" + "c".repeat(64));
+        when(mutation.engineState()).thenReturn(engineState);
+        IndependentDurableTestEngineFactory.PreparedRecovery recovery =
+                new IndependentDurableTestEngineFactory.PreparedRecovery(
+                        mutation, fixture, boundary);
+        when(session.prepare("step:checkpoint")).thenReturn(recovery);
+        ExecutionServiceStateSnapshot services = mock(ExecutionServiceStateSnapshot.class);
+        when(authorized.control().executionServices().snapshotState()).thenReturn(services);
+        DurableTestTerminalRecoveryRuntime runtime = new DurableTestTerminalRecoveryRuntime(
+                factory, runtimeOptions, new ObjectMapper().findAndRegisterModules());
+
+        DurableTestTerminalRecoveryRuntime.PreparedRecoveryStep prepared = runtime.prepareStep(
+                checkpoint, authorized, "wait", "approved", "step:checkpoint");
+
+        assertThat(prepared.outcome()).isEqualTo(
+                DurableTestExecutionCheckpointRepository.RecoveryStepOutcome.SUSPENDED);
+        assertThat(prepared.engineStateMutation()).isSameAs(mutation);
+        assertThat(prepared.fixtureConsumptionState()).isSameAs(fixture);
+        assertThat(prepared.executionServiceState()).isSameAs(services);
+        prepared.close();
         verify(session).close();
     }
 

@@ -373,6 +373,41 @@ public interface DurableTestExecutionCheckpointRepository {
             String requestFingerprint);
 
     /**
+     * Atomically commits one cold-signal recovery step at either a new suspension or a terminal
+     * boundary.
+     *
+     * <p>A suspended step relinquishes its recovery lease at the database linearization time, so a
+     * later worker acquisition must freshly authorize and claim the new checkpoint. A terminal
+     * step additionally creates the same promotion-blocking receipt used by the terminal-only v1
+     * protocol. Engine state, control checkpoint, immutable command result, optional receipt, and
+     * companion mutation share one local commit decision.</p>
+     *
+     * @param command exact source dispatch, resulting boundary, and idempotency identity
+     * @param engineStateMutation exact BLOGE aggregate mutation represented by the command
+     * @param companionMutation local payload-free audit or evidence write
+     * @return immutable suspended or terminal step result
+     */
+    RecoveryStepResult advanceRecoveryStepIdempotently(
+            RecoveryStepCommand command,
+            BoundEngineStateMutation engineStateMutation,
+            TestRuntimeTransactionMutation companionMutation);
+
+    /**
+     * Resolves an immutable recovery-step result before dispatch lookup or engine execution.
+     *
+     * @param tenantId verified tenant authority
+     * @param environmentId verified non-production environment
+     * @param clientRequestId caller-stable recovery-step idempotency key
+     * @param requestFingerprint server-derived authenticated step intent
+     * @return exact committed result marked as a replay, or empty
+     */
+    Optional<RecoveryStepResult> findRecoveryStepResult(
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            String requestFingerprint);
+
+    /**
      * Authenticated payload-free intent used to reserve an initial durable execution.
      *
      * @param clientRequestId caller-stable idempotency key scoped by tenant/environment
@@ -1383,6 +1418,181 @@ public interface DurableTestExecutionCheckpointRepository {
                     != DurableTestExecutionCheckpoint.Status.TERMINAL) {
                 throw new IllegalArgumentException(
                         "Recovery terminal receipt must bind its terminal checkpoint");
+            }
+        }
+    }
+
+    /** Stable boundary outcome for one cold-signal recovery step. */
+    enum RecoveryStepOutcome {
+        /** The signal reached exactly one new restorable signal suspension. */
+        SUSPENDED(null),
+        /** BLOGE completed successfully. */
+        COMPLETED(DurableTestRecoveryTerminalReceipt.ExecutionOutcome.COMPLETED),
+        /** BLOGE reached a business failure. */
+        FAILED(DurableTestRecoveryTerminalReceipt.ExecutionOutcome.FAILED),
+        /** BLOGE recovery itself failed. */
+        FAILED_RECOVERY(DurableTestRecoveryTerminalReceipt.ExecutionOutcome.FAILED_RECOVERY),
+        /** BLOGE execution was cancelled. */
+        CANCELLED(DurableTestRecoveryTerminalReceipt.ExecutionOutcome.CANCELLED),
+        /** BLOGE execution was administratively terminated. */
+        TERMINATED(DurableTestRecoveryTerminalReceipt.ExecutionOutcome.TERMINATED);
+
+        private final DurableTestRecoveryTerminalReceipt.ExecutionOutcome terminalOutcome;
+
+        RecoveryStepOutcome(
+                DurableTestRecoveryTerminalReceipt.ExecutionOutcome terminalOutcome) {
+            this.terminalOutcome = terminalOutcome;
+        }
+
+        /**
+         * Returns whether this boundary ends the durable execution.
+         *
+         * @return {@code true} for every outcome except {@link #SUSPENDED}
+         */
+        public boolean terminal() {
+            return terminalOutcome != null;
+        }
+
+        /**
+         * Returns the terminal receipt outcome.
+         *
+         * @return terminal outcome
+         * @throws IllegalStateException when this is the suspended outcome
+         */
+        public DurableTestRecoveryTerminalReceipt.ExecutionOutcome terminalOutcome() {
+            if (terminalOutcome == null) {
+                throw new IllegalStateException(
+                        "A suspended recovery step has no terminal execution outcome");
+            }
+            return terminalOutcome;
+        }
+    }
+
+    /**
+     * Idempotent command for one signal and its next stable durable boundary.
+     *
+     * @param clientRequestId caller-stable key scoped by dispatch tenant and environment
+     * @param requestFingerprint server-derived authenticated signal-intent fingerprint
+     * @param expectedDispatch exact current dispatch consumed by this step
+     * @param outcome next suspended or terminal BLOGE boundary
+     * @param engineState exact next BLOGE aggregate identity
+     * @param fixtureConsumptionState cumulative fixture cursor at the next boundary
+     * @param executionServiceState deterministic-provider state at the next boundary
+     * @param evidenceGapCodes explicit reasons this step cannot certify complete historical trace
+     */
+    record RecoveryStepCommand(
+            String clientRequestId,
+            String requestFingerprint,
+            DurableTestRecoveryDispatch expectedDispatch,
+            RecoveryStepOutcome outcome,
+            DurableTestExecutionCheckpoint.EngineState engineState,
+            FixtureConsumptionStateSnapshot fixtureConsumptionState,
+            ExecutionServiceStateSnapshot executionServiceState,
+            List<String> evidenceGapCodes) {
+        private static final Pattern IDENTIFIER =
+                Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
+        private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+        private static final Pattern GAP_CODE = Pattern.compile("[A-Z][A-Z0-9_.-]{0,127}");
+
+        /** Rejects ambiguous boundary identity and implicit evidence completeness. */
+        public RecoveryStepCommand {
+            clientRequestId = requiredStepValue(clientRequestId, "clientRequestId");
+            if (!IDENTIFIER.matcher(clientRequestId).matches()) {
+                throw new IllegalArgumentException(
+                        "clientRequestId must be a bounded stable identifier");
+            }
+            requestFingerprint = requiredStepValue(
+                    requestFingerprint, "requestFingerprint");
+            if (!FINGERPRINT.matcher(requestFingerprint).matches()) {
+                throw new IllegalArgumentException(
+                        "requestFingerprint must be a canonical SHA-256 fingerprint");
+            }
+            expectedDispatch = Objects.requireNonNull(expectedDispatch, "expectedDispatch");
+            outcome = Objects.requireNonNull(outcome, "outcome");
+            engineState = Objects.requireNonNull(engineState, "engineState");
+            fixtureConsumptionState = Objects.requireNonNull(
+                    fixtureConsumptionState, "fixtureConsumptionState");
+            executionServiceState = Objects.requireNonNull(
+                    executionServiceState, "executionServiceState");
+            if (!expectedDispatch.authorization().planFingerprint().equals(
+                    executionServiceState.planFingerprint())) {
+                throw new IllegalArgumentException(
+                        "Recovery-step provider state must bind the authorized plan");
+            }
+            if (outcome == RecoveryStepOutcome.SUSPENDED
+                    && !"SUSPEND".equals(engineState.boundaryType())) {
+                throw new IllegalArgumentException(
+                        "A suspended recovery step requires a SUSPEND engine boundary");
+            }
+            if (outcome.terminal() && "SUSPEND".equals(engineState.boundaryType())) {
+                throw new IllegalArgumentException(
+                        "A terminal recovery step cannot retain a SUSPEND engine boundary");
+            }
+            if (evidenceGapCodes == null || evidenceGapCodes.isEmpty()
+                    || evidenceGapCodes.size() > 32) {
+                throw new IllegalArgumentException(
+                        "At least one bounded evidence gap is required");
+            }
+            List<String> normalizedGaps = evidenceGapCodes.stream()
+                    .map(value -> requiredStepValue(value, "evidence gap")
+                            .toUpperCase(Locale.ROOT))
+                    .peek(value -> {
+                        if (!GAP_CODE.matcher(value).matches()) {
+                            throw new IllegalArgumentException(
+                                    "Evidence gap must be a bounded stable code");
+                        }
+                    })
+                    .distinct()
+                    .sorted()
+                    .toList();
+            if (normalizedGaps.size() != evidenceGapCodes.size()) {
+                throw new IllegalArgumentException("Evidence gaps must be unique");
+            }
+            evidenceGapCodes = normalizedGaps;
+        }
+
+        private static String requiredStepValue(String value, String field) {
+            String normalized = value == null ? "" : value.trim();
+            if (normalized.isBlank()) {
+                throw new IllegalArgumentException(field + " is required");
+            }
+            return normalized;
+        }
+    }
+
+    /**
+     * Immutable result of one recovery step.
+     *
+     * @param outcome suspended or terminal boundary outcome
+     * @param checkpoint exact resulting checkpoint
+     * @param terminalReceipt terminal receipt, present only for terminal outcomes
+     * @param idempotentReplay whether an earlier committed result was replayed
+     */
+    record RecoveryStepResult(
+            RecoveryStepOutcome outcome,
+            DurableTestExecutionCheckpoint checkpoint,
+            DurableTestRecoveryTerminalReceipt terminalReceipt,
+            boolean idempotentReplay) {
+        /** Enforces the mutually exclusive suspended and terminal result shapes. */
+        public RecoveryStepResult {
+            outcome = Objects.requireNonNull(outcome, "outcome");
+            checkpoint = Objects.requireNonNull(checkpoint, "checkpoint");
+            if (outcome.terminal()) {
+                terminalReceipt = Objects.requireNonNull(
+                        terminalReceipt, "terminalReceipt");
+                if (checkpoint.lifecycle().status()
+                        != DurableTestExecutionCheckpoint.Status.TERMINAL
+                        || !terminalReceipt.terminalCheckpointFingerprint().equals(
+                        checkpoint.checkpointFingerprint())
+                        || terminalReceipt.executionOutcome() != outcome.terminalOutcome()) {
+                    throw new IllegalArgumentException(
+                            "Terminal recovery-step receipt must bind its outcome and checkpoint");
+                }
+            } else if (terminalReceipt != null
+                    || checkpoint.lifecycle().status()
+                    != DurableTestExecutionCheckpoint.Status.SUSPENDED) {
+                throw new IllegalArgumentException(
+                        "Suspended recovery-step result cannot carry a terminal receipt");
             }
         }
     }

@@ -988,6 +988,237 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     }
 
     @Test
+    void recoveryStepAtomicallyCommitsSuspensionReleasesLeaseAndReplaysWithoutMutation() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(
+                        resumeCommand(expired, "resume-request-1", SHA_D, "instance-b"));
+        DurableTestExecutionCheckpoint.EngineState suspendedEngine =
+                suspendedEngineState(claimed.checkpoint());
+        DurableTestExecutionCheckpointRepository.RecoveryStepCommand command = stepCommand(
+                claimed, "step-request-1", SHA_B,
+                DurableTestExecutionCheckpointRepository.RecoveryStepOutcome.SUSPENDED,
+                suspendedEngine);
+        AtomicBoolean mutationRan = new AtomicBoolean();
+
+        DurableTestExecutionCheckpointRepository.RecoveryStepResult first =
+                repository.advanceRecoveryStepIdempotently(
+                        command,
+                        mutation(claimed.checkpoint().engineExecutionId(), suspendedEngine,
+                                jdbc -> {
+                                    mutationRan.set(true);
+                                    jdbc.update(
+                                            "INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
+                                            "step-suspended",
+                                            claimed.checkpoint().engineExecutionId(),
+                                            suspendedEngine.stateVersion());
+                                }),
+                        TestRuntimeTransactionMutation.noop());
+
+        assertThat(mutationRan).isTrue();
+        assertThat(first.idempotentReplay()).isFalse();
+        assertThat(first.outcome()).isEqualTo(
+                DurableTestExecutionCheckpointRepository.RecoveryStepOutcome.SUSPENDED);
+        assertThat(first.terminalReceipt()).isNull();
+        assertThat(first.checkpoint().lifecycle().status())
+                .isEqualTo(DurableTestExecutionCheckpoint.Status.SUSPENDED);
+        assertThat(first.checkpoint().lifecycle().leaseExpiresAt())
+                .isEqualTo(first.checkpoint().lifecycle().updatedAt());
+        assertThat(first.checkpoint().lifecycle().revision())
+                .isEqualTo(claimed.checkpoint().lifecycle().revision() + 1);
+        assertThat(repository.findExpiredRecoveryCandidates(
+                new DurableTestExecutionCheckpointRepository.RecoveryCandidateQuery(
+                        workerScope(), 10)).candidates())
+                .extracting(candidate -> candidate.checkpoint().checkpointFingerprint())
+                .contains(first.checkpoint().checkpointFingerprint());
+
+        assertThat(repository.findRecoveryStepResult(
+                "tenant-a", "test", "step-request-1", SHA_B)).get()
+                .satisfies(replay -> {
+                    assertThat(replay.idempotentReplay()).isTrue();
+                    assertThat(replay.checkpoint()).isEqualTo(first.checkpoint());
+                    assertThat(replay.terminalReceipt()).isNull();
+                });
+        mutationRan.set(false);
+        DurableTestExecutionCheckpointRepository.RecoveryStepResult replay =
+                repository.advanceRecoveryStepIdempotently(
+                        command,
+                        mutation(claimed.checkpoint().engineExecutionId(), suspendedEngine,
+                                ignored -> mutationRan.set(true)),
+                        TestRuntimeTransactionMutation.noop());
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(mutationRan).isFalse();
+        assertThat(engineCandidateCount("step-suspended")).isEqualTo(1);
+    }
+
+    @Test
+    void recoveryStepTerminalOutcomeRetainsPromotionBlockingReceipt() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(
+                        resumeCommand(expired, "resume-request-1", SHA_D, "instance-b"));
+        DurableTestExecutionCheckpoint.EngineState terminalEngine =
+                terminalEngineState(claimed.checkpoint());
+        DurableTestExecutionCheckpointRepository.RecoveryStepCommand command = stepCommand(
+                claimed, "step-request-terminal", SHA_B,
+                DurableTestExecutionCheckpointRepository.RecoveryStepOutcome.COMPLETED,
+                terminalEngine);
+
+        DurableTestExecutionCheckpointRepository.RecoveryStepResult result =
+                repository.advanceRecoveryStepIdempotently(
+                        command,
+                        mutation(claimed.checkpoint().engineExecutionId(), terminalEngine,
+                                ignored -> { }),
+                        TestRuntimeTransactionMutation.noop());
+
+        assertThat(result.checkpoint().lifecycle().status())
+                .isEqualTo(DurableTestExecutionCheckpoint.Status.TERMINAL);
+        assertThat(result.terminalReceipt()).isNotNull().satisfies(receipt -> {
+            assertThat(receipt.executionOutcome())
+                    .isEqualTo(DurableTestRecoveryTerminalReceipt.ExecutionOutcome.COMPLETED);
+            assertThat(receipt.evidenceStatus()).isEqualTo("EVIDENCE_INCOMPLETE");
+            receipt.requireValid(new ObjectMapper().findAndRegisterModules(),
+                    claimed.dispatch(), result.checkpoint());
+        });
+        assertThat(repository.findRecoveryStepResult(
+                "tenant-a", "test", "step-request-terminal", SHA_B)).get()
+                .extracting(DurableTestExecutionCheckpointRepository.RecoveryStepResult
+                        ::idempotentReplay)
+                .isEqualTo(true);
+    }
+
+    @Test
+    void recoveryStepAndCompanionAuditRollBackAsOneTransaction() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(
+                        resumeCommand(expired, "resume-request-1", SHA_D, "instance-b"));
+        DurableTestExecutionCheckpoint.EngineState suspendedEngine =
+                suspendedEngineState(claimed.checkpoint());
+        DurableTestExecutionCheckpointRepository.RecoveryStepCommand command = stepCommand(
+                claimed, "step-request-rollback", SHA_B,
+                DurableTestExecutionCheckpointRepository.RecoveryStepOutcome.SUSPENDED,
+                suspendedEngine);
+
+        assertThatThrownBy(() -> repository.advanceRecoveryStepIdempotently(
+                command,
+                mutation(claimed.checkpoint().engineExecutionId(), suspendedEngine,
+                        jdbc -> jdbc.update(
+                                "INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
+                                "step-rollback", claimed.checkpoint().engineExecutionId(),
+                                suspendedEngine.stateVersion())),
+                ignored -> {
+                    throw new IllegalStateException("injected recovery-step audit failure");
+                }))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("recovery-step audit failure");
+
+        assertThat(repository.find("tenant-a", "test", "run-a"))
+                .contains(claimed.checkpoint());
+        assertThat(engineCandidateCount("step-rollback")).isZero();
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_recovery_steps", Integer.class))
+                .isZero();
+    }
+
+    @Test
+    void recoveryStepRejectsIntentDriftAndStoredEvidenceGapTampering() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(
+                        resumeCommand(expired, "resume-request-1", SHA_D, "instance-b"));
+        DurableTestExecutionCheckpoint.EngineState suspendedEngine =
+                suspendedEngineState(claimed.checkpoint());
+        DurableTestExecutionCheckpointRepository.RecoveryStepCommand command = stepCommand(
+                claimed, "step-request-tamper", SHA_B,
+                DurableTestExecutionCheckpointRepository.RecoveryStepOutcome.SUSPENDED,
+                suspendedEngine);
+        repository.advanceRecoveryStepIdempotently(
+                command,
+                mutation(claimed.checkpoint().engineExecutionId(), suspendedEngine,
+                        ignored -> { }),
+                TestRuntimeTransactionMutation.noop());
+
+        DurableTestExecutionCheckpointRepository.RecoveryStepCommand changed =
+                new DurableTestExecutionCheckpointRepository.RecoveryStepCommand(
+                        command.clientRequestId(), command.requestFingerprint(),
+                        command.expectedDispatch(), command.outcome(), command.engineState(),
+                        command.fixtureConsumptionState(), command.executionServiceState(),
+                        List.of("DIFFERENT_EVIDENCE_GAP"));
+        assertThatThrownBy(() -> repository.advanceRecoveryStepIdempotently(
+                changed,
+                mutation(claimed.checkpoint().engineExecutionId(), suspendedEngine,
+                        ignored -> { }),
+                TestRuntimeTransactionMutation.noop()))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason
+                        .IDEMPOTENCY_CONFLICT);
+
+        database.jdbc().update("""
+                UPDATE rg_test_durable_recovery_steps SET evidence_gaps_json = '[]'
+                WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                """, "tenant-a", "test", "step-request-tamper");
+        assertThatThrownBy(() -> repository.findRecoveryStepResult(
+                "tenant-a", "test", "step-request-tamper", SHA_B))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("evidence gaps are corrupt");
+    }
+
+    @Test
+    void recoveryStepRejectsExpiredAndValidButUnissuedDispatches() throws Exception {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed =
+                repository.claimExpiredLeaseIdempotently(resumeCommand(
+                        expired, "resume-request-1", SHA_D, "instance-b",
+                        Duration.ofSeconds(1)));
+        DurableTestExecutionCheckpoint.EngineState suspendedEngine =
+                suspendedEngineState(claimed.checkpoint());
+        TimeUnit.MILLISECONDS.sleep(1_100);
+
+        assertThatThrownBy(() -> repository.advanceRecoveryStepIdempotently(
+                stepCommand(claimed, "step-request-expired", SHA_B,
+                        DurableTestExecutionCheckpointRepository.RecoveryStepOutcome.SUSPENDED,
+                        suspendedEngine),
+                mutation(claimed.checkpoint().engineExecutionId(), suspendedEngine,
+                        ignored -> { }),
+                TestRuntimeTransactionMutation.noop()))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason.LEASE_EXPIRED);
+
+        DurableTestRecoveryDispatch unissued = DurableTestRecoveryDispatch.issue(
+                new ObjectMapper().findAndRegisterModules(), resumeCommand(
+                        claimed.checkpoint(), "uncommitted-resume", SHA_D, "instance-b",
+                        Duration.ofMinutes(2), SHA_A).authorization(), claimed.checkpoint());
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult synthetic =
+                new DurableTestExecutionCheckpointRepository.LeaseClaimResult(
+                        claimed.checkpoint(), unissued, false);
+        DurableTestExecutionCheckpoint.EngineState unissuedEngine =
+                suspendedEngineState(claimed.checkpoint());
+
+        assertThatThrownBy(() -> repository.advanceRecoveryStepIdempotently(
+                stepCommand(synthetic, "step-request-unissued", SHA_B,
+                        DurableTestExecutionCheckpointRepository.RecoveryStepOutcome.SUSPENDED,
+                        unissuedEngine),
+                mutation(claimed.checkpoint().engineExecutionId(), unissuedEngine,
+                        ignored -> { }),
+                TestRuntimeTransactionMutation.noop()))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason
+                        .UNRECOGNIZED_DISPATCH);
+    }
+
+    @Test
     void recoveryTerminalCommandAtomicallyCommitsEngineStateAndBlockingEvidenceReceipt() {
         DurableTestExecutionCheckpoint expired = expiredCheckpoint();
         repository.create(expired, boundNoop(expired));
@@ -2555,6 +2786,29 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                 terminalEngine, claimed.checkpoint().fixtureConsumptionState(),
                 claimed.checkpoint().executionServiceState(),
                 List.of("PRE_CHECKPOINT_TRACE_UNAVAILABLE"));
+    }
+
+    private DurableTestExecutionCheckpointRepository.RecoveryStepCommand stepCommand(
+            DurableTestExecutionCheckpointRepository.LeaseClaimResult claimed,
+            String clientRequestId,
+            String requestFingerprint,
+            DurableTestExecutionCheckpointRepository.RecoveryStepOutcome outcome,
+            DurableTestExecutionCheckpoint.EngineState engineState) {
+        return new DurableTestExecutionCheckpointRepository.RecoveryStepCommand(
+                clientRequestId, requestFingerprint, claimed.dispatch(), outcome, engineState,
+                claimed.checkpoint().fixtureConsumptionState(),
+                claimed.checkpoint().executionServiceState(),
+                List.of("PRE_CHECKPOINT_TRACE_UNAVAILABLE",
+                        "RECOVERY_SIGNAL_PAYLOAD_OMITTED"));
+    }
+
+    private DurableTestExecutionCheckpoint.EngineState suspendedEngineState(
+            DurableTestExecutionCheckpoint checkpoint) {
+        DurableTestExecutionCheckpoint.EngineState current = checkpoint.engineState();
+        return new DurableTestExecutionCheckpoint.EngineState(
+                "checkpoint-suspended-next", "approval-next", "SUSPEND",
+                current.boundarySequence() + 1, current.stateVersion() + 1,
+                ProtocolFingerprint.ofText("suspended-engine-state"));
     }
 
     private DurableTestExecutionCheckpoint.EngineState terminalEngineState(

@@ -384,6 +384,45 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     tenant_id, environment_id, run_id, result_checkpoint_fingerprint
                 )
                 """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_recovery_steps (
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(32) NOT NULL,
+                    client_request_id VARCHAR(255) NOT NULL,
+                    request_fingerprint VARCHAR(80) NOT NULL,
+                    run_id VARCHAR(255) NOT NULL,
+                    engine_execution_id VARCHAR(255) NOT NULL,
+                    owner_id VARCHAR(255) NOT NULL,
+                    lease_epoch BIGINT NOT NULL,
+                    expected_revision BIGINT NOT NULL,
+                    expected_lease_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    expected_checkpoint_fingerprint VARCHAR(80) NOT NULL,
+                    expected_dispatch_fingerprint VARCHAR(80) NOT NULL,
+                    authorization_fingerprint VARCHAR(80) NOT NULL,
+                    boundary_outcome VARCHAR(32) NOT NULL,
+                    engine_state_fingerprint VARCHAR(80) NOT NULL,
+                    fixture_state_fingerprint VARCHAR(80) NOT NULL,
+                    provider_state_fingerprint VARCHAR(80) NOT NULL,
+                    evidence_gaps_fingerprint VARCHAR(80) NOT NULL,
+                    evidence_gaps_json CLOB NOT NULL,
+                    result_revision BIGINT NOT NULL,
+                    result_checkpoint_fingerprint VARCHAR(80) NOT NULL,
+                    result_receipt_fingerprint VARCHAR(80) NOT NULL,
+                    record_fingerprint VARCHAR(80) NOT NULL,
+                    result_checkpoint_json CLOB NOT NULL,
+                    result_receipt_json CLOB,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    PRIMARY KEY (tenant_id, environment_id, client_request_id),
+                    CONSTRAINT uq_rg_test_durable_recovery_step_dispatch
+                        UNIQUE (expected_dispatch_fingerprint)
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_durable_recovery_step_result_idx
+                ON rg_test_durable_recovery_steps (
+                    tenant_id, environment_id, run_id, result_checkpoint_fingerprint
+                )
+                """);
     }
 
     @Override
@@ -1101,6 +1140,399 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     "clientRequestId already identifies different recovery terminal intent");
         }
         return Optional.of(verifiedRecoveryTerminalResult(stored, true));
+    }
+
+    @Override
+    public RecoveryStepResult advanceRecoveryStepIdempotently(
+            RecoveryStepCommand command,
+            BoundEngineStateMutation engineStateMutation,
+            TestRuntimeTransactionMutation companionMutation) {
+        RecoveryStepCommand requiredCommand = Objects.requireNonNull(command, "command");
+        requiredCommand.expectedDispatch().requireValid(objectMapper);
+        BoundEngineStateMutation requiredEngineMutation = Objects.requireNonNull(
+                engineStateMutation, "engineStateMutation");
+        requireRecoveryStepMutationBinding(requiredCommand, requiredEngineMutation);
+        TestRuntimeTransactionMutation requiredCompanion = Objects.requireNonNull(
+                companionMutation, "companionMutation");
+        try {
+            return transactions.execute(status -> {
+                requireIssuedRecoveryDispatch(requiredCommand.expectedDispatch());
+                Optional<RecoveryStepResult> existing = replayedRecoveryStep(requiredCommand);
+                if (existing.isPresent()) {
+                    requiredCompanion.apply(jdbc);
+                    return existing.get();
+                }
+                try {
+                    Instant observedAt = databaseNow();
+                    DurableTestExecutionCheckpoint current = liveRecoveryCheckpoint(
+                            requiredCommand.expectedDispatch(), observedAt,
+                            "before its recovery step");
+                    DurableTestExecutionCheckpoint next = recoveryStepCheckpoint(
+                            current, requiredCommand, observedAt);
+                    Fence sourceFence = new Fence(
+                            current.lifecycle().ownerId(), current.lifecycle().leaseEpoch(),
+                            current.lifecycle().revision());
+                    requireTransition(current, next, sourceFence);
+                    requireMutationBinding(next, requiredEngineMutation);
+                    requiredEngineMutation.apply(jdbc);
+                    if (recoveryStepUpdate(next, current,
+                            requiredCommand.expectedDispatch(), observedAt) != 1) {
+                        throw conflict(STALE_FENCE,
+                                "Durable recovery dispatch changed concurrently");
+                    }
+                    DurableTestRecoveryTerminalReceipt receipt = requiredCommand.outcome().terminal()
+                            ? DurableTestRecoveryTerminalReceipt.issue(
+                            objectMapper, requiredCommand.expectedDispatch(), next,
+                            requiredCommand.outcome().terminalOutcome(),
+                            requiredCommand.evidenceGapCodes())
+                            : null;
+                    insertRecoveryStep(requiredCommand, next, receipt, observedAt);
+                    RecoveryStepResult result = new RecoveryStepResult(
+                            requiredCommand.outcome(), next, receipt, false);
+                    requiredCompanion.apply(jdbc);
+                    return result;
+                } catch (DurableTestExecutionCheckpointConflictException contested) {
+                    if (contested.reason() != STALE_FENCE
+                            && contested.reason() != LEASE_EXPIRED) {
+                        throw contested;
+                    }
+                    Optional<RecoveryStepResult> committed =
+                            replayedRecoveryStep(requiredCommand);
+                    if (committed.isPresent()) {
+                        requiredCompanion.apply(jdbc);
+                        return committed.get();
+                    }
+                    throw contested;
+                }
+            });
+        } catch (DataIntegrityViolationException concurrentCommand) {
+            return transactions.execute(status -> {
+                requireIssuedRecoveryDispatch(requiredCommand.expectedDispatch());
+                RecoveryStepResult replay = replayedRecoveryStep(requiredCommand)
+                        .orElseThrow(() -> concurrentCommand);
+                requiredCompanion.apply(jdbc);
+                return replay;
+            });
+        }
+    }
+
+    @Override
+    public Optional<RecoveryStepResult> findRecoveryStepResult(
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            String requestFingerprint) {
+        List<StoredRecoveryStep> rows = findRecoverySteps(
+                normalized(tenantId), normalizedEnvironment(environmentId),
+                normalized(clientRequestId));
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        StoredRecoveryStep stored = rows.getFirst();
+        requireValidRecoveryStepRecord(stored);
+        if (!stored.requestFingerprint().equals(normalized(requestFingerprint))) {
+            throw conflict(IDEMPOTENCY_CONFLICT,
+                    "clientRequestId already identifies different recovery-step intent");
+        }
+        return Optional.of(verifiedRecoveryStepResult(stored, true));
+    }
+
+    private Optional<RecoveryStepResult> replayedRecoveryStep(
+            RecoveryStepCommand command) {
+        DurableTestRecoveryDispatch dispatch = command.expectedDispatch();
+        List<StoredRecoveryStep> rows = findRecoverySteps(
+                dispatch.scope().tenantId(), dispatch.scope().environmentId(),
+                command.clientRequestId());
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        StoredRecoveryStep stored = rows.getFirst();
+        requireValidRecoveryStepRecord(stored);
+        if (!stored.matches(command, evidenceGapsFingerprint(command.evidenceGapCodes()))) {
+            throw conflict(IDEMPOTENCY_CONFLICT,
+                    "clientRequestId already identifies different recovery-step intent");
+        }
+        return Optional.of(verifiedRecoveryStepResult(stored, true));
+    }
+
+    private List<StoredRecoveryStep> findRecoverySteps(
+            String tenantId, String environmentId, String clientRequestId) {
+        return jdbc.query(recoveryStepSelect() + """
+                        WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                        """, this::mapRecoveryStep, tenantId, environmentId, clientRequestId);
+    }
+
+    private static String recoveryStepSelect() {
+        return """
+                SELECT tenant_id, environment_id, client_request_id, request_fingerprint,
+                       run_id, engine_execution_id, owner_id, lease_epoch, expected_revision,
+                       expected_lease_expires_at, expected_checkpoint_fingerprint,
+                       expected_dispatch_fingerprint, authorization_fingerprint,
+                       boundary_outcome, engine_state_fingerprint, fixture_state_fingerprint,
+                       provider_state_fingerprint, evidence_gaps_fingerprint,
+                       evidence_gaps_json, result_revision,
+                       result_checkpoint_fingerprint, result_receipt_fingerprint,
+                       record_fingerprint, result_checkpoint_json, result_receipt_json, created_at
+                FROM rg_test_durable_recovery_steps
+                """;
+    }
+
+    private DurableTestExecutionCheckpoint recoveryStepCheckpoint(
+            DurableTestExecutionCheckpoint current,
+            RecoveryStepCommand command,
+            Instant observedAt) {
+        var lifecycle = current.lifecycle();
+        if (observedAt.isBefore(lifecycle.updatedAt())) {
+            throw new IllegalStateException(
+                    "Test-runtime database clock moved behind the durable checkpoint");
+        }
+        boolean terminal = command.outcome().terminal();
+        Instant resultingLease = terminal ? lifecycle.leaseExpiresAt() : observedAt;
+        return integrity.seal(new DurableTestExecutionCheckpoint(
+                current.schemaVersion(), current.scope(), current.runId(),
+                current.engineExecutionId(), current.dependencies(),
+                command.fixtureConsumptionState(), command.executionServiceState(),
+                command.engineState(), new DurableTestExecutionCheckpoint.Lifecycle(
+                terminal ? DurableTestExecutionCheckpoint.Status.TERMINAL
+                        : DurableTestExecutionCheckpoint.Status.SUSPENDED,
+                lifecycle.ownerId(), lifecycle.leaseEpoch(), lifecycle.revision() + 1,
+                lifecycle.createdAt(), observedAt, resultingLease), ""));
+    }
+
+    private int recoveryStepUpdate(
+            DurableTestExecutionCheckpoint next,
+            DurableTestExecutionCheckpoint current,
+            DurableTestRecoveryDispatch expectedDispatch,
+            Instant observedAt) {
+        var lifecycle = next.lifecycle();
+        int updated = jdbc.update("""
+                UPDATE rg_test_durable_execution_checkpoints
+                SET status = ?, revision = ?, lease_expires_at = ?,
+                    fixture_state_fingerprint = ?, provider_state_fingerprint = ?,
+                    engine_state_fingerprint = ?, checkpoint_fingerprint = ?,
+                    updated_at = ?, checkpoint_json = ?
+                WHERE run_id = ? AND tenant_id = ? AND environment_id = ?
+                  AND engine_execution_id = ? AND status = 'RESUMING'
+                  AND owner_id = ? AND lease_epoch = ? AND revision = ?
+                  AND lease_expires_at = ? AND lease_expires_at > ?
+                  AND checkpoint_fingerprint = ?
+                """, lifecycle.status().name(), lifecycle.revision(),
+                Timestamp.from(lifecycle.leaseExpiresAt()),
+                next.fixtureConsumptionState().stateFingerprint(),
+                next.executionServiceState().snapshotFingerprint(),
+                next.engineState().closureFingerprint(), next.checkpointFingerprint(),
+                Timestamp.from(lifecycle.updatedAt()), write(next), next.runId(),
+                next.scope().tenantId(), next.scope().environmentId(), next.engineExecutionId(),
+                lifecycle.ownerId(), lifecycle.leaseEpoch(), current.lifecycle().revision(),
+                Timestamp.from(expectedDispatch.leaseExpiresAt()), Timestamp.from(observedAt),
+                expectedDispatch.checkpointFingerprint());
+        if (updated == 1) {
+            clearWorkerCandidateSchedulingState(
+                    new WorkerAcquisitionScope(
+                            current.scope().tenantId(), current.scope().organizationId(),
+                            current.scope().projectId(), current.scope().environmentId()),
+                    current.runId(), current.checkpointFingerprint());
+        }
+        return updated;
+    }
+
+    private void insertRecoveryStep(
+            RecoveryStepCommand command,
+            DurableTestExecutionCheckpoint next,
+            DurableTestRecoveryTerminalReceipt receipt,
+            Instant createdAt) {
+        DurableTestRecoveryDispatch source = command.expectedDispatch();
+        String gapsFingerprint = evidenceGapsFingerprint(command.evidenceGapCodes());
+        String receiptFingerprint = receipt == null ? "" : receipt.receiptFingerprint();
+        String recordFingerprint = recoveryStepRecordFingerprint(
+                command, next, receiptFingerprint, gapsFingerprint, createdAt);
+        jdbc.update("""
+                INSERT INTO rg_test_durable_recovery_steps (
+                    tenant_id, environment_id, client_request_id, request_fingerprint,
+                    run_id, engine_execution_id, owner_id, lease_epoch, expected_revision,
+                    expected_lease_expires_at, expected_checkpoint_fingerprint,
+                    expected_dispatch_fingerprint, authorization_fingerprint,
+                    boundary_outcome, engine_state_fingerprint, fixture_state_fingerprint,
+                    provider_state_fingerprint, evidence_gaps_fingerprint,
+                    evidence_gaps_json, result_revision,
+                    result_checkpoint_fingerprint, result_receipt_fingerprint,
+                    record_fingerprint, result_checkpoint_json, result_receipt_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, source.scope().tenantId(), source.scope().environmentId(),
+                command.clientRequestId(), command.requestFingerprint(), source.runId(),
+                source.engineExecutionId(), source.ownerId(), source.leaseEpoch(), source.revision(),
+                Timestamp.from(source.leaseExpiresAt()), source.checkpointFingerprint(),
+                source.dispatchFingerprint(), source.authorization().authorizationFingerprint(),
+                command.outcome().name(), command.engineState().closureFingerprint(),
+                command.fixtureConsumptionState().stateFingerprint(),
+                command.executionServiceState().snapshotFingerprint(), gapsFingerprint,
+                writeEvidenceGaps(command.evidenceGapCodes()), next.lifecycle().revision(),
+                next.checkpointFingerprint(), receiptFingerprint,
+                recordFingerprint, write(next),
+                receipt == null ? null : writeTerminalReceipt(receipt),
+                Timestamp.from(createdAt));
+    }
+
+    private RecoveryStepResult verifiedRecoveryStepResult(
+            StoredRecoveryStep stored, boolean idempotentReplay) {
+        DurableTestExecutionCheckpoint checkpoint;
+        try {
+            checkpoint = objectMapper.readValue(
+                    stored.resultCheckpointJson(), DurableTestExecutionCheckpoint.class);
+            integrity.requireValid(checkpoint);
+        } catch (JsonProcessingException | IllegalArgumentException corrupt) {
+            throw new IllegalStateException(
+                    "Stored recovery-step checkpoint is corrupt", corrupt);
+        }
+        RecoveryStepOutcome outcome;
+        try {
+            outcome = RecoveryStepOutcome.valueOf(stored.boundaryOutcome());
+        } catch (IllegalArgumentException corrupt) {
+            throw new IllegalStateException("Stored recovery-step outcome is corrupt", corrupt);
+        }
+        DurableTestRecoveryDispatch source;
+        try {
+            source = issuedRecoveryDispatch(
+                    stored.tenantId(), stored.environmentId(), stored.runId(),
+                    stored.expectedDispatchFingerprint());
+            if (!stored.agreesWithSource(source)) {
+                throw new IllegalArgumentException(
+                        "Recovery-step source dispatch does not match its command record");
+            }
+        } catch (IllegalArgumentException corrupt) {
+            throw new IllegalStateException(
+                    "Stored recovery-step source dispatch is corrupt", corrupt);
+        }
+        DurableTestRecoveryTerminalReceipt receipt = null;
+        if (outcome.terminal()) {
+            try {
+                receipt = objectMapper.readValue(
+                        stored.resultReceiptJson(), DurableTestRecoveryTerminalReceipt.class);
+                receipt.requireValid(objectMapper, source, checkpoint);
+            } catch (JsonProcessingException | IllegalArgumentException | NullPointerException corrupt) {
+                throw new IllegalStateException(
+                        "Stored recovery-step terminal receipt is corrupt", corrupt);
+            }
+        }
+        List<String> evidenceGaps = readEvidenceGaps(stored.evidenceGapsJson());
+        if (outcome.terminal() && !evidenceGaps.equals(receipt.evidenceGapCodes())) {
+            throw new IllegalStateException(
+                    "Stored recovery-step evidence gaps differ from the terminal receipt");
+        }
+        if (!stored.agreesWith(checkpoint, receipt,
+                evidenceGapsFingerprint(evidenceGaps))) {
+            throw new IllegalStateException("Stored recovery-step result is corrupt");
+        }
+        return new RecoveryStepResult(outcome, checkpoint, receipt, idempotentReplay);
+    }
+
+    private StoredRecoveryStep mapRecoveryStep(ResultSet rs, int rowNumber)
+            throws SQLException {
+        return new StoredRecoveryStep(
+                rs.getString("tenant_id"), rs.getString("environment_id"),
+                rs.getString("client_request_id"), rs.getString("request_fingerprint"),
+                rs.getString("run_id"), rs.getString("engine_execution_id"),
+                rs.getString("owner_id"), rs.getLong("lease_epoch"),
+                rs.getLong("expected_revision"),
+                rs.getTimestamp("expected_lease_expires_at").toInstant(),
+                rs.getString("expected_checkpoint_fingerprint"),
+                rs.getString("expected_dispatch_fingerprint"),
+                rs.getString("authorization_fingerprint"), rs.getString("boundary_outcome"),
+                rs.getString("engine_state_fingerprint"),
+                rs.getString("fixture_state_fingerprint"),
+                rs.getString("provider_state_fingerprint"),
+                rs.getString("evidence_gaps_fingerprint"), rs.getString("evidence_gaps_json"),
+                rs.getLong("result_revision"),
+                rs.getString("result_checkpoint_fingerprint"),
+                rs.getString("result_receipt_fingerprint"), rs.getString("record_fingerprint"),
+                rs.getString("result_checkpoint_json"), rs.getString("result_receipt_json"),
+                rs.getTimestamp("created_at").toInstant());
+    }
+
+    private void requireValidRecoveryStepRecord(StoredRecoveryStep stored) {
+        String actual = ProtocolFingerprint.of(objectMapper, stored.fingerprintMaterial());
+        if (!stored.recordFingerprint().equals(actual)) {
+            throw new IllegalStateException("Stored recovery-step record is corrupt");
+        }
+    }
+
+    private String recoveryStepRecordFingerprint(
+            RecoveryStepCommand command,
+            DurableTestExecutionCheckpoint next,
+            String receiptFingerprint,
+            String evidenceGapsFingerprint,
+            Instant createdAt) {
+        DurableTestRecoveryDispatch source = command.expectedDispatch();
+        return ProtocolFingerprint.of(objectMapper, recoveryStepFingerprintMaterial(
+                source.scope().tenantId(), source.scope().environmentId(),
+                command.clientRequestId(), command.requestFingerprint(), source.runId(),
+                source.engineExecutionId(), source.ownerId(), source.leaseEpoch(), source.revision(),
+                source.leaseExpiresAt(), source.checkpointFingerprint(),
+                source.dispatchFingerprint(), source.authorization().authorizationFingerprint(),
+                command.outcome().name(), command.engineState().closureFingerprint(),
+                command.fixtureConsumptionState().stateFingerprint(),
+                command.executionServiceState().snapshotFingerprint(), evidenceGapsFingerprint,
+                next.lifecycle().revision(), next.checkpointFingerprint(), receiptFingerprint,
+                createdAt));
+    }
+
+    private static Map<String, Object> recoveryStepFingerprintMaterial(
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            String requestFingerprint,
+            String runId,
+            String engineExecutionId,
+            String ownerId,
+            long leaseEpoch,
+            long expectedRevision,
+            Instant expectedLeaseExpiresAt,
+            String expectedCheckpointFingerprint,
+            String expectedDispatchFingerprint,
+            String authorizationFingerprint,
+            String boundaryOutcome,
+            String engineStateFingerprint,
+            String fixtureStateFingerprint,
+            String providerStateFingerprint,
+            String evidenceGapsFingerprint,
+            long resultRevision,
+            String resultCheckpointFingerprint,
+            String resultReceiptFingerprint,
+            Instant createdAt) {
+        return Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableRecoveryStepCommandRecord.v1"),
+                Map.entry("tenantId", tenantId),
+                Map.entry("environmentId", environmentId),
+                Map.entry("clientRequestId", clientRequestId),
+                Map.entry("requestFingerprint", requestFingerprint),
+                Map.entry("runId", runId),
+                Map.entry("engineExecutionId", engineExecutionId),
+                Map.entry("ownerId", ownerId),
+                Map.entry("leaseEpoch", leaseEpoch),
+                Map.entry("expectedRevision", expectedRevision),
+                Map.entry("expectedLeaseExpiresAt", expectedLeaseExpiresAt),
+                Map.entry("expectedCheckpointFingerprint", expectedCheckpointFingerprint),
+                Map.entry("expectedDispatchFingerprint", expectedDispatchFingerprint),
+                Map.entry("authorizationFingerprint", authorizationFingerprint),
+                Map.entry("boundaryOutcome", boundaryOutcome),
+                Map.entry("engineStateFingerprint", engineStateFingerprint),
+                Map.entry("fixtureStateFingerprint", fixtureStateFingerprint),
+                Map.entry("providerStateFingerprint", providerStateFingerprint),
+                Map.entry("evidenceGapsFingerprint", evidenceGapsFingerprint),
+                Map.entry("resultRevision", resultRevision),
+                Map.entry("resultCheckpointFingerprint", resultCheckpointFingerprint),
+                Map.entry("resultReceiptFingerprint", resultReceiptFingerprint),
+                Map.entry("createdAt", createdAt));
+    }
+
+    private static void requireRecoveryStepMutationBinding(
+            RecoveryStepCommand command, BoundEngineStateMutation mutation) {
+        if (!command.expectedDispatch().engineExecutionId().equals(
+                mutation.engineExecutionId())
+                || !command.engineState().equals(mutation.engineState())) {
+            throw conflict(INVALID_TRANSITION,
+                    "Recovery-step intent does not match its engine-state mutation");
+        }
     }
 
     private Optional<RecoveryTerminalResult> replayedTerminal(
@@ -3278,8 +3710,14 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             throw conflict(INVALID_TRANSITION,
                     "Durable checkpoint immutable identity or dependency closure changed");
         }
+        boolean explicitRecoveryRelease =
+                currentLifecycle.status() == DurableTestExecutionCheckpoint.Status.RESUMING
+                        && nextLifecycle.status()
+                        == DurableTestExecutionCheckpoint.Status.SUSPENDED
+                        && nextLifecycle.leaseExpiresAt().equals(nextLifecycle.updatedAt());
         if (nextLifecycle.updatedAt().isBefore(currentLifecycle.updatedAt())
-                || nextLifecycle.leaseExpiresAt().isBefore(currentLifecycle.leaseExpiresAt())) {
+                || (nextLifecycle.leaseExpiresAt().isBefore(
+                currentLifecycle.leaseExpiresAt()) && !explicitRecoveryRelease)) {
             throw conflict(INVALID_TRANSITION, "Durable checkpoint time or lease moved backwards");
         }
         if (!allowed(currentLifecycle.status(), nextLifecycle.status())) {
@@ -3441,6 +3879,41 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         } catch (JsonProcessingException failure) {
             throw new IllegalStateException(
                     "Cannot serialize durable recovery terminal receipt", failure);
+        }
+    }
+
+    private String writeEvidenceGaps(List<String> evidenceGaps) {
+        try {
+            return objectMapper.writeValueAsString(evidenceGaps);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException(
+                    "Cannot serialize durable recovery-step evidence gaps", failure);
+        }
+    }
+
+    private List<String> readEvidenceGaps(String json) {
+        try {
+            List<String> result = objectMapper.readValue(
+                    json, objectMapper.getTypeFactory().constructCollectionType(
+                            List.class, String.class));
+            List<String> canonical = result == null ? List.of() : result.stream()
+                    .map(value -> value == null ? "" : value.trim().toUpperCase(
+                            java.util.Locale.ROOT))
+                    .distinct()
+                    .sorted()
+                    .toList();
+            if (result == null || result.isEmpty() || result.size() > 32
+                    || canonical.size() != result.size()
+                    || !canonical.equals(result)
+                    || canonical.stream().anyMatch(value ->
+                    !value.matches("[A-Z][A-Z0-9_.-]{0,127}"))) {
+                throw new IllegalArgumentException(
+                        "Recovery-step evidence gaps must be a canonical bounded list");
+            }
+            return canonical;
+        } catch (JsonProcessingException | IllegalArgumentException corrupt) {
+            throw new IllegalStateException(
+                    "Stored recovery-step evidence gaps are corrupt", corrupt);
         }
     }
 
@@ -3893,6 +4366,141 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     && authorizationFingerprint.equals(
                     dispatch.authorization().authorizationFingerprint())
                     && lifecycle.status() == DurableTestExecutionCheckpoint.Status.RESUMING;
+        }
+    }
+
+    private record StoredRecoveryStep(
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            String requestFingerprint,
+            String runId,
+            String engineExecutionId,
+            String ownerId,
+            long leaseEpoch,
+            long expectedRevision,
+            Instant expectedLeaseExpiresAt,
+            String expectedCheckpointFingerprint,
+            String expectedDispatchFingerprint,
+            String authorizationFingerprint,
+            String boundaryOutcome,
+            String engineStateFingerprint,
+            String fixtureStateFingerprint,
+            String providerStateFingerprint,
+            String evidenceGapsFingerprint,
+            String evidenceGapsJson,
+            long resultRevision,
+            String resultCheckpointFingerprint,
+            String resultReceiptFingerprint,
+            String recordFingerprint,
+            String resultCheckpointJson,
+            String resultReceiptJson,
+            Instant createdAt
+    ) {
+        private Map<String, Object> fingerprintMaterial() {
+            return recoveryStepFingerprintMaterial(
+                    tenantId, environmentId, clientRequestId, requestFingerprint, runId,
+                    engineExecutionId, ownerId, leaseEpoch, expectedRevision,
+                    expectedLeaseExpiresAt, expectedCheckpointFingerprint,
+                    expectedDispatchFingerprint, authorizationFingerprint, boundaryOutcome,
+                    engineStateFingerprint, fixtureStateFingerprint, providerStateFingerprint,
+                    evidenceGapsFingerprint, resultRevision, resultCheckpointFingerprint,
+                    resultReceiptFingerprint, createdAt);
+        }
+
+        private boolean matches(
+                RecoveryStepCommand command, String commandEvidenceGapsFingerprint) {
+            DurableTestRecoveryDispatch source = command.expectedDispatch();
+            return tenantId.equals(source.scope().tenantId())
+                    && environmentId.equals(source.scope().environmentId())
+                    && clientRequestId.equals(command.clientRequestId())
+                    && requestFingerprint.equals(command.requestFingerprint())
+                    && runId.equals(source.runId())
+                    && engineExecutionId.equals(source.engineExecutionId())
+                    && ownerId.equals(source.ownerId())
+                    && leaseEpoch == source.leaseEpoch()
+                    && expectedRevision == source.revision()
+                    && expectedLeaseExpiresAt.equals(source.leaseExpiresAt())
+                    && expectedCheckpointFingerprint.equals(source.checkpointFingerprint())
+                    && expectedDispatchFingerprint.equals(source.dispatchFingerprint())
+                    && authorizationFingerprint.equals(
+                    source.authorization().authorizationFingerprint())
+                    && boundaryOutcome.equals(command.outcome().name())
+                    && engineStateFingerprint.equals(
+                    command.engineState().closureFingerprint())
+                    && fixtureStateFingerprint.equals(
+                    command.fixtureConsumptionState().stateFingerprint())
+                    && providerStateFingerprint.equals(
+                    command.executionServiceState().snapshotFingerprint())
+                    && evidenceGapsFingerprint.equals(commandEvidenceGapsFingerprint);
+        }
+
+        private boolean agreesWithSource(DurableTestRecoveryDispatch source) {
+            return tenantId.equals(source.scope().tenantId())
+                    && environmentId.equals(source.scope().environmentId())
+                    && runId.equals(source.runId())
+                    && engineExecutionId.equals(source.engineExecutionId())
+                    && ownerId.equals(source.ownerId())
+                    && leaseEpoch == source.leaseEpoch()
+                    && expectedRevision == source.revision()
+                    && expectedLeaseExpiresAt.equals(source.leaseExpiresAt())
+                    && expectedCheckpointFingerprint.equals(source.checkpointFingerprint())
+                    && expectedDispatchFingerprint.equals(source.dispatchFingerprint())
+                    && authorizationFingerprint.equals(
+                    source.authorization().authorizationFingerprint());
+        }
+
+        private boolean agreesWith(
+                DurableTestExecutionCheckpoint checkpoint,
+                DurableTestRecoveryTerminalReceipt receipt,
+                String actualEvidenceGapsFingerprint) {
+            DurableTestExecutionCheckpoint.Lifecycle lifecycle = checkpoint.lifecycle();
+            RecoveryStepOutcome outcome;
+            try {
+                outcome = RecoveryStepOutcome.valueOf(boundaryOutcome);
+            } catch (IllegalArgumentException corrupt) {
+                return false;
+            }
+            boolean terminalShape = outcome.terminal()
+                    && receipt != null
+                    && !resultReceiptFingerprint.isBlank()
+                    && resultReceiptJson != null
+                    && resultReceiptFingerprint.equals(receipt.receiptFingerprint())
+                    && expectedCheckpointFingerprint.equals(
+                    receipt.sourceCheckpointFingerprint())
+                    && expectedDispatchFingerprint.equals(
+                    receipt.sourceDispatchFingerprint())
+                    && authorizationFingerprint.equals(
+                    receipt.authorization().authorizationFingerprint())
+                    && outcome.terminalOutcome() == receipt.executionOutcome()
+                    && createdAt.equals(receipt.completedAt())
+                    && lifecycle.status() == DurableTestExecutionCheckpoint.Status.TERMINAL;
+            boolean suspendedShape = outcome == RecoveryStepOutcome.SUSPENDED
+                    && receipt == null
+                    && resultReceiptFingerprint.isBlank()
+                    && resultReceiptJson == null
+                    && lifecycle.status() == DurableTestExecutionCheckpoint.Status.SUSPENDED
+                    && lifecycle.leaseExpiresAt().equals(createdAt);
+            return tenantId.equals(checkpoint.scope().tenantId())
+                    && environmentId.equals(checkpoint.scope().environmentId())
+                    && runId.equals(checkpoint.runId())
+                    && engineExecutionId.equals(checkpoint.engineExecutionId())
+                    && ownerId.equals(lifecycle.ownerId())
+                    && leaseEpoch == lifecycle.leaseEpoch()
+                    && expectedRevision < Long.MAX_VALUE
+                    && resultRevision == expectedRevision + 1
+                    && resultRevision == lifecycle.revision()
+                    && engineStateFingerprint.equals(
+                    checkpoint.engineState().closureFingerprint())
+                    && fixtureStateFingerprint.equals(
+                    checkpoint.fixtureConsumptionState().stateFingerprint())
+                    && providerStateFingerprint.equals(
+                    checkpoint.executionServiceState().snapshotFingerprint())
+                    && evidenceGapsFingerprint.equals(actualEvidenceGapsFingerprint)
+                    && resultCheckpointFingerprint.equals(
+                    checkpoint.checkpointFingerprint())
+                    && createdAt.equals(lifecycle.updatedAt())
+                    && (terminalShape || suspendedShape);
         }
     }
 
