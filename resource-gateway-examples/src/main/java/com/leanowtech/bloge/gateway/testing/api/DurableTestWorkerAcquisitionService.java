@@ -42,6 +42,7 @@ public final class DurableTestWorkerAcquisitionService {
     private final int candidateLimit;
     private final Duration initialCandidateBackoff;
     private final Duration maximumCandidateBackoff;
+    private final int candidateQuarantineThreshold;
 
     /**
      * Creates a server-owned durable worker pull boundary.
@@ -63,7 +64,7 @@ public final class DurableTestWorkerAcquisitionService {
             Duration leaseDuration,
             int candidateLimit) {
         this(checkpoints, authorizer, securityEvents, objectMapper, ownerId, leaseDuration,
-                candidateLimit, Duration.ofSeconds(5), Duration.ofMinutes(5));
+                candidateLimit, Duration.ofSeconds(5), Duration.ofMinutes(5), 32);
     }
 
     /**
@@ -89,6 +90,36 @@ public final class DurableTestWorkerAcquisitionService {
             int candidateLimit,
             Duration initialCandidateBackoff,
             Duration maximumCandidateBackoff) {
+        this(checkpoints, authorizer, securityEvents, objectMapper, ownerId, leaseDuration,
+                candidateLimit, initialCandidateBackoff, maximumCandidateBackoff, 32);
+    }
+
+    /**
+     * Creates a worker pull boundary with bounded backoff and permanent exact-checkpoint
+     * quarantine after repeated deterministic ineligibility.
+     *
+     * @param checkpoints integrity-verifying queue and acquisition authority
+     * @param authorizer exact current dependency re-authorization service
+     * @param securityEvents fail-closed semantic security-event sink
+     * @param objectMapper canonical authenticated-intent mapper
+     * @param ownerId server-owned recovery process identity
+     * @param leaseDuration whole-second ownership lease between one second and one hour
+     * @param candidateLimit cyclic SQL candidate window between 1 and 1,000
+     * @param initialCandidateBackoff first deterministic-failure retry delay
+     * @param maximumCandidateBackoff bounded exponential retry delay cap
+     * @param candidateQuarantineThreshold consecutive same-reason failures before quarantine
+     */
+    public DurableTestWorkerAcquisitionService(
+            DurableTestExecutionCheckpointRepository checkpoints,
+            DurableTestRecoveryAuthorizer authorizer,
+            TestSecurityEventRepository securityEvents,
+            ObjectMapper objectMapper,
+            String ownerId,
+            Duration leaseDuration,
+            int candidateLimit,
+            Duration initialCandidateBackoff,
+            Duration maximumCandidateBackoff,
+            int candidateQuarantineThreshold) {
         this.checkpoints = Objects.requireNonNull(checkpoints, "checkpoints");
         this.authorizer = Objects.requireNonNull(authorizer, "authorizer");
         this.securityEvents = Objects.requireNonNull(securityEvents, "securityEvents");
@@ -113,6 +144,11 @@ public final class DurableTestWorkerAcquisitionService {
             throw new IllegalArgumentException(
                     "maximumCandidateBackoff must not be shorter than initialCandidateBackoff");
         }
+        if (candidateQuarantineThreshold < 1 || candidateQuarantineThreshold > 1_000_000) {
+            throw new IllegalArgumentException(
+                    "candidateQuarantineThreshold must be between 1 and 1000000");
+        }
+        this.candidateQuarantineThreshold = candidateQuarantineThreshold;
     }
 
     /**
@@ -147,6 +183,7 @@ public final class DurableTestWorkerAcquisitionService {
         int examined = 0;
         int ineligible = 0;
         int deferred = 0;
+        int quarantined = 0;
         List<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferral> deferrals =
                 new ArrayList<>();
         Optional<DurableTestExecutionCheckpointRepository.WorkerScanProgress> scanProgress =
@@ -166,7 +203,16 @@ public final class DurableTestWorkerAcquisitionService {
                 throw unavailable(identity, "RG.TEST.DURABLE_STORE_UNAVAILABLE",
                         "The isolated durable test control store returned invalid backoff state.");
             }
+            if (queued.activeQuarantine() == null) {
+                throw unavailable(identity, "RG.TEST.DURABLE_STORE_UNAVAILABLE",
+                        "The isolated durable test control store returned invalid quarantine state.");
+            }
             scanProgress = Optional.of(queued.progress());
+            if (queued.activeQuarantine().isPresent()) {
+                ineligible++;
+                quarantined++;
+                continue;
+            }
             if (queued.activeDeferral().isPresent()) {
                 ineligible++;
                 deferred++;
@@ -204,7 +250,7 @@ public final class DurableTestWorkerAcquisitionService {
             var selection = selection(candidate, authorized);
             TestRuntimeTransactionMutation audit = boundAudit(
                     identity, request.clientRequestId(), "ACQUIRED", candidate.runId(),
-                    examined, ineligible, deferred, false);
+                    examined, ineligible, deferred, quarantined, false);
             try {
                 var result = checkpoints.acquireWorkerCommandIdempotently(
                         command, Optional.of(selection), scanProgress,
@@ -245,7 +291,7 @@ public final class DurableTestWorkerAcquisitionService {
 
         TestRuntimeTransactionMutation audit = boundAudit(
                 identity, request.clientRequestId(), "NO_WORK", "", examined,
-                ineligible, deferred, false);
+                ineligible, deferred, quarantined, false);
         try {
             var result = checkpoints.acquireWorkerCommandIdempotently(
                     command, Optional.empty(), scanProgress, List.copyOf(deferrals), audit);
@@ -318,7 +364,8 @@ public final class DurableTestWorkerAcquisitionService {
             DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason reason) {
         return new DurableTestExecutionCheckpointRepository.WorkerCandidateDeferral(
                 candidate.progress(), candidate.checkpoint().checkpointFingerprint(), reason,
-                initialCandidateBackoff, maximumCandidateBackoff);
+                initialCandidateBackoff, maximumCandidateBackoff,
+                candidateQuarantineThreshold);
     }
 
     private String requestFingerprint(
@@ -349,11 +396,12 @@ public final class DurableTestWorkerAcquisitionService {
             int examined,
             int ineligible,
             int deferred,
+            int quarantined,
             boolean replay) {
         try {
             TestRuntimeTransactionMutation mutation = securityEvents.boundAppend(event(
                     identity, clientRequestId, outcome, runId, examined, ineligible,
-                    deferred, replay));
+                    deferred, quarantined, replay));
             if (mutation == null) {
                 throw new IllegalStateException("Security audit did not provide a bound mutation");
             }
@@ -371,7 +419,7 @@ public final class DurableTestWorkerAcquisitionService {
         try {
             securityEvents.append(event(identity, clientRequestId, result.outcome().name(),
                     result.checkpoint() == null ? "" : result.checkpoint().runId(),
-                    0, 0, 0, true));
+                    0, 0, 0, 0, true));
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "RG.INTEGRATION.SECURITY_AUDIT_UNAVAILABLE",
                     "Durable worker acquisition is unavailable because its audit cannot commit.");
@@ -386,15 +434,17 @@ public final class DurableTestWorkerAcquisitionService {
             int examined,
             int ineligible,
             int deferred,
+            int quarantined,
             boolean replay) {
         Map<String, Object> facts = runId.isBlank()
                 ? Map.of("clientRequestId", clientRequestId, "result", outcome,
                 "examinedCandidateCount", examined, "ineligibleCandidateCount", ineligible,
-                "deferredCandidateCount", deferred, "idempotentReplay", replay)
+                "deferredCandidateCount", deferred, "quarantinedCandidateCount", quarantined,
+                "idempotentReplay", replay)
                 : Map.of("clientRequestId", clientRequestId, "result", outcome,
                 "runId", runId, "examinedCandidateCount", examined,
                 "ineligibleCandidateCount", ineligible, "deferredCandidateCount", deferred,
-                "idempotentReplay", replay);
+                "quarantinedCandidateCount", quarantined, "idempotentReplay", replay);
         return new TestSecurityEvent(0, Instant.now(), identity.correlationId(),
                 identity.tenantId(), identity.environmentId(), identity.actorId(),
                 "DURABLE_WORKER_ACQUISITION", "ALLOWED",

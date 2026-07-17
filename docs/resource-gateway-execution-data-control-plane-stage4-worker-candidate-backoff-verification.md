@@ -86,6 +86,7 @@ sequence. Counts saturate rather than overflow.
 | --- | --- | --- |
 | `gateway.testing.durable.worker-acquisitions.initial-backoff-seconds` | `RG_TEST_DURABLE_WORKER_INITIAL_BACKOFF_SECONDS` | `5` |
 | `gateway.testing.durable.worker-acquisitions.maximum-backoff-seconds` | `RG_TEST_DURABLE_WORKER_MAXIMUM_BACKOFF_SECONDS` | `300` |
+| `gateway.testing.durable.worker-acquisitions.quarantine-threshold` | `RG_TEST_DURABLE_WORKER_QUARANTINE_THRESHOLD` | `32` |
 | `gateway.testing.runtime-slo.worker-backoff-max-active` | `RG_TEST_RUNTIME_SLO_WORKER_BACKOFF_MAX_ACTIVE` | `1000` |
 | `gateway.testing.runtime-slo.worker-backoff-max-retry-due` | `RG_TEST_RUNTIME_SLO_WORKER_BACKOFF_MAX_RETRY_DUE` | `100` |
 | `gateway.testing.runtime-slo.worker-backoff-max-consecutive-failures` | `RG_TEST_RUNTIME_SLO_WORKER_BACKOFF_MAX_CONSECUTIVE_FAILURES` | `16` |
@@ -134,9 +135,10 @@ and shaded CLI verification.
 
 ## Honest Boundary
 
-This is bounded temporary suppression, not permanent quarantine. It has no dead-letter state,
-manual remediation workflow, per-tenant policy, priority/fairness queue, adaptive retry classifier,
-alert routing, or automatic deletion of indefinitely abandoned due records. Global SLO pressure
-makes those records visible without exposing identities. Runtime-state delivery, cross-process
-worker supervision, hard cancellation, non-H2 dialect certification, and production-load
-qualification also remain Stage 4 work.
+This document verifies the temporary-backoff portion. The successor increment now converts a
+threshold-crossing exact checkpoint into permanent worker quarantine; see
+[Stage 4 worker candidate quarantine verification](resource-gateway-execution-data-control-plane-stage4-worker-candidate-quarantine-verification.md).
+That successor still has no dedicated list/claim/release remediation protocol, immutable resolution
+receipt, per-tenant policy, priority/fairness queue, adaptive retry classifier, or alert routing.
+Runtime-state delivery, cross-process worker supervision, hard cancellation, non-H2 dialect
+certification, and production-load qualification also remain Stage 4 work.

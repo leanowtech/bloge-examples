@@ -265,12 +265,21 @@ Legacy checkpoints and exact authorization `403`/`409` outcomes create a databas
 scheduling cache for that checkpoint fingerprint. An active record skips the authority call but not
 scan progress; a due repeat doubles from `RG_TEST_DURABLE_WORKER_INITIAL_BACKOFF_SECONDS` (default
 `5`) to `RG_TEST_DURABLE_WORKER_MAXIMUM_BACKOFF_SECONDS` (default `300`). Infrastructure failures do
-not create a deferral or advance the cursor. Checkpoint replacement or successful state transition
-clears the old record. This is non-blocking pull control with temporary deterministic backoff, not a
-fairness or quarantine claim: it does not transfer BLOGE runtime state to the caller, reserve an
-execution-capacity permit while idle, provide tenant weighting/priority/aging, dead-letter/manual
-remediation, or supervise a remote process. The exact transaction and counterexample semantics are
-documented in [Stage 4 worker candidate backoff verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-candidate-backoff-verification.md).
+not create a deferral or advance the cursor. After
+`RG_TEST_DURABLE_WORKER_QUARANTINE_THRESHOLD` consecutive same-reason failures (default `32`), the
+winning cursor transaction converts the exact checkpoint from temporary backoff to permanent worker
+quarantine. Quarantined candidates still advance the cyclic scan but are never re-authorized or
+claimed by worker pull merely because time passed. Checkpoint replacement or an explicit successful
+state transition clears the old fingerprint's scheduling state.
+
+This is non-blocking pull control with automatic exact-checkpoint isolation, not a complete
+dead-letter operations product: it does not transfer BLOGE runtime state to the caller, reserve an
+execution-capacity permit while idle, provide tenant weighting/priority/aging, expose a quarantine
+list, or provide maintenance-purpose claim/release receipts. The existing run-targeted owner-claim
+path remains the authenticated and audited explicit recovery escape until that dedicated maintenance
+protocol lands. Exact semantics are documented in
+[Stage 4 worker candidate backoff verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-candidate-backoff-verification.md)
+and [Stage 4 worker candidate quarantine verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-candidate-quarantine-verification.md).
 
 ### Claim an expired durable test lease
 
@@ -712,7 +721,8 @@ unhealthy. Only incomplete evidence, excessive/old queues, expired ownership, re
 store unavailability produce stable SLO violations. Fixed-vocabulary meters live under
 `resource.gateway.test.runtime.*`; tags are limited to closed `status`, `queue`, `scope`, and `kind`
 values. Deterministic worker deferrals add only the closed `reason` tag plus untagged retry-due,
-maximum-failure, and oldest-age gauges. Configure thresholds through
+maximum-failure, and oldest-age gauges. Worker quarantines add the same closed `reason` vocabulary
+plus untagged maximum-failure and oldest-age gauges. Configure thresholds through
 `gateway.testing.runtime-slo.*` / `RG_TEST_RUNTIME_SLO_*`; the full table is in the testing
 control-plane guide. Lifecycle/time indexes support these aggregate reads, and the outcome lookback
 is hard-capped at 365 days.

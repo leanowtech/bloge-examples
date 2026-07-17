@@ -290,6 +290,28 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 ON rg_test_durable_worker_candidate_deferrals (retry_after, reason)
                 """);
         jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_worker_candidate_quarantines (
+                    scope_key VARCHAR(80) NOT NULL,
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(32) NOT NULL,
+                    organization_id VARCHAR(255) NOT NULL,
+                    project_id VARCHAR(255) NOT NULL,
+                    run_id VARCHAR(255) NOT NULL,
+                    checkpoint_fingerprint VARCHAR(80) NOT NULL,
+                    reason VARCHAR(64) NOT NULL,
+                    consecutive_failures BIGINT NOT NULL,
+                    quarantine_threshold INT NOT NULL,
+                    first_observed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    quarantined_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(80) NOT NULL,
+                    PRIMARY KEY (scope_key, run_id)
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_durable_worker_quarantine_slo_idx
+                ON rg_test_durable_worker_candidate_quarantines (quarantined_at, reason)
+                """);
+        jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS rg_test_durable_recovery_heartbeats (
                     tenant_id VARCHAR(255) NOT NULL,
                     environment_id VARCHAR(32) NOT NULL,
@@ -745,6 +767,8 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 WorkerAcquisitionOutcome outcome = WorkerAcquisitionOutcome.NO_WORK;
                 if (requiredSelection.isPresent()) {
                     WorkerAcquisitionSelection selected = requiredSelection.get();
+                    requireWorkerCandidateNotQuarantined(
+                            requiredCommand.scope(), selected.claim());
                     claimed = claimExpiredLeaseAt(selected.claim(), observedAt);
                     if (!requiredCommand.scope().contains(claimed)) {
                         throw conflict(STALE_FENCE,
@@ -760,7 +784,7 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     persistWorkerCandidateDeferrals(
                             requiredCommand.scope(), requiredDeferrals, observedAt);
                 }
-                requiredSelection.ifPresent(value -> clearWorkerCandidateDeferral(
+                requiredSelection.ifPresent(value -> clearWorkerCandidateSchedulingState(
                         requiredCommand.scope(), value.claim().runId(),
                         value.claim().expectedCheckpointFingerprint()));
                 StoredWorkerAcquisition stored = newWorkerAcquisition(
@@ -1717,6 +1741,8 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             Instant observedAt) {
         Map<String, ActiveWorkerCandidateDeferral> activeDeferrals =
                 activeWorkerCandidateDeferrals(scope, checkpoints, observedAt);
+        Map<String, ActiveWorkerCandidateQuarantine> activeQuarantines =
+                activeWorkerCandidateQuarantines(scope, checkpoints);
         for (DurableTestExecutionCheckpoint checkpoint : checkpoints) {
             DurableTestExecutionCheckpoint.Lifecycle lifecycle = checkpoint.lifecycle();
             WorkerScanProgress progress = new WorkerScanProgress(
@@ -1724,7 +1750,8 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     lifecycle.leaseExpiresAt(), lifecycle.updatedAt(), checkpoint.runId());
             destination.add(new RecoveryCandidate(
                     checkpoint, progress,
-                    Optional.ofNullable(activeDeferrals.get(checkpoint.runId()))));
+                    Optional.ofNullable(activeDeferrals.get(checkpoint.runId())),
+                    Optional.ofNullable(activeQuarantines.get(checkpoint.runId()))));
         }
     }
 
@@ -1841,6 +1868,53 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         return Map.copyOf(active);
     }
 
+    private Map<String, ActiveWorkerCandidateQuarantine> activeWorkerCandidateQuarantines(
+            WorkerAcquisitionScope scope,
+            List<DurableTestExecutionCheckpoint> checkpoints) {
+        if (checkpoints.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = String.join(",",
+                java.util.Collections.nCopies(checkpoints.size(), "?"));
+        Object[] arguments = new Object[checkpoints.size() + 1];
+        arguments[0] = workerScanScopeKey(scope);
+        Map<String, String> checkpointFingerprints = new HashMap<>();
+        for (int index = 0; index < checkpoints.size(); index++) {
+            DurableTestExecutionCheckpoint checkpoint = checkpoints.get(index);
+            arguments[index + 1] = checkpoint.runId();
+            if (checkpointFingerprints.putIfAbsent(
+                    checkpoint.runId(), checkpoint.checkpointFingerprint()) != null) {
+                throw new IllegalStateException("Worker candidate page contains a duplicate run");
+            }
+        }
+        List<StoredWorkerCandidateQuarantine> rows = jdbc.query(("""
+                SELECT scope_key, tenant_id, environment_id, organization_id, project_id,
+                       run_id, checkpoint_fingerprint, reason, consecutive_failures,
+                       quarantine_threshold, first_observed_at, quarantined_at,
+                       record_fingerprint
+                FROM rg_test_durable_worker_candidate_quarantines
+                WHERE scope_key = ? AND run_id IN (%s)
+                """).formatted(placeholders), this::mapWorkerCandidateQuarantine, arguments);
+        Map<String, ActiveWorkerCandidateQuarantine> active = new HashMap<>();
+        Set<String> storedRuns = new HashSet<>();
+        for (StoredWorkerCandidateQuarantine stored : rows) {
+            requireValidWorkerCandidateQuarantine(stored);
+            if (!scope.equals(stored.scope())) {
+                throw new IllegalStateException(
+                        "Stored worker candidate quarantine scope is corrupt");
+            }
+            if (!storedRuns.add(stored.runId())) {
+                throw new IllegalStateException(
+                        "Stored worker candidate quarantine contains a duplicate run");
+            }
+            if (stored.checkpointFingerprint().equals(
+                    checkpointFingerprints.get(stored.runId()))) {
+                active.put(stored.runId(), stored.activeQuarantine());
+            }
+        }
+        return Map.copyOf(active);
+    }
+
     private Optional<StoredWorkerCandidateDeferral> findWorkerCandidateDeferral(
             WorkerAcquisitionScope scope,
             String runId) {
@@ -1863,6 +1937,30 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         return Optional.of(stored);
     }
 
+    private Optional<StoredWorkerCandidateQuarantine> findWorkerCandidateQuarantine(
+            WorkerAcquisitionScope scope,
+            String runId) {
+        List<StoredWorkerCandidateQuarantine> rows = jdbc.query("""
+                        SELECT scope_key, tenant_id, environment_id, organization_id, project_id,
+                               run_id, checkpoint_fingerprint, reason, consecutive_failures,
+                               quarantine_threshold, first_observed_at, quarantined_at,
+                               record_fingerprint
+                        FROM rg_test_durable_worker_candidate_quarantines
+                        WHERE scope_key = ? AND run_id = ?
+                        """, this::mapWorkerCandidateQuarantine,
+                workerScanScopeKey(scope), runId);
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        StoredWorkerCandidateQuarantine stored = rows.getFirst();
+        requireValidWorkerCandidateQuarantine(stored);
+        if (!scope.equals(stored.scope())) {
+            throw new IllegalStateException(
+                    "Stored worker candidate quarantine scope is corrupt");
+        }
+        return Optional.of(stored);
+    }
+
     private StoredWorkerCandidateDeferral mapWorkerCandidateDeferral(
             ResultSet rs,
             int rowNumber) throws SQLException {
@@ -1875,6 +1973,20 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 rs.getTimestamp("first_observed_at").toInstant(),
                 rs.getTimestamp("last_observed_at").toInstant(),
                 rs.getTimestamp("retry_after").toInstant(),
+                rs.getString("record_fingerprint"));
+    }
+
+    private StoredWorkerCandidateQuarantine mapWorkerCandidateQuarantine(
+            ResultSet rs,
+            int rowNumber) throws SQLException {
+        return new StoredWorkerCandidateQuarantine(
+                rs.getString("scope_key"), rs.getString("tenant_id"),
+                rs.getString("environment_id"), rs.getString("organization_id"),
+                rs.getString("project_id"), rs.getString("run_id"),
+                rs.getString("checkpoint_fingerprint"), rs.getString("reason"),
+                rs.getLong("consecutive_failures"), rs.getInt("quarantine_threshold"),
+                rs.getTimestamp("first_observed_at").toInstant(),
+                rs.getTimestamp("quarantined_at").toInstant(),
                 rs.getString("record_fingerprint"));
     }
 
@@ -1896,6 +2008,25 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         if (!workerScanScopeKey(scope).equals(stored.scopeKey())
                 || !expected.equals(stored.recordFingerprint())) {
             throw new IllegalStateException("Stored worker candidate deferral is corrupt");
+        }
+    }
+
+    private void requireValidWorkerCandidateQuarantine(
+            StoredWorkerCandidateQuarantine stored) {
+        WorkerAcquisitionScope scope;
+        ActiveWorkerCandidateQuarantine active;
+        try {
+            scope = stored.scope();
+            active = stored.activeQuarantine();
+        } catch (RuntimeException invalid) {
+            throw new IllegalStateException(
+                    "Stored worker candidate quarantine is corrupt", invalid);
+        }
+        String expected = workerCandidateQuarantineFingerprint(
+                scope, stored.runId(), stored.checkpointFingerprint(), active);
+        if (!workerScanScopeKey(scope).equals(stored.scopeKey())
+                || !expected.equals(stored.recordFingerprint())) {
+            throw new IllegalStateException("Stored worker candidate quarantine is corrupt");
         }
     }
 
@@ -1952,12 +2083,23 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             List<WorkerCandidateDeferral> deferrals,
             Instant observedAt) {
         for (WorkerCandidateDeferral deferral : deferrals) {
-            Optional<DurableTestExecutionCheckpoint> current = findInternal(
-                    scope.tenantId(), scope.environmentId(), deferral.runId());
+            Optional<DurableTestExecutionCheckpoint> current =
+                    findWorkerSchedulingCheckpointForUpdate(
+                            scope.tenantId(), scope.environmentId(), deferral.runId());
             if (current.isEmpty()
                     || !scope.contains(current.orElseThrow())
                     || !deferral.checkpointFingerprint().equals(
                     current.orElseThrow().checkpointFingerprint())) {
+                continue;
+            }
+            Optional<StoredWorkerCandidateQuarantine> quarantined =
+                    findWorkerCandidateQuarantine(scope, deferral.runId());
+            if (quarantined.isPresent()) {
+                if (!quarantined.orElseThrow().checkpointFingerprint().equals(
+                        deferral.checkpointFingerprint())) {
+                    throw new IllegalStateException(
+                            "Stored worker candidate quarantine conflicts with live checkpoint");
+                }
                 continue;
             }
             Optional<StoredWorkerCandidateDeferral> prior = findWorkerCandidateDeferral(
@@ -1976,6 +2118,17 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     ? saturatingIncrement(prior.orElseThrow().consecutiveFailures()) : 1;
             Instant firstObservedAt = consecutive
                     ? prior.orElseThrow().firstObservedAt() : observedAt;
+            if (failures >= deferral.quarantineThreshold()) {
+                ActiveWorkerCandidateQuarantine quarantine =
+                        new ActiveWorkerCandidateQuarantine(
+                                deferral.reason(), failures, deferral.quarantineThreshold(),
+                                firstObservedAt, observedAt);
+                insertWorkerCandidateQuarantine(
+                        scope, deferral.runId(), deferral.checkpointFingerprint(), quarantine);
+                clearWorkerCandidateDeferral(
+                        scope, deferral.runId(), deferral.checkpointFingerprint());
+                continue;
+            }
             Duration delay = exponentialBackoff(
                     deferral.initialBackoff(), deferral.maximumBackoff(), failures);
             Instant retryAfter = observedAt.plus(delay);
@@ -1998,6 +2151,31 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         }
     }
 
+    private void insertWorkerCandidateQuarantine(
+            WorkerAcquisitionScope scope,
+            String runId,
+            String checkpointFingerprint,
+            ActiveWorkerCandidateQuarantine quarantine) {
+        String fingerprint = workerCandidateQuarantineFingerprint(
+                scope, runId, checkpointFingerprint, quarantine);
+        int inserted = jdbc.update("""
+                INSERT INTO rg_test_durable_worker_candidate_quarantines (
+                    scope_key, tenant_id, environment_id, organization_id, project_id,
+                    run_id, checkpoint_fingerprint, reason, consecutive_failures,
+                    quarantine_threshold, first_observed_at, quarantined_at,
+                    record_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, workerScanScopeKey(scope), scope.tenantId(), scope.environmentId(),
+                scope.organizationId(), scope.projectId(), runId, checkpointFingerprint,
+                quarantine.reason().name(), quarantine.consecutiveFailures(),
+                quarantine.quarantineThreshold(), Timestamp.from(quarantine.firstObservedAt()),
+                Timestamp.from(quarantine.quarantinedAt()), fingerprint);
+        if (inserted != 1) {
+            throw new IllegalStateException(
+                    "Durable worker candidate quarantine was not inserted exactly once");
+        }
+    }
+
     private void clearWorkerCandidateDeferral(
             WorkerAcquisitionScope scope,
             String runId,
@@ -2016,6 +2194,49 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         if (deleted != 1) {
             throw new IllegalStateException(
                     "Durable worker candidate deferral changed while clearing");
+        }
+    }
+
+    private void clearWorkerCandidateQuarantine(
+            WorkerAcquisitionScope scope,
+            String runId,
+            String checkpointFingerprint) {
+        Optional<StoredWorkerCandidateQuarantine> stored = findWorkerCandidateQuarantine(
+                scope, runId);
+        if (stored.isEmpty()
+                || !stored.orElseThrow().checkpointFingerprint().equals(checkpointFingerprint)) {
+            return;
+        }
+        int deleted = jdbc.update("""
+                        DELETE FROM rg_test_durable_worker_candidate_quarantines
+                        WHERE scope_key = ? AND run_id = ?
+                          AND checkpoint_fingerprint = ? AND record_fingerprint = ?
+                        """, stored.orElseThrow().scopeKey(), runId, checkpointFingerprint,
+                stored.orElseThrow().recordFingerprint());
+        if (deleted != 1) {
+            throw new IllegalStateException(
+                    "Durable worker candidate quarantine changed while clearing");
+        }
+    }
+
+    private void clearWorkerCandidateSchedulingState(
+            WorkerAcquisitionScope scope,
+            String runId,
+            String checkpointFingerprint) {
+        clearWorkerCandidateDeferral(scope, runId, checkpointFingerprint);
+        clearWorkerCandidateQuarantine(scope, runId, checkpointFingerprint);
+    }
+
+    private void requireWorkerCandidateNotQuarantined(
+            WorkerAcquisitionScope scope,
+            LeaseClaim claim) {
+        Optional<StoredWorkerCandidateQuarantine> stored = findWorkerCandidateQuarantine(
+                scope, claim.runId());
+        if (stored.isPresent()
+                && stored.orElseThrow().checkpointFingerprint().equals(
+                claim.expectedCheckpointFingerprint())) {
+            throw conflict(NOT_RESUMABLE,
+                    "Selected durable checkpoint is quarantined from worker acquisition");
         }
     }
 
@@ -2052,6 +2273,23 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 Map.entry("firstObservedAt", active.firstObservedAt()),
                 Map.entry("lastObservedAt", active.lastObservedAt()),
                 Map.entry("retryAfter", active.retryAfter())));
+    }
+
+    private String workerCandidateQuarantineFingerprint(
+            WorkerAcquisitionScope scope,
+            String runId,
+            String checkpointFingerprint,
+            ActiveWorkerCandidateQuarantine active) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerCandidateQuarantine.v1"),
+                Map.entry("scope", scope),
+                Map.entry("runId", runId),
+                Map.entry("checkpointFingerprint", checkpointFingerprint),
+                Map.entry("reason", active.reason().name()),
+                Map.entry("consecutiveFailures", active.consecutiveFailures()),
+                Map.entry("quarantineThreshold", active.quarantineThreshold()),
+                Map.entry("firstObservedAt", active.firstObservedAt()),
+                Map.entry("quarantinedAt", active.quarantinedAt())));
     }
 
     private Optional<WorkerScanCursorSnapshot> findWorkerScanCursor(
@@ -2419,7 +2657,7 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         if (claimUpdate(claimed, claim, claimedAt) != 1) {
             throw conflict(STALE_FENCE, "Durable checkpoint lease changed concurrently");
         }
-        clearWorkerCandidateDeferral(
+        clearWorkerCandidateSchedulingState(
                 new WorkerAcquisitionScope(
                         current.scope().tenantId(), current.scope().organizationId(),
                         current.scope().projectId(), current.scope().environmentId()),
@@ -2932,6 +3170,17 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         return rows.stream().findFirst().map(this::verifiedCheckpoint);
     }
 
+    private Optional<DurableTestExecutionCheckpoint> findWorkerSchedulingCheckpointForUpdate(
+            String tenantId,
+            String environmentId,
+            String runId) {
+        List<StoredRow> rows = jdbc.query(selectColumns() + """
+                        WHERE tenant_id = ? AND environment_id = ? AND run_id = ?
+                        FOR UPDATE
+                        """, this::mapRow, tenantId, environmentId, runId);
+        return rows.stream().findFirst().map(this::verifiedCheckpoint);
+    }
+
     private boolean durableIdentityExists(String runId, String engineExecutionId) {
         Integer count = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM rg_test_durable_execution_checkpoints
@@ -2994,7 +3243,7 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 next.scope().tenantId(), next.scope().environmentId(), expected.ownerId(),
                 expected.leaseEpoch(), expected.revision(), current.checkpointFingerprint());
         if (updated == 1) {
-            clearWorkerCandidateDeferral(
+            clearWorkerCandidateSchedulingState(
                     new WorkerAcquisitionScope(
                             current.scope().tenantId(), current.scope().organizationId(),
                             current.scope().projectId(), current.scope().environmentId()),
@@ -3289,6 +3538,32 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             return new ActiveWorkerCandidateDeferral(
                     WorkerCandidateDeferralReason.valueOf(reason), consecutiveFailures,
                     firstObservedAt, lastObservedAt, retryAfter);
+        }
+    }
+
+    private record StoredWorkerCandidateQuarantine(
+            String scopeKey,
+            String tenantId,
+            String environmentId,
+            String organizationId,
+            String projectId,
+            String runId,
+            String checkpointFingerprint,
+            String reason,
+            long consecutiveFailures,
+            int quarantineThreshold,
+            Instant firstObservedAt,
+            Instant quarantinedAt,
+            String recordFingerprint) {
+        private WorkerAcquisitionScope scope() {
+            return new WorkerAcquisitionScope(
+                    tenantId, organizationId, projectId, environmentId);
+        }
+
+        private ActiveWorkerCandidateQuarantine activeQuarantine() {
+            return new ActiveWorkerCandidateQuarantine(
+                    WorkerCandidateDeferralReason.valueOf(reason), consecutiveFailures,
+                    quarantineThreshold, firstObservedAt, quarantinedAt);
         }
     }
 

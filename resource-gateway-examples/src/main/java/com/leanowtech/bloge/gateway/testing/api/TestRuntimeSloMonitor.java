@@ -97,6 +97,8 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
                     .withDetail("workItemQueue", queueDetails(assessment.workItems()))
                     .withDetail("workerCandidateDeferrals",
                             workerDeferralDetails(assessment.workerCandidateDeferrals()))
+                    .withDetail("workerCandidateQuarantines",
+                            workerQuarantineDetails(assessment.workerCandidateQuarantines()))
                     .withDetail("storage", assessment.storage());
         }
         return builder.build();
@@ -150,6 +152,18 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
                 policy.workerCandidateDeferrals().maxOldestActiveAge()) > 0) {
             violations.add(Violation.WORKER_CANDIDATE_BACKOFF_STALE.name());
         }
+        DatabaseTestRuntimeSloControlPlane.WorkerCandidateQuarantineSnapshot quarantines =
+                snapshot.workerCandidateQuarantines();
+        if (quarantines.totalRecords()
+                > policy.workerCandidateQuarantines().maxRecords()) {
+            violations.add(Violation.WORKER_CANDIDATE_QUARANTINE_BACKLOG.name());
+        }
+        Duration oldestQuarantineAge = age(
+                quarantines.oldestQuarantinedAt(), snapshot.observedAt());
+        if (oldestQuarantineAge != null && oldestQuarantineAge.compareTo(
+                policy.workerCandidateQuarantines().maxOldestAge()) > 0) {
+            violations.add(Violation.WORKER_CANDIDATE_QUARANTINE_STALE.name());
+        }
         DatabaseTestRuntimeSloControlPlane.StorageSnapshot storage = snapshot.storage();
         if (storage.expiredExecutionRecords()
                 > policy.storage().maxExpiredExecutionRecords()) {
@@ -178,7 +192,11 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
                         deferrals.totalRecords(), deferrals.activeRecords(),
                         deferrals.retryDueRecords(),
                         deferrals.maximumActiveConsecutiveFailures(),
-                        secondsOrUnknown(oldestDeferralAge)), storage);
+                        secondsOrUnknown(oldestDeferralAge)),
+                new ObservedWorkerQuarantines(
+                        quarantines.totalRecords(),
+                        quarantines.maximumConsecutiveFailures(),
+                        secondsOrUnknown(oldestQuarantineAge)), storage);
     }
 
     private static void assessEvidence(
@@ -236,6 +254,14 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
                 "retryDue", deferrals.retryDue(),
                 "maximumConsecutiveFailures", deferrals.maximumConsecutiveFailures(),
                 "oldestActiveAgeSeconds", deferrals.oldestActiveAgeSeconds());
+    }
+
+    private static java.util.Map<String, Long> workerQuarantineDetails(
+            ObservedWorkerQuarantines quarantines) {
+        return java.util.Map.of(
+                "records", quarantines.records(),
+                "maximumConsecutiveFailures", quarantines.maximumConsecutiveFailures(),
+                "oldestAgeSeconds", quarantines.oldestAgeSeconds());
     }
 
     private static Duration age(Instant earlier, Instant observedAt) {
@@ -314,6 +340,10 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
         WORKER_CANDIDATE_REPEATED_FAILURES,
         /** The oldest active deterministic candidate backoff exceeds policy. */
         WORKER_CANDIDATE_BACKOFF_STALE,
+        /** Active exact-checkpoint quarantines exceed their operational backlog limit. */
+        WORKER_CANDIDATE_QUARANTINE_BACKLOG,
+        /** The oldest unresolved exact-checkpoint quarantine exceeds policy. */
+        WORKER_CANDIDATE_QUARANTINE_STALE,
         /** Expired child execution records exceed their retention backlog limit. */
         EXECUTION_RETENTION_BACKLOG_EXCEEDED,
         /** Expired suite records exceed their retention backlog limit. */
@@ -337,6 +367,7 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
      * @param durableExecutions resumable durable-execution limits
      * @param workItems dispatchable and expired-claim work limits
      * @param workerCandidateDeferrals deterministic worker-candidate backoff limits
+     * @param workerCandidateQuarantines permanent exact-checkpoint quarantine limits
      * @param storage retained-record cleanup backlog limits
      */
     public record Policy(
@@ -348,6 +379,7 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
             QueuePolicy durableExecutions,
             QueuePolicy workItems,
             WorkerCandidateDeferralPolicy workerCandidateDeferrals,
+            WorkerCandidateQuarantinePolicy workerCandidateQuarantines,
             StoragePolicy storage) {
         /** Creates a compatibility policy with effectively unbounded candidate deferral limits. */
         public Policy(
@@ -364,6 +396,26 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
                     new WorkerCandidateDeferralPolicy(
                             Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
                             Duration.ofDays(36500)),
+                    new WorkerCandidateQuarantinePolicy(
+                            Long.MAX_VALUE, Duration.ofDays(36500)),
+                    storage);
+        }
+
+        /** Creates a compatibility policy with effectively unbounded quarantine limits. */
+        public Policy(
+                Duration outcomeLookback,
+                EvidencePolicy executionEvidence,
+                EvidencePolicy suiteEvidence,
+                QueuePolicy suiteRuns,
+                QueuePolicy durableCreations,
+                QueuePolicy durableExecutions,
+                QueuePolicy workItems,
+                WorkerCandidateDeferralPolicy workerCandidateDeferrals,
+                StoragePolicy storage) {
+            this(outcomeLookback, executionEvidence, suiteEvidence, suiteRuns,
+                    durableCreations, durableExecutions, workItems, workerCandidateDeferrals,
+                    new WorkerCandidateQuarantinePolicy(
+                            Long.MAX_VALUE, Duration.ofDays(36500)),
                     storage);
         }
 
@@ -381,6 +433,7 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
             Objects.requireNonNull(durableExecutions, "durableExecutions");
             Objects.requireNonNull(workItems, "workItems");
             Objects.requireNonNull(workerCandidateDeferrals, "workerCandidateDeferrals");
+            Objects.requireNonNull(workerCandidateQuarantines, "workerCandidateQuarantines");
             Objects.requireNonNull(storage, "storage");
         }
     }
@@ -443,6 +496,23 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
     }
 
     /**
+     * Permanent exact-checkpoint quarantine pressure policy.
+     *
+     * @param maxRecords largest acceptable active quarantine backlog
+     * @param maxOldestAge oldest acceptable unresolved quarantine age
+     */
+    public record WorkerCandidateQuarantinePolicy(long maxRecords, Duration maxOldestAge) {
+        /** Rejects negative counts or a non-positive age. */
+        public WorkerCandidateQuarantinePolicy {
+            if (maxRecords < 0) {
+                throw new IllegalArgumentException(
+                        "Worker candidate quarantine SLO limit must be non-negative");
+            }
+            positive(maxOldestAge, "maxOldestAge");
+        }
+    }
+
+    /**
      * Retained-record cleanup backlog policy.
      *
      * @param maxExpiredExecutionRecords largest expired child-evidence backlog
@@ -476,6 +546,12 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
             long oldestActiveAgeSeconds) {
     }
 
+    private record ObservedWorkerQuarantines(
+            long records,
+            long maximumConsecutiveFailures,
+            long oldestAgeSeconds) {
+    }
+
     private record Assessment(
             State state,
             List<String> violations,
@@ -491,6 +567,7 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
             ObservedQueue durableExecutions,
             ObservedQueue workItems,
             ObservedWorkerDeferrals workerCandidateDeferrals,
+            ObservedWorkerQuarantines workerCandidateQuarantines,
             DatabaseTestRuntimeSloControlPlane.StorageSnapshot storage) {
         private static Assessment storeUnavailable() {
             DatabaseTestRuntimeSloControlPlane.StorageSnapshot empty =
@@ -498,9 +575,12 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
             ObservedQueue queue = new ObservedQueue(0, 0, -1);
             ObservedWorkerDeferrals deferrals =
                     new ObservedWorkerDeferrals(0, 0, 0, 0, -1);
+            ObservedWorkerQuarantines quarantines =
+                    new ObservedWorkerQuarantines(0, 0, -1);
             return new Assessment(State.STORE_UNAVAILABLE,
                     List.of(Violation.TEST_RUNTIME_STORE_UNAVAILABLE.name()), null,
-                    0, 0, 0, 0, 0, 0, queue, queue, queue, queue, deferrals, empty);
+                    0, 0, 0, 0, 0, 0, queue, queue, queue, queue,
+                    deferrals, quarantines, empty);
         }
     }
 

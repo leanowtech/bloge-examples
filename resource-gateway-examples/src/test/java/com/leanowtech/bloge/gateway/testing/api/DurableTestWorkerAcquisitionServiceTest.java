@@ -145,6 +145,49 @@ class DurableTestWorkerAcquisitionServiceTest {
     }
 
     @Test
+    void skipsQuarantinedExactCandidateWithoutReauthorizingDependencies() {
+        DurableTestExecutionCheckpoint candidate = checkpoint("run-quarantined", SHA_A);
+        var queued = page(candidate).candidates().getFirst();
+        var quarantine = new DurableTestExecutionCheckpointRepository
+                .ActiveWorkerCandidateQuarantine(
+                DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                        .AUTHORIZATION_DENIED,
+                32, 32, Instant.parse("2026-07-16T00:00:00Z"),
+                Instant.parse("2026-07-17T00:00:00Z"));
+        when(checkpoints.findWorkerAcquisitionResult(any(), eq("poll-1"), any()))
+                .thenReturn(Optional.empty());
+        var quarantinedPage = new DurableTestExecutionCheckpointRepository.RecoveryCandidatePage(
+                List.of(new DurableTestExecutionCheckpointRepository.RecoveryCandidate(
+                        candidate, queued.progress(), Optional.empty(),
+                        Optional.of(quarantine))));
+        when(checkpoints.findExpiredRecoveryCandidates(any())).thenReturn(quarantinedPage);
+        var noWork = mock(
+                DurableTestExecutionCheckpointRepository.WorkerAcquisitionResult.class);
+        when(noWork.outcome()).thenReturn(
+                DurableTestExecutionCheckpointRepository.WorkerAcquisitionOutcome.NO_WORK);
+        when(noWork.observedAt()).thenReturn(Instant.parse("2026-07-17T00:02:00Z"));
+        when(checkpoints.acquireWorkerCommandIdempotently(
+                any(), eq(Optional.empty()), any(), eq(List.of()), any()))
+                .thenReturn(noWork);
+
+        DurableTestWorkerAcquisitionResponse response = service.acquire(
+                request("poll-1"), identity());
+
+        assertThat(response.outcome()).isEqualTo("NO_WORK");
+        verifyNoInteractions(authorizer);
+        ArgumentCaptor<TestRuntimeTransactionMutation> audit =
+                ArgumentCaptor.forClass(TestRuntimeTransactionMutation.class);
+        verify(checkpoints).acquireWorkerCommandIdempotently(
+                any(), eq(Optional.empty()), any(), eq(List.of()), audit.capture());
+        assertThat(audit.getValue()).isNotNull();
+        ArgumentCaptor<TestSecurityEvent> event = ArgumentCaptor.forClass(TestSecurityEvent.class);
+        verify(securityEvents).boundAppend(event.capture());
+        assertThat(event.getValue().facts())
+                .containsEntry("quarantinedCandidateCount", 1)
+                .containsEntry("deferredCandidateCount", 0);
+    }
+
+    @Test
     void commitsBoundedNoWorkResultWithNoCallerSelectedQueueFacts() {
         when(checkpoints.findWorkerAcquisitionResult(any(), eq("poll-1"), any()))
                 .thenReturn(Optional.empty());

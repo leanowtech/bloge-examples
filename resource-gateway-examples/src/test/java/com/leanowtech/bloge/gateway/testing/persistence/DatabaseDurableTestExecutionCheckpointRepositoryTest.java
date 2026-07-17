@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -36,6 +37,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -1829,6 +1831,256 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
 
         assertThat(database.jdbc().queryForObject(
                 "SELECT COUNT(*) FROM rg_test_durable_worker_candidate_deferrals",
+                Integer.class)).isZero();
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_scan_cursors", Integer.class))
+                .isZero();
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_acquisitions", Integer.class))
+                .isZero();
+    }
+
+    @Test
+    void deterministicCandidateFailureAtThresholdBecomesPermanentExactCheckpointQuarantine() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        var candidate = workerCandidate();
+        var observation = new DurableTestExecutionCheckpointRepository.WorkerCandidateDeferral(
+                candidate.progress(), expired.checkpointFingerprint(),
+                DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                        .AUTHORIZATION_DENIED,
+                Duration.ofSeconds(5), Duration.ofMinutes(5), 1);
+
+        repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-quarantine-threshold", SHA_A), Optional.empty(),
+                Optional.of(candidate.progress()), List.of(observation),
+                TestRuntimeTransactionMutation.noop());
+        var projected = workerCandidate();
+
+        assertThat(projected.activeDeferral()).isEmpty();
+        assertThat(projected.activeQuarantine()).isPresent();
+        assertThat(projected.activeQuarantine().orElseThrow().reason())
+                .isEqualTo(DurableTestExecutionCheckpointRepository
+                        .WorkerCandidateDeferralReason.AUTHORIZATION_DENIED);
+        assertThat(projected.activeQuarantine().orElseThrow().consecutiveFailures()).isOne();
+        assertThat(projected.activeQuarantine().orElseThrow().quarantineThreshold()).isOne();
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_candidate_deferrals",
+                Integer.class)).isZero();
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_candidate_quarantines",
+                Integer.class)).isOne();
+    }
+
+    @Test
+    void staleConcurrentScanCannotQuarantineCandidate() {
+        DurableTestExecutionCheckpoint oldest = identifiedCheckpoint(
+                expiredCheckpoint(), "run-oldest", "engine-oldest", "org-a", "project-a",
+                Instant.parse("2000-01-01T00:00:01Z"));
+        DurableTestExecutionCheckpoint next = identifiedCheckpoint(
+                expiredCheckpoint(), "run-next", "engine-next", "org-a", "project-a",
+                Instant.parse("2000-01-01T00:00:02Z"));
+        repository.create(oldest, boundNoop(oldest));
+        repository.create(next, boundNoop(next));
+        var shared = repository.findExpiredRecoveryCandidates(
+                new DurableTestExecutionCheckpointRepository.RecoveryCandidateQuery(
+                        workerScope(), 2));
+        var stale = shared.candidates().getFirst();
+
+        repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-quarantine-winner", SHA_A), Optional.empty(),
+                Optional.of(shared.candidates().getLast().progress()), List.of(),
+                TestRuntimeTransactionMutation.noop());
+        repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-quarantine-stale", SHA_B), Optional.empty(),
+                Optional.of(stale.progress()), List.of(new DurableTestExecutionCheckpointRepository
+                        .WorkerCandidateDeferral(
+                        stale.progress(), stale.checkpoint().checkpointFingerprint(),
+                        DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                                .AUTHORIZATION_CONFLICT,
+                        Duration.ofSeconds(5), Duration.ofMinutes(5), 1)),
+                TestRuntimeTransactionMutation.noop());
+
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_candidate_quarantines",
+                Integer.class)).isZero();
+    }
+
+    @Test
+    void workerSelectionCannotBypassAnExactCheckpointQuarantine() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        var candidate = workerCandidate();
+        repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-quarantine-create", SHA_A), Optional.empty(),
+                Optional.of(candidate.progress()), List.of(new DurableTestExecutionCheckpointRepository
+                        .WorkerCandidateDeferral(
+                        candidate.progress(), expired.checkpointFingerprint(),
+                        DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                                .AUTHORIZATION_DENIED,
+                        Duration.ofSeconds(5), Duration.ofMinutes(5), 1)),
+                TestRuntimeTransactionMutation.noop());
+        var quarantined = workerCandidate();
+
+        assertThatThrownBy(() -> repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-quarantine-bypass", SHA_B),
+                Optional.of(workerSelection(expired, "worker-bypass")),
+                Optional.of(quarantined.progress()), List.of(),
+                TestRuntimeTransactionMutation.noop()))
+                .isInstanceOfSatisfying(
+                        com.leanowtech.bloge.gateway.testing.api
+                                .DurableTestExecutionCheckpointConflictException.class,
+                        conflict -> assertThat(conflict.reason()).isEqualTo(
+                                com.leanowtech.bloge.gateway.testing.api
+                                        .DurableTestExecutionCheckpointConflictException.Reason
+                                        .NOT_RESUMABLE));
+        assertThat(repository.find("tenant-a", "test", expired.runId()).orElseThrow()
+                .checkpointFingerprint()).isEqualTo(expired.checkpointFingerprint());
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_candidate_quarantines",
+                Integer.class)).isOne();
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_acquisitions",
+                Integer.class)).isOne();
+    }
+
+    @Test
+    void checkpointFingerprintChangeInvalidatesHistoricalCandidateQuarantine() throws Exception {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        var candidate = workerCandidate();
+        repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-quarantine-before-change", SHA_A), Optional.empty(),
+                Optional.of(candidate.progress()), List.of(new DurableTestExecutionCheckpointRepository
+                        .WorkerCandidateDeferral(
+                        candidate.progress(), expired.checkpointFingerprint(),
+                        DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                                .LEGACY_PROTOCOL,
+                        Duration.ofSeconds(5), Duration.ofMinutes(5), 1)),
+                TestRuntimeTransactionMutation.noop());
+
+        repository.claimExpiredLease(
+                new DurableTestExecutionCheckpointRepository.LeaseClaim(
+                        "tenant-a", "test", expired.runId(),
+                        new DurableTestExecutionCheckpointRepository.Fence(
+                                expired.lifecycle().ownerId(), expired.lifecycle().leaseEpoch(),
+                                expired.lifecycle().revision()),
+                        expired.checkpointFingerprint(), "replacement-owner",
+                        Duration.ofSeconds(1)));
+        Thread.sleep(1_100);
+
+        assertThat(workerCandidate().activeQuarantine()).isEmpty();
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_candidate_quarantines",
+                Integer.class)).isZero();
+    }
+
+    @Test
+    void concurrentCheckpointTransitionCannotLeaveAStaleCandidateQuarantine() throws Exception {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        var candidate = workerCandidate();
+        var observation = new DurableTestExecutionCheckpointRepository.WorkerCandidateDeferral(
+                candidate.progress(), expired.checkpointFingerprint(),
+                DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                        .AUTHORIZATION_DENIED,
+                Duration.ofSeconds(5), Duration.ofMinutes(5), 1);
+        CountDownLatch transitionWritten = new CountDownLatch(1);
+        CountDownLatch releaseTransition = new CountDownLatch(1);
+        AtomicReference<DurableTestExecutionCheckpoint> claimed = new AtomicReference<>();
+        TransactionTemplate transition = new TransactionTemplate(database.transactionManager());
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var transitioning = executor.submit(() -> transition.executeWithoutResult(ignored -> {
+                claimed.set(repository.claimExpiredLease(
+                        new DurableTestExecutionCheckpointRepository.LeaseClaim(
+                                "tenant-a", "test", expired.runId(),
+                                new DurableTestExecutionCheckpointRepository.Fence(
+                                        expired.lifecycle().ownerId(),
+                                        expired.lifecycle().leaseEpoch(),
+                                        expired.lifecycle().revision()),
+                                expired.checkpointFingerprint(), "replacement-owner",
+                                Duration.ofSeconds(1))));
+                transitionWritten.countDown();
+                try {
+                    if (!releaseTransition.await(5, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("transition release timed out");
+                    }
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("transition interrupted", interrupted);
+                }
+            }));
+            assertThat(transitionWritten.await(5, TimeUnit.SECONDS)).isTrue();
+            var scanning = executor.submit(() -> repository.acquireWorkerCommandIdempotently(
+                    workerCommand("worker-quarantine-transition-race", SHA_A), Optional.empty(),
+                    Optional.of(candidate.progress()), List.of(observation),
+                    TestRuntimeTransactionMutation.noop()));
+            Thread.sleep(100);
+            assertThat(scanning.isDone()).isFalse();
+
+            releaseTransition.countDown();
+            transitioning.get(5, TimeUnit.SECONDS);
+            assertThat(scanning.get(5, TimeUnit.SECONDS).outcome()).isEqualTo(
+                    DurableTestExecutionCheckpointRepository.WorkerAcquisitionOutcome.NO_WORK);
+        }
+
+        assertThat(claimed.get()).isNotNull();
+        assertThat(repository.find("tenant-a", "test", expired.runId()).orElseThrow()
+                .checkpointFingerprint()).isEqualTo(claimed.get().checkpointFingerprint());
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_candidate_quarantines",
+                Integer.class)).isZero();
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_candidate_deferrals",
+                Integer.class)).isZero();
+    }
+
+    @Test
+    void rejectsTamperedCandidateQuarantineBeforeItCanSuppressAuthorization() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        var candidate = workerCandidate();
+        repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-quarantine-tamper", SHA_A), Optional.empty(),
+                Optional.of(candidate.progress()), List.of(new DurableTestExecutionCheckpointRepository
+                        .WorkerCandidateDeferral(
+                        candidate.progress(), expired.checkpointFingerprint(),
+                        DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                                .AUTHORIZATION_DENIED,
+                        Duration.ofSeconds(5), Duration.ofMinutes(5), 1)),
+                TestRuntimeTransactionMutation.noop());
+        database.jdbc().update("""
+                UPDATE rg_test_durable_worker_candidate_quarantines
+                SET consecutive_failures = 99
+                WHERE run_id = 'run-a'
+                """);
+
+        assertThatThrownBy(this::workerCandidate)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("candidate quarantine is corrupt");
+    }
+
+    @Test
+    void companionAuditFailureRollsBackCandidateQuarantineCursorAndNoWorkResult() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        var candidate = workerCandidate();
+        var observation = new DurableTestExecutionCheckpointRepository.WorkerCandidateDeferral(
+                candidate.progress(), expired.checkpointFingerprint(),
+                DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                        .AUTHORIZATION_CONFLICT,
+                Duration.ofSeconds(5), Duration.ofMinutes(5), 1);
+
+        assertThatThrownBy(() -> repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-quarantine-rollback", SHA_A), Optional.empty(),
+                Optional.of(candidate.progress()), List.of(observation), ignored -> {
+                    throw new IllegalStateException("audit unavailable");
+                })).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("audit unavailable");
+
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_candidate_quarantines",
                 Integer.class)).isZero();
         assertThat(database.jdbc().queryForObject(
                 "SELECT COUNT(*) FROM rg_test_durable_worker_scan_cursors", Integer.class))

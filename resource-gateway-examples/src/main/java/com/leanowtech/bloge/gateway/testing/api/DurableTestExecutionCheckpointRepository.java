@@ -711,16 +711,26 @@ public interface DurableTestExecutionCheckpointRepository {
      * @param checkpoint exact candidate checkpoint
      * @param progress atomic cursor progress through this candidate
      * @param activeDeferral verified scheduling backoff for this exact checkpoint, when active
+     * @param activeQuarantine verified permanent quarantine for this exact checkpoint, when active
      */
     record RecoveryCandidate(
             DurableTestExecutionCheckpoint checkpoint,
             WorkerScanProgress progress,
-            Optional<ActiveWorkerCandidateDeferral> activeDeferral) {
-        /** Creates a candidate without an active deterministic-failure backoff. */
+            Optional<ActiveWorkerCandidateDeferral> activeDeferral,
+            Optional<ActiveWorkerCandidateQuarantine> activeQuarantine) {
+        /** Creates a candidate without deterministic-failure scheduling state. */
         public RecoveryCandidate(
                 DurableTestExecutionCheckpoint checkpoint,
                 WorkerScanProgress progress) {
-            this(checkpoint, progress, Optional.empty());
+            this(checkpoint, progress, Optional.empty(), Optional.empty());
+        }
+
+        /** Creates a candidate with legacy temporary-backoff projection only. */
+        public RecoveryCandidate(
+                DurableTestExecutionCheckpoint checkpoint,
+                WorkerScanProgress progress,
+                Optional<ActiveWorkerCandidateDeferral> activeDeferral) {
+            this(checkpoint, progress, activeDeferral, Optional.empty());
         }
 
         /** Requires progress to identify the same candidate and scope. */
@@ -728,6 +738,11 @@ public interface DurableTestExecutionCheckpointRepository {
             checkpoint = Objects.requireNonNull(checkpoint, "checkpoint");
             progress = Objects.requireNonNull(progress, "progress");
             activeDeferral = Objects.requireNonNull(activeDeferral, "activeDeferral");
+            activeQuarantine = Objects.requireNonNull(activeQuarantine, "activeQuarantine");
+            if (activeDeferral.isPresent() && activeQuarantine.isPresent()) {
+                throw new IllegalArgumentException(
+                        "Worker candidate cannot be both deferred and quarantined");
+            }
             if (!progress.scope().contains(checkpoint)
                     || !progress.nextRunId().equals(checkpoint.runId())
                     || !progress.nextLeaseExpiresAt().equals(
@@ -757,15 +772,29 @@ public interface DurableTestExecutionCheckpointRepository {
      * @param reason closed deterministic failure reason; infrastructure outages are forbidden
      * @param initialBackoff first retry delay, in whole seconds
      * @param maximumBackoff bounded retry delay cap, in whole seconds
+     * @param quarantineThreshold positive consecutive same-reason failures before quarantine
      */
     record WorkerCandidateDeferral(
             WorkerScanProgress observedProgress,
             String checkpointFingerprint,
             WorkerCandidateDeferralReason reason,
             Duration initialBackoff,
-            Duration maximumBackoff) {
+            Duration maximumBackoff,
+            int quarantineThreshold) {
         private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
         private static final Duration MAXIMUM_ALLOWED_BACKOFF = Duration.ofHours(24);
+        private static final int MAXIMUM_QUARANTINE_THRESHOLD = 1_000_000;
+
+        /** Creates a compatibility observation that cannot quarantine under practical operation. */
+        public WorkerCandidateDeferral(
+                WorkerScanProgress observedProgress,
+                String checkpointFingerprint,
+                WorkerCandidateDeferralReason reason,
+                Duration initialBackoff,
+                Duration maximumBackoff) {
+            this(observedProgress, checkpointFingerprint, reason, initialBackoff, maximumBackoff,
+                    MAXIMUM_QUARANTINE_THRESHOLD);
+        }
 
         /** Rejects unbounded, ambiguous, or infrastructure-shaped observations. */
         public WorkerCandidateDeferral {
@@ -782,6 +811,11 @@ public interface DurableTestExecutionCheckpointRepository {
             if (maximumBackoff.compareTo(initialBackoff) < 0) {
                 throw new IllegalArgumentException(
                         "maximumBackoff must not be shorter than initialBackoff");
+            }
+            if (quarantineThreshold < 1
+                    || quarantineThreshold > MAXIMUM_QUARANTINE_THRESHOLD) {
+                throw new IllegalArgumentException(
+                        "quarantineThreshold must be between 1 and 1000000");
             }
         }
 
@@ -840,6 +874,38 @@ public interface DurableTestExecutionCheckpointRepository {
                     || firstObservedAt.isAfter(lastObservedAt)
                     || !retryAfter.isAfter(lastObservedAt)) {
                 throw new IllegalArgumentException("Invalid active worker candidate deferral");
+            }
+        }
+    }
+
+    /**
+     * Integrity-verified permanent scheduling quarantine for one exact candidate checkpoint.
+     *
+     * <p>The quarantine is permanent only for the exact checkpoint fingerprint projected beside
+     * it. A fenced checkpoint transition invalidates the record atomically; mere passage of time
+     * never makes the same poisoned closure eligible again.</p>
+     *
+     * @param reason closed deterministic failure reason
+     * @param consecutiveFailures count that met or exceeded the governing threshold
+     * @param quarantineThreshold policy threshold applied by the committing worker command
+     * @param firstObservedAt database time of the first consecutive same-reason observation
+     * @param quarantinedAt database time at which the threshold was crossed
+     */
+    record ActiveWorkerCandidateQuarantine(
+            WorkerCandidateDeferralReason reason,
+            long consecutiveFailures,
+            int quarantineThreshold,
+            Instant firstObservedAt,
+            Instant quarantinedAt) {
+        /** Rejects impossible counts, thresholds, or time ordering. */
+        public ActiveWorkerCandidateQuarantine {
+            reason = Objects.requireNonNull(reason, "reason");
+            firstObservedAt = Objects.requireNonNull(firstObservedAt, "firstObservedAt");
+            quarantinedAt = Objects.requireNonNull(quarantinedAt, "quarantinedAt");
+            if (quarantineThreshold < 1 || quarantineThreshold > 1_000_000
+                    || consecutiveFailures < quarantineThreshold
+                    || firstObservedAt.isAfter(quarantinedAt)) {
+                throw new IllegalArgumentException("Invalid active worker candidate quarantine");
             }
         }
     }

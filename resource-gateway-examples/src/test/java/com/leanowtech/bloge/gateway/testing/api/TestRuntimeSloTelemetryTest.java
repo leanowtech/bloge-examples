@@ -52,6 +52,13 @@ class TestRuntimeSloTelemetryTest {
                                                 .WorkerCandidateDeferralReason
                                                 .AUTHORIZATION_DENIED, 2),
                                 observedAt.minusSeconds(100), 5),
+                        new DatabaseTestRuntimeSloControlPlane.WorkerCandidateQuarantineSnapshot(
+                                counts(DurableTestExecutionCheckpointRepository
+                                                .WorkerCandidateDeferralReason.class,
+                                        DurableTestExecutionCheckpointRepository
+                                                .WorkerCandidateDeferralReason
+                                                .AUTHORIZATION_DENIED, 2),
+                                observedAt.minusSeconds(200), 32),
                         new DatabaseTestRuntimeSloControlPlane.StorageSnapshot(
                                 20, 2, 10, 1, 8, 9));
 
@@ -95,6 +102,15 @@ class TestRuntimeSloTelemetryTest {
         assertThat(registry.get(
                 "resource.gateway.test.runtime.worker.candidate.deferrals.oldest_age")
                 .gauge().value()).isEqualTo(100.0);
+        assertThat(gauge(registry,
+                "resource.gateway.test.runtime.worker.candidate.quarantines",
+                "reason", "authorization_denied")).isEqualTo(2.0);
+        assertThat(registry.get(
+                "resource.gateway.test.runtime.worker.candidate.quarantines.maximum_failures")
+                .gauge().value()).isEqualTo(32.0);
+        assertThat(registry.get(
+                "resource.gateway.test.runtime.worker.candidate.quarantines.oldest_age")
+                .gauge().value()).isEqualTo(200.0);
         assertThat(registry.get("resource.gateway.test.runtime.health").gauge().value())
                 .isEqualTo(-1.0);
         assertThat(registry.getMeters()).allSatisfy(meter ->

@@ -117,6 +117,7 @@ public final class DatabaseTestRuntimeSloControlPlane {
                     durableQueue(observedAt),
                     workQueue(observedAt),
                     workerCandidateDeferrals(observedAt),
+                    workerCandidateQuarantines(),
                     storage(observedAt));
         });
         if (snapshot == null) {
@@ -223,6 +224,45 @@ public final class DatabaseTestRuntimeSloControlPlane {
         return new WorkerCandidateDeferralSnapshot(
                 Map.copyOf(totals), Map.copyOf(active), oldestActive[0],
                 maximumConsecutiveFailures[0]);
+    }
+
+    private WorkerCandidateQuarantineSnapshot workerCandidateQuarantines() {
+        EnumMap<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason, Long>
+                totals = new EnumMap<>(
+                DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason.class);
+        for (var reason : DurableTestExecutionCheckpointRepository
+                .WorkerCandidateDeferralReason.values()) {
+            totals.put(reason, 0L);
+        }
+        Instant[] oldest = new Instant[1];
+        long[] maximumConsecutiveFailures = new long[1];
+        jdbc.query("""
+                SELECT reason, COUNT(*) AS total_count,
+                       MIN(quarantined_at) AS oldest_quarantined,
+                       COALESCE(MAX(consecutive_failures), 0) AS maximum_consecutive_failures
+                FROM rg_test_durable_worker_candidate_quarantines
+                GROUP BY reason
+                """, rs -> {
+            DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason reason;
+            try {
+                reason = DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                        .valueOf(rs.getString("reason"));
+            } catch (IllegalArgumentException invalid) {
+                throw new IllegalStateException(
+                        "Stored worker quarantine reason is outside its closed vocabulary");
+            }
+            totals.put(reason, rs.getLong("total_count"));
+            Timestamp candidateOldest = rs.getTimestamp("oldest_quarantined");
+            if (candidateOldest != null && (oldest[0] == null
+                    || candidateOldest.toInstant().isBefore(oldest[0]))) {
+                oldest[0] = candidateOldest.toInstant();
+            }
+            maximumConsecutiveFailures[0] = Math.max(
+                    maximumConsecutiveFailures[0],
+                    rs.getLong("maximum_consecutive_failures"));
+        });
+        return new WorkerCandidateQuarantineSnapshot(
+                Map.copyOf(totals), oldest[0], maximumConsecutiveFailures[0]);
     }
 
     private QueueSnapshot queue(String sql, Instant... instants) {
@@ -335,6 +375,7 @@ public final class DatabaseTestRuntimeSloControlPlane {
      * @param durableExecutions resumable durable execution queue
      * @param workItems dispatchable or expired-claim work queue
      * @param workerCandidateDeferrals deterministic worker authorization backoff pressure
+     * @param workerCandidateQuarantines permanently ineligible exact-checkpoint pressure
      * @param storage retained-record pressure
      */
     public record OperationalSnapshot(
@@ -350,6 +391,7 @@ public final class DatabaseTestRuntimeSloControlPlane {
             QueueSnapshot durableExecutions,
             QueueSnapshot workItems,
             WorkerCandidateDeferralSnapshot workerCandidateDeferrals,
+            WorkerCandidateQuarantineSnapshot workerCandidateQuarantines,
             StorageSnapshot storage) {
         /** Creates a compatibility snapshot with no worker candidate deferral pressure. */
         public OperationalSnapshot(
@@ -368,7 +410,29 @@ public final class DatabaseTestRuntimeSloControlPlane {
             this(observedAt, outcomeLookback, executionOutcomes, suiteOutcomes,
                     durableExecutionStates, engineExecutionStates, workItemStates,
                     suiteRuns, durableCreations, durableExecutions, workItems,
-                    WorkerCandidateDeferralSnapshot.empty(), storage);
+                    WorkerCandidateDeferralSnapshot.empty(),
+                    WorkerCandidateQuarantineSnapshot.empty(), storage);
+        }
+
+        /** Creates a compatibility snapshot with no worker candidate quarantine pressure. */
+        public OperationalSnapshot(
+                Instant observedAt,
+                Duration outcomeLookback,
+                Map<TestRunEvidence.Status, Long> executionOutcomes,
+                Map<TestSuiteRunEvidence.Status, Long> suiteOutcomes,
+                Map<DurableTestExecutionCheckpoint.Status, Long> durableExecutionStates,
+                Map<ExecutionStatus, Long> engineExecutionStates,
+                Map<WorkItemStatus, Long> workItemStates,
+                QueueSnapshot suiteRuns,
+                QueueSnapshot durableCreations,
+                QueueSnapshot durableExecutions,
+                QueueSnapshot workItems,
+                WorkerCandidateDeferralSnapshot workerCandidateDeferrals,
+                StorageSnapshot storage) {
+            this(observedAt, outcomeLookback, executionOutcomes, suiteOutcomes,
+                    durableExecutionStates, engineExecutionStates, workItemStates,
+                    suiteRuns, durableCreations, durableExecutions, workItems,
+                    workerCandidateDeferrals, WorkerCandidateQuarantineSnapshot.empty(), storage);
         }
 
         /** Freezes all aggregate maps and rejects incomplete observations. */
@@ -388,6 +452,7 @@ public final class DatabaseTestRuntimeSloControlPlane {
             Objects.requireNonNull(durableExecutions, "durableExecutions");
             Objects.requireNonNull(workItems, "workItems");
             Objects.requireNonNull(workerCandidateDeferrals, "workerCandidateDeferrals");
+            Objects.requireNonNull(workerCandidateQuarantines, "workerCandidateQuarantines");
             Objects.requireNonNull(storage, "storage");
         }
 
@@ -512,6 +577,58 @@ public final class DatabaseTestRuntimeSloControlPlane {
             }
             return new WorkerCandidateDeferralSnapshot(
                     Map.copyOf(empty), Map.copyOf(empty), null, 0);
+        }
+    }
+
+    /**
+     * Payload-free permanent worker-candidate quarantine pressure.
+     *
+     * @param totalByReason active exact-checkpoint quarantines by closed reason
+     * @param oldestQuarantinedAt database time of the oldest active quarantine, or {@code null}
+     * @param maximumConsecutiveFailures largest threshold-crossing count
+     */
+    public record WorkerCandidateQuarantineSnapshot(
+            Map<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason, Long>
+                    totalByReason,
+            Instant oldestQuarantinedAt,
+            long maximumConsecutiveFailures) {
+        /** Freezes the closed map and rejects inconsistent aggregates. */
+        public WorkerCandidateQuarantineSnapshot {
+            totalByReason = Map.copyOf(Objects.requireNonNull(totalByReason, "totalByReason"));
+            for (var reason : DurableTestExecutionCheckpointRepository
+                    .WorkerCandidateDeferralReason.values()) {
+                Long value = totalByReason.get(reason);
+                if (value == null || value < 0) {
+                    throw new IllegalArgumentException(
+                            "Worker candidate quarantine map must contain non-negative closed reasons");
+                }
+            }
+            long records = totalByReason.values().stream().mapToLong(Long::longValue).sum();
+            if (totalByReason.size() != DurableTestExecutionCheckpointRepository
+                    .WorkerCandidateDeferralReason.values().length
+                    || maximumConsecutiveFailures < 0
+                    || (records == 0) != (oldestQuarantinedAt == null)
+                    || (records == 0) != (maximumConsecutiveFailures == 0)) {
+                throw new IllegalArgumentException(
+                        "Invalid worker candidate quarantine aggregate");
+            }
+        }
+
+        /** @return all active exact-checkpoint quarantine records */
+        public long totalRecords() {
+            return totalByReason.values().stream().mapToLong(Long::longValue).sum();
+        }
+
+        /** @return an all-zero closed-vocabulary observation */
+        public static WorkerCandidateQuarantineSnapshot empty() {
+            EnumMap<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason, Long>
+                    empty = new EnumMap<>(
+                    DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason.class);
+            for (var reason : DurableTestExecutionCheckpointRepository
+                    .WorkerCandidateDeferralReason.values()) {
+                empty.put(reason, 0L);
+            }
+            return new WorkerCandidateQuarantineSnapshot(Map.copyOf(empty), null, 0);
         }
     }
 

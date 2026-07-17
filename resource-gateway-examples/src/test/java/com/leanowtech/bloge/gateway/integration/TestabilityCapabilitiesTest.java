@@ -98,6 +98,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("durableTestWorkerPullAcquisition", true)
                 .containsEntry("durableTestWorkerCyclicScanCursor", true)
                 .containsEntry("durableTestWorkerCandidateBackoff", true)
+                .containsEntry("durableTestWorkerCandidateQuarantine", true)
                 .containsEntry("immutableDurableWorkerNoWorkResult", true)
                 .containsEntry("durableRecoveryDependencyReauthorization", true)
                 .containsEntry("authenticatedDurableRecoveryHeartbeat", true)

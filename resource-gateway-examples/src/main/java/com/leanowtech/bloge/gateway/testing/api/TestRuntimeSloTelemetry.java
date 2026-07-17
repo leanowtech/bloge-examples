@@ -44,6 +44,10 @@ public final class TestRuntimeSloTelemetry {
     private final AtomicLong workerDeferralRetryDue = new AtomicLong();
     private final AtomicLong workerDeferralMaximumFailures = new AtomicLong();
     private final AtomicLong workerDeferralOldestAge = new AtomicLong(-1);
+    private final Map<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason,
+            AtomicLong> workerQuarantineRecords;
+    private final AtomicLong workerQuarantineMaximumFailures = new AtomicLong();
+    private final AtomicLong workerQuarantineOldestAge = new AtomicLong(-1);
     private final AtomicLong health = new AtomicLong();
 
     /**
@@ -93,6 +97,16 @@ public final class TestRuntimeSloTelemetry {
         Gauge.builder(PREFIX + "worker.candidate.deferrals.oldest_age",
                         workerDeferralOldestAge, AtomicLong::doubleValue)
                 .register(meters);
+        workerQuarantineRecords = enumGauges(
+                meters,
+                DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason.class,
+                PREFIX + "worker.candidate.quarantines", "reason");
+        Gauge.builder(PREFIX + "worker.candidate.quarantines.maximum_failures",
+                        workerQuarantineMaximumFailures, AtomicLong::doubleValue)
+                .register(meters);
+        Gauge.builder(PREFIX + "worker.candidate.quarantines.oldest_age",
+                        workerQuarantineOldestAge, AtomicLong::doubleValue)
+                .register(meters);
         Gauge.builder(PREFIX + "health", health, AtomicLong::doubleValue)
                 .description("Global test-runtime health: 1 healthy, -1 SLO violated, "
                         + "-2 store unavailable")
@@ -114,6 +128,7 @@ public final class TestRuntimeSloTelemetry {
         storageBacklog = Map.of();
         workerDeferralRecords = Map.of();
         activeWorkerDeferrals = Map.of();
+        workerQuarantineRecords = Map.of();
     }
 
     /**
@@ -174,6 +189,12 @@ public final class TestRuntimeSloTelemetry {
         workerDeferralMaximumFailures.set(deferrals.maximumActiveConsecutiveFailures());
         workerDeferralOldestAge.set(ageSeconds(
                 deferrals.oldestActiveObservedAt(), snapshot.observedAt()));
+        DatabaseTestRuntimeSloControlPlane.WorkerCandidateQuarantineSnapshot quarantines =
+                snapshot.workerCandidateQuarantines();
+        replace(workerQuarantineRecords, quarantines.totalByReason());
+        workerQuarantineMaximumFailures.set(quarantines.maximumConsecutiveFailures());
+        workerQuarantineOldestAge.set(ageSeconds(
+                quarantines.oldestQuarantinedAt(), snapshot.observedAt()));
         health.set(state == TestRuntimeSloMonitor.State.HEALTHY ? 1 : -1);
     }
 

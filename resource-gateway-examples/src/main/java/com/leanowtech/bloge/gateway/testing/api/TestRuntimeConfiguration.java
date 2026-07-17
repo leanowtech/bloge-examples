@@ -368,6 +368,10 @@ public class TestRuntimeConfiguration {
             long workerBackoffMaxConsecutiveFailures,
             @Value("${gateway.testing.runtime-slo.worker-backoff-max-oldest-age-seconds:3600}")
             long workerBackoffMaxOldestAgeSeconds,
+            @Value("${gateway.testing.runtime-slo.worker-quarantine-max-records:100}")
+            long workerQuarantineMaxRecords,
+            @Value("${gateway.testing.runtime-slo.worker-quarantine-max-oldest-age-seconds:86400}")
+            long workerQuarantineMaxOldestAgeSeconds,
             @Value("${gateway.testing.runtime-slo.max-expired-execution-records:0}")
             long maxExpiredExecutionRecords,
             @Value("${gateway.testing.runtime-slo.max-expired-suite-records:0}")
@@ -399,6 +403,9 @@ public class TestRuntimeConfiguration {
                                 workerBackoffMaxActive, workerBackoffMaxRetryDue,
                                 workerBackoffMaxConsecutiveFailures,
                                 Duration.ofSeconds(workerBackoffMaxOldestAgeSeconds)),
+                        new TestRuntimeSloMonitor.WorkerCandidateQuarantinePolicy(
+                                workerQuarantineMaxRecords,
+                                Duration.ofSeconds(workerQuarantineMaxOldestAgeSeconds)),
                         new TestRuntimeSloMonitor.StoragePolicy(
                                 maxExpiredExecutionRecords,
                                 maxExpiredSuiteRecords,
@@ -465,14 +472,16 @@ public class TestRuntimeConfiguration {
             @Value("${gateway.testing.durable.worker-acquisitions.initial-backoff-seconds:5}")
             long initialBackoffSeconds,
             @Value("${gateway.testing.durable.worker-acquisitions.maximum-backoff-seconds:300}")
-            long maximumBackoffSeconds) {
+            long maximumBackoffSeconds,
+            @Value("${gateway.testing.durable.worker-acquisitions.quarantine-threshold:32}")
+            int quarantineThreshold) {
         String owner = instanceId == null || instanceId.isBlank()
                 ? "durable-worker-" + UUID.randomUUID() : instanceId.trim();
         return new DurableTestWorkerAcquisitionService(
                 checkpoints, authorizer, securityEvents, objectMapper, owner,
                 Duration.ofSeconds(leaseDurationSeconds), candidateLimit,
                 Duration.ofSeconds(initialBackoffSeconds),
-                Duration.ofSeconds(maximumBackoffSeconds));
+                Duration.ofSeconds(maximumBackoffSeconds), quarantineThreshold);
     }
 
     /** Assembles authenticated heartbeat adaptation over issued internal recovery dispatches. */

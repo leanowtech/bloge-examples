@@ -99,6 +99,7 @@ Independent-store settings:
 | `gateway.testing.durable.worker-acquisitions.candidate-limit` | `RG_TEST_DURABLE_WORKER_CANDIDATE_LIMIT` | `32` |
 | `gateway.testing.durable.worker-acquisitions.initial-backoff-seconds` | `RG_TEST_DURABLE_WORKER_INITIAL_BACKOFF_SECONDS` | `5` |
 | `gateway.testing.durable.worker-acquisitions.maximum-backoff-seconds` | `RG_TEST_DURABLE_WORKER_MAXIMUM_BACKOFF_SECONDS` | `300` |
+| `gateway.testing.durable.worker-acquisitions.quarantine-threshold` | `RG_TEST_DURABLE_WORKER_QUARANTINE_THRESHOLD` | `32` |
 | `gateway.testing.runtime-slo.observation-interval-ms` | `RG_TEST_RUNTIME_SLO_OBSERVATION_INTERVAL_MS` | `30000` |
 | `gateway.testing.runtime-slo.outcome-lookback-seconds` | `RG_TEST_RUNTIME_SLO_OUTCOME_LOOKBACK_SECONDS` | `900` |
 | `gateway.testing.runtime-slo.execution-minimum-samples` | `RG_TEST_RUNTIME_SLO_EXECUTION_MINIMUM_SAMPLES` | `20` |
@@ -121,6 +122,8 @@ Independent-store settings:
 | `gateway.testing.runtime-slo.worker-backoff-max-retry-due` | `RG_TEST_RUNTIME_SLO_WORKER_BACKOFF_MAX_RETRY_DUE` | `100` |
 | `gateway.testing.runtime-slo.worker-backoff-max-consecutive-failures` | `RG_TEST_RUNTIME_SLO_WORKER_BACKOFF_MAX_CONSECUTIVE_FAILURES` | `16` |
 | `gateway.testing.runtime-slo.worker-backoff-max-oldest-age-seconds` | `RG_TEST_RUNTIME_SLO_WORKER_BACKOFF_MAX_OLDEST_AGE_SECONDS` | `3600` |
+| `gateway.testing.runtime-slo.worker-quarantine-max-records` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_RECORDS` | `100` |
+| `gateway.testing.runtime-slo.worker-quarantine-max-oldest-age-seconds` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_OLDEST_AGE_SECONDS` | `86400` |
 | `gateway.testing.runtime-slo.max-expired-execution-records` | `RG_TEST_RUNTIME_SLO_MAX_EXPIRED_EXECUTION_RECORDS` | `0` |
 | `gateway.testing.runtime-slo.max-expired-suite-records` | `RG_TEST_RUNTIME_SLO_MAX_EXPIRED_SUITE_RECORDS` | `0` |
 | `gateway.testing.runtime-slo.max-terminal-durable-executions` | `RG_TEST_RUNTIME_SLO_MAX_TERMINAL_DURABLE_EXECUTIONS` | `10000` |
@@ -850,6 +853,17 @@ advances; a due repeat doubles the delay from
 `RG_TEST_DURABLE_WORKER_MAXIMUM_BACKOFF_SECONDS` cap. Dependency-store or authority outages and all
 other infrastructure failures commit neither a result, cursor progress, nor a deferral.
 
+When a due observation reaches `RG_TEST_DURABLE_WORKER_QUARANTINE_THRESHOLD` consecutive failures
+for the same reason and exact checkpoint fingerprint, the winning cursor transaction inserts a
+whole-record-fingerprinted quarantine and removes the temporary deferral. Passage of time never
+makes that closure worker-eligible again. Quarantined candidates remain visible to cyclic progress
+but skip both dependency authorization and worker claim. The repository rechecks quarantine inside
+the claim transaction, so a stale or defective service-layer selection cannot bypass it. A fenced
+checkpoint transition clears scheduling state for the old fingerprint. The active quarantine is an
+internal dead-letter state; list/claim/release and immutable remediation receipts are not part of
+this protocol version. The explicit run-targeted owner-claim command remains a separate,
+authenticated recovery path rather than an implicit worker retry.
+
 The first successful transaction performs lease CAS, issues the hidden authorization-bound dispatch,
 stores the immutable acquisition result, and appends the semantic audit atomically. If the bounded
 window has no claimable candidate, the same transaction stores `NO_WORK` with database observation
@@ -1179,6 +1193,8 @@ The health model distinguishes correctness outcomes from runtime correctness:
   ownership failure until the execution is `ACTIVE` or `RESUMING`;
 - deterministic worker-candidate deferrals have independent active-count, retry-due, repeated-failure,
   and oldest-active-age policies; aggregation uses only the closed failure-reason vocabulary;
+- permanent worker-candidate quarantines have independent backlog and oldest-age policies, with
+  count by the same closed reason vocabulary and no scope or run identity;
 - expired child/suite records and terminal durable/work-item rows have explicit cleanup-backlog
   limits. Observation does not silently delete them.
 
@@ -1203,6 +1219,8 @@ WORKER_CANDIDATE_BACKOFF_CAPACITY_EXCEEDED
 WORKER_CANDIDATE_RETRY_DUE_BACKLOG
 WORKER_CANDIDATE_REPEATED_FAILURES
 WORKER_CANDIDATE_BACKOFF_STALE
+WORKER_CANDIDATE_QUARANTINE_BACKLOG
+WORKER_CANDIDATE_QUARANTINE_STALE
 EXECUTION_RETENTION_BACKLOG_EXCEEDED
 SUITE_RETENTION_BACKLOG_EXCEEDED
 DURABLE_TERMINAL_RETENTION_BACKLOG_EXCEEDED
@@ -1225,6 +1243,8 @@ above. Store exception messages are discarded. Micrometer gauges are rooted at
 | `queue.depth`, `lease.expired`, `queue.oldest.age` | `queue` | suite, creation, durable, and work pressure |
 | `worker.candidate.deferrals`, `worker.candidate.deferrals.active` | `reason` | retained and active deterministic backoffs |
 | `worker.candidate.deferrals.retry_due`, `.maximum_failures`, `.oldest_age` | none | due backlog and worst active-record pressure |
+| `worker.candidate.quarantines` | `reason` | active exact-checkpoint quarantine backlog |
+| `worker.candidate.quarantines.maximum_failures`, `.oldest_age` | none | worst unresolved quarantine pressure |
 | `evidence.incomplete.basis_points` | `scope` | execution/suite incomplete ratio |
 | `storage.records`, `storage.backlog` | `kind` | retained and cleanup-pressure rows |
 | `health` | none | `1` healthy, `-1` violated, `-2` store unavailable |

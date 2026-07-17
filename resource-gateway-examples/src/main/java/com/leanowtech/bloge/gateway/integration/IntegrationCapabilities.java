@@ -384,6 +384,7 @@ public record IntegrationCapabilities(
         features.put("durableTestWorkerPullAcquisition", testExecutionEndpointEnabled);
         features.put("durableTestWorkerCyclicScanCursor", testExecutionEndpointEnabled);
         features.put("durableTestWorkerCandidateBackoff", testExecutionEndpointEnabled);
+        features.put("durableTestWorkerCandidateQuarantine", testExecutionEndpointEnabled);
         features.put("immutableDurableWorkerNoWorkResult", testExecutionEndpointEnabled);
         features.put("durableRecoveryDependencyReauthorization", testExecutionEndpointEnabled);
         features.put("authenticatedDurableRecoveryHeartbeat", testExecutionEndpointEnabled);
