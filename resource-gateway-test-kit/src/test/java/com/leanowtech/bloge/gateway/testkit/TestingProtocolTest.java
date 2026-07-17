@@ -56,6 +56,10 @@ class TestingProtocolTest {
                     TestingProtocol.DURABLE_RECOVERY_STEP_REQUEST_V1);
             assertConstant(definitions, "durableTestRecoveryStepResponse",
                     TestingProtocol.DURABLE_RECOVERY_STEP_RESPONSE_V1);
+            assertConstant(definitions, "durableTestRecoverySequenceRequest",
+                    TestingProtocol.DURABLE_RECOVERY_SEQUENCE_REQUEST_V1);
+            assertConstant(definitions, "durableTestRecoverySequenceResponse",
+                    TestingProtocol.DURABLE_RECOVERY_SEQUENCE_RESPONSE_V1);
             assertThat(definitions.at("/testRunEvidence/oneOf")).hasSize(2);
             assertConstant(definitions, "testSuite", TestingProtocol.TEST_SUITE_V1);
             assertConstant(definitions, "testSuiteV2", TestingProtocol.TEST_SUITE_V2);
@@ -241,6 +245,99 @@ class TestingProtocolTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("durableTestRecoveryStepResponse")
                 .hasMessageNotContaining("run-a");
+    }
+
+    @Test
+    void packagedSchemaBindsRecoverySequenceStopReasonToItsFinalStatus() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode response = mapper.readTree("""
+                {
+                  "schemaVersion":"bloge.durableTestRecoverySequenceResponse.v1",
+                  "runId":"run-a",
+                  "outcome":"COMPLETED",
+                  "status":"TERMINAL",
+                  "stopReason":"TERMINAL",
+                  "providedSignalCount":2,
+                  "consumedSignalCount":1,
+                  "steps":[{
+                    "schemaVersion":"bloge.durableTestRecoveryStepResponse.v1",
+                    "runId":"run-a",
+                    "outcome":"COMPLETED",
+                    "status":"TERMINAL",
+                    "ownerId":"worker-a",
+                    "leaseEpoch":2,
+                    "revision":4,
+                    "observedAt":"2026-07-17T00:01:00Z",
+                    "checkpointFingerprint":"sha256:%s",
+                    "boundary":{
+                      "nodeId":"complete",
+                      "boundaryType":"NODE_BOUNDARY",
+                      "boundarySequence":5,
+                      "stateVersion":4
+                    },
+                    "terminal":{
+                      "executionOutcome":"COMPLETED",
+                      "completedAt":"2026-07-17T00:01:00Z",
+                      "receiptFingerprint":"sha256:%s",
+                      "evidenceStatus":"EVIDENCE_INCOMPLETE",
+                      "evidenceGapCodes":["PRE_CHECKPOINT_TRACE_UNAVAILABLE"]
+                    },
+                    "idempotentReplay":false
+                  }],
+                  "idempotentReplay":false
+                }
+                """.formatted("a".repeat(64), "b".repeat(64)));
+
+        assertThatNoException().isThrownBy(() -> TestingProtocolSchemaValidator.require(
+                response, "durableTestRecoverySequenceResponse"));
+
+        ((com.fasterxml.jackson.databind.node.ObjectNode) response)
+                .put("stopReason", "SIGNALS_EXHAUSTED");
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                response, "durableTestRecoverySequenceResponse"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("durableTestRecoverySequenceResponse")
+                .hasMessageNotContaining("run-a");
+    }
+
+    @Test
+    void packagedSchemaRejectsUnboundedOrExtensibleRecoverySequencePrograms()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode request = mapper.readTree("""
+                {
+                  "schemaVersion":"bloge.durableTestRecoverySequenceRequest.v1",
+                  "clientRequestId":"sequence-a",
+                  "expectedFence":{"ownerId":"worker-a","leaseEpoch":2,"revision":3},
+                  "expectedCheckpointFingerprint":"sha256:%s",
+                  "signals":[{"nodeId":"approval-1","data":"approved"}]
+                }
+                """.formatted("a".repeat(64)));
+
+        assertThatNoException().isThrownBy(() -> TestingProtocolSchemaValidator.require(
+                request, "durableTestRecoverySequenceRequest"));
+
+        com.fasterxml.jackson.databind.node.ArrayNode signals =
+                (com.fasterxml.jackson.databind.node.ArrayNode) request.path("signals");
+        while (signals.size() < 17) {
+            signals.add(signals.get(0).deepCopy());
+        }
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                request, "durableTestRecoverySequenceRequest"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("durableTestRecoverySequenceRequest")
+                .hasMessageNotContaining("approval-1");
+
+        signals.removeAll();
+        com.fasterxml.jackson.databind.node.ObjectNode forged =
+                mapper.createObjectNode().put("nodeId", "approval-1").put("data", "approved")
+                        .put("retry", true);
+        signals.add(forged);
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                request, "durableTestRecoverySequenceRequest"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("durableTestRecoverySequenceRequest")
+                .hasMessageNotContaining("approval-1");
     }
 
     private static void assertConstant(JsonNode definitions, String definition, String expected) {

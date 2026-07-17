@@ -408,6 +408,22 @@ public interface DurableTestExecutionCheckpointRepository {
             String requestFingerprint);
 
     /**
+     * Atomically reserves the complete payload-free intent of one bounded recovery sequence.
+     *
+     * <p>The reservation must linearize before any child owner claim or recovery step. It binds
+     * the outer idempotency key to the run, authenticated scope, signal count, and a fingerprint
+     * covering every signal without persisting signal values. This prevents a retry from changing
+     * a later, not-yet-executed signal after earlier steps have already committed.</p>
+     *
+     * @param command complete authenticated sequence intent
+     * @param companionMutation local payload-free audit mutation in the same transaction
+     * @return immutable reservation or its integrity-verified replay
+     */
+    RecoverySequenceReservation reserveRecoverySequenceIdempotently(
+            RecoverySequenceCommand command,
+            TestRuntimeTransactionMutation companionMutation);
+
+    /**
      * Authenticated payload-free intent used to reserve an initial durable execution.
      *
      * @param clientRequestId caller-stable idempotency key scoped by tenant/environment
@@ -1418,6 +1434,83 @@ public interface DurableTestExecutionCheckpointRepository {
                     != DurableTestExecutionCheckpoint.Status.TERMINAL) {
                 throw new IllegalArgumentException(
                         "Recovery terminal receipt must bind its terminal checkpoint");
+            }
+        }
+    }
+
+    /**
+     * Payload-free command reserving one complete bounded recovery sequence.
+     *
+     * @param clientRequestId caller-stable outer idempotency key
+     * @param requestFingerprint canonical authenticated intent covering every signal digest
+     * @param scope verified tenant, organization, project, environment, and actor scope
+     * @param runId exact durable execution controlled by the sequence
+     * @param signalCount positive bounded number of supplied signals
+     */
+    record RecoverySequenceCommand(
+            String clientRequestId,
+            String requestFingerprint,
+            DurableTestExecutionCheckpoint.Scope scope,
+            String runId,
+            int signalCount) {
+        private static final Pattern IDENTIFIER =
+                Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
+        private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+
+        /** Rejects ambiguous identities and unbounded synchronous programs. */
+        public RecoverySequenceCommand {
+            clientRequestId = requiredSequenceValue(clientRequestId, "clientRequestId");
+            requestFingerprint = requiredSequenceValue(
+                    requestFingerprint, "requestFingerprint");
+            scope = Objects.requireNonNull(scope, "scope");
+            runId = requiredSequenceValue(runId, "runId");
+            if (!IDENTIFIER.matcher(clientRequestId).matches()
+                    || !IDENTIFIER.matcher(runId).matches()) {
+                throw new IllegalArgumentException(
+                        "Recovery-sequence identities must be bounded stable identifiers");
+            }
+            if (!FINGERPRINT.matcher(requestFingerprint).matches()) {
+                throw new IllegalArgumentException(
+                        "Recovery-sequence request fingerprint must be canonical SHA-256");
+            }
+            if (signalCount < 1 || signalCount > 16) {
+                throw new IllegalArgumentException(
+                        "Recovery sequence requires between one and sixteen signals");
+            }
+        }
+
+        private static String requiredSequenceValue(String value, String field) {
+            String normalized = value == null ? "" : value.trim();
+            if (normalized.isBlank()) {
+                throw new IllegalArgumentException(field + " is required");
+            }
+            return normalized;
+        }
+    }
+
+    /**
+     * Immutable payload-free recovery-sequence intent reservation.
+     *
+     * @param command exact reserved intent
+     * @param createdAt database-authority reservation time
+     * @param recordFingerprint integrity identity of the stored reservation
+     * @param idempotentReplay whether an earlier reservation was replayed
+     */
+    record RecoverySequenceReservation(
+            RecoverySequenceCommand command,
+            Instant createdAt,
+            String recordFingerprint,
+            boolean idempotentReplay) {
+        private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+
+        /** Requires a complete immutable reservation identity. */
+        public RecoverySequenceReservation {
+            command = Objects.requireNonNull(command, "command");
+            createdAt = Objects.requireNonNull(createdAt, "createdAt");
+            recordFingerprint = recordFingerprint == null ? "" : recordFingerprint.trim();
+            if (!FINGERPRINT.matcher(recordFingerprint).matches()) {
+                throw new IllegalArgumentException(
+                        "Recovery-sequence record fingerprint must be canonical SHA-256");
             }
         }
     }

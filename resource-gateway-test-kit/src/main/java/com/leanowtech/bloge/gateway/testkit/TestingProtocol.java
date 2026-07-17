@@ -50,6 +50,12 @@ public final class TestingProtocol {
     /** Payload-free suspended-or-terminal durable recovery result wire version. */
     public static final String DURABLE_RECOVERY_STEP_RESPONSE_V1 =
             "bloge.durableTestRecoveryStepResponse.v1";
+    /** Bounded ordered durable recovery-sequence request wire version. */
+    public static final String DURABLE_RECOVERY_SEQUENCE_REQUEST_V1 =
+            "bloge.durableTestRecoverySequenceRequest.v1";
+    /** Payload-free bounded durable recovery-sequence result wire version. */
+    public static final String DURABLE_RECOVERY_SEQUENCE_RESPONSE_V1 =
+            "bloge.durableTestRecoverySequenceResponse.v1";
     /** Per-replica request-index rollout challenge wire version. */
     public static final String WORKER_QUARANTINE_REQUEST_INDEX_REPLICA_PROOF_REQUEST_V1 =
             "bloge.workerQuarantineRequestIndexReplicaProofRequest.v1";

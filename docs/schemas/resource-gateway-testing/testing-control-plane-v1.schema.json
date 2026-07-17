@@ -1363,6 +1363,111 @@
         }
       ]
     },
+    "durableTestRecoverySequenceRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "clientRequestId", "expectedFence",
+        "expectedCheckpointFingerprint", "signals"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.durableTestRecoverySequenceRequest.v1"},
+        "clientRequestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "expectedFence": {"$ref": "#/$defs/durableOwnerClaimFence"},
+        "expectedCheckpointFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "signals": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["nodeId", "data"],
+            "properties": {
+              "nodeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+              },
+              "data": {}
+            }
+          }
+        }
+      }
+    },
+    "durableTestRecoverySequenceResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "runId", "outcome", "status", "stopReason",
+        "providedSignalCount", "consumedSignalCount", "steps", "idempotentReplay"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.durableTestRecoverySequenceResponse.v1"},
+        "runId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "outcome": {
+          "enum": ["SUSPENDED", "COMPLETED", "FAILED", "FAILED_RECOVERY", "CANCELLED",
+            "TERMINATED"]
+        },
+        "status": {"enum": ["SUSPENDED", "TERMINAL"]},
+        "stopReason": {"enum": ["SIGNALS_EXHAUSTED", "TERMINAL"]},
+        "providedSignalCount": {"type": "integer", "minimum": 1, "maximum": 16},
+        "consumedSignalCount": {"type": "integer", "minimum": 1, "maximum": 16},
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {"$ref": "#/$defs/durableTestRecoveryStepResponse"}
+        },
+        "idempotentReplay": {"type": "boolean"}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "outcome": {"const": "SUSPENDED"},
+            "status": {"const": "SUSPENDED"},
+            "stopReason": {"const": "SIGNALS_EXHAUSTED"}
+          }
+        },
+        {
+          "properties": {
+            "outcome": {"const": "COMPLETED"},
+            "status": {"const": "TERMINAL"},
+            "stopReason": {"const": "TERMINAL"}
+          }
+        },
+        {
+          "properties": {
+            "outcome": {"const": "FAILED"},
+            "status": {"const": "TERMINAL"},
+            "stopReason": {"const": "TERMINAL"}
+          }
+        },
+        {
+          "properties": {
+            "outcome": {"const": "FAILED_RECOVERY"},
+            "status": {"const": "TERMINAL"},
+            "stopReason": {"const": "TERMINAL"}
+          }
+        },
+        {
+          "properties": {
+            "outcome": {"const": "CANCELLED"},
+            "status": {"const": "TERMINAL"},
+            "stopReason": {"const": "TERMINAL"}
+          }
+        },
+        {
+          "properties": {
+            "outcome": {"const": "TERMINATED"},
+            "status": {"const": "TERMINAL"},
+            "stopReason": {"const": "TERMINAL"}
+          }
+        }
+      ]
+    },
     "graphTarget": {
       "allOf": [
         {"$ref": "#/$defs/target"},

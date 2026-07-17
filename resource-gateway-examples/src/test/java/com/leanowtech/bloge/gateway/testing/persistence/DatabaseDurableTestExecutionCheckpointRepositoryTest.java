@@ -268,6 +268,104 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     }
 
     @Test
+    void reservesOnePayloadFreeRecoverySequenceIntentAndReplaysItExactly() {
+        DurableTestExecutionCheckpointRepository.RecoverySequenceCommand command =
+                recoverySequenceCommand("sequence-a", SHA_A, "run-a", 3);
+        TestSecurityEvent event = new TestSecurityEvent(
+                0, Instant.now(), "correlation-a", "tenant-a", "test", "runner-a",
+                "DURABLE_RECOVERY_SEQUENCE", "ALLOWED",
+                "RG.TEST.DURABLE_RECOVERY_SEQUENCE_AUTHORIZED",
+                Map.of("runId", "run-a", "clientRequestId", "sequence-a"));
+
+        var first = repository.reserveRecoverySequenceIdempotently(
+                command, securityEvents.boundAppend(event));
+        var replay = repository.reserveRecoverySequenceIdempotently(
+                command, securityEvents.boundAppend(event));
+
+        assertThat(first.idempotentReplay()).isFalse();
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(replay.command()).isEqualTo(first.command());
+        assertThat(replay.createdAt()).isEqualTo(first.createdAt());
+        assertThat(replay.recordFingerprint()).isEqualTo(first.recordFingerprint());
+        Map<String, Object> stored = database.jdbc().queryForMap("""
+                SELECT * FROM rg_test_durable_recovery_sequences
+                WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                """, "tenant-a", "test", "sequence-a");
+        assertThat(stored).containsEntry("REQUEST_FINGERPRINT", SHA_A)
+                .containsEntry("RUN_ID", "run-a")
+                .containsEntry("SIGNAL_COUNT", 3);
+        assertThat(stored.keySet()).noneMatch(column ->
+                column.contains("PAYLOAD") || column.contains("SIGNAL_DATA"));
+        assertThat(securityEvents.recent(10)).hasSize(2);
+    }
+
+    @Test
+    void recoverySequenceRejectsLateSignalIntentDriftBeforeAnyChildCommand() {
+        repository.reserveRecoverySequenceIdempotently(
+                recoverySequenceCommand("sequence-a", SHA_A, "run-a", 3),
+                TestRuntimeTransactionMutation.noop());
+
+        assertThatThrownBy(() -> repository.reserveRecoverySequenceIdempotently(
+                recoverySequenceCommand("sequence-a", SHA_B, "run-a", 3),
+                TestRuntimeTransactionMutation.noop()))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason
+                        .IDEMPOTENCY_CONFLICT);
+        assertThatThrownBy(() -> repository.reserveRecoverySequenceIdempotently(
+                recoverySequenceCommand("sequence-a", SHA_A, "run-a", 4),
+                TestRuntimeTransactionMutation.noop()))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason
+                        .IDEMPOTENCY_CONFLICT);
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_recovery_sequences", Integer.class))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void recoverySequenceReservationAndCompanionAuditRollBackTogether() {
+        assertThatThrownBy(() -> repository.reserveRecoverySequenceIdempotently(
+                recoverySequenceCommand("sequence-a", SHA_A, "run-a", 2), jdbc -> {
+                    securityEvents.boundAppend(new TestSecurityEvent(
+                            0, Instant.now(), "correlation-a", "tenant-a", "test",
+                            "runner-a", "DURABLE_RECOVERY_SEQUENCE", "ALLOWED",
+                            "RG.TEST.DURABLE_RECOVERY_SEQUENCE_AUTHORIZED",
+                            Map.of("runId", "run-a"))).apply(jdbc);
+                    throw new IllegalStateException("injected sequence audit failure");
+                })).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("sequence audit failure");
+
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_recovery_sequences", Integer.class))
+                .isZero();
+        assertThat(securityEvents.recent(10)).isEmpty();
+    }
+
+    @Test
+    void recoverySequenceReplayFailsClosedWhenStoredIntentIsTampered() {
+        DurableTestExecutionCheckpointRepository.RecoverySequenceCommand command =
+                recoverySequenceCommand("sequence-a", SHA_A, "run-a", 2);
+        repository.reserveRecoverySequenceIdempotently(
+                command, TestRuntimeTransactionMutation.noop());
+        database.jdbc().update("""
+                UPDATE rg_test_durable_recovery_sequences SET signal_count = 3
+                WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                """, "tenant-a", "test", "sequence-a");
+
+        assertThatThrownBy(() -> repository.reserveRecoverySequenceIdempotently(
+                command, TestRuntimeTransactionMutation.noop()))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason
+                        .INVALID_TRANSITION);
+    }
+
+    @Test
     void committedCreationReplaysOriginalInitialCheckpointWithoutReapplyingEngineMutation() {
         var acquired = repository.reserveInitialCreation(creationCommand(
                 "create-1", SHA_A, SHA_B, "creator-a", "run-created", "engine-created",
@@ -2918,6 +3016,19 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                 action.accept(jdbc);
             }
         };
+    }
+
+    private DurableTestExecutionCheckpointRepository.RecoverySequenceCommand
+    recoverySequenceCommand(
+            String clientRequestId,
+            String requestFingerprint,
+            String runId,
+            int signalCount) {
+        return new DurableTestExecutionCheckpointRepository.RecoverySequenceCommand(
+                clientRequestId, requestFingerprint,
+                new DurableTestExecutionCheckpoint.Scope(
+                        "tenant-a", "org-a", "project-a", "test", "runner"),
+                runId, signalCount);
     }
 
     private DurableTestExecutionCheckpointRepository.InitialCreationCommand creationCommand(

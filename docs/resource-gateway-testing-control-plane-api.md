@@ -974,6 +974,7 @@ The three public recovery-control commands exist only under `test` or `staging` 
 POST /api/testing/durable-executions/{runId}/owner-claims
 POST /api/testing/durable-executions/{runId}/heartbeats
 POST /api/testing/durable-executions/{runId}/recovery-steps
+POST /api/testing/durable-executions/{runId}/recovery-sequences
 POST /api/testing/durable-executions/{runId}/terminal-recoveries
 Authorization: Bearer <workload-token>
 X-Purpose: TEST_EXECUTION
@@ -1096,7 +1097,118 @@ acquire and freshly authorize the new checkpoint, then use a new key for the nex
 one-step durable primitive, not a queued signal broker, remote supervisor, hard cancellation system,
 or complete historical evidence service.
 
-### 4.2h.2 Execute one terminal cold recovery
+### 4.2h.2 Advance a bounded recovery sequence
+
+When a test fixture already knows several ordered signal values, the sequence endpoint removes the
+manual claim/step choreography while preserving the same per-boundary authorization and atomicity:
+
+```json
+{
+  "schemaVersion": "bloge.durableTestRecoverySequenceRequest.v1",
+  "clientRequestId": "sequence-run-42-1",
+  "expectedFence": {
+    "ownerId": "server-issued-owner",
+    "leaseEpoch": 2,
+    "revision": 12
+  },
+  "expectedCheckpointFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "signals": [
+    {"nodeId": "risk-approval", "data": {"approved": true}},
+    {"nodeId": "finance-approval", "data": {"approved": true}}
+  ]
+}
+```
+
+The request accepts 1 through 16 signals, no more than 256 KiB each and 1 MiB in total. Every
+nesting level rejects unknown fields. Before executing signal zero, the server atomically stores a
+payload-free reservation containing the authenticated scope, run, signal count, complete request
+fingerprint, database time, record fingerprint, and companion semantic audit. It never stores the
+signal program itself. Reusing the outer key with a changed initial fence, node, signal value,
+ordering, signal count, run, or principal fails before any child command executes, including when
+only a late, not-yet-consumed signal changed.
+
+The orchestrator derives stable child keys from tenant, environment, and the outer key. It invokes
+the ordinary atomic recovery-step service for each signal. After every `SUSPENDED` child result and
+before the next signal, it invokes the ordinary owner-claim service against the exact released
+checkpoint. That claim freshly reconstructs authorization and issues a new hidden dispatch; an old
+dispatch never crosses a suspension. If the HTTP response is lost after any prefix committed, the
+unchanged outer retry replays the reservation, child steps, and claims from index zero, then
+continues at the first uncommitted child without applying a signal twice.
+
+```json
+{
+  "schemaVersion": "bloge.durableTestRecoverySequenceResponse.v1",
+  "runId": "run-42",
+  "outcome": "COMPLETED",
+  "status": "TERMINAL",
+  "stopReason": "TERMINAL",
+  "providedSignalCount": 2,
+  "consumedSignalCount": 2,
+  "steps": [
+    {
+      "schemaVersion": "bloge.durableTestRecoveryStepResponse.v1",
+      "runId": "run-42",
+      "outcome": "SUSPENDED",
+      "status": "SUSPENDED",
+      "ownerId": "server-issued-owner",
+      "leaseEpoch": 2,
+      "revision": 13,
+      "observedAt": "2026-07-17T12:01:18Z",
+      "checkpointFingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "boundary": {
+        "nodeId": "finance-approval",
+        "boundaryType": "SUSPEND",
+        "boundarySequence": 8,
+        "stateVersion": 13
+      },
+      "terminal": null,
+      "idempotentReplay": false
+    },
+    {
+      "schemaVersion": "bloge.durableTestRecoveryStepResponse.v1",
+      "runId": "run-42",
+      "outcome": "COMPLETED",
+      "status": "TERMINAL",
+      "ownerId": "server-issued-owner",
+      "leaseEpoch": 3,
+      "revision": 15,
+      "observedAt": "2026-07-17T12:01:31Z",
+      "checkpointFingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "boundary": {
+        "nodeId": "complete",
+        "boundaryType": "NODE_BOUNDARY",
+        "boundarySequence": 9,
+        "stateVersion": 14
+      },
+      "terminal": {
+        "executionOutcome": "COMPLETED",
+        "completedAt": "2026-07-17T12:01:31Z",
+        "receiptFingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "evidenceStatus": "EVIDENCE_INCOMPLETE",
+        "evidenceGapCodes": [
+          "PRE_CHECKPOINT_TRACE_UNAVAILABLE",
+          "RECOVERY_SIGNAL_PAYLOAD_OMITTED"
+        ]
+      },
+      "idempotentReplay": false
+    }
+  ],
+  "idempotentReplay": false
+}
+```
+
+The response contains one ordered `steps` entry per consumed signal. `stopReason=TERMINAL` may consume fewer than
+the provided count when the graph terminates early. `stopReason=SIGNALS_EXHAUSTED` means every
+provided signal committed but the graph reached another suspension. No signal, dispatch,
+authorization, fixture/provider state, engine body, or lease expiry appears in the response.
+
+This endpoint is synchronous and bounded. It does not durably queue future signals, wait for a
+signal that was not supplied, run BLOGE in another process, enforce a wall-clock process kill,
+schedule fairly across tenants, supervise a remote worker, or preserve complete pre-checkpoint
+trace evidence. Those remain separate dispatcher, supervisor, hard-cancellation, and evidence
+requirements.
+
+### 4.2h.3 Execute one terminal cold recovery
 
 The terminal-recovery request consumes the latest exact fence returned by owner claim or heartbeat:
 

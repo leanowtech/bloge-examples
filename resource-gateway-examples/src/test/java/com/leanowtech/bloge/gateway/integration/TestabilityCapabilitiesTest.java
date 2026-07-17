@@ -18,6 +18,8 @@ import com.leanowtech.bloge.gateway.testing.api.DurableTestTerminalRecoveryReque
 import com.leanowtech.bloge.gateway.testing.api.DurableTestTerminalRecoveryResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryStepRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryStepResponse;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoverySequenceRequest;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoverySequenceResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableStateProjectionFindingClaimRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableStateProjectionFindingResolutionResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineClaimRequest;
@@ -58,6 +60,8 @@ class TestabilityCapabilitiesTest {
         assertThat(disabled.features()).containsEntry("dynamicAttemptOccurrenceSelectors", false);
         assertThat(disabled.features())
                 .containsEntry("durableOperatorTestExecutionCreation", false);
+        assertThat(disabled.features())
+                .containsEntry("boundedDurableRecoverySequence", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionAntiEntropy", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionSweepLease", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionFindingQueue", false);
@@ -106,7 +110,8 @@ class TestabilityCapabilitiesTest {
                 "durableTestExecutionCreateResponse",
                 "durableTestRecoveryHeartbeatRequest", "durableTestRecoveryHeartbeatResponse",
                 "durableTestTerminalRecoveryRequest", "durableTestTerminalRecoveryResponse",
-                "durableTestRecoveryStepRequest", "durableTestRecoveryStepResponse");
+                "durableTestRecoveryStepRequest", "durableTestRecoveryStepResponse",
+                "durableTestRecoverySequenceRequest", "durableTestRecoverySequenceResponse");
         assertThat(enabled.supportedObjects()).containsKeys(
                 "durableStateProjectionFindingsResponse",
                 "durableStateProjectionFindingClaimRequest",
@@ -172,6 +177,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("automaticDurableRecoveryHeartbeat", true)
                 .containsEntry("authenticatedDurableTerminalRecovery", true)
                 .containsEntry("authenticatedDurableRecoveryStep", true)
+                .containsEntry("boundedDurableRecoverySequence", true)
                 .containsEntry("durableStateProjectionAntiEntropy", true)
                 .containsEntry("durableStateProjectionSweepLease", true)
                 .containsEntry("durableStateProjectionFindingQueue", true)
@@ -235,6 +241,10 @@ class TestabilityCapabilitiesTest {
                 .containsExactly(DurableTestRecoveryStepRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("durableTestRecoveryStepResponse"))
                 .containsExactly(DurableTestRecoveryStepResponse.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("durableTestRecoverySequenceRequest"))
+                .containsExactly(DurableTestRecoverySequenceRequest.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("durableTestRecoverySequenceResponse"))
+                .containsExactly(DurableTestRecoverySequenceResponse.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get(
                 "durableStateProjectionFindingClaimRequest"))
                 .containsExactly(DurableStateProjectionFindingClaimRequest.SCHEMA_VERSION);
@@ -299,6 +309,9 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals(
                 "/api/testing/durable-executions/{runId}/recovery-steps"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
+                && endpoint.path().equals(
+                "/api/testing/durable-executions/{runId}/recovery-sequences"));
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("GET")
                 && endpoint.path().equals(
                 "/api/testing/durable-state/projection-findings"));

@@ -66,6 +66,10 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     DurableTestRecoveryStepController.class)).isEmpty();
             assertThat(context.getBeansOfType(
+                    DurableTestRecoverySequenceController.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableTestRecoverySequenceService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
                     DurableTestTerminalRecoveryService.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestTerminalRecoveryRuntime.class)).isEmpty();
@@ -143,6 +147,10 @@ class TestRuntimeProfileIsolationTest {
                     DurableTestTerminalRecoveryController.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableTestRecoveryStepController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableTestRecoverySequenceController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableTestRecoverySequenceService.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableTestTerminalRecoveryService.class)).hasSize(1);
             assertThat(context.getBeansOfType(
@@ -337,7 +345,8 @@ class TestRuntimeProfileIsolationTest {
                 WorkerQuarantineRequestIndexRolloutController.class,
                 DurableTestRecoveryHeartbeatController.class,
                 DurableTestTerminalRecoveryController.class,
-                DurableTestRecoveryStepController.class);
+                DurableTestRecoveryStepController.class,
+                DurableTestRecoverySequenceController.class);
         context.refresh();
         return context;
     }

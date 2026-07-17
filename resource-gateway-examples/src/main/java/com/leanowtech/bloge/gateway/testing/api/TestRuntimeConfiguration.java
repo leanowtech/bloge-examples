@@ -755,6 +755,18 @@ public class TestRuntimeConfiguration {
                 admissions);
     }
 
+    /** Orchestrates bounded multi-suspension recovery over the existing atomic child commands. */
+    @Bean
+    DurableTestRecoverySequenceService durableTestRecoverySequenceService(
+            DurableTestExecutionCheckpointRepository checkpoints,
+            DurableTestOwnerClaimService ownerClaims,
+            DurableTestTerminalRecoveryService recoverySteps,
+            TestSecurityEventRepository securityEvents,
+            ObjectMapper objectMapper) {
+        return new DurableTestRecoverySequenceService(
+                checkpoints, ownerClaims, recoverySteps, securityEvents, objectMapper);
+    }
+
     /** Reuses the configured local or managed signer for independently verifiable test evidence. */
     @Bean
     TestEvidenceIntegrityService testEvidenceIntegrityService(ObjectMapper objectMapper,

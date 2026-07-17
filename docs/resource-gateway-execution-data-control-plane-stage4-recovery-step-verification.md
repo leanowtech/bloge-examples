@@ -121,10 +121,11 @@ Full acceptance on 2026-07-17 also passed:
 ## Honest Boundary
 
 This increment closes the public one-signal step needed to advance a graph through multiple signal
-suspensions. It is a control primitive, not an automatic chain orchestrator: after a suspended
-result, a later worker must acquire and freshly authorize the released checkpoint before sending the
-next signal. The terminal-only v1 endpoint remains compatible and continues to reject a second
-suspension.
+suspensions. The endpoint remains a control primitive: after a suspended result, a later worker must
+acquire and freshly authorize the released checkpoint before sending the next signal. Bounded
+synchronous automation over that invariant is now provided separately by
+[Stage 4 recovery-sequence verification](resource-gateway-execution-data-control-plane-stage4-recovery-sequence-verification.md).
+The terminal-only v1 endpoint remains compatible and continues to reject a second suspension.
 
 It also does not ship runtime state to a remote process, enforce a wall-clock kill, supervise a
 worker across process failure, restore stream offsets, or preserve pre-checkpoint node/edge/attempt

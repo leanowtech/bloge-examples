@@ -60,6 +60,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/owner-claims` | Re-authorize an exact expired v2 checkpoint and atomically claim its lease; this does not resume BLOGE (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/heartbeats` | Renew one exact issued recovery fence under the same authenticated authority (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/recovery-steps` | Signal one exact claimed suspension and atomically commit the next suspended or terminal boundary (test/staging only) |
+| `POST http://localhost:8080/api/testing/durable-executions/{runId}/recovery-sequences` | Automatically consume a reserved sequence of up to 16 signals across freshly claimed suspension boundaries (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/terminal-recoveries` | Signal one exact claimed suspension and atomically commit only a server-derived terminal result (test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/operators/{operatorRef}` | Inspect frozen binding/schema/state fingerprints and executable testability (test/staging only) |
 | `POST http://localhost:8080/api/testing/targets/operators/{operatorRef}/executions` | Run the exact synchronous binding as a controlled one-node BLOGE graph (test/staging only) |
@@ -443,6 +444,41 @@ consumed lease at database time. Acquire the new checkpoint again before sending
 the old dispatch is intentionally unusable. Reuse the same key and identical intent only to recover
 an ambiguous response. Caller-owned outcome, engine/provider/fixture state, lease, evidence, or
 dispatch fields are rejected.
+
+### Advance a bounded recovery sequence
+
+When the complete ordered signal fixture is already known, use the sequence protocol to avoid
+manually claim/step chaining every suspension:
+
+```bash
+curl -sS -X POST \
+  http://localhost:8080/api/testing/durable-executions/run-20260716-001/recovery-sequences \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "schemaVersion": "bloge.durableTestRecoverySequenceRequest.v1",
+    "clientRequestId": "sequence-run-20260716-001-1",
+    "expectedFence": {
+      "ownerId": "server-issued-owner",
+      "leaseEpoch": 4,
+      "revision": 9
+    },
+    "expectedCheckpointFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "signals": [
+      {"nodeId": "risk-approval", "data": {"approved": true}},
+      {"nodeId": "finance-approval", "data": {"approved": true}}
+    ]
+  }'
+```
+
+The server reserves a fingerprint of the complete sequence before the first signal runs, then
+derives stable child keys and performs a fresh authorized owner claim after every committed
+suspension. A retry of the unchanged outer request replays the committed prefix and continues at
+the first unfinished step. The response reports ordered payload-free `steps`, consumed/provided
+counts, and either `stopReason=TERMINAL` or `SIGNALS_EXHAUSTED`. Limits are 16 signals, 256 KiB per
+signal, and 1 MiB for the sequence. This synchronous helper is not a background queue, remote
+runtime-state dispatcher, cross-process supervisor, or hard-cancellation mechanism.
 
 ### Complete one terminal recovery
 

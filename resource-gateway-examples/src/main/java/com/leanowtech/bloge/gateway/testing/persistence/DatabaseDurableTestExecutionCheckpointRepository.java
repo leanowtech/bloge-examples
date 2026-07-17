@@ -385,6 +385,22 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 )
                 """);
         jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_recovery_sequences (
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(32) NOT NULL,
+                    client_request_id VARCHAR(255) NOT NULL,
+                    request_fingerprint VARCHAR(80) NOT NULL,
+                    organization_id VARCHAR(255) NOT NULL,
+                    project_id VARCHAR(255) NOT NULL,
+                    actor_id VARCHAR(255) NOT NULL,
+                    run_id VARCHAR(255) NOT NULL,
+                    signal_count INTEGER NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(80) NOT NULL,
+                    PRIMARY KEY (tenant_id, environment_id, client_request_id)
+                )
+                """);
+        jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS rg_test_durable_recovery_steps (
                     tenant_id VARCHAR(255) NOT NULL,
                     environment_id VARCHAR(32) NOT NULL,
@@ -1140,6 +1156,124 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     "clientRequestId already identifies different recovery terminal intent");
         }
         return Optional.of(verifiedRecoveryTerminalResult(stored, true));
+    }
+
+    @Override
+    public RecoverySequenceReservation reserveRecoverySequenceIdempotently(
+            RecoverySequenceCommand command,
+            TestRuntimeTransactionMutation companionMutation) {
+        RecoverySequenceCommand requiredCommand = Objects.requireNonNull(command, "command");
+        TestRuntimeTransactionMutation requiredCompanion = Objects.requireNonNull(
+                companionMutation, "companionMutation");
+        try {
+            return transactions.execute(status -> reserveRecoverySequenceInTransaction(
+                    requiredCommand, requiredCompanion));
+        } catch (DataIntegrityViolationException concurrentInsert) {
+            return transactions.execute(status -> {
+                StoredRecoverySequence stored = findRecoverySequences(
+                        requiredCommand.scope().tenantId(),
+                        requiredCommand.scope().environmentId(),
+                        requiredCommand.clientRequestId()).stream().findFirst()
+                        .orElseThrow(() -> concurrentInsert);
+                RecoverySequenceReservation replay = verifiedRecoverySequence(
+                        requiredCommand, stored, true);
+                requiredCompanion.apply(jdbc);
+                return replay;
+            });
+        }
+    }
+
+    private RecoverySequenceReservation reserveRecoverySequenceInTransaction(
+            RecoverySequenceCommand command,
+            TestRuntimeTransactionMutation companionMutation) {
+        List<StoredRecoverySequence> existing = findRecoverySequences(
+                command.scope().tenantId(), command.scope().environmentId(),
+                command.clientRequestId());
+        if (!existing.isEmpty()) {
+            RecoverySequenceReservation replay = verifiedRecoverySequence(
+                    command, existing.getFirst(), true);
+            companionMutation.apply(jdbc);
+            return replay;
+        }
+        Instant createdAt = databaseNow();
+        String recordFingerprint = recoverySequenceRecordFingerprint(command, createdAt);
+        DurableTestExecutionCheckpoint.Scope scope = command.scope();
+        jdbc.update("""
+                INSERT INTO rg_test_durable_recovery_sequences (
+                    tenant_id, environment_id, client_request_id, request_fingerprint,
+                    organization_id, project_id, actor_id, run_id, signal_count,
+                    created_at, record_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, scope.tenantId(), scope.environmentId(), command.clientRequestId(),
+                command.requestFingerprint(), scope.organizationId(), scope.projectId(),
+                scope.actorId(), command.runId(), command.signalCount(),
+                Timestamp.from(createdAt), recordFingerprint);
+        companionMutation.apply(jdbc);
+        return new RecoverySequenceReservation(command, createdAt, recordFingerprint, false);
+    }
+
+    private List<StoredRecoverySequence> findRecoverySequences(
+            String tenantId,
+            String environmentId,
+            String clientRequestId) {
+        return jdbc.query("""
+                SELECT tenant_id, environment_id, client_request_id, request_fingerprint,
+                       organization_id, project_id, actor_id, run_id, signal_count,
+                       created_at, record_fingerprint
+                FROM rg_test_durable_recovery_sequences
+                WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                """, (rs, rowNumber) -> new StoredRecoverySequence(
+                rs.getString("tenant_id"), rs.getString("environment_id"),
+                rs.getString("client_request_id"), rs.getString("request_fingerprint"),
+                rs.getString("organization_id"), rs.getString("project_id"),
+                rs.getString("actor_id"), rs.getString("run_id"),
+                rs.getInt("signal_count"), rs.getTimestamp("created_at").toInstant(),
+                rs.getString("record_fingerprint")),
+                normalized(tenantId), normalizedEnvironment(environmentId),
+                normalized(clientRequestId));
+    }
+
+    private RecoverySequenceReservation verifiedRecoverySequence(
+            RecoverySequenceCommand expected,
+            StoredRecoverySequence stored,
+            boolean idempotentReplay) {
+        RecoverySequenceCommand actual;
+        try {
+            actual = new RecoverySequenceCommand(
+                    stored.clientRequestId(), stored.requestFingerprint(),
+                    new DurableTestExecutionCheckpoint.Scope(
+                            stored.tenantId(), stored.organizationId(), stored.projectId(),
+                            stored.environmentId(), stored.actorId()),
+                    stored.runId(), stored.signalCount());
+        } catch (RuntimeException malformed) {
+            throw conflict(INVALID_TRANSITION,
+                    "Stored recovery-sequence intent is malformed");
+        }
+        String expectedRecordFingerprint = recoverySequenceRecordFingerprint(
+                actual, stored.createdAt());
+        if (!expectedRecordFingerprint.equals(stored.recordFingerprint())) {
+            throw conflict(INVALID_TRANSITION,
+                    "Stored recovery-sequence record failed integrity verification");
+        }
+        if (!actual.equals(expected)) {
+            throw conflict(IDEMPOTENCY_CONFLICT,
+                    "clientRequestId already identifies different recovery-sequence intent");
+        }
+        return new RecoverySequenceReservation(
+                actual, stored.createdAt(), stored.recordFingerprint(), idempotentReplay);
+    }
+
+    private String recoverySequenceRecordFingerprint(
+            RecoverySequenceCommand command,
+            Instant createdAt) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableRecoverySequenceReservation.v1"),
+                Map.entry("clientRequestId", command.clientRequestId()),
+                Map.entry("requestFingerprint", command.requestFingerprint()),
+                Map.entry("scope", command.scope()),
+                Map.entry("runId", command.runId()),
+                Map.entry("signalCount", command.signalCount()),
+                Map.entry("createdAt", createdAt)));
     }
 
     @Override
@@ -4291,6 +4425,21 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     && checkpoint.lifecycle().status()
                     == DurableTestExecutionCheckpoint.Status.RESUMING;
         }
+    }
+
+    private record StoredRecoverySequence(
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            String requestFingerprint,
+            String organizationId,
+            String projectId,
+            String actorId,
+            String runId,
+            int signalCount,
+            Instant createdAt,
+            String recordFingerprint
+    ) {
     }
 
     private record StoredRecoveryHeartbeat(
