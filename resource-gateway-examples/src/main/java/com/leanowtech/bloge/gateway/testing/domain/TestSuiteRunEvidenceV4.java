@@ -596,8 +596,9 @@ public record TestSuiteRunEvidenceV4(
     private static boolean lifecycleMatches(
             TestSuiteRunEvidence.Status status, PropertyCoverageVerdict coverage) {
         return switch (status) {
-            case RUNNING -> List.of(PropertyCoverageStatus.NOT_EVALUATED,
-                    PropertyCoverageStatus.INCOMPLETE).contains(coverage.status());
+            // A signed checkpoint is still RUNNING after the final child completes and before the
+            // terminal aggregate is persisted, so any derived child-closure verdict is valid here.
+            case RUNNING -> true;
             case PASSED -> coverage.status() == PropertyCoverageStatus.SATISFIED
                     && coverage.allCasesCompleted();
             case COMPLETED_WITH_FAILURES -> List.of(PropertyCoverageStatus.COUNTEREXAMPLE,

@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -302,6 +303,11 @@ public final class DatabaseTestSuiteRunRepository implements TestSuiteRunReposit
 
     private static boolean generationMatches(TestSuiteRunRecord record,
                                              TestSuiteRunAttestation attestation) {
+        if (record.evidence() instanceof TestSuiteRunEvidenceV4 property) {
+            return TestSuiteRunEvidenceV4.SCHEMA_VERSION.equals(property.schemaVersion())
+                    && TestSuiteRunAttestation.SCHEMA_VERSION_V4.equals(
+                    attestation.schemaVersion());
+        }
         if (record.evidence() instanceof TestSuiteRunEvidenceV3 admission) {
             return TestSuiteRunEvidenceV3.SCHEMA_VERSION.equals(admission.schemaVersion())
                     && TestSuiteRunAttestation.SCHEMA_VERSION_V3.equals(attestation.schemaVersion())

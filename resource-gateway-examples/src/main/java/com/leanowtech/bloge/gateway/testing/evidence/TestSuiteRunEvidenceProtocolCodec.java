@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4;
 
 import java.util.Objects;
 
@@ -47,6 +48,8 @@ public final class TestSuiteRunEvidenceProtocolCodec {
                         objectMapper.treeToValue(tree, TestSuiteRunEvidenceV2.class);
                 case TestSuiteRunEvidenceV3.SCHEMA_VERSION ->
                         objectMapper.treeToValue(tree, TestSuiteRunEvidenceV3.class);
+                case TestSuiteRunEvidenceV4.SCHEMA_VERSION ->
+                        objectMapper.treeToValue(tree, TestSuiteRunEvidenceV4.class);
                 default -> throw new IllegalStateException(
                         "Stored suite-run evidence uses unsupported schemaVersion: " + schemaVersion);
             };
@@ -68,6 +71,10 @@ public final class TestSuiteRunEvidenceProtocolCodec {
         }
         if (evidence instanceof TestSuiteRunEvidenceV3 v3
                 && TestSuiteRunEvidenceV3.SCHEMA_VERSION.equals(v3.schemaVersion())) {
+            return;
+        }
+        if (evidence instanceof TestSuiteRunEvidenceV4 v4
+                && TestSuiteRunEvidenceV4.SCHEMA_VERSION.equals(v4.schemaVersion())) {
             return;
         }
         throw new IllegalArgumentException(

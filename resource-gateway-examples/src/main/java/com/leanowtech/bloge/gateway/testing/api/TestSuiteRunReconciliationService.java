@@ -8,7 +8,9 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.evidence.TestPropertySuiteEvidenceEvaluator;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 
@@ -28,7 +30,9 @@ import java.util.Objects;
  * preserves every completed child reference, marks pending cases evidence-incomplete, blocks
  * promotion, and relies on the repository's status/version/lease compare-and-set for concurrency.
  * Schema-admission checkpoints retain their exact typed validator observations and empty business
- * child closure while unfinished admission cases become explicitly incomplete.</p>
+ * child closure while unfinished admission cases become explicitly incomplete. Property
+ * checkpoints retain completed root/shrink outcomes and terminalize only pending coordinates;
+ * they never regenerate input or repeat a potentially effectful child invocation.</p>
  */
 public final class TestSuiteRunReconciliationService {
     /** Stable evidence diagnostic emitted by lease-expiry terminalization. */
@@ -38,6 +42,7 @@ public final class TestSuiteRunReconciliationService {
     private final ObjectMapper objectMapper;
     private final TestSuiteRunAttestationService attestations;
     private final TestSchemaAdmissionEvaluator schemaAdmissions;
+    private final TestPropertySuiteEvidenceEvaluator propertyEvidence;
     private final Clock clock;
 
     /**
@@ -79,6 +84,7 @@ public final class TestSuiteRunReconciliationService {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.attestations = Objects.requireNonNull(attestations, "attestations");
         this.schemaAdmissions = new TestSchemaAdmissionEvaluator(objectMapper);
+        this.propertyEvidence = new TestPropertySuiteEvidenceEvaluator();
         this.clock = clock;
     }
 
@@ -219,12 +225,30 @@ public final class TestSuiteRunReconciliationService {
                 admissionResults, admissionCoverage, diagnostics, metadata);
     }
 
-    private static TestSuiteRunEvidenceProtocol reconciledEvidence(
+    private TestSuiteRunEvidenceProtocol reconciledEvidence(
             TestSuiteRunEvidenceProtocol previous, Instant completedAt,
             List<TestSuiteRunEvidence.CaseResult> cases,
             TestSuiteRunEvidence.CoverageVerdict coverage,
             TestSuiteRunEvidence.PromotionVerdict promotion, Map<String, Object> metadata) {
         List<String> diagnostics = merged(previous.diagnostics(), List.of(ABANDONED_RUN_RECONCILED));
+        if (previous instanceof TestSuiteRunEvidenceV4 v4) {
+            java.util.Set<String> unfinished = previous.caseResults().stream()
+                    .filter(result -> result.status() == TestSuiteRunEvidence.CaseStatus.PENDING)
+                    .map(TestSuiteRunEvidence.CaseResult::caseId)
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+            TestPropertySuiteEvidenceEvaluator.Evaluation property =
+                    propertyEvidence.markIncomplete(v4.propertyTrialResults(), unfinished,
+                            ABANDONED_RUN_RECONCILED);
+            return new TestSuiteRunEvidenceV4("", previous.suiteRunId(),
+                    previous.clientRequestId(), TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE,
+                    previous.executionPurpose(), previous.suiteRef(), previous.target(),
+                    previous.startedAt(), completedAt, cases, coverage, promotion,
+                    v4.evaluationMode(), v4.quantification(), v4.exhaustive(),
+                    v4.propertyPlanFingerprint(), v4.inputSchemaFingerprint(),
+                    v4.generationPolicy(), v4.sourcePlanStatus(), v4.generationGapsAccepted(),
+                    v4.generationGaps(), property.trialResults(), property.coverage(), diagnostics,
+                    metadata);
+        }
         if (previous instanceof TestSuiteRunEvidenceV2 v2) {
             List<String> observed = v2.semanticCoverage().observed().stream()
                     .map(SemanticCoverageVerdict.Observation::requirementId).toList();

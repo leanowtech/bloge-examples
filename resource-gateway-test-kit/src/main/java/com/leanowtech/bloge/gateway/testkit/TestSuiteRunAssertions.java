@@ -45,6 +45,45 @@ public final class TestSuiteRunAssertions {
     }
 
     /**
+     * Requires every frozen property root and shrink input to satisfy its governed assertions.
+     * This is a bounded sampled claim and never an exhaustive proof over the input schema.
+     *
+     * @param run suite run to assert
+     */
+    public static void assertPropertySatisfied(TestSuiteRun run) {
+        required(run);
+        if (!run.propertyPassed()) {
+            String coverage = run.propertyCoverage()
+                    .map(value -> value.status().name()).orElse("UNAVAILABLE");
+            throw new AssertionFailedError("Resource Gateway property suite "
+                    + run.suiteRunId() + " was not satisfied; mode=" + run.evaluationMode()
+                    + ", status=" + run.status() + ", propertyCoverage=" + coverage,
+                    "PROPERTY_EXECUTION PASSED with SATISFIED bounded coverage",
+                    run.status() + " with " + coverage);
+        }
+    }
+
+    /**
+     * Requires at least one path-local counterexample and returns its payload-free coordinate.
+     *
+     * @param run bounded-property suite run
+     * @return first counterexample in immutable trial order
+     */
+    public static TestSuiteRun.CounterexampleRef assertCounterexampleFound(TestSuiteRun run) {
+        required(run);
+        List<TestSuiteRun.CounterexampleRef> counterexamples =
+                run.minimalObservedCounterexamples();
+        if (counterexamples.isEmpty()) {
+            String coverage = run.propertyCoverage()
+                    .map(value -> value.status().name()).orElse("UNAVAILABLE");
+            throw new AssertionFailedError("Resource Gateway property suite "
+                    + run.suiteRunId() + " has no observed counterexample; propertyCoverage="
+                    + coverage, "at least one path-local counterexample", coverage);
+        }
+        return counterexamples.getFirst();
+    }
+
+    /**
      * Requires every suite case to link a passing child run.
      *
      * @param run suite run to assert

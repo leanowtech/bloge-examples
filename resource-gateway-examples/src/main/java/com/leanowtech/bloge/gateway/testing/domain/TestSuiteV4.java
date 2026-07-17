@@ -22,9 +22,9 @@ import java.util.regex.Pattern;
  * time. Inputs and metadata are recursively frozen so the fingerprinted value cannot be changed
  * through a caller-owned collection after construction.</p>
  *
- * <p>This protocol describes executable intent but does not itself claim that a runtime can emit
- * V4 evidence. Capability discovery and the suite runner remain fail closed until the matching
- * evidence and attestation generation is available.</p>
+ * <p>The suite runner executes this frozen closure without generating new values at run time and
+ * emits V4 aggregate evidence. That evidence distinguishes assertion counterexamples from runtime
+ * failure and limits every minimality claim to the reviewed precomputed shrink path.</p>
  *
  * @param schemaVersion exact V4 suite schema version
  * @param suiteId stable suite identifier

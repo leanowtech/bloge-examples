@@ -151,7 +151,7 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("schemaAdmissionSuiteExecution", true)
                 .containsEntry("seededPropertyCasePlanning", true)
                 .containsEntry("propertySuiteMaterialization", true)
-                .containsEntry("propertySuiteExecution", false);
+                .containsEntry("propertySuiteExecution", true);
         assertThat(capabilities.getBody().payload().supportedObjects())
                 .containsEntry("testBoundaryCasePlan",
                         List.of(TestBoundaryCasePlan.SCHEMA_VERSION))
@@ -169,19 +169,23 @@ class TestRuntimeApplicationIntegrationTest {
                         TestSuiteExecutionResponse.SCHEMA_VERSION_V1,
                         TestSuiteExecutionResponse.SCHEMA_VERSION,
                         TestSuiteExecutionResponse.SCHEMA_VERSION_V3,
-                        TestSuiteExecutionResponse.SCHEMA_VERSION_V4))
+                        TestSuiteExecutionResponse.SCHEMA_VERSION_V4,
+                        TestSuiteExecutionResponse.SCHEMA_VERSION_V5))
                 .containsEntry("testSuiteRunEvidence", List.of(
                         TestSuiteRunEvidence.SCHEMA_VERSION,
                         com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2.SCHEMA_VERSION,
-                        TestSuiteRunEvidenceV3.SCHEMA_VERSION))
+                        TestSuiteRunEvidenceV3.SCHEMA_VERSION,
+                        com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4.SCHEMA_VERSION))
                 .containsEntry("testSuiteRunAttestation", List.of(
                         TestSuiteRunAttestation.SCHEMA_VERSION,
                         TestSuiteRunAttestation.SCHEMA_VERSION_V2,
-                        TestSuiteRunAttestation.SCHEMA_VERSION_V3))
+                        TestSuiteRunAttestation.SCHEMA_VERSION_V3,
+                        TestSuiteRunAttestation.SCHEMA_VERSION_V4))
                 .containsEntry("testSuiteEvidenceBundle", List.of(
                         TestSuiteEvidenceBundle.SCHEMA_VERSION,
                         TestSuiteEvidenceBundle.SCHEMA_VERSION_V2,
-                        TestSuiteEvidenceBundle.SCHEMA_VERSION_V3));
+                        TestSuiteEvidenceBundle.SCHEMA_VERSION_V3,
+                        TestSuiteEvidenceBundle.SCHEMA_VERSION_V4));
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("suiteRunOwnerLease", true)
                 .containsEntry("abandonedSuiteRunReconciliation", true)
@@ -398,16 +402,32 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsOnly(TestSuite.CaseType.PROPERTY);
 
         TestSuiteExecutionRequest propertyExecution = new TestSuiteExecutionRequest("",
-                propertyMaterialized.getBody().suiteRef(), "integration-property-run-disabled",
+                propertyMaterialized.getBody().suiteRef(), "integration-property-run-v4",
                 TestSuiteExecutionRequest.Strategy.COLLECT_ALL,
                 Map.of("source", "spring-http-property-test"));
-        var disabledPropertyRun = restTemplate.exchange(
+        var propertyRunWire = restTemplate.exchange(
                 "/api/testing/suites/loan-decision-properties/executions",
                 HttpMethod.POST, new HttpEntity<>(propertyExecution, headers), JsonNode.class);
-        assertThat(disabledPropertyRun.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
-        assertThat(disabledPropertyRun.getBody()).isNotNull();
-        assertThat(disabledPropertyRun.getBody().path("code").asText())
-                .isEqualTo("RG.TEST.PROPERTY_EVIDENCE_UNAVAILABLE");
+        assertThat(propertyRunWire.getStatusCode())
+                .withFailMessage("property suite execution failed: %s", propertyRunWire.getBody())
+                .isEqualTo(HttpStatus.OK);
+        assertThat(propertyRunWire.getBody()).isNotNull();
+        TestSuiteExecutionResponse propertyRun = objectMapper.treeToValue(
+                propertyRunWire.getBody(), TestSuiteExecutionResponse.class);
+        assertThat(propertyRun.schemaVersion())
+                .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION_V5);
+        assertThat(propertyRun.evidence()).isInstanceOfSatisfying(
+                com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4.class,
+                evidence -> {
+                    assertThat(evidence.propertyTrialResults())
+                            .hasSize(storedPropertySuite.propertyTrials().size());
+                    assertThat(evidence.caseResults())
+                            .hasSize(storedPropertySuite.cases().size());
+                    assertThat(evidence.propertyCoverage().allCasesCompleted()).isTrue();
+                    assertThat(evidence.propertyCoverage().globallyMinimal()).isFalse();
+                });
+        assertThat(propertyRun.attestation().schemaVersion())
+                .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V4);
 
         List<String> selectedBoundaryCases = boundaryCases.getBody().cases().stream()
                 .limit(3).map(TestBoundaryCasePlan.BoundaryCase::caseId).toList();

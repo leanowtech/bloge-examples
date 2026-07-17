@@ -321,6 +321,30 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void consumesPropertyResponseV5AndEvidenceBundleV4() throws Exception {
+        ResourceGatewayTestClient client = client();
+
+        TestSuiteRun run = client.findSuiteRun("suite-run/property");
+        TestSuiteEvidenceBundle bundle = client.findSuiteEvidenceBundle("suite-run/property");
+
+        assertThat(run.evaluationMode()).isEqualTo(TestSuiteRun.EvaluationMode.PROPERTY_EXECUTION);
+        assertThat(run.propertyPassed()).isFalse();
+        assertThat(run.requirePropertyCoverage().status())
+                .isEqualTo(TestSuiteRun.PropertyCoverageStatus.COUNTEREXAMPLE);
+        assertThat(TestSuiteRunAssertions.assertCounterexampleFound(run).globallyMinimal())
+                .isFalse();
+        assertThat(run.attestation().schemaVersion())
+                .isEqualTo(TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V4);
+        assertThat(bundle.rawResponse().path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V4);
+        assertThat(bundle.evidence().path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V4);
+        assertThat(requests).extracting(CapturedRequest::rawPath)
+                .containsExactly("/api/testing/suite-executions/suite-run%2Fproperty",
+                        "/api/testing/suite-executions/suite-run%2Fproperty/evidence-bundle");
+    }
+
+    @Test
     void retrievesSchemaValidatedSemanticWorkbookWithLeastPrivilegePurpose() {
         ResourceGatewayTestClient client = client();
 
@@ -598,7 +622,11 @@ class ResourceGatewayTestClientTest {
                     + "\"runId\":\"private-child-payload\",\"evidence\":{\"status\":\"NOT_A_STATUS\"}}");
             return;
         }
-        if (path.endsWith("suite-run%2Fadmission/evidence-bundle")) {
+        if (path.endsWith("suite-run%2Fproperty/evidence-bundle")) {
+            respond(exchange, 200, propertySuiteEvidenceBundleResponse());
+        } else if (path.endsWith("suite-run%2Fproperty")) {
+            respond(exchange, 200, propertySuiteRunResponse());
+        } else if (path.endsWith("suite-run%2Fadmission/evidence-bundle")) {
             respond(exchange, 200, schemaAdmissionSuiteEvidenceBundleResponse());
         } else if (path.endsWith("suite-run%2Fadmission")) {
             respond(exchange, 200, schemaAdmissionSuiteRunResponse());
@@ -956,6 +984,27 @@ class ResourceGatewayTestClientTest {
         ObjectNode bundle = JSON.createObjectNode();
         bundle.put("schemaVersion", TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V3);
         bundle.put("suiteRunId", "suite-run/admission");
+        bundle.put("bundleFingerprint", FINGERPRINT);
+        bundle.put("payloadPolicy", "OMITTED");
+        bundle.set("attestation", response.path("attestation").deepCopy());
+        bundle.set("evidence", response.path("evidence").deepCopy());
+        return bundle.toString();
+    }
+
+    private static String propertySuiteRunResponse() throws IOException {
+        ObjectNode response = (ObjectNode) JSON.readTree(
+                TestSuiteRunAssertionsTest.propertySuiteResponse());
+        response.put("suiteRunId", "suite-run/property");
+        ((ObjectNode) response.path("evidence")).put("suiteRunId", "suite-run/property");
+        ((ObjectNode) response.path("attestation")).put("suiteRunId", "suite-run/property");
+        return response.toString();
+    }
+
+    private static String propertySuiteEvidenceBundleResponse() throws IOException {
+        JsonNode response = JSON.readTree(propertySuiteRunResponse());
+        ObjectNode bundle = JSON.createObjectNode();
+        bundle.put("schemaVersion", TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V4);
+        bundle.put("suiteRunId", "suite-run/property");
         bundle.put("bundleFingerprint", FINGERPRINT);
         bundle.put("payloadPolicy", "OMITTED");
         bundle.set("attestation", response.path("attestation").deepCopy());

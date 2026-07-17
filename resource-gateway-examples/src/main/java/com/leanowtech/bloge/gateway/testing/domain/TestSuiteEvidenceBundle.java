@@ -30,6 +30,8 @@ public record TestSuiteEvidenceBundle(
     public static final String SCHEMA_VERSION_V2 = "bloge.testSuiteEvidenceBundle.v2";
     /** Portable bundle version carrying schema-admission aggregate evidence and attestation. */
     public static final String SCHEMA_VERSION_V3 = "bloge.testSuiteEvidenceBundle.v3";
+    /** Portable bundle version carrying bounded-property aggregate evidence and attestation. */
+    public static final String SCHEMA_VERSION_V4 = "bloge.testSuiteEvidenceBundle.v4";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
     /** Payload handling for this first portable bundle version. */
@@ -62,15 +64,23 @@ public record TestSuiteEvidenceBundle(
                 && attestation != null
                 && TestSuiteRunAttestation.SCHEMA_VERSION_V3.equals(attestation.schemaVersion())
                 && attestation.childEvidenceRefs().isEmpty();
+        boolean v4 = SCHEMA_VERSION_V4.equals(schemaVersion)
+                && evidence instanceof TestSuiteRunEvidenceV4 property
+                && TestSuiteRunEvidenceV4.SCHEMA_VERSION.equals(property.schemaVersion())
+                && attestation != null
+                && TestSuiteRunAttestation.SCHEMA_VERSION_V4.equals(attestation.schemaVersion());
         if (suiteRunId.isBlank() || !FINGERPRINT.matcher(bundleFingerprint).matches()
                 || attestation == null || !attestation.terminallyVerifiable()
                 || evidence == null || !suiteRunId.equals(evidence.suiteRunId())
-                || !suiteRunId.equals(attestation.suiteRunId()) || (!v1 && !v2 && !v3)) {
+                || !suiteRunId.equals(attestation.suiteRunId()) || (!v1 && !v2 && !v3 && !v4)) {
             throw new IllegalArgumentException("Portable suite evidence bundle is incomplete");
         }
     }
 
     private static String versionFor(TestSuiteRunEvidenceProtocol evidence) {
+        if (evidence instanceof TestSuiteRunEvidenceV4) {
+            return SCHEMA_VERSION_V4;
+        }
         if (evidence instanceof TestSuiteRunEvidenceV3) {
             return SCHEMA_VERSION_V3;
         }

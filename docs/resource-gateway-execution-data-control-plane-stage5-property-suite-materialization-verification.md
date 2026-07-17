@@ -1,5 +1,10 @@
 # Stage 5 Immutable Property Suite Materialization Verification
 
+> Historical verification record: this document proves the preceding materialization-only
+> increment. Property execution is now available through the isolated testing runtime; the current
+> evidence contract and failure proofs are documented in
+> [Stage 5 Property Execution Verification](resource-gateway-execution-data-control-plane-stage5-property-execution-verification.md).
+
 ## Scope
 
 This increment turns one reviewed `bloge.testPropertyCasePlan.v1` into a governed, immutable

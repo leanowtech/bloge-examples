@@ -85,26 +85,34 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V3);
             assertConstant(definitions, "testSuiteExecutionResponseV4",
                     TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V4);
-            assertThat(definitions.at("/testSuiteExecutionResponse/oneOf")).hasSize(4);
+            assertConstant(definitions, "testSuiteExecutionResponseV5",
+                    TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V5);
+            assertThat(definitions.at("/testSuiteExecutionResponse/oneOf")).hasSize(5);
             assertConstant(definitions, "testSuiteRunEvidence",
                     TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V1);
             assertConstant(definitions, "testSuiteRunEvidenceV2",
                     TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V2);
             assertConstant(definitions, "testSuiteRunEvidenceV3",
                     TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V3);
+            assertConstant(definitions, "testSuiteRunEvidenceV4",
+                    TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V4);
             assertConstant(definitions, "testSuiteRunAttestation",
                     TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V1);
             assertConstant(definitions, "testSuiteRunAttestationV2",
                     TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V2);
             assertConstant(definitions, "testSuiteRunAttestationV3",
                     TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V3);
+            assertConstant(definitions, "testSuiteRunAttestationV4",
+                    TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V4);
             assertConstant(definitions, "testSuiteEvidenceBundleV1",
                     TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V1);
             assertConstant(definitions, "testSuiteEvidenceBundleV2",
                     TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V2);
             assertConstant(definitions, "testSuiteEvidenceBundleV3",
                     TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V3);
-            assertThat(definitions.at("/testSuiteEvidenceBundle/oneOf")).hasSize(3);
+            assertConstant(definitions, "testSuiteEvidenceBundleV4",
+                    TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V4);
+            assertThat(definitions.at("/testSuiteEvidenceBundle/oneOf")).hasSize(4);
             assertConstant(definitions, "evidenceVerificationKeySet",
                     TestingProtocol.EVIDENCE_VERIFICATION_KEY_SET_V1);
             assertConstant(definitions, "testSuiteCatalogMaterialization",
@@ -139,6 +147,38 @@ class TestingProtocolTest {
 
         assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
                 invalid, "testSuiteExecutionResponse"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("authoritative schema");
+
+    }
+
+    @Test
+    void packagedSchemaAcceptsPropertyEvidenceButRejectsUnprovenGlobalMinimality()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode response = mapper.readTree(TestSuiteRunAssertionsTest.propertySuiteResponse());
+
+        assertThatNoException().isThrownBy(() -> TestingProtocolSchemaValidator.require(
+                response, "testSuiteExecutionResponse"));
+
+        JsonNode invalid = response.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) invalid
+                .at("/evidence/propertyCoverage")).put("globallyMinimal", true);
+
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                invalid, "testSuiteExecutionResponse"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("authoritative schema");
+
+        JsonNode incompleteChild = response.deepCopy();
+        com.fasterxml.jackson.databind.node.ObjectNode root =
+                (com.fasterxml.jackson.databind.node.ObjectNode) incompleteChild
+                        .at("/evidence/propertyTrialResults/0/rootResult");
+        root.put("status", "EVIDENCE_INCOMPLETE");
+        root.putNull("evidenceStatus");
+
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                incompleteChild, "testSuiteExecutionResponse"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("authoritative schema");
     }

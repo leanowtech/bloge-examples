@@ -163,6 +163,99 @@ class TestSuiteRunAssertionsTest {
                 .hasMessageContaining("authoritative schema");
     }
 
+    @Test
+    void projectsBoundedPropertyCounterexampleWithoutPayloadOrGlobalMinimalityClaim()
+            throws Exception {
+        TestSuiteRun run = TestSuiteRun.from(JSON.readTree(propertySuiteResponse()));
+
+        assertThat(run.evaluationMode()).isEqualTo(TestSuiteRun.EvaluationMode.PROPERTY_EXECUTION);
+        assertThat(run.propertyPassed()).isFalse();
+        assertThat(run.evaluationPassed()).isFalse();
+        assertThat(run.passed()).isFalse();
+        assertThat(run.requirePropertyCoverage().status())
+                .isEqualTo(TestSuiteRun.PropertyCoverageStatus.COUNTEREXAMPLE);
+        assertThat(run.propertyTrialResults())
+                .extracting(TestSuiteRun.PropertyTrialResult::status)
+                .containsExactly(TestSuiteRun.PropertyTrialStatus.COUNTEREXAMPLE);
+        TestSuiteRun.CounterexampleRef counterexample =
+                TestSuiteRunAssertions.assertCounterexampleFound(run);
+        assertThat(counterexample.caseId()).isEqualTo("property-001-shrink-001");
+        assertThat(counterexample.minimalityScope()).isEqualTo("PRECOMPUTED_SHRINK_PATH");
+        assertThat(counterexample.globallyMinimal()).isFalse();
+        assertThat(run.gateFailureCodes(false)).contains(
+                "SUITE_STATUS_COMPLETED_WITH_FAILURES",
+                "PROPERTY_COUNTEREXAMPLE", "PROPERTY_COUNTEREXAMPLES_PRESENT");
+        assertThatThrownBy(() -> TestSuiteRunAssertions.assertPropertySatisfied(run))
+                .hasMessageContaining("COUNTEREXAMPLE")
+                .hasMessageNotContaining("generated-root")
+                .hasMessageNotContaining("generated-shrink");
+        assertThat(run.rawResponse().toString())
+                .doesNotContain("generated-root", "generated-shrink");
+    }
+
+    @Test
+    void acceptsSatisfiedBoundedPropertyClosureAsItsOwnEvaluationMode() throws Exception {
+        ObjectNode response = (ObjectNode) JSON.readTree(propertySuiteResponse());
+        ObjectNode evidence = (ObjectNode) response.path("evidence");
+        evidence.put("status", "PASSED");
+        for (int index = 0; index < 2; index++) {
+            ObjectNode common = (ObjectNode) evidence.path("caseResults").get(index);
+            common.put("status", "PASSED");
+            common.put("evidenceStatus", "PASSED");
+            common.put("assertionsPassed", 1);
+            common.put("diagnosticCode", "");
+        }
+        ObjectNode trial = (ObjectNode) evidence.path("propertyTrialResults").get(0);
+        trial.put("status", "SATISFIED");
+        trial.putNull("minimalObservedCounterexample");
+        ObjectNode root = (ObjectNode) trial.path("rootResult");
+        root.put("status", "SATISFIED");
+        root.put("evidenceStatus", "PASSED");
+        root.put("assertionsPassed", 1);
+        root.put("diagnosticCode", "");
+        ObjectNode shrink = (ObjectNode) trial.path("shrinkResults").get(0);
+        shrink.put("status", "SATISFIED");
+        shrink.put("evidenceStatus", "PASSED");
+        shrink.put("assertionsPassed", 1);
+        shrink.put("diagnosticCode", "");
+        ObjectNode coverage = (ObjectNode) evidence.path("propertyCoverage");
+        coverage.put("status", "SATISFIED");
+        coverage.put("satisfiedCases", 2);
+        coverage.put("counterexampleCases", 0);
+        coverage.putArray("minimalObservedCounterexamples");
+
+        TestSuiteRun run = TestSuiteRun.from(response);
+
+        assertThat(run.propertyPassed()).isTrue();
+        assertThat(run.evaluationPassed()).isTrue();
+        assertThatCode(() -> TestSuiteRunAssertions.assertPropertySatisfied(run))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> TestSuiteRunAssertions.assertCounterexampleFound(run))
+                .hasMessageContaining("no observed counterexample");
+    }
+
+    @Test
+    void rejectsProducerOwnedPropertyMinimumAndCoverageCounterDrift() throws Exception {
+        ObjectNode wrongMinimum = (ObjectNode) JSON.readTree(propertySuiteResponse());
+        ((ObjectNode) wrongMinimum.at(
+                "/evidence/propertyTrialResults/0/minimalObservedCounterexample"))
+                .put("caseId", "property-001")
+                .put("inputFingerprint", FINGERPRINT)
+                .put("complexity", 2);
+
+        assertThatThrownBy(() -> TestSuiteRun.from(wrongMinimum))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must be derived");
+
+        ObjectNode wrongCoverage = (ObjectNode) JSON.readTree(propertySuiteResponse());
+        ((ObjectNode) wrongCoverage.at("/evidence/propertyCoverage"))
+                .put("counterexampleCases", 1);
+
+        assertThatThrownBy(() -> TestSuiteRun.from(wrongCoverage))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("compatibility closure");
+    }
+
     private static TestSuiteRun run(String status, String caseStatus, String coverage,
                                     String promotion, String reason) throws Exception {
         return TestSuiteRun.from(suiteResponse(status, caseStatus, coverage, promotion, reason));
@@ -244,5 +337,86 @@ class TestSuiteRunAssertionsTest {
                    "childEvidenceRefs":[],"signedAt":"2026-07-17T01:00:01Z","keyId":"test-key-1",
                    "algorithm":"Ed25519","signature":"AA==","independentlyVerifiable":true}}
                 """.formatted(FINGERPRINT);
+    }
+
+    static String propertySuiteResponse() {
+        return """
+                {"schemaVersion":"bloge.testSuiteExecutionResponse.v5","suiteRunId":"suite-run-property",
+                 "evidenceFingerprint":"%1$s","evidence":{"schemaVersion":"bloge.testSuiteRunEvidence.v4",
+                   "suiteRunId":"suite-run-property","clientRequestId":"property-ci-1",
+                   "status":"COMPLETED_WITH_FAILURES","executionPurpose":"PROPERTY_SUITE_EXECUTION",
+                   "suiteRef":{"suiteId":"suite-property","revision":4,"fingerprint":"%1$s"},
+                   "target":{"kind":"GRAPH","id":"loanDecision","fingerprint":"%1$s"},
+                   "startedAt":"2026-07-17T02:00:00Z","completedAt":"2026-07-17T02:00:02Z",
+                   "caseResults":[
+                     {"caseId":"property-001","caseType":"PROPERTY",
+                      "fixtureBundleRef":{"fixtureBundleId":"property-fixture","revision":1,
+                        "fingerprint":"%1$s"},"status":"FAILED","runId":"property-run-root",
+                      "evidenceStatus":"ASSERTION_FAILED","evidenceClass":"CERTIFIABLE",
+                      "assertionsEvaluated":1,"assertionsPassed":0,
+                      "diagnosticCode":"ASSERTION_FAILED","diagnostic":""},
+                     {"caseId":"property-001-shrink-001","caseType":"PROPERTY",
+                      "fixtureBundleRef":{"fixtureBundleId":"property-fixture","revision":1,
+                        "fingerprint":"%1$s"},"status":"FAILED","runId":"property-run-shrink",
+                      "evidenceStatus":"ASSERTION_FAILED","evidenceClass":"CERTIFIABLE",
+                      "assertionsEvaluated":1,"assertionsPassed":0,
+                      "diagnosticCode":"ASSERTION_FAILED","diagnostic":""}],
+                   "coverage":{"status":"SATISFIED","minimumCases":2,"completedCases":2,
+                     "requiredCaseTypes":["PROPERTY"],"observedCaseTypes":["PROPERTY"],
+                     "missingCaseTypes":[],"requiredInvocationSiteIds":[],
+                     "observedInvocationSiteIds":[],"missingInvocationSiteIds":[],
+                     "requiredEdgeTransfers":[],"observedEdgeTransfers":[],
+                     "missingEdgeTransfers":[],"minimumAssertionsPerCase":1,
+                     "assertionDensityViolations":[],"fixtureConsumptionViolations":[],
+                     "allCasesCompleted":true},
+                   "promotion":{"status":"BLOCKED","reasons":["CASE_FAILURES_PRESENT"],
+                     "allCasesPassed":false,"certifiableCases":2,"minimumCertifiableCases":2,
+                     "targetCertificationEligible":true,"coverageSatisfied":true,
+                     "allCasesCompleted":true},
+                   "evaluationMode":"PROPERTY_EXECUTION","quantification":"BOUNDED_SAMPLED",
+                   "exhaustive":false,"propertyPlanFingerprint":"%1$s",
+                   "inputSchemaFingerprint":"%1$s",
+                   "generationPolicy":{"generatorVersion":"property-cases-v1","seed":42,
+                     "requestedTrials":1,"maxShrinkSteps":1,"maxCases":2,
+                     "maxGenerationAttempts":32,"maxDepth":8,"maxCollectionItems":32,
+                     "verificationMode":"VISUAL_SCHEMA_VALIDATOR_PROOF"},
+                   "sourcePlanStatus":"GENERATED","generationGapsAccepted":false,
+                   "generationGaps":[],"propertyTrialResults":[{
+                     "trialId":"property-001","status":"COUNTEREXAMPLE",
+                     "rootResult":{"caseId":"property-001","role":"ROOT","parentCaseId":"",
+                       "shrinkStep":0,"inputFingerprint":"%1$s","complexity":2,
+                       "status":"COUNTEREXAMPLE","runId":"property-run-root",
+                       "evidenceStatus":"ASSERTION_FAILED","assertionsEvaluated":1,
+                       "assertionsPassed":0,"diagnosticCode":"ASSERTION_FAILED"},
+                     "shrinkResults":[{"caseId":"property-001-shrink-001","role":"SHRINK",
+                       "parentCaseId":"property-001","shrinkStep":1,
+                       "inputFingerprint":"sha256:%2$s","complexity":1,
+                       "status":"COUNTEREXAMPLE","runId":"property-run-shrink",
+                       "evidenceStatus":"ASSERTION_FAILED","assertionsEvaluated":1,
+                       "assertionsPassed":0,"diagnosticCode":"ASSERTION_FAILED"}],
+                     "minimalObservedCounterexample":{"caseId":"property-001-shrink-001",
+                       "inputFingerprint":"sha256:%2$s","complexity":1,
+                       "minimalityScope":"PRECOMPUTED_SHRINK_PATH","globallyMinimal":false}}],
+                   "propertyCoverage":{"status":"COUNTEREXAMPLE","requiredTrials":1,
+                     "completedTrials":1,"requiredCases":2,"evaluatedCases":2,
+                     "satisfiedCases":0,"counterexampleCases":2,"executionFailedCaseIds":[],
+                     "incompleteCaseIds":[],"minimalObservedCounterexamples":[{
+                       "caseId":"property-001-shrink-001","inputFingerprint":"sha256:%2$s",
+                       "complexity":1,"minimalityScope":"PRECOMPUTED_SHRINK_PATH",
+                       "globallyMinimal":false}],"allCasesCompleted":true,
+                     "minimalityScope":"PRECOMPUTED_SHRINK_PATH","globallyMinimal":false},
+                   "diagnostics":[],"metadata":{}},
+                 "attestation":{"schemaVersion":"bloge.testSuiteRunAttestation.v4",
+                   "signatureStatus":"VERIFIED","scope":"TERMINAL","suiteRunId":"suite-run-property",
+                   "suiteRef":{"suiteId":"suite-property","revision":4,"fingerprint":"%1$s"},
+                   "requestFingerprint":"%1$s","aggregateEvidenceFingerprint":"%1$s",
+                   "childEvidenceRefs":[
+                     {"caseId":"property-001","runId":"property-run-root",
+                      "evidenceFingerprint":"%1$s"},
+                     {"caseId":"property-001-shrink-001","runId":"property-run-shrink",
+                      "evidenceFingerprint":"%1$s"}],
+                   "signedAt":"2026-07-17T02:00:02Z","keyId":"test-key-1",
+                   "algorithm":"Ed25519","signature":"AA==","independentlyVerifiable":true}}
+                """.formatted(FINGERPRINT, "b".repeat(64));
     }
 }

@@ -28,8 +28,10 @@ import java.util.Set;
 /**
  * Dependency-light offline verifier for portable suite evidence and Ed25519 attestations.
  *
- * <p>The verifier recomputes bundle, aggregate, and signature-material fingerprints. It does not
- * trust the producer's {@code signatureStatus} claim and never requires child payload values.</p>
+ * <p>The verifier recomputes bundle, aggregate, and signature-material fingerprints. For bounded
+ * property evidence it also re-derives the typed trial, minimum-counterexample, and coverage
+ * closure. It does not trust the producer's {@code signatureStatus} claim and never requires child
+ * payload values.</p>
  */
 public final class TestSuiteEvidenceVerifier {
 
@@ -154,7 +156,10 @@ public final class TestSuiteEvidenceVerifier {
         String evidenceVersion = bundle.evidence().path("schemaVersion").asText();
         String expectedAttestationVersion;
         String expectedBundleVersion;
-        if (TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V3.equals(evidenceVersion)) {
+        if (TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V4.equals(evidenceVersion)) {
+            expectedAttestationVersion = TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V4;
+            expectedBundleVersion = TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V4;
+        } else if (TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V3.equals(evidenceVersion)) {
             expectedAttestationVersion = TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V3;
             expectedBundleVersion = TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V3;
         } else if (TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V2.equals(evidenceVersion)) {
@@ -193,6 +198,11 @@ public final class TestSuiteEvidenceVerifier {
                 return result(Outcome.INVALID, "CHILD_EVIDENCE_CLOSURE_INVALID",
                         bundle.suiteRunId(), attestation.keyId());
             }
+            if (TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V4.equals(evidenceVersion)
+                    && !propertySemanticsMatch(bundle)) {
+                return result(Outcome.INVALID, "PROPERTY_EVIDENCE_SEMANTICS_INVALID",
+                        bundle.suiteRunId(), attestation.keyId());
+            }
             ObjectNode bundleMaterial = JSON.createObjectNode();
             bundleMaterial.put("payloadPolicy", bundle.payloadPolicy().name());
             bundleMaterial.set("attestation", bundle.rawResponse().path("attestation").deepCopy());
@@ -210,6 +220,22 @@ public final class TestSuiteEvidenceVerifier {
         } catch (RuntimeException | GeneralSecurityException failure) {
             return result(Outcome.INVALID, "ATTESTATION_MATERIAL_INVALID",
                     bundle.suiteRunId(), attestation.keyId());
+        }
+    }
+
+    private static boolean propertySemanticsMatch(TestSuiteEvidenceBundle bundle) {
+        ObjectNode response = JSON.createObjectNode();
+        response.put("schemaVersion", TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V5);
+        response.put("suiteRunId", bundle.suiteRunId());
+        response.put("evidenceFingerprint",
+                bundle.attestation().aggregateEvidenceFingerprint());
+        response.set("evidence", bundle.evidence().deepCopy());
+        response.set("attestation", bundle.rawResponse().path("attestation").deepCopy());
+        try {
+            TestSuiteRun.from(response);
+            return true;
+        } catch (IllegalArgumentException failure) {
+            return false;
         }
     }
 

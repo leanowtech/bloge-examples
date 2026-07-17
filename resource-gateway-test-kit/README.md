@@ -207,7 +207,7 @@ or structural/semantic coverage passed. v4 response, v3 evidence, v3 attestation
 single generation; the schema validator and offline verifier reject mixed generations. The v3
 attestation must have an empty `childEvidenceRefs` list.
 
-Plan and freeze a bounded property suite without pretending that it is already executable:
+Plan, freeze, execute, and independently verify a bounded property suite:
 
 ```java
 JsonNode propertyPlan = client.planGraphPropertyCases(
@@ -235,16 +235,44 @@ materializationRequest.put("acceptGenerationGaps", false);
 
 JsonNode materialized = client.materializeGraphPropertySuite(
         "loanDecisionPolicy", materializationRequest);
-assert materialized.path("suiteRef").path("schemaVersion").asText()
+JsonNode propertySuiteRef = materialized.path("suiteRef");
+assert propertySuiteRef.path("schemaVersion").asText()
         .equals(TestingProtocol.TEST_SUITE_V4);
+
+TestSuiteRun propertyRun = client.executeSuite(
+        propertySuiteRef.path("suiteId").asText(),
+        propertySuiteRef.path("revision").asLong(),
+        propertySuiteRef.path("fingerprint").asText(),
+        "property-ci-1842",
+        ResourceGatewayTestClient.SuiteStrategy.COLLECT_ALL,
+        Map.of("source", "property-regression"));
+
+assert propertyRun.evaluationMode() == TestSuiteRun.EvaluationMode.PROPERTY_EXECUTION;
+TestSuiteRunAssertions.assertPropertySatisfied(propertyRun);
+
+TestSuiteEvidenceVerifier.VerificationResult propertyVerification =
+        client.verifySuiteEvidence(propertyRun.suiteRunId());
+if (!propertyVerification.verified()) {
+    throw new IllegalStateException(propertyVerification.reasonCode());
+}
 ```
 
 The service regenerates the plan and freezes its complete root/shrink closure; there is no case
 selection. The fixture must already belong to the same exact target and contain assertions. The
 ordinary `TestSuiteBuilder` intentionally remains limited to V1/V2 business intents, while
-`PROPERTY` is reserved for server-materialized V4. Check the capability probe before any execution:
-this release advertises `propertySuiteMaterialization=true` and `propertySuiteExecution=false`, so a
-V4 execution attempt is expected to fail closed with `RG.TEST.PROPERTY_EVIDENCE_UNAVAILABLE`.
+`PROPERTY` is reserved for server-materialized V4. Check the capability probe before execution;
+`propertySuiteExecution=true` means the isolated testing runtime can emit the complete V5/V4/V4/V4
+response, evidence, attestation, and portable-bundle generation.
+
+Property execution is bounded sampling, never an exhaustive proof. `COLLECT_ALL` runs every frozen
+root and shrink candidate. `FAIL_FAST` completes the shrink path belonging to the first failing root,
+then skips later roots. When a counterexample is expected, use
+`TestSuiteRunAssertions.assertCounterexampleFound(propertyRun)` to obtain a payload-free reference
+containing case id, input fingerprint, deterministic complexity, and
+`minimalityScope=PRECOMPUTED_SHRINK_PATH`. The reference always says `globallyMinimal=false` because
+the runtime proves only the smallest observed failure on the reviewed path. Abandoned checkpoints
+are terminalized as incomplete evidence; the server never regenerates or reruns missing inputs during
+reconciliation.
 
 Calling any semantic requirement method emits `bloge.testSuite.v2`; builders without these methods
 remain on v1:

@@ -11,7 +11,7 @@
 | Stage 2' | 进行中 | 已落地 graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（含四类 case intent、内容寻址 fixture 与一等 TestSuite 发布、聚合执行/coverage/promotion 回显）、immutable fixture/TestSuite registry、幂等 TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、10 态 child evidence、profile/identity/生产协议隔离、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其内容寻址 catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free effective plan v2 谱系与认证降级，以及同步 root/nested/foreach/loop/compensation 的结构寻址、控制传播、动态 attempt/occurrence selector 和 occurrence/attempt/node/edge evidence；streaming/suspendable control/evidence 与物理 network/runtime 隔离仍待完成 |
 | Stage 3 evidence chain | 进行中 | graph/operator child signature、suite checkpoint/terminal aggregate attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、签名时刻 lifecycle policy、外部 M-of-N trust publication、bounded append-only consistency page、durable consumer checkpoint、rollback/fork/split-view/revoked-pin resurrection detection 与 test-kit independent verifier 已完成；exact-suite ANEKE semantic workbook seed、`GovernanceGateResult.v3` 可重建 basis、编译级 GraphDraft target 绑定与独立 schema consumer 已完成；真实 ANEKE N/N-1 conformance、独立 witness gossip/跨域一致性证明待完成 |
 | Stage 4 deterministic runtime | 进行中 | run-scoped TIME/RANDOM/UUID、effective plan/provider state、组合 durable checkpoint、同库事务、数据库时钟 lease CAS、幂等命令与 staged 四 store aggregate 已完成；公开 authenticated durable GRAPH/OPERATOR create、payload-free query、owner claim、heartbeat、one-signal suspended-or-terminal recovery step、有界同步 multi-suspension recovery sequence、兼容 terminal-only recovery 和进程内 lease coordinator 已闭合；recovery sequence 外层及派生 step/claim/automatic-heartbeat 已具备数据库租约化有界 retention、独立 HMAC tombstone、密钥轮换启动自检、固定基数 telemetry 和数据库时钟 backlog SLO/readiness；公开 non-blocking worker pull 已在认证 tenant/org/project/environment 内以数据库时钟有界扫描，逐候选重授权，并把 exact lease CAS、hidden dispatch、`ACQUIRED/NO_WORK` 幂等结果和审计原子提交，再以 scope 级持久化循环 keyset 游标避免稳定毒化前缀饥饿，对 exact checkpoint 的确定性失败做数据库时钟指数退避，并在连续失败阈值后转为永久 worker quarantine；隔离 list/claim/release、数据库权威 maker/checker approved discard、token-free receipt/history、审批 SLO observation、claim-command replay token AES-GCM envelope/旧行迁移/轮换重包、active-control HMAC fence/旧行迁移/轮换重键、命令/审批/历史的数据库租约化有界保留、独立 keyed-HMAC request-index tombstone/在线轮换/旧行惰性迁移、N/N-1 三阶段 write/readiness/capability、challenge-bound 逐副本签名 proof、独立 test-kit exact-inventory fleet gate 与四维即时 admission 已落地；外部 quarantine change authorization 的 Ed25519 M-of-N trust、canonical scope/subject binding、checker HTTP v2 强制、数据库时间窗复核、双重唯一预留、销毁事务一次性消费、精确幂等重放、严格 Schema、staging fail-fast 配置、readiness/capability 和 key-free v2 证据透传已闭合。其他 durable command family 的统一有界 lifecycle、跨平台 serving-inventory 完整性证明、外部工单全生命周期与动态撤销刷新、法律保留/备份擦除、外部 WORM、runtime-state dispatch、排队/公平/优先级调度、异步/无界多 suspension 编排、跨进程 worker supervision、强制 worker 取消、完整历史 trace evidence、stream offset/checkpoint、identity/flag/secret authority 和确定性并发待完成 |
-| Stage 5 scale and quality | 进行中（immutable property suite 增量） | graph/operator exact target 的 validator-proven boundary plan、人工选择、三指纹乐观锁、内容寻址 revision、惰性 fixture、`bloge.testSuite.v3` immutable materialization，以及 exact-validator、零业务调用、签名 checkpoint/terminal evidence、幂等/容量/lease/reconciliation、v4/v3 权威协议与独立 test-kit 消费闭环已落地；seeded bounded property trial/shrink plan、显式非穷举量词、完整 root/shrink closure 与 assertion-bearing fixture 绑定的 `bloge.testSuite.v4` immutable materialization 已落地；property execution/evidence、pure-DSL mutation execution/score、flaky analysis 与独立部署硬隔离待完成 |
+| Stage 5 scale and quality | 进行中（bounded property execution 增量） | graph/operator boundary planning/admission、seeded bounded property trial/shrink plan、显式非穷举量词、完整 root/shrink `bloge.testSuite.v4` materialization，以及实际 root/shrink child execution、路径局部最小反例、property coverage、V5/V4/V4/V4 同代签名协议、幂等/lease/checkpoint/reconciliation、权威 Schema 与独立 test-kit CI/离线验签闭环已落地；pure-DSL mutation execution/score、flaky analysis、统计置信策略与独立部署硬隔离待完成 |
 
 第三十五增量已新增 `RecoveryStepCommand/Result` 与数据库权威 command record：一个
 issued dispatch 可把一个 signal 原子推进到唯一新 `SUSPENDED` 或五类 `TERMINAL`；再次挂起时用
@@ -81,7 +81,8 @@ seed/shrink、纯 DSL mutation execution/score、flaky analysis 和部署级硬�
 并完成 Spring Boot 可执行 JAR；独立 test-kit `clean verify` 执行 84 tests，0 failures、0 errors、
 0 skips，并通过权威 Schema 打包、普通/shaded JAR 与严格 public Javadoc 门禁。
 
-第四十二增量交付 `bloge.testPropertyCasePlan.v1` 与 graph/operator property-case GET。调用方必须显式
+第四十二增量（历史快照，执行限制已被第四十四增量取代）交付
+`bloge.testPropertyCasePlan.v1` 与 graph/operator property-case GET。调用方必须显式
 提供 seed；同一 exact target/schema/policy 可逐值重放 root trials、线性 shrink paths 和 plan fingerprint。
 每个候选都由公共 validator 独立证明，root 不重复、shrink complexity 严格递减；16 roots、每 root 5
 shrink、96 cases、32 attempts、8 层和 32 collection/string 是协议化上限。BLOGE projection loss、未展开
@@ -94,7 +95,8 @@ Spring HTTP 重放已同步；`propertySuiteExecution=false` 保持关闭，直�
 跳过并完成可执行 JAR；独立 test-kit 84 tests 全绿，并通过 Schema 打包、普通/shaded JAR 与 public
 Javadoc 门禁。
 
-第四十三增量把 reviewed property plan 物化为 `bloge.testSuite.v4`，但不越级开放执行。graph/operator
+第四十三增量（历史快照，执行限制已被第四十四增量取代）把 reviewed property plan 物化为
+`bloge.testSuite.v4`，但不越级开放执行。graph/operator
 materialization endpoint 只接受 `TEST_SUITE_WRITE`，服务端按请求 seed 和有界 policy 重建 exact plan，
 再次核对 target/input-schema/plan 三指纹，并冻结完整 root/shrink closure；协议没有 case selection，避免
 调用方删除不利样本。所有 case 固定为 `PROPERTY`，共享一个已经存在、target fingerprint 匹配、
@@ -110,6 +112,23 @@ coverage、checkpoint、terminal attestation、portable bundle 和独立 verifie
 本增量完整 Resource Gateway `clean verify` 执行 2382 tests，0 failures、0 errors、2 个条件跳过，
 并完成 Spring Boot 可执行 JAR；独立 test-kit `clean verify` 执行 85 tests，0 failures、0 errors、
 0 skips，并通过权威 Schema 打包、普通/shaded JAR 与严格 public JavaDoc 门禁。
+
+第四十四增量关闭 property execution/evidence 缺口。`bloge.testSuiteRunEvidence.v4` 绑定 exact plan、
+input schema、generation policy、非穷举量词、root/shrink lineage、逐 case child evidence 和 typed property
+coverage；runner 只消费 V4 冻结输入，不运行期重生成。`COLLECT_ALL` 执行完整闭包，`FAIL_FAST` 在首个
+反例后仍完成当前 root 的预计算 shrink path，再停止后续 root。最小观察反例只承诺
+`PRECOMPUTED_SHRINK_PATH`，协议强制 `globallyMinimal=false`。response/evidence/attestation/bundle
+升级为 V5/V4/V4/V4 并由数据库 generation guard、ordered child closure、权威 Schema 和 test-kit
+Ed25519 offline verifier 联合封闭。exact 幂等重放不二次执行；lease、签名、terminal persistence 与
+abandoned reconciliation 均 fail closed，恢复只把 pending case 标为 incomplete，不重跑业务输入。
+capability 仅在隔离 suite execution endpoint 存在时发布 `propertySuiteExecution=true`。验证见
+[Stage 5 property execution verification](resource-gateway-execution-data-control-plane-stage5-property-execution-verification.md)。
+该增量产出的是有界样本正确性证据，不是全输入域证明；剩余 Stage 5 主线是 mutation score、
+flaky/统计置信、跨进程并行调度和部署级硬隔离。
+本增量完整 Resource Gateway `clean verify` 执行 2389 tests，0 failures、0 errors、2 个既有条件跳过，
+并通过 34 项真实浏览器回归和 Spring Boot 可执行 JAR 打包；独立 test-kit `clean verify` 执行
+92 tests，0 failures、0 errors、0 skips，并通过权威 Schema、普通/shaded JAR、V4 语义重算/离线验签与严格
+public JavaDoc 门禁。
 
 恢复控制面回归执行 146 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2298 tests，0 failures、0 errors、28 个既有条件跳过，并通过真实浏览器流程与

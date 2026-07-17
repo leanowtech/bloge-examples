@@ -17,6 +17,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
@@ -142,22 +143,85 @@ class TestSuiteExecutionServiceTest {
     }
 
     @Test
-    void propertyV4FailsClosedBeforeRunPersistenceAdmissionOrBusinessExecution() {
+    void propertyV4ExecutesFrozenShrinkClosureAndExportsPathLocalCounterexampleEvidence() {
         StoredTestSuite stored = storedPropertySuite();
         when(registry.find("suite-a", 3, identity)).thenReturn(stored);
+        when(executions.describeGraphTarget("graph-a", identity)).thenReturn(graphTarget(TARGET, true));
+        when(executions.executeAdmittedSuiteGraphCase(any(), eq(identity)))
+                .thenReturn(propertyResponse("property-run-root", "property-001",
+                        TestRunEvidence.Status.ASSERTION_FAILED))
+                .thenReturn(propertyResponse("property-run-shrink",
+                        "property-001-shrink-001", TestRunEvidence.Status.ASSERTION_FAILED));
 
-        assertThatThrownBy(() -> service.execute("suite-a", request("property-request",
-                TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity))
-                .isInstanceOf(IntegrationProblemException.class)
-                .satisfies(failure -> {
-                    var problem = ((IntegrationProblemException) failure).problem();
-                    assertThat(problem.code()).isEqualTo("RG.TEST.PROPERTY_EVIDENCE_UNAVAILABLE");
-                    assertThat(problem.status()).isEqualTo(409);
+        TestSuiteExecutionResponse response = service.execute("suite-a", request("property-request",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity);
+        TestSuiteExecutionResponse retry = service.execute("suite-a", request("property-request",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity);
+        TestSuiteEvidenceBundle bundle = service.evidenceBundle(response.suiteRunId(), identity);
+
+        assertThat(retry).isEqualTo(response);
+        assertThat(response.schemaVersion()).isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION_V5);
+        assertThat(response.attestation().schemaVersion())
+                .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V4);
+        assertThat(response.evidence()).isInstanceOfSatisfying(TestSuiteRunEvidenceV4.class,
+                evidence -> {
+                    assertThat(evidence.status())
+                            .isEqualTo(TestSuiteRunEvidence.Status.COMPLETED_WITH_FAILURES);
+                    assertThat(evidence.propertyCoverage().status())
+                            .isEqualTo(TestSuiteRunEvidenceV4.PropertyCoverageStatus.COUNTEREXAMPLE);
+                    assertThat(evidence.propertyCoverage().minimalObservedCounterexamples())
+                            .singleElement().satisfies(counterexample -> {
+                                assertThat(counterexample.caseId())
+                                        .isEqualTo("property-001-shrink-001");
+                                assertThat(counterexample.minimalityScope())
+                                        .isEqualTo(TestSuiteRunEvidenceV4.MINIMALITY_SCOPE);
+                                assertThat(counterexample.globallyMinimal()).isFalse();
+                            });
+                    assertThat(evidence.propertyCoverage().counterexampleCases()).isEqualTo(2);
+                    assertThat(evidence.propertyCoverage().allCasesCompleted()).isTrue();
                 });
+        assertThat(response.attestation().childEvidenceRefs())
+                .extracting(TestSuiteRunAttestation.ChildEvidenceRef::runId)
+                .containsExactly("property-run-root", "property-run-shrink");
+        assertThat(bundle.schemaVersion()).isEqualTo(TestSuiteEvidenceBundle.SCHEMA_VERSION_V4);
+        assertThat(bundle.evidence()).isInstanceOf(TestSuiteRunEvidenceV4.class);
+        assertThat(objectMapper.valueToTree(bundle).toString())
+                .doesNotContain("generated-root", "generated-shrink");
+        verify(executions, times(2)).executeAdmittedSuiteGraphCase(any(), eq(identity));
+    }
 
-        verifyNoInteractions(executions, admissions);
-        assertThat(runRepository.findByClientRequestId(
-                "tenant-a", "test", "property-request")).isEmpty();
+    @Test
+    void propertyFailFastCompletesCurrentShrinkPathBeforeSkippingTheNextTrial() {
+        StoredTestSuite stored = storedTwoTrialPropertySuite();
+        when(registry.find("suite-a", 3, identity)).thenReturn(stored);
+        when(executions.describeGraphTarget("graph-a", identity)).thenReturn(graphTarget(TARGET, true));
+        when(executions.executeAdmittedSuiteGraphCase(any(), eq(identity)))
+                .thenReturn(propertyResponse("property-run-root", "property-001",
+                        TestRunEvidence.Status.ASSERTION_FAILED))
+                .thenReturn(propertyResponse("property-run-shrink",
+                        "property-001-shrink-001", TestRunEvidence.Status.ASSERTION_FAILED));
+
+        TestSuiteExecutionResponse response = service.execute("suite-a", request("property-fast",
+                TestSuiteExecutionRequest.Strategy.FAIL_FAST), identity);
+
+        assertThat(response.evidence()).isInstanceOfSatisfying(TestSuiteRunEvidenceV4.class,
+                evidence -> {
+                    assertThat(evidence.status()).isEqualTo(TestSuiteRunEvidence.Status.PARTIAL);
+                    assertThat(evidence.caseResults())
+                            .extracting(TestSuiteRunEvidence.CaseResult::status)
+                            .containsExactly(TestSuiteRunEvidence.CaseStatus.FAILED,
+                                    TestSuiteRunEvidence.CaseStatus.FAILED,
+                                    TestSuiteRunEvidence.CaseStatus.NOT_SCHEDULED,
+                                    TestSuiteRunEvidence.CaseStatus.NOT_SCHEDULED);
+                    assertThat(evidence.propertyTrialResults())
+                            .extracting(TestSuiteRunEvidenceV4.PropertyTrialResult::status)
+                            .containsExactly(
+                                    TestSuiteRunEvidenceV4.PropertyTrialStatus.COUNTEREXAMPLE,
+                                    TestSuiteRunEvidenceV4.PropertyTrialStatus.INCOMPLETE);
+                    assertThat(evidence.propertyCoverage().status())
+                            .isEqualTo(TestSuiteRunEvidenceV4.PropertyCoverageStatus.INCOMPLETE);
+                });
+        verify(executions, times(2)).executeAdmittedSuiteGraphCase(any(), eq(identity));
     }
 
     @Test
@@ -620,24 +684,76 @@ class TestSuiteExecutionServiceTest {
                 "fixture-property", 1, FIXTURE_1);
         TestSuiteV4 suite = new TestSuiteV4("", "suite-a", 3,
                 new TestSuite.Target("GRAPH", "graph-a", TARGET), "INTERNAL",
-                List.of(new TestSuite.TestCase("property-001", TestSuite.CaseType.PROPERTY,
-                        Map.of("orderId", "generated"), fixture,
-                        List.of("property-root"), Map.of())),
-                new TestSuite.CoveragePolicy(1, List.of(TestSuite.CaseType.PROPERTY),
+                List.of(
+                        new TestSuite.TestCase("property-001", TestSuite.CaseType.PROPERTY,
+                                Map.of("orderId", "generated-root"), fixture,
+                                List.of("property-root"), Map.of()),
+                        new TestSuite.TestCase("property-001-shrink-001",
+                                TestSuite.CaseType.PROPERTY,
+                                Map.of("orderId", "generated-shrink"), fixture,
+                                List.of("property-shrink"), Map.of())),
+                new TestSuite.CoveragePolicy(2, List.of(TestSuite.CaseType.PROPERTY),
                         List.of(), List.of(), 1, false), SemanticCoveragePolicy.empty(),
-                new TestSuite.PromotionPolicy(true, 1, true),
+                new TestSuite.PromotionPolicy(true, 2, true),
                 TestSuiteV4.EvaluationMode.PROPERTY_EXECUTION,
                 TestSuiteV4.Quantification.BOUNDED_SAMPLED, false,
                 "sha256:" + "e".repeat(64), "sha256:" + "f".repeat(64),
                 new TestSuiteV4.PropertyGenerationPolicy(
-                        "property-cases-v1", 42, 1, 0, 1, 32, 8, 32,
+                        "property-cases-v1", 42, 1, 1, 2, 32, 8, 32,
                         "VISUAL_SCHEMA_VALIDATOR_PROOF"),
                 TestSuiteV4.SourcePlanStatus.GENERATED, false, List.of(),
                 List.of(new TestSuiteV4.PropertyTrialRef(
-                        "property-001", "sha256:" + "9".repeat(64), 1, List.of())),
+                        "property-001", "sha256:" + "9".repeat(64), 2,
+                        List.of(new TestSuiteV4.PropertyShrinkRef(
+                                "property-001-shrink-001", "property-001", 1,
+                                "sha256:" + "8".repeat(64), 1)))),
                 Map.of("source", "seeded-property-plan"));
         return new StoredTestSuite("", "tenant-a", "test", "suite-a", 3,
                 SUITE, suite, Instant.now(), "runner");
+    }
+
+    private StoredTestSuite storedTwoTrialPropertySuite() {
+        TestSuite.FixtureBundleRef fixture = new TestSuite.FixtureBundleRef(
+                "fixture-property", 1, FIXTURE_1);
+        List<TestSuite.TestCase> cases = List.of(
+                propertyCase("property-001", "root-1", fixture),
+                propertyCase("property-001-shrink-001", "shrink-1", fixture),
+                propertyCase("property-002", "root-2", fixture),
+                propertyCase("property-002-shrink-001", "shrink-2", fixture));
+        TestSuiteV4 suite = new TestSuiteV4("", "suite-a", 3,
+                new TestSuite.Target("GRAPH", "graph-a", TARGET), "INTERNAL", cases,
+                new TestSuite.CoveragePolicy(4, List.of(TestSuite.CaseType.PROPERTY),
+                        List.of(), List.of(), 1, false), SemanticCoveragePolicy.empty(),
+                new TestSuite.PromotionPolicy(true, 4, true),
+                TestSuiteV4.EvaluationMode.PROPERTY_EXECUTION,
+                TestSuiteV4.Quantification.BOUNDED_SAMPLED, false,
+                "sha256:" + "e".repeat(64), "sha256:" + "f".repeat(64),
+                new TestSuiteV4.PropertyGenerationPolicy(
+                        "property-cases-v1", 42, 2, 1, 4, 32, 8, 32,
+                        "VISUAL_SCHEMA_VALIDATOR_PROOF"),
+                TestSuiteV4.SourcePlanStatus.GENERATED, false, List.of(),
+                List.of(
+                        propertyTrial(1, '9', '8'),
+                        propertyTrial(2, '7', '6')),
+                Map.of("source", "seeded-property-plan"));
+        return new StoredTestSuite("", "tenant-a", "test", "suite-a", 3,
+                SUITE, suite, Instant.now(), "runner");
+    }
+
+    private static TestSuite.TestCase propertyCase(
+            String caseId, String orderId, TestSuite.FixtureBundleRef fixture) {
+        return new TestSuite.TestCase(caseId, TestSuite.CaseType.PROPERTY,
+                Map.of("orderId", orderId), fixture, List.of("property"), Map.of());
+    }
+
+    private static TestSuiteV4.PropertyTrialRef propertyTrial(
+            int trial, char rootFingerprint, char shrinkFingerprint) {
+        String root = "property-%03d".formatted(trial);
+        return new TestSuiteV4.PropertyTrialRef(root,
+                "sha256:" + String.valueOf(rootFingerprint).repeat(64), 2,
+                List.of(new TestSuiteV4.PropertyShrinkRef(
+                        root + "-shrink-001", root, 1,
+                        "sha256:" + String.valueOf(shrinkFingerprint).repeat(64), 1)));
     }
 
     private TestSuiteV3 admissionSuite(TestBoundaryCasePlan plan, int caseCount) {
@@ -708,6 +824,26 @@ class TestSuiteExecutionServiceTest {
             TestRunEvidence.Status status, TestRunEvidence.EvidenceClass evidenceClass) {
         return response(runId, caseId, siteId, edgeFrom, edgeTo, status, evidenceClass,
                 "OPERATOR", "customer.normalize");
+    }
+
+    private static TestExecutionApiResponse propertyResponse(
+            String runId, String caseId, TestRunEvidence.Status status) {
+        Instant now = Instant.now();
+        boolean passed = status == TestRunEvidence.Status.PASSED;
+        TestRunEvidence evidence = new TestRunEvidence("", runId, status,
+                TestRunEvidence.EvidenceClass.CERTIFIABLE, "GRAPH_CONTRACT_TEST", TARGET,
+                FIXTURE_1, "sha256:" + "7".repeat(64), now, now, List.of(), List.of(),
+                List.of(new TestRunEvidence.FixtureConsumption(
+                        "rule-property", 1, true, "SATISFIED")),
+                List.of(new TestRunEvidence.AssertionResult(
+                        "OUTPUT", "/accepted", passed, true, passed,
+                        passed ? "" : "property counterexample")),
+                passed ? List.of() : List.of("PROPERTY_ASSERTION_FAILED"),
+                Map.of("caseId", caseId));
+        return new TestExecutionApiResponse("", runId,
+                new TestExecutionApiRequest.Target("GRAPH", "graph-a", TARGET),
+                new TestExecutionApiResponse.ResolvedFixtureBundleRef(
+                        "STORED", "fixture-property", 1, FIXTURE_1), null, evidence);
     }
 
     private static TestExecutionApiResponse response(

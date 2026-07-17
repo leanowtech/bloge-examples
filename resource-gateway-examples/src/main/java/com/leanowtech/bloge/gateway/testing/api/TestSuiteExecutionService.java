@@ -23,8 +23,10 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4;
 import com.leanowtech.bloge.gateway.testing.domain.SemanticCoverageVerdict;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.evidence.TestPropertySuiteEvidenceEvaluator;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteEvidenceAggregator;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunEvidenceProtocolCodec;
@@ -76,6 +78,7 @@ public final class TestSuiteExecutionService {
     private final TestSuiteRunAttestationService attestations;
     private final TestSuiteEvidenceAggregator aggregator;
     private final TestSchemaAdmissionEvaluator schemaAdmissions;
+    private final TestPropertySuiteEvidenceEvaluator propertyEvidence;
     private final TestSuiteRunEvidenceProtocolCodec evidenceCodec;
     private final TestRuntimeAdmissionGate admissions;
     private final Duration retention;
@@ -172,6 +175,7 @@ public final class TestSuiteExecutionService {
         this.admissions = Objects.requireNonNull(admissions, "admissions");
         this.aggregator = new TestSuiteEvidenceAggregator(objectMapper);
         this.schemaAdmissions = new TestSchemaAdmissionEvaluator(objectMapper);
+        this.propertyEvidence = new TestPropertySuiteEvidenceEvaluator();
         this.evidenceCodec = new TestSuiteRunEvidenceProtocolCodec(objectMapper);
         this.retention = retention == null || retention.isNegative() || retention.isZero()
                 ? Duration.ofDays(30) : retention;
@@ -203,11 +207,6 @@ public final class TestSuiteExecutionService {
         if (!request.suiteRef().fingerprint().equals(stored.fingerprint())) {
             throw conflict(identity, "RG.TEST.SUITE_FINGERPRINT_CONFLICT",
                     "Stored suite fingerprint differs from the exact execution reference.", Map.of());
-        }
-        if (stored.suite() instanceof TestSuiteV4) {
-            throw conflict(identity, "RG.TEST.PROPERTY_EVIDENCE_UNAVAILABLE",
-                    "Property-suite execution remains disabled until V4 evidence and attestation are available.",
-                    Map.of("suiteId", stored.suiteId(), "revision", stored.revision()));
         }
         if (stored.suite() instanceof TestSuiteV3 admissionSuite) {
             return executeSchemaAdmission(
@@ -459,8 +458,7 @@ public final class TestSuiteExecutionService {
                         target.state(), "SUITE_RUN_STORE_UNAVAILABLE", lease);
             }
             if (request.strategy() == TestSuiteExecutionRequest.Strategy.FAIL_FAST
-                    && observations.get(index).result().status()
-                    != TestSuiteRunEvidence.CaseStatus.PASSED) {
+                    && failFastBoundary(stored.suite(), observations, index)) {
                 markRemaining(observations, stored.suite(), index + 1,
                         "FAIL_FAST_STOP",
                         "Not scheduled after an earlier case failed under FAIL_FAST.");
@@ -856,6 +854,25 @@ public final class TestSuiteExecutionService {
                 request.metadata()));
         List<TestSuiteRunEvidence.CaseResult> results = observations.stream()
                 .map(TestSuiteEvidenceAggregator.CaseObservation::result).toList();
+        if (stored.suite() instanceof TestSuiteV4 propertySuite) {
+            TestPropertySuiteEvidenceEvaluator.Evaluation evaluation =
+                    propertyEvidence.evaluate(propertySuite, observations);
+            TestSuiteRunEvidenceV4.PropertyCoverageVerdict propertyCoverage =
+                    status == TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE
+                            ? TestSuiteRunEvidenceV4.incompleteCoverage(evaluation.trialResults())
+                            : evaluation.coverage();
+            metadata.put("suiteFingerprint", stored.fingerprint());
+            metadata.put("minimalityScope", TestSuiteRunEvidenceV4.MINIMALITY_SCOPE);
+            return new TestSuiteRunEvidenceV4("", suiteRunId, request.clientRequestId(), status,
+                    TestSuiteRunEvidenceV4.EXECUTION_PURPOSE, request.suiteRef(),
+                    propertySuite.target(), startedAt, completedAt, results, coverage, promotion,
+                    propertySuite.evaluationMode(), propertySuite.quantification(),
+                    propertySuite.exhaustive(), propertySuite.propertyPlanFingerprint(),
+                    propertySuite.inputSchemaFingerprint(), propertySuite.generationPolicy(),
+                    propertySuite.sourcePlanStatus(), propertySuite.generationGapsAccepted(),
+                    propertySuite.generationGaps(), evaluation.trialResults(), propertyCoverage,
+                    diagnostics, metadata);
+        }
         if (stored.suite() instanceof TestSuiteV2) {
             return new TestSuiteRunEvidenceV2("", suiteRunId, request.clientRequestId(), status,
                     AUTHORIZED_PURPOSE, request.suiteRef(), stored.suite().target(), startedAt,
@@ -911,17 +928,66 @@ public final class TestSuiteExecutionService {
         }
     }
 
+    private static boolean failFastBoundary(
+            TestSuiteProtocol suite,
+            List<TestSuiteEvidenceAggregator.CaseObservation> observations,
+            int completedIndex) {
+        if (!(suite instanceof TestSuiteV4 propertySuite)) {
+            return observations.get(completedIndex).result().status()
+                    != TestSuiteRunEvidence.CaseStatus.PASSED;
+        }
+        int trialStart = 0;
+        for (TestSuiteV4.PropertyTrialRef trial : propertySuite.propertyTrials()) {
+            int trialEnd = trialStart + trial.shrinkPath().size();
+            if (completedIndex <= trialEnd) {
+                if (completedIndex != trialEnd) {
+                    return false;
+                }
+                return observations.subList(trialStart, trialEnd + 1).stream()
+                        .anyMatch(value -> value.result().status()
+                                != TestSuiteRunEvidence.CaseStatus.PASSED);
+            }
+            trialStart = trialEnd + 1;
+        }
+        throw new IllegalStateException("Property case is outside its frozen trial closure");
+    }
+
     private static Map<String, Object> caseMetadata(
             StoredTestSuite stored, TestSuiteExecutionRequest request, String suiteRunId,
             TestSuite.TestCase testCase) {
-        return Map.of(
-                "suiteRunId", suiteRunId,
-                "clientRequestId", request.clientRequestId(),
-                "suiteId", stored.suiteId(),
-                "suiteRevision", stored.revision(),
-                "suiteFingerprint", stored.fingerprint(),
-                "caseId", testCase.caseId(),
-                "caseType", testCase.caseType().name());
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("suiteRunId", suiteRunId);
+        metadata.put("clientRequestId", request.clientRequestId());
+        metadata.put("suiteId", stored.suiteId());
+        metadata.put("suiteRevision", stored.revision());
+        metadata.put("suiteFingerprint", stored.fingerprint());
+        metadata.put("caseId", testCase.caseId());
+        metadata.put("caseType", testCase.caseType().name());
+        if (stored.suite() instanceof TestSuiteV4 propertySuite) {
+            metadata.put("propertyPlanFingerprint", propertySuite.propertyPlanFingerprint());
+            metadata.put("inputSchemaFingerprint", propertySuite.inputSchemaFingerprint());
+            propertyCoordinate(propertySuite, testCase.caseId()).forEach(metadata::put);
+        }
+        return Map.copyOf(metadata);
+    }
+
+    private static Map<String, Object> propertyCoordinate(
+            TestSuiteV4 suite, String caseId) {
+        for (TestSuiteV4.PropertyTrialRef trial : suite.propertyTrials()) {
+            if (trial.trialId().equals(caseId)) {
+                return Map.of("propertyRole", "ROOT", "inputFingerprint",
+                        trial.inputFingerprint(), "complexity", trial.complexity(),
+                        "shrinkStep", 0);
+            }
+            for (TestSuiteV4.PropertyShrinkRef shrink : trial.shrinkPath()) {
+                if (shrink.caseId().equals(caseId)) {
+                    return Map.of("propertyRole", "SHRINK", "parentCaseId",
+                            shrink.parentCaseId(), "inputFingerprint", shrink.inputFingerprint(),
+                            "complexity", shrink.complexity(), "shrinkStep", shrink.step());
+                }
+            }
+        }
+        throw new IllegalStateException("Property case has no frozen lineage coordinate");
     }
 
     private static TestExecutionApiRequest.Target target(TestSuiteProtocol suite) {
@@ -988,6 +1054,20 @@ public final class TestSuiteExecutionService {
                 previous.promotion().minimumCertifiableCases(),
                 previous.promotion().targetCertificationEligible(),
                 previous.promotion().coverageSatisfied(), previous.promotion().allCasesCompleted());
+        if (previous instanceof TestSuiteRunEvidenceV4 v4) {
+            Instant completedAt = previous.completedAt() == null
+                    ? Instant.now() : previous.completedAt();
+            return new TestSuiteRunEvidenceV4("", previous.suiteRunId(),
+                    previous.clientRequestId(), TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE,
+                    previous.executionPurpose(), previous.suiteRef(), previous.target(),
+                    previous.startedAt(), completedAt, previous.caseResults(), previous.coverage(),
+                    blocked, v4.evaluationMode(), v4.quantification(), v4.exhaustive(),
+                    v4.propertyPlanFingerprint(), v4.inputSchemaFingerprint(),
+                    v4.generationPolicy(), v4.sourcePlanStatus(), v4.generationGapsAccepted(),
+                    v4.generationGaps(), v4.propertyTrialResults(),
+                    TestSuiteRunEvidenceV4.incompleteCoverage(v4.propertyTrialResults()),
+                    diagnostics, previous.metadata());
+        }
         if (previous instanceof TestSuiteRunEvidenceV3 v3) {
             TestSuiteRunEvidenceV3.AdmissionCoverageVerdict admissionCoverage =
                     new TestSuiteRunEvidenceV3.AdmissionCoverageVerdict(
@@ -1112,6 +1192,9 @@ public final class TestSuiteExecutionService {
     }
 
     private static String responseVersion(TestSuiteRunEvidenceProtocol evidence) {
+        if (evidence instanceof TestSuiteRunEvidenceV4) {
+            return TestSuiteExecutionResponse.SCHEMA_VERSION_V5;
+        }
         if (evidence instanceof TestSuiteRunEvidenceV3) {
             return TestSuiteExecutionResponse.SCHEMA_VERSION_V4;
         }
@@ -1121,6 +1204,9 @@ public final class TestSuiteExecutionService {
     }
 
     private static String bundleVersion(TestSuiteRunEvidenceProtocol evidence) {
+        if (evidence instanceof TestSuiteRunEvidenceV4) {
+            return TestSuiteEvidenceBundle.SCHEMA_VERSION_V4;
+        }
         if (evidence instanceof TestSuiteRunEvidenceV3) {
             return TestSuiteEvidenceBundle.SCHEMA_VERSION_V3;
         }

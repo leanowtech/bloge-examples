@@ -48,6 +48,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import org.junit.jupiter.api.Test;
 
@@ -212,7 +213,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("schemaBoundaryCasePlanning", true)
                 .containsEntry("seededPropertyCasePlanning", true)
                 .containsEntry("propertySuiteMaterialization", true)
-                .containsEntry("propertySuiteExecution", false)
+                .containsEntry("propertySuiteExecution", true)
                 .containsEntry("schemaBoundarySuiteMaterialization", true)
                 .containsEntry("schemaAdmissionSuiteExecution", true)
                 .containsEntry("durableStateProjectionAntiEntropy", true)
@@ -255,19 +256,23 @@ class TestabilityCapabilitiesTest {
                 .containsExactly(TestSuiteExecutionResponse.SCHEMA_VERSION_V1,
                         TestSuiteExecutionResponse.SCHEMA_VERSION,
                         TestSuiteExecutionResponse.SCHEMA_VERSION_V3,
-                        TestSuiteExecutionResponse.SCHEMA_VERSION_V4);
+                        TestSuiteExecutionResponse.SCHEMA_VERSION_V4,
+                        TestSuiteExecutionResponse.SCHEMA_VERSION_V5);
         assertThat(enabled.supportedObjects().get("testSuiteRunEvidence"))
                 .containsExactly(TestSuiteRunEvidence.SCHEMA_VERSION,
                         TestSuiteRunEvidenceV2.SCHEMA_VERSION,
-                        TestSuiteRunEvidenceV3.SCHEMA_VERSION);
+                        TestSuiteRunEvidenceV3.SCHEMA_VERSION,
+                        TestSuiteRunEvidenceV4.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteRunAttestation"))
                 .containsExactly(TestSuiteRunAttestation.SCHEMA_VERSION,
                         TestSuiteRunAttestation.SCHEMA_VERSION_V2,
-                        TestSuiteRunAttestation.SCHEMA_VERSION_V3);
+                        TestSuiteRunAttestation.SCHEMA_VERSION_V3,
+                        TestSuiteRunAttestation.SCHEMA_VERSION_V4);
         assertThat(enabled.supportedObjects().get("testSuiteEvidenceBundle"))
                 .containsExactly(TestSuiteEvidenceBundle.SCHEMA_VERSION,
                         TestSuiteEvidenceBundle.SCHEMA_VERSION_V2,
-                        TestSuiteEvidenceBundle.SCHEMA_VERSION_V3);
+                        TestSuiteEvidenceBundle.SCHEMA_VERSION_V3,
+                        TestSuiteEvidenceBundle.SCHEMA_VERSION_V4);
         assertThat(enabled.supportedObjects().get("effectiveExecutionPlan"))
                 .containsExactly(EffectiveExecutionPlan.SCHEMA_VERSION_V1,
                         EffectiveExecutionPlan.SCHEMA_VERSION_V2,

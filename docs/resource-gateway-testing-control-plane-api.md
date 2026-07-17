@@ -366,8 +366,9 @@ means every requested unique root was produced without a disclosed planning gap;
 input domain is exhausted. `PARTIAL` retains useful proven trials and names every known projection,
 constraint, or resource-limit gap. `UNAVAILABLE` publishes no trial and must explain why. The capability
 `seededPropertyCasePlanning=true` advertises this authoring step. A reviewed plan can now be frozen as
-V4 through the next section, while `propertySuiteExecution=false` remains fail-closed until
-same-generation signed property evidence is implemented.
+V4 through the next section and executed through the isolated testing runtime. Planning alone is
+still not correctness evidence; only a generation-matched terminal property evidence bundle can be
+consumed by CI or a governance gate.
 
 ### 4.1.4 Materialize a reviewed property plan
 
@@ -415,16 +416,58 @@ as canonical fields. Inputs are recursively immutable. Every case has type `PROP
 fixture revision, and participates in full-case coverage and future fail-closed promotion policy.
 
 Raw `PUT /api/testing/suites/{suiteId}` registration rejects V4; only the materializer can provide the
-same-request regenerated plan proof. Conversely, `PROPERTY` cannot be used in V1-V3. An execution
-attempt currently returns `409 RG.TEST.PROPERTY_EVIDENCE_UNAVAILABLE` before run persistence,
-admission, or business invocation. Capability discovery therefore reports
-`propertySuiteMaterialization=true` and `propertySuiteExecution=false`.
+same-request regenerated plan proof. Conversely, `PROPERTY` cannot be used in V1-V3. Capability
+discovery reports `propertySuiteMaterialization=true`; it reports `propertySuiteExecution=true` only
+when the isolated suite-execution endpoint is enabled.
 
 The standalone test-kit exposes graph/operator plan and materialization methods and validates all
 four messages against its packaged schema. Implementation and negative proof details are recorded in
 [Stage 5 immutable property suite materialization verification](resource-gateway-execution-data-control-plane-stage5-property-suite-materialization-verification.md).
 
-### 4.1.5 Materialize reviewed boundary cases
+### 4.1.5 Execute and verify a bounded property suite
+
+Execute the exact V4 suite reference returned by materialization through the ordinary suite endpoint:
+
+```http
+POST /api/testing/suites/loan-decision-properties/executions
+Authorization: Bearer bloge-aneke-demo-token
+X-Purpose: TEST_EXECUTION
+Content-Type: application/json
+
+{
+  "schemaVersion": "bloge.testSuiteExecutionRequest.v1",
+  "suiteRef": {
+    "suiteId": "loan-decision-properties",
+    "revision": 4,
+    "fingerprint": "sha256:<materialized-suite>"
+  },
+  "clientRequestId": "property-ci-1842",
+  "strategy": "COLLECT_ALL",
+  "metadata": {"pipeline": "release-candidate", "buildId": "1842"}
+}
+```
+
+The service executes each frozen root and shrink candidate with the suite's one exact fixture. It
+does not regenerate inputs at run time. `COLLECT_ALL` evaluates the complete closure. `FAIL_FAST`
+finishes the current root's precomputed shrink path after the first counterexample, then skips later
+roots; this avoids publishing a root failure without its reviewed minimization evidence.
+
+The response/evidence/attestation/bundle generation is V5/V4/V4/V4. Typed property results distinguish
+`SATISFIED`, `COUNTEREXAMPLE`, `EXECUTION_FAILED`, and `EVIDENCE_INCOMPLETE` at case and aggregate
+levels. A counterexample reference contains only case id, input fingerprint, complexity, and
+minimality facts. `minimalityScope=PRECOMPUTED_SHRINK_PATH` and `globallyMinimal=false` are mandatory:
+the finite reviewed path is reproducible evidence, not a global proof over the input domain.
+
+The aggregate remains bounded and non-exhaustive even when every sampled case passes. Exact
+idempotency replay returns the existing checkpoint or terminal evidence. Lease loss, signing failure,
+terminal persistence failure, and abandoned checkpoints fail closed. Reconciliation preserves every
+completed root/shrink result, marks only pending cases incomplete, signs a terminal V4 closure, and
+never re-invokes the business target. Export the portable bundle and verify it against an independently
+pinned key set before using the result as a publish-gate input. Full implementation and failure proofs
+are recorded in
+[Stage 5 property execution verification](resource-gateway-execution-data-control-plane-stage5-property-execution-verification.md).
+
+### 4.1.6 Materialize reviewed boundary cases
 
 After reviewing one exact plan, submit the target, input-schema, and plan fingerprints together with
 an explicit case selection. Materialization requires `TEST_SUITE_WRITE`; target-read or execution-only
@@ -469,7 +512,7 @@ The capability probe reports both `schemaBoundarySuiteMaterialization=true` and
 exact v3 suite as described below. Admission evidence is useful for reviewed schema-regression
 gates, but it remains permanently ineligible for business promotion.
 
-### 4.1.6 Execute and verify a schema-admission suite
+### 4.1.7 Execute and verify a schema-admission suite
 
 Use the exact suite reference returned by materialization. The request and idempotency semantics are
 the same as other immutable suites:
@@ -2322,8 +2365,8 @@ external side effect. The runner:
 4. validates every child target, fixture, run id, and evidence identity before aggregation;
 5. derives invocation-site, edge-transfer, case-type, assertion-density, and required-fixture
    consumption coverage from child evidence rather than author metadata;
-6. stores terminal `bloge.testSuiteRunEvidence.v1` for a structural v1 suite or independently
-   canonicalized `bloge.testSuiteRunEvidence.v2` for a semantic v2 suite.
+6. stores a generation-matched terminal evidence record: V1 structural, V2 semantic, V3 schema
+   admission, or V4 bounded property execution.
 
 The owner lease is not a user lock. It is a short-lived runtime-instance claim that prevents a
 slow child from being mistaken for a dead process. Every heartbeat, checkpoint, and terminal write
@@ -2422,6 +2465,14 @@ always promotion-blocked even when every validator expectation matches. Consumer
 the evidence generation/evaluation mode; treating v4 as a more permissive business-suite response is
 a protocol error.
 
+A bounded property v4 suite returns `bloge.testSuiteExecutionResponse.v5`,
+`bloge.testSuiteRunEvidence.v4`, and `bloge.testSuiteRunAttestation.v4`; its portable export is
+`bloge.testSuiteEvidenceBundle.v4`. The evidence binds the plan and input-schema fingerprints,
+generation policy, non-exhaustive quantification, ordered root/shrink lineage, every child evidence
+reference, property coverage, and payload-free minimum observed counterexamples. Consumers must use
+`evaluationMode=PROPERTY_EXECUTION` and the typed property verdict. A normal structural `PASSED`
+predicate or an empty counterexample list cannot be used as a substitute for property coverage.
+
 The Canvas executable operator suite and standalone test-kit both consume this exact protocol; they
 do not reconstruct an aggregate result from mutable row responses.
 
@@ -2437,6 +2488,9 @@ heartbeats stop. After the lease expires, the sweeper converts the latest durabl
 - for schema-admission v3 evidence, the child closure remains empty, completed typed validator
   observations are preserved, pending common/admission results become `EVIDENCE_INCOMPLETE`, and
   exact target, plan, input-schema, generator, and verification-mode fingerprints remain bound;
+- for property v4 evidence, completed root/shrink child results and their signed references remain
+  unchanged, only pending property cases become `EVIDENCE_INCOMPLETE`, property coverage becomes
+  `INCOMPLETE`, and no input is regenerated or executed during reconciliation;
 - v3 structural DAG coverage remains `NOT_EVALUATED`; its admission coverage becomes
   `INCOMPLETE`, and every evidence generation sets promotion to `BLOCKED`;
 - reconciliation metadata records only owner fingerprint/version/timestamps, never raw owner,

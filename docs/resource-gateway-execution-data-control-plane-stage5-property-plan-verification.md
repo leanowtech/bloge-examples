@@ -1,5 +1,9 @@
 # Stage 5 Seeded Property Plan Verification
 
+> Historical verification record: this document proves the authoring-plan increment. The reviewed
+> plan can now be materialized and executed with generation-matched signed property evidence; see
+> [Stage 5 Property Execution Verification](resource-gateway-execution-data-control-plane-stage5-property-execution-verification.md).
+
 ## Scope
 
 This increment introduces a reproducible property-input authoring protocol. It does not execute a

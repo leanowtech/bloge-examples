@@ -103,12 +103,17 @@ public final class TestingProtocol {
     /** Signed suite response carrying schema-admission evidence without business execution. */
     public static final String TEST_SUITE_EXECUTION_RESPONSE_V4 =
             "bloge.testSuiteExecutionResponse.v4";
+    /** Signed suite response carrying bounded-property execution evidence. */
+    public static final String TEST_SUITE_EXECUTION_RESPONSE_V5 =
+            "bloge.testSuiteExecutionResponse.v5";
     /** Aggregate immutable suite-run evidence wire version. */
     public static final String TEST_SUITE_RUN_EVIDENCE_V1 = "bloge.testSuiteRunEvidence.v1";
     /** Aggregate suite evidence with a typed semantic coverage verdict. */
     public static final String TEST_SUITE_RUN_EVIDENCE_V2 = "bloge.testSuiteRunEvidence.v2";
     /** Aggregate schema-admission evidence with exact plan and validator provenance. */
     public static final String TEST_SUITE_RUN_EVIDENCE_V3 = "bloge.testSuiteRunEvidence.v3";
+    /** Aggregate bounded-property evidence with root/shrink lineage and honest minimality. */
+    public static final String TEST_SUITE_RUN_EVIDENCE_V4 = "bloge.testSuiteRunEvidence.v4";
     /** Signed suite checkpoint and terminal closure wire version. */
     public static final String TEST_SUITE_RUN_ATTESTATION_V1 =
             "bloge.testSuiteRunAttestation.v1";
@@ -118,6 +123,9 @@ public final class TestingProtocol {
     /** Domain-separated attestation with an intentionally empty business-child closure. */
     public static final String TEST_SUITE_RUN_ATTESTATION_V3 =
             "bloge.testSuiteRunAttestation.v3";
+    /** Domain-separated attestation for bounded-property aggregate and child closure. */
+    public static final String TEST_SUITE_RUN_ATTESTATION_V4 =
+            "bloge.testSuiteRunAttestation.v4";
     /** Portable payload-free terminal suite evidence bundle wire version. */
     public static final String TEST_SUITE_EVIDENCE_BUNDLE_V1 =
             "bloge.testSuiteEvidenceBundle.v1";
@@ -127,6 +135,9 @@ public final class TestingProtocol {
     /** Portable payload-free bundle carrying schema-admission evidence. */
     public static final String TEST_SUITE_EVIDENCE_BUNDLE_V3 =
             "bloge.testSuiteEvidenceBundle.v3";
+    /** Portable payload-free bundle carrying bounded-property evidence. */
+    public static final String TEST_SUITE_EVIDENCE_BUNDLE_V4 =
+            "bloge.testSuiteEvidenceBundle.v4";
     /** Resource Gateway evidence verification key wire version. */
     public static final String EVIDENCE_VERIFICATION_KEY_V1 =
             "toolStudio.resourceGateway.evidenceVerificationKey.v1";

@@ -49,6 +49,8 @@ public record TestSuiteRunAttestation(
     public static final String SCHEMA_VERSION_V2 = "bloge.testSuiteRunAttestation.v2";
     /** Schema-admission suite-run attestation protocol version. */
     public static final String SCHEMA_VERSION_V3 = "bloge.testSuiteRunAttestation.v3";
+    /** Bounded-property suite-run attestation protocol version. */
+    public static final String SCHEMA_VERSION_V4 = "bloge.testSuiteRunAttestation.v4";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
     /** Signature state persisted without provider-specific diagnostics. */
@@ -106,7 +108,7 @@ public record TestSuiteRunAttestation(
                 aggregateEvidenceFingerprint)
                 && !keyId.isBlank() && !algorithm.isBlank() && !signature.isBlank()
                 && !Instant.EPOCH.equals(signedAt);
-        if (!List.of(SCHEMA_VERSION, SCHEMA_VERSION_V2, SCHEMA_VERSION_V3)
+        if (!List.of(SCHEMA_VERSION, SCHEMA_VERSION_V2, SCHEMA_VERSION_V3, SCHEMA_VERSION_V4)
                 .contains(schemaVersion)) {
             throw new IllegalArgumentException("Unsupported suite-run attestation schemaVersion");
         }
@@ -152,8 +154,9 @@ public record TestSuiteRunAttestation(
         if (evidence == null) {
             throw new IllegalArgumentException("Aggregate evidence is required");
         }
-        String version = evidence instanceof TestSuiteRunEvidenceV3
-                ? SCHEMA_VERSION_V3
+        String version = evidence instanceof TestSuiteRunEvidenceV4
+                ? SCHEMA_VERSION_V4
+                : evidence instanceof TestSuiteRunEvidenceV3 ? SCHEMA_VERSION_V3
                 : evidence instanceof TestSuiteRunEvidenceV2 ? SCHEMA_VERSION_V2 : SCHEMA_VERSION;
         return new TestSuiteRunAttestation(version, SignatureStatus.VERIFICATION_UNAVAILABLE,
                 scope, evidence.suiteRunId(), evidence.suiteRef(), requestFingerprint,

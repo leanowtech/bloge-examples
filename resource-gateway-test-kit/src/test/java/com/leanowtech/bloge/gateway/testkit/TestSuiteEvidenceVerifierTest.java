@@ -64,6 +64,40 @@ class TestSuiteEvidenceVerifierTest {
     }
 
     @Test
+    void verifiesPropertyBundleWithSignedRootAndShrinkClosure() throws Exception {
+        Fixture fixture = propertyFixture();
+
+        TestSuiteEvidenceVerifier.VerificationResult result =
+                new TestSuiteEvidenceVerifier().verify(fixture.bundle(), fixture.key());
+
+        assertThat(result.verified()).isTrue();
+        assertThat(fixture.bundle().attestation().schemaVersion())
+                .isEqualTo(TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V4);
+        assertThat(fixture.bundle().attestation().childEvidenceRefs())
+                .extracting(TestSuiteRunAttestation.ChildEvidenceRef::caseId)
+                .containsExactly("property-001", "property-001-shrink-001");
+        assertThat(fixture.bundle().rawResponse().path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V4);
+        assertThat(fixture.bundle().evidence().at(
+                "/propertyTrialResults/0/minimalObservedCounterexample/globallyMinimal")
+                .asBoolean()).isFalse();
+    }
+
+    @Test
+    void rejectsCryptographicallyValidButSemanticallyContradictoryPropertyEvidence()
+            throws Exception {
+        ObjectNode evidence = propertyEvidence();
+        ((ObjectNode) evidence.path("propertyCoverage")).put("counterexampleCases", 1);
+        Fixture fixture = propertyFixture(evidence);
+
+        TestSuiteEvidenceVerifier.VerificationResult result =
+                new TestSuiteEvidenceVerifier().verify(fixture.bundle(), fixture.key());
+
+        assertThat(result.outcome()).isEqualTo(TestSuiteEvidenceVerifier.Outcome.INVALID);
+        assertThat(result.reasonCode()).isEqualTo("PROPERTY_EVIDENCE_SEMANTICS_INVALID");
+    }
+
+    @Test
     void aggregateMutationAndSignatureMutationAreRejected() throws Exception {
         Fixture fixture = fixture(List.of(child("golden", "child-run-1", CHILD)));
         ObjectNode alteredEvidence = (ObjectNode) fixture.bundle().evidence();
@@ -254,6 +288,18 @@ class TestSuiteEvidenceVerifierTest {
     private static Fixture schemaAdmissionFixture() throws Exception {
         return fixture(schemaAdmissionEvidence(), TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V3,
                 TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V3, List.of());
+    }
+
+    private static Fixture propertyFixture() throws Exception {
+        return propertyFixture(propertyEvidence());
+    }
+
+    private static Fixture propertyFixture(ObjectNode evidence) throws Exception {
+        return fixture(evidence, TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V4,
+                TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V4, List.of(
+                        child("property-001", "child-property-root", CHILD),
+                        child("property-001-shrink-001", "child-property-shrink",
+                                "sha256:" + "f".repeat(64))));
     }
 
     private static Fixture fixture(
@@ -547,6 +593,30 @@ class TestSuiteEvidenceVerifierTest {
         ObjectNode metadata = (ObjectNode) value.path("metadata");
         metadata.put("businessTargetInvoked", false);
         metadata.put("childRunCount", 0);
+        return value;
+    }
+
+    private static ObjectNode propertyEvidence() throws Exception {
+        ObjectNode response = (ObjectNode) JSON.readTree(
+                TestSuiteRunAssertionsTest.propertySuiteResponse());
+        ObjectNode value = (ObjectNode) response.path("evidence").deepCopy();
+        value.put("suiteRunId", "suite-run-1");
+        ObjectNode suiteRef = (ObjectNode) value.path("suiteRef");
+        suiteRef.put("suiteId", "suite-a");
+        suiteRef.put("revision", 3);
+        suiteRef.put("fingerprint", SUITE);
+        ((ObjectNode) value.path("target")).put("fingerprint", TARGET);
+        ObjectNode rootCase = (ObjectNode) value.path("caseResults").get(0);
+        rootCase.put("runId", "child-property-root");
+        ((ObjectNode) rootCase.path("fixtureBundleRef")).put("fingerprint", FIXTURE);
+        ObjectNode shrinkCase = (ObjectNode) value.path("caseResults").get(1);
+        shrinkCase.put("runId", "child-property-shrink");
+        ((ObjectNode) shrinkCase.path("fixtureBundleRef")).put("fingerprint", FIXTURE);
+        ObjectNode trial = (ObjectNode) value.path("propertyTrialResults").get(0);
+        ((ObjectNode) trial.path("rootResult")).put("runId", "child-property-root");
+        ((ObjectNode) trial.path("shrinkResults").get(0))
+                .put("runId", "child-property-shrink");
+        ((ObjectNode) value.path("metadata")).put("requestMetadataFingerprint", REQUEST);
         return value;
     }
 

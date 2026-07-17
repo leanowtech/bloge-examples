@@ -6,7 +6,9 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
@@ -163,6 +165,54 @@ class TestSuiteRunReconciliationServiceTest {
                 .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V3);
         assertThat(terminal.attestation().terminallyVerifiable()).isTrue();
         assertThat(terminal.attestation().childEvidenceRefs()).isEmpty();
+        assertThat(attestations.verify(terminal.evidence(), terminal.attestation()))
+                .isEqualTo(TestSuiteRunAttestationService.Verification.VERIFIED);
+    }
+
+    @Test
+    void expiredPropertyCheckpointPreservesCompletedRootAndTerminalizesPendingShrink() {
+        Instant sweepAt = Instant.parse("2026-07-16T10:40:00Z");
+        TestSuiteRunRepository repository = mock(TestSuiteRunRepository.class);
+        TestSuiteRunRecord running = runningPropertyRecord();
+        AbandonedTestSuiteRun abandoned = new AbandonedTestSuiteRun(
+                running, 13, "instance-property-dead", sweepAt.minusSeconds(2));
+        when(repository.findAbandoned(sweepAt, 10)).thenReturn(List.of(abandoned));
+        when(repository.reconcileAbandoned(eq(abandoned), any(), eq(sweepAt))).thenReturn(true);
+        TestSuiteRunReconciliationService service = new TestSuiteRunReconciliationService(
+                repository, objectMapper, attestations,
+                Clock.fixed(sweepAt, ZoneOffset.UTC));
+
+        TestSuiteRunReconciliationResult result = service.reconcileExpired(10);
+
+        assertThat(result.reconciled()).isOne();
+        var terminalCaptor = org.mockito.ArgumentCaptor.forClass(TestSuiteRunRecord.class);
+        verify(repository).reconcileAbandoned(eq(abandoned), terminalCaptor.capture(), eq(sweepAt));
+        TestSuiteRunRecord terminal = terminalCaptor.getValue();
+        assertThat(terminal.evidence()).isInstanceOfSatisfying(TestSuiteRunEvidenceV4.class,
+                evidence -> {
+                    assertThat(evidence.status())
+                            .isEqualTo(TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE);
+                    assertThat(evidence.propertyTrialResults().getFirst().rootResult())
+                            .isEqualTo(((TestSuiteRunEvidenceV4) running.evidence())
+                                    .propertyTrialResults().getFirst().rootResult());
+                    assertThat(evidence.propertyTrialResults().getFirst().shrinkResults().getFirst())
+                            .satisfies(shrink -> {
+                                assertThat(shrink.status()).isEqualTo(
+                                        TestSuiteRunEvidenceV4.PropertyCaseStatus.EVIDENCE_INCOMPLETE);
+                                assertThat(shrink.diagnosticCode()).isEqualTo(
+                                        TestSuiteRunReconciliationService.ABANDONED_RUN_RECONCILED);
+                            });
+                    assertThat(evidence.propertyCoverage().status()).isEqualTo(
+                            TestSuiteRunEvidenceV4.PropertyCoverageStatus.INCOMPLETE);
+                    assertThat(evidence.propertyCoverage().incompleteCaseIds())
+                            .containsExactly("property-001-shrink-001");
+                    assertThat(evidence.propertyCoverage().globallyMinimal()).isFalse();
+                });
+        assertThat(terminal.attestation().schemaVersion())
+                .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V4);
+        assertThat(terminal.attestation().childEvidenceRefs())
+                .extracting(TestSuiteRunAttestation.ChildEvidenceRef::caseId)
+                .containsExactly("property-001");
         assertThat(attestations.verify(terminal.evidence(), terminal.attestation()))
                 .isEqualTo(TestSuiteRunAttestationService.Verification.VERIFIED);
     }
@@ -340,6 +390,65 @@ class TestSuiteRunReconciliationServiceTest {
         String requestFingerprint = "sha256:" + "6".repeat(64);
         TestSuiteRunAttestation attestation = attestations.seal(evidence, requestFingerprint,
                 List.of(), TestSuiteRunAttestation.Scope.CHECKPOINT).attestation();
+        return new TestSuiteRunRecord(
+                evidence.suiteRunId(), evidence.clientRequestId(), requestFingerprint,
+                "tenant-a", "org-a", "project-a", "test", "runner", "INTERNAL", "",
+                evidence, attestation, started, started.plusSeconds(3600));
+    }
+
+    private TestSuiteRunRecord runningPropertyRecord() {
+        Instant started = Instant.parse("2026-07-16T10:35:00Z");
+        TestSuiteExecutionRequest.SuiteRef suiteRef = new TestSuiteExecutionRequest.SuiteRef(
+                "property-suite", 1, "sha256:" + "7".repeat(64));
+        TestSuite.Target target = new TestSuite.Target(
+                "GRAPH", "graph-property", "sha256:" + "8".repeat(64));
+        TestSuite.FixtureBundleRef fixture = new TestSuite.FixtureBundleRef(
+                "property-fixture", 1, "sha256:" + "9".repeat(64));
+        List<TestSuiteRunEvidence.CaseResult> cases = List.of(
+                new TestSuiteRunEvidence.CaseResult(
+                        "property-001", TestSuite.CaseType.PROPERTY, fixture,
+                        TestSuiteRunEvidence.CaseStatus.PASSED, "property-child-1",
+                        TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE,
+                        1, 1, "", ""),
+                new TestSuiteRunEvidence.CaseResult(
+                        "property-001-shrink-001", TestSuite.CaseType.PROPERTY, fixture,
+                        TestSuiteRunEvidence.CaseStatus.PENDING, "", null, null,
+                        0, 0, "", ""));
+        TestSuiteRunEvidenceV4.PropertyCaseResult root =
+                new TestSuiteRunEvidenceV4.PropertyCaseResult(
+                        "property-001", TestSuiteRunEvidenceV4.PropertyCaseRole.ROOT,
+                        "", 0, "sha256:" + "a".repeat(64), 2,
+                        TestSuiteRunEvidenceV4.PropertyCaseStatus.SATISFIED,
+                        "property-child-1", TestRunEvidence.Status.PASSED, 1, 1, "");
+        TestSuiteRunEvidenceV4.PropertyCaseResult shrink =
+                new TestSuiteRunEvidenceV4.PropertyCaseResult(
+                        "property-001-shrink-001",
+                        TestSuiteRunEvidenceV4.PropertyCaseRole.SHRINK,
+                        "property-001", 1, "sha256:" + "b".repeat(64), 1,
+                        TestSuiteRunEvidenceV4.PropertyCaseStatus.PENDING,
+                        "", null, 0, 0, "");
+        List<TestSuiteRunEvidenceV4.PropertyTrialResult> trials = List.of(
+                TestSuiteRunEvidenceV4.trialResult("property-001", root, List.of(shrink)));
+        TestSuiteRunEvidenceV4 evidence = new TestSuiteRunEvidenceV4(
+                "", "suite-run-property", "request-property",
+                TestSuiteRunEvidence.Status.RUNNING,
+                TestSuiteRunEvidenceV4.EXECUTION_PURPOSE, suiteRef, target,
+                started, null, cases, TestSuiteRunEvidence.CoverageVerdict.notEvaluated(),
+                TestSuiteRunEvidence.PromotionVerdict.notEvaluated(),
+                TestSuiteV4.EvaluationMode.PROPERTY_EXECUTION,
+                TestSuiteV4.Quantification.BOUNDED_SAMPLED, false,
+                "sha256:" + "c".repeat(64), "sha256:" + "d".repeat(64),
+                new TestSuiteV4.PropertyGenerationPolicy(
+                        "property-cases-v1", 42, 1, 1, 2, 32, 8, 32,
+                        "DRAFT_2020_12_SHARED_VALIDATOR"),
+                TestSuiteV4.SourcePlanStatus.GENERATED, false, List.of(), trials,
+                TestSuiteRunEvidenceV4.coverage(trials), List.of(), Map.of());
+        String requestFingerprint = "sha256:" + "e".repeat(64);
+        List<TestSuiteRunAttestation.ChildEvidenceRef> children = List.of(
+                new TestSuiteRunAttestation.ChildEvidenceRef(
+                        "property-001", "property-child-1", "sha256:" + "f".repeat(64)));
+        TestSuiteRunAttestation attestation = attestations.seal(evidence, requestFingerprint,
+                children, TestSuiteRunAttestation.Scope.CHECKPOINT).attestation();
         return new TestSuiteRunRecord(
                 evidence.suiteRunId(), evidence.clientRequestId(), requestFingerprint,
                 "tenant-a", "org-a", "project-a", "test", "runner", "INTERNAL", "",
