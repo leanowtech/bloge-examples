@@ -114,11 +114,21 @@ class TestRuntimeApplicationIntegrationTest {
                 endpoint.path().equals("/api/testing/targets/graphs/{graphName}"));
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/operators/{operatorRef}"));
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.path().equals(
+                        "/api/testing/targets/graphs/{graphName}/boundary-cases"));
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.path().equals(
+                        "/api/testing/targets/operators/{operatorRef}/boundary-cases"));
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("immutableTestSuiteRegistry", true)
                 .containsEntry("immutableTestSuiteExecution", true)
                 .containsEntry("suiteSemanticCoverageVerdict", true)
-                .containsEntry("builtInGraphSuiteCatalogMaterialization", true);
+                .containsEntry("builtInGraphSuiteCatalogMaterialization", true)
+                .containsEntry("schemaBoundaryCasePlanning", true);
+        assertThat(capabilities.getBody().payload().supportedObjects())
+                .containsEntry("testBoundaryCasePlan",
+                        List.of(TestBoundaryCasePlan.SCHEMA_VERSION));
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("suiteRunOwnerLease", true)
                 .containsEntry("abandonedSuiteRunReconciliation", true)
@@ -247,6 +257,18 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(descriptor.target().fingerprint()).startsWith("sha256:");
         assertThat(descriptor.contract().inputSchema().schema()).isNotEmpty();
         assertThat(descriptor.certificationEligible()).isTrue();
+
+        var boundaryCases = restTemplate.exchange(
+                "/api/testing/targets/graphs/loanDecisionPolicy/boundary-cases",
+                HttpMethod.GET, new HttpEntity<>(headers), TestBoundaryCasePlan.class);
+        assertThat(boundaryCases.getStatusCode())
+                .withFailMessage("boundary planning failed: %s", boundaryCases.getBody())
+                .isEqualTo(HttpStatus.OK);
+        assertThat(boundaryCases.getBody()).isNotNull();
+        assertThat(boundaryCases.getBody().target()).isEqualTo(descriptor.target());
+        assertThat(boundaryCases.getBody().cases()).isNotEmpty();
+        assertThat(boundaryCases.getBody().planFingerprint())
+                .matches("sha256:[a-f0-9]{64}");
 
         var nestedTarget = restTemplate.exchange("/api/testing/targets/graphs/enrichOrderList",
                 HttpMethod.GET, new HttpEntity<>(headers), JsonNode.class);

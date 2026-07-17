@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.integration;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse;
+import com.leanowtech.bloge.gateway.testing.api.TestBoundaryCasePlan;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimResponse;
@@ -66,6 +67,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("durableRecoverySequenceRetention", false);
         assertThat(disabled.features())
                 .containsEntry("durableRecoverySequenceRetentionSloHealth", false);
+        assertThat(disabled.features()).containsEntry("schemaBoundaryCasePlanning", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionAntiEntropy", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionSweepLease", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionFindingQueue", false);
@@ -106,7 +108,8 @@ class TestabilityCapabilitiesTest {
                 "fixtureBundle", "effectiveExecutionPlan", "executionServiceStateSnapshot",
                 "testRunEvidence",
                 "testEvidenceIntegrity",
-                "testGraphTargetDescriptor", "testOperatorExecutionRequest", "testOperatorTargetDescriptor",
+                "testGraphTargetDescriptor", "testBoundaryCasePlan",
+                "testOperatorExecutionRequest", "testOperatorTargetDescriptor",
                 "durableTestOwnerClaimRequest", "durableTestOwnerClaimResponse",
                 "durableTestWorkerAcquisitionRequest", "durableTestWorkerAcquisitionResponse",
                 "durableTestExecutionView", "durableTestExecutionCreateRequest",
@@ -184,6 +187,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("boundedDurableRecoverySequence", true)
                 .containsEntry("durableRecoverySequenceRetention", true)
                 .containsEntry("durableRecoverySequenceRetentionSloHealth", true)
+                .containsEntry("schemaBoundaryCasePlanning", true)
                 .containsEntry("durableStateProjectionAntiEntropy", true)
                 .containsEntry("durableStateProjectionSweepLease", true)
                 .containsEntry("durableStateProjectionFindingQueue", true)
@@ -205,6 +209,8 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.supportedObjects().get("testExecutionResponse"))
                 .containsExactly(TestExecutionApiResponse.SCHEMA_VERSION_V1,
                         TestExecutionApiResponse.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testBoundaryCasePlan"))
+                .containsExactly(TestBoundaryCasePlan.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteExecutionResponse"))
                 .containsExactly(TestSuiteExecutionResponse.SCHEMA_VERSION_V1,
                         TestSuiteExecutionResponse.SCHEMA_VERSION,

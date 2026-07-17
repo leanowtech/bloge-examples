@@ -290,6 +290,50 @@ global state, or malformed conformance facts fail certification closed in v1 run
 `HttpResourceOperator` has a built-in contract that fingerprints its protocol-processing class
 closure and the conservative descriptor snapshot.
 
+### 4.1.2 Generate validator-proven boundary inputs
+
+After discovery, request a boundary plan for the same current graph or operator target:
+
+```bash
+curl -sS http://localhost:8080/api/testing/targets/graphs/loanDecisionPolicy/boundary-cases \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION'
+
+curl -sS http://localhost:8080/api/testing/targets/operators/httpResource/boundary-cases \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION'
+```
+
+Both endpoints use the target-read authorization boundary, resolve the current exact target
+fingerprint, and return `bloge.testBoundaryCasePlan.v1`. The plan contains the projected input-schema
+fingerprint, a content fingerprint, deterministic generation policy, complete candidate inputs, the
+expected schema-admission outcome, validator diagnostic codes, and explicit coverage gaps. Operator
+planning retains BLOGE-to-visual-schema projection warnings instead of silently treating a lossy
+projection as complete.
+
+| `status` | Contract |
+| --- | --- |
+| `GENERATED` | At least one case exists and the planner found no unsupported constraint or generation bound in the traversed supported subset |
+| `PARTIAL` | Useful proven cases exist, but `gaps` names unsupported constraints, projection loss, an unprovable candidate, or a safety limit |
+| `UNAVAILABLE` | The schema is opaque/invalid or no baseline could be independently proven valid; `cases` is empty |
+
+Generation is deterministic and bounded to 64 published cases, schema depth 8, and generated
+string/collection size 32. Every accepted candidate must produce no validator error. Every rejected
+candidate must produce the diagnostic family expected for its transformation; an incidental failure
+does not count. v1 expands required/unknown properties, type mismatches, numeric and exclusive
+bounds, string/array lengths, enum, and const. Constraints such as pattern, format, multipleOf,
+uniqueItems, combinators, conditionals, dependent schemas, and property-count rules are disclosed as
+`CONSTRAINT_NOT_BOUNDARY_EXPANDED`; nullable type arrays are also disclosed because v1 traverses only
+the generated baseline branch. Empty, `any`, and `opaque` input domains are `UNAVAILABLE` rather than
+being represented by one misleading baseline.
+
+This response is an authoring plan, not a persisted `TestSuite`, an executed run, correctness
+evidence, exhaustive property coverage, or a mutation score. Review `gaps`, select or refine cases,
+publish them through the immutable fixture/suite workflow, and execute the exact suite revision
+before a governance gate consumes the result. Schemas must not embed credentials or business
+secrets in defaults/examples; target readers can already inspect those schema literals, and generated
+baseline inputs may reproduce them.
+
 ### 4.2 Register an immutable governed fixture
 
 Use the discovered target fingerprint in both `target.fingerprint` and

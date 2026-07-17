@@ -84,6 +84,24 @@ public class JavaOperatorInventoryProjector {
     }
 
     /**
+     * Projects one BLOGE schema descriptor into the supported visual JSON Schema subset.
+     *
+     * <p>The returned diagnostics are part of the trust contract: callers generating executable
+     * examples or boundary cases must retain projection warnings instead of treating an opaque
+     * fallback as complete schema knowledge.</p>
+     *
+     * @param schema BLOGE runtime schema descriptor
+     * @return projected schema envelope and any fidelity diagnostics
+     */
+    public static ProjectedSchema projectSchema(SchemaDescriptor schema) {
+        SchemaProjection projection = projectSchema(
+                schema == null ? OpaqueSchema.INSTANCE : schema, "/schema");
+        return new ProjectedSchema(
+                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", projection.schema()),
+                projection.diagnostics());
+    }
+
+    /**
      * @return all registry-discoverable Java operators projected to visual definitions
      */
     public List<OperatorDefinition> project() {
@@ -445,6 +463,20 @@ public class JavaOperatorInventoryProjector {
     private record SchemaProjection(Map<String, Object> schema, List<VisualDiagnostic> diagnostics) {
         private SchemaProjection {
             schema = schema == null ? SchemaEnvelope.opaque().schema() : new LinkedHashMap<>(schema);
+            diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
+        }
+    }
+
+    /**
+     * Public projection result preserving schema-fidelity diagnostics.
+     *
+     * @param schema supported visual schema envelope
+     * @param diagnostics warnings or errors encountered during projection
+     */
+    public record ProjectedSchema(SchemaEnvelope schema, List<VisualDiagnostic> diagnostics) {
+        /** Defensively freezes projection output. */
+        public ProjectedSchema {
+            schema = schema == null ? SchemaEnvelope.opaque() : schema;
             diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         }
     }

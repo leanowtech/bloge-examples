@@ -21,6 +21,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapsho
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -64,7 +65,9 @@ class TestExecutionApiServiceTest {
         when(graphService.requireGraph("controlled-graph")).thenReturn(graph);
         when(graphService.requireContract("controlled-graph")).thenReturn(
                 new com.leanowtech.bloge.gateway.gateway.GatewayGraphContract(
-                        "controlled-graph", null, null, List.of("subject")));
+                        "controlled-graph", SchemaEnvelope.object(Map.of(
+                                "input", Map.of("type", "string", "minLength", 2)),
+                                List.of("input")), null, List.of("subject")));
         doNothing().when(graphService).validateInput(org.mockito.ArgumentMatchers.eq("controlled-graph"),
                 org.mockito.ArgumentMatchers.any());
         replayPayloadService = mock(TestReplayPayloadService.class);
@@ -170,6 +173,23 @@ class TestExecutionApiServiceTest {
         assertThat(descriptor.dependencyPolicy()).isEqualTo("CONSERVATIVE_ALL_REGISTERED");
         assertThat(descriptor.certificationEligible()).isTrue();
         assertThat(descriptor.certificationGaps()).isEmpty();
+    }
+
+    @Test
+    void graphBoundaryPlanIsValidatorProvenAndBoundToTheCurrentTarget() {
+        TestBoundaryCasePlan plan = service.planGraphBoundaryCases(
+                "controlled-graph", identity("test"));
+
+        assertThat(plan.schemaVersion()).isEqualTo(TestBoundaryCasePlan.SCHEMA_VERSION);
+        assertThat(plan.target()).isEqualTo(target());
+        assertThat(plan.inputSchemaFingerprint()).matches("sha256:[a-f0-9]{64}");
+        assertThat(plan.planFingerprint()).matches("sha256:[a-f0-9]{64}");
+        assertThat(plan.status()).isEqualTo(TestBoundaryCasePlan.Status.GENERATED);
+        assertThat(plan.cases()).extracting(TestBoundaryCasePlan.BoundaryCase::kind)
+                .contains(TestBoundaryCasePlan.BoundaryKind.BASELINE,
+                        TestBoundaryCasePlan.BoundaryKind.REQUIRED_PROPERTY_MISSING,
+                        TestBoundaryCasePlan.BoundaryKind.MIN_LENGTH,
+                        TestBoundaryCasePlan.BoundaryKind.BELOW_MIN_LENGTH);
     }
 
     @Test

@@ -126,6 +126,33 @@ class TestExecutionControllerTest {
     }
 
     @Test
+    void boundaryPlanningUsesAuthenticatedGraphAndOperatorTargetPaths() throws Exception {
+        TestExecutionApiService service = mock(TestExecutionApiService.class);
+        String fingerprint = "sha256:" + "a".repeat(64);
+        when(service.planGraphBoundaryCases(eq("graph-a"), any()))
+                .thenReturn(boundaryPlan("GRAPH", "graph-a", fingerprint));
+        when(service.planOperatorBoundaryCases(eq("customer.normalize"), any()))
+                .thenReturn(boundaryPlan("OPERATOR", "customer.normalize", fingerprint));
+        MockMvc mvc = mvc(service);
+
+        mvc.perform(get("/api/testing/targets/graphs/graph-a/boundary-cases")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_EXECUTION"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(TestBoundaryCasePlan.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.target.kind").value("GRAPH"))
+                .andExpect(jsonPath("$.cases[0].kind").value("BASELINE"));
+        mvc.perform(get("/api/testing/targets/operators/customer.normalize/boundary-cases")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_EXECUTION"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.target.kind").value("OPERATOR"));
+
+        verify(service).planGraphBoundaryCases(eq("graph-a"), any());
+        verify(service).planOperatorBoundaryCases(eq("customer.normalize"), any());
+    }
+
+    @Test
     void executionPurposeCannotWriteGovernedFixtureRevisions() throws Exception {
         TestExecutionApiService service = mock(TestExecutionApiService.class);
         MockMvc mvc = mvc(service);
@@ -399,6 +426,21 @@ class TestExecutionControllerTest {
 
     private static MockMvc mvc(TestExecutionApiService service) {
         return mvc(service, mock(TestSuiteRegistryService.class), Set.of("TEST_EXECUTION"));
+    }
+
+    private static TestBoundaryCasePlan boundaryPlan(
+            String kind, String id, String targetFingerprint) {
+        return new TestBoundaryCasePlan("",
+                new TestExecutionApiRequest.Target(kind, id, targetFingerprint),
+                "sha256:" + "b".repeat(64), "sha256:" + "c".repeat(64),
+                TestBoundaryCasePlan.Status.GENERATED,
+                new TestBoundaryCasePlan.GenerationPolicy(
+                        "bloge.testBoundaryCaseGenerator.v1", 64, 8, 32,
+                        "VISUAL_SCHEMA_VALIDATOR_PROOF"),
+                List.of(new TestBoundaryCasePlan.BoundaryCase(
+                        "baseline-000000000000", TestBoundaryCasePlan.BoundaryKind.BASELINE,
+                        "", "/inputSchema/schema", TestBoundaryCasePlan.ExpectedOutcome.ACCEPTED,
+                        Map.of(), List.of())), List.of());
     }
 
     private static TestSuiteExecutionResponse suiteExecutionResponse(

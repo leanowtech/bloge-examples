@@ -92,6 +92,30 @@ class TestOperatorExecutionApiServiceTest {
     }
 
     @Test
+    void operatorBoundaryPlanUsesTheProjectedSchemaAndExactBindingFingerprint() {
+        TestOperatorTargetDescriptor target = service.describeOperatorTarget(
+                "customer.greeting", identity());
+
+        TestBoundaryCasePlan plan = service.planOperatorBoundaryCases(
+                "customer.greeting", identity());
+
+        assertThat(plan.target()).isEqualTo(target.target());
+        assertThat(plan.inputSchemaFingerprint()).matches("sha256:[a-f0-9]{64}");
+        assertThat(plan.cases()).extracting(TestBoundaryCasePlan.BoundaryCase::kind)
+                .contains(TestBoundaryCasePlan.BoundaryKind.BASELINE,
+                        TestBoundaryCasePlan.BoundaryKind.REQUIRED_PROPERTY_MISSING,
+                        TestBoundaryCasePlan.BoundaryKind.UNKNOWN_PROPERTY,
+                        TestBoundaryCasePlan.BoundaryKind.TYPE_MISMATCH);
+        assertThat(plan.cases()).allSatisfy(testCase -> {
+            if (testCase.expectedOutcome() == TestBoundaryCasePlan.ExpectedOutcome.ACCEPTED) {
+                assertThat(testCase.validationCodes()).isEmpty();
+            } else {
+                assertThat(testCase.validationCodes()).isNotEmpty();
+            }
+        });
+    }
+
+    @Test
     void targetFingerprintChangesWhenPublicInputConversionProfileChanges() {
         OperatorExecutionTargetSnapshot baseline = OperatorExecutionTargetSnapshot.capture(
                 mapper, "customer.greeting", operators, resources);

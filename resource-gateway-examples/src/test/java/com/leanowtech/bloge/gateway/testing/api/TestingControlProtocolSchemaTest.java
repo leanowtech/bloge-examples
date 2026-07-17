@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
+import com.leanowtech.bloge.gateway.testing.planning.TestBoundaryCasePlanner;
 import com.leanowtech.bloge.gateway.visual.runtime.EvidenceVerificationKeySet;
 import org.junit.jupiter.api.Test;
 
@@ -88,6 +89,8 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestSuiteRunEvidenceV2.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testGraphTargetDescriptor/properties/schemaVersion/const").asText())
                 .isEqualTo(TestGraphTargetDescriptor.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testBoundaryCasePlan/properties/schemaVersion/const").asText())
+                .isEqualTo(TestBoundaryCasePlan.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testOperatorExecutionRequest/properties/schemaVersion/const").asText())
                 .isEqualTo(TestOperatorExecutionApiRequest.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testOperatorTargetDescriptor/properties/schemaVersion/const").asText())
@@ -349,6 +352,7 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("testSuiteCatalogMaterialization")).isTrue();
         assertThat(definitions.has("testSuiteRunEvidence")).isTrue();
         assertThat(definitions.has("testEvidenceIntegrity")).isTrue();
+        assertThat(definitions.has("testBoundaryCasePlan")).isTrue();
         assertThat(definitions.has("durableTestOwnerClaimRequest")).isTrue();
         assertThat(definitions.has("durableTestOwnerClaimResponse")).isTrue();
         assertThat(definitions.has("durableTestWorkerAcquisitionRequest")).isTrue();
@@ -552,6 +556,19 @@ class TestingControlProtocolSchemaTest {
                 "/durableTestRecoverySequenceResponse/oneOf")).hasSize(6);
         assertThat(definitions.at("/fixtureBundleRegistrationRequest/properties/target/$ref").asText())
                 .isEqualTo("#/$defs/target");
+        assertThat(definitions.at("/testBoundaryCasePlan/additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(definitions.at("/testBoundaryCasePlan/properties/cases/maxItems").asInt())
+                .isEqualTo(TestBoundaryCasePlanner.MAX_CASES);
+        assertThat(definitions.at("/testBoundaryCasePlan/properties/policy/properties/maxDepth/const")
+                .asInt()).isEqualTo(TestBoundaryCasePlanner.MAX_DEPTH);
+        assertThat(definitions.at(
+                "/testBoundaryCasePlan/properties/policy/properties/maxCollectionItems/const")
+                .asInt()).isEqualTo(TestBoundaryCasePlanner.MAX_COLLECTION_ITEMS);
+        assertThat(definitions.at("/testBoundaryCasePlan/properties/status/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly("GENERATED", "PARTIAL", "UNAVAILABLE");
+        assertThat(definitions.at("/testBoundaryCasePlan/oneOf")).hasSize(3);
         assertThat(definitions.at("/testExecutionRequest/properties/target/$ref").asText())
                 .isEqualTo("#/$defs/graphTarget");
         assertThat(definitions.at("/testOperatorExecutionRequest/properties/target/$ref").asText())

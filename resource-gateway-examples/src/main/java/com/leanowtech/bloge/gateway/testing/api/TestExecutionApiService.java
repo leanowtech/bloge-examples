@@ -26,6 +26,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceSanitizer;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.InvocationInventoryBuilder;
+import com.leanowtech.bloge.gateway.testing.planning.TestBoundaryCasePlanner;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorInputCoercer;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorMicroGraphRunner;
 import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
@@ -33,7 +34,9 @@ import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionResult;
 import com.leanowtech.bloge.gateway.testing.runtime.TestRunService;
+import com.leanowtech.bloge.gateway.visual.catalog.JavaOperatorInventoryProjector;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -77,6 +80,7 @@ public final class TestExecutionApiService {
     private final TestEvidenceIntegrityService evidenceIntegrity;
     private final TestEvidenceSanitizer sanitizer;
     private final TestRuntimeAdmissionGate admissions;
+    private final TestBoundaryCasePlanner boundaryCases;
     private final Duration retention;
 
     public TestExecutionApiService(GatewayGraphService graphService,
@@ -193,6 +197,8 @@ public final class TestExecutionApiService {
         this.replayPayloads = replayPayloads;
         this.evidenceIntegrity = Objects.requireNonNull(evidenceIntegrity, "evidenceIntegrity");
         this.admissions = Objects.requireNonNull(admissions, "admissions");
+        this.boundaryCases = new TestBoundaryCasePlanner(
+                objectMapper, new JsonSchemaSampleGenerator());
         this.sanitizer = new TestEvidenceSanitizer(objectMapper);
         this.retention = retention == null || retention.isNegative() || retention.isZero()
                 ? Duration.ofDays(30) : retention;
@@ -277,6 +283,27 @@ public final class TestExecutionApiService {
                 "CONSERVATIVE_ALL_REGISTERED", target.certificationEligible(), target.certificationGaps());
     }
 
+    /**
+     * Generates validator-proven boundary inputs for one exact graph contract.
+     *
+     * @param graphName registered graph target
+     * @param identity verified test-runtime caller
+     * @return content-addressed boundary plan bound to the current graph fingerprint
+     */
+    public TestBoundaryCasePlan planGraphBoundaryCases(
+            String graphName,
+            IntegrationRequestContext identity) {
+        requireTestIdentity(identity);
+        TestExecutionApiRequest.Target requested = new TestExecutionApiRequest.Target(
+                "GRAPH", normalized(graphName), "");
+        Graph graph = requireGraph(requested, identity);
+        GraphExecutionTargetSnapshot target = GraphExecutionTargetSnapshot.capture(
+                objectMapper, graph, resourceRegistry);
+        return boundaryCases.plan(
+                new TestExecutionApiRequest.Target("GRAPH", graph.name(), target.fingerprint()),
+                graphService.requireContract(graph.name()).inputSchema(), List.of());
+    }
+
     /** Returns the frozen binding, schema and testability facts needed to author operator fixtures. */
     public TestOperatorTargetDescriptor describeOperatorTarget(String operatorRef,
                                                                IntegrationRequestContext identity) {
@@ -292,6 +319,31 @@ public final class TestExecutionApiService {
                 target.resourceDependencyFingerprints(), target.dependencyPolicy(),
                 target.executionSupported(), target.certificationEligible(),
                 target.certificationRequirements(), target.certificationGaps());
+    }
+
+    /**
+     * Generates validator-proven boundary inputs for one exact operator binding.
+     *
+     * @param operatorRef registered operator binding
+     * @param identity verified test-runtime caller
+     * @return content-addressed boundary plan with BLOGE projection losses disclosed
+     */
+    public TestBoundaryCasePlan planOperatorBoundaryCases(
+            String operatorRef,
+            IntegrationRequestContext identity) {
+        requireTestIdentity(identity);
+        OperatorExecutionTargetSnapshot target = requireOperator(operatorRef, identity);
+        JavaOperatorInventoryProjector.ProjectedSchema projection =
+                JavaOperatorInventoryProjector.projectSchema(target.metadata().inputSchema());
+        List<TestBoundaryCasePlan.CoverageGap> projectionGaps = projection.diagnostics().stream()
+                .map(diagnostic -> new TestBoundaryCasePlan.CoverageGap(
+                        TestBoundaryCasePlan.GapCode.BLOGE_SCHEMA_PROJECTION_WARNING,
+                        "/inputSchema" + diagnostic.target(), diagnostic.code()))
+                .toList();
+        return boundaryCases.plan(
+                new TestExecutionApiRequest.Target(
+                        "OPERATOR", target.operatorRef(), target.fingerprint()),
+                projection.schema(), projectionGaps);
     }
 
     /**

@@ -59,11 +59,29 @@ public class TestExecutionController {
                 context(headers, IntegrationOperation.TEST_TARGET_READ));
     }
 
+    /** Generates a validator-proven boundary input plan for one graph contract. */
+    @GetMapping("/targets/graphs/{graphName}/boundary-cases")
+    public TestBoundaryCasePlan planGraphBoundaryCases(
+            @PathVariable String graphName,
+            @RequestHeader HttpHeaders headers) {
+        return service.planGraphBoundaryCases(graphName,
+                context(headers, IntegrationOperation.TEST_TARGET_READ));
+    }
+
     /** Discovers one frozen operator binding and its executable testability contract. */
     @GetMapping("/targets/operators/{operatorRef}")
     public TestOperatorTargetDescriptor describeOperatorTarget(@PathVariable String operatorRef,
                                                                @RequestHeader HttpHeaders headers) {
         return service.describeOperatorTarget(operatorRef,
+                context(headers, IntegrationOperation.TEST_TARGET_READ));
+    }
+
+    /** Generates a validator-proven boundary input plan for one operator binding. */
+    @GetMapping("/targets/operators/{operatorRef}/boundary-cases")
+    public TestBoundaryCasePlan planOperatorBoundaryCases(
+            @PathVariable String operatorRef,
+            @RequestHeader HttpHeaders headers) {
+        return service.planOperatorBoundaryCases(operatorRef,
                 context(headers, IntegrationOperation.TEST_TARGET_READ));
     }
 

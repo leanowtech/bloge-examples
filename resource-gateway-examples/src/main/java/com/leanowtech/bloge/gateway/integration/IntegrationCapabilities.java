@@ -293,6 +293,8 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity.SCHEMA_VERSION));
             objects.put("testGraphTargetDescriptor", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestGraphTargetDescriptor.SCHEMA_VERSION));
+            objects.put("testBoundaryCasePlan", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestBoundaryCasePlan.SCHEMA_VERSION));
             objects.put("testOperatorExecutionRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestOperatorExecutionApiRequest.SCHEMA_VERSION));
             objects.put("testOperatorTargetDescriptor", List.of(
@@ -463,6 +465,7 @@ public record IntegrationCapabilities(
                 && identityProvider.properties().get("revocationPropagationSloSeconds") instanceof Number);
         features.put("webhook", false);
         features.put("operatorMicroGraphExecution", testExecutionEndpointEnabled);
+        features.put("schemaBoundaryCasePlanning", testExecutionEndpointEnabled);
         features.put("dynamicAttemptOccurrenceSelectors", testExecutionEndpointEnabled);
         features.put("immutableTestSuiteRegistry", testExecutionEndpointEnabled);
         features.put("immutableTestSuiteExecution", testExecutionEndpointEnabled);
@@ -579,7 +582,11 @@ public record IntegrationCapabilities(
         if (testExecutionEndpointEnabled) {
             endpoints.add(new Endpoint("POST", "/api/testing/executions"));
             endpoints.add(new Endpoint("GET", "/api/testing/targets/graphs/{graphName}"));
+            endpoints.add(new Endpoint("GET",
+                    "/api/testing/targets/graphs/{graphName}/boundary-cases"));
             endpoints.add(new Endpoint("GET", "/api/testing/targets/operators/{operatorRef}"));
+            endpoints.add(new Endpoint("GET",
+                    "/api/testing/targets/operators/{operatorRef}/boundary-cases"));
             endpoints.add(new Endpoint("POST", "/api/testing/targets/operators/{operatorRef}/executions"));
             endpoints.add(new Endpoint("POST", "/api/testing/executions/batch"));
             endpoints.add(new Endpoint("GET", "/api/testing/executions/{runId}"));
