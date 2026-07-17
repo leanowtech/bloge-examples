@@ -10,7 +10,7 @@
 | Stage 1' | 完成 | `testing/planning/runtime/evidence` 内核；独立 test engine；五行为；F2/F3 resource fixture；micro-graph runner；旧 graph suite adapter；37 个聚焦测试与 1653 个项目测试全绿 |
 | Stage 2' | 进行中 | 已落地 graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（含四类 case intent、内容寻址 fixture 与一等 TestSuite 发布、聚合执行/coverage/promotion 回显）、immutable fixture/TestSuite registry、幂等 TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、10 态 child evidence、profile/identity/生产协议隔离、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其内容寻址 catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free effective plan v2 谱系与认证降级，以及同步 root/nested/foreach/loop/compensation 的结构寻址、控制传播、动态 attempt/occurrence selector 和 occurrence/attempt/node/edge evidence；streaming/suspendable control/evidence 与物理 network/runtime 隔离仍待完成 |
 | Stage 3 evidence chain | 进行中 | graph/operator child signature、suite checkpoint/terminal aggregate attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、签名时刻 lifecycle policy、外部 M-of-N trust publication、bounded append-only consistency page、durable consumer checkpoint、rollback/fork/split-view/revoked-pin resurrection detection 与 test-kit independent verifier 已完成；exact-suite ANEKE semantic workbook seed、`GovernanceGateResult.v3` 可重建 basis、编译级 GraphDraft target 绑定与独立 schema consumer 已完成；真实 ANEKE N/N-1 conformance、独立 witness gossip/跨域一致性证明待完成 |
-| Stage 4 deterministic runtime | 进行中 | run-scoped TIME/RANDOM/UUID、effective plan/provider state、组合 durable checkpoint、同库事务、数据库时钟 lease CAS、幂等命令与 staged 四 store aggregate 已完成；公开 authenticated durable GRAPH/OPERATOR create、payload-free query、owner claim、heartbeat、one-signal terminal recovery 和进程内 lease coordinator 已闭合；公开 non-blocking worker pull 已在认证 tenant/org/project/environment 内以数据库时钟有界扫描，逐候选重授权，并把 exact lease CAS、hidden dispatch、`ACQUIRED/NO_WORK` 幂等结果和审计原子提交，再以 scope 级持久化循环 keyset 游标避免稳定毒化前缀饥饿，对 exact checkpoint 的确定性失败做数据库时钟指数退避，并在连续失败阈值后转为永久 worker quarantine；全局 SLO observation 与四维即时 admission 已落地。隔离 list/claim/release/discard、历史死信证据与人工处置 receipt、runtime-state dispatch、排队/公平/优先级调度、多 suspension 编排、跨进程 worker supervision、强制 worker 取消、完整历史 trace evidence、stream offset/checkpoint、identity/flag/secret authority 和确定性并发待完成 |
+| Stage 4 deterministic runtime | 进行中 | run-scoped TIME/RANDOM/UUID、effective plan/provider state、组合 durable checkpoint、同库事务、数据库时钟 lease CAS、幂等命令与 staged 四 store aggregate 已完成；公开 authenticated durable GRAPH/OPERATOR create、payload-free query、owner claim、heartbeat、one-signal terminal recovery 和进程内 lease coordinator 已闭合；公开 non-blocking worker pull 已在认证 tenant/org/project/environment 内以数据库时钟有界扫描，逐候选重授权，并把 exact lease CAS、hidden dispatch、`ACQUIRED/NO_WORK` 幂等结果和审计原子提交，再以 scope 级持久化循环 keyset 游标避免稳定毒化前缀饥饿，对 exact checkpoint 的确定性失败做数据库时钟指数退避，并在连续失败阈值后转为永久 worker quarantine；隔离 list/claim/release/discard、token-free receipt/history、全局 SLO observation 与四维即时 admission 已落地。四眼审批、token 加密/保留期、外部 WORM、runtime-state dispatch、排队/公平/优先级调度、多 suspension 编排、跨进程 worker supervision、强制 worker 取消、完整历史 trace evidence、stream offset/checkpoint、identity/flag/secret authority 和确定性并发待完成 |
 
 Stage 4 最新增量：fresh `RunSession` 的 initial-boundary policy 只接受唯一持久化 signal wait，
 并把 fixture cursor 与四 store closure 在同一静止点冻结；终态、pause、timer/work-item/stream
@@ -88,6 +88,21 @@ token/version/expiry fence、不可变 resolution receipt 和历史保留仍是�
 0 errors，34 个既有浏览器条件跳过并完成可执行 JAR；独立 test-kit `clean verify` 执行 63 tests 全绿，
 并通过 public JavaDoc、schema 与 shaded CLI 校验。
 
+第二十六增量把自动 active dead-letter 接成专用治理协议。`test/staging` 下只有 exact
+`TEST_RUNTIME_MAINTENANCE` purpose、部署 operator group 和最低 clearance 可在认证 scope 内读取
+payload-free quarantine/history；scope 与 owner 只来自 identity。`AVAILABLE -> CLAIMED -> AVAILABLE`
+release 和 `CLAIMED -> DISCARDED` 使用 server token、version、owner、caller-observed expiry 与数据库
+时钟共同 fencing；claim/resolve 先锁完整 checkpoint authority，再锁 exact quarantine/control，防止
+处置陈旧 closure。caller-stable command 支持精确重放并拒绝同键异意图；首次状态、命令 receipt、
+token-free audit 与 immutable history 同事务。`RELEASE` 保留 worker 抑制，`DISCARD` 只删除 exact
+quarantine 并保留历史。全局 SLO 新增维护 state、expired claim、history 聚合和稳定过期 claim code，
+schema/capability/profile/手册同步。该增量仍未提供四眼审批、claim-command token 字段加密与有界保留、
+外部 WORM 或 webhook，因此不能宣称完整企业 dead-letter 治理。
+本增量聚焦门禁执行 37 tests 全绿，其中 checkpoint authority 锁后的命令重检覆盖并发 exact retry；
+完整 Resource Gateway `clean verify` 执行 2190 tests，0 failures、
+0 errors，34 个既有浏览器条件跳过并完成可执行 JAR；独立 test-kit `clean verify` 执行 63 tests 全绿，
+并通过权威 schema 打包、shaded CLI 和 public JavaDoc 门禁。
+
 terminal recovery 现在复用已签发 dispatch 的认证续租内核：首个 heartbeat 在 BLOGE runtime
 访问前同步完成，后续 heartbeat 只接受 exact successor，并验证 scope、authorization、target、
 fixture、provider、engine、owner 和 epoch 闭包逐值不变。终态提交前 coordinator 停止并等待在途
@@ -102,8 +117,9 @@ tenant/namespace、状态、可选 shard、时间、稳定顺序与有界 limit 
 硬上限 1,000；持久化循环 keyset 游标保证稳定毒化前缀不会永久遮蔽后续候选，游标 scope/position
 篡改与并发回退均 fail closed。它仍无法发现 checkpoint 自身被错误投影隐藏的候选，后者由下述独立
 反熵循环处理。测试执行的即时四维配额已由独立 admission authority 执行；确定性候选临时退避、
-exact-checkpoint 自动 quarantine 与全局压力观测已实现；专用人工处置协议、历史 dead-letter evidence、
-runtime-state dispatch、排队/公平/优先级 backpressure 与跨进程 supervisor 仍待实现。
+exact-checkpoint 自动 quarantine、专用人工处置协议、token-free history 与全局压力观测已实现；四眼
+审批、claim-command token 加密/保留期、外部 WORM、runtime-state dispatch、排队/公平/优先级
+backpressure 与跨进程 supervisor 仍待实现。
 
 独立 durable-state projection 反熵循环现已补上隐藏候选检测和安全自愈。它按 execution/work-item
 主键分别做有界 keyset 轮转，不依赖被审计的 status/tenant/shard/time；默认每表 100 行、60 秒、
@@ -138,8 +154,9 @@ preflight 后冻结，subject 先按 tenant/environment 绑定再哈希，数据
 获取 permit，suite child 不重复获取，避免自己占满自己；429 携带有界 `Retry-After`，policy/store/lease
 漂移 fail closed。旧 release 与过期清理通过同一固定 4096 条带请求锁和重新过期校验，不能删除并发
 replacement 的 claims；关闭应用主动失效并释放本机 permit，崩溃则由 bounded cleanup 回收。
-仍缺外部 alert routing、外部 WORM/tamper-evident audit/archive anchoring、排队/公平/优先级 scheduler、
-runtime-state remote worker dispatch/supervision、hard cancellation、非 H2 方言和生产负载认证，因此
+仍缺四眼 `DISCARD` 审批、claim-command token 加密/保留期、外部 alert routing、外部 WORM/
+tamper-evident audit/archive anchoring、排队/公平/优先级 scheduler、runtime-state remote worker
+dispatch/supervision、hard cancellation、非 H2 方言和生产负载认证，因此
 不能宣称完整运维产品化。
 
 实现边界、错误语义、配置和 96 项聚焦证明见
@@ -152,6 +169,8 @@ Worker pull 的 scope、数据库时钟、幂等空结果、原子 claim/dispatc
 [Stage 4 worker scan cursor verification](resource-gateway-execution-data-control-plane-stage4-worker-scan-cursor-verification.md)。
 确定性候选退避的失败闭集、数据库时钟、并发不放大、SLO 与诚实边界见
 [Stage 4 worker candidate backoff verification](resource-gateway-execution-data-control-plane-stage4-worker-candidate-backoff-verification.md)。
+永久隔离维护的授权、fencing、幂等、原子审计、历史与反例证明见
+[Stage 4 worker quarantine maintenance verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-maintenance-verification.md)。
 
 Stage 0 验证基线：Resource Gateway `clean verify` 共 1624 tests、0 failures、33 个既有条件跳过；AuthorCanvas 聚焦回归 36 tests、0 failures。后续阶段必须继续维持该基线并增加对应反面用例。
 
@@ -518,7 +537,7 @@ flowchart LR
 
    BLOGE 源码提交 `bcbb19694` 提供公共 `CheckpointFailurePolicy.FAIL_FAST`；后续提交 `cb758c1af` 提供返回 `GraphResult` 的同步 `resumeSuspended`，不再为 cold signal 强制派生不可控后台线程。RG 的 test-profile durable session 强制 fail-fast，以调用方指定 execution id 开启单执行 stage，继承完整 `ExecutionOptions` 的 operator resolver/provider，并把 BLOGE `ExecutionStore` lifecycle/lease、node/loop/sequential-foreach `ExecutionCheckpointStore`、signal/timer/task/retry `WaitStore` 与完整 v5 `WorkItemStore` 分别冻结后，再以 `bloge.testDurableStateMutation.v3` 聚合为一个可幂等重试、与 engine id/完整 `EngineState` 强绑定的 mutation。wait 的 execution-local 读看到 overlay，timer/correlation 全局扫描只读 committed rows；wait identity 与 lifecycle identity 必须一致，waitId 不可跨 execution 迁移。work item 的 claim/renew/retry/failed/dead-letter/restore/discard/cancel 复用 BLOGE reference state machine；ready/expired-claim 全局扫描只读 committed rows，仅 BLOGE graph-execution scope 内的异步引擎线程可进入受信 stage 入队，无 stage 的读者看不到 speculative item；批量写入完整预校验，itemId 不可跨 execution 迁移。`bloge.testWorkItemMutation.v1` 通过 v3 aggregate 新增，未改写 v1/v2 历史指纹。跨实例竞态证明只有 control CAS 胜者的 execution/wait/work-item 状态可提交，关闭 stage 后 mutation 失效；冷读可重建完整 `ExecutionInstance`、`ExecutionWait` 与 `WorkItem`。
 
-   worker 扫描持久化面进一步关闭全表 payload 解码缺口：ready work、过期 work-item claim 与过期 execution lease 的 type/status、tenant/namespace、可选 shard、到期时间、稳定顺序和有界 limit 先通过全局/tenant-scoped 复合索引在 SQL 中筛选，候选行再解码并逐字段回验调度投影与权威 JSON；默认 100、硬上限 10,000。独立 system-level keyset 反熵循环不使用这些调度谓词，按 execution/work-item 主键各自轮转，因而能发现隐藏候选；默认每表 100 行、60 秒、`REPAIR_DERIVED`，并以 row identity、tenant/namespace、work-item execution ownership 和原始 authority JSON 做 CAS，只修复安全边界一致的派生列。主键/归属/scope 漂移和不可读 authority 只报告，单行失败隔离，数据库失败整体回滚 repair、finding 与 cursor；`AUDIT_ONLY` 可用于观察期。双游标、跨副本 database-clock sweep lease 与 payload-free finding owner queue 已持久化，claim/resolve 使用 token/version/owner/expiry 精确 fencing。profile-gated operations adapter 进一步以专用 purpose、global group、clearance 和 server-derived actor 隔离 system queue；caller-stable receipt、exact replay、同键异意图冲突及 claim/resolve + token-free audit 原子提交已经闭环，capability/schema/手册同步。第十七增量再以独立 lease 和 database clock 实现两级 retention：resolved active row 与 archive 各自有界扫描，archive insert + exact source delete + archive purge + counter checkpoint 原子提交；archive schema 排除 token/owner/request receipt/authority value，读取复算 whole-record fingerprint 并在漂移时 fail closed。第十八增量以同一数据库事务和数据库时钟形成 aggregate operational snapshot，以稳定 violation code 的 Actuator health 与固定 `result/state/tier/loop` 标签的 Micrometer 指标观测两条 loop，且 store exception、row/token/payload 不进入 detail 或 label。第十九增量用独立全局快照覆盖 child/suite evidence completeness、suite/creation/durable/work queue、expired lease/claim、oldest age 与 retention/terminal backlog；只使用数据库时钟、只读可重复读事务、专用索引和固定 `status/queue/scope/kind` 标签，且明确不把业务测试失败误判为平台故障。第二十增量以四维原子 claim、database-clock renewable lease、exact fencing、固定请求锁条带和 bounded expiry cleanup 为所有 engine-starting 路径提供即时 admission。第二十二增量进一步提供认证、有界且 payload-free 的 worker ownership pull；它仍不下发 runtime state，也不构成排队 scheduler。第二十三增量以 scope 级持久化循环 keyset 游标保证稳定毒化前缀后的候选最终可达，并拒绝 scope/position 篡改与并发倒退。第二十四增量以 exact checkpoint fingerprint、database clock、指数封顶和 cursor CAS 胜者约束实现确定性候选临时退避，并以闭集 reason 做全局低基数 SLO；第二十五增量再以独立 whole-record-fingerprinted active quarantine、阈值原子转换、批量投影和 claim 前二次校验停止永久毒化 closure 回流。专用人工处置协议与历史死信证据、alert routing、外部 WORM anchoring、runtime-state dispatch、公平/优先级 backpressure、hard cancellation、非 H2 方言、容量认证与跨进程 supervisor 仍待实现。
+   worker 扫描持久化面已将调度投影、稳定顺序和有界 limit 下推 SQL，并以权威 JSON 逐候选回验；独立 system-level keyset 反熵循环不依赖被审计谓词，repair、finding 与 cursor 同事务。双游标、database-clock sweep lease、payload-free finding owner queue、两级 retention archive、全局 SLO 和四维 admission 均已落地。公开 worker pull 再以循环 scope cursor、确定性退避与 exact-checkpoint quarantine 关闭毒化前缀和永久回流；第二十六增量已补齐 identity-derived scope/owner、maintenance purpose/group/clearance、database-clock exact fence、caller-stable command、transaction-bound audit 与 token-free immutable history 的 list/claim/release/discard。仍缺四眼审批、claim-command token 加密/保留期、alert routing、外部 WORM anchoring、runtime-state dispatch、公平/优先级 backpressure、hard cancellation、非 H2 方言、容量认证与跨进程 supervisor。
 
    内部 `openRecoverySession` 只接受完整性已验证、带 exact target、provider state 可恢复且 lifecycle 为 `RESUMING` 的 v2 checkpoint。它恢复累计 fixture cursor，要求 committed BLOGE lifecycle 为 `SUSPENDED` 且存在唯一目标 signal wait，然后同步 signal 到下一 terminal 或唯一新 suspension。`prepare` 把实际 BLOGE execution version、递增 boundary sequence、累计 fixture cursor 与四类 store mutation 冻结为同一原子 advance；未 prepare、CAS 失败或关闭 session 都回滚已删除 wait 与后续节点结果。该进程内 API 不提供虚假的 hard timeout；不可协作算子的墙钟 deadline 必须由可取消 worker 进程、lease 与 fencing 共同实现。
 

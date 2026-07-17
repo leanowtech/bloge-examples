@@ -144,6 +144,30 @@ class TestingControlProtocolSchemaTest {
                 "/$defs/durableStateProjectionFindingResolutionResponse/properties")
                 .has("claimToken")).isFalse();
         assertThat(schema.at(
+                "/$defs/durableWorkerQuarantinesResponse/properties/schemaVersion/const")
+                .asText()).isEqualTo(DurableWorkerQuarantinesResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineHistoryResponse/properties/schemaVersion/const")
+                .asText()).isEqualTo(DurableWorkerQuarantineHistoryResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineClaimRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(DurableWorkerQuarantineClaimRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineClaimResponse/properties/schemaVersion/const")
+                .asText()).isEqualTo(DurableWorkerQuarantineClaimResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineResolutionRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(DurableWorkerQuarantineResolutionRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineResolutionResponse/properties/schemaVersion/const")
+                .asText()).isEqualTo(DurableWorkerQuarantineResolutionResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineResolutionResponse/properties")
+                .has("claimToken")).isFalse();
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineHistoryResponse/properties/history/items/properties")
+                .has("claimToken")).isFalse();
+        assertThat(schema.at(
                 "/$defs/durableTestExecutionView/properties/schemaVersion/const").asText())
                 .isEqualTo(DurableTestExecutionQueryResponse.SCHEMA_VERSION);
         assertThat(schema.at(

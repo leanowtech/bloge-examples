@@ -19,6 +19,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeAdmissionControl;
 import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
@@ -90,6 +91,10 @@ class TestRuntimeProfileIsolationTest {
                     DurableStateProjectionFindingController.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableStateProjectionFindingService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DatabaseDurableWorkerQuarantineControlPlane.class)).isEmpty();
+            assertThat(context.getBeansOfType(DurableWorkerQuarantineController.class)).isEmpty();
+            assertThat(context.getBeansOfType(DurableWorkerQuarantineService.class)).isEmpty();
             assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();
@@ -143,6 +148,10 @@ class TestRuntimeProfileIsolationTest {
                     DurableStateProjectionFindingController.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableStateProjectionFindingService.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DatabaseDurableWorkerQuarantineControlPlane.class)).hasSize(1);
+            assertThat(context.getBeansOfType(DurableWorkerQuarantineController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(DurableWorkerQuarantineService.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableStateProjectionReconciliationScheduler.class)).hasSize(1);
             assertThat(context.getBeansOfType(
@@ -223,6 +232,10 @@ class TestRuntimeProfileIsolationTest {
                     DurableStateProjectionFindingController.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableStateProjectionFindingService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DatabaseDurableWorkerQuarantineControlPlane.class)).isEmpty();
+            assertThat(context.getBeansOfType(DurableWorkerQuarantineController.class)).isEmpty();
+            assertThat(context.getBeansOfType(DurableWorkerQuarantineService.class)).isEmpty();
             assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionStore.class)).isEmpty();
             assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();
@@ -252,6 +265,7 @@ class TestRuntimeProfileIsolationTest {
                 DurableTestOwnerClaimController.class,
                 DurableTestWorkerAcquisitionController.class,
                 DurableStateProjectionFindingController.class,
+                DurableWorkerQuarantineController.class,
                 DurableTestRecoveryHeartbeatController.class,
                 DurableTestTerminalRecoveryController.class);
         context.refresh();

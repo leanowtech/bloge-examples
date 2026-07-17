@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoin
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
@@ -58,7 +59,14 @@ class TestRuntimeSloTelemetryTest {
                                         DurableTestExecutionCheckpointRepository
                                                 .WorkerCandidateDeferralReason
                                                 .AUTHORIZATION_DENIED, 2),
-                                observedAt.minusSeconds(200), 32),
+                                observedAt.minusSeconds(200), 32,
+                                counts(DatabaseDurableWorkerQuarantineControlPlane
+                                                .QuarantineState.class,
+                                        DatabaseDurableWorkerQuarantineControlPlane
+                                                .QuarantineState.AVAILABLE, 1,
+                                        DatabaseDurableWorkerQuarantineControlPlane
+                                                .QuarantineState.CLAIMED, 1),
+                                1, 7),
                         new DatabaseTestRuntimeSloControlPlane.StorageSnapshot(
                                 20, 2, 10, 1, 8, 9));
 
@@ -111,12 +119,21 @@ class TestRuntimeSloTelemetryTest {
         assertThat(registry.get(
                 "resource.gateway.test.runtime.worker.candidate.quarantines.oldest_age")
                 .gauge().value()).isEqualTo(200.0);
+        assertThat(gauge(registry,
+                "resource.gateway.test.runtime.worker.candidate.quarantines.maintenance",
+                "state", "claimed")).isEqualTo(1.0);
+        assertThat(registry.get(
+                "resource.gateway.test.runtime.worker.candidate.quarantines.claims.expired")
+                .gauge().value()).isEqualTo(1.0);
+        assertThat(registry.get(
+                "resource.gateway.test.runtime.worker.candidate.quarantines.history")
+                .gauge().value()).isEqualTo(7.0);
         assertThat(registry.get("resource.gateway.test.runtime.health").gauge().value())
                 .isEqualTo(-1.0);
         assertThat(registry.getMeters()).allSatisfy(meter ->
                 assertThat(meter.getId().getTags()).allSatisfy(tag ->
                         assertThat(tag.getKey())
-                                .isIn("status", "queue", "scope", "kind", "reason")));
+                                .isIn("status", "queue", "scope", "kind", "reason", "state")));
 
         telemetry.observeStoreUnavailable();
         assertThat(registry.get("resource.gateway.test.runtime.health").gauge().value())

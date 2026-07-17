@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoin
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.Status;
@@ -180,7 +181,11 @@ class TestRuntimeSloMonitorTest {
                 .AUTHORIZATION_DENIED, 2L);
         var quarantines = new DatabaseTestRuntimeSloControlPlane
                 .WorkerCandidateQuarantineSnapshot(
-                totals, observedAt.minusSeconds(120), 32);
+                totals, observedAt.minusSeconds(120), 32,
+                counts(DatabaseDurableWorkerQuarantineControlPlane.QuarantineState.class,
+                        DatabaseDurableWorkerQuarantineControlPlane.QuarantineState.AVAILABLE, 1,
+                        DatabaseDurableWorkerQuarantineControlPlane.QuarantineState.CLAIMED, 1),
+                1, 7);
         when(controlPlane.operationalSnapshot(Duration.ofMinutes(15)))
                 .thenReturn(snapshot(observedAt, executionOutcomes(), suiteOutcomes(),
                         queue(0, 0, null), queue(0, 0, null),
@@ -200,9 +205,14 @@ class TestRuntimeSloMonitorTest {
                 (java.util.List<String>) health.getDetails().get("violations");
         assertThat(violations).containsExactly(
                 "WORKER_CANDIDATE_QUARANTINE_BACKLOG",
-                "WORKER_CANDIDATE_QUARANTINE_STALE");
+                "WORKER_CANDIDATE_QUARANTINE_STALE",
+                "WORKER_CANDIDATE_QUARANTINE_CLAIM_EXPIRED");
         assertThat(health.getDetails().toString())
                 .contains("workerCandidateQuarantines={")
+                .contains("available=1")
+                .contains("claimed=1")
+                .contains("expiredClaims=1")
+                .contains("historyRecords=7")
                 .contains("maximumConsecutiveFailures=32")
                 .doesNotContain("tenant", "runId", "checkpointFingerprint");
     }
@@ -222,6 +232,9 @@ class TestRuntimeSloMonitorTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new TestRuntimeSloMonitor.WorkerCandidateQuarantinePolicy(
                 -1, Duration.ofSeconds(1)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TestRuntimeSloMonitor.WorkerCandidateQuarantinePolicy(
+                0, Duration.ofSeconds(1), -1))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new TestRuntimeSloMonitor.Policy(
                 Duration.ofDays(366),
@@ -249,7 +262,7 @@ class TestRuntimeSloMonitorTest {
                 new TestRuntimeSloMonitor.WorkerCandidateDeferralPolicy(
                         1, 0, 2, Duration.ofSeconds(60)),
                 new TestRuntimeSloMonitor.WorkerCandidateQuarantinePolicy(
-                        1, Duration.ofSeconds(60)),
+                        1, Duration.ofSeconds(60), 0),
                 new TestRuntimeSloMonitor.StoragePolicy(0, 0, 0, 0));
     }
 
@@ -341,6 +354,16 @@ class TestRuntimeSloMonitorTest {
         EnumMap<E, Long> result = new EnumMap<>(type);
         for (E value : type.getEnumConstants()) {
             result.put(value, 0L);
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <E extends Enum<E>> Map<E, Long> counts(
+            Class<E> type, Object... entries) {
+        Map<E, Long> result = zeroes(type);
+        for (int index = 0; index < entries.length; index += 2) {
+            result.put((E) entries[index], ((Number) entries[index + 1]).longValue());
         }
         return result;
     }

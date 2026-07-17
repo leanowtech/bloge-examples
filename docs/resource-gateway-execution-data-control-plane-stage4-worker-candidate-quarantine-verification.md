@@ -101,13 +101,16 @@ The global repeatable-read snapshot exposes only:
 - active quarantine count by the three closed reasons;
 - total active quarantine records;
 - maximum threshold-crossing failure count;
-- oldest active quarantine age.
+- oldest active quarantine age;
+- effective `AVAILABLE`/`CLAIMED`, expired-claim, and retained-history counts.
 
-Stable health violations are `WORKER_CANDIDATE_QUARANTINE_BACKLOG` and
-`WORKER_CANDIDATE_QUARANTINE_STALE`. Micrometer gauges are rooted at
-`resource.gateway.test.runtime.worker.candidate.quarantines`; only the closed `reason` tag is used.
-Maximum-failure and oldest-age gauges are untagged. Tenant, organization, project, run, checkpoint,
-owner, token, exception, and payload values are excluded from health details and metric identity.
+Stable health violations are `WORKER_CANDIDATE_QUARANTINE_BACKLOG`,
+`WORKER_CANDIDATE_QUARANTINE_STALE`, and
+`WORKER_CANDIDATE_QUARANTINE_CLAIM_EXPIRED`. Micrometer gauges are rooted at
+`resource.gateway.test.runtime.worker.candidate.quarantines`; only closed `reason` and maintenance
+`state` tags are used. Maximum-failure, oldest-age, expired-claim, and retained-history gauges are
+untagged. Tenant, organization, project, run, checkpoint, owner, token, exception, and payload values
+are excluded from health details and metric identity.
 
 ## Configuration
 
@@ -116,6 +119,7 @@ owner, token, exception, and payload values are excluded from health details and
 | `gateway.testing.durable.worker-acquisitions.quarantine-threshold` | `RG_TEST_DURABLE_WORKER_QUARANTINE_THRESHOLD` | `32` |
 | `gateway.testing.runtime-slo.worker-quarantine-max-records` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_RECORDS` | `100` |
 | `gateway.testing.runtime-slo.worker-quarantine-max-oldest-age-seconds` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_OLDEST_AGE_SECONDS` | `86400` |
+| `gateway.testing.runtime-slo.worker-quarantine-max-expired-claims` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_EXPIRED_CLAIMS` | `0` |
 
 Threshold is valid in `1..1,000,000`; `1` means immediate quarantine on the first deterministic
 observation. SLO record limits are non-negative and age must be positive.
@@ -144,16 +148,15 @@ and 0 skips, including public JavaDoc, packaged schema, and shaded CLI verificat
 
 ## Honest Boundary
 
-This is an automatic active dead-letter state for worker pull, not the complete remediation control
-plane. There is no authenticated quarantine list, maintenance-purpose claim lease, release/discard
-decision, immutable resolution receipt, retained history after a successful checkpoint transition,
-owner/approval policy, or webhook. The existing explicit run-targeted owner-claim endpoint is a
-separate authenticated and audited recovery escape; it is not evidence that a dedicated quarantine
-workflow exists.
+The automatic state is now paired with an authenticated, payload-free
+`AVAILABLE -> CLAIMED -> RELEASE/DISCARD` maintenance protocol. Server token/version/owner/
+database-expiry fencing, caller-stable idempotency, transaction-bound action audit, exact checkpoint
+revalidation, immutable token-free receipts, retained history, capability discovery, and JSON Schema
+are verified in the
+[worker quarantine maintenance document](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-maintenance-verification.md).
 
-The next increment must add a payload-free `AVAILABLE -> CLAIMED -> RELEASED/DISCARDED` maintenance
-protocol with server token/version/owner/database-expiry fencing, caller-stable idempotency,
-transaction-bound action audit, exact checkpoint revalidation, history retention, and capability /
-schema / deep-link support. Runtime-state dispatch, fairness/priority/backpressure, cross-process
-supervision, hard cancellation, non-H2 dialect certification, and production-load qualification
-remain separate Stage 4/5 work.
+That protocol is not a complete enterprise dead-letter product: one privileged actor may discard,
+claim-command token retention is not yet encrypted or bounded, and there is no external WORM anchor,
+history retention loop, deep link, webhook, or alert routing. Runtime-state dispatch,
+fairness/priority/backpressure, cross-process supervision, hard cancellation, non-H2 dialect
+certification, and production-load qualification remain separate Stage 4/5 work.

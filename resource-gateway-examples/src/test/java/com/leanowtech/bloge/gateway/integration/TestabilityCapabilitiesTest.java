@@ -18,6 +18,8 @@ import com.leanowtech.bloge.gateway.testing.api.DurableTestTerminalRecoveryReque
 import com.leanowtech.bloge.gateway.testing.api.DurableTestTerminalRecoveryResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableStateProjectionFindingClaimRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableStateProjectionFindingResolutionResponse;
+import com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineClaimRequest;
+import com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineResolutionResponse;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
@@ -42,6 +44,9 @@ class TestabilityCapabilitiesTest {
         assertThat(disabled.features()).containsEntry("durableStateProjectionAntiEntropy", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionSweepLease", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionFindingQueue", false);
+        assertThat(disabled.features())
+                .containsEntry("durableTestWorkerQuarantineMaintenance", false)
+                .containsEntry("immutableDurableWorkerQuarantineHistory", false);
         assertThat(disabled.features())
                 .containsEntry("authenticatedDurableStateProjectionOperations", false)
                 .containsEntry("immutableDurableStateProjectionActionAudit", false)
@@ -78,6 +83,13 @@ class TestabilityCapabilitiesTest {
                 "durableStateProjectionFindingClaimResponse",
                 "durableStateProjectionFindingResolutionRequest",
                 "durableStateProjectionFindingResolutionResponse");
+        assertThat(enabled.supportedObjects()).containsKeys(
+                "durableWorkerQuarantinesResponse",
+                "durableWorkerQuarantineHistoryResponse",
+                "durableWorkerQuarantineClaimRequest",
+                "durableWorkerQuarantineClaimResponse",
+                "durableWorkerQuarantineResolutionRequest",
+                "durableWorkerQuarantineResolutionResponse");
         assertThat(enabled.features()).containsEntry("operatorMicroGraphExecution", true)
                 .containsEntry("dynamicAttemptOccurrenceSelectors", true)
                 .containsEntry("immutableTestSuiteRegistry", true)
@@ -99,6 +111,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("durableTestWorkerCyclicScanCursor", true)
                 .containsEntry("durableTestWorkerCandidateBackoff", true)
                 .containsEntry("durableTestWorkerCandidateQuarantine", true)
+                .containsEntry("durableTestWorkerQuarantineMaintenance", true)
+                .containsEntry("immutableDurableWorkerQuarantineHistory", true)
                 .containsEntry("immutableDurableWorkerNoWorkResult", true)
                 .containsEntry("durableRecoveryDependencyReauthorization", true)
                 .containsEntry("authenticatedDurableRecoveryHeartbeat", true)
@@ -169,6 +183,10 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.supportedObjects().get(
                 "durableStateProjectionFindingResolutionResponse"))
                 .containsExactly(DurableStateProjectionFindingResolutionResponse.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("durableWorkerQuarantineClaimRequest"))
+                .containsExactly(DurableWorkerQuarantineClaimRequest.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("durableWorkerQuarantineResolutionResponse"))
+                .containsExactly(DurableWorkerQuarantineResolutionResponse.SCHEMA_VERSION);
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.path().equals("/api/testing/executions"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/graphs/{graphName}"));
@@ -204,6 +222,15 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals(
                 "/api/testing/durable-state/projection-findings/claims"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("GET")
+                && endpoint.path().equals(
+                "/api/testing/durable-state/worker-quarantines"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("GET")
+                && endpoint.path().equals(
+                "/api/testing/durable-state/worker-quarantines/history"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
+                && endpoint.path().equals(
+                "/api/testing/durable-state/worker-quarantines/resolutions"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("PUT") && endpoint.path().equals("/api/testing/suites/{suiteId}"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->

@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -38,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "gateway.seed-descriptors=true",
                 "gateway.base-url=http://127.0.0.1:1",
                 "gateway.integration.identity.environment-id=test",
-                "gateway.integration.identity.allowed-purposes=TEST_EXECUTION,TEST_FIXTURE_READ,TEST_FIXTURE_WRITE,TEST_REPLAY,TEST_SUITE_READ,TEST_SUITE_WRITE",
+                "gateway.integration.identity.allowed-purposes=TEST_EXECUTION,TEST_FIXTURE_READ,TEST_FIXTURE_WRITE,TEST_REPLAY,TEST_SUITE_READ,TEST_SUITE_WRITE,TEST_RUNTIME_MAINTENANCE",
                 "spring.datasource.url=jdbc:h2:mem:testing-app-main;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false",
                 "gateway.testing.store.jdbc-url=jdbc:h2:mem:testing-app-control;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
         }
@@ -71,6 +72,10 @@ class TestRuntimeApplicationIntegrationTest {
                 DatabaseDurableStateProjectionControlPlane.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 DurableStateProjectionFindingService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                DatabaseDurableWorkerQuarantineControlPlane.class)).hasSize(1);
+        assertThat(context.getBeansOfType(DurableWorkerQuarantineService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(DurableWorkerQuarantineController.class)).hasSize(1);
         assertThat(context.getBeansOfType(ReplayPayloadRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestReplayPayloadService.class)).hasSize(1);
         assertThat(context.getBeansOfType(ReplayPayloadRetentionScheduler.class)).hasSize(1);
@@ -99,14 +104,33 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("durableStateProjectionSweepLease", true)
                 .containsEntry("durableStateProjectionFindingQueue", true)
                 .containsEntry("authenticatedDurableStateProjectionOperations", true)
-                .containsEntry("immutableDurableStateProjectionActionAudit", true);
+                .containsEntry("immutableDurableStateProjectionActionAudit", true)
+                .containsEntry("durableTestWorkerQuarantineMaintenance", true)
+                .containsEntry("immutableDurableWorkerQuarantineHistory", true);
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/durable-state/projection-findings"));
         assertThat(capabilities.getBody().payload().supportedObjects())
                 .containsEntry("durableStateProjectionFindingClaimRequest",
                         List.of(DurableStateProjectionFindingClaimRequest.SCHEMA_VERSION))
                 .containsEntry("durableStateProjectionFindingResolutionResponse",
-                        List.of(DurableStateProjectionFindingResolutionResponse.SCHEMA_VERSION));
+                        List.of(DurableStateProjectionFindingResolutionResponse.SCHEMA_VERSION))
+                .containsEntry("durableWorkerQuarantineClaimRequest",
+                        List.of(DurableWorkerQuarantineClaimRequest.SCHEMA_VERSION))
+                .containsEntry("durableWorkerQuarantineResolutionResponse",
+                        List.of(DurableWorkerQuarantineResolutionResponse.SCHEMA_VERSION));
+        assertThat(capabilities.getBody().payload().endpoints())
+                .anyMatch(endpoint -> endpoint.method().equals("GET")
+                        && endpoint.path().equals(
+                        "/api/testing/durable-state/worker-quarantines"))
+                .anyMatch(endpoint -> endpoint.method().equals("GET")
+                        && endpoint.path().equals(
+                        "/api/testing/durable-state/worker-quarantines/history"))
+                .anyMatch(endpoint -> endpoint.method().equals("POST")
+                        && endpoint.path().equals(
+                        "/api/testing/durable-state/worker-quarantines/claims"))
+                .anyMatch(endpoint -> endpoint.method().equals("POST")
+                        && endpoint.path().equals(
+                        "/api/testing/durable-state/worker-quarantines/resolutions"));
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("governedTestReplayPayloadCapture", true)
                 .containsEntry("testReplayBehavior", true)

@@ -100,6 +100,8 @@ Independent-store settings:
 | `gateway.testing.durable.worker-acquisitions.initial-backoff-seconds` | `RG_TEST_DURABLE_WORKER_INITIAL_BACKOFF_SECONDS` | `5` |
 | `gateway.testing.durable.worker-acquisitions.maximum-backoff-seconds` | `RG_TEST_DURABLE_WORKER_MAXIMUM_BACKOFF_SECONDS` | `300` |
 | `gateway.testing.durable.worker-acquisitions.quarantine-threshold` | `RG_TEST_DURABLE_WORKER_QUARANTINE_THRESHOLD` | `32` |
+| `gateway.testing.durable.worker-quarantines.required-group` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_GROUP` | `resource-gateway-test-runtime-operators` |
+| `gateway.testing.durable.worker-quarantines.required-clearance` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_CLEARANCE` | `RESTRICTED` |
 | `gateway.testing.runtime-slo.observation-interval-ms` | `RG_TEST_RUNTIME_SLO_OBSERVATION_INTERVAL_MS` | `30000` |
 | `gateway.testing.runtime-slo.outcome-lookback-seconds` | `RG_TEST_RUNTIME_SLO_OUTCOME_LOOKBACK_SECONDS` | `900` |
 | `gateway.testing.runtime-slo.execution-minimum-samples` | `RG_TEST_RUNTIME_SLO_EXECUTION_MINIMUM_SAMPLES` | `20` |
@@ -124,6 +126,7 @@ Independent-store settings:
 | `gateway.testing.runtime-slo.worker-backoff-max-oldest-age-seconds` | `RG_TEST_RUNTIME_SLO_WORKER_BACKOFF_MAX_OLDEST_AGE_SECONDS` | `3600` |
 | `gateway.testing.runtime-slo.worker-quarantine-max-records` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_RECORDS` | `100` |
 | `gateway.testing.runtime-slo.worker-quarantine-max-oldest-age-seconds` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_OLDEST_AGE_SECONDS` | `86400` |
+| `gateway.testing.runtime-slo.worker-quarantine-max-expired-claims` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_EXPIRED_CLAIMS` | `0` |
 | `gateway.testing.runtime-slo.max-expired-execution-records` | `RG_TEST_RUNTIME_SLO_MAX_EXPIRED_EXECUTION_RECORDS` | `0` |
 | `gateway.testing.runtime-slo.max-expired-suite-records` | `RG_TEST_RUNTIME_SLO_MAX_EXPIRED_SUITE_RECORDS` | `0` |
 | `gateway.testing.runtime-slo.max-terminal-durable-executions` | `RG_TEST_RUNTIME_SLO_MAX_TERMINAL_DURABLE_EXECUTIONS` | `10000` |
@@ -152,8 +155,9 @@ The local test-profile defaults are:
 | immutable test-suite registration | `TEST_SUITE_WRITE` |
 | built-in graph catalog materialization | `TEST_SUITE_WRITE` |
 | global durable projection finding read/claim/resolve | `TEST_RUNTIME_MAINTENANCE` plus configured global group and clearance |
+| scoped durable worker quarantine list/claim/release/discard/history | `TEST_RUNTIME_MAINTENANCE` plus configured group and clearance |
 
-The local demo bearer is `bloge-aneke-demo-token` and is granted all six testing purposes.
+The local demo bearer is `bloge-aneke-demo-token` and is granted all listed testing purposes.
 Production credentials should keep fixture authors, suite authors, readers, and runners separate.
 `RG_INTEGRATION_ENVIRONMENT_ID` and `RG_INTEGRATION_ALLOWED_PURPOSES` override profile defaults;
 deployment manifests must set both explicitly so a staging runner cannot inherit production identity claims.
@@ -1169,6 +1173,91 @@ finding-state gauges, active/archive backlog, last-success age, and numeric heal
 Only Actuator health is web-exposed by default. A deployment must explicitly secure and configure a
 registry/exporter before exporting metrics, and should keep detailed health output authorized.
 
+### 4.2j Operate exact-checkpoint worker quarantines
+
+Permanent worker quarantine is tenant/project scoped, unlike the global projection-finding queue.
+The service derives tenant, organization, project, environment, and claim owner from the verified
+identity; none is accepted in JSON. Access still requires `test` or `staging`, exact purpose
+`TEST_RUNTIME_MAINTENANCE`, the configured operator group, and minimum clearance.
+
+List active payload-free records or token-free action history:
+
+```bash
+curl -sS 'http://localhost:8080/api/testing/durable-state/worker-quarantines?actionableOnly=true&limit=100' \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_RUNTIME_MAINTENANCE'
+
+curl -sS 'http://localhost:8080/api/testing/durable-state/worker-quarantines/history?limit=100' \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_RUNTIME_MAINTENANCE'
+```
+
+`actionableOnly=true` returns `AVAILABLE` records and records whose previous claim has expired by
+the database clock. Claim one exact `runId` plus checkpoint fingerprint with a caller-stable request
+ID. The request has no owner or scope:
+
+```http
+POST /api/testing/durable-state/worker-quarantines/claims
+Authorization: Bearer <maintenance-operator-token>
+X-Purpose: TEST_RUNTIME_MAINTENANCE
+Content-Type: application/json
+
+{
+  "schemaVersion": "bloge.durableWorkerQuarantineClaimRequest.v1",
+  "clientRequestId": "claim-quarantine-run-a-1",
+  "key": {
+    "runId": "run-a",
+    "checkpointFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "claimDurationSeconds": 120
+}
+```
+
+The successful response is the only public object containing `claimToken`. Treat `claimToken`,
+`version`, and `claimUntil` as one opaque fence. Resolve with the exact fence and a closed,
+non-payload reason code:
+
+```http
+POST /api/testing/durable-state/worker-quarantines/resolutions
+Authorization: Bearer <maintenance-operator-token>
+X-Purpose: TEST_RUNTIME_MAINTENANCE
+Content-Type: application/json
+
+{
+  "schemaVersion": "bloge.durableWorkerQuarantineResolutionRequest.v1",
+  "clientRequestId": "discard-quarantine-run-a-1",
+  "key": {
+    "runId": "run-a",
+    "checkpointFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "claimToken": "<server-issued-token>",
+  "claimVersion": 1,
+  "claimUntil": "2026-07-17T12:02:00Z",
+  "action": "DISCARD",
+  "reasonCode": "AUTHORIZED_RETRY"
+}
+```
+
+The two actions have intentionally different worker semantics:
+
+| Action | Maintenance state | Worker effect | Evidence |
+| --- | --- | --- | --- |
+| `RELEASE` | returns to `AVAILABLE` with a higher version | checkpoint remains quarantined and cannot be acquired | immutable token-free receipt and history row |
+| `DISCARD` | active quarantine is deleted | exact checkpoint becomes eligible for a later worker scan | immutable token-free receipt and retained history row |
+
+Every claim and resolution first locks and revalidates the full checkpoint authority, then the exact
+quarantine/control row. Server token, owner, version, and database expiry all have to match. A
+changed checkpoint, another live owner, stale/forged/expired fence, or reused request ID with changed
+intent returns a stable `409`; malformed requests return `400`. Exact retries return the immutable
+result with `idempotentReplay=true`.
+
+State mutation, command receipt, token-free semantic audit, and resolution history commit in one
+local transaction. Audit failure rolls everything back. List, history, resolution response, metrics,
+health detail, logs, and audit facts exclude claim tokens and business payloads. The database command
+receipt currently retains a claim token to reproduce an exact lost claim response; deployments must
+protect the test-runtime database. Encryption-at-rest, bounded command-receipt retention, two-person
+approval for `DISCARD`, external WORM anchoring, and webhook notification remain hardening work.
+
 ### 4.2.1.1 Global test-runtime SLO and capacity observation
 
 `testRuntimeSloMonitor` is a separate Actuator health component for the whole isolated testing
@@ -1193,8 +1282,9 @@ The health model distinguishes correctness outcomes from runtime correctness:
   ownership failure until the execution is `ACTIVE` or `RESUMING`;
 - deterministic worker-candidate deferrals have independent active-count, retry-due, repeated-failure,
   and oldest-active-age policies; aggregation uses only the closed failure-reason vocabulary;
-- permanent worker-candidate quarantines have independent backlog and oldest-age policies, with
-  count by the same closed reason vocabulary and no scope or run identity;
+- permanent worker-candidate quarantines have independent backlog, oldest-age, and expired
+  maintenance-claim policies; aggregates include closed reason/state counts and retained history
+  size without scope, run, owner, or token identity;
 - expired child/suite records and terminal durable/work-item rows have explicit cleanup-backlog
   limits. Observation does not silently delete them.
 
@@ -1221,6 +1311,7 @@ WORKER_CANDIDATE_REPEATED_FAILURES
 WORKER_CANDIDATE_BACKOFF_STALE
 WORKER_CANDIDATE_QUARANTINE_BACKLOG
 WORKER_CANDIDATE_QUARANTINE_STALE
+WORKER_CANDIDATE_QUARANTINE_CLAIM_EXPIRED
 EXECUTION_RETENTION_BACKLOG_EXCEEDED
 SUITE_RETENTION_BACKLOG_EXCEEDED
 DURABLE_TERMINAL_RETENTION_BACKLOG_EXCEEDED
@@ -1245,6 +1336,8 @@ above. Store exception messages are discarded. Micrometer gauges are rooted at
 | `worker.candidate.deferrals.retry_due`, `.maximum_failures`, `.oldest_age` | none | due backlog and worst active-record pressure |
 | `worker.candidate.quarantines` | `reason` | active exact-checkpoint quarantine backlog |
 | `worker.candidate.quarantines.maximum_failures`, `.oldest_age` | none | worst unresolved quarantine pressure |
+| `worker.candidate.quarantines.maintenance` | `state` | effective `AVAILABLE`/`CLAIMED` counts |
+| `worker.candidate.quarantines.claims.expired`, `.history` | none | expired ownership and retained resolution history |
 | `evidence.incomplete.basis_points` | `scope` | execution/suite incomplete ratio |
 | `storage.records`, `storage.backlog` | `kind` | retained and cleanup-pressure rows |
 | `health` | none | `1` healthy, `-1` violated, `-2` store unavailable |
@@ -1255,8 +1348,8 @@ profile-owned testing runtime exists.
 
 The SLO component is an observation and readiness gate, not the capacity authority. The same isolated
 profile separately installs the admission controller below. Neither component supplies a queued
-scheduler, priority/fairness policy, permanent quarantine/dead-letter workflow, hard worker
-cancellation, runtime-state delivery, adaptive scaling, or external alert delivery.
+scheduler, priority/fairness policy, two-person dead-letter approval, hard worker cancellation,
+runtime-state delivery, adaptive scaling, or external alert delivery.
 
 ### 4.2.1.2 Database-authoritative runtime admission
 

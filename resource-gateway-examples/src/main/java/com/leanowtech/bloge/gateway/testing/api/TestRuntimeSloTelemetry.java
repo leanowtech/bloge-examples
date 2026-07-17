@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoin
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 
@@ -48,6 +49,10 @@ public final class TestRuntimeSloTelemetry {
             AtomicLong> workerQuarantineRecords;
     private final AtomicLong workerQuarantineMaximumFailures = new AtomicLong();
     private final AtomicLong workerQuarantineOldestAge = new AtomicLong(-1);
+    private final Map<DatabaseDurableWorkerQuarantineControlPlane.QuarantineState, AtomicLong>
+            workerQuarantineMaintenanceStates;
+    private final AtomicLong workerQuarantineExpiredClaims = new AtomicLong();
+    private final AtomicLong workerQuarantineHistory = new AtomicLong();
     private final AtomicLong health = new AtomicLong();
 
     /**
@@ -107,6 +112,15 @@ public final class TestRuntimeSloTelemetry {
         Gauge.builder(PREFIX + "worker.candidate.quarantines.oldest_age",
                         workerQuarantineOldestAge, AtomicLong::doubleValue)
                 .register(meters);
+        workerQuarantineMaintenanceStates = enumGauges(
+                meters, DatabaseDurableWorkerQuarantineControlPlane.QuarantineState.class,
+                PREFIX + "worker.candidate.quarantines.maintenance", "state");
+        Gauge.builder(PREFIX + "worker.candidate.quarantines.claims.expired",
+                        workerQuarantineExpiredClaims, AtomicLong::doubleValue)
+                .register(meters);
+        Gauge.builder(PREFIX + "worker.candidate.quarantines.history",
+                        workerQuarantineHistory, AtomicLong::doubleValue)
+                .register(meters);
         Gauge.builder(PREFIX + "health", health, AtomicLong::doubleValue)
                 .description("Global test-runtime health: 1 healthy, -1 SLO violated, "
                         + "-2 store unavailable")
@@ -129,6 +143,7 @@ public final class TestRuntimeSloTelemetry {
         workerDeferralRecords = Map.of();
         activeWorkerDeferrals = Map.of();
         workerQuarantineRecords = Map.of();
+        workerQuarantineMaintenanceStates = Map.of();
     }
 
     /**
@@ -195,6 +210,9 @@ public final class TestRuntimeSloTelemetry {
         workerQuarantineMaximumFailures.set(quarantines.maximumConsecutiveFailures());
         workerQuarantineOldestAge.set(ageSeconds(
                 quarantines.oldestQuarantinedAt(), snapshot.observedAt()));
+        replace(workerQuarantineMaintenanceStates, quarantines.totalByMaintenanceState());
+        workerQuarantineExpiredClaims.set(quarantines.expiredClaimRecords());
+        workerQuarantineHistory.set(quarantines.historyRecords());
         health.set(state == TestRuntimeSloMonitor.State.HEALTHY ? 1 : -1);
     }
 

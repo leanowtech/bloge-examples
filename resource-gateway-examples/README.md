@@ -272,14 +272,13 @@ quarantine. Quarantined candidates still advance the cyclic scan but are never r
 claimed by worker pull merely because time passed. Checkpoint replacement or an explicit successful
 state transition clears the old fingerprint's scheduling state.
 
-This is non-blocking pull control with automatic exact-checkpoint isolation, not a complete
-dead-letter operations product: it does not transfer BLOGE runtime state to the caller, reserve an
-execution-capacity permit while idle, provide tenant weighting/priority/aging, expose a quarantine
-list, or provide maintenance-purpose claim/release receipts. The existing run-targeted owner-claim
-path remains the authenticated and audited explicit recovery escape until that dedicated maintenance
-protocol lands. Exact semantics are documented in
+This is non-blocking pull control with automatic exact-checkpoint isolation, not runtime-state
+delivery or a complete scheduler: it does not transfer BLOGE runtime state to the caller, reserve an
+execution-capacity permit while idle, or provide tenant weighting/priority/aging. A separate
+`TEST_RUNTIME_MAINTENANCE` protocol now provides scoped, payload-free quarantine list/history,
+server-fenced claims, and idempotent `RELEASE`/`DISCARD` receipts. Exact semantics are documented in
 [Stage 4 worker candidate backoff verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-candidate-backoff-verification.md)
-and [Stage 4 worker candidate quarantine verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-candidate-quarantine-verification.md).
+and the [worker quarantine maintenance verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-maintenance-verification.md).
 
 ### Claim an expired durable test lease
 
@@ -721,8 +720,10 @@ unhealthy. Only incomplete evidence, excessive/old queues, expired ownership, re
 store unavailability produce stable SLO violations. Fixed-vocabulary meters live under
 `resource.gateway.test.runtime.*`; tags are limited to closed `status`, `queue`, `scope`, and `kind`
 values. Deterministic worker deferrals add only the closed `reason` tag plus untagged retry-due,
-maximum-failure, and oldest-age gauges. Worker quarantines add the same closed `reason` vocabulary
-plus untagged maximum-failure and oldest-age gauges. Configure thresholds through
+maximum-failure, and oldest-age gauges. Worker quarantines add the same closed `reason` vocabulary,
+fixed `AVAILABLE`/`CLAIMED` maintenance-state gauges, and untagged maximum-failure, oldest-age,
+expired-claim, and retained-history gauges. An expired claim has its own stable health violation.
+Configure thresholds through
 `gateway.testing.runtime-slo.*` / `RG_TEST_RUNTIME_SLO_*`; the full table is in the testing
 control-plane guide. Lifecycle/time indexes support these aggregate reads, and the outcome lookback
 is hard-capped at 365 days.

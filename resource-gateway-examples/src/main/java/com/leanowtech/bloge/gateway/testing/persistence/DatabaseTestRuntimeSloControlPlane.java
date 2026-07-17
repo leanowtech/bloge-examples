@@ -117,7 +117,7 @@ public final class DatabaseTestRuntimeSloControlPlane {
                     durableQueue(observedAt),
                     workQueue(observedAt),
                     workerCandidateDeferrals(observedAt),
-                    workerCandidateQuarantines(),
+                    workerCandidateQuarantines(observedAt),
                     storage(observedAt));
         });
         if (snapshot == null) {
@@ -226,7 +226,7 @@ public final class DatabaseTestRuntimeSloControlPlane {
                 maximumConsecutiveFailures[0]);
     }
 
-    private WorkerCandidateQuarantineSnapshot workerCandidateQuarantines() {
+    private WorkerCandidateQuarantineSnapshot workerCandidateQuarantines(Instant observedAt) {
         EnumMap<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason, Long>
                 totals = new EnumMap<>(
                 DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason.class);
@@ -236,12 +236,31 @@ public final class DatabaseTestRuntimeSloControlPlane {
         }
         Instant[] oldest = new Instant[1];
         long[] maximumConsecutiveFailures = new long[1];
+        EnumMap<DatabaseDurableWorkerQuarantineControlPlane.QuarantineState, Long>
+                maintenanceStates = new EnumMap<>(
+                DatabaseDurableWorkerQuarantineControlPlane.QuarantineState.class);
+        for (var state : DatabaseDurableWorkerQuarantineControlPlane.QuarantineState.values()) {
+            maintenanceStates.put(state, 0L);
+        }
+        long[] expiredClaims = new long[1];
         jdbc.query("""
-                SELECT reason, COUNT(*) AS total_count,
-                       MIN(quarantined_at) AS oldest_quarantined,
-                       COALESCE(MAX(consecutive_failures), 0) AS maximum_consecutive_failures
-                FROM rg_test_durable_worker_candidate_quarantines
-                GROUP BY reason
+                SELECT q.reason, COUNT(*) AS total_count,
+                       MIN(q.quarantined_at) AS oldest_quarantined,
+                       COALESCE(MAX(q.consecutive_failures), 0) AS maximum_consecutive_failures,
+                       COALESCE(SUM(CASE
+                           WHEN c.control_state = 'CLAIMED' AND c.claim_until > ?
+                           THEN 1 ELSE 0 END), 0) AS claimed_count,
+                       COALESCE(SUM(CASE
+                           WHEN c.scope_key IS NULL OR c.control_state = 'AVAILABLE'
+                                OR (c.control_state = 'CLAIMED' AND c.claim_until <= ?)
+                           THEN 1 ELSE 0 END), 0) AS available_count,
+                       COALESCE(SUM(CASE
+                           WHEN c.control_state = 'CLAIMED' AND c.claim_until <= ?
+                           THEN 1 ELSE 0 END), 0) AS expired_claim_count
+                FROM rg_test_durable_worker_candidate_quarantines q
+                LEFT JOIN rg_test_durable_worker_quarantine_controls c
+                  ON c.scope_key = q.scope_key AND c.run_id = q.run_id
+                GROUP BY q.reason
                 """, rs -> {
             DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason reason;
             try {
@@ -260,9 +279,23 @@ public final class DatabaseTestRuntimeSloControlPlane {
             maximumConsecutiveFailures[0] = Math.max(
                     maximumConsecutiveFailures[0],
                     rs.getLong("maximum_consecutive_failures"));
-        });
+            long availableCount = rs.getLong("available_count");
+            long claimedCount = rs.getLong("claimed_count");
+            maintenanceStates.compute(
+                    DatabaseDurableWorkerQuarantineControlPlane.QuarantineState.AVAILABLE,
+                    (ignored, count) -> count + availableCount);
+            maintenanceStates.compute(
+                    DatabaseDurableWorkerQuarantineControlPlane.QuarantineState.CLAIMED,
+                    (ignored, count) -> count + claimedCount);
+            expiredClaims[0] += rs.getLong("expired_claim_count");
+        }, Timestamp.from(observedAt), Timestamp.from(observedAt),
+                Timestamp.from(observedAt));
+        Long historyRecords = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_quarantine_history", Long.class);
         return new WorkerCandidateQuarantineSnapshot(
-                Map.copyOf(totals), oldest[0], maximumConsecutiveFailures[0]);
+                Map.copyOf(totals), oldest[0], maximumConsecutiveFailures[0],
+                Map.copyOf(maintenanceStates), expiredClaims[0],
+                historyRecords == null ? 0 : historyRecords);
     }
 
     private QueueSnapshot queue(String sql, Instant... instants) {
@@ -586,12 +619,29 @@ public final class DatabaseTestRuntimeSloControlPlane {
      * @param totalByReason active exact-checkpoint quarantines by closed reason
      * @param oldestQuarantinedAt database time of the oldest active quarantine, or {@code null}
      * @param maximumConsecutiveFailures largest threshold-crossing count
+     * @param totalByMaintenanceState active records by effective database-clock owner state
+     * @param expiredClaimRecords expired claims projected as available for takeover
+     * @param historyRecords retained token-free manual action evidence
      */
     public record WorkerCandidateQuarantineSnapshot(
             Map<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason, Long>
                     totalByReason,
             Instant oldestQuarantinedAt,
-            long maximumConsecutiveFailures) {
+            long maximumConsecutiveFailures,
+            Map<DatabaseDurableWorkerQuarantineControlPlane.QuarantineState, Long>
+                    totalByMaintenanceState,
+            long expiredClaimRecords,
+            long historyRecords) {
+        /** Creates a compatibility observation with every active record available and no history. */
+        public WorkerCandidateQuarantineSnapshot(
+                Map<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason, Long>
+                        totalByReason,
+                Instant oldestQuarantinedAt,
+                long maximumConsecutiveFailures) {
+            this(totalByReason, oldestQuarantinedAt, maximumConsecutiveFailures,
+                    allAvailable(totalByReason), 0, 0);
+        }
+
         /** Freezes the closed map and rejects inconsistent aggregates. */
         public WorkerCandidateQuarantineSnapshot {
             totalByReason = Map.copyOf(Objects.requireNonNull(totalByReason, "totalByReason"));
@@ -604,11 +654,29 @@ public final class DatabaseTestRuntimeSloControlPlane {
                 }
             }
             long records = totalByReason.values().stream().mapToLong(Long::longValue).sum();
+            totalByMaintenanceState = Map.copyOf(Objects.requireNonNull(
+                    totalByMaintenanceState, "totalByMaintenanceState"));
+            for (var state : DatabaseDurableWorkerQuarantineControlPlane
+                    .QuarantineState.values()) {
+                Long value = totalByMaintenanceState.get(state);
+                if (value == null || value < 0) {
+                    throw new IllegalArgumentException(
+                            "Worker quarantine maintenance map must contain non-negative closed states");
+                }
+            }
+            long maintenanceRecords = totalByMaintenanceState.values().stream()
+                    .mapToLong(Long::longValue).sum();
             if (totalByReason.size() != DurableTestExecutionCheckpointRepository
                     .WorkerCandidateDeferralReason.values().length
+                    || totalByMaintenanceState.size()
+                    != DatabaseDurableWorkerQuarantineControlPlane.QuarantineState.values().length
                     || maximumConsecutiveFailures < 0
                     || (records == 0) != (oldestQuarantinedAt == null)
-                    || (records == 0) != (maximumConsecutiveFailures == 0)) {
+                    || (records == 0) != (maximumConsecutiveFailures == 0)
+                    || maintenanceRecords != records || expiredClaimRecords < 0
+                    || expiredClaimRecords > totalByMaintenanceState.get(
+                    DatabaseDurableWorkerQuarantineControlPlane.QuarantineState.AVAILABLE)
+                    || historyRecords < 0) {
                 throw new IllegalArgumentException(
                         "Invalid worker candidate quarantine aggregate");
             }
@@ -628,7 +696,22 @@ public final class DatabaseTestRuntimeSloControlPlane {
                     .WorkerCandidateDeferralReason.values()) {
                 empty.put(reason, 0L);
             }
-            return new WorkerCandidateQuarantineSnapshot(Map.copyOf(empty), null, 0);
+            return new WorkerCandidateQuarantineSnapshot(
+                    Map.copyOf(empty), null, 0, allAvailable(empty), 0, 0);
+        }
+
+        private static Map<DatabaseDurableWorkerQuarantineControlPlane.QuarantineState, Long>
+                allAvailable(Map<?, Long> totalByReason) {
+            long records = totalByReason == null ? 0
+                    : totalByReason.values().stream().mapToLong(Long::longValue).sum();
+            EnumMap<DatabaseDurableWorkerQuarantineControlPlane.QuarantineState, Long> states =
+                    new EnumMap<>(DatabaseDurableWorkerQuarantineControlPlane
+                            .QuarantineState.class);
+            states.put(DatabaseDurableWorkerQuarantineControlPlane
+                    .QuarantineState.AVAILABLE, records);
+            states.put(DatabaseDurableWorkerQuarantineControlPlane
+                    .QuarantineState.CLAIMED, 0L);
+            return Map.copyOf(states);
         }
     }
 

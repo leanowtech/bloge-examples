@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionRetent
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionTelemetry;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableTestExecutionCheckpointRepository;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseFixtureBundleRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseReplayPayloadRepository;
@@ -84,6 +85,33 @@ public class TestRuntimeConfiguration {
             DurableTestExecutionCheckpointIntegrity integrity) {
         return new DatabaseDurableTestExecutionCheckpointRepository(
                 database.jdbc(), database.transactionManager(), objectMapper, integrity);
+    }
+
+    /**
+     * Creates exact-checkpoint quarantine maintenance after its automatic authority is initialized.
+     */
+    @Bean
+    DatabaseDurableWorkerQuarantineControlPlane durableWorkerQuarantineControlPlane(
+            TestRuntimeDatabase database,
+            ObjectMapper objectMapper,
+            DurableTestExecutionCheckpointRepository checkpointAuthority) {
+        java.util.Objects.requireNonNull(checkpointAuthority, "checkpointAuthority");
+        return new DatabaseDurableWorkerQuarantineControlPlane(
+                database.jdbc(), database.transactionManager(), objectMapper);
+    }
+
+    /** Assembles the scoped, authenticated, action-audited quarantine owner queue. */
+    @Bean
+    DurableWorkerQuarantineService durableWorkerQuarantineService(
+            DatabaseDurableWorkerQuarantineControlPlane controlPlane,
+            TestSecurityEventRepository securityEvents,
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.durable.worker-quarantines.required-group:resource-gateway-test-runtime-operators}")
+            String requiredGroup,
+            @Value("${gateway.testing.durable.worker-quarantines.required-clearance:RESTRICTED}")
+            String requiredClearance) {
+        return new DurableWorkerQuarantineService(
+                controlPlane, securityEvents, objectMapper, requiredGroup, requiredClearance);
     }
 
     /**
@@ -312,10 +340,12 @@ public class TestRuntimeConfiguration {
             TestRunRepository runRepository,
             TestSuiteRunRepository suiteRunRepository,
             DurableTestExecutionCheckpointRepository checkpointRepository,
+            DatabaseDurableWorkerQuarantineControlPlane quarantineControlPlane,
             DurableTestRuntimeResources runtimeResources) {
         java.util.Objects.requireNonNull(runRepository, "runRepository");
         java.util.Objects.requireNonNull(suiteRunRepository, "suiteRunRepository");
         java.util.Objects.requireNonNull(checkpointRepository, "checkpointRepository");
+        java.util.Objects.requireNonNull(quarantineControlPlane, "quarantineControlPlane");
         java.util.Objects.requireNonNull(runtimeResources, "runtimeResources");
         return new DatabaseTestRuntimeSloControlPlane(
                 database.jdbc(), database.transactionManager());
@@ -372,6 +402,8 @@ public class TestRuntimeConfiguration {
             long workerQuarantineMaxRecords,
             @Value("${gateway.testing.runtime-slo.worker-quarantine-max-oldest-age-seconds:86400}")
             long workerQuarantineMaxOldestAgeSeconds,
+            @Value("${gateway.testing.runtime-slo.worker-quarantine-max-expired-claims:0}")
+            long workerQuarantineMaxExpiredClaims,
             @Value("${gateway.testing.runtime-slo.max-expired-execution-records:0}")
             long maxExpiredExecutionRecords,
             @Value("${gateway.testing.runtime-slo.max-expired-suite-records:0}")
@@ -405,7 +437,8 @@ public class TestRuntimeConfiguration {
                                 Duration.ofSeconds(workerBackoffMaxOldestAgeSeconds)),
                         new TestRuntimeSloMonitor.WorkerCandidateQuarantinePolicy(
                                 workerQuarantineMaxRecords,
-                                Duration.ofSeconds(workerQuarantineMaxOldestAgeSeconds)),
+                                Duration.ofSeconds(workerQuarantineMaxOldestAgeSeconds),
+                                workerQuarantineMaxExpiredClaims),
                         new TestRuntimeSloMonitor.StoragePolicy(
                                 maxExpiredExecutionRecords,
                                 maxExpiredSuiteRecords,
