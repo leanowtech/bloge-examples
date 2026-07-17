@@ -59,6 +59,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/testing/durable-executions/worker-acquisitions` | Pull at most one authorized expired execution through an atomic payload-free worker assignment (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/owner-claims` | Re-authorize an exact expired v2 checkpoint and atomically claim its lease; this does not resume BLOGE (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/heartbeats` | Renew one exact issued recovery fence under the same authenticated authority (test/staging only) |
+| `POST http://localhost:8080/api/testing/durable-executions/{runId}/recovery-steps` | Signal one exact claimed suspension and atomically commit the next suspended or terminal boundary (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/terminal-recoveries` | Signal one exact claimed suspension and atomically commit only a server-derived terminal result (test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/operators/{operatorRef}` | Inspect frozen binding/schema/state fingerprints and executable testability (test/staging only) |
 | `POST http://localhost:8080/api/testing/targets/operators/{operatorRef}/executions` | Run the exact synchronous binding as a controlled one-node BLOGE graph (test/staging only) |
@@ -411,6 +412,37 @@ an old fence under a new key, changing authority, using an expired lease, or reu
 different intent fails closed. The authorization audit and first heartbeat commit atomically. This
 endpoint renews ownership only: it does not poll work, run BLOGE, cancel execution, or produce
 terminal evidence.
+
+### Advance one durable recovery step
+
+For a graph that can suspend more than once, use the latest exact claim/heartbeat fence with the
+one-step protocol:
+
+```bash
+curl -sS -X POST \
+  http://localhost:8080/api/testing/durable-executions/run-20260716-001/recovery-steps \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "schemaVersion": "bloge.durableTestRecoveryStepRequest.v1",
+    "clientRequestId": "step-run-20260716-001-1",
+    "expectedFence": {
+      "ownerId": "server-issued-owner",
+      "leaseEpoch": 4,
+      "revision": 9
+    },
+    "expectedCheckpointFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "signal": {"nodeId": "approval-wait", "data": {"approved": true}}
+  }'
+```
+
+The response is payload-free and has `outcome=SUSPENDED` with `terminal: null`, or one of five
+terminal outcomes with a promotion-blocking receipt projection. A suspended commit releases the
+consumed lease at database time. Acquire the new checkpoint again before sending the next signal;
+the old dispatch is intentionally unusable. Reuse the same key and identical intent only to recover
+an ambiguous response. Caller-owned outcome, engine/provider/fixture state, lease, evidence, or
+dispatch fields are rejected.
 
 ### Complete one terminal recovery
 

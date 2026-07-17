@@ -280,6 +280,12 @@ class TestingControlProtocolSchemaTest {
         assertThat(schema.at(
                 "/$defs/durableTestTerminalRecoveryResponse/properties/schemaVersion/const")
                 .asText()).isEqualTo(DurableTestTerminalRecoveryResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableTestRecoveryStepRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(DurableTestRecoveryStepRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableTestRecoveryStepResponse/properties/schemaVersion/const")
+                .asText()).isEqualTo(DurableTestRecoveryStepResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/durableTestExecutionCheckpointV2/required"))
                 .extracting(JsonNode::asText)
                 .contains("dependencies", "fixtureConsumptionState", "executionServiceState",
@@ -349,6 +355,8 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("durableTestRecoveryHeartbeatResponse")).isTrue();
         assertThat(definitions.has("durableTestTerminalRecoveryRequest")).isTrue();
         assertThat(definitions.has("durableTestTerminalRecoveryResponse")).isTrue();
+        assertThat(definitions.has("durableTestRecoveryStepRequest")).isTrue();
+        assertThat(definitions.has("durableTestRecoveryStepResponse")).isTrue();
         assertThat(definitions.at("/durableTestOwnerClaimRequest/additionalProperties").asBoolean())
                 .isFalse();
         assertThat(definitions.at("/durableTestOwnerClaimRequest/required"))
@@ -475,6 +483,37 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.at(
                 "/durableTestTerminalRecoveryResponse/properties/evidenceStatus/const").asText())
                 .isEqualTo("EVIDENCE_INCOMPLETE");
+        assertThat(definitions.at(
+                "/durableTestRecoveryStepRequest/additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(definitions.at("/durableTestRecoveryStepRequest/required"))
+                .extracting(JsonNode::asText)
+                .containsExactly("schemaVersion", "clientRequestId", "expectedFence",
+                        "expectedCheckpointFingerprint", "signal");
+        assertThat(definitions.at(
+                "/durableTestRecoveryStepRequest/properties/signal/additionalProperties")
+                .asBoolean()).isFalse();
+        assertThat(definitions.at(
+                "/durableTestRecoveryStepResponse/additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(definitions.at(
+                "/durableTestRecoveryStepResponse/properties/outcome/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly("SUSPENDED", "COMPLETED", "FAILED", "FAILED_RECOVERY",
+                        "CANCELLED", "TERMINATED");
+        assertThat(definitions.at(
+                "/durableTestRecoveryStepResponse/properties/status/enum"))
+                .extracting(JsonNode::asText).containsExactly("SUSPENDED", "TERMINAL");
+        assertThat(definitions.at(
+                "/durableTestRecoveryStepResponse/properties/terminal/oneOf"))
+                .hasSize(2);
+        assertThat(definitions.at(
+                "/durableTestRecoveryStepResponse/oneOf")).hasSize(6);
+        assertThat(definitions.at(
+                "/durableTestRecoveryStepResponse/oneOf/1/properties/terminal/properties/executionOutcome/const")
+                .asText()).isEqualTo("COMPLETED");
+        assertThat(definitions.at(
+                "/durableTestRecoveryStepResponse/properties").has("signal")).isFalse();
         assertThat(definitions.at("/fixtureBundleRegistrationRequest/properties/target/$ref").asText())
                 .isEqualTo("#/$defs/target");
         assertThat(definitions.at("/testExecutionRequest/properties/target/$ref").asText())

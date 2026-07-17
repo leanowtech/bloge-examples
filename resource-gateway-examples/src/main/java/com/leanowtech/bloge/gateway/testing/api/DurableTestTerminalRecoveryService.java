@@ -42,6 +42,8 @@ public final class DurableTestTerminalRecoveryService {
     private static final int MAX_SIGNAL_BYTES = 256 * 1024;
     private static final List<String> EVIDENCE_GAPS = List.of(
             "PRE_CHECKPOINT_TRACE_UNAVAILABLE", "RECOVERY_SIGNAL_PAYLOAD_OMITTED");
+    private static final String TERMINAL_EVENT_TYPE = "DURABLE_TERMINAL_RECOVERY";
+    private static final String STEP_EVENT_TYPE = "DURABLE_RECOVERY_STEP";
 
     private final DurableTestExecutionCheckpointRepository checkpoints;
     private final DurableTestRecoveryAuthorizer authorizer;
@@ -155,6 +157,177 @@ public final class DurableTestTerminalRecoveryService {
         try (AdmissionGuard admission = admissions.admit(identity, intent)) {
             return recoverAdmitted(normalizedRunId, request, identity, requestFingerprint,
                     dispatch, current, authorized, boundAudit, admission);
+        }
+    }
+
+    /**
+     * Executes one signal and commits the next server-derived suspended or terminal boundary.
+     *
+     * <p>Immutable response-loss replay is resolved before dispatch lookup, authorization,
+     * admission, lease monitoring, or engine access. A suspended result explicitly relinquishes
+     * the consumed recovery lease, requiring a fresh worker acquisition before another signal.</p>
+     *
+     * @param runId path-bound durable run identity
+     * @param request exact source fence, checkpoint identity, idempotency key, and signal
+     * @param identity freshly authenticated workload authority
+     * @return payload-free committed recovery-step result or its exact replay
+     */
+    public DurableTestRecoveryStepResponse advance(
+            String runId,
+            DurableTestRecoveryStepRequest request,
+            IntegrationRequestContext identity) {
+        requireIdentity(identity, STEP_EVENT_TYPE);
+        validateStepRequest(runId, request, identity);
+        String normalizedRunId = runId.trim();
+        String signalFingerprint = signalFingerprint(request.signal().data(), identity);
+        String requestFingerprint = stepRequestFingerprint(
+                normalizedRunId, request, signalFingerprint, identity);
+
+        Optional<DurableTestExecutionCheckpointRepository.RecoveryStepResult> prior =
+                findPriorStep(request.clientRequestId(), requestFingerprint, identity);
+        if (prior.isPresent()) {
+            return replayStep(
+                    prior.get(), normalizedRunId, request.clientRequestId(), identity);
+        }
+
+        DurableTestTerminalRecoveryRequest controlIntent = request.sharedControlIntent();
+        DurableTestRecoveryDispatch dispatch = dispatch(
+                normalizedRunId, controlIntent, identity);
+        requirePrincipal(dispatch, normalizedRunId, identity, STEP_EVENT_TYPE);
+        DurableTestExecutionCheckpoint current = scopedCheckpoint(
+                normalizedRunId, dispatch, identity);
+        DurableTestRecoveryAuthorizer.AuthorizedRecovery authorized =
+                authorize(current, normalizedRunId, identity, STEP_EVENT_TYPE);
+        requireAuthorizationContinuity(
+                dispatch, authorized, normalizedRunId, identity, STEP_EVENT_TYPE);
+        TestRuntimeTransactionMutation boundAudit = boundStepAllowedAudit(
+                identity, normalizedRunId, request.clientRequestId());
+
+        AdmissionSubjects subjects = AdmissionSubjects.from(
+                authorized.control(), authorized.dependencyRefs());
+        String admissionFingerprint = ProtocolFingerprint.of(objectMapper, Map.of(
+                "schemaVersion", "bloge.durableTestRecoveryStepAdmissionIntent.v1",
+                "requestFingerprint", requestFingerprint,
+                "authorizationFingerprint", ProtocolFingerprint.of(
+                        objectMapper, authorized.authorization()),
+                "operatorRefs", subjects.operatorRefs(),
+                "dependencyRefs", subjects.dependencyRefs()));
+        AdmissionIntent intent = new AdmissionIntent(
+                Kind.DURABLE_RECOVERY, request.clientRequestId(), admissionFingerprint, "",
+                subjects.operatorRefs(), subjects.dependencyRefs());
+        try (AdmissionGuard admission = admissions.admit(identity, intent)) {
+            return advanceAdmitted(
+                    normalizedRunId, request, identity, requestFingerprint, dispatch,
+                    current, authorized, boundAudit, admission);
+        }
+    }
+
+    private DurableTestRecoveryStepResponse advanceAdmitted(
+            String runId,
+            DurableTestRecoveryStepRequest request,
+            IntegrationRequestContext identity,
+            String requestFingerprint,
+            DurableTestRecoveryDispatch dispatch,
+            DurableTestExecutionCheckpoint current,
+            DurableTestRecoveryAuthorizer.AuthorizedRecovery authorized,
+            TestRuntimeTransactionMutation boundAudit,
+            AdmissionGuard admission) {
+        Object signal = signalValue(request.signal().data(), identity);
+        String checkpointRef = "step:" + requestFingerprint.substring("sha256:".length());
+        try (DurableTestRecoveryLeaseCoordinator.LeaseGuard guard = leases.monitor(
+                dispatch, current, requestFingerprint, identity)) {
+            try (DurableTestTerminalRecoveryRuntime.PreparedRecoveryStep prepared =
+                         runtime.prepareStep(
+                                 guard.executionCheckpoint(), authorized,
+                                 request.signal().nodeId(), signal, checkpointRef)) {
+                DurableTestExecutionCheckpointRepository.RecoveryHeartbeatResult latest =
+                        guard.freeze();
+                DurableTestExecutionCheckpointRepository.RecoveryStepCommand command =
+                        new DurableTestExecutionCheckpointRepository.RecoveryStepCommand(
+                                request.clientRequestId(), requestFingerprint,
+                                latest.dispatch(), prepared.outcome(),
+                                prepared.engineStateMutation().engineState(),
+                                prepared.fixtureConsumptionState(),
+                                prepared.executionServiceState(), EVIDENCE_GAPS);
+                DurableTestRecoveryStepResponse response = commitStep(
+                        command, prepared, runId, request.clientRequestId(),
+                        requestFingerprint, boundAudit, identity);
+                admission.checkpoint();
+                return response;
+            }
+        } catch (DurableTestRecoveryLeaseCoordinator.LeaseLostException lost) {
+            throw conflict(identity, "RG.TEST.DURABLE_RECOVERY_LEASE_LOST",
+                    "Durable recovery ownership became uncertain during execution.", true);
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (RuntimeException executionFailure) {
+            rejected(identity, runId,
+                    "RG.TEST.DURABLE_RECOVERY_STEP_EXECUTION_FAILED", STEP_EVENT_TYPE);
+            throw conflict(identity, "RG.TEST.DURABLE_RECOVERY_STEP_EXECUTION_FAILED",
+                    "The isolated durable recovery did not produce a committable stable boundary.",
+                    true);
+        }
+    }
+
+    private DurableTestRecoveryStepResponse commitStep(
+            DurableTestExecutionCheckpointRepository.RecoveryStepCommand command,
+            DurableTestTerminalRecoveryRuntime.PreparedRecoveryStep prepared,
+            String runId,
+            String clientRequestId,
+            String requestFingerprint,
+            TestRuntimeTransactionMutation boundAudit,
+            IntegrationRequestContext identity) {
+        try {
+            DurableTestExecutionCheckpointRepository.RecoveryStepResult result =
+                    checkpoints.advanceRecoveryStepIdempotently(
+                            command, prepared.engineStateMutation(), boundAudit);
+            requireResultScope(result, runId, identity);
+            if (result.idempotentReplay()) {
+                appendStepReplayAudit(identity, runId, clientRequestId);
+            }
+            return DurableTestRecoveryStepResponse.from(result);
+        } catch (DurableTestExecutionCheckpointConflictException conflict) {
+            if (conflict.reason()
+                    == DurableTestExecutionCheckpointConflictException.Reason
+                    .IDEMPOTENCY_CONFLICT) {
+                Optional<DurableTestExecutionCheckpointRepository.RecoveryStepResult> winner =
+                        findPriorStep(clientRequestId, requestFingerprint, identity);
+                if (winner.isPresent()) {
+                    return replayStep(winner.get(), runId, clientRequestId, identity);
+                }
+            }
+            throw mapStepConflict(conflict.reason(), identity);
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "RG.TEST.DURABLE_STORE_UNAVAILABLE",
+                    "The isolated durable test control store is unavailable.");
+        }
+    }
+
+    private DurableTestRecoveryStepResponse replayStep(
+            DurableTestExecutionCheckpointRepository.RecoveryStepResult result,
+            String runId,
+            String clientRequestId,
+            IntegrationRequestContext identity) {
+        requireResultScope(result, runId, identity);
+        appendStepReplayAudit(identity, runId, clientRequestId);
+        return DurableTestRecoveryStepResponse.from(result);
+    }
+
+    private Optional<DurableTestExecutionCheckpointRepository.RecoveryStepResult> findPriorStep(
+            String clientRequestId,
+            String requestFingerprint,
+            IntegrationRequestContext identity) {
+        try {
+            return checkpoints.findRecoveryStepResult(
+                    identity.tenantId(), identity.environmentId(),
+                    clientRequestId, requestFingerprint);
+        } catch (DurableTestExecutionCheckpointConflictException conflict) {
+            throw mapStepConflict(conflict.reason(), identity);
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "RG.TEST.DURABLE_STORE_UNAVAILABLE",
+                    "The isolated durable test control store is unavailable.");
         }
     }
 
@@ -349,13 +522,22 @@ public final class DurableTestTerminalRecoveryService {
             DurableTestExecutionCheckpoint current,
             String runId,
             IntegrationRequestContext identity) {
+        return authorize(current, runId, identity, TERMINAL_EVENT_TYPE);
+    }
+
+    private DurableTestRecoveryAuthorizer.AuthorizedRecovery authorize(
+            DurableTestExecutionCheckpoint current,
+            String runId,
+            IntegrationRequestContext identity,
+            String eventType) {
         try {
             return authorizer.authorize(current, identity);
         } catch (IntegrationProblemException rejected) {
-            rejected(identity, runId, rejected.problem().code());
+            rejected(identity, runId, rejected.problem().code(), eventType);
             throw rejected;
         } catch (RuntimeException unavailable) {
-            rejected(identity, runId, "RG.TEST.DURABLE_AUTHORIZATION_UNAVAILABLE");
+            rejected(identity, runId,
+                    "RG.TEST.DURABLE_AUTHORIZATION_UNAVAILABLE", eventType);
             throw unavailable(identity, "RG.TEST.DURABLE_AUTHORIZATION_UNAVAILABLE",
                     "Durable recovery dependencies cannot currently be authorized.");
         }
@@ -365,12 +547,20 @@ public final class DurableTestTerminalRecoveryService {
             DurableTestRecoveryDispatch dispatch,
             String runId,
             IntegrationRequestContext identity) {
+        requirePrincipal(dispatch, runId, identity, TERMINAL_EVENT_TYPE);
+    }
+
+    private void requirePrincipal(
+            DurableTestRecoveryDispatch dispatch,
+            String runId,
+            IntegrationRequestContext identity,
+            String eventType) {
         String currentPrincipal = DurableTestRecoveryPrincipal.fingerprint(
                 objectMapper, identity);
         if (!currentPrincipal.equals(
                 dispatch.authorization().principalFingerprint())) {
             rejected(identity, runId,
-                    "RG.TEST.DURABLE_RECOVERY_PRINCIPAL_MISMATCH");
+                    "RG.TEST.DURABLE_RECOVERY_PRINCIPAL_MISMATCH", eventType);
             throw new IntegrationProblemException(IntegrationProblem.forbidden(
                     "RG.TEST.DURABLE_RECOVERY_PRINCIPAL_MISMATCH",
                     "The authenticated workload does not own this recovery authorization.",
@@ -383,9 +573,19 @@ public final class DurableTestTerminalRecoveryService {
             DurableTestRecoveryAuthorizer.AuthorizedRecovery authorized,
             String runId,
             IntegrationRequestContext identity) {
+        requireAuthorizationContinuity(
+                dispatch, authorized, runId, identity, TERMINAL_EVENT_TYPE);
+    }
+
+    private void requireAuthorizationContinuity(
+            DurableTestRecoveryDispatch dispatch,
+            DurableTestRecoveryAuthorizer.AuthorizedRecovery authorized,
+            String runId,
+            IntegrationRequestContext identity,
+            String eventType) {
         if (!dispatch.authorization().equals(authorized.authorization())) {
             rejected(identity, runId,
-                    "RG.TEST.DURABLE_RECOVERY_AUTHORIZATION_DRIFT");
+                    "RG.TEST.DURABLE_RECOVERY_AUTHORIZATION_DRIFT", eventType);
             throw conflict(identity, "RG.TEST.DURABLE_RECOVERY_AUTHORIZATION_DRIFT",
                     "Current recovery authorization differs from the issued worker dispatch.",
                     false);
@@ -436,6 +636,27 @@ public final class DurableTestTerminalRecoveryService {
                         DurableTestRecoveryPrincipal.fingerprint(objectMapper, identity))));
     }
 
+    private String stepRequestFingerprint(
+            String runId,
+            DurableTestRecoveryStepRequest request,
+            String signalFingerprint,
+            IntegrationRequestContext identity) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion",
+                        "bloge.durableRecoveryStepAuthorizedIntent.v1"),
+                Map.entry("runId", runId),
+                Map.entry("clientRequestId", request.clientRequestId()),
+                Map.entry("expectedOwnerId", request.expectedFence().ownerId()),
+                Map.entry("expectedLeaseEpoch", request.expectedFence().leaseEpoch()),
+                Map.entry("expectedRevision", request.expectedFence().revision()),
+                Map.entry("expectedCheckpointFingerprint",
+                        request.expectedCheckpointFingerprint()),
+                Map.entry("signalNodeId", request.signal().nodeId()),
+                Map.entry("signalFingerprint", signalFingerprint),
+                Map.entry("principalFingerprint",
+                        DurableTestRecoveryPrincipal.fingerprint(objectMapper, identity))));
+    }
+
     private TestRuntimeTransactionMutation boundAllowedAudit(
             IntegrationRequestContext identity,
             String runId,
@@ -455,6 +676,25 @@ public final class DurableTestTerminalRecoveryService {
         }
     }
 
+    private TestRuntimeTransactionMutation boundStepAllowedAudit(
+            IntegrationRequestContext identity,
+            String runId,
+            String clientRequestId) {
+        try {
+            TestRuntimeTransactionMutation mutation = securityEvents.boundAppend(event(
+                    identity, STEP_EVENT_TYPE, "ALLOWED",
+                    "RG.TEST.DURABLE_RECOVERY_STEP_COMMITTED", runId, clientRequestId));
+            if (mutation == null) {
+                throw new IllegalStateException(
+                        "Security audit did not provide a bound mutation");
+            }
+            return mutation;
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "RG.INTEGRATION.SECURITY_AUDIT_UNAVAILABLE",
+                    "Durable recovery step is unavailable because its security audit cannot commit.");
+        }
+    }
+
     private void appendReplayAudit(
             IntegrationRequestContext identity,
             String runId,
@@ -469,18 +709,54 @@ public final class DurableTestTerminalRecoveryService {
         }
     }
 
-    private void rejected(
-            IntegrationRequestContext identity, String runId, String reasonCode) {
+    private void appendStepReplayAudit(
+            IntegrationRequestContext identity,
+            String runId,
+            String clientRequestId) {
         try {
-            securityEvents.append(event(identity, "REJECTED", reasonCode, runId, ""));
+            securityEvents.append(event(identity, STEP_EVENT_TYPE, "ALLOWED",
+                    "RG.TEST.DURABLE_RECOVERY_STEP_IDEMPOTENT_REPLAY",
+                    runId, clientRequestId));
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "RG.INTEGRATION.SECURITY_AUDIT_UNAVAILABLE",
-                    "Durable terminal recovery is unavailable because its security audit cannot commit.");
+                    "Durable recovery step is unavailable because its security audit cannot commit.");
+        }
+    }
+
+    private void rejected(
+            IntegrationRequestContext identity, String runId, String reasonCode) {
+        rejected(identity, runId, reasonCode, TERMINAL_EVENT_TYPE);
+    }
+
+    private void rejected(
+            IntegrationRequestContext identity,
+            String runId,
+            String reasonCode,
+            String eventType) {
+        try {
+            securityEvents.append(event(
+                    identity, eventType, "REJECTED", reasonCode, runId, ""));
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "RG.INTEGRATION.SECURITY_AUDIT_UNAVAILABLE",
+                    TERMINAL_EVENT_TYPE.equals(eventType)
+                            ? "Durable terminal recovery is unavailable because its security audit cannot commit."
+                            : "Durable recovery step is unavailable because its security audit cannot commit.");
         }
     }
 
     private static TestSecurityEvent event(
             IntegrationRequestContext identity,
+            String outcome,
+            String reasonCode,
+            String runId,
+            String clientRequestId) {
+        return event(identity, TERMINAL_EVENT_TYPE, outcome, reasonCode,
+                runId, clientRequestId);
+    }
+
+    private static TestSecurityEvent event(
+            IntegrationRequestContext identity,
+            String eventType,
             String outcome,
             String reasonCode,
             String runId,
@@ -491,14 +767,19 @@ public final class DurableTestTerminalRecoveryService {
         return new TestSecurityEvent(
                 0, Instant.now(), identity.correlationId(), identity.tenantId(),
                 identity.environmentId(), identity.actorId(),
-                "DURABLE_TERMINAL_RECOVERY", outcome, reasonCode, facts);
+                eventType, outcome, reasonCode, facts);
     }
 
     private void requireIdentity(IntegrationRequestContext identity) {
+        requireIdentity(identity, TERMINAL_EVENT_TYPE);
+    }
+
+    private void requireIdentity(
+            IntegrationRequestContext identity, String eventType) {
         Objects.requireNonNull(identity, "identity").requireComplete();
         String environment = identity.environmentId().toLowerCase(Locale.ROOT);
         if (!ENABLED_ENVIRONMENTS.contains(environment)) {
-            rejected(identity, "", "RG.TEST.DURABLE_ENVIRONMENT_FORBIDDEN");
+            rejected(identity, "", "RG.TEST.DURABLE_ENVIRONMENT_FORBIDDEN", eventType);
             throw new IntegrationProblemException(IntegrationProblem.forbidden(
                     "RG.TEST.DURABLE_ENVIRONMENT_FORBIDDEN",
                     "Durable test recovery is restricted to test and staging identities.",
@@ -537,8 +818,51 @@ public final class DurableTestTerminalRecoveryService {
         }
     }
 
+    private static void validateStepRequest(
+            String runId,
+            DurableTestRecoveryStepRequest request,
+            IntegrationRequestContext identity) {
+        boolean valid = request != null
+                && DurableTestRecoveryStepRequest.SCHEMA_VERSION.equals(
+                request.schemaVersion())
+                && IDENTIFIER.matcher(normalized(runId)).matches()
+                && IDENTIFIER.matcher(request.clientRequestId()).matches()
+                && request.expectedFence() != null
+                && IDENTIFIER.matcher(request.expectedFence().ownerId()).matches()
+                && request.expectedFence().leaseEpoch() > 0
+                && request.expectedFence().revision() >= 0
+                && FINGERPRINT.matcher(
+                request.expectedCheckpointFingerprint()).matches()
+                && request.signal() != null
+                && IDENTIFIER.matcher(request.signal().nodeId()).matches();
+        if (!valid) {
+            throw new IntegrationProblemException(IntegrationProblem.badRequest(
+                    "RG.TEST.DURABLE_RECOVERY_STEP_REQUEST_INVALID",
+                    "Recovery step requires a versioned idempotency key, exact fence, checkpoint fingerprint, and signal node.",
+                    identity.correlationId(), Map.of()));
+        }
+    }
+
     private static void requireResultScope(
             DurableTestExecutionCheckpointRepository.RecoveryTerminalResult result,
+            String runId,
+            IntegrationRequestContext identity) {
+        DurableTestExecutionCheckpoint checkpoint = result == null
+                ? null : result.checkpoint();
+        if (checkpoint == null
+                || !runId.equals(checkpoint.runId())
+                || !identity.tenantId().equals(checkpoint.scope().tenantId())
+                || !identity.organizationId().equals(
+                checkpoint.scope().organizationId())
+                || !identity.projectId().equals(checkpoint.scope().projectId())
+                || !identity.environmentId().equals(
+                checkpoint.scope().environmentId())) {
+            throw dispatchNotFound(identity);
+        }
+    }
+
+    private static void requireResultScope(
+            DurableTestExecutionCheckpointRepository.RecoveryStepResult result,
             String runId,
             IntegrationRequestContext identity) {
         DurableTestExecutionCheckpoint checkpoint = result == null
@@ -573,6 +897,27 @@ public final class DurableTestTerminalRecoveryService {
             case LEASE_ACTIVE, NOT_RESUMABLE, DUPLICATE_IDENTITY, INVALID_TRANSITION ->
                     conflict(identity, "RG.TEST.DURABLE_TERMINAL_RECOVERY_CONFLICT",
                             "The terminal recovery violates the current control state.", false);
+        };
+    }
+
+    private static IntegrationProblemException mapStepConflict(
+            DurableTestExecutionCheckpointConflictException.Reason reason,
+            IntegrationRequestContext identity) {
+        return switch (reason) {
+            case STALE_FENCE -> conflict(identity, "RG.TEST.DURABLE_STALE_FENCE",
+                    "The durable execution fence changed after caller selection.", true);
+            case LEASE_EXPIRED -> conflict(identity, "RG.TEST.DURABLE_LEASE_EXPIRED",
+                    "The durable execution lease expired before recovery-step commit.", true);
+            case UNRECOGNIZED_DISPATCH -> conflict(identity,
+                    "RG.TEST.DURABLE_UNRECOGNIZED_DISPATCH",
+                    "The durable recovery dispatch has no committed issuance record.", false);
+            case IDEMPOTENCY_CONFLICT -> conflict(identity,
+                    "RG.TEST.DURABLE_IDEMPOTENCY_CONFLICT",
+                    "clientRequestId already identifies different authorized recovery-step intent.",
+                    false);
+            case LEASE_ACTIVE, NOT_RESUMABLE, DUPLICATE_IDENTITY, INVALID_TRANSITION ->
+                    conflict(identity, "RG.TEST.DURABLE_RECOVERY_STEP_CONFLICT",
+                            "The recovery step violates the current control state.", false);
         };
     }
 

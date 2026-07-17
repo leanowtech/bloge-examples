@@ -321,6 +321,10 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.DurableTestTerminalRecoveryRequest.SCHEMA_VERSION));
             objects.put("durableTestTerminalRecoveryResponse", List.of(
                     com.leanowtech.bloge.gateway.testing.api.DurableTestTerminalRecoveryResponse.SCHEMA_VERSION));
+            objects.put("durableTestRecoveryStepRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryStepRequest.SCHEMA_VERSION));
+            objects.put("durableTestRecoveryStepResponse", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryStepResponse.SCHEMA_VERSION));
             objects.put("durableStateProjectionFindingsResponse", List.of(
                     com.leanowtech.bloge.gateway.testing.api.DurableStateProjectionFindingsResponse.SCHEMA_VERSION));
             objects.put("durableStateProjectionFindingClaimRequest", List.of(
@@ -508,6 +512,7 @@ public record IntegrationCapabilities(
         features.put("authenticatedDurableRecoveryHeartbeat", testExecutionEndpointEnabled);
         features.put("automaticDurableRecoveryHeartbeat", testExecutionEndpointEnabled);
         features.put("authenticatedDurableTerminalRecovery", testExecutionEndpointEnabled);
+        features.put("authenticatedDurableRecoveryStep", testExecutionEndpointEnabled);
         features.put("durableStateProjectionAntiEntropy", testExecutionEndpointEnabled);
         features.put("durableStateProjectionSweepLease", testExecutionEndpointEnabled);
         features.put("durableStateProjectionFindingQueue", testExecutionEndpointEnabled);
@@ -584,6 +589,8 @@ public record IntegrationCapabilities(
                     "/api/testing/durable-executions/{runId}/heartbeats"));
             endpoints.add(new Endpoint("POST",
                     "/api/testing/durable-executions/{runId}/terminal-recoveries"));
+            endpoints.add(new Endpoint("POST",
+                    "/api/testing/durable-executions/{runId}/recovery-steps"));
             endpoints.add(new Endpoint("GET",
                     "/api/testing/durable-state/projection-findings"));
             endpoints.add(new Endpoint("POST",

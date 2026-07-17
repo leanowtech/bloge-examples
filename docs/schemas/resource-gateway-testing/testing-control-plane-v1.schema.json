@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://leanowtech.example/schemas/resource-gateway-testing/testing-control-plane-v1.schema.json",
   "title": "Resource Gateway Testing Control Plane v1",
-  "description": "Wire contracts for target discovery, immutable fixtures and suites, controlled execution, durable graph and operator execution creation, query, ownership and worker acquisition, recovery heartbeat, terminal recovery, durable projection finding operations, externally authorized exact-checkpoint worker quarantine maintenance, signed request-index rollout proofs, plans, and sanitized evidence.",
+  "description": "Wire contracts for target discovery, immutable fixtures and suites, controlled execution, durable graph and operator execution creation, query, ownership and worker acquisition, recovery heartbeat, one-signal suspended-or-terminal recovery steps, terminal recovery, durable projection finding operations, externally authorized exact-checkpoint worker quarantine maintenance, signed request-index rollout proofs, plans, and sanitized evidence.",
   "$defs": {
     "fingerprint": {
       "type": "string",
@@ -1198,6 +1198,170 @@
         },
         "idempotentReplay": {"type": "boolean"}
       }
+    },
+    "durableTestRecoveryStepRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "clientRequestId", "expectedFence",
+        "expectedCheckpointFingerprint", "signal"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.durableTestRecoveryStepRequest.v1"},
+        "clientRequestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "expectedFence": {"$ref": "#/$defs/durableOwnerClaimFence"},
+        "expectedCheckpointFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "signal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["nodeId", "data"],
+          "properties": {
+            "nodeId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+            },
+            "data": {}
+          }
+        }
+      }
+    },
+    "durableTestRecoveryStepResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "runId", "outcome", "status", "ownerId",
+        "leaseEpoch", "revision", "observedAt", "checkpointFingerprint", "boundary",
+        "terminal", "idempotentReplay"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.durableTestRecoveryStepResponse.v1"},
+        "runId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "outcome": {
+          "enum": ["SUSPENDED", "COMPLETED", "FAILED", "FAILED_RECOVERY", "CANCELLED",
+            "TERMINATED"]
+        },
+        "status": {"enum": ["SUSPENDED", "TERMINAL"]},
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "leaseEpoch": {"type": "integer", "minimum": 1},
+        "revision": {"type": "integer", "minimum": 1},
+        "observedAt": {"type": "string", "format": "date-time"},
+        "checkpointFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "boundary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["nodeId", "boundaryType", "boundarySequence", "stateVersion"],
+          "properties": {
+            "nodeId": {"type": "string", "minLength": 1, "maxLength": 255},
+            "boundaryType": {
+              "enum": ["NODE_BOUNDARY", "SUSPEND", "TIMER", "WORK_ITEM", "STREAM_OFFSET"]
+            },
+            "boundarySequence": {"type": "integer", "minimum": 1},
+            "stateVersion": {"type": "integer", "minimum": 0}
+          }
+        },
+        "terminal": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["executionOutcome", "completedAt", "receiptFingerprint",
+                "evidenceStatus", "evidenceGapCodes"],
+              "properties": {
+                "executionOutcome": {
+                  "enum": ["COMPLETED", "FAILED", "FAILED_RECOVERY", "CANCELLED", "TERMINATED"]
+                },
+                "completedAt": {"type": "string", "format": "date-time"},
+                "receiptFingerprint": {"$ref": "#/$defs/fingerprint"},
+                "evidenceStatus": {"const": "EVIDENCE_INCOMPLETE"},
+                "evidenceGapCodes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 32,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "idempotentReplay": {"type": "boolean"}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "outcome": {"const": "SUSPENDED"},
+            "status": {"const": "SUSPENDED"},
+            "terminal": {"type": "null"}
+          }
+        },
+        {
+          "properties": {
+            "outcome": {"const": "COMPLETED"},
+            "status": {"const": "TERMINAL"},
+            "terminal": {
+              "type": "object",
+              "required": ["executionOutcome"],
+              "properties": {"executionOutcome": {"const": "COMPLETED"}}
+            }
+          }
+        },
+        {
+          "properties": {
+            "outcome": {"const": "FAILED"},
+            "status": {"const": "TERMINAL"},
+            "terminal": {
+              "type": "object",
+              "required": ["executionOutcome"],
+              "properties": {"executionOutcome": {"const": "FAILED"}}
+            }
+          }
+        },
+        {
+          "properties": {
+            "outcome": {"const": "FAILED_RECOVERY"},
+            "status": {"const": "TERMINAL"},
+            "terminal": {
+              "type": "object",
+              "required": ["executionOutcome"],
+              "properties": {"executionOutcome": {"const": "FAILED_RECOVERY"}}
+            }
+          }
+        },
+        {
+          "properties": {
+            "outcome": {"const": "CANCELLED"},
+            "status": {"const": "TERMINAL"},
+            "terminal": {
+              "type": "object",
+              "required": ["executionOutcome"],
+              "properties": {"executionOutcome": {"const": "CANCELLED"}}
+            }
+          }
+        },
+        {
+          "properties": {
+            "outcome": {"const": "TERMINATED"},
+            "status": {"const": "TERMINAL"},
+            "terminal": {
+              "type": "object",
+              "required": ["executionOutcome"],
+              "properties": {"executionOutcome": {"const": "TERMINATED"}}
+            }
+          }
+        }
+      ]
     },
     "graphTarget": {
       "allOf": [

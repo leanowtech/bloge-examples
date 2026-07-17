@@ -973,6 +973,7 @@ The three public recovery-control commands exist only under `test` or `staging` 
 ```http
 POST /api/testing/durable-executions/{runId}/owner-claims
 POST /api/testing/durable-executions/{runId}/heartbeats
+POST /api/testing/durable-executions/{runId}/recovery-steps
 POST /api/testing/durable-executions/{runId}/terminal-recoveries
 Authorization: Bearer <workload-token>
 X-Purpose: TEST_EXECUTION
@@ -1033,7 +1034,69 @@ override it with a whole-second value from `1` through one third of the lease. T
 already claimed fence alive. It does not discover work, execute or cancel BLOGE, publish terminal
 evidence, or make cold-start durable resume complete.
 
-### 4.2h Execute one terminal cold recovery
+### 4.2h.1 Advance one suspended-or-terminal recovery step
+
+Graphs with more than one signal boundary use the latest exact owner-claim or heartbeat fence:
+
+```json
+{
+  "schemaVersion": "bloge.durableTestRecoveryStepRequest.v1",
+  "clientRequestId": "step-run-42-1",
+  "expectedFence": {
+    "ownerId": "server-issued-owner",
+    "leaseEpoch": 2,
+    "revision": 12
+  },
+  "expectedCheckpointFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "signal": {
+    "nodeId": "approval-wait",
+    "data": {"approved": true}
+  }
+}
+```
+
+The request is strict at every nesting level. Outcome, engine/fixture/provider state, lease expiry,
+dispatch, authorization, evidence, receipt, and omitted `signal.data` are rejected before service
+entry. Immutable replay is resolved before dispatch lookup, authorization, admission, heartbeat, or
+engine execution. A first attempt requires the same principal and freshly reconstructed dependency
+closure as the issued dispatch, acquires the same database-authoritative runtime permit, then runs
+one signal under automatic lease renewal.
+
+The repository atomically commits the staged four-store BLOGE mutation, cumulative fixture/provider
+state, next checkpoint, immutable command result, semantic audit, and optional terminal receipt. A
+new suspension releases ownership with database authority time; the old dispatch cannot cross that
+boundary. The payload-free suspended response is:
+
+```json
+{
+  "schemaVersion": "bloge.durableTestRecoveryStepResponse.v1",
+  "runId": "run-42",
+  "outcome": "SUSPENDED",
+  "status": "SUSPENDED",
+  "ownerId": "server-issued-owner",
+  "leaseEpoch": 2,
+  "revision": 13,
+  "observedAt": "2026-07-17T12:01:18Z",
+  "checkpointFingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "boundary": {
+    "nodeId": "second-approval-wait",
+    "boundaryType": "SUSPEND",
+    "boundarySequence": 8,
+    "stateVersion": 13
+  },
+  "terminal": null,
+  "idempotentReplay": false
+}
+```
+
+For `COMPLETED`, `FAILED`, `FAILED_RECOVERY`, `CANCELLED`, or `TERMINATED`, `status` is `TERMINAL`
+and `terminal` contains completion time, receipt fingerprint, `EVIDENCE_INCOMPLETE`, and explicit
+gap codes. Signal data and internal state never appear. To continue after `SUSPENDED`, a worker must
+acquire and freshly authorize the new checkpoint, then use a new key for the next signal. This is a
+one-step durable primitive, not a queued signal broker, remote supervisor, hard cancellation system,
+or complete historical evidence service.
+
+### 4.2h.2 Execute one terminal cold recovery
 
 The terminal-recovery request consumes the latest exact fence returned by owner claim or heartbeat:
 
@@ -1619,6 +1682,7 @@ Every engine-starting command is admitted against one independent test-runtime d
 | Batch | one direct permit per sequential child | each child's exact compiled closure |
 | Immutable suite | one parent permit for the complete serial run | tenant + suite id + target operator/dependency closure |
 | Durable create | fresh engine preparation to committed initial boundary | authorized target/control-plan closure |
+| Durable recovery step | recovered engine execution to next suspended or terminal boundary | re-authorized target/control-plan closure |
 | Durable terminal recovery | recovered engine execution to committed terminal boundary | re-authorized target/control-plan closure |
 
 Suite children deliberately do not reacquire capacity: the parent already owns every subject they can
@@ -2525,7 +2589,8 @@ Implemented now:
 - immutable plan plus graph/operator/resource dependency fingerprints;
 - profile-sensitive capability probe and production control-field guard.
 - profile-gated authenticated durable graph and operator creation, payload-free execution query, v2 owner claim,
-  authenticated heartbeat, and one-signal terminal recovery,
+  authenticated heartbeat, one-signal suspended-or-terminal recovery steps, and compatible
+  terminal-only recovery,
   with exact hidden-dispatch lookup, principal and reauthorization continuity, database-time fencing,
   immutable pre-execution replay, isolated cold execution, and atomic BLOGE/checkpoint/receipt/audit
   commit; terminal v1 receipts remain explicitly incomplete and promotion-blocking.

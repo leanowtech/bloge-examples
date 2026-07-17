@@ -19,7 +19,8 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
         DurableWorkerQuarantineController.class,
         WorkerQuarantineRequestIndexRolloutController.class,
         DurableTestRecoveryHeartbeatController.class,
-        DurableTestTerminalRecoveryController.class})
+        DurableTestTerminalRecoveryController.class,
+        DurableTestRecoveryStepController.class})
 public class TestExecutionProblemHandler {
 
     @ExceptionHandler(IntegrationProblemException.class)

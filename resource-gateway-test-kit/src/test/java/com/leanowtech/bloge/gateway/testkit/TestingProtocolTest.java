@@ -52,6 +52,10 @@ class TestingProtocolTest {
                     TestingProtocol.DURABLE_WORKER_ACQUISITION_REQUEST_V1);
             assertConstant(definitions, "durableTestWorkerAcquisitionResponse",
                     TestingProtocol.DURABLE_WORKER_ACQUISITION_RESPONSE_V1);
+            assertConstant(definitions, "durableTestRecoveryStepRequest",
+                    TestingProtocol.DURABLE_RECOVERY_STEP_REQUEST_V1);
+            assertConstant(definitions, "durableTestRecoveryStepResponse",
+                    TestingProtocol.DURABLE_RECOVERY_STEP_RESPONSE_V1);
             assertThat(definitions.at("/testRunEvidence/oneOf")).hasSize(2);
             assertConstant(definitions, "testSuite", TestingProtocol.TEST_SUITE_V1);
             assertConstant(definitions, "testSuiteV2", TestingProtocol.TEST_SUITE_V2);
@@ -170,6 +174,72 @@ class TestingProtocolTest {
                 noWork, "durableTestWorkerAcquisitionResponse"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("durableTestWorkerAcquisitionResponse")
+                .hasMessageNotContaining("run-a");
+    }
+
+    @Test
+    void packagedSchemaBindsRecoveryStepOutcomeToItsTerminalReceipt() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode suspended = mapper.readTree("""
+                {
+                  "schemaVersion":"bloge.durableTestRecoveryStepResponse.v1",
+                  "runId":"run-a",
+                  "outcome":"SUSPENDED",
+                  "status":"SUSPENDED",
+                  "ownerId":"worker-a",
+                  "leaseEpoch":2,
+                  "revision":3,
+                  "observedAt":"2026-07-17T00:00:00Z",
+                  "checkpointFingerprint":"sha256:%s",
+                  "boundary":{
+                    "nodeId":"approval-2",
+                    "boundaryType":"SUSPEND",
+                    "boundarySequence":4,
+                    "stateVersion":3
+                  },
+                  "terminal":null,
+                  "idempotentReplay":false
+                }
+                """.formatted("a".repeat(64)));
+        JsonNode completed = mapper.readTree("""
+                {
+                  "schemaVersion":"bloge.durableTestRecoveryStepResponse.v1",
+                  "runId":"run-a",
+                  "outcome":"COMPLETED",
+                  "status":"TERMINAL",
+                  "ownerId":"worker-a",
+                  "leaseEpoch":2,
+                  "revision":4,
+                  "observedAt":"2026-07-17T00:01:00Z",
+                  "checkpointFingerprint":"sha256:%s",
+                  "boundary":{
+                    "nodeId":"complete",
+                    "boundaryType":"NODE_BOUNDARY",
+                    "boundarySequence":5,
+                    "stateVersion":4
+                  },
+                  "terminal":{
+                    "executionOutcome":"COMPLETED",
+                    "completedAt":"2026-07-17T00:01:00Z",
+                    "receiptFingerprint":"sha256:%s",
+                    "evidenceStatus":"EVIDENCE_INCOMPLETE",
+                    "evidenceGapCodes":["PRE_CHECKPOINT_TRACE_UNAVAILABLE"]
+                  },
+                  "idempotentReplay":false
+                }
+                """.formatted("b".repeat(64), "c".repeat(64)));
+
+        assertThatNoException().isThrownBy(() -> TestingProtocolSchemaValidator.require(
+                suspended, "durableTestRecoveryStepResponse"));
+        assertThatNoException().isThrownBy(() -> TestingProtocolSchemaValidator.require(
+                completed, "durableTestRecoveryStepResponse"));
+
+        ((com.fasterxml.jackson.databind.node.ObjectNode) completed.path("terminal"))
+                .put("executionOutcome", "FAILED");
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                completed, "durableTestRecoveryStepResponse"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("durableTestRecoveryStepResponse")
                 .hasMessageNotContaining("run-a");
     }
 

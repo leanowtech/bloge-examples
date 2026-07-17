@@ -44,6 +44,12 @@ public final class TestingProtocol {
     /** Payload-free acquired/no-work worker result wire version. */
     public static final String DURABLE_WORKER_ACQUISITION_RESPONSE_V1 =
             "bloge.durableTestWorkerAcquisitionResponse.v1";
+    /** One-signal suspended-or-terminal durable recovery request wire version. */
+    public static final String DURABLE_RECOVERY_STEP_REQUEST_V1 =
+            "bloge.durableTestRecoveryStepRequest.v1";
+    /** Payload-free suspended-or-terminal durable recovery result wire version. */
+    public static final String DURABLE_RECOVERY_STEP_RESPONSE_V1 =
+            "bloge.durableTestRecoveryStepResponse.v1";
     /** Per-replica request-index rollout challenge wire version. */
     public static final String WORKER_QUARANTINE_REQUEST_INDEX_REPLICA_PROOF_REQUEST_V1 =
             "bloge.workerQuarantineRequestIndexReplicaProofRequest.v1";

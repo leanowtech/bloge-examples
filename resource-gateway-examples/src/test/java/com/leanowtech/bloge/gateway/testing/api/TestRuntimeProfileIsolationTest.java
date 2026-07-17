@@ -64,6 +64,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     DurableTestTerminalRecoveryController.class)).isEmpty();
             assertThat(context.getBeansOfType(
+                    DurableTestRecoveryStepController.class)).isEmpty();
+            assertThat(context.getBeansOfType(
                     DurableTestTerminalRecoveryService.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestTerminalRecoveryRuntime.class)).isEmpty();
@@ -139,6 +141,8 @@ class TestRuntimeProfileIsolationTest {
                     DurableTestRecoveryHeartbeatService.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableTestTerminalRecoveryController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableTestRecoveryStepController.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableTestTerminalRecoveryService.class)).hasSize(1);
             assertThat(context.getBeansOfType(
@@ -239,6 +243,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     DurableTestTerminalRecoveryController.class)).isEmpty();
             assertThat(context.getBeansOfType(
+                    DurableTestRecoveryStepController.class)).isEmpty();
+            assertThat(context.getBeansOfType(
                     DurableTestTerminalRecoveryService.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestTerminalRecoveryRuntime.class)).isEmpty();
@@ -330,7 +336,8 @@ class TestRuntimeProfileIsolationTest {
                 DurableWorkerQuarantineController.class,
                 WorkerQuarantineRequestIndexRolloutController.class,
                 DurableTestRecoveryHeartbeatController.class,
-                DurableTestTerminalRecoveryController.class);
+                DurableTestTerminalRecoveryController.class,
+                DurableTestRecoveryStepController.class);
         context.refresh();
         return context;
     }
