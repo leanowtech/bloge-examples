@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.dsl.GraphBuilder;
 import com.leanowtech.bloge.core.operator.Operator;
+import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate;
@@ -16,9 +17,12 @@ import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot
 import com.leanowtech.bloge.gateway.testing.domain.FixtureConsumptionStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
+import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
+import com.leanowtech.bloge.gateway.testing.planning.InvocationInventoryBuilder;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestCreationRuntime;
 import com.leanowtech.bloge.gateway.testing.runtime.GovernedExecutionServices;
 import com.leanowtech.bloge.gateway.testing.runtime.IndependentDurableTestEngineFactory;
+import com.leanowtech.bloge.gateway.testing.runtime.OperatorMicroGraphRunner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -147,6 +151,87 @@ class DurableTestExecutionCreationServiceTest {
         });
         verify(admissionGuard).checkpoint();
         verify(admissionGuard).close();
+    }
+
+    @Test
+    void createsOperatorTargetThroughTheSameAdmissionLeaseAndAtomicCommitKernel() {
+        DurableOperatorTestExecutionCreateRequest request = values.operatorRequest(
+                "operator-a", Map.of("name", "Ada"));
+        var operatorCreation = new DurableTestRecoveryAuthorizer.AuthorizedOperatorCreation(
+                values.operatorAuthorized(), Map.of(
+                "operatorInput", Map.of("name", "Ada", "typed", true)));
+        when(checkpoints.findInitialCreationResult(any(), any(), any(), any()))
+                .thenReturn(Optional.empty());
+        when(authorizer.authorizeOperatorCreation("operator-a", request, identity()))
+                .thenReturn(operatorCreation);
+        when(checkpoints.reserveInitialCreation(any()))
+                .thenReturn(values.pendingResult(true));
+        when(runtime.prepare(any(), any(), any(), any()))
+                .thenReturn(values.prepared(
+                        OperatorMicroGraphRunner.DURABLE_START_NODE_ID));
+        when(checkpoints.commitInitialCreation(any(), any(), any(), any()))
+                .thenAnswer(invocation -> values.committedResult(
+                        invocation.getArgument(1), false));
+
+        DurableTestExecutionCreateResponse response = service.createOperator(
+                "operator-a", request, identity());
+
+        assertThat(response.execution().target()).satisfies(target -> {
+            assertThat(target.kind()).isEqualTo("OPERATOR");
+            assertThat(target.id()).isEqualTo("operator-a");
+            assertThat(target.fingerprint()).isEqualTo(SHA_B);
+        });
+        assertThat(response.execution().authorizedPurpose()).isEqualTo("OPERATOR_UNIT_TEST");
+        verify(runtime).prepare(any(), org.mockito.ArgumentMatchers.same(
+                        operatorCreation.authorization()),
+                org.mockito.ArgumentMatchers.eq(operatorCreation.context()), any());
+        ArgumentCaptor<DurableTestExecutionCheckpoint> checkpoint =
+                ArgumentCaptor.forClass(DurableTestExecutionCheckpoint.class);
+        verify(checkpoints).commitInitialCreation(any(), checkpoint.capture(), any(), any());
+        assertThat(checkpoint.getValue().dependencies().target().kind()).isEqualTo("OPERATOR");
+        assertThat(checkpoint.getValue().engineState().nodeId())
+                .isEqualTo(OperatorMicroGraphRunner.DURABLE_START_NODE_ID);
+        ArgumentCaptor<AdmissionIntent> admission = ArgumentCaptor.forClass(AdmissionIntent.class);
+        verify(admissions).admit(any(), admission.capture());
+        assertThat(admission.getValue().operatorRefs())
+                .contains("operator-a")
+                .hasSize(2);
+        assertThat(admission.getValue().dependencyRefs()).containsExactly("resource-a");
+        verify(admissionGuard).checkpoint();
+        verify(admissionGuard).close();
+    }
+
+    @Test
+    void replaysDurableOperatorCreationBeforeRereadingTheOperatorRegistry() {
+        when(checkpoints.findInitialCreationResult(any(), any(), any(), any()))
+                .thenReturn(Optional.of(values.committedResult(true)));
+
+        DurableTestExecutionCreateResponse response = service.createOperator(
+                "operator-a", values.operatorRequest("operator-a", Map.of("name", "Ada")),
+                identity());
+
+        assertThat(response.idempotentReplay()).isTrue();
+        verifyNoInteractions(authorizer, runtime, admissions);
+    }
+
+    @Test
+    void rejectsDurableOperatorPathDriftAndControlInputBeforePersistence() {
+        DurableOperatorTestExecutionCreateRequest pathDrift = values.operatorRequest(
+                "operator-b", Map.of("name", "Ada"));
+        assertThatThrownBy(() -> service.createOperator("operator-a", pathDrift, identity()))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(400);
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.DURABLE_OPERATOR_CREATE_TARGET_INVALID");
+                });
+        DurableOperatorTestExecutionCreateRequest controlInput = values.operatorRequest(
+                "operator-a", Map.of("testMode", true));
+        assertThatThrownBy(() -> service.createOperator("operator-a", controlInput, identity()))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure ->
+                        assertThat(failure.problem().code())
+                                .isEqualTo("RG.TEST.CONTROL_IN_BUSINESS_CONTEXT"));
+
+        verifyNoInteractions(checkpoints, authorizer, runtime, admissions);
     }
 
     @Test
@@ -404,16 +489,62 @@ class DurableTestExecutionCreationServiceTest {
             return authorized;
         }
 
+        private DurableOperatorTestExecutionCreateRequest operatorRequest(
+                String operatorRef, Object input) {
+            return new DurableOperatorTestExecutionCreateRequest(
+                    "", "create-1", new TestExecutionApiRequest.Target(
+                    "OPERATOR", operatorRef, SHA_B), "OPERATOR_UNIT_TEST", input,
+                    new TestExecutionApiRequest.FixtureBundleRef("fixture-a", 1, SHA_C));
+        }
+
+        private DurableTestRecoveryAuthorizer.AuthorizedCreation operatorAuthorized() {
+            EffectiveExecutionPlan plan = new EffectiveExecutionPlan(
+                    EffectiveExecutionPlan.SCHEMA_VERSION, "plan-operator", SHA_A,
+                    "OPERATOR_UNIT_TEST", SHA_B, SHA_C, List.of(), List.of(), List.of(),
+                    Map.of("unmatchedExternalEffect", "DENY"), List.of());
+            DurableTestExecutionCheckpoint.ControlDependencies operatorDependencies =
+                    new DurableTestExecutionCheckpoint.ControlDependencies(
+                            plan, new DurableTestExecutionCheckpoint.ExactFixtureRef(
+                            "fixture-a", 1, SHA_C), "DENY_REAL",
+                            new DurableTestExecutionCheckpoint.AuthoritySnapshot(
+                                    "FAIL_CLOSED", SHA_D),
+                            new DurableTestExecutionCheckpoint.ExecutionTargetRef(
+                                    "OPERATOR", "operator-a", SHA_B));
+            Operator<Object, Object> operator = (input, context) -> input;
+            var graph = OperatorMicroGraphRunner.durableMicroGraph("operator-a", operator);
+            InvocationInventory inventory = new InvocationInventoryBuilder(
+                    new DefaultOperatorRegistry()).build(graph, SHA_B);
+            CompiledExecutionControl control = new CompiledExecutionControl(
+                    plan, Map.of(), List.of(), inventory, null,
+                    mock(GovernedExecutionServices.class));
+            return new DurableTestRecoveryAuthorizer.AuthorizedCreation(
+                    graph, control, Set.of("resource-a"), operatorDependencies, SHA_D);
+        }
+
         private DurableTestExecutionCheckpoint.ControlDependencies dependencies() {
             return dependencies;
         }
 
         private DurableTestCreationRuntime.PreparedCreation prepared() {
+            return prepared("approval");
+        }
+
+        private DurableTestCreationRuntime.PreparedCreation prepared(String nodeId) {
             return new DurableTestCreationRuntime.PreparedCreation(
-                    mutation(), fixtureState, serviceState, () -> { });
+                    mutation(nodeId), fixtureState, serviceState, () -> { });
         }
 
         private DurableTestExecutionCheckpointRepository.BoundEngineStateMutation mutation() {
+            return mutation("approval");
+        }
+
+        private DurableTestExecutionCheckpointRepository.BoundEngineStateMutation mutation(
+                String nodeId) {
+            DurableTestExecutionCheckpoint.EngineState selectedEngineState =
+                    "approval".equals(nodeId) ? engineState
+                            : new DurableTestExecutionCheckpoint.EngineState(
+                            "initial-run-created", nodeId, "SUSPEND", 1, 2,
+                            ProtocolFingerprint.ofText("engine-created-state-" + nodeId));
             return new DurableTestExecutionCheckpointRepository.BoundEngineStateMutation() {
                 @Override
                 public String engineExecutionId() {
@@ -422,7 +553,7 @@ class DurableTestExecutionCreationServiceTest {
 
                 @Override
                 public DurableTestExecutionCheckpoint.EngineState engineState() {
-                    return engineState;
+                    return selectedEngineState;
                 }
 
                 @Override

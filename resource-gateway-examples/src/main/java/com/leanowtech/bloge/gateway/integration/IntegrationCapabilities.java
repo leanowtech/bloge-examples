@@ -252,6 +252,8 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionQueryResponse.SCHEMA_VERSION));
             objects.put("durableTestExecutionCreateRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCreateRequest.SCHEMA_VERSION));
+            objects.put("durableOperatorTestExecutionCreateRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableOperatorTestExecutionCreateRequest.SCHEMA_VERSION));
             objects.put("durableTestExecutionCreateResponse", List.of(
                     com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCreateResponse.SCHEMA_VERSION));
             objects.put("durableTestRecoveryHeartbeatRequest", List.of(
@@ -372,6 +374,7 @@ public record IntegrationCapabilities(
         features.put("testReplayBehavior", testExecutionEndpointEnabled);
         features.put("durableTestExecutionQuery", testExecutionEndpointEnabled);
         features.put("durableTestExecutionCreation", testExecutionEndpointEnabled);
+        features.put("durableOperatorTestExecutionCreation", testExecutionEndpointEnabled);
         features.put("durableTestCreationLeaseHeartbeat", testExecutionEndpointEnabled);
         features.put("durableTestOwnerClaim", testExecutionEndpointEnabled);
         features.put("durableRecoveryDependencyReauthorization", testExecutionEndpointEnabled);
@@ -444,6 +447,8 @@ public record IntegrationCapabilities(
                     "/api/testing/durable-executions/{runId}"));
             endpoints.add(new Endpoint("POST",
                     "/api/testing/durable-executions"));
+            endpoints.add(new Endpoint("POST",
+                    "/api/testing/durable-executions/operators/{operatorRef}"));
             endpoints.add(new Endpoint("POST",
                     "/api/testing/durable-executions/{runId}/owner-claims"));
             endpoints.add(new Endpoint("POST",

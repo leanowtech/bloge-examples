@@ -547,8 +547,8 @@ binding, restore policy, and deterministic cursor/usage closure. Any mismatch ma
 `CONTROL_PLAN_UNAVAILABLE`; there is no fallback to latest configuration, system providers, or REAL
 execution.
 
-This state object remains an internal planner/runtime protocol. The public surface exposes a narrow,
-authenticated durable-run creator plus a payload-free checkpoint query and the owner-claim,
+This state object remains an internal planner/runtime protocol. The public surface exposes narrow,
+authenticated graph and operator durable-run creators plus a payload-free checkpoint query and the owner-claim,
 recovery-heartbeat, and one-signal terminal-recovery controls described below. It does not expose a
 dispatcher, worker poll API, or general multi-boundary BLOGE resume endpoint. The
 profile-gated staged BLOGE stores persist it inside
@@ -682,7 +682,73 @@ one third of the lease, and an explicit value must be a whole second no greater 
 lease. This does not forcibly cancel an uncooperative in-process operator; hard wall-clock deadlines
 still require a killable worker process or container plus lease fencing.
 
-### 4.2e Query one durable execution
+### 4.2e Create one durable operator execution
+
+Durable operator creation has its own immutable request contract instead of widening the graph v1
+schema in place. Discover the exact synchronous binding and publish an immutable fixture revision for
+that operator fingerprint first, then submit:
+
+```http
+POST /api/testing/durable-executions/operators/{operatorRef}
+Authorization: Bearer <workload-token>
+X-Purpose: TEST_EXECUTION
+Content-Type: application/json
+```
+
+```json
+{
+  "schemaVersion": "bloge.durableOperatorTestExecutionCreateRequest.v1",
+  "clientRequestId": "create-credit-score-20260717-01",
+  "target": {
+    "kind": "OPERATOR",
+    "id": "creditScore",
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "executionPurpose": "OPERATOR_UNIT_TEST",
+  "input": {
+    "customerId": "C-42",
+    "annualIncome": 180000
+  },
+  "fixtureBundleRef": {
+    "fixtureBundleId": "credit-score-fixture",
+    "revision": 4,
+    "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  }
+}
+```
+
+The path and body target must match exactly. The target fingerprint, stored fixture revision and
+fingerprint, and `OPERATOR_UNIT_TEST` purpose are mandatory. Inline/latest fixtures, caller-owned
+context, owner/lease fields, and test-control keys hidden in the formal input are rejected. Input is
+bounded to 1 MiB. After exact binding verification, the server converts it with the frozen operator
+metadata and stores the converted value under the server-owned `operatorInput` context key. It then
+creates the canonical `durable-operator-test:{operatorRef}` BLOGE graph: the source is the read-only,
+idempotent `durable-operator-start` gate and the exact `subject` binding runs only after that gate.
+Callers cannot inject either internal node or the context key.
+
+Committed and rejected outcomes use the same tenant/environment-scoped durable command namespace as
+graph creation. A retry is therefore replayed before the mutable operator registry or fixture store is
+read, while reuse of the same `clientRequestId` for a different graph/operator intent returns the
+existing idempotency conflict. Fresh work enters the same four-dimensional admission gate,
+database-time preparation lease, staged execution/checkpoint/wait/work-item aggregate, revision-zero
+checkpoint commit, and transaction-bound audit path. The response remains
+`bloge.durableTestExecutionCreateResponse.v1`, with `target.kind=OPERATOR` and
+`authorizedPurpose=OPERATOR_UNIT_TEST`; it never contains raw or converted input.
+
+Fresh creation always reaches exactly one server-owned signal suspension at
+`durable-operator-start`; `subject` has not been invoked when revision zero commits. A later terminal
+recovery must signal that exact gate. The gate ignores signal data, then the subject consumes the
+already-persisted formal input and executes with the same frozen binding, fixture cursor, provider
+state, authority, side-effect policy, admission permit, and lease fence. The isolated runtime proves
+that a cold recovery invokes the subject exactly once. As with graph recovery, ambiguous response
+replay returns the committed terminal result without reapplying the signal or operator mutation.
+
+The internal gate is included in the compiled invocation inventory and therefore consumes a
+conservative operator admission slot alongside `subject`; caller fixtures must not target it. This
+capability does not add worker polling, multi-boundary orchestration, hard cancellation, or complete
+pre-checkpoint trace evidence.
+
+### 4.2f Query one durable execution
 
 The profile-gated read endpoint accepts only authenticated `TEST_EXECUTION` or `TEST_REPLAY`
 purposes:
@@ -744,7 +810,7 @@ operations but has no `target`, sets `migrationRequired=true`, and is never repo
 query is an observation, not a lease reservation or bearer capability; callers must still submit the
 entire returned fence to owner claim, which rechecks live state and current authorization.
 
-### 4.2f Claim, renew, and terminally recover an exact durable fence
+### 4.2g Claim, renew, and terminally recover an exact durable fence
 
 The three public recovery-control commands exist only under `test` or `staging` and require
 `TEST_EXECUTION` or `TEST_REPLAY` purpose:
@@ -812,7 +878,7 @@ override it with a whole-second value from `1` through one third of the lease. T
 already claimed fence alive. It does not discover work, execute or cancel BLOGE, publish terminal
 evidence, or make cold-start durable resume complete.
 
-### 4.2f Execute one terminal cold recovery
+### 4.2h Execute one terminal cold recovery
 
 The terminal-recovery request consumes the latest exact fence returned by owner claim or heartbeat:
 
@@ -887,7 +953,7 @@ This endpoint is deliberately terminal-only and synchronous. It does not poll a 
 separate worker process, accept multiple signals, enforce a hard process deadline, assemble complete
 signed historical evidence, or turn Resource Gateway into a general durable worker runtime.
 
-### 4.2g Operate the durable projection finding queue
+### 4.2i Operate the durable projection finding queue
 
 The anti-entropy finding table cannot reliably prove tenant ownership, so these endpoints are not
 ordinary tenant APIs. They require all of the following: `test` or `staging`, the exact
@@ -1990,7 +2056,7 @@ Implemented now:
 - independent datasource, tables, retention, evidence sanitization, and security events;
 - immutable plan plus graph/operator/resource dependency fingerprints;
 - profile-sensitive capability probe and production control-field guard.
-- profile-gated authenticated durable graph creation, payload-free execution query, v2 owner claim,
+- profile-gated authenticated durable graph and operator creation, payload-free execution query, v2 owner claim,
   authenticated heartbeat, and one-signal terminal recovery,
   with exact hidden-dispatch lookup, principal and reauthorization continuity, database-time fencing,
   immutable pre-execution replay, isolated cold execution, and atomic BLOGE/checkpoint/receipt/audit
@@ -2047,8 +2113,8 @@ Still intentionally outside this increment:
   queued priority/fairness scheduling, remote worker acquisition, adaptive quota/autoscaling, external
   alert routing, and suite-history list/trend APIs; database-authoritative immediate admission now
   enforces tenant/suite/operator/dependency capacity, but it is not a scheduler;
-- operator-target durable creation, dispatcher/polling, cross-process recovery supervision and
-  multi-boundary recovery orchestration, hard worker cancellation, typed identity/flag/secret
+- dispatcher/polling, cross-process recovery supervision and multi-boundary recovery orchestration,
+  hard worker cancellation, typed identity/flag/secret
   authorities, explicit
   streaming offset/checkpoint recovery, and deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;

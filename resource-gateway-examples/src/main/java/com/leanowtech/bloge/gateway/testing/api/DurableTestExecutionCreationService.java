@@ -25,13 +25,14 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
- * Authenticated orchestrator for one caller-idempotent durable graph-test creation.
+ * Authenticated orchestrator for caller-idempotent durable graph and operator-test creation.
  *
  * <p>The service resolves a committed command before rereading mutable dependency authorities.
- * Fresh work then freezes the exact graph, fixture, replay, identity-authority, and execution plan,
- * acquires a database-time preparation fence, executes in the isolated staged engine, and commits
- * the initial checkpoint, four-store aggregate, immutable command result, and semantic audit as one
- * local transaction. Business context never enters command, response, or audit records.</p>
+ * Fresh work then freezes the exact graph or operator micro-graph, fixture, replay,
+ * identity-authority, and execution plan, acquires a database-time preparation fence, executes in
+ * the isolated staged engine, and commits the initial checkpoint, four-store aggregate, immutable
+ * command result, and semantic audit as one local transaction. Business input never enters command,
+ * response, or audit records.</p>
  */
 public final class DurableTestExecutionCreationService {
 
@@ -127,6 +128,48 @@ public final class DurableTestExecutionCreationService {
 
         DurableTestRecoveryAuthorizer.AuthorizedCreation authorized =
                 authorizer.authorizeCreation(request, identity);
+        return createAuthorized(request.clientRequestId(), requestFingerprint, authorized,
+                request.context(), identity);
+    }
+
+    /**
+     * Creates or replays one durable operator unit test at its first unambiguous signal suspension.
+     *
+     * <p>Idempotent replay is resolved before the mutable operator registry or fixture authority is
+     * read. Fresh creation delegates input conversion and exact binding authorization to
+     * {@link DurableTestRecoveryAuthorizer}, then uses the same admission, lease, staged-store, and
+     * atomic commit path as durable graph creation.</p>
+     *
+     * @param operatorRef path-bound operator registry reference
+     * @param request exact public durable operator creation intent
+     * @param identity verified test-execution identity
+     * @return payload-free initial suspended execution view
+     */
+    public DurableTestExecutionCreateResponse createOperator(
+            String operatorRef,
+            DurableOperatorTestExecutionCreateRequest request,
+            IntegrationRequestContext identity) {
+        requireIdentity(identity);
+        validateOperatorRequest(operatorRef, request, identity);
+        String requestFingerprint = requestFingerprint(request, identity);
+        DurableTestExecutionCheckpointRepository.InitialCreationReservationResult prior =
+                findPrior(request.clientRequestId(), requestFingerprint, identity);
+        if (prior != null) {
+            return terminalResponse(prior, identity);
+        }
+
+        DurableTestRecoveryAuthorizer.AuthorizedOperatorCreation operatorCreation =
+                authorizer.authorizeOperatorCreation(operatorRef, request, identity);
+        return createAuthorized(request.clientRequestId(), requestFingerprint,
+                operatorCreation.authorization(), operatorCreation.context(), identity);
+    }
+
+    private DurableTestExecutionCreateResponse createAuthorized(
+            String clientRequestId,
+            String requestFingerprint,
+            DurableTestRecoveryAuthorizer.AuthorizedCreation authorized,
+            Map<String, Object> context,
+            IntegrationRequestContext identity) {
         AdmissionSubjects subjects = AdmissionSubjects.from(
                 authorized.control(), authorized.dependencyRefs());
         String admissionFingerprint = ProtocolFingerprint.of(objectMapper, Map.of(
@@ -136,23 +179,24 @@ public final class DurableTestExecutionCreationService {
                 "operatorRefs", subjects.operatorRefs(),
                 "dependencyRefs", subjects.dependencyRefs()));
         AdmissionIntent intent = new AdmissionIntent(
-                Kind.DURABLE_CREATION, request.clientRequestId(), admissionFingerprint, "",
+                Kind.DURABLE_CREATION, clientRequestId, admissionFingerprint, "",
                 subjects.operatorRefs(), subjects.dependencyRefs());
         try (AdmissionGuard admission = admissions.admit(identity, intent)) {
             DurableTestExecutionCreateResponse response = createAdmitted(
-                    request, requestFingerprint, authorized, identity);
+                    clientRequestId, requestFingerprint, authorized, context, identity);
             admission.checkpoint();
             return response;
         }
     }
 
     private DurableTestExecutionCreateResponse createAdmitted(
-            DurableTestExecutionCreateRequest request,
+            String clientRequestId,
             String requestFingerprint,
             DurableTestRecoveryAuthorizer.AuthorizedCreation authorized,
+            Map<String, Object> context,
             IntegrationRequestContext identity) {
         var command = new DurableTestExecutionCheckpointRepository.InitialCreationCommand(
-                request.clientRequestId(), requestFingerprint,
+                clientRequestId, requestFingerprint,
                 authorized.authorizationFingerprint(), scope(identity),
                 UUID.randomUUID().toString(), "engine-" + UUID.randomUUID(),
                 leases.ownerId(), leases.leaseDuration());
@@ -168,17 +212,17 @@ public final class DurableTestExecutionCreationService {
                             "runId", reserved.reservation().runId(),
                             "leaseExpiresAt", reserved.reservation().leaseExpiresAt().toString()));
         }
-        return executeAcquired(request, authorized, reserved.reservation(), identity);
+        return executeAcquired(context, authorized, reserved.reservation(), identity);
     }
 
     private DurableTestExecutionCreateResponse executeAcquired(
-            DurableTestExecutionCreateRequest request,
+            Map<String, Object> context,
             DurableTestRecoveryAuthorizer.AuthorizedCreation authorized,
             DurableTestExecutionCheckpointRepository.InitialCreationReservation reservation,
             IntegrationRequestContext identity) {
         try (DurableTestCreationLeaseCoordinator.LeaseGuard guard = leases.monitor(reservation)) {
             try (DurableTestCreationRuntime.PreparedCreation prepared = runtime.prepare(
-                    reservation.engineExecutionId(), authorized, request.context(),
+                    reservation.engineExecutionId(), authorized, context,
                     "initial-" + reservation.runId())) {
                 if (!prepared.executionServiceState().restorable()) {
                     return reject(guard.freeze(),
@@ -316,13 +360,44 @@ public final class DurableTestExecutionCreationService {
     }
 
     private String requestFingerprint(
-            DurableTestExecutionCreateRequest request,
+            Object request,
             IntegrationRequestContext identity) {
         return ProtocolFingerprint.of(objectMapper, Map.of(
                 "schemaVersion", "bloge.durableTestCreationAuthenticatedIntent.v1",
                 "request", request,
                 "principalFingerprint", DurableTestRecoveryPrincipal.fingerprint(
                         objectMapper, identity)));
+    }
+
+    private void validateOperatorRequest(
+            String operatorRef,
+            DurableOperatorTestExecutionCreateRequest request,
+            IntegrationRequestContext identity) {
+        if (request == null || !DurableOperatorTestExecutionCreateRequest.SCHEMA_VERSION.equals(
+                request.schemaVersion())) {
+            throw badRequest(identity, "RG.TEST.DURABLE_OPERATOR_CREATE_SCHEMA_VERSION_INVALID",
+                    "Unsupported durable operator creation request schemaVersion.", Map.of());
+        }
+        if (!IDENTIFIER.matcher(request.clientRequestId()).matches()) {
+            throw badRequest(identity, "RG.TEST.DURABLE_CREATE_REQUEST_ID_INVALID",
+                    "clientRequestId must be a bounded stable identifier.", Map.of());
+        }
+        if (!TestExecutionApiService.AUTHORIZED_OPERATOR_PURPOSE.equals(
+                request.executionPurpose())) {
+            throw badRequest(identity, "RG.TEST.DURABLE_OPERATOR_CREATE_PURPOSE_INVALID",
+                    "executionPurpose must explicitly be OPERATOR_UNIT_TEST.", Map.of());
+        }
+        String pathRef = operatorRef == null ? "" : operatorRef.trim();
+        if (!IDENTIFIER.matcher(pathRef).matches() || request.target() == null
+                || !"OPERATOR".equals(request.target().kind())
+                || !pathRef.equals(request.target().id())
+                || !FINGERPRINT.matcher(request.target().fingerprint()).matches()) {
+            throw badRequest(identity, "RG.TEST.DURABLE_OPERATOR_CREATE_TARGET_INVALID",
+                    "Path and request must identify the same exact OPERATOR target.", Map.of());
+        }
+        validateFixture(request.fixtureBundleRef(), identity);
+        rejectControlKeys(request.input(), identity);
+        requireBounded(request.input(), "input", identity);
     }
 
     private void validateRequest(
@@ -347,7 +422,14 @@ public final class DurableTestExecutionCreationService {
             throw badRequest(identity, "RG.TEST.DURABLE_CREATE_TARGET_INVALID",
                     "An exact GRAPH target id and fingerprint are required.", Map.of());
         }
-        var fixture = request.fixtureBundleRef();
+        validateFixture(request.fixtureBundleRef(), identity);
+        rejectControlKeys(request.context(), identity);
+        requireBounded(request.context(), "context", identity);
+    }
+
+    private void validateFixture(
+            TestExecutionApiRequest.FixtureBundleRef fixture,
+            IntegrationRequestContext identity) {
         if (fixture == null || !IDENTIFIER.matcher(fixture.fixtureBundleId()).matches()
                 || fixture.revision() <= 0
                 || !FINGERPRINT.matcher(fixture.fingerprint()).matches()) {
@@ -355,21 +437,32 @@ public final class DurableTestExecutionCreationService {
                     "An exact stored fixture id, positive revision, and fingerprint are required.",
                     Map.of());
         }
-        request.context().keySet().stream().map(DurableTestExecutionCreationService::compactKey)
+    }
+
+    private void rejectControlKeys(Object input, IntegrationRequestContext identity) {
+        if (!(input instanceof Map<?, ?> map)) {
+            return;
+        }
+        map.keySet().stream().filter(Objects::nonNull).map(Object::toString)
+                .map(DurableTestExecutionCreationService::compactKey)
                 .filter(CONTROL_CONTEXT_KEYS::contains).findFirst().ifPresent(key -> {
                     throw badRequest(identity, "RG.TEST.CONTROL_IN_BUSINESS_CONTEXT",
-                            "Execution controls must never enter business context.",
+                            "Execution controls must never enter business input.",
                             Map.of("field", key));
                 });
+    }
+
+    private void requireBounded(
+            Object value, String field, IntegrationRequestContext identity) {
         try {
-            if (objectMapper.writeValueAsBytes(request.context()).length > MAX_CONTEXT_BYTES) {
+            if (objectMapper.writeValueAsBytes(value).length > MAX_CONTEXT_BYTES) {
                 throw badRequest(identity, "RG.TEST.REQUEST_FIELD_TOO_LARGE",
-                        "context exceeds the bounded durable creation protocol size.",
-                        Map.of("field", "context", "maximumBytes", MAX_CONTEXT_BYTES));
+                        field + " exceeds the bounded durable creation protocol size.",
+                        Map.of("field", field, "maximumBytes", MAX_CONTEXT_BYTES));
             }
         } catch (JsonProcessingException invalid) {
             throw badRequest(identity, "RG.TEST.REQUEST_FIELD_INVALID",
-                    "context cannot be serialized as protocol JSON.", Map.of("field", "context"));
+                    field + " cannot be serialized as protocol JSON.", Map.of("field", field));
         }
     }
 

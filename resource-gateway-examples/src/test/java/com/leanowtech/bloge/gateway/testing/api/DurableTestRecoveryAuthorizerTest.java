@@ -84,6 +84,57 @@ class DurableTestRecoveryAuthorizerTest {
     }
 
     @Test
+    void authorizesFreshOperatorCreationThroughCanonicalTypedMicroGraph() {
+        Scenario scenario = Scenario.operator();
+        DurableOperatorTestExecutionCreateRequest request = operatorCreationRequest(
+                scenario, "operator-a", Map.of("value", "Ada"));
+
+        DurableTestRecoveryAuthorizer.AuthorizedOperatorCreation created =
+                scenario.authorizer().authorizeOperatorCreation(
+                        "operator-a", request, identity("CONFIDENTIAL"));
+
+        assertThat(created.authorization().graph().name())
+                .isEqualTo("durable-operator-test:operator-a");
+        assertThat(created.authorization().graph().sourceNodes())
+                .containsExactly(OperatorMicroGraphRunner.DURABLE_START_NODE_ID);
+        assertThat(created.authorization().dependencies()).satisfies(dependencies -> {
+            assertThat(dependencies.target().kind()).isEqualTo("OPERATOR");
+            assertThat(dependencies.target().id()).isEqualTo("operator-a");
+            assertThat(dependencies.plan().authorizedPurpose()).isEqualTo("OPERATOR_UNIT_TEST");
+            assertThat(dependencies.fixture())
+                    .isEqualTo(scenario.checkpoint().dependencies().fixture());
+        });
+        assertThat(created.context()).containsOnly(
+                org.assertj.core.data.MapEntry.entry("operatorInput", "Ada"));
+    }
+
+    @Test
+    void freshOperatorCreationRejectsPathDriftBeforeFixtureResolution() {
+        Scenario scenario = Scenario.operator();
+
+        assertUnavailable(() -> scenario.authorizer().authorizeOperatorCreation(
+                "operator-b", operatorCreationRequest(
+                        scenario, "operator-a", Map.of("value", "Ada")),
+                identity("CONFIDENTIAL")), "TARGET");
+    }
+
+    @Test
+    void freshOperatorCreationRejectsInputThatCannotSatisfyTheFrozenType() {
+        Scenario scenario = Scenario.operator();
+
+        assertThatThrownBy(() -> scenario.authorizer().authorizeOperatorCreation(
+                "operator-a", operatorCreationRequest(
+                        scenario, "operator-a", Map.of("left", 1, "right", 2)),
+                identity("CONFIDENTIAL")))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(400);
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.DURABLE_OPERATOR_INPUT_INVALID");
+                    assertThat(failure.problem().details()).isEmpty();
+                });
+    }
+
+    @Test
     void reauthorizesAndRecompilesAnExactGraphClosure() {
         Scenario scenario = Scenario.graph();
 
@@ -111,7 +162,22 @@ class DurableTestRecoveryAuthorizerTest {
     void reauthorizesAnOperatorThroughTheCanonicalMicroGraph() {
         Scenario scenario = Scenario.operator();
 
-        scenario.authorizer().authorize(scenario.checkpoint(), identity("CONFIDENTIAL"));
+        DurableTestRecoveryAuthorizer.AuthorizedRecovery recovered =
+                scenario.authorizer().authorize(
+                        scenario.checkpoint(), identity("CONFIDENTIAL"));
+
+        assertThat(recovered.graph().name()).isEqualTo("durable-operator-test:operator-a");
+    }
+
+    @Test
+    void preservesLegacyOneNodeOperatorCheckpointReconstruction() {
+        Scenario scenario = Scenario.legacyOperator();
+
+        DurableTestRecoveryAuthorizer.AuthorizedRecovery recovered =
+                scenario.authorizer().authorize(
+                        scenario.checkpoint(), identity("CONFIDENTIAL"));
+
+        assertThat(recovered.graph().name()).isEqualTo("operator-test:operator-a");
     }
 
     @Test
@@ -202,6 +268,20 @@ class DurableTestRecoveryAuthorizerTest {
                         dependencies.fixture().fingerprint()));
     }
 
+    private static DurableOperatorTestExecutionCreateRequest operatorCreationRequest(
+            Scenario scenario, String operatorRef, Object input) {
+        DurableTestExecutionCheckpoint.ControlDependencies dependencies =
+                scenario.checkpoint().dependencies();
+        return new DurableOperatorTestExecutionCreateRequest(
+                "", "create-operator-1", new TestExecutionApiRequest.Target(
+                "OPERATOR", operatorRef, dependencies.target().fingerprint()),
+                "OPERATOR_UNIT_TEST", input,
+                new TestExecutionApiRequest.FixtureBundleRef(
+                        dependencies.fixture().fixtureBundleId(),
+                        dependencies.fixture().revision(),
+                        dependencies.fixture().fingerprint()));
+    }
+
     private static IntegrationRequestContext identity(
             String region, String correlationId, String clearance) {
         return new IntegrationRequestContext("tenant-a", "org-a", "project-a", "test",
@@ -245,6 +325,14 @@ class DurableTestRecoveryAuthorizerTest {
         }
 
         private static Scenario operator() {
+            return operator(true);
+        }
+
+        private static Scenario legacyOperator() {
+            return operator(false);
+        }
+
+        private static Scenario operator(boolean startGated) {
             ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
             DefaultOperatorRegistry operators = new DefaultOperatorRegistry();
             operators.register("operator-a", new ReadOnlyOperator());
@@ -253,7 +341,10 @@ class DurableTestRecoveryAuthorizerTest {
             GatewayGraphService graphService = mock(GatewayGraphService.class);
             OperatorExecutionTargetSnapshot target = OperatorExecutionTargetSnapshot.capture(
                     mapper, "operator-a", operators, resources);
-            Graph graph = OperatorMicroGraphRunner.microGraph(
+            Graph graph = startGated
+                    ? OperatorMicroGraphRunner.durableMicroGraph(
+                    target.operatorRef(), target.synchronousOperator())
+                    : OperatorMicroGraphRunner.microGraph(
                     target.operatorRef(), target.synchronousOperator());
             return scenario(mapper, operators, resources, graphService, graph,
                     "OPERATOR", "operator-a", target.fingerprint(), "OPERATOR_UNIT_TEST");
@@ -307,6 +398,12 @@ class DurableTestRecoveryAuthorizerTest {
             when(checkpoint.dependencies()).thenReturn(dependencies);
             when(checkpoint.executionServiceState()).thenReturn(
                     compiled.executionServices().snapshotState());
+            DurableTestExecutionCheckpoint.EngineState engineState =
+                    mock(DurableTestExecutionCheckpoint.EngineState.class);
+            when(engineState.nodeId()).thenReturn(executionGraph.sourceNodes().contains(
+                    OperatorMicroGraphRunner.DURABLE_START_NODE_ID)
+                    ? OperatorMicroGraphRunner.DURABLE_START_NODE_ID : "subject");
+            when(checkpoint.engineState()).thenReturn(engineState);
             DurableTestRecoveryAuthorizer authorizer = new DurableTestRecoveryAuthorizer(
                     graphService, operators, resources, fixtures, replay, authority, mapper);
             when(checkpoint.runId()).thenReturn("run-a");
@@ -317,9 +414,9 @@ class DurableTestRecoveryAuthorizerTest {
         }
     }
 
-    private static final class ReadOnlyOperator implements Operator<Object, Object> {
+    private static final class ReadOnlyOperator implements Operator<String, String> {
         @Override
-        public Object execute(Object input, OperatorContext context) {
+        public String execute(String input, OperatorContext context) {
             return input;
         }
 

@@ -88,6 +88,38 @@ class DurableTestExecutionCreationControllerTest {
         verifyNoInteractions(service);
     }
 
+    @Test
+    void authenticatesPathBoundDurableOperatorCreation() throws Exception {
+        DurableTestExecutionCreationService service = mock(
+                DurableTestExecutionCreationService.class);
+        when(service.createOperator(any(), any(), any())).thenReturn(
+                response("OPERATOR", "operator-a", "OPERATOR_UNIT_TEST"));
+        MockMvc mvc = mvc(service, Set.of("TEST_EXECUTION"));
+
+        mvc.perform(post("/api/testing/durable-executions/operators/operator-a")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_EXECUTION")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(operatorRequestJson()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.execution.target.kind").value("OPERATOR"))
+                .andExpect(jsonPath("$.execution.target.id").value("operator-a"))
+                .andExpect(jsonPath("$.execution.authorizedPurpose")
+                        .value("OPERATOR_UNIT_TEST"))
+                .andExpect(jsonPath("$.execution.context").doesNotExist());
+
+        verify(service).createOperator(
+                org.mockito.ArgumentMatchers.eq("operator-a"),
+                org.mockito.ArgumentMatchers.argThat(request ->
+                        request.clientRequestId().equals("create-operator-1")
+                                && request.target().kind().equals("OPERATOR")
+                                && request.target().id().equals("operator-a")
+                                && request.input() instanceof java.util.Map<?, ?>),
+                org.mockito.ArgumentMatchers.argThat(identity ->
+                        identity.tenantId().equals("tenant-a")
+                                && identity.purpose().equals("TEST_EXECUTION")));
+    }
+
     private static String requestJson() {
         return """
                 {
@@ -103,17 +135,37 @@ class DurableTestExecutionCreationControllerTest {
                 """.formatted(sha('a'), sha('f'));
     }
 
+    private static String operatorRequestJson() {
+        return """
+                {
+                  "schemaVersion": "bloge.durableOperatorTestExecutionCreateRequest.v1",
+                  "clientRequestId": "create-operator-1",
+                  "target": {"kind": "OPERATOR", "id": "operator-a", "fingerprint": "%s"},
+                  "executionPurpose": "OPERATOR_UNIT_TEST",
+                  "input": {"customerId": "c-1"},
+                  "fixtureBundleRef": {
+                    "fixtureBundleId": "fixture-a", "revision": 3, "fingerprint": "%s"
+                  }
+                }
+                """.formatted(sha('a'), sha('f'));
+    }
+
     private static DurableTestExecutionCreateResponse response() {
+        return response("GRAPH", "graph-a", "GRAPH_CONTRACT_TEST");
+    }
+
+    private static DurableTestExecutionCreateResponse response(
+            String targetKind, String targetId, String purpose) {
         return new DurableTestExecutionCreateResponse("",
                 new DurableTestExecutionQueryResponse(
                         "", "run-a", "engine-a", "SUSPENDED",
                         new DurableTestExecutionQueryResponse.Fence("owner-a", 1, 0),
                         Instant.parse("2026-07-17T00:03:00Z"),
                         new DurableTestExecutionQueryResponse.Target(
-                                "GRAPH", "graph-a", sha('a')),
+                                targetKind, targetId, sha('a')),
                         new DurableTestExecutionQueryResponse.Fixture(
                                 "fixture-a", 3, sha('f')),
-                        "GRAPH_CONTRACT_TEST", "DENY_REAL", sha('b'), sha('d'), sha('c'),
+                        purpose, "DENY_REAL", sha('b'), sha('d'), sha('c'),
                         new DurableTestExecutionQueryResponse.EngineBoundary(
                                 "checkpoint-a", "approval", "SUSPEND", 1, 7, sha('e')),
                         sha('a'), Instant.parse("2026-07-17T00:00:00Z"),

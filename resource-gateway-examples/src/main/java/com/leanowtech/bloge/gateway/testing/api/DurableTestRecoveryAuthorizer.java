@@ -19,9 +19,11 @@ import com.leanowtech.bloge.gateway.testing.evidence.OperatorExecutionTargetSnap
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
+import com.leanowtech.bloge.gateway.testing.runtime.OperatorInputCoercer;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorMicroGraphRunner;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -96,7 +98,7 @@ public class DurableTestRecoveryAuthorizer {
             throw unavailable(identity, "CHECKPOINT");
         }
         requireAuthority(dependencies, identity);
-        AuthorizedTarget authorizedTarget = resolveTarget(target, identity);
+        AuthorizedTarget authorizedTarget = resolveRecoveryTarget(checkpoint, target, identity);
         FixtureBundle fixture = resolveFixture(dependencies, identity);
         ResolvedReplayPayloads replays = resolveReplays(fixture, identity);
         if (!replays.planDependencies().equals(dependencies.plan().replayDependencies())) {
@@ -186,8 +188,69 @@ public class DurableTestRecoveryAuthorizer {
             throw dependencyStoreUnavailable(identity, "TARGET");
         }
 
-        TestExecutionApiRequest.FixtureBundleRef requestedFixture = Objects.requireNonNull(
-                requiredRequest.fixtureBundleRef(), "fixtureBundleRef");
+        return authorizeFreshCreation(authorizedTarget, target,
+                requiredRequest.fixtureBundleRef(), TestExecutionApiService.AUTHORIZED_PURPOSE,
+                identity);
+    }
+
+    /**
+     * Freezes a fresh durable operator test and converts its formal input after target verification.
+     *
+     * <p>The returned context is server-derived for the canonical start-gated micro graph. The caller
+     * cannot inject the internal {@code operatorInput} context key directly. Input conversion and
+     * exact binding resolution happen only after the idempotent command replay lookup performed by
+     * the application service.</p>
+     *
+     * @param operatorRef path-bound operator registry reference
+     * @param request exact durable operator creation request
+     * @param identity verified non-production execution identity
+     * @return exact executable authorization plus its server-derived micro-graph context
+     */
+    public AuthorizedOperatorCreation authorizeOperatorCreation(
+            String operatorRef,
+            DurableOperatorTestExecutionCreateRequest request,
+            IntegrationRequestContext identity) {
+        DurableOperatorTestExecutionCreateRequest requiredRequest = Objects.requireNonNull(
+                request, "request");
+        Objects.requireNonNull(identity, "identity").requireComplete();
+        TestExecutionApiRequest.Target requestedTarget = Objects.requireNonNull(
+                requiredRequest.target(), "target");
+        DurableTestExecutionCheckpoint.ExecutionTargetRef target =
+                new DurableTestExecutionCheckpoint.ExecutionTargetRef(
+                        requestedTarget.kind(), requestedTarget.id(),
+                        requestedTarget.fingerprint());
+        if (!"OPERATOR".equals(target.kind()) || !normalized(operatorRef).equals(target.id())) {
+            throw unavailable(identity, "TARGET");
+        }
+        AuthorizedOperatorTarget operatorTarget = resolveOperatorTarget(target, identity);
+        Object typedInput;
+        try {
+            typedInput = OperatorInputCoercer.coerce(
+                    requiredRequest.input(), operatorTarget.snapshot().metadata(), objectMapper);
+        } catch (IllegalArgumentException invalidInput) {
+            throw new IntegrationProblemException(IntegrationProblem.badRequest(
+                    "RG.TEST.DURABLE_OPERATOR_INPUT_INVALID",
+                    "Durable operator input does not satisfy the exact operator contract.",
+                    identity.correlationId(), Map.of()));
+        }
+        AuthorizedCreation authorization = authorizeFreshCreation(
+                operatorTarget.target(), target, requiredRequest.fixtureBundleRef(),
+                TestExecutionApiService.AUTHORIZED_OPERATOR_PURPOSE, identity);
+        Map<String, Object> context = new LinkedHashMap<>();
+        if (typedInput != null) {
+            context.put("operatorInput", typedInput);
+        }
+        return new AuthorizedOperatorCreation(authorization, context);
+    }
+
+    private AuthorizedCreation authorizeFreshCreation(
+            AuthorizedTarget authorizedTarget,
+            DurableTestExecutionCheckpoint.ExecutionTargetRef target,
+            TestExecutionApiRequest.FixtureBundleRef requestedFixture,
+            String authorizedPurpose,
+            IntegrationRequestContext identity) {
+
+        Objects.requireNonNull(requestedFixture, "fixtureBundleRef");
         DurableTestExecutionCheckpoint.ExactFixtureRef fixtureRef =
                 new DurableTestExecutionCheckpoint.ExactFixtureRef(
                         requestedFixture.fixtureBundleId(), requestedFixture.revision(),
@@ -199,7 +262,7 @@ public class DurableTestRecoveryAuthorizer {
         CompiledExecutionControl compiled;
         try {
             compiled = compiler.compile(authorizedTarget.graph(), fixture,
-                    TestExecutionApiService.AUTHORIZED_PURPOSE,
+                    authorizedPurpose,
                     target.fingerprint(), replays);
         } catch (IllegalArgumentException rejected) {
             throw unavailable(identity, "PLAN");
@@ -261,19 +324,56 @@ public class DurableTestRecoveryAuthorizer {
                             snapshot.graph(), snapshot.dependencyFingerprints().keySet());
                 }
                 case "OPERATOR" -> {
-                    OperatorExecutionTargetSnapshot snapshot =
-                            OperatorExecutionTargetSnapshot.capture(objectMapper, target.id(),
-                                    operatorRegistry, resourceRegistry);
-                    if (!snapshot.executionSupported()
-                            || !target.fingerprint().equals(snapshot.fingerprint())) {
-                        throw unavailable(identity, "TARGET");
-                    }
-                    yield new AuthorizedTarget(OperatorMicroGraphRunner.microGraph(
-                            snapshot.operatorRef(), snapshot.synchronousOperator()),
-                            snapshot.resourceDependencyFingerprints().keySet());
+                    yield resolveOperatorTarget(target, identity, false).target();
                 }
                 default -> throw unavailable(identity, "TARGET");
             };
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (IllegalArgumentException absentOrInvalid) {
+            throw unavailable(identity, "TARGET");
+        } catch (RuntimeException infrastructure) {
+            throw dependencyStoreUnavailable(identity, "TARGET");
+        }
+    }
+
+    private AuthorizedTarget resolveRecoveryTarget(
+            DurableTestExecutionCheckpoint checkpoint,
+            DurableTestExecutionCheckpoint.ExecutionTargetRef target,
+            IntegrationRequestContext identity) {
+        if (!"OPERATOR".equals(target.kind())) {
+            return resolveTarget(target, identity);
+        }
+        boolean startGated = checkpoint.engineState() != null
+                && OperatorMicroGraphRunner.DURABLE_START_NODE_ID.equals(
+                checkpoint.engineState().nodeId());
+        return resolveOperatorTarget(target, identity, startGated).target();
+    }
+
+    private AuthorizedOperatorTarget resolveOperatorTarget(
+            DurableTestExecutionCheckpoint.ExecutionTargetRef target,
+            IntegrationRequestContext identity) {
+        return resolveOperatorTarget(target, identity, true);
+    }
+
+    private AuthorizedOperatorTarget resolveOperatorTarget(
+            DurableTestExecutionCheckpoint.ExecutionTargetRef target,
+            IntegrationRequestContext identity,
+            boolean startGated) {
+        try {
+            OperatorExecutionTargetSnapshot snapshot = OperatorExecutionTargetSnapshot.capture(
+                    objectMapper, target.id(), operatorRegistry, resourceRegistry);
+            if (!snapshot.executionSupported()
+                    || !target.fingerprint().equals(snapshot.fingerprint())) {
+                throw unavailable(identity, "TARGET");
+            }
+            return new AuthorizedOperatorTarget(new AuthorizedTarget(
+                    startGated
+                            ? OperatorMicroGraphRunner.durableMicroGraph(
+                            snapshot.operatorRef(), snapshot.synchronousOperator())
+                            : OperatorMicroGraphRunner.microGraph(
+                            snapshot.operatorRef(), snapshot.synchronousOperator()),
+                    snapshot.resourceDependencyFingerprints().keySet()), snapshot);
         } catch (IntegrationProblemException expected) {
             throw expected;
         } catch (IllegalArgumentException absentOrInvalid) {
@@ -378,6 +478,14 @@ public class DurableTestRecoveryAuthorizer {
         }
     }
 
+    private record AuthorizedOperatorTarget(
+            AuthorizedTarget target, OperatorExecutionTargetSnapshot snapshot) {
+        private AuthorizedOperatorTarget {
+            Objects.requireNonNull(target, "target");
+            Objects.requireNonNull(snapshot, "snapshot");
+        }
+    }
+
     /**
      * Server-internal executable closure paired with its payload-free durable authorization proof.
      *
@@ -448,6 +556,21 @@ public class DurableTestRecoveryAuthorizer {
                 throw new IllegalArgumentException(
                         "Creation authorization fingerprint must be canonical SHA-256");
             }
+        }
+    }
+
+    /**
+     * Fresh operator authorization paired with the only business context accepted by its micro graph.
+     *
+     * @param authorization exact payload-free durable dependency closure
+     * @param context server-derived context containing only the converted formal operator input
+     */
+    public record AuthorizedOperatorCreation(
+            AuthorizedCreation authorization, Map<String, Object> context) {
+        /** Requires the authorization and freezes the top-level server-owned context. */
+        public AuthorizedOperatorCreation {
+            authorization = Objects.requireNonNull(authorization, "authorization");
+            context = context == null ? Map.of() : Map.copyOf(context);
         }
     }
 }

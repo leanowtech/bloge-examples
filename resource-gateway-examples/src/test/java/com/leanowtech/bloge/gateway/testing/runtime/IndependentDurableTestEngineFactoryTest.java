@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -57,6 +58,38 @@ class IndependentDurableTestEngineFactoryTest {
             }
 
             assertThat(harness.store().executionStore().get("engine-initial-signal"))
+                    .isEmpty();
+        }
+    }
+
+    @Test
+    void durableOperatorGraphCommitsItsStartGateBeforeInvokingTheBusinessBinding() {
+        try (Harness harness = harness("durable-operator-start-gate")) {
+            AtomicInteger subjectCalls = new AtomicInteger();
+            Operator<Object, Object> subject = (input, context) -> {
+                subjectCalls.incrementAndGet();
+                return input;
+            };
+            Graph graph = OperatorMicroGraphRunner.durableMicroGraph(
+                    "operator-a", subject);
+            ExecutionOptions options = options("engine-durable-operator");
+
+            try (var session = harness.factory().openSession(
+                    "engine-durable-operator", new InvocationRecorder(harness.mapper()), options)) {
+                var result = session.execute(
+                        graph, new GraphContext(java.util.Map.of(
+                        "operatorInput", java.util.Map.of("name", "Ada"))));
+                var prepared = session.prepareInitialSuspension("checkpoint-operator-start");
+
+                assertThat(result.isSuspended()).isTrue();
+                assertThat(result.suspendedNodes()).containsOnlyKeys(
+                        OperatorMicroGraphRunner.DURABLE_START_NODE_ID);
+                assertThat(prepared.boundary().nodeId())
+                        .isEqualTo(OperatorMicroGraphRunner.DURABLE_START_NODE_ID);
+                assertThat(subjectCalls).hasValue(0);
+            }
+
+            assertThat(harness.store().executionStore().get("engine-durable-operator"))
                     .isEmpty();
         }
     }

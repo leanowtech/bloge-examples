@@ -106,6 +106,44 @@ class IndependentDurableTestRecoverySessionTest {
     }
 
     @Test
+    @Timeout(15)
+    void durableOperatorStartGateDefersTheExactSubjectUntilColdSignal() throws Exception {
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        try (TestRuntimeDatabase database = database("operator-start-gate")) {
+            Fixture fixture = fixture(database, mapper);
+            AtomicInteger subjectCalls = new AtomicInteger();
+            Operator<Object, Object> subject = (input, context) -> {
+                subjectCalls.incrementAndGet();
+                return input;
+            };
+            Graph graph = OperatorMicroGraphRunner.durableMicroGraph(
+                    "operator-a", subject);
+            DurableTestExecutionCheckpoint claimed = persistSuspendedExecution(
+                    fixture, graph,
+                    new GraphContext(Map.of("operatorInput", Map.of("name", "Ada"))),
+                    OperatorMicroGraphRunner.DURABLE_START_NODE_ID,
+                    "durable-operator-start");
+
+            assertThat(subjectCalls).hasValue(0);
+            ExecutionOptions recoveryOptions = ExecutionOptions.builder()
+                    .executionServices(ExecutionServices.builder().build())
+                    .build();
+            try (IndependentDurableTestEngineFactory.RecoverySession session =
+                         fixture.factory().openRecoverySession(
+                                 claimed, new InvocationRecorder(mapper), recoveryOptions)) {
+                var boundary = session.signalAndAwait(
+                        graph, OperatorMicroGraphRunner.DURABLE_START_NODE_ID, Map.of());
+
+                assertThat(boundary.executionStatus()).isEqualTo(ExecutionStatus.COMPLETED);
+                assertThat(subjectCalls).hasValue(1);
+                assertThat(session.prepare("checkpoint-operator-terminal")
+                        .engineStateMutation().engineState().stateVersion())
+                        .isGreaterThan(claimed.engineState().stateVersion());
+            }
+        }
+    }
+
+    @Test
     void rejectsAControlCheckpointThatHasNotEnteredResuming() {
         ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
         try (TestRuntimeDatabase database = database("wrong-state")) {
@@ -281,6 +319,17 @@ class IndependentDurableTestRecoverySessionTest {
 
     private static DurableTestExecutionCheckpoint persistSuspendedExecution(
             Fixture fixture, Graph graph) throws Exception {
+        return persistSuspendedExecution(fixture, graph,
+                new GraphContext(Map.of("requestId", "request-a")),
+                "wait", "approval-key");
+    }
+
+    private static DurableTestExecutionCheckpoint persistSuspendedExecution(
+            Fixture fixture,
+            Graph graph,
+            GraphContext context,
+            String suspendedNodeId,
+            String suspendKey) throws Exception {
         ExecutionServices services = ExecutionServices.builder()
                 .idGenerator(scope -> "engine-a")
                 .build();
@@ -290,15 +339,14 @@ class IndependentDurableTestRecoverySessionTest {
         InvocationRecorder recorder = new InvocationRecorder(fixture.mapper());
         try (IndependentDurableTestEngineFactory.RunSession session =
                      fixture.factory().openSession("engine-a", recorder, options)) {
-            var result = session.execute(
-                    graph, new GraphContext(Map.of("requestId", "request-a")));
+            var result = session.execute(graph, context);
             assertThat(result.isSuspended()).isTrue();
             assertThat(result.suspendedNodes()).containsExactlyEntriesOf(
-                    Map.of("wait", "approval-key"));
+                    Map.of(suspendedNodeId, suspendKey));
             long stateVersion = fixture.store().executionStore().get("engine-a")
                     .orElseThrow().version();
             var mutation = session.prepare(
-                    "checkpoint-suspended", "wait", "SUSPEND", 1, stateVersion);
+                    "checkpoint-suspended", suspendedNodeId, "SUSPEND", 1, stateVersion);
             DurableTestExecutionCheckpoint control = control(
                     fixture.integrity(), DurableTestExecutionCheckpoint.Status.RESUMING,
                     mutation.engineState());

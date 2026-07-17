@@ -54,6 +54,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}` | Freeze the graph/resource target fingerprint before authoring fixtures (test/staging only) |
 | `POST http://localhost:8080/api/testing/executions` | Run an isolated inline or governed fixture plan and retain sanitized evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions` | Idempotently create an exact graph test at its first unique signal suspension (test/staging only) |
+| `POST http://localhost:8080/api/testing/durable-executions/operators/{operatorRef}` | Idempotently freeze an exact operator test at its server-owned start gate (test/staging only) |
 | `GET http://localhost:8080/api/testing/durable-executions/{runId}` | Inspect an integrity-verified, payload-free durable checkpoint view before recovery (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/owner-claims` | Re-authorize an exact expired v2 checkpoint and atomically claim its lease; this does not resume BLOGE (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/heartbeats` | Renew one exact issued recovery fence under the same authenticated authority (test/staging only) |
@@ -138,12 +139,13 @@ curl -sS -X POST \
   }'
 ```
 
-Creation v1 accepts only exact graph targets and stored fixtures and succeeds only at one unambiguous
+The graph creation v1 contract accepts only exact graph targets and stored fixtures and succeeds only at one unambiguous
 persisted signal wait. The response wraps a payload-free suspended execution view containing the
 server-minted run id and recovery fence. A committed success or deterministic unsupported-boundary
 rejection is replayed for the same authenticated `clientRequestId`; a live concurrent preparation
-returns `409` with its run id and lease deadline. It does not support operator creation, inline/latest
-dependencies, timers/tasks/streams, terminal fresh runs, or multiple live suspensions.
+returns `409` with its run id and lease deadline. This graph endpoint does not accept operator
+targets, inline/latest dependencies, timers/tasks/streams, terminal fresh runs, or multiple live
+suspensions.
 
 The server owns the preparation identity and lease through
 `gateway.testing.durable.creation.instance-id` and
@@ -157,6 +159,49 @@ fingerprint; heartbeat failure or service shutdown returns
 in-process cancellation: an uncooperative operator still requires a killable worker boundary.
 Complete wire semantics and failure codes are in the
 [Testing Control Plane API](../docs/resource-gateway-testing-control-plane-api.md#42d-create-one-durable-graph-execution).
+
+### Create a durable operator test
+
+Discover the exact operator binding and publish a stored fixture revision first. The operator
+contract is versioned separately from graph creation:
+
+```bash
+curl -sS -X POST \
+  http://localhost:8080/api/testing/durable-executions/operators/creditScore \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "schemaVersion": "bloge.durableOperatorTestExecutionCreateRequest.v1",
+    "clientRequestId": "create-credit-score-20260717-01",
+    "target": {
+      "kind": "OPERATOR",
+      "id": "creditScore",
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "executionPurpose": "OPERATOR_UNIT_TEST",
+    "input": {"customerId": "C-42", "annualIncome": 180000},
+    "fixtureBundleRef": {
+      "fixtureBundleId": "credit-score-fixture",
+      "revision": 4,
+      "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  }'
+```
+
+Resource Gateway validates and converts the formal input, then persists a canonical two-node graph:
+the server-owned `durable-operator-start` gate followed by the exact `subject` binding. Revision zero
+commits while the gate is suspended, before the business operator is invoked. Claim the run and send
+a terminal-recovery signal to that gate to execute the subject exactly once from the frozen input,
+fixture cursor, provider state, and authorization closure. Signal data is ignored by the gate and
+cannot replace business input. Responses, commands, and audits remain payload-free.
+
+Graph and operator creation share the same idempotency namespace, four-dimensional admission,
+database-time preparation lease, staged four-store aggregate, atomic checkpoint/audit commit, query,
+owner claim, heartbeat, and terminal recovery. The internal start gate also occupies a conservative
+operator admission slot. Worker polling, multi-boundary orchestration, hard cancellation, and
+complete pre-checkpoint trace evidence remain outside this increment. Full semantics are in the
+[Testing Control Plane API](../docs/resource-gateway-testing-control-plane-api.md#42e-create-one-durable-operator-execution).
 
 ### Inspect a durable test execution
 
@@ -683,7 +728,7 @@ and commits the server-derived final BLOGE mutation, terminal checkpoint, immuta
 and payload-free receipt in one transaction; retries never reapply the engine mutation. Because durable
 state still lacks complete pre-checkpoint node/edge/attempt trace, receipt v1 is always
 `EVIDENCE_INCOMPLETE`, requires explicit gap codes, and blocks promotion. BLOGE streaming
-offset/checkpoint state, complete historical evidence, operator-target durable creation, authenticated
+offset/checkpoint state, complete historical evidence, authenticated
 worker poll/dispatch and multi-boundary orchestration, dispatcher consumption, cross-process worker
 supervision, and a killable worker deadline are not wired yet. These internal primitives are
 not a product claim that durable test

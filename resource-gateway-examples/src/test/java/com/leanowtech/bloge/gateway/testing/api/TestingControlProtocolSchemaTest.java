@@ -144,6 +144,10 @@ class TestingControlProtocolSchemaTest {
                 "/$defs/durableTestExecutionCreateRequest/properties/schemaVersion/const")
                 .asText()).isEqualTo(DurableTestExecutionCreateRequest.SCHEMA_VERSION);
         assertThat(schema.at(
+                "/$defs/durableOperatorTestExecutionCreateRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                DurableOperatorTestExecutionCreateRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
                 "/$defs/durableTestExecutionCreateResponse/properties/schemaVersion/const")
                 .asText()).isEqualTo(DurableTestExecutionCreateResponse.SCHEMA_VERSION);
         assertThat(schema.at(
@@ -219,6 +223,7 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("durableTestOwnerClaimResponse")).isTrue();
         assertThat(definitions.has("durableTestExecutionView")).isTrue();
         assertThat(definitions.has("durableTestExecutionCreateRequest")).isTrue();
+        assertThat(definitions.has("durableOperatorTestExecutionCreateRequest")).isTrue();
         assertThat(definitions.has("durableTestExecutionCreateResponse")).isTrue();
         assertThat(definitions.has("durableTestRecoveryHeartbeatRequest")).isTrue();
         assertThat(definitions.has("durableTestRecoveryHeartbeatResponse")).isTrue();
@@ -269,6 +274,22 @@ class TestingControlProtocolSchemaTest {
                 .asText()).isEqualTo("#/$defs/fingerprint");
         assertThat(definitions.at(
                 "/durableTestExecutionCreateRequest/properties/fixtureBundleRef/properties/fingerprint/$ref")
+                .asText()).isEqualTo("#/$defs/fingerprint");
+        assertThat(definitions.at(
+                "/durableOperatorTestExecutionCreateRequest/additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(definitions.at("/durableOperatorTestExecutionCreateRequest/required"))
+                .extracting(JsonNode::asText)
+                .containsExactly("schemaVersion", "clientRequestId", "target",
+                        "executionPurpose", "input", "fixtureBundleRef");
+        assertThat(definitions.at(
+                "/durableOperatorTestExecutionCreateRequest/properties/target/properties/kind/const")
+                .asText()).isEqualTo("OPERATOR");
+        assertThat(definitions.at(
+                "/durableOperatorTestExecutionCreateRequest/properties/executionPurpose/const")
+                .asText()).isEqualTo("OPERATOR_UNIT_TEST");
+        assertThat(definitions.at(
+                "/durableOperatorTestExecutionCreateRequest/properties/target/properties/fingerprint/$ref")
                 .asText()).isEqualTo("#/$defs/fingerprint");
         assertThat(definitions.at(
                 "/durableTestExecutionCreateResponse/additionalProperties").asBoolean())

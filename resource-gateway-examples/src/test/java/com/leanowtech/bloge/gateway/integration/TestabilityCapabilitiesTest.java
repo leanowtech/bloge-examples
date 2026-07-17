@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionQueryResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCreateRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCreateResponse;
+import com.leanowtech.bloge.gateway.testing.api.DurableOperatorTestExecutionCreateRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryHeartbeatRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryHeartbeatResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestTerminalRecoveryRequest;
@@ -34,6 +35,8 @@ class TestabilityCapabilitiesTest {
         assertThat(disabled.testability().executionEndpointEnabled()).isFalse();
         assertThat(disabled.endpoints()).noneMatch(endpoint -> endpoint.path().startsWith("/api/testing/"));
         assertThat(disabled.features()).containsEntry("dynamicAttemptOccurrenceSelectors", false);
+        assertThat(disabled.features())
+                .containsEntry("durableOperatorTestExecutionCreation", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionAntiEntropy", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionSweepLease", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionFindingQueue", false);
@@ -62,6 +65,7 @@ class TestabilityCapabilitiesTest {
                 "testGraphTargetDescriptor", "testOperatorExecutionRequest", "testOperatorTargetDescriptor",
                 "durableTestOwnerClaimRequest", "durableTestOwnerClaimResponse",
                 "durableTestExecutionView", "durableTestExecutionCreateRequest",
+                "durableOperatorTestExecutionCreateRequest",
                 "durableTestExecutionCreateResponse",
                 "durableTestRecoveryHeartbeatRequest", "durableTestRecoveryHeartbeatResponse",
                 "durableTestTerminalRecoveryRequest", "durableTestTerminalRecoveryResponse");
@@ -85,6 +89,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("governedTestReplayPayloadCapture", true)
                 .containsEntry("testReplayBehavior", true)
                 .containsEntry("durableTestExecutionCreation", true)
+                .containsEntry("durableOperatorTestExecutionCreation", true)
                 .containsEntry("durableTestCreationLeaseHeartbeat", true)
                 .containsEntry("durableTestOwnerClaim", true)
                 .containsEntry("durableRecoveryDependencyReauthorization", true)
@@ -133,6 +138,9 @@ class TestabilityCapabilitiesTest {
                 .containsExactly(DurableTestExecutionQueryResponse.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("durableTestExecutionCreateRequest"))
                 .containsExactly(DurableTestExecutionCreateRequest.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get(
+                "durableOperatorTestExecutionCreateRequest"))
+                .containsExactly(DurableOperatorTestExecutionCreateRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("durableTestExecutionCreateResponse"))
                 .containsExactly(DurableTestExecutionCreateResponse.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("durableTestRecoveryHeartbeatRequest"))
@@ -166,6 +174,9 @@ class TestabilityCapabilitiesTest {
                 "/api/testing/durable-executions/{runId}"));
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals("/api/testing/durable-executions"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
+                && endpoint.path().equals(
+                "/api/testing/durable-executions/operators/{operatorRef}"));
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals(
                 "/api/testing/durable-executions/{runId}/heartbeats"));

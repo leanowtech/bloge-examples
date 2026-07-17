@@ -10,7 +10,7 @@
 | Stage 1' | 完成 | `testing/planning/runtime/evidence` 内核；独立 test engine；五行为；F2/F3 resource fixture；micro-graph runner；旧 graph suite adapter；37 个聚焦测试与 1653 个项目测试全绿 |
 | Stage 2' | 进行中 | 已落地 graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（含四类 case intent、内容寻址 fixture 与一等 TestSuite 发布、聚合执行/coverage/promotion 回显）、immutable fixture/TestSuite registry、幂等 TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、10 态 child evidence、profile/identity/生产协议隔离、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其内容寻址 catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free effective plan v2 谱系与认证降级，以及同步 root/nested/foreach/loop/compensation 的结构寻址、控制传播、动态 attempt/occurrence selector 和 occurrence/attempt/node/edge evidence；streaming/suspendable control/evidence 与物理 network/runtime 隔离仍待完成 |
 | Stage 3 evidence chain | 进行中 | graph/operator child signature、suite checkpoint/terminal aggregate attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、签名时刻 lifecycle policy、外部 M-of-N trust publication、bounded append-only consistency page、durable consumer checkpoint、rollback/fork/split-view/revoked-pin resurrection detection 与 test-kit independent verifier 已完成；exact-suite ANEKE semantic workbook seed、`GovernanceGateResult.v3` 可重建 basis、编译级 GraphDraft target 绑定与独立 schema consumer 已完成；真实 ANEKE N/N-1 conformance、独立 witness gossip/跨域一致性证明待完成 |
-| Stage 4 deterministic runtime | 进行中 | run-scoped TIME/RANDOM/UUID、environment-dependent built-in resolver、effective plan v3/provider state、semantic result fingerprint、组合 durable checkpoint/fixture cursor、静止边界 recorder snapshot、同库事务、数据库时钟 lease CAS、幂等命令与 staged `ExecutionStore + ExecutionCheckpointStore + WaitStore + WorkItemStore` aggregate 已完成；BLOGE 公共 `CheckpointFailurePolicy.FAIL_FAST`、fresh execution-to-durable-boundary 与同步 cold-start signal recovery 已装配。RG fresh `RunSession` 已能在无驻留线程的情况下同步返回首个终态或持久化 suspension，内部 `RecoverySession` 已能从 v2 `RESUMING` fence 恢复真实 suspension、延续 fixture cursor，并把下一静止边界与 control checkpoint 原子提交或整体回滚。公开 authenticated durable GRAPH create 已把 exact dependency/principal authorization、首个唯一 signal suspension、revision-zero checkpoint、四 store mutation、不可变结果和审计原子闭合，并以数据库时钟 CAS 心跳自动维持 preparation lease；公开 payload-free query 已按 tenant/environment/org/project non-disclosure scope 投影完整性验证后的 fence、依赖与边界指纹；`test`/`staging` owner claim 已把 authorization receipt、结果 fence 与 worker dispatch 原子绑定；公开 authenticated heartbeat 已按 exact predecessor fence 隐式解析已签发 dispatch、保持 principal 连续性，并用 live fence + 数据库时钟原子旋转 revision/lease/successor dispatch；公开 terminal recovery 已在同身份与同授权下执行一个有界 signal，并原子提交 server-derived BLOGE mutation、terminal checkpoint、审计与显式 evidence-gap receipt；进程内 recovery lease coordinator 在引擎启动前同步续租、执行期间周期旋转 successor，并在终态 CAS 前冻结到最新 dispatch，续租失效则丢弃 stage；全局 test-runtime operational snapshot、证据完整率、四类队列/租约/年龄、storage backlog、Actuator SLO health 与固定低基数指标已落地；第二十增量以数据库时钟、四维原子 claim、可续租 exact fence 和有界清理，为 graph/operator/suite/durable create/recovery 建立跨副本即时 admission，suite 采用一次父 permit 避免子 case 自锁。operator-target durable 创建、worker poll/dispatch、排队/公平/优先级调度、多 suspension 编排、跨进程 worker supervision、强制 worker 取消、完整历史 trace evidence、stream offset/checkpoint、identity/flag/secret authority 和确定性并发待完成 |
+| Stage 4 deterministic runtime | 进行中 | run-scoped TIME/RANDOM/UUID、environment-dependent built-in resolver、effective plan v3/provider state、semantic result fingerprint、组合 durable checkpoint/fixture cursor、静止边界 recorder snapshot、同库事务、数据库时钟 lease CAS、幂等命令与 staged `ExecutionStore + ExecutionCheckpointStore + WaitStore + WorkItemStore` aggregate 已完成；BLOGE 公共 `CheckpointFailurePolicy.FAIL_FAST`、fresh execution-to-durable-boundary 与同步 cold-start signal recovery 已装配。RG fresh `RunSession` 已能在无驻留线程的情况下同步返回首个终态或持久化 suspension，内部 `RecoverySession` 已能从 v2 `RESUMING` fence 恢复真实 suspension、延续 fixture cursor，并把下一静止边界与 control checkpoint 原子提交或整体回滚。公开 authenticated durable GRAPH create 已把 exact dependency/principal authorization、首个唯一 signal suspension、revision-zero checkpoint、四 store mutation、不可变结果和审计原子闭合，并以数据库时钟 CAS 心跳自动维持 preparation lease；公开 durable OPERATOR create 以独立 v1 请求、exact binding/input coercion 和服务端只读幂等 start gate 在业务算子执行前稳定提交 revision-zero suspension，cold terminal recovery 放行后才按冻结输入执行 subject；公开 payload-free query 已按 tenant/environment/org/project non-disclosure scope 投影完整性验证后的 fence、依赖与边界指纹；`test`/`staging` owner claim 已把 authorization receipt、结果 fence 与 worker dispatch 原子绑定；公开 authenticated heartbeat 已按 exact predecessor fence 隐式解析已签发 dispatch、保持 principal 连续性，并用 live fence + 数据库时钟原子旋转 revision/lease/successor dispatch；公开 terminal recovery 已在同身份与同授权下执行一个有界 signal，并原子提交 server-derived BLOGE mutation、terminal checkpoint、审计与显式 evidence-gap receipt；进程内 recovery lease coordinator 在引擎启动前同步续租、执行期间周期旋转 successor，并在终态 CAS 前冻结到最新 dispatch，续租失效则丢弃 stage；全局 test-runtime operational snapshot、证据完整率、四类队列/租约/年龄、storage backlog、Actuator SLO health 与固定低基数指标已落地；第二十增量以数据库时钟、四维原子 claim、可续租 exact fence 和有界清理，为 graph/operator/suite/durable create/recovery 建立跨副本即时 admission，suite 采用一次父 permit 避免子 case 自锁。worker poll/dispatch、排队/公平/优先级调度、多 suspension 编排、跨进程 worker supervision、强制 worker 取消、完整历史 trace evidence、stream offset/checkpoint、identity/flag/secret authority 和确定性并发待完成 |
 
 Stage 4 最新增量：fresh `RunSession` 的 initial-boundary policy 只接受唯一持久化 signal wait，
 并把 fixture cursor 与四 store closure 在同一静止点冻结；终态、pause、timer/work-item/stream
@@ -24,6 +24,17 @@ fixture，业务 context 不进入 command/response/audit，成功只发布首�
 commit/reject 前先冻结心跳并使用最新 successor。任何续租失败或服务关停都视为 ownership 不确定，
 丢弃 staged 状态且不猜测提交。
 该窄协议仍不等于 dispatcher 或完整 durable worker 产品。
+
+第二十一增量补齐 operator-target durable creation，但不改写 graph request v1。
+`bloge.durableOperatorTestExecutionCreateRequest.v1` 仅接受 path/body 一致的 exact OPERATOR target、
+`OPERATOR_UNIT_TEST`、形式化 input 与 exact stored fixture。服务端按冻结 metadata coercion 输入并写入
+隔离 `operatorInput` context；canonical durable micro-graph 由只读、幂等的
+`durable-operator-start` source 和 exact `subject` 组成。fresh create 在 start gate 形成唯一 signal
+suspension 并原子提交 revision-zero，业务算子此时尚未调用；cold terminal recovery 放行 gate 后才以
+已持久化 input 和同一 fixture/provider/authority closure 执行 subject，signal data 不参与业务输入。
+该路径复用既有幂等、admission、preparation lease、四 store stage、audit、query、claim、heartbeat 与
+terminal recovery，独立冷恢复测试证明 subject 恰好执行一次。内部 gate 同样计入 operator admission
+inventory，以容量保守换取不漏算。
 
 terminal recovery 现在复用已签发 dispatch 的认证续租内核：首个 heartbeat 在 BLOGE runtime
 访问前同步完成，后续 heartbeat 只接受 exact successor，并验证 scope、authorization、target、
@@ -77,6 +88,8 @@ replacement 的 claims；关闭应用主动失效并释放本机 permit，崩溃
 
 实现边界、错误语义、配置和 96 项聚焦证明见
 [Stage 4 runtime admission verification](resource-gateway-execution-data-control-plane-stage4-runtime-admission-verification.md)。
+Operator durable create 的启动门、原子性、冷恢复和反例证明见
+[Stage 4 operator durable creation verification](resource-gateway-execution-data-control-plane-stage4-operator-durable-creation-verification.md)。
 
 Stage 0 验证基线：Resource Gateway `clean verify` 共 1624 tests、0 failures、33 个既有条件跳过；AuthorCanvas 聚焦回归 36 tests、0 failures。后续阶段必须继续维持该基线并增加对应反面用例。
 
@@ -85,6 +98,11 @@ Stage 1 实现证据与复现命令见
 Stage 1 全量验收：Resource Gateway `clean verify` 共 1653 tests、0 failures、0 errors、34 个条件跳过，JAR 打包成功。
 第二十增量后端全量验收：Resource Gateway `clean verify` 共 2121 tests、0 failures、0 errors、
 34 个既有条件跳过，Spring Boot JAR 打包成功；runtime admission 相关 96 项聚焦验证全部通过。
+第二十一增量后端全量验收：Resource Gateway `clean verify` 共 2131 tests、0 failures、0 errors、
+2 个条件性浏览器跳过，Spring Boot JAR 打包成功；operator durable creation、cold recovery、
+legacy reconstruction、schema/capability/controller 相关 45 项聚焦验证全部通过。独立 test-kit
+`clean verify` 共 62 tests、0 failures、0 errors、0 skips，权威 testing-control-plane schema 已打入
+普通与 shaded CLI JAR，JavaDoc 门禁通过。
 当前严格验收：Resource Gateway `-Pfrontend clean verify` 共 2103 tests、0 failures、0 errors、0 skips，
 真实浏览器回归与 JAR 打包成功；Stage 4 durable checkpoint/aggregate/public payload-free query/
 owner-claim/recovery/authorization-bound dispatch/live-fence heartbeat/terminal commit/automatic
@@ -457,6 +475,6 @@ flowchart LR
 
 ### 十一、明确排除（v1 不做）
 
-流式时间行为（STREAM）、sandbox conformance 双验与反熵漂移检测（保真度 F5）、identity/feature-flag/test-secret fixture authority、stream offset/checkpoint 协议、operator-target durable 创建、worker poll/dispatch、跨进程 worker supervision、多 suspension 编排、断点前完整 trace evidence、真实 ANEKE cross-version conformance、独立 witness gossip/跨域一致性证明、确定性并发 scheduler、独立 test-runtime 部署、mutation/property testing。F4 record-replay、动态 selector、签名证据链、run-scoped TIME/RANDOM/UUID、environment-dependent built-in resolver、semantic result fingerprint、provider-state snapshot/compiler restore seam、受信组合 checkpoint 本地事务基座、payload-free durable create/query、creation preparation 自动心跳、数据库时钟 expired-lease owner handoff、持久化命令幂等结果、公开鉴权/审计/重授权 owner claim、authorization-bound dispatch、公开 authenticated live-fence heartbeat successor、同步 terminal recovery 自动续租、公开 one-signal terminal recovery、promotion-blocking terminal receipt、BLOGE execution/checkpoint/wait/work-item staged aggregate 与内部同步 cold-signal recovery 已经落地；其余能力均已在北极星文档 Stage 3-5 有宿主。
+流式时间行为（STREAM）、sandbox conformance 双验与反熵漂移检测（保真度 F5）、identity/feature-flag/test-secret fixture authority、stream offset/checkpoint 协议、worker poll/dispatch、跨进程 worker supervision、多 suspension 编排、断点前完整 trace evidence、真实 ANEKE cross-version conformance、独立 witness gossip/跨域一致性证明、确定性并发 scheduler、独立 test-runtime 部署、mutation/property testing。F4 record-replay、动态 selector、签名证据链、run-scoped TIME/RANDOM/UUID、environment-dependent built-in resolver、semantic result fingerprint、provider-state snapshot/compiler restore seam、受信组合 checkpoint 本地事务基座、payload-free durable graph/operator create/query、creation preparation 自动心跳、数据库时钟 expired-lease owner handoff、持久化命令幂等结果、公开鉴权/审计/重授权 owner claim、authorization-bound dispatch、公开 authenticated live-fence heartbeat successor、同步 terminal recovery 自动续租、公开 one-signal terminal recovery、promotion-blocking terminal receipt、BLOGE execution/checkpoint/wait/work-item staged aggregate 与内部同步 cold-signal recovery 已经落地；其余能力均已在北极星文档 Stage 3-5 有宿主。
 
 ---

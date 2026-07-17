@@ -4,8 +4,12 @@ import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.dsl.GraphBuilder;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.model.NodeSpec;
+import com.leanowtech.bloge.core.operator.Idempotency;
 import com.leanowtech.bloge.core.operator.Operator;
+import com.leanowtech.bloge.core.operator.OperatorContext;
+import com.leanowtech.bloge.core.operator.OperatorResult;
 import com.leanowtech.bloge.core.operator.SideEffectType;
+import com.leanowtech.bloge.core.operator.SuspendableOperator;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionGuard;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
@@ -18,11 +22,13 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Thin operator-test entry that executes the exact runtime binding as a one-node BLOGE graph.
+ * Thin operator-test entry that executes the exact runtime binding as a BLOGE micro graph.
  *
  * <p>The micro graph intentionally reuses {@link TestRunService}; it is not a second execution
- * mechanism. Classification is affirmative: only a read-only operator, or an HTTP resource tested
- * with a transport-boundary fixture, earns {@link Classification#EXECUTABLE_UNIT}.</p>
+ * mechanism. Normal execution uses one subject node; durable execution adds only a server-owned
+ * pre-execution signal gate. Classification is affirmative: only a read-only operator, or an HTTP
+ * resource tested with a transport-boundary fixture, earns
+ * {@link Classification#EXECUTABLE_UNIT}.</p>
  */
 public class OperatorMicroGraphRunner {
 
@@ -33,6 +39,10 @@ public class OperatorMicroGraphRunner {
     }
 
     private static final String NODE_ID = "subject";
+    /** Server-owned signal gate used only by durable operator-test creation and recovery. */
+    public static final String DURABLE_START_NODE_ID = "durable-operator-start";
+    private static final SuspendableOperator<Void, Object> DURABLE_START_GATE =
+            new DurableOperatorStartGate();
     private final TestRunService testRunService;
 
     /** @param testRunService shared execution-control kernel */
@@ -154,6 +164,36 @@ public class OperatorMicroGraphRunner {
                 built.streamingInputs());
     }
 
+    /**
+     * Builds the canonical recoverable operator graph with a server-owned pre-execution signal gate.
+     *
+     * <p>Fresh durable creation executes only the gate and therefore cannot invoke the business
+     * operator before its checkpoint commits. A later authenticated signal completes the gate; the
+     * exact frozen subject then reads its formal input from the persisted graph context. The gate is
+     * read-only, idempotent, has no caller-controlled configuration, and is reconstructed identically
+     * during recovery authorization.</p>
+     *
+     * @param operatorRef stable registry reference
+     * @param operator exact synchronous runtime binding
+     * @return canonical start-gated operator micro graph
+     */
+    public static Graph durableMicroGraph(String operatorRef, Operator<?, ?> operator) {
+        Objects.requireNonNull(operator, "operator");
+        Graph built = new GraphBuilder("durable-operator-test:" + normalized(operatorRef))
+                .suspendNode(DURABLE_START_NODE_ID, DURABLE_START_GATE)
+                .node(NODE_ID, operator).dependsOn(DURABLE_START_NODE_ID)
+                .input((results, context) -> context.get("operatorInput"))
+                .build();
+        NodeSpec normalizedNode = built.nodes().get(NODE_ID).toBuilder()
+                .operatorRef(normalized(operatorRef)).build();
+        Map<String, NodeSpec> nodes = new LinkedHashMap<>(built.nodes());
+        nodes.put(NODE_ID, normalizedNode);
+        return new Graph(built.name(), nodes, built.edges(), built.sourceNodes(),
+                built.terminalNodes(), built.schemaValidationLevel(), built.embeddedOperators(),
+                built.declaredInputSchema(), built.declaredOutputSchema(), built.sagaConfig(),
+                built.definitionSource(), built.streamingOutputNodeId(), built.streamingInputs());
+    }
+
     private static FixtureBundle defaultBundle(Operator<?, ?> operator, String targetFingerprint) {
         List<FixtureRule> rules = operator.sideEffectType() == SideEffectType.READ_ONLY
                 ? List.of(new FixtureRule(FixtureRule.SCHEMA_VERSION, "subject-real",
@@ -166,6 +206,24 @@ public class OperatorMicroGraphRunner {
 
     private static String normalized(String operatorRef) {
         return operatorRef == null || operatorRef.isBlank() ? "operator" : operatorRef.trim();
+    }
+
+    private static final class DurableOperatorStartGate
+            implements SuspendableOperator<Void, Object> {
+        @Override
+        public OperatorResult<Object> execute(Void input, OperatorContext context) {
+            return OperatorResult.suspend("durable-operator-start");
+        }
+
+        @Override
+        public Idempotency idempotency() {
+            return Idempotency.IDEMPOTENT;
+        }
+
+        @Override
+        public SideEffectType sideEffectType() {
+            return SideEffectType.READ_ONLY;
+        }
     }
 
     /**

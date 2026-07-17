@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://leanowtech.example/schemas/resource-gateway-testing/testing-control-plane-v1.schema.json",
   "title": "Resource Gateway Testing Control Plane v1",
-  "description": "Wire contracts for target discovery, immutable fixtures and suites, controlled execution, durable execution creation, query and ownership, recovery heartbeat, terminal recovery, durable projection finding operations, plans, and sanitized evidence.",
+  "description": "Wire contracts for target discovery, immutable fixtures and suites, controlled execution, durable graph and operator execution creation, query and ownership, recovery heartbeat, terminal recovery, durable projection finding operations, plans, and sanitized evidence.",
   "$defs": {
     "fingerprint": {
       "type": "string",
@@ -63,6 +63,53 @@
         },
         "executionPurpose": {"const": "GRAPH_CONTRACT_TEST"},
         "context": {"type": "object"},
+        "fixtureBundleRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["fixtureBundleId", "revision", "fingerprint"],
+          "properties": {
+            "fixtureBundleId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+            },
+            "revision": {"type": "integer", "minimum": 1},
+            "fingerprint": {"$ref": "#/$defs/fingerprint"}
+          }
+        }
+      }
+    },
+    "durableOperatorTestExecutionCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "clientRequestId", "target", "executionPurpose",
+        "input", "fixtureBundleRef"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.durableOperatorTestExecutionCreateRequest.v1"},
+        "clientRequestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "fingerprint"],
+          "properties": {
+            "kind": {"const": "OPERATOR"},
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+            },
+            "fingerprint": {"$ref": "#/$defs/fingerprint"}
+          }
+        },
+        "executionPurpose": {"const": "OPERATOR_UNIT_TEST"},
+        "input": {},
         "fixtureBundleRef": {
           "type": "object",
           "additionalProperties": false,
