@@ -17,6 +17,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
@@ -203,6 +204,32 @@ class TestSuiteExecutionServiceTest {
                 bundle.bundleFingerprint(), bundle.payloadPolicy(), bundle.attestation(), mislabeled))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("incomplete");
+    }
+
+    @Test
+    void schemaAdmissionV3IsRejectedBeforeExecutionOrEvidenceCreation() {
+        StoredTestSuite structural = storedSuite();
+        TestSuite base = (TestSuite) structural.suite();
+        TestSuite.TestCase boundary = base.cases().getFirst();
+        TestSuiteV3 admission = new TestSuiteV3("", base.suiteId(), base.revision(),
+                base.target(), base.classification(), List.of(boundary),
+                new TestSuite.CoveragePolicy(1, List.of(boundary.caseType()), List.of(),
+                        List.of(), 0, false), SemanticCoveragePolicy.empty(),
+                new TestSuite.PromotionPolicy(true, 0, false),
+                TestSuiteV3.EvaluationMode.SCHEMA_ADMISSION,
+                "sha256:" + "1".repeat(64), "sha256:" + "2".repeat(64),
+                Map.of(boundary.caseId(), new TestSuiteV3.AdmissionExpectation(
+                        TestSuiteV3.ExpectedOutcome.ACCEPTED, List.of())), Map.of());
+        when(registry.find("suite-a", 3, identity)).thenReturn(new StoredTestSuite("", "tenant-a",
+                "test", "suite-a", 3, SUITE, admission, Instant.now(), "runner"));
+
+        assertThatThrownBy(() -> service.execute("suite-a", request("admission-v3",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity))
+                .isInstanceOf(IntegrationProblemException.class)
+                .satisfies(error -> assertThat(((IntegrationProblemException) error).problem().code())
+                        .isEqualTo("RG.TEST.SUITE_ADMISSION_EVIDENCE_UNAVAILABLE"));
+        assertThat(runRepository.records).isEmpty();
+        verifyNoInteractions(executions, admissions);
     }
 
     @Test

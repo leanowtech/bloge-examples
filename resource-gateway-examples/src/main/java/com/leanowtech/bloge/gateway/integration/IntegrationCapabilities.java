@@ -252,7 +252,8 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.StoredReplayPayload.SCHEMA_VERSION));
             objects.put("testSuite", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestSuite.SCHEMA_VERSION,
-                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2.SCHEMA_VERSION));
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2.SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3.SCHEMA_VERSION));
             objects.put("testSuiteRegistrationRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistrationRequest.SCHEMA_VERSION));
             objects.put("storedTestSuite", List.of(
@@ -295,6 +296,10 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.TestGraphTargetDescriptor.SCHEMA_VERSION));
             objects.put("testBoundaryCasePlan", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestBoundaryCasePlan.SCHEMA_VERSION));
+            objects.put("testBoundarySuiteMaterializationRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION));
+            objects.put("testBoundarySuiteMaterialization", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestBoundarySuiteMaterializationResponse.SCHEMA_VERSION));
             objects.put("testOperatorExecutionRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestOperatorExecutionApiRequest.SCHEMA_VERSION));
             objects.put("testOperatorTargetDescriptor", List.of(
@@ -466,6 +471,8 @@ public record IntegrationCapabilities(
         features.put("webhook", false);
         features.put("operatorMicroGraphExecution", testExecutionEndpointEnabled);
         features.put("schemaBoundaryCasePlanning", testExecutionEndpointEnabled);
+        features.put("schemaBoundarySuiteMaterialization", testExecutionEndpointEnabled);
+        features.put("schemaAdmissionSuiteExecution", false);
         features.put("dynamicAttemptOccurrenceSelectors", testExecutionEndpointEnabled);
         features.put("immutableTestSuiteRegistry", testExecutionEndpointEnabled);
         features.put("immutableTestSuiteExecution", testExecutionEndpointEnabled);
@@ -584,9 +591,13 @@ public record IntegrationCapabilities(
             endpoints.add(new Endpoint("GET", "/api/testing/targets/graphs/{graphName}"));
             endpoints.add(new Endpoint("GET",
                     "/api/testing/targets/graphs/{graphName}/boundary-cases"));
+            endpoints.add(new Endpoint("POST",
+                    "/api/testing/targets/graphs/{graphName}/boundary-suites"));
             endpoints.add(new Endpoint("GET", "/api/testing/targets/operators/{operatorRef}"));
             endpoints.add(new Endpoint("GET",
                     "/api/testing/targets/operators/{operatorRef}/boundary-cases"));
+            endpoints.add(new Endpoint("POST",
+                    "/api/testing/targets/operators/{operatorRef}/boundary-suites"));
             endpoints.add(new Endpoint("POST", "/api/testing/targets/operators/{operatorRef}/executions"));
             endpoints.add(new Endpoint("POST", "/api/testing/executions/batch"));
             endpoints.add(new Endpoint("GET", "/api/testing/executions/{runId}"));

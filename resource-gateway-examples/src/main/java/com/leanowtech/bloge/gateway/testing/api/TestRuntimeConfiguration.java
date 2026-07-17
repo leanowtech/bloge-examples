@@ -935,6 +935,16 @@ public class TestRuntimeConfiguration {
                 executionService, suiteRegistry, graphService, objectMapper);
     }
 
+    /** Assembles human-confirmed boundary-plan materialization into immutable v3 suites. */
+    @Bean
+    TestBoundarySuiteMaterializationService testBoundarySuiteMaterializationService(
+            TestExecutionApiService executionService,
+            TestSuiteRegistryService suiteRegistry,
+            ObjectMapper objectMapper) {
+        return new TestBoundarySuiteMaterializationService(
+                executionService, suiteRegistry, objectMapper);
+    }
+
     /** Assembles the idempotent immutable-suite runner and coverage evaluator. */
     @Bean(destroyMethod = "close")
     TestSuiteRunLeaseCoordinator testSuiteRunLeaseCoordinator(

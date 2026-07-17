@@ -4,6 +4,8 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestBoundaryCasePlan;
+import com.leanowtech.bloge.gateway.testing.api.TestBoundarySuiteMaterializationRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestBoundarySuiteMaterializationResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimResponse;
@@ -34,6 +36,9 @@ import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizat
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import org.junit.jupiter.api.Test;
 
@@ -68,6 +73,9 @@ class TestabilityCapabilitiesTest {
         assertThat(disabled.features())
                 .containsEntry("durableRecoverySequenceRetentionSloHealth", false);
         assertThat(disabled.features()).containsEntry("schemaBoundaryCasePlanning", false);
+        assertThat(disabled.features())
+                .containsEntry("schemaBoundarySuiteMaterialization", false)
+                .containsEntry("schemaAdmissionSuiteExecution", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionAntiEntropy", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionSweepLease", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionFindingQueue", false);
@@ -109,6 +117,7 @@ class TestabilityCapabilitiesTest {
                 "testRunEvidence",
                 "testEvidenceIntegrity",
                 "testGraphTargetDescriptor", "testBoundaryCasePlan",
+                "testBoundarySuiteMaterializationRequest", "testBoundarySuiteMaterialization",
                 "testOperatorExecutionRequest", "testOperatorTargetDescriptor",
                 "durableTestOwnerClaimRequest", "durableTestOwnerClaimResponse",
                 "durableTestWorkerAcquisitionRequest", "durableTestWorkerAcquisitionResponse",
@@ -188,6 +197,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("durableRecoverySequenceRetention", true)
                 .containsEntry("durableRecoverySequenceRetentionSloHealth", true)
                 .containsEntry("schemaBoundaryCasePlanning", true)
+                .containsEntry("schemaBoundarySuiteMaterialization", true)
+                .containsEntry("schemaAdmissionSuiteExecution", false)
                 .containsEntry("durableStateProjectionAntiEntropy", true)
                 .containsEntry("durableStateProjectionSweepLease", true)
                 .containsEntry("durableStateProjectionFindingQueue", true)
@@ -211,6 +222,13 @@ class TestabilityCapabilitiesTest {
                         TestExecutionApiResponse.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testBoundaryCasePlan"))
                 .containsExactly(TestBoundaryCasePlan.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testBoundarySuiteMaterializationRequest"))
+                .containsExactly(TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testBoundarySuiteMaterialization"))
+                .containsExactly(TestBoundarySuiteMaterializationResponse.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testSuite"))
+                .containsExactly(TestSuite.SCHEMA_VERSION, TestSuiteV2.SCHEMA_VERSION,
+                        TestSuiteV3.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteExecutionResponse"))
                 .containsExactly(TestSuiteExecutionResponse.SCHEMA_VERSION_V1,
                         TestSuiteExecutionResponse.SCHEMA_VERSION,
@@ -294,6 +312,12 @@ class TestabilityCapabilitiesTest {
                 endpoint.path().equals("/api/testing/targets/graphs/{graphName}"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/operators/{operatorRef}"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
+                && endpoint.path().equals(
+                "/api/testing/targets/graphs/{graphName}/boundary-suites"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
+                && endpoint.path().equals(
+                "/api/testing/targets/operators/{operatorRef}/boundary-suites"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/operators/{operatorRef}/executions"));
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")

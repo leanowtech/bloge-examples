@@ -1933,10 +1933,95 @@
         "metadata": {"type": "object", "maxProperties": 100}
       }
     },
+    "testSuiteAdmissionExpectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expectedOutcome", "validationCodes"],
+      "properties": {
+        "expectedOutcome": {"enum": ["ACCEPTED", "SCHEMA_REJECTED"]},
+        "validationCodes": {
+          "type": "array", "uniqueItems": true, "maxItems": 64,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "expectedOutcome": {"const": "ACCEPTED"},
+            "validationCodes": {"maxItems": 0}
+          }
+        },
+        {
+          "properties": {
+            "expectedOutcome": {"const": "SCHEMA_REJECTED"},
+            "validationCodes": {"minItems": 1}
+          }
+        }
+      ]
+    },
+    "testSuiteV3": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteId", "revision", "target", "classification",
+        "cases", "coveragePolicy", "semanticCoveragePolicy", "promotionPolicy",
+        "evaluationMode", "boundaryPlanFingerprint", "inputSchemaFingerprint",
+        "admissionExpectations", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuite.v3"},
+        "suiteId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "revision": {"type": "integer", "minimum": 1},
+        "target": {"$ref": "#/$defs/exactTarget"},
+        "classification": {"enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]},
+        "cases": {
+          "type": "array", "minItems": 1, "maxItems": 100,
+          "items": {"$ref": "#/$defs/testSuiteCase"}
+        },
+        "coveragePolicy": {
+          "allOf": [
+            {"$ref": "#/$defs/testSuiteCoveragePolicy"},
+            {
+              "properties": {
+                "requiredInvocationSiteIds": {"maxItems": 0},
+                "requiredEdgeTransfers": {"maxItems": 0},
+                "minimumAssertionsPerCase": {"const": 0},
+                "requireAllFixtureRulesConsumed": {"const": false}
+              }
+            }
+          ]
+        },
+        "semanticCoveragePolicy": {
+          "type": "object", "additionalProperties": false,
+          "required": ["requirements"],
+          "properties": {"requirements": {"type": "array", "maxItems": 0}}
+        },
+        "promotionPolicy": {
+          "allOf": [
+            {"$ref": "#/$defs/testSuitePromotionPolicy"},
+            {
+              "properties": {
+                "requireAllCasesPassed": {"const": true},
+                "minimumCertifiableCases": {"const": 0},
+                "requireTargetCertificationEligible": {"const": false}
+              }
+            }
+          ]
+        },
+        "evaluationMode": {"const": "SCHEMA_ADMISSION"},
+        "boundaryPlanFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "inputSchemaFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "admissionExpectations": {
+          "type": "object", "minProperties": 1, "maxProperties": 100,
+          "propertyNames": {"type": "string", "minLength": 1, "maxLength": 255},
+          "additionalProperties": {"$ref": "#/$defs/testSuiteAdmissionExpectation"}
+        },
+        "metadata": {"type": "object", "maxProperties": 100}
+      }
+    },
     "testSuiteProtocol": {
       "oneOf": [
         {"$ref": "#/$defs/testSuite"},
-        {"$ref": "#/$defs/testSuiteV2"}
+        {"$ref": "#/$defs/testSuiteV2"},
+        {"$ref": "#/$defs/testSuiteV3"}
       ]
     },
     "testSuiteRegistrationRequest": {
@@ -3048,6 +3133,64 @@
             "status": {"const": "UNAVAILABLE"},
             "cases": {"maxItems": 0},
             "gaps": {"minItems": 1}
+          }
+        }
+      ]
+    },
+    "testBoundarySuiteMaterializationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteId", "classification",
+        "expectedTargetFingerprint", "expectedInputSchemaFingerprint",
+        "expectedPlanFingerprint", "selectedCaseIds", "acceptCoverageGaps"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testBoundarySuiteMaterializationRequest.v1"},
+        "suiteId": {
+          "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$"
+        },
+        "classification": {"enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]},
+        "expectedTargetFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "expectedInputSchemaFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "expectedPlanFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "selectedCaseIds": {
+          "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 128}
+        },
+        "acceptCoverageGaps": {"type": "boolean"}
+      }
+    },
+    "testBoundarySuiteMaterialization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "materializationFingerprint", "target",
+        "inputSchemaFingerprint", "boundaryPlanFingerprint", "sourcePlanStatus",
+        "coverageGapsAccepted", "selectedCaseIds", "fixtureRef", "suiteRef"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testBoundarySuiteMaterialization.v1"},
+        "materializationFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "target": {"$ref": "#/$defs/exactTarget"},
+        "inputSchemaFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "boundaryPlanFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "sourcePlanStatus": {"enum": ["GENERATED", "PARTIAL"]},
+        "coverageGapsAccepted": {"type": "boolean"},
+        "selectedCaseIds": {
+          "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 128}
+        },
+        "fixtureRef": {"$ref": "#/$defs/governedFixtureBundleRef"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "sourcePlanStatus": {"const": "GENERATED"},
+            "coverageGapsAccepted": {"const": false}
+          }
+        },
+        {
+          "properties": {
+            "sourcePlanStatus": {"const": "PARTIAL"},
+            "coverageGapsAccepted": {"const": true}
           }
         }
       ]

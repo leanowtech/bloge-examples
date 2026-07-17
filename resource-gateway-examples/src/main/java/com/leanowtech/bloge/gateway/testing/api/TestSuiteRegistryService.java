@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.SemanticCoveragePolicy;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.OperatorExecutionTargetSnapshot;
@@ -178,10 +179,12 @@ public final class TestSuiteRegistryService {
 
     private void validateIdentity(String pathSuiteId, TestSuiteProtocol suite,
                                   IntegrationRequestContext identity) {
-        boolean supportedGeneration = suite instanceof TestSuite
-                && TestSuite.SCHEMA_VERSION.equals(suite.schemaVersion())
-                || suite instanceof TestSuiteV2
-                && TestSuiteV2.SCHEMA_VERSION.equals(suite.schemaVersion());
+        boolean supportedGeneration = (suite instanceof TestSuite
+                && TestSuite.SCHEMA_VERSION.equals(suite.schemaVersion()))
+                || (suite instanceof TestSuiteV2
+                && TestSuiteV2.SCHEMA_VERSION.equals(suite.schemaVersion()))
+                || (suite instanceof TestSuiteV3
+                && TestSuiteV3.SCHEMA_VERSION.equals(suite.schemaVersion()));
         if (!supportedGeneration
                 || normalized(pathSuiteId).isBlank()
                 || !normalized(pathSuiteId).equals(suite.suiteId())
@@ -217,6 +220,7 @@ public final class TestSuiteRegistryService {
             StoredFixtureBundle fixture = requireFixture(testCase.fixtureBundleRef(), identity);
             validateFixtureDependency(suite, testCase, fixture, identity);
         }
+        validateSchemaAdmissionPolicy(suite, caseIds, identity);
         if (!representedTypes.containsAll(suite.coveragePolicy().requiredCaseTypes())) {
             Set<TestSuite.CaseType> missing = new HashSet<>(suite.coveragePolicy().requiredCaseTypes());
             missing.removeAll(representedTypes);
@@ -241,11 +245,19 @@ public final class TestSuiteRegistryService {
 
     private void validateSemanticCoveragePolicy(TestSuiteProtocol suite,
                                                 IntegrationRequestContext identity) {
-        if (!(suite instanceof TestSuiteV2 semanticSuite)) {
+        SemanticCoveragePolicy semanticCoverage = switch (suite) {
+            case TestSuiteV2 semanticSuite -> semanticSuite.semanticCoveragePolicy();
+            case TestSuiteV3 admissionSuite -> admissionSuite.semanticCoveragePolicy();
+            default -> null;
+        };
+        if (semanticCoverage == null) {
             return;
         }
         List<SemanticCoveragePolicy.Requirement> requirements =
-                semanticSuite.semanticCoveragePolicy().requirements();
+                semanticCoverage.requirements();
+        if (suite instanceof TestSuiteV3 && requirements.isEmpty()) {
+            return;
+        }
         if (requirements.isEmpty() || requirements.size() > MAX_SEMANTIC_REQUIREMENTS) {
             throw badRequest(identity, "RG.TEST.SUITE_SEMANTIC_POLICY_INVALID",
                     "A v2 suite must contain between 1 and 1000 semantic requirements.",
@@ -301,6 +313,46 @@ public final class TestSuiteRegistryService {
         }
     }
 
+    private void validateSchemaAdmissionPolicy(TestSuiteProtocol suite,
+                                               Set<String> caseIds,
+                                               IntegrationRequestContext identity) {
+        if (!(suite instanceof TestSuiteV3 admissionSuite)) {
+            return;
+        }
+        TestSuite.CoveragePolicy coverage = suite.coveragePolicy();
+        TestSuite.PromotionPolicy promotion = suite.promotionPolicy();
+        boolean inertPolicy = coverage.requiredInvocationSiteIds().isEmpty()
+                && coverage.requiredEdgeTransfers().isEmpty()
+                && coverage.minimumAssertionsPerCase() == 0
+                && !coverage.requireAllFixtureRulesConsumed()
+                && promotion.requireAllCasesPassed()
+                && promotion.minimumCertifiableCases() == 0
+                && !promotion.requireTargetCertificationEligible()
+                && admissionSuite.semanticCoveragePolicy().requirements().isEmpty();
+        if (!inertPolicy) {
+            throw badRequest(identity, "RG.TEST.SUITE_ADMISSION_POLICY_INVALID",
+                    "Schema-admission suites require inert execution/semantic coverage and cannot claim business promotion evidence.",
+                    Map.of());
+        }
+        Map<String, TestSuiteV3.AdmissionExpectation> expectations =
+                admissionSuite.admissionExpectations();
+        if (!expectations.keySet().equals(caseIds) || expectations.values().stream()
+                .anyMatch(Objects::isNull)) {
+            throw badRequest(identity, "RG.TEST.SUITE_ADMISSION_EXPECTATIONS_INVALID",
+                    "Schema-admission suites require exactly one expectation for every caseId.",
+                    Map.of("caseCount", caseIds.size(), "expectationCount", expectations.size()));
+        }
+        expectations.forEach((caseId, expectation) -> {
+            if (expectation.validationCodes().size() > 64
+                    || expectation.validationCodes().stream()
+                    .anyMatch(code -> code.isBlank() || code.length() > MAX_IDENTIFIER_LENGTH)) {
+                throw badRequest(identity, "RG.TEST.SUITE_ADMISSION_EXPECTATIONS_INVALID",
+                        "Admission validation codes must be bounded stable identifiers.",
+                        Map.of("caseId", caseId));
+            }
+        });
+    }
+
     private void validateCaseShape(TestSuiteProtocol suite, TestSuite.TestCase testCase,
                                    Set<String> caseIds,
                                    IntegrationRequestContext identity) {
@@ -310,7 +362,8 @@ public final class TestSuiteRegistryService {
             throw badRequest(identity, "RG.TEST.SUITE_CASE_IDENTITY_INVALID",
                     "Every case requires a unique bounded caseId and a supported caseType.", Map.of());
         }
-        if ("GRAPH".equals(suite.target().kind()) && !(testCase.input() instanceof Map<?, ?>)) {
+        if ("GRAPH".equals(suite.target().kind()) && !(suite instanceof TestSuiteV3)
+                && !(testCase.input() instanceof Map<?, ?>)) {
             throw badRequest(identity, "RG.TEST.SUITE_GRAPH_INPUT_INVALID",
                     "Every GRAPH suite case input must be a JSON object.", Map.of("caseId", testCase.caseId()));
         }
@@ -379,6 +432,14 @@ public final class TestSuiteRegistryService {
                     "A case fixture does not satisfy minimumAssertionsPerCase.",
                     Map.of("caseId", testCase.caseId(),
                             "actualAssertions", fixture.bundle().assertions().size()));
+        }
+        if (suite instanceof TestSuiteV3 && (!fixture.bundle().rules().isEmpty()
+                || !fixture.bundle().assertions().isEmpty()
+                || fixture.bundle().logicalClock() != null
+                || fixture.bundle().randomSeed() != null)) {
+            throw badRequest(identity, "RG.TEST.SUITE_ADMISSION_FIXTURE_NOT_INERT",
+                    "Schema-admission suites may reference only inert provenance fixtures.",
+                    Map.of("caseId", testCase.caseId()));
         }
     }
 

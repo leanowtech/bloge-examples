@@ -329,10 +329,57 @@ being represented by one misleading baseline.
 
 This response is an authoring plan, not a persisted `TestSuite`, an executed run, correctness
 evidence, exhaustive property coverage, or a mutation score. Review `gaps`, select or refine cases,
-publish them through the immutable fixture/suite workflow, and execute the exact suite revision
-before a governance gate consumes the result. Schemas must not embed credentials or business
+materialize an exact selected subset as described below, and wait for schema-admission execution
+evidence support before a governance gate consumes the result. Schemas must not embed credentials or business
 secrets in defaults/examples; target readers can already inspect those schema literals, and generated
 baseline inputs may reproduce them.
+
+### 4.1.3 Materialize reviewed boundary cases
+
+After reviewing one exact plan, submit the target, input-schema, and plan fingerprints together with
+an explicit case selection. Materialization requires `TEST_SUITE_WRITE`; target-read or execution-only
+credentials cannot publish generated candidates as governed assets.
+
+```http
+POST /api/testing/targets/graphs/loanDecisionPolicy/boundary-suites
+Authorization: Bearer bloge-aneke-demo-token
+X-Purpose: TEST_SUITE_WRITE
+Content-Type: application/json
+
+{
+  "schemaVersion": "bloge.testBoundarySuiteMaterializationRequest.v1",
+  "suiteId": "loan-decision-schema-boundaries",
+  "classification": "INTERNAL",
+  "expectedTargetFingerprint": "sha256:<target>",
+  "expectedInputSchemaFingerprint": "sha256:<input-schema>",
+  "expectedPlanFingerprint": "sha256:<plan>",
+  "selectedCaseIds": ["baseline", "required-customerId-missing"],
+  "acceptCoverageGaps": false
+}
+```
+
+Use `POST /api/testing/targets/operators/{operatorRef}/boundary-suites` with the same body for an
+operator target.
+
+The service regenerates the current plan before any write. A changed target, projected schema, or
+plan returns `409 RG.TEST.BOUNDARY_PLAN_FINGERPRINT_CONFLICT`; the caller must fetch and review the
+new plan. Unknown, duplicate, empty, oversized, or more than 64 case IDs fail closed. `PARTIAL`
+requires `acceptCoverageGaps=true`; `UNAVAILABLE` cannot be materialized.
+
+Success returns `bloge.testBoundarySuiteMaterialization.v1` with a content fingerprint, source-plan
+status, selected IDs in source-plan order, one exact inert fixture ref, and one exact
+`bloge.testSuite.v3` ref. Content-derived revisions make an exact retry idempotent. The fixture has no
+rules, assertions, clock, or random seed; v3 binds every case ID to `ACCEPTED` or `SCHEMA_REJECTED`
+plus its stable validator codes. Its execution/semantic coverage is deliberately empty and its
+promotion policy requires zero certifiable cases. If fixture storage succeeds but suite storage
+fails, retry is safe: the only residue is an immutable, unreferenced inert fixture.
+
+This increment materializes an authoring asset; it does not yet sign schema-admission results. The
+capability probe therefore reports `schemaBoundarySuiteMaterialization=true` and
+`schemaAdmissionSuiteExecution=false`. Sending a v3 suite to the existing suite runner returns
+`409 RG.TEST.SUITE_ADMISSION_EVIDENCE_UNAVAILABLE` before target execution, run persistence, or
+admission allocation. Do not convert this suite into business correctness or publish-gate evidence
+until a later protocol advertises signed schema-admission execution.
 
 ### 4.2 Register an immutable governed fixture
 

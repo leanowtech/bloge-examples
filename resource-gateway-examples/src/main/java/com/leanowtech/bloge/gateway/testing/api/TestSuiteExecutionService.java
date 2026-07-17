@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
@@ -196,6 +197,11 @@ public final class TestSuiteExecutionService {
         if (!request.suiteRef().fingerprint().equals(stored.fingerprint())) {
             throw conflict(identity, "RG.TEST.SUITE_FINGERPRINT_CONFLICT",
                     "Stored suite fingerprint differs from the exact execution reference.", Map.of());
+        }
+        if (stored.suite() instanceof TestSuiteV3) {
+            throw conflict(identity, "RG.TEST.SUITE_ADMISSION_EVIDENCE_UNAVAILABLE",
+                    "Schema-admission suite execution requires the signed admission-evidence protocol.",
+                    Map.of("suiteSchemaVersion", TestSuiteV3.SCHEMA_VERSION));
         }
 
         Instant startedAt = Instant.now();

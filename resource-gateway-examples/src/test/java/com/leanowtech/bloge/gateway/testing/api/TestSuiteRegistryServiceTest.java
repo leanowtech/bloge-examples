@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.SemanticCoveragePolicy;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.BeforeEach;
@@ -241,6 +242,74 @@ class TestSuiteRegistryServiceTest {
                 "RG.TEST.SUITE_SEMANTIC_POLICY_INVALID", 400);
     }
 
+    @Test
+    void registersSchemaAdmissionV3WithExactExpectationClosureAndNonObjectGraphInput() {
+        StoredFixtureBundle inert = storeInertFixture("fixture-admission", "INTERNAL", 1);
+        TestSuite.TestCase rejected = new TestSuite.TestCase("root-type",
+                TestSuite.CaseType.NEGATIVE, List.of("not-an-object"), fixtureRef(inert),
+                List.of("schema-admission"), Map.of());
+        TestSuiteV3 suite = admissionSuite("suite-v3", rejected, inert,
+                Map.of("root-type", new TestSuiteV3.AdmissionExpectation(
+                        TestSuiteV3.ExpectedOutcome.SCHEMA_REJECTED,
+                        List.of("visual.context.typeMismatch"))));
+
+        StoredTestSuite stored = service.register("suite-v3",
+                new TestSuiteRegistrationRequest("", suite),
+                identity("tenant-a", "test", "CONFIDENTIAL"));
+
+        assertThat(stored.suite()).isInstanceOf(TestSuiteV3.class);
+        assertThat(stored.fingerprint()).isEqualTo(ProtocolFingerprint.of(mapper, suite));
+    }
+
+    @Test
+    void schemaAdmissionV3RejectsMissingExpectationsNonInertFixturesAndPromotionClaims() {
+        StoredFixtureBundle inert = storeInertFixture("fixture-admission", "INTERNAL", 1);
+        TestSuite.TestCase testCase = new TestSuite.TestCase("accepted",
+                TestSuite.CaseType.GOLDEN, Map.of("input", "hello"), fixtureRef(inert),
+                List.of(), Map.of());
+        TestSuiteV3 missing = admissionSuite("suite-v3-missing", testCase, inert, Map.of());
+        assertProblem(() -> service.register("suite-v3-missing",
+                new TestSuiteRegistrationRequest("", missing),
+                identity("tenant-a", "test", "CONFIDENTIAL")),
+                "RG.TEST.SUITE_ADMISSION_EXPECTATIONS_INVALID", 400);
+
+        TestSuite.TestCase nonInertCase = new TestSuite.TestCase("accepted",
+                TestSuite.CaseType.GOLDEN, Map.of("input", "hello"),
+                fixtureRef(internalFixture), List.of(), Map.of());
+        TestSuiteV3 nonInert = admissionSuite("suite-v3-non-inert", nonInertCase,
+                internalFixture, Map.of("accepted", new TestSuiteV3.AdmissionExpectation(
+                        TestSuiteV3.ExpectedOutcome.ACCEPTED, List.of())));
+        assertProblem(() -> service.register("suite-v3-non-inert",
+                new TestSuiteRegistrationRequest("", nonInert),
+                identity("tenant-a", "test", "CONFIDENTIAL")),
+                "RG.TEST.SUITE_ADMISSION_FIXTURE_NOT_INERT", 400);
+
+        TestSuiteV3 promotionClaim = new TestSuiteV3("", "suite-v3-promotion", 1,
+                missing.target(), missing.classification(), List.of(testCase), missing.coveragePolicy(),
+                SemanticCoveragePolicy.empty(), new TestSuite.PromotionPolicy(true, 1, true),
+                TestSuiteV3.EvaluationMode.SCHEMA_ADMISSION,
+                missing.boundaryPlanFingerprint(), missing.inputSchemaFingerprint(),
+                Map.of("accepted", new TestSuiteV3.AdmissionExpectation(
+                        TestSuiteV3.ExpectedOutcome.ACCEPTED, List.of())), Map.of());
+        assertProblem(() -> service.register("suite-v3-promotion",
+                new TestSuiteRegistrationRequest("", promotionClaim),
+                identity("tenant-a", "test", "CONFIDENTIAL")),
+                "RG.TEST.SUITE_ADMISSION_POLICY_INVALID", 400);
+    }
+
+    private TestSuiteV3 admissionSuite(String suiteId, TestSuite.TestCase testCase,
+                                       StoredFixtureBundle fixture,
+                                       Map<String, TestSuiteV3.AdmissionExpectation> expectations) {
+        return new TestSuiteV3("", suiteId, 1,
+                new TestSuite.Target("GRAPH", "controlled-graph", targetFingerprint), "INTERNAL",
+                List.of(testCase), new TestSuite.CoveragePolicy(1,
+                List.of(testCase.caseType()), List.of(), List.of(), 0, false),
+                SemanticCoveragePolicy.empty(), new TestSuite.PromotionPolicy(true, 0, false),
+                TestSuiteV3.EvaluationMode.SCHEMA_ADMISSION,
+                "sha256:" + "b".repeat(64), "sha256:" + "c".repeat(64),
+                expectations, Map.of("fixtureId", fixture.fixtureBundleId()));
+    }
+
     private StoredFixtureBundle storeFixture(String id, String classification, long revision) {
         return storeFixture(id, classification, revision, targetFingerprint);
     }
@@ -250,6 +319,14 @@ class TestSuiteRegistryServiceTest {
         FixtureBundle bundle = new FixtureBundle("", id, revision, fingerprint,
                 classification, null, null, List.of(), List.of(new FixtureBundle.Assertion(
                 "OUTPUT_PATH", "subject", "/result", "EQUALS", "hello", null)), Map.of());
+        StoredFixtureBundle stored = new StoredFixtureBundle("", "tenant-a", "test", id, revision,
+                ProtocolFingerprint.of(mapper, bundle), bundle, Instant.now(), "runner");
+        return fixtures.create(stored);
+    }
+
+    private StoredFixtureBundle storeInertFixture(String id, String classification, long revision) {
+        FixtureBundle bundle = new FixtureBundle("", id, revision, targetFingerprint,
+                classification, null, null, List.of(), List.of(), Map.of("mode", "admission"));
         StoredFixtureBundle stored = new StoredFixtureBundle("", "tenant-a", "test", id, revision,
                 ProtocolFingerprint.of(mapper, bundle), bundle, Instant.now(), "runner");
         return fixtures.create(stored);

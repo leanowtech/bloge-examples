@@ -17,9 +17,10 @@ import java.util.Map;
         property = "schemaVersion", visible = true)
 @JsonSubTypes({
         @JsonSubTypes.Type(value = TestSuite.class, name = TestSuite.SCHEMA_VERSION),
-        @JsonSubTypes.Type(value = TestSuiteV2.class, name = TestSuiteV2.SCHEMA_VERSION)
+        @JsonSubTypes.Type(value = TestSuiteV2.class, name = TestSuiteV2.SCHEMA_VERSION),
+        @JsonSubTypes.Type(value = TestSuiteV3.class, name = TestSuiteV3.SCHEMA_VERSION)
 })
-public sealed interface TestSuiteProtocol permits TestSuite, TestSuiteV2 {
+public sealed interface TestSuiteProtocol permits TestSuite, TestSuiteV2, TestSuiteV3 {
     /** @return exact wire schema version */
     String schemaVersion();
 
