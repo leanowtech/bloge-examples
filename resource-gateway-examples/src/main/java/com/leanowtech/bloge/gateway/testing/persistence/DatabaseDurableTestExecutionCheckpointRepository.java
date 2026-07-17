@@ -15,6 +15,7 @@ import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.ResultSet;
@@ -23,6 +24,7 @@ import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +53,7 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;
+    private final TransactionTemplate repeatableReadScans;
     private final ObjectMapper objectMapper;
     private final DurableTestExecutionCheckpointIntegrity integrity;
 
@@ -68,8 +71,13 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             ObjectMapper objectMapper,
             DurableTestExecutionCheckpointIntegrity integrity) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
-        this.transactions = new TransactionTemplate(
-                Objects.requireNonNull(transactionManager, "transactionManager"));
+        PlatformTransactionManager requiredTransactionManager = Objects.requireNonNull(
+                transactionManager, "transactionManager");
+        this.transactions = new TransactionTemplate(requiredTransactionManager);
+        this.repeatableReadScans = new TransactionTemplate(requiredTransactionManager);
+        this.repeatableReadScans.setReadOnly(true);
+        this.repeatableReadScans.setIsolationLevel(
+                TransactionDefinition.ISOLATION_REPEATABLE_READ);
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.integrity = Objects.requireNonNull(integrity, "integrity");
     }
@@ -233,6 +241,30 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS rg_test_durable_worker_acquisition_operations_idx
                 ON rg_test_durable_worker_acquisitions (outcome, observed_at)
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_worker_scan_cursor_locks (
+                    scope_key VARCHAR(80) NOT NULL PRIMARY KEY,
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(32) NOT NULL,
+                    organization_id VARCHAR(255) NOT NULL,
+                    project_id VARCHAR(255) NOT NULL
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_worker_scan_cursors (
+                    scope_key VARCHAR(80) NOT NULL PRIMARY KEY,
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(32) NOT NULL,
+                    organization_id VARCHAR(255) NOT NULL,
+                    project_id VARCHAR(255) NOT NULL,
+                    cycle_epoch BIGINT NOT NULL,
+                    cursor_lease_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    cursor_updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    cursor_run_id VARCHAR(255) NOT NULL,
+                    advanced_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    cursor_fingerprint VARCHAR(80) NOT NULL
+                )
                 """);
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS rg_test_durable_recovery_heartbeats (
@@ -625,41 +657,37 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
     }
 
     @Override
-    public List<DurableTestExecutionCheckpoint> findExpiredRecoveryCandidates(
+    public RecoveryCandidatePage findExpiredRecoveryCandidates(
             RecoveryCandidateQuery query) {
         RecoveryCandidateQuery requiredQuery = Objects.requireNonNull(query, "query");
-        WorkerAcquisitionScope scope = requiredQuery.scope();
-        List<DurableTestExecutionCheckpoint> candidates = transactions.execute(status -> {
-            Instant cutoff = databaseNow();
-            List<StoredRow> rows = jdbc.query(selectColumns() + """
-                            WHERE tenant_id = ? AND environment_id = ?
-                              AND organization_id = ? AND project_id = ?
-                              AND status IN ('ACTIVE', 'SUSPENDED', 'RESUMING')
-                              AND lease_expires_at <= ?
-                            ORDER BY lease_expires_at, updated_at, run_id
-                            LIMIT ?
-                            """, this::mapRow, scope.tenantId(), scope.environmentId(),
-                    scope.organizationId(), scope.projectId(), Timestamp.from(cutoff),
-                    requiredQuery.limit());
-            return rows.stream().map(this::verifiedCheckpoint).toList();
-        });
-        if (candidates == null) {
+        RecoveryCandidatePage page = repeatableReadScans.execute(
+                status -> recoveryCandidatePage(requiredQuery));
+        if (page == null) {
             throw new IllegalStateException(
                     "Durable recovery candidate transaction returned no result");
         }
-        return List.copyOf(candidates);
+        return page;
     }
 
     @Override
     public WorkerAcquisitionResult acquireWorkerCommandIdempotently(
             WorkerAcquisitionCommand command,
             Optional<WorkerAcquisitionSelection> selection,
+            Optional<WorkerScanProgress> scanProgress,
             TestRuntimeTransactionMutation companionMutation) {
         WorkerAcquisitionCommand requiredCommand = Objects.requireNonNull(command, "command");
         Optional<WorkerAcquisitionSelection> requiredSelection = Objects.requireNonNull(
                 selection, "selection");
+        Optional<WorkerScanProgress> requiredProgress = Objects.requireNonNull(
+                scanProgress, "scanProgress");
         TestRuntimeTransactionMutation requiredMutation = Objects.requireNonNull(
                 companionMutation, "companionMutation");
+        requiredProgress.ifPresent(progress -> {
+            if (!requiredCommand.scope().equals(progress.scope())) {
+                throw new IllegalArgumentException(
+                        "Worker scan progress does not belong to its command scope");
+            }
+        });
         requiredSelection.ifPresent(value -> {
             value.authorization().requireValid(objectMapper);
             LeaseClaim claim = value.claim();
@@ -668,6 +696,11 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     || !scope.environmentId().equals(claim.environmentId())) {
                 throw new IllegalArgumentException(
                         "Worker selection does not belong to its command scope");
+            }
+            if (requiredProgress.isEmpty()
+                    || !claim.runId().equals(requiredProgress.orElseThrow().nextRunId())) {
+                throw new IllegalArgumentException(
+                        "Worker selection requires progress through the selected candidate");
             }
         });
         try {
@@ -693,6 +726,8 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                             objectMapper, selected.authorization(), claimed);
                     outcome = WorkerAcquisitionOutcome.ACQUIRED;
                 }
+                requiredProgress.ifPresent(progress -> advanceWorkerScanCursor(
+                        requiredCommand.scope(), progress, observedAt));
                 StoredWorkerAcquisition stored = newWorkerAcquisition(
                         requiredCommand, outcome, observedAt, claimed, dispatch);
                 insertWorkerAcquisition(stored);
@@ -1607,6 +1642,296 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 Map.entry("resultCheckpointFingerprint", resultCheckpointFingerprint),
                 Map.entry("resultDispatchFingerprint", resultDispatchFingerprint),
                 Map.entry("createdAt", createdAt));
+    }
+
+    private RecoveryCandidatePage recoveryCandidatePage(RecoveryCandidateQuery query) {
+        WorkerAcquisitionScope scope = query.scope();
+        WorkerScanCursorSnapshot cursor = findWorkerScanCursor(scope)
+                .orElseGet(() -> emptyWorkerScanCursor(scope));
+        Instant cutoff = databaseNow();
+        List<RecoveryCandidate> candidates = new ArrayList<>(query.limit());
+        if (cursor.position() == null) {
+            appendRecoveryCandidates(candidates,
+                    queryRecoveryCandidatesFromHead(scope, cutoff, query.limit()),
+                    scope, cursor.cursorFingerprint(), cursor.cycleEpoch());
+            return new RecoveryCandidatePage(candidates);
+        }
+
+        List<DurableTestExecutionCheckpoint> tail = queryRecoveryCandidatesAfter(
+                scope, cutoff, cursor.position(), query.limit());
+        appendRecoveryCandidates(candidates, tail, scope, cursor.cursorFingerprint(),
+                cursor.cycleEpoch());
+        int remaining = query.limit() - tail.size();
+        if (remaining > 0) {
+            if (cursor.cycleEpoch() == Long.MAX_VALUE) {
+                throw new IllegalStateException("Durable worker scan cycle is exhausted");
+            }
+            appendRecoveryCandidates(candidates, queryRecoveryCandidatesAtOrBefore(
+                            scope, cutoff, cursor.position(), remaining),
+                    scope, cursor.cursorFingerprint(), cursor.cycleEpoch() + 1);
+        }
+        return new RecoveryCandidatePage(candidates);
+    }
+
+    private void appendRecoveryCandidates(
+            List<RecoveryCandidate> destination,
+            List<DurableTestExecutionCheckpoint> checkpoints,
+            WorkerAcquisitionScope scope,
+            String expectedCursorFingerprint,
+            long cycleEpoch) {
+        for (DurableTestExecutionCheckpoint checkpoint : checkpoints) {
+            DurableTestExecutionCheckpoint.Lifecycle lifecycle = checkpoint.lifecycle();
+            destination.add(new RecoveryCandidate(checkpoint, new WorkerScanProgress(
+                    scope, expectedCursorFingerprint, cycleEpoch,
+                    lifecycle.leaseExpiresAt(), lifecycle.updatedAt(), checkpoint.runId())));
+        }
+    }
+
+    private List<DurableTestExecutionCheckpoint> queryRecoveryCandidatesFromHead(
+            WorkerAcquisitionScope scope, Instant cutoff, int limit) {
+        return verifiedRecoveryCandidates(jdbc.query(selectColumns() + """
+                        WHERE tenant_id = ? AND environment_id = ?
+                          AND organization_id = ? AND project_id = ?
+                          AND status IN ('ACTIVE', 'SUSPENDED', 'RESUMING')
+                          AND lease_expires_at <= ?
+                        ORDER BY lease_expires_at, updated_at, run_id
+                        LIMIT ?
+                        """, this::mapRow, scope.tenantId(), scope.environmentId(),
+                scope.organizationId(), scope.projectId(), Timestamp.from(cutoff), limit));
+    }
+
+    private List<DurableTestExecutionCheckpoint> queryRecoveryCandidatesAfter(
+            WorkerAcquisitionScope scope,
+            Instant cutoff,
+            WorkerScanPosition cursor,
+            int limit) {
+        Timestamp lease = Timestamp.from(cursor.leaseExpiresAt());
+        Timestamp updated = Timestamp.from(cursor.updatedAt());
+        return verifiedRecoveryCandidates(jdbc.query(selectColumns() + """
+                        WHERE tenant_id = ? AND environment_id = ?
+                          AND organization_id = ? AND project_id = ?
+                          AND status IN ('ACTIVE', 'SUSPENDED', 'RESUMING')
+                          AND lease_expires_at <= ?
+                          AND (
+                                lease_expires_at > ?
+                                OR (lease_expires_at = ? AND updated_at > ?)
+                                OR (lease_expires_at = ? AND updated_at = ? AND run_id > ?)
+                              )
+                        ORDER BY lease_expires_at, updated_at, run_id
+                        LIMIT ?
+                        """, this::mapRow, scope.tenantId(), scope.environmentId(),
+                scope.organizationId(), scope.projectId(), Timestamp.from(cutoff), lease, lease,
+                updated, lease, updated, cursor.runId(), limit));
+    }
+
+    private List<DurableTestExecutionCheckpoint> queryRecoveryCandidatesAtOrBefore(
+            WorkerAcquisitionScope scope,
+            Instant cutoff,
+            WorkerScanPosition cursor,
+            int limit) {
+        Timestamp lease = Timestamp.from(cursor.leaseExpiresAt());
+        Timestamp updated = Timestamp.from(cursor.updatedAt());
+        return verifiedRecoveryCandidates(jdbc.query(selectColumns() + """
+                        WHERE tenant_id = ? AND environment_id = ?
+                          AND organization_id = ? AND project_id = ?
+                          AND status IN ('ACTIVE', 'SUSPENDED', 'RESUMING')
+                          AND lease_expires_at <= ?
+                          AND (
+                                lease_expires_at < ?
+                                OR (lease_expires_at = ? AND updated_at < ?)
+                                OR (lease_expires_at = ? AND updated_at = ? AND run_id <= ?)
+                              )
+                        ORDER BY lease_expires_at, updated_at, run_id
+                        LIMIT ?
+                        """, this::mapRow, scope.tenantId(), scope.environmentId(),
+                scope.organizationId(), scope.projectId(), Timestamp.from(cutoff), lease, lease,
+                updated, lease, updated, cursor.runId(), limit));
+    }
+
+    private List<DurableTestExecutionCheckpoint> verifiedRecoveryCandidates(
+            List<StoredRow> rows) {
+        return rows.stream().map(this::verifiedCheckpoint).toList();
+    }
+
+    private Optional<WorkerScanCursorSnapshot> findWorkerScanCursor(
+            WorkerAcquisitionScope scope) {
+        List<StoredWorkerScanCursor> rows = jdbc.query("""
+                        SELECT scope_key, tenant_id, environment_id, organization_id, project_id,
+                               cycle_epoch, cursor_lease_expires_at, cursor_updated_at,
+                               cursor_run_id, advanced_at, cursor_fingerprint
+                        FROM rg_test_durable_worker_scan_cursors
+                        WHERE scope_key = ?
+                        """, this::mapWorkerScanCursor, workerScanScopeKey(scope));
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        StoredWorkerScanCursor stored = rows.getFirst();
+        requireValidWorkerScanCursor(stored);
+        if (!scope.equals(stored.scope())) {
+            throw new IllegalStateException("Stored worker scan cursor scope is corrupt");
+        }
+        return Optional.of(stored.snapshot());
+    }
+
+    private WorkerScanCursorSnapshot emptyWorkerScanCursor(WorkerAcquisitionScope scope) {
+        return new WorkerScanCursorSnapshot(
+                0, null, emptyWorkerScanCursorFingerprint(scope));
+    }
+
+    private String emptyWorkerScanCursorFingerprint(WorkerAcquisitionScope scope) {
+        return ProtocolFingerprint.of(objectMapper, Map.of(
+                "schemaVersion", "bloge.durableWorkerScanCursorEmpty.v1",
+                "scope", scope));
+    }
+
+    private void advanceWorkerScanCursor(
+            WorkerAcquisitionScope scope,
+            WorkerScanProgress progress,
+            Instant advancedAt) {
+        lockWorkerScanCursor(scope);
+        Optional<WorkerScanCursorSnapshot> currentStored = findWorkerScanCursor(scope);
+        WorkerScanCursorSnapshot current = currentStored.orElseGet(
+                () -> emptyWorkerScanCursor(scope));
+        if (!current.cursorFingerprint().equals(progress.expectedCursorFingerprint())) {
+            return;
+        }
+        WorkerScanPosition nextPosition = new WorkerScanPosition(
+                progress.nextLeaseExpiresAt(), progress.nextUpdatedAt(), progress.nextRunId());
+        requireValidWorkerScanAdvance(current, progress.nextCycleEpoch(), nextPosition);
+        String nextFingerprint = workerScanCursorFingerprint(
+                scope, progress.nextCycleEpoch(), nextPosition, advancedAt);
+        StoredWorkerScanCursor next = new StoredWorkerScanCursor(
+                workerScanScopeKey(scope), scope.tenantId(), scope.environmentId(),
+                scope.organizationId(),
+                scope.projectId(), progress.nextCycleEpoch(), nextPosition.leaseExpiresAt(),
+                nextPosition.updatedAt(), nextPosition.runId(), advancedAt, nextFingerprint);
+        if (currentStored.isEmpty()) {
+            insertWorkerScanCursor(next);
+        } else {
+            int updated = jdbc.update("""
+                            UPDATE rg_test_durable_worker_scan_cursors
+                            SET cycle_epoch = ?, cursor_lease_expires_at = ?,
+                                cursor_updated_at = ?, cursor_run_id = ?, advanced_at = ?,
+                                cursor_fingerprint = ?
+                            WHERE scope_key = ? AND cursor_fingerprint = ?
+                            """, next.cycleEpoch(), Timestamp.from(next.cursorLeaseExpiresAt()),
+                    Timestamp.from(next.cursorUpdatedAt()), next.cursorRunId(),
+                    Timestamp.from(next.advancedAt()), next.cursorFingerprint(), next.scopeKey(),
+                    current.cursorFingerprint());
+            if (updated != 1) {
+                throw new IllegalStateException(
+                        "Durable worker scan cursor changed while locked");
+            }
+        }
+    }
+
+    private void requireValidWorkerScanAdvance(
+            WorkerScanCursorSnapshot current,
+            long nextCycleEpoch,
+            WorkerScanPosition nextPosition) {
+        if (current.position() == null) {
+            if (nextCycleEpoch != 0) {
+                throw new IllegalArgumentException(
+                        "Initial worker scan progress must start in cycle zero");
+            }
+            return;
+        }
+        int positionOrder = nextPosition.compareTo(current.position());
+        if (nextCycleEpoch == current.cycleEpoch()) {
+            if (positionOrder <= 0) {
+                throw new IllegalArgumentException(
+                        "Worker scan progress must advance within its current cycle");
+            }
+            return;
+        }
+        if (current.cycleEpoch() == Long.MAX_VALUE
+                || nextCycleEpoch != current.cycleEpoch() + 1
+                || positionOrder > 0) {
+            throw new IllegalArgumentException(
+                    "Worker scan progress may wrap only once to an earlier keyset position");
+        }
+    }
+
+    private void lockWorkerScanCursor(WorkerAcquisitionScope scope) {
+        jdbc.update("""
+                MERGE INTO rg_test_durable_worker_scan_cursor_locks (
+                            scope_key, tenant_id, environment_id, organization_id, project_id
+                        ) KEY (scope_key)
+                        VALUES (?, ?, ?, ?, ?)
+                        """, workerScanScopeKey(scope), scope.tenantId(), scope.environmentId(),
+                scope.organizationId(), scope.projectId());
+        jdbc.queryForObject("""
+                        SELECT scope_key FROM rg_test_durable_worker_scan_cursor_locks
+                        WHERE scope_key = ?
+                        FOR UPDATE
+                        """, String.class, workerScanScopeKey(scope));
+    }
+
+    private void insertWorkerScanCursor(StoredWorkerScanCursor cursor) {
+        jdbc.update("""
+                        INSERT INTO rg_test_durable_worker_scan_cursors (
+                            scope_key, tenant_id, environment_id, organization_id, project_id,
+                            cycle_epoch, cursor_lease_expires_at, cursor_updated_at,
+                            cursor_run_id, advanced_at, cursor_fingerprint
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, cursor.scopeKey(), cursor.tenantId(), cursor.environmentId(),
+                cursor.organizationId(),
+                cursor.projectId(), cursor.cycleEpoch(),
+                Timestamp.from(cursor.cursorLeaseExpiresAt()),
+                Timestamp.from(cursor.cursorUpdatedAt()), cursor.cursorRunId(),
+                Timestamp.from(cursor.advancedAt()), cursor.cursorFingerprint());
+    }
+
+    private StoredWorkerScanCursor mapWorkerScanCursor(ResultSet rs, int rowNumber)
+            throws SQLException {
+        return new StoredWorkerScanCursor(
+                rs.getString("scope_key"), rs.getString("tenant_id"),
+                rs.getString("environment_id"),
+                rs.getString("organization_id"), rs.getString("project_id"),
+                rs.getLong("cycle_epoch"),
+                rs.getTimestamp("cursor_lease_expires_at").toInstant(),
+                rs.getTimestamp("cursor_updated_at").toInstant(),
+                rs.getString("cursor_run_id"), rs.getTimestamp("advanced_at").toInstant(),
+                rs.getString("cursor_fingerprint"));
+    }
+
+    private void requireValidWorkerScanCursor(StoredWorkerScanCursor stored) {
+        WorkerAcquisitionScope scope;
+        WorkerScanPosition position;
+        try {
+            scope = stored.scope();
+            position = stored.position();
+        } catch (RuntimeException invalid) {
+            throw new IllegalStateException("Stored worker scan cursor is corrupt", invalid);
+        }
+        String expected = workerScanCursorFingerprint(
+                scope, stored.cycleEpoch(), position, stored.advancedAt());
+        if (stored.cycleEpoch() < 0
+                || !workerScanScopeKey(scope).equals(stored.scopeKey())
+                || !expected.equals(stored.cursorFingerprint())) {
+            throw new IllegalStateException("Stored worker scan cursor is corrupt");
+        }
+    }
+
+    private String workerScanScopeKey(WorkerAcquisitionScope scope) {
+        return ProtocolFingerprint.of(objectMapper, Map.of(
+                "schemaVersion", "bloge.durableWorkerScanScope.v1",
+                "scope", scope));
+    }
+
+    private String workerScanCursorFingerprint(
+            WorkerAcquisitionScope scope,
+            long cycleEpoch,
+            WorkerScanPosition position,
+            Instant advancedAt) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerScanCursor.v1"),
+                Map.entry("scope", scope),
+                Map.entry("cycleEpoch", cycleEpoch),
+                Map.entry("leaseExpiresAt", position.leaseExpiresAt()),
+                Map.entry("updatedAt", position.updatedAt()),
+                Map.entry("runId", position.runId()),
+                Map.entry("advancedAt", advancedAt)));
     }
 
     private Optional<WorkerAcquisitionResult> replayedWorkerAcquisition(
@@ -2566,6 +2891,64 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
 
     private static String normalizedEnvironment(String value) {
         return normalized(value).toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private record WorkerScanPosition(
+            Instant leaseExpiresAt,
+            Instant updatedAt,
+            String runId) implements Comparable<WorkerScanPosition> {
+        private WorkerScanPosition {
+            leaseExpiresAt = Objects.requireNonNull(leaseExpiresAt, "leaseExpiresAt");
+            updatedAt = Objects.requireNonNull(updatedAt, "updatedAt");
+            runId = normalized(runId);
+            if (runId.isBlank()) {
+                throw new IllegalArgumentException("Worker scan runId is required");
+            }
+        }
+
+        @Override
+        public int compareTo(WorkerScanPosition other) {
+            int leaseOrder = leaseExpiresAt.compareTo(other.leaseExpiresAt);
+            if (leaseOrder != 0) {
+                return leaseOrder;
+            }
+            int updateOrder = updatedAt.compareTo(other.updatedAt);
+            return updateOrder != 0 ? updateOrder : runId.compareTo(other.runId);
+        }
+    }
+
+    private record WorkerScanCursorSnapshot(
+            long cycleEpoch,
+            WorkerScanPosition position,
+            String cursorFingerprint) {
+    }
+
+    private record StoredWorkerScanCursor(
+            String scopeKey,
+            String tenantId,
+            String environmentId,
+            String organizationId,
+            String projectId,
+            long cycleEpoch,
+            Instant cursorLeaseExpiresAt,
+            Instant cursorUpdatedAt,
+            String cursorRunId,
+            Instant advancedAt,
+            String cursorFingerprint) {
+        private WorkerAcquisitionScope scope() {
+            return new WorkerAcquisitionScope(
+                    tenantId, organizationId, projectId, environmentId);
+        }
+
+        private WorkerScanPosition position() {
+            return new WorkerScanPosition(
+                    cursorLeaseExpiresAt, cursorUpdatedAt, cursorRunId);
+        }
+
+        private WorkerScanCursorSnapshot snapshot() {
+            return new WorkerScanCursorSnapshot(
+                    cycleEpoch, position(), cursorFingerprint);
+        }
     }
 
     private record StoredWorkerAcquisition(

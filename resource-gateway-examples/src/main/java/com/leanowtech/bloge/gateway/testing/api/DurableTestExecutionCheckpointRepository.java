@@ -154,9 +154,9 @@ public interface DurableTestExecutionCheckpointRepository {
      * state transition.</p>
      *
      * @param query server-bounded scope and page size
-     * @return oldest-expiry-first candidates with a stable run-id tie breaker
+     * @return cyclic keyset page whose candidates each carry atomic scan progress
      */
-    List<DurableTestExecutionCheckpoint> findExpiredRecoveryCandidates(
+    RecoveryCandidatePage findExpiredRecoveryCandidates(
             RecoveryCandidateQuery query);
 
     /**
@@ -170,12 +170,14 @@ public interface DurableTestExecutionCheckpointRepository {
      *
      * @param command authenticated pull identity independent of any selected run
      * @param selection exact authorized candidate, or empty after a bounded scan found no claimable work
+     * @param scanProgress last candidate actually examined, or empty when the queue page was empty
      * @param companionMutation local payload-free audit mutation
      * @return immutable original result, marked as replay when already committed
      */
     WorkerAcquisitionResult acquireWorkerCommandIdempotently(
             WorkerAcquisitionCommand command,
             Optional<WorkerAcquisitionSelection> selection,
+            Optional<WorkerScanProgress> scanProgress,
             TestRuntimeTransactionMutation companionMutation);
 
     /**
@@ -659,6 +661,100 @@ public interface DurableTestExecutionCheckpointRepository {
                 throw new IllegalArgumentException(
                         "Recovery candidate limit must be between 1 and 1000");
             }
+        }
+    }
+
+    /**
+     * One bounded cyclic candidate page read from a repeatable database snapshot.
+     *
+     * @param candidates integrity-verified candidates in cyclic keyset order
+     */
+    record RecoveryCandidatePage(List<RecoveryCandidate> candidates) {
+        /** Freezes the page and rejects null candidate entries. */
+        public RecoveryCandidatePage {
+            candidates = List.copyOf(Objects.requireNonNull(candidates, "candidates"));
+            if (candidates.stream().anyMatch(Objects::isNull)) {
+                throw new IllegalArgumentException("Recovery candidate page contains null entries");
+            }
+        }
+    }
+
+    /**
+     * Integrity-verified checkpoint plus the cursor position reached after examining it.
+     *
+     * @param checkpoint exact candidate checkpoint
+     * @param progress atomic cursor progress through this candidate
+     */
+    record RecoveryCandidate(
+            DurableTestExecutionCheckpoint checkpoint,
+            WorkerScanProgress progress) {
+        /** Requires progress to identify the same candidate and scope. */
+        public RecoveryCandidate {
+            checkpoint = Objects.requireNonNull(checkpoint, "checkpoint");
+            progress = Objects.requireNonNull(progress, "progress");
+            if (!progress.scope().contains(checkpoint)
+                    || !progress.nextRunId().equals(checkpoint.runId())
+                    || !progress.nextLeaseExpiresAt().equals(
+                    checkpoint.lifecycle().leaseExpiresAt())
+                    || !progress.nextUpdatedAt().equals(checkpoint.lifecycle().updatedAt())) {
+                throw new IllegalArgumentException(
+                        "Worker scan progress must identify its exact candidate");
+            }
+        }
+    }
+
+    /**
+     * Compare-and-advance token for the persisted cyclic worker scan cursor.
+     *
+     * <p>The expected fingerprint identifies the cursor observed before the repeatable-read scan.
+     * A concurrent winner may make this token stale; persistence must then leave the newer cursor
+     * unchanged while still allowing an otherwise valid acquisition result to commit.</p>
+     *
+     * @param scope exact queue scope
+     * @param expectedCursorFingerprint integrity fingerprint observed before scanning
+     * @param nextCycleEpoch non-negative cyclic pass containing the examined candidate
+     * @param nextLeaseExpiresAt candidate lease-order coordinate
+     * @param nextUpdatedAt candidate update-order coordinate
+     * @param nextRunId candidate stable tie-breaker
+     */
+    record WorkerScanProgress(
+            WorkerAcquisitionScope scope,
+            String expectedCursorFingerprint,
+            long nextCycleEpoch,
+            Instant nextLeaseExpiresAt,
+            Instant nextUpdatedAt,
+            String nextRunId) {
+        private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+        private static final Pattern IDENTIFIER =
+                Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
+
+        /** Rejects ambiguous or non-canonical cursor coordinates. */
+        public WorkerScanProgress {
+            scope = Objects.requireNonNull(scope, "scope");
+            expectedCursorFingerprint = scanRequired(
+                    expectedCursorFingerprint, "expectedCursorFingerprint");
+            nextLeaseExpiresAt = Objects.requireNonNull(
+                    nextLeaseExpiresAt, "nextLeaseExpiresAt");
+            nextUpdatedAt = Objects.requireNonNull(nextUpdatedAt, "nextUpdatedAt");
+            nextRunId = scanRequired(nextRunId, "nextRunId");
+            if (!FINGERPRINT.matcher(expectedCursorFingerprint).matches()) {
+                throw new IllegalArgumentException(
+                        "expectedCursorFingerprint must be a canonical SHA-256 fingerprint");
+            }
+            if (nextCycleEpoch < 0) {
+                throw new IllegalArgumentException("nextCycleEpoch must be non-negative");
+            }
+            if (!IDENTIFIER.matcher(nextRunId).matches()) {
+                throw new IllegalArgumentException("nextRunId must be a bounded stable identifier");
+            }
+        }
+
+        private static String scanRequired(String value, String field) {
+            String normalized = value == null ? "" : value.trim();
+            if (normalized.isBlank()) {
+                throw new IllegalArgumentException(field + " is required");
+            }
+            return normalized;
         }
     }
 

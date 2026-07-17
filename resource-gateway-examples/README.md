@@ -246,7 +246,8 @@ curl -sS -X POST \
 ```
 
 The caller cannot send a run selector, queue scope, owner, lease, priority, or candidate limit. The
-server scans the oldest expired candidates within the authenticated scope, up to
+server scans expired candidates from a persisted cyclic keyset position within the authenticated
+scope, up to
 `RG_TEST_DURABLE_WORKER_CANDIDATE_LIMIT` (default `32`, valid `1..1000`), re-authorizes each exact
 dependency closure, and atomically commits either `ACQUIRED` or `NO_WORK`. `ACQUIRED` contains the
 same payload-free owner/epoch/revision/checkpoint fence used by heartbeat and terminal recovery;
@@ -255,9 +256,12 @@ no claimable assignment, not that a global queue is empty.
 
 Both outcomes are immutable under `clientRequestId`, including `NO_WORK`. Retry a lost response with
 the same key; use a new key for a later poll. Lease CAS, hidden dispatch, command result, and semantic
-audit share one transaction. This is non-blocking pull control: it does not transfer BLOGE runtime
-state to the caller, reserve an execution-capacity permit while idle, provide fairness/priority
-scheduling, or supervise a remote process.
+audit share one transaction with progress through the last examined candidate. The database cursor
+wraps from the ordered tail to the head, so a full ineligible prefix cannot permanently hide later
+work; cursor state and scope projections are fingerprint-verified, and stale concurrent progress
+cannot move it backward. This is non-blocking pull control, not a fairness claim: it does not transfer
+BLOGE runtime state to the caller, reserve an execution-capacity permit while idle, provide tenant
+weighting/priority/aging or candidate quarantine, or supervise a remote process.
 
 ### Claim an expired durable test lease
 

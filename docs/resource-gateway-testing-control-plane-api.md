@@ -831,18 +831,22 @@ Content-Type: application/json
 The verified principal exclusively determines tenant, organization, project, and environment.
 Caller-owned run ids, queue filters, owner ids, lease durations, priorities, and candidate limits are
 unknown fields and fail closed. The repository uses its database clock and an indexed SQL query to
-select at most `RG_TEST_DURABLE_WORKER_CANDIDATE_LIMIT` oldest expired `ACTIVE`, `SUSPENDED`, or
-`RESUMING` v2 candidates; default `32`, valid `1..1000`. Each candidate is integrity-verified and
-freshly re-authorized before exact fence CAS. Authorization conflicts are skipped inside the bounded
-window; dependency-store or authority outages fail the entire poll instead of producing false
-`NO_WORK`.
+select at most `RG_TEST_DURABLE_WORKER_CANDIDATE_LIMIT` expired `ACTIVE`, `SUSPENDED`, or `RESUMING`
+v2 candidates from a persisted cyclic `(leaseExpiresAt, updatedAt, runId)` keyset position; default
+`32`, valid `1..1000`. Cursor plus tail/head reads use one database-clock `REPEATABLE_READ` snapshot.
+Each candidate is integrity-verified and freshly re-authorized before exact fence CAS. Authorization
+conflicts are skipped inside the bounded window; dependency-store or authority outages fail the
+entire poll instead of producing false `NO_WORK` or cursor progress.
 
 The first successful transaction performs lease CAS, issues the hidden authorization-bound dispatch,
 stores the immutable acquisition result, and appends the semantic audit atomically. If the bounded
 window has no claimable candidate, the same transaction stores `NO_WORK` with database observation
-time and audit. Both outcomes are immutable under the scoped `clientRequestId`; a retry after a lost
-response receives the original result even if queue state later changes. A later observation must use
-a new key.
+time and audit. The transaction also compare-and-advances the cursor through the last candidate
+actually examined. A stale concurrent token is a no-op and cannot regress a newer cursor. Cursor
+lookup uses a derived scope key and verifies all scope/position projections against a whole-record
+fingerprint, so projection drift cannot silently reset the scan. Both outcomes are immutable under
+the scoped `clientRequestId`; a retry after a lost response receives the original result before a
+new scan. A later observation must use a new key.
 
 ```json
 {
@@ -870,8 +874,9 @@ a new key.
 `NO_WORK` has `assignment: null`. Neither shape contains dispatch, authorization, fixture/replay
 payload, provider cursor, engine checkpoint, context, or credential. This endpoint acquires recovery
 ownership only. It does not hold an admission permit while idle, execute BLOGE remotely, long-poll,
-guarantee cross-tenant fairness or priority, quarantine unrecoverable candidates, cancel work, or
-supervise worker liveness.
+guarantee bounded waiting under unbounded churn, provide tenant weighting/priority/aging, quarantine
+or back off unrecoverable candidates, cancel work, or supervise worker liveness. The cyclic cursor
+prevents a stable poison prefix from causing permanent starvation; it is not a general scheduler.
 
 ### 4.2h Claim, renew, and terminally recover an exact durable fence
 

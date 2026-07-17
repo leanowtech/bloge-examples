@@ -105,9 +105,11 @@ Verification results on 2026-07-17:
 
 ## Honest Boundary
 
-This increment is a remote control-plane acquisition protocol, not a complete worker product. It
-does not provide long polling, persisted fairness cursor, tenant weighting, priority/aging,
-unrecoverable-candidate quarantine, runtime-state delivery, cross-process heartbeat supervision,
+This increment is a remote control-plane acquisition protocol, not a complete worker product. A
+later increment adds the persisted cyclic scan cursor documented in
+[Stage 4 worker scan cursor verification](resource-gateway-execution-data-control-plane-stage4-worker-scan-cursor-verification.md).
+The combined capability still does not provide long polling, tenant weighting, priority/aging,
+unrecoverable-candidate quarantine/backoff, runtime-state delivery, cross-process heartbeat supervision,
 hard process/container cancellation, multi-suspension orchestration, non-H2 dialect certification,
 or production load qualification. Those remain Stage 4 work and must not be inferred from
 `durableTestWorkerPullAcquisition=true`.

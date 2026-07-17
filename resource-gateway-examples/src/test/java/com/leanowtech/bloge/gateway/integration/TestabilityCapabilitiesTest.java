@@ -96,6 +96,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("durableTestCreationLeaseHeartbeat", true)
                 .containsEntry("durableTestOwnerClaim", true)
                 .containsEntry("durableTestWorkerPullAcquisition", true)
+                .containsEntry("durableTestWorkerCyclicScanCursor", true)
                 .containsEntry("immutableDurableWorkerNoWorkResult", true)
                 .containsEntry("durableRecoveryDependencyReauthorization", true)
                 .containsEntry("authenticatedDurableRecoveryHeartbeat", true)

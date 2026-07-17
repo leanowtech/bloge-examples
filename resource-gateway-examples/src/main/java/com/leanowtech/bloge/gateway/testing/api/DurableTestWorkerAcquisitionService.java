@@ -104,15 +104,24 @@ public final class DurableTestWorkerAcquisitionService {
             return DurableTestWorkerAcquisitionResponse.from(prior.get());
         }
 
-        List<DurableTestExecutionCheckpoint> candidates = candidates(scope, identity);
+        List<DurableTestExecutionCheckpointRepository.RecoveryCandidate> candidates =
+                candidates(scope, identity);
         int examined = 0;
         int ineligible = 0;
-        for (DurableTestExecutionCheckpoint candidate : candidates) {
+        Optional<DurableTestExecutionCheckpointRepository.WorkerScanProgress> scanProgress =
+                Optional.empty();
+        for (DurableTestExecutionCheckpointRepository.RecoveryCandidate queued : candidates) {
+            DurableTestExecutionCheckpoint candidate = queued.checkpoint();
             examined++;
             if (!scope.contains(candidate)) {
                 throw unavailable(identity, "RG.TEST.DURABLE_STORE_UNAVAILABLE",
                         "The isolated durable test control store returned an invalid scope.");
             }
+            if (queued.progress() == null) {
+                throw unavailable(identity, "RG.TEST.DURABLE_STORE_UNAVAILABLE",
+                        "The isolated durable test control store returned invalid scan progress.");
+            }
+            scanProgress = Optional.of(queued.progress());
             if (!DurableTestExecutionCheckpoint.SCHEMA_VERSION.equals(candidate.schemaVersion())
                     || candidate.dependencies().target() == null) {
                 ineligible++;
@@ -139,7 +148,7 @@ public final class DurableTestWorkerAcquisitionService {
                     examined, ineligible, false);
             try {
                 var result = checkpoints.acquireWorkerCommandIdempotently(
-                        command, Optional.of(selection), audit);
+                        command, Optional.of(selection), scanProgress, audit);
                 requireResultScope(result, scope, identity);
                 if (result.idempotentReplay()) {
                     appendReplayAudit(identity, request.clientRequestId(), result);
@@ -179,7 +188,7 @@ public final class DurableTestWorkerAcquisitionService {
                 ineligible, false);
         try {
             var result = checkpoints.acquireWorkerCommandIdempotently(
-                    command, Optional.empty(), audit);
+                    command, Optional.empty(), scanProgress, audit);
             if (result.idempotentReplay()) {
                 appendReplayAudit(identity, request.clientRequestId(), result);
             }
@@ -204,13 +213,13 @@ public final class DurableTestWorkerAcquisitionService {
         }
     }
 
-    private List<DurableTestExecutionCheckpoint> candidates(
+    private List<DurableTestExecutionCheckpointRepository.RecoveryCandidate> candidates(
             DurableTestExecutionCheckpointRepository.WorkerAcquisitionScope scope,
             IntegrationRequestContext identity) {
         try {
             return checkpoints.findExpiredRecoveryCandidates(
                     new DurableTestExecutionCheckpointRepository.RecoveryCandidateQuery(
-                            scope, candidateLimit));
+                            scope, candidateLimit)).candidates();
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "RG.TEST.DURABLE_STORE_UNAVAILABLE",
                     "The isolated durable test control store is unavailable.");

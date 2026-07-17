@@ -70,10 +70,11 @@ class DurableTestWorkerAcquisitionServiceTest {
     void skipsIneligibleCandidateAndClaimsNextAuthorizedExactFence() {
         DurableTestExecutionCheckpoint unavailable = checkpoint("run-old", SHA_A);
         DurableTestExecutionCheckpoint eligible = checkpoint("run-next", SHA_B);
+        var candidatePage = page(unavailable, eligible);
         when(checkpoints.findWorkerAcquisitionResult(any(), eq("poll-1"), any()))
                 .thenReturn(Optional.empty());
         when(checkpoints.findExpiredRecoveryCandidates(any()))
-                .thenReturn(List.of(unavailable, eligible));
+                .thenReturn(candidatePage);
         when(authorizer.authorize(eq(unavailable), any())).thenThrow(
                 new IntegrationProblemException(
                         com.leanowtech.bloge.gateway.integration.IntegrationProblem.conflict(
@@ -82,7 +83,7 @@ class DurableTestWorkerAcquisitionServiceTest {
         when(authorizer.authorize(eq(eligible), any())).thenReturn(authorized);
         var acquired = result(eligible, false);
         when(checkpoints.acquireWorkerCommandIdempotently(
-                any(), any(), any())).thenReturn(acquired);
+                any(), any(), any(), any())).thenReturn(acquired);
 
         DurableTestWorkerAcquisitionResponse response = service.acquire(
                 request("poll-1"), identity());
@@ -90,26 +91,30 @@ class DurableTestWorkerAcquisitionServiceTest {
         assertThat(response.assignment().runId()).isEqualTo("run-next");
         ArgumentCaptor<Optional<DurableTestExecutionCheckpointRepository.WorkerAcquisitionSelection>>
                 selection = ArgumentCaptor.forClass(Optional.class);
+        ArgumentCaptor<Optional<DurableTestExecutionCheckpointRepository.WorkerScanProgress>>
+                progress = ArgumentCaptor.forClass(Optional.class);
         verify(checkpoints).acquireWorkerCommandIdempotently(
-                any(), selection.capture(), any());
+                any(), selection.capture(), progress.capture(), any());
         assertThat(selection.getValue()).isPresent();
         assertThat(selection.getValue().orElseThrow().claim().runId()).isEqualTo("run-next");
         assertThat(selection.getValue().orElseThrow().claim().claimantOwnerId())
                 .isEqualTo("worker-instance-a");
+        assertThat(progress.getValue().orElseThrow().nextRunId()).isEqualTo("run-next");
     }
 
     @Test
     void commitsBoundedNoWorkResultWithNoCallerSelectedQueueFacts() {
         when(checkpoints.findWorkerAcquisitionResult(any(), eq("poll-1"), any()))
                 .thenReturn(Optional.empty());
-        when(checkpoints.findExpiredRecoveryCandidates(any())).thenReturn(List.of());
+        when(checkpoints.findExpiredRecoveryCandidates(any())).thenReturn(page());
         var noWork = mock(
                 DurableTestExecutionCheckpointRepository.WorkerAcquisitionResult.class);
         when(noWork.outcome()).thenReturn(
                 DurableTestExecutionCheckpointRepository.WorkerAcquisitionOutcome.NO_WORK);
         when(noWork.observedAt()).thenReturn(Instant.parse("2026-07-17T00:00:00Z"));
         when(noWork.idempotentReplay()).thenReturn(false);
-        when(checkpoints.acquireWorkerCommandIdempotently(any(), eq(Optional.empty()), any()))
+        when(checkpoints.acquireWorkerCommandIdempotently(
+                any(), eq(Optional.empty()), eq(Optional.empty()), any()))
                 .thenReturn(noWork);
 
         DurableTestWorkerAcquisitionResponse response = service.acquire(
@@ -127,18 +132,51 @@ class DurableTestWorkerAcquisitionServiceTest {
     }
 
     @Test
+    void commitsNoWorkWithProgressThroughTheLastIneligibleCandidate() {
+        DurableTestExecutionCheckpoint first = checkpoint("run-first", SHA_A);
+        DurableTestExecutionCheckpoint second = checkpoint("run-second", SHA_B);
+        var candidatePage = page(first, second);
+        when(checkpoints.findWorkerAcquisitionResult(any(), eq("poll-1"), any()))
+                .thenReturn(Optional.empty());
+        when(checkpoints.findExpiredRecoveryCandidates(any())).thenReturn(candidatePage);
+        when(authorizer.authorize(any(), any())).thenThrow(
+                new IntegrationProblemException(
+                        com.leanowtech.bloge.gateway.integration.IntegrationProblem.conflict(
+                                "RG.TEST.DURABLE_CONTROL_PLAN_UNAVAILABLE", "gone", "c",
+                                java.util.Map.of())));
+        var noWork = mock(
+                DurableTestExecutionCheckpointRepository.WorkerAcquisitionResult.class);
+        when(noWork.outcome()).thenReturn(
+                DurableTestExecutionCheckpointRepository.WorkerAcquisitionOutcome.NO_WORK);
+        when(noWork.observedAt()).thenReturn(Instant.parse("2026-07-17T00:00:00Z"));
+        when(checkpoints.acquireWorkerCommandIdempotently(any(), any(), any(), any()))
+                .thenReturn(noWork);
+
+        DurableTestWorkerAcquisitionResponse response = service.acquire(
+                request("poll-1"), identity());
+
+        assertThat(response.outcome()).isEqualTo("NO_WORK");
+        ArgumentCaptor<Optional<DurableTestExecutionCheckpointRepository.WorkerScanProgress>>
+                progress = ArgumentCaptor.forClass(Optional.class);
+        verify(checkpoints).acquireWorkerCommandIdempotently(
+                any(), eq(Optional.empty()), progress.capture(), any());
+        assertThat(progress.getValue().orElseThrow().nextRunId()).isEqualTo("run-second");
+    }
+
+    @Test
     void staleCandidateRaceContinuesToAnotherAssignment() {
         DurableTestExecutionCheckpoint first = checkpoint("run-first", SHA_A);
         DurableTestExecutionCheckpoint second = checkpoint("run-second", SHA_B);
+        var candidatePage = page(first, second);
         when(checkpoints.findWorkerAcquisitionResult(any(), eq("poll-1"), any()))
                 .thenReturn(Optional.empty());
         when(checkpoints.findExpiredRecoveryCandidates(any()))
-                .thenReturn(List.of(first, second));
+                .thenReturn(candidatePage);
         DurableTestRecoveryAuthorizer.AuthorizedRecovery firstAuthorization = authorized(first);
         DurableTestRecoveryAuthorizer.AuthorizedRecovery secondAuthorization = authorized(second);
         when(authorizer.authorize(any(), any()))
                 .thenReturn(firstAuthorization, secondAuthorization);
-        when(checkpoints.acquireWorkerCommandIdempotently(any(), any(), any()))
+        when(checkpoints.acquireWorkerCommandIdempotently(any(), any(), any(), any()))
                 .thenThrow(new DurableTestExecutionCheckpointConflictException(
                         DurableTestExecutionCheckpointConflictException.Reason.STALE_FENCE,
                         "lost race"))
@@ -149,22 +187,24 @@ class DurableTestWorkerAcquisitionServiceTest {
 
         assertThat(response.assignment().runId()).isEqualTo("run-second");
         verify(checkpoints, org.mockito.Mockito.times(2))
-                .acquireWorkerCommandIdempotently(any(), any(), any());
+                .acquireWorkerCommandIdempotently(any(), any(), any(), any());
     }
 
     @Test
     void dependencyInfrastructureFailureDoesNotCommitAFalseNoWorkResult() {
         DurableTestExecutionCheckpoint candidate = checkpoint("run-a", SHA_A);
+        var candidatePage = page(candidate);
         when(checkpoints.findWorkerAcquisitionResult(any(), eq("poll-1"), any()))
                 .thenReturn(Optional.empty());
-        when(checkpoints.findExpiredRecoveryCandidates(any())).thenReturn(List.of(candidate));
+        when(checkpoints.findExpiredRecoveryCandidates(any())).thenReturn(candidatePage);
         when(authorizer.authorize(eq(candidate), any())).thenThrow(
                 new IllegalStateException("registry offline"));
 
         assertProblem(() -> service.acquire(request("poll-1"), identity()),
                 503, "RG.TEST.DURABLE_AUTHORIZATION_UNAVAILABLE");
 
-        verify(checkpoints, never()).acquireWorkerCommandIdempotently(any(), any(), any());
+        verify(checkpoints, never()).acquireWorkerCommandIdempotently(
+                any(), any(), any(), any());
     }
 
     @Test
@@ -174,13 +214,19 @@ class DurableTestWorkerAcquisitionServiceTest {
                 "tenant-a", "org-other", "project-other", "test", "runner"));
         when(checkpoints.findWorkerAcquisitionResult(any(), eq("poll-1"), any()))
                 .thenReturn(Optional.empty());
-        when(checkpoints.findExpiredRecoveryCandidates(any())).thenReturn(List.of(candidate));
+        DurableTestExecutionCheckpointRepository.RecoveryCandidate queued = mock(
+                DurableTestExecutionCheckpointRepository.RecoveryCandidate.class);
+        when(queued.checkpoint()).thenReturn(candidate);
+        when(checkpoints.findExpiredRecoveryCandidates(any())).thenReturn(
+                new DurableTestExecutionCheckpointRepository.RecoveryCandidatePage(
+                        List.of(queued)));
 
         assertProblem(() -> service.acquire(request("poll-1"), identity()),
                 503, "RG.TEST.DURABLE_STORE_UNAVAILABLE");
 
         verifyNoInteractions(authorizer);
-        verify(checkpoints, never()).acquireWorkerCommandIdempotently(any(), any(), any());
+        verify(checkpoints, never()).acquireWorkerCommandIdempotently(
+                any(), any(), any(), any());
     }
 
     @Test
@@ -205,6 +251,22 @@ class DurableTestWorkerAcquisitionServiceTest {
                 .thenReturn(checkpointFingerprint);
         when(authorized.authorization()).thenReturn(authorization);
         return authorized;
+    }
+
+    private static DurableTestExecutionCheckpointRepository.RecoveryCandidatePage page(
+            DurableTestExecutionCheckpoint... checkpoints) {
+        var scope = new DurableTestExecutionCheckpointRepository.WorkerAcquisitionScope(
+                "tenant-a", "org-a", "project-a", "test");
+        List<DurableTestExecutionCheckpointRepository.RecoveryCandidate> candidates =
+                java.util.Arrays.stream(checkpoints)
+                        .map(checkpoint -> new DurableTestExecutionCheckpointRepository.RecoveryCandidate(
+                                checkpoint,
+                                new DurableTestExecutionCheckpointRepository.WorkerScanProgress(
+                                        scope, SHA_A, 0,
+                                        checkpoint.lifecycle().leaseExpiresAt(),
+                                        checkpoint.lifecycle().updatedAt(), checkpoint.runId())))
+                        .toList();
+        return new DurableTestExecutionCheckpointRepository.RecoveryCandidatePage(candidates);
     }
 
     private static DurableTestExecutionCheckpointRepository.WorkerAcquisitionResult result(
