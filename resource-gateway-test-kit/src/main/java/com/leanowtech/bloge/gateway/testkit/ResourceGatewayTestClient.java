@@ -117,6 +117,35 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Plans bounded independently compiling pure-DSL mutants for one exact graph.
+     *
+     * <p>The returned value is an authoring plan. It contains fingerprints and structural AST
+     * coordinates, not executable source, mutation-run evidence, or a mutation score. Callers
+     * must inspect {@code status} and {@code gaps}; a schema-valid partial plan does not claim full
+     * mutation coverage.</p>
+     *
+     * @param graphName registered graph name
+     * @param maxMutants caller-selected result bound from 1 through 128
+     * @return defensive schema-validated mutation-plan JSON
+     */
+    public JsonNode planGraphMutationCases(String graphName, int maxMutants) {
+        if (maxMutants < 1 || maxMutants > 128) {
+            throw new IllegalArgumentException("Mutation planning requires 1..128 mutants");
+        }
+        String exactGraphName = requiredIdentifier(graphName, "graphName", 512);
+        JsonNode response = exchange("GET", "/api/testing/targets/graphs/"
+                        + segment(exactGraphName) + "/mutation-cases",
+                "maxMutants=" + maxMutants, "TEST_EXECUTION", null);
+        requireVersion(response, TestingProtocol.TEST_MUTATION_CASE_PLAN_V1);
+        TestingProtocolSchemaValidator.require(response, "testMutationCasePlan");
+        if (!exactGraphName.equals(response.path("target").path("id").asText())) {
+            throw responseContractInvalid(
+                    "The server returned a mutation plan for a different graph target.");
+        }
+        return response.deepCopy();
+    }
+
+    /**
      * Materializes a caller-reviewed graph property plan as an immutable V4 suite.
      *
      * <p>The request must reference an existing assertion-bearing fixture. A successful response

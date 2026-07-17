@@ -134,6 +134,9 @@ class TestRuntimeApplicationIntegrationTest {
                         "/api/testing/targets/graphs/{graphName}/property-cases"));
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals(
+                        "/api/testing/targets/graphs/{graphName}/mutation-cases"));
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.path().equals(
                         "/api/testing/targets/operators/{operatorRef}/property-cases"));
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("POST") && endpoint.path().equals(
@@ -151,12 +154,15 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("schemaAdmissionSuiteExecution", true)
                 .containsEntry("seededPropertyCasePlanning", true)
                 .containsEntry("propertySuiteMaterialization", true)
-                .containsEntry("propertySuiteExecution", true);
+                .containsEntry("propertySuiteExecution", true)
+                .containsEntry("pureDslMutationPlanning", true);
         assertThat(capabilities.getBody().payload().supportedObjects())
                 .containsEntry("testBoundaryCasePlan",
                         List.of(TestBoundaryCasePlan.SCHEMA_VERSION))
                 .containsEntry("testPropertyCasePlan",
                         List.of(TestPropertyCasePlan.SCHEMA_VERSION))
+                .containsEntry("testMutationCasePlan",
+                        List.of(TestMutationCasePlan.SCHEMA_VERSION))
                 .containsEntry("testBoundarySuiteMaterializationRequest",
                         List.of(TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION))
                 .containsEntry("testBoundarySuiteMaterialization",
@@ -346,6 +352,25 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(propertyCases.getBody().exhaustive()).isFalse();
         assertThat(propertyCases.getBody().trials()).isNotEmpty();
         assertThat(propertyCases.getBody().planFingerprint()).matches("sha256:[a-f0-9]{64}");
+
+        String mutationPlanPath = "/api/testing/targets/graphs/loanDecisionPolicy/mutation-cases"
+                + "?maxMutants=64";
+        var mutationCases = restTemplate.exchange(mutationPlanPath, HttpMethod.GET,
+                new HttpEntity<>(headers), TestMutationCasePlan.class);
+        var mutationReplay = restTemplate.exchange(mutationPlanPath, HttpMethod.GET,
+                new HttpEntity<>(headers), TestMutationCasePlan.class);
+        assertThat(mutationCases.getStatusCode())
+                .withFailMessage("mutation planning failed: %s", mutationCases.getBody())
+                .isEqualTo(HttpStatus.OK);
+        assertThat(mutationCases.getBody()).isNotNull();
+        assertThat(mutationCases.getBody()).isEqualTo(mutationReplay.getBody());
+        assertThat(mutationCases.getBody().target()).isEqualTo(descriptor.target());
+        assertThat(mutationCases.getBody().status())
+                .isNotEqualTo(TestMutationCasePlan.Status.UNAVAILABLE);
+        assertThat(mutationCases.getBody().mutants()).isNotEmpty();
+        assertThat(mutationCases.getBody().policy().externalOperatorMutation()).isFalse();
+        assertThat(mutationCases.getBody().policy().equivalentMutantDetection()).isFalse();
+        assertThat(mutationCases.getBody().planFingerprint()).matches("sha256:[a-f0-9]{64}");
 
         FixtureBundle propertyFixture = new FixtureBundle("", "loan-property-fixture", 1,
                 descriptor.target().fingerprint(), "INTERNAL", null, 918273645L,

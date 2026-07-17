@@ -307,6 +307,8 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.TestBoundaryCasePlan.SCHEMA_VERSION));
             objects.put("testPropertyCasePlan", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestPropertyCasePlan.SCHEMA_VERSION));
+            objects.put("testMutationCasePlan", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestMutationCasePlan.SCHEMA_VERSION));
             objects.put("testBoundarySuiteMaterializationRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION));
             objects.put("testBoundarySuiteMaterialization", List.of(
@@ -487,6 +489,9 @@ public record IntegrationCapabilities(
         features.put("operatorMicroGraphExecution", testExecutionEndpointEnabled);
         features.put("schemaBoundaryCasePlanning", testExecutionEndpointEnabled);
         features.put("seededPropertyCasePlanning", testExecutionEndpointEnabled);
+        features.put("pureDslMutationPlanning", testExecutionEndpointEnabled);
+        features.put("pureDslMutationExecution", false);
+        features.put("mutationScoreEvidence", false);
         features.put("propertySuiteMaterialization", testExecutionEndpointEnabled);
         features.put("propertySuiteExecution", testExecutionEndpointEnabled);
         features.put("schemaBoundarySuiteMaterialization", testExecutionEndpointEnabled);
@@ -611,6 +616,8 @@ public record IntegrationCapabilities(
                     "/api/testing/targets/graphs/{graphName}/boundary-cases"));
             endpoints.add(new Endpoint("GET",
                     "/api/testing/targets/graphs/{graphName}/property-cases"));
+            endpoints.add(new Endpoint("GET",
+                    "/api/testing/targets/graphs/{graphName}/mutation-cases"));
             endpoints.add(new Endpoint("POST",
                     "/api/testing/targets/graphs/{graphName}/boundary-suites"));
             endpoints.add(new Endpoint("POST",

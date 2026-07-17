@@ -27,6 +27,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerpri
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.InvocationInventoryBuilder;
 import com.leanowtech.bloge.gateway.testing.planning.TestBoundaryCasePlanner;
+import com.leanowtech.bloge.gateway.testing.planning.TestDslMutationPlanner;
 import com.leanowtech.bloge.gateway.testing.planning.TestPropertyCasePlanner;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorInputCoercer;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorMicroGraphRunner;
@@ -83,6 +84,7 @@ public final class TestExecutionApiService {
     private final TestEvidenceSanitizer sanitizer;
     private final TestRuntimeAdmissionGate admissions;
     private final TestBoundaryCasePlanner boundaryCases;
+    private final TestDslMutationPlanner mutationCases;
     private final TestPropertyCasePlanner propertyCases;
     private final Duration retention;
 
@@ -202,6 +204,7 @@ public final class TestExecutionApiService {
         this.admissions = Objects.requireNonNull(admissions, "admissions");
         this.boundaryCases = new TestBoundaryCasePlanner(
                 objectMapper, new JsonSchemaSampleGenerator());
+        this.mutationCases = new TestDslMutationPlanner(objectMapper, operatorRegistry);
         this.propertyCases = new TestPropertyCasePlanner(
                 objectMapper, new JsonSchemaSampleGenerator());
         this.sanitizer = new TestEvidenceSanitizer(objectMapper);
@@ -329,6 +332,36 @@ public final class TestExecutionApiService {
         SchemaEnvelope schema = graphService.requireContract(graph.name()).inputSchema();
         return propertyPlan(current, schema, seed, trialCount, maxShrinkSteps,
                 List.of(), identity);
+    }
+
+    /**
+     * Generates independently compiling pure-DSL mutants for one exact graph artifact.
+     *
+     * <p>The response is an authoring plan only. It contains no executable DSL source and does not
+     * claim that any mutant was killed, survived, or is behaviorally non-equivalent.</p>
+     *
+     * @param graphName registered graph target
+     * @param maxMutants maximum mutants returned from 1 through 128
+     * @param identity verified test-runtime caller
+     * @return content-addressed bounded mutation plan
+     */
+    public TestMutationCasePlan planGraphMutationCases(
+            String graphName,
+            int maxMutants,
+            IntegrationRequestContext identity) {
+        requireTestIdentity(identity);
+        if (maxMutants < 1 || maxMutants > TestDslMutationPlanner.MAX_MUTANTS) {
+            throw badRequest(identity, "RG.TEST.MUTATION_PLAN_POLICY_INVALID",
+                    "Mutation planning requires 1..128 mutants.", Map.of());
+        }
+        TestExecutionApiRequest.Target requested = new TestExecutionApiRequest.Target(
+                "GRAPH", normalized(graphName), "");
+        Graph graph = requireGraph(requested, identity);
+        GraphExecutionTargetSnapshot snapshot = GraphExecutionTargetSnapshot.capture(
+                objectMapper, graph, resourceRegistry);
+        TestExecutionApiRequest.Target current = new TestExecutionApiRequest.Target(
+                "GRAPH", graph.name(), snapshot.fingerprint());
+        return mutationCases.plan(current, graph, snapshot.dependencyFingerprints(), maxMutants);
     }
 
     /** Returns the frozen binding, schema and testability facts needed to author operator fixtures. */

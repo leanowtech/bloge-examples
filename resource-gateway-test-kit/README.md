@@ -5,7 +5,7 @@ Resource Gateway testing control plane without depending on its Spring Boot
 implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 
 - a bounded JDK HTTP client for graph/operator target discovery, fixture and immutable-suite
-  registries, deterministic property planning and V4 materialization, built-in graph-catalog
+  registries, deterministic property planning and V4 materialization, pure-DSL mutation planning, built-in graph-catalog
   materialization, graph/operator execution, suite execution, and persisted child/aggregate-run
   lookup;
 - a fail-closed `FixtureBundleBuilder` for output-level and transport-level protocol fixtures,
@@ -102,6 +102,20 @@ JUnitXmlReportWriter.write(
         "loan-policy",
         List.of(run));
 ```
+
+Plan pure-DSL graph mutations without receiving or executing mutated source:
+
+```java
+JsonNode mutationPlan = client.planGraphMutationCases("loanDecisionPolicy", 64);
+if (!mutationPlan.path("status").asText().equals("GENERATED")) {
+    mutationPlan.path("gaps").forEach(System.out::println);
+}
+```
+
+The client validates `bloge.testMutationCasePlan.v1` against its packaged authoritative Schema.
+Each returned entry is an independently compiling AST rewrite identified by content fingerprints.
+This API is planning only: `pureDslMutationExecution` and `mutationScoreEvidence` remain false, and
+the plan cannot be used as test evidence.
 
 Run an exact synchronous operator binding with the same governed fixture and evidence protocol:
 

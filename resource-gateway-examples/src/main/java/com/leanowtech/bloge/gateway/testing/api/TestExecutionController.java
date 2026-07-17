@@ -80,6 +80,16 @@ public class TestExecutionController {
                 context(headers, IntegrationOperation.TEST_TARGET_READ));
     }
 
+    /** Generates a bounded independently compiled pure-DSL mutation plan for one graph. */
+    @GetMapping("/targets/graphs/{graphName}/mutation-cases")
+    public TestMutationCasePlan planGraphMutationCases(
+            @PathVariable String graphName,
+            @RequestParam(defaultValue = "64") int maxMutants,
+            @RequestHeader HttpHeaders headers) {
+        return service.planGraphMutationCases(graphName, maxMutants,
+                context(headers, IntegrationOperation.TEST_TARGET_READ));
+    }
+
     /** Discovers one frozen operator binding and its executable testability contract. */
     @GetMapping("/targets/operators/{operatorRef}")
     public TestOperatorTargetDescriptor describeOperatorTarget(@PathVariable String operatorRef,

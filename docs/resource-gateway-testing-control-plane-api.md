@@ -370,7 +370,42 @@ V4 through the next section and executed through the isolated testing runtime. P
 still not correctness evidence; only a generation-matched terminal property evidence bundle can be
 consumed by CI or a governance gate.
 
-### 4.1.4 Materialize a reviewed property plan
+### 4.1.4 Plan bounded pure-DSL mutants
+
+Mutation planning starts from the recoverable BLOGE DSL AST already attached to the exact graph:
+
+```bash
+curl -sS 'http://localhost:8080/api/testing/targets/graphs/loanDecisionPolicy/mutation-cases?maxMutants=64' \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION'
+```
+
+The response is `bloge.testMutationCasePlan.v1`. Before publishing any mutant, the service decodes
+the tagged AST through a restricted class allowlist, independently recompiles the baseline, and
+requires both its graph-artifact fingerprint and its complete dependency-bound target fingerprint to
+match the current graph. Each candidate is then independently recompiled through the runtime operator
+registry. A non-compiling or duplicate candidate is omitted and disclosed as a stable gap.
+
+v1 can toggle branch mode, redirect branch targets, negate a decision predicate, swap FIRST-hit
+decision rules, relax a decision hit policy, swap adjacent transform bindings, remove a fallback, or
+decrement a positive retry count. It never rewrites `operatorRef`, operator implementation, external
+request, fixture, payload, or operator input binding. Imported graphs, extension nodes and nested
+foreach/loop/parallel scopes are not expanded in this generation and therefore produce explicit gaps.
+
+| `status` | Contract |
+| --- | --- |
+| `GENERATED` | At least one independently compiling mutant exists and no supported site or declared bound was skipped |
+| `PARTIAL` | Useful mutants exist, but a limit, unsupported scope, duplicate, or compiler rejection is disclosed in `gaps` |
+| `UNAVAILABLE` | No safely reproducible mutant exists; `mutants` is empty and `gaps` explains the source or verification failure |
+
+The plan is bounded to 1 through 128 mutants. It contains AST coordinates and source/artifact/target
+fingerprints, but deliberately omits executable mutated source and business literals. Every mutant's
+`equivalenceClassification` is `UNKNOWN`; v1 performs no equivalent-mutant detection. This endpoint
+does not execute mutants, materialize a suite, calculate a score, or emit evidence. Capability clients
+must therefore observe `pureDslMutationPlanning=true`, `pureDslMutationExecution=false`, and
+`mutationScoreEvidence=false` as three independent facts.
+
+### 4.1.5 Materialize a reviewed property plan
 
 Register an assertion-bearing fixture for the same exact target, then submit the plan's seed, policy,
 three review fingerprints, and exact fixture reference. Materialization requires
@@ -424,7 +459,7 @@ The standalone test-kit exposes graph/operator plan and materialization methods 
 four messages against its packaged schema. Implementation and negative proof details are recorded in
 [Stage 5 immutable property suite materialization verification](resource-gateway-execution-data-control-plane-stage5-property-suite-materialization-verification.md).
 
-### 4.1.5 Execute and verify a bounded property suite
+### 4.1.6 Execute and verify a bounded property suite
 
 Execute the exact V4 suite reference returned by materialization through the ordinary suite endpoint:
 
@@ -467,7 +502,7 @@ pinned key set before using the result as a publish-gate input. Full implementat
 are recorded in
 [Stage 5 property execution verification](resource-gateway-execution-data-control-plane-stage5-property-execution-verification.md).
 
-### 4.1.6 Materialize reviewed boundary cases
+### 4.1.7 Materialize reviewed boundary cases
 
 After reviewing one exact plan, submit the target, input-schema, and plan fingerprints together with
 an explicit case selection. Materialization requires `TEST_SUITE_WRITE`; target-read or execution-only
@@ -512,7 +547,7 @@ The capability probe reports both `schemaBoundarySuiteMaterialization=true` and
 exact v3 suite as described below. Admission evidence is useful for reviewed schema-regression
 gates, but it remains permanently ineligible for business promotion.
 
-### 4.1.7 Execute and verify a schema-admission suite
+### 4.1.8 Execute and verify a schema-admission suite
 
 Use the exact suite reference returned by materialization. The request and idempotency semantics are
 the same as other immutable suites:

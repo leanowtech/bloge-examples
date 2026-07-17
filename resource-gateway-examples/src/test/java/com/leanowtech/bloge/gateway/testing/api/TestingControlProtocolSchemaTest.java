@@ -19,6 +19,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
 import com.leanowtech.bloge.gateway.testing.planning.TestBoundaryCasePlanner;
+import com.leanowtech.bloge.gateway.testing.planning.TestDslMutationPlanner;
 import com.leanowtech.bloge.gateway.testing.planning.TestPropertyCasePlanner;
 import com.leanowtech.bloge.gateway.visual.runtime.EvidenceVerificationKeySet;
 import org.junit.jupiter.api.Test;
@@ -117,6 +118,8 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestBoundaryCasePlan.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testPropertyCasePlan/properties/schemaVersion/const").asText())
                 .isEqualTo(TestPropertyCasePlan.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testMutationCasePlan/properties/schemaVersion/const").asText())
+                .isEqualTo(TestMutationCasePlan.SCHEMA_VERSION);
         assertThat(schema.at(
                 "/$defs/testBoundarySuiteMaterializationRequest/properties/schemaVersion/const")
                 .asText()).isEqualTo(TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION);
@@ -398,6 +401,7 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("testEvidenceIntegrity")).isTrue();
         assertThat(definitions.has("testBoundaryCasePlan")).isTrue();
         assertThat(definitions.has("testPropertyCasePlan")).isTrue();
+        assertThat(definitions.has("testMutationCasePlan")).isTrue();
         assertThat(definitions.has("testBoundarySuiteMaterializationRequest")).isTrue();
         assertThat(definitions.has("testBoundarySuiteMaterialization")).isTrue();
         assertThat(definitions.has("durableTestOwnerClaimRequest")).isTrue();
@@ -634,6 +638,29 @@ class TestingControlProtocolSchemaTest {
                 "/testPropertyCasePlan/properties/policy/properties/generatorVersion/const")
                 .asText()).isEqualTo(TestPropertyCasePlanner.GENERATOR_VERSION);
         assertThat(definitions.at("/testPropertyCasePlan/oneOf")).hasSize(3);
+        assertThat(definitions.at("/testMutationCasePlan/additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(definitions.at(
+                "/testMutationCasePlan/properties/policy/properties/plannerVersion/const")
+                .asText()).isEqualTo(TestDslMutationPlanner.PLANNER_VERSION);
+        assertThat(definitions.at(
+                "/testMutationCasePlan/properties/policy/properties/maxMutants/maximum")
+                .asInt()).isEqualTo(TestDslMutationPlanner.MAX_MUTANTS);
+        assertThat(definitions.at(
+                "/testMutationCasePlan/properties/policy/properties/sourceFormat/const")
+                .asText()).isEqualTo(TestDslMutationPlanner.SOURCE_FORMAT);
+        assertThat(definitions.at(
+                "/testMutationCasePlan/properties/policy/properties/verificationMode/const")
+                .asText()).isEqualTo(TestDslMutationPlanner.VERIFICATION_MODE);
+        assertThat(definitions.at(
+                "/testMutationCasePlan/properties/policy/properties/externalOperatorMutation/const")
+                .asBoolean()).isFalse();
+        assertThat(definitions.at(
+                "/testMutationCasePlan/properties/policy/properties/equivalentMutantDetection/const")
+                .asBoolean()).isFalse();
+        assertThat(definitions.at("/testMutationCasePlan/properties/mutants/maxItems").asInt())
+                .isEqualTo(TestDslMutationPlanner.MAX_MUTANTS);
+        assertThat(definitions.at("/testMutationCasePlan/oneOf")).hasSize(3);
         assertThat(definitions.at(
                 "/testBoundarySuiteMaterializationRequest/additionalProperties").asBoolean())
                 .isFalse();

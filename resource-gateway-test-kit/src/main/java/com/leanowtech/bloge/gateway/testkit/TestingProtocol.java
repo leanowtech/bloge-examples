@@ -77,6 +77,8 @@ public final class TestingProtocol {
     public static final String TEST_SUITE_V4 = "bloge.testSuite.v4";
     /** Seeded validator-proven property case plan wire version. */
     public static final String TEST_PROPERTY_CASE_PLAN_V1 = "bloge.testPropertyCasePlan.v1";
+    /** Bounded independently compiling pure-DSL mutation authoring plan wire version. */
+    public static final String TEST_MUTATION_CASE_PLAN_V1 = "bloge.testMutationCasePlan.v1";
     /** Exact property-suite materialization request wire version. */
     public static final String TEST_PROPERTY_SUITE_MATERIALIZATION_REQUEST_V1 =
             "bloge.testPropertySuiteMaterializationRequest.v1";

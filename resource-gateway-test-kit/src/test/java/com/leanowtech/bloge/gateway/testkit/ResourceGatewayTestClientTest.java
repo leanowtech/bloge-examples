@@ -155,6 +155,49 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void plansBoundedPureDslGraphMutations() {
+        ResourceGatewayTestClient client = client();
+
+        JsonNode plan = client.planGraphMutationCases("loan decision/v2", 17);
+
+        assertThat(plan.path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_MUTATION_CASE_PLAN_V1);
+        assertThat(plan.path("policy").path("externalOperatorMutation").asBoolean()).isFalse();
+        assertThat(plan.path("policy").path("equivalentMutantDetection").asBoolean()).isFalse();
+        assertThat(plan.path("mutants")).hasSize(1);
+        assertThat(requests).singleElement().satisfies(request -> {
+            assertThat(request.purpose()).isEqualTo("TEST_EXECUTION");
+            assertThat(request.rawPath())
+                    .endsWith("/loan%20decision%2Fv2/mutation-cases");
+            assertThat(request.rawQuery()).isEqualTo("maxMutants=17");
+        });
+    }
+
+    @Test
+    void rejectsUnboundedMutationPlanningBeforeTransport() {
+        ResourceGatewayTestClient client = client();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> client.planGraphMutationCases("graph-a", 129))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("1..128");
+        assertThat(requests).isEmpty();
+    }
+
+    @Test
+    void rejectsMutationPlanForDifferentGraphTarget() {
+        ResourceGatewayTestClient client = client();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> client.planGraphMutationCases("different-graph", 17))
+                .isInstanceOf(ResourceGatewayTestException.class)
+                .extracting(failure -> ((ResourceGatewayTestException) failure).code())
+                .isEqualTo("RG.TESTKIT.RESPONSE_CONTRACT_INVALID");
+        assertThat(requests).singleElement().satisfies(request ->
+                assertThat(request.rawPath()).endsWith("/different-graph/mutation-cases"));
+    }
+
+    @Test
     void registersExecutesAndQueriesOneExactImmutableSuite() throws Exception {
         ResourceGatewayTestClient client = client();
         ObjectNode registration = JSON.createObjectNode();
@@ -649,6 +692,8 @@ class ResourceGatewayTestClientTest {
             respond(exchange, 200, evidenceKeySetResponse());
         } else if (path.contains("/evidence-keys/")) {
             respond(exchange, 200, evidenceKeyResponse());
+        } else if (path.endsWith("/mutation-cases")) {
+            respond(exchange, 200, mutationPlanResponse());
         } else if (path.endsWith("/property-cases")) {
             respond(exchange, 200, propertyPlanResponse());
         } else if (path.endsWith("/property-suites")) {
@@ -699,6 +744,26 @@ class ResourceGatewayTestClientTest {
                    "verificationMode":"VISUAL_SCHEMA_VALIDATOR_PROOF"},
                  "trials":[{"trialId":"property-001","input":{"value":"generated"},
                    "inputFingerprint":"%1$s","complexity":1,"shrinkPath":[]}],
+                 "gaps":[]}
+                """.formatted(FINGERPRINT);
+    }
+
+    private static String mutationPlanResponse() {
+        return """
+                {"schemaVersion":"bloge.testMutationCasePlan.v1",
+                 "target":{"kind":"GRAPH","id":"loan decision/v2","fingerprint":"%1$s"},
+                 "sourceFormat":"bloge-dsl.ast.v1","sourceFingerprint":"%1$s",
+                 "graphArtifactFingerprint":"%1$s","planFingerprint":"%1$s",
+                 "status":"GENERATED",
+                 "policy":{"plannerVersion":"pure-dsl-mutations-v1","maxMutants":17,
+                   "sourceFormat":"bloge-dsl.ast.v1",
+                   "verificationMode":"BLOGE_DSL_AST_RECOMPILE_PROOF",
+                   "externalOperatorMutation":false,"equivalentMutantDetection":false},
+                 "mutants":[{"mutantId":"mutant-001","kind":"FALLBACK_REMOVED",
+                   "astPath":"/members/0/fallback","sourceLine":2,"sourceColumn":3,
+                   "mutantSourceFingerprint":"%1$s",
+                   "mutantGraphArtifactFingerprint":"%1$s",
+                   "mutantTargetFingerprint":"%1$s","equivalenceClassification":"UNKNOWN"}],
                  "gaps":[]}
                 """.formatted(FINGERPRINT);
     }

@@ -192,6 +192,28 @@ class TestExecutionControllerTest {
     }
 
     @Test
+    void mutationPlanningUsesOnlyTheAuthenticatedGraphTargetPath() throws Exception {
+        TestExecutionApiService service = mock(TestExecutionApiService.class);
+        String fingerprint = "sha256:" + "a".repeat(64);
+        when(service.planGraphMutationCases(eq("graph-a"), eq(32), any()))
+                .thenReturn(mutationPlan("graph-a", fingerprint));
+        MockMvc mvc = mvc(service);
+
+        mvc.perform(get("/api/testing/targets/graphs/graph-a/mutation-cases")
+                        .queryParam("maxMutants", "32")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_EXECUTION"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(TestMutationCasePlan.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.target.kind").value("GRAPH"))
+                .andExpect(jsonPath("$.policy.maxMutants").value(32))
+                .andExpect(jsonPath("$.policy.externalOperatorMutation").value(false))
+                .andExpect(jsonPath("$.mutants[0].equivalenceClassification").value("UNKNOWN"));
+
+        verify(service).planGraphMutationCases(eq("graph-a"), eq(32), any());
+    }
+
+    @Test
     void executionPurposeCannotWriteGovernedFixtureRevisions() throws Exception {
         TestExecutionApiService service = mock(TestExecutionApiService.class);
         MockMvc mvc = mvc(service);
@@ -496,6 +518,26 @@ class TestExecutionControllerTest {
                 List.of(new TestPropertyCasePlan.PropertyTrial(
                         "property-001", Map.of("value", 1),
                         "sha256:" + "d".repeat(64), 10, List.of())), List.of());
+    }
+
+    private static TestMutationCasePlan mutationPlan(
+            String id, String targetFingerprint) {
+        String sourceFingerprint = "sha256:" + "b".repeat(64);
+        String graphFingerprint = "sha256:" + "c".repeat(64);
+        return new TestMutationCasePlan("",
+                new TestExecutionApiRequest.Target("GRAPH", id, targetFingerprint),
+                "bloge-dsl.ast.v1", sourceFingerprint, graphFingerprint,
+                "sha256:" + "d".repeat(64), TestMutationCasePlan.Status.GENERATED,
+                new TestMutationCasePlan.MutationPolicy(
+                        "pure-dsl-mutations-v1", 32, "bloge-dsl.ast.v1",
+                        "BLOGE_DSL_AST_RECOMPILE_PROOF", false, false),
+                List.of(new TestMutationCasePlan.PlannedMutant(
+                        "mutant-001", TestMutationCasePlan.MutationKind.BRANCH_MODE_TOGGLED,
+                        "/members/1/inclusive", 2, 3,
+                        "sha256:" + "e".repeat(64), "sha256:" + "f".repeat(64),
+                        "sha256:" + "1".repeat(64),
+                        TestMutationCasePlan.EquivalenceClassification.UNKNOWN)),
+                List.of());
     }
 
     private static TestSuiteExecutionResponse suiteExecutionResponse(

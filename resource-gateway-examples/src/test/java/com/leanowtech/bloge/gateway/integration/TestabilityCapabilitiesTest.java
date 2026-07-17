@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestBoundaryCasePlan;
 import com.leanowtech.bloge.gateway.testing.api.TestPropertyCasePlan;
+import com.leanowtech.bloge.gateway.testing.api.TestMutationCasePlan;
 import com.leanowtech.bloge.gateway.testing.api.TestBoundarySuiteMaterializationRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestBoundarySuiteMaterializationResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestPropertySuiteMaterializationRequest;
@@ -117,7 +118,10 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("testRuntimeSloHealth", false)
                 .containsEntry("boundedCardinalityTestRuntimeMetrics", false)
                 .containsEntry("databaseAuthoritativeTestRuntimeAdmission", false)
-                .containsEntry("boundedCardinalityTestRuntimeAdmissionMetrics", false);
+                .containsEntry("boundedCardinalityTestRuntimeAdmissionMetrics", false)
+                .containsEntry("pureDslMutationPlanning", false)
+                .containsEntry("pureDslMutationExecution", false)
+                .containsEntry("mutationScoreEvidence", false);
         assertThat(enabled.testability().executionEndpointEnabled()).isTrue();
         assertThat(enabled.supportedObjects()).containsKeys("testExecutionRequest", "testExecutionResponse",
                 "testExecutionBatchRequest", "testExecutionBatchResponse", "fixtureBundleRegistrationRequest",
@@ -131,6 +135,7 @@ class TestabilityCapabilitiesTest {
                 "testRunEvidence",
                 "testEvidenceIntegrity",
                 "testGraphTargetDescriptor", "testBoundaryCasePlan", "testPropertyCasePlan",
+                "testMutationCasePlan",
                 "testBoundarySuiteMaterializationRequest", "testBoundarySuiteMaterialization",
                 "testOperatorExecutionRequest", "testOperatorTargetDescriptor",
                 "durableTestOwnerClaimRequest", "durableTestOwnerClaimResponse",
@@ -228,6 +233,9 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("boundedCardinalityTestRuntimeMetrics", true)
                 .containsEntry("databaseAuthoritativeTestRuntimeAdmission", true)
                 .containsEntry("boundedCardinalityTestRuntimeAdmissionMetrics", true)
+                .containsEntry("pureDslMutationPlanning", true)
+                .containsEntry("pureDslMutationExecution", false)
+                .containsEntry("mutationScoreEvidence", false)
                 .containsEntry("signedTestRunEvidence", false)
                 .containsEntry("suiteSignedChildEvidenceGate", false)
                 .containsEntry("signedTestSuiteRunAttestation", false)
@@ -241,6 +249,8 @@ class TestabilityCapabilitiesTest {
                 .containsExactly(TestBoundaryCasePlan.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testPropertyCasePlan"))
                 .containsExactly(TestPropertyCasePlan.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testMutationCasePlan"))
+                .containsExactly(TestMutationCasePlan.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testBoundarySuiteMaterializationRequest"))
                 .containsExactly(TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testBoundarySuiteMaterialization"))
@@ -358,6 +368,9 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("GET")
                 && endpoint.path().equals(
                 "/api/testing/targets/graphs/{graphName}/property-cases"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("GET")
+                && endpoint.path().equals(
+                "/api/testing/targets/graphs/{graphName}/mutation-cases"));
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals(
                 "/api/testing/targets/graphs/{graphName}/property-suites"));

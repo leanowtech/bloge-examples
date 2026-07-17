@@ -3880,6 +3880,120 @@
         }
       ]
     },
+    "testMutationCasePlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "target", "sourceFormat", "sourceFingerprint",
+        "graphArtifactFingerprint", "planFingerprint", "status", "policy", "mutants",
+        "gaps"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testMutationCasePlan.v1"},
+        "target": {
+          "allOf": [
+            {"$ref": "#/$defs/exactTarget"},
+            {"properties": {"kind": {"const": "GRAPH"}}}
+          ]
+        },
+        "sourceFormat": {"type": "string", "minLength": 1, "maxLength": 128},
+        "sourceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "graphArtifactFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "planFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "status": {"enum": ["GENERATED", "PARTIAL", "UNAVAILABLE"]},
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["plannerVersion", "maxMutants", "sourceFormat",
+            "verificationMode", "externalOperatorMutation", "equivalentMutantDetection"],
+          "properties": {
+            "plannerVersion": {"const": "pure-dsl-mutations-v1"},
+            "maxMutants": {"type": "integer", "minimum": 1, "maximum": 128},
+            "sourceFormat": {"const": "bloge-dsl.ast.v1"},
+            "verificationMode": {"const": "BLOGE_DSL_AST_RECOMPILE_PROOF"},
+            "externalOperatorMutation": {"const": false},
+            "equivalentMutantDetection": {"const": false}
+          }
+        },
+        "mutants": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["mutantId", "kind", "astPath", "sourceLine", "sourceColumn",
+              "mutantSourceFingerprint", "mutantGraphArtifactFingerprint",
+              "mutantTargetFingerprint", "equivalenceClassification"],
+            "properties": {
+              "mutantId": {"type": "string", "pattern": "^mutant-[0-9]{3}$"},
+              "kind": {
+                "enum": ["BRANCH_MODE_TOGGLED", "BRANCH_CASE_TARGET_REPLACED",
+                  "BRANCH_OTHERWISE_TARGET_REPLACED", "DECISION_CONDITION_NEGATED",
+                  "DECISION_FIRST_RULE_ORDER_SWAPPED", "DECISION_HIT_POLICY_RELAXED",
+                  "TRANSFORM_BINDINGS_SWAPPED", "FALLBACK_REMOVED",
+                  "RETRY_ATTEMPTS_DECREMENTED"]
+              },
+              "astPath": {
+                "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^/"
+              },
+              "sourceLine": {"type": "integer", "minimum": 1},
+              "sourceColumn": {"type": "integer", "minimum": 1},
+              "mutantSourceFingerprint": {"$ref": "#/$defs/fingerprint"},
+              "mutantGraphArtifactFingerprint": {"$ref": "#/$defs/fingerprint"},
+              "mutantTargetFingerprint": {"$ref": "#/$defs/fingerprint"},
+              "equivalenceClassification": {"const": "UNKNOWN"}
+            }
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "maxItems": 512,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "astPath", "mutationKind"],
+            "properties": {
+              "code": {
+                "enum": ["RECOVERABLE_DSL_SOURCE_UNAVAILABLE",
+                  "UNSUPPORTED_DSL_SOURCE_FORMAT", "DSL_SOURCE_DECODE_FAILED",
+                  "BASELINE_RECOMPILATION_FAILED", "BASELINE_RECOMPILATION_MISMATCH",
+                  "IMPORTED_GRAPH_MUTATION_UNSUPPORTED", "EXTENSION_MUTATION_UNSUPPORTED",
+                  "NESTED_SCOPE_NOT_EXPANDED", "MUTANT_COMPILATION_REJECTED",
+                  "MUTANT_DUPLICATE_REJECTED", "MUTANT_LIMIT_REACHED",
+                  "NO_SUPPORTED_MUTATION_SITE"]
+              },
+              "astPath": {"type": "string", "maxLength": 512},
+              "mutationKind": {"type": "string", "maxLength": 128}
+            }
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "status": {"const": "GENERATED"},
+            "sourceFormat": {"const": "bloge-dsl.ast.v1"},
+            "mutants": {"minItems": 1},
+            "gaps": {"maxItems": 0}
+          }
+        },
+        {
+          "properties": {
+            "status": {"const": "PARTIAL"},
+            "sourceFormat": {"const": "bloge-dsl.ast.v1"},
+            "mutants": {"minItems": 1},
+            "gaps": {"minItems": 1}
+          }
+        },
+        {
+          "properties": {
+            "status": {"const": "UNAVAILABLE"},
+            "mutants": {"maxItems": 0},
+            "gaps": {"minItems": 1}
+          }
+        }
+      ]
+    },
     "testBoundarySuiteMaterializationRequest": {
       "type": "object",
       "additionalProperties": false,

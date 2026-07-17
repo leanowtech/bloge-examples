@@ -68,6 +68,8 @@ class TestingProtocolTest {
             assertThat(definitions.at("/testSuiteProtocol/oneOf")).hasSize(4);
             assertConstant(definitions, "testPropertyCasePlan",
                     TestingProtocol.TEST_PROPERTY_CASE_PLAN_V1);
+            assertConstant(definitions, "testMutationCasePlan",
+                    TestingProtocol.TEST_MUTATION_CASE_PLAN_V1);
             assertConstant(definitions, "testPropertySuiteMaterializationRequest",
                     TestingProtocol.TEST_PROPERTY_SUITE_MATERIALIZATION_REQUEST_V1);
             assertConstant(definitions, "testPropertySuiteMaterialization",
@@ -463,6 +465,71 @@ class TestingProtocolTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("durableTestRecoverySequenceRequest")
                 .hasMessageNotContaining("approval-1");
+    }
+
+    @Test
+    void packagedSchemaEnforcesMutationPlanningSafetyAndCompleteness() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode valid = mapper.readTree("""
+                {"schemaVersion":"bloge.testMutationCasePlan.v1",
+                 "target":{"kind":"GRAPH","id":"graph-a","fingerprint":"sha256:%1$s"},
+                 "sourceFormat":"bloge-dsl.ast.v1","sourceFingerprint":"sha256:%1$s",
+                 "graphArtifactFingerprint":"sha256:%1$s","planFingerprint":"sha256:%1$s",
+                 "status":"GENERATED",
+                 "policy":{"plannerVersion":"pure-dsl-mutations-v1","maxMutants":16,
+                   "sourceFormat":"bloge-dsl.ast.v1",
+                   "verificationMode":"BLOGE_DSL_AST_RECOMPILE_PROOF",
+                   "externalOperatorMutation":false,"equivalentMutantDetection":false},
+                 "mutants":[{"mutantId":"mutant-001","kind":"FALLBACK_REMOVED",
+                   "astPath":"/members/0/fallback","sourceLine":2,"sourceColumn":3,
+                   "mutantSourceFingerprint":"sha256:%1$s",
+                   "mutantGraphArtifactFingerprint":"sha256:%1$s",
+                   "mutantTargetFingerprint":"sha256:%1$s",
+                   "equivalenceClassification":"UNKNOWN"}],"gaps":[]}
+                """.formatted("a".repeat(64)));
+
+        assertThatNoException().isThrownBy(() -> TestingProtocolSchemaValidator.require(
+                valid, "testMutationCasePlan"));
+
+        JsonNode externalMutation = valid.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) externalMutation.path("policy"))
+                .put("externalOperatorMutation", true);
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                externalMutation, "testMutationCasePlan"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("testMutationCasePlan");
+
+        JsonNode falseComplete = valid.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ArrayNode) falseComplete.path("gaps"))
+                .addObject().put("code", "MUTANT_LIMIT_REACHED")
+                .put("astPath", "/members/1").put("mutationKind", "FALLBACK_REMOVED");
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                falseComplete, "testMutationCasePlan"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("testMutationCasePlan");
+
+        JsonNode extensible = valid.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) extensible).put("executableSource", "");
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                extensible, "testMutationCasePlan"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("testMutationCasePlan");
+
+        JsonNode wrongTargetKind = valid.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) wrongTargetKind.path("target"))
+                .put("kind", "OPERATOR");
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                wrongTargetKind, "testMutationCasePlan"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("testMutationCasePlan");
+
+        JsonNode mismatchedSource = valid.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) mismatchedSource)
+                .put("sourceFormat", "legacy-dsl.v0");
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                mismatchedSource, "testMutationCasePlan"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("testMutationCasePlan");
     }
 
     private static void assertConstant(JsonNode definitions, String definition, String expected) {
