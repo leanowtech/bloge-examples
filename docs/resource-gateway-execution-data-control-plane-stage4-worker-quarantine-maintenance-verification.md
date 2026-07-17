@@ -84,7 +84,7 @@ The maintenance protocol owns nine separate tables:
 | `rg_test_durable_worker_quarantine_discard_approvals` | exact token-free checker intent and one-way consumption state |
 | `rg_test_durable_worker_quarantine_discards` | caller-stable approved-discard intent and receipt replay |
 | `rg_test_durable_worker_quarantine_discard_history` | dedicated token-free maker/checker evidence |
-| `rg_test_durable_worker_quarantine_request_tombstones` | payload-free request reservation after detailed replay expires |
+| `rg_test_durable_worker_quarantine_request_tombstones` | payload-free request reservation with an independent rotation-aware HMAC index |
 | `rg_test_durable_worker_quarantine_retention` | singleton database lease, fence, counters, and last-success authority |
 
 Control rows cascade with the automatic quarantine. History is independent so `DISCARD` cannot erase
@@ -124,8 +124,10 @@ the checker identity must differ from the maker. Any mismatch fails closed.
 - replay and rejection attempts append separate token-free audit events.
 
 After the detailed replay window, an exact retry returns stable replay-window-expired `409`; changed
-intent remains a conflict. A server-computed request-key digest reserves the identity without storing
-the raw request ID. Reuse is accepted only after the independent tombstone window expires.
+intent remains a conflict. A server-computed, domain-separated HMAC request index binds operation,
+authenticated scope, and request ID without storing the raw request ID. New writes use the active
+generation; exact old-key or legacy hits are CAS re-keyed. Reuse is accepted only after the
+independent tombstone window expires.
 
 ## Audit And Data Minimization
 
@@ -136,7 +138,8 @@ state mutation roll back.
 The claim token appears only in the successful claim response, the resolution/approved-discard
 request, and an AES-GCM envelope in the internal claim-command replay row. The active control stores
 only a domain-separated HMAC verifier and key ID. Bounded retention authenticates the envelope before
-deleting the command; the successor tombstone contains no token or raw request ID. The token is
+deleting the command; the successor tombstone contains no token or raw request ID and uses a key ring
+independent from claim-token roots. The token is
 excluded from list/history payloads, resolution receipts,
 health details, metrics, problem responses, and semantic audit facts. Business input/output,
 fixture, dispatch, dependency value, and checkpoint JSON are never exported by this protocol.
@@ -177,6 +180,8 @@ and last-success epoch.
 | `gateway.testing.durable.worker-quarantines.tombstone-retention-days` | `RG_TEST_WORKER_QUARANTINE_TOMBSTONE_RETENTION_DAYS` | `365` |
 | `gateway.testing.durable.worker-quarantines.retention-page-size` | `RG_TEST_WORKER_QUARANTINE_RETENTION_PAGE_SIZE` | `100` |
 | `gateway.testing.durable.worker-quarantines.retention-interval-ms` | `RG_TEST_WORKER_QUARANTINE_RETENTION_INTERVAL_MS` | `3600000` |
+| `gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id` | `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID` | local key in `test`; required in `staging` |
+| `gateway.testing.durable.worker-quarantines.request-key-protection.key-ring` | `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING` | local key in `test`; required in `staging` |
 | `gateway.testing.runtime-slo.worker-quarantine-max-records` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_RECORDS` | `100` |
 | `gateway.testing.runtime-slo.worker-quarantine-max-oldest-age-seconds` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_OLDEST_AGE_SECONDS` | `86400` |
 | `gateway.testing.runtime-slo.worker-quarantine-max-expired-claims` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_EXPIRED_CLAIMS` | `0` |
@@ -196,7 +201,10 @@ and last-success epoch.
 | Claim response is lost | exact retry returns the original token and fence |
 | Resolution response is lost | exact retry returns the original token-free receipt |
 | detailed replay expires | exact retry returns replay-window-expired; no action is repeated |
-| retention source or tombstone is changed out of band | leased page or retry fails closed |
+| Exact retry reaches an old-key or legacy tombstone | retry semantics are preserved and the row is CAS re-keyed to active v2 |
+| An unexpired v2 tombstone references a removed key | startup fails readiness instead of accepting request-ID resurrection |
+| An expired v2 tombstone references a removed key | startup succeeds and bounded retention may purge the row |
+| A selected retention source or tombstone fingerprint is changed | leased page or exact retry fails closed |
 | `RELEASE` succeeds | quarantine remains and returns to actionable maintenance state |
 | direct new `DISCARD` is submitted | stable approval-required rejection; no mutation |
 | maker approves its own discard | self approval rejected; no approval row |
@@ -236,7 +244,10 @@ dead-letter product. New discards require distinct verified maker/checker actors
 deployment groups, but there is no external ticket binding, governance-gate callback, device/session
 assurance, or proof beyond the configured identity provider. During its bounded detailed replay
 window the claim-command copy is protected by a rotation-aware AES-256-GCM envelope; valid legacy
-plaintext rows are migrated at startup. The active short-lived control fence is not yet hashed.
+plaintext rows are migrated at startup. The active short-lived control fence and long-lived request
+index are domain-separated HMAC values under their respective key lifecycles. Legacy unkeyed request
+indexes cannot be proactively bulk re-keyed because raw IDs are intentionally absent; they migrate
+only on exact access or disappear at expiry.
 Command, approval, and history retention are now database-leased and bounded, but physical deletion
 is not backup erasure, legal hold, an archive, or externally anchored WORM evidence. Webhook
 notification, deep links, retention-backlog health policy, and alert routing are also absent.
@@ -245,6 +256,13 @@ See the [claim-token protection verification](resource-gateway-execution-data-co
 for key configuration, two-phase rotation, and fail-closed migration behavior.
 The [bounded retention verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-retention-verification.md)
 defines deletion clocks, tombstone semantics, database fencing, and remaining erasure limits.
+The [request-index protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-protection-verification.md)
+defines the HMAC wire format, independent key custody, online rotation, readiness guard, and legacy
+migration limit.
+
+An out-of-band database writer can still delete a tombstone or alter its indexed lookup value so a
+request lookup does not select that row before retention reaches it. Database IAM and external
+append-only/WORM anchoring are required to prevent or prove that omission class.
 
 Runtime-state dispatch, fair/priority scheduling, cross-process supervision, hard cancellation,
 non-H2 dialect certification, and production-load qualification remain separate Stage 4/5 work.

@@ -416,6 +416,8 @@ public record IntegrationCapabilities(
                 testExecutionEndpointEnabled);
         features.put("hashedDurableWorkerQuarantineActiveFence",
                 testExecutionEndpointEnabled);
+        features.put("keyedDurableWorkerQuarantineRequestIndex",
+                testExecutionEndpointEnabled);
         features.put("boundedDurableWorkerQuarantineMaintenanceRetention",
                 testExecutionEndpointEnabled);
         features.put("immutableDurableWorkerNoWorkResult", testExecutionEndpointEnabled);

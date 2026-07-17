@@ -21,7 +21,7 @@
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
 | Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（四类 case intent、内容寻址 fixture/一等 suite 发布、精确 revision 执行与 aggregate coverage/promotion 回显）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、process-owner lease/heartbeat/checkpoint fence、abandoned RUNNING fail-closed reconciliation、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其 governed catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free plan v2 谱系与认证降级，以及同步 nested/foreach/loop/compensation 控制传播、动态 attempt/occurrence selector 与 occurrence/attempt/node/edge evidence 已落地；streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3 | In progress | graph/operator `TestRunEvidence`、suite checkpoint/terminal attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、签名时刻 lifecycle policy、外部 M-of-N trust publication、bounded append-only consistency page、durable consumer checkpoint、rollback/fork/split-view/revoked-pin resurrection detection 与 test-kit independent verifier 已完成；exact-suite ANEKE semantic workbook seed、`GovernanceGateResult.v3` 可重建 basis、编译级 GraphDraft target 绑定和独立 schema consumer 已完成；真实 ANEKE N/N-1 conformance、独立 witness gossip/跨域一致性证明待完成 |
-| Stage 4 | In progress | BLOGE run-scoped services、checkpoint/resume primitives 与 RG deterministic provider、组合 checkpoint、同库事务、数据库时钟 fence、幂等命令和 staged 四 store aggregate 已落地；公开 authenticated durable GRAPH/OPERATOR create、payload-free query、owner claim、heartbeat、one-signal terminal recovery 和进程内 lease coordinator 已闭合；公开 non-blocking worker pull 已在认证 tenant/org/project/environment 内有界扫描，逐候选重授权，并把 exact lease CAS、hidden dispatch、`ACQUIRED/NO_WORK` 幂等结果和审计原子提交，再以 scope 级持久化循环 keyset 游标避免稳定毒化前缀饥饿，对 exact checkpoint 的确定性失败做数据库时钟指数退避，并在连续失败阈值后转为永久 worker quarantine；隔离 list/claim/release、数据库权威 maker/checker approved discard、token-free receipt/history、审批 SLO observation、claim-command replay token AES-GCM envelope/旧行迁移/轮换重包、active-control HMAC fence/旧行迁移/轮换重键、命令/审批/历史的数据库租约化有界保留、payload-free request-key tombstone 与四维即时 admission 已落地。外部审批/工单绑定、法律保留/备份擦除、外部 WORM、runtime-state dispatch、排队/公平/优先级调度、多 suspension 编排、跨进程 worker supervision、强制 worker 取消、完整历史 trace evidence、stream offset/checkpoint、identity/flag/secret fixture authority、streaming 恢复与确定性并发待完成 |
+| Stage 4 | In progress | BLOGE run-scoped services、checkpoint/resume primitives 与 RG deterministic provider、组合 checkpoint、同库事务、数据库时钟 fence、幂等命令和 staged 四 store aggregate 已落地；公开 authenticated durable GRAPH/OPERATOR create、payload-free query、owner claim、heartbeat、one-signal terminal recovery 和进程内 lease coordinator 已闭合；公开 non-blocking worker pull 已在认证 tenant/org/project/environment 内有界扫描，逐候选重授权，并把 exact lease CAS、hidden dispatch、`ACQUIRED/NO_WORK` 幂等结果和审计原子提交，再以 scope 级持久化循环 keyset 游标避免稳定毒化前缀饥饿，对 exact checkpoint 的确定性失败做数据库时钟指数退避，并在连续失败阈值后转为永久 worker quarantine；隔离 list/claim/release、数据库权威 maker/checker approved discard、token-free receipt/history、审批 SLO observation、claim-command replay token AES-GCM envelope/旧行迁移/轮换重包、active-control HMAC fence/旧行迁移/轮换重键、命令/审批/历史的数据库租约化有界保留、独立 keyed-HMAC request-index tombstone/在线轮换/旧行惰性迁移与四维即时 admission 已落地。外部审批/工单绑定、法律保留/备份擦除、外部 WORM、runtime-state dispatch、排队/公平/优先级调度、多 suspension 编排、跨进程 worker supervision、强制 worker 取消、完整历史 trace evidence、stream offset/checkpoint、identity/flag/secret fixture authority、streaming 恢复与确定性并发待完成 |
 | Stage 5 | Not started | 独立部署、network/identity/secret/store 物理隔离、规模化调度与 mutation/property testing |
 
 Stage 4 最新增量把 fresh initial boundary 收敛为唯一持久化 signal wait，并在该静止点同时
@@ -162,6 +162,24 @@ Resource Gateway `clean verify` 执行 2229 tests，0 failures、0 errors、34 �
 可执行 JAR；独立 test-kit `clean verify` 执行 63 tests 全绿，并通过权威 Schema、shaded CLI 与
 public JavaDoc。
 
+第三十一增量关闭 request tombstone 中低熵 `clientRequestId` 的离线枚举面。新 v2 行只保存独立
+request-index key ID、`v1.<base64url HMAC-SHA-256>` 和 `recordVersion=2`；专用 32-byte root 先以固定
+KDF context 派生，再以独立 message context 和长度前缀绑定 operation、认证 scope 与 request ID，
+不复用 claim-token root。key ring 固定上限 16 代，新写只用 active key，精确查询有界计算
+active/old/legacy 候选并做常量时间验证；命中 old key 或 legacy SHA 行时，在行锁内按整行 fingerprint
+CAS 重键。启动检查所有未过期 v2 行的 key generation，缺 key 即 fail readiness；已过期行不再参与
+幂等查找，可在 retired key 缺失时按整行完整性有界清理。因为 legacy 行刻意不含原始 request ID，
+不能离线批量迁移，只能在精确访问时升级或等待到期，这是明确兼容边界。capability 新增
+`keyedDurableWorkerQuarantineRequestIndex`。该能力抵御 database-only dictionary attack，但不覆盖
+process/root compromise、database+key 联合失陷、KMS/HSM custody、备份擦除或多区域轮换认证。
+key generation 可在线轮换，但旧 binary 无法读取新 v2 行；首次 legacy-to-v2 升级必须暂停 maintenance
+写入/retention、排空在途命令并完成全副本升级后再恢复。真正零停机 N/N-1 rollout 仍需显式
+`LEGACY_READ_WRITE -> DUAL_READ_KEYED_WRITE -> KEYED_ONLY` 状态协议与跨版本 conformance。
+本增量联合聚焦门禁执行 81 tests 全绿，其中数据库 authority 40 tests、request-index protector
+4 tests；Resource Gateway `clean verify` 执行 2238 tests，0 failures、0 errors、34 个既有条件浏览器
+跳过并完成可执行 JAR；独立 test-kit `clean verify` 执行 63 tests 全绿，并通过权威 Schema、shaded
+CLI 与 public JavaDoc。
+
 同步 terminal recovery 的进程内 coordinator 现在先用原 dispatch 完成一次认证 heartbeat，确保
 BLOGE 不会在临近过期 fence 下启动；运行中只沿服务端签发的 successor 链周期续租，并逐次验证
 authorization、target、fixture、provider、engine、owner/epoch 闭包不漂移。终态提交前先冻结并等待
@@ -180,7 +198,7 @@ tenant/namespace、状态、可选 shard、时间、排序和有界 limit 下推
 确定性候选临时退避、exact-checkpoint 自动 quarantine、专用人工处置、token-free history 与全局压力
 观测和 maker/checker approved discard 已实现；claim-command replay token 加密、旧行迁移和轮换重包
 以及 active-control HMAC fence、旧行迁移和轮换重键已实现；command/approval/history 有界 retention
-与 request-key tombstone 已实现；外部审批绑定、
+与独立 HMAC request-index tombstone、在线轮换、旧行惰性迁移及 live-key readiness 已实现；外部审批绑定、
 法律保留/备份擦除证明、外部 WORM、runtime-state dispatch、排队/
 公平/优先级 backpressure 与跨进程 worker supervisor 仍未提供。
 
@@ -228,6 +246,8 @@ Worker pull 的 scope、数据库时钟、幂等空结果、原子 claim/dispatc
 [Stage 4 worker quarantine two-person discard verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-two-person-discard-verification.md)。
 三窗口保留、request-key tombstone、跨副本 lease、事务回滚与 telemetry 故障域证明见
 [Stage 4 worker quarantine retention verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-retention-verification.md)。
+低熵 request ID 的 keyed HMAC 索引、独立 key custody、在线轮换、readiness 与 legacy 迁移边界见
+[Stage 4 worker quarantine request-index protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-protection-verification.md)。
 
 实现细节、行为兼容决策和可复现测试见
 [v1 实施蓝图](resource-gateway-industrial-testability-evolution-plan-1.0.md) 与
@@ -1472,8 +1492,10 @@ claim、history aggregate 与稳定过期 claim code；第二十七增量已增�
 独立 approver group、单次审批原子消费、双人历史和 expired approval SLO；第二十八增量再用
 AES-GCM envelope、启动迁移和两阶段轮换保护 claim 精确重放副本；第二十九增量再以三窗口 retention、
 request-key tombstone、跨副本 lease/fence 和固定基数 telemetry 关闭无界维护记录与 request resurrection；
-第三十增量以 domain-separated HMAC active fence、命令交叉验证和轮换重键清除 control 明文 bearer。
-仍缺 keyed request index、外部审批/工单绑定、法律保留/备份擦除证明、外部
+第三十增量以 domain-separated HMAC active fence、命令交叉验证和轮换重键清除 control 明文 bearer；
+第三十一增量再以独立 HMAC request-index key ring、live-key readiness、bounded dual-read 和惰性 CAS
+重键关闭低熵 request ID 的 database-only 离线枚举面。仍缺 request-index N/N-1 mixed-binary
+write-mode 协议、外部审批/工单绑定、法律保留/备份擦除证明、外部
 WORM/tamper-evident anchoring、排队/公平/优先级
 backpressure、alert routing、非 H2 方言与生产负载认证、runtime-state dispatch、hard cancellation
 或生产级跨进程 supervisor。

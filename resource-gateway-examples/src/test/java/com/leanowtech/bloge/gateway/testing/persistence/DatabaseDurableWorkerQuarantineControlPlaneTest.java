@@ -14,10 +14,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.security.SecureRandom;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +45,7 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
     private DatabaseDurableWorkerQuarantineControlPlane controlPlane;
     private DurableTestExecutionCheckpointIntegrity integrity;
     private WorkerQuarantineClaimTokenProtector tokenProtector;
+    private WorkerQuarantineRequestKeyProtector requestKeyProtector;
 
     @BeforeEach
     void setUp() {
@@ -56,8 +58,11 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
                 database.jdbc(), database.transactionManager(), objectMapper, integrity);
         repository.init();
         tokenProtector = tokenProtector("key-v1", "key-v1", 1);
+        requestKeyProtector = requestKeyProtector(
+                "request-key-v1", Map.of("request-key-v1", keyBytes(11)));
         controlPlane = new DatabaseDurableWorkerQuarantineControlPlane(
-                database.jdbc(), database.transactionManager(), objectMapper, tokenProtector);
+                database.jdbc(), database.transactionManager(), objectMapper,
+                tokenProtector, requestKeyProtector);
         controlPlane.init();
     }
 
@@ -157,7 +162,7 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
         DatabaseDurableWorkerQuarantineControlPlane rotated =
                 new DatabaseDurableWorkerQuarantineControlPlane(
                         database.jdbc(), database.transactionManager(), objectMapper,
-                        rotatedProtector);
+                        rotatedProtector, requestKeyProtector);
         rotated.init();
         assertThat(database.jdbc().queryForObject("""
                 SELECT result_claim_token_envelope
@@ -214,7 +219,7 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
         DatabaseDurableWorkerQuarantineControlPlane upgraded =
                 new DatabaseDurableWorkerQuarantineControlPlane(
                         database.jdbc(), database.transactionManager(), objectMapper,
-                        tokenProtector);
+                        tokenProtector, requestKeyProtector);
 
         assertThatThrownBy(upgraded::init)
                 .isInstanceOf(IllegalStateException.class)
@@ -306,7 +311,7 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
         DatabaseDurableWorkerQuarantineControlPlane upgraded =
                 new DatabaseDurableWorkerQuarantineControlPlane(
                         database.jdbc(), database.transactionManager(), objectMapper,
-                        tokenProtector);
+                        tokenProtector, requestKeyProtector);
         upgraded.init();
         var replayed = upgraded.claim(workerScope(), key, "operator-a", "claim-legacy",
                 Duration.ofMinutes(2), ignored -> {
@@ -375,7 +380,7 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
         DatabaseDurableWorkerQuarantineControlPlane upgraded =
                 new DatabaseDurableWorkerQuarantineControlPlane(
                         database.jdbc(), database.transactionManager(), objectMapper,
-                        tokenProtector);
+                        tokenProtector, requestKeyProtector);
 
         upgraded.init();
 
@@ -413,7 +418,7 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
         DatabaseDurableWorkerQuarantineControlPlane rotated =
                 new DatabaseDurableWorkerQuarantineControlPlane(
                         database.jdbc(), database.transactionManager(), objectMapper,
-                        rotatedProtector);
+                        rotatedProtector, requestKeyProtector);
 
         assertThatThrownBy(rotated::init)
                 .isInstanceOf(IllegalStateException.class)
@@ -449,7 +454,7 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
         DatabaseDurableWorkerQuarantineControlPlane rotated =
                 new DatabaseDurableWorkerQuarantineControlPlane(
                         database.jdbc(), database.transactionManager(), objectMapper,
-                        rotatedProtector);
+                        rotatedProtector, requestKeyProtector);
 
         rotated.init();
 
@@ -1165,17 +1170,21 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
                 FROM rg_test_durable_worker_quarantine_request_tombstones
                 WHERE request_kind = 'CLAIM'
                 """, String.class)).doesNotContain(token);
-        assertThat(database.jdbc().queryForObject("""
-                SELECT request_key
+        Map<String, Object> storedTombstone = database.jdbc().queryForMap("""
+                SELECT request_key_id, request_key, record_version
                 FROM rg_test_durable_worker_quarantine_request_tombstones
                 WHERE request_kind = 'CLAIM'
-                """, String.class)).startsWith("sha256:").doesNotContain("claim-retained");
+                """);
+        assertThat(storedTombstone.get("REQUEST_KEY_ID")).isEqualTo("request-key-v1");
+        assertThat(storedTombstone.get("REQUEST_KEY").toString())
+                .startsWith("v1.").doesNotContain("claim-retained");
+        assertThat(storedTombstone.get("RECORD_VERSION")).isEqualTo(2);
         assertThat(database.jdbc().queryForList("""
                 SELECT column_name
                 FROM information_schema.columns
                 WHERE table_name = 'RG_TEST_DURABLE_WORKER_QUARANTINE_REQUEST_TOMBSTONES'
                 """, String.class))
-                .contains("REQUEST_KEY")
+                .contains("REQUEST_KEY_ID", "REQUEST_KEY", "RECORD_VERSION")
                 .doesNotContain("CLIENT_REQUEST_ID");
 
         assertThat(controlPlane.claim(workerScope(), key, "operator-a", "claim-retained",
@@ -1193,6 +1202,219 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
             assertThat(snapshot.tombstoneRecords()).isOne();
             assertThat(snapshot.lastSuccessAt()).isNotNull();
         });
+    }
+
+    @Test
+    void requestIndexRotationReadsTheOldGenerationAndLazilyRekeysTheTombstone()
+            throws Exception {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        controlPlane.claim(workerScope(), key, "operator-a", "claim-index-rotation",
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop());
+        Thread.sleep(1_100);
+        controlPlane.retainClaimedPage(controlPlane.acquireRetentionLease().orElseThrow(),
+                Duration.ZERO, Duration.ZERO, Duration.ofDays(1), 10);
+        String oldIndex = database.jdbc().queryForObject("""
+                SELECT request_key
+                FROM rg_test_durable_worker_quarantine_request_tombstones
+                WHERE request_kind = 'CLAIM'
+                """, String.class);
+        WorkerQuarantineRequestKeyProtector rotatedIndexProtector = requestKeyProtector(
+                "request-key-v2", Map.of(
+                        "request-key-v1", keyBytes(11), "request-key-v2", keyBytes(12)));
+        var rotated = new DatabaseDurableWorkerQuarantineControlPlane(
+                database.jdbc(), database.transactionManager(), objectMapper,
+                tokenProtector, rotatedIndexProtector);
+        rotated.init();
+
+        var replay = rotated.claim(workerScope(), key, "operator-a", "claim-index-rotation",
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop());
+
+        assertThat(replay.disposition()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.ClaimDisposition
+                        .REPLAY_WINDOW_EXPIRED);
+        Map<String, Object> rekeyed = database.jdbc().queryForMap("""
+                SELECT request_key_id, request_key, record_version
+                FROM rg_test_durable_worker_quarantine_request_tombstones
+                WHERE request_kind = 'CLAIM'
+                """);
+        assertThat(rekeyed.get("REQUEST_KEY_ID")).isEqualTo("request-key-v2");
+        assertThat(rekeyed.get("REQUEST_KEY")).isNotEqualTo(oldIndex);
+        assertThat(rekeyed.get("RECORD_VERSION")).isEqualTo(2);
+    }
+
+    @Test
+    void duplicateRequestIndexGenerationsFailClosedBeforeCommandCanRun()
+            throws Exception {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        String requestId = "claim-index-duplicate";
+        controlPlane.claim(workerScope(), key, "operator-a", requestId,
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop());
+        Thread.sleep(1_100);
+        controlPlane.retainClaimedPage(controlPlane.acquireRetentionLease().orElseThrow(),
+                Duration.ZERO, Duration.ZERO, Duration.ofDays(1), 10);
+        Map<String, Object> current = database.jdbc().queryForMap("""
+                SELECT scope_key, request_fingerprint, source_record_fingerprint,
+                       source_completed_at, tombstoned_at, expires_at
+                FROM rg_test_durable_worker_quarantine_request_tombstones
+                WHERE request_kind = 'CLAIM'
+                """);
+        String scopeKey = current.get("SCOPE_KEY").toString();
+        WorkerQuarantineRequestKeyProtector rotatedIndexProtector = requestKeyProtector(
+                "request-key-v2", Map.of(
+                        "request-key-v1", keyBytes(11), "request-key-v2", keyBytes(12)));
+        var activeIndex = rotatedIndexProtector.protect("CLAIM", scopeKey, requestId);
+        Instant sourceCompletedAt = ((OffsetDateTime) current.get("SOURCE_COMPLETED_AT")).toInstant();
+        Instant tombstonedAt = ((OffsetDateTime) current.get("TOMBSTONED_AT")).toInstant();
+        Instant expiresAt = ((OffsetDateTime) current.get("EXPIRES_AT")).toInstant();
+        String duplicateFingerprint = ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineRequestTombstone.v2"),
+                Map.entry("requestKind", "CLAIM"), Map.entry("scopeKey", scopeKey),
+                Map.entry("requestKeyId", activeIndex.keyId()),
+                Map.entry("requestKey", activeIndex.value()),
+                Map.entry("requestFingerprint", current.get("REQUEST_FINGERPRINT")),
+                Map.entry("sourceRecordFingerprint", current.get("SOURCE_RECORD_FINGERPRINT")),
+                Map.entry("sourceCompletedAt", sourceCompletedAt),
+                Map.entry("tombstonedAt", tombstonedAt), Map.entry("expiresAt", expiresAt),
+                Map.entry("recordVersion", 2)));
+        database.jdbc().update("""
+                INSERT INTO rg_test_durable_worker_quarantine_request_tombstones (
+                    request_kind, scope_key, request_key_id, request_key, request_fingerprint,
+                    source_record_fingerprint, source_completed_at, tombstoned_at,
+                    expires_at, record_version, record_fingerprint
+                ) VALUES ('CLAIM', ?, ?, ?, ?, ?, ?, ?, ?, 2, ?)
+                """, scopeKey, activeIndex.keyId(), activeIndex.value(),
+                current.get("REQUEST_FINGERPRINT"), current.get("SOURCE_RECORD_FINGERPRINT"),
+                Timestamp.from(sourceCompletedAt), Timestamp.from(tombstonedAt),
+                Timestamp.from(expiresAt), duplicateFingerprint);
+        var rotated = new DatabaseDurableWorkerQuarantineControlPlane(
+                database.jdbc(), database.transactionManager(), objectMapper,
+                tokenProtector, rotatedIndexProtector);
+        rotated.init();
+
+        assertThatThrownBy(() -> rotated.claim(workerScope(), key, "operator-a", requestId,
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("request tombstone is not unique")
+                .hasMessageNotContaining(requestId);
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*) FROM rg_test_durable_worker_quarantine_claim_commands
+                """, Integer.class)).isZero();
+    }
+
+    @Test
+    void startupRejectsRemovalOfARequestIndexKeyStillReferencedByATombstone()
+            throws Exception {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        controlPlane.claim(workerScope(), key, "operator-a", "claim-index-missing-key",
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop());
+        Thread.sleep(1_100);
+        controlPlane.retainClaimedPage(controlPlane.acquireRetentionLease().orElseThrow(),
+                Duration.ZERO, Duration.ZERO, Duration.ofDays(1), 10);
+        WorkerQuarantineRequestKeyProtector missingOldKey = requestKeyProtector(
+                "request-key-v2", Map.of("request-key-v2", keyBytes(12)));
+        var rotated = new DatabaseDurableWorkerQuarantineControlPlane(
+                database.jdbc(), database.transactionManager(), objectMapper,
+                tokenProtector, missingOldKey);
+
+        assertThatThrownBy(rotated::init)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("request tombstone key generation is unavailable")
+                .hasMessageNotContaining("claim-index-missing-key");
+    }
+
+    @Test
+    void retiredRequestIndexKeyDoesNotBlockPurgingItsAlreadyExpiredTombstone()
+            throws Exception {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        controlPlane.claim(workerScope(), key, "operator-a", "claim-index-expired-key",
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop());
+        Thread.sleep(1_100);
+        controlPlane.retainClaimedPage(controlPlane.acquireRetentionLease().orElseThrow(),
+                Duration.ZERO, Duration.ZERO, Duration.ofSeconds(1), 10);
+        Thread.sleep(1_100);
+        WorkerQuarantineRequestKeyProtector withoutRetiredKey = requestKeyProtector(
+                "request-key-v2", Map.of("request-key-v2", keyBytes(12)));
+        var rotated = new DatabaseDurableWorkerQuarantineControlPlane(
+                database.jdbc(), database.transactionManager(), objectMapper,
+                tokenProtector, withoutRetiredKey);
+
+        rotated.init();
+        var retained = rotated.retainClaimedPage(
+                rotated.acquireRetentionLease().orElseThrow(), Duration.ZERO,
+                Duration.ZERO, Duration.ofDays(1), 10);
+
+        assertThat(retained.result().tombstonesPurged()).isOne();
+        assertThat(rotated.retentionSnapshot().tombstoneRecords()).isZero();
+    }
+
+    @Test
+    void legacyUnkeyedRequestTombstoneIsRecognizedAndUpgradedOnExactAccess()
+            throws Exception {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        String requestId = "claim-index-legacy";
+        controlPlane.claim(workerScope(), key, "operator-a", requestId,
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop());
+        Thread.sleep(1_100);
+        controlPlane.retainClaimedPage(controlPlane.acquireRetentionLease().orElseThrow(),
+                Duration.ZERO, Duration.ZERO, Duration.ofDays(1), 10);
+        Map<String, Object> current = database.jdbc().queryForMap("""
+                SELECT scope_key, request_fingerprint, source_record_fingerprint,
+                       source_completed_at, tombstoned_at, expires_at
+                FROM rg_test_durable_worker_quarantine_request_tombstones
+                WHERE request_kind = 'CLAIM'
+                """);
+        String scopeKey = current.get("SCOPE_KEY").toString();
+        String legacyRequestKey = ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineRequestKey.v1"),
+                Map.entry("requestKind", "CLAIM"), Map.entry("scopeKey", scopeKey),
+                Map.entry("clientRequestId", requestId)));
+        Instant sourceCompletedAt = ((OffsetDateTime) current.get("SOURCE_COMPLETED_AT")).toInstant();
+        Instant tombstonedAt = ((OffsetDateTime) current.get("TOMBSTONED_AT")).toInstant();
+        Instant expiresAt = ((OffsetDateTime) current.get("EXPIRES_AT")).toInstant();
+        String legacyFingerprint = ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineRequestTombstone.v1"),
+                Map.entry("requestKind", "CLAIM"), Map.entry("scopeKey", scopeKey),
+                Map.entry("requestKey", legacyRequestKey),
+                Map.entry("requestFingerprint", current.get("REQUEST_FINGERPRINT")),
+                Map.entry("sourceRecordFingerprint", current.get("SOURCE_RECORD_FINGERPRINT")),
+                Map.entry("sourceCompletedAt", sourceCompletedAt),
+                Map.entry("tombstonedAt", tombstonedAt), Map.entry("expiresAt", expiresAt)));
+        database.jdbc().update("""
+                UPDATE rg_test_durable_worker_quarantine_request_tombstones
+                SET request_key_id = '', request_key = ?, record_version = 1,
+                    record_fingerprint = ?
+                WHERE request_kind = 'CLAIM'
+                """, legacyRequestKey, legacyFingerprint);
+        var upgraded = new DatabaseDurableWorkerQuarantineControlPlane(
+                database.jdbc(), database.transactionManager(), objectMapper,
+                tokenProtector, requestKeyProtector);
+        upgraded.init();
+
+        var replay = upgraded.claim(workerScope(), key, "operator-a", requestId,
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop());
+
+        assertThat(replay.disposition()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.ClaimDisposition
+                        .REPLAY_WINDOW_EXPIRED);
+        Map<String, Object> migrated = database.jdbc().queryForMap("""
+                SELECT request_key_id, request_key, record_version
+                FROM rg_test_durable_worker_quarantine_request_tombstones
+                WHERE request_kind = 'CLAIM'
+                """);
+        assertThat(migrated.get("REQUEST_KEY_ID")).isEqualTo("request-key-v1");
+        assertThat(migrated.get("REQUEST_KEY").toString()).startsWith("v1.");
+        assertThat(migrated.get("REQUEST_KEY")).isNotEqualTo(legacyRequestKey);
+        assertThat(migrated.get("RECORD_VERSION")).isEqualTo(2);
     }
 
     @Test
@@ -1297,11 +1519,13 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
     void retentionLeaseIsExclusiveAndRejectsTheSupersededReplicaFence() throws Exception {
         var first = new DatabaseDurableWorkerQuarantineControlPlane(
                 database.jdbc(), database.transactionManager(), objectMapper, tokenProtector,
+                requestKeyProtector,
                 "retention-replica-a", Duration.ofSeconds(1));
         first.init();
         var firstLease = first.acquireRetentionLease().orElseThrow();
         var second = new DatabaseDurableWorkerQuarantineControlPlane(
                 database.jdbc(), database.transactionManager(), objectMapper, tokenProtector,
+                requestKeyProtector,
                 "retention-replica-b", Duration.ofSeconds(1));
         second.init();
 
@@ -1458,6 +1682,11 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
             String activeKeyId, String keyId, int fill) {
         return new WorkerQuarantineClaimTokenProtector(
                 activeKeyId, Map.of(keyId, keyBytes(fill)), new SecureRandom());
+    }
+
+    private static WorkerQuarantineRequestKeyProtector requestKeyProtector(
+            String activeKeyId, Map<String, byte[]> keys) {
+        return new WorkerQuarantineRequestKeyProtector(activeKeyId, keys);
     }
 
     private static byte[] keyBytes(int fill) {

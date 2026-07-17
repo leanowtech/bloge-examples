@@ -55,6 +55,8 @@ Environment:
   BLOGE_VISUAL_CANVAS_PROFILE          default: test
   RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID  required for staging
   RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING       required for staging; keyId=base64AES256[,..]
+  RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID  required for staging
+  RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING       required for staging; keyId=base64Key[,..]
   RG_TEST_WORKER_QUARANTINE_COMMAND_RETENTION_DAYS    default: 30
   RG_TEST_WORKER_QUARANTINE_HISTORY_RETENTION_DAYS    default: 365
   RG_TEST_WORKER_QUARANTINE_TOMBSTONE_RETENTION_DAYS  default: 365
@@ -83,9 +85,11 @@ validate_profile_secrets() {
         return 0
     fi
     if [ -z "${RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID:-}" ] ||
-        [ -z "${RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING:-}" ]; then
-        echo "Staging requires RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID and RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING." >&2
-        echo "Inject both values from the deployment secret manager before startup." >&2
+        [ -z "${RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING:-}" ] ||
+        [ -z "${RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID:-}" ] ||
+        [ -z "${RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING:-}" ]; then
+        echo "Staging requires both worker-quarantine token and request-key protection key rings." >&2
+        echo "Inject all four values from the deployment secret manager before startup." >&2
         return 1
     fi
 }

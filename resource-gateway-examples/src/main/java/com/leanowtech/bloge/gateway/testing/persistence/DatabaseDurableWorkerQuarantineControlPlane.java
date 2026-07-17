@@ -23,6 +23,7 @@ import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -46,6 +47,7 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
     private static final int MAX_PAGE_SIZE = 1_000;
     private static final int TOKEN_MIGRATION_PAGE_SIZE = 1_000;
     private static final int CONTROL_RECORD_VERSION = 2;
+    private static final int TOMBSTONE_RECORD_VERSION = 2;
     private static final Duration MIN_COMMAND_RETENTION = Duration.ofHours(1);
     private static final Duration MIN_HISTORY_RETENTION = Duration.ofDays(1);
     private static final Duration MIN_TOMBSTONE_RETENTION = Duration.ofDays(1);
@@ -57,6 +59,7 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
     private final ObjectMapper objectMapper;
     private final DurableTestExecutionCheckpointIntegrity checkpointIntegrity;
     private final WorkerQuarantineClaimTokenProtector claimTokenProtector;
+    private final WorkerQuarantineRequestKeyProtector requestKeyProtector;
     private final TransactionTemplate transactions;
     private final TransactionTemplate observations;
     private final String retentionOwnerId;
@@ -69,13 +72,15 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
      * @param transactionManager transaction manager for the same datasource
      * @param objectMapper canonical protocol fingerprint mapper
      * @param claimTokenProtector rotation-aware claim-command token envelope authority
+     * @param requestKeyProtector independent rotation-aware idempotency index authority
      */
     public DatabaseDurableWorkerQuarantineControlPlane(
             JdbcTemplate jdbc,
             PlatformTransactionManager transactionManager,
             ObjectMapper objectMapper,
-            WorkerQuarantineClaimTokenProtector claimTokenProtector) {
-        this(jdbc, transactionManager, objectMapper, claimTokenProtector,
+            WorkerQuarantineClaimTokenProtector claimTokenProtector,
+            WorkerQuarantineRequestKeyProtector requestKeyProtector) {
+        this(jdbc, transactionManager, objectMapper, claimTokenProtector, requestKeyProtector,
                 "worker-quarantine-retention-" + UUID.randomUUID(), Duration.ofMinutes(2));
     }
 
@@ -86,6 +91,7 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
      * @param transactionManager transaction manager for the same datasource
      * @param objectMapper canonical protocol fingerprint mapper
      * @param claimTokenProtector rotation-aware claim-command token envelope authority
+     * @param requestKeyProtector independent rotation-aware idempotency index authority
      * @param retentionOwnerId stable identity of this Resource Gateway replica
      * @param retentionLeaseDuration database-clock lease for one bounded retention page
      */
@@ -94,6 +100,7 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             PlatformTransactionManager transactionManager,
             ObjectMapper objectMapper,
             WorkerQuarantineClaimTokenProtector claimTokenProtector,
+            WorkerQuarantineRequestKeyProtector requestKeyProtector,
             String retentionOwnerId,
             Duration retentionLeaseDuration) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
@@ -101,6 +108,8 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         this.checkpointIntegrity = new DurableTestExecutionCheckpointIntegrity(objectMapper);
         this.claimTokenProtector = Objects.requireNonNull(
                 claimTokenProtector, "claimTokenProtector");
+        this.requestKeyProtector = Objects.requireNonNull(
+                requestKeyProtector, "requestKeyProtector");
         PlatformTransactionManager safeTransactionManager =
                 Objects.requireNonNull(transactionManager, "transactionManager");
         this.transactions = new TransactionTemplate(safeTransactionManager);
@@ -360,21 +369,37 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 CREATE TABLE IF NOT EXISTS rg_test_durable_worker_quarantine_request_tombstones (
                     request_kind VARCHAR(32) NOT NULL,
                     scope_key VARCHAR(80) NOT NULL,
+                    request_key_id VARCHAR(64) NOT NULL DEFAULT '',
                     request_key VARCHAR(80) NOT NULL,
                     request_fingerprint VARCHAR(80) NOT NULL,
                     source_record_fingerprint VARCHAR(80) NOT NULL,
                     source_completed_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     tombstoned_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_version INTEGER NOT NULL DEFAULT 1,
                     record_fingerprint VARCHAR(80) NOT NULL,
                     PRIMARY KEY (request_kind, scope_key, request_key)
                 )
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_request_tombstones
+                ADD COLUMN IF NOT EXISTS request_key_id VARCHAR(64) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_request_tombstones
+                ADD COLUMN IF NOT EXISTS record_version INTEGER NOT NULL DEFAULT 1
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_worker_quarantine_tombstone_lookup_idx
+                ON rg_test_durable_worker_quarantine_request_tombstones
+                    (request_kind, scope_key, request_key_id, request_key)
                 """);
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS rg_test_worker_quarantine_tombstone_expiry_idx
                 ON rg_test_durable_worker_quarantine_request_tombstones
                     (expires_at, request_kind, scope_key, request_key)
                 """);
+        validateRequestTombstoneKeyRing();
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS rg_test_durable_worker_quarantine_retention (
                     job_name VARCHAR(128) PRIMARY KEY,
@@ -727,9 +752,10 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
 
     private int purgeExpiredTombstones(Instant now, int pageSize) {
         List<StoredRequestTombstone> tombstones = jdbc.query("""
-                        SELECT request_kind, scope_key, request_key, request_fingerprint,
+                        SELECT request_kind, scope_key, request_key_id, request_key,
+                               request_fingerprint,
                                source_record_fingerprint, source_completed_at, tombstoned_at,
-                               expires_at, record_fingerprint
+                               expires_at, record_version, record_fingerprint
                         FROM rg_test_durable_worker_quarantine_request_tombstones
                         WHERE expires_at <= ?
                         ORDER BY expires_at, request_kind, scope_key, request_key
@@ -739,10 +765,12 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             requireValid(tombstone);
             int deleted = jdbc.update("""
                     DELETE FROM rg_test_durable_worker_quarantine_request_tombstones
-                    WHERE request_kind = ? AND scope_key = ? AND request_key = ?
+                    WHERE request_kind = ? AND scope_key = ? AND request_key_id = ?
+                      AND request_key = ?
                       AND expires_at = ? AND record_fingerprint = ?
                     """, tombstone.kind().name(), tombstone.scopeKey(),
-                    tombstone.requestKey(), Timestamp.from(tombstone.expiresAt()),
+                    tombstone.requestKeyId(), tombstone.requestKey(),
+                    Timestamp.from(tombstone.expiresAt()),
                     tombstone.recordFingerprint());
             requireDeleted(deleted, "request tombstone");
         }
@@ -758,23 +786,26 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             Instant sourceCompletedAt,
             Instant tombstonedAt,
             Duration retention) {
+        WorkerQuarantineRequestKeyProtector.IndexKey index = requestKeyProtector.protect(
+                kind.name(), scopeKey, requestId);
         StoredRequestTombstone unsealed = new StoredRequestTombstone(kind, scopeKey,
-                requestTombstoneKey(kind, scopeKey, requestId), requestFingerprint,
+                index.keyId(), index.value(), requestFingerprint,
                 sourceRecordFingerprint, sourceCompletedAt, tombstonedAt,
-                tombstonedAt.plus(retention), "");
+                tombstonedAt.plus(retention), TOMBSTONE_RECORD_VERSION, "");
         StoredRequestTombstone tombstone = unsealed.withFingerprint(
                 requestTombstoneFingerprint(unsealed));
         int inserted = jdbc.update("""
                 INSERT INTO rg_test_durable_worker_quarantine_request_tombstones (
-                    request_kind, scope_key, request_key, request_fingerprint,
+                    request_kind, scope_key, request_key_id, request_key, request_fingerprint,
                     source_record_fingerprint, source_completed_at, tombstoned_at,
-                    expires_at, record_fingerprint
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    expires_at, record_version, record_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, tombstone.kind().name(), tombstone.scopeKey(),
-                tombstone.requestKey(), tombstone.requestFingerprint(),
+                tombstone.requestKeyId(), tombstone.requestKey(),
+                tombstone.requestFingerprint(),
                 tombstone.sourceRecordFingerprint(), Timestamp.from(tombstone.sourceCompletedAt()),
                 Timestamp.from(tombstone.tombstonedAt()), Timestamp.from(tombstone.expiresAt()),
-                tombstone.recordFingerprint());
+                tombstone.recordVersion(), tombstone.recordFingerprint());
         if (inserted != 1) {
             throw new IllegalStateException(
                     "Worker quarantine request tombstone was not inserted");
@@ -794,21 +825,80 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             String requestId,
             boolean forUpdate) {
         String safeScopeKey = scopeKey(scope);
-        String requestKey = requestTombstoneKey(kind, safeScopeKey, requestId);
-        List<StoredRequestTombstone> rows = jdbc.query("""
-                        SELECT request_kind, scope_key, request_key, request_fingerprint,
-                               source_record_fingerprint, source_completed_at, tombstoned_at,
-                               expires_at, record_fingerprint
-                        FROM rg_test_durable_worker_quarantine_request_tombstones
-                        WHERE request_kind = ? AND scope_key = ? AND request_key = ?
-                        """ + (forUpdate ? " FOR UPDATE" : ""), this::mapRequestTombstone,
-                kind.name(), safeScopeKey, requestKey);
+        String legacyRequestKey = legacyRequestTombstoneKey(kind, safeScopeKey, requestId);
+        List<WorkerQuarantineRequestKeyProtector.IndexKey> candidates =
+                requestKeyProtector.lookupCandidates(kind.name(), safeScopeKey, requestId);
+        List<String> requestKeys = new ArrayList<>(
+                candidates.stream().map(WorkerQuarantineRequestKeyProtector.IndexKey::value)
+                        .distinct().toList());
+        if (!requestKeys.contains(legacyRequestKey)) {
+            requestKeys.add(legacyRequestKey);
+        }
+        String placeholders = String.join(", ", requestKeys.stream()
+                .map(ignored -> "?").toList());
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(kind.name());
+        parameters.add(safeScopeKey);
+        parameters.addAll(requestKeys);
+        String query = """
+                SELECT request_kind, scope_key, request_key_id, request_key,
+                       request_fingerprint,
+                       source_record_fingerprint, source_completed_at, tombstoned_at,
+                       expires_at, record_version, record_fingerprint
+                FROM rg_test_durable_worker_quarantine_request_tombstones
+                WHERE request_kind = ? AND scope_key = ? AND request_key IN (%s)
+                """.formatted(placeholders) + (forUpdate ? " FOR UPDATE" : "");
+        List<StoredRequestTombstone> rows = jdbc.query(query, this::mapRequestTombstone,
+                parameters.toArray());
         if (rows.size() > 1) {
             throw new IllegalStateException(
                     "Worker quarantine request tombstone is not unique");
         }
         rows.forEach(this::requireValid);
-        return rows.stream().findFirst();
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        StoredRequestTombstone found = rows.getFirst();
+        boolean indexMatches = found.recordVersion() == 1
+                ? found.requestKey().equals(legacyRequestKey)
+                : requestKeyProtector.matches(kind.name(), safeScopeKey, requestId,
+                found.requestKeyId(), found.requestKey());
+        if (!indexMatches) {
+            throw new IllegalStateException(
+                    "Stored worker quarantine request tombstone index is inconsistent");
+        }
+        if (forUpdate && (found.recordVersion() == 1
+                || requestKeyProtector.requiresRekey(found.requestKeyId()))) {
+            found = rekeyRequestTombstone(found, requestId);
+        }
+        return Optional.of(found);
+    }
+
+    private StoredRequestTombstone rekeyRequestTombstone(
+            StoredRequestTombstone current, String requestId) {
+        WorkerQuarantineRequestKeyProtector.IndexKey index = requestKeyProtector.protect(
+                current.kind().name(), current.scopeKey(), requestId);
+        StoredRequestTombstone migrated = new StoredRequestTombstone(
+                current.kind(), current.scopeKey(), index.keyId(), index.value(),
+                current.requestFingerprint(), current.sourceRecordFingerprint(),
+                current.sourceCompletedAt(), current.tombstonedAt(), current.expiresAt(),
+                TOMBSTONE_RECORD_VERSION, "");
+        migrated = migrated.withFingerprint(requestTombstoneFingerprint(migrated));
+        int changed = jdbc.update("""
+                UPDATE rg_test_durable_worker_quarantine_request_tombstones
+                SET request_key_id = ?, request_key = ?, record_version = ?,
+                    record_fingerprint = ?
+                WHERE request_kind = ? AND scope_key = ? AND request_key_id = ?
+                  AND request_key = ? AND record_version = ? AND record_fingerprint = ?
+                """, migrated.requestKeyId(), migrated.requestKey(), migrated.recordVersion(),
+                migrated.recordFingerprint(), current.kind().name(), current.scopeKey(),
+                current.requestKeyId(), current.requestKey(), current.recordVersion(),
+                current.recordFingerprint());
+        if (changed != 1) {
+            throw new IllegalStateException(
+                    "Worker quarantine request tombstone re-key fence was rejected");
+        }
+        return migrated;
     }
 
     private StoredRequestTombstone mapRequestTombstone(
@@ -821,28 +911,64 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     "Stored worker quarantine request tombstone is corrupt", invalid);
         }
         return new StoredRequestTombstone(kind, rs.getString("scope_key"),
-                rs.getString("request_key"), rs.getString("request_fingerprint"),
+                rs.getString("request_key_id"), rs.getString("request_key"),
+                rs.getString("request_fingerprint"),
                 rs.getString("source_record_fingerprint"),
                 rs.getTimestamp("source_completed_at").toInstant(),
                 rs.getTimestamp("tombstoned_at").toInstant(),
                 rs.getTimestamp("expires_at").toInstant(),
+                rs.getInt("record_version"),
                 rs.getString("record_fingerprint"));
     }
 
     private void requireValid(StoredRequestTombstone tombstone) {
-        if (tombstone.requestKey().length() != 71
-                || !tombstone.requestKey().startsWith("sha256:")
-                || !tombstone.sourceCompletedAt().isAfter(Instant.EPOCH)
-                || tombstone.tombstonedAt().isBefore(tombstone.sourceCompletedAt())
-                || !tombstone.expiresAt().isAfter(tombstone.tombstonedAt())
-                || !requestTombstoneFingerprint(tombstone).equals(
-                        tombstone.recordFingerprint())) {
+        boolean valid;
+        try {
+            boolean legacy = tombstone.recordVersion() == 1;
+            boolean current = tombstone.recordVersion() == TOMBSTONE_RECORD_VERSION;
+            boolean legacyIndex = tombstone.requestKeyId().isBlank()
+                    && tombstone.requestKey().length() == 71
+                    && tombstone.requestKey().startsWith("sha256:");
+            boolean currentIndex = !tombstone.requestKeyId().isBlank();
+            if (currentIndex) {
+                new WorkerQuarantineRequestKeyProtector.IndexKey(
+                        tombstone.requestKeyId(), tombstone.requestKey());
+            }
+            valid = (legacy && legacyIndex || current && currentIndex)
+                    && tombstone.sourceCompletedAt().isAfter(Instant.EPOCH)
+                    && !tombstone.tombstonedAt().isBefore(tombstone.sourceCompletedAt())
+                    && tombstone.expiresAt().isAfter(tombstone.tombstonedAt())
+                    && requestTombstoneFingerprint(tombstone).equals(
+                    tombstone.recordFingerprint());
+        } catch (RuntimeException invalid) {
+            throw new IllegalStateException(
+                    "Stored worker quarantine request tombstone is corrupt", invalid);
+        }
+        if (!valid) {
             throw new IllegalStateException(
                     "Stored worker quarantine request tombstone is corrupt");
         }
     }
 
     private String requestTombstoneFingerprint(StoredRequestTombstone tombstone) {
+        if (tombstone.recordVersion() == 1) {
+            return legacyRequestTombstoneFingerprint(tombstone);
+        }
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineRequestTombstone.v2"),
+                Map.entry("requestKind", tombstone.kind().name()),
+                Map.entry("scopeKey", tombstone.scopeKey()),
+                Map.entry("requestKeyId", tombstone.requestKeyId()),
+                Map.entry("requestKey", tombstone.requestKey()),
+                Map.entry("requestFingerprint", tombstone.requestFingerprint()),
+                Map.entry("sourceRecordFingerprint", tombstone.sourceRecordFingerprint()),
+                Map.entry("sourceCompletedAt", tombstone.sourceCompletedAt()),
+                Map.entry("tombstonedAt", tombstone.tombstonedAt()),
+                Map.entry("expiresAt", tombstone.expiresAt()),
+                Map.entry("recordVersion", tombstone.recordVersion())));
+    }
+
+    private String legacyRequestTombstoneFingerprint(StoredRequestTombstone tombstone) {
         return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
                 Map.entry("schemaVersion", "bloge.durableWorkerQuarantineRequestTombstone.v1"),
                 Map.entry("requestKind", tombstone.kind().name()),
@@ -855,13 +981,33 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 Map.entry("expiresAt", tombstone.expiresAt())));
     }
 
-    private String requestTombstoneKey(
+    private String legacyRequestTombstoneKey(
             RequestKind kind, String scopeKey, String requestId) {
         return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
                 Map.entry("schemaVersion", "bloge.durableWorkerQuarantineRequestKey.v1"),
                 Map.entry("requestKind", kind.name()),
                 Map.entry("scopeKey", scopeKey),
                 Map.entry("clientRequestId", requestId)));
+    }
+
+    private void validateRequestTombstoneKeyRing() {
+        List<TombstoneKeyGeneration> generations = jdbc.query("""
+                        SELECT DISTINCT record_version, request_key_id
+                        FROM rg_test_durable_worker_quarantine_request_tombstones
+                        WHERE expires_at > CURRENT_TIMESTAMP
+                        """, (rs, rowNumber) -> new TombstoneKeyGeneration(
+                        rs.getInt("record_version"), rs.getString("request_key_id")));
+        for (TombstoneKeyGeneration generation : generations) {
+            boolean legacy = generation.recordVersion() == 1
+                    && generation.keyId().isBlank();
+            boolean current = generation.recordVersion() == TOMBSTONE_RECORD_VERSION
+                    && !generation.keyId().isBlank()
+                    && requestKeyProtector.containsKey(generation.keyId());
+            if (!legacy && !current) {
+                throw new IllegalStateException(
+                        "Worker quarantine request tombstone key generation is unavailable");
+            }
+        }
     }
 
     /**
@@ -3878,18 +4024,23 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
     private record StoredRequestTombstone(
             RequestKind kind,
             String scopeKey,
+            String requestKeyId,
             String requestKey,
             String requestFingerprint,
             String sourceRecordFingerprint,
             Instant sourceCompletedAt,
             Instant tombstonedAt,
             Instant expiresAt,
+            int recordVersion,
             String recordFingerprint) {
         private StoredRequestTombstone withFingerprint(String fingerprint) {
-            return new StoredRequestTombstone(kind, scopeKey, requestKey,
+            return new StoredRequestTombstone(kind, scopeKey, requestKeyId, requestKey,
                     requestFingerprint, sourceRecordFingerprint, sourceCompletedAt,
-                    tombstonedAt, expiresAt, fingerprint);
+                    tombstonedAt, expiresAt, recordVersion, fingerprint);
         }
+    }
+
+    private record TombstoneKeyGeneration(int recordVersion, String keyId) {
     }
 
     private record StoredQuarantine(

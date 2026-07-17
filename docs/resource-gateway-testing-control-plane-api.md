@@ -52,17 +52,22 @@ Choose a profile explicitly when needed:
 ./scripts/start-visual-canvas-demo.sh --profile production
 ```
 
-`staging` has no committed token-protection key. Inject a 32-byte AES key from the deployment secret
-manager before startup; the launcher rejects a missing configuration immediately:
+`staging` has no committed claim-token or request-index key. Inject two independent 32-byte roots
+from the deployment secret manager before startup; the launcher rejects a missing configuration
+immediately:
 
 ```bash
 export RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID='staging-2026-07'
 export RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING='staging-2026-07=<base64-encoded-32-byte-key>'
+export RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID='request-index-2026-07'
+export RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING='request-index-2026-07=<different-base64-encoded-32-byte-key>'
 ./scripts/start-visual-canvas-demo.sh --profile staging
 ```
 
-Do not use the placeholder literally or reuse the local `test` key. The rotation runbook is in the
-[claim-token protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md).
+Do not use the placeholders literally, reuse the local `test` keys, or share one root between the two
+rings. Rotation runbooks are in the
+[claim-token protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md)
+and [request-index protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-protection-verification.md).
 
 `production` intentionally has no `TestExecutionController`, fixture/suite repository,
 child/suite-run repository, or testability capability marker. The capability probe reports
@@ -123,6 +128,8 @@ Independent-store settings:
 | `gateway.testing.durable.worker-quarantines.retention-interval-ms` | `RG_TEST_WORKER_QUARANTINE_RETENTION_INTERVAL_MS` | `3600000` |
 | `gateway.testing.durable.worker-quarantines.claim-token-protection.active-key-id` | `RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID` | local key in `test`; required in `staging` |
 | `gateway.testing.durable.worker-quarantines.claim-token-protection.key-ring` | `RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING` | local key in `test`; required in `staging` |
+| `gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id` | `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID` | local key in `test`; required in `staging` |
+| `gateway.testing.durable.worker-quarantines.request-key-protection.key-ring` | `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING` | local key in `test`; required in `staging` |
 | `gateway.testing.runtime-slo.observation-interval-ms` | `RG_TEST_RUNTIME_SLO_OBSERVATION_INTERVAL_MS` | `30000` |
 | `gateway.testing.runtime-slo.outcome-lookback-seconds` | `RG_TEST_RUNTIME_SLO_OUTCOME_LOOKBACK_SECONDS` | `900` |
 | `gateway.testing.runtime-slo.execution-minimum-samples` | `RG_TEST_RUNTIME_SLO_EXECUTION_MINIMUM_SAMPLES` | `20` |
@@ -1344,8 +1351,12 @@ Exact replay is intentionally time bounded. After the command/approval deadline 
 `command-retention-days`, the leased retention loop atomically replaces the detailed command with a
 payload-free request tombstone. An exact retry then returns
 `409 RG.TEST.WORKER_QUARANTINE_REPLAY_WINDOW_EXPIRED`; changed intent under that ID remains an
-idempotency conflict. The tombstone stores a server-computed `sha256:` request key rather than the
-raw `clientRequestId`. Only after `tombstone-retention-days` may the request identity be reused.
+idempotency conflict. A v2 tombstone stores a non-secret key generation and a domain-separated
+`v1.<base64url HMAC-SHA-256>` over operation, authenticated scope, and request ID rather than the raw
+`clientRequestId`. New writes use the active key; exact lookup checks a bounded active/old/legacy
+candidate set and CAS re-keys an old-key or legacy hit. Startup fails if any unexpired v2 tombstone
+references an unavailable key, while expired rows remain purgeable without that retired key. Only
+after `tombstone-retention-days` may the request identity be reused.
 Token-free action history is physically deleted after `history-retention-days`.
 
 Each tick has a database-clock owner/token/epoch lease and processes at most the configured page in
@@ -1361,9 +1372,14 @@ commits semantic audit in one local transaction. Audit failure rolls everything 
 history, metrics, health, logs, and audit facts exclude claim tokens and business payloads. During
 the detailed replay window the claim-command copy is AES-GCM encrypted; bounded retention later
 authenticates it before deletion and leaves only a payload-free request tombstone. The live control
-contains only a keyed verifier, not a second bearer token. External workflow
+contains only a keyed verifier, not a second bearer token. Request tombstone indexes use a separate
+key ring so their longer retention does not retain the claim-token root. External workflow
 identity proof, ticket binding, WORM anchoring, legal hold, backup erasure, and webhook notification
 remain hardening work.
+
+The exact request-index format, online rotation order, legacy migration limit, and failure matrix are
+defined in the
+[request-index protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-protection-verification.md).
 
 ### 4.2.1.1 Global test-runtime SLO and capacity observation
 

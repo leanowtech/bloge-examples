@@ -42,6 +42,8 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "gateway.integration.identity.allowed-purposes=TEST_EXECUTION,TEST_FIXTURE_READ,TEST_FIXTURE_WRITE,TEST_REPLAY,TEST_SUITE_READ,TEST_SUITE_WRITE,TEST_RUNTIME_MAINTENANCE",
                 "gateway.testing.durable.worker-quarantines.claim-token-protection.active-key-id=integration-test-v1",
                 "gateway.testing.durable.worker-quarantines.claim-token-protection.key-ring=integration-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+                "gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id=integration-request-index-v1",
+                "gateway.testing.durable.worker-quarantines.request-key-protection.key-ring=integration-request-index-v1=HyAdHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA=",
                 "spring.datasource.url=jdbc:h2:mem:testing-app-main;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false",
                 "gateway.testing.store.jdbc-url=jdbc:h2:mem:testing-app-control;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
         }
@@ -117,6 +119,7 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("immutableApprovedWorkerQuarantineDiscardHistory", true)
                 .containsEntry("encryptedDurableWorkerQuarantineClaimReplay", true)
                 .containsEntry("hashedDurableWorkerQuarantineActiveFence", true)
+                .containsEntry("keyedDurableWorkerQuarantineRequestIndex", true)
                 .containsEntry("boundedDurableWorkerQuarantineMaintenanceRetention", true);
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/durable-state/projection-findings"));

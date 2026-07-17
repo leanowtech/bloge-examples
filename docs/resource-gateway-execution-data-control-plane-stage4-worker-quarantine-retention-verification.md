@@ -37,21 +37,25 @@ history.
 `rg_test_durable_worker_quarantine_request_tombstones` stores:
 
 - operation kind and a content-addressed scope key;
-- `request_key`, a server-computed `sha256:` digest over operation kind, scope, and request ID;
+- `request_key_id`, the non-secret request-index key generation;
+- `request_key`, a domain-separated `v1.<base64url HMAC-SHA-256>` over operation kind, scope, and request ID;
+- `record_version=2` for keyed rows;
 - the canonical intent fingerprint and source-record fingerprint;
 - completion, tombstone, and expiry timestamps;
 - a whole-record fingerprint over every stored field.
 
 The table has no raw `client_request_id`, claim token, owner token, business payload, fixture,
-checkpoint JSON, or reason text. Lookup recomputes `request_key` from the authenticated scope and
-incoming request ID. A malformed digest, timestamp inversion, unknown operation kind, or changed
-whole-record fingerprint fails closed before replay classification.
+checkpoint JSON, or reason text. Lookup recomputes a bounded active/old-key candidate set from the
+authenticated scope and incoming request ID, uses constant-time exact verification, and CAS re-keys
+an old-key hit. A malformed index, timestamp inversion, unknown operation kind, duplicate match, or
+changed whole-record fingerprint fails closed before replay classification.
 
-These digests are pseudonymous integrity and lookup keys, not anonymization. Low-entropy request IDs
-may remain susceptible to an offline dictionary attack by a database reader who knows the scope.
-A keyed request-index service is separate future hardening. Claim-token destruction is likewise
-application-layer deletion: database backups, replicas, and key-manager retention require their own
-erasure policy.
+The request-index ring is independent from claim-token roots. New v2 rows resist a database-only
+offline dictionary attack against low-entropy request IDs, but this is pseudonymization rather than
+anonymization. A process/root compromise can still derive indexes. Legacy v1 SHA rows cannot be bulk
+re-keyed because the raw request ID is intentionally absent; they migrate on exact access or expire.
+Claim-token destruction and request-index deletion remain application-layer operations: database
+backups, replicas, logs, and key-manager retention require their own erasure policy.
 
 ## Lease, Fence, And Transaction Model
 
@@ -95,14 +99,17 @@ The scheduler exists only in `test` or `staging`, and never when `production` is
 | `gateway.testing.durable.worker-quarantines.tombstone-retention-days` | `RG_TEST_WORKER_QUARANTINE_TOMBSTONE_RETENTION_DAYS` | `365` | 1..3650 days |
 | `gateway.testing.durable.worker-quarantines.retention-page-size` | `RG_TEST_WORKER_QUARANTINE_RETENTION_PAGE_SIZE` | `100` | 1..1000 per category |
 | `gateway.testing.durable.worker-quarantines.retention-interval-ms` | `RG_TEST_WORKER_QUARANTINE_RETENTION_INTERVAL_MS` | `3600000` | 1000 ms..30 days |
+| `gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id` | `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID` | local key in `test`; required in `staging` | `[A-Za-z0-9_-]{1,64}` and present in ring |
+| `gateway.testing.durable.worker-quarantines.request-key-protection.key-ring` | `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING` | local key in `test`; required in `staging` | 1..16 named 32-byte roots |
 
 Days are assembled as whole-day durations by the profile configuration. Unsafe lifecycle windows,
 page sizes, lease durations, or scheduling cadence fail application assembly instead of silently
 disabling cleanup or creating a busy loop.
 
 Capability discovery advertises
-`boundedDurableWorkerQuarantineMaintenanceRetention=true` only when the isolated testing runtime
-owns the scheduler and database authority.
+`boundedDurableWorkerQuarantineMaintenanceRetention=true` and
+`keyedDurableWorkerQuarantineRequestIndex=true` only when the isolated testing runtime owns the
+scheduler, database authority, and request-index protector.
 
 ## Telemetry
 
@@ -130,10 +137,13 @@ retention health violation or an alert-delivery integration.
 | two replicas tick concurrently | one lease owner; the other returns `LEASE_BUSY` |
 | lease expires and another replica takes over | old epoch/token cannot delete or update counters |
 | one eligible source is tampered | entire page rolls back; no partial tombstone or counter advance |
-| tombstone is tampered | command retry fails closed before replay/conflict classification |
+| selected tombstone metadata/fingerprint is inconsistent | command retry fails closed before replay/conflict classification |
 | claim envelope cannot authenticate | detailed row is retained; page rolls back |
 | exact retry after detailed retention | stable replay-window-expired `409`; no command rerun |
 | changed intent under a tombstoned ID | stable idempotency-conflict `409`; no command rerun |
+| exact access finds an old-key or legacy SHA row | row is exact-fence CAS re-keyed to active v2 |
+| live v2 row references an unavailable key | application readiness fails |
+| expired v2 row references an unavailable key | row remains integrity-verifiable and purgeable |
 | tombstone reaches its own deadline | bounded purge succeeds; later ID reuse is accepted |
 | eligible rows exceed the configured page | each category processes no more than `pageSize` |
 | telemetry refresh fails after commit | committed page remains successful; no false rollback claim |
@@ -161,10 +171,19 @@ packaged-schema, shaded CLI, and public JavaDoc verification.
 
 This is same-database bounded deletion, not legal-hold orchestration, an archive, or external WORM
 evidence. It has no external approval/ticket binding, retention-policy revision ledger, per-tenant
-policy, deletion certificate, backup/replica erasure proof, keyed request index, or regulator hold.
+key policy, deletion certificate, backup/replica erasure proof, or regulator hold.
 The aggregate counters and source fingerprints are not an independently witnessed audit trail.
+
+An out-of-band database writer can delete a tombstone or alter its lookup index so the exact request
+does not select that row before retention scans it. The unkeyed whole-record fingerprint cannot prove
+absence and is not an authentication code. Strict database IAM and an externally anchored
+append-only manifest/WORM authority are needed to close that omission attack.
 
 The active short-lived maintenance control fence still exists in the isolated database; KMS/HSM
 key custody, non-H2 dialect certification, multi-region lease behavior, external alert routing,
 production-scale contention qualification, and retention-backlog readiness policy remain separate
 Stage 4/5 work.
+
+The follow-on
+[request-index protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-protection-verification.md)
+defines the keyed format, rotation order, readiness invariant, and legacy-row limitation.

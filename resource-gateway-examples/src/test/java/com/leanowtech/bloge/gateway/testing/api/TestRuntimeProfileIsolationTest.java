@@ -24,6 +24,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloCo
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeAdmissionControl;
 import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
 import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineClaimTokenProtector;
+import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineRequestKeyProtector;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestTerminalRecoveryRuntime;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
@@ -97,6 +98,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     WorkerQuarantineClaimTokenProtector.class)).isEmpty();
             assertThat(context.getBeansOfType(
+                    WorkerQuarantineRequestKeyProtector.class)).isEmpty();
+            assertThat(context.getBeansOfType(
                     DurableWorkerQuarantineRetentionScheduler.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableWorkerQuarantineRetentionTelemetry.class)).isEmpty();
@@ -159,6 +162,8 @@ class TestRuntimeProfileIsolationTest {
                     DatabaseDurableWorkerQuarantineControlPlane.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     WorkerQuarantineClaimTokenProtector.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    WorkerQuarantineRequestKeyProtector.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableWorkerQuarantineRetentionScheduler.class)).hasSize(1);
             assertThat(context.getBeansOfType(
@@ -250,6 +255,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     WorkerQuarantineClaimTokenProtector.class)).isEmpty();
             assertThat(context.getBeansOfType(
+                    WorkerQuarantineRequestKeyProtector.class)).isEmpty();
+            assertThat(context.getBeansOfType(
                     DurableWorkerQuarantineRetentionScheduler.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableWorkerQuarantineRetentionTelemetry.class)).isEmpty();
@@ -276,7 +283,11 @@ class TestRuntimeProfileIsolationTest {
                 "gateway.testing.durable.worker-quarantines.claim-token-protection.active-key-id",
                 "profile-test-v1",
                 "gateway.testing.durable.worker-quarantines.claim-token-protection.key-ring",
-                "profile-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")));
+                "profile-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+                "gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id",
+                "profile-request-index-v1",
+                "gateway.testing.durable.worker-quarantines.request-key-protection.key-ring",
+                "profile-request-index-v1=HyAdHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA=")));
         context.registerBean(ObjectMapper.class, () -> new ObjectMapper().findAndRegisterModules());
         context.registerBean(GatewayGraphService.class, () -> mock(GatewayGraphService.class));
         context.registerBean(OperatorRegistry.class, () -> mock(OperatorRegistry.class));

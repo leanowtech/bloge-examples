@@ -30,6 +30,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DurableStateProjectionRe
 import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineClaimTokenProtector;
+import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineRequestKeyProtector;
 import com.leanowtech.bloge.gateway.testing.runtime.CompiledTestRuntimeOptions;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestCreationRuntime;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
@@ -101,6 +102,18 @@ public class TestRuntimeConfiguration {
     }
 
     /**
+     * Builds the independent rotation-aware HMAC authority for retained request indexes.
+     */
+    @Bean
+    WorkerQuarantineRequestKeyProtector workerQuarantineRequestKeyProtector(
+            @Value("${gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id}")
+            String activeKeyId,
+            @Value("${gateway.testing.durable.worker-quarantines.request-key-protection.key-ring}")
+            String keyRing) {
+        return WorkerQuarantineRequestKeyProtector.fromConfiguration(activeKeyId, keyRing);
+    }
+
+    /**
      * Creates exact-checkpoint quarantine maintenance after its automatic authority is initialized.
      */
     @Bean
@@ -109,6 +122,7 @@ public class TestRuntimeConfiguration {
             ObjectMapper objectMapper,
             DurableTestExecutionCheckpointRepository checkpointAuthority,
             WorkerQuarantineClaimTokenProtector claimTokenProtector,
+            WorkerQuarantineRequestKeyProtector requestKeyProtector,
             @Value("${gateway.testing.durable.worker-quarantines.retention-instance-id:}")
             String retentionInstanceId,
             @Value("${gateway.testing.durable.worker-quarantines.retention-lease-duration-seconds:120}")
@@ -119,7 +133,8 @@ public class TestRuntimeConfiguration {
                 : retentionInstanceId.trim();
         return new DatabaseDurableWorkerQuarantineControlPlane(
                 database.jdbc(), database.transactionManager(), objectMapper,
-                claimTokenProtector, owner, Duration.ofSeconds(retentionLeaseDurationSeconds));
+                claimTokenProtector, requestKeyProtector, owner,
+                Duration.ofSeconds(retentionLeaseDurationSeconds));
     }
 
     /** Bounds quarantine command, approval, tombstone, and history storage in leased pages. */

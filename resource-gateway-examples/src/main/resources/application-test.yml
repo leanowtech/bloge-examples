@@ -38,6 +38,9 @@ gateway:
         claim-token-protection:
           active-key-id: ${RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID:local-test-v1}
           key-ring: ${RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING:local-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=}
+        request-key-protection:
+          active-key-id: ${RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID:local-request-index-v1}
+          key-ring: ${RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING:local-request-index-v1=HyAdHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA=}
       heartbeats:
         lease-duration-seconds: ${RG_TEST_DURABLE_HEARTBEAT_LEASE_SECONDS:120}
       recovery-worker:

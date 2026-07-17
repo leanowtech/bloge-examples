@@ -86,10 +86,13 @@ Useful variants:
 ./scripts/visual-canvas-demo.sh restart
 ```
 
-`staging` requires `RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID` and
-`RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING` (`keyId=base64AES256[,oldKeyId=base64AES256]`) to be
-injected by the deployment secret manager before `--profile staging`; the launcher fails early when
-either value is absent. The `test` profile's committed local key is demonstration-only.
+`staging` requires two independent deployment-secret key rings before `--profile staging`:
+`RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID` plus
+`RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING` protect claim replay/control credentials, while
+`RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID` plus
+`RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING` protect low-entropy request tombstone indexes. Ring
+values use `keyId=base64-encoded-32-byte-key[,oldKeyId=...]`. The launcher fails early when any value
+is absent. The `test` profile's committed local keys are demonstration-only and must not be reused.
 Worker-quarantine detailed replay defaults to 30 days, token-free history and request tombstones to
 365 days, and leased cleanup to 100 rows per category every hour. Override these with
 `RG_TEST_WORKER_QUARANTINE_COMMAND_RETENTION_DAYS`,
@@ -292,16 +295,19 @@ separate approver group creates a token-free, short-lived approval for the exact
 the maker then proves its secret fence and atomically consumes that approval. New direct legacy
 `DISCARD` commands are rejected. Exact claim-response replay is encrypted with a rotation-aware
 AES-256-GCM key ring, while the live control keeps only a domain-separated HMAC-SHA-256 verifier;
-`staging` requires the shared root-key ring to be injected explicitly. A database-leased,
+`staging` requires that claim-token root-key ring to be injected explicitly. A database-leased,
 bounded retention loop later replaces detailed claim/resolution/approval/discard replay rows with
-request-key tombstones that contain neither the raw request ID nor claim token, independently purges
-token-free history, and permits request-ID reuse only after the tombstone window. Exact semantics are
-documented in
+request-key tombstones that contain neither the raw request ID nor claim token. New tombstones use an
+independent, domain-separated HMAC-SHA-256 request index with bounded online key rotation; live rows
+whose key is unavailable block readiness, old-key/legacy rows lazily re-key on exact access, and
+expired rows remain purgeable. The loop independently purges token-free history and permits request-ID
+reuse only after the tombstone window. Exact semantics are documented in
 [Stage 4 worker candidate backoff verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-candidate-backoff-verification.md),
 the [worker quarantine maintenance verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-maintenance-verification.md),
 the [two-person discard verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-two-person-discard-verification.md),
 the [claim-token protection verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md),
-and the [bounded retention verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-retention-verification.md).
+the [bounded retention verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-retention-verification.md),
+and the [request-index protection verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-protection-verification.md).
 
 ### Claim an expired durable test lease
 
