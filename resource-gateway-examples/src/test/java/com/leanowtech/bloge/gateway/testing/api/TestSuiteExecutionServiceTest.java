@@ -16,10 +16,14 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
+import com.leanowtech.bloge.gateway.testing.planning.TestBoundaryCasePlanner;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -207,29 +211,93 @@ class TestSuiteExecutionServiceTest {
     }
 
     @Test
-    void schemaAdmissionV3IsRejectedBeforeExecutionOrEvidenceCreation() {
-        StoredTestSuite structural = storedSuite();
-        TestSuite base = (TestSuite) structural.suite();
-        TestSuite.TestCase boundary = base.cases().getFirst();
-        TestSuiteV3 admission = new TestSuiteV3("", base.suiteId(), base.revision(),
-                base.target(), base.classification(), List.of(boundary),
-                new TestSuite.CoveragePolicy(1, List.of(boundary.caseType()), List.of(),
-                        List.of(), 0, false), SemanticCoveragePolicy.empty(),
-                new TestSuite.PromotionPolicy(true, 0, false),
-                TestSuiteV3.EvaluationMode.SCHEMA_ADMISSION,
-                "sha256:" + "1".repeat(64), "sha256:" + "2".repeat(64),
-                Map.of(boundary.caseId(), new TestSuiteV3.AdmissionExpectation(
-                        TestSuiteV3.ExpectedOutcome.ACCEPTED, List.of())), Map.of());
-        when(registry.find("suite-a", 3, identity)).thenReturn(new StoredTestSuite("", "tenant-a",
-                "test", "suite-a", 3, SUITE, admission, Instant.now(), "runner"));
+    void schemaAdmissionV3RevalidatesWithoutInvokingBusinessTargetAndExportsEvidence() {
+        AdmissionScenario scenario = admissionScenario(3);
+        when(registry.find("suite-a", 3, identity)).thenReturn(scenario.stored());
+        when(executions.resolveSchemaAdmissionTarget(any(), eq(identity))).thenReturn(
+                scenario.current());
 
-        assertThatThrownBy(() -> service.execute("suite-a", request("admission-v3",
-                TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity))
-                .isInstanceOf(IntegrationProblemException.class)
-                .satisfies(error -> assertThat(((IntegrationProblemException) error).problem().code())
-                        .isEqualTo("RG.TEST.SUITE_ADMISSION_EVIDENCE_UNAVAILABLE"));
-        assertThat(runRepository.records).isEmpty();
-        verifyNoInteractions(executions, admissions);
+        TestSuiteExecutionResponse response = service.execute("suite-a", request("admission-v3",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity);
+        TestSuiteExecutionResponse retry = service.execute("suite-a", request("admission-v3",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity);
+        TestSuiteEvidenceBundle bundle = service.evidenceBundle(response.suiteRunId(), identity);
+
+        assertThat(retry).isEqualTo(response);
+        assertThat(response.schemaVersion()).isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION_V4);
+        assertThat(response.evidence()).isInstanceOfSatisfying(TestSuiteRunEvidenceV3.class,
+                evidence -> {
+                    assertThat(evidence.status()).isEqualTo(TestSuiteRunEvidence.Status.PASSED);
+                    assertThat(evidence.admissionResults())
+                            .extracting(TestSuiteRunEvidenceV3.AdmissionCaseResult::status)
+                            .containsOnly(TestSuiteRunEvidenceV3.AdmissionCaseStatus.MATCHED);
+                    assertThat(evidence.admissionCoverage().status())
+                            .isEqualTo(TestSuiteRunEvidenceV3.AdmissionCoverageStatus.SATISFIED);
+                    assertThat(evidence.coverage())
+                            .isEqualTo(TestSuiteRunEvidence.CoverageVerdict.notEvaluated());
+                    assertThat(evidence.promotion().status())
+                            .isEqualTo(TestSuiteRunEvidence.PromotionStatus.BLOCKED);
+                    assertThat(evidence.promotion().reasons()).containsExactlyInAnyOrder(
+                            TestSuiteRunEvidenceV3.SCHEMA_ADMISSION_ONLY,
+                            TestSuiteRunEvidenceV3.BUSINESS_EXECUTION_NOT_PERFORMED);
+                    assertThat(evidence.metadata()).containsEntry("businessTargetInvoked", false)
+                            .containsEntry("childRunCount", 0);
+                    assertThat(evidence.caseResults())
+                            .allSatisfy(result -> assertThat(result.runId()).isBlank());
+                });
+        assertThat(response.attestation().schemaVersion())
+                .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V3);
+        assertThat(response.attestation().childEvidenceRefs()).isEmpty();
+        assertThat(bundle.schemaVersion()).isEqualTo(TestSuiteEvidenceBundle.SCHEMA_VERSION_V3);
+        assertThat(bundle.evidence()).isInstanceOf(TestSuiteRunEvidenceV3.class);
+        assertThat(objectMapper.valueToTree(bundle).toString()).doesNotContain("\"input\":");
+
+        ArgumentCaptor<AdmissionIntent> admissionIntent =
+                ArgumentCaptor.forClass(AdmissionIntent.class);
+        verify(admissions).admit(eq(identity), admissionIntent.capture());
+        assertThat(admissionIntent.getValue().operatorRefs()).isEmpty();
+        assertThat(admissionIntent.getValue().dependencyRefs()).isEmpty();
+        verify(executions).resolveSchemaAdmissionTarget(any(), eq(identity));
+        verify(executions, never()).admissionSubjects(any(), any());
+        verify(executions, never()).executeAdmittedSuiteGraphCase(any(), any());
+        verify(executions, never()).executeAdmittedSuiteOperatorCase(any(), any(), any());
+        verify(executions, never()).describeGraphTarget(any(), any());
+        verify(executions, never()).describeOperatorTarget(any(), any());
+        assertThat(runRepository.records).hasSize(1);
+    }
+
+    @Test
+    void schemaAdmissionTerminalStoreFailurePreservesSignedV3IncompleteEvidence() {
+        AdmissionScenario scenario = admissionScenario(2);
+        when(registry.find("suite-a", 3, identity)).thenReturn(scenario.stored());
+        when(executions.resolveSchemaAdmissionTarget(any(), eq(identity))).thenReturn(
+                scenario.current());
+        runRepository.failNextTerminalUpdate = true;
+
+        TestSuiteExecutionResponse response = service.execute("suite-a", request(
+                "admission-terminal-store-failure",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity);
+
+        assertThat(response.schemaVersion()).isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION_V4);
+        assertThat(response.evidence()).isInstanceOfSatisfying(TestSuiteRunEvidenceV3.class,
+                evidence -> {
+                    assertThat(evidence.status())
+                            .isEqualTo(TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE);
+                    assertThat(evidence.admissionCoverage().status())
+                            .isEqualTo(TestSuiteRunEvidenceV3.AdmissionCoverageStatus.INCOMPLETE);
+                    assertThat(evidence.admissionResults())
+                            .extracting(TestSuiteRunEvidenceV3.AdmissionCaseResult::status)
+                            .containsOnly(TestSuiteRunEvidenceV3.AdmissionCaseStatus.MATCHED);
+                    assertThat(evidence.promotion().reasons())
+                            .contains("EVIDENCE_INCOMPLETE");
+                });
+        assertThat(response.attestation().schemaVersion())
+                .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V3);
+        assertThat(response.attestation().terminallyVerifiable()).isTrue();
+        assertThat(response.attestation().childEvidenceRefs()).isEmpty();
+        assertThat(runRepository.records.get(response.suiteRunId()).evidence())
+                .isInstanceOf(TestSuiteRunEvidenceV3.class);
+        verify(executions, never()).executeAdmittedSuiteGraphCase(any(), any());
     }
 
     @Test
@@ -527,6 +595,50 @@ class TestSuiteExecutionServiceTest {
                 suite, Instant.now(), "runner");
     }
 
+    private TestSuiteV3 admissionSuite(TestBoundaryCasePlan plan, int caseCount) {
+        List<TestBoundaryCasePlan.BoundaryCase> selected =
+                plan.cases().stream().limit(caseCount).toList();
+        List<TestSuite.TestCase> cases = selected.stream().map(source ->
+                new TestSuite.TestCase(source.caseId(), TestSuite.CaseType.BOUNDARY,
+                        source.input(), new TestSuite.FixtureBundleRef(
+                                "boundary-fixture", 1, FIXTURE_1),
+                        List.of("schema-admission"), Map.of())).toList();
+        Map<String, TestSuiteV3.AdmissionExpectation> expectations = new LinkedHashMap<>();
+        selected.forEach(source -> expectations.put(source.caseId(),
+                new TestSuiteV3.AdmissionExpectation(
+                        TestSuiteV3.ExpectedOutcome.valueOf(source.expectedOutcome().name()),
+                        source.validationCodes())));
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("source", "schema-boundary-plan");
+        metadata.put("evaluationMode", TestSuiteV3.EvaluationMode.SCHEMA_ADMISSION.name());
+        metadata.put("boundaryPlanStatus", plan.status().name());
+        metadata.put("coverageGapCount", plan.gaps().size());
+        metadata.put("coverageGapsAccepted", plan.status() == TestBoundaryCasePlan.Status.PARTIAL);
+        metadata.put("selectedCaseCount", cases.size());
+        return new TestSuiteV3("", "suite-a", 3,
+                new TestSuite.Target(plan.target().kind(), plan.target().id(),
+                        plan.target().fingerprint()), "INTERNAL", cases,
+                new TestSuite.CoveragePolicy(cases.size(), List.of(TestSuite.CaseType.BOUNDARY),
+                        List.of(), List.of(), 0, false), SemanticCoveragePolicy.empty(),
+                new TestSuite.PromotionPolicy(true, 0, false),
+                TestSuiteV3.EvaluationMode.SCHEMA_ADMISSION,
+                plan.planFingerprint(), plan.inputSchemaFingerprint(), expectations, metadata);
+    }
+
+    private AdmissionScenario admissionScenario(int caseCount) {
+        SchemaEnvelope schema = SchemaEnvelope.object(Map.of(
+                "name", Map.of("type", "string", "minLength", 1)), List.of("name"));
+        TestExecutionApiRequest.Target target = new TestExecutionApiRequest.Target(
+                "GRAPH", "graph-a", TARGET);
+        TestBoundaryCasePlan plan = new TestBoundaryCasePlanner(objectMapper,
+                new JsonSchemaSampleGenerator()).plan(target, schema, List.of());
+        TestSuiteV3 admission = admissionSuite(plan, caseCount);
+        StoredTestSuite stored = new StoredTestSuite("", "tenant-a", "test", "suite-a", 3,
+                SUITE, admission, Instant.now(), "runner");
+        return new AdmissionScenario(stored,
+                TestSchemaAdmissionTarget.verified(objectMapper, target, schema, plan));
+    }
+
     private static TestSuiteExecutionRequest request(String requestId,
                                                      TestSuiteExecutionRequest.Strategy strategy) {
         return new TestSuiteExecutionRequest("", new TestSuiteExecutionRequest.SuiteRef(
@@ -585,6 +697,12 @@ class TestSuiteExecutionServiceTest {
                 source.suiteRef(), source.target(), source.startedAt(), source.completedAt(),
                 source.caseResults(), source.coverage(), source.semanticCoverage(),
                 source.promotion(), source.diagnostics(), source.metadata());
+    }
+
+    private record AdmissionScenario(
+            StoredTestSuite stored,
+            TestSchemaAdmissionTarget current
+    ) {
     }
 
     private static final class InMemorySuiteRunRepository implements TestSuiteRunRepository {

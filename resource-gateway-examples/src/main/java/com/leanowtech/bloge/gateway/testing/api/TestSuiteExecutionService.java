@@ -45,10 +45,12 @@ import java.util.regex.Pattern;
 /**
  * Idempotent runner for exact immutable test-suite revisions.
  *
- * <p>The runner persists a RUNNING checkpoint before invoking the first case and after every child
- * run. Fail-fast stops scheduling only; it never cancels an already executing case. Child payloads
- * remain in the independently governed run store while this aggregate retains stable run ids and
- * server-derived coverage facts.</p>
+ * <p>The runner persists a RUNNING checkpoint before scheduling the first case and after each
+ * completed step. Structural and semantic suites execute governed child runs; fail-fast only stops
+ * new scheduling and never cancels an executing child. Schema-admission suites instead revalidate
+ * exact plan cases with the shared schema validator and never invoke the business target. Child
+ * payloads remain in the independently governed run store while aggregates retain only stable run
+ * ids and server-derived evidence facts.</p>
  */
 public final class TestSuiteExecutionService {
 
@@ -72,6 +74,7 @@ public final class TestSuiteExecutionService {
     private final TestSuiteRunLeaseCoordinator leaseCoordinator;
     private final TestSuiteRunAttestationService attestations;
     private final TestSuiteEvidenceAggregator aggregator;
+    private final TestSchemaAdmissionEvaluator schemaAdmissions;
     private final TestSuiteRunEvidenceProtocolCodec evidenceCodec;
     private final TestRuntimeAdmissionGate admissions;
     private final Duration retention;
@@ -167,6 +170,7 @@ public final class TestSuiteExecutionService {
         this.attestations = Objects.requireNonNull(attestations, "attestations");
         this.admissions = Objects.requireNonNull(admissions, "admissions");
         this.aggregator = new TestSuiteEvidenceAggregator(objectMapper);
+        this.schemaAdmissions = new TestSchemaAdmissionEvaluator(objectMapper);
         this.evidenceCodec = new TestSuiteRunEvidenceProtocolCodec(objectMapper);
         this.retention = retention == null || retention.isNegative() || retention.isZero()
                 ? Duration.ofDays(30) : retention;
@@ -199,10 +203,9 @@ public final class TestSuiteExecutionService {
             throw conflict(identity, "RG.TEST.SUITE_FINGERPRINT_CONFLICT",
                     "Stored suite fingerprint differs from the exact execution reference.", Map.of());
         }
-        if (stored.suite() instanceof TestSuiteV3) {
-            throw conflict(identity, "RG.TEST.SUITE_ADMISSION_EVIDENCE_UNAVAILABLE",
-                    "Schema-admission suite execution requires the signed admission-evidence protocol.",
-                    Map.of("suiteSchemaVersion", TestSuiteV3.SCHEMA_VERSION));
+        if (stored.suite() instanceof TestSuiteV3 admissionSuite) {
+            return executeSchemaAdmission(
+                    stored, admissionSuite, request, identity, requestFingerprint);
         }
 
         Instant startedAt = Instant.now();
@@ -240,6 +243,148 @@ public final class TestSuiteExecutionService {
             admission.checkpoint();
             return response;
         }
+    }
+
+    private TestSuiteExecutionResponse executeSchemaAdmission(
+            StoredTestSuite stored,
+            TestSuiteV3 suite,
+            TestSuiteExecutionRequest request,
+            IntegrationRequestContext identity,
+            String requestFingerprint) {
+        TestSchemaAdmissionTarget current;
+        TestSchemaAdmissionEvaluator.PreparedAdmission prepared;
+        try {
+            current = executions.resolveSchemaAdmissionTarget(target(suite), identity);
+            prepared = schemaAdmissions.prepare(suite, current);
+        } catch (TestSchemaAdmissionEvaluator.Conflict rejected) {
+            throw conflict(identity, rejected.code(), rejected.getMessage(), rejected.details());
+        } catch (IntegrationProblemException rejected) {
+            throw rejected;
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "RG.TEST.SUITE_ADMISSION_PREFLIGHT_UNAVAILABLE",
+                    "Schema-admission preflight could not resolve the current target contract.");
+        }
+
+        Instant startedAt = Instant.now();
+        String suiteRunId = UUID.randomUUID().toString();
+        List<TestSuiteRunEvidenceV3.AdmissionCaseResult> results =
+                new ArrayList<>(schemaAdmissions.pending(suite));
+        TestSuiteRunEvidenceV3 running = admissionEvidence(stored, suite, request, identity,
+                current, suiteRunId, startedAt, null, TestSuiteRunEvidence.Status.RUNNING,
+                results, List.of());
+        TestSuiteRunAttestationService.SealResult initialSeal = attestations.seal(running,
+                requestFingerprint, List.of(), TestSuiteRunAttestation.Scope.CHECKPOINT);
+        if (!initialSeal.verified()) {
+            throw unavailable(identity, "RG.TEST.SUITE_ATTESTATION_UNAVAILABLE",
+                    "Suite execution cannot start because its initial checkpoint cannot be signed.");
+        }
+        TestSuiteRunRecord record = new TestSuiteRunRecord(suiteRunId, request.clientRequestId(),
+                requestFingerprint, identity.tenantId(), identity.organizationId(),
+                identity.projectId(), identity.environmentId(), identity.actorId(),
+                suite.classification(), "", running, initialSeal.attestation(),
+                startedAt, startedAt.plus(retention));
+
+        Set<String> operatorRefs = "OPERATOR".equals(suite.target().kind())
+                ? Set.of(suite.target().id()) : Set.of();
+        String admissionFingerprint = ProtocolFingerprint.of(objectMapper, Map.of(
+                "schemaVersion", "bloge.testSchemaAdmissionIntent.v1",
+                "requestFingerprint", requestFingerprint,
+                "suiteFingerprint", stored.fingerprint(),
+                "target", current.target(),
+                "boundaryPlanFingerprint", current.boundaryPlan().planFingerprint(),
+                "operatorRefs", operatorRefs,
+                "dependencyRefs", Set.of()));
+        AdmissionIntent intent = new AdmissionIntent(
+                Kind.SUITE, request.clientRequestId(), admissionFingerprint,
+                stored.suiteId(), operatorRefs, Set.of());
+        try (AdmissionGuard admission = admissions.admit(identity, intent)) {
+            TestSuiteExecutionResponse response = executeAdmittedSchemaAdmission(
+                    record, stored, suite, request, identity, current, prepared, results);
+            admission.checkpoint();
+            return response;
+        }
+    }
+
+    private TestSuiteExecutionResponse executeAdmittedSchemaAdmission(
+            TestSuiteRunRecord initial,
+            StoredTestSuite stored,
+            TestSuiteV3 suite,
+            TestSuiteExecutionRequest request,
+            IntegrationRequestContext identity,
+            TestSchemaAdmissionTarget current,
+            TestSchemaAdmissionEvaluator.PreparedAdmission prepared,
+            List<TestSuiteRunEvidenceV3.AdmissionCaseResult> results) {
+        TestSuiteRunRecord record;
+        try {
+            record = runRepository.create(initial, leaseCoordinator.newLease());
+        } catch (TestSuiteRunConflictException race) {
+            TestSuiteRunRecord winner = findByClientRequestId(request.clientRequestId(), identity)
+                    .orElseThrow(() -> conflict(identity,
+                            "RG.TEST.SUITE_RUN_IDEMPOTENCY_RETIRED",
+                            "clientRequestId is already reserved by expired or retired evidence; use a new key.",
+                            Map.of()));
+            return idempotentResponse(winner, initial.requestFingerprint(), identity);
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "RG.TEST.SUITE_RUN_STORE_UNAVAILABLE",
+                    "The independent suite-run store is unavailable.");
+        }
+
+        try (TestSuiteRunLeaseCoordinator.LeaseGuard lease = leaseCoordinator.monitor(record)) {
+            return executeOwnedSchemaAdmission(record, stored, suite, request, identity,
+                    current, prepared, results, lease);
+        }
+    }
+
+    private TestSuiteExecutionResponse executeOwnedSchemaAdmission(
+            TestSuiteRunRecord record,
+            StoredTestSuite stored,
+            TestSuiteV3 suite,
+            TestSuiteExecutionRequest request,
+            IntegrationRequestContext identity,
+            TestSchemaAdmissionTarget current,
+            TestSchemaAdmissionEvaluator.PreparedAdmission prepared,
+            List<TestSuiteRunEvidenceV3.AdmissionCaseResult> results,
+            TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
+        for (int index = 0; index < suite.cases().size(); index++) {
+            if (!lease.held()) {
+                markAdmissionRemaining(results, index, "SUITE_RUN_LEASE_LOST");
+                return finishSchemaAdmission(record, stored, suite, request, identity, current,
+                        results, TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE,
+                        List.of("SUITE_RUN_LEASE_LOST"), lease);
+            }
+            TestSuite.TestCase testCase = suite.cases().get(index);
+            results.set(index, schemaAdmissions.evaluate(prepared, testCase,
+                    suite.admissionExpectations().get(testCase.caseId())));
+            if (request.strategy() == TestSuiteExecutionRequest.Strategy.FAIL_FAST
+                    && results.get(index).status()
+                    != TestSuiteRunEvidenceV3.AdmissionCaseStatus.MATCHED) {
+                markAdmissionRemaining(results, index + 1, "FAIL_FAST_STOP");
+                return finishSchemaAdmission(record, stored, suite, request, identity, current,
+                        results, TestSuiteRunEvidence.Status.PARTIAL,
+                        List.of("FAIL_FAST_STOP"), lease);
+            }
+            if (index + 1 < suite.cases().size()) {
+                try {
+                    checkpointSchemaAdmission(record, stored, suite, request, identity,
+                            current, results, lease);
+                } catch (RuntimeException persistenceFailure) {
+                    markAdmissionRemaining(results, index + 1,
+                            "SUITE_RUN_STORE_UNAVAILABLE");
+                    return finishSchemaAdmission(record, stored, suite, request, identity, current,
+                            results, TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE,
+                            List.of("SUITE_RUN_STORE_UNAVAILABLE"), lease);
+                }
+            }
+        }
+        TestSuiteRunEvidenceV3.AdmissionCoverageVerdict coverage =
+                schemaAdmissions.coverage(results);
+        TestSuiteRunEvidence.Status status = switch (coverage.status()) {
+            case SATISFIED -> TestSuiteRunEvidence.Status.PASSED;
+            case UNSATISFIED -> TestSuiteRunEvidence.Status.COMPLETED_WITH_FAILURES;
+            case NOT_EVALUATED, INCOMPLETE -> TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE;
+        };
+        return finishSchemaAdmission(record, stored, suite, request, identity, current,
+                results, status, List.of(), lease);
     }
 
     private TestSuiteExecutionResponse executeAdmitted(
@@ -479,7 +624,123 @@ public final class TestSuiteExecutionService {
         return new TargetPreflight(descriptor.target().fingerprint(),
                 new TestSuiteEvidenceAggregator.TargetState(
                         suite.target().fingerprint().equals(descriptor.target().fingerprint()),
-                        descriptor.certificationEligible()));
+                descriptor.certificationEligible()));
+    }
+
+    private TestSuiteExecutionResponse finishSchemaAdmission(
+            TestSuiteRunRecord record,
+            StoredTestSuite stored,
+            TestSuiteV3 suite,
+            TestSuiteExecutionRequest request,
+            IntegrationRequestContext identity,
+            TestSchemaAdmissionTarget current,
+            List<TestSuiteRunEvidenceV3.AdmissionCaseResult> results,
+            TestSuiteRunEvidence.Status status,
+            List<String> diagnostics,
+            TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
+        TestSuiteRunEvidenceV3 terminal = admissionEvidence(
+                stored, suite, request, identity, current, record.suiteRunId(),
+                record.createdAt(), Instant.now(), status, results, diagnostics);
+        TestSuiteRunRecord completed = terminalRecordFromChildren(record, terminal, List.of());
+        try {
+            return response(updateOwned(completed, lease));
+        } catch (RuntimeException persistenceFailure) {
+            return persistIncompleteBestEffort(
+                    completed, "SUITE_RUN_TERMINAL_PERSISTENCE_FAILED", lease);
+        }
+    }
+
+    private void checkpointSchemaAdmission(
+            TestSuiteRunRecord record,
+            StoredTestSuite stored,
+            TestSuiteV3 suite,
+            TestSuiteExecutionRequest request,
+            IntegrationRequestContext identity,
+            TestSchemaAdmissionTarget current,
+            List<TestSuiteRunEvidenceV3.AdmissionCaseResult> results,
+            TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
+        TestSuiteRunEvidenceV3 running = admissionEvidence(
+                stored, suite, request, identity, current, record.suiteRunId(),
+                record.createdAt(), null, TestSuiteRunEvidence.Status.RUNNING,
+                results, List.of());
+        TestSuiteRunAttestationService.SealResult seal = attestations.seal(running,
+                record.requestFingerprint(), List.of(), TestSuiteRunAttestation.Scope.CHECKPOINT);
+        if (!seal.verified()) {
+            throw new IllegalStateException(seal.failureCode());
+        }
+        updateOwned(withEvidence(record, running, "", seal.attestation()), lease);
+    }
+
+    private TestSuiteRunEvidenceV3 admissionEvidence(
+            StoredTestSuite stored,
+            TestSuiteV3 suite,
+            TestSuiteExecutionRequest request,
+            IntegrationRequestContext identity,
+            TestSchemaAdmissionTarget current,
+            String suiteRunId,
+            Instant startedAt,
+            Instant completedAt,
+            TestSuiteRunEvidence.Status status,
+            List<TestSuiteRunEvidenceV3.AdmissionCaseResult> admissionResults,
+            List<String> diagnostics) {
+        List<TestSuiteRunEvidence.CaseResult> commonResults = new ArrayList<>();
+        for (int index = 0; index < suite.cases().size(); index++) {
+            commonResults.add(schemaAdmissions.commonResult(
+                    suite.cases().get(index), admissionResults.get(index)));
+        }
+        TestSuiteRunEvidenceV3.AdmissionCoverageVerdict admissionCoverage =
+                schemaAdmissions.coverage(admissionResults);
+        List<String> promotionReasons = new ArrayList<>(List.of(
+                TestSuiteRunEvidenceV3.SCHEMA_ADMISSION_ONLY,
+                TestSuiteRunEvidenceV3.BUSINESS_EXECUTION_NOT_PERFORMED));
+        if (status == TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE) {
+            promotionReasons.add("EVIDENCE_INCOMPLETE");
+        } else if (status == TestSuiteRunEvidence.Status.PARTIAL) {
+            promotionReasons.add("SUITE_RUN_INCOMPLETE");
+        }
+        TestSuiteRunEvidence.PromotionVerdict promotion =
+                new TestSuiteRunEvidence.PromotionVerdict(
+                        TestSuiteRunEvidence.PromotionStatus.BLOCKED, promotionReasons,
+                        admissionCoverage.status()
+                                == TestSuiteRunEvidenceV3.AdmissionCoverageStatus.SATISFIED,
+                        0, 0, false, false, admissionCoverage.allCasesCompleted());
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("tenantId", identity.tenantId());
+        metadata.put("organizationId", identity.organizationId());
+        metadata.put("projectId", identity.projectId());
+        metadata.put("environmentId", identity.environmentId());
+        metadata.put("actorId", identity.actorId());
+        metadata.put("correlationId", identity.correlationId());
+        metadata.put("strategy", request.strategy().name());
+        metadata.put("requestMetadataFingerprint", ProtocolFingerprint.of(
+                objectMapper, request.metadata()));
+        metadata.put("businessTargetInvoked", false);
+        metadata.put("childRunCount", 0);
+        metadata.put("suiteFingerprint", stored.fingerprint());
+        return new TestSuiteRunEvidenceV3("", suiteRunId, request.clientRequestId(), status,
+                TestSuiteRunEvidenceV3.EXECUTION_PURPOSE, request.suiteRef(), suite.target(),
+                startedAt, completedAt, commonResults,
+                TestSuiteRunEvidence.CoverageVerdict.notEvaluated(), promotion,
+                suite.evaluationMode(), current.boundaryPlan().planFingerprint(),
+                current.boundaryPlan().inputSchemaFingerprint(),
+                current.boundaryPlan().policy().generatorVersion(),
+                TestSuiteRunEvidenceV3.VERIFICATION_MODE, current.boundaryPlan().status(),
+                current.boundaryPlan().gaps().size(),
+                current.boundaryPlan().status() == TestBoundaryCasePlan.Status.PARTIAL,
+                admissionResults, admissionCoverage, diagnostics, metadata);
+    }
+
+    private static void markAdmissionRemaining(
+            List<TestSuiteRunEvidenceV3.AdmissionCaseResult> results,
+            int fromIndex,
+            String diagnosticCode) {
+        for (int index = fromIndex; index < results.size(); index++) {
+            TestSuiteRunEvidenceV3.AdmissionCaseResult previous = results.get(index);
+            results.set(index, new TestSuiteRunEvidenceV3.AdmissionCaseResult(
+                    previous.caseId(), TestSuiteRunEvidenceV3.AdmissionCaseStatus.NOT_SCHEDULED,
+                    previous.expectedOutcome(), null, previous.expectedValidationCodes(),
+                    List.of(), diagnosticCode));
+        }
     }
 
     private TestSuiteExecutionResponse finishWithoutCases(
@@ -721,6 +982,35 @@ public final class TestSuiteExecutionService {
                 previous.promotion().minimumCertifiableCases(),
                 previous.promotion().targetCertificationEligible(),
                 previous.promotion().coverageSatisfied(), previous.promotion().allCasesCompleted());
+        if (previous instanceof TestSuiteRunEvidenceV3 v3) {
+            TestSuiteRunEvidenceV3.AdmissionCoverageVerdict admissionCoverage =
+                    new TestSuiteRunEvidenceV3.AdmissionCoverageVerdict(
+                            TestSuiteRunEvidenceV3.AdmissionCoverageStatus.INCOMPLETE,
+                            v3.admissionCoverage().requiredCases(),
+                            v3.admissionCoverage().evaluatedCases(),
+                            v3.admissionCoverage().matchedCases(),
+                            v3.admissionCoverage().expectationMismatchCaseIds(),
+                            v3.admissionCoverage().provenanceMismatchCaseIds(),
+                            v3.admissionCoverage().incompleteCaseIds(),
+                            v3.admissionCoverage().allCasesCompleted());
+            TestSuiteRunEvidence.PromotionVerdict admissionBlocked =
+                    new TestSuiteRunEvidence.PromotionVerdict(
+                            TestSuiteRunEvidence.PromotionStatus.BLOCKED, promotionReasons,
+                            false, 0, 0, false, false,
+                            admissionCoverage.allCasesCompleted());
+            Instant completedAt = previous.completedAt() == null
+                    ? Instant.now() : previous.completedAt();
+            return new TestSuiteRunEvidenceV3("", previous.suiteRunId(),
+                    previous.clientRequestId(), TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE,
+                    previous.executionPurpose(), previous.suiteRef(), previous.target(),
+                    previous.startedAt(), completedAt, previous.caseResults(),
+                    TestSuiteRunEvidence.CoverageVerdict.notEvaluated(), admissionBlocked,
+                    v3.evaluationMode(), v3.boundaryPlanFingerprint(),
+                    v3.inputSchemaFingerprint(), v3.generatorVersion(), v3.verificationMode(),
+                    v3.sourcePlanStatus(), v3.sourceCoverageGapCount(),
+                    v3.coverageGapsAccepted(), v3.admissionResults(), admissionCoverage,
+                    diagnostics, previous.metadata());
+        }
         if (previous instanceof TestSuiteRunEvidenceV2 v2) {
             SemanticCoverageVerdict semantic = new SemanticCoverageVerdict(
                     SemanticCoverageVerdict.Status.INCOMPLETE,
