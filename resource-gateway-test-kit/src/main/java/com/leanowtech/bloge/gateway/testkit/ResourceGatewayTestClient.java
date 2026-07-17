@@ -819,7 +819,8 @@ public final class ResourceGatewayTestClient {
         String actual = response.path("schemaVersion").asText();
         if (!TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1.equals(actual)
                 && !TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V2.equals(actual)
-                && !TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V3.equals(actual)) {
+                && !TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V3.equals(actual)
+                && !TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V4.equals(actual)) {
             throw ResourceGatewayTestException.local("RG.TESTKIT.PROTOCOL_VERSION_MISMATCH",
                     "The server returned an unsupported suite execution response version.", null);
         }
@@ -828,7 +829,8 @@ public final class ResourceGatewayTestClient {
     private static void requireSuiteEvidenceBundleVersion(JsonNode response) {
         String actual = response.path("schemaVersion").asText();
         if (!TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V1.equals(actual)
-                && !TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V2.equals(actual)) {
+                && !TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V2.equals(actual)
+                && !TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V3.equals(actual)) {
             throw ResourceGatewayTestException.local("RG.TESTKIT.PROTOCOL_VERSION_MISMATCH",
                     "The server returned an unsupported suite evidence bundle version.", null);
         }

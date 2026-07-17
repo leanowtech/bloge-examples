@@ -17,7 +17,8 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
 - typed v2 child-evidence integrity manifests with v1 migration compatibility;
 - signed suite checkpoint/terminal attestations, payload-free evidence-bundle export, verification
-  key lookup, and dependency-light offline Ed25519 verification;
+  key lookup, and dependency-light offline Ed25519 verification, including schema-admission v3
+  evidence with a signed empty business-child closure;
 - challenge-bound request-index replica proof collection plus an offline exact-inventory rollout
   gate that rejects missing, duplicate, unexpected, stale, mixed-scope/artifact/protocol/mode, or
   cryptographically invalid cohorts against an externally pinned key set;
@@ -167,6 +168,44 @@ JUnitXmlReportWriter.writeSuite(
         true);
 ```
 
+Execute a reviewed `bloge.testSuite.v3` reference returned by the server's boundary-suite
+materialization API without confusing schema admission with business execution:
+
+```java
+TestSuiteRun admissionRun = client.executeSuite(
+        "loan-decision-schema-boundaries",
+        materializedRevision,
+        materializedFingerprint,
+        "schema-admission-ci-1042",
+        ResourceGatewayTestClient.SuiteStrategy.COLLECT_ALL,
+        Map.of("source", "contract-regression"));
+
+assert admissionRun.evaluationMode() == TestSuiteRun.EvaluationMode.SCHEMA_ADMISSION;
+TestSuiteRunAssertions.assertAdmissionPassed(admissionRun);
+assert !admissionRun.passed();             // no business graph/operator execution occurred
+assert !admissionRun.promotionEligible();  // admission evidence never authorizes publication
+
+TestSuiteRun.AdmissionCoverage coverage = admissionRun.requireAdmissionCoverage();
+List<TestSuiteRun.AdmissionCaseResult> observations = admissionRun.admissionResults();
+
+TestSuiteEvidenceBundle admissionBundle =
+        client.findSuiteEvidenceBundle(admissionRun.suiteRunId());
+String trustedPin = System.getenv("RESOURCE_GATEWAY_EVIDENCE_KEY_SET_PIN");
+TestSuiteEvidenceVerifier.VerificationResult admissionVerification =
+        client.verifySuiteEvidence(admissionRun.suiteRunId(), trustedPin);
+
+JUnitXmlReportWriter.writeSuite(
+        Path.of("target/surefire-reports/schema-admission.xml"),
+        admissionRun,
+        false); // promotion is deliberately blocked for admission-only evidence
+```
+
+Admission success means every stored case still belongs to the exact reviewed boundary plan and the
+shared validator produced the expected outcome/codes. It does not mean the operator, DAG, assertions,
+or structural/semantic coverage passed. v4 response, v3 evidence, v3 attestation, and v3 bundle are a
+single generation; the schema validator and offline verifier reject mixed generations. The v3
+attestation must have an empty `childEvidenceRefs` list.
+
 Calling any semantic requirement method emits `bloge.testSuite.v2`; builders without these methods
 remain on v1:
 
@@ -227,11 +266,12 @@ references can be supplied directly to `executeSuite` or to the CI command below
 case, intent, assertion, or policy changes produce a new immutable revision instead of overwriting
 history.
 
-`TestSuiteRun` links each case to its child `runId`, exact fixture revision, evidence class,
-assertion counters, and stable diagnostic code. It intentionally excludes child inputs, outputs,
-and free-form diagnostics from its reportable projection. Structural v2 and semantic v3 responses
-expose a signed `CHECKPOINT` or `TERMINAL` attestation; v1 responses remain readable but explicitly
-unsigned. Semantic-aware consumers call `requireSemanticCoverage()` so historical v1 fails as
+For business suites, `TestSuiteRun` links each case to its child `runId`, exact fixture revision,
+evidence class, assertion counters, and stable diagnostic code. Schema-admission suites instead carry
+typed admission observations and deliberately blank child fields. Both projections exclude inputs,
+outputs, and free-form diagnostics. Structural v2, semantic v3, and admission v4 responses expose a
+generation-matched signed `CHECKPOINT` or `TERMINAL` attestation; v1 responses remain readable but
+explicitly unsigned. Semantic-aware consumers call `requireSemanticCoverage()` so historical v1 fails as
 `SEMANTIC_COVERAGE_UNAVAILABLE` rather than appearing empty and satisfied.
 `promotionEligible()` means only that the run satisfies the suite's policy and may be submitted to a
 later gate; it does not mean certified, approved, or published.

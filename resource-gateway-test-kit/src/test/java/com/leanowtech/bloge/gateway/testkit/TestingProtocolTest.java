@@ -74,20 +74,28 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V2);
             assertConstant(definitions, "testSuiteExecutionResponseV3",
                     TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V3);
-            assertThat(definitions.at("/testSuiteExecutionResponse/oneOf")).hasSize(3);
+            assertConstant(definitions, "testSuiteExecutionResponseV4",
+                    TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V4);
+            assertThat(definitions.at("/testSuiteExecutionResponse/oneOf")).hasSize(4);
             assertConstant(definitions, "testSuiteRunEvidence",
                     TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V1);
             assertConstant(definitions, "testSuiteRunEvidenceV2",
                     TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V2);
+            assertConstant(definitions, "testSuiteRunEvidenceV3",
+                    TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V3);
             assertConstant(definitions, "testSuiteRunAttestation",
                     TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V1);
             assertConstant(definitions, "testSuiteRunAttestationV2",
                     TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V2);
+            assertConstant(definitions, "testSuiteRunAttestationV3",
+                    TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V3);
             assertConstant(definitions, "testSuiteEvidenceBundleV1",
                     TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V1);
             assertConstant(definitions, "testSuiteEvidenceBundleV2",
                     TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V2);
-            assertThat(definitions.at("/testSuiteEvidenceBundle/oneOf")).hasSize(2);
+            assertConstant(definitions, "testSuiteEvidenceBundleV3",
+                    TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V3);
+            assertThat(definitions.at("/testSuiteEvidenceBundle/oneOf")).hasSize(3);
             assertConstant(definitions, "evidenceVerificationKeySet",
                     TestingProtocol.EVIDENCE_VERIFICATION_KEY_SET_V1);
             assertConstant(definitions, "testSuiteCatalogMaterialization",
@@ -103,6 +111,74 @@ class TestingProtocolTest {
                     .isEqualTo(TestingProtocol.EVIDENCE_KEY_SET_TRUST_PUBLICATION_V1);
             assertThat(schema.at("/properties/publications/maxItems").asInt()).isEqualTo(256);
         }
+    }
+
+    @Test
+    void packagedSchemaAcceptsAdmissionEvidenceAndRejectsBusinessChildClosure() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode response = mapper.readTree(schemaAdmissionSuiteResponse());
+
+        assertThatNoException().isThrownBy(() -> TestingProtocolSchemaValidator.require(
+                response, "testSuiteExecutionResponse"));
+
+        JsonNode invalid = response.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ArrayNode) invalid
+                .at("/attestation/childEvidenceRefs")).addObject()
+                .put("caseId", "baseline")
+                .put("runId", "business-run-must-not-exist")
+                .put("evidenceFingerprint", "sha256:" + "f".repeat(64));
+
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                invalid, "testSuiteExecutionResponse"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("authoritative schema");
+    }
+
+    private static String schemaAdmissionSuiteResponse() {
+        return """
+                {"schemaVersion":"bloge.testSuiteExecutionResponse.v4","suiteRunId":"suite-run-admission",
+                 "evidenceFingerprint":"sha256:%1$s","evidence":{
+                   "schemaVersion":"bloge.testSuiteRunEvidence.v3","suiteRunId":"suite-run-admission",
+                   "clientRequestId":"admission-ci-1","status":"PASSED",
+                   "executionPurpose":"SCHEMA_ADMISSION_SUITE_EXECUTION",
+                   "suiteRef":{"suiteId":"suite-boundary","revision":3,"fingerprint":"sha256:%1$s"},
+                   "target":{"kind":"OPERATOR","id":"customer.normalize/v2","fingerprint":"sha256:%2$s"},
+                   "startedAt":"2026-07-17T01:00:00Z","completedAt":"2026-07-17T01:00:01Z",
+                   "caseResults":[{"caseId":"baseline","caseType":"BOUNDARY",
+                     "fixtureBundleRef":{"fixtureBundleId":"boundary-baseline","revision":1,
+                       "fingerprint":"sha256:%3$s"},"status":"PASSED","runId":"",
+                     "evidenceStatus":null,"evidenceClass":null,"assertionsEvaluated":0,
+                     "assertionsPassed":0,"diagnosticCode":"","diagnostic":""}],
+                   "coverage":{"status":"NOT_EVALUATED","minimumCases":0,"completedCases":0,
+                     "requiredCaseTypes":[],"observedCaseTypes":[],"missingCaseTypes":[],
+                     "requiredInvocationSiteIds":[],"observedInvocationSiteIds":[],
+                     "missingInvocationSiteIds":[],"requiredEdgeTransfers":[],
+                     "observedEdgeTransfers":[],"missingEdgeTransfers":[],
+                     "minimumAssertionsPerCase":0,"assertionDensityViolations":[],
+                     "fixtureConsumptionViolations":[],"allCasesCompleted":false},
+                   "promotion":{"status":"BLOCKED","reasons":["BUSINESS_EXECUTION_NOT_PERFORMED",
+                     "SCHEMA_ADMISSION_ONLY"],"allCasesPassed":true,"certifiableCases":0,
+                     "minimumCertifiableCases":0,"targetCertificationEligible":false,
+                     "coverageSatisfied":false,"allCasesCompleted":true},
+                   "evaluationMode":"SCHEMA_ADMISSION","boundaryPlanFingerprint":"sha256:%4$s",
+                   "inputSchemaFingerprint":"sha256:%5$s","generatorVersion":"boundary-generator.v1",
+                   "verificationMode":"EXACT_SHARED_VALIDATOR","sourcePlanStatus":"GENERATED",
+                   "sourceCoverageGapCount":0,"coverageGapsAccepted":false,
+                   "admissionResults":[{"caseId":"baseline","status":"MATCHED",
+                     "expectedOutcome":"ACCEPTED","observedOutcome":"ACCEPTED",
+                     "expectedValidationCodes":[],"observedValidationCodes":[],"diagnosticCode":""}],
+                   "admissionCoverage":{"status":"SATISFIED","requiredCases":1,
+                     "evaluatedCases":1,"matchedCases":1,"expectationMismatchCaseIds":[],
+                     "provenanceMismatchCaseIds":[],"incompleteCaseIds":[],"allCasesCompleted":true},
+                   "diagnostics":[],"metadata":{"businessTargetInvoked":false,"childRunCount":0}},
+                 "attestation":{"schemaVersion":"bloge.testSuiteRunAttestation.v3",
+                   "signatureStatus":"VERIFIED","scope":"TERMINAL","suiteRunId":"suite-run-admission",
+                   "suiteRef":{"suiteId":"suite-boundary","revision":3,"fingerprint":"sha256:%1$s"},
+                   "requestFingerprint":"sha256:%6$s","aggregateEvidenceFingerprint":"sha256:%1$s",
+                   "childEvidenceRefs":[],"signedAt":"2026-07-17T01:00:01Z","keyId":"test-key-1",
+                   "algorithm":"Ed25519","signature":"AA==","independentlyVerifiable":true}}
+                """.formatted("a".repeat(64), "b".repeat(64), "c".repeat(64),
+                "d".repeat(64), "e".repeat(64), "f".repeat(64));
     }
 
     @Test

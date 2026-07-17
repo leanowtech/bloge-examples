@@ -1,5 +1,11 @@
 # Stage 5 Boundary-Suite Materialization Verification
 
+> Historical checkpoint: this record proves the materialization-only boundary as it existed in the
+> fourth Stage 5 increment. Its deliberate `schemaAdmissionSuiteExecution=false` limitation was
+> closed by the subsequent
+> [schema-admission execution verification](resource-gateway-execution-data-control-plane-stage5-schema-admission-execution-verification.md).
+> Keep this document as migration history; use the newer record for current runtime capability.
+
 ## Result
 
 This increment converts a reviewed `bloge.testBoundaryCasePlan.v1` subset into immutable governed

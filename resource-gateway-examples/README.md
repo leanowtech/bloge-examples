@@ -665,6 +665,15 @@ terminal `bloge.testSuiteRunEvidence.v2` refs without case input, fixture payloa
 is rejected instead of being presented as empty semantic coverage; verification-authority outage is distinct from no
 retained evidence. ANEKE must fetch each referenced portable bundle and verify it against an independently pinned key set.
 
+Reviewed schema-boundary plans can now be materialized as immutable `bloge.testSuite.v3` assets and executed without
+calling the graph or operator. A successful run emits generation-matched
+`testSuiteExecutionResponse.v4` / `testSuiteRunEvidence.v3` / `testSuiteRunAttestation.v3`, with typed validator
+observations, exact plan/schema/generator provenance, and a signed empty business-child closure. Structural coverage stays
+`NOT_EVALUATED` and promotion stays `BLOCKED`; this proves schema admission, not business correctness. The capability probe
+advertises `schemaAdmissionSuiteExecution` only with the isolated testing runtime. See the
+[testing API guide](../docs/resource-gateway-testing-control-plane-api.md#414-execute-and-verify-a-schema-admission-suite)
+and [standalone test-kit guide](../resource-gateway-test-kit/README.md).
+
 ANEKE remains the workbook and publish-gate authority. Historical `GovernanceGateResult.v2` stays readable, while a
 semantic `PASSED` decision uses `GovernanceGateResult.v3`: it records the exact suite target, reconstructable ordered
 evidence closure, semantic bundle manifest facts, policy version, and every required check. Resource Gateway rebuilds the

@@ -10,6 +10,9 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
@@ -133,14 +136,31 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("builtInGraphSuiteCatalogMaterialization", true)
                 .containsEntry("schemaBoundaryCasePlanning", true)
                 .containsEntry("schemaBoundarySuiteMaterialization", true)
-                .containsEntry("schemaAdmissionSuiteExecution", false);
+                .containsEntry("schemaAdmissionSuiteExecution", true);
         assertThat(capabilities.getBody().payload().supportedObjects())
                 .containsEntry("testBoundaryCasePlan",
                         List.of(TestBoundaryCasePlan.SCHEMA_VERSION))
                 .containsEntry("testBoundarySuiteMaterializationRequest",
                         List.of(TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION))
                 .containsEntry("testBoundarySuiteMaterialization",
-                        List.of(TestBoundarySuiteMaterializationResponse.SCHEMA_VERSION));
+                        List.of(TestBoundarySuiteMaterializationResponse.SCHEMA_VERSION))
+                .containsEntry("testSuiteExecutionResponse", List.of(
+                        TestSuiteExecutionResponse.SCHEMA_VERSION_V1,
+                        TestSuiteExecutionResponse.SCHEMA_VERSION,
+                        TestSuiteExecutionResponse.SCHEMA_VERSION_V3,
+                        TestSuiteExecutionResponse.SCHEMA_VERSION_V4))
+                .containsEntry("testSuiteRunEvidence", List.of(
+                        TestSuiteRunEvidence.SCHEMA_VERSION,
+                        com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2.SCHEMA_VERSION,
+                        TestSuiteRunEvidenceV3.SCHEMA_VERSION))
+                .containsEntry("testSuiteRunAttestation", List.of(
+                        TestSuiteRunAttestation.SCHEMA_VERSION,
+                        TestSuiteRunAttestation.SCHEMA_VERSION_V2,
+                        TestSuiteRunAttestation.SCHEMA_VERSION_V3))
+                .containsEntry("testSuiteEvidenceBundle", List.of(
+                        TestSuiteEvidenceBundle.SCHEMA_VERSION,
+                        TestSuiteEvidenceBundle.SCHEMA_VERSION_V2,
+                        TestSuiteEvidenceBundle.SCHEMA_VERSION_V3));
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("suiteRunOwnerLease", true)
                 .containsEntry("abandonedSuiteRunReconciliation", true)
@@ -323,6 +343,61 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(admissionSuite.evaluationMode())
                 .isEqualTo(TestSuiteV3.EvaluationMode.SCHEMA_ADMISSION);
         assertThat(admissionSuite.admissionExpectations()).hasSize(selectedBoundaryCases.size());
+
+        TestSuiteExecutionRequest admissionExecution = new TestSuiteExecutionRequest("",
+                materialized.getBody().suiteRef(), "integration-schema-admission-run-1",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL,
+                Map.of("source", "spring-http-schema-admission-test"));
+        var admissionRun = restTemplate.exchange(
+                "/api/testing/suites/loan-decision-schema-boundaries/executions",
+                HttpMethod.POST, new HttpEntity<>(admissionExecution, headers),
+                TestSuiteExecutionResponse.class);
+        assertThat(admissionRun.getStatusCode())
+                .withFailMessage("schema-admission execution failed: %s", admissionRun.getBody())
+                .isEqualTo(HttpStatus.OK);
+        assertThat(admissionRun.getBody()).isNotNull();
+        assertThat(admissionRun.getBody().schemaVersion())
+                .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION_V4);
+        assertThat(admissionRun.getBody().evidence())
+                .isInstanceOfSatisfying(TestSuiteRunEvidenceV3.class, evidence -> {
+                    assertThat(evidence.status()).isEqualTo(TestSuiteRunEvidence.Status.PASSED);
+                    assertThat(evidence.admissionCoverage().status())
+                            .isEqualTo(TestSuiteRunEvidenceV3.AdmissionCoverageStatus.SATISFIED);
+                    assertThat(evidence.admissionResults())
+                            .extracting(TestSuiteRunEvidenceV3.AdmissionCaseResult::status)
+                            .containsOnly(TestSuiteRunEvidenceV3.AdmissionCaseStatus.MATCHED);
+                    assertThat(evidence.caseResults()).allSatisfy(result -> {
+                        assertThat(result.runId()).isBlank();
+                        assertThat(result.evidenceStatus()).isNull();
+                        assertThat(result.evidenceClass()).isNull();
+                    });
+                    assertThat(evidence.metadata()).containsEntry("businessTargetInvoked", false)
+                            .containsEntry("childRunCount", 0);
+                });
+        assertThat(admissionRun.getBody().attestation().schemaVersion())
+                .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V3);
+        assertThat(admissionRun.getBody().attestation().terminallyVerifiable()).isTrue();
+        assertThat(admissionRun.getBody().attestation().childEvidenceRefs()).isEmpty();
+
+        var admissionPortable = restTemplate.exchange("/api/testing/suite-executions/"
+                        + admissionRun.getBody().suiteRunId() + "/evidence-bundle",
+                HttpMethod.GET, new HttpEntity<>(headers), TestSuiteEvidenceBundle.class);
+        assertThat(admissionPortable.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(admissionPortable.getBody()).isNotNull();
+        assertThat(admissionPortable.getBody().schemaVersion())
+                .isEqualTo(TestSuiteEvidenceBundle.SCHEMA_VERSION_V3);
+        assertThat(admissionPortable.getBody().attestation())
+                .isEqualTo(admissionRun.getBody().attestation());
+        assertThat(admissionPortable.getBody().evidence())
+                .isInstanceOf(TestSuiteRunEvidenceV3.class);
+        assertThat(objectMapper.valueToTree(admissionPortable.getBody()).toString())
+                .doesNotContain("spring-http-schema-admission-test", "\"input\":");
+
+        var admissionRunRead = restTemplate.exchange("/api/testing/suite-executions/"
+                        + admissionRun.getBody().suiteRunId(), HttpMethod.GET,
+                new HttpEntity<>(headers), TestSuiteExecutionResponse.class);
+        assertThat(admissionRunRead.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(admissionRunRead.getBody()).isEqualTo(admissionRun.getBody());
 
         var nestedTarget = restTemplate.exchange("/api/testing/targets/graphs/enrichOrderList",
                 HttpMethod.GET, new HttpEntity<>(headers), JsonNode.class);

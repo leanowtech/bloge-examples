@@ -107,6 +107,32 @@ class JUnitXmlReportWriterTest {
         assertThat(document.getElementsByTagName("failure").getLength()).isEqualTo(2);
     }
 
+    @Test
+    void writesPassingAdmissionReportWithoutInventingBusinessChildRuns() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        TestSuiteRun run = TestSuiteRun.from(
+                mapper.readTree(TestSuiteRunAssertionsTest.schemaAdmissionSuiteResponse()));
+        Path report = temporaryDirectory.resolve("reports/schema-admission.xml");
+
+        JUnitXmlReportWriter.Report result = JUnitXmlReportWriter.writeSuite(report, run, false);
+
+        assertThat(result.tests()).isEqualTo(2);
+        assertThat(result.failures()).isZero();
+        assertThat(result.exitCode()).isZero();
+        assertThat(Files.readString(report))
+                .contains("evaluationMode=SCHEMA_ADMISSION")
+                .contains("admissionCoverage=SATISFIED")
+                .doesNotContain("child runId=")
+                .doesNotContain("BUSINESS_EXECUTION_NOT_PERFORMED");
+
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        Document document = factory.newDocumentBuilder().parse(report.toFile());
+        assertThat(document.getDocumentElement().getAttribute("tests")).isEqualTo("2");
+        assertThat(document.getDocumentElement().getAttribute("failures")).isEqualTo("0");
+        assertThat(document.getElementsByTagName("failure").getLength()).isZero();
+    }
+
     private static String run(String runId, String status, String evidenceClass, String diagnostic) {
         return """
                 {"schemaVersion":"bloge.testExecutionResponse.v1","runId":"%s",

@@ -46,6 +46,24 @@ class TestSuiteEvidenceVerifierTest {
     }
 
     @Test
+    void verifiesSchemaAdmissionBundleWithSignedEmptyBusinessChildClosure() throws Exception {
+        Fixture fixture = schemaAdmissionFixture();
+
+        TestSuiteEvidenceVerifier.VerificationResult result =
+                new TestSuiteEvidenceVerifier().verify(fixture.bundle(), fixture.key());
+
+        assertThat(result.verified()).isTrue();
+        assertThat(fixture.bundle().attestation().schemaVersion())
+                .isEqualTo(TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V3);
+        assertThat(fixture.bundle().attestation().childEvidenceRefs()).isEmpty();
+        assertThat(fixture.bundle().rawResponse().path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V3);
+        JsonNode metadata = fixture.bundle().evidence().path("metadata");
+        assertThat(metadata.path("businessTargetInvoked").asBoolean()).isFalse();
+        assertThat(metadata.path("childRunCount").asInt()).isZero();
+    }
+
+    @Test
     void aggregateMutationAndSignatureMutationAreRejected() throws Exception {
         Fixture fixture = fixture(List.of(child("golden", "child-run-1", CHILD)));
         ObjectNode alteredEvidence = (ObjectNode) fixture.bundle().evidence();
@@ -229,10 +247,21 @@ class TestSuiteEvidenceVerifierTest {
 
     private static Fixture fixture(List<TestSuiteRunAttestation.ChildEvidenceRef> children)
             throws Exception {
+        return fixture(evidence(), TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V1,
+                TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V1, children);
+    }
+
+    private static Fixture schemaAdmissionFixture() throws Exception {
+        return fixture(schemaAdmissionEvidence(), TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V3,
+                TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V3, List.of());
+    }
+
+    private static Fixture fixture(
+            ObjectNode evidence, String attestationVersion, String bundleVersion,
+            List<TestSuiteRunAttestation.ChildEvidenceRef> children) throws Exception {
         KeyPair keyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
-        ObjectNode evidence = evidence();
         String aggregateFingerprint = fingerprint(evidence);
-        ObjectNode material = signatureMaterial(aggregateFingerprint, children);
+        ObjectNode material = signatureMaterial(attestationVersion, aggregateFingerprint, children);
         String materialFingerprint = fingerprint(material);
         Signature signer = Signature.getInstance("Ed25519");
         signer.initSign(keyPair.getPrivate());
@@ -240,7 +269,7 @@ class TestSuiteEvidenceVerifierTest {
         String signature = Base64.getEncoder().encodeToString(signer.sign());
         String keyId = "test-ed25519-1";
         TestSuiteRunAttestation attestation = new TestSuiteRunAttestation(
-                TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V1,
+                attestationVersion,
                 TestSuiteRunAttestation.SignatureStatus.VERIFIED,
                 TestSuiteRunAttestation.Scope.TERMINAL, "suite-run-1",
                 new TestSuiteRunAttestation.SuiteRef("suite-a", 3, SUITE), REQUEST,
@@ -251,7 +280,7 @@ class TestSuiteEvidenceVerifierTest {
         bundleMaterial.set("attestation", attestationJson);
         bundleMaterial.set("evidence", evidence);
         ObjectNode response = JSON.createObjectNode();
-        response.put("schemaVersion", TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V1);
+        response.put("schemaVersion", bundleVersion);
         response.put("suiteRunId", "suite-run-1");
         response.put("bundleFingerprint", fingerprint(bundleMaterial));
         response.put("payloadPolicy", "OMITTED");
@@ -463,10 +492,69 @@ class TestSuiteEvidenceVerifierTest {
         return value;
     }
 
+    private static ObjectNode schemaAdmissionEvidence() {
+        ObjectNode value = evidence();
+        value.put("schemaVersion", TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V3);
+        value.put("executionPurpose", "SCHEMA_ADMISSION_SUITE_EXECUTION");
+        ObjectNode result = (ObjectNode) value.withArray("caseResults").get(0);
+        result.put("runId", "");
+        result.putNull("evidenceStatus");
+        result.putNull("evidenceClass");
+        result.put("assertionsEvaluated", 0);
+        result.put("assertionsPassed", 0);
+        ObjectNode coverage = (ObjectNode) value.path("coverage");
+        coverage.put("status", "NOT_EVALUATED");
+        coverage.put("minimumCases", 0);
+        coverage.put("completedCases", 0);
+        coverage.putArray("requiredCaseTypes");
+        coverage.putArray("observedCaseTypes");
+        coverage.put("minimumAssertionsPerCase", 0);
+        coverage.put("allCasesCompleted", false);
+        ObjectNode promotion = (ObjectNode) value.path("promotion");
+        promotion.put("status", "BLOCKED");
+        promotion.putArray("reasons")
+                .add("BUSINESS_EXECUTION_NOT_PERFORMED")
+                .add("SCHEMA_ADMISSION_ONLY");
+        promotion.put("certifiableCases", 0);
+        promotion.put("minimumCertifiableCases", 0);
+        promotion.put("targetCertificationEligible", false);
+        promotion.put("coverageSatisfied", false);
+        value.put("evaluationMode", "SCHEMA_ADMISSION");
+        value.put("boundaryPlanFingerprint", REQUEST);
+        value.put("inputSchemaFingerprint", TARGET);
+        value.put("generatorVersion", "boundary-generator.v1");
+        value.put("verificationMode", "EXACT_SHARED_VALIDATOR");
+        value.put("sourcePlanStatus", "GENERATED");
+        value.put("sourceCoverageGapCount", 0);
+        value.put("coverageGapsAccepted", false);
+        ObjectNode admission = value.putArray("admissionResults").addObject();
+        admission.put("caseId", "golden");
+        admission.put("status", "MATCHED");
+        admission.put("expectedOutcome", "ACCEPTED");
+        admission.put("observedOutcome", "ACCEPTED");
+        admission.putArray("expectedValidationCodes");
+        admission.putArray("observedValidationCodes");
+        admission.put("diagnosticCode", "");
+        ObjectNode admissionCoverage = value.putObject("admissionCoverage");
+        admissionCoverage.put("status", "SATISFIED");
+        admissionCoverage.put("requiredCases", 1);
+        admissionCoverage.put("evaluatedCases", 1);
+        admissionCoverage.put("matchedCases", 1);
+        admissionCoverage.putArray("expectationMismatchCaseIds");
+        admissionCoverage.putArray("provenanceMismatchCaseIds");
+        admissionCoverage.putArray("incompleteCaseIds");
+        admissionCoverage.put("allCasesCompleted", true);
+        ObjectNode metadata = (ObjectNode) value.path("metadata");
+        metadata.put("businessTargetInvoked", false);
+        metadata.put("childRunCount", 0);
+        return value;
+    }
+
     private static ObjectNode signatureMaterial(
-            String aggregateFingerprint, List<TestSuiteRunAttestation.ChildEvidenceRef> children) {
+            String schemaVersion, String aggregateFingerprint,
+            List<TestSuiteRunAttestation.ChildEvidenceRef> children) {
         ObjectNode value = JSON.createObjectNode();
-        value.put("schemaVersion", TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V1);
+        value.put("schemaVersion", schemaVersion);
         value.put("scope", "TERMINAL");
         value.put("suiteRunId", "suite-run-1");
         exactRef(value.putObject("suiteRef"), "suiteId", "suite-a", 3, SUITE);
@@ -484,7 +572,7 @@ class TestSuiteEvidenceVerifierTest {
     }
 
     private static ObjectNode attestationJson(TestSuiteRunAttestation value) {
-        ObjectNode node = signatureMaterial(value.aggregateEvidenceFingerprint(),
+        ObjectNode node = signatureMaterial(value.schemaVersion(), value.aggregateEvidenceFingerprint(),
                 value.childEvidenceRefs());
         node.put("signatureStatus", value.signatureStatus().name());
         node.put("keyId", value.keyId());

@@ -151,14 +151,19 @@ public final class TestSuiteEvidenceVerifier {
             return result(Outcome.INVALID, "TERMINAL_ATTESTATION_REQUIRED",
                     bundle.suiteRunId(), attestation.keyId());
         }
-        boolean v2 = TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V2.equals(
-                bundle.evidence().path("schemaVersion").asText());
-        String expectedAttestationVersion = v2
-                ? TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V2
-                : TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V1;
-        String expectedBundleVersion = v2
-                ? TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V2
-                : TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V1;
+        String evidenceVersion = bundle.evidence().path("schemaVersion").asText();
+        String expectedAttestationVersion;
+        String expectedBundleVersion;
+        if (TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V3.equals(evidenceVersion)) {
+            expectedAttestationVersion = TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V3;
+            expectedBundleVersion = TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V3;
+        } else if (TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V2.equals(evidenceVersion)) {
+            expectedAttestationVersion = TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V2;
+            expectedBundleVersion = TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V2;
+        } else {
+            expectedAttestationVersion = TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V1;
+            expectedBundleVersion = TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V1;
+        }
         if (!expectedAttestationVersion.equals(attestation.schemaVersion())
                 || !expectedBundleVersion.equals(
                 bundle.rawResponse().path("schemaVersion").asText())) {

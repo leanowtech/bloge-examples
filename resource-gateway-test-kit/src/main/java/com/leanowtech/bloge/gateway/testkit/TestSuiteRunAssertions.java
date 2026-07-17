@@ -18,9 +18,29 @@ public final class TestSuiteRunAssertions {
     public static void assertPassed(TestSuiteRun run) {
         required(run);
         if (!run.passed()) {
-            throw new AssertionFailedError("Resource Gateway suite " + run.suiteRunId()
-                    + " did not pass; status=" + run.status() + ", coverage=" + run.coverageStatus(),
+            throw new AssertionFailedError("Resource Gateway business suite " + run.suiteRunId()
+                    + " did not pass; mode=" + run.evaluationMode() + ", status=" + run.status()
+                    + ", coverage=" + run.coverageStatus(),
                     "PASSED with SATISFIED coverage", run.status() + " with " + run.coverageStatus());
+        }
+    }
+
+    /**
+     * Requires exact reviewed cases to match the shared schema validator without claiming business
+     * target execution, structural coverage, or promotion eligibility.
+     *
+     * @param run suite run to assert
+     */
+    public static void assertAdmissionPassed(TestSuiteRun run) {
+        required(run);
+        if (!run.admissionPassed()) {
+            String coverage = run.admissionCoverage()
+                    .map(value -> value.status().name()).orElse("UNAVAILABLE");
+            throw new AssertionFailedError("Resource Gateway schema-admission suite "
+                    + run.suiteRunId() + " did not pass; mode=" + run.evaluationMode()
+                    + ", status=" + run.status() + ", admissionCoverage=" + coverage,
+                    "SCHEMA_ADMISSION PASSED with SATISFIED admission coverage",
+                    run.status() + " with " + coverage);
         }
     }
 

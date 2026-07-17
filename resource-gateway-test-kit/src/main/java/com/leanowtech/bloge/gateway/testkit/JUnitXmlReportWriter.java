@@ -57,8 +57,9 @@ public final class JUnitXmlReportWriter {
 
     /**
      * Writes one payload-free testcase per governed case plus one fail-closed aggregate gate.
-     * The gate requires a passing suite and satisfied coverage; promotion eligibility is optional
-     * only when the caller explicitly disables it.
+     * Business suites require structural coverage; schema-admission suites require exact validator
+     * matches and never imply business execution. Promotion eligibility is optional only when the
+     * caller explicitly disables it.
      *
      * @param output destination XML file
      * @param run immutable suite-run projection
@@ -76,7 +77,7 @@ public final class JUnitXmlReportWriter {
         writeDocument(output, "resource-gateway suite " + run.suiteId(),
                 run.caseResults().size() + 1, failures, xml -> {
             for (TestSuiteRun.CaseResult result : run.caseResults()) {
-                writeSuiteCase(xml, result);
+                writeSuiteCase(xml, result, run.evaluationMode());
             }
             writeSuiteGate(xml, run, requirePromotionEligible, gatePassed);
         });
@@ -166,7 +167,8 @@ public final class JUnitXmlReportWriter {
         xml.writeEndElement();
     }
 
-    private static void writeSuiteCase(XMLStreamWriter xml, TestSuiteRun.CaseResult result)
+    private static void writeSuiteCase(XMLStreamWriter xml, TestSuiteRun.CaseResult result,
+                                       TestSuiteRun.EvaluationMode evaluationMode)
             throws XMLStreamException {
         xml.writeStartElement("testcase");
         xml.writeAttribute("classname", "resource-gateway.governed-suite");
@@ -176,12 +178,18 @@ public final class JUnitXmlReportWriter {
             xml.writeAttribute("type", "ResourceGateway." + result.status());
             String code = result.diagnosticCode().isBlank() ? result.status().name() : result.diagnosticCode();
             xml.writeAttribute("message", bounded(code, 512));
-            xml.writeCharacters("Inspect the authorized testing API using child runId="
-                    + bounded(result.runId(), 256) + ".");
+            if (evaluationMode == TestSuiteRun.EvaluationMode.SCHEMA_ADMISSION) {
+                xml.writeCharacters("Inspect the authorized suite admission result using caseId="
+                        + bounded(result.caseId(), 256) + ".");
+            } else {
+                xml.writeCharacters("Inspect the authorized testing API using child runId="
+                        + bounded(result.runId(), 256) + ".");
+            }
             xml.writeEndElement();
         }
         xml.writeStartElement("system-out");
-        xml.writeCharacters("caseType=" + bounded(result.caseType(), 64)
+        xml.writeCharacters("evaluationMode=" + evaluationMode
+                + "; caseType=" + bounded(result.caseType(), 64)
                 + "; status=" + result.status()
                 + "; runId=" + bounded(result.runId(), 256)
                 + "; evidenceStatus=" + bounded(result.evidenceStatus(), 64)
@@ -210,6 +218,7 @@ public final class JUnitXmlReportWriter {
         }
         xml.writeStartElement("system-out");
         xml.writeCharacters("suiteRunId=" + bounded(run.suiteRunId(), 256)
+                + "; evaluationMode=" + run.evaluationMode()
                 + "; status=" + run.status()
                 + "; suite=" + bounded(run.suiteId(), 256) + "@" + run.suiteRevision()
                 + "; suiteFingerprint=" + bounded(run.suiteFingerprint(), 80)
@@ -217,6 +226,8 @@ public final class JUnitXmlReportWriter {
                 + "; targetFingerprint=" + bounded(run.targetFingerprint(), 80)
                 + "; evidenceFingerprint=" + bounded(run.evidenceFingerprint(), 80)
                 + "; coverage=" + run.coverageStatus()
+                + "; admissionCoverage=" + run.admissionCoverage()
+                .map(value -> value.status().name()).orElse("NOT_APPLICABLE")
                 + "; promotion=" + run.promotionStatus()
                 + "; promotionRequired=" + requirePromotionEligible);
         xml.writeEndElement();

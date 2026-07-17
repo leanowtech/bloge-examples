@@ -2334,6 +2334,175 @@
         "metadata": {"type": "object"}
       }
     },
+    "testSuiteAdmissionCompatibilityCaseResult": {
+      "allOf": [
+        {"$ref": "#/$defs/testSuiteCaseResult"},
+        {
+          "properties": {
+            "runId": {"const": ""},
+            "evidenceStatus": {"type": "null"},
+            "evidenceClass": {"type": "null"},
+            "assertionsEvaluated": {"const": 0},
+            "assertionsPassed": {"const": 0}
+          }
+        }
+      ]
+    },
+    "testSuiteAdmissionCaseResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "status", "expectedOutcome", "observedOutcome",
+        "expectedValidationCodes", "observedValidationCodes", "diagnosticCode"],
+      "properties": {
+        "caseId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "status": {"enum": ["PENDING", "MATCHED", "EXPECTATION_MISMATCH",
+          "PROVENANCE_MISMATCH", "EVIDENCE_INCOMPLETE", "NOT_SCHEDULED"]},
+        "expectedOutcome": {"enum": ["ACCEPTED", "SCHEMA_REJECTED"]},
+        "observedOutcome": {
+          "type": ["string", "null"], "enum": ["ACCEPTED", "SCHEMA_REJECTED", null]
+        },
+        "expectedValidationCodes": {
+          "type": "array", "uniqueItems": true, "maxItems": 64,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}
+        },
+        "observedValidationCodes": {
+          "type": "array", "uniqueItems": true, "maxItems": 64,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}
+        },
+        "diagnosticCode": {"type": "string", "maxLength": 255}
+      }
+    },
+    "testSuiteAdmissionCoverageVerdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "requiredCases", "evaluatedCases", "matchedCases",
+        "expectationMismatchCaseIds", "provenanceMismatchCaseIds", "incompleteCaseIds",
+        "allCasesCompleted"],
+      "properties": {
+        "status": {"enum": ["NOT_EVALUATED", "SATISFIED", "UNSATISFIED", "INCOMPLETE"]},
+        "requiredCases": {"type": "integer", "minimum": 1, "maximum": 100},
+        "evaluatedCases": {"type": "integer", "minimum": 0, "maximum": 100},
+        "matchedCases": {"type": "integer", "minimum": 0, "maximum": 100},
+        "expectationMismatchCaseIds": {
+          "type": "array", "uniqueItems": true, "maxItems": 100,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}
+        },
+        "provenanceMismatchCaseIds": {
+          "type": "array", "uniqueItems": true, "maxItems": 100,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}
+        },
+        "incompleteCaseIds": {
+          "type": "array", "uniqueItems": true, "maxItems": 100,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}
+        },
+        "allCasesCompleted": {"type": "boolean"}
+      }
+    },
+    "testSuiteRunEvidenceV3": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteRunId", "clientRequestId", "status",
+        "executionPurpose", "suiteRef", "target", "startedAt", "completedAt", "caseResults",
+        "coverage", "promotion", "evaluationMode", "boundaryPlanFingerprint",
+        "inputSchemaFingerprint", "generatorVersion", "verificationMode", "sourcePlanStatus",
+        "sourceCoverageGapCount", "coverageGapsAccepted", "admissionResults",
+        "admissionCoverage", "diagnostics", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteRunEvidence.v3"},
+        "suiteRunId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "clientRequestId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "status": {"enum": ["RUNNING", "PASSED", "COMPLETED_WITH_FAILURES", "PARTIAL",
+          "EVIDENCE_INCOMPLETE"]},
+        "executionPurpose": {"const": "SCHEMA_ADMISSION_SUITE_EXECUTION"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "target": {"$ref": "#/$defs/exactTarget"},
+        "startedAt": {"type": "string", "format": "date-time"},
+        "completedAt": {"type": ["string", "null"], "format": "date-time"},
+        "caseResults": {
+          "type": "array", "minItems": 1, "maxItems": 100,
+          "items": {"$ref": "#/$defs/testSuiteAdmissionCompatibilityCaseResult"}
+        },
+        "coverage": {
+          "allOf": [
+            {"$ref": "#/$defs/testSuiteCoverageVerdict"},
+            {"properties": {
+              "status": {"const": "NOT_EVALUATED"},
+              "minimumCases": {"const": 0},
+              "completedCases": {"const": 0},
+              "requiredCaseTypes": {"maxItems": 0},
+              "observedCaseTypes": {"maxItems": 0},
+              "missingCaseTypes": {"maxItems": 0},
+              "requiredInvocationSiteIds": {"maxItems": 0},
+              "observedInvocationSiteIds": {"maxItems": 0},
+              "missingInvocationSiteIds": {"maxItems": 0},
+              "requiredEdgeTransfers": {"maxItems": 0},
+              "observedEdgeTransfers": {"maxItems": 0},
+              "missingEdgeTransfers": {"maxItems": 0},
+              "minimumAssertionsPerCase": {"const": 0},
+              "assertionDensityViolations": {"maxItems": 0},
+              "fixtureConsumptionViolations": {"maxItems": 0},
+              "allCasesCompleted": {"const": false}
+            }}
+          ]
+        },
+        "promotion": {
+          "allOf": [
+            {"$ref": "#/$defs/testSuitePromotionVerdict"},
+            {"properties": {
+              "status": {"const": "BLOCKED"},
+              "reasons": {"minItems": 2, "allOf": [
+                {"contains": {"const": "SCHEMA_ADMISSION_ONLY"}},
+                {"contains": {"const": "BUSINESS_EXECUTION_NOT_PERFORMED"}}
+              ]},
+              "certifiableCases": {"const": 0},
+              "minimumCertifiableCases": {"const": 0},
+              "targetCertificationEligible": {"const": false},
+              "coverageSatisfied": {"const": false}
+            }}
+          ]
+        },
+        "evaluationMode": {"const": "SCHEMA_ADMISSION"},
+        "boundaryPlanFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "inputSchemaFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "generatorVersion": {"type": "string", "minLength": 1, "maxLength": 255},
+        "verificationMode": {"const": "EXACT_SHARED_VALIDATOR"},
+        "sourcePlanStatus": {"enum": ["GENERATED", "PARTIAL"]},
+        "sourceCoverageGapCount": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "coverageGapsAccepted": {"type": "boolean"},
+        "admissionResults": {
+          "type": "array", "minItems": 1, "maxItems": 100,
+          "items": {"$ref": "#/$defs/testSuiteAdmissionCaseResult"}
+        },
+        "admissionCoverage": {"$ref": "#/$defs/testSuiteAdmissionCoverageVerdict"},
+        "diagnostics": {
+          "type": "array", "maxItems": 100,
+          "items": {"type": "string", "maxLength": 512}
+        },
+        "metadata": {"type": "object", "maxProperties": 100}
+      },
+      "allOf": [
+        {"oneOf": [
+          {"properties": {"sourcePlanStatus": {"const": "GENERATED"},
+            "sourceCoverageGapCount": {"const": 0}, "coverageGapsAccepted": {"const": false}}},
+          {"properties": {"sourcePlanStatus": {"const": "PARTIAL"},
+            "sourceCoverageGapCount": {"minimum": 1}, "coverageGapsAccepted": {"const": true}}}
+        ]},
+        {"oneOf": [
+          {"properties": {"status": {"const": "RUNNING"}, "completedAt": {"type": "null"},
+            "admissionCoverage": {"properties": {
+              "status": {"enum": ["NOT_EVALUATED", "INCOMPLETE"]}}}}},
+          {"properties": {"status": {"const": "PASSED"}, "completedAt": {"type": "string"},
+            "admissionCoverage": {"properties": {"status": {"const": "SATISFIED"},
+              "allCasesCompleted": {"const": true}}}}},
+          {"properties": {"status": {"const": "COMPLETED_WITH_FAILURES"},
+            "completedAt": {"type": "string"}, "admissionCoverage": {"properties": {
+              "status": {"const": "UNSATISFIED"}, "allCasesCompleted": {"const": true}}}}},
+          {"properties": {"status": {"enum": ["PARTIAL", "EVIDENCE_INCOMPLETE"]},
+            "completedAt": {"type": "string"}, "admissionCoverage": {"properties": {
+              "status": {"const": "INCOMPLETE"}}}}}
+        ]}
+      ]
+    },
     "testSuiteRunAttestationChild": {
       "type": "object",
       "additionalProperties": false,
@@ -2398,6 +2567,30 @@
         "independentlyVerifiable": {"type": "boolean"}
       }
     },
+    "testSuiteRunAttestationV3": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "signatureStatus", "scope", "suiteRunId", "suiteRef",
+        "requestFingerprint", "aggregateEvidenceFingerprint", "childEvidenceRefs", "signedAt",
+        "keyId", "algorithm", "signature", "independentlyVerifiable"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteRunAttestation.v3"},
+        "signatureStatus": {"enum": ["VERIFIED", "UNSIGNED", "VERIFICATION_UNAVAILABLE"]},
+        "scope": {"enum": ["CHECKPOINT", "TERMINAL"]},
+        "suiteRunId": {"type": "string", "maxLength": 255},
+        "suiteRef": {"oneOf": [{"$ref": "#/$defs/testSuiteRef"}, {"type": "null"}]},
+        "requestFingerprint": {"oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]},
+        "aggregateEvidenceFingerprint": {
+          "oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]
+        },
+        "childEvidenceRefs": {"type": "array", "maxItems": 0},
+        "signedAt": {"type": "string", "format": "date-time"},
+        "keyId": {"type": "string", "maxLength": 512},
+        "algorithm": {"type": "string", "maxLength": 128},
+        "signature": {"type": "string", "maxLength": 4096},
+        "independentlyVerifiable": {"type": "boolean"}
+      }
+    },
     "testSuiteExecutionResponseV1": {
       "type": "object",
       "additionalProperties": false,
@@ -2433,11 +2626,24 @@
         "attestation": {"$ref": "#/$defs/testSuiteRunAttestationV2"}
       }
     },
+    "testSuiteExecutionResponseV4": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteRunId", "evidenceFingerprint", "evidence", "attestation"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteExecutionResponse.v4"},
+        "suiteRunId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "evidenceFingerprint": {"oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]},
+        "evidence": {"$ref": "#/$defs/testSuiteRunEvidenceV3"},
+        "attestation": {"$ref": "#/$defs/testSuiteRunAttestationV3"}
+      }
+    },
     "testSuiteExecutionResponse": {
       "oneOf": [
         {"$ref": "#/$defs/testSuiteExecutionResponseV1"},
         {"$ref": "#/$defs/testSuiteExecutionResponseV2"},
-        {"$ref": "#/$defs/testSuiteExecutionResponseV3"}
+        {"$ref": "#/$defs/testSuiteExecutionResponseV3"},
+        {"$ref": "#/$defs/testSuiteExecutionResponseV4"}
       ]
     },
     "testSuiteEvidenceBundleV1": {
@@ -2468,10 +2674,25 @@
         "evidence": {"$ref": "#/$defs/testSuiteRunEvidenceV2"}
       }
     },
+    "testSuiteEvidenceBundleV3": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteRunId", "bundleFingerprint", "payloadPolicy",
+        "attestation", "evidence"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteEvidenceBundle.v3"},
+        "suiteRunId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "bundleFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "payloadPolicy": {"const": "OMITTED"},
+        "attestation": {"$ref": "#/$defs/testSuiteRunAttestationV3"},
+        "evidence": {"$ref": "#/$defs/testSuiteRunEvidenceV3"}
+      }
+    },
     "testSuiteEvidenceBundle": {
       "oneOf": [
         {"$ref": "#/$defs/testSuiteEvidenceBundleV1"},
-        {"$ref": "#/$defs/testSuiteEvidenceBundleV2"}
+        {"$ref": "#/$defs/testSuiteEvidenceBundleV2"},
+        {"$ref": "#/$defs/testSuiteEvidenceBundleV3"}
       ]
     },
     "testExecutionRequest": {

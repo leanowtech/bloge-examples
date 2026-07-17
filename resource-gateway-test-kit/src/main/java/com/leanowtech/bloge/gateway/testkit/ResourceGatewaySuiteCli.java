@@ -77,8 +77,11 @@ public final class ResourceGatewaySuiteCli {
             JUnitXmlReportWriter.Report report = JUnitXmlReportWriter.writeSuite(
                     options.report(), run, options.requirePromotionEligible());
             safeOutput.println("suiteRunId=" + safe(run.suiteRunId(), 256)
+                    + "; evaluationMode=" + run.evaluationMode()
                     + "; status=" + run.status()
                     + "; coverage=" + run.coverageStatus()
+                    + "; admissionCoverage=" + run.admissionCoverage()
+                    .map(value -> value.status().name()).orElse("NOT_APPLICABLE")
                     + "; promotion=" + run.promotionStatus()
                     + "; cases=" + run.caseResults().size()
                     + "; report=" + options.report().toAbsolutePath());

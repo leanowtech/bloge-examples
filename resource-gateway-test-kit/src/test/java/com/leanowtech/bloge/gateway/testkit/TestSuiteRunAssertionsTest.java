@@ -128,6 +128,41 @@ class TestSuiteRunAssertionsTest {
                 .hasMessage("SEMANTIC_COVERAGE_UNAVAILABLE");
     }
 
+    @Test
+    void projectsAdmissionEvidenceWithoutClaimingBusinessExecutionOrPromotion() throws Exception {
+        TestSuiteRun run = TestSuiteRun.from(JSON.readTree(schemaAdmissionSuiteResponse()));
+
+        assertThat(run.evaluationMode()).isEqualTo(TestSuiteRun.EvaluationMode.SCHEMA_ADMISSION);
+        assertThat(run.admissionPassed()).isTrue();
+        assertThat(run.evaluationPassed()).isTrue();
+        assertThat(run.passed()).isFalse();
+        assertThat(run.requireAdmissionCoverage().status())
+                .isEqualTo(TestSuiteRun.AdmissionCoverageStatus.SATISFIED);
+        assertThat(run.admissionResults())
+                .extracting(TestSuiteRun.AdmissionCaseResult::status)
+                .containsExactly(TestSuiteRun.AdmissionCaseStatus.MATCHED);
+        assertThat(run.caseResults().getFirst().runId()).isBlank();
+        assertThat(run.promotionEligible()).isFalse();
+        assertThat(run.gateFailureCodes(false)).isEmpty();
+        assertThat(run.gateFailureCodes(true))
+                .contains("PROMOTION_BLOCKED", "SCHEMA_ADMISSION_ONLY",
+                        "BUSINESS_EXECUTION_NOT_PERFORMED");
+        assertThatCode(() -> TestSuiteRunAssertions.assertAdmissionPassed(run))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> TestSuiteRunAssertions.assertPassed(run))
+                .hasMessageContaining("business suite");
+    }
+
+    @Test
+    void admissionProjectionRejectsMixedStructuralClaims() throws Exception {
+        ObjectNode response = (ObjectNode) JSON.readTree(schemaAdmissionSuiteResponse());
+        ((ObjectNode) response.at("/evidence/coverage")).put("status", "SATISFIED");
+
+        assertThatThrownBy(() -> TestSuiteRun.from(response))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("authoritative schema");
+    }
+
     private static TestSuiteRun run(String status, String caseStatus, String coverage,
                                     String promotion, String reason) throws Exception {
         return TestSuiteRun.from(suiteResponse(status, caseStatus, coverage, promotion, reason));
@@ -164,5 +199,50 @@ class TestSuiteRunAssertionsTest {
                 """.formatted(FINGERPRINT, status, caseStatus, evidenceStatus,
                 "PASSED".equals(caseStatus) ? 1 : 0, coverage, promotion, reasons,
                 "PASSED".equals(caseStatus), "SATISFIED".equals(coverage)));
+    }
+
+    static String schemaAdmissionSuiteResponse() {
+        return """
+                {"schemaVersion":"bloge.testSuiteExecutionResponse.v4","suiteRunId":"suite-run-admission",
+                 "evidenceFingerprint":"%1$s","evidence":{"schemaVersion":"bloge.testSuiteRunEvidence.v3",
+                   "suiteRunId":"suite-run-admission","clientRequestId":"admission-ci-1","status":"PASSED",
+                   "executionPurpose":"SCHEMA_ADMISSION_SUITE_EXECUTION",
+                   "suiteRef":{"suiteId":"suite-boundary","revision":3,"fingerprint":"%1$s"},
+                   "target":{"kind":"OPERATOR","id":"customer.normalize/v2","fingerprint":"%1$s"},
+                   "startedAt":"2026-07-17T01:00:00Z","completedAt":"2026-07-17T01:00:01Z",
+                   "caseResults":[{"caseId":"baseline","caseType":"BOUNDARY",
+                     "fixtureBundleRef":{"fixtureBundleId":"boundary-baseline","revision":1,
+                       "fingerprint":"%1$s"},"status":"PASSED","runId":"","evidenceStatus":null,
+                     "evidenceClass":null,"assertionsEvaluated":0,"assertionsPassed":0,
+                     "diagnosticCode":"","diagnostic":""}],
+                   "coverage":{"status":"NOT_EVALUATED","minimumCases":0,"completedCases":0,
+                     "requiredCaseTypes":[],"observedCaseTypes":[],"missingCaseTypes":[],
+                     "requiredInvocationSiteIds":[],"observedInvocationSiteIds":[],
+                     "missingInvocationSiteIds":[],"requiredEdgeTransfers":[],"observedEdgeTransfers":[],
+                     "missingEdgeTransfers":[],"minimumAssertionsPerCase":0,
+                     "assertionDensityViolations":[],"fixtureConsumptionViolations":[],
+                     "allCasesCompleted":false},
+                   "promotion":{"status":"BLOCKED","reasons":["BUSINESS_EXECUTION_NOT_PERFORMED",
+                     "SCHEMA_ADMISSION_ONLY"],"allCasesPassed":true,"certifiableCases":0,
+                     "minimumCertifiableCases":0,"targetCertificationEligible":false,
+                     "coverageSatisfied":false,"allCasesCompleted":true},
+                   "evaluationMode":"SCHEMA_ADMISSION","boundaryPlanFingerprint":"%1$s",
+                   "inputSchemaFingerprint":"%1$s","generatorVersion":"boundary-generator.v1",
+                   "verificationMode":"EXACT_SHARED_VALIDATOR","sourcePlanStatus":"GENERATED",
+                   "sourceCoverageGapCount":0,"coverageGapsAccepted":false,
+                   "admissionResults":[{"caseId":"baseline","status":"MATCHED",
+                     "expectedOutcome":"ACCEPTED","observedOutcome":"ACCEPTED",
+                     "expectedValidationCodes":[],"observedValidationCodes":[],"diagnosticCode":""}],
+                   "admissionCoverage":{"status":"SATISFIED","requiredCases":1,"evaluatedCases":1,
+                     "matchedCases":1,"expectationMismatchCaseIds":[],"provenanceMismatchCaseIds":[],
+                     "incompleteCaseIds":[],"allCasesCompleted":true},"diagnostics":[],
+                   "metadata":{"businessTargetInvoked":false,"childRunCount":0}},
+                 "attestation":{"schemaVersion":"bloge.testSuiteRunAttestation.v3",
+                   "signatureStatus":"VERIFIED","scope":"TERMINAL","suiteRunId":"suite-run-admission",
+                   "suiteRef":{"suiteId":"suite-boundary","revision":3,"fingerprint":"%1$s"},
+                   "requestFingerprint":"%1$s","aggregateEvidenceFingerprint":"%1$s",
+                   "childEvidenceRefs":[],"signedAt":"2026-07-17T01:00:01Z","keyId":"test-key-1",
+                   "algorithm":"Ed25519","signature":"AA==","independentlyVerifiable":true}}
+                """.formatted(FINGERPRINT);
     }
 }

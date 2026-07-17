@@ -260,6 +260,30 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void consumesSchemaAdmissionResponseV4AndEvidenceBundleV3() throws Exception {
+        ResourceGatewayTestClient client = client();
+
+        TestSuiteRun run = client.findSuiteRun("suite-run/admission");
+        TestSuiteEvidenceBundle bundle = client.findSuiteEvidenceBundle("suite-run/admission");
+
+        assertThat(run.evaluationMode()).isEqualTo(TestSuiteRun.EvaluationMode.SCHEMA_ADMISSION);
+        assertThat(run.admissionPassed()).isTrue();
+        assertThat(run.passed()).isFalse();
+        assertThat(run.requireAdmissionCoverage().status())
+                .isEqualTo(TestSuiteRun.AdmissionCoverageStatus.SATISFIED);
+        assertThat(run.attestation().schemaVersion())
+                .isEqualTo(TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V3);
+        assertThat(run.attestation().childEvidenceRefs()).isEmpty();
+        assertThat(bundle.rawResponse().path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V3);
+        assertThat(bundle.evidence().path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V3);
+        assertThat(requests).extracting(CapturedRequest::rawPath)
+                .containsExactly("/api/testing/suite-executions/suite-run%2Fadmission",
+                        "/api/testing/suite-executions/suite-run%2Fadmission/evidence-bundle");
+    }
+
+    @Test
     void retrievesSchemaValidatedSemanticWorkbookWithLeastPrivilegePurpose() {
         ResourceGatewayTestClient client = client();
 
@@ -537,7 +561,11 @@ class ResourceGatewayTestClientTest {
                     + "\"runId\":\"private-child-payload\",\"evidence\":{\"status\":\"NOT_A_STATUS\"}}");
             return;
         }
-        if (path.endsWith("suite-run%2Fsemantic/evidence-bundle")) {
+        if (path.endsWith("suite-run%2Fadmission/evidence-bundle")) {
+            respond(exchange, 200, schemaAdmissionSuiteEvidenceBundleResponse());
+        } else if (path.endsWith("suite-run%2Fadmission")) {
+            respond(exchange, 200, schemaAdmissionSuiteRunResponse());
+        } else if (path.endsWith("suite-run%2Fsemantic/evidence-bundle")) {
             respond(exchange, 200, semanticSuiteEvidenceBundleResponse());
         } else if (path.endsWith("suite-run%2Fsemantic")) {
             respond(exchange, 200, semanticSuiteRunResponse());
@@ -754,6 +782,91 @@ class ResourceGatewayTestClientTest {
         ObjectNode bundle = JSON.createObjectNode();
         bundle.put("schemaVersion", TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V2);
         bundle.put("suiteRunId", "suite-run/semantic");
+        bundle.put("bundleFingerprint", FINGERPRINT);
+        bundle.put("payloadPolicy", "OMITTED");
+        bundle.set("attestation", response.path("attestation").deepCopy());
+        bundle.set("evidence", response.path("evidence").deepCopy());
+        return bundle.toString();
+    }
+
+    private static String schemaAdmissionSuiteRunResponse() throws IOException {
+        ObjectNode response = (ObjectNode) JSON.readTree(suiteRunResponse());
+        response.put("schemaVersion", TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V4);
+        response.put("suiteRunId", "suite-run/admission");
+        ObjectNode evidence = (ObjectNode) response.path("evidence");
+        evidence.put("schemaVersion", TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V3);
+        evidence.put("suiteRunId", "suite-run/admission");
+        evidence.put("executionPurpose", "SCHEMA_ADMISSION_SUITE_EXECUTION");
+        evidence.withArray("caseResults").forEach(value -> {
+            ObjectNode result = (ObjectNode) value;
+            result.put("runId", "");
+            result.putNull("evidenceStatus");
+            result.putNull("evidenceClass");
+            result.put("assertionsEvaluated", 0);
+            result.put("assertionsPassed", 0);
+        });
+        ObjectNode coverage = (ObjectNode) evidence.path("coverage");
+        coverage.put("status", "NOT_EVALUATED");
+        coverage.put("minimumCases", 0);
+        coverage.put("completedCases", 0);
+        coverage.putArray("requiredCaseTypes");
+        coverage.putArray("observedCaseTypes");
+        coverage.put("minimumAssertionsPerCase", 0);
+        coverage.put("allCasesCompleted", false);
+        ObjectNode promotion = (ObjectNode) evidence.path("promotion");
+        promotion.put("status", "BLOCKED");
+        promotion.putArray("reasons")
+                .add("BUSINESS_EXECUTION_NOT_PERFORMED")
+                .add("SCHEMA_ADMISSION_ONLY");
+        promotion.put("certifiableCases", 0);
+        promotion.put("minimumCertifiableCases", 0);
+        promotion.put("targetCertificationEligible", false);
+        promotion.put("coverageSatisfied", false);
+        evidence.put("evaluationMode", "SCHEMA_ADMISSION");
+        evidence.put("boundaryPlanFingerprint", FINGERPRINT);
+        evidence.put("inputSchemaFingerprint", FINGERPRINT);
+        evidence.put("generatorVersion", "boundary-generator.v1");
+        evidence.put("verificationMode", "EXACT_SHARED_VALIDATOR");
+        evidence.put("sourcePlanStatus", "GENERATED");
+        evidence.put("sourceCoverageGapCount", 0);
+        evidence.put("coverageGapsAccepted", false);
+        var admissionResults = evidence.putArray("admissionResults");
+        evidence.withArray("caseResults").forEach(value -> {
+            ObjectNode admission = admissionResults.addObject();
+            admission.put("caseId", value.path("caseId").asText());
+            admission.put("status", "MATCHED");
+            admission.put("expectedOutcome", "ACCEPTED");
+            admission.put("observedOutcome", "ACCEPTED");
+            admission.putArray("expectedValidationCodes");
+            admission.putArray("observedValidationCodes");
+            admission.put("diagnosticCode", "");
+        });
+        ObjectNode admissionCoverage = evidence.putObject("admissionCoverage");
+        admissionCoverage.put("status", "SATISFIED");
+        admissionCoverage.put("requiredCases", 2);
+        admissionCoverage.put("evaluatedCases", 2);
+        admissionCoverage.put("matchedCases", 2);
+        admissionCoverage.putArray("expectationMismatchCaseIds");
+        admissionCoverage.putArray("provenanceMismatchCaseIds");
+        admissionCoverage.putArray("incompleteCaseIds");
+        admissionCoverage.put("allCasesCompleted", true);
+        ObjectNode metadata = (ObjectNode) evidence.path("metadata");
+        metadata.put("businessTargetInvoked", false);
+        metadata.put("childRunCount", 0);
+        ObjectNode attestation = (ObjectNode) JSON.readTree(suiteEvidenceBundleResponse())
+                .path("attestation").deepCopy();
+        attestation.put("schemaVersion", TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V3);
+        attestation.put("suiteRunId", "suite-run/admission");
+        attestation.putArray("childEvidenceRefs");
+        response.set("attestation", attestation);
+        return response.toString();
+    }
+
+    private static String schemaAdmissionSuiteEvidenceBundleResponse() throws IOException {
+        JsonNode response = JSON.readTree(schemaAdmissionSuiteRunResponse());
+        ObjectNode bundle = JSON.createObjectNode();
+        bundle.put("schemaVersion", TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V3);
+        bundle.put("suiteRunId", "suite-run/admission");
         bundle.put("bundleFingerprint", FINGERPRINT);
         bundle.put("payloadPolicy", "OMITTED");
         bundle.set("attestation", response.path("attestation").deepCopy());

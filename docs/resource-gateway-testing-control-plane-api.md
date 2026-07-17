@@ -329,8 +329,7 @@ being represented by one misleading baseline.
 
 This response is an authoring plan, not a persisted `TestSuite`, an executed run, correctness
 evidence, exhaustive property coverage, or a mutation score. Review `gaps`, select or refine cases,
-materialize an exact selected subset as described below, and wait for schema-admission execution
-evidence support before a governance gate consumes the result. Schemas must not embed credentials or business
+and materialize an exact selected subset as described below. Schemas must not embed credentials or business
 secrets in defaults/examples; target readers can already inspect those schema literals, and generated
 baseline inputs may reproduce them.
 
@@ -374,12 +373,73 @@ plus its stable validator codes. Its execution/semantic coverage is deliberately
 promotion policy requires zero certifiable cases. If fixture storage succeeds but suite storage
 fails, retry is safe: the only residue is an immutable, unreferenced inert fixture.
 
-This increment materializes an authoring asset; it does not yet sign schema-admission results. The
-capability probe therefore reports `schemaBoundarySuiteMaterialization=true` and
-`schemaAdmissionSuiteExecution=false`. Sending a v3 suite to the existing suite runner returns
-`409 RG.TEST.SUITE_ADMISSION_EVIDENCE_UNAVAILABLE` before target execution, run persistence, or
-admission allocation. Do not convert this suite into business correctness or publish-gate evidence
-until a later protocol advertises signed schema-admission execution.
+The capability probe reports both `schemaBoundarySuiteMaterialization=true` and
+`schemaAdmissionSuiteExecution=true` when the isolated testing runtime is assembled. Execute the
+exact v3 suite as described below. Admission evidence is useful for reviewed schema-regression
+gates, but it remains permanently ineligible for business promotion.
+
+### 4.1.4 Execute and verify a schema-admission suite
+
+Use the exact suite reference returned by materialization. The request and idempotency semantics are
+the same as other immutable suites:
+
+```http
+POST /api/testing/suites/loan-decision-schema-boundaries/executions
+Authorization: Bearer bloge-aneke-demo-token
+X-Purpose: TEST_EXECUTION
+Content-Type: application/json
+
+{
+  "schemaVersion": "bloge.testSuiteExecutionRequest.v1",
+  "suiteRef": {
+    "suiteId": "loan-decision-schema-boundaries",
+    "revision": 3,
+    "fingerprint": "sha256:<materialized-suite>"
+  },
+  "clientRequestId": "schema-admission-ci-1042",
+  "strategy": "COLLECT_ALL",
+  "metadata": {"source": "contract-regression"}
+}
+```
+
+The runner atomically resolves the current target, projected input schema, and regenerated boundary
+plan, then validates every stored case with the same shared validator used by graph/operator
+admission. It never invokes the graph or operator. A terminal response uses this same-generation
+closure:
+
+| Object | Version | Required interpretation |
+| --- | --- | --- |
+| response | `bloge.testSuiteExecutionResponse.v4` | schema-admission response, not business execution |
+| evidence | `bloge.testSuiteRunEvidence.v3` | exact plan/schema/generator provenance plus typed observations |
+| attestation | `bloge.testSuiteRunAttestation.v3` | signed terminal/checkpoint aggregate with empty `childEvidenceRefs` |
+| portable bundle | `bloge.testSuiteEvidenceBundle.v3` | payload-free evidence export for offline verification |
+
+`admissionResults[*].status=MATCHED` proves both case provenance and exact expected validator
+outcome/codes. `admissionCoverage.status=SATISFIED` requires every selected case to match. Structural
+`coverage` is always `NOT_EVALUATED`; `promotion` is always `BLOCKED` with
+`SCHEMA_ADMISSION_ONLY` and `BUSINESS_EXECUTION_NOT_PERFORMED`; every compatibility case has blank
+`runId`, null child evidence fields, and zero assertion counters. These are protocol invariants, not
+display conventions.
+
+Export terminal evidence with:
+
+```bash
+curl -sS http://localhost:8080/api/testing/suite-executions/<suiteRunId>/evidence-bundle \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION'
+```
+
+The standalone test-kit exposes `evaluationMode()`, `admissionResults()`,
+`requireAdmissionCoverage()`, `admissionPassed()`, and
+`TestSuiteRunAssertions.assertAdmissionPassed(...)`. `passed()` and `assertPassed(...)` remain
+business-execution predicates and deliberately return/fail false for admission-only evidence. For a
+JUnit XML schema-regression gate, call `writeSuite(..., false)`; requiring promotion eligibility is
+expected to fail because admission evidence can never authorize publication by itself.
+
+Exact request replay returns the same checkpoint or terminal result. Changed suite intent returns an
+idempotency conflict. Target/schema/plan drift fails before evaluation, signer unavailability fails
+closed without publishing unsigned v3 evidence, and abandoned checkpoints reconcile to signed
+`EVIDENCE_INCOMPLETE` while preserving completed observations and the empty business-child closure.
 
 ### 4.2 Register an immutable governed fixture
 
@@ -2263,6 +2323,13 @@ A semantic v2 suite returns `bloge.testSuiteExecutionResponse.v3`,
 `missingRequirementIds`, and trust/sanitization `unavailable` facts. `UNSATISFIED` means trusted
 complete evidence did not contain a required fact; `INCOMPLETE` means Resource Gateway could not
 prove the fact. Both block promotion. Only `CERTIFIABLE` child evidence can satisfy a requirement.
+
+A schema-admission v3 suite returns `bloge.testSuiteExecutionResponse.v4`,
+`bloge.testSuiteRunEvidence.v3`, and `bloge.testSuiteRunAttestation.v3`. Its success predicate is
+`admissionCoverage=SATISFIED`, not structural coverage. It carries no business child closure and is
+always promotion-blocked even when every validator expectation matches. Consumers must branch on
+the evidence generation/evaluation mode; treating v4 as a more permissive business-suite response is
+a protocol error.
 
 The Canvas executable operator suite and standalone test-kit both consume this exact protocol; they
 do not reconstruct an aggregate result from mutable row responses.

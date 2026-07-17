@@ -35,6 +35,7 @@ class ResourceGatewaySuiteCliTest {
         server.createContext("/api/testing/suites/loan-policy/executions", this::executeSuite);
         server.createContext("/api/testing/suites/blocked-policy/executions", this::executeBlockedSuite);
         server.createContext("/api/testing/suites/running-policy/executions", this::executeRunningSuite);
+        server.createContext("/api/testing/suites/suite-boundary/executions", this::executeAdmissionSuite);
         server.start();
     }
 
@@ -149,6 +150,35 @@ class ResourceGatewaySuiteCliTest {
     }
 
     @Test
+    void gatesSchemaAdmissionByAdmissionVerdictWhenPromotionIsExplicitlyOptional() throws Exception {
+        Path report = temporaryDirectory.resolve("ci/schema-admission.xml");
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ByteArrayOutputStream error = new ByteArrayOutputStream();
+
+        int exit = ResourceGatewaySuiteCli.run(new String[]{
+                        "--base-uri", "http://127.0.0.1:" + server.getAddress().getPort(),
+                        "--suite-id", "suite-boundary",
+                        "--revision", "3",
+                        "--fingerprint", FINGERPRINT,
+                        "--client-request-id", "admission-ci-1",
+                        "--report", report.toString(),
+                        "--allow-non-eligible",
+                }, Map.of("RESOURCE_GATEWAY_TOKEN", "ci-secret-token"),
+                new PrintStream(output), new PrintStream(error));
+
+        assertThat(exit).isZero();
+        assertThat(output.toString(StandardCharsets.UTF_8))
+                .contains("evaluationMode=SCHEMA_ADMISSION")
+                .contains("admissionCoverage=SATISFIED")
+                .contains("promotion=BLOCKED");
+        assertThat(error.toString(StandardCharsets.UTF_8)).isEmpty();
+        assertThat(Files.readString(report))
+                .contains("tests=\"2\"")
+                .contains("failures=\"0\"")
+                .doesNotContain("child runId=");
+    }
+
+    @Test
     void neverEchoesUnexpectedPositionalArgumentThatMayContainASecret() {
         String accidentalSecret = "accidental-secret-value";
         ByteArrayOutputStream error = new ByteArrayOutputStream();
@@ -186,6 +216,17 @@ class ResourceGatewaySuiteCliTest {
         purpose = exchange.getRequestHeaders().getFirst("X-Purpose");
         authorization = exchange.getRequestHeaders().getFirst("Authorization");
         byte[] response = runningSuiteResponse().getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.sendResponseHeaders(200, response.length);
+        exchange.getResponseBody().write(response);
+        exchange.close();
+    }
+
+    private void executeAdmissionSuite(HttpExchange exchange) throws IOException {
+        purpose = exchange.getRequestHeaders().getFirst("X-Purpose");
+        authorization = exchange.getRequestHeaders().getFirst("Authorization");
+        byte[] response = TestSuiteRunAssertionsTest.schemaAdmissionSuiteResponse()
+                .getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(200, response.length);
         exchange.getResponseBody().write(response);

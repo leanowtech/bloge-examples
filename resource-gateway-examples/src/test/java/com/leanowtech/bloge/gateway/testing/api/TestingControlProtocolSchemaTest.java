@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.planning.TestBoundaryCasePlanner;
@@ -73,14 +74,20 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION_V1);
         assertThat(schema.at("/$defs/testSuiteExecutionResponseV3/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION_V3);
+        assertThat(schema.at("/$defs/testSuiteExecutionResponseV4/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION_V4);
         assertThat(schema.at("/$defs/testSuiteRunAttestation/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteRunAttestationV2/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V2);
+        assertThat(schema.at("/$defs/testSuiteRunAttestationV3/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V3);
         assertThat(schema.at("/$defs/testSuiteEvidenceBundleV1/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteEvidenceBundle.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteEvidenceBundleV2/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteEvidenceBundle.SCHEMA_VERSION_V2);
+        assertThat(schema.at("/$defs/testSuiteEvidenceBundleV3/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteEvidenceBundle.SCHEMA_VERSION_V3);
         assertThat(schema.at("/$defs/evidenceVerificationKeySet/properties/schemaVersion/const").asText())
                 .isEqualTo(EvidenceVerificationKeySet.SCHEMA_VERSION);
         assertThat(schema.at(
@@ -90,6 +97,8 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestSuiteRunEvidence.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteRunEvidenceV2/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteRunEvidenceV2.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testSuiteRunEvidenceV3/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteRunEvidenceV3.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testGraphTargetDescriptor/properties/schemaVersion/const").asText())
                 .isEqualTo(TestGraphTargetDescriptor.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testBoundaryCasePlan/properties/schemaVersion/const").asText())
@@ -355,11 +364,14 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("testSuiteExecutionResponseV1")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponseV2")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponseV3")).isTrue();
+        assertThat(definitions.has("testSuiteExecutionResponseV4")).isTrue();
         assertThat(definitions.has("testSuiteRunAttestation")).isTrue();
+        assertThat(definitions.has("testSuiteRunAttestationV3")).isTrue();
         assertThat(definitions.has("testSuiteEvidenceBundle")).isTrue();
         assertThat(definitions.has("evidenceVerificationKeySet")).isTrue();
         assertThat(definitions.has("testSuiteCatalogMaterialization")).isTrue();
         assertThat(definitions.has("testSuiteRunEvidence")).isTrue();
+        assertThat(definitions.has("testSuiteRunEvidenceV3")).isTrue();
         assertThat(definitions.has("testEvidenceIntegrity")).isTrue();
         assertThat(definitions.has("testBoundaryCasePlan")).isTrue();
         assertThat(definitions.has("testBoundarySuiteMaterializationRequest")).isTrue();
@@ -636,7 +648,32 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo("#/$defs/testSuiteRunAttestation");
         assertThat(definitions.at("/testSuiteEvidenceBundleV1/properties/payloadPolicy/const").asText())
                 .isEqualTo("OMITTED");
-        assertThat(definitions.at("/testSuiteEvidenceBundle/oneOf")).hasSize(2);
+        assertThat(definitions.at("/testSuiteEvidenceBundle/oneOf")).hasSize(3);
+        assertThat(definitions.at("/testSuiteExecutionResponse/oneOf")).hasSize(4);
+        assertThat(definitions.at(
+                "/testSuiteExecutionResponseV4/properties/evidence/$ref").asText())
+                .isEqualTo("#/$defs/testSuiteRunEvidenceV3");
+        assertThat(definitions.at(
+                "/testSuiteExecutionResponseV4/properties/attestation/$ref").asText())
+                .isEqualTo("#/$defs/testSuiteRunAttestationV3");
+        assertThat(definitions.at(
+                "/testSuiteRunAttestationV3/properties/childEvidenceRefs/maxItems").asInt())
+                .isZero();
+        assertThat(definitions.at(
+                "/testSuiteRunEvidenceV3/properties/executionPurpose/const").asText())
+                .isEqualTo(TestSuiteRunEvidenceV3.EXECUTION_PURPOSE);
+        assertThat(definitions.at(
+                "/testSuiteRunEvidenceV3/properties/verificationMode/const").asText())
+                .isEqualTo(TestSuiteRunEvidenceV3.VERIFICATION_MODE);
+        assertThat(definitions.at(
+                "/testSuiteRunEvidenceV3/properties/coverage/allOf/1/properties/status/const")
+                .asText()).isEqualTo("NOT_EVALUATED");
+        assertThat(definitions.at(
+                "/testSuiteRunEvidenceV3/properties/promotion/allOf/1/properties/status/const")
+                .asText()).isEqualTo("BLOCKED");
+        assertThat(definitions.at(
+                "/testSuiteEvidenceBundleV3/properties/evidence/$ref").asText())
+                .isEqualTo("#/$defs/testSuiteRunEvidenceV3");
         assertThat(definitions.at("/testSuiteProtocol/oneOf")).hasSize(3);
         assertThat(definitions.at("/testSuiteV3/additionalProperties").asBoolean()).isFalse();
         assertThat(definitions.at("/testSuiteV3/properties/evaluationMode/const").asText())

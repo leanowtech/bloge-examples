@@ -99,6 +99,147 @@ public record TestSuiteRun(
         BLOCKED
     }
 
+    /** Mutually exclusive meaning of a suite run. */
+    public enum EvaluationMode {
+        /** Graph or operator business behavior was executed and structural coverage was evaluated. */
+        BUSINESS_EXECUTION,
+        /** Inputs were checked by the exact shared schema validator without invoking the target. */
+        SCHEMA_ADMISSION
+    }
+
+    /** Typed lifecycle of one schema-admission case. */
+    public enum AdmissionCaseStatus {
+        /** Validator evaluation has not started. */
+        PENDING,
+        /** Plan provenance and validator observations exactly match the stored expectation. */
+        MATCHED,
+        /** The validator outcome or diagnostics differ from the stored expectation. */
+        EXPECTATION_MISMATCH,
+        /** The stored case no longer belongs to the exact reviewed boundary plan. */
+        PROVENANCE_MISMATCH,
+        /** A complete independently usable observation could not be produced. */
+        EVIDENCE_INCOMPLETE,
+        /** Fail-fast or lease loss prevented validator evaluation. */
+        NOT_SCHEDULED
+    }
+
+    /** Schema-admission expectation and observation outcomes. */
+    public enum AdmissionOutcome {
+        /** The exact shared validator accepted the input. */
+        ACCEPTED,
+        /** The exact shared validator rejected the input. */
+        SCHEMA_REJECTED
+    }
+
+    /** Aggregate schema-admission coverage states. */
+    public enum AdmissionCoverageStatus {
+        /** No case has reached validator evaluation. */
+        NOT_EVALUATED,
+        /** Every exact case produced the expected validator result. */
+        SATISFIED,
+        /** Every case completed but at least one expectation or provenance check failed. */
+        UNSATISFIED,
+        /** At least one required case lacks complete evidence. */
+        INCOMPLETE
+    }
+
+    /**
+     * Payload-free observation for one exact schema-admission case.
+     *
+     * @param caseId suite-local case identity
+     * @param status typed admission status
+     * @param expectedOutcome immutable suite expectation
+     * @param observedOutcome validator observation, or null before/in lieu of evaluation
+     * @param expectedValidationCodes exact expected validator codes
+     * @param observedValidationCodes exact observed validator codes
+     * @param diagnosticCode stable mismatch or evidence-failure code
+     */
+    public record AdmissionCaseResult(
+            String caseId,
+            AdmissionCaseStatus status,
+            AdmissionOutcome expectedOutcome,
+            AdmissionOutcome observedOutcome,
+            List<String> expectedValidationCodes,
+            List<String> observedValidationCodes,
+            String diagnosticCode
+    ) {
+        /** Normalizes bounded protocol values and rejects contradictory match claims. */
+        public AdmissionCaseResult {
+            caseId = normalized(caseId);
+            expectedValidationCodes = immutableCodes(expectedValidationCodes);
+            observedValidationCodes = immutableCodes(observedValidationCodes);
+            diagnosticCode = machineCode(diagnosticCode, "admission diagnostic code");
+            if (caseId.isBlank() || status == null || expectedOutcome == null) {
+                throw new IllegalArgumentException("Admission case result is incomplete");
+            }
+            if (status == AdmissionCaseStatus.MATCHED
+                    && (observedOutcome != expectedOutcome
+                    || !observedValidationCodes.equals(expectedValidationCodes)
+                    || !diagnosticCode.isBlank())) {
+                throw new IllegalArgumentException("Matched admission result must exactly match");
+            }
+            if (List.of(AdmissionCaseStatus.EXPECTATION_MISMATCH,
+                    AdmissionCaseStatus.PROVENANCE_MISMATCH).contains(status)
+                    && (observedOutcome == null || diagnosticCode.isBlank())) {
+                throw new IllegalArgumentException(
+                        "Admission mismatch requires an observation and diagnostic code");
+            }
+        }
+
+        /**
+         * Reports whether the planned expectation and shared-validator observation match exactly.
+         *
+         * @return true only for an exact plan and validator match
+         */
+        public boolean matched() {
+            return status == AdmissionCaseStatus.MATCHED;
+        }
+    }
+
+    /**
+     * Strongly typed aggregate schema-admission verdict.
+     *
+     * @param status aggregate admission state
+     * @param requiredCases exact suite case count
+     * @param evaluatedCases cases that reached the validator
+     * @param matchedCases cases whose observations exactly matched expectations
+     * @param expectationMismatchCaseIds validator expectation mismatches
+     * @param provenanceMismatchCaseIds reviewed-plan provenance mismatches
+     * @param incompleteCaseIds cases without complete evidence
+     * @param allCasesCompleted whether every exact case completed
+     */
+    public record AdmissionCoverage(
+            AdmissionCoverageStatus status,
+            int requiredCases,
+            int evaluatedCases,
+            int matchedCases,
+            List<String> expectationMismatchCaseIds,
+            List<String> provenanceMismatchCaseIds,
+            List<String> incompleteCaseIds,
+            boolean allCasesCompleted
+    ) {
+        /** Canonicalizes case identities and enforces fail-closed aggregate counters. */
+        public AdmissionCoverage {
+            expectationMismatchCaseIds = immutableIds(expectationMismatchCaseIds);
+            provenanceMismatchCaseIds = immutableIds(provenanceMismatchCaseIds);
+            incompleteCaseIds = immutableIds(incompleteCaseIds);
+            if (status == null || requiredCases < 1 || evaluatedCases < 0 || matchedCases < 0
+                    || evaluatedCases > requiredCases || matchedCases > evaluatedCases) {
+                throw new IllegalArgumentException("Admission coverage counters are inconsistent");
+            }
+            boolean satisfied = status == AdmissionCoverageStatus.SATISFIED
+                    && allCasesCompleted && evaluatedCases == requiredCases
+                    && matchedCases == requiredCases && expectationMismatchCaseIds.isEmpty()
+                    && provenanceMismatchCaseIds.isEmpty() && incompleteCaseIds.isEmpty();
+            boolean notEvaluated = status == AdmissionCoverageStatus.NOT_EVALUATED
+                    && evaluatedCases == 0 && matchedCases == 0 && !allCasesCompleted;
+            if (status == AdmissionCoverageStatus.SATISFIED && !satisfied
+                    || status == AdmissionCoverageStatus.NOT_EVALUATED && !notEvaluated) {
+                throw new IllegalArgumentException("Admission coverage status is contradictory");
+            }
+        }
+    }
+
     /** Semantic coverage states emitted only by suite evidence v2. */
     public enum SemanticCoverageStatus {
         /** A running checkpoint has not evaluated semantic coverage. */
@@ -218,10 +359,12 @@ public record TestSuiteRun(
                     || hasEvidenceClass && !List.of("EXPLORATORY", "CERTIFIABLE").contains(evidenceClass)) {
                 throw new IllegalArgumentException("Suite case child-evidence identity is inconsistent");
             }
-            if (status == CaseStatus.PASSED && (!hasRun || !"PASSED".equals(evidenceStatus)
-                    || assertionsPassed != assertionsEvaluated)) {
+            boolean businessPassing = hasRun && "PASSED".equals(evidenceStatus)
+                    && assertionsPassed == assertionsEvaluated;
+            boolean admissionPassing = !hasRun && assertionsEvaluated == 0 && assertionsPassed == 0;
+            if (status == CaseStatus.PASSED && !businessPassing && !admissionPassing) {
                 throw new IllegalArgumentException(
-                        "A passing suite case must link passing terminal child evidence and assertions");
+                        "A passing suite case requires business child evidence or admission-only shape");
             }
         }
 
@@ -232,6 +375,12 @@ public record TestSuiteRun(
          */
         public boolean passed() {
             return status == CaseStatus.PASSED;
+        }
+
+        /** @return true when this compatibility case proves no business child was invoked */
+        boolean admissionOnly() {
+            return runId.isBlank() && evidenceStatus.isBlank() && evidenceClass.isBlank()
+                    && assertionsEvaluated == 0 && assertionsPassed == 0;
         }
     }
 
@@ -260,16 +409,23 @@ public record TestSuiteRun(
         if (status != Status.RUNNING && !fingerprint(evidenceFingerprint)) {
             throw new IllegalArgumentException("Terminal suite-run evidence requires a full fingerprint");
         }
-        if (status == Status.PASSED && (coverageStatus != CoverageStatus.SATISFIED
+        AdmissionProjection admission = admissionProjection(rawResponse);
+        if (admission == null && status == Status.PASSED
+                && (coverageStatus != CoverageStatus.SATISFIED
                 || caseResults.stream().anyMatch(result -> !result.passed()))) {
-            throw new IllegalArgumentException("A passing suite run requires passing cases and coverage");
+            throw new IllegalArgumentException(
+                    "A passing business suite run requires passing cases and coverage");
+        }
+        if (admission != null) {
+            validateAdmissionRun(status, coverageStatus, promotionStatus, promotionReasons,
+                    caseResults, admission);
         }
         rawResponse = rawResponse == null ? null : rawResponse.deepCopy();
     }
 
     /**
-     * Projects a historical v1, structural v2, or semantic v3 suite response without copying child
-     * payloads into reportable fields.
+     * Projects a historical v1, structural v2, semantic v3, or admission v4 suite response without
+     * copying case payloads into reportable fields.
      *
      * @param response decoded suite execution response
      * @return immutable suite-run projection
@@ -298,7 +454,8 @@ public record TestSuiteRun(
         String responseVersion = response.path("schemaVersion").asText();
         TestSuiteRunAttestation attestation = List.of(
                 TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V2,
-                TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V3).contains(responseVersion)
+                TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V3,
+                TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V4).contains(responseVersion)
                 ? TestSuiteRunAttestation.from(response.path("attestation"))
                 : TestSuiteRunAttestation.unsigned();
         return new TestSuiteRun(response.path("suiteRunId").asText(evidence.path("suiteRunId").asText()),
@@ -320,8 +477,71 @@ public record TestSuiteRun(
      * @return true only for an internally consistent passing aggregate
      */
     public boolean passed() {
-        return status == Status.PASSED && coverageStatus == CoverageStatus.SATISFIED
+        return evaluationMode() == EvaluationMode.BUSINESS_EXECUTION
+                && status == Status.PASSED && coverageStatus == CoverageStatus.SATISFIED
                 && caseResults.stream().allMatch(CaseResult::passed);
+    }
+
+    /**
+     * Indicates whether exact reviewed inputs produced every expected schema-admission result.
+     * This never implies that graph or operator business behavior ran.
+     *
+     * @return true only for terminal satisfied admission evidence
+     */
+    public boolean admissionPassed() {
+        return admissionCoverage().filter(value -> status == Status.PASSED
+                && value.status() == AdmissionCoverageStatus.SATISFIED
+                && admissionResults().stream().allMatch(AdmissionCaseResult::matched)).isPresent();
+    }
+
+    /**
+     * Applies the success predicate belonging to this run's explicit evaluation mode.
+     *
+     * @return business execution success or schema-admission success, never a conflation of both
+     */
+    public boolean evaluationPassed() {
+        return evaluationMode() == EvaluationMode.SCHEMA_ADMISSION ? admissionPassed() : passed();
+    }
+
+    /**
+     * Returns the mutually exclusive meaning of this evidence generation.
+     *
+     * @return schema admission for evidence v3, otherwise business execution
+     */
+    public EvaluationMode evaluationMode() {
+        return admissionProjection(rawResponse) == null
+                ? EvaluationMode.BUSINESS_EXECUTION : EvaluationMode.SCHEMA_ADMISSION;
+    }
+
+    /**
+     * Returns ordered typed schema-admission observations.
+     *
+     * @return immutable empty list for business-execution evidence
+     */
+    public List<AdmissionCaseResult> admissionResults() {
+        AdmissionProjection projection = admissionProjection(rawResponse);
+        return projection == null ? List.of() : projection.results();
+    }
+
+    /**
+     * Returns schema-admission coverage when the producer emitted evidence v3.
+     *
+     * @return empty for business-execution evidence
+     */
+    public Optional<AdmissionCoverage> admissionCoverage() {
+        AdmissionProjection projection = admissionProjection(rawResponse);
+        return projection == null ? Optional.empty() : Optional.of(projection.coverage());
+    }
+
+    /**
+     * Requires schema-admission support instead of treating structural coverage as equivalent.
+     *
+     * @return typed admission coverage
+     * @throws IllegalStateException when this is business-execution evidence
+     */
+    public AdmissionCoverage requireAdmissionCoverage() {
+        return admissionCoverage().orElseThrow(() -> new IllegalStateException(
+                "SCHEMA_ADMISSION_COVERAGE_UNAVAILABLE"));
     }
 
     /**
@@ -381,13 +601,23 @@ public record TestSuiteRun(
         if (status != Status.PASSED) {
             codes.add("SUITE_STATUS_" + status.name());
         }
-        if (coverageStatus != CoverageStatus.SATISFIED) {
-            codes.add("COVERAGE_" + coverageStatus.name());
-        }
-        semanticCoverage().filter(value -> value.status() != SemanticCoverageStatus.SATISFIED)
-                .ifPresent(value -> codes.add("SEMANTIC_COVERAGE_" + value.status().name()));
-        if (caseResults.stream().anyMatch(result -> !result.passed())) {
-            codes.add("CASE_FAILURES_PRESENT");
+        if (evaluationMode() == EvaluationMode.SCHEMA_ADMISSION) {
+            AdmissionCoverage admission = requireAdmissionCoverage();
+            if (admission.status() != AdmissionCoverageStatus.SATISFIED) {
+                codes.add("SCHEMA_ADMISSION_" + admission.status().name());
+            }
+            if (admissionResults().stream().anyMatch(result -> !result.matched())) {
+                codes.add("ADMISSION_CASE_FAILURES_PRESENT");
+            }
+        } else {
+            if (coverageStatus != CoverageStatus.SATISFIED) {
+                codes.add("COVERAGE_" + coverageStatus.name());
+            }
+            semanticCoverage().filter(value -> value.status() != SemanticCoverageStatus.SATISFIED)
+                    .ifPresent(value -> codes.add("SEMANTIC_COVERAGE_" + value.status().name()));
+            if (caseResults.stream().anyMatch(result -> !result.passed())) {
+                codes.add("CASE_FAILURES_PRESENT");
+            }
         }
         if (requirePromotionEligible && promotionStatus != PromotionStatus.ELIGIBLE) {
             codes.add("PROMOTION_" + promotionStatus.name());
@@ -466,5 +696,101 @@ public record TestSuiteRun(
 
     private static boolean fingerprint(String value) {
         return normalized(value).matches("sha256:[0-9a-f]{64}");
+    }
+
+    private static AdmissionProjection admissionProjection(JsonNode response) {
+        JsonNode evidence = response == null ? null : response.path("evidence");
+        if (evidence == null || !TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V3.equals(
+                evidence.path("schemaVersion").asText())) {
+            return null;
+        }
+        List<AdmissionCaseResult> results = new ArrayList<>();
+        evidence.path("admissionResults").forEach(value -> {
+            List<String> expectedCodes = new ArrayList<>();
+            value.path("expectedValidationCodes").forEach(code -> expectedCodes.add(code.asText()));
+            List<String> observedCodes = new ArrayList<>();
+            value.path("observedValidationCodes").forEach(code -> observedCodes.add(code.asText()));
+            String observed = nullableText(value.path("observedOutcome"));
+            results.add(new AdmissionCaseResult(value.path("caseId").asText(),
+                    enumValue(AdmissionCaseStatus.class, value.path("status").asText(),
+                            "admission case status"),
+                    enumValue(AdmissionOutcome.class, value.path("expectedOutcome").asText(),
+                            "expected admission outcome"),
+                    observed.isBlank() ? null : enumValue(AdmissionOutcome.class, observed,
+                            "observed admission outcome"),
+                    expectedCodes, observedCodes, value.path("diagnosticCode").asText()));
+        });
+        JsonNode value = evidence.path("admissionCoverage");
+        AdmissionCoverage coverage = new AdmissionCoverage(
+                enumValue(AdmissionCoverageStatus.class, value.path("status").asText(),
+                        "admission coverage status"),
+                value.path("requiredCases").asInt(), value.path("evaluatedCases").asInt(),
+                value.path("matchedCases").asInt(), strings(value.path("expectationMismatchCaseIds")),
+                strings(value.path("provenanceMismatchCaseIds")),
+                strings(value.path("incompleteCaseIds")), value.path("allCasesCompleted").asBoolean());
+        return new AdmissionProjection(List.copyOf(results), coverage);
+    }
+
+    private static void validateAdmissionRun(
+            Status status, CoverageStatus coverageStatus, PromotionStatus promotionStatus,
+            List<String> promotionReasons, List<CaseResult> cases, AdmissionProjection admission) {
+        boolean exactClosure = cases.size() == admission.results().size()
+                && admission.coverage().requiredCases() == cases.size();
+        for (int index = 0; exactClosure && index < cases.size(); index++) {
+            exactClosure = cases.get(index).caseId().equals(admission.results().get(index).caseId());
+        }
+        if (coverageStatus != CoverageStatus.NOT_EVALUATED
+                || promotionStatus != PromotionStatus.BLOCKED
+                || !promotionReasons.contains("SCHEMA_ADMISSION_ONLY")
+                || !promotionReasons.contains("BUSINESS_EXECUTION_NOT_PERFORMED")
+                || cases.stream().anyMatch(result -> !result.admissionOnly()) || !exactClosure) {
+            throw new IllegalArgumentException(
+                    "Schema admission evidence cannot claim business execution or coverage");
+        }
+        AdmissionCoverageStatus expected = switch (status) {
+            case RUNNING -> null;
+            case PASSED -> AdmissionCoverageStatus.SATISFIED;
+            case COMPLETED_WITH_FAILURES -> AdmissionCoverageStatus.UNSATISFIED;
+            case PARTIAL, EVIDENCE_INCOMPLETE -> AdmissionCoverageStatus.INCOMPLETE;
+        };
+        if (expected == null
+                ? !List.of(AdmissionCoverageStatus.NOT_EVALUATED,
+                AdmissionCoverageStatus.INCOMPLETE).contains(admission.coverage().status())
+                : admission.coverage().status() != expected) {
+            throw new IllegalArgumentException(
+                    "Schema admission aggregate status and coverage are inconsistent");
+        }
+    }
+
+    private static List<String> strings(JsonNode values) {
+        List<String> result = new ArrayList<>();
+        values.forEach(value -> result.add(value.asText()));
+        return result;
+    }
+
+    private static List<String> immutableIds(List<String> values) {
+        List<String> result = values == null ? List.of()
+                : values.stream().map(TestSuiteRun::normalized).toList();
+        if (result.stream().anyMatch(String::isBlank)
+                || new LinkedHashSet<>(result).size() != result.size()) {
+            throw new IllegalArgumentException("Admission case identities must be unique and non-empty");
+        }
+        return List.copyOf(result);
+    }
+
+    private static List<String> immutableCodes(List<String> values) {
+        List<String> result = values == null ? List.of()
+                : values.stream().map(TestSuiteRun::normalized).toList();
+        if (result.stream().anyMatch(String::isBlank)
+                || new LinkedHashSet<>(result).size() != result.size()) {
+            throw new IllegalArgumentException("Admission validator codes must be unique and non-empty");
+        }
+        return List.copyOf(result);
+    }
+
+    private record AdmissionProjection(
+            List<AdmissionCaseResult> results,
+            AdmissionCoverage coverage
+    ) {
     }
 }

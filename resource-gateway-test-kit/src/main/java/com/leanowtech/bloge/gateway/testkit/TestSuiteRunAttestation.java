@@ -111,12 +111,18 @@ public record TestSuiteRunAttestation(
         }
         if (signatureStatus == SignatureStatus.VERIFIED
                 && (!List.of(TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V1,
-                        TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V2).contains(schemaVersion)
+                        TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V2,
+                        TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V3).contains(schemaVersion)
                 || suiteRunId.isBlank() || suiteRef == null || !fingerprint(requestFingerprint)
                 || !fingerprint(aggregateEvidenceFingerprint) || Instant.EPOCH.equals(signedAt)
                 || keyId.isBlank() || algorithm.isBlank() || signature.isBlank()
                 || !independentlyVerifiable)) {
             throw new IllegalArgumentException("Verified suite attestation is incomplete");
+        }
+        if (TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V3.equals(schemaVersion)
+                && !childEvidenceRefs.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Schema-admission attestation cannot reference business child evidence");
         }
     }
 

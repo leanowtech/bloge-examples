@@ -263,16 +263,20 @@ public record IntegrationCapabilities(
             objects.put("testSuiteExecutionResponse", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION,
-                    com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION_V3));
+                    com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION_V3,
+                    com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION_V4));
             objects.put("testSuiteRunEvidence", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence.SCHEMA_VERSION,
-                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2.SCHEMA_VERSION));
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2.SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3.SCHEMA_VERSION));
             objects.put("testSuiteRunAttestation", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.SCHEMA_VERSION,
-                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.SCHEMA_VERSION_V2));
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.SCHEMA_VERSION_V2,
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.SCHEMA_VERSION_V3));
             objects.put("testSuiteEvidenceBundle", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle.SCHEMA_VERSION,
-                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle.SCHEMA_VERSION_V2));
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle.SCHEMA_VERSION_V2,
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle.SCHEMA_VERSION_V3));
             objects.put("semanticCorrectnessWorkbookBundle", List.of(
                     SemanticCorrectnessWorkbookBundle.SCHEMA_VERSION));
             objects.put("testSuiteRunReconciliation", List.of(
@@ -472,7 +476,7 @@ public record IntegrationCapabilities(
         features.put("operatorMicroGraphExecution", testExecutionEndpointEnabled);
         features.put("schemaBoundaryCasePlanning", testExecutionEndpointEnabled);
         features.put("schemaBoundarySuiteMaterialization", testExecutionEndpointEnabled);
-        features.put("schemaAdmissionSuiteExecution", false);
+        features.put("schemaAdmissionSuiteExecution", testExecutionEndpointEnabled);
         features.put("dynamicAttemptOccurrenceSelectors", testExecutionEndpointEnabled);
         features.put("immutableTestSuiteRegistry", testExecutionEndpointEnabled);
         features.put("immutableTestSuiteExecution", testExecutionEndpointEnabled);
