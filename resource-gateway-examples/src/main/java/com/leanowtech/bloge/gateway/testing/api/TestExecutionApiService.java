@@ -35,6 +35,7 @@ import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionResult;
 import com.leanowtech.bloge.gateway.testing.runtime.TestRunService;
 import com.leanowtech.bloge.gateway.visual.catalog.JavaOperatorInventoryProjector;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 
@@ -293,15 +294,8 @@ public final class TestExecutionApiService {
     public TestBoundaryCasePlan planGraphBoundaryCases(
             String graphName,
             IntegrationRequestContext identity) {
-        requireTestIdentity(identity);
-        TestExecutionApiRequest.Target requested = new TestExecutionApiRequest.Target(
-                "GRAPH", normalized(graphName), "");
-        Graph graph = requireGraph(requested, identity);
-        GraphExecutionTargetSnapshot target = GraphExecutionTargetSnapshot.capture(
-                objectMapper, graph, resourceRegistry);
-        return boundaryCases.plan(
-                new TestExecutionApiRequest.Target("GRAPH", graph.name(), target.fingerprint()),
-                graphService.requireContract(graph.name()).inputSchema(), List.of());
+        return resolveSchemaAdmissionTarget(new TestExecutionApiRequest.Target(
+                "GRAPH", normalized(graphName), ""), identity).boundaryPlan();
     }
 
     /** Returns the frozen binding, schema and testability facts needed to author operator fixtures. */
@@ -331,7 +325,53 @@ public final class TestExecutionApiService {
     public TestBoundaryCasePlan planOperatorBoundaryCases(
             String operatorRef,
             IntegrationRequestContext identity) {
+        return resolveSchemaAdmissionTarget(new TestExecutionApiRequest.Target(
+                "OPERATOR", normalized(operatorRef), ""), identity).boundaryPlan();
+    }
+
+    /**
+     * Resolves the exact current schema and regenerated plan for admission-only suite execution.
+     *
+     * <p>This package-private boundary is shared by authoring and execution. It performs no graph
+     * or operator business invocation.</p>
+     *
+     * @param requested graph or operator identity; its fingerprint is ignored for current lookup
+     * @param identity verified test-runtime caller
+     * @return one internally consistent current target, schema, and boundary plan
+     */
+    TestSchemaAdmissionTarget resolveSchemaAdmissionTarget(
+            TestExecutionApiRequest.Target requested,
+            IntegrationRequestContext identity) {
         requireTestIdentity(identity);
+        if (requested == null || normalized(requested.id()).isBlank()) {
+            throw badRequest(identity, "RG.TEST.SUITE_ADMISSION_TARGET_INVALID",
+                    "Schema-admission execution requires a graph or operator target.", Map.of());
+        }
+        return switch (normalized(requested.kind()).toUpperCase(Locale.ROOT)) {
+            case "GRAPH" -> resolveGraphSchemaAdmissionTarget(requested.id(), identity);
+            case "OPERATOR" -> resolveOperatorSchemaAdmissionTarget(requested.id(), identity);
+            default -> throw badRequest(identity, "RG.TEST.SUITE_ADMISSION_TARGET_INVALID",
+                    "Schema-admission execution supports only GRAPH or OPERATOR targets.",
+                    Map.of("targetKind", normalized(requested.kind())));
+        };
+    }
+
+    private TestSchemaAdmissionTarget resolveGraphSchemaAdmissionTarget(
+            String graphName, IntegrationRequestContext identity) {
+        TestExecutionApiRequest.Target requested = new TestExecutionApiRequest.Target(
+                "GRAPH", normalized(graphName), "");
+        Graph graph = requireGraph(requested, identity);
+        GraphExecutionTargetSnapshot snapshot = GraphExecutionTargetSnapshot.capture(
+                objectMapper, graph, resourceRegistry);
+        TestExecutionApiRequest.Target current = new TestExecutionApiRequest.Target(
+                "GRAPH", graph.name(), snapshot.fingerprint());
+        SchemaEnvelope schema = graphService.requireContract(graph.name()).inputSchema();
+        return TestSchemaAdmissionTarget.verified(objectMapper, current, schema,
+                boundaryCases.plan(current, schema, List.of()));
+    }
+
+    private TestSchemaAdmissionTarget resolveOperatorSchemaAdmissionTarget(
+            String operatorRef, IntegrationRequestContext identity) {
         OperatorExecutionTargetSnapshot target = requireOperator(operatorRef, identity);
         JavaOperatorInventoryProjector.ProjectedSchema projection =
                 JavaOperatorInventoryProjector.projectSchema(target.metadata().inputSchema());
@@ -340,10 +380,10 @@ public final class TestExecutionApiService {
                         TestBoundaryCasePlan.GapCode.BLOGE_SCHEMA_PROJECTION_WARNING,
                         "/inputSchema" + diagnostic.target(), diagnostic.code()))
                 .toList();
-        return boundaryCases.plan(
-                new TestExecutionApiRequest.Target(
-                        "OPERATOR", target.operatorRef(), target.fingerprint()),
-                projection.schema(), projectionGaps);
+        TestExecutionApiRequest.Target current = new TestExecutionApiRequest.Target(
+                "OPERATOR", target.operatorRef(), target.fingerprint());
+        return TestSchemaAdmissionTarget.verified(objectMapper, current, projection.schema(),
+                boundaryCases.plan(current, projection.schema(), projectionGaps));
     }
 
     /**

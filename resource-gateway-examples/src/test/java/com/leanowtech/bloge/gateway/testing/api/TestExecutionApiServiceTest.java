@@ -18,6 +18,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
@@ -179,9 +180,16 @@ class TestExecutionApiServiceTest {
     void graphBoundaryPlanIsValidatorProvenAndBoundToTheCurrentTarget() {
         TestBoundaryCasePlan plan = service.planGraphBoundaryCases(
                 "controlled-graph", identity("test"));
+        TestSchemaAdmissionTarget resolved = service.resolveSchemaAdmissionTarget(
+                new TestExecutionApiRequest.Target("GRAPH", "controlled-graph", "stale"),
+                identity("test"));
 
         assertThat(plan.schemaVersion()).isEqualTo(TestBoundaryCasePlan.SCHEMA_VERSION);
         assertThat(plan.target()).isEqualTo(target());
+        assertThat(resolved.target()).isEqualTo(plan.target());
+        assertThat(resolved.boundaryPlan()).isEqualTo(plan);
+        assertThat(ProtocolFingerprint.of(mapper, resolved.inputSchema()))
+                .isEqualTo(plan.inputSchemaFingerprint());
         assertThat(plan.inputSchemaFingerprint()).matches("sha256:[a-f0-9]{64}");
         assertThat(plan.planFingerprint()).matches("sha256:[a-f0-9]{64}");
         assertThat(plan.status()).isEqualTo(TestBoundaryCasePlan.Status.GENERATED);

@@ -19,6 +19,7 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.OperatorExecutionTargetSnapshot;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorComposabilityManifest;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorComposabilityManifestProvider;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorRuntimeBindingSnapshotProvider;
@@ -98,8 +99,15 @@ class TestOperatorExecutionApiServiceTest {
 
         TestBoundaryCasePlan plan = service.planOperatorBoundaryCases(
                 "customer.greeting", identity());
+        TestSchemaAdmissionTarget resolved = service.resolveSchemaAdmissionTarget(
+                new TestExecutionApiRequest.Target(
+                        "OPERATOR", "customer.greeting", "stale"), identity());
 
         assertThat(plan.target()).isEqualTo(target.target());
+        assertThat(resolved.target()).isEqualTo(plan.target());
+        assertThat(resolved.boundaryPlan()).isEqualTo(plan);
+        assertThat(ProtocolFingerprint.of(mapper, resolved.inputSchema()))
+                .isEqualTo(plan.inputSchemaFingerprint());
         assertThat(plan.inputSchemaFingerprint()).matches("sha256:[a-f0-9]{64}");
         assertThat(plan.cases()).extracting(TestBoundaryCasePlan.BoundaryCase::kind)
                 .contains(TestBoundaryCasePlan.BoundaryKind.BASELINE,
