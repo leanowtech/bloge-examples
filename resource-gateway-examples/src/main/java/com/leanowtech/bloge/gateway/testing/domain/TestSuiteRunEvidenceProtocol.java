@@ -20,10 +20,12 @@ import java.util.Map;
         @JsonSubTypes.Type(value = TestSuiteRunEvidence.class,
                 name = TestSuiteRunEvidence.SCHEMA_VERSION),
         @JsonSubTypes.Type(value = TestSuiteRunEvidenceV2.class,
-                name = TestSuiteRunEvidenceV2.SCHEMA_VERSION)
+                name = TestSuiteRunEvidenceV2.SCHEMA_VERSION),
+        @JsonSubTypes.Type(value = TestSuiteRunEvidenceV3.class,
+                name = TestSuiteRunEvidenceV3.SCHEMA_VERSION)
 })
 public sealed interface TestSuiteRunEvidenceProtocol
-        permits TestSuiteRunEvidence, TestSuiteRunEvidenceV2 {
+        permits TestSuiteRunEvidence, TestSuiteRunEvidenceV2, TestSuiteRunEvidenceV3 {
     /** @return exact wire schema version */
     String schemaVersion();
     /** @return durable suite run id */
