@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestBoundaryCasePlan;
+import com.leanowtech.bloge.gateway.testing.api.TestPropertyCasePlan;
 import com.leanowtech.bloge.gateway.testing.api.TestBoundarySuiteMaterializationRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestBoundarySuiteMaterializationResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse;
@@ -79,6 +80,9 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("durableRecoverySequenceRetentionSloHealth", false);
         assertThat(disabled.features()).containsEntry("schemaBoundaryCasePlanning", false);
         assertThat(disabled.features())
+                .containsEntry("seededPropertyCasePlanning", false)
+                .containsEntry("propertySuiteExecution", false);
+        assertThat(disabled.features())
                 .containsEntry("schemaBoundarySuiteMaterialization", false)
                 .containsEntry("schemaAdmissionSuiteExecution", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionAntiEntropy", false);
@@ -121,7 +125,7 @@ class TestabilityCapabilitiesTest {
                 "fixtureBundle", "effectiveExecutionPlan", "executionServiceStateSnapshot",
                 "testRunEvidence",
                 "testEvidenceIntegrity",
-                "testGraphTargetDescriptor", "testBoundaryCasePlan",
+                "testGraphTargetDescriptor", "testBoundaryCasePlan", "testPropertyCasePlan",
                 "testBoundarySuiteMaterializationRequest", "testBoundarySuiteMaterialization",
                 "testOperatorExecutionRequest", "testOperatorTargetDescriptor",
                 "durableTestOwnerClaimRequest", "durableTestOwnerClaimResponse",
@@ -202,6 +206,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("durableRecoverySequenceRetention", true)
                 .containsEntry("durableRecoverySequenceRetentionSloHealth", true)
                 .containsEntry("schemaBoundaryCasePlanning", true)
+                .containsEntry("seededPropertyCasePlanning", true)
+                .containsEntry("propertySuiteExecution", false)
                 .containsEntry("schemaBoundarySuiteMaterialization", true)
                 .containsEntry("schemaAdmissionSuiteExecution", true)
                 .containsEntry("durableStateProjectionAntiEntropy", true)
@@ -227,6 +233,8 @@ class TestabilityCapabilitiesTest {
                         TestExecutionApiResponse.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testBoundaryCasePlan"))
                 .containsExactly(TestBoundaryCasePlan.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testPropertyCasePlan"))
+                .containsExactly(TestPropertyCasePlan.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testBoundarySuiteMaterializationRequest"))
                 .containsExactly(TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testBoundarySuiteMaterialization"))
@@ -333,9 +341,15 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals(
                 "/api/testing/targets/graphs/{graphName}/boundary-suites"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("GET")
+                && endpoint.path().equals(
+                "/api/testing/targets/graphs/{graphName}/property-cases"));
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals(
                 "/api/testing/targets/operators/{operatorRef}/boundary-suites"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("GET")
+                && endpoint.path().equals(
+                "/api/testing/targets/operators/{operatorRef}/property-cases"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/operators/{operatorRef}/executions"));
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")

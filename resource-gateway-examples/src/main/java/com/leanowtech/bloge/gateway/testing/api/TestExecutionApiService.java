@@ -27,6 +27,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerpri
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.InvocationInventoryBuilder;
 import com.leanowtech.bloge.gateway.testing.planning.TestBoundaryCasePlanner;
+import com.leanowtech.bloge.gateway.testing.planning.TestPropertyCasePlanner;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorInputCoercer;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorMicroGraphRunner;
 import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
@@ -82,6 +83,7 @@ public final class TestExecutionApiService {
     private final TestEvidenceSanitizer sanitizer;
     private final TestRuntimeAdmissionGate admissions;
     private final TestBoundaryCasePlanner boundaryCases;
+    private final TestPropertyCasePlanner propertyCases;
     private final Duration retention;
 
     public TestExecutionApiService(GatewayGraphService graphService,
@@ -200,6 +202,8 @@ public final class TestExecutionApiService {
         this.admissions = Objects.requireNonNull(admissions, "admissions");
         this.boundaryCases = new TestBoundaryCasePlanner(
                 objectMapper, new JsonSchemaSampleGenerator());
+        this.propertyCases = new TestPropertyCasePlanner(
+                objectMapper, new JsonSchemaSampleGenerator());
         this.sanitizer = new TestEvidenceSanitizer(objectMapper);
         this.retention = retention == null || retention.isNegative() || retention.isZero()
                 ? Duration.ofDays(30) : retention;
@@ -298,6 +302,35 @@ public final class TestExecutionApiService {
                 "GRAPH", normalized(graphName), ""), identity).boundaryPlan();
     }
 
+    /**
+     * Generates reproducible validator-proven property trials for one exact graph contract.
+     *
+     * @param graphName registered graph target
+     * @param seed caller-selected deterministic seed
+     * @param trialCount requested unique root trials
+     * @param maxShrinkSteps maximum precomputed shrink steps per trial
+     * @param identity verified test-runtime caller
+     * @return bounded sampled property plan
+     */
+    public TestPropertyCasePlan planGraphPropertyCases(
+            String graphName,
+            long seed,
+            int trialCount,
+            int maxShrinkSteps,
+            IntegrationRequestContext identity) {
+        requireTestIdentity(identity);
+        TestExecutionApiRequest.Target requested = new TestExecutionApiRequest.Target(
+                "GRAPH", normalized(graphName), "");
+        Graph graph = requireGraph(requested, identity);
+        GraphExecutionTargetSnapshot snapshot = GraphExecutionTargetSnapshot.capture(
+                objectMapper, graph, resourceRegistry);
+        TestExecutionApiRequest.Target current = new TestExecutionApiRequest.Target(
+                "GRAPH", graph.name(), snapshot.fingerprint());
+        SchemaEnvelope schema = graphService.requireContract(graph.name()).inputSchema();
+        return propertyPlan(current, schema, seed, trialCount, maxShrinkSteps,
+                List.of(), identity);
+    }
+
     /** Returns the frozen binding, schema and testability facts needed to author operator fixtures. */
     public TestOperatorTargetDescriptor describeOperatorTarget(String operatorRef,
                                                                IntegrationRequestContext identity) {
@@ -327,6 +360,54 @@ public final class TestExecutionApiService {
             IntegrationRequestContext identity) {
         return resolveSchemaAdmissionTarget(new TestExecutionApiRequest.Target(
                 "OPERATOR", normalized(operatorRef), ""), identity).boundaryPlan();
+    }
+
+    /**
+     * Generates reproducible validator-proven property trials for one exact operator binding.
+     *
+     * @param operatorRef registered operator binding
+     * @param seed caller-selected deterministic seed
+     * @param trialCount requested unique root trials
+     * @param maxShrinkSteps maximum precomputed shrink steps per trial
+     * @param identity verified test-runtime caller
+     * @return bounded sampled property plan with projection losses disclosed
+     */
+    public TestPropertyCasePlan planOperatorPropertyCases(
+            String operatorRef,
+            long seed,
+            int trialCount,
+            int maxShrinkSteps,
+            IntegrationRequestContext identity) {
+        requireTestIdentity(identity);
+        OperatorExecutionTargetSnapshot target = requireOperator(operatorRef, identity);
+        JavaOperatorInventoryProjector.ProjectedSchema projection =
+                JavaOperatorInventoryProjector.projectSchema(target.metadata().inputSchema());
+        List<TestPropertyCasePlan.CoverageGap> projectionGaps = projection.diagnostics().stream()
+                .map(diagnostic -> new TestPropertyCasePlan.CoverageGap(
+                        TestPropertyCasePlan.GapCode.BLOGE_SCHEMA_PROJECTION_WARNING,
+                        "/inputSchema" + diagnostic.target(), diagnostic.code()))
+                .toList();
+        TestExecutionApiRequest.Target current = new TestExecutionApiRequest.Target(
+                "OPERATOR", target.operatorRef(), target.fingerprint());
+        return propertyPlan(current, projection.schema(), seed, trialCount, maxShrinkSteps,
+                projectionGaps, identity);
+    }
+
+    private TestPropertyCasePlan propertyPlan(
+            TestExecutionApiRequest.Target target,
+            SchemaEnvelope schema,
+            long seed,
+            int trialCount,
+            int maxShrinkSteps,
+            List<TestPropertyCasePlan.CoverageGap> initialGaps,
+            IntegrationRequestContext identity) {
+        if (trialCount < 1 || trialCount > TestPropertyCasePlanner.MAX_TRIALS
+                || maxShrinkSteps < 0
+                || maxShrinkSteps > TestPropertyCasePlanner.MAX_SHRINK_STEPS) {
+            throw badRequest(identity, "RG.TEST.PROPERTY_PLAN_POLICY_INVALID",
+                    "Property planning requires 1..16 trials and 0..5 shrink steps.", Map.of());
+        }
+        return propertyCases.plan(target, schema, seed, trialCount, maxShrinkSteps, initialGaps);
     }
 
     /**

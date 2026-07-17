@@ -300,6 +300,8 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.TestGraphTargetDescriptor.SCHEMA_VERSION));
             objects.put("testBoundaryCasePlan", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestBoundaryCasePlan.SCHEMA_VERSION));
+            objects.put("testPropertyCasePlan", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestPropertyCasePlan.SCHEMA_VERSION));
             objects.put("testBoundarySuiteMaterializationRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION));
             objects.put("testBoundarySuiteMaterialization", List.of(
@@ -475,6 +477,8 @@ public record IntegrationCapabilities(
         features.put("webhook", false);
         features.put("operatorMicroGraphExecution", testExecutionEndpointEnabled);
         features.put("schemaBoundaryCasePlanning", testExecutionEndpointEnabled);
+        features.put("seededPropertyCasePlanning", testExecutionEndpointEnabled);
+        features.put("propertySuiteExecution", false);
         features.put("schemaBoundarySuiteMaterialization", testExecutionEndpointEnabled);
         features.put("schemaAdmissionSuiteExecution", testExecutionEndpointEnabled);
         features.put("dynamicAttemptOccurrenceSelectors", testExecutionEndpointEnabled);
@@ -595,11 +599,15 @@ public record IntegrationCapabilities(
             endpoints.add(new Endpoint("GET", "/api/testing/targets/graphs/{graphName}"));
             endpoints.add(new Endpoint("GET",
                     "/api/testing/targets/graphs/{graphName}/boundary-cases"));
+            endpoints.add(new Endpoint("GET",
+                    "/api/testing/targets/graphs/{graphName}/property-cases"));
             endpoints.add(new Endpoint("POST",
                     "/api/testing/targets/graphs/{graphName}/boundary-suites"));
             endpoints.add(new Endpoint("GET", "/api/testing/targets/operators/{operatorRef}"));
             endpoints.add(new Endpoint("GET",
                     "/api/testing/targets/operators/{operatorRef}/boundary-cases"));
+            endpoints.add(new Endpoint("GET",
+                    "/api/testing/targets/operators/{operatorRef}/property-cases"));
             endpoints.add(new Endpoint("POST",
                     "/api/testing/targets/operators/{operatorRef}/boundary-suites"));
             endpoints.add(new Endpoint("POST", "/api/testing/targets/operators/{operatorRef}/executions"));

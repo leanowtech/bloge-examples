@@ -68,6 +68,18 @@ public class TestExecutionController {
                 context(headers, IntegrationOperation.TEST_TARGET_READ));
     }
 
+    /** Generates a reproducible bounded property plan for one graph contract. */
+    @GetMapping("/targets/graphs/{graphName}/property-cases")
+    public TestPropertyCasePlan planGraphPropertyCases(
+            @PathVariable String graphName,
+            @RequestParam long seed,
+            @RequestParam(defaultValue = "8") int trials,
+            @RequestParam(defaultValue = "3") int maxShrinkSteps,
+            @RequestHeader HttpHeaders headers) {
+        return service.planGraphPropertyCases(graphName, seed, trials, maxShrinkSteps,
+                context(headers, IntegrationOperation.TEST_TARGET_READ));
+    }
+
     /** Discovers one frozen operator binding and its executable testability contract. */
     @GetMapping("/targets/operators/{operatorRef}")
     public TestOperatorTargetDescriptor describeOperatorTarget(@PathVariable String operatorRef,
@@ -82,6 +94,18 @@ public class TestExecutionController {
             @PathVariable String operatorRef,
             @RequestHeader HttpHeaders headers) {
         return service.planOperatorBoundaryCases(operatorRef,
+                context(headers, IntegrationOperation.TEST_TARGET_READ));
+    }
+
+    /** Generates a reproducible bounded property plan for one operator binding. */
+    @GetMapping("/targets/operators/{operatorRef}/property-cases")
+    public TestPropertyCasePlan planOperatorPropertyCases(
+            @PathVariable String operatorRef,
+            @RequestParam long seed,
+            @RequestParam(defaultValue = "8") int trials,
+            @RequestParam(defaultValue = "3") int maxShrinkSteps,
+            @RequestHeader HttpHeaders headers) {
+        return service.planOperatorPropertyCases(operatorRef, seed, trials, maxShrinkSteps,
                 context(headers, IntegrationOperation.TEST_TARGET_READ));
     }
 

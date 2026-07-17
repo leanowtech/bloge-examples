@@ -18,6 +18,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.planning.TestBoundaryCasePlanner;
+import com.leanowtech.bloge.gateway.testing.planning.TestPropertyCasePlanner;
 import com.leanowtech.bloge.gateway.visual.runtime.EvidenceVerificationKeySet;
 import org.junit.jupiter.api.Test;
 
@@ -103,6 +104,8 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestGraphTargetDescriptor.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testBoundaryCasePlan/properties/schemaVersion/const").asText())
                 .isEqualTo(TestBoundaryCasePlan.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testPropertyCasePlan/properties/schemaVersion/const").asText())
+                .isEqualTo(TestPropertyCasePlan.SCHEMA_VERSION);
         assertThat(schema.at(
                 "/$defs/testBoundarySuiteMaterializationRequest/properties/schemaVersion/const")
                 .asText()).isEqualTo(TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION);
@@ -374,6 +377,7 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("testSuiteRunEvidenceV3")).isTrue();
         assertThat(definitions.has("testEvidenceIntegrity")).isTrue();
         assertThat(definitions.has("testBoundaryCasePlan")).isTrue();
+        assertThat(definitions.has("testPropertyCasePlan")).isTrue();
         assertThat(definitions.has("testBoundarySuiteMaterializationRequest")).isTrue();
         assertThat(definitions.has("testBoundarySuiteMaterialization")).isTrue();
         assertThat(definitions.has("durableTestOwnerClaimRequest")).isTrue();
@@ -592,6 +596,24 @@ class TestingControlProtocolSchemaTest {
                 .extracting(JsonNode::asText)
                 .containsExactly("GENERATED", "PARTIAL", "UNAVAILABLE");
         assertThat(definitions.at("/testBoundaryCasePlan/oneOf")).hasSize(3);
+        assertThat(definitions.at("/testPropertyCasePlan/additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(definitions.at("/testPropertyCasePlan/properties/quantification/const")
+                .asText()).isEqualTo(TestPropertyCasePlan.Quantification.BOUNDED_SAMPLED.name());
+        assertThat(definitions.at("/testPropertyCasePlan/properties/exhaustive/const")
+                .asBoolean()).isFalse();
+        assertThat(definitions.at("/testPropertyCasePlan/properties/trials/maxItems").asInt())
+                .isEqualTo(TestPropertyCasePlanner.MAX_TRIALS);
+        assertThat(definitions.at(
+                "/testPropertyCasePlan/properties/trials/items/properties/shrinkPath/maxItems")
+                .asInt()).isEqualTo(TestPropertyCasePlanner.MAX_SHRINK_STEPS);
+        assertThat(definitions.at(
+                "/testPropertyCasePlan/properties/policy/properties/maxCases/maximum")
+                .asInt()).isEqualTo(TestPropertyCasePlanner.MAX_CASES);
+        assertThat(definitions.at(
+                "/testPropertyCasePlan/properties/policy/properties/generatorVersion/const")
+                .asText()).isEqualTo(TestPropertyCasePlanner.GENERATOR_VERSION);
+        assertThat(definitions.at("/testPropertyCasePlan/oneOf")).hasSize(3);
         assertThat(definitions.at(
                 "/testBoundarySuiteMaterializationRequest/additionalProperties").asBoolean())
                 .isFalse();

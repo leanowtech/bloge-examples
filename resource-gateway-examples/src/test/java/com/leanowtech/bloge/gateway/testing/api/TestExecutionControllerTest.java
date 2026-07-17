@@ -153,6 +153,45 @@ class TestExecutionControllerTest {
     }
 
     @Test
+    void propertyPlanningBindsExplicitSeedAndBoundedSamplingPolicy() throws Exception {
+        TestExecutionApiService service = mock(TestExecutionApiService.class);
+        String fingerprint = "sha256:" + "a".repeat(64);
+        when(service.planGraphPropertyCases(eq("graph-a"), eq(918273645L),
+                eq(6), eq(4), any())).thenReturn(propertyPlan("GRAPH", "graph-a", fingerprint));
+        when(service.planOperatorPropertyCases(eq("customer.normalize"), eq(918273645L),
+                eq(8), eq(3), any())).thenReturn(
+                propertyPlan("OPERATOR", "customer.normalize", fingerprint));
+        MockMvc mvc = mvc(service);
+
+        mvc.perform(get("/api/testing/targets/graphs/graph-a/property-cases")
+                        .queryParam("seed", "918273645")
+                        .queryParam("trials", "6")
+                        .queryParam("maxShrinkSteps", "4")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_EXECUTION"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(TestPropertyCasePlan.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.policy.seed").value(918273645L))
+                .andExpect(jsonPath("$.quantification").value("BOUNDED_SAMPLED"))
+                .andExpect(jsonPath("$.exhaustive").value(false));
+        mvc.perform(get("/api/testing/targets/operators/customer.normalize/property-cases")
+                        .queryParam("seed", "918273645")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_EXECUTION"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.target.kind").value("OPERATOR"));
+        mvc.perform(get("/api/testing/targets/graphs/graph-a/property-cases")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_EXECUTION"))
+                .andExpect(status().isBadRequest());
+
+        verify(service).planGraphPropertyCases(eq("graph-a"), eq(918273645L),
+                eq(6), eq(4), any());
+        verify(service).planOperatorPropertyCases(eq("customer.normalize"), eq(918273645L),
+                eq(8), eq(3), any());
+    }
+
+    @Test
     void executionPurposeCannotWriteGovernedFixtureRevisions() throws Exception {
         TestExecutionApiService service = mock(TestExecutionApiService.class);
         MockMvc mvc = mvc(service);
@@ -440,7 +479,23 @@ class TestExecutionControllerTest {
                 List.of(new TestBoundaryCasePlan.BoundaryCase(
                         "baseline-000000000000", TestBoundaryCasePlan.BoundaryKind.BASELINE,
                         "", "/inputSchema/schema", TestBoundaryCasePlan.ExpectedOutcome.ACCEPTED,
-                        Map.of(), List.of())), List.of());
+                Map.of(), List.of())), List.of());
+    }
+
+    private static TestPropertyCasePlan propertyPlan(
+            String kind, String id, String targetFingerprint) {
+        TestPropertyCasePlan.GenerationPolicy policy =
+                new TestPropertyCasePlan.GenerationPolicy(
+                        "property-cases-v1", 918273645L, 1, 0, 1,
+                        32, 8, 32, "VISUAL_SCHEMA_VALIDATOR_PROOF");
+        return new TestPropertyCasePlan("",
+                new TestExecutionApiRequest.Target(kind, id, targetFingerprint),
+                "sha256:" + "b".repeat(64), "sha256:" + "c".repeat(64),
+                TestPropertyCasePlan.Status.GENERATED,
+                TestPropertyCasePlan.Quantification.BOUNDED_SAMPLED, false, policy,
+                List.of(new TestPropertyCasePlan.PropertyTrial(
+                        "property-001", Map.of("value", 1),
+                        "sha256:" + "d".repeat(64), 10, List.of())), List.of());
     }
 
     private static TestSuiteExecutionResponse suiteExecutionResponse(

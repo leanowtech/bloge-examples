@@ -333,7 +333,43 @@ and materialize an exact selected subset as described below. Schemas must not em
 secrets in defaults/examples; target readers can already inspect those schema literals, and generated
 baseline inputs may reproduce them.
 
-### 4.1.3 Materialize reviewed boundary cases
+### 4.1.3 Generate reproducible property trials
+
+Property planning explores more than the fixed boundary transforms while retaining an exact replay
+coordinate. The caller must choose the seed; trial and shrink limits are explicit and bounded:
+
+```bash
+curl -sS 'http://localhost:8080/api/testing/targets/graphs/loanDecisionPolicy/property-cases?seed=918273645&trials=8&maxShrinkSteps=3' \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION'
+
+curl -sS 'http://localhost:8080/api/testing/targets/operators/httpResource/property-cases?seed=918273645&trials=8&maxShrinkSteps=3' \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION'
+```
+
+Both endpoints return `bloge.testPropertyCasePlan.v1` for the current exact target and projected
+input-schema fingerprint. Repeating the same request against the same target and schema reproduces
+the same ordered roots, shrink paths, and `planFingerprint`. Changing the seed, schema, target, policy,
+candidate, or disclosed gap changes the content address. Operator plans preserve BLOGE schema
+projection warnings as first-class gaps.
+
+Every published root and shrink candidate is independently accepted by `VisualSchemaValidator`.
+Shrink paths are precomputed, linear, and strictly decrease a deterministic complexity score; they are
+candidate minimization coordinates for later execution, not proof that a business failure was minimized.
+v1 permits at most 16 unique roots, five shrink candidates per root, 96 total cases, 32 attempts per
+unique root, schema depth 8, and string/collection size 32. A low-cardinality domain returns `PARTIAL`
+with `UNIQUE_TRIAL_LIMIT_REACHED` rather than duplicating values to satisfy a requested count.
+
+`quantification=BOUNDED_SAMPLED` and `exhaustive=false` are mandatory protocol facts. `GENERATED`
+means every requested unique root was produced without a disclosed planning gap; it does not mean the
+input domain is exhausted. `PARTIAL` retains useful proven trials and names every known projection,
+constraint, or resource-limit gap. `UNAVAILABLE` publishes no trial and must explain why. The capability
+`seededPropertyCasePlanning=true` advertises only this authoring step. `propertySuiteExecution=false`
+remains fail-closed until immutable suite materialization and same-generation signed property evidence
+are implemented.
+
+### 4.1.4 Materialize reviewed boundary cases
 
 After reviewing one exact plan, submit the target, input-schema, and plan fingerprints together with
 an explicit case selection. Materialization requires `TEST_SUITE_WRITE`; target-read or execution-only
@@ -378,7 +414,7 @@ The capability probe reports both `schemaBoundarySuiteMaterialization=true` and
 exact v3 suite as described below. Admission evidence is useful for reviewed schema-regression
 gates, but it remains permanently ineligible for business promotion.
 
-### 4.1.4 Execute and verify a schema-admission suite
+### 4.1.5 Execute and verify a schema-admission suite
 
 Use the exact suite reference returned by materialization. The request and idempotency semantics are
 the same as other immutable suites:

@@ -127,6 +127,12 @@ class TestRuntimeApplicationIntegrationTest {
                 endpoint.path().equals(
                         "/api/testing/targets/operators/{operatorRef}/boundary-cases"));
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.path().equals(
+                        "/api/testing/targets/graphs/{graphName}/property-cases"));
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.path().equals(
+                        "/api/testing/targets/operators/{operatorRef}/property-cases"));
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("POST") && endpoint.path().equals(
                         "/api/testing/targets/graphs/{graphName}/boundary-suites"));
         assertThat(capabilities.getBody().payload().features())
@@ -136,10 +142,14 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("builtInGraphSuiteCatalogMaterialization", true)
                 .containsEntry("schemaBoundaryCasePlanning", true)
                 .containsEntry("schemaBoundarySuiteMaterialization", true)
-                .containsEntry("schemaAdmissionSuiteExecution", true);
+                .containsEntry("schemaAdmissionSuiteExecution", true)
+                .containsEntry("seededPropertyCasePlanning", true)
+                .containsEntry("propertySuiteExecution", false);
         assertThat(capabilities.getBody().payload().supportedObjects())
                 .containsEntry("testBoundaryCasePlan",
                         List.of(TestBoundaryCasePlan.SCHEMA_VERSION))
+                .containsEntry("testPropertyCasePlan",
+                        List.of(TestPropertyCasePlan.SCHEMA_VERSION))
                 .containsEntry("testBoundarySuiteMaterializationRequest",
                         List.of(TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION))
                 .containsEntry("testBoundarySuiteMaterialization",
@@ -301,6 +311,26 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(boundaryCases.getBody().cases()).isNotEmpty();
         assertThat(boundaryCases.getBody().planFingerprint())
                 .matches("sha256:[a-f0-9]{64}");
+
+        String propertyPlanPath = "/api/testing/targets/graphs/loanDecisionPolicy/property-cases"
+                + "?seed=918273645&trials=3&maxShrinkSteps=2";
+        var propertyCases = restTemplate.exchange(propertyPlanPath, HttpMethod.GET,
+                new HttpEntity<>(headers), TestPropertyCasePlan.class);
+        var propertyReplay = restTemplate.exchange(propertyPlanPath, HttpMethod.GET,
+                new HttpEntity<>(headers), TestPropertyCasePlan.class);
+        assertThat(propertyCases.getStatusCode())
+                .withFailMessage("property planning failed: %s", propertyCases.getBody())
+                .isEqualTo(HttpStatus.OK);
+        assertThat(propertyCases.getBody()).isNotNull();
+        assertThat(propertyCases.getBody()).isEqualTo(propertyReplay.getBody());
+        assertThat(propertyCases.getBody().target()).isEqualTo(descriptor.target());
+        assertThat(propertyCases.getBody().policy().seed()).isEqualTo(918273645L);
+        assertThat(propertyCases.getBody().policy().requestedTrials()).isEqualTo(3);
+        assertThat(propertyCases.getBody().quantification())
+                .isEqualTo(TestPropertyCasePlan.Quantification.BOUNDED_SAMPLED);
+        assertThat(propertyCases.getBody().exhaustive()).isFalse();
+        assertThat(propertyCases.getBody().trials()).isNotEmpty();
+        assertThat(propertyCases.getBody().planFingerprint()).matches("sha256:[a-f0-9]{64}");
 
         HttpHeaders suiteWriteHeaders = new HttpHeaders();
         suiteWriteHeaders.setBearerAuth("bloge-aneke-demo-token");

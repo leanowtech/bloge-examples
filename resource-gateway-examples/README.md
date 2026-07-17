@@ -53,6 +53,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `http://localhost:8080/api/gateway/graphs/contracts` | Inspect resource graph input/output contracts |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}` | Freeze the graph/resource target fingerprint before authoring fixtures (test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}/boundary-cases` | Generate bounded, validator-proven graph input candidates and explicit coverage gaps (test/staging only) |
+| `GET http://localhost:8080/api/testing/targets/graphs/{graphName}/property-cases?seed=...` | Generate reproducible, bounded graph trials with validator-proven shrink paths; this is an authoring plan, not execution evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/targets/graphs/{graphName}/boundary-suites` | Materialize an explicitly selected, fingerprint-locked boundary-plan subset as an immutable schema-admission suite (test/staging only) |
 | `POST http://localhost:8080/api/testing/executions` | Run an isolated inline or governed fixture plan and retain sanitized evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions` | Idempotently create an exact graph test at its first unique signal suspension (test/staging only) |
@@ -66,6 +67,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/terminal-recoveries` | Signal one exact claimed suspension and atomically commit only a server-derived terminal result (test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/operators/{operatorRef}` | Inspect frozen binding/schema/state fingerprints and executable testability (test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/operators/{operatorRef}/boundary-cases` | Project an operator input schema and generate bounded, validator-proven candidates (test/staging only) |
+| `GET http://localhost:8080/api/testing/targets/operators/{operatorRef}/property-cases?seed=...` | Generate reproducible, bounded operator trials while disclosing schema-projection and generation gaps (test/staging only) |
 | `POST http://localhost:8080/api/testing/targets/operators/{operatorRef}/boundary-suites` | Materialize selected operator boundary candidates under suite-write authority (test/staging only) |
 | `POST http://localhost:8080/api/testing/targets/operators/{operatorRef}/executions` | Run the exact synchronous binding as a controlled one-node BLOGE graph (test/staging only) |
 | `GET http://localhost:8080/api/integration/test-suites/{suiteId}/revisions/{revision}/semantic-correctness-workbook` | Export a payload-free ANEKE seed for one exact semantic suite and its verified terminal evidence (test/staging only) |
